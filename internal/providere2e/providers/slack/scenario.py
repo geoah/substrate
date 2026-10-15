@@ -52,6 +52,14 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   tool (#712)
    18. first      a first reply posted into a mirrored message that had no
                   replies lands on the next sync (#711)
+   19. events     batches of live Events API callbacks POSTed to the
+                  `slack-events` webhook land on the mirror: a new message
+                  and a reply, an edit that a late copy of the original does
+                  not undo, a reaction added and removed (each read whole
+                  from `reactions.get`), a reaction on a message the walk
+                  never read, a delete, a 429 that ends the batch's calls; a
+                  repeated event_id runs once, a foreign team_id is ignored,
+                  and no history cursor or account stamp moves
 
 Run against `raw/slack` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -1878,6 +1886,9 @@ def main():
 
     section("18. a first reply into a thread lands")
     first_reply()
+
+    section("19. live events land on the mirror and move no cursor")
+    live_events()
     return finish()
 
 
@@ -2104,6 +2115,293 @@ def first_reply():
     # NOT "the parent is now watched": section 16 filled this conversation's
     # watch with newer parents, and the watch keeps the newest WATCH_MAX.
     note("first reply %s %s" % (reply_ts, "landed" if rows else "MISSING"))
+
+
+EVENTS_TRIGGER = "slack-events"
+TRIGGERRUN = "substrate.reamde.dev/core/triggerrun"
+AUTHORITY = os.environ.get("SUBSTRATE_AUTHORITY", "")
+
+
+def post_events(callbacks):
+    """POST one batch to the webhook door the way the Socket Mode sidecar
+    does, and wait for its fire to settle. Returns the fire's triggerrun
+    status (`ok` when the batch applied), or what went wrong instead."""
+    url = "%s/webhooks/%s/%s" % (SERVER, AUTHORITY, EVENTS_TRIGGER)
+    data = json.dumps({"version": 1, "events": callbacks}).encode()
+    req = urllib.request.Request(url, data=data, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            status, body = r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return "HTTP %d %s" % (e.code, e.read()[:200].decode("utf-8", "replace"))
+    fire = (body or {}).get("fire")
+    if status != 202 or not fire:
+        return "the door answered %s %r" % (status, body)
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        for row in records(TRIGGERRUN):
+            if props(row).get("fireId") == fire:
+                return props(row).get("status")
+        time.sleep(1)
+    return "no triggerrun for fire %s after 120s" % fire
+
+
+def live_events():
+    """The `slack-events` webhook trigger: what a Socket Mode sidecar
+    forwards lands on the mirror rows, and moves no cursor.
+
+    Every batch goes through the public door as the sidecar sends it, and
+    `reactions.get` is played by the mock's rules: each answer is the
+    message's whole current reaction set, which is what the body writes,
+    whatever the event said."""
+    if not MOCK or SEED:
+        seed_note("live events are driven against the mock only")
+        return
+    if not ok(AUTHORITY, "SUBSTRATE_AUTHORITY is not set, so the webhook URL "
+                         "cannot be built"):
+        return
+    auth = load("GET_api_auth.test.json") or {}
+    team, owner = auth.get("team_id"), auth.get("user_id")
+    settle()
+    convs = {props(r).get("conversationId"): r for r in records(CONV)}
+    states = records(SYNC)
+    walked = {ref_id(props(st).get("conversation")) for st in states
+              if props(st).get("latestTs")}
+    cid = next((c for c, r in sorted(convs.items())
+                if c and c[:1] == "C" and props(r).get("isMember")
+                and rid(r) in walked), None)
+    other = next((c for c in sorted(convs) if c and c != cid), None)
+    if not ok(cid and other, "no walked channel to send live events into"):
+        return
+    conv_row = rid(convs[cid])
+    owner_row = next((u for u in records(USER)
+                      if props(u).get("userId") == owner), None)
+    owner_whole = None
+    for _n, doc in each("GET_api_users.list__*"):
+        for u in doc.get("members") or []:
+            if u.get("id") == owner:
+                owner_whole = u
+    if not ok(owner_row and owner_whole, "the owner %s is not in users.list "
+                                         "and the mirror" % owner):
+        return
+
+    def state_of(rows):
+        return {rid(r): (version(r), props(r).get("latestTs"),
+                         props(r).get("repliesTs"), props(r).get("threadWatch"))
+                for r in rows}
+    sync_before = state_of(states)
+    _st, acct_before = api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))
+    acct_before = acct_before or {}
+    api("DELETE", MOCK + "/__mock/requests")
+
+    base = int(time.time())
+    new_ts, reply_ts, edit_ts = ("%d.000100" % base, "%d.000200" % (base + 1),
+                                 "%d.000300" % (base + 2))
+    later_ts, unseen_ts, foreign_ts = ("%d.000400" % (base + 3),
+                                       "%d.000500" % (base - 400 * 86400),
+                                       "%d.000600" % (base + 4))
+    text = "live event for <@%s>" % owner
+
+    def message(ts, words, **extra):
+        return dict({"type": "message", "channel": cid, "user": owner,
+                     "text": words, "ts": ts, "event_ts": ts,
+                     "channel_type": "channel", "team": team}, **extra)
+
+    def callback(eid, event, from_team=None):
+        at = int(float(event.get("event_ts") or base))
+        return {"token": "e2e", "team_id": from_team or team,
+                "api_app_id": "A0E2EAPP01", "event": event,
+                "type": "event_callback", "event_id": eid, "event_time": at,
+                "authorizations": [{"team_id": team, "user_id": owner,
+                                    "is_bot": False}]}
+
+    def reaction(eid, typ, ts, at):
+        return callback(eid, {"type": typ, "user": owner, "reaction": "eyes",
+                              "item_user": owner, "event_ts": at,
+                              "item": {"type": "message", "channel": cid,
+                                       "ts": ts}})
+
+    def answer(ts, msg):
+        return {"match": "GET /api/reactions.get",
+                "contains": "timestamp=" + ts, "status": [200] * 5,
+                "body": {"ok": True, "type": "message", "channel": cid,
+                         "message": msg}}
+
+    def row_at(ts):
+        return next((m for m in records(MESSAGE)
+                     if props(m).get("ts") == ts
+                     and ref_id(props(m).get("channel")) == conv_row), None)
+
+    # 1. A new message, sent twice under one event_id, a reply to it, a
+    #    callback from another workspace, an event type the body does not
+    #    know, a rename and a user's profile change.
+    status_text = "e2e live event"
+    changed_owner = dict(owner_whole, profile=dict(
+        owner_whole.get("profile") or {}, status_text=status_text))
+    first = callback("EvE2E0001", message(new_ts, text))
+    got = post_events([
+        first, first,
+        callback("EvE2E0002", message(reply_ts, "a live reply",
+                                      thread_ts=new_ts, parent_user_id=owner)),
+        callback("EvE2E0003", message(foreign_ts, "from another workspace"),
+                 from_team="T0FOREIGN01"),
+        callback("EvE2E0004", {"type": "app_home_opened", "user": owner,
+                               "tab": "home", "event_ts": "%d.000700" % base}),
+        callback("EvE2E0005", {"type": "channel_rename", "event_ts": "%d.000800" % base,
+                               "channel": {"id": other, "name": "renamed-live",
+                                           "created": base - 86400}}),
+        callback("EvE2E0006", {"type": "user_change", "user": changed_owner,
+                               "event_ts": "%d.000900" % base}),
+    ])
+    ok(got == "ok", "the first events batch settled %r, want ok" % got)
+    parent = row_at(new_ts)
+    if ok(parent, "the new message %s did not land in %s" % (new_ts, cid)):
+        ok(props(parent).get("text") == text,
+           "the new message reads %r, want %r" % (props(parent).get("text"), text))
+        ok(props(parent).get("mentions"),
+           "the new message's mention of the owner was not decoded")
+        child = row_at(reply_ts)
+        if ok(child, "the reply %s did not land" % reply_ts):
+            ok(ref_id(props(child).get("parent")) == rid(parent),
+               "the reply points at %r, want its parent %s"
+               % (props(child).get("parent"), rid(parent)))
+            ok(ref_id(props(parent).get("latestReply")) == rid(child),
+               "the parent's latestReply is %r, want the reply %s"
+               % (props(parent).get("latestReply"), rid(child)))
+            ok(ref_ids(props(parent).get("replyUsers")) == [rid(owner_row)],
+               "the parent's replyUsers are %r, want the owner"
+               % props(parent).get("replyUsers"))
+    ok(not [m for m in records(MESSAGE) if props(m).get("ts") == foreign_ts],
+       "a callback from another workspace's team_id was written")
+    renamed = next((r for r in records(CONV)
+                    if props(r).get("conversationId") == other), {})
+    ok(props(renamed).get("name") == "renamed-live",
+       "channel_rename left %s named %r" % (other, props(renamed).get("name")))
+    me = next((u for u in records(USER) if props(u).get("userId") == owner), {})
+    ok((props(me).get("profile") or {}).get("statusText") == status_text,
+       "user_change left the owner's statusText %r"
+       % (props(me).get("profile") or {}).get("statusText"))
+
+    # 2. An edit, then the original delivered late: the edit stands.
+    edited = message(new_ts, "live event, edited",
+                     edited={"user": owner, "ts": edit_ts})
+    edited.pop("event_ts")
+    got = post_events([callback("EvE2E0010", {
+        "type": "message", "subtype": "message_changed", "channel": cid,
+        "hidden": True, "ts": edit_ts, "event_ts": edit_ts, "message": edited,
+        "previous_message": message(new_ts, text)})])
+    ok(got == "ok", "the edit batch settled %r" % got)
+    got = post_events([first])
+    ok(got == "ok", "the late original settled %r" % got)
+    row = row_at(new_ts)
+    ok(row and props(row).get("text") == "live event, edited"
+       and props(row).get("edited"),
+       "after an edit and a late copy of the original the row reads %r"
+       % (props(row or {}).get("text"),))
+
+    # 3. A reaction added, then removed. Two events on one message in one
+    #    batch read it once.
+    with_eyes = dict(edited, reactions=[{"name": "eyes", "count": 1,
+                                         "users": [owner]}])
+    faults([answer(new_ts, with_eyes)])
+    got = post_events([reaction("EvE2E0020", "reaction_added", new_ts,
+                                "%d.001000" % base),
+                       reaction("EvE2E0021", "reaction_added", new_ts,
+                                "%d.001100" % base)])
+    ok(got == "ok", "the reaction_added batch settled %r" % got)
+    row = row_at(new_ts) or {}
+    eyes = props(row).get("reactions") or []
+    ok([(r.get("name"), r.get("count")) for r in eyes] == [("eyes", 1)]
+       and ref_ids(eyes[0].get("users")) == [rid(owner_row)],
+       "after reaction_added the row's reactions are %r" % eyes)
+    faults([answer(new_ts, edited)])
+    got = post_events([reaction("EvE2E0022", "reaction_removed", new_ts,
+                                "%d.001200" % base)])
+    ok(got == "ok", "the reaction_removed batch settled %r" % got)
+    ok(not props(row_at(new_ts) or {}).get("reactions"),
+       "after reaction_removed the row still holds %r"
+       % props(row_at(new_ts) or {}).get("reactions"))
+
+    # 4. A reaction on a message the walk never read lands the message.
+    unseen = message(unseen_ts, "an old message nobody walked",
+                     reactions=[{"name": "tada", "count": 1, "users": [owner]}])
+    unseen.pop("event_ts")
+    faults([answer(unseen_ts, unseen)])
+    ok(row_at(unseen_ts) is None, "the unseen message %s is already mirrored"
+       % unseen_ts)
+    got = post_events([reaction("EvE2E0030", "reaction_added", unseen_ts,
+                                "%d.001300" % base)])
+    ok(got == "ok", "the reaction on an unseen message settled %r" % got)
+    row = row_at(unseen_ts)
+    if ok(row, "a reaction on a message the walk never read did not land it"):
+        ok([r.get("name") for r in props(row).get("reactions") or []] == ["tada"],
+           "the unseen message holds reactions %r" % props(row).get("reactions"))
+
+    # 5. A 429 ends the batch's calls politely: the reaction it was for is
+    #    left, and a message later in the batch still lands.
+    faults([{"match": "GET /api/reactions.get", "status": [429],
+             "headers": {"Retry-After": "30"},
+             "body": {"ok": False, "error": "ratelimited"}}])
+    got = post_events([reaction("EvE2E0040", "reaction_added", new_ts,
+                                "%d.001400" % base),
+                       callback("EvE2E0041", message(later_ts, "after the 429"))])
+    faults([])
+    ok(got == "ok", "a batch Slack rate limited settled %r, want ok" % got)
+    ok(row_at(later_ts), "the message after the 429 did not land")
+    ok(not props(row_at(new_ts) or {}).get("reactions"),
+       "a reaction whose read was rate limited was written anyway")
+
+    # 6. A delete, beside a delete of a message the mirror never held.
+    def deleted(eid, ts, at):
+        return callback(eid, {"type": "message", "subtype": "message_deleted",
+                              "channel": cid, "hidden": True, "ts": at,
+                              "event_ts": at, "deleted_ts": ts})
+    got = post_events([deleted("EvE2E0050", new_ts, "%d.001500" % (base + 5)),
+                       deleted("EvE2E0051", "%d.000001" % (base - 900 * 86400),
+                               "%d.001600" % (base + 5))])
+    ok(got == "ok", "the delete batch settled %r" % got)
+    ok(row_at(new_ts) is None, "the deleted message %s is still mirrored"
+       % new_ts)
+
+    # 7. Nothing the walk owns moved, and the body asked Slack for nothing
+    #    but reactions.
+    sync_after = state_of(records(SYNC))
+    moved = sorted(k for k in sync_before if sync_after.get(k) != sync_before[k])
+    ok(not moved, "the events moved %d conversationsync rows: %s"
+       % (len(moved), moved[:3]))
+    _st, acct_after = api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))
+    acct_after = acct_after or {}
+    ok(version(acct_after) == version(acct_before),
+       "the account moved from version %s to %s under the events"
+       % (version(acct_before), version(acct_after)))
+    for key in ("lastSyncedAt", "streamCursors", "syncStatus", "syncRequestedAck"):
+        ok(props(acct_after).get(key) == props(acct_before).get(key),
+           "the events changed the account's %s" % key)
+    try:
+        with urllib.request.urlopen(MOCK + "/__mock/requests", timeout=20) as r:
+            log = json.loads(r.read())
+        reqs = log if isinstance(log, list) else (log.get("items")
+                                                 or log.get("requests") or [])
+    except Exception as e:  # noqa: BLE001
+        reqs = []
+        note("(mock request log unavailable: %s)" % e)
+    methods = sorted({(q.get("path") or "").rsplit("/", 1)[-1] for q in reqs})
+    ok(methods == ["reactions.get"],
+       "the events asked Slack for %s, want reactions.get alone" % methods)
+    def full(entry):
+        # the mock logs `query` as the raw string on some paths and as a
+        # parsed mapping on others
+        raw = entry.get("query")
+        if isinstance(raw, str):
+            return "full=true" in raw
+        return isinstance(raw, dict) and raw.get("full") in ("true", ["true"])
+    reads = [q for q in reqs if (q.get("path") or "").endswith("reactions.get")]
+    ok(reads and all(full(q) for q in reads),
+       "a reactions.get went out without full=true: %r"
+       % [q.get("query") for q in reads][:3])
+    note("live events: %d reactions.get calls, %d conversationsync rows "
+         "unchanged" % (len(reads), len(sync_before)))
 
 
 def finish():

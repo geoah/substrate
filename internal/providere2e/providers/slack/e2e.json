@@ -20,11 +20,12 @@
   ],
   "triggers": [
     "slack-messages-on-connect",
-    "slack-messages-on-demand"
+    "slack-messages-on-demand",
+    "slack-events"
   ],
   "settleSeconds": 240,
   "_window": "all, and deliberately. `last2d` made the run depend on the WALL CLOCK: the recordings hold two real days, so the window only contained them while the cut was fresh, and the fixtures' instants are shifted off the real calendar anyway (fixtures/README.md). A time-relative floor against a fixed recording set is a test that passes today and fails on Thursday. `all` means the floor is 0 and the mirror must hold every message the cut holds, which is the assertion worth making. Testing the other depths needs recordings older than the window; see fixtures/README.md.",
-  "_triggers": "The scheduled tick is disabled for a run: a catch-up fire racing the drain proves nothing. on-demand stays, because the scenario's second sync IS a syncRequestedAt stamp.",
+  "_triggers": "The scheduled tick is disabled for a run: a catch-up fire racing the drain proves nothing. on-demand stays, because the scenario's second sync IS a syncRequestedAt stamp, and slack-events stays because section 19 POSTs live event batches to it.",
   "seedCredential": {
     "property": "userToken",
     "match": "xoxp-"
