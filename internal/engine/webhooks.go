@@ -92,7 +92,9 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 	if err != nil {
 		return "", err
 	}
-	row, err := ds.admitWebhook(ctx, tr, req)
+	// The sender waits for the answer, so the admission's writes go ahead of
+	// the repository's background writers (withForegroundWrites).
+	row, err := ds.admitWebhook(withForegroundWrites(ctx), tr, req)
 	if err != nil {
 		return "", err
 	}

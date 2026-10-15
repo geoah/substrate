@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -270,4 +271,68 @@ func TestWritesFinishOnTheSmallestPool(t *testing.T) {
 		t.Fatalf("the writers did not finish on a %d-connection pool: %v", repositoryConnsPerHandle(MinRepositoryConnections), ctx.Err())
 	}
 	waitGateIdle(t, &ds.gate)
+}
+
+// The webhook door's writes before its answer (the body's blob spool and the
+// admission) go past background writers waiting at the gate, as an owner's
+// save does: a sender that times out redelivers, and drops the delivery after
+// a few tries. With the changelog lock held, one background writer parked on
+// it and another queued, a delivery is counted as an owner write and never
+// joins the queue.
+func TestAWebhookDeliveryGoesAheadOfQueuedBackgroundWriters(t *testing.T) {
+	t.Parallel()
+	ds := newRaceDataset(t)
+	installLedgerConnector(t, ds, nowUTC().Add(-time.Hour))
+	ctx := context.Background()
+	g := &ds.gate
+	waitGateIdle(t, g)
+
+	barrier, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = barrier.Rollback() }()
+	if _, err := barrier.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey(changelogLockKey)); err != nil {
+		t.Fatal(err)
+	}
+
+	background := make(chan error, 2)
+	go func() {
+		_, err := backgroundEffect(ctx, ds, 1, "parked")
+		background <- err
+	}()
+	waitParked(t, ds, 1, changelogLockKey)
+	go func() {
+		_, err := backgroundEffect(ctx, ds, 1, "queued")
+		background <- err
+	}()
+	waitGate(t, g, "the second background writer queues", func(_ bool, q, _ int) bool { return q == 1 })
+
+	delivered := make(chan error, 1)
+	go func() {
+		_, err := ds.svc.receiveWebhook(ctx, testdb.Repository(t), ledgerHook, "", substrate.WebhookRequest{
+			Method: "POST", ContentType: "application/json",
+			Headers: map[string]string{"content-type": "application/json"},
+			Body:    []byte(`{"say":"ahead of the queue"}`),
+		}, webhookFireHeld)
+		delivered <- err
+	}()
+	waitGate(t, g, "the delivery goes past the queue as an owner write", func(_ bool, q, o int) bool { return o == 1 && q == 1 })
+
+	if err := barrier.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-delivered; err != nil {
+		t.Fatalf("the delivery: %v", err)
+	}
+	for range 2 {
+		if err := <-background; err != nil {
+			t.Fatalf("a background writer: %v", err)
+		}
+	}
+	waitGateIdle(t, g)
+	if ids := failureIDs(t, ds, ledgerHook); len(ids) != 1 {
+		t.Fatalf("the delivery left %d pending entries, want 1", len(ids))
+	}
 }
