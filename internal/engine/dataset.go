@@ -640,7 +640,7 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	// to the changelog lock, and one background writer at a time goes on to
 	// it. The pass is given back once the lock is held, and on every exit
 	// before that.
-	pass, err := ds.gate.enter(ctx, ds.ownerFirst(actor, internal))
+	pass, err := ds.gate.enter(ctx, ds.ownerFirst(ctx, actor, internal))
 	if err != nil {
 		return err
 	}
