@@ -163,7 +163,16 @@ data:
   # 20: `slacksync` pins requests 2.34.2, past PYSEC-2026-1872
   # (CVE-2024-47081) and PYSEC-2026-2275 (CVE-2026-25645); `postmessage`
   # raises its HTTP errors `from` the exception that caused them.
-  version: 20
+  #
+  # 21: live events. The `slack-events` webhook trigger delivers batches of
+  # Events API callbacks a Socket Mode sidecar forwards, and `slacksync`
+  # applies them to the mirror rows: messages, edits, deletes, thread
+  # replies, reactions (read whole through `reactions.get`), pins,
+  # conversation and roster changes, users and files. The events path writes
+  # no cursor, no `conversationsync` row and no account property, so the
+  # poll stays the pass that covers what the socket missed. `slacksync`
+  # reads `team` too, for the workspace host a permalink is built from.
+  version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2913,6 +2922,18 @@ data:
 # if_absent and absorbs the overlap. The account's stamp is the LAST effect of
 # a drain. A conversation Slack refuses is stamped on its own STATE row and
 # the queue moves on.
+#
+# LIVE EVENTS (21). A delivery whose envelope carries a webhook `request` is
+# not a walk: it is one batch of Events API callbacks from the `slack-events`
+# trigger, `{"version": 1, "events": [...]}`, each element the `payload` of
+# a Socket Mode `events_api` envelope. The batch is applied with the same row
+# makers the walk uses, which is why it is a branch of this body and not a
+# function of its own: a bundle function is one self-contained module, so a
+# second function would carry a copy of every row shape below or reach this
+# one through a host call with its own budgets and call depth. The events
+# path writes mirror rows only, never a cursor, a `conversationsync` row or
+# an account property: the walk stays the pass that covers what the socket
+# missed.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/slack/slacksync
@@ -2922,7 +2943,8 @@ data:
   description: >-
     Sync one Slack workspace over the Web API — its team, users, conversations,
     messages, thread replies and shared files — one page per invocation, advancing
-    each conversation's own cursor on its sync-state row. Read-only.
+    each conversation's own cursor on its sync-state row, and apply a batch
+    of live Events API callbacks a webhook delivers. Read-only.
   runtime: python
   timeout: PT30S
   permissions:
@@ -2949,6 +2971,9 @@ data:
         - providers.substrate.reamde.dev/slack/user
         - providers.substrate.reamde.dev/slack/file
         - providers.substrate.reamde.dev/slack/bot
+        # 21. The events path has no auth.test to read the workspace host
+        # off, so it reads the team row's `url` for a permalink.
+        - providers.substrate.reamde.dev/slack/team
       budgets:
         calls: 600
         rows: 4000
@@ -2985,8 +3010,10 @@ data:
     display name lifted out of a profile, no owner-relative flag, no count of a
     list the row already holds.
     """
+    import base64
     import datetime as _dt
     import http.cookiejar
+    import json
     import re
     import time
     import urllib.parse
@@ -3431,25 +3458,25 @@ data:
     _SESSION.cookies.set_policy(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
 
 
-    def _get(url, params, headers):
+    def _get(url, params, headers, timeout=HTTP_TIMEOUT):
         try:
-            return _SESSION.get(url, params=params, timeout=HTTP_TIMEOUT, headers=headers)
+            return _SESSION.get(url, params=params, timeout=timeout, headers=headers)
         except requests.exceptions.ConnectionError as e:
             # A kept-alive connection Slack closed between invocations fails on
             # its first reuse; the call is a read, so one fresh try is safe. A
             # timeout is not a closed connection and is not retried.
             if isinstance(e, requests.exceptions.Timeout):
                 raise
-            return _SESSION.get(url, params=params, timeout=HTTP_TIMEOUT, headers=headers)
+            return _SESSION.get(url, params=params, timeout=timeout, headers=headers)
 
 
-    def _call(base, token, method, params=None):
+    def _call(base, token, method, params=None, timeout=HTTP_TIMEOUT):
         # ONE Slack Web API call. GET with the token in the Authorization header —
         # never in the query, so no URL a proxy or a recording holds can carry the
         # credential.
         url = base + "/api/" + method
         resp = _get(url, params or {}, {"Authorization": "Bearer " + token,
-                                         "Accept": "application/json"})
+                                         "Accept": "application/json"}, timeout)
         if resp.status_code == 429:
             raise RateLimited(method, _retry_after(resp))
         if resp.status_code >= 400:
@@ -4365,18 +4392,8 @@ data:
         # the last reactor from a list whose count did not change — has to clear
         # what is there, so the presence of the key decides, never its length.
         if "reactions" in msg:
-            reactions = []
-            for r in msg.get("reactions") or []:
-                if not isinstance(r, dict):
-                    continue
-                one = _shape(r, [("name", "name", None), ("count", "count", None),
-                                 ("url", "url", None)])
-                if "users" in r:
-                    one["users"] = _refs(host, aid, team, r.get("users"),
-                                         _user_ref) or None
-                if one:
-                    reactions.append(one)
-            props["reactions"] = reactions or None
+            props["reactions"] = _reaction_props(host, aid, team,
+                                                 msg.get("reactions"))
         lang = msg.get("language") or {}
         if isinstance(lang, dict) and lang:
             one = _shape(lang, [("locale", "locale", None),
@@ -4401,6 +4418,24 @@ data:
         if link:
             props["permalink"] = link
         return props
+
+
+    def _reaction_props(host, aid, team, reactions):
+        """A message's `reactions` as the row holds them, or None for none:
+        the whole set, never a delta, which is what both a history re-read and
+        a `reactions.get` answer."""
+        out = []
+        for r in reactions or []:
+            if not isinstance(r, dict):
+                continue
+            one = _shape(r, [("name", "name", None), ("count", "count", None),
+                             ("url", "url", None)])
+            if "users" in r:
+                one["users"] = _refs(host, aid, team, r.get("users"),
+                                     _user_ref) or None
+            if one:
+                out.append(one)
+        return out or None
 
 
     def _keep(msg):
@@ -5414,30 +5449,36 @@ data:
             return _failed(resume, "file", fid, e, files=queue[1:])
         f = body.get("file") or {}
         if f.get("id"):
-            # The GRANTS and the canvas creator name users, and a reference needs
-            # a row to land on (§1), so each is minted thin first.
-            #
-            # The SHARES do not: `channels`/`groups`/`ims` name conversations the
-            # walk may never touch — a file shared into a channel the token's
-            # user is not in — and minting one would invent a conversation row
-            # the mirror has no business holding. It is the same treatment
-            # `channelMentions` already gets: a reference without `mustExist`,
-            # pointing outside the cut by design.
-            for g in f.get("dm_mpdm_users_with_file_access") or []:
-                if isinstance(g, dict) and g.get("user_id"):
-                    _put(host, USER_TYPE, _user_ref(host, aid, team, g["user_id"]),
-                         {"account": aid, "userId": g["user_id"]})
-            for uid in (f.get("editors") or []):
-                if uid:
-                    _put(host, USER_TYPE, _user_ref(host, aid, team, uid),
-                         {"account": aid, "userId": uid})
-            if f.get("canvas_creator_id"):
-                _put(host, USER_TYPE,
-                     _user_ref(host, aid, team, f["canvas_creator_id"]),
-                     {"account": aid, "userId": f["canvas_creator_id"]})
-            _put(host, FILE_TYPE, _file_ref(host, aid, team, f["id"]),
-                 _file_props(host, aid, team, f))
+            _put_file_info(host, aid, team, f)
         return dict(resume, files=queue[1:])
+
+
+    def _put_file_info(host, aid, team, f):
+        """One `files.info` answer, written whole.
+
+        The GRANTS and the canvas creator name users, and a reference needs a
+        row to land on (§1), so each is minted thin first.
+
+        The SHARES do not: `channels`/`groups`/`ims` name conversations the
+        walk may never touch — a file shared into a channel the token's user is
+        not in — and minting one would invent a conversation row the mirror has
+        no business holding. It is the same treatment `channelMentions` already
+        gets: a reference without `mustExist`, pointing outside the cut by
+        design."""
+        for g in f.get("dm_mpdm_users_with_file_access") or []:
+            if isinstance(g, dict) and g.get("user_id"):
+                _put(host, USER_TYPE, _user_ref(host, aid, team, g["user_id"]),
+                     {"account": aid, "userId": g["user_id"]})
+        for uid in (f.get("editors") or []):
+            if uid:
+                _put(host, USER_TYPE, _user_ref(host, aid, team, uid),
+                     {"account": aid, "userId": uid})
+        if f.get("canvas_creator_id"):
+            _put(host, USER_TYPE,
+                 _user_ref(host, aid, team, f["canvas_creator_id"]),
+                 {"account": aid, "userId": f["canvas_creator_id"]})
+        _put(host, FILE_TYPE, _file_ref(host, aid, team, f["id"]),
+             _file_props(host, aid, team, f))
 
 
     def _phase_bots(host, base, token, resume):
@@ -5749,6 +5790,702 @@ data:
         return time.time() - days * 86400
 
 
+    # ----------------------------------------------------------- live events
+    #
+    # The `slack-events` webhook trigger delivers what a Socket Mode sidecar
+    # forwards: one JSON body, `{"version": 1, "events": [...]}`, each element
+    # the `payload` of an `events_api` envelope (the outer event callback:
+    # `team_id`, `event_id`, `event_time` and the `event` itself). Slack
+    # redelivers an event nobody acknowledged and promises no order, so every
+    # write below survives being repeated and reordered:
+    #
+    #   * a message is mint-then-patch at its (channel, ts) identity, and a
+    #     payload whose edit is older than the row's is not written over it;
+    #   * a reaction is never a delta: `reactions.get` answers the message's
+    #     whole current set, and the row takes that set;
+    #   * a pin, an archive or a roster change sets the one fact it names.
+    #
+    # Within one batch the events run in `event_ts` order, a repeated
+    # `event_id` runs once, a message the batch deletes is not written by an
+    # earlier or later event of the same batch, and one message's reactions
+    # are read once.
+    #
+    # THE WALK STAYS THE COMPLETENESS PASS. This path writes mirror rows and
+    # nothing else: no `conversationsync` row, no account property, no
+    # cursor. A message posted while the socket was down is read by the next
+    # history walk; a reaction, an edit or a delete on an older message is
+    # seen only when a walk reads that message again.
+    #
+    # BOUNDED like the walk. One invocation starts no Slack call past
+    # EVENT_PAGE_SECONDS or EVENT_PAGE_CALLS and no event past EVENT_PAGE_READS
+    # record reads; it hands the rest of the batch to the next page. The whole
+    # batch makes at most EVENT_BATCH_CALLS calls inside EVENT_BATCH_SECONDS,
+    # inside the engine's two-minute drain. A 429 ends the batch's calls: the
+    # events that need none are still applied, the ones that need one are
+    # counted `limited` and left to the walk. A Slack refusal of one target is
+    # that target's, and the batch goes on.
+
+    EVENTS_VERSION = 1
+    EVENT_PAGE_SECONDS = 10
+    EVENT_PAGE_CALLS = 20
+    EVENT_PAGE_READS = 450
+    # Shorter than the walk's: one invocation may start a call at
+    # EVENT_PAGE_SECONDS, and the function's timeout is thirty seconds.
+    EVENT_HTTP_TIMEOUT = 10
+    EVENT_BATCH_SECONDS = 75
+    EVENT_BATCH_CALLS = 150
+    EVENT_LOG_MAX = 20
+
+
+    class _PageFull(Exception):
+        """This invocation has spent its share of calls; the event that asked
+        for one more runs again, from its start, on the next page."""
+
+
+    class _Counted:
+        """The host, with every record read counted against the page."""
+
+        def __init__(self, host, ev):
+            self._host = host
+            self._ev = ev
+            self.effects = host.effects
+            self.ids = host.ids
+            self.records = self
+
+        def get(self, kind, eid):
+            self._ev.reads += 1
+            return self._host.records.get(kind, eid)
+
+        def log(self, msg):
+            self._ev.log(msg)
+
+
+    def _ref_tail(value):
+        """The record id a stored reference names. A read hands a reference
+        back as `<kind>/<id>` or as `{"ref": "<kind>/<id>"}`, and a write takes
+        the bare id."""
+        if isinstance(value, dict):
+            value = value.get("ref") or value.get("id")
+        return str(value).rsplit("/", 1)[-1] if value else ""
+
+
+    def _instant(value):
+        """A stored or composed datetime as an aware datetime, or None. The
+        engine may hand a datetime back in another spelling than the one
+        written, so two are compared parsed, never as strings."""
+        if not value:
+            return None
+        try:
+            when = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return when if when.tzinfo else when.replace(tzinfo=_dt.timezone.utc)
+
+
+    def _throttled(props):
+        """Is the account inside a Retry-After the walk was given?"""
+        when = _instant(props.get("retryNotBefore"))
+        return bool(when and _dt.datetime.now(_dt.timezone.utc) < when)
+
+
+    class _Events:
+        """One invocation of the events path: the account the batch lands
+        on, what this invocation read and wrote, and the chain's own spend
+        (`cur`, carried between pages)."""
+
+        def __init__(self, host, base, token, aid, props, cur):
+            self.raw = host
+            self.host = _Counted(host, self)
+            self.base, self.token, self.aid = base, token, aid
+            self.cur = cur
+            self.team_ref = _ref_tail(props.get("team"))
+            self.owner_ref = _ref_tail(props.get("user"))
+            self.filter = (props.get("conversationFilter") or "").strip().lower()
+            self.members = bool(props.get("enabledMembers"))
+            self.team = ""
+            self.teams = {}
+            self.reads = 0
+            self.page_calls = 0
+            self.page_started = time.time()
+            self.logged = 0
+            # Committed conversation rows by id, None for absent.
+            self.convs = {}
+            # Message rows this invocation read or wrote, by record id; reads
+            # never see this invocation's own staged writes.
+            self.msgs = {}
+            self.deleted = set()
+            row = self.host.records.get(TEAM_TYPE, self.team_ref) or {}
+            url = (row.get("properties") or {}).get("url") or ""
+            self.domain = urllib.parse.urlsplit(url).hostname or ""
+
+        def log(self, msg):
+            self.logged += 1
+            if self.logged <= EVENT_LOG_MAX:
+                self.raw.log(msg)
+
+        def ours(self, tid):
+            """Is this callback from the account's own workspace? The account
+            holds the team as a reference, and a reference is a hash of the
+            team id, so the candidate is hashed and compared."""
+            if not isinstance(tid, str) or not tid:
+                return False
+            if tid not in self.teams:
+                self.teams[tid] = _team_ref(self.raw, self.aid, tid, tid) == self.team_ref
+            if self.teams[tid]:
+                self.team = tid
+            return self.teams[tid]
+
+        def spent(self):
+            return (self.reads >= EVENT_PAGE_READS
+                    or self.page_calls >= EVENT_PAGE_CALLS
+                    or time.time() - self.page_started >= EVENT_PAGE_SECONDS)
+
+        def fetched(self, key):
+            return key in (self.cur.get("fetched") or [])
+
+        def fetch(self, key):
+            self.cur["fetched"] = list(self.cur.get("fetched") or []) + [key]
+
+        def call(self, method, params):
+            """One Slack call, as (body, None), or (None, the outcome word the
+            event is counted under)."""
+            if self.cur.get("limited"):
+                return None, "limited"
+            if (self.cur.get("calls") or 0) >= EVENT_BATCH_CALLS or \
+                    time.time() - (self.cur.get("startedAt") or 0) >= EVENT_BATCH_SECONDS:
+                return None, "budget"
+            if self.page_calls and (self.page_calls >= EVENT_PAGE_CALLS or
+                                    time.time() - self.page_started >= EVENT_PAGE_SECONDS):
+                raise _PageFull()
+            self.page_calls += 1
+            self.cur["calls"] = (self.cur.get("calls") or 0) + 1
+            target = " ".join(str(v) for k, v in sorted(params.items()) if k != "full")
+            try:
+                return _call(self.base, self.token, method, params,
+                             timeout=EVENT_HTTP_TIMEOUT), None
+            except RateLimited as rl:
+                self.cur["limited"] = True
+                self.log("slack events: %s answered 429 (Retry-After %ss); the "
+                         "batch makes no more Slack calls" % (method, rl.retry_after))
+                return None, "limited"
+            except Slack as e:
+                self.log("slack events: %s %s refused: %s" % (method, target, e.error))
+                return None, ("refused" if e.error in PERMANENT_ERRORS else "failed")
+            except Exception as e:  # noqa: BLE001 - one target's failure is its own
+                self.log("slack events: %s %s failed: %s"
+                         % (method, target, str(e)[:REASON_MAX]))
+                return None, "failed"
+
+        def message(self, eid):
+            """The message row's properties, None when there is none."""
+            if eid not in self.msgs:
+                row = self.host.records.get(MESSAGE_TYPE, eid)
+                self.msgs[eid] = (row.get("properties") or {}) if row else None
+            return self.msgs[eid]
+
+        def conv_row(self, cid):
+            """The conversation row's properties, None when there is none."""
+            if cid not in self.convs:
+                row = self.host.records.get(CONV_TYPE, _conv_ref(
+                    self.host, self.aid, self.team, cid))
+                self.convs[cid] = (row.get("properties") or {}) if row else None
+            return self.convs[cid]
+
+        def conversation(self, cid):
+            """The conversation a message lands in, minted when the mirror has
+            none yet (a DM opened since the last walk), or None when the
+            account's `conversationFilter` keeps its messages out.
+
+            `message.channel` is `mustExist`, so the row has to be there before
+            the message. One conversations.info fills it in; without the call
+            a thin row holds the id, and the walk fills it in later."""
+            props = self.conv_row(cid)
+            if props is None:
+                h, aid, team = self.host, self.aid, self.team
+                body, _word = self.call("conversations.info", {"channel": cid})
+                c = (body or {}).get("channel") or {}
+                if c.get("id") == cid:
+                    _mint_conv_actors(h, aid, team, c)
+                    props = _conv_props(h, aid, team, c)
+                else:
+                    props = {"account": aid, "conversationId": cid}
+                _put(h, CONV_TYPE, _conv_ref(h, aid, team, cid), props)
+                self.convs[cid] = props
+            if self.filter and self.filter not in (props.get("name") or "").lower():
+                return None
+            return props
+
+
+    def _event_batch(request):
+        """The batch's callbacks, or None and why there are none."""
+        body = request.get("body") or {}
+        text = body.get("text")
+        if text is None and body.get("base64"):
+            try:
+                text = base64.b64decode(body["base64"]).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                return None, "the request body is not UTF-8"
+        if not text:
+            return None, "the request carried no body"
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return None, "the request body is not JSON"
+        if not isinstance(doc, dict) or doc.get("version") != EVENTS_VERSION:
+            return None, ("the request body is not a version %d event batch"
+                          % EVENTS_VERSION)
+        events = doc.get("events")
+        if not isinstance(events, list):
+            return None, "the batch carries no `events` list"
+        return [e for e in events if isinstance(e, dict)], None
+
+
+    def _event_order(batch):
+        """The batch in the order it runs: by `event_ts`, the sidecar's order
+        breaking ties, each `event_id` once. Returns (callbacks, repeats)."""
+        seen, out, repeats = set(), [], 0
+        for i, cb in enumerate(batch):
+            eid = cb.get("event_id")
+            if isinstance(eid, str) and eid:
+                if eid in seen:
+                    repeats += 1
+                    continue
+                seen.add(eid)
+            e = cb.get("event") if isinstance(cb.get("event"), dict) else {}
+            when = 0.0
+            for v in (e.get("event_ts"), cb.get("event_time")):
+                try:
+                    when = float(v)
+                    break
+                except (TypeError, ValueError):
+                    continue
+            out.append((when, i, cb))
+        out.sort(key=lambda t: (t[0], t[1]))
+        return [cb for _w, _i, cb in out], repeats
+
+
+    def _event_of(ev, cb):
+        """The inner event of one of the account's own callbacks, or None."""
+        e = cb.get("event")
+        if cb.get("type") != "event_callback" or not isinstance(e, dict):
+            return None
+        if not ev.ours(cb.get("team_id")):
+            return None
+        return e
+
+
+    def _no_reactions(msg):
+        """A message payload without its reactions. Only `reactions.get`
+        writes them here: an event's copy is as old as the event, and a
+        `reactions.get` this or an earlier batch wrote is newer."""
+        out = {k: v for k, v in msg.items() if k != "reactions"}
+        if isinstance(out.get("root"), dict):
+            out["root"] = {k: v for k, v in out["root"].items() if k != "reactions"}
+        return out
+
+
+    def _not_older(row, payload):
+        """May this payload be written over the row? Only an edit orders two
+        versions of one message, so a payload is older when the row holds an
+        edit and the payload holds none or an earlier one: a redelivered
+        `message` event, or a `message_changed` that arrived late."""
+        stored = _instant(((row or {}).get("edited") or {}).get("ts"))
+        if stored is None:
+            return True
+        mine = _instant(_ts_iso(((payload.get("edited") or {}).get("ts"))))
+        return mine is not None and mine >= stored
+
+
+    def _overlay(row, props):
+        """A row as it reads after a mint-then-patch of these properties: a
+        value replaces, None removes, and what the write left out stays."""
+        out = dict(row or {})
+        for key, val in props.items():
+            if val is None:
+                out.pop(key, None)
+            else:
+                out[key] = val
+        return out
+
+
+    def _ev_put_message(ev, channel, payload):
+        h, aid, team = ev.host, ev.aid, ev.team
+        _put_message(h, aid, team, channel, ev.domain, payload)
+        for msg in (payload.get("root"), payload):
+            if isinstance(msg, dict) and msg.get("ts") and _keep(msg):
+                eid = _msg_ref(h, aid, team, channel, msg["ts"])
+                ev.msgs[eid] = _overlay(ev.message(eid), _message_props(
+                    h, aid, team, channel, ev.domain, msg))
+
+
+    def _ev_message(ev, e):
+        h, aid, team = ev.host, ev.aid, ev.team
+        channel = e.get("channel")
+        sub = e.get("subtype") or ""
+        if not isinstance(channel, str) or not channel:
+            return "skipped"
+        if sub == "message_deleted":
+            gone = e.get("deleted_ts") or (e.get("previous_message") or {}).get("ts")
+            if not gone:
+                return "skipped"
+            eid = _msg_ref(h, aid, team, channel, gone)
+            # A delete of a row that does not exist fails the whole delivery,
+            # and a message the mirror never held, or already deleted, has
+            # nothing to delete.
+            if ev.message(eid) is None:
+                return "skipped"
+            h.effects.delete(MESSAGE_TYPE, eid)
+            ev.msgs[eid] = None
+            return "applied"
+        msg = e
+        if sub in MUTATION_SUBTYPES:
+            msg = e.get("message")
+            if not isinstance(msg, dict):
+                return "skipped"
+        ts = msg.get("ts")
+        if not ts or (channel, ts) in ev.deleted:
+            return "skipped"
+        if ev.conversation(channel) is None:
+            return "skipped"
+        payload = _no_reactions(msg)
+        if not _not_older(ev.message(_msg_ref(h, aid, team, channel, ts)), payload):
+            return "stale"
+        _ev_put_message(ev, channel, payload)
+        _ev_thread(ev, channel, payload)
+        return "applied"
+
+
+    def _ev_thread(ev, channel, msg):
+        """A reply refreshes what its parent says about replies, where that is
+        exact without a call: the newest reply and its instant, the reply's
+        author among `replyUsers`, and the parent's own thread self-reference.
+        `replyCount` and `replyUsersCount` are counts an event cannot keep
+        exactly under redelivery, and wait for the walk."""
+        thread_ts, ts = msg.get("thread_ts"), msg.get("ts")
+        if not thread_ts or thread_ts == ts or (channel, thread_ts) in ev.deleted:
+            return
+        h, aid, team = ev.host, ev.aid, ev.team
+        peid = _msg_ref(h, aid, team, channel, thread_ts)
+        row = ev.message(peid)
+        if row is None:
+            return
+        patch = {}
+        at = _ts_iso(ts)
+        known = _instant(row.get("latestReplyAt"))
+        if at and (known is None or _instant(at) > known):
+            patch["latestReply"] = _msg_ref(h, aid, team, channel, ts)
+            patch["latestReplyAt"] = at
+        uid = msg.get("user") or ""
+        if uid[:1] in ("U", "W"):
+            users = [_ref_tail(r) for r in (row.get("replyUsers") or [])]
+            ref = _user_ref(h, aid, team, uid)
+            if ref not in users:
+                patch["replyUsers"] = users + [ref]
+        if _ref_tail(row.get("parent")) != peid:
+            patch["parent"] = peid
+        if patch:
+            h.effects.patch(MESSAGE_TYPE, peid, properties=patch)
+            ev.msgs[peid] = _overlay(row, patch)
+
+
+    def _ev_reaction(ev, e):
+        """`reaction_added` and `reaction_removed`: the message's whole set,
+        read now. A reaction on a file or a file comment has no message row to
+        hold it and is skipped."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        item = e.get("item") or {}
+        if item.get("type") != "message":
+            return "skipped"
+        channel, ts = item.get("channel"), item.get("ts")
+        if not (channel and ts) or (channel, ts) in ev.deleted:
+            return "skipped"
+        key = "reactions %s/%s" % (channel, ts)
+        if ev.fetched(key):
+            return "repeated"
+        if ev.conversation(channel) is None:
+            return "skipped"
+        body, word = ev.call("reactions.get", {"channel": channel,
+                                               "timestamp": ts, "full": "true"})
+        if body is None:
+            return word
+        ev.fetch(key)
+        msg = body.get("message") or {}
+        if msg.get("ts") != ts:
+            return "skipped"
+        reactions = msg.get("reactions") or []
+        eid = _msg_ref(h, aid, team, channel, ts)
+        row = ev.message(eid)
+        if row is None:
+            # A message the mirror never held: the answer is the whole
+            # message, so it lands whole, with its reactions present even when
+            # there are none.
+            _ev_put_message(ev, channel, dict(msg, reactions=reactions))
+            _ev_thread(ev, channel, msg)
+            return "applied"
+        _mint_actors(h, aid, team, {"reactions": reactions})
+        shaped = _reaction_props(h, aid, team, reactions)
+        h.effects.patch(MESSAGE_TYPE, eid, properties={"reactions": shaped})
+        ev.msgs[eid] = _overlay(row, {"reactions": shaped})
+        return "applied"
+
+
+    def _ev_pin(ev, e, added):
+        """`pin_added` and `pin_removed` on a message: this conversation joins
+        or leaves the row's `pinnedTo`. A pin on a message the mirror never
+        held writes the message the event carries first."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        item = e.get("item") or {}
+        if item.get("type") != "message":
+            return "skipped"
+        channel = item.get("channel") or e.get("channel_id") or ""
+        msg = item.get("message") or {}
+        ts = msg.get("ts") or ""
+        if not (channel and ts) or (channel, ts) in ev.deleted:
+            return "skipped"
+        eid = _msg_ref(h, aid, team, channel, ts)
+        row = ev.message(eid)
+        if row is None:
+            if not added or ev.conversation(channel) is None:
+                return "skipped"
+            _ev_put_message(ev, channel, _no_reactions(msg))
+            row = ev.message(eid) or {}
+        cref = _conv_ref(h, aid, team, channel)
+        pinned = [_ref_tail(r) for r in (row.get("pinnedTo") or [])]
+        patch = {}
+        if added:
+            if cref not in pinned:
+                pinned.append(cref)
+            info = {}
+            by = item.get("created_by") or e.get("user") or ""
+            if by[:1] in ("U", "W"):
+                _put(h, USER_TYPE, _user_ref(h, aid, team, by),
+                     {"account": aid, "userId": by})
+                info["pinnedBy"] = _user_ref(h, aid, team, by)
+            when = _epoch_iso(item.get("created")) or _ts_iso(e.get("event_ts"))
+            if when:
+                info["pinnedTs"] = when
+            if info:
+                patch["pinnedInfo"] = info
+        else:
+            pinned = [r for r in pinned if r != cref]
+            if not pinned:
+                patch["pinnedInfo"] = None
+        patch["pinnedTo"] = pinned or None
+        h.effects.patch(MESSAGE_TYPE, eid, properties=patch)
+        ev.msgs[eid] = _overlay(row, patch)
+        return "applied"
+
+
+    def _ev_conversation(ev, e):
+        """`channel_created`, `channel_rename` and `group_rename` carry the
+        conversation as an object; what it carries is written, and a field
+        it leaves out is left as the walk wrote it."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        c = e.get("channel")
+        if not isinstance(c, dict) or not c.get("id"):
+            return "skipped"
+        row = ev.conv_row(c["id"])
+        _mint_conv_actors(h, aid, team, c)
+        props = _conv_props(h, aid, team, c)
+        _put(h, CONV_TYPE, _conv_ref(h, aid, team, c["id"]), props)
+        ev.convs[c["id"]] = _overlay(row, props)
+        return "applied"
+
+
+    def _ev_archive(ev, e, archived):
+        h, aid, team = ev.host, ev.aid, ev.team
+        cid = e.get("channel")
+        if isinstance(cid, dict):
+            cid = cid.get("id")
+        if not isinstance(cid, str) or not cid:
+            return "skipped"
+        row = ev.conv_row(cid)
+        props = {"account": aid, "conversationId": cid, "isArchived": archived}
+        _put(h, CONV_TYPE, _conv_ref(h, aid, team, cid), props)
+        ev.convs[cid] = _overlay(row, props)
+        return "applied"
+
+
+    def _ev_member(ev, e, joined):
+        """`member_joined_channel` and `member_left_channel`. The owner's own
+        join or leave sets the conversation's `isMember`; anyone's moves the
+        `members` roster where the row holds one, which it does only when the
+        account walks rosters. A conversation the mirror does not hold yet is
+        left to the walk."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        cid, uid = e.get("channel"), e.get("user")
+        if not (isinstance(cid, str) and cid and isinstance(uid, str) and uid):
+            return "skipped"
+        row = ev.conv_row(cid)
+        if row is None:
+            return "skipped"
+        uref = _user_ref(h, aid, team, uid)
+        patch = {}
+        if uref == ev.owner_ref and row.get("isMember") is not joined:
+            patch["isMember"] = joined
+        if ev.members and isinstance(row.get("members"), list):
+            members = [_ref_tail(m) for m in row["members"]]
+            if joined and uref not in members:
+                patch["members"] = members + [uref]
+            elif not joined and uref in members:
+                patch["members"] = [m for m in members if m != uref] or None
+        if not patch:
+            return "skipped"
+        if joined and uid[:1] in ("U", "W"):
+            _put(h, USER_TYPE, uref, {"account": aid, "userId": uid})
+        h.effects.patch(CONV_TYPE, _conv_ref(h, aid, team, cid), properties=patch)
+        ev.convs[cid] = _overlay(row, patch)
+        return "applied"
+
+
+    def _ev_user(ev, e):
+        """`user_change` and `team_join` carry the whole member object, as
+        users.list does."""
+        u = e.get("user")
+        if not isinstance(u, dict) or not u.get("id"):
+            return "skipped"
+        _put_user(ev.host, ev.aid, ev.team, u, whole=True)
+        return "applied"
+
+
+    def _ev_file(ev, e):
+        """`file_shared` and `file_change` name the file and little else, so
+        the file is read from `files.info`, once per batch."""
+        fid = e.get("file_id") or (e.get("file") or {}).get("id")
+        if not isinstance(fid, str) or not fid:
+            return "skipped"
+        key = "file " + fid
+        if ev.fetched(key):
+            return "repeated"
+        body, word = ev.call("files.info", {"file": fid})
+        if body is None:
+            return word
+        ev.fetch(key)
+        f = body.get("file") or {}
+        if f.get("id") != fid:
+            return "skipped"
+        _put_file_info(ev.host, ev.aid, ev.team, f)
+        return "applied"
+
+
+    def _ev_file_deleted(ev, e):
+        """`file_deleted` marks a mirrored file the way a deleted file's embed
+        does when the walk reads it, `mode: tombstone`; the row stays, as the
+        walk keeps it. A file the mirror never held is not minted."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        fid = e.get("file_id") or (e.get("file") or {}).get("id")
+        if not isinstance(fid, str) or not fid:
+            return "skipped"
+        eid = _file_ref(h, aid, team, fid)
+        if not h.records.get(FILE_TYPE, eid):
+            return "skipped"
+        _put(h, FILE_TYPE, eid, {"account": aid, "fileId": fid, "mode": "tombstone"})
+        return "applied"
+
+
+    EVENT_HANDLERS = {
+        "message": _ev_message,
+        "reaction_added": _ev_reaction,
+        "reaction_removed": _ev_reaction,
+        "pin_added": lambda ev, e: _ev_pin(ev, e, True),
+        "pin_removed": lambda ev, e: _ev_pin(ev, e, False),
+        "channel_created": _ev_conversation,
+        "channel_rename": _ev_conversation,
+        "group_rename": _ev_conversation,
+        "channel_archive": lambda ev, e: _ev_archive(ev, e, True),
+        "group_archive": lambda ev, e: _ev_archive(ev, e, True),
+        "channel_unarchive": lambda ev, e: _ev_archive(ev, e, False),
+        "group_unarchive": lambda ev, e: _ev_archive(ev, e, False),
+        # The walk keeps a deleted conversation's row and its messages: the
+        # conversation leaves conversations.list and Slack refuses its
+        # history. The event changes nothing the walk would not.
+        "channel_deleted": lambda ev, e: "skipped",
+        "group_deleted": lambda ev, e: "skipped",
+        "member_joined_channel": lambda ev, e: _ev_member(ev, e, True),
+        "member_left_channel": lambda ev, e: _ev_member(ev, e, False),
+        "user_change": _ev_user,
+        "team_join": _ev_user,
+        "file_shared": _ev_file,
+        "file_change": _ev_file,
+        "file_deleted": _ev_file_deleted,
+    }
+
+
+    def _events(input, host, accounts, token, base):
+        """One webhook delivery: a batch of Events API callbacks, applied to
+        the one live account's mirror rows. See "live events" above."""
+        request = (input.get("envelope") or {}).get("request")
+        if not isinstance(request, dict):
+            # An authenticated wake of the trigger fires with no request.
+            return {"output": {"skipped": "no request"}}
+        batch, why = _event_batch(request)
+        if why:
+            host.log("slack events: %s; nothing applied" % why)
+            return {"output": {"skipped": why}}
+        live = sorted(aid for aid, a in accounts.items() if _wants(a))
+        if not live:
+            host.log("slack events: no account has enabledMessages on; "
+                     "nothing applied")
+            return {"output": {"skipped": "no account"}}
+        aid = live[0]
+        props = accounts[aid].get("properties") or {}
+        if props.get("syncPaused"):
+            return {"output": {"skipped": "paused"}}
+        if not _ref_tail(props.get("team")):
+            # The account learns its workspace from the walk's auth.test.
+            host.log("slack events: the account has not synced yet, so its "
+                     "workspace is not known; nothing applied")
+            return {"output": {"skipped": "not synced"}}
+        resume = host.page.resume()
+        cur = resume if isinstance(resume, dict) and resume.get("events") else {
+            "events": EVENTS_VERSION, "at": 0, "calls": 0,
+            "startedAt": time.time(), "limited": _throttled(props),
+            "fetched": [], "counts": {}}
+        ev = _Events(host, base, token, aid, props, cur)
+        callbacks, repeats = _event_order(batch)
+        for cb in callbacks:
+            e = _event_of(ev, cb)
+            if e and e.get("type") == "message" and e.get("subtype") == "message_deleted":
+                gone = e.get("deleted_ts") or (e.get("previous_message") or {}).get("ts")
+                if e.get("channel") and gone:
+                    ev.deleted.add((e["channel"], gone))
+        counts = cur["counts"]
+        i = cur["at"]
+        while i < len(callbacks):
+            if i > cur["at"] and ev.spent():
+                break
+            cb = callbacks[i]
+            e = cb.get("event") if isinstance(cb.get("event"), dict) else {}
+            try:
+                handler = EVENT_HANDLERS.get(e.get("type") or "")
+                if cb.get("type") != "event_callback" or not e:
+                    word = "ignored"
+                elif not ev.ours(cb.get("team_id")):
+                    word = "foreign"
+                else:
+                    word = handler(ev, e) if handler else "ignored"
+            except _PageFull:
+                break
+            except Exception as err:  # noqa: BLE001 - one event's failure is its own
+                ev.log("slack events: a %s event (%s) failed: %s: %s"
+                       % (e.get("type") or "?", cb.get("event_id") or "no id",
+                          type(err).__name__, str(err)[:REASON_MAX]))
+                word = "failed"
+            counts[word] = counts.get(word, 0) + 1
+            i += 1
+        if i < len(callbacks):
+            return {"more": host.page.more(dict(cur, at=i))}
+        out = dict(counts, events=len(callbacks), repeats=repeats,
+                   calls=cur.get("calls") or 0, rateLimited=bool(cur.get("limited")))
+        host.log("slack events: %d events, %d repeated: %s; %d Slack calls%s"
+                 % (len(callbacks), repeats,
+                    ", ".join("%s %d" % kv for kv in sorted(counts.items())) or "none",
+                    out["calls"], ", rate limited" if out["rateLimited"] else ""))
+        if ev.logged > EVENT_LOG_MAX:
+            host.log("slack events: %d more lines not logged" % (ev.logged - EVENT_LOG_MAX))
+        return {"output": out}
+
+
     def main(input, host):
         cfg = input.get("config") or {}
         connector = ((cfg.get("inputs") or {}).get("connector")) or {}
@@ -5769,6 +6506,13 @@ data:
             raise RuntimeError(
                 "slack: apiBase %r is not a pinned origin (https on a slack.com "
                 "host, or loopback); refusing to send the user token" % base)
+
+        # A webhook delivery is a batch of live events, not a walk. The
+        # request decides, as well as the mode, so a test that steps this
+        # body with an envelope reaches the same branch.
+        envelope = input.get("envelope") or {}
+        if input.get("mode") == "webhook" or "request" in envelope:
+            return _events(input, host, accounts, token, base)
 
         resume = host.page.resume() or None
         if resume:
