@@ -302,9 +302,9 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the seven shipped ones are
+A **provider** is a package a publisher owns: the eight shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop`, `/beeper` and `/slack`. The tier is read from the tree the closure
+`/whoop`, `/beeper`, `/slack` and `/apple`. The tier is read from the tree the closure
 came from, never guessed from an OAuth block, from account kinds, or from the
 package's name: a token or webhook provider may declare no OAuth, and an
 account-shaped package is not necessarily one.
@@ -322,6 +322,9 @@ A token provider (Linear, Notion, Beeper, Slack) ships the same
 `accountconfig` kind and no `oauth2:` block: the pasted key or token lives on
 its `config` record, and the trait's `tokenRef`, `tokenStatus` and
 `grantedScopes` stay declared and unwritten.
+A pushed provider (Apple) ships neither: an app on the owner's device writes
+its records with the owner's token through the ordinary record routes, so
+the closure declares kinds and no account, config or function.
 
 A provider's records mirror in as ordinary records of the bundle's own kinds,
 under ids composed from the provider's own identifiers
