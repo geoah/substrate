@@ -57,6 +57,10 @@ type fakeTurn struct {
 	// reasoning_content deltas ahead of the content on a stream, and
 	// reasoning_content on the message of a one-shot reply.
 	reasoning string
+	// signature, with reasoning, signs it: LiteLLM's `thinking_blocks` then
+	// carry the whole block once more with this signature, on the stream's
+	// last reasoning chunk or on the one-shot message.
+	signature string
 }
 
 // fakeLLM scripts /chat/completions per MODEL: each request pops the next
@@ -160,6 +164,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		if turn.reasoning != "" {
 			msg["reasoning_content"] = turn.reasoning
 		}
+		if turn.signature != "" {
+			msg["thinking_blocks"] = []any{map[string]any{"type": "thinking", "thinking": turn.reasoning, "signature": turn.signature}}
+		}
 		if len(toolCalls) > 0 {
 			msg["tool_calls"] = toolCalls
 		}
@@ -185,6 +192,13 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
 				map[string]any{"index": 0, "delta": map[string]any{"reasoning_content": part}},
+			}})
+		}
+		if turn.signature != "" {
+			chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
+				map[string]any{"index": 0, "delta": map[string]any{"thinking_blocks": []any{
+					map[string]any{"type": "thinking", "thinking": turn.reasoning, "signature": turn.signature},
+				}}},
 			}})
 		}
 	}

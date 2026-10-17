@@ -549,11 +549,14 @@ the token counts, `costUSD`), and
 tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
 sub-agent call's row), and the required `thread` it belongs to. An
 `assistant` row whose model exposed its thinking also carries `reasoning`,
-the first 4000 runes of it, and `reasoningMillis`, the time from the request
-to the last streamed piece; a completion that streamed nothing (a run with no
-client attached) keeps the text and no time. The reasoning is for people
-reading the thread: no later request replays it, and compaction never reads
-it.
+the first 4000 runes of it, and `reasoningMillis`, the time from the first
+streamed piece of reasoning to the last; a completion that streamed nothing
+(a run with no client attached) keeps the text and no time. The reasoning is
+for people reading the thread: no later request replays it, and compaction
+never reads it. The provider's signed thinking blocks are another matter:
+within one run, the loop passes them back unchanged on the assistant turn
+that called tools, as Anthropic requires, and then drops them; no row keeps
+them.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 

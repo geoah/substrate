@@ -300,3 +300,146 @@ func TestReasoningSummarySendsTheThinkingKey(t *testing.T) {
 		t.Fatalf("anthropic thinking sent unasked: %v", an.last["thinking"])
 	}
 }
+
+// A tool round trip on the native wire: the second request carries the
+// first reply's thinking and redacted_thinking blocks back unchanged, ahead
+// of the text and the tool_use, signature and data intact.
+func TestAnthropicEchoesSignedThinkingOnTheToolRoundTrip(t *testing.T) {
+	var bodies []map[string]any
+	srv := newAnthropicServer(t, func(w http.ResponseWriter, req map[string]any) {
+		bodies = append(bodies, req)
+		if len(bodies) == 1 {
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, e := range anthropicThinkingEvents {
+				var typed struct {
+					Type string `json:"type"`
+				}
+				_ = json.Unmarshal([]byte(e), &typed)
+				_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", typed.Type, e)
+			}
+			return
+		}
+		jsonBody(w, map[string]any{
+			"id": "msg_2", "type": "message", "role": "assistant", "model": "m",
+			"content":     []any{map[string]any{"type": "text", "text": "12C"}},
+			"stop_reason": "end_turn", "usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	client := srv.client(t, nil)
+	user := Message{Role: RoleUser, Content: "weather?"}
+	first, err := client.Complete(context.Background(), Request{Model: "m", Messages: []Message{user}}, func(Delta) {})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if _, err := client.Complete(context.Background(), Request{Model: "m", Messages: []Message{
+		user,
+		{Role: RoleAssistant, Content: first.Content, ToolCalls: first.ToolCalls, ReasoningBlocks: first.ReasoningBlocks},
+		{Role: RoleTool, ToolCallID: "toolu_0", ToolName: "get_weather", Content: "12C"},
+	}}, nil); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	messages, _ := bodies[1]["messages"].([]any)
+	assistant, _ := messages[1].(map[string]any)
+	blocks, _ := assistant["content"].([]any)
+	got := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		raw, _ := json.Marshal(b)
+		got = append(got, string(raw))
+	}
+	want := []string{
+		`{"signature":"sig-part-1sig-part-2","thinking":"Bonn moved, so Berlin.","type":"thinking"}`,
+		`{"data":"opaque-data","type":"redacted_thinking"}`,
+		`{"text":"Checking Berlin.","type":"text"}`,
+		`{"id":"toolu_0","input":{"city":"Berlin"},"name":"get_weather","type":"tool_use"}`,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("echoed assistant turn:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// A turn with no blocks echoes none.
+	if _, err := client.Complete(context.Background(), Request{Model: "m", Messages: []Message{
+		user, {Role: RoleAssistant, Content: "hi"}, {Role: RoleUser, Content: "more"},
+	}}, nil); err != nil {
+		t.Fatalf("third: %v", err)
+	}
+	plain, _ := bodies[2]["messages"].([]any)
+	if raw, _ := json.Marshal(plain[1]); string(raw) != `{"content":[{"text":"hi","type":"text"}],"role":"assistant"}` {
+		t.Fatalf("plain assistant turn = %s", raw)
+	}
+}
+
+// The openai wire keeps the signed blocks LiteLLM sends as `thinking_blocks`
+// (the unsigned pieces drop) and sends them back on the assistant message.
+func TestOpenAIEchoesThinkingBlocksOnTheToolRoundTrip(t *testing.T) {
+	stream, err := os.ReadFile("testdata/litellm-thinking-tool-call.sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oneShot, err := os.ReadFile("testdata/litellm-thinking-oneshot.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newOpenAIServer(t, func(w http.ResponseWriter, req map[string]any) {
+		if req["stream"] == true {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write(stream)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(oneShot)
+	})
+	client, _ := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+	user := Message{Role: RoleUser, Content: "weather?"}
+	first, err := client.Complete(context.Background(), Request{Model: "m", Messages: []Message{user}}, func(Delta) {})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	var blocks []map[string]any
+	if err := json.Unmarshal(first.ReasoningBlocks, &blocks); err != nil || len(blocks) != 1 ||
+		blocks[0]["signature"] != "REDACTED-SIGNATURE" || !strings.HasPrefix(blocks[0]["thinking"].(string), "Germany's capital") {
+		t.Fatalf("reasoning blocks = %s (%v)", first.ReasoningBlocks, err)
+	}
+	second, err := client.Complete(context.Background(), Request{Model: "m", Messages: []Message{
+		user,
+		{Role: RoleAssistant, Content: first.Content, ToolCalls: first.ToolCalls, ReasoningBlocks: first.ReasoningBlocks},
+		{Role: RoleTool, ToolCallID: first.ToolCalls[0].ID, ToolName: "get_weather", Content: "12C"},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	messages, _ := srv.last["messages"].([]any)
+	assistant, _ := messages[1].(map[string]any)
+	var sent any
+	_ = json.Unmarshal(first.ReasoningBlocks, &sent)
+	echoed, _ := json.Marshal(assistant["thinking_blocks"])
+	want, _ := json.Marshal(sent)
+	if string(echoed) != string(want) || assistant["role"] != "assistant" || assistant["tool_calls"] == nil {
+		t.Fatalf("echoed assistant message = %v", assistant)
+	}
+	if _, ok := messages[0].(map[string]any)["thinking_blocks"]; ok {
+		t.Fatalf("the user message carried thinking_blocks: %v", messages[0])
+	}
+	// The one-shot reply's blocks are read off the message.
+	if !strings.Contains(string(second.ReasoningBlocks), "REDACTED-SIGNATURE") {
+		t.Fatalf("one-shot reasoning blocks = %s", second.ReasoningBlocks)
+	}
+}
+
+// A stream whose reasoning alone passes the cumulative bound is cut off
+// with an error rather than held in memory.
+func TestOpenAIStreamIsBoundedIncludingReasoning(t *testing.T) {
+	piece := strings.Repeat("x", 1<<20)
+	srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for range 17 {
+			_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":%q}}]}\n\n", piece)
+		}
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	})
+	client, _ := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+	_, err := client.Complete(context.Background(), Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, func(Delta) {})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("an oversized reasoning stream: %v", err)
+	}
+}

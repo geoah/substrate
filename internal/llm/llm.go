@@ -12,6 +12,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -107,7 +108,18 @@ type Message struct {
 	ToolCalls  []ToolCall
 	ToolCallID string
 	ToolName   string
+	// ReasoningBlocks are an assistant turn's signed thinking blocks, as the
+	// Result that produced the turn carried them. Anthropic refuses a tool
+	// result whose assistant turn lost them, so a loop passes them back on
+	// the next request of the same run. They are never stored and never
+	// replayed across runs.
+	ReasoningBlocks json.RawMessage
 }
+
+// maxResponseBytes bounds what one completion accumulates in memory: text,
+// reasoning, tool arguments and reasoning blocks together. The base URL is
+// repository-chosen, so the endpoint is not trusted to stop sending.
+const maxResponseBytes = 16 << 20
 
 // Tool is one model-facing tool card. Parameters is a JSON schema.
 type Tool struct {
@@ -261,6 +273,11 @@ type Result struct {
 	// and still return none: Anthropic's current models omit the text unless
 	// the request asks for a summary.
 	Reasoning string
+	// ReasoningBlocks are the turn's thinking blocks verbatim, as a JSON array
+	// of Anthropic content blocks: `thinking` with its `thinking` and
+	// `signature`, `redacted_thinking` with its `data`. Empty when the wire
+	// returned none. A caller echoes them on the turn's Message.
+	ReasoningBlocks json.RawMessage
 }
 
 // Delta is one streamed piece of a turn: exactly one of Text and Reasoning is

@@ -29,16 +29,24 @@ Chosen: a `reasoning` event of its own and a bounded summary, because a
 client that knows nothing of reasoning keeps rendering `delta` events as the
 reply and never shows thinking as an answer, and a flag on `delta` would make
 every old client do exactly that. The assistant row keeps `reasoning`, the
-first 4000 runes, and `reasoningMillis`, the time from the request to the last
-streamed piece. The row is a transcript people read; the chain is thousands of
+first 4000 runes, and `reasoningMillis`, the time from the first streamed
+piece of reasoning to the last; the console's live count measures the same
+span. The row is a transcript people read; the chain is thousands of
 tokens a turn, and nothing replays it: `replayView` ignores the property and
 compaction never reads it.
 
-The thinking is not echoed back inside a run either. LiteLLM's openai wire
-was checked live on 2026-10-17 with `anthropic/claude-haiku-5-5`: a
-tool-calling turn that streamed a signed thinking block, followed by its tool
-result without the assistant message's `thinking_blocks`, was answered `200`.
-The same request with the block echoed was answered `200` too. Anthropic's
+Inside one run the signed blocks do go back. Anthropic's rule is that the
+assistant turn carrying a `tool_use` keeps its `thinking` and
+`redacted_thinking` blocks complete and unchanged on the request that answers
+it, so `llm.Result` and `llm.Message` carry them as `ReasoningBlocks`, the
+loop puts them on the run's in-memory tail, and the anthropic wire sends them
+ahead of the turn's text and `tool_use`. The openai wire sends them as the
+assistant message's `thinking_blocks`, which LiteLLM forwards; it reads them
+from the reply's `thinking_blocks`, keeping only the signed or redacted
+ones. No row stores them and no later run replays them. LiteLLM was checked
+live on 2026-10-17 with `anthropic/claude-haiku-5-5`: a tool result answered
+both with and without the echoed `thinking_blocks`, so the echo follows the
+documented rule rather than a refusal seen here. Anthropic's
 current models think with their display `omitted` by default, so a request
 that names only `reasoning_effort` streams signed blocks with empty text, and
 no `reasoning` event, through LiteLLM.
@@ -86,8 +94,7 @@ and chose not to think at any effort on the short prompts tried.
 
 ## More Information
 
-Revisit when a model refuses a tool result without its signed thinking
-blocks: the native anthropic wire would then echo them back ahead of
-`tool_use` within a run, which a `ReasoningBlocks` field on `llm.Message`
-would carry. The native wire was not checked live for this. The plan is
+Revisit if a run must survive a restart mid-tool-loop: the blocks live only
+in memory, so a resumed thread replays its turns without them, which is
+legal on Anthropic for turns before the last user message. The plan is
 `docs/plans/chat-turns.md`, PR 3.

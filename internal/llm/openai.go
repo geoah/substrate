@@ -47,7 +47,7 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}
-	oc.HTTPClient = &extraBodyDoer{inner: oc.HTTPClient}
+	oc.HTTPClient = &bodyDoer{inner: oc.HTTPClient}
 	return &openaiClient{client: openai.NewClientWithConfig(oc), apiKey: cfg.APIKey}
 }
 
@@ -81,50 +81,146 @@ func (d *headerDoer) Do(req *http.Request) (*http.Response, error) {
 	return inner.Do(req)
 }
 
-// extraBodyKey carries request body keys the SDK's request struct cannot
-// spell, from Complete to extraBodyDoer, scoped to one call's context.
-type extraBodyKey struct{}
+// bodyPatch is what one call adds to the JSON the SDK writes and reads past
+// what the SDK parses, carried from Complete to bodyDoer in the call's
+// context. The SDK's chat types have no key for a thinking request or for
+// `thinking_blocks`, and LiteLLM speaks both.
+type bodyPatch struct {
+	// extra are top-level request keys; a key the SDK wrote stays as written.
+	extra map[string]any
+	// messages are keys added to the request message at each index.
+	messages map[int]map[string]json.RawMessage
+	// response, when non-nil, receives a one-shot reply's body, read whole
+	// up to maxResponseBytes; a stream's body is left to the SDK.
+	response *[]byte
+}
 
-// extraBodyDoer adds the context's extra keys to a JSON request body. A key
-// the SDK already wrote is left as the SDK wrote it.
-type extraBodyDoer struct {
+type bodyPatchKey struct{}
+
+// bodyDoer applies the context's bodyPatch to one request and its reply.
+type bodyDoer struct {
 	inner openai.HTTPDoer
 }
 
-func (d *extraBodyDoer) Do(req *http.Request) (*http.Response, error) {
-	extra, _ := req.Context().Value(extraBodyKey{}).(map[string]any)
-	if len(extra) > 0 && req.Body != nil {
-		raw, err := io.ReadAll(req.Body)
-		_ = req.Body.Close()
-		if err != nil {
+func (d *bodyDoer) Do(req *http.Request) (*http.Response, error) {
+	patch, _ := req.Context().Value(bodyPatchKey{}).(*bodyPatch)
+	if patch == nil {
+		return d.inner.Do(req)
+	}
+	if (len(patch.extra) > 0 || len(patch.messages) > 0) && req.Body != nil {
+		if err := patchRequest(req, patch); err != nil {
 			return nil, err
 		}
-		var body map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &body); err != nil {
-			return nil, fmt.Errorf("openai: request body: %w", err)
+	}
+	res, err := d.inner.Do(req)
+	if err != nil || patch.response == nil || res.StatusCode >= http.StatusBadRequest ||
+		strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
+		return res, err
+	}
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
+	_ = res.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("openai: response body exceeds %d bytes", maxResponseBytes)
+	}
+	*patch.response = body
+	res.Body = io.NopCloser(bytes.NewReader(body))
+	return res, nil
+}
+
+func patchRequest(req *http.Request, patch *bodyPatch) error {
+	raw, err := io.ReadAll(req.Body)
+	_ = req.Body.Close()
+	if err != nil {
+		return err
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return fmt.Errorf("openai: request body: %w", err)
+	}
+	for k, v := range patch.extra {
+		if _, set := body[k]; set {
+			continue
 		}
-		for k, v := range extra {
-			if _, set := body[k]; set {
+		if body[k], err = json.Marshal(v); err != nil {
+			return err
+		}
+	}
+	if len(patch.messages) > 0 {
+		var messages []map[string]json.RawMessage
+		if err := json.Unmarshal(body["messages"], &messages); err != nil {
+			return fmt.Errorf("openai: request messages: %w", err)
+		}
+		for i, keys := range patch.messages {
+			if i < 0 || i >= len(messages) {
 				continue
 			}
-			enc, err := json.Marshal(v)
-			if err != nil {
-				return nil, err
+			for k, v := range keys {
+				messages[i][k] = v
 			}
-			body[k] = enc
 		}
-		if raw, err = json.Marshal(body); err != nil {
-			return nil, err
+		if body["messages"], err = json.Marshal(messages); err != nil {
+			return err
 		}
-		req.Body = io.NopCloser(bytes.NewReader(raw))
-		req.ContentLength = int64(len(raw))
-		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(raw)), nil }
 	}
-	return d.inner.Do(req)
+	if raw, err = json.Marshal(body); err != nil {
+		return err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(raw))
+	req.ContentLength = int64(len(raw))
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(raw)), nil }
+	return nil
+}
+
+// thinkingBlocks reads the `thinking_blocks` LiteLLM puts beside an
+// assistant message or a stream delta.
+type thinkingBlocks struct {
+	Choices []struct {
+		Message struct {
+			ThinkingBlocks []json.RawMessage `json:"thinking_blocks"`
+		} `json:"message"`
+		Delta struct {
+			ThinkingBlocks []json.RawMessage `json:"thinking_blocks"`
+		} `json:"delta"`
+	} `json:"choices"`
+}
+
+// signedBlocks keeps the blocks that can be echoed: a thinking block with its
+// signature, a redacted one with its data. A stream sends each thinking
+// block in unsigned pieces first and then once whole with the signature, so
+// the pieces drop here.
+func signedBlocks(blocks []json.RawMessage) []json.RawMessage {
+	var out []json.RawMessage
+	for _, b := range blocks {
+		var head struct {
+			Type      string `json:"type"`
+			Signature string `json:"signature"`
+			Data      string `json:"data"`
+		}
+		if json.Unmarshal(b, &head) != nil {
+			continue
+		}
+		if (head.Type == "thinking" && head.Signature != "") || (head.Type == "redacted_thinking" && head.Data != "") {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func rawArray(blocks []json.RawMessage) json.RawMessage {
+	if len(blocks) == 0 {
+		return nil
+	}
+	raw, _ := json.Marshal(blocks)
+	return raw
 }
 
 func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
-	oreq := openai.ChatCompletionRequest{Model: req.Model, Messages: openaiMessages(req)}
+	messages, echoed := openaiMessages(req)
+	oreq := openai.ChatCompletionRequest{Model: req.Model, Messages: messages}
+	patch := &bodyPatch{messages: echoed}
 	if t := req.Params.Temperature; t != nil {
 		// The SDK tags Temperature `omitempty`, so a true zero never reaches
 		// the wire and the endpoint silently samples at its own default. The
@@ -148,10 +244,8 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 	// gpt-5.6 model here — that family reasons by default and refuses
 	// function tools for any effort but none on /v1/chat/completions.
 	oreq.ReasoningEffort = req.Params.ReasoningEffort
-	// The SDK's chat request has no key for it, so it rides the context to
-	// extraBodyDoer, which adds it to this request's body alone.
 	if req.Params.ReasoningSummary {
-		ctx = context.WithValue(ctx, extraBodyKey{}, map[string]any{"thinking": thinkingSummarized()})
+		patch.extra = map[string]any{"thinking": thinkingSummarized()}
 	}
 	for _, t := range req.Tools {
 		oreq.Tools = append(oreq.Tools, openai.Tool{
@@ -162,9 +256,18 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 		})
 	}
 	if onDelta == nil {
-		return c.oneShot(ctx, oreq)
+		var body []byte
+		patch.response = &body
+		res, err := c.oneShot(context.WithValue(ctx, bodyPatchKey{}, patch), oreq)
+		if res != nil {
+			var tb thinkingBlocks
+			if json.Unmarshal(body, &tb) == nil && len(tb.Choices) > 0 {
+				res.ReasoningBlocks = rawArray(signedBlocks(tb.Choices[0].Message.ThinkingBlocks))
+			}
+		}
+		return res, err
 	}
-	return c.stream(ctx, oreq, onDelta)
+	return c.stream(context.WithValue(ctx, bodyPatchKey{}, patch), oreq, onDelta)
 }
 
 func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest) (*Result, error) {
@@ -193,18 +296,41 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	}
 	defer func() { _ = stream.Close() }()
 	var content, reasoning strings.Builder
+	var blocks []json.RawMessage
+	size := 0
+	grow := func(n int) error {
+		size += n
+		if size > maxResponseBytes {
+			return fmt.Errorf("openai: a streamed response exceeds %d bytes", maxResponseBytes)
+		}
+		return nil
+	}
 	var usage *Usage
 	// The finish reason rides one chunk near the end, and the usage chunk
 	// after it carries none, so the last one seen is the turn's.
 	var finish openai.FinishReason
 	acc := &toolCallAccumulator{byIndex: map[int]*openai.ToolCall{}}
 	for {
-		chunk, err := stream.Recv()
+		raw, err := stream.RecvRaw()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
 			return nil, c.scrubbed(err)
+		}
+		var chunk openai.ChatCompletionStreamResponse
+		if err := json.Unmarshal(raw, &chunk); err != nil {
+			return nil, c.scrubbed(err)
+		}
+		var tb thinkingBlocks
+		if json.Unmarshal(raw, &tb) == nil && len(tb.Choices) > 0 {
+			signed := signedBlocks(tb.Choices[0].Delta.ThinkingBlocks)
+			for _, b := range signed {
+				if err := grow(len(b)); err != nil {
+					return nil, err
+				}
+			}
+			blocks = append(blocks, signed...)
 		}
 		if chunk.Usage != nil {
 			usage = openaiUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens)
@@ -216,11 +342,17 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			finish = fr
 		}
 		delta := chunk.Choices[0].Delta
+		if err := grow(len(delta.ReasoningContent) + len(delta.Content)); err != nil {
+			return nil, err
+		}
+		for _, tc := range delta.ToolCalls {
+			if err := grow(len(tc.Function.Arguments)); err != nil {
+				return nil, err
+			}
+		}
 		// reasoning_content is the thinking text LiteLLM and the other
-		// gateways stream ahead of the content. The thinking_blocks array
-		// beside it repeats the same text plus the provider's signature and
-		// is not read: the signature only matters to a request that echoes
-		// the block back, and no request here does.
+		// gateways stream ahead of the content; thinking_blocks beside it
+		// repeat the text with the signature, kept above for the echo.
 		if delta.ReasoningContent != "" {
 			reasoning.WriteString(delta.ReasoningContent)
 			onDelta(Delta{Reasoning: delta.ReasoningContent})
@@ -234,6 +366,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	return &Result{
 		Content: content.String(), ToolCalls: neutralToolCalls(acc.finalize()), Usage: usage,
 		Stop: openaiStop(finish), Reasoning: reasoning.String(),
+		ReasoningBlocks: rawArray(blocks),
 	}, nil
 }
 
@@ -262,8 +395,13 @@ func openaiStop(reason openai.FinishReason) string {
 
 // openaiMessages maps the neutral turns onto the wire's roles 1:1. The system
 // prompt leads, because on this wire that is what a system prompt is.
-func openaiMessages(req Request) []openai.ChatCompletionMessage {
+//
+// The second result is the `thinking_blocks` to add to each assistant message
+// that carries them, by index: LiteLLM passes them back to an Anthropic model,
+// which refuses a tool result whose assistant turn lost its signed thinking.
+func openaiMessages(req Request) ([]openai.ChatCompletionMessage, map[int]map[string]json.RawMessage) {
 	out := make([]openai.ChatCompletionMessage, 0, len(req.Messages)+1)
+	var echoed map[int]map[string]json.RawMessage
 	if req.System != "" {
 		out = append(out, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleSystem, Content: req.System})
 	}
@@ -277,6 +415,12 @@ func openaiMessages(req Request) []openai.ChatCompletionMessage {
 					Function: openai.FunctionCall{Name: tc.Name, Arguments: tc.Arguments},
 				})
 			}
+			if len(m.ReasoningBlocks) > 0 {
+				if echoed == nil {
+					echoed = map[int]map[string]json.RawMessage{}
+				}
+				echoed[len(out)] = map[string]json.RawMessage{"thinking_blocks": m.ReasoningBlocks}
+			}
 			out = append(out, om)
 		case RoleTool:
 			out = append(out, openai.ChatCompletionMessage{
@@ -287,7 +431,7 @@ func openaiMessages(req Request) []openai.ChatCompletionMessage {
 			out = append(out, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: m.Content})
 		}
 	}
-	return out
+	return out, echoed
 }
 
 func neutralToolCalls(calls []openai.ToolCall) []ToolCall {

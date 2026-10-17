@@ -61,8 +61,8 @@ data:
     reasoningMillis:
       type: int
       min: 0
-      description: how long the model thought before it stopped streaming
-        its reasoning, in milliseconds
+      description: how long the model thought, from its first streamed piece
+        of reasoning to its last, in milliseconds
     # The arguments ride as the VERBATIM wire string: they are the model's own
     # JSON, echoed back on the tool result, and re-encoding them would change
     # the bytes the provider matched a call by.

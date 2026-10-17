@@ -88,7 +88,7 @@ const (
 	anthropicMaxEvent = 4 << 20
 	// anthropicMaxMessage bounds a one-shot response body, and the text,
 	// tool input and block starts a stream accumulates.
-	anthropicMaxMessage = 16 << 20
+	anthropicMaxMessage = maxResponseBytes
 	// anthropicMaxErrorBody is how much of a refusal's body, or of a stream's
 	// error event, the call's error quotes.
 	anthropicMaxErrorBody = 64 << 10
@@ -373,6 +373,14 @@ func anthropicBlocks(m Message) (string, []any) {
 		}}
 	case RoleAssistant:
 		var blocks []any
+		// The signed thinking goes back first and unchanged: the API refuses
+		// a tool result whose assistant turn dropped or edited it.
+		var reasoning []json.RawMessage
+		if len(m.ReasoningBlocks) > 0 && json.Unmarshal(m.ReasoningBlocks, &reasoning) == nil {
+			for _, b := range reasoning {
+				blocks = append(blocks, b)
+			}
+		}
 		if m.Content != "" {
 			blocks = append(blocks, newAnthropicText(m.Content))
 		}
@@ -856,10 +864,14 @@ func anthropicResult(msg *anthropicMessage) *Result {
 		Stop: anthropicStop(msg.StopReason),
 	}
 	var content, reasoning strings.Builder
+	var blocks []any
 	for _, block := range msg.Content {
 		switch block.Type {
+		case "redacted_thinking":
+			blocks = append(blocks, map[string]any{"type": block.Type, "data": block.Data})
 		case "thinking":
 			reasoning.WriteString(block.Thinking)
+			blocks = append(blocks, map[string]any{"type": block.Type, "thinking": block.Thinking, "signature": block.Signature})
 		case "text":
 			content.WriteString(block.Text)
 		case "tool_use":
@@ -870,6 +882,9 @@ func anthropicResult(msg *anthropicMessage) *Result {
 	}
 	res.Content = content.String()
 	res.Reasoning = reasoning.String()
+	if len(blocks) > 0 {
+		res.ReasoningBlocks, _ = json.Marshal(blocks)
+	}
 	return res
 }
 

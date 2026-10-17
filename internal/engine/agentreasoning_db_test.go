@@ -30,7 +30,7 @@ func TestAReasoningModelStreamsItsThinkingAndTheRowKeepsASummary(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat",
-		fakeTurn{reasoning: "I should look it up first.", content: "Checking.", calls: []fakeCall{{name: "nosuch", args: `{}`}}, finish: "tool_calls"},
+		fakeTurn{reasoning: "I should look it up first.", signature: "sig-1", content: "Checking.", calls: []fakeCall{{name: "nosuch", args: `{}`}}, finish: "tool_calls"},
 		fakeTurn{reasoning: "The lookup failed, so I answer plainly.", content: "hello there"},
 	)
 	var events []substrate.AgentEvent
@@ -81,13 +81,29 @@ func TestAReasoningModelStreamsItsThinkingAndTheRowKeepsASummary(t *testing.T) {
 			t.Fatalf("row %d reasoningMillis = %v", i, rows[i]["reasoningMillis"])
 		}
 	}
+	// Within the run, the tool round trip carries the signed block back on
+	// the assistant message that called the tool, and nowhere else.
+	reqs := fake.requestsOf("chat")
+	echo, _ := json.Marshal(reqs[1]["messages"])
+	if strings.Count(string(echo), `"thinking_blocks"`) != 1 || !strings.Contains(string(echo), `"signature":"sig-1"`) {
+		t.Fatalf("the tool round trip did not echo the signed block: %s", echo)
+	}
+	for _, row := range threadMessages(t, ds, res.Thread) {
+		raw, _ := json.Marshal(row)
+		if strings.Contains(string(raw), "sig-1") {
+			t.Fatalf("a row kept the signed block: %s", raw)
+		}
+	}
 	// A continuation replays the thread, and no reasoning reaches the model.
 	fake.script("chat", fakeTurn{content: "again"})
 	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil); err != nil {
 		t.Fatalf("continue: %v", err)
 	}
-	reqs := fake.requestsOf("chat")
+	reqs = fake.requestsOf("chat")
 	for i, req := range reqs {
+		if i == 1 {
+			continue
+		}
 		raw, _ := json.Marshal(req["messages"])
 		if strings.Contains(string(raw), "look it up") || strings.Contains(string(raw), "lookup failed") ||
 			strings.Contains(string(raw), "reasoning") {
