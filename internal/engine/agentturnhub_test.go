@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -135,5 +136,31 @@ func TestAStopBeforeTheRunContextTakesEffect(t *testing.T) {
 	}
 	if h.stopper() != substrate.ActorConsole {
 		t.Fatalf("stopper = %q", h.stopper())
+	}
+}
+
+// Reasoning pieces merge like deltas, each kind on its own: a turn that
+// thinks, answers, then thinks again replays as three events, in order.
+func TestTheReplayMergesReasoningApartFromTheReply(t *testing.T) {
+	t.Parallel()
+	h := newTurnHub()
+	for _, ev := range []substrate.AgentEvent{
+		{Kind: substrate.AgentEventReasoning, Text: "think ", Turn: 1},
+		{Kind: substrate.AgentEventReasoning, Text: "more", Turn: 1},
+		{Kind: substrate.AgentEventDelta, Text: "say ", Turn: 1},
+		{Kind: substrate.AgentEventDelta, Text: "it", Turn: 1},
+		{Kind: substrate.AgentEventReasoning, Text: "again", Turn: 1},
+		{Kind: substrate.AgentEventReasoning, Text: "next turn", Turn: 3},
+	} {
+		h.publish(ev)
+	}
+	var got []string
+	for _, e := range h.replay {
+		ev := e.event()
+		got = append(got, fmt.Sprintf("%s:%d:%s", ev.Kind, ev.Turn, ev.Text))
+	}
+	want := "reasoning:1:think more,delta:1:say it,reasoning:1:again,reasoning:3:next turn"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("replay = %s, want %s", strings.Join(got, ","), want)
 	}
 }

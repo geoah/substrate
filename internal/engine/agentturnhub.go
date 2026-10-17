@@ -19,7 +19,8 @@ import (
 
 // agentTurnReplayBytes bounds the memory a hub retains for a late attacher:
 // each retained event's own size plus its text, arguments, output and error.
-// Consecutive deltas of one turn are retained as one event, so a reply
+// Consecutive deltas (or reasoning pieces) of one turn are retained as one
+// event, so a reply
 // streamed a token at a time costs its text, not an event per token. Past
 // the bound the hub keeps the prefix it has and retains nothing further;
 // live subscribers still receive everything, and the thread's
@@ -107,13 +108,19 @@ func eventBytes(ev substrate.AgentEvent) int {
 	return agentEventSize + len(ev.Text) + len(ev.Args) + len(ev.Output) + len(ev.Error)
 }
 
-// retain adds ev to the replay, merging a delta into the delta before it
-// when both belong to one turn. It reports false when the bound would be
-// passed.
+// streamed reports whether an event is a piece of streamed text: a delta of
+// the reply or of the model's reasoning.
+func streamed(ev substrate.AgentEvent) bool {
+	return ev.Kind == substrate.AgentEventDelta || ev.Kind == substrate.AgentEventReasoning
+}
+
+// retain adds ev to the replay, merging a delta (or a reasoning piece) into
+// the one before it when both are of one kind and one turn. It reports false
+// when the bound would be passed.
 func (h *turnHub) retain(ev substrate.AgentEvent) bool {
-	if n := len(h.replay); ev.Kind == substrate.AgentEventDelta && n > 0 {
+	if n := len(h.replay); streamed(ev) && n > 0 {
 		last := &h.replay[n-1]
-		if last.text != nil && last.ev.Turn == ev.Turn {
+		if last.text != nil && last.ev.Kind == ev.Kind && last.ev.Turn == ev.Turn {
 			before := last.text.Cap()
 			if h.bytes+max(before, last.text.Len()+len(ev.Text))-before > h.limit {
 				return false
@@ -129,7 +136,7 @@ func (h *turnHub) retain(ev substrate.AgentEvent) bool {
 	}
 	h.bytes += n
 	entry := replayEntry{ev: ev}
-	if ev.Kind == substrate.AgentEventDelta {
+	if streamed(ev) {
 		entry.text = &strings.Builder{}
 		entry.text.WriteString(ev.Text)
 		entry.ev.Text = ""

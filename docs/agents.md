@@ -1034,14 +1034,15 @@ A repository runs at most 4 chat turns at once. One more is refused `409
 conflict` (`4 chat turns are already running in this repository: wait for
 one to finish, or stop one`) before anything is written.
 
-`delta`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
+`delta`, `reasoning`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
 matching `message` row carries or will carry. A thread's ordinals are unique:
 a row another writer puts on the thread while a turn runs (a resolution's
 `system` row) takes an ordinal past every one the turn has drawn, including
 the reply it is still streaming. A client that attaches after reading the
 rows drops a replayed event exactly when a stored row carries its `turn`,
 and keeps every other one. A highest-turn cutoff is wrong: the resolution
-row's later ordinal would hide the reply still streaming. An attach replays at most 4 MiB of event text, counted
+row's later ordinal would hide the reply still streaming. An attach replays a turn's consecutive `delta` events as one event, and its
+consecutive `reasoning` events as one, and at most 4 MiB of event text, counted
 over `text`, `args`, `output` and `error`; past that it sends what it kept,
 one `{"kind":"truncated"}` line, then live events, and the dropped part is in
 the `message` rows once `done` arrives. A client that reads slower than the

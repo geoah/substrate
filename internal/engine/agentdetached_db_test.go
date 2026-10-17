@@ -320,3 +320,48 @@ func TestTheThreadStatusEnumAdmitsStopped(t *testing.T) {
 		t.Fatalf("a stopped status does not validate: %v", err)
 	}
 }
+
+// A reasoning model's thinking carries the reply's `turn`, like its deltas,
+// and an attach mid-turn replays it as one merged event before the reply.
+func TestAnAttachReplaysTheTurnsReasoningWithItsTurn(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	hold, release := heldTurn(t)
+	fake.script("chat", fakeTurn{reasoning: "weighing the options", content: "the answer", hold: hold})
+	log := newEventLog()
+	chatted := make(chan struct{})
+	go func() {
+		defer close(chatted)
+		_, _ = ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/chatter", "", "hi", log.emit)
+	}()
+	delta := log.waitFor(t, substrate.AgentEventDelta)
+	thread := log.snapshot()[0].Thread
+	for _, ev := range log.snapshot() {
+		if ev.Kind == substrate.AgentEventReasoning && ev.Turn != delta.Turn {
+			t.Fatalf("a reasoning event carries turn %d, the reply's deltas %d", ev.Turn, delta.Turn)
+		}
+	}
+
+	late := newEventLog()
+	attached := make(chan struct{})
+	go func() {
+		defer close(attached)
+		if _, err := ds.AttachAgentTurn(context.Background(), thread, late.emit); err != nil {
+			t.Errorf("attach: %v", err)
+		}
+	}()
+	late.waitFor(t, substrate.AgentEventDelta)
+	replay := late.snapshot()
+	release()
+	<-attached
+	<-chatted
+	if len(replay) != 3 || replay[1].Kind != substrate.AgentEventReasoning ||
+		replay[1].Text != "weighing the options" || replay[1].Turn != delta.Turn || replay[2].Turn != delta.Turn {
+		t.Fatalf("replay = %+v, want thread, one reasoning event and the delta, all at turn %d", replay, delta.Turn)
+	}
+	for _, m := range threadMessages(t, ds, thread) {
+		if m["role"] == "assistant" && intProp(m, "turn") != delta.Turn {
+			t.Fatalf("the reply row's turn = %v, its events carried %d", m["turn"], delta.Turn)
+		}
+	}
+}
