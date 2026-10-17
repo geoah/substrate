@@ -42,6 +42,7 @@ import {
   examplePrompts,
   providerName,
   tallyWords,
+  threadSubject,
   threadTally,
 } from "@/lib/agent-chat"
 import {
@@ -370,7 +371,11 @@ export function Conversation({
       <header className="flex shrink-0 items-center gap-2.5 border-b px-4 py-3 md:px-6">
         {agentId && <AgentMark id={agentId} size="md" />}
         <div className="min-w-0 flex-1">
-          <ThreadHeading title={title} thread={current} />
+          <ThreadHeading
+            title={title}
+            subject={threadSubject(threadRecord)}
+            thread={current}
+          />
           <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
             <span>with {name}</span>
             {technical && current && (

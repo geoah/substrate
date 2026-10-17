@@ -28,9 +28,10 @@ const threadSubjectRunes = 80
 const titleExcerptRunes = 2000
 
 // The title call's output ceilings. A title is at most eight words, so 32
-// tokens hold it. A call that sends a reasoning effort other than "none"
-// gets room to think first, because a reasoning model counts its thinking
-// against the same ceiling and would otherwise stop on it with no title.
+// tokens hold it, and a call that sends the effort "none" gets that. Every
+// other call gets room to think first, an unset effort included: a model
+// with a reasoning default thinks unasked, counts the thinking against the
+// same ceiling, and would otherwise stop on it with no title.
 const (
 	titleMaxTokens          = 32
 	titleReasoningMaxTokens = 512
@@ -128,9 +129,9 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 		}
 		params = llm.Params{ReasoningEffort: defaults.ReasoningEffort}
 	}
-	params.MaxTokens = titleMaxTokens
-	if params.ReasoningEffort != "" && params.ReasoningEffort != "none" {
-		params.MaxTokens = titleReasoningMaxTokens
+	params.MaxTokens = titleReasoningMaxTokens
+	if params.ReasoningEffort == "none" {
+		params.MaxTokens = titleMaxTokens
 	}
 	// One user message carrying the exchange: a request that ends on an
 	// assistant turn is a prefill on the anthropic wire, which the model
@@ -141,6 +142,16 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 	prompt.WriteString("\nassistant: ")
 	prompt.WriteString(cutRunes(reply, titleExcerptRunes))
 	prompt.WriteString("\n</conversation>\n\nTitle this conversation.")
+
+	// The call is a spend operation of its own on the thread, counted the
+	// way a turn is (spend.go): a charge from its return, the row's lifetime
+	// once the patch commits, and a lost charge when no patch does.
+	base := 0.0
+	if row, err := l.ds.loadRowDB(ctx, eref{Kind: typeThread, ID: l.threadID}); err == nil && row != nil {
+		base, _ = anyFloat(row.Props["costUSD"])
+	}
+	run := l.ds.spend.open(l.ag.Identity(), l.threadID, base)
+	defer l.ds.spend.finish(run)
 
 	cctx, cancel := context.WithTimeout(ctx, titleAllowance)
 	defer cancel()
@@ -168,20 +179,28 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 	}
 	price := l.provider.pricing[model]
 	cost := (float64(prompted)*price.inPer1M + float64(completed)*price.outPer1M) / 1e6
+	l.ds.spend.charge(run, cost)
 	if title == "" && prompted+completed == 0 {
 		return
 	}
-	if err := l.writeTitle(ctx, title, prompted, completed, cost); err != nil {
+	lifetime, patched, err := l.writeTitle(ctx, title, prompted, completed, cost)
+	if err != nil {
 		l.ds.svc.log.Warn("substrate: thread title not written", "thread", l.threadID, "error", err)
+		return
+	}
+	if patched {
+		l.ds.spend.commit(run, lifetime)
 	}
 }
 
 // writeTitle patches the generated subject and adds the call's usage onto
 // the thread's tallies, so costUSD stays the thread's whole cost. The usage
 // is billed whether or not the subject lands; the subject lands only while
-// the agent still manages it.
-func (l *agentLoop) writeTitle(ctx context.Context, title string, prompted, completed int, cost float64) error {
-	return l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+// the agent still manages it. It reports the costUSD the patch wrote, and
+// whether a patch was made at all: a deleted thread takes none.
+func (l *agentLoop) writeTitle(ctx context.Context, title string, prompted, completed int, cost float64) (lifetime float64, patched bool, err error) {
+	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+		patched = false
 		t.causedBy = l.in.causedBy
 		// The order every put takes (claimThread says why).
 		if err := t.lockRegistryDepShared(); err != nil {
@@ -217,7 +236,11 @@ func (l *agentLoop) writeTitle(ctx context.Context, title string, prompted, comp
 				props[propThreadSubject] = title
 			}
 		}
-		_, err = t.patch(ref, substrate.PatchInput{Properties: props})
-		return err
+		if _, err := t.patch(ref, substrate.PatchInput{Properties: props}); err != nil {
+			return err
+		}
+		patched, lifetime = true, num("costUSD")+cost
+		return nil
 	})
+	return lifetime, patched && err == nil, err
 }

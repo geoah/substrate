@@ -53,23 +53,27 @@ there is priced like any other, and most agents share a row; a per-agent knob
 would be a second place to name one model. The request is one user message
 holding the first message and the reply, each cut to 2,000 characters, under
 a fixed system prompt asking for at most eight words, with no tools. The
-output cap is 32 tokens, which holds eight words in any language the tokenizers
-in use split finely. A call that sends a reasoning effort other than `none`
-gets 512, because a reasoning model counts its thinking against the same cap
-and would otherwise stop on it with no title. The effort is the agent's on
+output cap is 512 tokens, and 32 when the call sends the effort `none`: 32
+holds eight words in any language the tokenizers in use split finely, but a
+reasoning model counts its thinking against the same cap and would stop on it
+with no title, and a call that sends no effort may still meet a model whose
+default is to think. The effort is the agent's on
 the thread's own model, and the row's `defaults.reasoningEffort` on the
 `titleModel`, because the agent's word was chosen for the agent's model.
 
 What that costs, at a sonnet-class rate of 3 USD per 1M input and 15 USD per
 1M output tokens: a typical first exchange is about 300 input tokens, so a
-title is about 0.0014 USD; the cut bounds the input near 1,150 tokens, so the
-most a title can cost is about 0.004 USD without reasoning and 0.011 USD with
-the 512-token cap spent. A small model on `titleModel` costs its own rates.
-The call's tokens and cost are added to the thread's tallies under the same
-row lock, so `costUSD` stays the thread's whole cost and the spend cap
+title that does not think is about 0.0014 USD; the cut bounds the input near
+1,150 tokens, so the most a title can cost is about 0.011 USD, with the
+512-token cap spent on thinking. A small model on `titleModel`, or the effort
+`none`, costs less. The call's tokens and cost are added to the thread's
+tallies under the same row lock, so `costUSD` stays the thread's whole cost.
+The spend cap
 ([0149](0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md))
-counts it at the next admission; the title call itself is never refused by
-the cap.
+counts the call the way it counts a turn: a charge in the spend ledger from
+the moment the call returns, the thread's lifetime once the patch commits,
+and a lost charge when no patch commits (a deleted thread). The title call
+itself is never refused by the cap.
 
 The template becomes `{subject|agent}`: a thread with a subject renders it,
 every other thread renders its agent's title. The status is dropped from the
@@ -96,7 +100,8 @@ heading, because the row carries `status` beside it.
 `TestTheFirstTurnTitlesTheThreadAndChargesTheRow`,
 `TestAnOwnerRenameIsNeverOverwritten`,
 `TestATitleCallThatFailsKeepsTheProvisionalSubject`,
-`TestTitleModelOnTheProviderRowIsUsed`; and
+`TestTitleModelOnTheProviderRowIsUsed`,
+`TestATitleCallCountsAgainstTheSpendCap`; and
 `TestBootUpgradeLandsTheThreadSubjectWithNoConversions` in
 `upgrade_guard_db_test.go`.
 

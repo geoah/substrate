@@ -543,9 +543,10 @@ The thread's `subject` is written when a chat opens it: the first non-blank
 line of the first message, cut to 80 characters. After the first turn settles
 `ok`, a background call asks the provider row's `titleModel` (else the
 thread's own model) for a title of at most eight words, with no tools and an
-output cap of 32 tokens (512 when the call sends a reasoning effort other than
-`none`). The title replaces the subject, and the call's tokens and cost land
-on the thread's tallies. The call runs after the `done` event, so the turn
+output cap of 512 tokens (32 when the call sends the effort `none`, since a
+model that thinks spends the cap on thinking first). The title replaces the
+subject, and the call's tokens and cost land on the thread's tallies and
+count against the [spend cap](#the-daily-spend-cap) like a turn's. The call runs after the `done` event, so the turn
 never waits on it; a failed or empty answer leaves the first message as the
 subject, and nothing retries it. A later turn never titles again. The
 thread's `title` renders the subject, and a thread without one (a triggered

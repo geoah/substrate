@@ -14,20 +14,26 @@ import { patchRecord } from "@/lib/api/records"
 
 export function ThreadHeading({
   title,
+  subject,
   thread,
 }: {
+  /** The heading as displayed, which may be cut short. */
   title: string
+  /** The thread's full `subject`, what a rename starts from; the title when
+   * the thread has none. */
+  subject?: string
   /** The thread's id; empty for a new chat. */
   thread: string
 }) {
+  const full = subject ?? title
   const client = useQueryClient()
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function save() {
-    const subject = (draft ?? "").trim()
-    if (!subject || subject === title) {
+    const next = (draft ?? "").trim()
+    if (!next || next === full) {
       setDraft(null)
       return
     }
@@ -35,7 +41,7 @@ export function ThreadHeading({
     setError(null)
     try {
       await patchRecord(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread", thread, {
-        properties: { subject },
+        properties: { subject: next },
       })
       setDraft(null)
       void client.invalidateQueries({ queryKey: ["records"] })
@@ -64,7 +70,7 @@ export function ThreadHeading({
               aria-label="Rename this chat"
               onClick={() => {
                 setError(null)
-                setDraft(title)
+                setDraft(full)
               }}
             >
               <PencilIcon />

@@ -135,8 +135,13 @@ func TestTheFirstTurnTitlesTheThreadAndChargesTheRow(t *testing.T) {
 	if _, ok := reqs[1]["tools"]; ok {
 		t.Fatalf("the title call offered tools: %v", reqs[1])
 	}
-	if mt, _ := reqs[1]["max_completion_tokens"].(float64); int(mt) != titleMaxTokens {
-		t.Fatalf("title call max tokens %v, want %d", reqs[1]["max_completion_tokens"], titleMaxTokens)
+	// No effort is sent, so the model may think by default: the call gets
+	// the ceiling with room for it.
+	if _, sent := reqs[1]["reasoning_effort"]; sent {
+		t.Fatalf("the title call sent an effort the agent never named: %v", reqs[1]["reasoning_effort"])
+	}
+	if mt, _ := reqs[1]["max_completion_tokens"].(float64); int(mt) != titleReasoningMaxTokens {
+		t.Fatalf("title call max tokens %v, want %d", reqs[1]["max_completion_tokens"], titleReasoningMaxTokens)
 	}
 
 	// A second turn makes no title call.
@@ -234,6 +239,9 @@ func TestTitleModelOnTheProviderRowIsUsed(t *testing.T) {
 	ds, fake := openTitleDataset(t)
 	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeProvider, "namellm", substrate.PatchInput{Properties: map[string]any{
 		"titleModel": "small",
+		// The title model takes the row's effort, not the agent's; "none"
+		// is the one effort that gets the bare title ceiling.
+		"defaults": map[string]any{"reasoningEffort": "none"},
 		"pricing": []any{
 			map[string]any{"model": "name", "inputPer1M": "1", "outputPer1M": "5"},
 			map[string]any{"model": "small", "inputPer1M": "100", "outputPer1M": "100"},
@@ -247,8 +255,15 @@ func TestTitleModelOnTheProviderRowIsUsed(t *testing.T) {
 	rec := waitThread(t, ds, res.Thread, func(r *substrate.Record) bool {
 		return r.Properties[propThreadSubject] == "Small title"
 	})
-	if got := len(fake.requestsOf("small")); got != 1 {
-		t.Fatalf("title model calls %d", got)
+	small := fake.requestsOf("small")
+	if len(small) != 1 {
+		t.Fatalf("title model calls %d", len(small))
+	}
+	if small[0]["reasoning_effort"] != "none" {
+		t.Fatalf("title call effort %v, want the row's none", small[0]["reasoning_effort"])
+	}
+	if mt, _ := small[0]["max_completion_tokens"].(float64); int(mt) != titleMaxTokens {
+		t.Fatalf("title call max tokens %v, want %d", small[0]["max_completion_tokens"], titleMaxTokens)
 	}
 	if got := len(fake.requestsOf("name")); got != 1 {
 		t.Fatalf("thread model calls %d, want the turn alone", got)
@@ -257,5 +272,68 @@ func TestTitleModelOnTheProviderRowIsUsed(t *testing.T) {
 	want := (10*1.0+5*5.0)/1e6 + (10*100.0+5*100.0)/1e6
 	if got, _ := anyFloat(rec.Properties["costUSD"]); got < want-1e-12 || got > want+1e-12 {
 		t.Fatalf("costUSD %v, want %v", got, want)
+	}
+}
+
+// The title call is spend like a turn: an admission on a snapshot read
+// before it sees its charge once it commits, and a title whose thread was
+// deleted keeps its charge as lost, because no row carries it.
+func TestATitleCallCountsAgainstTheSpendCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openSpendDataset(t)
+	ds.mu.Lock()
+	ds.skipThreadTitles = false
+	ds.mu.Unlock()
+	open := spendPackage + "/open"
+
+	// Every run on the thread reports its end; the title's is the second.
+	ended := make(chan *spendRun, 4)
+	ds.spend.finishing = func(r *spendRun) { ended <- r }
+	waitTitle := func() {
+		t.Helper()
+		for range 2 {
+			select {
+			case <-ended:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the title run never ended")
+			}
+		}
+	}
+
+	// A default turn costs 100 cents on pricedllm, and so does a title.
+	if got := spentOf(t, ds, "open", true); got != 0 {
+		t.Fatalf("before: %d cents", got)
+	}
+	fake.script("open", fakeTurn{content: "hello"}, fakeTurn{content: "Greeting"})
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, "", "hi", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitTitle()
+	if got := spentOf(t, ds, "open", false); got != 200 {
+		t.Fatalf("on the snapshot read before the chat: %d cents, want the turn's 100 and the title's 100", got)
+	}
+	if got := spentOf(t, ds, "open", true); got != 200 {
+		t.Fatalf("on a fresh snapshot: %d cents, want 200", got)
+	}
+
+	// The thread is deleted while its title call runs.
+	arrived, release := make(chan struct{}), make(chan struct{})
+	fake.script("open", fakeTurn{content: "hello"}, fakeTurn{content: "Gone", arrived: arrived, release: release})
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, "", "again", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-arrived
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, res.Thread, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the thread: %v", err)
+	}
+	close(release)
+	waitTitle()
+	ds.spend.finishing = nil
+	// 200 before, the deleted thread's turn 100 (a tombstone still counts),
+	// and its title's 100 as a lost charge.
+	if got := spentOf(t, ds, "open", true); got != 400 {
+		t.Fatalf("after a title whose thread was deleted: %d cents, want 400", got)
 	}
 }

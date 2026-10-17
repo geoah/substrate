@@ -20,10 +20,10 @@ vi.mock("@/lib/api/records", async (importOriginal) => ({
 
 import { ThreadHeading } from "./thread-heading"
 
-function renderHeading(thread: string) {
+function renderHeading(thread: string, subject?: string) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <ThreadHeading title="plan a trip" thread={thread} />
+      <ThreadHeading title="plan a trip" subject={subject} thread={thread} />
     </QueryClientProvider>
   )
 }
@@ -48,6 +48,26 @@ describe("the thread heading", () => {
         "thread",
         "t1",
         { properties: { subject: "Trip to Berlin" } }
+      )
+    )
+  })
+
+  it("edits the whole subject, not the heading cut short", async () => {
+    patchRecord.mockResolvedValue({})
+    const long = "A".repeat(70) + " and the tail"
+    renderHeading("t1", long)
+    fireEvent.click(screen.getByRole("button", { name: "Rename this chat" }))
+    const input = screen.getByRole("textbox", { name: "Chat name" })
+    expect((input as HTMLInputElement).value).toBe(long)
+    fireEvent.change(input, { target: { value: long + "!" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    await waitFor(() =>
+      expect(patchRecord).toHaveBeenCalledWith(
+        "substrate.reamde.dev",
+        "llm",
+        "thread",
+        "t1",
+        { properties: { subject: long + "!" } }
       )
     )
   })
