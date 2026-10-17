@@ -430,3 +430,44 @@ func TestAStopReachesAnAgentAFunctionToolRuns(t *testing.T) {
 		t.Fatalf("editor threads = %+v, want one stopped", editors)
 	}
 }
+
+// A stop during the settle-time compaction: the summarizer is canceled, and
+// the thread settles `stopped` with the reply it got, never `ok`.
+func TestAStopDuringSettleTimeCompactionSettlesStopped(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	q1, q2 := "q1"+hundred, "q2"+hundred
+	r1, r2 := "r1"+hundred, "r2"+hundred
+	fake.script("compact", fakeTurn{content: r1, promptTokens: 900})
+	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, compactor, "", q1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summarizing := make(chan struct{})
+	held, _ := heldTurn(t)
+	fake.script("compact",
+		fakeTurn{content: r2, promptTokens: 900},
+		fakeTurn{content: "SUMMARY", arrived: summarizing, release: held},
+	)
+	chatted := make(chan *substrate.AgentResult, 1)
+	go func() {
+		res, _ := ds.ChatAgent(ctx, substrate.ActorAPI, compactor, first.Thread, q2, nil)
+		chatted <- res
+	}()
+	waitArrived(t, summarizing, "the settle-time summarizer")
+	res, err := ds.StopAgentTurn(ctx, substrate.ActorConsole, first.Thread)
+	if err != nil || res.Status != threadStopped || res.Reply != r2 {
+		t.Fatalf("stop = %+v, %v; want stopped keeping the reply", res, err)
+	}
+	if got := <-chatted; got == nil || got.Status != threadStopped {
+		t.Fatalf("the chat's own result = %+v", got)
+	}
+	props := threadProps(t, ds, first.Thread)
+	if props["status"] != threadStopped || props["reason"] != reasonStoppedBy(substrate.ActorConsole) {
+		t.Fatalf("thread = %v (%v), want stopped by console", props["status"], props["reason"])
+	}
+	if ds.admitResume(ctx, first.Thread, "") {
+		t.Fatal("a resume would be admitted on the stopped thread")
+	}
+}

@@ -557,6 +557,9 @@ type agentLoop struct {
 	partial strings.Builder
 	// opening is the history openThread returned, which run starts from.
 	opening []llm.Message
+	// settledStatus and settledReason are what the last settle committed,
+	// which a stop arriving during it may have turned into `stopped`.
+	settledStatus, settledReason string
 }
 
 // runAgent is the loop's one entry. Everything the loop writes lands
@@ -887,16 +890,17 @@ loop:
 	if status == threadOverBudget && reason == "" {
 		reason = fmt.Sprintf("max turns reached (%d)", l.ag.Budgets.MaxTurns)
 	}
-	// A stop that came while the turn finished on its own (its last write,
-	// say) still decides the settle: the owner asked to stop, so the thread
-	// settles `stopped`, keeping the reply it got.
-	if why := l.stopRequested(); why != "" && (status == threadOK || status == threadOverBudget) {
-		status, reason = threadStopped, why
-	}
-	if status == threadOK {
+	if status == threadOK && l.stopRequested() == "" {
 		// Before the result and the settle, so the summarizer's tokens land
 		// in the same tally.
 		l.compactAtSettle(ctx, reply)
+	}
+	// The stop decision is made here, after the last step before the settle
+	// writes the terminal status: a stop that came while the turn finished
+	// on its own (its last write, the settle-time compaction) still decides
+	// it, so the thread settles `stopped`, keeping the reply it got.
+	if why := l.stopRequested(); why != "" && (status == threadOK || status == threadOverBudget) {
+		status, reason = threadStopped, why
 	}
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
@@ -934,6 +938,7 @@ loop:
 		}
 		return nil, err
 	}
+	status, res.Status, res.Reason = l.settledStatus, l.settledStatus, l.settledReason
 	// The settle-time re-check: a resolution that landed MID-turn lost the
 	// lease to this very run, so its resume was dropped. The rows are right
 	// there — pick them up with a fresh continuation instead of waiting for
@@ -1425,6 +1430,14 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		patched = false
 		t.causedBy = l.in.causedBy
+		// The last word on a stop: one that came after the run's own check
+		// still turns a natural end into `stopped`, here, in the transaction
+		// that writes the terminal status.
+		if status == threadOK || status == threadOverBudget {
+			if why := l.stopRequested(); why != "" {
+				status, reason = threadStopped, why
+			}
+		}
 		// The shared registry-dependency lock before the row lock below, the
 		// order every put takes (changelog < registry-dep < subject-type <
 		// record, stated at rows.go changelogLockKey; inTx has taken the first):
@@ -1488,6 +1501,9 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		// At once, before the resolution re-check and the done event, so no
 		// check reads a committed thread as a run still going.
 		l.ds.spend.commit(l.spend, lifetime)
+	}
+	if err == nil {
+		l.settledStatus, l.settledReason = status, reason
 	}
 	return err
 }

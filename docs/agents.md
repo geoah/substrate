@@ -1026,7 +1026,8 @@ again by its id:
   an unknown thread is `404 not_found`.
 
 A stop that arrives while the turn is finishing on its own (writing its
-last row) still settles it `stopped`, keeping the reply it got, and the stop
+last row, or compacting the thread at settle) still settles it `stopped`,
+keeping the reply it got, and the stop
 reaches an agent a function tool of the turn runs (`host.agents.call`) as it
 reaches a sub-agent. A message write that fails settles the thread `error`.
 
