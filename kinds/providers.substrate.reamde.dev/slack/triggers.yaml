@@ -1,14 +1,15 @@
 # The Slack bundle's delivery wiring — ordinary DATA records of core's
-# `trigger` kind. Four triggers drive the one sync function:
+# `trigger` kind. Three triggers drive the one sync function:
 #
 #   account(messages on, never synced)  --slacksync-->
 #       team + user + conversation + message mirrors
 #       (+ each conversation's own history cursor, + the account's stamp)
 #   15-minute schedule  --slacksync-->  the enabled account, when it is due
 #   account(syncRequestedAt != syncRequestedAck)  --slacksync-->  a walk now
-#   POST /webhooks/<authority>/slack-events  --slacksync-->
-#       a batch of live Events API callbacks applied to the mirror rows
-#       (no cursor, no account stamp)
+#
+# Live Socket Mode events are not this bundle's: the opt-in
+# `providers.substrate.reamde.dev/slacklive` bundle applies them to the same
+# mirror rows.
 #
 # There is NO tokenStatus gate here — nothing OAuth ever writes one for this
 # bundle (the accountconfig trait's tokenRef/tokenStatus/grantedScopes are
@@ -109,30 +110,4 @@ data:
           == true && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
           in record.properties) || string(record.properties.syncRequestedAt)
           != string(record.properties.syncRequestedAck))
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/slack/slacksync
----
-# Live events. A Socket Mode sidecar holds Slack's websocket, acknowledges
-# each `events_api` envelope, and POSTs batches of their payloads here as
-# `{"version": 1, "events": [<payload>, ...]}` with Content-Type
-# application/json. The body applies them to the mirror rows (messages,
-# edits, deletes, replies, reactions, pins, conversations, rosters, users,
-# files) and moves no cursor, so the walks above still cover what the socket
-# missed while it was down.
-#
-# SHIPPED WITHOUT A KEY, so the endpoint is open to whoever can reach the
-# server. A deployment the internet can reach sets `source.webhook.key` on
-# this record (16 to 128 characters of [A-Za-z0-9_-]) and gives the sidecar
-# POST /webhooks/<authority>/slack-events/<key>. The key lives on the record
-# only: an apply of this file replaces `source` whole and drops it, so set
-# it again after every apply. No header is declared: the body reads the
-# JSON and nothing else.
-kind: substrate.reamde.dev/core/trigger
-metadata:
-  id: slack-events
-data:
-  properties:
-    enabled: true
-    label: Slack live events
-    source:
-      webhook: {}
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/slack/slacksync

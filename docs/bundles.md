@@ -111,7 +111,7 @@ is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
-`linear`, `notion`, `whoop`, `beeper` and `slack`, all published under
+`linear`, `notion`, `whoop`, `beeper`, `slack` and `slacklive`, all published under
 `providers.substrate.reamde.dev`. Installing one from the catalog writes
 `source: published` on its package, and from then on only an install or an
 upgrade writes its declarations: a `POST …/vocabulary/apply` naming that
@@ -302,9 +302,9 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the seven shipped ones are
+A **provider** is a package a publisher owns: the eight shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop`, `/beeper` and `/slack`. The tier is read from the tree the closure
+`/whoop`, `/beeper`, `/slack` and `/slacklive`. The tier is read from the tree the closure
 came from, never guessed from an OAuth block, from account kinds, or from the
 package's name: a token or webhook provider may declare no OAuth, and an
 account-shaped package is not necessarily one.
@@ -651,7 +651,7 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the seven **providers** under `kinds/providers.substrate.reamde.dev`, and the
+the eight **providers** under `kinds/providers.substrate.reamde.dev`, and the
 thirteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `observations`, `health`, and the worked examples
 `llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`). A
@@ -835,11 +835,15 @@ as an imported copy (`ada.example.com/scheduling`) is refused, and the refusal
 names the copy: a package under another authority is another package, and
 importing the bundle instead rehomes its requirements with it.
 
-**No provider requires a sample package, and every provider installs on a bare
-repository.** A provider ships mirror kinds in its own shape and writes nothing
-else: no `requires:`, no reference pinned at a sample kind, no core row. So the
-console can install any of the seven from a repository that has imported nothing,
-and the console's Add button is never disabled for a missing requirement.
+**No provider requires a sample package, and every provider but one installs
+on a bare repository.** A provider ships mirror kinds in its own shape and
+writes nothing else: no reference pinned at a sample kind, no core row. So the
+console can install any of them from a repository that has imported nothing,
+and the console's Add button is never disabled for a missing requirement. The
+one exception is `slacklive`, which `requires:` the Slack provider and writes
+its rows
+([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)):
+its Add takes the Slack bundle first.
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the
 repository declares, from a mirror onto a kind of its own. A mapping onto a

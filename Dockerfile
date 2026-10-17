@@ -139,6 +139,36 @@ RUN set -eu; \
     mkdir /out; \
     tar -xzf /tmp/uv.tar.gz -C /out --strip-components=1 "uv-${target}/uv" "uv-${target}/uvx"
 
+# ---- slack-socket -------------------------------------------------------
+# The Socket Mode bridge (cmd/slack-socket), a second image built from this
+# file: `docker build --target slack-socket .`. BuildKit builds only the
+# stages a target reaches, so the default image never compiles it and this
+# image never carries the server, the console or python. Its own build stage,
+# on the same pinned Go as `build`, so the target compiles the bridge and
+# nothing else; it runs on the same pinned alpine as the server, as the same
+# unprivileged uid. VERSION and COMMIT are handed in as for `build`.
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS slack-socket-build
+ARG TARGETOS TARGETARCH
+ARG VERSION=""
+ARG COMMIT=""
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w \
+      -X github.com/geoah/substrate/internal/build.version=${VERSION} \
+      -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
+      -o /out/slack-socket ./cmd/slack-socket
+
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS slack-socket
+# ca-certificates for the wss:// connection to Slack and an https webhook.
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
+COPY --from=slack-socket-build /out/slack-socket /usr/local/bin/slack-socket
+EXPOSE 8080
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/slack-socket"]
+
 # ---- runtime ------------------------------------------------------------
 # The shared function runner executes inline bundle code as child processes, so
 # the image must carry the language it runs: python3, the host every function

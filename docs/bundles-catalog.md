@@ -1,16 +1,18 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty bundles, in the two tiers
+The catalog in the binary serves twenty-one bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and thirteen samples. This page covers thirteen of them;
+draws: eight providers and thirteen samples. This page covers fourteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
 
-**Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
-Each is a package its publisher owns, installed under
-`providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
-provider into the repository. Three also ship one write each, a function
+**Eight providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack and
+Slack live events. Each is a package its publisher owns, installed under
+`providers.substrate.reamde.dev` and upgraded there. Every one but Slack live
+events syncs from the provider into the repository; Slack live events applies
+Slack's pushed events to the Slack bundle's rows and needs that bundle
+([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)). Three also ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
 sync spends and writes no record; what it sent reaches the mirror only when
@@ -1167,20 +1169,30 @@ write.
   to the next invocation. Its phases run in this order: `auth.test`,
   `team.info`, `users.list`, `conversations.list`, `conversations.info`,
   `conversations.history`, `conversations.replies`, `users.info`,
-  `files.info`, `bots.info`, `conversations.members`. The same function
-  applies a batch of live events when a webhook delivers one; see
-  [live events](#live-events). `postmessage` posts one
+  `files.info`, `bots.info`, `conversations.members`. `postmessage` posts one
   message, at the top level or in a thread; see
   [writing to Slack](#writing-to-slack).
-- **Triggers (4)**: `slack-messages-on-connect` fires on an account whose
+- **Triggers (3)**: `slack-messages-on-connect` fires on an account whose
   `enabledMessages` is true and which carries no `lastSyncedAt`;
   `slack-messages-scheduled` fires every 15 minutes and takes the account
   when it is due; `slack-messages-on-demand` fires while `syncRequestedAt`
-  differs from `syncRequestedAck`; `slack-events` is the webhook a Socket
-  Mode sidecar posts live events to.
+  differs from `syncRequestedAck`.
 - **Mappings**: none shipped. `user` is the identity kind a repository would
   map onto a person, and `profile.email` is the property a mapping matches
   on.
+
+The walk sees a reaction, an edit or a delete only while the message is
+within a day of its conversation's history cursor. The opt-in
+[Slack live events](#slack-live-events) bundle applies those changes as Slack
+pushes them; this bundle ships no webhook.
+
+**Upgrading from version 21.** Version 21 was on `main` and the `latest`
+image only, never in a release. It shipped a `slack-events` webhook trigger,
+enabled and keyless, and upgrading to 22 leaves that record in place: a POST
+to it starts a `slacksync` walk. In order: stop the Socket Mode bridge,
+`substratectl delete substrate.reamde.dev/core/trigger slack-events`, upgrade
+the Slack bundle, install Slack live events and write its keyed trigger, then
+point the bridge at the new URL.
 
 The token is a secret on the `config` record, origin-pinned: the sync sends
 it to `https` on a `slack.com` host or to loopback, and an `apiBase` naming
@@ -1309,22 +1321,68 @@ only for channels, never for DMs or group DMs. A file re-shared into a new
 channel after its row was filled in is not read again, so its `shares` and
 `channels` age.
 
-### Live events
+### Writing to Slack
 
-The walk sees a reaction, an edit or a delete only while the message is
-within a day of its conversation's history cursor, so on an older message
-those changes go stale. The `slack-events` webhook trigger takes them live.
-A Slack Socket Mode sidecar, which this repository does not ship, holds the
-websocket, acknowledges each `events_api` envelope, and POSTs batches of
-their payloads to `POST /webhooks/<authority>/slack-events` as
+`postmessage` posts one message as the token's user. It takes `channel` (a
+mirrored conversation's `conversationId`), `text`, and an optional `threadTs`,
+the `ts` of the thread's parent, to reply in that thread. It calls
+`chat.postMessage` with the config's token, under the same origin pin as the
+sync, and answers the `channel` and the new message's `ts`. The pasted token
+needs Slack's `chat:write` user scope; without it Slack answers
+`missing_scope`, and every refusal (`not_in_channel`, `channel_not_found`)
+fails the call with Slack's own error code. It writes no record: the message
+reaches the `message` mirror only when the sync reads it back. A top-level
+post is read on the next sync. A reply is read when the sync already
+watches its thread, which it does for a parent it saw with replies. The next
+sync reads a first reply when its parent is within a day of the
+conversation's newest message, and misses it otherwise.
+Redirects are refused rather than followed, so the origin pin holds for the
+one request made.
+
+## Slack live events
+
+Package `providers.substrate.reamde.dev/slacklive`. It applies Slack's Events
+API, delivered over Socket Mode, to the Slack bundle's mirror rows, so a
+reaction, an edit or a delete on an older message reaches the mirror within
+seconds instead of waiting for a walk that may never reread it. It declares no
+kind: it `requires:` `providers.substrate.reamde.dev/slack` at version 22 or
+later, writes that bundle's `team`, `user`, `conversation`, `message`, `bot`
+and `file` rows under the same ids `slacksync` writes, and reads the Slack
+account it lands on. The bundle's README is
+[`slacklive/README.md`](../kinds/providers.substrate.reamde.dev/slacklive/README.md).
+
+- **Kinds**: none.
+- **Functions (1)**: `slackevents` applies one batch. Its row makers are a
+  copy of `slacksync`'s, kept in step by review.
+- **Settings**: the `userToken` secret, the same `xoxp-` token the Slack
+  bundle's `config` holds, pasted again because another bundle's injected
+  input never reaches this one; and the `apiBase` setting, origin-pinned like
+  the Slack bundle's.
+- **Triggers**: none shipped. The operator writes the `slack-live-events`
+  webhook trigger, key included, in one write.
+
+The Socket Mode bridge, [`cmd/slack-socket`](../cmd/slack-socket/README.md),
+holds Slack's websocket, acknowledges each `events_api` envelope after this
+trigger accepted it, and POSTs batches of their payloads to
+`/webhooks/<authority>/slack-live-events/<key>` as
 `Content-Type: application/json`:
 
 ```json
 {"version": 1, "events": [{"type": "event_callback", "team_id": "T…", "event_id": "Ev…", "event_time": 1760000000, "event": {"type": "reaction_added", "…": "…"}}]}
 ```
 
-`slacksync` applies the batch to the one live account, chosen as the walk
-chooses it, and writes mirror rows only. It moves no `conversationsync`
+**No webhook exists until an operator writes a keyed one.** The webhook door
+checks a key only when the trigger declares one, and nothing in the engine
+refuses a keyless webhook trigger, so the bundle ships no trigger: a shipped
+disabled record would be one Resume click in the console from an open
+endpoint. The operator writes the whole `slack-live-events` record, with
+`source.webhook.key` (matching `^[A-Za-z0-9_-]{16,128}$`; `openssl rand -hex
+32` prints one) and `enabled: true`, in one `substratectl apply -f`; the
+bundle's README has the document. It is the operator's record, so a
+reinstall or an upgrade of the bundle leaves it and its key alone.
+
+`slackevents` applies the batch to the one live Slack account, chosen as the
+walk chooses it, and writes mirror rows only. It moves no `conversationsync`
 cursor and writes no account property (`lastSyncedAt`, `streamCursors` and
 the trait stay the walk's), so a message posted while the socket was down is
 still read by the next walk. A callback whose `team_id` is not the
@@ -1358,44 +1416,22 @@ yet gets the conversation from `conversations.info`, or a row holding only
 its id when Slack refuses. `conversationFilter` holds back messages and
 reactions in the conversations it excludes. One order is not covered: a
 `message` event that arrives in a later batch than its own
-`message_deleted` (a sidecar re-posting an older batch after a newer one)
-writes the message back, and the walk does not delete it again. A sidecar
-keeps its batches in order by retrying a refused POST before it sends the
-next.
+`message_deleted` writes the message back. The bridge posts one batch at a
+time in arrival order, but a batch the door refused is left unacked and
+Slack redelivers it later, behind newer events.
 
 A batch is bounded like a walk. One invocation starts no Slack call after
 10 seconds or 20 calls and pages the rest of the batch to the next; the
 whole batch makes at most 150 calls in 75 seconds. A 429 (or a
 `retryNotBefore` the walk was given) ends the batch's calls: the events that
 need no call are still applied, and the ones that need one are left to the
-walk. A Slack refusal of one target (`message_not_found`, `missing_scope`
-when the user token lacks `reactions:read`) skips that event and the batch
-goes on. Every delivery logs one line counting what it applied, skipped and
+walk. A refused token (`invalid_auth`, `not_authed`, `account_inactive`,
+`token_revoked`, `token_expired`) ends the batch's calls the same way, counts
+those events `unauthorized` and puts `authError` in the output, because the
+second paste of the token goes stale on its own. A Slack refusal of one
+target (`message_not_found`, `missing_scope` when the user token lacks
+`reactions:read`) skips that event and the batch goes on. Every delivery logs one line counting what it applied, skipped and
 ignored.
-
-The trigger ships without a key, so the endpoint takes any POST that reaches
-the server. A deployment reachable from outside sets `source.webhook.key` on
-the trigger record (16 to 128 characters of `[A-Za-z0-9_-]`), and the
-sidecar posts to `/webhooks/<authority>/slack-events/<key>`. Applying
-`triggers.yaml` again replaces `source` and drops the key.
-
-### Writing to Slack
-
-`postmessage` posts one message as the token's user. It takes `channel` (a
-mirrored conversation's `conversationId`), `text`, and an optional `threadTs`,
-the `ts` of the thread's parent, to reply in that thread. It calls
-`chat.postMessage` with the config's token, under the same origin pin as the
-sync, and answers the `channel` and the new message's `ts`. The pasted token
-needs Slack's `chat:write` user scope; without it Slack answers
-`missing_scope`, and every refusal (`not_in_channel`, `channel_not_found`)
-fails the call with Slack's own error code. It writes no record: the message
-reaches the `message` mirror only when the sync reads it back. A top-level
-post is read on the next sync. A reply is read when the sync already
-watches its thread, which it does for a parent it saw with replies. The next
-sync reads a first reply when its parent is within a day of the
-conversation's newest message, and misses it otherwise.
-Redirects are refused rather than followed, so the origin pin holds for the
-one request made.
 
 ## Firecrawl (sample)
 

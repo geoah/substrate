@@ -6,12 +6,14 @@ require (
 	filippo.io/age v1.3.2
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/cel-go v0.31.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/moby/moby/client v0.6.1
 	github.com/pgvector/pgvector-go v0.4.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/sashabaranov/go-openai v1.43.0
+	github.com/slack-go/slack v0.29.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/teambition/rrule-go v1.8.2

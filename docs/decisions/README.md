@@ -326,6 +326,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
 | [0166](0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md) | A record page's layout is a record in a seeded console package | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |
+| [0168](0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md) | A provider's live events ship as an opt-in bundle that requires the provider, with its webhook off | accepted |
 | [0169](0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md) | A chat turn runs detached from its client, and its thread is attached by id | proposed |
 | [0170](0170-a-chat-thread-is-titled-by-its-first-message-then-by-its-model-and-an-owner-rename-holds.md) | A chat thread is titled by its first message, then by its model, and an owner rename holds | proposed |
 | [0171](0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md) | A reasoning delta is its own event, and a turn keeps a bounded summary, never the chain | proposed |

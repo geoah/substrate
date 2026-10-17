@@ -52,8 +52,11 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   tool (#712)
    18. first      a first reply posted into a mirrored message that had no
                   replies lands on the next sync (#711)
-   19. events     batches of live Events API callbacks POSTed to the
-                  `slack-events` webhook land on the mirror: a new message
+   19. events     the opt-in `slacklive` bundle, installed here: it ships
+                  no webhook, so nothing answers until the scenario writes
+                  the keyed `slack-live-events` trigger record; then a
+                  keyless or wrong-key POST is refused, and the batches of live
+                  Events API callbacks POSTed to it land on the mirror: a new message
                   and a reply, an edit that a late copy of the original does
                   not undo, a reaction added and removed (each read whole
                   from `reactions.get`), a reaction on a message the walk
@@ -72,6 +75,8 @@ import json
 import os
 import pathlib
 import re
+import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -2117,24 +2122,97 @@ def first_reply():
     note("first reply %s %s" % (reply_ts, "landed" if rows else "MISSING"))
 
 
-EVENTS_TRIGGER = "slack-events"
+LIVE = "providers.substrate.reamde.dev/slacklive"
+EVENTS_TRIGGER = "slack-live-events"
+# What an operator sets on the trigger before enabling it: 16 to 128
+# characters of [A-Za-z0-9_-].
+EVENTS_KEY = "e2e-live-events-key-0123456789"
+# e2e.json's config token: the operator pastes the Slack bundle's token into
+# this bundle's own secret.
+EVENTS_TOKEN = "xoxp-e2e-user-token"
 TRIGGERRUN = "substrate.reamde.dev/core/triggerrun"
 AUTHORITY = os.environ.get("SUBSTRATE_AUTHORITY", "")
 
 
-def post_events(callbacks):
-    """POST one batch to the webhook door the way the Socket Mode sidecar
-    does, and wait for its fire to settle. Returns the fire's triggerrun
-    status (`ok` when the batch applied), or what went wrong instead."""
-    url = "%s/webhooks/%s/%s" % (SERVER, AUTHORITY, EVENTS_TRIGGER)
+def install_live():
+    """Install the slacklive bundle the way an operator does, from a copy
+    pointed at the mock: the closure and its settings applied, the token
+    filled in. Returns what went wrong, or None. The bundle ships no trigger,
+    so no webhook answers yet."""
+    import e2e as runner  # the runner's rewiring helpers; runner/ is on PYTHONPATH
+    ctl = os.environ.get("SUBSTRATE_CTL")
+    if not ctl:
+        return "SUBSTRATE_CTL is not set, so the bundle cannot be applied"
+    work = pathlib.Path(tempfile.mkdtemp(prefix="slacklive-e2e-"))
+    files = []
+    for name in ("bundle.yaml", "settings.yaml"):
+        text = (runner.BUNDLES / "slacklive" / name).read_text()
+        text = text.replace("https://slack.com", MOCK)
+        text, _n = runner.allow_mock_host(text, urllib.parse.urlsplit(MOCK).netloc)
+        (work / name).write_text(text)
+        files.append(work / name)
+    secret = work / "token.yaml"
+    secret.write_text(
+        "kind: substrate.reamde.dev/core/secret\n"
+        "metadata:\n  id: %s/userToken\n"
+        "data:\n  properties:\n    value: %s\n" % (LIVE, EVENTS_TOKEN))
+    for batch in (files, [secret]):
+        r = live_ctl(ctl, "apply", *sum((["-f", str(f)] for f in batch), []))
+        if r.returncode != 0:
+            return "apply %s: %s" % ([f.name for f in batch],
+                                     (r.stderr or r.stdout).strip()[:400])
+    return None
+
+
+def live_ctl(ctl, *args):
+    return subprocess.run([ctl, "--context", AUTHORITY, "--server", SERVER,
+                           *args], capture_output=True, text=True)
+
+
+def key_live(key, enabled):
+    """Write the whole trigger record, key and switch included, in one
+    write, as the bundle's README tells an operator to. Returns what went
+    wrong, or None."""
+    ctl = os.environ.get("SUBSTRATE_CTL")
+    doc = pathlib.Path(tempfile.mkdtemp(prefix="slacklive-key-")) / "trigger.yaml"
+    doc.write_text(
+        "kind: substrate.reamde.dev/core/trigger\n"
+        "metadata:\n  id: %s\n"
+        "data:\n  properties:\n    enabled: %s\n    label: Slack live events\n"
+        "    source:\n      webhook:\n        key: %s\n"
+        "    callable: substrate.reamde.dev/core/function/%s/slackevents\n"
+        % (EVENTS_TRIGGER, "true" if enabled else "false", key, LIVE))
+    r = live_ctl(ctl, "apply", "-f", str(doc))
+    if r.returncode != 0:
+        return (r.stderr or r.stdout).strip()[:400]
+    return None
+
+
+def post_raw(url, callbacks):
+    """POST one batch; (status, body) or (HTTP status, error text)."""
     data = json.dumps({"version": 1, "events": callbacks}).encode()
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            status, body = r.status, json.loads(r.read() or b"{}")
+            return r.status, json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
-        return "HTTP %d %s" % (e.code, e.read()[:200].decode("utf-8", "replace"))
+        return e.code, e.read()[:200].decode("utf-8", "replace")
+
+
+def events_url(key=""):
+    url = "%s/webhooks/%s/%s" % (SERVER, AUTHORITY, EVENTS_TRIGGER)
+    return url + "/" + key if key else url
+
+
+def post_events(callbacks):
+    """POST one batch to the keyed webhook door the way the Socket Mode
+    bridge does, and wait for its fire to settle. Returns the fire's
+    triggerrun status (`ok` when the batch applied), or what went wrong
+    instead."""
+    status, body = post_raw(events_url(EVENTS_KEY), callbacks)
+    if not isinstance(body, dict):
+        return "HTTP %d %s" % (status, body)
     fire = (body or {}).get("fire")
     if status != 202 or not fire:
         return "the door answered %s %r" % (status, body)
@@ -2148,10 +2226,11 @@ def post_events(callbacks):
 
 
 def live_events():
-    """The `slack-events` webhook trigger: what a Socket Mode sidecar
-    forwards lands on the mirror rows, and moves no cursor.
+    """The slacklive bundle's `slack-live-events` webhook trigger: shipped
+    closed, and once keyed, what the Socket Mode bridge forwards lands on
+    the Slack bundle's mirror rows and moves no cursor.
 
-    Every batch goes through the public door as the sidecar sends it, and
+    Every batch goes through the public door as the bridge sends it, and
     `reactions.get` is played by the mock's rules: each answer is the
     message's whole current reaction set, which is what the body writes,
     whatever the event said."""
@@ -2185,6 +2264,25 @@ def live_events():
     if not ok(owner_row and owner_whole, "the owner %s is not in users.list "
                                          "and the mirror" % owner):
         return
+
+    # 0. Installed as shipped, no webhook answers, keyed or not; once the
+    #    keyed record is written, the keyed URL alone does.
+    why = install_live()
+    if not ok(why is None, "installing %s: %s" % (LIVE, why)):
+        return
+    for label, url in (("keyless", events_url()),
+                       ("keyed", events_url(EVENTS_KEY))):
+        status, _body = post_raw(url, [])
+        ok(status == 404, "the bundle as installed answered a %s POST with "
+                          "%s, want 404: it ships no trigger" % (label, status))
+    why = key_live(EVENTS_KEY, True)
+    if not ok(why is None, "keying the trigger: %s" % why):
+        return
+    for label, url in (("keyless", events_url()),
+                       ("wrong-key", events_url("x" * 24))):
+        status, _body = post_raw(url, [])
+        ok(status == 404, "the keyed trigger answered a %s POST with %s, "
+                          "want 404" % (label, status))
 
     def state_of(rows):
         return {rid(r): (version(r), props(r).get("latestTs"),

@@ -24,6 +24,7 @@ const BRANDS: Record<string, { name?: string; color: string }> = {
   github: { name: "GitHub", color: "var(--foreground)" },
   notion: { color: "var(--foreground)" },
   slack: { color: "#E01E5A" },
+  slacklive: { name: "Slack live events", color: "#E01E5A" },
   beeper: { color: "#6D5DFC" },
   whoop: { color: "#1CB5AC" },
 }
