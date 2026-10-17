@@ -513,6 +513,9 @@ panel on the right.
   the request and response verbatim. Only what you act on sits under the line
   whether it is open or not: a suggested change and a batch of questions. A
   thread a trigger started opens with the record whose change started it.
+  When the model exposed its thinking, a turn opens with a folded line,
+  **Thought for 12 s**, whose text shows when opened; while the turn is still
+  thinking the line reads **Thinking for 3 s** and counts.
 - **A chat's name** is its first message until the agent's first reply,
   then a short title the agent's model writes. The pencil beside the name in
   the header renames the chat (Enter saves, Escape cancels), and a rename is

@@ -97,7 +97,12 @@ data:
   for any effort but none on chat completions, so an agent with `tools:` on one
   of those needs `reasoningEffort: none` said out loud. For the same reason a
   provider row's `defaults` is the wrong home for this knob — one row serves
-  several models — and none of the seeded rows sets it.
+  several models — and none of the seeded rows sets it. The effort also
+  decides whether a model thinks at all, and so whether a chat streams
+  `reasoning` events; whether those carry any text is the model's call.
+  Anthropic's current models, asked through LiteLLM with an effort alone,
+  think without returning the text, so the stream and the row stay empty
+  ([decision 0171](decisions/0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md)).
 - **`tools:`**, the functions the model may invoke (below).
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -533,7 +538,13 @@ the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the
 tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
-sub-agent call's row), and the required `thread` it belongs to.
+sub-agent call's row), and the required `thread` it belongs to. An
+`assistant` row whose model exposed its thinking also carries `reasoning`,
+the first 4000 runes of it, and `reasoningMillis`, the time from the request
+to the last streamed piece; a completion that streamed nothing (a run with no
+client attached) keeps the text and no time. The reasoning is for people
+reading the thread: no later request replays it, and compaction never reads
+it.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
@@ -947,7 +958,9 @@ call, something durable is minted — the thread is the trace.
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with `{"thread"?, "message"}`
 opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
-per streamed token, `toolStarted` and `toolFinished` around each dispatch,
+per streamed token, `reasoning` carrying `text` per streamed piece of the
+model's thinking, ahead of that turn's `delta` events and only from a model
+that exposes it, `toolStarted` and `toolFinished` around each dispatch,
 `compacted` when the loop summarizes older turns, one `done` carrying the
 settled result under `result`). A loop that fails after the
 `200` status line has already gone out terminates the stream with an `error`

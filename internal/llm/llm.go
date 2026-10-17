@@ -242,6 +242,11 @@ type Result struct {
 	// Stop is why the turn ended, one of the Stop constants; empty when the
 	// wire said nothing.
 	Stop string
+	// Reasoning is the turn's whole thinking text as the wire returned it,
+	// streamed or not; empty when the model exposed none. A model may think
+	// and still return none: Anthropic's current models omit the text unless
+	// the request asks for a summary.
+	Reasoning string
 }
 
 // Delta is one streamed piece of a turn: exactly one of Text and Reasoning is

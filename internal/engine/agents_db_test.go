@@ -53,6 +53,10 @@ type fakeTurn struct {
 	// finish is the turn's finish_reason; empty sends "stop". A "length"
 	// turn is a reply cut off by its output ceiling.
 	finish string
+	// reasoning is the turn's thinking, sent the way LiteLLM sends it:
+	// reasoning_content deltas ahead of the content on a stream, and
+	// reasoning_content on the message of a one-shot reply.
+	reasoning string
 }
 
 // fakeLLM scripts /chat/completions per MODEL: each request pops the next
@@ -153,6 +157,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if stream, _ := req["stream"].(bool); !stream {
 		msg := map[string]any{"role": "assistant", "content": turn.content}
+		if turn.reasoning != "" {
+			msg["reasoning_content"] = turn.reasoning
+		}
 		if len(toolCalls) > 0 {
 			msg["tool_calls"] = toolCalls
 		}
@@ -168,6 +175,18 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	chunk := func(payload map[string]any) {
 		buf, _ := json.Marshal(payload)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", buf)
+	}
+	if turn.reasoning != "" {
+		runes := []rune(turn.reasoning)
+		half := len(runes) / 2
+		for _, part := range []string{string(runes[:half]), string(runes[half:])} {
+			if part == "" {
+				continue
+			}
+			chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
+				map[string]any{"index": 0, "delta": map[string]any{"reasoning_content": part}},
+			}})
+		}
 	}
 	// Content streams as two deltas so the collector sees real chunking.
 	if turn.content != "" {

@@ -573,12 +573,20 @@ type anthropicMessage struct {
 	Usage      anthropicUsage     `json:"usage"`
 }
 
+// anthropicContent is one response block. A thinking block carries Thinking
+// (empty when the model's display is omitted, the default on current models)
+// and the Signature that would let it be echoed back; a redacted_thinking
+// block carries only the opaque Data. No request here echoes either back, so
+// both are kept for the result alone.
 type anthropicContent struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
+	Signature string          `json:"signature"`
+	Data      string          `json:"data"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
 }
 
 type anthropicUsage struct {
@@ -634,6 +642,8 @@ type anthropicEvent struct {
 	Delta        struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
@@ -649,7 +659,7 @@ type anthropicEvent struct {
 
 // anthropicStream folds a stream's events into the message they describe.
 // Each block's text grows in text, beside msg.Content, so a long reply is
-// not copied once per delta.
+// not copied once per delta; a thinking block's thinking grows there too.
 type anthropicStream struct {
 	msg  anthropicMessage
 	text [][]byte
@@ -701,6 +711,10 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*
 		return nil, err
 	}
 	for i := range s.msg.Content {
+		if s.msg.Content[i].Type == "thinking" {
+			s.msg.Content[i].Thinking = string(s.text[i])
+			continue
+		}
 		s.msg.Content[i].Text = string(s.text[i])
 	}
 	return &s.msg, nil
@@ -718,7 +732,7 @@ func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 	case "message_start":
 		s.msg, s.text, s.size = ev.Message, nil, 0
 		for _, block := range s.msg.Content {
-			s.text = append(s.text, []byte(block.Text))
+			s.text = append(s.text, []byte(block.Text+block.Thinking))
 		}
 	case "message_delta":
 		s.msg.StopReason = ev.Delta.StopReason
@@ -742,7 +756,7 @@ func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 			return err
 		}
 		s.msg.Content = append(s.msg.Content, ev.ContentBlock)
-		s.text = append(s.text, []byte(ev.ContentBlock.Text))
+		s.text = append(s.text, []byte(ev.ContentBlock.Text+ev.ContentBlock.Thinking))
 	case "content_block_delta":
 		if err := s.started(ev); err != nil {
 			return err
@@ -757,6 +771,19 @@ func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 			if ev.Delta.Text != "" {
 				onDelta(Delta{Text: ev.Delta.Text})
 			}
+		case "thinking_delta":
+			if err := s.grow(len(ev.Delta.Thinking)); err != nil {
+				return err
+			}
+			s.text[ev.Index] = append(s.text[ev.Index], ev.Delta.Thinking...)
+			if ev.Delta.Thinking != "" {
+				onDelta(Delta{Reasoning: ev.Delta.Thinking})
+			}
+		case "signature_delta":
+			if err := s.grow(len(ev.Delta.Signature)); err != nil {
+				return err
+			}
+			block.Signature += ev.Delta.Signature
 		case "input_json_delta":
 			if ev.Delta.PartialJSON == "" {
 				break
@@ -821,9 +848,11 @@ func anthropicResult(msg *anthropicMessage) *Result {
 		},
 		Stop: anthropicStop(msg.StopReason),
 	}
-	var content strings.Builder
+	var content, reasoning strings.Builder
 	for _, block := range msg.Content {
 		switch block.Type {
+		case "thinking":
+			reasoning.WriteString(block.Thinking)
 		case "text":
 			content.WriteString(block.Text)
 		case "tool_use":
@@ -833,6 +862,7 @@ func anthropicResult(msg *anthropicMessage) *Result {
 		}
 	}
 	res.Content = content.String()
+	res.Reasoning = reasoning.String()
 	return res
 }
 

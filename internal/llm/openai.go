@@ -128,7 +128,7 @@ func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRe
 	msg := resp.Choices[0].Message
 	return &Result{
 		Content: msg.Content, ToolCalls: neutralToolCalls(msg.ToolCalls), Usage: usage,
-		Stop: openaiStop(resp.Choices[0].FinishReason),
+		Stop: openaiStop(resp.Choices[0].FinishReason), Reasoning: msg.ReasoningContent,
 	}, nil
 }
 
@@ -141,7 +141,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 		return nil, c.scrubbed(err)
 	}
 	defer func() { _ = stream.Close() }()
-	var content strings.Builder
+	var content, reasoning strings.Builder
 	var usage *Usage
 	// The finish reason rides one chunk near the end, and the usage chunk
 	// after it carries none, so the last one seen is the turn's.
@@ -165,6 +165,15 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			finish = fr
 		}
 		delta := chunk.Choices[0].Delta
+		// reasoning_content is the thinking text LiteLLM and the other
+		// gateways stream ahead of the content. The thinking_blocks array
+		// beside it repeats the same text plus the provider's signature and
+		// is not read: the signature only matters to a request that echoes
+		// the block back, and no request here does.
+		if delta.ReasoningContent != "" {
+			reasoning.WriteString(delta.ReasoningContent)
+			onDelta(Delta{Reasoning: delta.ReasoningContent})
+		}
 		if delta.Content != "" {
 			content.WriteString(delta.Content)
 			onDelta(Delta{Text: delta.Content})
@@ -173,7 +182,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	}
 	return &Result{
 		Content: content.String(), ToolCalls: neutralToolCalls(acc.finalize()), Usage: usage,
-		Stop: openaiStop(finish),
+		Stop: openaiStop(finish), Reasoning: reasoning.String(),
 	}, nil
 }
 

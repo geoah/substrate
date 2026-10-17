@@ -71,6 +71,10 @@ const (
 	// failed after the status line was gone, so the failure travels as its own
 	// event rather than masquerading as a done with no result.
 	AgentEventError = "error"
+
+	// AgentEventReasoning is a streamed piece of the model's thinking, in Text,
+	// ahead of the turn's deltas; only from a model and wire that expose it.
+	AgentEventReasoning = "reasoning"
 )
 
 // AgentEvent is one streamed loop event (the chat transport; ndjson on the
@@ -79,7 +83,7 @@ type AgentEvent struct {
 	Kind string `json:"kind"`
 	// Thread rides the first event: the thread id, minted or continued.
 	Thread string `json:"thread,omitempty"`
-	// Text is a streamed content delta.
+	// Text is a streamed content delta, or a reasoning piece.
 	Text string `json:"text,omitempty"`
 	// Tool/Args/OK shape the tool lifecycle events, and ID is the tool call
 	// they belong to: a turn may dispatch the same tool twice, so the NAME

@@ -103,6 +103,18 @@ export interface TurnView {
   changes?: ChangeStamp[]
   /** On a summary turn: what it folded. */
   compaction?: CompactionView
+  /** On an assistant turn: the model's thinking, as the row keeps it (at
+   * most its first 4000 runes) or as the live `reasoning` events carry it.
+   * Absent when the model exposed none. */
+  reasoning?: string
+  /** How long the model thought, in milliseconds: the row's
+   * `reasoningMillis`, or on a live turn the time from its first reasoning
+   * event to its first text or tool call. Absent while it is still
+   * thinking, and on a row whose completion streamed nothing. */
+  reasoningMillis?: number
+  /** On a live turn still thinking: when its first reasoning event arrived
+   * (`Date.now()`), so a reader can count the seconds. */
+  reasoningStartedAt?: number
 }
 
 function str(value: unknown): string {
@@ -321,11 +333,21 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
     if (role === "user" || role === "assistant") {
       const tools = role === "assistant" ? callsOf(record) : []
       for (const call of tools) if (call.id) pending.set(call.id, call)
+      const reasoning =
+        role === "assistant" ? str(record.properties.reasoning) : ""
+      const reasoningMillis =
+        role === "assistant"
+          ? num(record.properties.reasoningMillis)
+          : undefined
       turns.push({
         key: record.id,
         role,
         content: str(record.properties.content),
         tools,
+        ...(reasoning ? { reasoning } : {}),
+        ...(reasoning && reasoningMillis !== undefined
+          ? { reasoningMillis }
+          : {}),
       })
       continue
     }
@@ -573,12 +595,60 @@ export interface LiveOverlay {
 
 export const EMPTY_OVERLAY: LiveOverlay = { turns: [], closed: false }
 
+/** Stops a live turn's thinking clock: its first text or tool call ends the
+ * thinking, and the elapsed time becomes the turn's `reasoningMillis`. */
+function doneThinking(turn: TurnView, now: number): TurnView {
+  if (turn.reasoningStartedAt === undefined) return turn
+  const { reasoningStartedAt, ...rest } = turn
+  return {
+    ...rest,
+    reasoningMillis: Math.max(0, now - reasoningStartedAt),
+  }
+}
+
+/** Appends a piece of the model's thinking. Thinking opens a completion, so
+ * it starts a new assistant turn unless the one in flight has neither text
+ * nor tool calls yet. */
+export function pushReasoning(
+  live: LiveOverlay,
+  text: string,
+  seq: number,
+  now: number = Date.now()
+): LiveOverlay {
+  const turns = [...live.turns]
+  const last = turns[turns.length - 1]
+  if (
+    !last ||
+    last.role !== "assistant" ||
+    live.closed ||
+    last.content !== "" ||
+    last.tools.length > 0
+  ) {
+    turns.push({
+      key: `live-a${seq}`,
+      role: "assistant",
+      content: "",
+      tools: [],
+      reasoning: text,
+      reasoningStartedAt: now,
+    })
+    return { turns, closed: false }
+  }
+  turns[turns.length - 1] = {
+    ...last,
+    reasoning: (last.reasoning ?? "") + text,
+    reasoningStartedAt: last.reasoningStartedAt ?? now,
+  }
+  return { turns, closed: false }
+}
+
 /** Appends a delta, starting a new assistant turn when the previous one has
  * already dispatched and settled its tools. */
 export function pushDelta(
   live: LiveOverlay,
   text: string,
-  seq: number
+  seq: number,
+  now: number = Date.now()
 ): LiveOverlay {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
@@ -591,7 +661,10 @@ export function pushDelta(
     })
     return { turns, closed: false }
   }
-  turns[turns.length - 1] = { ...last, content: last.content + text }
+  turns[turns.length - 1] = {
+    ...doneThinking(last, now),
+    content: last.content + text,
+  }
   return { turns, closed: false }
 }
 
@@ -600,7 +673,8 @@ export function pushDelta(
 export function pushToolStart(
   live: LiveOverlay,
   call: ToolCallView,
-  seq: number
+  seq: number,
+  now: number = Date.now()
 ): LiveOverlay {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
@@ -613,7 +687,10 @@ export function pushToolStart(
     })
     return { ...live, turns }
   }
-  turns[turns.length - 1] = { ...last, tools: [...last.tools, call] }
+  turns[turns.length - 1] = {
+    ...doneThinking(last, now),
+    tools: [...last.tools, call],
+  }
   return { ...live, turns }
 }
 

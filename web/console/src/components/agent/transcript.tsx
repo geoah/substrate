@@ -7,7 +7,8 @@
  * Consecutive assistant turns are ONE reply to the reader: a loop that reads,
  * then suggests, then answers is three turns on the wire and one message on
  * screen. Within a turn, its tool calls sit above its text, because one
- * completion produces both and the text is what follows the calls. */
+ * completion produces both and the text is what follows the calls; the
+ * model's thinking, when it shows any, sits above both, folded. */
 
 import {
   CheckCircle2Icon,
@@ -19,6 +20,7 @@ import {
 import { AgentMark } from "@/components/agent/agent-mark"
 import { ChangesList } from "@/components/agent/changes"
 import { MessageText } from "@/components/agent/message-text"
+import { Reasoning } from "@/components/agent/reasoning"
 import { ToolCallCard } from "@/components/agent/tool-call"
 import { TriggerContext } from "@/components/agent/trigger-context"
 import { IdText } from "@/components/identity/id-text"
@@ -215,6 +217,7 @@ function AgentReply({
       <div className="flex min-w-0 flex-col gap-2.5">
         {turns.map((turn) => (
           <div key={turn.key} className="flex min-w-0 flex-col gap-2.5">
+            {turn.reasoning && <Reasoning turn={turn} />}
             {turn.tools.map((call, i) => (
               <ToolCallCard
                 key={call.id || `${turn.key}:${i}`}

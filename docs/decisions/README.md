@@ -314,3 +314,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |
 | [0170](0170-a-chat-thread-is-titled-by-its-first-message-then-by-its-model-and-an-owner-rename-holds.md) | A chat thread is titled by its first message, then by its model, and an owner rename holds | proposed |
+| [0171](0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md) | A reasoning delta is its own event, and a turn keeps a bounded summary, never the chain | proposed |

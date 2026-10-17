@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"","thinking_blocks":[{"type":"thinking","thinking":"","signature":"REDACTED-SIGNATURE"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":"","signature":"REDACTED-SIGNATURE"}]},"content":"","role":"assistant"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":"1"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":"574"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{}}],"usage":{"completion_tokens":34,"prompt_tokens":34,"total_tokens":68,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":34},"prompt_tokens_details":{"cached_tokens":0,"text_tokens":34,"cache_creation_tokens":0,"cache_creation_token_details":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}},"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
+
+data: [DONE]
+
