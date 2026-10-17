@@ -1025,6 +1025,11 @@ again by its id:
   turn running it is `409 conflict` (`thread <id> has no running chat turn`);
   an unknown thread is `404 not_found`.
 
+A stop that arrives while the turn is finishing on its own (writing its
+last row) still settles it `stopped`, keeping the reply it got, and the stop
+reaches an agent a function tool of the turn runs (`host.agents.call`) as it
+reaches a sub-agent. A message write that fails settles the thread `error`.
+
 **A stopped thread holds until its owner writes again.** Nothing resumes it
 on its own: not a resolution that landed during the turn, not one that lands
 later, and not the resolution sweep. The owner's next message replays the

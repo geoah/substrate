@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"unsafe"
 
@@ -85,23 +84,26 @@ func (h *turnHub) setRun(run context.Context, cancel context.CancelFunc) {
 	}
 }
 
-// replayEntry is one retained event. A delta's text grows in a builder as
-// later deltas of the same turn merge into it.
+// replayEntry is one retained event. A streamed piece's text lives in buf,
+// which later pieces of the same kind and turn are appended to.
 type replayEntry struct {
-	ev   substrate.AgentEvent
-	text *strings.Builder
+	ev     substrate.AgentEvent
+	merges bool
+	buf    []byte
 }
 
 func (e replayEntry) event() substrate.AgentEvent {
 	ev := e.ev
-	if e.text != nil {
-		ev.Text = e.text.String()
+	if e.merges && len(e.buf) > 0 {
+		// Bytes already in buf are never written again: a merge appends
+		// past them or moves to a new array, so the string stays valid.
+		ev.Text = unsafe.String(&e.buf[0], len(e.buf))
 	}
 	return ev
 }
 
 // agentEventSize is what one retained event costs before its strings.
-var agentEventSize = int(unsafe.Sizeof(substrate.AgentEvent{})) + int(unsafe.Sizeof(replayEntry{}))
+var agentEventSize = int(unsafe.Sizeof(replayEntry{}))
 
 // eventBytes is what retaining an event costs the replay bound.
 func eventBytes(ev substrate.AgentEvent) int {
@@ -116,17 +118,25 @@ func streamed(ev substrate.AgentEvent) bool {
 
 // retain adds ev to the replay, merging a delta (or a reasoning piece) into
 // the one before it when both are of one kind and one turn. It reports false
-// when the bound would be passed.
+// when the bound would be passed: the bound is checked against what a merge
+// will allocate, before it allocates.
 func (h *turnHub) retain(ev substrate.AgentEvent) bool {
 	if n := len(h.replay); streamed(ev) && n > 0 {
 		last := &h.replay[n-1]
-		if last.text != nil && last.ev.Kind == ev.Kind && last.ev.Turn == ev.Turn {
-			before := last.text.Cap()
-			if h.bytes+max(before, last.text.Len()+len(ev.Text))-before > h.limit {
+		if last.merges && last.ev.Kind == ev.Kind && last.ev.Turn == ev.Turn {
+			need := len(last.buf) + len(ev.Text)
+			if need <= cap(last.buf) {
+				last.buf = append(last.buf, ev.Text...)
+				return true
+			}
+			grown := max(2*cap(last.buf), need)
+			if h.bytes+grown-cap(last.buf) > h.limit {
 				return false
 			}
-			last.text.WriteString(ev.Text)
-			h.bytes += last.text.Cap() - before
+			buf := make([]byte, len(last.buf), grown)
+			copy(buf, last.buf)
+			h.bytes += grown - cap(last.buf)
+			last.buf = append(buf, ev.Text...)
 			return true
 		}
 	}
@@ -137,10 +147,9 @@ func (h *turnHub) retain(ev substrate.AgentEvent) bool {
 	h.bytes += n
 	entry := replayEntry{ev: ev}
 	if streamed(ev) {
-		entry.text = &strings.Builder{}
-		entry.text.WriteString(ev.Text)
+		entry.merges = true
+		entry.buf = append(make([]byte, 0, len(ev.Text)), ev.Text...)
 		entry.ev.Text = ""
-		h.bytes += entry.text.Cap() - len(ev.Text)
 	}
 	h.replay = append(h.replay, entry)
 	return true
@@ -204,6 +213,17 @@ func (h *turnHub) stop(actor substrate.Actor) {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// runContext is the turn's run context, which a stop and the shutdown
+// cancel; a background context before the run starts.
+func (h *turnHub) runContext() context.Context {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.run == nil {
+		return context.Background()
+	}
+	return h.run
 }
 
 // ended reports whether the turn's run context ended: a stop or the

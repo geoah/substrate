@@ -165,6 +165,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 		ds: ds, stack: append(slices.Clone(origin.stack), fn.Identity()),
 		causedBy: origin.causedBy, threads: origin.threads, scrub: newScrubber(),
 		emitCeiling: origin.emitCeiling, ceilinged: origin.ceilinged,
+		stopHub: origin.stopHub,
 	}
 	// The runner's `config` field, resolved per invocation (invocationconfig.go):
 	// a bundle function receives its bundle's `inject: functions` inputs,
@@ -253,6 +254,9 @@ type invocation struct {
 	// a function tool never widens its caller's writes (record 0121).
 	emitCeiling []string
 	ceilinged   bool
+	// stopHub is the detached chat turn whose function tool this root runs
+	// as, nil otherwise: an agent a body under it runs is stopped with it.
+	stopHub *turnHub
 	// effects accumulates the sub-calls' decoded effects, in call order.
 	// They apply in the CALLER's delivery transaction, before the caller's
 	// own — each decoded against ITS function's capability envelope. A
@@ -519,8 +523,18 @@ func (b *callBackend) callAgent(ctx context.Context, ident string, args any) (an
 	// loop runs uncancelled and takes the deadline as its own instead: it
 	// settles its thread rather than leaving it running under its lease.
 	notAfter, _ := ctx.Deadline()
-	res, err := ds.runAgent(context.WithoutCancel(ctx), ag, agentInvocation{
-		mode: "call", user: user, notAfter: notAfter,
+	rctx := context.WithoutCancel(ctx)
+	if hub := b.inv.stopHub; hub != nil {
+		// Under a detached chat turn the stop still reaches the run: its
+		// writes are bounded and outlive it (agentloop.go writeContext).
+		var cancel context.CancelFunc
+		rctx, cancel = context.WithCancel(rctx)
+		defer cancel()
+		defer context.AfterFunc(hub.runContext(), cancel)()
+	}
+	res, err := ds.runAgent(rctx, ag, agentInvocation{
+		stopHub: b.inv.stopHub,
+		mode:    "call", user: user, notAfter: notAfter,
 		// The first message is the calling function's, so the thread says
 		// who asked.
 		userActor: substrate.Actor(b.fn.Actor()),
@@ -559,6 +573,7 @@ type callOrigin struct {
 	threads     *agentThreads
 	emitCeiling []string
 	ceilinged   bool
+	stopHub     *turnHub
 }
 
 // agentThreads records the first agent thread a function body opened

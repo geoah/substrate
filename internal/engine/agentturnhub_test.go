@@ -14,8 +14,8 @@ import (
 func TestTheReplayBufferIsBounded(t *testing.T) {
 	t.Parallel()
 	h := newTurnHub()
-	// Room for two retained deltas, each its event and an 8-byte buffer.
-	h.limit = 2 * (agentEventSize + 8)
+	// Room for two retained deltas, each its event and its 4-byte text.
+	h.limit = 2 * (agentEventSize + 4)
 	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th"})
 	for i, text := range []string{"abcd", "efgh", "ijkl"} {
 		h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: text, Turn: i + 1})
@@ -162,5 +162,25 @@ func TestTheReplayMergesReasoningApartFromTheReply(t *testing.T) {
 	want := "reasoning:1:think more,delta:1:say it,reasoning:1:again,reasoning:3:next turn"
 	if strings.Join(got, ",") != want {
 		t.Fatalf("replay = %s, want %s", strings.Join(got, ","), want)
+	}
+}
+
+// Merging a delta grows its buffer to twice its size and more: the bound is
+// checked against the grown buffer, so the hub never holds past its limit.
+func TestAMergedDeltaNeverGrowsPastTheBound(t *testing.T) {
+	t.Parallel()
+	h := newTurnHub()
+	h.limit = agentEventSize + 100
+	for range 200 {
+		h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "abc", Turn: 1})
+		if h.bytes > h.limit {
+			t.Fatalf("the hub holds %d bytes against a limit of %d", h.bytes, h.limit)
+		}
+	}
+	if !h.overflow {
+		t.Fatal("600 bytes of text fit a 100-byte bound")
+	}
+	if got := len(h.replay[0].event().Text); got == 0 || got > 100 {
+		t.Fatalf("retained %d bytes of text", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -303,5 +304,129 @@ func TestRunningChatTurnsAreCapped(t *testing.T) {
 	fake.script("chat", fakeTurn{content: "room again"})
 	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "now", nil); err != nil {
 		t.Fatalf("a turn after the others settled: %v", err)
+	}
+}
+
+// A stop that lands while the turn writes its final reply decides the
+// settle: the thread settles `stopped` with the reply it got, and the
+// resolution that landed meanwhile starts no continuation.
+func TestAStopDuringTheFinalWriteSettlesStoppedAndResumesNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-late", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writing, release := make(chan struct{}), make(chan struct{})
+	ds.agentRowWrite = func(ctx context.Context, props map[string]any) error {
+		if props["role"] == "assistant" && props["content"] == "final answer" {
+			close(writing)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}
+	fake.script("root",
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-late","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{content: "final answer"},
+	)
+	log := newEventLog()
+	go func() {
+		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", "", "change the widget", log.emit)
+	}()
+	waitArrived(t, writing, "the final reply write")
+	thread := log.snapshot()[0].Thread
+	req := onlyPatchRequest(t, ds)
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
+	}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	stopped := make(chan *substrate.AgentResult, 1)
+	go func() {
+		res, _ := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread)
+		stopped <- res
+	}()
+	waitUntil(t, "the stop to reach the turn", func() bool {
+		v, ok := ds.runningThreads.Load(thread)
+		return ok && v.(*agentLoop).hub.stopper() != ""
+	})
+	close(release)
+	res := <-stopped
+	if res == nil || res.Status != threadStopped || res.Reply != "final answer" {
+		t.Fatalf("stop = %+v, want stopped with the final reply", res)
+	}
+	holdFor(t, "the stop", func() bool {
+		return threadProps(t, ds, thread)["status"] == threadStopped && len(fake.requestsOf("root")) == 2
+	})
+	msgs := threadMessages(t, ds, thread)
+	if last := msgs[len(msgs)-1]; last["content"] != "final answer" && msgs[len(msgs)-2]["content"] != "final answer" {
+		t.Fatalf("the final reply row is missing: %+v", msgs)
+	}
+}
+
+// A message write that fails settles the thread `error`, so it does not
+// stay `running` under its lease.
+func TestAFailedMessageWriteSettlesTheThread(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
+		if props["role"] == "assistant" {
+			return errors.New("the disk is full")
+		}
+		return nil
+	}
+	fake.script("chat", fakeTurn{content: "never lands"})
+	log := newEventLog()
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", log.emit); err == nil {
+		t.Fatal("a turn whose reply could not be written succeeded")
+	}
+	thread := log.snapshot()[0].Thread
+	props := threadProps(t, ds, thread)
+	if props["status"] != threadError || !strings.Contains(fmt.Sprint(props["reason"]), "the disk is full") {
+		t.Fatalf("thread = %v (%v), want error naming the write", props["status"], props["reason"])
+	}
+}
+
+// A chat's function tool that runs an agent (`host.agents.call`) is part of
+// the turn: a stop cancels that agent's model call, its thread settles
+// `stopped`, and the stop answers without waiting for the model.
+func TestAStopReachesAnAgentAFunctionToolRuns(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+	editorArrived := make(chan struct{})
+	held, _ := heldTurn(t)
+	fake.script("steward", fakeTurn{calls: []fakeCall{{"curator", `{}`}}})
+	fake.script("edit", fakeTurn{content: "a widget", arrived: editorArrived, release: held})
+	log := newEventLog()
+	go func() {
+		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, relayPackage+"/steward", "", "make one", log.emit)
+	}()
+	waitArrived(t, editorArrived, "the editor's completion")
+	thread := log.snapshot()[0].Thread
+	stopped := make(chan *substrate.AgentResult, 1)
+	go func() {
+		res, _ := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread)
+		stopped <- res
+	}()
+	select {
+	case res := <-stopped:
+		if res == nil || res.Status != threadStopped {
+			t.Fatalf("stop = %+v", res)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the stop waited on the agent the function tool runs")
+	}
+	editors := agentThreadsOf(t, ds, "editor")
+	if len(editors) != 1 || editors[0]["status"] != threadStopped {
+		t.Fatalf("editor threads = %+v, want one stopped", editors)
 	}
 }

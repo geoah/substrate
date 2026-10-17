@@ -794,7 +794,7 @@ loop:
 		if len(calls) == 0 {
 			// The final tool-free reply is the loop's natural end.
 			if err := l.putReply(ctx, l.reasoning.stamp(map[string]any{"role": "assistant", "content": content})); err != nil {
-				return nil, err
+				return nil, l.failWrite(ctx, err)
 			}
 			status, reply = threadOK, content
 			break
@@ -812,7 +812,7 @@ loop:
 			props["content"] = content
 		}
 		if err := l.putReply(ctx, l.reasoning.stamp(props)); err != nil {
-			return nil, err
+			return nil, l.failWrite(ctx, err)
 		}
 		// The signed thinking rides this run's tail alone, never the row: the
 		// next request needs it beside the tool results, and no later run
@@ -869,7 +869,7 @@ loop:
 			err := l.putMessageAt(wctx, l.actor, toolTurn, toolProps)
 			done()
 			if err != nil {
-				return nil, err
+				return nil, l.failWrite(ctx, err)
 			}
 			messages = append(messages, llm.Message{
 				Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: out,
@@ -886,6 +886,12 @@ loop:
 	}
 	if status == threadOverBudget && reason == "" {
 		reason = fmt.Sprintf("max turns reached (%d)", l.ag.Budgets.MaxTurns)
+	}
+	// A stop that came while the turn finished on its own (its last write,
+	// say) still decides the settle: the owner asked to stop, so the thread
+	// settles `stopped`, keeping the reply it got.
+	if why := l.stopRequested(); why != "" && (status == threadOK || status == threadOverBudget) {
+		status, reason = threadStopped, why
 	}
 	if status == threadOK {
 		// Before the result and the settle, so the summarizer's tokens land
@@ -917,9 +923,13 @@ loop:
 	defer cancelSettle()
 	if err := l.settle(sctx, status, reason, reply, complete); err != nil {
 		// The terminal patch rolled back with the completion: settle the
-		// thread as an error in a transaction of its own, so it does not
-		// stay `running` under its lease.
-		if serr := l.settle(sctx, threadError, err.Error(), reply, nil); serr != nil {
+		// thread as an error in a transaction of its own, on a budget of its
+		// own (the first may have spent it), so it does not stay `running`
+		// under its lease.
+		fctx, done := l.settleContext(ctx)
+		serr := l.settle(fctx, threadError, err.Error(), reply, nil)
+		done()
+		if serr != nil {
 			l.ds.svc.log.Warn("substrate: settling a thread whose completion failed", "thread", l.threadID, "error", serr)
 		}
 		return nil, err
@@ -929,7 +939,7 @@ loop:
 	// there — pick them up with a fresh continuation instead of waiting for
 	// the sweep (agentdecision.go). A stopped thread holds until its owner
 	// writes again: their next message replays the resolution rows.
-	if status != threadStopped {
+	if status != threadStopped && l.stopRequested() == "" {
 		l.recheckResolutions(sctx)
 	}
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
@@ -950,6 +960,31 @@ func (l *agentLoop) stopReason(ctx context.Context) (bool, string) {
 		return true, reasonStoppedBy(actor)
 	}
 	return true, reasonShutdown
+}
+
+// stopRequested is the reason a stop of the detached turn this run belongs
+// to settles with, or "" when nobody asked for one. Unlike stopReason it
+// does not need the run's context to have ended: a stop that lands while the
+// turn writes its last row still decides how it settles.
+func (l *agentLoop) stopRequested() string {
+	if h := l.in.stopHub; h != nil {
+		if actor := h.stopper(); actor != "" {
+			return reasonStoppedBy(actor)
+		}
+	}
+	return ""
+}
+
+// failWrite settles the thread `error` after one of the loop's own message
+// writes failed, on a budget of its own, so the thread does not stay
+// `running` under its lease and a stop does not answer that nothing runs.
+func (l *agentLoop) failWrite(ctx context.Context, err error) error {
+	sctx, done := l.settleContext(ctx)
+	defer done()
+	if serr := l.settle(sctx, threadError, err.Error(), "", nil); serr != nil {
+		l.ds.svc.log.Warn("substrate: settling a thread after a failed message write", "thread", l.threadID, "error", serr)
+	}
+	return err
 }
 
 // writeContext is the context one of the loop's own writes runs on. A
@@ -2054,6 +2089,9 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	fctx := withCallOrigin(ctx, callOrigin{
 		causedBy: l.in.causedBy, stack: l.in.callStack,
 		emitCeiling: l.emit, ceilinged: true,
+		// An agent the body runs is part of this detached turn: a stop
+		// reaches it as it reaches a sub-agent.
+		stopHub: l.in.stopHub,
 	})
 	effects, output, err := l.ds.runCallable(fctx, fn, runner.Input{
 		Mode: runner.ModeCall, Args: input,
