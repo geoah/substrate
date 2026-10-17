@@ -125,6 +125,7 @@ is wrong:
     SUBSTRATE_SERVER     http://localhost:8081
     SUBSTRATE_TOKEN      the target repository's bearer
     SUBSTRATE_AUTHORITY  the repository (e2e-github.localhost)
+    SUBSTRATE_CTL        the substratectl the run applies with
     MOCK_URL             http://127.0.0.1:<port>
     MODE                 e2e
     PROVIDER             github
@@ -1183,6 +1184,9 @@ def run_scenario(a, edir: pathlib.Path, mock: str, recordings: pathlib.Path,
     env.update({
         "SUBSTRATE_SERVER": a.server, "SUBSTRATE_TOKEN": a.token,
         "SUBSTRATE_AUTHORITY": a.authority, "MOCK_URL": mock,
+        # The substratectl the run applies with, so a scenario can install a
+        # second closure beside the provider's (slack's installs slacklive).
+        "SUBSTRATE_CTL": a.ctl,
         "MODE": a.mode, "PROVIDER": a.provider,
         "ACCOUNT_KIND": akind, "ACCOUNT_ID": account_id,
         "CONFIG_KIND": ckind, "RECORDINGS": str(recordings),

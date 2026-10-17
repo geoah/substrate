@@ -1,42 +1,57 @@
 package providertest
 
-// The Slack bundle's live events path: a batch of Events API callbacks, as
-// the `slack-events` webhook trigger delivers it, stepped through `slacksync`
-// against the loopback fake with every page applied.
+// The Slack live events bundle's `slackevents`: a batch of Events API
+// callbacks, as the `slack-live-events` webhook trigger delivers it, stepped
+// against the loopback fake with every page applied, over the rows the Slack
+// bundle's `slacksync` walked first.
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const slackSyncStateType = slackPackage + "/conversationsync"
+const (
+	slackLiveDir       = providersDir + "/slacklive"
+	slackLivePackage   = "providers.substrate.reamde.dev/slacklive"
+	slackEventsFn      = slackLivePackage + "/slackevents"
+	slackSyncStateType = slackPackage + "/conversationsync"
+)
+
+// slackLiveSetup is slackSetup with the live events bundle installed beside
+// the Slack bundle. rewrites edit the `slackevents` body.
+func slackLiveSetup(t *testing.T, ds substrate.Dataset, f *fakeSlack, rewrites ...[2]string) {
+	t.Helper()
+	slackSetup(t, ds, f)
+	installRewired(t, ds, slackLiveDir, rewrites...)
+}
 
 // slackEvents delivers one batch of callbacks the way the webhook trigger
-// does, page by page with every page applied, and returns the body's
-// output with the number of pages under `pages`. It fails the test on any write to the account or to a
-// conversationsync row: the events path moves no cursor and stamps nothing.
+// does, page by page with every page applied, and returns the body's output
+// with the number of pages under `pages`. The injected config carries the
+// bundle's settings and NO accounts: the account is another package's kind,
+// so the body reads it. It fails the test on any write to the account or to
+// a conversationsync row: the events path moves no cursor and stamps nothing.
 func slackEvents(t *testing.T, ds substrate.Dataset, f *fakeSlack, callbacks ...map[string]any) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, slackAccountType, slackAccountID)
-	conn := mustGet(t, ds, slackConfigType, "default")
 	cfg := map[string]any{
-		"accounts": []any{map[string]any{
-			"id": slackAccountID, "kind": slackAccountType,
-			"version": row.Version, "properties": row.Properties,
-		}},
-		"inputs": map[string]any{"connector": map[string]any{
-			"id": conn.ID, "kind": slackConfigType, "version": conn.Version,
-			"properties": map[string]any{"userToken": fakeToken, "apiBase": f.ts.URL},
-		}},
+		"bundle":   slackLivePackage,
+		"settings": map[string]any{"userToken": fakeToken, "apiBase": f.ts.URL},
 	}
 	body, err := json.Marshal(map[string]any{"version": 1, "events": callbacks})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newStepper(t, ds, slackSyncFn, cfg)
+	s := newStepper(t, ds, slackEventsFn, cfg)
 	s.setEnvelope(map[string]any{
 		"fire":       map[string]any{"id": "hook-test", "at": "2026-10-15T00:00:00Z"},
 		"repository": map[string]any{"authority": "test.example.com"},
@@ -98,20 +113,20 @@ func reactionNames(row *substrate.Record) []string {
 	return out
 }
 
-// TestSlackEventsApplyToTheMirror walks one conversation through the events
+// TestSlackLiveEventsApplyToTheMirror walks one conversation through the events
 // a live socket carries and holds each write to what Slack says now: a new
 // message, a repeat, a foreign workspace's callback, a reply, an edit and a
 // late copy of the original, a reaction added and removed, a reaction on a
 // message the walk never read, and a delete. No cursor and no account
 // property moves.
-func TestSlackEventsApplyToTheMirror(t *testing.T) {
+func TestSlackLiveEventsApplyToTheMirror(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	ds, _ := slackDataset(t)
 	f := newFakeSlack(t)
 	f.channels = []map[string]any{slackChannel("C1")}
 	f.history["C1"] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
-	slackSetup(t, ds, f)
+	slackLiveSetup(t, ds, f)
 	slackRun(t, ds, f, nil)
 
 	acct := mustGet(t, ds, slackAccountType, slackAccountID)
@@ -241,17 +256,17 @@ func TestSlackEventsApplyToTheMirror(t *testing.T) {
 	}
 }
 
-// TestSlackEventsRateLimitEndsTheCalls: a 429 ends the batch's calls, the
+// TestSlackLiveEventsRateLimitEndsTheCalls: a 429 ends the batch's calls, the
 // event that needed one is counted `limited`, and an event after it that
 // needs none is still applied.
-func TestSlackEventsRateLimitEndsTheCalls(t *testing.T) {
+func TestSlackLiveEventsRateLimitEndsTheCalls(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	ds, _ := slackDataset(t)
 	f := newFakeSlack(t)
 	f.channels = []map[string]any{slackChannel("C1")}
 	f.history["C1"] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
-	slackSetup(t, ds, f)
+	slackLiveSetup(t, ds, f)
 	slackRun(t, ds, f, nil)
 
 	f.limited = true
@@ -283,16 +298,16 @@ func TestSlackEventsRateLimitEndsTheCalls(t *testing.T) {
 	}
 }
 
-// TestSlackEventsConversationsUsersPinsFiles: the events that are not
+// TestSlackLiveEventsConversationsUsersPinsFiles: the events that are not
 // messages each set the one fact they name, on the row the walk wrote.
-func TestSlackEventsConversationsUsersPinsFiles(t *testing.T) {
+func TestSlackLiveEventsConversationsUsersPinsFiles(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	ds, _ := slackDataset(t)
 	f := newFakeSlack(t)
 	f.channels = []map[string]any{slackChannel("C1")}
 	f.history["C1"] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
-	slackSetup(t, ds, f)
+	slackLiveSetup(t, ds, f)
 	mustPut(t, ds, substrate.PutInput{Kind: slackAccountType, ID: slackAccountID, Properties: map[string]any{
 		"enabledMembers": true,
 	}})
@@ -378,10 +393,10 @@ func TestSlackEventsConversationsUsersPinsFiles(t *testing.T) {
 	}
 }
 
-// TestSlackEventsPageOnTheirBudget: a batch that needs more calls than one
+// TestSlackLiveEventsPageOnTheirBudget: a batch that needs more calls than one
 // invocation may make continues on the next page, and every event lands
 // once.
-func TestSlackEventsPageOnTheirBudget(t *testing.T) {
+func TestSlackLiveEventsPageOnTheirBudget(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	ds, _ := slackDataset(t)
@@ -401,7 +416,7 @@ func TestSlackEventsPageOnTheirBudget(t *testing.T) {
 		}))
 	}
 	f.history["C1"] = history
-	slackSetup(t, ds, f, [2]string{"EVENT_PAGE_CALLS = 20", "EVENT_PAGE_CALLS = 1"})
+	slackLiveSetup(t, ds, f, [2]string{"EVENT_PAGE_CALLS = 20", "EVENT_PAGE_CALLS = 1"})
 	slackRun(t, ds, f, nil)
 
 	out := slackEvents(t, ds, f, callbacks...)
@@ -415,5 +430,214 @@ func TestSlackEventsPageOnTheirBudget(t *testing.T) {
 		if got := reactionNames(slackMessageAt(t, ds, m["ts"].(string))); len(got) != 1 {
 			t.Fatalf("message %s holds reactions %v after the paged batch", m["ts"], got)
 		}
+	}
+}
+
+// TestSlackLiveShipsNoWebhookTrigger: the bundle ships no trigger at all.
+// The webhook door checks a key only where the trigger declares one, so a
+// shipped keyless record, even a disabled one, is one Resume click away from
+// an endpoint anyone can POST Slack rows to. The operator writes the keyed
+// record (the README's).
+func TestSlackLiveShipsNoWebhookTrigger(t *testing.T) {
+	t.Parallel()
+	entries, err := os.ReadDir(slackLiveDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		for _, d := range loadDocs(t, slackLiveDir+"/"+e.Name()) {
+			if d["kind"] == vocabulary.CoreKind("trigger") {
+				meta, _ := d["metadata"].(map[string]any)
+				t.Fatalf("%s ships the trigger %v: the operator writes the keyed trigger record, the bundle ships none", e.Name(), meta["id"])
+			}
+		}
+	}
+}
+
+// TestSlackLiveEventsStopOnARefusedToken: a token Slack refuses ends the
+// batch's calls like a 429 does, the events that need no call still land,
+// and the output names the refusal so a stale second paste is visible.
+func TestSlackLiveEventsStopOnARefusedToken(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, logs := slackDataset(t)
+	f := newFakeSlack(t)
+	f.channels = []map[string]any{slackChannel("C1")}
+	f.history["C1"] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
+	slackLiveSetup(t, ds, f)
+	slackRun(t, ds, f, nil)
+
+	f.refuse["reactions.get C1"] = "invalid_auth"
+	reaction := func(id, at string) map[string]any {
+		return slackCallback(id, slackTeam, map[string]any{
+			"type": "reaction_added", "user": slackOwner, "reaction": "eyes", "event_ts": at,
+			"item": map[string]any{"type": "message", "channel": "C1", "ts": "1700000000.000100"},
+		})
+	}
+	out := slackEvents(t, ds, f,
+		reaction("Ev1", "1700000100.000100"),
+		slackCallback("Ev2", slackTeam, map[string]any{
+			"type": "message", "channel": "C1", "user": slackOwner,
+			"text": "after the refusal", "ts": "1700000200.000100", "event_ts": "1700000200.000100",
+		}),
+		slackCallback("Ev3", slackTeam, map[string]any{
+			"type": "file_shared", "file_id": "F1", "event_ts": "1700000300.000100",
+		}),
+	)
+	if out["unauthorized"] != float64(2) || out["applied"] != float64(1) || out["authError"] != "invalid_auth" {
+		t.Fatalf("output %v, want 2 unauthorized, 1 applied, authError invalid_auth", out)
+	}
+	if n := f.callsTo("reactions.get") + f.callsTo("files.info"); n != 1 {
+		t.Fatalf("Slack was called %d times after the token was refused, want the one refused call", n)
+	}
+	if slackMessageAt(t, ds, "1700000200.000100") == nil {
+		t.Fatal("the message after the refusal did not land")
+	}
+	if logs.lines("Slack refused the userToken (invalid_auth)") == 0 {
+		t.Fatal("no log line names the refused token")
+	}
+}
+
+// TestSlackLiveRequiresTheSlackBundle: the closure declares no kind, so
+// every kind its function names is the Slack bundle's, and admission
+// refuses it while that package is absent. With the Slack bundle present it
+// admits, and its one function writes the Slack mirrors and never the
+// account or the sync state.
+func TestSlackLiveRequiresTheSlackBundle(t *testing.T) {
+	t.Parallel()
+	reg := bundleRegistry(t, slackDir)
+	data, err := os.ReadFile(slackLiveDir + "/bundle.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := vocabulary.ParseStream(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packages, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
+	if err != nil {
+		t.Fatalf("build the slacklive package: %v", err)
+	}
+	if err := reg.InstallAll(packages); err != nil {
+		t.Fatalf("slacklive did not admit beside slack: %v", err)
+	}
+	fn, err := reg.ResolveFunction(slackEventsFn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustEmit(t, fn,
+		slackPackage+"/team", slackPackage+"/user", slackPackage+"/conversation",
+		slackPackage+"/message", slackPackage+"/bot", slackPackage+"/file")
+	for _, owned := range []string{slackAccountType, slackSyncStateType} {
+		if slices.Contains(fn.Caps.Emit, owned) {
+			t.Fatalf("%s may write %s: the events path moves no cursor and stamps no account", slackEventsFn, owned)
+		}
+	}
+	mustRead(t, fn,
+		slackAccountType, slackPackage+"/team", slackPackage+"/conversation",
+		slackPackage+"/message", slackPackage+"/user", slackPackage+"/file")
+
+	alone, err := enginetest.SeededRegistry(seedKindsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packages, err = vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = alone.InstallAll(packages)
+	if err == nil || !strings.Contains(err.Error(), "data.requires names "+slackPackage) {
+		t.Fatalf("slacklive without slack: %v, want the requires refusal naming %s", err, slackPackage)
+	}
+}
+
+// slackLiveCopyDiffers names the top-level definitions `slackevents` shares
+// with `slacksync` that differ on purpose. Anything else the two bodies both
+// define must be identical, so a row maker changed in one and not the other
+// fails here rather than writing two shapes of one row.
+var slackLiveCopyDiffers = map[string]string{
+	"_get":           "takes a timeout: an events page must end inside the 30 s function timeout",
+	"_call":          "takes a timeout, passed on to _get",
+	"_message_props": "builds reactions through _reaction_props, which reactions.get shares",
+	"main":           "each body's own entry point",
+}
+
+// slackLiveCompare is run by python3 over the two bodies: it prints one line
+// per top-level name both define, `same <name>` or `differs <name>`, comparing
+// the parsed trees, so a comment or a blank line is not a difference.
+const slackLiveCompare = `
+import ast, sys
+
+def defs(path):
+    out = {}
+    for node in ast.parse(open(path).read()).body:
+        names = []
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            names = [node.name]
+        elif isinstance(node, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        for n in names:
+            out[n] = ast.dump(node)
+    return out
+
+a, b = defs(sys.argv[1]), defs(sys.argv[2])
+for name in sorted(set(a) & set(b)):
+    print(("same " if a[name] == b[name] else "differs ") + name)
+`
+
+// TestSlackLiveCopyMatchesSlacksync: every top-level function, class and
+// constant the two bodies share is identical, except the allowlisted ones.
+func TestSlackLiveCopyMatchesSlacksync(t *testing.T) {
+	t.Parallel()
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	source := func(dir, fn string) string {
+		for _, d := range loadDocs(t, dir+"/bundle.yaml") {
+			meta, _ := d["metadata"].(map[string]any)
+			if meta["id"] != fn {
+				continue
+			}
+			data, _ := d["data"].(map[string]any)
+			src, _ := data["source"].(string)
+			path := filepath.Join(t.TempDir(), "body.py")
+			if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return path
+		}
+		t.Fatalf("%s declares no function %s", dir, fn)
+		return ""
+	}
+	out, err := exec.Command(python, "-I", "-c", slackLiveCompare,
+		source(slackDir, slackSyncFn), source(slackLiveDir, slackEventsFn)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("comparing the bodies: %v\n%s", err, out)
+	}
+	seen := map[string]bool{}
+	shared := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		verdict, name, _ := strings.Cut(line, " ")
+		shared++
+		seen[name] = true
+		_, allowed := slackLiveCopyDiffers[name]
+		switch {
+		case verdict == "differs" && !allowed:
+			t.Errorf("%s differs between slacksync and slackevents: change both, or allowlist it with a reason", name)
+		case verdict == "same" && allowed:
+			t.Errorf("%s is allowlisted as differing but the two bodies agree: drop it from slackLiveCopyDiffers", name)
+		}
+	}
+	for name := range slackLiveCopyDiffers {
+		if !seen[name] {
+			t.Errorf("%s is allowlisted but is not defined by both bodies", name)
+		}
+	}
+	if shared < 50 {
+		t.Fatalf("the bodies share %d top-level names; the copy is gone or the comparison broke:\n%s", shared, out)
 	}
 }

@@ -313,3 +313,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | proposed |
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |
+| [0168](0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md) | A provider's live events ship as an opt-in bundle that requires the provider, with its webhook off | accepted |

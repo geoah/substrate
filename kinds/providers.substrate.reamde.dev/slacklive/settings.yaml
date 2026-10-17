@@ -1,0 +1,32 @@
+# The bundle's configuration, as the two ordinary records decision record 0076
+# makes it: a core `secret` for the token and a core `setting` for the API
+# origin. `slackevents` reads them as `config.settings.userToken` and
+# `config.settings.apiBase`.
+kind: substrate.reamde.dev/core/secret
+metadata:
+  id: providers.substrate.reamde.dev/slacklive/userToken
+data:
+  properties:
+    displayName: User token
+    description: >-
+      The Slack user token (xoxp-…) the Slack bundle syncs with, pasted again
+      here: another bundle's token never reaches this bundle's function. It
+      reads reactions.get, conversations.info and files.info, so it needs
+      the reactions:read, channels:read, groups:read, im:read, mpim:read and
+      files:read scopes. Sealed from reads.
+    required: true
+---
+# ORIGIN-PINNED in the body, not here: `slackevents` sends the token only to
+# https on a slack.com host or to loopback (the test seam), so editing this
+# value cannot redirect the credential.
+kind: substrate.reamde.dev/core/setting
+metadata:
+  id: providers.substrate.reamde.dev/slacklive/apiBase
+data:
+  properties:
+    displayName: API origin
+    description: >-
+      The Slack Web API origin. The body refuses any origin but a slack.com
+      host or loopback, so there is normally no reason to change it.
+    type: url
+    value: https://slack.com
