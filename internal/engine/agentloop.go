@@ -2005,10 +2005,12 @@ func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.
 		Model: l.model, System: l.system(), Messages: messages,
 		Tools: l.defs, Params: l.params,
 	}
-	var onDelta func(string)
+	var onDelta func(llm.Delta)
 	if l.in.emit != nil {
-		onDelta = func(text string) {
-			l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: text})
+		onDelta = func(d llm.Delta) {
+			if d.Text != "" {
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: d.Text})
+			}
 		}
 	}
 	return l.client.Complete(ctx, req, onDelta)

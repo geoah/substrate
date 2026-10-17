@@ -77,7 +77,7 @@ func (d *headerDoer) Do(req *http.Request) (*http.Response, error) {
 	return inner.Do(req)
 }
 
-func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
+func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	oreq := openai.ChatCompletionRequest{Model: req.Model, Messages: openaiMessages(req)}
 	if t := req.Params.Temperature; t != nil {
 		// The SDK tags Temperature `omitempty`, so a true zero never reaches
@@ -132,7 +132,7 @@ func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRe
 	}, nil
 }
 
-func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionRequest, onDelta func(string)) (*Result, error) {
+func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionRequest, onDelta func(Delta)) (*Result, error) {
 	// The usage tally only rides a stream when it is asked for, and the loop's
 	// cost accounting depends on it.
 	oreq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
@@ -167,7 +167,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 		delta := chunk.Choices[0].Delta
 		if delta.Content != "" {
 			content.WriteString(delta.Content)
-			onDelta(delta.Content)
+			onDelta(Delta{Text: delta.Content})
 		}
 		acc.absorb(delta.ToolCalls)
 	}

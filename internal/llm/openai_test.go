@@ -236,7 +236,7 @@ func TestOpenAIStreamsDeltasAndAccumulatesToolCalls(t *testing.T) {
 	var deltas []string
 	res, err := client.Complete(context.Background(), Request{
 		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
-	}, func(s string) { deltas = append(deltas, s) })
+	}, func(d Delta) { deltas = append(deltas, d.Text) })
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -334,9 +334,9 @@ func TestOpenAICompletionErrorDoesNotCarryTheKey(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new: %v", err)
 			}
-			var onDelta func(string)
+			var onDelta func(Delta)
 			if !oneShot {
-				onDelta = func(string) {}
+				onDelta = func(Delta) {}
 			}
 			_, err = client.Complete(context.Background(), Request{
 				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -417,9 +417,9 @@ func TestOpenAIClassifiesAContextOverflow(t *testing.T) {
 				}))
 				t.Cleanup(srv.Close)
 				client, _ := New(WireOpenAI, Config{BaseURL: srv.URL, APIKey: key})
-				var onDelta func(string)
+				var onDelta func(Delta)
 				if !oneShot {
-					onDelta = func(string) {}
+					onDelta = func(Delta) {}
 				}
 				_, err := client.Complete(context.Background(), Request{
 					Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},

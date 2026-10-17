@@ -116,7 +116,7 @@ type chainMeter struct {
 	llm.Client
 }
 
-func (m chainMeter) Complete(ctx context.Context, req llm.Request, onDelta func(string)) (*llm.Result, error) {
+func (m chainMeter) Complete(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (*llm.Result, error) {
 	if err := m.ledger.Charge(m.wire); err != nil {
 		return nil, err
 	}

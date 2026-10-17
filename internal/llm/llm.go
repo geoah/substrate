@@ -244,11 +244,19 @@ type Result struct {
 	Stop string
 }
 
+// Delta is one streamed piece of a turn: exactly one of Text and Reasoning is
+// set. Reasoning is the model's thinking as the wire exposes it, which arrives
+// before the turn's text and is never part of Result.Content.
+type Delta struct {
+	Text      string
+	Reasoning string
+}
+
 // Client is one configured place to buy completions from.
 type Client interface {
 	// Complete runs one turn. onDelta nil is a one-shot request; non-nil
-	// streams text deltas as they arrive and still returns the whole result.
-	Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error)
+	// streams deltas as they arrive and still returns the whole result.
+	Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error)
 }
 
 // New builds the adapter for a wire. An unknown wire is the only way this

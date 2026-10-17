@@ -153,7 +153,7 @@ func (c *anthropicClient) scrubbed(err error) error {
 	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
 }
 
-func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
+func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	msg, err := c.complete(ctx, anthropicParams(req), onDelta)
 	if err != nil {
 		return nil, c.scrubbed(err)
@@ -161,7 +161,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta fun
 	return anthropicResult(msg), nil
 }
 
-func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest, onDelta func(string)) (*anthropicMessage, error) {
+func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest, onDelta func(Delta)) (*anthropicMessage, error) {
 	params.Stream = onDelta != nil
 	if !params.Stream {
 		ceiling := anthropicOneShotMaxTokens
@@ -661,7 +661,7 @@ type anthropicStream struct {
 // readStream reads the event stream of res. Events are dispatched on their
 // SSE event name; ping and any name the adapter has no use for are skipped,
 // and an error event ends the call with that event's data as its error.
-func (c *anthropicClient) readStream(res *http.Response, onDelta func(string)) (*anthropicMessage, error) {
+func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*anthropicMessage, error) {
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 0, 64<<10), anthropicMaxEvent)
 	var s anthropicStream
@@ -709,7 +709,7 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(string)) (
 // fold applies one event to the message. Blocks start in index order with
 // no gaps, and a delta or a stop names a block already started; anything
 // else is a broken stream and an error.
-func (s *anthropicStream) fold(data []byte, onDelta func(string)) error {
+func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 	var ev anthropicEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
 		return err
@@ -755,7 +755,7 @@ func (s *anthropicStream) fold(data []byte, onDelta func(string)) error {
 			}
 			s.text[ev.Index] = append(s.text[ev.Index], ev.Delta.Text...)
 			if ev.Delta.Text != "" {
-				onDelta(ev.Delta.Text)
+				onDelta(Delta{Text: ev.Delta.Text})
 			}
 		case "input_json_delta":
 			if ev.Delta.PartialJSON == "" {

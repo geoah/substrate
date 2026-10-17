@@ -523,7 +523,7 @@ type panicOnSecond struct {
 	calls int
 }
 
-func (p *panicOnSecond) Complete(ctx context.Context, req llm.Request, onDelta func(string)) (*llm.Result, error) {
+func (p *panicOnSecond) Complete(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (*llm.Result, error) {
 	p.calls++
 	if p.calls == 2 {
 		panic("the second completion panics")
