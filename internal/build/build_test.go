@@ -102,15 +102,16 @@ func TestStampedSymbolsAreTheOnesShipped(t *testing.T) {
 	// Every file that cuts a versioned artifact, and how many binaries each one
 	// cuts. .goreleaser.yaml stamps the released CLI and server; the Dockerfile
 	// stamps both binaries of the image built from source, which is what
-	// `image:push` and the latest workflow ship.
+	// `image:push` and the latest workflow ship, and the Socket Mode bridge
+	// its `slack-socket` target builds.
 	//
-	// The COUNT is the guard, not mere presence. Each file builds two binaries,
+	// The COUNT is the guard, not mere presence. Each file builds several binaries,
 	// so "the symbol appears somewhere" passes while one of the two builds
 	// stamps nothing and ships a binary reporting "dev". Raise the number with
 	// the build, or the new artifact is unstamped and silent about it.
 	for name, builds := range map[string]int{
 		"../../.goreleaser.yaml": 2,
-		"../../Dockerfile":       2,
+		"../../Dockerfile":       3,
 	} {
 		b, err := os.ReadFile(name)
 		if err != nil {

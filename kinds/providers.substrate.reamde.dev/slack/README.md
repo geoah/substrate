@@ -27,34 +27,21 @@ the delivery wiring. They are the contract; this file is not.
 
 ## Live events
 
-`triggers.yaml` ships a webhook trigger, `slack-events` (label "Slack live
-events"), at `POST /webhooks/<authority>/slack-events`. A Slack Socket Mode
-sidecar, which this repository does not ship, holds the websocket,
-acknowledges each `events_api` envelope and POSTs batches of their payloads
-with `Content-Type: application/json`:
+This bundle polls, so it sees a reaction, an edit or a delete only while the
+message is within a day of its conversation's history cursor. The opt-in
+[`slacklive`](../slacklive/README.md) bundle applies Slack's live events to
+these same rows through a webhook trigger that the Socket Mode bridge
+([`cmd/slack-socket`](../../../cmd/slack-socket/README.md)) posts to. This
+bundle ships no webhook.
 
-```json
-{"version": 1, "events": [{"type": "event_callback", "team_id": "T…", "event_id": "Ev…", "event_time": 1760000000, "event": {"type": "message", "…": "…"}}]}
-```
-
-`slacksync` applies the batch to the mirror rows: messages and replies,
-`message_changed` and `message_deleted`, `reaction_added` and
-`reaction_removed` (the message's whole set read from `reactions.get`),
-pins, conversation creates, renames and archives, member joins and leaves,
-`user_change`, `team_join` and the file events. It moves no history cursor
-and writes no account property, so the scheduled walk still reads what the
-socket missed. A callback whose `team_id` is not the account's workspace is
-ignored, and so is an event type the body does not know.
-
-The trigger ships without a key, so the endpoint takes any POST that reaches
-the server. A deployment reachable from outside sets `source.webhook.key` on
-the trigger record and gives the sidecar
-`POST /webhooks/<authority>/slack-events/<key>`. Applying `triggers.yaml`
-again replaces `source` and drops the key, so set it again after an apply.
-The Slack app the sidecar connects with subscribes to the events above.
-`reactions.get` runs with the pasted user token, which needs the
-`reactions:read` scope; without it each reaction event is counted as
-refused, and the walk still reads reactions when it re-reads a message.
+**Upgrading from version 21.** Version 21 (on `main` and the `latest` image
+only, never in a release) shipped a `slack-events` webhook trigger, enabled
+and without a key. Upgrading to 22 leaves that record in place, still
+enabled and keyless, and a POST to it starts a `slacksync` walk. Stop the
+bridge, run `substratectl delete substrate.reamde.dev/core/trigger
+slack-events`, then upgrade; the
+[slacklive README](../slacklive/README.md#upgrading-from-slack-bundle-21) has
+the whole order.
 
 What it writes, where the token comes from, the account's toggles, and how
 the walk bounds itself:
