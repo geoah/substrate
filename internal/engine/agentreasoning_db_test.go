@@ -166,3 +166,25 @@ func TestReasoningIsBoundedOnTheRow(t *testing.T) {
 		t.Fatalf("kept %d runes", utf8.RuneCountInString(kept))
 	}
 }
+
+func TestAnAgentAskingForAReasoningSummarySendsTheThinkingKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("think", fakeTurn{reasoning: "Summarized.", content: "done"})
+	fake.script("chat", fakeTurn{content: "done"})
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/thinker", "", "hi", func(substrate.AgentEvent) {}); err != nil {
+		t.Fatalf("chat thinker: %v", err)
+	}
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(substrate.AgentEvent) {}); err != nil {
+		t.Fatalf("chat chatter: %v", err)
+	}
+	asked := fake.requestsOf("think")[0]
+	thinking, _ := asked["thinking"].(map[string]any)
+	if thinking["type"] != "adaptive" || thinking["display"] != "summarized" || asked["reasoning_effort"] != "low" {
+		t.Fatalf("request = %v", asked)
+	}
+	if _, sent := fake.requestsOf("chat")[0]["thinking"]; sent {
+		t.Fatalf("an agent that did not ask sent thinking: %v", fake.requestsOf("chat")[0])
+	}
+}

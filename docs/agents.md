@@ -85,7 +85,8 @@ data:
   `claude-opus-5` on an `anthropic`-wire row.
   The substrate keeps no model table: re-pointing an agent at a cheaper model
   is one word here.
-- optional **`params`**: `{temperature, maxTokens, reasoningEffort}` for this
+- optional **`params`**: `{temperature, maxTokens, reasoningEffort,
+  reasoningSummary}` for this
   agent's calls, merged over the provider row's `defaults`. The set is closed,
   so a knob the loop could not pass on is a load error rather than a line that
   silently does nothing. `reasoningEffort` is one of `none`, `minimal`, `low`,
@@ -100,8 +101,16 @@ data:
   several models — and none of the seeded rows sets it. The effort also
   decides whether a model thinks at all, and so whether a chat streams
   `reasoning` events; whether those carry any text is the model's call.
-  Anthropic's current models, asked through LiteLLM with an effort alone,
-  think without returning the text, so the stream and the row stay empty
+  Anthropic's current models think with the text omitted unless a request
+  asks for it, so an effort alone leaves the stream and the row empty.
+  `reasoningSummary: true` asks: it sends
+  `thinking: {type: adaptive, display: summarized}` as the request key on the
+  anthropic wire and as an extra body key on the openai and azure wires,
+  which LiteLLM forwards to an Anthropic model. The model still decides
+  whether a turn is worth thinking about, and a short question often is not.
+  The key is not a standard openai one: LiteLLM accepted it for the OpenAI and
+  Gemini models tried, and an endpoint that refuses unknown keys refuses the
+  request, so set it only on an agent whose provider row's endpoint takes it
   ([decision 0171](decisions/0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md)).
 - **`tools:`**, the functions the model may invoke (below).
 - **`subagents:`**, sub-agent references (self-reference is a load error).

@@ -1,8 +1,11 @@
 package llm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -44,6 +47,7 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}
+	oc.HTTPClient = &extraBodyDoer{inner: oc.HTTPClient}
 	return &openaiClient{client: openai.NewClientWithConfig(oc), apiKey: cfg.APIKey}
 }
 
@@ -77,6 +81,48 @@ func (d *headerDoer) Do(req *http.Request) (*http.Response, error) {
 	return inner.Do(req)
 }
 
+// extraBodyKey carries request body keys the SDK's request struct cannot
+// spell, from Complete to extraBodyDoer, scoped to one call's context.
+type extraBodyKey struct{}
+
+// extraBodyDoer adds the context's extra keys to a JSON request body. A key
+// the SDK already wrote is left as the SDK wrote it.
+type extraBodyDoer struct {
+	inner openai.HTTPDoer
+}
+
+func (d *extraBodyDoer) Do(req *http.Request) (*http.Response, error) {
+	extra, _ := req.Context().Value(extraBodyKey{}).(map[string]any)
+	if len(extra) > 0 && req.Body != nil {
+		raw, err := io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return nil, fmt.Errorf("openai: request body: %w", err)
+		}
+		for k, v := range extra {
+			if _, set := body[k]; set {
+				continue
+			}
+			enc, err := json.Marshal(v)
+			if err != nil {
+				return nil, err
+			}
+			body[k] = enc
+		}
+		if raw, err = json.Marshal(body); err != nil {
+			return nil, err
+		}
+		req.Body = io.NopCloser(bytes.NewReader(raw))
+		req.ContentLength = int64(len(raw))
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(raw)), nil }
+	}
+	return d.inner.Do(req)
+}
+
 func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	oreq := openai.ChatCompletionRequest{Model: req.Model, Messages: openaiMessages(req)}
 	if t := req.Params.Temperature; t != nil {
@@ -102,6 +148,11 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 	// gpt-5.6 model here — that family reasons by default and refuses
 	// function tools for any effort but none on /v1/chat/completions.
 	oreq.ReasoningEffort = req.Params.ReasoningEffort
+	// The SDK's chat request has no key for it, so it rides the context to
+	// extraBodyDoer, which adds it to this request's body alone.
+	if req.Params.ReasoningSummary {
+		ctx = context.WithValue(ctx, extraBodyKey{}, map[string]any{"thinking": thinkingSummarized()})
+	}
 	for _, t := range req.Tools {
 		oreq.Tools = append(oreq.Tools, openai.Tool{
 			Type: openai.ToolTypeFunction,

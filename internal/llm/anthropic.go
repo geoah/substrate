@@ -197,6 +197,7 @@ type anthropicRequest struct {
 	Tools        []anthropicTool        `json:"tools,omitempty"`
 	Temperature  *float64               `json:"temperature,omitempty"`
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Thinking     map[string]any         `json:"thinking,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
 }
 
@@ -265,6 +266,12 @@ func anthropicParams(req Request) anthropicRequest {
 	// and this endpoint refuses them, which is the refusal the loop should see.
 	if req.Params.ReasoningEffort != "" {
 		params.OutputConfig = &anthropicOutputConfig{Effort: req.Params.ReasoningEffort}
+	}
+	// Adaptive is the only thinking mode current models accept, and an older
+	// model that takes only a budget refuses it: that refusal reaches the loop
+	// the way a refused effort does.
+	if req.Params.ReasoningSummary {
+		params.Thinking = thinkingSummarized()
 	}
 	for _, t := range req.Tools {
 		params.Tools = append(params.Tools, anthropicTool{

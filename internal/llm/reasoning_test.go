@@ -237,3 +237,66 @@ func TestAnthropicStreamWithoutThinkingCallsNoReasoningDelta(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 }
+
+// ReasoningSummary is the same `thinking` object on every wire: a request key
+// on anthropic, an extra body key on openai (streamed and one-shot alike).
+// Unset sends nothing.
+func TestReasoningSummarySendsTheThinkingKey(t *testing.T) {
+	want := `{"display":"summarized","type":"adaptive"}`
+	asJSON := func(v any) string {
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+	oa := newOpenAIServer(t, func(w http.ResponseWriter, req map[string]any) {
+		if req["stream"] == true {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+			return
+		}
+		jsonBody(w, map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "ok"}}}})
+	})
+	openaiClient, _ := New(WireOpenAI, Config{BaseURL: oa.srv.URL, APIKey: "k", Headers: map[string]string{"X-Title": "substrate"}})
+	req := Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		Params: Params{ReasoningEffort: "low", ReasoningSummary: true},
+	}
+	for _, onDelta := range []func(Delta){nil, func(Delta) {}} {
+		if _, err := openaiClient.Complete(context.Background(), req, onDelta); err != nil {
+			t.Fatalf("openai complete: %v", err)
+		}
+		if got := asJSON(oa.last["thinking"]); got != want {
+			t.Fatalf("openai thinking = %s (streamed %v)", got, onDelta != nil)
+		}
+		if oa.last["reasoning_effort"] != "low" || oa.hdr.Get("X-Title") != "substrate" {
+			t.Fatalf("the extra key displaced the rest of the request: %v %v", oa.last, oa.hdr)
+		}
+	}
+	plain := req
+	plain.Params = Params{ReasoningEffort: "low"}
+	if _, err := openaiClient.Complete(context.Background(), plain, nil); err != nil {
+		t.Fatalf("openai complete: %v", err)
+	}
+	if _, sent := oa.last["thinking"]; sent {
+		t.Fatalf("openai thinking sent unasked: %v", oa.last["thinking"])
+	}
+
+	an := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+			"content": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	if _, err := an.client(t, nil).Complete(context.Background(), req, nil); err != nil {
+		t.Fatalf("anthropic complete: %v", err)
+	}
+	cfg, _ := an.last["output_config"].(map[string]any)
+	if got := asJSON(an.last["thinking"]); got != want || cfg["effort"] != "low" {
+		t.Fatalf("anthropic thinking = %s, output_config = %v", got, an.last["output_config"])
+	}
+	if _, err := an.client(t, nil).Complete(context.Background(), plain, nil); err != nil {
+		t.Fatalf("anthropic complete: %v", err)
+	}
+	if _, sent := an.last["thinking"]; sent {
+		t.Fatalf("anthropic thinking sent unasked: %v", an.last["thinking"])
+	}
+}

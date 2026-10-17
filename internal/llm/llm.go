@@ -223,6 +223,20 @@ type Params struct {
 	// not know it refuses the call, the way it refuses a temperature it does
 	// not accept.
 	ReasoningEffort string
+	// ReasoningSummary asks for a readable summary of the model's thinking,
+	// as Anthropic's `thinking: {type: adaptive, display: summarized}`: on the
+	// anthropic wire as that request key, and on the openai and azure wires as
+	// the same key beside the standard ones, which LiteLLM forwards to an
+	// Anthropic model. False sends nothing. An endpoint that does not know the
+	// key decides what to do with it, so the knob is for a row whose endpoint
+	// takes it (decision 0171).
+	ReasoningSummary bool
+}
+
+// thinkingSummarized is the request's `thinking` value when ReasoningSummary
+// is set, the same object on every wire.
+func thinkingSummarized() map[string]any {
+	return map[string]any{"type": "adaptive", "display": "summarized"}
 }
 
 // Request is one completion.

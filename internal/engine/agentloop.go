@@ -353,9 +353,10 @@ func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, e
 			substrate.ErrValidation, providerID, err)
 	}
 	return llm.Params{
-		Temperature:     p.Temperature,
-		MaxTokens:       p.MaxTokens,
-		ReasoningEffort: p.ReasoningEffort,
+		Temperature:      p.Temperature,
+		MaxTokens:        p.MaxTokens,
+		ReasoningEffort:  p.ReasoningEffort,
+		ReasoningSummary: p.ReasoningSummary,
 	}, nil
 }
 

@@ -408,6 +408,10 @@ def main(input, host):
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// namer chats for the thread title tests (agenttitle_db_test.go).
 		agent("namer", map[string]any{"provider": "namellm", "model": "name"}),
+		agent("thinker", map[string]any{
+			"provider": "chatllm", "model": "think",
+			"params": map[string]any{"reasoningEffort": "low", "reasoningSummary": true},
+		}),
 		// compactor chats on the one provider row with a context window, and
 		// may ask: the compaction fixture, a pending ask its blocked head.
 		agent("compactor", map[string]any{
