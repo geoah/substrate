@@ -16,7 +16,7 @@ data:
     the thread IS the run. Status, turns, tokens and cost accumulate as the
     loop goes, and a root thread's tally rolls up every sub-agent's spend,
     so one number answers what a chain cost.
-  version: 14
+  version: 15
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -85,7 +85,8 @@ data:
         - ok
         - overbudget
         - error
-      description: running, then settled to ok, overbudget or error
+        - stopped
+      description: running, then settled to ok, overbudget, error or stopped
     # A preview for a thread list, so a list reads one kind. Not searchable:
     # the reply is already indexed on its llm/message row, and a second copy
     # would make the thread the hit for every word its agent said.
@@ -96,7 +97,9 @@ data:
         that ends with no reply leaves the previous one
     reason:
       type: string
-      description: which budget ended an overbudget run, or the error
+      description: >-
+        which budget ended an overbudget run, the error, or who or what stopped
+        a stopped one
     agentDepth:
       type: int
       required: true

@@ -542,7 +542,8 @@ data:
 The conversation state is the run: there is no separate run record. A `thread`
 is written as the loop runs under the agent's actor, carrying `agent`,
 `provider`, `model`, `mode`, `status` (`running` then
-`ok`/`overbudget`/`error`), `agentDepth`, the tallies (`turns`, `toolCalls`,
+`ok`/`overbudget`/`error`/`stopped`, where `stopped` is a chat turn a client
+stopped or a server shutdown ended), `agentDepth`, the tallies (`turns`, `toolCalls`,
 the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the
@@ -995,5 +996,50 @@ GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/llm/thread"],"propert
 
 Each row's `title` is its heading and `lastReply` previews its last reply
 ([threads](#threads-messages-and-cost)).
+
+**A chat turn runs detached from its client**
+([decision 0169](decisions/0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md)).
+Every refusal (a hidden agent, the spend cap, a running turn, a missing
+thread, `503 unavailable` while the server shuts down) still answers with its
+own status before the stream opens. After that the turn runs to its own end
+whether or not the client stays: closing the connection loses the stream, not
+the turn, and the thread stays `running` under its lease until the turn
+settles. A stream idle for 30 seconds carries a `{}` heartbeat line, and a
+server drain ends the stream cleanly. Two verbs on the thread reach the turn
+again by its id:
+
+- `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` attaches to the
+  running turn: `200 application/x-ndjson`, the `thread` event first, every
+  event the turn has emitted so far, then live events, ending with `done` or
+  `error`. With no chat turn running it answers one line,
+  `{"kind":"idle","thread":"<id>","status":"<the thread's status>"}`, and
+  ends; `status: "running"` there means a run no client can stream (a
+  triggered run, or a call) holds the thread, so read the records and try
+  later. An unknown thread is `404 not_found`.
+- `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` stops the running
+  chat turn and answers `200` with its settled result once the settle
+  committed: `status: "stopped"`, `reason: "stopped by <actor>"`, and the
+  text streamed so far as `reply`, which also lands as the turn's assistant
+  message row. Every attached stream ends with the same `done`. With no chat
+  turn running it is `409 conflict` (`thread <id> has no running chat turn`);
+  an unknown thread is `404 not_found`.
+
+`delta`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
+matching `message` row carries or will carry. A client that attaches after
+reading the rows drops every replayed event whose `turn` is at or below the
+highest one it holds. An attach replays at most 4 MiB of event text, counted
+over `text`, `args`, `output` and `error`; past that it sends what it kept,
+one `{"kind":"truncated"}` line, then live events, and the dropped part is in
+the `message` rows once `done` arrives. A client that reads slower than the
+turn writes is dropped with an `error` event saying to attach again. A server
+shutdown stops every running chat turn: each settles `stopped` with reason
+`stopped: the server shut down during the turn`, within the shutdown's
+10 second drain; a settle that misses the drain is a `running` thread the next
+open settles as interrupted.
+
+The turns and their streams live in the memory of the process serving the
+repository. A repository has one writer
+([decision 0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)),
+so that process is the one every attach and stop reaches.
 
 Next: the [bundles catalog](bundles-catalog.md), what ships today.

@@ -377,7 +377,7 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT t.id FROM records t
 		WHERE t.kind = $1 AND t.deleted_at IS NULL
-		  AND t.props->>'status' IN ('ok', 'overbudget')
+		  AND t.props->>'status' IN ('ok', 'overbudget', 'stopped')
 		  AND EXISTS (
 		    SELECT 1 FROM records m
 		    WHERE m.kind = $2 AND m.deleted_at IS NULL

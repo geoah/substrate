@@ -40,6 +40,7 @@ const APIVersion = "v1"
 const (
 	coreAuthorityName = "substrate.reamde.dev"
 	corePackage       = coreAuthorityName + "/core"
+	llmPackage        = coreAuthorityName + "/llm"
 )
 
 // kindBundleIdentity is the bundle kind's reference. A PATCH of a bundle record
@@ -355,6 +356,12 @@ func (h *handler) mountResources(r chi.Router) {
 			// Agents: the same call API, plus chat — the one loop streaming.
 			r.Post("/"+corePackage+"/agent/{name}/call", h.postAgentCall)
 			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
+			// A chat turn runs detached from its request (decision 0169), so
+			// a client reaches it again by the thread it runs on: attach to
+			// its stream, or stop it. Five segments, so the record path
+			// below never shadows them.
+			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
+			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
 
 			// THE RECORD PATH. It IS the record's reference: the kind's three
 			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and

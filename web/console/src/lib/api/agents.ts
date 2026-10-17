@@ -12,11 +12,13 @@ import { queryOptions } from "@tanstack/react-query"
 
 import { recordsQueryOptions } from "./records"
 import {
+  collectionPath,
   corePath,
   CORE_AUTHORITY,
   CORE_PACKAGE_NAME,
   LLM_PACKAGE_NAME,
   envelopeError,
+  request,
 } from "./http"
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type SubstrateRecord } from "./types"
@@ -250,6 +252,8 @@ export interface AgentEvent {
     | "toolStarted"
     | "toolFinished"
     | "compacted"
+    | "truncated"
+    | "idle"
     | "done"
     | "error"
   /** Rides the first event: the thread id, minted or continued. */
@@ -279,6 +283,12 @@ export interface AgentEvent {
   result?: AgentResult
   /** Rides the error event: a post-200 loop failure. */
   error?: string
+  /** Rides delta, toolStarted and toolFinished: the `turn` ordinal the
+   * matching `llm/message` row carries or will carry. An attach after reading
+   * the rows drops every replayed event at or below the highest turn held. */
+  turn?: number
+  /** Rides the idle event: the thread row's status. */
+  status?: string
 }
 
 /** One ndjson line off the chat stream, or null (blank line / garbage). */
@@ -296,54 +306,56 @@ export function parseAgentEvent(line: string): AgentEvent | null {
   if (typeof obj.kind !== "string") return null
   // The counts are read as numbers or not at all: a line that spells one
   // some other way must not reach a sentence that formats it.
-  for (const key of ["tokensBefore", "covered"]) {
+  for (const key of ["tokensBefore", "covered", "turn"]) {
     if (key in obj && typeof obj[key] !== "number") delete obj[key]
   }
   return obj as unknown as AgentEvent
 }
 
 export interface ChatHandle {
-  /** Aborts the in-flight stream. */
+  /** Aborts the in-flight stream. The turn itself runs on: stopping it is
+   * `stopThread`. */
   stop(): void
 }
 
-/** Open or continue a thread against an agent with one user message and stream
- * the run: one AgentEvent per line (thread first, deltas and tool lifecycle as
- * they happen, one done event carrying the AgentResult). The fetch body never
- * ends until the loop settles, so `request` cannot carry it — this reads the
- * raw ndjson body. */
-export function streamChat(opts: {
-  agent: string
-  /** Continues an existing thread; empty opens one. */
-  thread?: string
-  message: string
+interface StreamHandlers {
   onEvent: (event: AgentEvent) => void
   onError?: (error: Error) => void
   onDone?: () => void
-}): ChatHandle {
+}
+
+/** The path of a verb on one `llm/thread` record. */
+function threadVerbPath(thread: string, verb: string): string {
+  return `${collectionPath(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread")}/${encodeURIComponent(thread)}/${verb}`
+}
+
+/** Fetches an ndjson agent stream and reads it to its end. The body never
+ * ends until the turn settles, so `request` cannot carry it. */
+function openAgentStream(
+  path: string,
+  init: { method: "GET" | "POST"; body?: unknown },
+  handlers: StreamHandlers
+): ChatHandle {
   const ctrl = new AbortController()
 
   void (async () => {
     try {
       const headers: Record<string, string> = {
         Accept: "application/x-ndjson",
-        "Content-Type": "application/json",
         "X-Substrate-Actor": "console",
       }
+      if (init.body !== undefined) headers["Content-Type"] = "application/json"
       const token = getToken()
       if (token) headers.Authorization = `Bearer ${token}`
-      const res = await fetch(`${corePath("agent", opts.agent)}/chat`, {
-        method: "POST",
+      const res = await fetch(path, {
+        method: init.method,
         headers,
-        body: JSON.stringify({
-          thread: opts.thread ?? "",
-          message: opts.message,
-        }),
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
         signal: ctrl.signal,
       })
       if (res.status === 401) {
         sessionExpired()
-        opts.onError?.(new ApiError("auth", "session expired", 401))
+        handlers.onError?.(new ApiError("auth", "session expired", 401))
         return
       }
       if (!res.ok) {
@@ -358,56 +370,105 @@ export function streamChat(opts: {
         throw envelopeError(res.status, body)
       }
       if (!res.body) throw envelopeError(res.status, undefined)
-
-      // A post-200 loop failure arrives as an `error` event (or, from an older
-      // server, a `done` with text and no result). Either routes to onError and
-      // suppresses onDone, so the surface never settles a blank assistant turn
-      // on top of an error.
-      let errored = false
-      const handle = (event: AgentEvent) => {
-        const isError =
-          event.kind === "error" ||
-          (event.kind === "done" &&
-            !event.result &&
-            Boolean(event.error || event.text))
-        if (isError) {
-          errored = true
-          opts.onError?.(
-            new Error(event.error || event.text || "the agent run failed")
-          )
-          return
-        }
-        opts.onEvent(event)
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let nl = buffer.indexOf("\n")
-        for (; nl >= 0; nl = buffer.indexOf("\n")) {
-          const event = parseAgentEvent(buffer.slice(0, nl))
-          buffer = buffer.slice(nl + 1)
-          if (event) handle(event)
-        }
-      }
-      const tail = parseAgentEvent(buffer)
-      if (tail) handle(tail)
-      if (!errored) opts.onDone?.()
+      await readAgentStream(res.body, handlers)
     } catch (cause) {
       if (ctrl.signal.aborted) return
       const detail =
         cause instanceof ApiError
           ? cause.message
           : ((cause as Error).message ?? "chat stream failed")
-      opts.onError?.(new Error(detail))
+      handlers.onError?.(new Error(detail))
     }
   })()
 
   return { stop: () => ctrl.abort() }
+}
+
+/** Reads an agent stream's ndjson body to its end. A post-200 loop failure
+ * arrives as an `error` event (or, from an older server, a `done` with text
+ * and no result). Either routes to onError and suppresses onDone, so the
+ * surface never settles a blank assistant turn on top of an error. */
+export async function readAgentStream(
+  body: ReadableStream<Uint8Array>,
+  handlers: StreamHandlers
+): Promise<void> {
+  let errored = false
+  const handle = (event: AgentEvent) => {
+    const isError =
+      event.kind === "error" ||
+      (event.kind === "done" &&
+        !event.result &&
+        Boolean(event.error || event.text))
+    if (isError) {
+      errored = true
+      handlers.onError?.(
+        new Error(event.error || event.text || "the agent run failed")
+      )
+      return
+    }
+    handlers.onEvent(event)
+  }
+
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let nl = buffer.indexOf("\n")
+    for (; nl >= 0; nl = buffer.indexOf("\n")) {
+      const event = parseAgentEvent(buffer.slice(0, nl))
+      buffer = buffer.slice(nl + 1)
+      if (event) handle(event)
+    }
+  }
+  const tail = parseAgentEvent(buffer)
+  if (tail) handle(tail)
+  if (!errored) handlers.onDone?.()
+}
+
+/** Open or continue a thread against an agent with one user message and stream
+ * the run: one AgentEvent per line (thread first, deltas and tool lifecycle as
+ * they happen, one done event carrying the AgentResult). The turn runs on the
+ * server whether or not this stream stays open; `attachThread` picks it up
+ * again. */
+export function streamChat(
+  opts: {
+    agent: string
+    /** Continues an existing thread; empty opens one. */
+    thread?: string
+    message: string
+  } & StreamHandlers
+): ChatHandle {
+  return openAgentStream(
+    `${corePath("agent", opts.agent)}/chat`,
+    {
+      method: "POST",
+      body: { thread: opts.thread ?? "", message: opts.message },
+    },
+    opts
+  )
+}
+
+/** Attach to the chat turn running on a thread: what it emitted so far, then
+ * live events, ending with `done`. With nothing running the stream is one
+ * `idle` event carrying the thread's status. */
+export function attachThread(
+  opts: { thread: string } & StreamHandlers
+): ChatHandle {
+  return openAgentStream(
+    threadVerbPath(opts.thread, "events"),
+    { method: "GET" },
+    opts
+  )
+}
+
+/** Stop the chat turn running on a thread. Resolves with the settled result
+ * once the turn has settled (`status: "stopped"` unless it finished first);
+ * any attached stream ends with the same `done`. */
+export function stopThread(thread: string): Promise<AgentResult> {
+  return request<AgentResult>("POST", threadVerbPath(thread, "stop"))
 }
 
 /** The assistant reply a settled thread carries — the newest assistant

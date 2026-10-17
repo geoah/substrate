@@ -6,6 +6,7 @@
  * Nothing here is sent to the API: display names are the console's own. */
 
 import { actorIdentity, agentName } from "@/lib/actor-identity"
+import type { AgentEvent } from "@/lib/api/agents"
 import { deliveryNoticeOf, type ToolCallView } from "@/lib/api/transcript"
 import {
   readReference,
@@ -308,6 +309,26 @@ export function chatRows(
     agentId: threadAgentId(thread),
     preview: threadPreview(thread),
   }))
+}
+
+// ── attaching to a running turn ────────────────────────────────────────────
+
+/** The highest `turn` the thread's stored message rows carry, or -1 with
+ * none: what an attach already holds of the running turn. */
+export function maxPersistedTurn(messages: SubstrateRecord[]): number {
+  let max = -1
+  for (const m of messages) {
+    const turn = m.properties.turn
+    if (typeof turn === "number" && turn > max) max = turn
+  }
+  return max
+}
+
+/** Whether an attach's replayed event is already a stored row: its `turn`
+ * is at or below the highest stored one. Events without a turn (the thread,
+ * a compaction, done) are never dropped. */
+export function isReplayed(event: AgentEvent, maxTurn: number): boolean {
+  return typeof event.turn === "number" && event.turn <= maxTurn
 }
 
 // ── tools ──────────────────────────────────────────────────────────────────

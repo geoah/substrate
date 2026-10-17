@@ -36,6 +36,16 @@ There is no per-kind list route: `/api/v1/{authority}/{package}/{kind}` names
 nothing and answers the router's JSON `404`, and a wrong method at a path that
 exists answers `405`. Neither ever falls through to a write.
 
+A few runtime verbs sit one segment past a record path and act on that
+record, never on its data. A chat turn runs detached from the request that
+started it, so the `substrate.reamde.dev/llm/thread` record it runs on carries
+two ([agents](agents.md#calling-an-agent)):
+
+```http
+GET  /api/v1/substrate.reamde.dev/llm/thread/{id}/events  # attach to the running chat turn: replay, then live ndjson
+POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop    # stop it; answers the settled result
+```
+
 **There is no repository segment anywhere.** The bearer token names the
 repository, so an address never has to, and there is nothing to get wrong.
 

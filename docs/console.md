@@ -520,6 +520,15 @@ panel on the right.
   then a short title the agent's model writes. The pencil beside the name in
   the header renames the chat (Enter saves, Escape cancels), and a rename is
   never replaced by a generated title.
+- **A running reply keeps running** when you close the page, reload it or
+  open another chat: the turn runs on the server, and coming back to the chat
+  picks it up where it is, the stored messages first and the rest live. A
+  chat whose turn is still running is marked **Working** in the chats
+  column. While a reply streams, **Stop** in the header and in place of the
+  send button ends it; what it had written so far stays as its reply, and the
+  chat is ready for the next message. A chat a trigger is still running says
+  the agent is working on it in the background, and shows the answer when the
+  run finishes.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a

@@ -1258,6 +1258,24 @@ func (d *fakeDataset) ChatAgent(_ context.Context, _ substrate.Actor, name, _, _
 	return nil, noSuch("agent", name)
 }
 
+// AttachAgentTurn and StopAgentTurn find no running turn: the fake runs no
+// loop. A thread record the fake holds answers ErrNoRunningTurn, any other
+// id ErrNotFound, as the engine does.
+func (d *fakeDataset) AttachAgentTurn(ctx context.Context, threadID string, _ func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	return nil, d.noRunningTurn(ctx, threadID)
+}
+
+func (d *fakeDataset) StopAgentTurn(ctx context.Context, _ substrate.Actor, threadID string) (*substrate.AgentResult, error) {
+	return nil, d.noRunningTurn(ctx, threadID)
+}
+
+func (d *fakeDataset) noRunningTurn(ctx context.Context, threadID string) error {
+	if _, err := d.Get(ctx, "substrate.reamde.dev/llm/thread", threadID); err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: thread %s has no running chat turn", substrate.ErrNoRunningTurn, threadID)
+}
+
 func (d *fakeDataset) SweepResolutions(context.Context) (int, error) { return 0, nil }
 
 func (d *fakeDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {

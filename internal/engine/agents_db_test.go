@@ -47,6 +47,9 @@ type fakeTurn struct {
 	// concurrency barriers.
 	arrived chan struct{}
 	release <-chan struct{}
+	// hold, on a streamed turn, blocks the response after its first content
+	// chunk is flushed: a turn the client has seen part of.
+	hold <-chan struct{}
 	// promptTokens, when non-zero, is the turn's reported prompt_tokens: the
 	// context size compaction measures. Zero reports the default 10.
 	promptTokens int
@@ -205,13 +208,23 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	// Content streams as two deltas so the collector sees real chunking.
 	if turn.content != "" {
 		half := len(turn.content) / 2
-		for _, part := range []string{turn.content[:half], turn.content[half:]} {
+		for i, part := range []string{turn.content[:half], turn.content[half:]} {
 			if part == "" {
 				continue
 			}
 			chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
 				map[string]any{"index": 0, "delta": map[string]any{"content": part}},
 			}})
+			if i == 0 && turn.hold != nil {
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				select {
+				case <-turn.hold:
+				case <-r.Context().Done():
+					return
+				}
+			}
 		}
 	}
 	for _, tc := range toolCalls {
@@ -1204,18 +1217,26 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	release := make(chan struct{})
 	fake.script("chat", fakeTurn{content: "second", arrived: arrived, release: release})
 	done := make(chan error, 1)
+	cctx, leave := context.WithCancel(ctx)
+	defer leave()
 	go func() {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil)
+		_, err := ds.ChatAgent(cctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil)
 		done <- err
 	}()
 	<-arrived // the first continuation holds the lease, parked at the model
+	// Its client leaves: the turn is detached and keeps the lease.
+	leave()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		close(release)
+		t.Fatalf("the first continuation's client: %v, want context.Canceled", err)
+	}
 
 	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "sneak", nil); !errors.Is(err, substrate.ErrConflict) {
 		close(release)
 		t.Fatalf("a second active turn was admitted: %v", err)
 	}
 	close(release)
-	if err := <-done; err != nil {
+	if _, err := ds.AttachAgentTurn(ctx, res.Thread, nil); err != nil && !errors.Is(err, substrate.ErrNoRunningTurn) {
 		t.Fatalf("first continuation: %v", err)
 	}
 

@@ -107,6 +107,7 @@ const STATUS_TONE: Record<RunStatus, PillTone> = {
   ok: "ok",
   overbudget: "warn",
   error: "bad",
+  stopped: "neutral",
 }
 
 /** How many runs the table shows at first, and adds per "Show more". */

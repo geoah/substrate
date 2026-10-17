@@ -250,8 +250,14 @@ func agentEntryError(err error) error {
 
 // ChatAgent is the same loop with a live client attached: open or continue a
 // thread against any agent with a user message, the assistant turns
-// streaming through emit. No trigger, no cursor — the thread is ordinary
+// streaming through emit. No trigger, no cursor: the thread is ordinary
 // data the console renders.
+//
+// The turn runs detached from ctx (decision 0169). Every refusal (a hidden
+// agent, the fence, the spend cap, a running turn, a missing thread) comes
+// back before the first event, under ctx; after that the loop runs as a
+// background task of the service and ctx only carries this caller's attach,
+// so a client that leaves gets ctx.Err() and the turn runs on to its settle.
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
@@ -265,23 +271,103 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 			substrate.ErrValidation, ag.Identity())
 	}
 	// Admission under the lifecycle fence, held through the whole chat turn's
-	// writes (thread claim/mint, every message, settlement).
+	// writes (thread claim/mint, every message, settlement): the detached
+	// task releases it, so a bundle disable waits for the turn as it did
+	// while the turn ran under its request.
 	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	detached := false
+	defer func() {
+		if !detached {
+			release()
+		}
+	}()
 	if message == "" {
 		return nil, fmt.Errorf("%w: a chat turn needs a message", substrate.ErrValidation)
 	}
-	res, err := ds.runAgent(ctx, ag, agentInvocation{
+	if ds.svc.bg.stopping() {
+		// A shutdown never opens a thread it will not run.
+		return nil, fmt.Errorf("%w: the server is shutting down: send the message again once it is back", substrate.ErrUnavailable)
+	}
+	hub := newTurnHub()
+	runCtx, l, err := ds.prepareAgentRun(ctx, ag, agentInvocation{
 		mode: agentModeChat, user: message, userActor: actor,
-		threadID: threadID, emit: emit,
+		threadID: threadID, hub: hub,
 	})
 	if err != nil {
 		return nil, agentEntryError(err)
 	}
-	return res, nil
+	// The run keeps the request's values (the fence's lease, the spend
+	// admission) and drops its cancellation; a stop and the service
+	// shutdown are what cancel it.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(runCtx))
+	hub.setCancel(cancel)
+	stopOnShutdown := context.AfterFunc(ds.svc.bg.ctx, cancel)
+	turn := func() {
+		defer stopOnShutdown()
+		defer cancel()
+		res, err := (*substrate.AgentResult)(nil), errors.New("the chat turn ended without settling")
+		defer func() { hub.finish(res, err) }()
+		res, err = l.run(runCtx)
+		if err != nil {
+			err = agentEntryError(err)
+		}
+	}
+	detached = ds.spawn("chat turn", func(context.Context) {
+		defer release()
+		turn()
+	})
+	if !detached {
+		// The shutdown began after the check above and the thread is open:
+		// run it out on a canceled context, which settles it `stopped`.
+		cancel()
+		turn()
+		return nil, fmt.Errorf("%w: the server is shutting down: send the message again once it is back", substrate.ErrUnavailable)
+	}
+	return hub.attach(ctx, emit)
+}
+
+// runningTurn is the hub of the detached chat turn this process runs on
+// threadID. With none it answers ErrNoRunningTurn for a thread that exists
+// and ErrNotFound for one that does not.
+func (ds *dataset) runningTurn(ctx context.Context, threadID string) (*turnHub, error) {
+	if v, ok := ds.runningThreads.Load(threadID); ok {
+		if l, _ := v.(*agentLoop); l != nil && l.hub != nil {
+			return l.hub, nil
+		}
+	}
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: threadID})
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || row.DeletedAt != nil || row.Kind != typeThread {
+		return nil, fmt.Errorf("%w: thread %s", substrate.ErrNotFound, threadID)
+	}
+	return nil, fmt.Errorf("%w: thread %s has no running chat turn", substrate.ErrNoRunningTurn, threadID)
+}
+
+// AttachAgentTurn streams the running detached chat turn of a thread: what
+// it emitted so far, then live events, then done.
+func (ds *dataset) AttachAgentTurn(ctx context.Context, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	hub, err := ds.runningTurn(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+	return hub.attach(ctx, emit)
+}
+
+// StopAgentTurn cancels the running detached chat turn of a thread and waits
+// for its settle: the result is the turn's own, `stopped` unless it settled
+// first. A triggered run is not stoppable: it ends within its own budget.
+func (ds *dataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
+	hub, err := ds.runningTurn(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+	hub.stop(actor)
+	return hub.wait(ctx)
 }
 
 // agentUserContent renders a call input as the first user message: a string

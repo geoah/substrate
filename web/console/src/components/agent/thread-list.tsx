@@ -13,6 +13,7 @@ import { Link } from "@tanstack/react-router"
 import { MessagesSquareIcon, PlusIcon, SearchIcon } from "lucide-react"
 
 import { AgentRef } from "@/components/agent/agent-ref"
+import { Pill } from "@/components/identity/pill"
 import { PurposeTag } from "@/components/identity/purpose-tag"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -273,8 +274,15 @@ export function ThreadList({
                     onClick={() => onSelect(row.thread.id)}
                     className={CHAT_ROW}
                   >
-                    <span className="truncate text-[13px] font-medium">
-                      {row.title}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[13px] font-medium">
+                        {row.title}
+                      </span>
+                      {row.thread.properties.status === "running" && (
+                        <Pill tone="accent" live className="shrink-0">
+                          Working
+                        </Pill>
+                      )}
                     </span>
                     {row.preview && (
                       <span className="truncate text-xs text-muted-foreground">

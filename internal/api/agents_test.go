@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -98,8 +101,15 @@ func TestStreamsAskProxiesNotToBuffer(t *testing.T) {
 		t.Fatalf("watch status = %d", resp.StatusCode)
 	}
 	watch := resp.Header
+	if _, err := callable.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: threadKind, ID: "th1", Properties: map[string]any{"status": "ok"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", tok, nil)
+	wantStatus(t, events, http.StatusOK)
 
-	for name, h := range map[string]http.Header{"chat": chat.Header(), "watch": watch} {
+	for name, h := range map[string]http.Header{"chat": chat.Header(), "watch": watch, "events": events.Header()} {
 		if got := h.Get("X-Accel-Buffering"); got != "no" {
 			t.Errorf("%s: X-Accel-Buffering = %q, want no", name, got)
 		}
@@ -110,4 +120,148 @@ func TestStreamsAskProxiesNotToBuffer(t *testing.T) {
 			t.Errorf("%s: Content-Type = %q", name, got)
 		}
 	}
+}
+
+// heldChat opens a stream with its thread event and then holds it until the
+// client leaves, as a detached turn still running does.
+type heldChat struct {
+	*fakeDataset
+	attach func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error)
+	stop   func() (*substrate.AgentResult, error)
+}
+
+func (c *heldChat) ChatAgent(ctx context.Context, _ substrate.Actor, _, _, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th1"})
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (c *heldChat) AttachAgentTurn(ctx context.Context, id string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	if c.attach == nil {
+		return c.fakeDataset.AttachAgentTurn(ctx, id, emit)
+	}
+	return c.attach(emit)
+}
+
+func (c *heldChat) StopAgentTurn(ctx context.Context, actor substrate.Actor, id string) (*substrate.AgentResult, error) {
+	if c.stop == nil {
+		return c.fakeDataset.StopAgentTurn(ctx, actor, id)
+	}
+	return c.stop()
+}
+
+const threadKind = "substrate.reamde.dev/llm/thread"
+
+func putThread(t *testing.T, ds *fakeDataset, id, status string) {
+	t.Helper()
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		Kind: threadKind, ID: id, Properties: map[string]any{"status": status},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// With nothing running on a thread, an attach answers one idle line naming
+// the thread's status and ends; an unknown thread is a 404.
+func TestThreadEventsAnswersIdleWhenNothingRuns(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	putThread(t, env.svc.datasets[fakeRepository], "th1", "running")
+
+	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := rec.Header().Get("Content-Type"); got != "application/x-ndjson" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"kind":"idle","thread":"th1","status":"running"}` {
+		t.Fatalf("idle answer = %s", got)
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/nope/events", tok, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+}
+
+// A running turn's attach streams its events, replay and live alike, to done.
+func TestThreadEventsStreamsARunningTurn(t *testing.T) {
+	env := newTestEnv(t)
+	res := &substrate.AgentResult{Thread: "th1", Status: "ok", Reply: "hi"}
+	chat := &heldChat{fakeDataset: env.svc.datasets[fakeRepository], attach: func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th1"})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "hi", Turn: 3})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
+		return res, nil
+	}}
+	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
+	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", env.svc.token(fakeRepository), nil)
+	wantStatus(t, rec, http.StatusOK)
+	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+	if len(lines) != 3 || lines[1] != `{"kind":"delta","text":"hi","turn":3}` || !strings.Contains(lines[2], `"kind":"done"`) {
+		t.Fatalf("attach stream = %s", rec.Body.String())
+	}
+}
+
+// A stop answers the settled result; with nothing running it is a 409, and an
+// unknown thread a 404.
+func TestThreadStopAnswersTheSettledResult(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	putThread(t, env.svc.datasets[fakeRepository], "th1", "ok")
+	const path = "/api/v1/substrate.reamde.dev/llm/thread/th1/stop"
+
+	rec := env.do(t, http.MethodPost, path, tok, nil)
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if !strings.Contains(rec.Body.String(), "thread th1 has no running chat turn") {
+		t.Fatalf("the conflict does not say why: %s", rec.Body.String())
+	}
+	rec = env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/llm/thread/nope/stop", tok, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+
+	chat := &heldChat{fakeDataset: env.svc.datasets[fakeRepository], stop: func() (*substrate.AgentResult, error) {
+		return &substrate.AgentResult{Thread: "th1", Status: "stopped", Reason: "stopped by console", Reply: "part"}, nil
+	}}
+	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
+	rec = env.do(t, http.MethodPost, path, tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	var got substrate.AgentResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "stopped" || got.Reason != "stopped by console" || got.Reply != "part" {
+		t.Fatalf("stop answer = %+v", got)
+	}
+}
+
+// A chat stream held open past the heartbeat interval carries the idle `{}`
+// line, and a server drain ends it cleanly while the turn runs on.
+func TestAChatStreamHeartbeatsAndEndsOnDrain(t *testing.T) {
+	prev := heartbeatInterval
+	heartbeatInterval = 20 * time.Millisecond
+	t.Cleanup(func() { heartbeatInterval = prev })
+
+	svc, draining, srv := drainEnv(t)
+	chat := &heldChat{fakeDataset: svc.datasets[fakeRepository]}
+	svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
+	body, _ := json.Marshal(map[string]any{"message": "hi"})
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/substrate.reamde.dev/core/agent/helper/chat", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+svc.token(fakeRepository))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	br := bufio.NewReader(resp.Body)
+	first, err := br.ReadString('\n')
+	if err != nil || !strings.Contains(first, `"kind":"thread"`) {
+		t.Fatalf("first line = %q, %v", first, err)
+	}
+	beat, err := br.ReadString('\n')
+	if err != nil || beat != "{}\n" {
+		t.Fatalf("heartbeat line = %q, %v", beat, err)
+	}
+	close(draining)
+	readToEOF(t, br, 5*time.Second)
 }

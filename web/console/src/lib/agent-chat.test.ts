@@ -16,8 +16,10 @@ import {
   dayGroup,
   examplePrompts,
   groupByDay,
+  isReplayed,
   judgeVerdictOf,
   lastChatAgent,
+  maxPersistedTurn,
   openingMessages,
   propertyLabel,
   proposedHeading,
@@ -568,5 +570,35 @@ describe("a change request's thread and verdict", () => {
     expect(
       judgeVerdictOf(record({ annotations: { "policy/verdict": {} } }))
     ).toBeUndefined()
+  })
+})
+
+describe("attaching to a running turn", () => {
+  it("reads the highest stored turn, -1 with none", () => {
+    expect(maxPersistedTurn([])).toBe(-1)
+    expect(
+      maxPersistedTurn([
+        record({ properties: { turn: 0 } }),
+        record({ properties: { turn: 4 } }),
+        record({ properties: { turn: 2 } }),
+        record({ properties: { turn: "7" } }),
+      ])
+    ).toBe(4)
+  })
+
+  it("drops replayed events the stored rows hold and keeps the rest", () => {
+    const events = [
+      { kind: "thread" as const, thread: "t1" },
+      { kind: "toolStarted" as const, id: "c0", turn: 2 },
+      { kind: "toolFinished" as const, id: "c0", turn: 2 },
+      { kind: "delta" as const, text: "hi", turn: 3 },
+      { kind: "compacted" as const, covered: 4 },
+    ]
+    expect(events.filter((e) => !isReplayed(e, 2))).toEqual([
+      events[0],
+      events[3],
+      events[4],
+    ])
+    expect(events.filter((e) => !isReplayed(e, -1))).toEqual(events)
   })
 })
