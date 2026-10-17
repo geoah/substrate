@@ -48,7 +48,7 @@ import {
   agentName,
   examplePrompts,
   isReplayed,
-  maxPersistedTurn,
+  persistedTurns,
   providerName,
   tallyWords,
   threadSubject,
@@ -75,7 +75,7 @@ import {
   transcriptOf,
   type LiveOverlay,
 } from "@/lib/api/transcript"
-import type { SubstrateRecord } from "@/lib/api/types"
+import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 
 /** The callout for an agent whose provider row has no key: the run would be
  * refused at dispatch, so the page says why before anybody types. */
@@ -184,7 +184,18 @@ export function Conversation({
     enabled: Boolean(current) && !streaming,
   })
 
-  useEffect(() => () => handleRef.current?.stop(), [])
+  // A re-attach waiting out its backoff.
+  const retryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The last failure an attach saw, shown if the turn turns out to have
+  // ended on it.
+  const lastErrorRef = useRef<string | null>(null)
+  useEffect(
+    () => () => {
+      handleRef.current?.stop()
+      clearTimeout(retryRef.current)
+    },
+    []
+  )
 
   // While a turn runs elsewhere, every write to a thread re-reads the
   // records, so the thread's settle reaches this page.
@@ -332,67 +343,88 @@ export function Conversation({
     void client.invalidateQueries({ queryKey: ["records-count"] })
   }
 
-  // The turn running on the thread, attached once per running stretch: the
-  // stored rows first, so the replay's events they already hold are dropped.
+  // The turn running on the thread, attached once per running stretch.
+  // Each attach reads the stored rows afresh and freezes them, so the
+  // replay's events those rows already hold are dropped by their `turn`.
   const threadRunning = threadRecord?.properties.status === "running"
   const [attachedFor, setAttachedFor] = useState("")
-  // The attach this render decided on, opened by the effect below: the
-  // decision is state set while rendering, so the effect only subscribes.
+  // The attach to open, decided while rendering or by a stream that ended
+  // without its `done`; the effect below opens it.
   const [pending, setPending] = useState<{
     thread: string
-    maxTurn: number
+    attempt: number
   } | null>(null)
   if (!threadRunning && attachedFor) setAttachedFor("")
   if (!threadRunning && background) setBackground(false)
-  if (
-    current &&
-    threadRunning &&
-    !busy &&
-    messages.isSuccess &&
-    attachedFor !== current
-  ) {
+  if (current && threadRunning && !busy && attachedFor !== current) {
     setAttachedFor(current)
-    setPending({
-      thread: current,
-      maxTurn: maxPersistedTurn(messages.data.records),
-    })
+    setPending({ thread: current, attempt: 0 })
     setError(null)
     setResult(null)
     setSettledAt(0)
-    setLive(EMPTY_OVERLAY)
     setStreaming(true)
   }
+
+  // A stream that ended without `done` (a dropped connection, a stream
+  // that fell behind, a server restart) is not the turn's end: attach again,
+  // backing off, until the server says the turn settled.
+  function reattach(run: number, thread: string, attempt: number) {
+    if (run !== runRef.current) return
+    clearTimeout(retryRef.current)
+    const delay = attempt === 0 ? 0 : Math.min(1000 * 2 ** (attempt - 1), 15000)
+    retryRef.current = setTimeout(() => {
+      if (run === runRef.current) setPending({ thread, attempt })
+    }, delay)
+  }
+
   const openAttach = useEffectEvent(
-    ({ thread, maxTurn }: { thread: string; maxTurn: number }) => {
-      liveRef.current = EMPTY_OVERLAY
+    ({ thread, attempt }: { thread: string; attempt: number }) => {
       runThreadRef.current = thread
       const run = ++runRef.current
-      let idle = false
-      handleRef.current = attachThread({
-        thread,
-        onEvent: (ev) => {
-          if (run !== runRef.current) return
-          if (ev.kind === "idle") {
-            idle = true
-            if (ev.status === "running") setBackground(true)
-            return
-          }
-          if (isReplayed(ev, maxTurn)) return
-          onEvent(ev, run)
-        },
-        onError: (err) => {
-          if (run !== runRef.current) return
-          setError(err.message)
-          settleRun(run)
-        },
-        onDone: () => {
-          if (run !== runRef.current) return
-          if (!idle) return settleRun(run)
-          // Nothing to attach to: the stored rows are already the view.
-          update(EMPTY_OVERLAY)
-          setStreaming(false)
-          void client.invalidateQueries({ queryKey: ["records"] })
-        },
+      void messages.refetch().then((read) => {
+        if (run !== runRef.current) return
+        if (read.isError) return reattach(run, thread, attempt + 1)
+        const held = persistedTurns(read.data?.records ?? [])
+        update(EMPTY_OVERLAY)
+        let idle = ""
+        let done = false
+        handleRef.current = attachThread({
+          thread,
+          onEvent: (ev) => {
+            if (run !== runRef.current) return
+            if (ev.kind === "idle") {
+              idle = ev.status || "unknown"
+              if (ev.status === "running") setBackground(true)
+              else if (lastErrorRef.current) setError(lastErrorRef.current)
+              return
+            }
+            if (ev.kind === "done") {
+              done = true
+              lastErrorRef.current = null
+            }
+            if (isReplayed(ev, held)) return
+            onEvent(ev, run)
+          },
+          onError: (err) => {
+            if (run !== runRef.current) return
+            lastErrorRef.current = err.message
+            reattach(run, thread, attempt + 1)
+          },
+          onDone: () => {
+            if (run !== runRef.current) return
+            if (done) return settleRun(run)
+            if (!idle) return reattach(run, thread, attempt + 1)
+            if (idle === "running") {
+              // A run no client can stream: nothing to show live.
+              update(EMPTY_OVERLAY)
+              setStreaming(false)
+              setStopping(false)
+              void client.invalidateQueries({ queryKey: ["records"] })
+              return
+            }
+            settleRun(run)
+          },
+        })
       })
     }
   )
@@ -406,6 +438,9 @@ export function Conversation({
     setStopping(true)
     stopThread(thread).catch((err: Error) => {
       setStopping(false)
+      // The turn settled on its own first: its stream's `done` is the
+      // answer, and there is nothing to say about the stop.
+      if (err instanceof ApiError && err.status === 409) return
       setError(err.message)
     })
   }
@@ -441,10 +476,14 @@ export function Conversation({
 
     // A run that never named a thread wrote nothing, so no read will ever
     // hand over and settling would leave the composer busy for good. The
-    // optimistic turn goes, and the message comes back to be retried.
+    // optimistic turn goes, and the message comes back to be retried. A run
+    // that named one and ended without `done` is still running on the
+    // server: it is attached to again.
+    let done = false
     const end = () => {
       if (run !== runRef.current) return
-      if (runThreadRef.current) return settle()
+      if (runThreadRef.current && done) return settle()
+      if (runThreadRef.current) return reattach(run, runThreadRef.current, 0)
       update(EMPTY_OVERLAY)
       setStreaming(false)
       setStopping(false)
@@ -458,11 +497,13 @@ export function Conversation({
       onEvent: (ev) => {
         if (ev.kind === "thread" && ev.thread && run === runRef.current)
           setAttachedFor(ev.thread)
+        if (ev.kind === "done") done = true
         onEvent(ev, run)
       },
       onError: (err) => {
         if (run !== runRef.current) return
-        setError(err.message)
+        if (runThreadRef.current) lastErrorRef.current = err.message
+        else setError(err.message)
         end()
       },
       onDone: end,

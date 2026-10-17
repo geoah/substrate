@@ -313,22 +313,26 @@ export function chatRows(
 
 // ── attaching to a running turn ────────────────────────────────────────────
 
-/** The highest `turn` the thread's stored message rows carry, or -1 with
- * none: what an attach already holds of the running turn. */
-export function maxPersistedTurn(messages: SubstrateRecord[]): number {
-  let max = -1
+/** The `turn` ordinals the thread's stored message rows carry: what an
+ * attach already holds of the running turn. A thread's ordinals are unique,
+ * so a streamed event is shown by a stored row exactly when a row carries
+ * its `turn`. */
+export function persistedTurns(messages: SubstrateRecord[]): Set<number> {
+  const turns = new Set<number>()
   for (const m of messages) {
     const turn = m.properties.turn
-    if (typeof turn === "number" && turn > max) max = turn
+    if (typeof turn === "number") turns.add(turn)
   }
-  return max
+  return turns
 }
 
-/** Whether an attach's replayed event is already a stored row: its `turn`
- * is at or below the highest stored one. Events without a turn (the thread,
- * a compaction, done) are never dropped. */
-export function isReplayed(event: AgentEvent, maxTurn: number): boolean {
-  return typeof event.turn === "number" && event.turn <= maxTurn
+/** Whether an attach's replayed event is already a stored row: a row
+ * carries its `turn`. Events without a turn (the thread, a compaction,
+ * done) are never dropped. A highest-turn cutoff is wrong here: a
+ * resolution written while the reply streams takes a later ordinal than
+ * the reply, and would hide it. */
+export function isReplayed(event: AgentEvent, held: Set<number>): boolean {
+  return typeof event.turn === "number" && held.has(event.turn)
 }
 
 // ── tools ──────────────────────────────────────────────────────────────────

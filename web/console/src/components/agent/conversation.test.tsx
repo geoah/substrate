@@ -32,6 +32,7 @@ type ChatOpts = {
 const calls: ChatOpts[] = []
 const attaches: (Omit<ChatOpts, "message"> & { thread: string })[] = []
 const stops: string[] = []
+let stopAnswer: () => Promise<unknown> = () => new Promise(() => {})
 
 vi.mock("@/lib/api/agents", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/agents")>()
@@ -47,13 +48,13 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
     },
     stopThread: (thread: string) => {
       stops.push(thread)
-      return new Promise(() => {})
+      return stopAnswer()
     },
   }
 })
 
 import type { AgentEvent } from "@/lib/api/agents"
-import type { SubstrateRecord } from "@/lib/api/types"
+import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { Conversation } from "./conversation"
 
 afterEach(() => {
@@ -61,6 +62,7 @@ afterEach(() => {
   calls.length = 0
   attaches.length = 0
   stops.length = 0
+  stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
 })
 
@@ -154,7 +156,24 @@ describe("Conversation", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     fail = true
-    act(() => calls[0].onDone?.())
+    act(() => {
+      calls[0].onEvent({
+        kind: "done",
+        result: {
+          reply: "hi",
+          thread: "t-1",
+          status: "ok",
+          effects: 0,
+          turns: 1,
+          toolCalls: 0,
+          promptTokens: 1,
+          completionTokens: 1,
+          totalTokens: 2,
+          costUSD: 0,
+        },
+      })
+      calls[0].onDone?.()
+    })
 
     const note = await screen.findByRole("alert")
     expect(note.textContent).toContain("db down")
@@ -302,4 +321,82 @@ describe("Conversation", () => {
     )
     expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull()
   })
+
+  it("keeps a streaming reply whose turn a resolution written meanwhile passed", async () => {
+    stubRows([
+      message("m2", 2, "system", "a decision"),
+      message("m0", 0, "user", "question"),
+    ])
+    mount("t-3", { threadRecord: runningThread("t-3") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-3" })
+      attaches[0].onEvent({ kind: "delta", text: "the live reply", turn: 1 })
+    })
+    expect(screen.getByText("the live reply")).toBeTruthy()
+  })
+
+  it("attaches again when a stream ends without done", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-4", { threadRecord: runningThread("t-4") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-4" })
+      attaches[0].onDone?.()
+    })
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 3000 })
+    expect(attaches[1].thread).toBe("t-4")
+    // A dropped connection is not shown as the turn's failure.
+    act(() => attaches[1].onError?.(new Error("network down")))
+    expect(screen.queryByText(/network down/)).toBeNull()
+  })
+
+  it("says nothing when a stop loses the race to the turn's own end", async () => {
+    stopAnswer = () =>
+      Promise.reject(new ApiError("conflict", "no running chat turn", 409))
+    mount()
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "go" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => calls[0].onEvent({ kind: "thread", thread: "t-5" }))
+    fireEvent.click(screen.getAllByRole("button", { name: /Stop/ })[0])
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(stops).toEqual(["t-5"])
+    expect(screen.queryByText(/no running chat turn/)).toBeNull()
+  })
 })
+
+function message(id: string, turn: number, role: string, content: string) {
+  return {
+    id,
+    kind: "substrate.reamde.dev/llm/message",
+    properties: { turn, role, content },
+    labels: {},
+    version: 1,
+    createdAt: "2026-10-17T10:00:00Z",
+    updatedAt: "2026-10-17T10:00:00Z",
+  }
+}
+
+/** Every records read answers these rows, newest first. */
+function stubRows(records: ReturnType<typeof message>[]) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () => new Response(JSON.stringify({ records }), { status: 200 })
+    )
+  )
+}
+
+function runningThread(id: string): SubstrateRecord {
+  return {
+    id,
+    kind: "substrate.reamde.dev/llm/thread",
+    properties: { status: "running" },
+    labels: {},
+    version: 1,
+    createdAt: "2026-10-17T10:00:00Z",
+    updatedAt: "2026-10-17T10:00:00Z",
+  }
+}

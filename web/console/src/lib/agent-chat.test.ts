@@ -19,7 +19,7 @@ import {
   isReplayed,
   judgeVerdictOf,
   lastChatAgent,
-  maxPersistedTurn,
+  persistedTurns,
   openingMessages,
   propertyLabel,
   proposedHeading,
@@ -574,19 +574,18 @@ describe("a change request's thread and verdict", () => {
 })
 
 describe("attaching to a running turn", () => {
-  it("reads the highest stored turn, -1 with none", () => {
-    expect(maxPersistedTurn([])).toBe(-1)
+  it("collects the stored rows' turns", () => {
+    expect(persistedTurns([])).toEqual(new Set())
     expect(
-      maxPersistedTurn([
+      persistedTurns([
         record({ properties: { turn: 0 } }),
         record({ properties: { turn: 4 } }),
-        record({ properties: { turn: 2 } }),
         record({ properties: { turn: "7" } }),
       ])
-    ).toBe(4)
+    ).toEqual(new Set([0, 4]))
   })
 
-  it("drops replayed events the stored rows hold and keeps the rest", () => {
+  it("drops replayed events a stored row holds and keeps the rest", () => {
     const events = [
       { kind: "thread" as const, thread: "t1" },
       { kind: "toolStarted" as const, id: "c0", turn: 2 },
@@ -594,11 +593,18 @@ describe("attaching to a running turn", () => {
       { kind: "delta" as const, text: "hi", turn: 3 },
       { kind: "compacted" as const, covered: 4 },
     ]
-    expect(events.filter((e) => !isReplayed(e, 2))).toEqual([
+    expect(events.filter((e) => !isReplayed(e, new Set([0, 1, 2])))).toEqual([
       events[0],
       events[3],
       events[4],
     ])
-    expect(events.filter((e) => !isReplayed(e, -1))).toEqual(events)
+    expect(events.filter((e) => !isReplayed(e, new Set()))).toEqual(events)
+  })
+
+  it("keeps a streaming reply whose turn a later resolution row passed", () => {
+    // The user row is 0, the reply streams at 1, and a resolution written
+    // meanwhile took 2: the reply has no row yet and must stay.
+    const held = new Set([0, 2])
+    expect(isReplayed({ kind: "delta", text: "a", turn: 1 }, held)).toBe(false)
   })
 })
