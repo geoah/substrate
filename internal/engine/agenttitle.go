@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
@@ -46,8 +44,8 @@ const titleSystemPrompt = "You name conversations. Reply with a title for the " 
 	"conversation's own language. Reply with the title alone."
 
 // provisionalSubject is the subject a chat thread opens with: the first
-// non-blank line of its first message, whitespace collapsed, cut to
-// threadSubjectRunes. Only a chat thread minted by this run takes one: a
+// non-blank line of its first message as plain text, whitespace collapsed,
+// cut to threadSubjectRunes. Only a chat thread minted by this run takes one: a
 // trigger's first message is a JSON envelope, which reads as no heading.
 func (l *agentLoop) provisionalSubject() string {
 	if l.in.mode != agentModeChat || l.in.threadID != "" {
@@ -56,37 +54,6 @@ func (l *agentLoop) provisionalSubject() string {
 	for line := range strings.SplitSeq(l.in.user, "\n") {
 		if s := cleanSubject(line); s != "" {
 			return s
-		}
-	}
-	return ""
-}
-
-// cleanSubject collapses whitespace, strips surrounding quotes and a
-// trailing period, and cuts to threadSubjectRunes.
-func cleanSubject(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	s = strings.TrimFunc(s, func(r rune) bool {
-		return unicode.IsSpace(r) || strings.ContainsRune("\"'`“”‘’«»", r)
-	})
-	return cutRunes(s, threadSubjectRunes)
-}
-
-// cutRunes cuts s to at most n runes, never inside one.
-func cutRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return strings.TrimSpace(string([]rune(s)[:n]))
-}
-
-// cleanTitle is the title model's answer as a subject: its first non-blank
-// line, cleaned, without a trailing period. Empty when it said nothing.
-func cleanTitle(content string) string {
-	for line := range strings.SplitSeq(content, "\n") {
-		line = strings.TrimSpace(line)
-		line = strings.TrimPrefix(line, "Title:")
-		if s := strings.TrimRight(cleanSubject(line), "."); s != "" {
-			return cleanSubject(s)
 		}
 	}
 	return ""
