@@ -511,6 +511,10 @@ panel on the right.
   the request and response verbatim. Only what you act on sits under the line
   whether it is open or not: a suggested change and a batch of questions. A
   thread a trigger started opens with the record whose change started it.
+- **A chat's name** is its first message until the agent's first reply,
+  then a short title the agent's model writes. The pencil beside the name in
+  the header renames the chat (Enter saves, Escape cancels), and a rename is
+  never replaced by a generated title.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a

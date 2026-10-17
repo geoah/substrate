@@ -160,7 +160,7 @@ export function AgentsPage() {
 
   const title = threadId
     ? (rows.find((r) => r.thread.id === threadId)?.title ??
-      threadTitle(undefined))
+      threadTitle(threadRecord, undefined))
     : "New chat"
 
   const newKey = `new:${chat}:${agentId ?? ""}`

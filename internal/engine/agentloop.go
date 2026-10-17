@@ -243,6 +243,9 @@ type providerConfig struct {
 	// pricing is USD per 1M tokens keyed by model id; a model absent from the
 	// table costs 0 and only the token tally is authoritative.
 	pricing map[string]modelPrice
+	// titleModel is the model chat threads are titled by; empty means each
+	// thread's own (agenttitle.go).
+	titleModel string
 }
 
 type modelPrice struct {
@@ -290,6 +293,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		pc.cfg.Headers[name] = fmt.Sprint(entry["value"])
 	}
 	pc.defaults, _ = row.Props["defaults"].(map[string]any)
+	pc.titleModel, _ = row.Props["titleModel"].(string)
 	for _, entry := range objectRows(row.Props["pricing"]) {
 		model, _ := entry["model"].(string)
 		if model == "" {
@@ -795,6 +799,7 @@ loop:
 	// the sweep (agentdecision.go).
 	l.recheckResolutions(ctx)
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
+	l.titleAfterFirstTurn(status, reply)
 	return res, nil
 }
 
@@ -922,6 +927,9 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}
 		if l.in.parent != "" {
 			props[threadRelPare] = l.in.parent
+		}
+		if subject := l.provisionalSubject(); subject != "" {
+			props[propThreadSubject] = subject
 		}
 		in := substrate.PutInput{Kind: typeThread, ID: id, Properties: props}
 		if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {

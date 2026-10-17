@@ -191,11 +191,22 @@ describe("which agents the column lists", () => {
 
 describe("thread titles", () => {
   it("is the opening message's first line, cut short", () => {
-    expect(threadTitle("What is due?\nand more")).toBe("What is due?")
+    expect(threadTitle(undefined, "What is due?\nand more")).toBe(
+      "What is due?"
+    )
     const long = "x".repeat(100)
-    expect(threadTitle(long)).toHaveLength(64)
-    expect(threadTitle(long).endsWith("…")).toBe(true)
-    expect(threadTitle(undefined)).toBe("New chat")
+    expect(threadTitle(undefined, long)).toHaveLength(64)
+    expect(threadTitle(undefined, long).endsWith("…")).toBe(true)
+    expect(threadTitle(undefined, undefined)).toBe("New chat")
+  })
+
+  it("prefers the thread's own subject", () => {
+    const titled = record({ properties: { subject: "Trip to Berlin" } })
+    expect(threadTitle(titled, "plan a trip")).toBe("Trip to Berlin")
+    const blank = record({ properties: { subject: "  " } })
+    expect(threadTitle(blank, "plan a trip")).toBe("plan a trip")
+    const rows = chatRows([{ ...titled, id: "t9" }], new Map([["t9", "x"]]))
+    expect(rows[0].title).toBe("Trip to Berlin")
   })
 
   it("reads a delivery envelope as what fired", () => {
@@ -203,7 +214,7 @@ describe("thread titles", () => {
       change: { op: "update", kind: "a.b/c/note", id: "n1" },
       record: { kind: "a.b/c/note", id: "n1", properties: { title: "Retro" } },
     })
-    expect(threadTitle(envelope)).toBe("When Retro changed")
+    expect(threadTitle(undefined, envelope)).toBe("When Retro changed")
   })
 
   it("takes each thread's first user message", () => {

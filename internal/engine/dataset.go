@@ -231,6 +231,11 @@ type dataset struct {
 	// runAgent). The engine builds its clients from provider rows, so this is
 	// the one place the live chain can meter a completion before it is sent.
 	wrapLLMClient func(wire llm.Wire, c llm.Client) llm.Client
+	// skipThreadTitles, under mu, is set only by tests: it keeps a chat's
+	// first turn from spending a scripted completion on its title
+	// (agenttitle.go), which suites that script a model's queue turn by turn
+	// would otherwise lose to a background call.
+	skipThreadTitles bool
 	// exporting is the repository's one export slot (export.go): set by
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.

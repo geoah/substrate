@@ -16,7 +16,7 @@ data:
     the thread IS the run. Status, turns, tokens and cost accumulate as the
     loop goes, and a root thread's tally rolls up every sub-agent's spend,
     so one number answers what a chain cost.
-  version: 12
+  version: 13
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -26,7 +26,9 @@ data:
   purpose: internal
   names:
     singular: thread
-  displayTemplate: "{agent}: {status}"
+  # A chat thread is headed by its subject; every other thread (a triggered
+  # run, a row older than the property) by its agent (decision record 0170).
+  displayTemplate: "{subject|agent}"
   # No declared index on `agent`: the engine builds one for every single
   # reference property on the path it points at (engine/indices.go), and the
   # filter by agent compares that path.
@@ -34,6 +36,14 @@ data:
     - properties:
         - status
   properties:
+    # Written by the loop when a chat thread opens (the first message), once
+    # by the title model after the first turn, and by the owner's rename. The
+    # title model writes only while the property's manager is still the
+    # agent's actor, so a rename is never overwritten.
+    subject:
+      type: string
+      description: the thread's heading; the first message, then a model's
+        title, then whatever its owner renames it to
     agent:
       type: reference
       kind: substrate.reamde.dev/core/agent

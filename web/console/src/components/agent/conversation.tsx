@@ -32,6 +32,7 @@ import { KeyRoundIcon } from "lucide-react"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { Composer } from "@/components/agent/composer"
+import { ThreadHeading } from "@/components/agent/thread-heading"
 import { Transcript } from "@/components/agent/transcript"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
@@ -369,7 +370,7 @@ export function Conversation({
       <header className="flex shrink-0 items-center gap-2.5 border-b px-4 py-3 md:px-6">
         {agentId && <AgentMark id={agentId} size="md" />}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-semibold">{title}</h1>
+          <ThreadHeading title={title} thread={current} />
           <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
             <span>with {name}</span>
             {technical && current && (

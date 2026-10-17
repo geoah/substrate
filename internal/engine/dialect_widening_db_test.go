@@ -443,8 +443,9 @@ func TestDerivedTitleTokens(t *testing.T) {
 
 const dtPackage = "dtemplate.example.substrate.reamde.dev/dtemplate"
 
-// llm/thread's own title, against the SHIPPED declarations: `{agent}` is a
-// bare token on a reference, so it follows the pointer to the referent's title,
+// llm/thread's own title, against the SHIPPED declarations: `{subject|agent}`
+// renders the subject where one is set, and `{agent}` is a bare token on a
+// reference, so it follows the pointer to the referent's title,
 // which is agent's `{localName}`. The template read `{agent.name}` until
 // core/agent stopped declaring `name`, and every thread in every repository
 // titled ": running" — a stale worked example is why this case is a test and
@@ -484,8 +485,18 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 			"startedAt":  "2026-01-01T00:00:00Z",
 		},
 	})
-	if thread.Title != "scribe: running" {
-		t.Fatalf("llm/thread title = %q, want the agent's own title and the status", thread.Title)
+	if thread.Title != "scribe" {
+		t.Fatalf("llm/thread title = %q, want the agent's own title", thread.Title)
+	}
+	// A subject heads the thread instead (decision record 0170).
+	titled, err := ds.Patch(ctx, owner, "substrate.reamde.dev/llm/thread", "t1", substrate.PatchInput{
+		Properties: map[string]any{"subject": "Notes for Monday"},
+	})
+	if err != nil {
+		t.Fatalf("set the subject: %v", err)
+	}
+	if titled.Title != "Notes for Monday" {
+		t.Fatalf("llm/thread title = %q, want the subject", titled.Title)
 	}
 }
 

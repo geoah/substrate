@@ -537,6 +537,32 @@ sub-agent call's row), and the required `thread` it belongs to.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
+**A chat thread has a heading**
+([decision 0170](decisions/0170-a-chat-thread-is-titled-by-its-first-message-then-by-its-model-and-an-owner-rename-holds.md)).
+The thread's `subject` is written when a chat opens it: the first non-blank
+line of the first message, cut to 80 characters. After the first turn settles
+`ok`, a background call asks the provider row's `titleModel` (else the
+thread's own model) for a title of at most eight words, with no tools and an
+output cap of 32 tokens (512 when the call sends a reasoning effort other than
+`none`). The title replaces the subject, and the call's tokens and cost land
+on the thread's tallies. The call runs after the `done` event, so the turn
+never waits on it; a failed or empty answer leaves the first message as the
+subject, and nothing retries it. A later turn never titles again. The
+thread's `title` renders the subject, and a thread without one (a triggered
+run, a thread older than the property) renders its agent. To rename a
+thread, patch it:
+
+```http
+PATCH /api/v1/substrate.reamde.dev/llm/thread/<id>
+{"properties": {"subject": "Trip to Berlin"}}
+```
+
+The generated title is written only while the agent's actor still manages
+`subject` (`propertyMeta.subject.manager`), so a rename by anyone else holds,
+whether it lands before or after the title call answers. A client that wants
+the title as it lands tails
+`GET /api/v1/changes?watch=1&kinds=substrate.reamde.dev/llm/thread`.
+
 `agent`, `parent` and `thread` are references that never cascade: a thread is
 the audit row of a run and has to keep naming the agent that ran it, so
 deleting the agent leaves the row standing. Each declares its `inverse`, so the
@@ -670,7 +696,14 @@ the runs going at that moment spend before they finish.
 
 An `llm/provider` row is one place completions are bought, as pure data:
 `label`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
-(request params the agent's own `params` merge over), and `pricing`.
+(request params the agent's own `params` merge over), `pricing`, and
+`titleModel`.
+
+**`titleModel` names the model that titles chat threads** on this row
+([threads](#threads-messages-and-cost)). Absent, a thread is titled by the
+model it ran. Name a small model here and give it a `pricing` entry, so the
+title call is cheap and priced; it takes the row's `defaults.reasoningEffort`,
+not the agent's.
 
 **`wire` is a protocol, not a company** — `openai`, `anthropic`, or `azure`,
 the three wires an adapter speaks. OpenRouter, LiteLLM, Together, Groq and a

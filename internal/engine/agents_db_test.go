@@ -214,7 +214,12 @@ func provisionAgents(t *testing.T, ds *dataset) *fakeLLM {
 	t.Helper()
 	ctx := context.Background()
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm"} {
+	// A chat's title call would pop the next scripted turn of the chat's
+	// model; the title tests (agenttitle_db_test.go) turn it back on.
+	ds.mu.Lock()
+	ds.skipThreadTitles = true
+	ds.mu.Unlock()
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm", "namellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -382,6 +387,8 @@ def main(input, host):
 			"budgets":     map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
+		// namer chats for the thread title tests (agenttitle_db_test.go).
+		agent("namer", map[string]any{"provider": "namellm", "model": "name"}),
 		// compactor chats on the one provider row with a context window, and
 		// may ask: the compaction fixture, a pending ask its blocked head.
 		agent("compactor", map[string]any{

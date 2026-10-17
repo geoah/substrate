@@ -1787,3 +1787,78 @@ func TestBootUpgradeRefusesADefaultARefinementNoLongerAdmits(t *testing.T) {
 		})
 	}
 }
+
+// cutShipped removes the lines of doc from the one starting with from up to
+// the one starting with to, to excluded.
+func cutShipped(t *testing.T, doc, from, to string) string {
+	t.Helper()
+	i := strings.Index(doc, from)
+	j := strings.Index(doc, to)
+	if i < 0 || j < i {
+		t.Fatalf("the declaration no longer holds %q before %q", from, to)
+	}
+	return doc[:i] + doc[j:]
+}
+
+// The upgrade that brings llm/thread `subject` and llm/provider `titleModel`
+// (decision record 0170) is two optional strings and a template: it converts
+// no record and re-derives no reference inside the open's transaction, so a
+// repository with any number of threads upgrades in the time its declaration
+// rows take.
+func TestBootUpgradeLandsTheThreadSubjectWithNoConversions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	before := shippedTree(t)
+	patchShipped(t, llmKind(before, "thread.yaml"), func(doc string) string {
+		doc = cutShipped(t, doc, "    # Written by the loop when a chat thread opens", "    agent:\n")
+		doc = strings.Replace(doc, `displayTemplate: "{subject|agent}"`, `displayTemplate: "{agent}: {status}"`, 1)
+		return pinVersion(t, doc, "12")
+	})
+	patchShipped(t, llmKind(before, "provider.yaml"), func(doc string) string {
+		doc = cutShipped(t, doc, "    # The model a chat thread's title is asked of", "    # A header is a name and a value")
+		return pinVersion(t, doc, "12")
+	})
+	svc, dsn := newService(t, engine.WithKindsDir(before))
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("close the seeding service: %v", err)
+	}
+
+	var logs lockedLog
+	after, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	if err != nil {
+		t.Fatalf("reopen under the shipped tree: %v", err)
+	}
+	defer func() { _ = after.Close() }()
+	ds, err := after.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	var upgraded string
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		if strings.Contains(line, "upgraded a repository's shipped vocabulary") {
+			upgraded = line
+		}
+	}
+	if upgraded == "" {
+		t.Fatalf("the open did not upgrade the shipped vocabulary:\n%s", logs.String())
+	}
+	t.Log(upgraded)
+	if !strings.Contains(upgraded, "convertedRecords=0") {
+		t.Fatalf("the upgrade converted records: %s", upgraded)
+	}
+	for _, kind := range []string{"substrate.reamde.dev/llm/thread", "substrate.reamde.dev/llm/provider"} {
+		decl, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", kind)
+		if err != nil {
+			t.Fatalf("read the %s declaration: %v", kind, err)
+		}
+		props, _ := decl.Properties["properties"].(map[string]any)
+		want := map[string]string{"substrate.reamde.dev/llm/thread": "subject", "substrate.reamde.dev/llm/provider": "titleModel"}[kind]
+		if _, ok := props[want]; !ok {
+			t.Fatalf("%s does not declare %s after the upgrade", kind, want)
+		}
+	}
+}

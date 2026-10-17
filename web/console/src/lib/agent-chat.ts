@@ -216,10 +216,33 @@ export function groupByDay<T>(
 
 const TITLE_LENGTH = 64
 
-/** What a thread is called: its opening message, first line, cut short. A
- * triggered thread opens with the delivery envelope, which reads as what
- * fired rather than as JSON. */
-export function threadTitle(opening: string | undefined): string {
+const cutTitle = (line: string) =>
+  line.length > TITLE_LENGTH
+    ? line.slice(0, TITLE_LENGTH - 1).trimEnd() + "…"
+    : line
+
+/** The heading a thread carries itself: `subject`, which the server writes
+ * from the first message, then from the agent's model after the first
+ * reply, and which a rename overwrites. Undefined on threads without one
+ * (triggered runs, threads older than the property). */
+export function threadSubject(
+  thread: SubstrateRecord | undefined
+): string | undefined {
+  const subject = thread?.properties.subject
+  return typeof subject === "string" && subject.trim()
+    ? subject.trim()
+    : undefined
+}
+
+/** What a thread is called: its subject when it has one, else its opening
+ * message, first line, cut short. A triggered thread opens with the delivery
+ * envelope, which reads as what fired rather than as JSON. */
+export function threadTitle(
+  thread: SubstrateRecord | undefined,
+  opening: string | undefined
+): string {
+  const subject = threadSubject(thread)
+  if (subject) return cutTitle(subject)
   const text = (opening ?? "").trim()
   if (!text) return "New chat"
   const delivery = deliveryNoticeOf({
@@ -232,10 +255,7 @@ export function threadTitle(opening: string | undefined): string {
     const what = delivery.record.title || displayName(delivery.record.kind)
     return `When ${what} changed`
   }
-  const line = text.split("\n")[0].trim()
-  return line.length > TITLE_LENGTH
-    ? line.slice(0, TITLE_LENGTH - 1).trimEnd() + "…"
-    : line
+  return cutTitle(text.split("\n")[0].trim())
 }
 
 /** Each thread's opening user message, from a page of user messages in turn
@@ -262,14 +282,15 @@ export interface ChatRow {
   agentId?: string
 }
 
-/** The loaded conversations as rows, titled off their opening messages. */
+/** The loaded conversations as rows, titled by their subjects, else by their
+ * opening messages. */
 export function chatRows(
   threads: SubstrateRecord[],
   openings: Map<string, string>
 ): ChatRow[] {
   return threads.map((thread) => ({
     thread,
-    title: threadTitle(openings.get(thread.id)),
+    title: threadTitle(thread, openings.get(thread.id)),
     agentId: threadAgentId(thread),
   }))
 }
