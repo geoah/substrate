@@ -52,6 +52,7 @@ function row(i: number, agentId: string, title = `Chat ${i}`): ChatRow {
     thread: {
       ...record(`t${i}`, { startedAt: at.toISOString() }),
       kind: "substrate.reamde.dev/llm/thread",
+      updatedAt: at.toISOString(),
     },
     title,
     agentId,
@@ -240,6 +241,17 @@ describe("ThreadList", () => {
     ).toBeTruthy()
   })
 
+  it("shows a thread's last reply under its title", async () => {
+    renderList({
+      rows: [
+        { ...row(1, HELPER, "Trip to Berlin"), preview: "See the Reichstag" },
+      ],
+    })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    const chat = within(chats).getByRole("button", { name: /Trip to Berlin/ })
+    expect(chat.textContent).toContain("See the Reichstag")
+  })
+
   it("never dates a chat in the future", async () => {
     const ahead = new Date(Date.now() + 8 * 3600_000).toISOString()
     renderList({
@@ -248,6 +260,7 @@ describe("ThreadList", () => {
           thread: {
             ...record("tf", { startedAt: ahead }),
             kind: "substrate.reamde.dev/llm/thread",
+            updatedAt: ahead,
           },
           title: "Skewed",
           agentId: HELPER,

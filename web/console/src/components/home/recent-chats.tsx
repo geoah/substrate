@@ -13,7 +13,7 @@ import {
   agentActor,
   chatRows,
   openingMessages,
-  threadStartedAt,
+  threadActiveAt,
 } from "@/lib/agent-chat"
 import {
   conversationsQueryOptions,
@@ -74,7 +74,7 @@ export function RecentChats() {
         const agent = row.agentId
           ? actorIdentity(agentActor(row.agentId))
           : undefined
-        const at = threadStartedAt(row.thread)
+        const at = threadActiveAt(row.thread)
         return (
           <li
             key={row.thread.id}

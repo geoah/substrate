@@ -123,6 +123,12 @@ export function threadStartedAt(thread: SubstrateRecord): string {
   return typeof declared === "string" && declared ? declared : thread.createdAt
 }
 
+/** When a thread was last active: the row's last write, which every settle
+ * makes, else when it started. The chat list orders and groups by it. */
+export function threadActiveAt(thread: SubstrateRecord): string {
+  return thread.updatedAt || threadStartedAt(thread)
+}
+
 /** How long ago something in a chat happened. A stamp ahead of the reader's
  * clock (a skewed host, a seeded row) reads "just now": what already happened
  * never reads "in 8h". */
@@ -280,6 +286,14 @@ export interface ChatRow {
   thread: SubstrateRecord
   title: string
   agentId?: string
+  /** The start of the thread's last reply (`lastReply`), when it has one. */
+  preview?: string
+}
+
+/** The thread's own preview of its last reply. */
+export function threadPreview(thread: SubstrateRecord): string | undefined {
+  const reply = thread.properties.lastReply
+  return typeof reply === "string" && reply.trim() ? reply.trim() : undefined
 }
 
 /** The loaded conversations as rows, titled by their subjects, else by their
@@ -292,6 +306,7 @@ export function chatRows(
     thread,
     title: threadTitle(thread, openings.get(thread.id)),
     agentId: threadAgentId(thread),
+    preview: threadPreview(thread),
   }))
 }
 
