@@ -564,6 +564,13 @@ whether it lands before or after the title call answers. A client that wants
 the title as it lands tails
 `GET /api/v1/changes?watch=1&kinds=substrate.reamde.dev/llm/thread`.
 
+**A thread keeps a preview of its last reply.** Each settle writes
+`lastReply`: the reply the turn settled with, whitespace collapsed and cut to
+240 characters. A turn that settles with no reply text (an error, or an
+`overbudget` run whose last turn called tools) leaves the previous preview, so
+a list reads the thread rows alone. `lastReply` is not searchable; the reply
+is, on its `message` row.
+
 `agent`, `parent` and `thread` are references that never cascade: a thread is
 the audit row of a run and has to keep naming the agent that ran it, so
 deleting the agent leaves the row standing. Each declares its `inverse`, so the
@@ -953,5 +960,15 @@ tally on the thread row; one active turn per thread is enforced by a lease, so
 a second concurrent turn is refused as a conflict, leaving nothing on the
 thread, and a crashed turn's expired lease is taken over by the next
 continuation.
+
+A chat list is one read of the threads, most recently active first, because
+every settle writes the thread row:
+
+```http
+GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/llm/thread"],"properties":{"mode":{"eq":"chat"}}}&orderBy=updatedAt:desc&first=50
+```
+
+Each row's `title` is its heading and `lastReply` previews its last reply
+([threads](#threads-messages-and-cost)).
 
 Next: the [bundles catalog](bundles-catalog.md), what ships today.

@@ -1800,8 +1800,9 @@ func cutShipped(t *testing.T, doc, from, to string) string {
 	return doc[:i] + doc[j:]
 }
 
-// The upgrade that brings llm/thread `subject` and llm/provider `titleModel`
-// (decision record 0170) is two optional strings and a template: it converts
+// The upgrade that brings llm/thread `subject` and `lastReply` and
+// llm/provider `titleModel` (decision record 0170) is three optional strings
+// and a template: it converts
 // no record and re-derives no reference inside the open's transaction, so a
 // repository with any number of threads upgrades in the time its declaration
 // rows take.
@@ -1811,6 +1812,7 @@ func TestBootUpgradeLandsTheThreadSubjectWithNoConversions(t *testing.T) {
 	before := shippedTree(t)
 	patchShipped(t, llmKind(before, "thread.yaml"), func(doc string) string {
 		doc = cutShipped(t, doc, "    # Written by the loop when a chat thread opens", "    agent:\n")
+		doc = cutShipped(t, doc, "    # A preview for a thread list", "    reason:\n")
 		doc = strings.Replace(doc, `displayTemplate: "{subject|agent}"`, `displayTemplate: "{agent}: {status}"`, 1)
 		return pinVersion(t, doc, "12")
 	})
@@ -1856,9 +1858,14 @@ func TestBootUpgradeLandsTheThreadSubjectWithNoConversions(t *testing.T) {
 			t.Fatalf("read the %s declaration: %v", kind, err)
 		}
 		props, _ := decl.Properties["properties"].(map[string]any)
-		want := map[string]string{"substrate.reamde.dev/llm/thread": "subject", "substrate.reamde.dev/llm/provider": "titleModel"}[kind]
-		if _, ok := props[want]; !ok {
-			t.Fatalf("%s does not declare %s after the upgrade", kind, want)
+		want := map[string][]string{
+			"substrate.reamde.dev/llm/thread":   {"subject", "lastReply"},
+			"substrate.reamde.dev/llm/provider": {"titleModel"},
+		}[kind]
+		for _, name := range want {
+			if _, ok := props[name]; !ok {
+				t.Fatalf("%s does not declare %s after the upgrade", kind, name)
+			}
 		}
 	}
 }

@@ -71,7 +71,9 @@ export const CONVERSATION_MODES = [
 /** How many conversations the chat list reads. */
 export const CHAT_LIST_WINDOW = 100
 
-/** Every agent's conversations, newest first: the chat list. */
+/** Every agent's conversations, most recently active first: the chat list.
+ * Ordered by `updatedAt`, which every settle moves, so a continued chat
+ * rises to the top. */
 export function conversationsQueryOptions(first = CHAT_LIST_WINDOW) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
@@ -79,7 +81,7 @@ export function conversationsQueryOptions(first = CHAT_LIST_WINDOW) {
     name: "thread",
     first,
     filter: { properties: { mode: { in: CONVERSATION_MODES } } },
-    orderBy: "startedAt:desc",
+    orderBy: "updatedAt:desc",
   })
 }
 

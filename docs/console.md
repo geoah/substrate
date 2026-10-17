@@ -491,7 +491,9 @@ conversation on the left, the one being read in the middle, and the agent's
 panel on the right.
 
 - **The chats column** has **New chat**, a search over the chats' titles,
-  every conversation under Today, Yesterday and Earlier, and the agents
+  every conversation under Today, Yesterday and Earlier by when it was last
+  active (a continued chat moves to the top), each with the start of its last
+  reply under its name, and the agents
   themselves. It lists the primary agents you talk to; **Show more agents**
   adds the supporting and internal ones, each tagged with its
   [purpose](agents.md), and the ones that only work for other agents. One you
