@@ -157,6 +157,7 @@ describe("Conversation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     fail = true
     act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-1" })
       calls[0].onEvent({
         kind: "done",
         result: {
@@ -364,6 +365,42 @@ describe("Conversation", () => {
     await act(() => new Promise((r) => setTimeout(r, 0)))
     expect(stops).toEqual(["t-5"])
     expect(screen.queryByText(/no running chat turn/)).toBeNull()
+  })
+
+  it("stops attaching when the thread is gone, and says so", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-6", { threadRecord: runningThread("t-6") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() =>
+      attaches[0].onError?.(
+        new ApiError("not_found", "substrate: not found: thread t-6", 404)
+      )
+    )
+    expect(screen.getByText(/thread t-6/)).toBeTruthy()
+    await act(() => new Promise((r) => setTimeout(r, 1200)))
+    expect(attaches).toHaveLength(1)
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
+    ).toBeTruthy()
+  })
+
+  it("gives the message back when a turn is refused before it starts", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-7")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "one more thing" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    const refusal =
+      "substrate: version conflict: 4 chat turns are already running in this repository: wait for one to finish, or stop one"
+    act(() => calls[0].onError?.(new ApiError("conflict", refusal, 409)))
+    expect(screen.getByText(/4 chat turns are already running/)).toBeTruthy()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "one more thing"
+    )
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(attaches).toHaveLength(0)
   })
 })
 

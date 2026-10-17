@@ -365,6 +365,18 @@ export function Conversation({
     setStreaming(true)
   }
 
+  // A refusal the same request would meet again: a 4xx other than a
+  // conflict or a rate limit, which can clear on their own.
+  function permanent(err: Error): boolean {
+    return (
+      err instanceof ApiError &&
+      err.status >= 400 &&
+      err.status < 500 &&
+      err.status !== 409 &&
+      err.status !== 429
+    )
+  }
+
   // A stream that ended without `done` (a dropped connection, a stream
   // that fell behind, a server restart) is not the turn's end: attach again,
   // backing off, until the server says the turn settled.
@@ -407,6 +419,12 @@ export function Conversation({
           },
           onError: (err) => {
             if (run !== runRef.current) return
+            if (permanent(err)) {
+              // Attaching again would meet the same answer (a deleted
+              // thread): say so and release the composer.
+              setError(err.message)
+              return settleRun(run)
+            }
             lastErrorRef.current = err.message
             reattach(run, thread, attempt + 1)
           },
@@ -479,11 +497,15 @@ export function Conversation({
     // optimistic turn goes, and the message comes back to be retried. A run
     // that named one and ended without `done` is still running on the
     // server: it is attached to again.
+    // Whether this request's stream named its thread: before that, a failure
+    // is a refusal (the repository's cap, a running turn, a spend cap) and
+    // nothing ran, so the message comes back.
     let done = false
+    let named = false
     const end = () => {
       if (run !== runRef.current) return
-      if (runThreadRef.current && done) return settle()
-      if (runThreadRef.current) return reattach(run, runThreadRef.current, 0)
+      if (named && done) return settle()
+      if (named) return reattach(run, runThreadRef.current, 0)
       update(EMPTY_OVERLAY)
       setStreaming(false)
       setStopping(false)
@@ -495,14 +517,16 @@ export function Conversation({
       thread: current || undefined,
       message,
       onEvent: (ev) => {
-        if (ev.kind === "thread" && ev.thread && run === runRef.current)
+        if (ev.kind === "thread" && ev.thread && run === runRef.current) {
+          named = true
           setAttachedFor(ev.thread)
+        }
         if (ev.kind === "done") done = true
         onEvent(ev, run)
       },
       onError: (err) => {
         if (run !== runRef.current) return
-        if (runThreadRef.current) lastErrorRef.current = err.message
+        if (named) lastErrorRef.current = err.message
         else setError(err.message)
         end()
       },

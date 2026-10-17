@@ -373,11 +373,13 @@ function openAgentStream(
       await readAgentStream(res.body, handlers)
     } catch (cause) {
       if (ctrl.signal.aborted) return
-      const detail =
+      // An ApiError keeps its status, so a caller can tell a refusal that
+      // will not change (a deleted thread) from a failure worth retrying.
+      handlers.onError?.(
         cause instanceof ApiError
-          ? cause.message
-          : ((cause as Error).message ?? "chat stream failed")
-      handlers.onError?.(new Error(detail))
+          ? cause
+          : new Error((cause as Error).message ?? "chat stream failed")
+      )
     }
   })()
 
