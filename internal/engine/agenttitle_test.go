@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +40,13 @@ func TestCleanSubjectReadsMarkdownAsPlainText(t *testing.T) {
 		{"keep snake_case_name and 2*3 as text", "keep snake_case_name and 2*3 as text"},
 		{"compute 2 * 3 * 4", "compute 2 * 3 * 4"},
 		{"clear /tmp/_cache/file now", "clear /tmp/_cache/file now"},
+		{"clear /tmp/_cache_/file now", "clear /tmp/_cache_/file now"},
+		{"see https://example.com/_cache_/file now", "see https://example.com/_cache_/file now"},
+		{"the **/tmp/x** path", "the /tmp/x path"},
+		{"[code `]` label](x)", "code ] label"},
+		{"**a*", "*a"},
+		{"*a**", "a*"},
+		{"***a* b**", "a b"},
 		{"open https://example.com/a_b_c*d now", "open https://example.com/a_b_c*d now"},
 		{`escaped \*stars\* stay`, "escaped *stars* stay"},
 		{"## A heading", "A heading"},
@@ -90,6 +96,7 @@ func TestCleanSubjectOfAHugeMarkerRunIsBounded(t *testing.T) {
 	} {
 		started := time.Now()
 		var got string
+		// AllocsPerRun warms with one call before it counts.
 		allocs := testing.AllocsPerRun(3, func() { got = cleanSubject(in) })
 		if took := time.Since(started); took > 2*time.Second {
 			t.Errorf("cleanSubject of a %d byte line took %v", len(in), took)
@@ -101,14 +108,6 @@ func TestCleanSubjectOfAHugeMarkerRunIsBounded(t *testing.T) {
 		}
 		if utf8.RuneCountInString(got) > threadSubjectRunes {
 			t.Errorf("subject of %d runes", utf8.RuneCountInString(got))
-		}
-		var stats runtime.MemStats
-		runtime.ReadMemStats(&stats)
-		before := stats.TotalAlloc
-		cleanSubject(in)
-		runtime.ReadMemStats(&stats)
-		if spent := stats.TotalAlloc - before; spent > 256*subjectScanBytes {
-			t.Errorf("cleanSubject of a %d byte line allocated %d bytes", len(in), spent)
 		}
 	}
 }

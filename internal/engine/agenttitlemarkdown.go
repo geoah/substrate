@@ -86,8 +86,52 @@ func plainText(line string) string {
 		return ""
 	}
 	rs := []rune(line[blockPrefix(line):])
-	brackets, parens := matchPairs(rs, '[', ']'), matchPairs(rs, '(', ')')
-	return renderInline(parseInline(rs, 0, len(rs), brackets, parens, matchTicks(rs)))
+	ticks := matchTicks(rs)
+	md := &mdLine{
+		rs: rs, ticks: ticks,
+		brackets: matchPairs(rs, '[', ']', ticks), parens: matchPairs(rs, '(', ')', ticks),
+	}
+	md.words()
+	return renderInline(md.parseInline(0, len(rs)))
+}
+
+// mdLine is one line under reduction, with what parseInline looks up in
+// constant time: each bracket's and paren's partner, each backtick run's
+// close, and the whitespace-delimited word each rune sits in.
+type mdLine struct {
+	rs                      []rune
+	brackets, parens, ticks []int
+	// wordLo and wordHi bound the word at each index; pathy marks the
+	// indexes whose word holds a `/`, a path or a URL.
+	wordLo, wordHi []int
+	pathy          []bool
+}
+
+func (md *mdLine) words() {
+	n := len(md.rs)
+	md.wordLo, md.wordHi, md.pathy = make([]int, n), make([]int, n), make([]bool, n)
+	for lo := 0; lo < n; {
+		if unicode.IsSpace(md.rs[lo]) {
+			lo++
+			continue
+		}
+		hi, slash := lo, false
+		for hi < n && !unicode.IsSpace(md.rs[hi]) {
+			slash = slash || md.rs[hi] == '/'
+			hi++
+		}
+		for k := lo; k < hi; k++ {
+			md.wordLo[k], md.wordHi[k], md.pathy[k] = lo, hi, slash
+		}
+		lo = hi
+	}
+}
+
+// literalRun reports a delimiter run at rs[i:n] that sits strictly inside a
+// path or URL (`/tmp/_cache_/file`): text there, never emphasis. A run at the
+// edge of the word (`**/tmp/x**`) still pairs.
+func (md *mdLine) literalRun(i, n int) bool {
+	return md.pathy[i] && i > md.wordLo[i] && n < md.wordHi[i]
 }
 
 // thematicBreak reports a line of three or more of one of `-`, `*`, `_`,
@@ -161,13 +205,21 @@ func blockPrefix(line string) int {
 
 // matchPairs maps each open rune to its balanced close and back, in one pass
 // with a stack; -1 where a rune has no partner. An escaped rune pairs with
-// nothing.
-func matchPairs(rs []rune, open, close rune) []int {
+// nothing, and a code span is skipped whole: its contents are literal.
+func matchPairs(rs []rune, open, close rune, ticks []int) []int {
 	match := make([]int, len(rs))
-	var stack []int
-	for i := range rs {
+	for i := range match {
 		match[i] = -1
+	}
+	var stack []int
+	for i := 0; i < len(rs); i++ {
 		switch {
+		case rs[i] == '`' && ticks[i] >= 0:
+			width := 0
+			for i+width < len(rs) && rs[i+width] == '`' {
+				width++
+			}
+			i = ticks[i] + width - 1
 		case i > 0 && rs[i-1] == '\\':
 		case rs[i] == open:
 			stack = append(stack, i)
@@ -215,7 +267,9 @@ type inlineTok struct {
 	delim    rune // '*', '_' or '~'; 0 for text
 	canOpen  bool
 	canClose bool
-	removed  bool
+	// left is how many of the run's delimiters no pairing consumed; they
+	// render as text.
+	left int
 }
 
 func wordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
@@ -224,8 +278,10 @@ func wordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 // A delimiter run opens when the next rune is text and the previous one is
 // not a letter or digit, and closes the other way round, so a delimiter
 // inside a word or standing alone between spaces is text. A closer pairs
-// with the nearest open run of its own rune; what pairs is dropped.
-func parseInline(rs []rune, lo, hi int, brackets, parens, ticks []int) []inlineTok {
+// with the nearest open run of its own rune, consuming as many delimiters as
+// both hold, so `**a*` keeps one `*`.
+func (md *mdLine) parseInline(lo, hi int) []inlineTok {
+	rs, brackets, parens, ticks := md.rs, md.brackets, md.parens, md.ticks
 	var toks []inlineTok
 	var text strings.Builder
 	flush := func() {
@@ -274,7 +330,7 @@ func parseInline(rs []rune, lo, hi int, brackets, parens, ticks []int) []inlineT
 			if closeAt > open && closeAt < hi && closeAt+1 < hi && rs[closeAt+1] == '(' {
 				if end := parens[closeAt+1]; end > closeAt+1 && end < hi {
 					flush()
-					toks = append(toks, parseInline(rs, open+1, closeAt, brackets, parens, ticks)...)
+					toks = append(toks, md.parseInline(open+1, closeAt)...)
 					i = end + 1
 					continue
 				}
@@ -293,7 +349,7 @@ func parseInline(rs []rune, lo, hi int, brackets, parens, ticks []int) []inlineT
 			for n < hi && rs[n] == r {
 				n++
 			}
-			if r == '~' && n-i != 2 {
+			if r == '~' && n-i != 2 || md.literalRun(i, n) {
 				text.WriteString(string(rs[i:n]))
 				i = n
 				continue
@@ -301,7 +357,7 @@ func parseInline(rs []rune, lo, hi int, brackets, parens, ticks []int) []inlineT
 			before, after := at(i-1), at(n)
 			flush()
 			toks = append(toks, inlineTok{
-				text: string(rs[i:n]), delim: r,
+				text: string(rs[i:n]), delim: r, left: n - i,
 				canOpen:  !unicode.IsSpace(after) && !wordRune(before),
 				canClose: !unicode.IsSpace(before) && !wordRune(after),
 			})
@@ -319,14 +375,17 @@ func parseInline(rs []rune, lo, hi int, brackets, parens, ticks []int) []inlineT
 			continue
 		}
 		if t.canClose {
-			if stack := open[t.delim]; len(stack) > 0 {
-				o := stack[len(stack)-1]
-				open[t.delim] = stack[:len(stack)-1]
-				toks[o].removed, t.removed = true, true
-				continue
+			for stack := open[t.delim]; t.left > 0 && len(stack) > 0; stack = open[t.delim] {
+				o := &toks[stack[len(stack)-1]]
+				used := min(o.left, t.left)
+				o.left -= used
+				t.left -= used
+				if o.left == 0 {
+					open[t.delim] = stack[:len(stack)-1]
+				}
 			}
 		}
-		if t.canOpen {
+		if t.canOpen && t.left > 0 {
 			open[t.delim] = append(open[t.delim], k)
 		}
 	}
@@ -364,9 +423,11 @@ func autolinkEnd(rs []rune, i, hi int) (int, bool) {
 func renderInline(toks []inlineTok) string {
 	var b strings.Builder
 	for _, t := range toks {
-		if !t.removed {
+		if t.delim == 0 {
 			b.WriteString(t.text)
+			continue
 		}
+		b.WriteString(strings.Repeat(string(t.delim), t.left))
 	}
 	return b.String()
 }
