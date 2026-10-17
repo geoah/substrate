@@ -197,4 +197,30 @@ describe("the transcript", () => {
     expect(screen.getByText("m1")).toBeTruthy()
     expect(screen.getByText("m9")).toBeTruthy()
   })
+
+  it("puts a turn's thinking above its text, and none on a turn without", () => {
+    const { container } = render(
+      <Transcript
+        turns={[
+          turn({ content: "hi" }),
+          turn({
+            key: "a1",
+            role: "assistant",
+            content: "Hello.",
+            reasoning: "greet back",
+            reasoningMillis: 2000,
+          }),
+          turn({ key: "u2", content: "again" }),
+          turn({ key: "a2", role: "assistant", content: "Hello again." }),
+        ]}
+      />
+    )
+    const disclosures = container.querySelectorAll('[data-slot="reasoning"]')
+    expect(disclosures).toHaveLength(1)
+    expect(screen.getByText("Thought for 2 s")).toBeTruthy()
+    const reply = container.querySelector('[data-slot="agent-message"]')!
+    expect(reply.textContent?.indexOf("Thought for 2 s")).toBeLessThan(
+      reply.textContent?.indexOf("Hello.") ?? 0
+    )
+  })
 })

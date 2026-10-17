@@ -16,7 +16,7 @@ type spendFake struct {
 	calls int
 }
 
-func (f *spendFake) Complete(context.Context, Request, func(string)) (*Result, error) {
+func (f *spendFake) Complete(context.Context, Request, func(Delta)) (*Result, error) {
 	f.calls++
 	u := f.usage
 	return &Result{Content: "ok", Usage: &u}, nil

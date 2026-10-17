@@ -353,9 +353,10 @@ func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, e
 			substrate.ErrValidation, providerID, err)
 	}
 	return llm.Params{
-		Temperature:     p.Temperature,
-		MaxTokens:       p.MaxTokens,
-		ReasoningEffort: p.ReasoningEffort,
+		Temperature:      p.Temperature,
+		MaxTokens:        p.MaxTokens,
+		ReasoningEffort:  p.ReasoningEffort,
+		ReasoningSummary: p.ReasoningSummary,
 	}, nil
 }
 
@@ -497,6 +498,10 @@ type agentLoop struct {
 	// spend is the root run's spend (spend.go), set on the root loop alone:
 	// a settle of this loop that commits the thread row tells it so at once.
 	spend *spendRun
+
+	// reasoning is the current completion's thinking, as streamed or as the
+	// one-shot result carried it; reset by each complete.
+	reasoning turnReasoning
 
 	// own counters (the thread row's); the tally aggregates across the chain
 	turns      int
@@ -675,9 +680,10 @@ loop:
 				}
 			}
 		}
+		l.reasoning.settle(res.Reasoning)
 		if len(calls) == 0 {
 			// The final tool-free reply is the loop's natural end.
-			if err := l.putMessage(ctx, l.actor, map[string]any{"role": "assistant", "content": content}); err != nil {
+			if err := l.putMessage(ctx, l.actor, l.reasoning.stamp(map[string]any{"role": "assistant", "content": content})); err != nil {
 				return nil, err
 			}
 			status, reply = threadOK, content
@@ -695,11 +701,15 @@ loop:
 		if content != "" {
 			props["content"] = content
 		}
-		if err := l.putMessage(ctx, l.actor, props); err != nil {
+		if err := l.putMessage(ctx, l.actor, l.reasoning.stamp(props)); err != nil {
 			return nil, err
 		}
+		// The signed thinking rides this run's tail alone, never the row: the
+		// next request needs it beside the tool results, and no later run
+		// replays it.
 		messages = append(messages, llm.Message{
 			Role: llm.RoleAssistant, Content: content, ToolCalls: calls,
+			ReasoningBlocks: res.ReasoningBlocks,
 		})
 		for _, tc := range calls {
 			var out string
@@ -2005,11 +2015,76 @@ func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.
 		Model: l.model, System: l.system(), Messages: messages,
 		Tools: l.defs, Params: l.params,
 	}
-	var onDelta func(string)
+	l.reasoning = turnReasoning{}
+	var onDelta func(llm.Delta)
 	if l.in.emit != nil {
-		onDelta = func(text string) {
-			l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: text})
+		onDelta = func(d llm.Delta) {
+			switch {
+			case d.Reasoning != "":
+				l.reasoning.add(d.Reasoning, time.Now())
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Text: d.Reasoning})
+			case d.Text != "":
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: d.Text})
+			}
 		}
 	}
 	return l.client.Complete(ctx, req, onDelta)
+}
+
+// agentReasoningRunes bounds the reasoning an assistant row keeps: the row is
+// a transcript people read, and the whole chain is thousands of tokens a
+// turn that nothing replays (decision 0171). The first runes are kept.
+const agentReasoningRunes = 4000
+
+// turnReasoning is one completion's thinking: the bounded text the assistant
+// row keeps, and how long the model thought. The time runs from the first
+// streamed piece of reasoning to the last, the console's live count measures
+// the same span, and a one-shot completion streams none and records no time.
+type turnReasoning struct {
+	text     strings.Builder
+	runes    int
+	start    time.Time
+	last     time.Time
+	streamed bool
+}
+
+// add takes one streamed piece, arrived at now.
+func (r *turnReasoning) add(piece string, now time.Time) {
+	r.last = now
+	if !r.streamed {
+		r.streamed, r.start = true, now
+	}
+	r.keep(piece)
+}
+
+// settle takes the result's reasoning when nothing streamed: a one-shot
+// completion carries it whole on the result alone.
+func (r *turnReasoning) settle(whole string) {
+	if !r.streamed {
+		r.keep(whole)
+	}
+}
+
+func (r *turnReasoning) keep(piece string) {
+	for _, c := range piece {
+		if r.runes >= agentReasoningRunes {
+			return
+		}
+		r.text.WriteRune(c)
+		r.runes++
+	}
+}
+
+// stamp adds the reasoning to an assistant row's properties. A model that
+// thought without exposing the text (Anthropic's omitted display) leaves the
+// row as it was.
+func (r *turnReasoning) stamp(props map[string]any) map[string]any {
+	if strings.TrimSpace(r.text.String()) == "" {
+		return props
+	}
+	props["reasoning"] = r.text.String()
+	if r.streamed {
+		props["reasoningMillis"] = max(0, r.last.Sub(r.start).Milliseconds())
+	}
+	return props
 }

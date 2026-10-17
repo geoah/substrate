@@ -88,7 +88,7 @@ const (
 	anthropicMaxEvent = 4 << 20
 	// anthropicMaxMessage bounds a one-shot response body, and the text,
 	// tool input and block starts a stream accumulates.
-	anthropicMaxMessage = 16 << 20
+	anthropicMaxMessage = maxResponseBytes
 	// anthropicMaxErrorBody is how much of a refusal's body, or of a stream's
 	// error event, the call's error quotes.
 	anthropicMaxErrorBody = 64 << 10
@@ -153,7 +153,7 @@ func (c *anthropicClient) scrubbed(err error) error {
 	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
 }
 
-func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
+func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	msg, err := c.complete(ctx, anthropicParams(req), onDelta)
 	if err != nil {
 		return nil, c.scrubbed(err)
@@ -161,7 +161,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta fun
 	return anthropicResult(msg), nil
 }
 
-func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest, onDelta func(string)) (*anthropicMessage, error) {
+func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest, onDelta func(Delta)) (*anthropicMessage, error) {
 	params.Stream = onDelta != nil
 	if !params.Stream {
 		ceiling := anthropicOneShotMaxTokens
@@ -197,6 +197,7 @@ type anthropicRequest struct {
 	Tools        []anthropicTool        `json:"tools,omitempty"`
 	Temperature  *float64               `json:"temperature,omitempty"`
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Thinking     map[string]any         `json:"thinking,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
 }
 
@@ -265,6 +266,12 @@ func anthropicParams(req Request) anthropicRequest {
 	// and this endpoint refuses them, which is the refusal the loop should see.
 	if req.Params.ReasoningEffort != "" {
 		params.OutputConfig = &anthropicOutputConfig{Effort: req.Params.ReasoningEffort}
+	}
+	// Adaptive is the only thinking mode current models accept, and an older
+	// model that takes only a budget refuses it: that refusal reaches the loop
+	// the way a refused effort does.
+	if req.Params.ReasoningSummary {
+		params.Thinking = thinkingSummarized()
 	}
 	for _, t := range req.Tools {
 		params.Tools = append(params.Tools, anthropicTool{
@@ -366,6 +373,14 @@ func anthropicBlocks(m Message) (string, []any) {
 		}}
 	case RoleAssistant:
 		var blocks []any
+		// The signed thinking goes back first and unchanged: the API refuses
+		// a tool result whose assistant turn dropped or edited it.
+		var reasoning []json.RawMessage
+		if len(m.ReasoningBlocks) > 0 && json.Unmarshal(m.ReasoningBlocks, &reasoning) == nil {
+			for _, b := range reasoning {
+				blocks = append(blocks, b)
+			}
+		}
 		if m.Content != "" {
 			blocks = append(blocks, newAnthropicText(m.Content))
 		}
@@ -573,12 +588,20 @@ type anthropicMessage struct {
 	Usage      anthropicUsage     `json:"usage"`
 }
 
+// anthropicContent is one response block. A thinking block carries Thinking
+// (empty when the model's display is omitted, the default on current models)
+// and the Signature that would let it be echoed back; a redacted_thinking
+// block carries only the opaque Data. No request here echoes either back, so
+// both are kept for the result alone.
 type anthropicContent struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
+	Signature string          `json:"signature"`
+	Data      string          `json:"data"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
 }
 
 type anthropicUsage struct {
@@ -634,6 +657,8 @@ type anthropicEvent struct {
 	Delta        struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
@@ -649,7 +674,7 @@ type anthropicEvent struct {
 
 // anthropicStream folds a stream's events into the message they describe.
 // Each block's text grows in text, beside msg.Content, so a long reply is
-// not copied once per delta.
+// not copied once per delta; a thinking block's thinking grows there too.
 type anthropicStream struct {
 	msg  anthropicMessage
 	text [][]byte
@@ -661,7 +686,7 @@ type anthropicStream struct {
 // readStream reads the event stream of res. Events are dispatched on their
 // SSE event name; ping and any name the adapter has no use for are skipped,
 // and an error event ends the call with that event's data as its error.
-func (c *anthropicClient) readStream(res *http.Response, onDelta func(string)) (*anthropicMessage, error) {
+func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*anthropicMessage, error) {
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 0, 64<<10), anthropicMaxEvent)
 	var s anthropicStream
@@ -701,6 +726,10 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(string)) (
 		return nil, err
 	}
 	for i := range s.msg.Content {
+		if s.msg.Content[i].Type == "thinking" {
+			s.msg.Content[i].Thinking = string(s.text[i])
+			continue
+		}
 		s.msg.Content[i].Text = string(s.text[i])
 	}
 	return &s.msg, nil
@@ -709,7 +738,7 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(string)) (
 // fold applies one event to the message. Blocks start in index order with
 // no gaps, and a delta or a stop names a block already started; anything
 // else is a broken stream and an error.
-func (s *anthropicStream) fold(data []byte, onDelta func(string)) error {
+func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 	var ev anthropicEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
 		return err
@@ -718,7 +747,7 @@ func (s *anthropicStream) fold(data []byte, onDelta func(string)) error {
 	case "message_start":
 		s.msg, s.text, s.size = ev.Message, nil, 0
 		for _, block := range s.msg.Content {
-			s.text = append(s.text, []byte(block.Text))
+			s.text = append(s.text, []byte(block.Text+block.Thinking))
 		}
 	case "message_delta":
 		s.msg.StopReason = ev.Delta.StopReason
@@ -742,7 +771,7 @@ func (s *anthropicStream) fold(data []byte, onDelta func(string)) error {
 			return err
 		}
 		s.msg.Content = append(s.msg.Content, ev.ContentBlock)
-		s.text = append(s.text, []byte(ev.ContentBlock.Text))
+		s.text = append(s.text, []byte(ev.ContentBlock.Text+ev.ContentBlock.Thinking))
 	case "content_block_delta":
 		if err := s.started(ev); err != nil {
 			return err
@@ -755,8 +784,21 @@ func (s *anthropicStream) fold(data []byte, onDelta func(string)) error {
 			}
 			s.text[ev.Index] = append(s.text[ev.Index], ev.Delta.Text...)
 			if ev.Delta.Text != "" {
-				onDelta(ev.Delta.Text)
+				onDelta(Delta{Text: ev.Delta.Text})
 			}
+		case "thinking_delta":
+			if err := s.grow(len(ev.Delta.Thinking)); err != nil {
+				return err
+			}
+			s.text[ev.Index] = append(s.text[ev.Index], ev.Delta.Thinking...)
+			if ev.Delta.Thinking != "" {
+				onDelta(Delta{Reasoning: ev.Delta.Thinking})
+			}
+		case "signature_delta":
+			if err := s.grow(len(ev.Delta.Signature)); err != nil {
+				return err
+			}
+			block.Signature += ev.Delta.Signature
 		case "input_json_delta":
 			if ev.Delta.PartialJSON == "" {
 				break
@@ -821,9 +863,15 @@ func anthropicResult(msg *anthropicMessage) *Result {
 		},
 		Stop: anthropicStop(msg.StopReason),
 	}
-	var content strings.Builder
+	var content, reasoning strings.Builder
+	var blocks []any
 	for _, block := range msg.Content {
 		switch block.Type {
+		case "redacted_thinking":
+			blocks = append(blocks, map[string]any{"type": block.Type, "data": block.Data})
+		case "thinking":
+			reasoning.WriteString(block.Thinking)
+			blocks = append(blocks, map[string]any{"type": block.Type, "thinking": block.Thinking, "signature": block.Signature})
 		case "text":
 			content.WriteString(block.Text)
 		case "tool_use":
@@ -833,6 +881,10 @@ func anthropicResult(msg *anthropicMessage) *Result {
 		}
 	}
 	res.Content = content.String()
+	res.Reasoning = reasoning.String()
+	if len(blocks) > 0 {
+		res.ReasoningBlocks, _ = json.Marshal(blocks)
+	}
 	return res
 }
 

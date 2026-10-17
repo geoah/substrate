@@ -538,3 +538,16 @@ func TestAgentSpendCapIsOptionalAndZeroIsACap(t *testing.T) {
 		}
 	}
 }
+
+// reasoningSummary is a bool and nothing else.
+func TestReasoningSummaryParamIsABool(t *testing.T) {
+	p, err := vocabulary.ParseAgentParams(map[string]any{"reasoningSummary": true})
+	if err != nil || !p.ReasoningSummary {
+		t.Fatalf("reasoningSummary true: %+v, %v", p, err)
+	}
+	for _, bad := range []any{"true", 1, nil} {
+		if _, err := vocabulary.ParseAgentParams(map[string]any{"reasoningSummary": bad}); err == nil {
+			t.Fatalf("reasoningSummary %v accepted, want refused", bad)
+		}
+	}
+}

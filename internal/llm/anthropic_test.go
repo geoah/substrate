@@ -388,7 +388,7 @@ func TestAnthropicStreamsDeltasAndAccumulatesToolInput(t *testing.T) {
 	var deltas []string
 	res, err := srv.client(t, nil).Complete(context.Background(), Request{
 		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
-	}, func(s string) { deltas = append(deltas, s) })
+	}, func(d Delta) { deltas = append(deltas, d.Text) })
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -712,9 +712,9 @@ func TestAnthropicRetriesTheStatusesTheSDKRetried(t *testing.T) {
 					_, _ = fmt.Fprint(w, `{"type":"error","error":{"type":"api_error","message":"refused"}}`)
 				}))
 				defer srv.Close()
-				var onDelta func(string)
+				var onDelta func(Delta)
 				if stream {
-					onDelta = func(string) {}
+					onDelta = func(Delta) {}
 				}
 				_, err := anthropicClientAt(t, srv.URL).Complete(context.Background(), anthropicHi(), onDelta)
 				if err == nil || !strings.Contains(err.Error(), fmt.Sprintf(": %d ", tc.status)) {
@@ -775,7 +775,7 @@ func TestAnthropicRetriesARefusedStream(t *testing.T) {
 	}))
 	defer srv.Close()
 	var deltas strings.Builder
-	res, err := anthropicClientAt(t, srv.URL).Complete(context.Background(), anthropicHi(), func(s string) { deltas.WriteString(s) })
+	res, err := anthropicClientAt(t, srv.URL).Complete(context.Background(), anthropicHi(), func(d Delta) { deltas.WriteString(d.Text) })
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -842,7 +842,7 @@ func TestAnthropicStreamSkipsWhatItDoesNotUse(t *testing.T) {
 			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
 		)
 	})
-	res, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(string) {})
+	res, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(Delta) {})
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -862,7 +862,7 @@ func TestAnthropicStreamSurfacesAnErrorEvent(t *testing.T) {
 			`{"type":"error","error":{"type":"overloaded_error","message":"Overloaded (key sk-test)"}}`)...)
 	})
 	var deltas strings.Builder
-	_, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(s string) { deltas.WriteString(s) })
+	_, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(d Delta) { deltas.WriteString(d.Text) })
 	if err == nil || !strings.Contains(err.Error(), "overloaded_error") || strings.Contains(err.Error(), "sk-test") {
 		t.Fatalf("err = %v, want the scrubbed error event", err)
 	}
@@ -928,9 +928,9 @@ func TestAnthropicBoundsWhatItBuffers(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) { tc.respond(w) })
-			var onDelta func(string)
+			var onDelta func(Delta)
 			if tc.stream {
-				onDelta = func(string) {}
+				onDelta = func(Delta) {}
 			}
 			_, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), onDelta)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -975,7 +975,7 @@ func TestAnthropicRefusesALongOneShotUnsent(t *testing.T) {
 			case !tc.refused && err != nil:
 				t.Fatalf("one-shot: %v", err)
 			}
-			if _, err := srv.client(t, nil).Complete(context.Background(), req, func(string) {}); err != nil {
+			if _, err := srv.client(t, nil).Complete(context.Background(), req, func(Delta) {}); err != nil {
 				t.Fatalf("streamed: %v", err)
 			}
 		})
@@ -1064,13 +1064,13 @@ func TestAnthropicSendsTheSDKsRequestBody(t *testing.T) {
 					}
 					anthropicMessageBody(w)
 				})
-				var onDelta func(string)
+				var onDelta func(Delta)
 				var want map[string]any
 				if err := json.Unmarshal([]byte(tc.want), &want); err != nil {
 					t.Fatalf("want: %v", err)
 				}
 				if stream {
-					onDelta, want["stream"] = func(string) {}, true
+					onDelta, want["stream"] = func(Delta) {}, true
 				}
 				if _, err := srv.client(t, nil).Complete(context.Background(), tc.req, onDelta); err != nil {
 					t.Fatalf("complete: %v", err)
@@ -1105,7 +1105,7 @@ func TestAnthropicStreamAccumulatesInterleavedToolBlocks(t *testing.T) {
 			`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}`,
 			`{"type":"message_stop"}`)
 	})
-	res, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(string) {})
+	res, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(Delta) {})
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -1116,7 +1116,7 @@ func TestAnthropicStreamAccumulatesInterleavedToolBlocks(t *testing.T) {
 	broken := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
 		anthropicSSE(w, anthropicStreamOK[0], start(0, "toolu_a"), anthropicInputDelta(1, `{}`))
 	})
-	if _, err := broken.client(t, nil).Complete(context.Background(), anthropicHi(), func(string) {}); err == nil ||
+	if _, err := broken.client(t, nil).Complete(context.Background(), anthropicHi(), func(Delta) {}); err == nil ||
 		!strings.Contains(err.Error(), "content block at index 1") {
 		t.Fatalf("err = %v, want the unstarted block named", err)
 	}
@@ -1133,7 +1133,7 @@ func TestAnthropicStreamAssemblesToolInputFromAnyStart(t *testing.T) {
 					anthropicInputDelta(0, `{"id": `), anthropicInputDelta(0, `"a"}`),
 					`{"type":"content_block_stop","index":0}`, `{"type":"message_stop"}`)
 			})
-			res, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(string) {})
+			res, err := srv.client(t, nil).Complete(context.Background(), anthropicHi(), func(Delta) {})
 			if err != nil {
 				t.Fatalf("complete: %v", err)
 			}
@@ -1168,7 +1168,7 @@ func TestAnthropicReadsTokenCountsLeniently(t *testing.T) {
 			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":"4","input_tokens":"11","cache_read_input_tokens":2.0}}`,
 			`{"type":"message_stop"}`)
 	})
-	res, err = streamed.client(t, nil).Complete(context.Background(), anthropicHi(), func(string) {})
+	res, err = streamed.client(t, nil).Complete(context.Background(), anthropicHi(), func(Delta) {})
 	if err != nil {
 		t.Fatalf("streamed: %v", err)
 	}
@@ -1208,9 +1208,9 @@ func TestAnthropicErrorQuotesNoFragmentOfTheKey(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new: %v", err)
 			}
-			var onDelta func(string)
+			var onDelta func(Delta)
 			if tc.stream {
-				onDelta = func(string) {}
+				onDelta = func(Delta) {}
 			}
 			call := func(b string) string {
 				t.Helper()
@@ -1311,9 +1311,9 @@ func TestAnthropicClosesEveryResponseBody(t *testing.T) {
 			hc, _ := c.doer.inner.(*http.Client)
 			bodies := &bodyCounter{inner: hc.Transport}
 			hc.Transport = bodies
-			var onDelta func(string)
+			var onDelta func(Delta)
 			if tc.stream {
-				onDelta = func(string) {}
+				onDelta = func(Delta) {}
 			}
 			_, _ = c.Complete(context.Background(), anthropicHi(), onDelta)
 			if opened, closed := bodies.opened.Load(), bodies.closed.Load(); opened == 0 || closed != opened {
@@ -1359,9 +1359,9 @@ func TestAnthropicStopsWhenTheContextEnds(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			go func() { <-answered; cancel() }()
-			var onDelta func(string)
+			var onDelta func(Delta)
 			if tc.stream {
-				onDelta = func(string) {}
+				onDelta = func(Delta) {}
 			}
 			began := time.Now()
 			_, err := anthropicClientAt(t, srv.URL).Complete(ctx, anthropicHi(), onDelta)
@@ -1396,7 +1396,7 @@ func TestAnthropicNeverReplaysAStartedStream(t *testing.T) {
 	}))
 	defer srv.Close()
 	var deltas strings.Builder
-	_, err := anthropicClientAt(t, srv.URL).Complete(context.Background(), anthropicHi(), func(s string) { deltas.WriteString(s) })
+	_, err := anthropicClientAt(t, srv.URL).Complete(context.Background(), anthropicHi(), func(d Delta) { deltas.WriteString(d.Text) })
 	if err == nil {
 		t.Fatal("a broken stream ended without an error")
 	}

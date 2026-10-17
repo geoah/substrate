@@ -85,7 +85,8 @@ data:
   `claude-opus-5` on an `anthropic`-wire row.
   The substrate keeps no model table: re-pointing an agent at a cheaper model
   is one word here.
-- optional **`params`**: `{temperature, maxTokens, reasoningEffort}` for this
+- optional **`params`**: `{temperature, maxTokens, reasoningEffort,
+  reasoningSummary}` for this
   agent's calls, merged over the provider row's `defaults`. The set is closed,
   so a knob the loop could not pass on is a load error rather than a line that
   silently does nothing. `reasoningEffort` is one of `none`, `minimal`, `low`,
@@ -97,7 +98,20 @@ data:
   for any effort but none on chat completions, so an agent with `tools:` on one
   of those needs `reasoningEffort: none` said out loud. For the same reason a
   provider row's `defaults` is the wrong home for this knob — one row serves
-  several models — and none of the seeded rows sets it.
+  several models — and none of the seeded rows sets it. The effort also
+  decides whether a model thinks at all, and so whether a chat streams
+  `reasoning` events; whether those carry any text is the model's call.
+  Anthropic's current models think with the text omitted unless a request
+  asks for it, so an effort alone leaves the stream and the row empty.
+  `reasoningSummary: true` asks: it sends
+  `thinking: {type: adaptive, display: summarized}` as the request key on the
+  anthropic wire and as an extra body key on the openai and azure wires,
+  which LiteLLM forwards to an Anthropic model. The model still decides
+  whether a turn is worth thinking about, and a short question often is not.
+  The key is not a standard openai one: LiteLLM accepted it for the OpenAI and
+  Gemini models tried, and an endpoint that refuses unknown keys refuses the
+  request, so set it only on an agent whose provider row's endpoint takes it
+  ([decision 0171](decisions/0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md)).
 - **`tools:`**, the functions the model may invoke (below).
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -533,7 +547,16 @@ the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the
 tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
-sub-agent call's row), and the required `thread` it belongs to.
+sub-agent call's row), and the required `thread` it belongs to. An
+`assistant` row whose model exposed its thinking also carries `reasoning`,
+the first 4000 runes of it, and `reasoningMillis`, the time from the first
+streamed piece of reasoning to the last; a completion that streamed nothing
+(a run with no client attached) keeps the text and no time. The reasoning is
+for people reading the thread: no later request replays it, and compaction
+never reads it. The provider's signed thinking blocks are another matter:
+within one run, the loop passes them back unchanged on the assistant turn
+that called tools, as Anthropic requires, and then drops them; no row keeps
+them.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
@@ -947,7 +970,9 @@ call, something durable is minted — the thread is the trace.
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with `{"thread"?, "message"}`
 opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
-per streamed token, `toolStarted` and `toolFinished` around each dispatch,
+per streamed token, `reasoning` carrying `text` per streamed piece of the
+model's thinking, ahead of that turn's `delta` events and only from a model
+that exposes it, `toolStarted` and `toolFinished` around each dispatch,
 `compacted` when the loop summarizes older turns, one `done` carrying the
 settled result under `result`). A loop that fails after the
 `200` status line has already gone out terminates the stream with an `error`

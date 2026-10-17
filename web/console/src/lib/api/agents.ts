@@ -246,6 +246,7 @@ export interface AgentEvent {
   kind:
     | "thread"
     | "delta"
+    | "reasoning"
     | "toolStarted"
     | "toolFinished"
     | "compacted"
@@ -253,7 +254,8 @@ export interface AgentEvent {
     | "error"
   /** Rides the first event: the thread id, minted or continued. */
   thread?: string
-  /** A streamed content delta. */
+  /** A streamed content delta, or on a `reasoning` event a piece of the
+   * model's thinking, which arrives ahead of the turn's text. */
   text?: string
   /** Tool lifecycle. `id` is the tool CALL's id and rides both sides: one turn
    * may dispatch the same tool twice, so a client pairing by name settles the

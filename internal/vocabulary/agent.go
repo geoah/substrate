@@ -59,10 +59,14 @@ const (
 	AgentParamTemperature     = "temperature"
 	AgentParamMaxTokens       = "maxTokens"
 	AgentParamReasoningEffort = "reasoningEffort"
+	// AgentParamReasoningSummary asks the model for a readable summary of
+	// its thinking. Anthropic's current models think with the text omitted
+	// unless a request asks, so an effort alone streams no reasoning.
+	AgentParamReasoningSummary = "reasoningSummary"
 )
 
 // AgentParamKeys is the recognized set, in the order the errors name it.
-var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamReasoningEffort, AgentParamTemperature}
+var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamReasoningEffort, AgentParamReasoningSummary, AgentParamTemperature}
 
 // AgentReasoningEfforts is the reasoning-effort set, weakest first — the UNION
 // of what the wires accept, because one declaration serves all of them and no
@@ -492,9 +496,10 @@ func (l *loader) parseAgent(d Document) *Agent {
 // current models differ on whether a sampling param is even accepted: nil
 // means "do not send one", which is not the same as sending zero.
 type AgentParams struct {
-	Temperature     *float32
-	MaxTokens       int
-	ReasoningEffort string
+	Temperature      *float32
+	MaxTokens        int
+	ReasoningEffort  string
+	ReasoningSummary bool
 }
 
 // ParseAgentParams validates a request-param map and parses it. The set is
@@ -537,6 +542,12 @@ func ParseAgentParams(params map[string]any) (AgentParams, error) {
 					strings.Join(AgentReasoningEfforts, ", "))
 			}
 			out.ReasoningEffort = s
+		case AgentParamReasoningSummary:
+			b, ok := params[k].(bool)
+			if !ok {
+				return AgentParams{}, fmt.Errorf("%s: %v — true or false", k, params[k])
+			}
+			out.ReasoningSummary = b
 		default:
 			return AgentParams{}, fmt.Errorf("%s is not a request param — one of %s",
 				k, strings.Join(AgentParamKeys, ", "))

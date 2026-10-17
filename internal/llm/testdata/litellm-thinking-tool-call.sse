@@ -1,0 +1,56 @@
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"Germany's capital sh","thinking_blocks":[{"type":"thinking","thinking":"Germany's capital sh"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":"Germany's capital sh"}]},"content":"","role":"assistant"}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"ifted from","thinking_blocks":[{"type":"thinking","thinking":"ifted from"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":"ifted from"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":" Bonn to Berlin","thinking_blocks":[{"type":"thinking","thinking":" Bonn to Berlin"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":" Bonn to Berlin"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":" after reunification, so I should","thinking_blocks":[{"type":"thinking","thinking":" after reunification, so I should"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":" after reunification, so I should"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":" get","thinking_blocks":[{"type":"thinking","thinking":" get"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":" get"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":" the","thinking_blocks":[{"type":"thinking","thinking":" the"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":" the"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":" weather for Berlin.","thinking_blocks":[{"type":"thinking","thinking":" weather for Berlin."}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":" weather for Berlin."}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"\n\n","thinking_blocks":[{"type":"thinking","thinking":"\n\n"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":"\n\n"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"","thinking_blocks":[{"type":"thinking","thinking":"Germany's capital shifted from Bonn to Berlin after reunification, so I should get the weather for Berlin.\n\n","signature":"REDACTED-SIGNATURE"}],"provider_specific_fields":{"thinking_blocks":[{"type":"thinking","thinking":"Germany's capital shifted from Bonn to Berlin after reunification, so I should get the weather for Berlin.\n\n","signature":"REDACTED-SIGNATURE"}]},"content":""}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":"The"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" country is Germany."}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" Bonn was the capital"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" of West Germany until"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" re"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":"unification in"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" 1990, and the cap"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":"ital is now Berlin."}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" I'll get"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":" the weather there"}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{"content":"."}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"id":"toolu_REDACTED","function":{"arguments":"","name":"get_weather"},"type":"function","index":0,"caller":{"type":"direct"}}]}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"function":{"arguments":""},"type":"function","index":0}]}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"function":{"arguments":"{\"city\""},"type":"function","index":0}]}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"function":{"arguments":": \"Berl"},"type":"function","index":0}]}}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"function":{"arguments":"in\"}"},"type":"function","index":0}]}}]}
+
+data: {"id":"chatcmpl-REDACTED","object":"chat.completion.chunk","created":1700000000,"model":"anthropic/claude-haiku-5-5","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"chatcmpl-REDACTED","created":1700000000,"model":"anthropic/claude-haiku-5-5","object":"chat.completion.chunk","choices":[{"index":0,"delta":{}}],"usage":{"completion_tokens":184,"prompt_tokens":415,"total_tokens":599,"completion_tokens_details":{"reasoning_tokens":22,"text_tokens":162},"prompt_tokens_details":{"cached_tokens":0,"text_tokens":415,"cache_creation_tokens":0,"cache_creation_token_details":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}},"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
+
+data: [DONE]
+

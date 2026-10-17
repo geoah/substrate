@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 22
+  version: 23
   purpose: internal
   names:
     singular: agent
@@ -107,6 +107,16 @@ data:
             - max
           description: how hard a reasoning model thinks, when it takes the
             knob
+        # Sent as Anthropic's `thinking: {type: adaptive, display: summarized}`
+        # on every wire: the request key on anthropic, an extra body key on
+        # openai and azure, which LiteLLM forwards to an Anthropic model. Its
+        # current models think with the text omitted unless asked, so without
+        # this no reasoning streams. An endpoint that does not know the key
+        # decides what to do with it (decision 0171).
+        reasoningSummary:
+          type: bool
+          description: ask the model for a readable summary of its thinking,
+            which the chat streams and the turn keeps
     # `function` names the tool, and it is the ONE arm: the four built-ins are
     # `runtime: host` function records core ships, so
     # `{function: substrate.reamde.dev/core/query}` names one exactly as a

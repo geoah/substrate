@@ -53,6 +53,14 @@ type fakeTurn struct {
 	// finish is the turn's finish_reason; empty sends "stop". A "length"
 	// turn is a reply cut off by its output ceiling.
 	finish string
+	// reasoning is the turn's thinking, sent the way LiteLLM sends it:
+	// reasoning_content deltas ahead of the content on a stream, and
+	// reasoning_content on the message of a one-shot reply.
+	reasoning string
+	// signature, with reasoning, signs it: LiteLLM's `thinking_blocks` then
+	// carry the whole block once more with this signature, on the stream's
+	// last reasoning chunk or on the one-shot message.
+	signature string
 }
 
 // fakeLLM scripts /chat/completions per MODEL: each request pops the next
@@ -153,6 +161,12 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if stream, _ := req["stream"].(bool); !stream {
 		msg := map[string]any{"role": "assistant", "content": turn.content}
+		if turn.reasoning != "" {
+			msg["reasoning_content"] = turn.reasoning
+		}
+		if turn.signature != "" {
+			msg["thinking_blocks"] = []any{map[string]any{"type": "thinking", "thinking": turn.reasoning, "signature": turn.signature}}
+		}
 		if len(toolCalls) > 0 {
 			msg["tool_calls"] = toolCalls
 		}
@@ -168,6 +182,25 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	chunk := func(payload map[string]any) {
 		buf, _ := json.Marshal(payload)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", buf)
+	}
+	if turn.reasoning != "" {
+		runes := []rune(turn.reasoning)
+		half := len(runes) / 2
+		for _, part := range []string{string(runes[:half]), string(runes[half:])} {
+			if part == "" {
+				continue
+			}
+			chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
+				map[string]any{"index": 0, "delta": map[string]any{"reasoning_content": part}},
+			}})
+		}
+		if turn.signature != "" {
+			chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
+				map[string]any{"index": 0, "delta": map[string]any{"thinking_blocks": []any{
+					map[string]any{"type": "thinking", "thinking": turn.reasoning, "signature": turn.signature},
+				}}},
+			}})
+		}
 	}
 	// Content streams as two deltas so the collector sees real chunking.
 	if turn.content != "" {
@@ -389,6 +422,10 @@ def main(input, host):
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// namer chats for the thread title tests (agenttitle_db_test.go).
 		agent("namer", map[string]any{"provider": "namellm", "model": "name"}),
+		agent("thinker", map[string]any{
+			"provider": "chatllm", "model": "think",
+			"params": map[string]any{"reasoningEffort": "low", "reasoningSummary": true},
+		}),
 		// compactor chats on the one provider row with a context window, and
 		// may ask: the compaction fixture, a pending ask its blocked head.
 		agent("compactor", map[string]any{

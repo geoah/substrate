@@ -68,7 +68,7 @@ type liveMeter struct {
 	Client
 }
 
-func (m liveMeter) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
+func (m liveMeter) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	if err := m.ledger.Charge(m.wire); err != nil {
 		return nil, err
 	}
@@ -296,7 +296,7 @@ func TestLiveStreaming(t *testing.T) {
 				System:   liveOneWordSystem,
 				Messages: []Message{{Role: RoleUser, Content: liveOneWordUser}},
 				Params:   Params{MaxTokens: liveMaxTokens},
-			}, func(delta string) { acc.WriteString(delta) })
+			}, func(d Delta) { acc.WriteString(d.Text) })
 			if err != nil {
 				t.Fatalf("stream: %v", err)
 			}

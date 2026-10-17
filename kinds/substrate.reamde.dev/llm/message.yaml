@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 16
+  version: 17
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -50,6 +50,19 @@ data:
       required: true
       min: 0
       description: the loop iteration this row belongs to, for ordering
+    # Stamped by the ENGINE on an assistant row when the model streamed or
+    # returned its thinking: the first 4000 runes, kept for people reading
+    # the transcript and never replayed to a model (decision record 0171).
+    reasoning:
+      type: text
+      fts: false
+      description: the model's thinking for an assistant turn, at most its
+        first 4000 runes, stamped by the engine
+    reasoningMillis:
+      type: int
+      min: 0
+      description: how long the model thought, from its first streamed piece
+        of reasoning to its last, in milliseconds
     # The arguments ride as the VERBATIM wire string: they are the model's own
     # JSON, echoed back on the tool result, and re-encoding them would change
     # the bytes the provider matched a call by.

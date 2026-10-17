@@ -58,6 +58,7 @@ import {
   EMPTY_OVERLAY,
   pushCompacted,
   pushDelta,
+  pushReasoning,
   pushToolStart,
   settleTool,
   transcriptOf,
@@ -230,6 +231,10 @@ export function Conversation({
           setMinted(ev.thread)
           onThread(ev.thread)
         }
+        break
+      case "reasoning":
+        if (ev.text)
+          update(pushReasoning(liveRef.current, ev.text, seqRef.current++))
         break
       case "delta":
         if (ev.text)
