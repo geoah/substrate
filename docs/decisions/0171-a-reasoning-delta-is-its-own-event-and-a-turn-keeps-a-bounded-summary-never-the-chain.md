@@ -43,7 +43,9 @@ loop puts them on the run's in-memory tail, and the anthropic wire sends them
 ahead of the turn's text and `tool_use`. The openai wire sends them as the
 assistant message's `thinking_blocks`, which LiteLLM forwards; it reads them
 from the reply's `thinking_blocks`, keeping only the signed or redacted
-ones. No row stores them and no later run replays them. LiteLLM was checked
+ones. No row stores them and no later run replays them. A compaction on
+context overflow keeps the run's active tool exchange as it is, signed
+blocks included, because dropping them would break the native continuation. LiteLLM was checked
 live on 2026-10-17 with `anthropic/claude-haiku-5-5`: a tool result answered
 both with and without the echoed `thinking_blocks`, so the echo follows the
 documented rule rather than a refusal seen here. Anthropic's

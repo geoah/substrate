@@ -443,3 +443,62 @@ func TestOpenAIStreamIsBoundedIncludingReasoning(t *testing.T) {
 		t.Fatalf("an oversized reasoning stream: %v", err)
 	}
 }
+
+// Every field a streamed tool call keeps counts against the bound, and an
+// endpoint cannot open tool calls without end by choosing new indexes.
+func TestOpenAIStreamBoundsToolCalls(t *testing.T) {
+	stream := func(chunks func(w http.ResponseWriter)) error {
+		srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			chunks(w)
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		})
+		client, _ := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+		_, err := client.Complete(context.Background(), Request{
+			Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		}, func(Delta) {})
+		return err
+	}
+	id := strings.Repeat("i", 1<<20)
+	err := stream(func(w http.ResponseWriter) {
+		for i := range 17 {
+			_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":%d,\"id\":%q,\"type\":\"function\",\"function\":{\"name\":\"n\"}}]}}]}\n\n", i, id)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("17 MiB of tool call ids: %v", err)
+	}
+	err = stream(func(w http.ResponseWriter) {
+		for i := range maxToolCalls + 1 {
+			_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":%d,\"id\":\"c\",\"type\":\"function\",\"function\":{\"name\":\"n\"}}]}}]}\n\n", i*1000)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "tool calls") {
+		t.Fatalf("%d tool calls: %v", maxToolCalls+1, err)
+	}
+}
+
+// One event line past the bound fails the read before the SDK can buffer
+// it whole, terminated or not.
+func TestOpenAIStreamBoundsOneLine(t *testing.T) {
+	for _, terminated := range []bool{true, false} {
+		srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"")
+			chunk := strings.Repeat("x", 64<<10)
+			for range (maxStreamLine / len(chunk)) + 2 {
+				_, _ = fmt.Fprint(w, chunk)
+			}
+			if terminated {
+				_, _ = fmt.Fprint(w, "\"}}]}\n\ndata: [DONE]\n\n")
+			}
+		})
+		client, _ := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+		_, err := client.Complete(context.Background(), Request{
+			Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		}, func(Delta) {})
+		if err == nil || !strings.Contains(err.Error(), "stream line exceeds") {
+			t.Fatalf("an oversized line (terminated %v): %v", terminated, err)
+		}
+	}
+}

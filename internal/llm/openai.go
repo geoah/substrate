@@ -81,6 +81,38 @@ func (d *headerDoer) Do(req *http.Request) (*http.Response, error) {
 	return inner.Do(req)
 }
 
+// maxStreamLine bounds one event-stream line, the anthropic adapter's bound
+// on one event.
+const maxStreamLine = 4 << 20
+
+// maxToolCalls bounds the tool calls one streamed reply may open: each is
+// accumulated by its index, and the index is the endpoint's to choose.
+const maxToolCalls = 512
+
+// lineLimitReader fails a read once a line runs past limit bytes without a
+// newline, so a reader that buffers whole lines cannot be made to buffer
+// without end.
+type lineLimitReader struct {
+	io.ReadCloser
+	limit int
+	run   int
+}
+
+func (r *lineLimitReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	for _, b := range p[:n] {
+		if b == '\n' {
+			r.run = 0
+			continue
+		}
+		r.run++
+		if r.run > r.limit {
+			return 0, fmt.Errorf("openai: a stream line exceeds %d bytes", r.limit)
+		}
+	}
+	return n, err
+}
+
 // bodyPatch is what one call adds to the JSON the SDK writes and reads past
 // what the SDK parses, carried from Complete to bodyDoer in the call's
 // context. The SDK's chat types have no key for a thinking request or for
@@ -105,7 +137,7 @@ type bodyDoer struct {
 func (d *bodyDoer) Do(req *http.Request) (*http.Response, error) {
 	patch, _ := req.Context().Value(bodyPatchKey{}).(*bodyPatch)
 	if patch == nil {
-		return d.inner.Do(req)
+		patch = &bodyPatch{}
 	}
 	if (len(patch.extra) > 0 || len(patch.messages) > 0) && req.Body != nil {
 		if err := patchRequest(req, patch); err != nil {
@@ -113,9 +145,17 @@ func (d *bodyDoer) Do(req *http.Request) (*http.Response, error) {
 		}
 	}
 	res, err := d.inner.Do(req)
-	if err != nil || patch.response == nil || res.StatusCode >= http.StatusBadRequest ||
-		strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
+	if err != nil {
 		return res, err
+	}
+	if strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
+		// The SDK reads each event line whole before anything here can
+		// count it, so the line itself is bounded underneath it.
+		res.Body = &lineLimitReader{ReadCloser: res.Body, limit: maxStreamLine}
+		return res, nil
+	}
+	if patch.response == nil || res.StatusCode >= http.StatusBadRequest {
+		return res, nil
 	}
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
 	_ = res.Body.Close()
@@ -346,9 +386,12 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			return nil, err
 		}
 		for _, tc := range delta.ToolCalls {
-			if err := grow(len(tc.Function.Arguments)); err != nil {
+			if err := grow(len(tc.ID) + len(tc.Function.Name) + len(tc.Function.Arguments)); err != nil {
 				return nil, err
 			}
+		}
+		if err := acc.admit(delta.ToolCalls); err != nil {
+			return nil, err
 		}
 		// reasoning_content is the thinking text LiteLLM and the other
 		// gateways stream ahead of the content; thinking_blocks beside it
@@ -451,6 +494,24 @@ func neutralToolCalls(calls []openai.ToolCall) []ToolCall {
 type toolCallAccumulator struct {
 	byIndex map[int]*openai.ToolCall
 	order   []int
+}
+
+// admit refuses deltas that would open more than maxToolCalls calls.
+func (a *toolCallAccumulator) admit(deltas []openai.ToolCall) error {
+	opened := 0
+	for _, d := range deltas {
+		i := 0
+		if d.Index != nil {
+			i = *d.Index
+		}
+		if _, ok := a.byIndex[i]; !ok {
+			opened++
+		}
+	}
+	if len(a.byIndex)+opened > maxToolCalls {
+		return fmt.Errorf("openai: a streamed reply opens more than %d tool calls", maxToolCalls)
+	}
+	return nil
 }
 
 func (a *toolCallAccumulator) absorb(deltas []openai.ToolCall) {
