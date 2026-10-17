@@ -164,6 +164,10 @@ type dataset struct {
 	// loop returns (agentloop.go runAgent). A `running` thread outside it
 	// whose lease expired has no loop left to settle it (settleLostThreads).
 	runningThreads sync.Map
+	// chatTurns counts the detached chat turns this process runs for the
+	// repository, from admission to settle (agents.go ChatAgent), against
+	// maxRunningChatTurns.
+	chatTurns atomic.Int32
 	// firing counts the schedule occurrences this process is delivering now,
 	// keyed by fireKey (functions.go startFire). A function fire writes no
 	// row until it settles or parks, so without it a status read shows an
@@ -236,6 +240,12 @@ type dataset struct {
 	// (agenttitle.go), which suites that script a model's queue turn by turn
 	// would otherwise lose to a background call.
 	skipThreadTitles bool
+	// agentWriteTimeout and agentRowWrite are set only by tests, before any
+	// loop runs: the budget of a detached chat turn's own writes (zero is
+	// agentSettleTimeout), and a hook every agent message row passes
+	// through before it is written, so a test can hold one.
+	agentWriteTimeout time.Duration
+	agentRowWrite     func(ctx context.Context, props map[string]any) error
 	// exporting is the repository's one export slot (export.go): set by
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.

@@ -12,13 +12,12 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const (
-	// heartbeatInterval keeps idle ndjson streams (and the proxies in front
-	// of them) alive.
-	heartbeatInterval = 30 * time.Second
-	// changeBatch is one Changes() page while draining.
-	changeBatch = 500
-)
+// changeBatch is one Changes() page while draining.
+const changeBatch = 500
+
+// heartbeatInterval keeps idle ndjson streams (and the proxies in front of
+// them) alive. A variable only so a test can wait less than the interval.
+var heartbeatInterval = 30 * time.Second
 
 // streamWriteDeadline is how long one frame of a stream, or one write of the
 // export, may take to reach its client. The server sets no WriteTimeout,

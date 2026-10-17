@@ -36,9 +36,12 @@ type AgentResult struct {
 	Reply string `json:"reply"`
 	// Thread is the root thread record's id.
 	Thread string `json:"thread"`
-	// Status is ok, overbudget or error — the thread row's settled status.
+	// Status is ok, overbudget, error or stopped: the thread row's settled
+	// status. A chat turn a client stopped, or one a server shutdown ended,
+	// settles stopped.
 	Status string `json:"status"`
-	// Reason names the budget that ended an overbudget run.
+	// Reason names the budget that ended an overbudget run, or who or what
+	// stopped a stopped one.
 	Reason string `json:"reason,omitempty"`
 	// Effects counts the writes the run applied, tool calls included;
 	// EffectsByAction breaks the count down for the run ledger (root only).
@@ -66,7 +69,15 @@ const (
 	// history: the thread, the context size that triggered it, and how many
 	// message rows it replaces in replay.
 	AgentEventCompacted = "compacted"
-	AgentEventDone      = "done"
+	// AgentEventTruncated marks where an attach's replay lost events: the
+	// running turn emitted more than its replay buffer holds, so the events
+	// after this line are live and the dropped ones are read from the
+	// thread's `llm/message` rows.
+	AgentEventTruncated = "truncated"
+	// AgentEventIdle is an attach's whole answer when no detached turn runs
+	// on the thread: the thread and its row's status, then the stream ends.
+	AgentEventIdle = "idle"
+	AgentEventDone = "done"
 	// AgentEventError terminates a stream that already sent its 200: the loop
 	// failed after the status line was gone, so the failure travels as its own
 	// event rather than masquerading as a done with no result.
@@ -113,4 +124,11 @@ type AgentEvent struct {
 	// the new summary row covers.
 	TokensBefore int `json:"tokensBefore,omitempty"`
 	Covered      int `json:"covered,omitempty"`
+	// Turn rides delta, toolStarted and toolFinished: the `turn` ordinal the
+	// `llm/message` row for the event carries or will carry. A client that
+	// attaches after reading the rows drops every replayed event at or below
+	// the highest turn it holds.
+	Turn int `json:"turn,omitempty"`
+	// Status rides the idle event: the thread row's status.
+	Status string `json:"status,omitempty"`
 }

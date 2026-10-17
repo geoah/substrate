@@ -22,6 +22,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -236,10 +237,11 @@ func (t *txn) requireThreadKinds() error {
 	return nil
 }
 
-// nextThreadTurn is the thread's next message ordinal — the max stored
-// `turn` plus one. A continuation running CONCURRENTLY may mint the same
-// ordinal from its in-memory counter; replay stays honest because history
-// orders by creation, and the ordinal is display.
+// nextThreadTurn is the thread's next message ordinal: the max stored
+// `turn` plus one, or, while a loop of this process runs on the thread, an
+// ordinal it reserves past every one it has drawn. Replay orders by
+// creation; the ordinal is what a client pairs streamed events with rows by,
+// so it is unique within a thread.
 func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)
@@ -252,7 +254,18 @@ func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 		SELECT coalesce(max((e.props->>'turn')::bigint), -1) + 1 FROM records e
 		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread,
 		b.args...).Scan(&next)
-	return next, err
+	if err != nil {
+		return 0, err
+	}
+	// A loop running on the thread holds ordinals no row carries yet (the
+	// reply it is streaming, the tool call it is running): the row takes one
+	// past them, so no two rows of a thread share an ordinal.
+	if v, ok := t.ds.runningThreads.Load(threadID); ok {
+		if l, _ := v.(*agentLoop); l != nil {
+			next = int64(l.reserveTurnAfter(int(next)))
+		}
+	}
+	return next, nil
 }
 
 // resumeNotifiedThread continues the thread a resolution just reported into,
@@ -285,6 +298,11 @@ func (ds *dataset) admitResume(ctx context.Context, threadID string, decider sub
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: threadID})
 	if err != nil || row == nil || row.DeletedAt != nil {
 		ds.svc.log.Warn("substrate: resume: thread does not resolve", "thread", threadID, "error", err)
+		return false
+	}
+	// A stopped thread holds until its owner writes again, whoever resolved
+	// what: the owner's next message replays the resolution rows.
+	if status, _ := row.Props["status"].(string); status == threadStopped {
 		return false
 	}
 	agentID := referenceID(row.Props["agent"])
@@ -353,7 +371,11 @@ func (ds *dataset) continueThread(ctx context.Context, threadID string) {
 	}
 	defer release()
 	mode, _ := row.Props["mode"].(string)
-	if _, err := ds.runAgent(ctx, ag, agentInvocation{mode: mode, threadID: threadID}); err != nil && ctx.Err() == nil {
+	_, err = ds.runAgent(ctx, ag, agentInvocation{mode: mode, threadID: threadID, resume: true})
+	if errors.Is(err, errResumeStopped) {
+		return
+	}
+	if err != nil && ctx.Err() == nil {
 		// A canceled context is the shutdown taking the turn down, not a
 		// continuation that failed on its own; the sweep is the retry.
 		ds.svc.log.Warn("substrate: resume: the continuation failed", "thread", threadID, "agent", agentID, "error", err)

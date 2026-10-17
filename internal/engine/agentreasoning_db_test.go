@@ -117,7 +117,9 @@ func TestAOneShotReasoningKeepsTheTextWithoutATime(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{reasoning: "Short thought.", content: "done"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", nil)
+	// A call streams to no client, so its completion is one-shot; a chat
+	// turn always streams, into its hub.
+	res, err := ds.CallAgent(ctx, crewPackage+"/chatter", "hi")
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}

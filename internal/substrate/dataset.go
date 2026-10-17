@@ -168,7 +168,21 @@ type Dataset interface {
 	// CallAgent is the call API's agent half; ChatAgent is the same loop with a
 	// live client attached.
 	CallAgent(ctx context.Context, name string, input any) (*AgentResult, error)
+	//
+	// A chat turn runs detached from its client: ChatAgent streams it
+	// through emit and returns ctx.Err() when the client leaves first, and
+	// the turn runs on to its own settle.
 	ChatAgent(ctx context.Context, actor Actor, name, threadID, message string, emit func(AgentEvent)) (*AgentResult, error)
+	// AttachAgentTurn streams the running detached turn of threadID through
+	// emit, replay then live, and returns its settled result.
+	// ErrNoRunningTurn when no turn this process streams runs on the thread;
+	// ErrNotFound when the thread does not exist; ctx.Err() when the client
+	// left first.
+	AttachAgentTurn(ctx context.Context, threadID string, emit func(AgentEvent)) (*AgentResult, error)
+	// StopAgentTurn cancels the running detached turn of threadID on behalf
+	// of actor and returns its settled result. ErrNoRunningTurn and
+	// ErrNotFound as above.
+	StopAgentTurn(ctx context.Context, actor Actor, threadID string) (*AgentResult, error)
 	// SweepResolutions is the resume-recovery pass the service loop drives:
 	// settled threads whose newest resolution row postdates their settlement
 	// get their dropped continuation back, after a `running` thread whose

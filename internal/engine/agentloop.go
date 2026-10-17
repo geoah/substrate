@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/geoah/substrate/internal/llm"
@@ -44,13 +45,31 @@ const (
 	threadRelPare = "parent"
 )
 
-// Thread statuses. `running` settles to exactly one of the other three.
+// Thread statuses. `running` settles to exactly one of the others.
+// `stopped` is a detached chat turn a client stopped or a shutdown ended.
 const (
 	threadRunning    = "running"
 	threadOK         = "ok"
 	threadOverBudget = "overbudget"
 	threadError      = "error"
+	threadStopped    = "stopped"
 )
+
+// errResumeStopped refuses an automatic resume of a thread its owner
+// stopped: a stopped thread holds until the owner writes again.
+var errResumeStopped = errors.New("a stopped thread is not resumed until its owner writes again")
+
+// reasonShutdown is the reason a detached chat turn the server's shutdown
+// ended settles with; reasonStoppedBy names the actor that stopped one.
+const reasonShutdown = "stopped: the server shut down during the turn"
+
+func reasonStoppedBy(actor substrate.Actor) string {
+	return "stopped by " + string(actor)
+}
+
+// agentSettleTimeout bounds a detached turn's last writes, which run on a
+// context its stop and its shutdown do not cancel.
+const agentSettleTimeout = 30 * time.Second
 
 // The two `reason`s of an overbudget thread the deadline ended. The second
 // says the run had its final phase: the nudge is sent and never stored, so
@@ -158,6 +177,17 @@ type agentInvocation struct {
 	// what the chain's narrowest ancestor allowed.
 	emitCeiling []string
 	ceilinged   bool
+	// hub, set by ChatAgent alone, makes the run a detached chat turn: emit
+	// is the hub's publish, and attaches and stops reach the loop through it.
+	hub *turnHub
+	// resume marks a continuation the engine started on its own (a
+	// resolution's resume): it never claims a thread its owner stopped.
+	resume bool
+	// stopHub is the detached chat turn this run belongs to: the root's own
+	// hub, and the same hub on every sub-agent run under it. A run that has
+	// one is stopped with it, and writes and settles on bounded contexts its
+	// stop and the shutdown do not cancel.
+	stopHub *turnHub
 	// delivery is the stable delivery identity (repository/trigger/seq or fire
 	// id; per-call ids for direct invocations): tool idempotency keys derive
 	// from it plus the call path and ordinal, so a RETRIED delivery hands an
@@ -445,7 +475,15 @@ type agentLoop struct {
 	actor    substrate.Actor
 
 	threadID string
-	turn     int // next message ordinal on the thread
+	// turn is the next message ordinal on the thread. turnMu guards it,
+	// because a resolution written into the thread while the loop runs
+	// draws its ordinal here too (nextThreadTurn), so no two rows share one.
+	turnMu sync.Mutex
+	turn   int
+	// replyTurn is the ordinal reserved for the current completion's
+	// assistant row, -1 when none is reserved: its streamed deltas carry it
+	// before the row exists.
+	replyTurn int
 	// openedAt marks when this invocation loaded (or minted) its thread: a
 	// resolution row landing AFTER it was not in the replayed history, so the
 	// settle-time re-check knows what this run could not have consumed.
@@ -511,6 +549,17 @@ type agentLoop struct {
 	cost       float64
 	readCalls  int
 	readRows   int
+
+	// hub is in.hub: a detached chat turn's fan-out, nil on every other
+	// entry. partial is the current completion's streamed text, kept so a
+	// stopped turn's assistant row carries what the client already saw.
+	hub     *turnHub
+	partial strings.Builder
+	// opening is the history openThread returned, which run starts from.
+	opening []llm.Message
+	// settledStatus and settledReason are what the last settle committed,
+	// which a stop arriving during it may have turned into `stopped`.
+	settledStatus, settledReason string
 }
 
 // runAgent is the loop's one entry. Everything the loop writes lands
@@ -518,32 +567,48 @@ type agentLoop struct {
 // budget leaves a readable trace; the delivery machinery around it stays
 // at-least-once (a retried delivery is a fresh thread).
 func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) (*substrate.AgentResult, error) {
+	ctx, l, err := ds.prepareAgentRun(ctx, ag, in)
+	if err != nil {
+		return nil, err
+	}
+	return l.run(ctx)
+}
+
+// prepareAgentRun is the first half of a run: admission, the provider, the
+// tools, the thread opened or claimed, and the thread event. Every refusal
+// a caller must see as its own status happens here, before anything runs.
+// On success the loop is in runningThreads and the caller must call run on
+// the returned context, which carries the spend admission.
+func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) (_ context.Context, _ *agentLoop, err error) {
 	root := in.tally == nil
 	// A root run the dispatcher or a hand's entry did not already check meets
 	// the spend caps here, before a thread opens (spend.go): a sub-agent runs
 	// under its root's cap, which its caller was admitted against.
 	if root && !spendAdmitted(ctx, ag) {
-		var err error
 		if ctx, err = ds.refuseAtSpendCap(ctx, ag); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	// Counted for the whole loop, the model's turns and the tools it calls,
 	// so the background digest of a changelog yields to it
-	// (segmentdigest.go).
+	// (segmentdigest.go). run ends the count; a refusal here ends it now.
 	ds.svc.invocationStarted()
-	defer ds.svc.invocationEnded()
+	defer func() {
+		if err != nil {
+			ds.svc.invocationEnded()
+		}
+	}()
 	provider, err := ds.resolveProvider(ctx, ag.Provider)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	params, err := mergeParams(provider.id, provider.defaults, ag.Params)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	client, err := llm.New(provider.wire, provider.cfg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: agent %s: %w", substrate.ErrValidation, ag.Identity(), err)
+		return nil, nil, fmt.Errorf("%w: agent %s: %w", substrate.ErrValidation, ag.Identity(), err)
 	}
 	ds.mu.RLock()
 	wrap := ds.wrapLLMClient
@@ -560,43 +625,75 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 		// two operations to any external deduper (the CallFunction precedent).
 		id, err := newID()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.Repository().ID, id)
 	}
+	if in.hub != nil {
+		in.emit = in.hub.publish
+		in.stopHub = in.hub
+	}
 	l := &agentLoop{
 		ds: ds, ag: ag, provider: provider, model: ag.Model, params: params, in: in,
-		client: client,
-		actor:  substrate.Actor(ag.Actor()),
-		emit:   effectiveEmit(ag.Emit, in.emitCeiling, in.ceilinged),
+		client:    client,
+		actor:     substrate.Actor(ag.Actor()),
+		emit:      effectiveEmit(ag.Emit, in.emitCeiling, in.ceilinged),
+		hub:       in.hub,
+		replyTurn: -1,
 	}
 	if err := l.buildTools(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	messages, err := l.openThread(ctx)
+	defer func() {
+		// openThread registers the loop as soon as it holds the thread.
+		if err != nil && l.threadID != "" {
+			ds.runningThreads.CompareAndDelete(l.threadID, l)
+		}
+	}()
+	octx := ctx
+	if in.hub == nil && in.stopHub != nil {
+		// A sub-agent of a detached turn opens its thread past a stop that
+		// lands meanwhile, so a thread row never stays without its settle.
+		var done context.CancelFunc
+		octx, done = l.writeContext(ctx)
+		defer done()
+	}
+	l.opening, err = l.openThread(octx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if root {
 		// The run's charges count against the caps from its first one. A
 		// settle that commits the thread row moves them onto it (settle);
 		// when the loop returns by any other path, a panic included, they
 		// stay counted for the window, because no row will carry them
-		// (spend.go).
-		run := ds.spend.open(ag.Identity(), l.threadID, l.openCost)
-		in.tally.spend = run
-		l.spend = run
-		defer ds.spend.finish(run)
+		// (spend.go). run finishes it.
+		l.spend = ds.spend.open(ag.Identity(), l.threadID, l.openCost)
+		l.in.tally.spend = l.spend
 	}
-	ds.runningThreads.Store(l.threadID, l)
-	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
-	messages = l.compactAtOpen(ctx, messages)
+	return ctx, l, nil
+}
+
+// run is the second half of a run: the loop, the settle and the done event.
+// It owns what prepareAgentRun left open: the spend run, the runningThreads
+// entry and the invocation count. A detached chat turn (l.hub set) runs on a
+// context its stop and the service shutdown cancel; its writes outlive that
+// cancellation, so it settles `stopped` instead of leaving the thread
+// `running` under its lease.
+func (l *agentLoop) run(ctx context.Context) (*substrate.AgentResult, error) {
+	ds, ag := l.ds, l.ag
+	defer ds.svc.invocationEnded()
+	if l.spend != nil {
+		defer ds.spend.finish(l.spend)
+	}
+	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
+	messages := l.compactAtOpen(ctx, l.opening)
 
 	started := nowUTC()
 	deadline := started.Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
-	if !in.notAfter.IsZero() && in.notAfter.Before(deadline) {
-		deadline = in.notAfter
+	if !l.in.notAfter.IsZero() && l.in.notAfter.Before(deadline) {
+		deadline = l.in.notAfter
 	}
 	lctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
@@ -640,6 +737,20 @@ loop:
 		l.turns++
 		res, err := l.complete(lctx, messages)
 		if err != nil {
+			if stopped, why := l.stopReason(ctx); stopped {
+				// A stop or a shutdown ended the call: what streamed so far
+				// is the turn's reply, written before the settle.
+				status, reason, reply = threadStopped, why, l.partial.String()
+				if reply != "" {
+					// The settle comes first: a partial reply that cannot be
+					// written is logged, and the thread still settles.
+					if perr := l.putReply(ctx, l.reasoning.stamp(map[string]any{"role": "assistant", "content": reply})); perr != nil {
+						l.ds.svc.log.Warn("substrate: a stopped chat turn's partial reply was not written",
+							"thread", l.threadID, "error", perr)
+					}
+				}
+				break
+			}
 			if ctx.Err() == nil && errors.Is(lctx.Err(), context.DeadlineExceeded) {
 				// The loop's own deadline ended the call, not a server stop
 				// (the outer context is live). It settles like the other two
@@ -665,7 +776,9 @@ loop:
 				l.ds.svc.log.Warn("substrate: agent thread overflowed its context and could not compact",
 					"thread", l.threadID, "error", cerr)
 			}
-			serr := l.settle(ctx, threadError, err.Error(), reply, nil)
+			ectx, done := l.settleContext(ctx)
+			serr := l.settle(ectx, threadError, err.Error(), reply, nil)
+			done()
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
@@ -683,8 +796,8 @@ loop:
 		l.reasoning.settle(res.Reasoning)
 		if len(calls) == 0 {
 			// The final tool-free reply is the loop's natural end.
-			if err := l.putMessage(ctx, l.actor, l.reasoning.stamp(map[string]any{"role": "assistant", "content": content})); err != nil {
-				return nil, err
+			if err := l.putReply(ctx, l.reasoning.stamp(map[string]any{"role": "assistant", "content": content})); err != nil {
+				return nil, l.failWrite(ctx, err)
 			}
 			status, reply = threadOK, content
 			break
@@ -701,8 +814,8 @@ loop:
 		if content != "" {
 			props["content"] = content
 		}
-		if err := l.putMessage(ctx, l.actor, l.reasoning.stamp(props)); err != nil {
-			return nil, err
+		if err := l.putReply(ctx, l.reasoning.stamp(props)); err != nil {
+			return nil, l.failWrite(ctx, err)
 		}
 		// The signed thinking rides this run's tail alone, never the row: the
 		// next request needs it beside the tool results, and no later run
@@ -716,6 +829,8 @@ loop:
 			var ok bool
 			l.dispatchChanges = nil
 			l.dispatchWrites = nil
+			// The tool row's ordinal, reserved before its events carry it.
+			toolTurn := l.takeTurn()
 			if l.toolCalls >= maxToolCalls {
 				// The v4 lesson: refuse with a synthetic result the model
 				// SEES, so it can land a final reply instead of a silent
@@ -727,10 +842,10 @@ loop:
 				}
 			} else {
 				l.toolCalls++
-				l.toolEvent(substrate.AgentEventToolStarted, tc, nil, "")
+				l.toolEvent(substrate.AgentEventToolStarted, tc, toolTurn, nil, "")
 				out, ok = l.dispatch(lctx, tc)
 			}
-			l.toolEvent(substrate.AgentEventToolFinished, tc, &ok, out)
+			l.toolEvent(substrate.AgentEventToolFinished, tc, toolTurn, &ok, out)
 			// `ok` is stored, not inferred: a replayed transcript otherwise has
 			// to sniff the failure envelope out of the payload, and a
 			// successful result carrying an `error` key would counterfeit it.
@@ -753,12 +868,19 @@ loop:
 			if l.dispatchWrites != nil {
 				toolProps["subagentWrites"] = l.dispatchWrites
 			}
-			if err := l.putMessage(ctx, l.actor, toolProps); err != nil {
-				return nil, err
+			wctx, done := l.writeContext(ctx)
+			err := l.putMessageAt(wctx, l.actor, toolTurn, toolProps)
+			done()
+			if err != nil {
+				return nil, l.failWrite(ctx, err)
 			}
 			messages = append(messages, llm.Message{
 				Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: out,
 			})
+		}
+		if stopped, why := l.stopReason(ctx); stopped {
+			status, reason = threadStopped, why
+			break loop
 		}
 		if lctx.Err() != nil || final {
 			reason = deadlineReason(final)
@@ -768,10 +890,17 @@ loop:
 	if status == threadOverBudget && reason == "" {
 		reason = fmt.Sprintf("max turns reached (%d)", l.ag.Budgets.MaxTurns)
 	}
-	if status == threadOK {
+	if status == threadOK && l.stopRequested() == "" {
 		// Before the result and the settle, so the summarizer's tokens land
 		// in the same tally.
 		l.compactAtSettle(ctx, reply)
+	}
+	// The stop decision is made here, after the last step before the settle
+	// writes the terminal status: a stop that came while the turn finished
+	// on its own (its last write, the settle-time compaction) still decides
+	// it, so the thread settles `stopped`, keeping the reply it got.
+	if why := l.stopRequested(); why != "" && (status == threadOK || status == threadOverBudget) {
+		status, reason = threadStopped, why
 	}
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
@@ -794,23 +923,133 @@ loop:
 	if l.in.complete != nil {
 		complete = func(t *txn) error { return l.in.complete(t, res) }
 	}
-	if err := l.settle(ctx, status, reason, reply, complete); err != nil {
+	sctx, cancelSettle := l.settleContext(ctx)
+	defer cancelSettle()
+	if err := l.settle(sctx, status, reason, reply, complete); err != nil {
 		// The terminal patch rolled back with the completion: settle the
-		// thread as an error in a transaction of its own, so it does not
-		// stay `running` under its lease.
-		if serr := l.settle(ctx, threadError, err.Error(), reply, nil); serr != nil {
+		// thread as an error in a transaction of its own, on a budget of its
+		// own (the first may have spent it), so it does not stay `running`
+		// under its lease.
+		fctx, done := l.settleContext(ctx)
+		serr := l.settle(fctx, threadError, err.Error(), reply, nil)
+		done()
+		if serr != nil {
 			l.ds.svc.log.Warn("substrate: settling a thread whose completion failed", "thread", l.threadID, "error", serr)
 		}
 		return nil, err
 	}
+	status, res.Status, res.Reason = l.settledStatus, l.settledStatus, l.settledReason
 	// The settle-time re-check: a resolution that landed MID-turn lost the
 	// lease to this very run, so its resume was dropped. The rows are right
 	// there — pick them up with a fresh continuation instead of waiting for
-	// the sweep (agentdecision.go).
-	l.recheckResolutions(ctx)
+	// the sweep (agentdecision.go). A stopped thread holds until its owner
+	// writes again: their next message replays the resolution rows.
+	if status != threadStopped && l.stopRequested() == "" {
+		l.recheckResolutions(sctx)
+	}
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
 	l.titleAfterFirstTurn(status, reply)
 	return res, nil
+}
+
+// stopReason reports whether the detached turn this run belongs to was
+// stopped or ended by the shutdown, and the reason it settles with: the
+// actor that stopped it, or the shutdown. A run outside a detached turn is
+// never stopped; its context ending is the caller's.
+func (l *agentLoop) stopReason(ctx context.Context) (bool, string) {
+	h := l.in.stopHub
+	if h == nil || ctx.Err() == nil || !h.ended() {
+		return false, ""
+	}
+	if actor := h.stopper(); actor != "" {
+		return true, reasonStoppedBy(actor)
+	}
+	return true, reasonShutdown
+}
+
+// stopRequested is the reason a stop of the detached turn this run belongs
+// to settles with, or "" when nobody asked for one. Unlike stopReason it
+// does not need the run's context to have ended: a stop that lands while the
+// turn writes its last row still decides how it settles.
+func (l *agentLoop) stopRequested() string {
+	if h := l.in.stopHub; h != nil {
+		if actor := h.stopper(); actor != "" {
+			return reasonStoppedBy(actor)
+		}
+	}
+	return ""
+}
+
+// failWrite settles the thread `error` after one of the loop's own message
+// writes failed, on a budget of its own, so the thread does not stay
+// `running` under its lease and a stop does not answer that nothing runs.
+func (l *agentLoop) failWrite(ctx context.Context, err error) error {
+	sctx, done := l.settleContext(ctx)
+	defer done()
+	if serr := l.settle(sctx, threadError, err.Error(), "", nil); serr != nil {
+		l.ds.svc.log.Warn("substrate: settling a thread after a failed message write", "thread", l.threadID, "error", serr)
+	}
+	return err
+}
+
+// writeContext is the context one of the loop's own writes runs on. A
+// detached turn's writes run past its stop and the shutdown, each within
+// its own budget, so a stop mid-turn still leaves a settled thread and a
+// stuck write cannot hold the turn for good. Every other run writes on ctx,
+// as before (decision 0151 owns what a shutdown leaves of those).
+func (l *agentLoop) writeContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if l.in.stopHub == nil {
+		return ctx, func() {}
+	}
+	timeout := l.ds.agentWriteTimeout
+	if timeout <= 0 {
+		timeout = agentSettleTimeout
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), timeout)
+}
+
+// settleContext is the context a run's settle writes on: writeContext, so a
+// detached turn's settle never runs on a canceled context.
+func (l *agentLoop) settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return l.writeContext(ctx)
+}
+
+// putReply writes the current completion's assistant row at the ordinal its
+// deltas carried, then releases the reservation.
+func (l *agentLoop) putReply(ctx context.Context, props map[string]any) error {
+	wctx, done := l.writeContext(ctx)
+	defer done()
+	turn := l.reserveReplyTurn()
+	l.replyTurn = -1
+	return l.putMessageAt(wctx, l.actor, turn, props)
+}
+
+// takeTurn draws the next message ordinal.
+func (l *agentLoop) takeTurn() int {
+	l.turnMu.Lock()
+	defer l.turnMu.Unlock()
+	n := l.turn
+	l.turn++
+	return n
+}
+
+// reserveReplyTurn is the current completion's ordinal, drawn on first use.
+func (l *agentLoop) reserveReplyTurn() int {
+	if l.replyTurn < 0 {
+		l.replyTurn = l.takeTurn()
+	}
+	return l.replyTurn
+}
+
+// reserveTurnAfter draws an ordinal for a row another writer puts on the
+// running loop's thread: at least next (what the stored rows imply), and
+// past every ordinal the loop has drawn, so the loop's later rows follow it.
+func (l *agentLoop) reserveTurnAfter(next int) int {
+	l.turnMu.Lock()
+	defer l.turnMu.Unlock()
+	n := max(next, l.turn)
+	l.turn = n + 1
+	return n
 }
 
 // effectiveEmit intersects an agent's declared emit with the inherited
@@ -884,11 +1123,11 @@ func (l *agentLoop) event(ev substrate.AgentEvent) {
 // toolEvent emits one side of a dispatch's lifecycle. The call ID rides both
 // sides: a turn may dispatch one tool several times, so a client pairing by
 // NAME settles the wrong card.
-func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string) {
+func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, turn int, ok *bool, out string) {
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, Callable: l.byName[tc.Name].callable(), OK: ok}
+	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, Callable: l.byName[tc.Name].callable(), OK: ok, Turn: turn}
 	if kind == substrate.AgentEventToolStarted {
 		ev.Args = tc.Arguments
 	} else {
@@ -912,6 +1151,9 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		if err := l.claimThread(ctx); err != nil {
 			return nil, err
 		}
+		// Registered before the rows are read: a resolution written into
+		// the thread from here on draws its ordinal from this loop.
+		l.ds.runningThreads.Store(l.threadID, l)
 		rows, err := l.loadThreadRows(ctx)
 		if err != nil {
 			return nil, err
@@ -919,7 +1161,9 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		history, origin, maxTurn := replayView(rows, l.ds.svc.log)
 		messages = append(messages, history...)
 		l.rows, l.origin, l.historyLen = rows, origin, len(history)
-		l.turn = maxTurn + 1
+		l.turnMu.Lock()
+		l.turn = max(l.turn, maxTurn+1)
+		l.turnMu.Unlock()
 	} else {
 		id, err := newID()
 		if err != nil {
@@ -954,6 +1198,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}); err != nil {
 			return nil, err
 		}
+		l.ds.runningThreads.Store(l.threadID, l)
 	}
 	// A decision resume continues with NO new user turn: the system row the
 	// decision wrote is already the thread's last message, replayed above.
@@ -1033,6 +1278,11 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		// reads the id it names, not the value's spelling.
 		if agent := referenceID(row.Props["agent"]); agent != l.ag.Identity() {
 			return fmt.Errorf("%w: thread %s belongs to agent %q — open a new thread", substrate.ErrValidation, l.in.threadID, agent)
+		}
+		// Checked under the row lock, so a resume admitted just before a
+		// stop settled still finds the stop.
+		if status, _ := row.Props["status"].(string); status == threadStopped && l.in.resume {
+			return fmt.Errorf("%w: thread %s", errResumeStopped, l.in.threadID)
 		}
 		if status, _ := row.Props["status"].(string); status == threadRunning {
 			if until, _ := row.Props["leaseUntil"].(string); until != "" {
@@ -1120,12 +1370,26 @@ func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props
 
 // putMessageID is putMessage returning the minted row id.
 func (l *agentLoop) putMessageID(ctx context.Context, actor substrate.Actor, props map[string]any) (string, error) {
+	return l.putMessageTurn(ctx, actor, l.takeTurn(), props)
+}
+
+// putMessageAt writes a message row at an ordinal already drawn.
+func (l *agentLoop) putMessageAt(ctx context.Context, actor substrate.Actor, turn int, props map[string]any) error {
+	_, err := l.putMessageTurn(ctx, actor, turn, props)
+	return err
+}
+
+func (l *agentLoop) putMessageTurn(ctx context.Context, actor substrate.Actor, turn int, props map[string]any) (string, error) {
 	id, err := newID()
 	if err != nil {
 		return "", err
 	}
-	props["turn"] = l.turn
-	l.turn++
+	if hook := l.ds.agentRowWrite; hook != nil {
+		if err := hook(ctx, props); err != nil {
+			return "", err
+		}
+	}
+	props["turn"] = turn
 	// The thread is a REFERENCE: a bare id, which the `kind:` pin completes.
 	props[msgRelThread] = l.threadID
 	return id, l.putRow(ctx, actor, substrate.PutInput{
@@ -1166,6 +1430,14 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		patched = false
 		t.causedBy = l.in.causedBy
+		// The last word on a stop: one that came after the run's own check
+		// still turns a natural end into `stopped`, here, in the transaction
+		// that writes the terminal status.
+		if status == threadOK || status == threadOverBudget {
+			if why := l.stopRequested(); why != "" {
+				status, reason = threadStopped, why
+			}
+		}
 		// The shared registry-dependency lock before the row lock below, the
 		// order every put takes (changelog < registry-dep < subject-type <
 		// record, stated at rows.go changelogLockKey; inTx has taken the first):
@@ -1229,6 +1501,9 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		// At once, before the resolution re-check and the done event, so no
 		// check reads a committed thread as a run still going.
 		l.ds.spend.commit(l.spend, lifetime)
+	}
+	if err == nil {
+		l.settledStatus, l.settledReason = status, reason
 	}
 	return err
 }
@@ -1830,6 +2105,9 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	fctx := withCallOrigin(ctx, callOrigin{
 		causedBy: l.in.causedBy, stack: l.in.callStack,
 		emitCeiling: l.emit, ceilinged: true,
+		// An agent the body runs is part of this detached turn: a stop
+		// reaches it as it reaches a sub-agent.
+		stopHub: l.in.stopHub,
 	})
 	effects, output, err := l.ds.runCallable(fctx, fn, runner.Input{
 		Mode: runner.ModeCall, Args: input,
@@ -1965,6 +2243,9 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	res, err := l.ds.runAgent(ctx, sub, agentInvocation{
 		mode: agentModeSubagent, user: input,
 		parent: l.threadID, depth: depth,
+		// A stop of the detached turn stops the child with it, and the
+		// child settles `stopped` on its own bounded writes.
+		stopHub:  l.in.stopHub,
 		causedBy: l.in.causedBy, causalDepth: l.in.causalDepth,
 		tally: l.in.tally, callStack: l.in.callStack,
 		// The child's ceiling is THIS loop's effective emit: intersection at
@@ -2016,15 +2297,18 @@ func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.
 		Tools: l.defs, Params: l.params,
 	}
 	l.reasoning = turnReasoning{}
+	l.partial.Reset()
 	var onDelta func(llm.Delta)
 	if l.in.emit != nil {
+		turn := l.reserveReplyTurn()
 		onDelta = func(d llm.Delta) {
 			switch {
 			case d.Reasoning != "":
 				l.reasoning.add(d.Reasoning, time.Now())
-				l.event(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Text: d.Reasoning})
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Text: d.Reasoning, Turn: turn})
 			case d.Text != "":
-				l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: d.Text})
+				l.partial.WriteString(d.Text)
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: d.Text, Turn: turn})
 			}
 		}
 	}

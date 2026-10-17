@@ -16,8 +16,10 @@ import {
   dayGroup,
   examplePrompts,
   groupByDay,
+  isReplayed,
   judgeVerdictOf,
   lastChatAgent,
+  persistedTurns,
   openingMessages,
   propertyLabel,
   proposedHeading,
@@ -568,5 +570,41 @@ describe("a change request's thread and verdict", () => {
     expect(
       judgeVerdictOf(record({ annotations: { "policy/verdict": {} } }))
     ).toBeUndefined()
+  })
+})
+
+describe("attaching to a running turn", () => {
+  it("collects the stored rows' turns", () => {
+    expect(persistedTurns([])).toEqual(new Set())
+    expect(
+      persistedTurns([
+        record({ properties: { turn: 0 } }),
+        record({ properties: { turn: 4 } }),
+        record({ properties: { turn: "7" } }),
+      ])
+    ).toEqual(new Set([0, 4]))
+  })
+
+  it("drops replayed events a stored row holds and keeps the rest", () => {
+    const events = [
+      { kind: "thread" as const, thread: "t1" },
+      { kind: "toolStarted" as const, id: "c0", turn: 2 },
+      { kind: "toolFinished" as const, id: "c0", turn: 2 },
+      { kind: "delta" as const, text: "hi", turn: 3 },
+      { kind: "compacted" as const, covered: 4 },
+    ]
+    expect(events.filter((e) => !isReplayed(e, new Set([0, 1, 2])))).toEqual([
+      events[0],
+      events[3],
+      events[4],
+    ])
+    expect(events.filter((e) => !isReplayed(e, new Set()))).toEqual(events)
+  })
+
+  it("keeps a streaming reply whose turn a later resolution row passed", () => {
+    // The user row is 0, the reply streams at 1, and a resolution written
+    // meanwhile took 2: the reply has no row yet and must stay.
+    const held = new Set([0, 2])
+    expect(isReplayed({ kind: "delta", text: "a", turn: 1 }, held)).toBe(false)
   })
 })

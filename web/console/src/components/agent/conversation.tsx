@@ -17,7 +17,13 @@
  * conversation blinks back to its pre-run state for a round trip.
  *
  * The parent keys this component by conversation, and keeps the key when a
- * new chat's run mints its thread — remounting then would drop the stream. */
+ * new chat's run mints its thread — remounting then would drop the stream.
+ *
+ * A turn runs on the server whether or not this page stays (decision 0169).
+ * Opening a thread whose record says `running` attaches to it once the stored
+ * rows are read: the replay's events the rows already hold are dropped by
+ * their `turn`, and the rest feed the same overlay a send does. Stop ends
+ * the turn on the server, and the stream's own `done` settles the overlay. */
 
 import {
   useEffect,
@@ -27,7 +33,7 @@ import {
   type ReactNode,
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { KeyRoundIcon } from "lucide-react"
+import { KeyRoundIcon, SquareIcon } from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
@@ -37,15 +43,20 @@ import { Transcript } from "@/components/agent/transcript"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useLiveRecords } from "@/hooks/use-live-records"
 import {
   agentName,
   examplePrompts,
+  isReplayed,
+  persistedTurns,
   providerName,
   tallyWords,
   threadSubject,
   threadTally,
 } from "@/lib/agent-chat"
 import {
+  attachThread,
+  stopThread,
   streamChat,
   threadMessagesQueryOptions,
   transcriptOrder,
@@ -64,7 +75,7 @@ import {
   transcriptOf,
   type LiveOverlay,
 } from "@/lib/api/transcript"
-import type { SubstrateRecord } from "@/lib/api/types"
+import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 
 /** The callout for an agent whose provider row has no key: the run would be
  * refused at dispatch, so the page says why before anybody types. */
@@ -137,6 +148,10 @@ export function Conversation({
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A turn no client can stream holds the thread (a triggered run): the page
+  // says so and re-reads the thread as it changes, instead of waiting.
+  const [background, setBackground] = useState(false)
+  const [stopping, setStopping] = useState(false)
   // The thread this conversation's own run minted, which the URL learns a
   // moment later; reading it from here keeps the run's next turn on it.
   const [minted, setMinted] = useState("")
@@ -169,7 +184,22 @@ export function Conversation({
     enabled: Boolean(current) && !streaming,
   })
 
-  useEffect(() => () => handleRef.current?.stop(), [])
+  // A re-attach waiting out its backoff.
+  const retryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The last failure an attach saw, shown if the turn turns out to have
+  // ended on it.
+  const lastErrorRef = useRef<string | null>(null)
+  useEffect(
+    () => () => {
+      handleRef.current?.stop()
+      clearTimeout(retryRef.current)
+    },
+    []
+  )
+
+  // While a turn runs elsewhere, every write to a thread re-reads the
+  // records, so the thread's settle reaches this page.
+  useLiveRecords(background ? [`${LLM_PACKAGE}/thread`] : [], [["records"]])
 
   const persisted = transcriptOrder(messages.data?.records ?? [])
   const handedOver = settledAt > 0 && messages.dataUpdatedAt >= settledAt
@@ -297,6 +327,142 @@ export function Conversation({
     handOver()
   }, [autoSend, agentId])
 
+  // Both endings hand over the same way: the rows the loop wrote are the
+  // truth, so they are marked stale and swapped in once they land. An error
+  // ends a run too — leaving the overlay up beside a refetched transcript
+  // would double every turn it had shown.
+  function settleRun(run: number) {
+    if (run !== runRef.current) return
+    setSettledAt(Date.now())
+    setStreaming(false)
+    setStopping(false)
+    void client.invalidateQueries({ queryKey: ["records"] })
+    // A turn's effects land as ROWS, so the surfaces counting them are
+    // stale too. Coarse on purpose: the run reports a tally, not which
+    // collections moved.
+    void client.invalidateQueries({ queryKey: ["records-count"] })
+  }
+
+  // The turn running on the thread, attached once per running stretch.
+  // Each attach reads the stored rows afresh and freezes them, so the
+  // replay's events those rows already hold are dropped by their `turn`.
+  const threadRunning = threadRecord?.properties.status === "running"
+  const [attachedFor, setAttachedFor] = useState("")
+  // The attach to open, decided while rendering or by a stream that ended
+  // without its `done`; the effect below opens it.
+  const [pending, setPending] = useState<{
+    thread: string
+    attempt: number
+  } | null>(null)
+  if (!threadRunning && attachedFor) setAttachedFor("")
+  if (!threadRunning && background) setBackground(false)
+  if (current && threadRunning && !busy && attachedFor !== current) {
+    setAttachedFor(current)
+    setPending({ thread: current, attempt: 0 })
+    setError(null)
+    setResult(null)
+    setSettledAt(0)
+    setStreaming(true)
+  }
+
+  // A refusal the same request would meet again: a 4xx other than a
+  // conflict or a rate limit, which can clear on their own.
+  function permanent(err: Error): boolean {
+    return (
+      err instanceof ApiError &&
+      err.status >= 400 &&
+      err.status < 500 &&
+      err.status !== 409 &&
+      err.status !== 429
+    )
+  }
+
+  // A stream that ended without `done` (a dropped connection, a stream
+  // that fell behind, a server restart) is not the turn's end: attach again,
+  // backing off, until the server says the turn settled.
+  function reattach(run: number, thread: string, attempt: number) {
+    if (run !== runRef.current) return
+    clearTimeout(retryRef.current)
+    const delay = attempt === 0 ? 0 : Math.min(1000 * 2 ** (attempt - 1), 15000)
+    retryRef.current = setTimeout(() => {
+      if (run === runRef.current) setPending({ thread, attempt })
+    }, delay)
+  }
+
+  const openAttach = useEffectEvent(
+    ({ thread, attempt }: { thread: string; attempt: number }) => {
+      runThreadRef.current = thread
+      const run = ++runRef.current
+      void messages.refetch().then((read) => {
+        if (run !== runRef.current) return
+        if (read.isError) return reattach(run, thread, attempt + 1)
+        const held = persistedTurns(read.data?.records ?? [])
+        update(EMPTY_OVERLAY)
+        let idle = ""
+        let done = false
+        handleRef.current = attachThread({
+          thread,
+          onEvent: (ev) => {
+            if (run !== runRef.current) return
+            if (ev.kind === "idle") {
+              idle = ev.status || "unknown"
+              if (ev.status === "running") setBackground(true)
+              else if (lastErrorRef.current) setError(lastErrorRef.current)
+              return
+            }
+            if (ev.kind === "done") {
+              done = true
+              lastErrorRef.current = null
+            }
+            if (isReplayed(ev, held)) return
+            onEvent(ev, run)
+          },
+          onError: (err) => {
+            if (run !== runRef.current) return
+            if (permanent(err)) {
+              // Attaching again would meet the same answer (a deleted
+              // thread): say so and release the composer.
+              setError(err.message)
+              return settleRun(run)
+            }
+            lastErrorRef.current = err.message
+            reattach(run, thread, attempt + 1)
+          },
+          onDone: () => {
+            if (run !== runRef.current) return
+            if (done) return settleRun(run)
+            if (!idle) return reattach(run, thread, attempt + 1)
+            if (idle === "running") {
+              // A run no client can stream: nothing to show live.
+              update(EMPTY_OVERLAY)
+              setStreaming(false)
+              setStopping(false)
+              void client.invalidateQueries({ queryKey: ["records"] })
+              return
+            }
+            settleRun(run)
+          },
+        })
+      })
+    }
+  )
+  useEffect(() => {
+    if (pending) openAttach(pending)
+  }, [pending])
+
+  function stop() {
+    const thread = runThreadRef.current || current
+    if (!thread || stopping) return
+    setStopping(true)
+    stopThread(thread).catch((err: Error) => {
+      setStopping(false)
+      // The turn settled on its own first: its stream's `done` is the
+      // answer, and there is nothing to say about the stop.
+      if (err instanceof ApiError && err.status === 409) return
+      setError(err.message)
+    })
+  }
+
   function send(text = draft) {
     const message = text.trim()
     if (!message || busy || !agentId || keylessProvider) return
@@ -321,31 +487,28 @@ export function Conversation({
     })
     setStreaming(true)
     runThreadRef.current = current
+    // This page's own run is not attached to again.
+    setAttachedFor(current)
     const run = ++runRef.current
-
-    // Both endings hand over the same way: the rows the loop wrote are the
-    // truth, so they are marked stale and swapped in once they land. An error
-    // ends a run too — leaving the overlay up beside a refetched transcript
-    // would double every turn it had shown.
-    const settle = () => {
-      if (run !== runRef.current) return
-      setSettledAt(Date.now())
-      setStreaming(false)
-      void client.invalidateQueries({ queryKey: ["records"] })
-      // A turn's effects land as ROWS, so the surfaces counting them are
-      // stale too. Coarse on purpose: the run reports a tally, not which
-      // collections moved.
-      void client.invalidateQueries({ queryKey: ["records-count"] })
-    }
+    const settle = () => settleRun(run)
 
     // A run that never named a thread wrote nothing, so no read will ever
     // hand over and settling would leave the composer busy for good. The
-    // optimistic turn goes, and the message comes back to be retried.
+    // optimistic turn goes, and the message comes back to be retried. A run
+    // that named one and ended without `done` is still running on the
+    // server: it is attached to again.
+    // Whether this request's stream named its thread: before that, a failure
+    // is a refusal (the repository's cap, a running turn, a spend cap) and
+    // nothing ran, so the message comes back.
+    let done = false
+    let named = false
     const end = () => {
       if (run !== runRef.current) return
-      if (runThreadRef.current) return settle()
+      if (named && done) return settle()
+      if (named) return reattach(run, runThreadRef.current, 0)
       update(EMPTY_OVERLAY)
       setStreaming(false)
+      setStopping(false)
       if (!draftRef.current.trim()) onDraft(message)
     }
 
@@ -353,10 +516,18 @@ export function Conversation({
       agent: agentId,
       thread: current || undefined,
       message,
-      onEvent: (ev) => onEvent(ev, run),
+      onEvent: (ev) => {
+        if (ev.kind === "thread" && ev.thread && run === runRef.current) {
+          named = true
+          setAttachedFor(ev.thread)
+        }
+        if (ev.kind === "done") done = true
+        onEvent(ev, run)
+      },
       onError: (err) => {
         if (run !== runRef.current) return
-        setError(err.message)
+        if (named) lastErrorRef.current = err.message
+        else setError(err.message)
         end()
       },
       onDone: end,
@@ -393,7 +564,20 @@ export function Conversation({
             )}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">{actions}</div>
+        <div className="flex shrink-0 items-center gap-1">
+          {streaming && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={stop}
+              disabled={stopping}
+            >
+              <SquareIcon />
+              {stopping ? "Stopping…" : "Stop"}
+            </Button>
+          )}
+          {actions}
+        </div>
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -446,6 +630,12 @@ export function Conversation({
             agentId={agentId}
             agent={agent}
           />
+          {background && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {name} is working on this chat in the background. Its answer shows
+              here when it finishes.
+            </p>
+          )}
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
               {name} couldn’t answer: {error}
@@ -492,6 +682,8 @@ export function Conversation({
           value={draft}
           onChange={onDraft}
           onSend={() => send()}
+          onStop={streaming ? stop : undefined}
+          stopping={stopping}
           agentId={agentId}
           agents={current ? undefined : pickable}
           onPickAgent={current ? undefined : onPickAgent}

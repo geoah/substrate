@@ -79,6 +79,11 @@ var (
 	// ErrUnavailable does not loop on it. The API still answers it `503
 	// unavailable` with Retry-After, and the message names the restart.
 	ErrRestartRequired = errors.New("substrate: refused until the server restarts")
+	// ErrNoRunningTurn answers an attach or a stop on a thread no detached
+	// chat turn of this process runs on: the thread is settled, or a turn no
+	// client can stream (a triggered run) holds it. It wraps ErrConflict, so
+	// the API answers 409.
+	ErrNoRunningTurn = fmt.Errorf("%w: no running chat turn", ErrConflict)
 )
 
 // ErrorEnvelope is the one body every refused request answers with.

@@ -144,6 +144,21 @@ function renderList(props: Partial<Parameters<typeof ThreadList>[0]> = {}) {
 afterEach(cleanup)
 
 describe("ThreadList", () => {
+  it("marks a chat whose turn is still running", async () => {
+    const running = row(0, HELPER, "Busy chat")
+    running.thread.properties.status = "running"
+    const done = row(1, HELPER, "Quiet chat")
+    done.thread.properties.status = "ok"
+    renderList({ rows: [running, done] })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    expect(
+      within(chats).getByRole("button", { name: /Busy chat/ }).textContent
+    ).toContain("Working")
+    expect(
+      within(chats).getByRole("button", { name: /Quiet chat/ }).textContent
+    ).not.toContain("Working")
+  })
+
   it("lists the agents above the chats, one line each", async () => {
     renderList()
     const agents = await screen.findByRole("navigation", { name: "Agents" })

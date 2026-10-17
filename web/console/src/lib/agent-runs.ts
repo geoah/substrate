@@ -11,11 +11,14 @@ import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import { kindPatternWords } from "@/lib/tools"
 import { allowVerbs, policyIdOf, type PolicyOp } from "@/lib/agent-rules"
 
-export type RunStatus = "running" | "ok" | "overbudget" | "error"
+export type RunStatus = "running" | "ok" | "overbudget" | "error" | "stopped"
 
 export function runStatus(thread: SubstrateRecord): RunStatus {
   const status = thread.properties.status
-  return status === "running" || status === "overbudget" || status === "error"
+  return status === "running" ||
+    status === "overbudget" ||
+    status === "error" ||
+    status === "stopped"
     ? status
     : "ok"
 }
@@ -54,6 +57,7 @@ export const STATUS_WORDS: Record<RunStatus, string> = {
   ok: "Done",
   overbudget: "Ran out of budget",
   error: "Failed",
+  stopped: "Stopped",
 }
 
 function num(value: unknown): number | undefined {

@@ -6,11 +6,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
+  attachThread,
   lastAssistantReply,
   parseAgentEvent,
   policiesForAgent,
   providerEndpoint,
   providerHasKey,
+  stopThread,
   streamChat,
 } from "./agents"
 import type { AgentEvent } from "./agents"
@@ -98,6 +100,25 @@ describe("parseAgentEvent", () => {
       parseAgentEvent('{"kind":"compacted","tokensBefore":"lots","covered":3}')
     ).toEqual({ kind: "compacted", covered: 3 })
   })
+  it("reads truncated and idle events", () => {
+    expect(parseAgentEvent('{"kind":"truncated"}')).toEqual({
+      kind: "truncated",
+    })
+    expect(
+      parseAgentEvent('{"kind":"idle","thread":"t-1","status":"running"}')
+    ).toEqual({ kind: "idle", thread: "t-1", status: "running" })
+  })
+  it("reads a numeric turn and drops one that is not a number", () => {
+    expect(parseAgentEvent('{"kind":"delta","text":"a","turn":3}')).toEqual({
+      kind: "delta",
+      text: "a",
+      turn: 3,
+    })
+    expect(parseAgentEvent('{"kind":"delta","text":"a","turn":"3"}')).toEqual({
+      kind: "delta",
+      text: "a",
+    })
+  })
   it("returns null on blank lines, heartbeats and garbage", () => {
     expect(parseAgentEvent("")).toBeNull()
     expect(parseAgentEvent("   ")).toBeNull()
@@ -181,6 +202,57 @@ describe("streamChat post-200 failures", () => {
     expect(r.error).toBeUndefined()
     expect(r.done).toBe(true)
     expect(r.events.map((e) => e.kind)).toEqual(["thread", "delta", "done"])
+  })
+})
+
+describe("attaching to and stopping a thread's turn", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("attaches with a GET on the thread's events and reads the stream", async () => {
+    const fetchMock = vi.fn(async () =>
+      ndjson(['{"kind":"idle","thread":"t 1","status":"ok"}'])
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const events: AgentEvent[] = []
+    await new Promise<void>((resolve) => {
+      attachThread({
+        thread: "t 1",
+        onEvent: (e) => events.push(e),
+        onDone: resolve,
+      })
+    })
+    expect(events).toEqual([{ kind: "idle", thread: "t 1", status: "ok" }])
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe("/api/v1/substrate.reamde.dev/llm/thread/t%201/events")
+    expect(init.method).toBe("GET")
+    expect(init.body).toBeUndefined()
+  })
+
+  it("stops with a POST and resolves the settled result", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            reply: "par",
+            thread: "t-1",
+            status: "stopped",
+            reason: "stopped by console",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const res = await stopThread("t-1")
+    expect(res.status).toBe("stopped")
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe("/api/v1/substrate.reamde.dev/llm/thread/t-1/stop")
+    expect(init.method).toBe("POST")
   })
 })
 

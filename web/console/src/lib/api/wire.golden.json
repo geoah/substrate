@@ -16,10 +16,12 @@
     "ok": false,
     "output": false,
     "result": false,
+    "status": false,
     "text": false,
     "thread": false,
     "tokensBefore": false,
-    "tool": false
+    "tool": false,
+    "turn": false
   },
   "AgentResult": {
     "completionTokens": true,

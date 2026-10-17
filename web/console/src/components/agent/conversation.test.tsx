@@ -2,7 +2,9 @@
 /** A new chat whose run fails before the server names its thread has nothing
  * to hand over to: there are no rows to read back. The composer is released,
  * the error is shown, and what was typed comes back so a retry is one press.
- * A question another page handed over to be asked is sent once, on open. */
+ * A question another page handed over to be asked is sent once, on open.
+ * A running turn shows Stop, and a thread that is still running when it is
+ * opened is attached to, without the events its stored rows already hold. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -28,6 +30,9 @@ type ChatOpts = {
   onDone?: () => void
 }
 const calls: ChatOpts[] = []
+const attaches: (Omit<ChatOpts, "message"> & { thread: string })[] = []
+const stops: string[] = []
+let stopAnswer: () => Promise<unknown> = () => new Promise(() => {})
 
 vi.mock("@/lib/api/agents", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/agents")>()
@@ -37,15 +42,27 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
       calls.push(opts)
       return { stop() {} }
     },
+    attachThread: (opts: (typeof attaches)[number]) => {
+      attaches.push(opts)
+      return { stop() {} }
+    },
+    stopThread: (thread: string) => {
+      stops.push(thread)
+      return stopAnswer()
+    },
   }
 })
 
 import type { AgentEvent } from "@/lib/api/agents"
+import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { Conversation } from "./conversation"
 
 afterEach(() => {
   cleanup()
   calls.length = 0
+  attaches.length = 0
+  stops.length = 0
+  stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
 })
 
@@ -54,11 +71,13 @@ function Harness({
   initialDraft = "",
   autoSend = false,
   onAutoSent,
+  threadRecord,
 }: {
   initialThread?: string
   initialDraft?: string
   autoSend?: boolean
   onAutoSent?: () => void
+  threadRecord?: SubstrateRecord
 }) {
   const [draft, setDraft] = useState(initialDraft)
   const [thread, setThread] = useState(initialThread)
@@ -72,6 +91,7 @@ function Harness({
       onDraft={setDraft}
       autoSend={autoSend}
       onAutoSent={onAutoSent}
+      threadRecord={threadRecord}
     />
   )
 }
@@ -136,7 +156,25 @@ describe("Conversation", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     fail = true
-    act(() => calls[0].onDone?.())
+    act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-1" })
+      calls[0].onEvent({
+        kind: "done",
+        result: {
+          reply: "hi",
+          thread: "t-1",
+          status: "ok",
+          effects: 0,
+          turns: 1,
+          toolCalls: 0,
+          promptTokens: 1,
+          completionTokens: 1,
+          totalTokens: 2,
+          costUSD: 0,
+        },
+      })
+      calls[0].onDone?.()
+    })
 
     const note = await screen.findByRole("alert")
     expect(note.textContent).toContain("db down")
@@ -189,4 +227,213 @@ describe("Conversation", () => {
     )
     expect(calls).toHaveLength(1)
   })
+
+  it("shows Stop while a turn streams and stops it on the server", () => {
+    mount()
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "go" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => calls[0].onEvent({ kind: "thread", thread: "t-9" }))
+    const buttons = screen.getAllByRole("button", { name: /Stop/ })
+    // The header's Stop and the composer's, which took the send button's place.
+    expect(buttons).toHaveLength(2)
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull()
+    fireEvent.click(buttons[0])
+    expect(stops).toEqual(["t-9"])
+    expect(screen.getAllByRole("button", { name: /Stopping/ })).toHaveLength(2)
+  })
+
+  it("attaches to a thread that is still running and skips what its rows hold", async () => {
+    const row = (id: string, turn: number, role: string, content: string) => ({
+      id,
+      kind: "substrate.reamde.dev/llm/message",
+      properties: { turn, role, content },
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-17T10:00:00Z",
+      updatedAt: "2026-10-17T10:00:00Z",
+    })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              records: [
+                row("m1", 1, "assistant", "stored half"),
+                row("m0", 0, "user", "question"),
+              ],
+            }),
+            { status: 200 }
+          )
+      )
+    )
+    const running = {
+      id: "t-1",
+      kind: "substrate.reamde.dev/llm/thread",
+      properties: { status: "running" },
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-17T10:00:00Z",
+      updatedAt: "2026-10-17T10:00:00Z",
+    } as unknown as SubstrateRecord
+    mount("t-1", { threadRecord: running })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    expect(attaches[0].thread).toBe("t-1")
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-1" })
+      attaches[0].onEvent({ kind: "delta", text: "replayed", turn: 1 })
+      attaches[0].onEvent({ kind: "delta", text: "fresh words", turn: 2 })
+    })
+    expect(screen.getByText("stored half")).toBeTruthy()
+    expect(screen.getByText("fresh words")).toBeTruthy()
+    expect(screen.queryByText(/replayed/)).toBeNull()
+    expect(
+      screen.getAllByRole("button", { name: /Stop/ }).length
+    ).toBeGreaterThan(0)
+  })
+
+  it("says a turn no client can stream is working in the background", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    const running = {
+      id: "t-2",
+      kind: "substrate.reamde.dev/llm/thread",
+      properties: { status: "running" },
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-17T10:00:00Z",
+      updatedAt: "2026-10-17T10:00:00Z",
+    } as unknown as SubstrateRecord
+    mount("t-2", { threadRecord: running })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "idle", thread: "t-2", status: "running" })
+      attaches[0].onDone?.()
+    })
+    expect(screen.getByRole("status").textContent).toContain(
+      "working on this chat in the background"
+    )
+    expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull()
+  })
+
+  it("keeps a streaming reply whose turn a resolution written meanwhile passed", async () => {
+    stubRows([
+      message("m2", 2, "system", "a decision"),
+      message("m0", 0, "user", "question"),
+    ])
+    mount("t-3", { threadRecord: runningThread("t-3") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-3" })
+      attaches[0].onEvent({ kind: "delta", text: "the live reply", turn: 1 })
+    })
+    expect(screen.getByText("the live reply")).toBeTruthy()
+  })
+
+  it("attaches again when a stream ends without done", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-4", { threadRecord: runningThread("t-4") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-4" })
+      attaches[0].onDone?.()
+    })
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 3000 })
+    expect(attaches[1].thread).toBe("t-4")
+    // A dropped connection is not shown as the turn's failure.
+    act(() => attaches[1].onError?.(new Error("network down")))
+    expect(screen.queryByText(/network down/)).toBeNull()
+  })
+
+  it("says nothing when a stop loses the race to the turn's own end", async () => {
+    stopAnswer = () =>
+      Promise.reject(new ApiError("conflict", "no running chat turn", 409))
+    mount()
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "go" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => calls[0].onEvent({ kind: "thread", thread: "t-5" }))
+    fireEvent.click(screen.getAllByRole("button", { name: /Stop/ })[0])
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(stops).toEqual(["t-5"])
+    expect(screen.queryByText(/no running chat turn/)).toBeNull()
+  })
+
+  it("stops attaching when the thread is gone, and says so", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-6", { threadRecord: runningThread("t-6") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() =>
+      attaches[0].onError?.(
+        new ApiError("not_found", "substrate: not found: thread t-6", 404)
+      )
+    )
+    expect(screen.getByText(/thread t-6/)).toBeTruthy()
+    await act(() => new Promise((r) => setTimeout(r, 1200)))
+    expect(attaches).toHaveLength(1)
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
+    ).toBeTruthy()
+  })
+
+  it("gives the message back when a turn is refused before it starts", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-7")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "one more thing" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    const refusal =
+      "substrate: version conflict: 4 chat turns are already running in this repository: wait for one to finish, or stop one"
+    act(() => calls[0].onError?.(new ApiError("conflict", refusal, 409)))
+    expect(screen.getByText(/4 chat turns are already running/)).toBeTruthy()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "one more thing"
+    )
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(attaches).toHaveLength(0)
+  })
 })
+
+function message(id: string, turn: number, role: string, content: string) {
+  return {
+    id,
+    kind: "substrate.reamde.dev/llm/message",
+    properties: { turn, role, content },
+    labels: {},
+    version: 1,
+    createdAt: "2026-10-17T10:00:00Z",
+    updatedAt: "2026-10-17T10:00:00Z",
+  }
+}
+
+/** Every records read answers these rows, newest first. */
+function stubRows(records: ReturnType<typeof message>[]) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () => new Response(JSON.stringify({ records }), { status: 200 })
+    )
+  )
+}
+
+function runningThread(id: string): SubstrateRecord {
+  return {
+    id,
+    kind: "substrate.reamde.dev/llm/thread",
+    properties: { status: "running" },
+    labels: {},
+    version: 1,
+    createdAt: "2026-10-17T10:00:00Z",
+    updatedAt: "2026-10-17T10:00:00Z",
+  }
+}

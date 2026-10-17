@@ -1,9 +1,10 @@
 /** Where you write to the agent: a growing text box, the agent it goes to
  * (chosen on a new chat, fixed on an existing one, since a thread keeps its
- * agent) and the send button. Enter sends; Shift+Enter starts a new line. */
+ * agent) and the send button, which is a stop button while a turn runs.
+ * Enter sends; Shift+Enter starts a new line. */
 
 import { useEffect, useRef } from "react"
-import { ArrowUpIcon, ChevronDownIcon } from "lucide-react"
+import { ArrowUpIcon, ChevronDownIcon, SquareIcon } from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,8 @@ export function Composer({
   onPickAgent,
   busy,
   disabled,
+  onStop,
+  stopping = false,
 }: {
   value: string
   onChange: (value: string) => void
@@ -39,6 +42,10 @@ export function Composer({
   busy: boolean
   /** Sending cannot work at all (no agent, no key). */
   disabled?: boolean
+  /** Stops the running turn; set while one streams. */
+  onStop?: () => void
+  /** A stop was asked for and the turn has not settled yet. */
+  stopping?: boolean
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -107,14 +114,25 @@ export function Composer({
           <span className="hidden sm:inline">
             Enter to send · Shift+Enter for a new line
           </span>
-          <Button
-            size="icon-sm"
-            aria-label="Send"
-            disabled={!canSend}
-            onClick={onSend}
-          >
-            {busy ? <Spinner className="size-3.5" /> : <ArrowUpIcon />}
-          </Button>
+          {onStop ? (
+            <Button
+              size="icon-sm"
+              aria-label={stopping ? "Stopping" : "Stop"}
+              disabled={stopping}
+              onClick={onStop}
+            >
+              {stopping ? <Spinner className="size-3.5" /> : <SquareIcon />}
+            </Button>
+          ) : (
+            <Button
+              size="icon-sm"
+              aria-label="Send"
+              disabled={!canSend}
+              onClick={onSend}
+            >
+              {busy ? <Spinner className="size-3.5" /> : <ArrowUpIcon />}
+            </Button>
+          )}
         </div>
       </div>
     </div>
