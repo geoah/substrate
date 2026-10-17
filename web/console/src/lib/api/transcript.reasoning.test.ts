@@ -56,28 +56,49 @@ describe("reasoning on the transcript", () => {
 })
 
 describe("reasoning in the live overlay", () => {
-  it("counts from the first reasoning event to the first text", () => {
+  it("counts from the first piece of reasoning to the latest", () => {
     let live = pushReasoning(EMPTY_OVERLAY, "let me ", 1, 1000)
     live = pushReasoning(live, "think", 2, 1500)
     expect(live.turns).toHaveLength(1)
-    expect(live.turns[0].reasoning).toBe("let me think")
-    expect(live.turns[0].reasoningStartedAt).toBe(1000)
-    live = pushDelta(live, "Hi", 3, 4000)
-    live = pushDelta(live, " there", 4, 9000)
+    expect(live.turns[0]).toMatchObject({
+      reasoning: "let me think",
+      reasoningStartedAt: 1000,
+      reasoningMillis: 500,
+      thinking: true,
+    })
+    live = pushDelta(live, "Hi", 3)
+    live = pushDelta(live, " there", 4)
     expect(live.turns).toHaveLength(1)
+    // The text ends the thinking; the time stays the reasoning's own span,
+    // as the row measures it, not the wait for the first text.
     expect(live.turns[0]).toMatchObject({
       content: "Hi there",
       reasoning: "let me think",
-      reasoningMillis: 3000,
+      reasoningMillis: 500,
+      thinking: false,
     })
-    expect(live.turns[0]).not.toHaveProperty("reasoningStartedAt")
   })
 
-  it("stops the clock at a tool call, and opens a new turn after it", () => {
+  it("keeps reasoning, text, reasoning, text from one completion in one turn", () => {
+    let live = pushReasoning(EMPTY_OVERLAY, "first, ", 1, 0)
+    live = pushDelta(live, "Partly ", 2)
+    live = pushReasoning(live, "then more", 3, 3000)
+    expect(live.turns[0].thinking).toBe(true)
+    live = pushDelta(live, "done.", 4)
+    expect(live.turns).toHaveLength(1)
+    expect(live.turns[0]).toMatchObject({
+      content: "Partly done.",
+      reasoning: "first, then more",
+      reasoningMillis: 3000,
+      thinking: false,
+    })
+  })
+
+  it("opens a new turn only after the tool round closes", () => {
     let live = pushReasoning(EMPTY_OVERLAY, "look it up", 1, 0)
     const call = { id: "c1", name: "peek", arguments: "{}" }
-    live = pushToolStart(live, call, 2, 2000)
-    expect(live.turns[0].reasoningMillis).toBe(2000)
+    live = pushToolStart(live, call, 2)
+    expect(live.turns[0].thinking).toBe(false)
     live = settleTool(live, call, "{}", true, 3)
     live = pushReasoning(live, "now answer", 4, 5000)
     expect(live.turns).toHaveLength(2)

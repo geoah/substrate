@@ -38,6 +38,7 @@ describe("the thinking disclosure", () => {
         turn={turn({
           reasoning: "hmm",
           reasoningStartedAt: Date.now() - 3000,
+          thinking: true,
         })}
       />
     )
@@ -55,5 +56,12 @@ describe("the thinking disclosure", () => {
     expect(thinkingDuration(65_000)).toBe("1 min 5 s")
     expect(thinkingDuration(120_000)).toBe("2 min")
     expect(thinkingLabel({}, 0)).toBe("Thought")
+    // A live turn that moved on to its text reads its measured span.
+    expect(
+      thinkingLabel(
+        { reasoningStartedAt: 0, reasoningMillis: 2000, thinking: false },
+        99_000
+      )
+    ).toBe("Thought for 2 s")
   })
 })

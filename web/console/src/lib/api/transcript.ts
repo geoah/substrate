@@ -107,14 +107,18 @@ export interface TurnView {
    * most its first 4000 runes) or as the live `reasoning` events carry it.
    * Absent when the model exposed none. */
   reasoning?: string
-  /** How long the model thought, in milliseconds: the row's
-   * `reasoningMillis`, or on a live turn the time from its first reasoning
-   * event to its first text or tool call. Absent while it is still
-   * thinking, and on a row whose completion streamed nothing. */
+  /** How long the model thought, in milliseconds, from its first piece of
+   * reasoning to its last: the row's `reasoningMillis`, or on a live turn the
+   * same span over the `reasoning` events that arrived. Absent on a row whose
+   * completion streamed nothing. */
   reasoningMillis?: number
-  /** On a live turn still thinking: when its first reasoning event arrived
-   * (`Date.now()`), so a reader can count the seconds. */
+  /** On a live turn: when its first and its latest reasoning event arrived
+   * (`Date.now()`). */
   reasoningStartedAt?: number
+  reasoningLastAt?: number
+  /** On a live turn: the latest event was reasoning, so the model is still
+   * thinking and a reader counts the seconds. */
+  thinking?: boolean
 }
 
 function str(value: unknown): string {
@@ -595,20 +599,16 @@ export interface LiveOverlay {
 
 export const EMPTY_OVERLAY: LiveOverlay = { turns: [], closed: false }
 
-/** Stops a live turn's thinking clock: its first text or tool call ends the
- * thinking, and the elapsed time becomes the turn's `reasoningMillis`. */
-function doneThinking(turn: TurnView, now: number): TurnView {
-  if (turn.reasoningStartedAt === undefined) return turn
-  const { reasoningStartedAt, ...rest } = turn
-  return {
-    ...rest,
-    reasoningMillis: Math.max(0, now - reasoningStartedAt),
-  }
+/** Text or a tool call after reasoning: the model is no longer thinking. */
+function doneThinking(turn: TurnView): TurnView {
+  return turn.thinking ? { ...turn, thinking: false } : turn
 }
 
-/** Appends a piece of the model's thinking. Thinking opens a completion, so
- * it starts a new assistant turn unless the one in flight has neither text
- * nor tool calls yet. */
+/** Appends a piece of the model's thinking to the completion in flight. A
+ * completion may interleave thinking with its text, so only a closed round
+ * (its tools settled, or a compaction) or no assistant turn at all opens a
+ * new turn. The time spent runs from the first piece to the latest, the
+ * span the row's `reasoningMillis` measures. */
 export function pushReasoning(
   live: LiveOverlay,
   text: string,
@@ -617,13 +617,7 @@ export function pushReasoning(
 ): LiveOverlay {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
-  if (
-    !last ||
-    last.role !== "assistant" ||
-    live.closed ||
-    last.content !== "" ||
-    last.tools.length > 0
-  ) {
+  if (!last || last.role !== "assistant" || live.closed) {
     turns.push({
       key: `live-a${seq}`,
       role: "assistant",
@@ -631,13 +625,20 @@ export function pushReasoning(
       tools: [],
       reasoning: text,
       reasoningStartedAt: now,
+      reasoningLastAt: now,
+      reasoningMillis: 0,
+      thinking: true,
     })
     return { turns, closed: false }
   }
+  const startedAt = last.reasoningStartedAt ?? now
   turns[turns.length - 1] = {
     ...last,
     reasoning: (last.reasoning ?? "") + text,
-    reasoningStartedAt: last.reasoningStartedAt ?? now,
+    reasoningStartedAt: startedAt,
+    reasoningLastAt: now,
+    reasoningMillis: Math.max(0, now - startedAt),
+    thinking: true,
   }
   return { turns, closed: false }
 }
@@ -647,8 +648,7 @@ export function pushReasoning(
 export function pushDelta(
   live: LiveOverlay,
   text: string,
-  seq: number,
-  now: number = Date.now()
+  seq: number
 ): LiveOverlay {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
@@ -662,7 +662,7 @@ export function pushDelta(
     return { turns, closed: false }
   }
   turns[turns.length - 1] = {
-    ...doneThinking(last, now),
+    ...doneThinking(last),
     content: last.content + text,
   }
   return { turns, closed: false }
@@ -673,8 +673,7 @@ export function pushDelta(
 export function pushToolStart(
   live: LiveOverlay,
   call: ToolCallView,
-  seq: number,
-  now: number = Date.now()
+  seq: number
 ): LiveOverlay {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
@@ -688,7 +687,7 @@ export function pushToolStart(
     return { ...live, turns }
   }
   turns[turns.length - 1] = {
-    ...doneThinking(last, now),
+    ...doneThinking(last),
     tools: [...last.tools, call],
   }
   return { ...live, turns }

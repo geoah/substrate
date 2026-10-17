@@ -16,7 +16,7 @@ import type { TurnView } from "@/lib/api/transcript"
 import { thinkingLabel } from "@/lib/thinking-time"
 
 export function Reasoning({ turn }: { turn: TurnView }) {
-  const live = turn.reasoningStartedAt !== undefined
+  const live = turn.thinking === true
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!live) return
