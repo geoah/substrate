@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -15,11 +17,13 @@ import (
 // through runningThreads, which the loop leaves when it returns, and nothing
 // caches a finished turn.
 
-// agentTurnReplayBytes bounds what a hub retains for a late attacher,
-// summed over each event's text, arguments, output and error. Past it the
-// hub keeps the prefix it has and retains nothing further; live subscribers
-// still receive everything, and the thread's `llm/message` rows hold what
-// the replay dropped.
+// agentTurnReplayBytes bounds the memory a hub retains for a late attacher:
+// each retained event's own size plus its text, arguments, output and error.
+// Consecutive deltas of one turn are retained as one event, so a reply
+// streamed a token at a time costs its text, not an event per token. Past
+// the bound the hub keeps the prefix it has and retains nothing further;
+// live subscribers still receive everything, and the thread's
+// `llm/message` rows hold what the replay dropped.
 const agentTurnReplayBytes = 4 << 20
 
 // agentTurnSubscriberBuffer is how many events a subscriber may fall behind
@@ -41,7 +45,7 @@ type turnHub struct {
 	// thread is the opening event, kept apart from the replay so an attach
 	// always starts with it whatever the buffer dropped.
 	thread   *substrate.AgentEvent
-	replay   []substrate.AgentEvent
+	replay   []replayEntry
 	bytes    int
 	limit    int
 	overflow bool
@@ -49,6 +53,7 @@ type turnHub struct {
 
 	// cancel ends the turn's run context; stop and the service shutdown
 	// both call it, and stoppedBy is what tells the two apart.
+	run       context.Context
 	cancel    context.CancelFunc
 	stoppedBy substrate.Actor
 
@@ -66,12 +71,12 @@ func newTurnHub() *turnHub {
 	}
 }
 
-// setCancel hands the hub the run context's cancel. The loop is reachable
+// setRun hands the hub the run context and its cancel. The loop is reachable
 // through runningThreads before the run context exists, so a stop that came
 // first takes effect here.
-func (h *turnHub) setCancel(cancel context.CancelFunc) {
+func (h *turnHub) setRun(run context.Context, cancel context.CancelFunc) {
 	h.mu.Lock()
-	h.cancel = cancel
+	h.run, h.cancel = run, cancel
 	stopped := h.stoppedBy != ""
 	h.mu.Unlock()
 	if stopped {
@@ -79,9 +84,59 @@ func (h *turnHub) setCancel(cancel context.CancelFunc) {
 	}
 }
 
-// eventBytes is what an event costs the replay bound.
+// replayEntry is one retained event. A delta's text grows in a builder as
+// later deltas of the same turn merge into it.
+type replayEntry struct {
+	ev   substrate.AgentEvent
+	text *strings.Builder
+}
+
+func (e replayEntry) event() substrate.AgentEvent {
+	ev := e.ev
+	if e.text != nil {
+		ev.Text = e.text.String()
+	}
+	return ev
+}
+
+// agentEventSize is what one retained event costs before its strings.
+var agentEventSize = int(unsafe.Sizeof(substrate.AgentEvent{})) + int(unsafe.Sizeof(replayEntry{}))
+
+// eventBytes is what retaining an event costs the replay bound.
 func eventBytes(ev substrate.AgentEvent) int {
-	return len(ev.Text) + len(ev.Args) + len(ev.Output) + len(ev.Error)
+	return agentEventSize + len(ev.Text) + len(ev.Args) + len(ev.Output) + len(ev.Error)
+}
+
+// retain adds ev to the replay, merging a delta into the delta before it
+// when both belong to one turn. It reports false when the bound would be
+// passed.
+func (h *turnHub) retain(ev substrate.AgentEvent) bool {
+	if n := len(h.replay); ev.Kind == substrate.AgentEventDelta && n > 0 {
+		last := &h.replay[n-1]
+		if last.text != nil && last.ev.Turn == ev.Turn {
+			before := last.text.Cap()
+			if h.bytes+max(before, last.text.Len()+len(ev.Text))-before > h.limit {
+				return false
+			}
+			last.text.WriteString(ev.Text)
+			h.bytes += last.text.Cap() - before
+			return true
+		}
+	}
+	n := eventBytes(ev)
+	if h.bytes+n > h.limit {
+		return false
+	}
+	h.bytes += n
+	entry := replayEntry{ev: ev}
+	if ev.Kind == substrate.AgentEventDelta {
+		entry.text = &strings.Builder{}
+		entry.text.WriteString(ev.Text)
+		entry.ev.Text = ""
+		h.bytes += entry.text.Cap() - len(ev.Text)
+	}
+	h.replay = append(h.replay, entry)
+	return true
 }
 
 // publish is the loop's emit. The terminal done event is not published: finish
@@ -100,12 +155,8 @@ func (h *turnHub) publish(ev substrate.AgentEvent) {
 		h.thread = &ev
 	case h.overflow:
 	default:
-		n := eventBytes(ev)
-		if h.bytes+n > h.limit {
+		if !h.retain(ev) {
 			h.overflow = true
-		} else {
-			h.bytes += n
-			h.replay = append(h.replay, ev)
 		}
 	}
 	for sub := range h.subs {
@@ -148,6 +199,14 @@ func (h *turnHub) stop(actor substrate.Actor) {
 	}
 }
 
+// ended reports whether the turn's run context ended: a stop or the
+// shutdown, never the loop's own deadline, which sits below it.
+func (h *turnHub) ended() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.run != nil && h.run.Err() != nil
+}
+
 func (h *turnHub) stopper() substrate.Actor {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -179,7 +238,9 @@ func (h *turnHub) attach(ctx context.Context, emit func(substrate.AgentEvent)) (
 	if h.thread != nil {
 		snapshot = append(snapshot, *h.thread)
 	}
-	snapshot = append(snapshot, h.replay...)
+	for _, e := range h.replay {
+		snapshot = append(snapshot, e.event())
+	}
 	if h.overflow {
 		snapshot = append(snapshot, substrate.AgentEvent{Kind: substrate.AgentEventTruncated})
 	}

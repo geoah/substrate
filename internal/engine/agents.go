@@ -291,21 +291,40 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 		// A shutdown never opens a thread it will not run.
 		return nil, fmt.Errorf("%w: the server is shutting down: send the message again once it is back", substrate.ErrUnavailable)
 	}
+	// A slot among the repository's running chat turns, held until the
+	// turn settles: a detached turn outlives its client, so nothing else
+	// bounds how many a client can leave running.
+	if n := ds.chatTurns.Add(1); n > maxRunningChatTurns {
+		ds.chatTurns.Add(-1)
+		return nil, fmt.Errorf("%w: %d chat turns are already running in this repository: wait for one to finish, or stop one",
+			substrate.ErrConflict, maxRunningChatTurns)
+	}
+	slotHeld := true
+	defer func() {
+		if slotHeld {
+			ds.chatTurns.Add(-1)
+		}
+	}()
 	hub := newTurnHub()
 	runCtx, l, err := ds.prepareAgentRun(ctx, ag, agentInvocation{
 		mode: agentModeChat, user: message, userActor: actor,
 		threadID: threadID, hub: hub,
 	})
 	if err != nil {
-		return nil, agentEntryError(err)
+		err = agentEntryError(err)
+		// A client may have attached while the thread was being opened.
+		hub.finish(nil, err)
+		return nil, err
 	}
 	// The run keeps the request's values (the fence's lease, the spend
 	// admission) and drops its cancellation; a stop and the service
 	// shutdown are what cancel it.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(runCtx))
-	hub.setCancel(cancel)
+	hub.setRun(runCtx, cancel)
 	stopOnShutdown := context.AfterFunc(ds.svc.bg.ctx, cancel)
+	slotHeld = false
 	turn := func() {
+		defer ds.chatTurns.Add(-1)
 		defer stopOnShutdown()
 		defer cancel()
 		res, err := (*substrate.AgentResult)(nil), errors.New("the chat turn ended without settling")
@@ -328,6 +347,11 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 	}
 	return hub.attach(ctx, emit)
 }
+
+// maxRunningChatTurns is how many detached chat turns a repository runs at
+// once. Each holds a model call, the lifecycle fence's read lock and up to
+// agentTurnReplayBytes of replay, and none ends when its client leaves.
+const maxRunningChatTurns = 4
 
 // runningTurn is the hub of the detached chat turn this process runs on
 // threadID. With none it answers ErrNoRunningTurn for a thread that exists

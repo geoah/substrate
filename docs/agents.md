@@ -1020,14 +1020,28 @@ again by its id:
   chat turn and answers `200` with its settled result once the settle
   committed: `status: "stopped"`, `reason: "stopped by <actor>"`, and the
   text streamed so far as `reply`, which also lands as the turn's assistant
-  message row. Every attached stream ends with the same `done`. With no chat
+  message row. A sub-agent thread the turn was waiting on settles `stopped`
+  with it. Every attached stream ends with the same `done`. With no chat
   turn running it is `409 conflict` (`thread <id> has no running chat turn`);
   an unknown thread is `404 not_found`.
 
+**A stopped thread holds until its owner writes again.** Nothing resumes it
+on its own: not a resolution that landed during the turn, not one that lands
+later, and not the resolution sweep. The owner's next message replays the
+resolution rows with the rest of the history.
+
+A repository runs at most 4 chat turns at once. One more is refused `409
+conflict` (`4 chat turns are already running in this repository: wait for
+one to finish, or stop one`) before anything is written.
+
 `delta`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
-matching `message` row carries or will carry. A client that attaches after
-reading the rows drops every replayed event whose `turn` is at or below the
-highest one it holds. An attach replays at most 4 MiB of event text, counted
+matching `message` row carries or will carry. A thread's ordinals are unique:
+a row another writer puts on the thread while a turn runs (a resolution's
+`system` row) takes an ordinal past every one the turn has drawn, including
+the reply it is still streaming. A client that attaches after reading the
+rows drops a replayed event exactly when a stored row carries its `turn`,
+and keeps every other one. A highest-turn cutoff is wrong: the resolution
+row's later ordinal would hide the reply still streaming. An attach replays at most 4 MiB of event text, counted
 over `text`, `args`, `output` and `error`; past that it sends what it kept,
 one `{"kind":"truncated"}` line, then live events, and the dropped part is in
 the `message` rows once `done` arrives. A client that reads slower than the
@@ -1035,7 +1049,10 @@ turn writes is dropped with an `error` event saying to attach again. A server
 shutdown stops every running chat turn: each settles `stopped` with reason
 `stopped: the server shut down during the turn`, within the shutdown's
 10 second drain; a settle that misses the drain is a `running` thread the next
-open settles as interrupted.
+open settles as interrupted. A chat turn's own writes (its message rows, the
+partial reply, the settle) run past a stop or a shutdown, each within 30
+seconds; a partial reply that cannot be written is logged and the thread
+settles without it.
 
 The turns and their streams live in the memory of the process serving the
 repository. A repository has one writer

@@ -482,6 +482,32 @@ streaming and calls `stopThread`.
   memory per running turn is bounded at 4 MiB), confirmation (the tests
   above by name).
 
+### Review follow-ups (landed in this PR)
+
+- A stopped thread is never resumed automatically: the settle-time
+  re-check is skipped for `stopped`, `admitResume` refuses a stopped thread,
+  `claimThread` refuses a resume (`agentInvocation.resume`) of one under the
+  row lock, and `SweepResolutions` keeps listing `ok` and `overbudget` only.
+- A stop or a shutdown reaches sub-agent runs: `agentInvocation.stopHub`
+  rides into every child, which writes and settles on bounded contexts and
+  settles `stopped`.
+- Every detached write has its own 30 s budget (`writeContext`); a partial
+  reply that fails to write is logged and the settle goes on.
+- Ordinals are unique per thread: the loop reserves its reply's ordinal
+  when the completion starts and each tool row's before its events, and
+  `nextThreadTurn` reserves past them while a loop runs (`reserveTurnAfter`).
+  Clients dedupe by set membership, not by a highest-turn cutoff.
+- The replay merges consecutive deltas of one turn and counts each
+  retained event's own size.
+- At most `maxRunningChatTurns` (4) chat turns run per repository.
+- The API's stream worker recovers a panic and ends the stream as an
+  internal error.
+- The console re-reads the rows before every attach, re-attaches with
+  backoff after a stream that ends without `done`, and says nothing when a
+  stop loses the race (`409`).
+- A stopped completion's prompt tokens are not charged: the provider
+  reports usage only at the end of a stream, so a canceled call reports none.
+
 ### Risks
 
 - The `runAgent` split touches every entry; a missed `defer` (spend
@@ -914,7 +940,7 @@ kind is spelled in full, and an agent name in a path has each `/` as `%2F`.
 
 - Refusals come as an error envelope with their own status before any
   stream: `409 conflict` when the thread already has a running turn (attach
-  to it or stop it), `403 guard` at a spend cap, `404 not_found` for an
+  to it or stop it) or when the repository already runs 4 chat turns, `403 guard` at a spend cap, `404 not_found` for an
   unknown thread, `422 validation` for a hidden agent, an empty message or
   a provider row that cannot resolve, `503 unavailable` while the server is
   shutting down.
@@ -938,7 +964,10 @@ record and try later. `404 not_found` for an unknown thread.
 settled result (`status: "stopped"`, partial reply kept) once the turn has
 settled; `409 conflict` when no stoppable turn runs on the thread; `404
 not_found` for an unknown thread. Any attached stream ends with the same
-`done`.
+`done`. A stopped thread holds until you write to it again: nothing
+resumes it on its own, and your next message replays whatever resolved
+meanwhile. A `409` from a stop usually means the turn finished first; its
+stream's `done` is the answer.
 
 ### Events
 
@@ -958,9 +987,17 @@ is dropped.
 | `done` | `result` | the turn settled; `result.status` is `ok`, `overbudget`, `error` or `stopped`, `result.reason` says why, `result.reply` is the final text |
 | `error` | `error` | the turn failed after the stream opened; treat as settled with an error |
 
-`turn` is the ordinal the matching `llm/message` row carries. When you
-attach after reading the rows, drop every replayed event whose `turn` is at
-or below the highest `turn` you already hold; everything else is new.
+`turn` is the ordinal the matching `llm/message` row carries or will carry,
+and a thread's ordinals are unique: a row another writer puts on the thread
+while a turn runs (a resolution's `system` row) takes an ordinal past every
+one the turn has drawn, including the reply still streaming. When you attach
+after reading the rows, drop a replayed event exactly when one of the rows
+you hold carries its `turn`; keep every other event. Do not drop by "at or
+below the highest stored turn": the resolution row's later ordinal would
+hide the reply that is still streaming. A stream that ends without `done`
+(a dropped connection, `error` with `stream fell behind; attach again`, a
+server restart) is not the turn's end: re-read the rows and attach again,
+backing off, until the answer is `done` or `idle`.
 
 ### The records you read
 

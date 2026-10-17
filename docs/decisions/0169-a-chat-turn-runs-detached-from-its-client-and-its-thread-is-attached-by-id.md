@@ -48,6 +48,14 @@ keeps its settle on its caller's context
 ([0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md)
 owns what a shutdown leaves of those).
 
+A stop is the owner's word and holds: nothing resumes a `stopped` thread on
+its own (not the settle-time re-check, a resolution's resume or the sweep)
+until the owner writes again, and the stop reaches every sub-agent run the
+turn is waiting on. Because a client pairs streamed events with stored rows
+by `turn`, a thread's ordinals are unique: a row another writer puts on the
+thread while a turn runs takes an ordinal past every one the turn has drawn.
+A repository runs at most 4 chat turns at once.
+
 ### Consequences
 
 - Good, because a client leaving no longer costs the turn, and the next
@@ -60,6 +68,8 @@ owns what a shutdown leaves of those).
 - Bad, because a crash still leaves the thread `running` for the next open
   to settle as interrupted, and a settle that misses the shutdown's 10 second
   drain does the same.
+- Bad, because a resolution that lands during a turn the owner then stops
+  waits for the owner's next message, however long that is.
 - Bad, because each running turn holds up to 4 MiB of replay, and the
   lifecycle fence's read lock for the whole turn, so a bundle disable waits
   for a turn no client is watching.
@@ -71,7 +81,12 @@ owns what a shutdown leaves of those).
 `TestAttachReplaysTheRunningTurnThenStreamsLive`,
 `TestStopSettlesAChatTurnWithItsPartialOutput`,
 `TestStopRefusesAThreadWithNoRunningTurn`,
-`TestAShutdownSettlesADetachedTurnStopped`. The replay bound is
+`TestAShutdownSettlesADetachedTurnStopped`; and
+`internal/engine/agentdetached_review_db_test.go`:
+`TestAStopHoldsAgainstAResolutionThatLandedMidTurn`,
+`TestTheSweepLeavesAStoppedThreadAlone`,
+`TestAStopSettlesTheSubAgentThreadStopped`,
+`TestRunningChatTurnsAreCapped`. The replay bound is
 `TestTheReplayBufferIsBounded` in `internal/engine/agentturnhub_test.go`, and
 the wire is `internal/api/agents_test.go`.
 

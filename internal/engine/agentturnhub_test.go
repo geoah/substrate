@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,13 +13,14 @@ import (
 func TestTheReplayBufferIsBounded(t *testing.T) {
 	t.Parallel()
 	h := newTurnHub()
-	h.limit = 10
+	// Room for two retained deltas, each its event and an 8-byte buffer.
+	h.limit = 2 * (agentEventSize + 8)
 	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th"})
-	for _, text := range []string{"abcd", "efgh", "ijkl", "mnop"} {
-		h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: text, Turn: 1})
+	for i, text := range []string{"abcd", "efgh", "ijkl"} {
+		h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: text, Turn: i + 1})
 	}
 	// Past the bound nothing more is retained, not even a small event.
-	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "q", Turn: 1})
+	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "q", Turn: 2})
 	res := &substrate.AgentResult{Thread: "th", Status: threadOK}
 	h.finish(res, nil)
 
@@ -33,6 +35,37 @@ func TestTheReplayBufferIsBounded(t *testing.T) {
 	if strings.Join(got, ",") != want {
 		t.Fatalf("attach events = %s, want %s", strings.Join(got, ","), want)
 	}
+}
+
+// Consecutive deltas of one turn are one retained event, and the bound
+// counts what the hub holds: 200,000 four-byte deltas over 40 turns are 40
+// events of 20,000 bytes each, not 200,000 events.
+func TestTheReplayMergesDeltasAndCountsWhatItHolds(t *testing.T) {
+	h := newTurnHub()
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	const n = 200_000
+	for i := range n {
+		h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "tok ", Turn: 1 + i/5000})
+	}
+	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventToolStarted, ID: "c", Turn: 41})
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+	if len(h.replay) != 41 || h.overflow {
+		t.Fatalf("retained %d events, overflow %v; want 41 and no overflow", len(h.replay), h.overflow)
+	}
+	if first := h.replay[0].event(); first.Text != strings.Repeat("tok ", 5000) || first.Turn != 1 {
+		t.Fatalf("the first merged delta is %d bytes at turn %d", len(first.Text), first.Turn)
+	}
+	if h.bytes < 4*n || h.bytes > 2*4*n+41*agentEventSize {
+		t.Fatalf("counted %d bytes for %d bytes of text", h.bytes, 4*n)
+	}
+	if grew := int64(after.HeapAlloc) - int64(before.HeapAlloc); grew > 3*int64(h.bytes) {
+		t.Fatalf("the heap grew %d bytes against %d counted", grew, h.bytes)
+	}
+	runtime.KeepAlive(h)
 }
 
 func TestALiveSubscriberGetsEverythingPastTheBound(t *testing.T) {
@@ -96,7 +129,7 @@ func TestAStopBeforeTheRunContextTakesEffect(t *testing.T) {
 	h := newTurnHub()
 	h.stop(substrate.ActorConsole)
 	ctx, cancel := context.WithCancel(context.Background())
-	h.setCancel(cancel)
+	h.setRun(ctx, cancel)
 	if ctx.Err() == nil {
 		t.Fatal("a stop before setCancel did not cancel the run")
 	}

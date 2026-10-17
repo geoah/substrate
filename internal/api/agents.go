@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -102,6 +105,11 @@ func (h *handler) postThreadStop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+// errStreamPanicked ends a stream whose producer panicked. It maps to no
+// sentinel, so it answers 500 `internal` before the first event and an
+// `internal error` event after it.
+var errStreamPanicked = errors.New("internal error")
+
 // streamAgentEvents runs start and writes each event it emits as one ndjson
 // line. The status line waits for the first event: a refusal before it (a
 // spend cap, a hidden agent, a running turn, nothing to attach to) comes
@@ -122,6 +130,16 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 	events := make(chan substrate.AgentEvent)
 	ended := make(chan error, 1)
 	go func() {
+		// This goroutine carries no request as far as chi's recoverer is
+		// concerned: a panic here would kill the server, so it ends the
+		// stream as an internal error instead.
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("agent stream panicked and was contained",
+					append(requestLogAttrs(r), "panic", fmt.Sprint(p), "stack", string(debug.Stack()))...)
+				ended <- errStreamPanicked
+			}
+		}()
 		_, err := start(ctx, func(ev substrate.AgentEvent) {
 			select {
 			case events <- ev:

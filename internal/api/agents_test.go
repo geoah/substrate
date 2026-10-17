@@ -265,3 +265,38 @@ func TestAChatStreamHeartbeatsAndEndsOnDrain(t *testing.T) {
 	close(draining)
 	readToEOF(t, br, 5*time.Second)
 }
+
+// panicChat panics inside the stream's producer, after emitting events.
+type panicChat struct {
+	*fakeDataset
+	events []substrate.AgentEvent
+}
+
+func (c *panicChat) ChatAgent(_ context.Context, _ substrate.Actor, _, _, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	for _, ev := range c.events {
+		emit(ev)
+	}
+	panic("the dataset broke")
+}
+
+// A panic in the goroutine that runs the turn's stream is contained: the
+// server keeps serving, and the request ends as an internal error, a 500
+// before the first event and an error event after it.
+func TestAPanickingChatStreamEndsAsAnInternalError(t *testing.T) {
+	env := newTestEnv(t)
+	chat := &panicChat{fakeDataset: env.svc.datasets[fakeRepository]}
+	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
+	tok := env.svc.token(fakeRepository)
+	const path = "/api/v1/substrate.reamde.dev/core/agent/helper/chat"
+
+	rec := env.do(t, http.MethodPost, path, tok, map[string]any{"message": "hi"})
+	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
+
+	chat.events = []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}}
+	rec = env.do(t, http.MethodPost, path, tok, map[string]any{"message": "hi"})
+	wantStatus(t, rec, http.StatusOK)
+	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+	if len(lines) != 2 || lines[1] != `{"kind":"error","error":"internal error"}` {
+		t.Fatalf("stream after a panic = %s", rec.Body.String())
+	}
+}
