@@ -30,6 +30,10 @@ func openSpendDataset(t *testing.T, opts ...Option) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds := openInternalDataset(t, opts...)
+	// A chat's title call would spend a scripted turn and a priced one.
+	ds.mu.Lock()
+	ds.skipThreadTitles = true
+	ds.mu.Unlock()
 	fake := newFakeLLM(t)
 	priced := []any{}
 	for _, model := range []string{"capped", "zero", "open"} {

@@ -27,7 +27,7 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  version: 12
+  version: 13
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -77,6 +77,14 @@ data:
       description: the embeddings model this row's endpoint serves; naming
         it makes this the repository's embeddings provider, and only one row
         may name one
+    # The model a chat thread's title is asked of (decision record 0170). It
+    # sits on the row because the row already prices and windows its models by
+    # id, so a small model named here is priced like any other; absent, a
+    # thread is titled by the model it ran.
+    titleModel:
+      type: string
+      description: the model id on this row that titles chat threads; absent
+        means each thread's own model
     # A header is a name and a value, so it is declared as one: a repeated
     # object, not a json blob whose shape nothing checks. The substrate has no
     # map datatype — a keyed table is a list whose key is a declared field.
