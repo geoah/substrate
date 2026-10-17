@@ -9,10 +9,8 @@ import (
 )
 
 // A thread keeps a preview of its last reply, so a thread list reads one
-// kind. A turn that settles with no reply text leaves the previous preview.
-//
-// A stopped turn (the detached-turn work) settles with its partial text as
-// the reply, which this same path writes; its case belongs with that change.
+// kind. A turn that settles with no reply text leaves the previous preview,
+// and a stopped turn's preview is the text it streamed before the stop.
 func TestSettleKeepsTheLastReplyOnTheThread(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -58,5 +56,24 @@ func TestSettleKeepsTheLastReplyOnTheThread(t *testing.T) {
 	chat(first.Thread, "again")
 	if got := lastReply(first.Thread); got != "the newest" {
 		t.Fatalf("lastReply %q, want the newest reply", got)
+	}
+
+	// A stop mid-reply: the preview is the partial text.
+	hold, _ := heldTurn(t)
+	fake.script("budget", fakeTurn{content: "cut short here", hold: hold})
+	log := newEventLog()
+	chatted := make(chan struct{})
+	go func() {
+		defer close(chatted)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, budgeter, first.Thread, "once more", log.emit)
+	}()
+	log.waitFor(t, substrate.AgentEventDelta)
+	stopped, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, first.Thread)
+	if err != nil || stopped.Status != threadStopped || stopped.Reply != "cut sho" {
+		t.Fatalf("stop = %+v, %v", stopped, err)
+	}
+	<-chatted
+	if got := lastReply(first.Thread); got != "cut sho" {
+		t.Fatalf("lastReply after a stop %q, want the partial %q", got, "cut sho")
 	}
 }
