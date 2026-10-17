@@ -24,7 +24,7 @@ import {
   groupByDay,
   sinceWords,
   tallyWords,
-  threadStartedAt,
+  threadActiveAt,
   threadTally,
   type ChatRow,
 } from "@/lib/agent-chat"
@@ -95,7 +95,7 @@ export function ThreadList({
     () => visibleChats(rows, { agent, query, limit }),
     [rows, agent, query, limit]
   )
-  const groups = groupByDay(chats, (r) => threadStartedAt(r.thread))
+  const groups = groupByDay(chats, (r) => threadActiveAt(r.thread))
   const counts = new Map<string, number>()
   for (const r of rows) {
     if (r.agentId) counts.set(r.agentId, (counts.get(r.agentId) ?? 0) + 1)
@@ -276,10 +276,15 @@ export function ThreadList({
                     <span className="truncate text-[13px] font-medium">
                       {row.title}
                     </span>
+                    {row.preview && (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {row.preview}
+                      </span>
+                    )}
                     <span className="truncate text-xs text-faint">
                       {agent
-                        ? sinceWords(threadStartedAt(row.thread))
-                        : `${row.agentId ? agentName(row.agentId) : "An agent"} · ${sinceWords(threadStartedAt(row.thread))}`}
+                        ? sinceWords(threadActiveAt(row.thread))
+                        : `${row.agentId ? agentName(row.agentId) : "An agent"} · ${sinceWords(threadActiveAt(row.thread))}`}
                     </span>
                     {technical && (
                       <span className="truncate text-[11.5px] text-faint">

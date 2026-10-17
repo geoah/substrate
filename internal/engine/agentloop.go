@@ -1123,6 +1123,19 @@ func (l *agentLoop) putMessageID(ctx context.Context, actor substrate.Actor, pro
 	})
 }
 
+// propThreadLastReply is the thread's preview of its last reply, cut to
+// lastReplyRunes. A settle with no reply text leaves the previous one.
+const (
+	propThreadLastReply = "lastReply"
+	lastReplyRunes      = 240
+)
+
+// lastReplyOf is the preview a settle writes: the reply's text with its
+// whitespace collapsed, cut to lastReplyRunes; empty when there is none.
+func lastReplyOf(reply string) string {
+	return cutRunes(strings.Join(strings.Fields(reply), " "), lastReplyRunes)
+}
+
 // settle writes the thread's final shape. Counters ACCUMULATE onto whatever
 // the row already carries, so a continued chat thread keeps one running
 // total; the root thread additionally absorbs the whole chain's tally (cost
@@ -1184,6 +1197,9 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		props["reason"] = nil
 		if reason != "" {
 			props["reason"] = reason
+		}
+		if preview := lastReplyOf(reply); preview != "" {
+			props[propThreadLastReply] = preview
 		}
 		// A thread deleted while the turn ran takes no settle: a tombstone
 		// refuses the patch, a collected row is absent, and what `then`

@@ -209,6 +209,17 @@ describe("thread titles", () => {
     expect(rows[0].title).toBe("Trip to Berlin")
   })
 
+  it("carries the thread's last reply as the row's preview", () => {
+    const rows = chatRows(
+      [
+        record({ id: "t1", properties: { lastReply: " See the Reichstag " } }),
+        record({ id: "t2", properties: {} }),
+      ],
+      new Map()
+    )
+    expect(rows.map((r) => r.preview)).toEqual(["See the Reichstag", undefined])
+  })
+
   it("reads a delivery envelope as what fired", () => {
     const envelope = JSON.stringify({
       change: { op: "update", kind: "a.b/c/note", id: "n1" },
