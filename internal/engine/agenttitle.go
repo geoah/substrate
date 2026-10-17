@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -46,8 +47,8 @@ const titleSystemPrompt = "You name conversations. Reply with a title for the " 
 	"conversation's own language. Reply with the title alone."
 
 // provisionalSubject is the subject a chat thread opens with: the first
-// non-blank line of its first message, whitespace collapsed, cut to
-// threadSubjectRunes. Only a chat thread minted by this run takes one: a
+// non-blank line of its first message as plain text, whitespace collapsed,
+// cut to threadSubjectRunes. Only a chat thread minted by this run takes one: a
 // trigger's first message is a JSON envelope, which reads as no heading.
 func (l *agentLoop) provisionalSubject() string {
 	if l.in.mode != agentModeChat || l.in.threadID != "" {
@@ -61,14 +62,79 @@ func (l *agentLoop) provisionalSubject() string {
 	return ""
 }
 
-// cleanSubject collapses whitespace, strips surrounding quotes and a
-// trailing period, and cuts to threadSubjectRunes.
+// cleanSubject reduces one line to plain text, collapses whitespace, strips
+// surrounding quotes, and cuts to threadSubjectRunes.
 func cleanSubject(s string) string {
+	s = plainText(s)
 	s = strings.Join(strings.Fields(s), " ")
 	s = strings.TrimFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || strings.ContainsRune("\"'`“”‘’«»", r)
 	})
 	return cutRunes(s, threadSubjectRunes)
+}
+
+// The markdown plainText takes apart. A heading is read in a list and a push
+// notification, where markup prints as itself.
+var (
+	// mdLink is an inline link or image, `[text](target)` or `![alt](src)`;
+	// the target may hold one level of parentheses.
+	mdLink = regexp.MustCompile(`!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)`)
+	// mdAutolink is `<scheme:...>` or `<user@host>`.
+	mdAutolink = regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9+.-]*:[^<>\s]+|[^<>\s@]+@[^<>\s@]+)>`)
+	// mdLead is what opens a block: a heading, a quote, a list item, a task
+	// box. It repeats (`> - item`).
+	mdLead = regexp.MustCompile(`^\s*(?:#{1,6}(?:\s+|$)|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d{1,9}[.)]\s+)`)
+	// mdRule is a line that is a thematic break and nothing else.
+	mdRule = regexp.MustCompile(`^\s*(?:[-*_]\s*){3,}$`)
+)
+
+// plainText is one line of markdown as the text a reader sees: link and
+// image text without their targets, an autolink's address, no emphasis,
+// strikethrough or code markers, and no heading, quote or list marker. An
+// underscore or asterisk inside a word (snake_case, 2*3) is text and stays.
+func plainText(line string) string {
+	if mdRule.MatchString(line) {
+		return ""
+	}
+	for {
+		next := mdLead.ReplaceAllString(line, "")
+		if next == line {
+			break
+		}
+		line = next
+	}
+	line = mdLink.ReplaceAllString(line, "$1")
+	line = mdAutolink.ReplaceAllString(line, "$1")
+	line = strings.ReplaceAll(line, "`", "")
+	line = strings.ReplaceAll(line, "~~", "")
+	return stripEmphasis(line)
+}
+
+// stripEmphasis drops every run of `*` or `_` that is not inside a word: a
+// run with a letter or digit on both sides is text.
+func stripEmphasis(s string) string {
+	rs := []rune(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	wordy := func(i int) bool {
+		return i >= 0 && i < len(rs) && (unicode.IsLetter(rs[i]) || unicode.IsDigit(rs[i]))
+	}
+	for i := 0; i < len(rs); {
+		if rs[i] != '*' && rs[i] != '_' {
+			b.WriteRune(rs[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(rs) && rs[j] == rs[i] {
+			j++
+		}
+		if wordy(i-1) && wordy(j) {
+			b.WriteString(string(rs[i:j]))
+		}
+		i = j
+	}
+	return b.String()
 }
 
 // cutRunes cuts s to at most n runes, never inside one.
@@ -83,7 +149,7 @@ func cutRunes(s string, n int) string {
 // line, cleaned, without a trailing period. Empty when it said nothing.
 func cleanTitle(content string) string {
 	for line := range strings.SplitSeq(content, "\n") {
-		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(plainText(line))
 		line = strings.TrimPrefix(line, "Title:")
 		if s := strings.TrimRight(cleanSubject(line), "."); s != "" {
 			return cleanSubject(s)
