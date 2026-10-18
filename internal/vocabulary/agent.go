@@ -118,8 +118,9 @@ const (
 	MaxAgentDeadlineSec     = 600
 	DefaultAgentDepth       = 3
 	MaxAgentDepth           = 3
-	// DefaultAgentToolTimeoutSec bounds one `query` or function tool call;
-	// the loop's own deadline still ends it sooner.
+	// DefaultAgentToolTimeoutSec bounds one `query` call when the agent sets
+	// no toolTimeoutSeconds; the loop's own deadline still ends it sooner. A
+	// function call is not held to it: the function declares its own timeout.
 	DefaultAgentToolTimeoutSec = 30
 	MaxAgentToolTimeoutSec     = 600
 	// DefaultAgentToolResultBytes caps one tool result as the model sees it
@@ -233,7 +234,12 @@ type AgentBudgets struct {
 	DeadlineSeconds int
 	Depth           int
 	// ToolTimeoutSeconds bounds one `query` or function tool call; a call
-	// past it is a tool error the model sees, never a failed run.
+	// past it is a tool error the model sees, never a failed run. Zero is
+	// absent, which is not the same bound for both: a `query` call takes
+	// DefaultAgentToolTimeoutSec, and a function call the function's own
+	// timeout plus 5 s for starting the body, never less than
+	// DefaultAgentToolTimeoutSec, so a function declaring more than the
+	// default is not cut short and one declaring less loses nothing.
 	ToolTimeoutSeconds int
 	// MaxToolResultBytes caps one tool result: a larger one is replaced by
 	// a truncation envelope carrying its head.
@@ -707,7 +713,7 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 		return false
 	}
 	if a.Budgets.ToolTimeoutSeconds, ok = l.boundedInt(where+": data.budgets.toolTimeoutSeconds", budgets, "toolTimeoutSeconds",
-		DefaultAgentToolTimeoutSec, MaxAgentToolTimeoutSec); !ok {
+		0, MaxAgentToolTimeoutSec); !ok {
 		return false
 	}
 	if a.Budgets.MaxToolResultBytes, ok = l.boundedIntFrom(where+": data.budgets.maxToolResultBytes", budgets, "maxToolResultBytes",

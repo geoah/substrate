@@ -1601,10 +1601,11 @@ func (l *agentLoop) queryLimits(ctx context.Context) string {
 		}
 	}
 	limits := fmt.Sprintf("Limits: a search stops at %s or at the newest %d matching records, and then answers \"capped\": true with a \"note\"; "+
-		"a call stops after %ds with the error \"tool call timed out…\"; a result over %s is replaced by "+
+		"a query call stops after %ds with the error \"tool call timed out…\"; a result over %s is replaced by "+
 		"{\"truncated\": true, \"bytes\", \"limit\", \"head\", \"note\"}. "+
 		"When one hits, narrow once (rarer words, filter.kinds, a smaller first), then answer from what you have.",
-		svc.searchBudget, svc.searchReadMax, int(l.toolTimeout()/time.Second), formatBytes(l.toolResultCap()))
+		svc.searchBudget, svc.searchReadMax, ceilSeconds(toolBound(l.ag.Budgets.ToolTimeoutSeconds, svc.queryToolTimeout, nil, time.Time{}, time.Time{})),
+		formatBytes(l.toolResultCap()))
 	return words + semantic + limits
 }
 
@@ -1623,31 +1624,68 @@ func toolJSON(v any) string {
 	return string(out)
 }
 
-// toolContext bounds one `query` or function tool call by the agent's
-// budgets.toolTimeoutSeconds. ctx carries the loop's deadline, so a call never
-// outlives the run. Sub-agents run on budgets of their own, and `propose`,
-// `write` and `ask` write, where cutting a call mid-transaction would only
-// trade a slow answer for an unclear one.
-func (l *agentLoop) toolContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, l.toolTimeout())
+// toolContext bounds one `query` (fn nil) or function tool call by toolBound
+// and answers the bound with it, for the timeout error to name. ctx carries
+// the loop's deadline, so a call never outlives the run. Sub-agents run on
+// budgets of their own, and `propose`, `write` and `ask` write, where cutting
+// a call mid-transaction would only trade a slow answer for an unclear one.
+func (l *agentLoop) toolContext(ctx context.Context, fn *vocabulary.Function) (context.Context, context.CancelFunc, time.Duration) {
+	deadline, _ := ctx.Deadline()
+	bound := toolBound(l.ag.Budgets.ToolTimeoutSeconds, l.ds.svc.queryToolTimeout, fn, deadline, time.Now())
+	cctx, cancel := context.WithTimeout(ctx, bound)
+	return cctx, cancel, bound
 }
 
-func (l *agentLoop) toolTimeout() time.Duration {
-	s := l.ag.Budgets.ToolTimeoutSeconds
-	if s <= 0 {
-		s = vocabulary.DefaultAgentToolTimeoutSec
+// functionToolStartGrace is added to a function's declared timeout when the
+// agent sets no toolTimeoutSeconds. The runner starts the declared clock only
+// once the process is up, and its own "invocation exceeded" error names the
+// function's timeout, which tells the model more than the tool error does; a
+// bound equal to the declared timeout would end the call first every time.
+const functionToolStartGrace = 5 * time.Second
+
+// toolBound is one tool call's wall clock. An agent's toolTimeoutSeconds
+// bounds both a `query` (fn nil) and a function call, a function below its
+// declared timeout too. Without one, a `query` takes queryDefault
+// (DefaultAgentToolTimeoutSec when not positive), and a function its declared
+// timeout plus functionToolStartGrace, never less than the `query` default:
+// a function allowed 50 s is not cut at 30 s, and one allowed 5 s keeps the
+// 30 s a cold start may need. A non-zero deadline shortens the bound to the
+// time left before it.
+func toolBound(explicitSec int, queryDefault time.Duration, fn *vocabulary.Function, deadline, now time.Time) time.Duration {
+	if queryDefault <= 0 {
+		queryDefault = vocabulary.DefaultAgentToolTimeoutSec * time.Second
 	}
-	return time.Duration(s) * time.Second
+	bound := queryDefault
+	switch {
+	case explicitSec > 0:
+		bound = time.Duration(explicitSec) * time.Second
+	case fn != nil:
+		declared := fn.Timeout
+		if declared <= 0 {
+			declared = vocabulary.DefaultRunTimeout
+		}
+		bound = max(declared+functionToolStartGrace, queryDefault)
+	}
+	if !deadline.IsZero() {
+		bound = min(bound, deadline.Sub(now))
+	}
+	return bound
 }
 
 // toolTimedOut answers the tool error of a call its own timeout ended, and
 // false when it did not: a call the loop's deadline or a stop ended is the
 // loop's to settle, and its context is done too.
-func (l *agentLoop) toolTimedOut(loop, call context.Context) (string, bool) {
+func toolTimedOut(loop, call context.Context, bound time.Duration) (string, bool) {
 	if loop.Err() != nil || !errors.Is(call.Err(), context.DeadlineExceeded) {
 		return "", false
 	}
-	return toolError(fmt.Sprintf(toolTimeoutMessage, int(l.toolTimeout()/time.Second))), true
+	return toolError(fmt.Sprintf(toolTimeoutMessage, ceilSeconds(bound))), true
+}
+
+// ceilSeconds rounds up: a declared timeout may be fractional (PT0.25S), and
+// the error must not name less time than the call had.
+func ceilSeconds(d time.Duration) int {
+	return int((d + time.Second - 1) / time.Second)
 }
 
 // toolTimeoutMessage is the error a call past its timeout answers; %d is the
@@ -1773,10 +1811,10 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 	if remaining <= 0 {
 		return toolError(fmt.Sprintf("read budget exhausted (%d rows)", reads.Rows)), false
 	}
-	qctx, cancel := l.toolContext(ctx)
+	qctx, cancel, bound := l.toolContext(ctx, nil)
 	defer cancel()
 	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: reads.Kinds, rows: remaining}, args)
-	if late, timedOut := l.toolTimedOut(ctx, qctx); timedOut {
+	if late, timedOut := toolTimedOut(ctx, qctx, bound); timedOut {
 		// A read the timeout cut may still answer ok: a search whose rows
 		// failed to load skips them, so what it returned is not the answer.
 		return late, false
@@ -2249,13 +2287,13 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	})
 	// The timeout bounds the body alone: the effects below apply under the
 	// loop's context, so a call cut short applies none of them.
-	rctx, cancel := l.toolContext(fctx)
+	rctx, cancel, bound := l.toolContext(fctx, fn)
 	effects, output, err := l.ds.runCallable(rctx, fn, runner.Input{
 		Mode: runner.ModeCall, Args: input,
 		CausalDepth:    l.in.causalDepth,
 		IdempotencyKey: key,
 	})
-	late, timedOut := l.toolTimedOut(ctx, rctx)
+	late, timedOut := toolTimedOut(ctx, rctx, bound)
 	cancel()
 	if timedOut {
 		return late, false
