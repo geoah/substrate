@@ -88,6 +88,12 @@ const (
 	// statsSample is roughly how many rows the average band lengths are read
 	// from.
 	statsSample = 2000
+	// statsReadTimeout bounds one statistics read, which runs past the search
+	// that started it.
+	statsReadTimeout = 2 * time.Minute
+	// statsWait is how long a search with no statistics held waits for the
+	// read in flight before it ranks without them.
+	statsWait = time.Second
 )
 
 // searchStats is one repository's collection statistics: live rows and the
@@ -100,11 +106,15 @@ type searchStats struct {
 
 // searchStatsCache holds one repository's statistics between searches.
 type searchStatsCache struct {
-	// mu guards s alone and is never held across a read.
+	// mu guards every field and is never held across a read.
 	mu sync.Mutex
 	s  searchStats
-	// refresh is held by the one caller reading fresh statistics.
-	refresh sync.Mutex
+	// refreshing is closed when the read in flight ends, and nil while none
+	// runs; err is what the last read failed with.
+	refreshing chan struct{}
+	err        error
+	// wait overrides statsWait, for a test.
+	wait time.Duration
 }
 
 // searchStats returns the repository's collection statistics, reading them
@@ -120,34 +130,61 @@ func (ds *dataset) searchStats(ctx context.Context) (searchStats, error) {
 	return ds.statsCache.get(ctx, ds.readSearchStats)
 }
 
-// get answers the held statistics while they stand, and read's otherwise.
-// The read runs outside mu: it samples the repository, and every lexical
-// search would wait on it. One caller reads at a time; while it does, a
-// caller holding stale statistics answers those, and a caller with none
-// waits for the read and answers what it found.
+// get answers the held statistics while they stand. Otherwise it starts one
+// read, on a context of its own: the sample took 5.6 s on a repository of
+// 620,000 rows, longer than a search's whole budget, and a read canceled
+// with the search that started it cached nothing, so every search paid for
+// it again and failed. A caller holding stale statistics answers those at
+// once; a caller holding none waits for the read up to statsWait and then
+// answers none, which ranks without IDF or length normalization until the
+// read lands. A read that fails is answered to the callers waiting on it.
 func (c *searchStatsCache) get(ctx context.Context, read func(context.Context) (searchStats, error)) (searchStats, error) {
-	held := c.held()
-	if statsFresh(held) {
-		return held, nil
-	}
-	if held.at.IsZero() {
-		c.refresh.Lock()
-	} else if !c.refresh.TryLock() {
-		return held, nil
-	}
-	defer c.refresh.Unlock()
-	// The caller that held refresh before this one may have read already.
-	if held = c.held(); statsFresh(held) {
-		return held, nil
-	}
-	s, err := read(ctx)
-	if err != nil {
-		return searchStats{}, err
-	}
 	c.mu.Lock()
-	c.s = s
+	if statsFresh(c.s) {
+		s := c.s
+		c.mu.Unlock()
+		return s, nil
+	}
+	if c.refreshing == nil {
+		done := make(chan struct{})
+		c.refreshing = done
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), statsReadTimeout)
+		go func() {
+			defer cancel()
+			s, err := read(rctx)
+			c.mu.Lock()
+			if err == nil {
+				c.s = s
+			}
+			c.err = err
+			c.refreshing = nil
+			c.mu.Unlock()
+			close(done)
+		}()
+	}
+	held, refreshing := c.s, c.refreshing
+	wait := c.wait
 	c.mu.Unlock()
-	return s, nil
+	if !held.at.IsZero() {
+		return held, nil
+	}
+	if wait <= 0 {
+		wait = statsWait
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-refreshing:
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.s.at.IsZero() {
+			return searchStats{}, c.err
+		}
+		return c.s, nil
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	return searchStats{}, nil
 }
 
 func (c *searchStatsCache) held() searchStats {

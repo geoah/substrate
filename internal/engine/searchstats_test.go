@@ -9,100 +9,105 @@ import (
 	"time"
 )
 
-// The statistics refresh reads a sample of the repository, so it must not
-// hold the lock every lexical search takes: a caller holding stale
-// statistics answers them while another caller reads, and a caller holding
-// none waits for that read rather than starting its own.
+// The statistics read samples the repository and can take longer than a
+// search's whole budget, so it runs on a context of its own, one at a time:
+// a caller holding stale statistics answers them at once, a caller holding
+// none waits a moment and then answers none, and the read lands for the
+// next caller even when the caller that started it has gone.
 func TestSearchStatsRefreshDoesNotHoldSearchesBack(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	stale := searchStats{n: 1, at: time.Now().Add(-2 * statsTTL)}
 	next := searchStats{n: 2, at: time.Now()}
 
 	// blockingRead stands for a slow sample: it reports that it started and
-	// returns next once released.
+	// returns next once released, or the error its context ended with.
 	blockingRead := func(reads *atomic.Int32, started, release chan struct{}) func(context.Context) (searchStats, error) {
-		return func(context.Context) (searchStats, error) {
+		return func(ctx context.Context) (searchStats, error) {
 			reads.Add(1)
 			close(started)
-			<-release
-			return next, nil
+			select {
+			case <-release:
+				return next, nil
+			case <-ctx.Done():
+				return searchStats{}, ctx.Err()
+			}
+		}
+	}
+	// landed waits for the cache to hold want.
+	landed := func(t *testing.T, c *searchStatsCache, want float64) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for c.held().n != want {
+			if time.Now().After(deadline) {
+				t.Fatalf("the cache holds n=%v, want n=%v", c.held().n, want)
+			}
+			time.Sleep(5 * time.Millisecond)
 		}
 	}
 
-	t.Run("stale statistics answer while another caller reads", func(t *testing.T) {
+	t.Run("stale statistics answer at once and one read refreshes them", func(t *testing.T) {
 		t.Parallel()
 		c := &searchStatsCache{s: stale}
 		var reads atomic.Int32
 		started, release := make(chan struct{}), make(chan struct{})
-		refreshed := make(chan searchStats, 1)
-		go func() {
-			s, _ := c.get(ctx, blockingRead(&reads, started, release))
-			refreshed <- s
-		}()
+		s, err := c.get(context.Background(), blockingRead(&reads, started, release))
+		if err != nil || s.n != stale.n {
+			t.Fatalf("get = n=%v, %v; want the held n=%v at once", s.n, err, stale.n)
+		}
 		<-started
-		answered := make(chan searchStats, 1)
-		go func() {
-			s, _ := c.get(ctx, func(context.Context) (searchStats, error) {
-				reads.Add(1)
-				return next, nil
-			})
-			answered <- s
-		}()
-		select {
-		case s := <-answered:
-			if s.n != stale.n {
-				t.Fatalf("a caller during the refresh answered n=%v, want the held n=%v", s.n, stale.n)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("a caller holding stale statistics waited on another caller's refresh")
+		s, _ = c.get(context.Background(), func(context.Context) (searchStats, error) {
+			reads.Add(1)
+			return next, nil
+		})
+		if s.n != stale.n {
+			t.Fatalf("a caller during the refresh answered n=%v, want the held n=%v", s.n, stale.n)
 		}
 		close(release)
-		if s := <-refreshed; s.n != next.n {
-			t.Fatalf("the refreshing caller answered n=%v, want the read's n=%v", s.n, next.n)
-		}
+		landed(t, c, next.n)
 		if got := reads.Load(); got != 1 {
 			t.Fatalf("%d reads, want the one refresh", got)
 		}
-		if s, _ := c.get(ctx, nil); s.n != next.n {
+		if s, _ := c.get(context.Background(), nil); s.n != next.n {
 			t.Fatalf("after the refresh the cache answered n=%v, want n=%v", s.n, next.n)
 		}
 	})
 
-	t.Run("a caller with nothing held waits for the read in flight", func(t *testing.T) {
+	t.Run("a caller with nothing held answers the read that lands in time", func(t *testing.T) {
 		t.Parallel()
-		c := &searchStatsCache{}
+		c := &searchStatsCache{wait: 5 * time.Second}
 		var reads atomic.Int32
 		started, release := make(chan struct{}), make(chan struct{})
-		go func() { _, _ = c.get(ctx, blockingRead(&reads, started, release)) }()
+		go func() { <-started; close(release) }()
+		s, err := c.get(context.Background(), blockingRead(&reads, started, release))
+		if err != nil || s.n != next.n {
+			t.Fatalf("get = n=%v, %v; want the read's n=%v", s.n, err, next.n)
+		}
+	})
+
+	t.Run("a slow read outlives the search that started it", func(t *testing.T) {
+		t.Parallel()
+		c := &searchStatsCache{wait: 20 * time.Millisecond}
+		var reads atomic.Int32
+		started, release := make(chan struct{}), make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
+		s, err := c.get(ctx, blockingRead(&reads, started, release))
+		if err != nil || !s.at.IsZero() {
+			t.Fatalf("get = %+v, %v; want no statistics and no error after the wait", s, err)
+		}
+		cancel()
 		<-started
-		answered := make(chan searchStats, 1)
-		go func() {
-			s, _ := c.get(ctx, func(context.Context) (searchStats, error) {
-				reads.Add(1)
-				return searchStats{n: 3, at: time.Now()}, nil
-			})
-			answered <- s
-		}()
-		select {
-		case s := <-answered:
-			t.Fatalf("a caller with nothing held answered n=%v before the read finished", s.n)
-		case <-time.After(100 * time.Millisecond):
-		}
 		close(release)
-		if s := <-answered; s.n != next.n {
-			t.Fatalf("the waiting caller answered n=%v, want the finished read's n=%v", s.n, next.n)
-		}
+		landed(t, c, next.n)
 		if got := reads.Load(); got != 1 {
-			t.Fatalf("%d reads, want one: the waiting caller found the statistics fresh", got)
+			t.Fatalf("%d reads, want one", got)
 		}
 	})
 
 	t.Run("a failed read answers its error and keeps nothing", func(t *testing.T) {
 		t.Parallel()
-		c := &searchStatsCache{}
+		c := &searchStatsCache{wait: 5 * time.Second}
 		boom := errors.New("boom")
-		if _, err := c.get(ctx, func(context.Context) (searchStats, error) { return searchStats{}, boom }); !errors.Is(err, boom) {
+		if _, err := c.get(context.Background(), func(context.Context) (searchStats, error) { return searchStats{}, boom }); !errors.Is(err, boom) {
 			t.Fatalf("get = %v, want the read's error", err)
 		}
 		if s := c.held(); !s.at.IsZero() {
