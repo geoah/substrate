@@ -413,9 +413,13 @@ first label.
   `unique` and `deprecated` are reserved today: stored, refused where they
   could not be honored, and acted on by no server path. A kind's `purpose`
   (`primary`, `supporting` or `internal`; absent reads as `primary`) is
-  validated and stored and read by clients alone, to decide what they list;
-  every seeded kind is `internal`
-  ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md)). `renamedFrom` is live, on a
+  validated and stored, read by clients to decide what they list, by search
+  to rank machinery lower, and by the engine to leave `internal` kinds out
+  of an agent's kinds list unless its grant names them; every seeded kind is
+  `internal`
+  ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md),
+  [0136](docs/decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md),
+  [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). `renamedFrom` is live, on a
   property and on an enum value entry alike:
   admitting the declaration moves every live record's value to the new name,
   or rewrites the old spelling to the new one, inside the apply's

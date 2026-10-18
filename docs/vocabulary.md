@@ -878,7 +878,10 @@ lists, and still reaches every kind by its reference. On the server,
 [`filter.purposes`](api.md#the-filter-grammar) narrows a list or a ranked read
 to the kinds of the named purposes, and [search](api.md#search) ranks
 `supporting` and `internal` records lower
-([record 0136](decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md)). A kind's `purpose:` is
+([record 0136](decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md)).
+An agent's kinds list in its system prompt leaves out the `internal` kinds
+its grant reaches only through a glob
+([record 0172](decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). A kind's `purpose:` is
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
 

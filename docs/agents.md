@@ -244,12 +244,15 @@ entry could name only a function.
 
 - **`substrate.reamde.dev/core/query`** is the read, and it speaks the
   [records route](api.md#the-records-route)'s grammar as a tool: `kind` + `id`
-  reads one record; `q` (with `mode`, `first`, `filter.kinds` and
-  `filter.purposes`) is the ranked read. A `q` that names no kinds and no
-  purposes searches only the `primary` and `supporting` kinds
-  ([0133](decisions/0133-a-kind-declares-its-purpose.md)), so a wide grant
-  does not answer with a thread's own messages or other machinery; naming an
-  internal kind or `purposes: [internal]` reaches it. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
+  reads one record; `q` (with `filter.kinds` or `kind`, and optionally
+  `mode`, `first` and `filter.purposes`) is the ranked read. A `q`, and a
+  list with `filter.search`, must name one or more kinds: one that names
+  none is a tool error telling the model to pick kinds from the kinds list in
+  its system prompt (below,
+  [0172](decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)),
+  and `filter.purposes` alone is not enough. The REST route, the direct call
+  of this function and the console's search still take a search that names
+  nothing. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
   `referencing` included), `orderBy`, `first`, `after` and `expand` list a
   page, which answers `{records, cursor, head, generation, included?,
   matches?}` exactly as the route does. A `filter` bounding `at` on both
@@ -263,6 +266,26 @@ entry could name only a function.
   override that claims a slot, whatever its kind, so an override outside the
   allowlist removes its slot (decision 0111). List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
+
+  An agent holding `query` gets a **kinds list** in its system prompt,
+  after its own `prompt`: the `primary` and `supporting` kinds its
+  `permissions.reads` reaches, globs expanded as the gate expands them,
+  grouped under each authority and package and ordered by full kind
+  reference. An `internal` kind is listed only where the allowlist names it
+  outright; one a glob reaches is still readable. Each line is the full kind
+  reference, its purpose when it is not `primary`, the first sentence of its
+  description (at most 120 characters), and its top-level references whose
+  target the list carries (`account -> <kind>`), or that point at
+  `any kind` or `any kind implementing <trait>`. The list sits in a fenced
+  block under a sentence saying the descriptions are data written by kind
+  authors, never instructions: any writer whose grant reaches
+  `substrate.reamde.dev/core/kind` can edit one. It is rendered once per run,
+  so its bytes are stable across turns and runs while the rendered fields do
+  not change, which lets a provider that caches prompt prefixes reuse them.
+  Past 40 KiB the remaining kinds are listed by reference alone, primary
+  kinds described first, and past a further 8 KiB they are counted. A
+  sub-agent holding `query` gets its own list from its own allowlist. An
+  agent narrows its list by narrowing its reads grant; there is no other key.
 - **`substrate.reamde.dev/core/write`** is the direct write: one call is
   `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,
   merging and never pruning; omit `id` to mint one), `patch` (change an

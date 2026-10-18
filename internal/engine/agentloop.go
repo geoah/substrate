@@ -507,6 +507,10 @@ type agentLoop struct {
 
 	defs   []llm.Tool
 	byName map[string]agentTool
+	// systemPrompt is what system() sends, composed once by buildTools: the
+	// kinds list is tens of kilobytes, and one composition per run keeps every
+	// turn's prompt the same bytes.
+	systemPrompt string
 
 	// gateOrdinal counts the writes the policy door GATED across this
 	// invocation: it rides the request-id derivation, so two gated writes in
@@ -1600,6 +1604,8 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		l.defs = append(l.defs, llm.Tool{Name: name, Description: description, Parameters: params})
 	}
 	openObject := map[string]any{"type": "object"}
+	catalogue := ""
+	defer func() { l.systemPrompt = composeSystem(l.ag.Prompt, catalogue, l.in.systemSuffix) }()
 	for _, t := range l.ag.Tools {
 		fn, err := l.ds.registry().ResolveFunction(t.Callable)
 		if err != nil {
@@ -1623,6 +1629,9 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		}
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)
+			if l.ag.Reads != nil {
+				catalogue = kindsCatalogue(l.ds.registry().Kinds(), l.ag.Reads.Kinds)
+			}
 		}
 		tool := agentTool{fn: fn, builtin: t.Builtin}
 		add(t.Name, description, params, tool)
@@ -1874,7 +1883,7 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 	}
 	qctx, cancel, bound := l.toolContext(ctx, nil)
 	defer cancel()
-	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: reads.Kinds, rows: remaining}, args)
+	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: reads.Kinds, rows: remaining, requireKinds: true}, args)
 	if late, timedOut := toolTimedOut(ctx, qctx, bound); timedOut {
 		// A read the timeout cut may still answer ok: a search whose rows
 		// failed to load skips them, so what it returned is not the answer.
@@ -1891,6 +1900,9 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 type queryScope struct {
 	kinds []string
 	rows  int
+	// requireKinds refuses a ranked read that names no kinds: an agent's
+	// query tool sets it (record 0172), a function body's host query does not.
+	requireKinds bool
 }
 
 func (s queryScope) allows(ident string) bool {
@@ -2029,13 +2041,21 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		if arm := rankedFilterArm(q.Filter); arm != "" {
 			return toolError("filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds and filter.purposes alone"), false, 0
 		}
+		if scope.requireKinds {
+			// The direct call keeps reading `q` without the shorthand.
+			if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
+				q.Filter.Kinds = []string{ident}
+			}
+			if len(q.Filter.Kinds) == 0 {
+				return toolError(errSearchNeedsKinds("q")), false, 0
+			}
+		}
 		in := substrate.SearchInput{Q: text, K: min(q.First, scope.rows), Purposes: q.Filter.Purposes}
 		if len(q.Filter.Kinds) == 0 && len(in.Purposes) == 0 {
+			// Only the direct call reaches here (an agent named a kind above).
 			// A search that names nothing skips machinery, as the console's
-			// everyday search does (record 0136). Without it a wide grant
-			// answers with the loop's own transcript: every llm/message that
-			// repeated the words ranks beside the records they were about.
-			// Naming a kind or a purpose reaches it.
+			// everyday search does (record 0136); naming a kind or a purpose
+			// reaches it.
 			in.Purposes = []string{vocabulary.PurposePrimary, vocabulary.PurposeSupporting}
 		}
 		if m, _ := args["mode"].(string); m != "" {
@@ -2063,6 +2083,9 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 	// `kind` is the one-kind shorthand for filter.kinds.
 	if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
 		q.Filter.Kinds = []string{ident}
+	}
+	if scope.requireKinds && len(q.Filter.Kinds) == 0 && q.Filter.Search != "" {
+		return toolError(errSearchNeedsKinds("filter.search")), false, 0
 	}
 	if len(q.Filter.Kinds) == 0 {
 		// The allowlist IS the list when the call names no kinds: nil for a
@@ -2133,6 +2156,15 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			rows, scope.rows)), false, 0
 	}
 	return toolJSON(page), true, rows
+}
+
+// errSearchNeedsKinds is an agent's refusal of a text search that names no
+// kinds (record 0172): a search over the whole grant ranks every message and
+// link in the repository, the slowest and noisiest read there is.
+func errSearchNeedsKinds(arm string) string {
+	return arm + " needs filter.kinds (or kind): name one or more kinds that would hold the answer, " +
+		"from the kinds listed under \"Kinds you can read\" in your system prompt, where your grant has any. " +
+		"filter.purposes alone is not enough."
 }
 
 // rankedFilterArm names the first filter arm set beside `kinds` and
@@ -2519,18 +2551,10 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 // --- the completion transport ------------------------------------------------------
 
 // system is the system prompt this run sends: the agent's own, then the
-// engine's suffix where the invocation carries one. The agent's words come
-// FIRST so the engine's contract is the last thing read, and the declaration
-// is never rewritten to carry it.
-func (l *agentLoop) system() string {
-	switch {
-	case l.in.systemSuffix == "":
-		return l.ag.Prompt
-	case l.ag.Prompt == "":
-		return l.in.systemSuffix
-	}
-	return l.ag.Prompt + "\n\n" + l.in.systemSuffix
-}
+// kinds list where the agent holds `query`, then the engine's suffix where
+// the invocation carries one. The declaration is never rewritten to carry
+// either.
+func (l *agentLoop) system() string { return l.systemPrompt }
 
 // complete runs one model turn through the provider's wire adapter:
 // streaming (deltas through emit) when a client is attached, one-shot
