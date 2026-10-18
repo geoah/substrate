@@ -458,6 +458,10 @@ type service struct {
 	// searchTopUpHook, set only by a test, runs before a lexical search's
 	// relaxed top-up: the seam that spends the budget between the passes.
 	searchTopUpHook func()
+	// queryToolTimeout, set only by a test, replaces
+	// DefaultAgentToolTimeoutSec when positive, so a test can show a function
+	// call outliving the `query` default without waiting 30 s.
+	queryToolTimeout time.Duration
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend

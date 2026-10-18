@@ -1,12 +1,72 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
+
+// An explicit toolTimeoutSeconds bounds every call; without one a `query`
+// takes the default and a function its declared timeout plus the start
+// grace, never less than the default; a deadline closer than either wins.
+func TestToolBound(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	declares := func(d time.Duration) *vocabulary.Function { return &vocabulary.Function{Timeout: d} }
+	for _, c := range []struct {
+		name     string
+		explicit int
+		query    time.Duration
+		fn       *vocabulary.Function
+		deadline time.Time
+		want     time.Duration
+	}{
+		{"query, no budget", 0, 0, nil, time.Time{}, 30 * time.Second},
+		{"query, lowered default", 0, time.Second, nil, time.Time{}, time.Second},
+		{"query, explicit budget", 12, 0, nil, time.Time{}, 12 * time.Second},
+		{"function declaring 50s, no budget", 0, 0, declares(50 * time.Second), time.Time{}, 55 * time.Second},
+		{"function declaring nothing, no budget", 0, 0, declares(0), time.Time{}, 30 * time.Second},
+		{"function declaring 5s, no budget", 0, 0, declares(5 * time.Second), time.Time{}, 30 * time.Second},
+		{"function declaring 25s, no budget", 0, 0, declares(25 * time.Second), time.Time{}, 30 * time.Second},
+		{"function declaring 26s, no budget", 0, 0, declares(26 * time.Second), time.Time{}, 31 * time.Second},
+		{"function, lowered query default", 0, time.Second, declares(10 * time.Second), time.Time{}, 15 * time.Second},
+		{"function declaring nothing, lowered query default", 0, time.Second, declares(0), time.Time{}, 10 * time.Second},
+		{"function, explicit budget below its timeout", 20, 0, declares(50 * time.Second), time.Time{}, 20 * time.Second},
+		{"function, explicit budget above its timeout", 90, 0, declares(50 * time.Second), time.Time{}, 90 * time.Second},
+		{"function, run deadline sooner", 0, 0, declares(50 * time.Second), now.Add(7 * time.Second), 7 * time.Second},
+		{"query, run deadline later", 0, 0, nil, now.Add(time.Minute), 30 * time.Second},
+		{"explicit, run deadline sooner", 40, 0, nil, now.Add(2 * time.Second), 2 * time.Second},
+	} {
+		if got := toolBound(c.explicit, c.query, c.fn, c.deadline, now); got != c.want {
+			t.Errorf("%s: toolBound = %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// The timeout error names the bound in force, rounded up to whole seconds.
+func TestToolTimedOutNamesTheBound(t *testing.T) {
+	t.Parallel()
+	call, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-call.Done()
+	got, ok := toolTimedOut(context.Background(), call, 55*time.Second)
+	if !ok || got != toolError("tool call timed out after 55s — narrow the call (fewer words, a filter, a smaller window) or answer from what you have") {
+		t.Fatalf("toolTimedOut = %q, %v", got, ok)
+	}
+	if got, _ := toolTimedOut(context.Background(), call, 1500*time.Millisecond); !strings.Contains(got, "after 2s") {
+		t.Fatalf("a fractional bound reads %q", got)
+	}
+	loop, stop := context.WithCancel(context.Background())
+	stop()
+	if _, ok := toolTimedOut(loop, call, time.Second); ok {
+		t.Fatal("a call the loop ended answered the tool's timeout error")
+	}
+}
 
 // A result over the cap becomes a valid JSON envelope no larger than the cap,
 // its head cut on a rune boundary; one under it passes untouched.

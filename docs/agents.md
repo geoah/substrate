@@ -119,10 +119,20 @@ data:
   600), and `depth` (default 3, max 3). Its optional `spendCentsPerDay` caps
   what the agent's runs may spend in a rolling 24 hours, in US cents: absent
   is no cap, and 0 holds every run ([the daily spend cap](#the-daily-spend-cap)).
-  Two more bound each tool call. `toolTimeoutSeconds` (default 30, max 600)
-  is one `query` or function call's wall clock, never past the run's own
-  deadline: a call past it answers the model a tool error naming the limit,
-  and the run goes on. `maxToolResultBytes` (default 49152, min 1024, max
+  Two more bound each tool call. `toolTimeoutSeconds` (max 600) is one
+  `query` or function call's wall clock, never past the run's own deadline:
+  a call past it answers the model a tool error naming the limit, and the
+  run goes on. Set, it bounds both, a function below its declared `timeout`
+  too. Absent, a `query` call gets 30 s, and a function call gets the
+  function's own `timeout` (5 s where it declares none) plus 5 s for
+  starting the body, never less than 30 s. The runner starts the declared
+  clock once the body is up, so a body that runs too long fails with the
+  runner's `invocation exceeded` error, which names the function's timeout.
+  A body with an inline dependency block may take up to 120 s to start cold,
+  which can still outlast that bound: such a call fails with the tool error.
+  The bound stops at the run's deadline, not before the time the run keeps
+  for its last turn, so a long function call can spend that time and shorten
+  the last turn. `maxToolResultBytes` (default 49152, min 1024, max
   1048576) caps one tool result, of any tool, as the model sees it, the
   thread stores it and the stream carries it: a larger one is replaced by a
   JSON envelope, `{"truncated": true, "bytes", "limit", "head", "note"}`,
