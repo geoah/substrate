@@ -965,6 +965,18 @@ repeats the word. A prefix (`lay*`) ranks the word itself above its
 completions. `filter.search` and `match` stay predicates: they require every
 word, exactly as the grammar reads.
 
+**How the lexical arm is bounded.** Each candidate pass reads at most 2000
+matching records, newest first, and the passes keep the best 400 of them
+(more for a large `first`) by `ts_rank` normalized by the logarithm of the
+record's length, so a long text that
+repeats a word does not crowd out a short record naming it. The arm runs
+under a 5 s budget. When BM25F scoring of the candidates does not finish
+within it, the arm answers the candidates in the order the passes already
+hold: the records matching every word first, then by that `ts_rank`, which
+is then what `scores.lexical` carries. Any of these cuts sets `capped: true`
+beside the ranking and a `note` saying which cut happened and how to narrow
+the query.
+
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
 arms and fuses them by rank (reciprocal rank fusion), so a record near the
 top of both ranks highest and neither arm's scale decides. Every hit's score

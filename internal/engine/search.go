@@ -353,7 +353,7 @@ type arm struct {
 }
 
 // capped reports whether the lexical arm stopped short of every match.
-func (c lexicalCap) capped() bool { return c.readCapped || c.budget }
+func (c lexicalCap) capped() bool { return c.readCapped || c.budget || c.unscored }
 
 // note is what a capped search tells its caller, an agent above all: why the
 // ranking is partial and what narrows the next query. Empty when not capped.
@@ -361,6 +361,9 @@ func (c lexicalCap) note(budget time.Duration) string {
 	var parts []string
 	if c.budget {
 		parts = append(parts, fmt.Sprintf("search stopped at the %s budget, so the hits are only records matching every word.", budget))
+	}
+	if c.unscored {
+		parts = append(parts, fmt.Sprintf("search ran out of its %s budget while ranking, so the hits are in a cheaper order: records matching every word first, then by ts_rank, not BM25F.", budget))
 	}
 	if c.readCapped {
 		parts = append(parts, fmt.Sprintf("more than %d records match, so only the newest %d matches were ranked.", c.readMax, c.readMax))
