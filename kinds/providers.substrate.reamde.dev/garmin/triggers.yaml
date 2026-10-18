@@ -1,0 +1,89 @@
+# The Garmin bundle's delivery wiring: ordinary DATA records of core's
+# `trigger` kind. Four triggers, two functions:
+#
+#   Garmin  --POST /webhooks/<authority>/garmin-webhook/<key>-->  garminpush  -->  the mirrors
+#   account(connected, never synced)                           -->  garminsync -->  user id, backfill requests
+#   account(syncRequestedAt != syncRequestedAck)               -->  garminsync
+#   hourly schedule                                            -->  garminsync, every account with backfill left
+#
+# Garmin signs nothing it pushes, so the webhook's KEY is the only credential
+# the door checks. It ships DISABLED and without a key: set
+# `source.webhook.key` to 16 to 128 characters of [A-Za-z0-9_-], enable the
+# trigger, and register `https://<your-substrate-host>/webhooks/<authority>/garmin-webhook/<key>`
+# for every summary type in Garmin's Endpoint Configuration tool. An enabled
+# trigger with no key would write whatever anyone who learns a Garmin user id
+# posts to it.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: garmin-webhook
+data:
+  properties:
+    enabled: false
+    label: Garmin push
+    source:
+      webhook:
+        # Garmin names the app it pushes for here, though not on every
+        # request; garminpush refuses a push naming another app's client id.
+        headers:
+          - garmin-client-id
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/garmin/garminpush
+---
+# The first sync: an account whose OAuth just landed and that has never
+# synced. It records the Garmin user id the pushes are matched on and commits
+# it before it asks for any backfill. A push that arrives before then names a
+# user no account holds yet, fails, and parks for a retry. Every optional
+# property is read through the `in` idiom, because CEL indexing an absent key
+# throws.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: garmin-on-connect
+data:
+  properties:
+    enabled: true
+    label: Garmin first sync
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/garmin/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && !("lastSyncedAt" in record.properties)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/garmin/garminsync
+---
+# "Sync now", as a generation: the owner stamps `syncRequestedAt`, the sync
+# echoes the value it acted on into `syncRequestedAck`, and this fires
+# exactly while the two disagree.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: garmin-on-request
+data:
+  properties:
+    enabled: true
+    label: Garmin sync now
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/garmin/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
+          in record.properties) || string(record.properties.syncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/garmin/garminsync
+---
+# The hourly tick names no record: the body walks every account that still
+# has backfill windows to ask for, or has never recorded its user id, and
+# passes over the rest without a request.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: garmin-scheduled
+data:
+  properties:
+    enabled: true
+    label: Garmin scheduled backfill
+    source:
+      schedule:
+        recurrence: "FREQ=HOURLY"
+        timezone: Europe/London
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/garmin/garminsync

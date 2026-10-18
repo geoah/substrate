@@ -46,7 +46,7 @@ const (
 // fixtures/, and a directory under kinds/providers.substrate.reamde.dev/. The
 // cases run side by side (see TestProviderE2E), so the order is only the
 // order they start in.
-var providers = []string{"whoop", "linear", "notion", "beeper", "github", "google", "slack"}
+var providers = []string{"whoop", "linear", "notion", "beeper", "github", "google", "slack", "garmin", "googlefit"}
 
 // caseBudget is what one provider's run gets before the harness kills it. The
 // runner waits `settleSeconds` from e2e.json for the triggers to go quiet and
@@ -83,10 +83,10 @@ func TestMain(m *testing.M) {
 // pins (distinct per provider), its substratectl contexts live in a config
 // file of its own, and the runner and the scenario read and write that
 // repository alone. What they share is the server, whose dispatcher runs one
-// pass per repository at a time and caps the passes at eight, above the seven
-// here. Run sequentially the suite was the sum of its cases, ten minutes,
-// most of it the slowest three waiting on their own syncs; side by side it is
-// the slowest case alone.
+// pass per repository at a time and caps the passes at eight, one fewer than
+// the nine cases here, so a case may wait for a free pass. Run sequentially
+// the suite was the sum of its cases, ten minutes, most of it the slowest
+// three waiting on their own syncs; side by side it is the slowest case alone.
 //
 // The registrations are made here, before the cases start, so a door refusal
 // is one failure on the parent rather than one per case. The auth gate admits

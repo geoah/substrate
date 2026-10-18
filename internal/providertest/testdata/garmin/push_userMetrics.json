@@ -1,0 +1,16 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "819",
+   "garmin-client-id": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"userMetrics\":[{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6aa46bd0\",\"calendarDate\":\"2026-09-12\",\"vo2Max\":49.0,\"fitnessAge\":33,\"enhanced\":true},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6aada650\",\"calendarDate\":\"2026-09-19\",\"vo2Max\":49.0,\"fitnessAge\":33,\"enhanced\":true,\"vo2MaxCycling\":46.0},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6abad550\",\"calendarDate\":\"2026-09-29\",\"vo2Max\":48.0,\"fitnessAge\":33,\"enhanced\":true},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac01b50\",\"calendarDate\":\"2026-10-03\",\"vo2Max\":48.0,\"fitnessAge\":33,\"enhanced\":true,\"vo2MaxCycling\":45.0},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac56150\",\"calendarDate\":\"2026-10-07\",\"vo2Max\":48.0,\"fitnessAge\":33,\"enhanced\":true}]}"
+  }
+ },
+ "_receivedAt": "2026-10-08T05:15:52Z"
+}

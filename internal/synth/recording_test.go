@@ -82,7 +82,7 @@ print(json.dumps(out))
 // them under its own, so the two are held to each other by running the
 // Python: the name Go writes for a request is the mock's recording_name and
 // its exact try, and the name Go writes without the pagination pairs (what
-// the WHOOP emitter writes) is one the mock tries too. A drift in
+// the WHOOP and Garmin emitters write) is one the mock tries too. A drift in
 // either rule, or in the helpers they share, fails here.
 func TestRecordingNameIsTheOneTheMockServerTries(t *testing.T) {
 	t.Parallel()

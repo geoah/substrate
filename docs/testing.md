@@ -10,7 +10,7 @@ suites are where most of the behaviour is actually pinned down.
 | ----- | ---- | ----- | ------- |
 | Short | `mise run test:short` | nothing | seconds |
 | Database | `mise run test:db` | Docker, or a DSN; `uv` and `python3` for the provider suite | ~2 minutes, plus 3 to 5 for the provider suite |
-| Providers | `mise run test:db:providers` | Docker, or a DSN; `uv` and `python3` | 3 to 5 minutes: the seven cases run side by side, so it is the slowest one; Apple Health, which has no upstream to record, is tested in `internal/providertest` alone |
+| Providers | `mise run test:db:providers` | Docker, or a DSN; `uv` and `python3` | 3 to 5 minutes: the nine cases run side by side, so it is the slowest one; Apple Health, which has no upstream to record, is tested in `internal/providertest` alone |
 | Both | `mise run test` | the same as `test:db` | ~2 minutes, plus 3 to 5 for the provider suite |
 | Race | `mise run test:race` | nothing | ~1 minute |
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |

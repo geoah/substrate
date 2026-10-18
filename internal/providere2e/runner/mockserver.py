@@ -50,7 +50,19 @@ Three tries, in order, and the first file that exists wins:
      the server logs `~fallback` so nobody mistakes it for a real recording;
   3. the name with no query slug at all.
 
-A miss is `404` with a JSON body naming all three files it looked for, so the
+A provider whose time window is a PATH segment (PATH_RELAXATIONS: Google Fit
+reads `.../datasets/<startNs>-<endNs>`) then gets the same tries again over
+the path with that segment dropped, logged `~path`, `~path+fallback` and so
+on.
+
+A provider in TIME_SHIFTS (Google Fit) has the instants in every response it
+is served moved by the whole days from the day its recordings were cut on to
+the day the mock started, so a sync reading a window that ends today finds
+them in it. `--no-time-shift` serves them as written, for recordings dated on
+purpose: internal/synth's describe the days they were generated for, beside
+other providers' data for the same days.
+
+A miss is `404` with a JSON body naming every file it looked for, so the
 provider agent sees exactly what to record and under what name.
 
 THE RECORDING
@@ -77,7 +89,8 @@ LAST PATH SEGMENT is one of these is handled before the recordings are
 consulted:
 
   * `authorize` — 302 to the request's `redirect_uri` carrying `code` and the
-    `state` unchanged. No consent page: the redirect IS the consent.
+    `state` unchanged. No consent page: the redirect IS the consent. `auth`,
+    `oauth2` and Garmin's `oauth2Confirm` are the same stub.
   * `token` / `access_token` — `{access_token, refresh_token, expires_in,
     scope, token_type}`. `grant_type=refresh_token` answers a new access
     token, which is what the facility's refresh loop expects.
@@ -99,6 +112,8 @@ INTROSPECTION
                               text, so a scenario asserts what a write sent
     GET /__mock/recordings    what is on disk
     GET /__mock/misses        the 404s, i.e. the recordings still to capture
+    GET /__mock/shift         `{"days": n}`, how far TIME_SHIFTS moved this
+                              provider's instants
     DELETE /__mock/requests   reset the log between phases of a scenario
     GET /healthz              ok
 
@@ -154,6 +169,7 @@ asserts the failure or the slowness happened rather than assuming it.
 from __future__ import annotations
 
 import argparse
+import datetime
 import fnmatch
 import hashlib
 import json
@@ -195,6 +211,31 @@ PAGINATION_PARAMS = {
     "page", "per_page", "offset", "after", "before", "startAt", "start",
     "maxResults", "max_results", "limit", "count", "oldest", "latest",
     "inclusive", "syncToken", "sync_token", "startIndex", "pageSize",
+}
+# RELAXABLE WINDOWS INSIDE A PATH. Google Fit names a dataset's time range in
+# the path (`/datasets/1791331200000000000-1791417600000000000`) and the sync
+# derives it from the clock, so no exact name could answer a later run. The
+# window segment is dropped from the path slug and the lookup tried again once
+# every candidate for the exact path missed: one recording then answers every
+# day, and the sync keeps the points that fall in the day it asked for.
+#
+#   {provider: [(regex over the path slug, replacement)]}
+PATH_RELAXATIONS: dict[str, list[tuple[re.Pattern, str]]] = {
+    "googlefit": [(re.compile(r"_datasets_\d+-\d+$"), "_datasets")],
+}
+# RECORDINGS THAT MOVE WITH THE CLOCK. A sync that reads a window ending today
+# keeps nothing from recordings cut weeks earlier, and a scenario comparing
+# what landed with what was recorded would then compare two empty sets. A
+# provider listed here names the UTC day its recordings were cut on and the
+# response fields that hold instants; every response the mock serves moves
+# those fields by the whole days from that day to the day the mock started.
+# `/__mock/shift` reports the count, so a scenario moves what it expects too.
+#
+#   {provider: (cut-on day, nanosecond fields, millisecond fields)}
+TIME_SHIFTS: dict[str, tuple[datetime.date, tuple[str, ...], tuple[str, ...]]] = {
+    "googlefit": (datetime.date(2026, 10, 11),
+                  ("startTimeNanos", "endTimeNanos"),
+                  ("startTimeMillis", "endTimeMillis", "modifiedTimeMillis")),
 }
 SLUG_MAX = 80
 
@@ -272,30 +313,58 @@ def relax(pairs: list[tuple[str, str]], provider: str = "") -> list[tuple[str, s
              if k in rules else v) for k, v in pairs]
 
 
-def candidate_names(method: str, path: str, query=None,
-                    body: bytes | str | None = None,
-                    content_type: str = "", provider: str = "") -> list[str]:
-    """The names the lookup tries, in order, deduplicated."""
+def relax_path(slug: str, provider: str = "") -> str:
+    """Drop every relaxable window segment from a path slug. See
+    PATH_RELAXATIONS."""
+    for rx, repl in PATH_RELAXATIONS.get(provider, []):
+        slug = rx.sub(repl, slug)
+    return slug
+
+
+MATCH_WORDS = ["exact", "~relaxed", "~fallback", "~relaxed+fallback", "~no-query"]
+
+
+def candidate_matches(method: str, path: str, query=None,
+                      body: bytes | str | None = None,
+                      content_type: str = "",
+                      provider: str = "") -> list[tuple[str, str]]:
+    """The names the lookup tries, in order, deduplicated, each with the word
+    the request log records when it is the one that answers."""
     bp = body_pairs(body, content_type)
     qp = _pairs(query)
-    p = path_slug(path)
     thin = lambda pairs: [(k, v) for k, v in pairs if k not in PAGINATION_PARAMS]
-    names = [
+    slugs = [
         query_slug(qp, bp),                                   # exact
         query_slug(relax(qp, provider), relax(bp, provider)),  # window relaxed
         query_slug(thin(qp), thin(bp)),                       # page relaxed
         query_slug(thin(relax(qp, provider)), thin(relax(bp, provider))),
+        "",                                                   # no query
     ]
-    out = []
-    for slug in names + [""]:
-        n = "%s_%s__%s.json" % (method.upper(), p, slug) if slug \
-            else "%s_%s.json" % (method.upper(), p)
-        if n not in out:
-            out.append(n)
+    p = path_slug(path)
+    paths = [(p, "")]
+    relaxed = relax_path(p, provider)
+    if relaxed != p:
+        paths.append((relaxed, "~path"))
+    out, seen = [], set()
+    for ps, prefix in paths:
+        for slug, word in zip(slugs, MATCH_WORDS):
+            n = "%s_%s__%s.json" % (method.upper(), ps, slug) if slug \
+                else "%s_%s.json" % (method.upper(), ps)
+            if n in seen:
+                continue
+            seen.add(n)
+            if prefix:
+                word = prefix if word == "exact" else prefix + "+" + word.lstrip("~")
+            out.append((n, word))
     return out
 
 
-MATCH_WORDS = ["exact", "~relaxed", "~fallback", "~relaxed+fallback", "~no-query"]
+def candidate_names(method: str, path: str, query=None,
+                    body: bytes | str | None = None,
+                    content_type: str = "", provider: str = "") -> list[str]:
+    """The names the lookup tries, in order, deduplicated."""
+    return [n for n, _ in candidate_matches(method, path, query, body,
+                                            content_type, provider)]
 
 
 # ------------------------------------------------------------------ the server
@@ -340,7 +409,8 @@ HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 class Mock:
     """The state one served directory carries."""
 
-    def __init__(self, directory: pathlib.Path, provider: str = ""):
+    def __init__(self, directory: pathlib.Path, provider: str = "",
+                 time_shift: bool = True):
         self.dir = directory
         self.provider = provider or directory.parent.name
         self.lock = threading.Lock()
@@ -349,6 +419,37 @@ class Mock:
         self.seq: dict[str, int] = {}     # per-file cursor into __responses
         self.codes: dict[str, str] = {}   # authorize code -> granted scope
         self.faults: list[dict] = []      # injected failures, in order
+        shift = TIME_SHIFTS.get(self.provider)
+        self.shift_days = 0
+        if shift is not None and time_shift:
+            today = datetime.datetime.now(datetime.timezone.utc).date()
+            self.shift_days = (today - shift[0]).days
+
+    def shifted(self, value):
+        """A served body with its instants moved by `shift_days` (TIME_SHIFTS),
+        each in the type the recording holds it in."""
+        shift = TIME_SHIFTS.get(self.provider)
+        if shift is None or not self.shift_days:
+            return value
+        _, nanos, millis = shift
+        delta = {**{k: self.shift_days * 86400 * 10**9 for k in nanos},
+                 **{k: self.shift_days * 86400 * 1000 for k in millis}}
+
+        def move(v):
+            if isinstance(v, list):
+                return [move(x) for x in v]
+            if not isinstance(v, dict):
+                return v
+            out = {}
+            for k, x in v.items():
+                if k in delta and isinstance(x, str) and x.lstrip("-").isdigit():
+                    out[k] = str(int(x) + delta[k])
+                elif k in delta and isinstance(x, int) and not isinstance(x, bool):
+                    out[k] = x + delta[k]
+                else:
+                    out[k] = move(x)
+            return out
+        return move(value)
 
     # -- injected failures ---------------------------------------------------
 
@@ -512,7 +613,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(status, out, headers)
 
         last = path.rstrip("/").rsplit("/", 1)[-1].lower()
-        if last in ("authorize", "auth", "oauth2"):
+        if last in ("authorize", "auth", "oauth2", "oauth2confirm"):
             return self.oauth_authorize(query)
         if last in ("token", "access_token"):
             return self.oauth_token(body, ctype)
@@ -520,14 +621,15 @@ class Handler(BaseHTTPRequestHandler):
             self.note("oauth", "revoke", 200)
             return self.respond(200, {})
 
-        names = candidate_names(self.command, path, query, body, ctype,
-                                self.mock.provider)
-        for i, name in enumerate(names):
+        matches = candidate_matches(self.command, path, query, body, ctype,
+                                    self.mock.provider)
+        names = [n for n, _ in matches]
+        for name, verdict in matches:
             doc = self.mock.read(name)
             if doc is None:
                 continue
             status, headers, out = self.mock.resolve(doc, name)
-            verdict = MATCH_WORDS[i] if i < len(MATCH_WORDS) else "~fallback"
+            out = self.mock.shifted(out)
             with self.mock.lock:
                 self.mock.requests.append({
                     "method": self.command, "path": path, "query": query,
@@ -633,6 +735,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, {"requests": self.mock.requests})
         if what == "misses":
             return self.respond(200, {"misses": self.mock.misses})
+        if what == "shift":
+            return self.respond(200, {"days": self.mock.shift_days})
         if what == "recordings":
             return self.respond(200, {
                 "dir": str(self.mock.dir),
@@ -648,11 +752,11 @@ def load_faults(path) -> list:
 
 
 def build(directory: pathlib.Path, port: int = 0, provider: str = "",
-          faults=None):
+          faults=None, time_shift: bool = True):
     """One server over one directory. The handler is a SUBCLASS per server, so
     two mocks in one process do not share the `mock` class attribute — which
     a scenario running its own second-pass mock beside the runner's would."""
-    mock = Mock(directory, provider)
+    mock = Mock(directory, provider, time_shift)
     if faults:
         mock.set_faults(faults)
     handler = type("Handler_%s" % (provider or "mock"), (Handler,), {"mock": mock})
@@ -674,8 +778,8 @@ def serve_bg(directory, port: int = 0, provider: str = ""):
 
 
 def serve(directory: pathlib.Path, port: int, provider: str = "",
-          faults=None) -> None:
-    httpd, mock = build(directory, port, provider, faults)
+          faults=None, time_shift: bool = True) -> None:
+    httpd, mock = build(directory, port, provider, faults, time_shift)
     n = len(list(directory.glob("*.json"))) if directory.is_dir() else 0
     sys.stderr.write("mockserver: %s (%d recordings) on http://127.0.0.1:%d%s\n"
                      % (directory, n, httpd.server_address[1],
@@ -698,6 +802,8 @@ def main() -> None:
                     help="a JSON file of injected-failure rules (see the "
                          "module docstring); a scenario can also POST them to "
                          "/__mock/faults mid-run")
+    ap.add_argument("--no-time-shift", action="store_true",
+                    help="serve a TIME_SHIFTS provider's instants as written")
     ap.add_argument("--name", nargs="*", metavar="METHOD PATH [QUERY]",
                     help="print the recording name for a request and exit")
     a = ap.parse_args()
@@ -710,7 +816,7 @@ def main() -> None:
         a.dir.mkdir(parents=True, exist_ok=True)
         sys.stderr.write("mockserver: %s did not exist; created it empty\n" % a.dir)
     serve(a.dir, a.port, a.provider,
-          load_faults(a.faults) if a.faults else None)
+          load_faults(a.faults) if a.faults else None, not a.no_time_shift)
 
 
 if __name__ == "__main__":

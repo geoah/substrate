@@ -1,10 +1,10 @@
 // Package synth generates synthetic provider data for one invented person,
-// in the exact shapes the shipped provider functions read: WHOOP API
-// responses as mock recordings, Health Auto Export deliveries as webhook
-// requests, and two lab panels as records.
+// in the exact shapes the shipped provider functions read: WHOOP and Google
+// Fit API responses as mock recordings, Garmin push envelopes and Health
+// Auto Export deliveries as webhook requests, and two lab panels as records.
 //
 // Everything derives from one Persona: a deterministic model of a body over
-// a date range, so the emitters run independently and still describe one
+// a date range, so four emitters run independently and still describe one
 // life, and every value is reproducible from the seed. Each emitter adds
 // its own device noise on top (Noisy), so the sources disagree by a
 // plausible margin instead of agreeing to the decimal.
@@ -648,6 +648,64 @@ func (d *Day) Floors() int {
 		return int(float64(n) * 0.3)
 	}
 	return n
+}
+
+// Stress is a Garmin-style stress level 0..100 at t, -1 while a workout
+// runs (not measured).
+func (d *Day) Stress(t time.Time) int {
+	if s := d.AsleepAt(t); s != nil {
+		v := 18.0
+		if d.persona.Ill(s.Date) {
+			v += 12
+		}
+		return max(5, int(math.Round(v+d.persona.rng("stress", s.Date, t.Unix()/180).NormFloat64()*5)))
+	}
+	if d.WorkoutAt(t) != nil {
+		return -1
+	}
+	lt := t.In(d.Zone)
+	h := float64(lt.Hour()) + float64(lt.Minute())/60
+	base := 28.0
+	if h >= 9 && h < 18 && lt.Weekday() >= time.Monday && lt.Weekday() <= time.Friday {
+		base += 12
+	}
+	if d.Ill {
+		base += 10
+	}
+	base += 10*gauss(h, 11, 1.5) + 8*gauss(h, 16, 1.2)
+	v := base + d.persona.rng("stress", d.Date, t.Unix()/180).NormFloat64()*8
+	return int(math.Max(5, math.Min(95, v)))
+}
+
+// BodyBattery is a Garmin-style body battery 0..100 at t: charged by sleep,
+// drained by the day.
+func (d *Day) BodyBattery(t time.Time) int {
+	lt := t.In(d.Zone)
+	h := float64(lt.Hour()) + float64(lt.Minute())/60
+	top := 92.0
+	if d.Ill {
+		top -= 25
+	}
+	if d.Recovery < 50 {
+		top -= 6
+	}
+	wake := 7.1
+	if lt.Weekday() == time.Saturday || lt.Weekday() == time.Sunday {
+		wake = 8.7
+	}
+	var v float64
+	if h < wake {
+		v = top - 10 + 10*(h/wake)
+	} else {
+		v = top - (top-22)*math.Pow((h-wake)/(24-wake), 0.8)
+		for _, w := range d.Workouts {
+			if !w.End.After(t) {
+				v -= math.Min(18, w.Strain*1.2)
+			}
+		}
+	}
+	v += d.persona.rng("bb", d.Date, lt.Hour()).NormFloat64() * 2
+	return int(math.Max(5, math.Min(100, v)))
 }
 
 // SpO2Night samples oxygen saturation through the night every step.

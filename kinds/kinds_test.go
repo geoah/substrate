@@ -489,14 +489,14 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	// An adapter sample lands after BOTH halves it reads and writes: the
 	// provider whose mirror kinds its function reads and its trigger watches,
 	// and the domain samples whose kinds it writes.
-	adapter, err := reg.ResolveFunction(samples.Authority + "/healthwhoop/adaptwhoop")
+	adapter, err := reg.ResolveFunction(samples.Authority + "/healthgooglefit/adaptgooglefit")
 	if err != nil {
-		t.Fatalf("the healthwhoop adapter did not land: %v", err)
+		t.Fatalf("the healthgooglefit adapter did not land: %v", err)
 	}
-	if !slices.Contains(adapter.Caps.Emit, samples.Authority+"/observations/observation") ||
+	if !slices.Contains(adapter.Caps.Emit, samples.Authority+"/observations/trace") ||
 		adapter.Caps.Reads == nil ||
-		!slices.Contains(adapter.Caps.Reads.Kinds, "providers.substrate.reamde.dev/whoop/recovery") {
-		t.Errorf("the healthwhoop adapter emits %v and reads %+v", adapter.Caps.Emit, adapter.Caps.Reads)
+		!slices.Contains(adapter.Caps.Reads.Kinds, "providers.substrate.reamde.dev/googlefit/dataset") {
+		t.Errorf("the healthgooglefit adapter emits %v and reads %+v", adapter.Caps.Emit, adapter.Caps.Reads)
 	}
 	// The suggested mappings landed and RESOLVED: five onto the shipped
 	// person, one onto the shipped task. `installs:` is the package both
@@ -534,7 +534,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // absent (decision record 0049). So this is the fresh-repository case, and the
 // filter is what makes it admit: without it every sample carrying one would be
 // refused for vocabulary the reader never asked for. `healthwhoop` requires
-// the WHOOP provider and `healthapple` requires Apple Health; each lands
+// the WHOOP provider and `healthgooglefit` requires googlefit; each lands
 // under its own authority as shipped, and no suggested mapping reads either.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"

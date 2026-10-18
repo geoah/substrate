@@ -1144,6 +1144,66 @@ data:
 ---
 kind: samples.substrate.reamde.dev/observations/metric
 metadata:
+  id: health/garmin_stress
+data:
+  properties:
+    name: Garmin stress
+    description: >-
+      Garmin's stress level, a dimensionless score from 0 to 100 sampled through
+      the day. Garmin's own method. The Garmin field name follows the Health
+      API's documentation and is unverified against a live account.
+    codes:
+      - system: garmin
+        code: timeOffsetStressLevelValues
+        display: Stress details values
+      - system: garmin
+        code: averageStressLevel
+        display: Daily summary average stress
+    measures: score
+    unit: "{score}"
+    form: gauge
+    hold: PT6M
+    reducers:
+      - avg
+      - max
+      - durationIn
+    displayPrecision: 0
+    category: scores
+    algorithm:
+      vendor: Garmin
+      name: stress
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/garmin_body_battery
+data:
+  properties:
+    name: Garmin Body Battery
+    description: >-
+      Garmin's estimate of the body's energy reserve, a dimensionless score
+      from 0 to 100 sampled through the day. Garmin's own method. The Garmin
+      field name follows the Health API's documentation and is unverified
+      against a live account.
+    codes:
+      - system: garmin
+        code: timeOffsetBodyBatteryValues
+        display: Stress details Body Battery values
+    measures: score
+    unit: "{score}"
+    form: gauge
+    hold: PT6M
+    reducers:
+      - last
+      - min
+      - max
+    displayPrecision: 0
+    category: scores
+    algorithm:
+      vendor: Garmin
+      name: Body Battery
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
   id: health/ldl_cholesterol
 data:
   properties:

@@ -81,9 +81,11 @@ func TestAMetricRefusesAUnitOfAnotherMeasure(t *testing.T) {
 		byID[m.id] = m
 	}
 	for id, to := range map[string]string{
-		"health/hba1c":        "mmol/mol",
-		"health/hba1c_ifcc":   "%",
-		"health/whoop_strain": "%",
+		"health/hba1c":               "mmol/mol",
+		"health/hba1c_ifcc":          "%",
+		"health/whoop_strain":        "%",
+		"health/garmin_stress":       "%",
+		"health/garmin_body_battery": "%",
 	} {
 		m, ok := byID[id]
 		if !ok {
