@@ -91,7 +91,7 @@ func TestGoogleDriveScopeRefusalLogsTheReasonOnce(t *testing.T) {
 	fake.serve(t, mux)
 
 	config := func(props map[string]any) map[string]any {
-		cfg := stepConfig(googleAccountType, "acct-d", props)
+		cfg := stepConfig(googleAccountKind, "acct-d", props)
 		cfg["inputs"] = map[string]any{"client": map[string]any{
 			"properties": map[string]any{"apiBase": fake.ts.URL},
 		}}
@@ -100,7 +100,7 @@ func TestGoogleDriveScopeRefusalLogsTheReasonOnce(t *testing.T) {
 	props := syncProps(nil, "enabledDrive")
 
 	effects, _ := newStepper(t, ds, googleDriveSyncFn, config(props)).drain(nil)
-	stamp := accountStamp(t, effects, googleAccountType, "acct-d")
+	stamp := accountStamp(t, effects, googleAccountKind, "acct-d")
 	if stamp["driveSyncState"] != "needsreconsent" {
 		t.Fatalf("drive stamp = %v, want driveSyncState needsreconsent", stamp)
 	}

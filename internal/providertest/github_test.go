@@ -25,8 +25,8 @@ import (
 const (
 	githubDir         = providersDir + "/github"
 	githubPackage     = "providers.substrate.reamde.dev/github"
-	githubAccountType = githubPackage + "/account"
-	githubPullType    = githubPackage + "/pullrequest"
+	githubAccountKind = githubPackage + "/account"
+	githubPullKind    = githubPackage + "/pullrequest"
 	githubSyncFn      = githubPackage + "/githubsync"
 	githubAccount     = "acct-gh"
 	githubLogin       = "ada"
@@ -192,10 +192,10 @@ func (f *fakeGitHub) requests() int {
 // stored, its token, and the API base pointed at the fake.
 func githubConfig(t *testing.T, ds substrate.Dataset, fake *fakeGitHub) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, githubAccountType, githubAccount)
+	row := mustGet(t, ds, githubAccountKind, githubAccount)
 	return map[string]any{
 		"accounts": []any{map[string]any{
-			"id": githubAccount, "kind": githubAccountType,
+			"id": githubAccount, "kind": githubAccountKind,
 			"properties": row.Properties, "token": fakeToken,
 		}},
 		"inputs": map[string]any{"client": map[string]any{
@@ -232,14 +232,14 @@ func TestGitHubSyncWritesThePullRequestsOwnURL(t *testing.T) {
 	install(t, ds, githubDir, nil)
 	fake := newFakeGitHub(t, 3)
 	mustPut(t, ds, substrate.PutInput{
-		Kind: githubAccountType, ID: githubAccount,
+		Kind: githubAccountKind, ID: githubAccount,
 		Properties: syncProps(nil, "enabledPullRequests"),
 	})
 
 	s := newStepper(t, ds, githubSyncFn, githubConfig(t, ds, fake))
 	var written int
 	for _, ef := range s.drainApplying(nil) {
-		if ef.Kind != githubPullType {
+		if ef.Kind != githubPullKind {
 			continue
 		}
 		addr, ok := ef.Properties["url"]
@@ -254,7 +254,7 @@ func TestGitHubSyncWritesThePullRequestsOwnURL(t *testing.T) {
 	if written == 0 {
 		t.Fatal("no effect wrote a pull request's url")
 	}
-	if n := countLive(t, ds, githubPullType); n != 3 {
+	if n := countLive(t, ds, githubPullKind); n != 3 {
 		t.Fatalf("%d pull requests are mirrored, want 3", n)
 	}
 }
@@ -274,7 +274,7 @@ func TestGitHubSyncStopsOnTheDrainBudgetAndResumesTheWalk(t *testing.T) {
 
 	fake := newFakeGitHub(t, githubPulls)
 	mustPut(t, ds, substrate.PutInput{
-		Kind: githubAccountType, ID: githubAccount,
+		Kind: githubAccountKind, ID: githubAccount,
 		Properties: syncProps(nil, "enabledPullRequests"),
 	})
 
@@ -306,7 +306,7 @@ func TestGitHubSyncStopsOnTheDrainBudgetAndResumesTheWalk(t *testing.T) {
 	if n := fake.requests() - before; n != 0 {
 		t.Fatalf("the stopping page made %d GitHub requests, want none", n)
 	}
-	stamp := accountStamp(t, effects, githubAccountType, githubAccount)
+	stamp := accountStamp(t, effects, githubAccountKind, githubAccount)
 	walk, _ := stamp["syncWalk"].(map[string]any)
 	if walk == nil {
 		t.Fatalf("the stop saved no syncWalk: %v", stamp)
@@ -327,7 +327,7 @@ func TestGitHubSyncStopsOnTheDrainBudgetAndResumesTheWalk(t *testing.T) {
 
 	// The search stage wrote each pull request's OWN address, not the Issue
 	// representation's `/issues/{n}` that the hydrate would flip back.
-	pulls := listLive(t, ds, githubPullType)
+	pulls := listLive(t, ds, githubPullKind)
 	if len(pulls) != 100 {
 		t.Fatalf("after one search page %d pull requests are mirrored, want 100", len(pulls))
 	}
@@ -344,7 +344,7 @@ func TestGitHubSyncStopsOnTheDrainBudgetAndResumesTheWalk(t *testing.T) {
 	s2 := newStepper(t, ds, githubSyncFn, githubConfig(t, ds, fake))
 	all := s2.drainApplying(nil)
 	assertFirstSearchFrom(t, fake, from, boundary, "the run after the stop")
-	final := accountStamp(t, all, githubAccountType, githubAccount)
+	final := accountStamp(t, all, githubAccountKind, githubAccount)
 	if v, ok := final["syncWalk"]; !ok || v != nil {
 		t.Fatalf("the completed walk left syncWalk = %v (present %v), want it cleared", v, ok)
 	}
@@ -352,7 +352,7 @@ func TestGitHubSyncStopsOnTheDrainBudgetAndResumesTheWalk(t *testing.T) {
 	if cursors["pulls"] != runStart {
 		t.Fatalf("syncCursors.pulls = %v, want the first run's start %s", cursors["pulls"], runStart)
 	}
-	pulls = listLive(t, ds, githubPullType)
+	pulls = listLive(t, ds, githubPullKind)
 	if len(pulls) != githubPulls {
 		t.Fatalf("%d pull requests are mirrored, want %d", len(pulls), githubPulls)
 	}
@@ -394,7 +394,7 @@ func TestGitHubSyncStopInHydrationResumesTheBacklogThenWalks(t *testing.T) {
 	install(t, ds, githubDir, nil)
 	fake := newFakeGitHub(t, 3)
 	mustPut(t, ds, substrate.PutInput{
-		Kind: githubAccountType, ID: githubAccount,
+		Kind: githubAccountKind, ID: githubAccount,
 		Properties: syncProps(nil, "enabledPullRequests"),
 	})
 
@@ -417,7 +417,7 @@ func TestGitHubSyncStopInHydrationResumesTheBacklogThenWalks(t *testing.T) {
 	if next != nil {
 		t.Fatalf("a page past the drain budget returned another page: %v", next)
 	}
-	stamp := accountStamp(t, effects, githubAccountType, githubAccount)
+	stamp := accountStamp(t, effects, githubAccountKind, githubAccount)
 	walk, _ := stamp["syncWalk"].(map[string]any)
 	stages, _ := walk["stages"].([]any)
 	if len(stages) == 0 || stages[0] != "pullsFetch" {
@@ -434,7 +434,7 @@ func TestGitHubSyncStopInHydrationResumesTheBacklogThenWalks(t *testing.T) {
 	s2 := newStepper(t, ds, githubSyncFn, githubConfig(t, ds, fake))
 	all := s2.drainApplying(nil)
 	assertFirstSearchFrom(t, fake, from, minusOverlap(t, runStart), "the run after a hydration stop")
-	final := accountStamp(t, all, githubAccountType, githubAccount)
+	final := accountStamp(t, all, githubAccountKind, githubAccount)
 	if v, ok := final["syncWalk"]; !ok || v != nil {
 		t.Fatalf("the completed walk left syncWalk = %v (present %v), want it cleared", v, ok)
 	}
@@ -452,7 +452,7 @@ func TestGitHubSyncStopInHydrationResumesTheBacklogThenWalks(t *testing.T) {
 // accountEnvelope is the delivery envelope a record trigger on the account
 // carries: the body syncs the account it names, whatever the cadence says.
 func accountEnvelope() map[string]any {
-	return map[string]any{"record": map[string]any{"kind": githubAccountType, "id": githubAccount}}
+	return map[string]any{"record": map[string]any{"kind": githubAccountKind, "id": githubAccount}}
 }
 
 // minusOverlap is a watermark as the body queries it back: 120 seconds early.

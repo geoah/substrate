@@ -276,11 +276,18 @@ func TestOnConflictDecode(t *testing.T) {
 	})); err == nil || !strings.Contains(err.Error(), "onConflict is a string") {
 		t.Fatalf("a non-string policy decoded: %v", err)
 	}
-	// delete carries no precondition, so the key is not in its closed set.
+	// A delete takes a precondition too, so it holds onConflict to the
+	// same rule: the policy needs the ifVersion it answers.
 	if _, err := ds.decodeEffect(fn, map[string]any{
 		"action": "delete", "kind": raceWidget, "id": "x", "onConflict": "yield",
-	}); err == nil || !strings.Contains(err.Error(), "unknown key") {
-		t.Fatalf("delete accepted onConflict: %v", err)
+	}); err == nil || !strings.Contains(err.Error(), "needs ifVersion") {
+		t.Fatalf("delete onConflict without ifVersion: %v", err)
+	}
+	if ef, err := ds.decodeEffect(fn, map[string]any{
+		"action": "delete", "kind": raceWidget, "id": "x",
+		"ifVersion": float64(4), "onConflict": "yield",
+	}); err != nil || ef.OnConflict != conflictYield {
+		t.Fatalf("guarded delete decode = %+v, %v", ef, err)
 	}
 }
 

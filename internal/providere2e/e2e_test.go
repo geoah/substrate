@@ -60,7 +60,20 @@ func caseBudget(settleSeconds int) time.Duration {
 func TestMain(m *testing.M) {
 	// testdb.Main: the data roots on tmpfs, the run, then every database the
 	// run made dropped.
-	os.Exit(testdb.Main(m))
+	code := testdb.Main(m)
+	line := fmt.Sprintf("providere2e: %d provider cases ran", casesRun.Load())
+	fmt.Println(line)
+	if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			_, _ = fmt.Fprintln(f, line)
+			_ = f.Close()
+		}
+	}
+	if suiteRequired && casesRun.Load() == 0 && code == 0 {
+		fmt.Printf("providere2e: %s is set and no provider case ran\n", requiredEnv)
+		code = 1
+	}
+	os.Exit(code)
 }
 
 // TestProviderE2E runs every provider's case against one server, all at once.
@@ -76,8 +89,8 @@ func TestMain(m *testing.M) {
 // the slowest case alone.
 //
 // The registrations are made here, before the cases start, so a door refusal
-// is one failure on the parent rather than seven. The auth gate admits them
-// back to back: its per-peer and per-repository buckets key on the repository
+// is one failure on the parent rather than one per case. The auth gate admits
+// them back to back: its per-peer and per-repository buckets key on the repository
 // name, which differs per case, and the global bucket holds thirty-two.
 func TestProviderE2E(t *testing.T) {
 	requirePython(t)
@@ -108,7 +121,7 @@ type providerCase struct {
 
 // newProviderCase registers the case's repository. The config file is the
 // case's own: substratectl rewrites the whole file on every context change,
-// so seven cases sharing one would race each other's writes.
+// so cases sharing one would race each other's writes.
 func newProviderCase(t *testing.T, srv *server, provider string) providerCase {
 	t.Helper()
 	c := providerCase{
@@ -123,6 +136,7 @@ func newProviderCase(t *testing.T, srv *server, provider string) providerCase {
 // runProvider is one case: the runner over the case's repository.
 func runProvider(t *testing.T, srv *server, c providerCase) {
 	t.Helper()
+	casesRun.Add(1)
 	provider := c.provider
 	cfg := readProviderConfig(t, provider)
 

@@ -1,0 +1,17 @@
+{
+ "id": 1047510,
+ "user_id": 4021873,
+ "created_at": "2026-10-08T20:35:39.721Z",
+ "updated_at": "2026-10-10T15:31:47.865Z",
+ "start": "2026-10-08T20:35:23.316Z",
+ "end": "2026-10-09T19:55:11.644Z",
+ "timezone_offset": "+03:00",
+ "score_state": "SCORED",
+ "score": {
+  "strain": 13.6118,
+  "kilojoule": 10528.951,
+  "average_heart_rate": 76,
+  "max_heart_rate": 168
+ },
+ "step_count": 8875
+}

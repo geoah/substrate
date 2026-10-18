@@ -551,6 +551,10 @@ jobs:
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
+      # A missing `uv` or `python3` fails the suite instead of skipping it, so
+      # this job cannot pass having run no provider case; the count of cases
+      # run goes to the job summary.
+      SUBSTRATE_REQUIRE_PROVIDER_SUITES: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

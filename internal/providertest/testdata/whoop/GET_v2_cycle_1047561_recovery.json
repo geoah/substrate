@@ -1,0 +1,16 @@
+{
+ "cycle_id": 1047561,
+ "sleep_id": "adde68d0-1852-41bd-963a-f47e68df7da7",
+ "user_id": 4021873,
+ "created_at": "2026-10-10T04:36:59.133Z",
+ "updated_at": "2026-10-10T07:21:56.592Z",
+ "score_state": "SCORED",
+ "score": {
+  "user_calibrating": false,
+  "recovery_score": 90.0,
+  "resting_heart_rate": 51.0,
+  "hrv_rmssd_milli": 70.914622,
+  "spo2_percentage": 96.125,
+  "skin_temp_celsius": 33.9
+ }
+}

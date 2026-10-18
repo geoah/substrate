@@ -172,7 +172,8 @@ as after a meal); `components`, the parts of a value measured together
 trait's `sourceValue` could not be normalized; `quality` (`valid`, `estimated`, `questionable`, `stale`,
 `validated`, `unavailable`); `issuedAt`, when the value became known;
 `recordingMethod` (`automatic`, `active`, `manual`); `adapter`, the code
-that wrote it from the trait's `origin`; `derivedFrom` and `conversion`, for a value computed
+that wrote it from the trait's `origin`
+([the adapters](#the-adapters)); `derivedFrom` and `conversion`, for a value computed
 from another. It titles itself `{metric} {value}`, "Body weight 72.40 kg".
 
 **`trace`** declares the trait's packed properties and adds `acquisition`
@@ -488,6 +489,107 @@ A `PT0S` value holds no time, so under `priority` it covers only its own
 instant: a blood pressure two apps deliver at one instant is the higher
 source's alone, and one stamped seconds apart is kept twice
 (G-31 in the observations requirements).
+
+## The adapters
+
+An adapter is a sample whose function turns one provider's mirror rows into
+these records, each naming the mirror row it came from in `origin` and
+rewritten or deleted with it. One ships, with its mapping and rules in the
+catalog: [WHOOP to health](bundles-catalog.md#whoop-to-health-sample)
+(`healthwhoop`).
+Garmin and Google Fit adapters are planned.
+Every adapter that writes traces composes their ids as
+[a trace's](#the-base-kinds) are,
+`<provider>/<account record id>/<source>/<metric>[/<channel>]/<period start>`,
+the period being the UTC hour, because one account delivers several
+devices' data.
+
+Every adapter holds to one set of rules:
+
+- **One reconcile.** Each hands what a mirror row implies to
+  `host.observed.reconcile`, which writes each output in one put, leaves one
+  that already holds it unwritten, never lowers a stored `revision`, and
+  deletes what the row no longer implies.
+- **One spelling.** Each writes its numbers, lengths of time, instants,
+  composed ids and a night's `efficiency` through `host.observed`
+  (`decimal`, `duration`, `instant`, `record_id` and `percent`), so a
+  value has the same text whichever adapter wrote it.
+- **The catalogue's codes and holds.** Every gauge carries its metric's
+  `hold` from the catalogue, a workout's `sport` is one value of the
+  workout code set (`other` where the provider's word has none, the word in
+  `sportSource`), a workout's energy is `activeEnergy` or `totalEnergy` as
+  the provider measures it, a day total is a `sum` summary, and sleep the
+  device did not stage is the `asleep` code. A night's whole time in bed is
+  its `timeInBed`, never an `in_bed` amount.
+- **A night's own figures.** A sleep carries `efficiency` (time asleep over
+  time in bed) and `latency` where the provider sends what they are
+  computed from, and `isNap`, which WHOOP sends.
+
+Every output also names the code that wrote it, in `adapter`:
+`<package>@<version>` (`healthwhoop@3`), a constant at the top of the
+adapter's function whose version is the package's own. The base kinds and `health/sleep` and `health/workout`
+declare it as their own property, apart from `revision`, which is the
+upstream's
+([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
+An adapter upgrade does not reach mirror rows the upstream never changes on
+its own. To reprocess them, raise the constant and the package's `version`
+with the change, apply the new closure, and replay the adapter's record
+trigger from the start:
+
+```bash
+bin/substratectl trigger replay healthwhoop-on-mirror --from 0
+```
+
+Every mirror row is delivered again and every output is rewritten under the
+new `adapter` at the `revision` it already holds, which the write path admits
+because an equal revision is not a stale one. An output whose code is
+unchanged is not rewritten.
+
+### Correcting a value an adapter wrote
+
+An adapter's outputs are read-only to the owner. Every delivery of a mirror
+row, and every replay, writes each output whole: each property the adapter
+owns is set to what the row implies, and an output the row implies is
+written again if the owner deleted it. An edit to an adapter's output lasts
+until the row is delivered again.
+
+A correction is the owner's own record from the owner's own source. Write a
+`source` for the device or the hand that is right (a scale, `manual`), rank
+it above the provider for the metric in its `priorities`, and write the
+corrected value as an observation of that source:
+
+```yaml
+kind: <authority>/observations/source
+metadata:
+  id: owner/scale
+data:
+  properties:
+    name: My scale
+    class: scale
+    priorities:
+      <authority>/observations/metric/health/body_mass: 1
+---
+kind: <authority>/observations/observation
+metadata:
+  id: owner/body_mass/2026-09-11T04:02:41Z
+data:
+  properties:
+    metric: <authority>/observations/metric/health/body_mass
+    source: <authority>/observations/source/owner/scale
+    form: gauge
+    hold: PT0S
+    value:
+      value: "71.8"
+      unit: kg
+    at: "2026-09-11T04:02:41Z"
+    utcOffset: 180
+```
+
+A read with `sources.policy: priority` then answers the owner's value where
+the two overlap, and `separate` shows both. The adapter never writes the
+owner's source or the owner's records, so a delivery or a replay leaves the
+correction and its ranking in place. The provider's own value stays as the
+provider sent it, which keeps a later re-read of the provider honest.
 
 ## Building observed values in a function
 

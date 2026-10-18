@@ -474,9 +474,16 @@ class Effects:
             ef["onConflict"] = oc
         return self._add(ef)
 
-    def delete(self, kind, id):
-        return self._add({"action": "delete", "kind": _need_kind("delete", kind),
-                          "id": _need_id("delete", "id", id)})
+    def delete(self, kind, id, if_version=_UNSET, on_conflict=None):
+        ef = {"action": "delete", "kind": _need_kind("delete", kind),
+              "id": _need_id("delete", "id", id)}
+        v = _if_version("delete", if_version)
+        if v is not None:
+            ef["ifVersion"] = v
+        oc = _on_conflict("delete", on_conflict, v)
+        if oc is not None:
+            ef["onConflict"] = oc
+        return self._add(ef)
 
     def merge(self, kind, id, loser):
         winner = _need_id("merge", "id", id)

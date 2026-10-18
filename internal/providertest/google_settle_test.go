@@ -127,7 +127,7 @@ func (g *googleFailing) account(t *testing.T, id string, streams ...string) {
 		props["enabled"+strings.ToUpper(s[:1])+s[1:]] = true
 	}
 	before := g.calls()
-	mustPut(t, g.ds, substrate.PutInput{Kind: googleAccountType, ID: id, Properties: props})
+	mustPut(t, g.ds, substrate.PutInput{Kind: googleAccountKind, ID: id, Properties: props})
 	g.drain(t, before, nil)
 }
 
@@ -136,7 +136,7 @@ func (g *googleFailing) account(t *testing.T, id string, streams ...string) {
 func (g *googleFailing) connect(t *testing.T, id string) {
 	t.Helper()
 	consent, err := g.ds.StartOAuth(context.Background(), substrate.ActorAPI,
-		vocabulary.RecordPath(googleAccountType, id))
+		vocabulary.RecordPath(googleAccountKind, id))
 	if err != nil {
 		t.Fatalf("start the consent for %s: %v", id, err)
 	}
@@ -147,7 +147,7 @@ func (g *googleFailing) connect(t *testing.T, id string) {
 // delivers.
 func (g *googleFailing) edit(t *testing.T, id string) {
 	t.Helper()
-	if _, err := g.ds.Patch(context.Background(), substrate.ActorAPI, googleAccountType, id, substrate.PatchInput{
+	if _, err := g.ds.Patch(context.Background(), substrate.ActorAPI, googleAccountKind, id, substrate.PatchInput{
 		Properties: map[string]any{"syncFrequency": "hourly"},
 	}); err != nil {
 		t.Fatalf("edit %s: %v", id, err)
@@ -243,7 +243,7 @@ func TestGoogleARepeatedFailureStaysErroring(t *testing.T) {
 
 	first := map[string]*substrate.Record{}
 	for id, stream := range streams {
-		row := mustGet(t, g.ds, googleAccountType, id)
+		row := mustGet(t, g.ds, googleAccountKind, id)
 		assertFailing(t, row, stream, states[id])
 		if row.Properties["syncError"] == nil || row.Properties["syncErrorAt"] == nil {
 			t.Fatalf("%s after its first failure: syncError %v, syncErrorAt %v, want both written",
@@ -270,7 +270,7 @@ func TestGoogleARepeatedFailureStaysErroring(t *testing.T) {
 	// `running`, so it reads as the first failure left it.
 	moves := []string{"lastSyncStartedAt", "lastSyncDurationMs", "retryNotBefore", "syncFrequency"}
 	for id, stream := range streams {
-		row := mustGet(t, g.ds, googleAccountType, id)
+		row := mustGet(t, g.ds, googleAccountKind, id)
 		if row.Properties["lastSyncStartedAt"] == first[id].Properties["lastSyncStartedAt"] {
 			t.Fatalf("%s: lastSyncStartedAt did not move, so the edit delivered no %s run", id, stream)
 		}
@@ -290,7 +290,7 @@ func TestGoogleARepeatedFailureStaysErroring(t *testing.T) {
 			}
 		}
 	}
-	wall, _ := mustGet(t, g.ds, googleAccountType, "acct-k").Properties["retryNotBefore"].(string)
+	wall, _ := mustGet(t, g.ds, googleAccountKind, "acct-k").Properties["retryNotBefore"].(string)
 	if was, _ := first["acct-k"].Properties["retryNotBefore"].(string); wall <= was {
 		t.Fatalf("acct-k retryNotBefore = %q after a second 429, want later than %q", wall, was)
 	}
@@ -312,14 +312,14 @@ func TestGoogleTwoFailingStreamsDeliverOnce(t *testing.T) {
 	before := g.calls()
 	g.connect(t, "acct-2")
 	g.drain(t, before, once)
-	row := mustGet(t, g.ds, googleAccountType, "acct-2")
+	row := mustGet(t, g.ds, googleAccountKind, "acct-2")
 	assertFailing(t, row, "contacts", substrate.SyncStateErroring)
 	assertFailing(t, row, "drive", substrate.SyncStateErroring)
 
 	before = g.calls()
 	g.edit(t, "acct-2")
 	g.drain(t, before, once)
-	assertFailing(t, mustGet(t, g.ds, googleAccountType, "acct-2"), "contacts", substrate.SyncStateErroring)
+	assertFailing(t, mustGet(t, g.ds, googleAccountKind, "acct-2"), "contacts", substrate.SyncStateErroring)
 }
 
 // TestGoogleAReconnectRestatesTheFailure reconnects an account whose contacts
@@ -336,14 +336,14 @@ func TestGoogleAReconnectRestatesTheFailure(t *testing.T) {
 	before := g.calls()
 	g.connect(t, "acct-c")
 	g.drain(t, before, once)
-	first := mustGet(t, g.ds, googleAccountType, "acct-c")
+	first := mustGet(t, g.ds, googleAccountKind, "acct-c")
 	assertFailing(t, first, "contacts", substrate.SyncStateErroring)
 
 	nextSecond()
 	before = g.calls()
 	g.connect(t, "acct-c")
 	g.drain(t, before, once)
-	row := mustGet(t, g.ds, googleAccountType, "acct-c")
+	row := mustGet(t, g.ds, googleAccountKind, "acct-c")
 	assertFailing(t, row, "contacts", substrate.SyncStateErroring)
 	if row.Properties["syncError"] != first.Properties["syncError"] {
 		t.Fatalf("syncError = %v after the reconnect's failure, want %v", row.Properties["syncError"], first.Properties["syncError"])
@@ -357,7 +357,7 @@ func TestGoogleAReconnectRestatesTheFailure(t *testing.T) {
 	before = g.calls()
 	g.edit(t, "acct-c")
 	g.drain(t, before, once)
-	row = mustGet(t, g.ds, googleAccountType, "acct-c")
+	row = mustGet(t, g.ds, googleAccountKind, "acct-c")
 	if got := row.Properties["syncState"]; got != substrate.SyncStateOK {
 		t.Fatalf("syncState = %v after the API answered, want %s (syncMessage %v)",
 			got, substrate.SyncStateOK, row.Properties["syncMessage"])
