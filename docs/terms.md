@@ -58,6 +58,13 @@ nothing, there are none.
 | **dialect** | A monotonic integer stamped on each repository naming a shape it speaks. A binary older than the stamp refuses to open the repository. There are two, refused the same way and stamped differently: the **vocabulary dialect** over its stored declarations, stamped at the repository's first open, and the **changelog dialect** over the entries in its changelog, claimed by the transaction that appends them. |
 | **managed** | A declared property the ENGINE stamps (`managed: true`): a declaration's `version`, its `source`, a package's `declaredBy`, the quarantine marks, a bundle's lifecycle bools, and the decision stamps `decidedAt` and `resolvedAt`. A write may echo the stored value, but a different one is refused rather than dropped, and a client renders it read-only. The one exception is a declaration's `version`, which the engine resolves itself: an incoming value is honored only when it moves past the stored one, and anything else (absent, echoed, lower) is stamped server-side. Not projection's *managed properties*, which is the ownership rule over a record's values. |
 
+## Measured values
+
+| Term | What it is |
+| ---- | ---------- |
+| **quantity** | A value of the `quantity` datatype: exact decimal digits and a case-sensitive UCUM unit code, `{value, unit, comparator?}`. Decision record 0153. |
+| **measure** | A named quantity in the engine's [unit table](units.md) (`mass`, `energy`, `torque`): a dimension, a base unit and the codes that convert into it. A value converts and compares only within its measure; a declaration names it with `measures:`. |
+
 ## Installed things
 
 | Term | What it is |

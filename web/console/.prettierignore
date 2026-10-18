@@ -19,3 +19,7 @@ src/lib/api/wire.golden.json
 # Copied verbatim from the shadcn package below its header; left unformatted
 # so a re-copy is a clean diff.
 src/shadcn.css
+
+# Written by internal/vocabulary/units_generated_test.go from the engine's unit
+# table, in Go's encoder shape, for the same reason as the wire golden above.
+src/lib/units.table.json

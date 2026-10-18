@@ -547,7 +547,32 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   comparisons and `exists`, and each operand is itself a money value:
   `{"price": {"gte": {"amount": 1000, "currency": "EUR"}}}` is every price
   of at least 10.00 EUR. The comparison holds within the operand's currency;
-  a bare number carries no currency and is refused. `match` is the one operator that reads words
+  a bare number carries no currency and is refused. A `quantity` property
+  takes the same operators, and each operand is itself a quantity value
+  without a comparator:
+  `{"weight": {"lt": {"value": "160", "unit": "[lb_av]"}}}` is every weight
+  below 160 pounds, a stored 72.4 kg among them. The engine converts the
+  operand exactly into each unit the rows hold, inside the operand's
+  [measure](units.md); a stored value of another measure never matches, and an
+  operand outside a declared `measures:` is refused. Where the
+  property declares `units:`, those codes are every unit a row can hold and
+  no row is read to find them. Otherwise the grammar admits codes no list
+  names (`Mg`, `kg/h`), so each request first reads the distinct units of the
+  filtered kinds' rows (the live ones, or the tombstones under
+  `"deleted": true`): one pass over the rows the rest of the filter selects
+  (its time range and every other condition; the quantity comparisons are
+  built last, so each narrows by everything else), whatever `first` says,
+  and a refusal past 256 distinct spellings among them. An order by the
+  quantity reads the same way, under the whole filter. Declaring `units:`
+  removes that read. A filter without `filter.kinds` compares a quantity
+  over every kind that declares the name, where each declares it as one
+  quantity: a kind whose `measures:` does not hold the operand matches
+  nothing, and the operand is refused only where no kind's measure holds it.
+  Where some kind declares the name as something else (a string, a state), a
+  quantity operand is refused and the request names its kinds. A value stored with a
+  comparator (`<0.5`) matches only where the comparison holds for its whole
+  half-line, and `in` is refused on a property that declares `comparator:
+  true` ([the table](data-model.md#property-types)). `match` is the one operator that reads words
   rather than values: a query in the [search grammar](#the-search-grammar)
   against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
   every record whose `notes` holds a word `rack` and a word starting `lay`,
@@ -605,7 +630,26 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
 a JSON list of `{property, desc}`). A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
-currencies, so a list that wants one currency filters on it. Only declared properties filter and order:
+currencies, so a list that wants one currency filters on it. A `quantity`
+property sorts by its value converted to its measure's base unit (155 `[lb_av]`
+between 50 kg and 71000 g), kept to 40 decimal places of the base unit (two
+values that agree that far tie and sort by kind and id), in every unit a write
+admitted: the codes the property lists, else its measure's codes, else every
+code the table lists, and then any other code the read's rows hold (1 `Mg`
+sorts as 1000 kg, though the mass table lists no `Mg`), found by the same one
+read of the rows' units a filter makes. Each kind's rows sort in the measure that kind declares, so a
+10 `Cel` temperature (283.15 K) sorts after a 20 `K` difference. `rad` sorts through pi at 40
+places; a level or an arbitrary unit sorts by its own number. A declared
+index on a quantity holds the same expression over the declared codes and
+needs `measures:` or `units:`; it serves the order while every stored unit is
+one of those codes, which `units:` guarantees. The engine resolves an order over the kinds the filter
+selects (`kinds`, narrowed by `implements` and `purposes`), or over every kind
+when the filter names none, so another kind's declaration of the same name
+changes nothing. Where two selected kinds declare the name differently (a
+quantity on one, a string on another), the order sorts by the property's
+stored JSON text, and a filter naming the one kind restores the typed order. A
+name any selected kind declares `secret` or `digest` is refused. Only declared
+properties filter and order:
 **filterable, indexed, and declared are the same set**, so a query that would
 be slow is one the grammar cannot express.
 
@@ -847,9 +891,10 @@ surface, and the key stays a list so a second surface, should one come, lands
 as a new name beside it rather than a reshaped document. The example above is
 abridged; the full list, and it is the same for every deployment of a given
 build, is `triggers`, `functions`, `bundles`, `blobs`, `export`, `changefeed`,
-`search`, `embeddings` and `agents`. `grammar.collection` is the records
-route and `grammar.recordPath` the record path, so a client checks the two
-shapes it must agree with the substrate about before it addresses anything.
+`search`, `units`, `embeddings` and `agents`. `grammar.collection` is the
+records route and `grammar.recordPath` the record path, so a client checks
+the two shapes it must agree with the substrate about before it addresses
+anything.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
@@ -1053,6 +1098,40 @@ once never outranks a friend. Against the hits of other kinds a `utility`
 person's score is halved and competes like any other, so a contact synced a
 moment ago still outranks the machinery their name happens to match, and a
 strong match on a task still outranks them.
+
+## The unit table
+
+`GET /api/v1/units` answers the engine's [unit table](units.md), the one a
+write holds a quantity to: every measure (`name`, `base`, `scale`, `display`,
+`dimension`, `note`) with the codes it lists, each code's `print` symbol and
+its exact rational `factor` to the base, an absolute temperature's `offset`,
+and the `aliases` a write reads. A code no rational number converts (a level,
+an arbitrary unit, `rad`) has no `factor`. The route takes no parameter.
+
+`GET /api/v1/units/convert` converts one value exactly, as `host.units.convert`
+does in a function. `value` is exact digits, at most 1000 of them; `from` and
+`to` are codes or aliases, percent-encoded in the query (`%5Blb_av%5D` for
+`[lb_av]`); and `measure`, optional, names the measure to convert in where the
+units' own reading is not meant (`temperature-difference` for a deviation):
+
+```http
+GET /api/v1/units/convert?value=72.4&from=kg&to=%5Blb_av%5D
+```
+
+```json
+{"value": "159.61467782185136844", "unit": "[lb_av]", "measure": "mass", "exact": false}
+```
+
+`value` is every digit where the result has a finite decimal expansion, else
+20 significant digits with `exact: false`. Either way it holds at most 1000
+digits, so a write takes it back: a longer answer is rounded to the fraction
+digits its integer part leaves, with `exact: false`, and one whose integer
+part (1000 ones from `10*24` to `1`) or whose first significant digit lies
+past 1000 digits is a `422`. A missing parameter or an unknown
+one is `400 bad_request`; a value, a unit or a pair of units the table refuses
+(`kg` to `J`, `mmol/mol` to `%`) is `422 validation` carrying the table's
+reason. Neither route reads the repository; the token gates them as it gates
+every route under `/api/v1`.
 
 ## Actors
 

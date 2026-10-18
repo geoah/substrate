@@ -105,6 +105,45 @@ func (n narrowing) count(q sqlReader) (int64, error) {
 // carry it, for a narrowing counted in Go.
 const propValuesQuery = `SELECT props->$2 FROM records WHERE kind = $1 AND deleted_at IS NULL AND props ? $2`
 
+// deletedPropValuesQuery streams the value of one property over the
+// tombstones that carry it. A restoring put keeps every value the declaration
+// in force admits (restore.go admitRestored), so a guard against a change that
+// rereads an admitted value counts tombstones as well as live rows.
+const deletedPropValuesQuery = `SELECT props->$2 FROM records WHERE kind = $1 AND deleted_at IS NOT NULL AND props ? $2`
+
+// deletedRestoredValuesQuery is deletedPropValuesQuery for a property a
+// restore also fills from its predecessor: the value under the name where a
+// tombstone holds one, else the predecessor's, as reshapeRestored moves it.
+const deletedRestoredValuesQuery = `SELECT CASE WHEN props ? $2 THEN props->$2 ELSE props->$3 END
+	FROM records WHERE kind = $1 AND deleted_at IS NOT NULL AND (props ? $2 OR props ? $3)`
+
+// deletedValues is the query streaming, per tombstone, the root value a
+// restore under the candidate declaration would keep for the property whose
+// own step is step.
+func deletedValues(ident string, step fieldStep) (string, []any) {
+	as := step.restoreAs
+	if as == "" {
+		as = step.key
+	}
+	if step.restoreFrom == "" || step.restoreFrom == as {
+		return deletedPropValuesQuery, []any{ident, as}
+	}
+	return deletedRestoredValuesQuery, []any{ident, as, step.restoreFrom}
+}
+
+// restoreStep is a property's own step with the names a restore under candT
+// reads: the candidate's name, and its renamedFrom where candT no longer
+// declares that name.
+func restoreStep(step fieldStep, candT *vocabulary.Kind, candP *vocabulary.Property) fieldStep {
+	step.restoreAs = candP.Name
+	if from := candP.RenamedFrom; from != "" && from != candP.Name {
+		if _, declared := candT.Props[from]; !declared {
+			step.restoreFrom = from
+		}
+	}
+	return step
+}
+
 // countPropQuery counts live rows of a type carrying a value for a property
 // (a nulled property's key is deleted from props, so presence is a value).
 const countPropQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND props ? $2`
@@ -479,7 +518,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 				})
 			}
 			if curP.Datatype == vocabulary.DatatypeReference {
-				out = append(out, referenceNarrowings(ident, pname, curP, candP)...)
+				out = append(out, referenceNarrowings(ident, pname, curP, candP, restoreStep(fieldStep{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}, candT, candP))...)
 			}
 			if keyPatternTightens(curP, candP) {
 				q, args := keysOutsidePattern(ident, mapPath(nil, pname),
@@ -490,13 +529,13 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 					query: q, args: args,
 				})
 			}
+			own := restoreStep(fieldStep{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}, candT, candP)
 			out = append(out, constraintNarrowings(ident, fmt.Sprintf("property %q", pname),
-				containerPath(nil, curP, pname), curP, candP)...)
+				[]fieldStep{own}, curP, candP)...)
 			// An object property that drops or kind-changes a declared field
 			// strands rows holding that field, at every declared level.
 			if curP.Datatype == vocabulary.DatatypeObject {
-				out = append(out, objectFieldNarrowings(ident,
-					[]fieldStep{{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}}, curP, candP)...)
+				out = append(out, objectFieldNarrowings(ident, []fieldStep{own}, curP, candP)...)
 			}
 		}
 		// With a `default` beside it the apply writes the default onto every
@@ -612,9 +651,9 @@ const countDanglingRefQuery = `SELECT count(*) FROM refs r
 // Dropping the reference, taking `repeated:` away and repointing `kind:` are
 // classified by the ordinary property loop this is called from: a reference is
 // a property, and a container flip is a container flip.
-func referenceNarrowings(ident, pname string, curP, candP *vocabulary.Property) []narrowing {
+func referenceNarrowings(ident, pname string, curP, candP *vocabulary.Property, refStep fieldStep) []narrowing {
 	var out []narrowing
-	out = append(out, linkPropNarrowings(ident, pname, curP, candP)...)
+	out = append(out, linkPropNarrowings(ident, pname, curP, candP, refStep)...)
 	// `mustExist` added is a narrowing with a real count behind it: the
 	// declaration admits only pointers at records that exist, and a stored
 	// pointer at a record that never arrived (or was purged) is one no later
@@ -640,7 +679,10 @@ func referenceNarrowings(ident, pname string, curP, candP *vocabulary.Property) 
 // stored values first and the declaration then follows them. A link property
 // held to a stricter rule than the identical record property would be a
 // difference with nothing behind it.
-func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) []narrowing {
+//
+// refStep is the reference property's own step, with the names a restore
+// reads (restoreStep).
+func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property, refStep fieldStep) []narrowing {
 	var out []narrowing
 	for _, lname := range curP.PropertyOrder {
 		curL, candL := curP.Properties[lname], candP.Properties[lname]
@@ -690,7 +732,7 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) [
 				query: countMissingLinkPropQuery, args: []any{ident, pname, lname},
 			})
 		}
-		out = append(out, linkConstraintNarrowings(ident, pname, lname, curL, candL)...)
+		out = append(out, linkConstraintNarrowings(ident, pname, lname, refStep, curL, candL)...)
 	}
 	// A link property the candidate ADDS as required strands every stored value,
 	// for the same reason it does on a record: a write is refused without it and
@@ -801,6 +843,12 @@ type fieldStep struct {
 	key      string
 	repeated bool
 	keyed    bool
+	// restoreAs and restoreFrom are set on a property's own step alone: the
+	// name a restore writes the value under, and the predecessor it moves
+	// into that name from a tombstone lacking it (restore.go
+	// reshapeRestored follows the candidate's renamedFrom). A guard over
+	// tombstones reads the value a restore would keep.
+	restoreAs, restoreFrom string
 }
 
 // pathLabel renders a path for a guard message: the keys, dotted. A one-step
@@ -1204,6 +1252,36 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 			query: q, args: args,
 		})
 	}
+	// A quantity's measure, units, comparator and bounds are judged by the
+	// write coercion itself, row by row in Go: a unit's measure is the unit
+	// grammar's to answer, which SQL cannot parse.
+	if candP.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curP.Quantity, candP.Quantity) {
+		change := quantityChange(curP.Quantity, candP.Quantity)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it refuses; rewrite them first",
+				ident, subject, change),
+			query:   propValuesQuery,
+			args:    []any{ident, path[0].key},
+			strands: quantityRefuses(path, candP),
+		})
+		if quantityMeasureChanges(curP.Quantity, candP.Quantity) {
+			deletedQuery, deletedArgs := deletedValues(ident, path[0])
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it reads in another measure; rewrite them first",
+					ident, subject, change),
+				query:   propValuesQuery,
+				args:    []any{ident, path[0].key},
+				strands: quantityRereads(path, curP, candP),
+			})
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d deleted records hold a value written in another measure, which a restore under this or a later declaration would reread; restore and rewrite them, or wait for the collector to purge them",
+					ident, subject, change),
+				query:   deletedQuery,
+				args:    deletedArgs,
+				strands: quantityRereadsDeleted(path, curP, candP),
+			})
+		}
+	}
 	return out
 }
 
@@ -1213,7 +1291,11 @@ const linkPropValuesQuery = `SELECT r.props->$3 ` + linkFrom + ` AND r.props ? $
 
 // linkConstraintNarrowings is constraintNarrowings for one declared link
 // property, whose values live in the refs index as one flat scalar each.
-func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabulary.Property) []narrowing {
+//
+// refStep is the reference property's own step, so a tombstone's link values
+// can be read out of its stored reference value: the refs index holds no row
+// a guard over tombstones could read.
+func linkConstraintNarrowings(ident, pname, lname string, refStep fieldStep, curL, candL *vocabulary.Property) []narrowing {
 	var out []narrowing
 	if patternTightens(curL, candL) {
 		out = append(out, narrowing{
@@ -1238,6 +1320,30 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 				ident, pname, lname, *candL.Max),
 			query: q, args: args,
 		})
+	}
+	if candL.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curL.Quantity, candL.Quantity) {
+		change, path := quantityChange(curL.Quantity, candL.Quantity), []fieldStep{{key: lname}}
+		out = append(out, narrowing{
+			format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it refuses; rewrite them first",
+				ident, pname, lname, change),
+			query: linkPropValuesQuery, args: []any{ident, pname, lname},
+			strands: quantityRefuses(path, candL),
+		})
+		if quantityMeasureChanges(curL.Quantity, candL.Quantity) {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it reads in another measure; rewrite them first",
+					ident, pname, lname, change),
+				query: linkPropValuesQuery, args: []any{ident, pname, lname},
+				strands: quantityRereads(path, curL, candL),
+			})
+			deletedQuery, deletedArgs := deletedValues(ident, refStep)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d deleted records hold a value written in another measure, which a restore under this or a later declaration would reread; restore and rewrite them, or wait for the collector to purge them",
+					ident, pname, lname, change),
+				query: deletedQuery, args: deletedArgs,
+				strands: quantityRereadsDeleted([]fieldStep{refStep, {key: lname}}, curL, candL),
+			})
+		}
 	}
 	return out
 }
@@ -1277,7 +1383,8 @@ func patternApplies(dt vocabulary.Datatype) bool {
 	switch dt {
 	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
 		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal,
-		vocabulary.DatatypeMoney, vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState:
+		vocabulary.DatatypeMoney, vocabulary.DatatypeQuantity, vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef,
+		vocabulary.DatatypeState:
 		return false
 	}
 	return true

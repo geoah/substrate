@@ -9,7 +9,8 @@
 #                    {"op": "invoke", "reqId": N, "id": <key>, "input": {...}}
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
-#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call", "params": {...}}
+#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call"|
+#                     "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
 #   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)
@@ -24,6 +25,7 @@
 # is an error frame the engine parks — never a host crash. Isolation is the
 # process boundary (user code never loads into the substrate); tightening
 # placement is a later dial on the same protocol.
+import decimal
 import hashlib
 import json
 import os
@@ -182,6 +184,8 @@ class HostError(Exception):
 #     link/unlink/merge/split       a staged effect and returns a handle
 #   host.ids.external/url           deterministic, hash-backed, URL-safe ids
 #   host.page.resume / .more()      the paged-checkpoint wrapper
+#   host.units.convert/canonical/   the engine's unit table, over the host call
+#     measure
 #
 # Writes STAY effects: the builder never writes mid-body, it accumulates the
 # effect list the engine already applies atomically after the body returns.
@@ -613,10 +617,97 @@ class Agents:
         return self._host.call(agent, input)
 
 
+# --- units --------------------------------------------------------------------
+#
+# host.units asks the ENGINE's unit table over the host call, so a body and the
+# write path that holds its effects read one table; there is no Python copy of
+# it.
+
+_RE_DECIMAL = re.compile(r"^[+-]?[0-9]+(\.[0-9]+)?$")
+
+
+def _decimal_text(fn, value):
+    """A number as the exact digits the engine stores. A str is held to the
+    decimal grammar and an int or a Decimal is written out; a float is written
+    as its shortest repr, which is the digits a JSON payload carried, so pass a
+    str or a Decimal to keep digits a float cannot hold."""
+    if isinstance(value, bool):
+        raise ValueError("%s: %r is a bool, not a number" % (fn, value))
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("%s: %r is not a finite number" % (fn, value))
+        value = decimal.Decimal(repr(value))
+    if isinstance(value, decimal.Decimal):
+        if not value.is_finite():
+            raise ValueError("%s: %r is not a finite number" % (fn, value))
+        return format(value, "f")
+    if isinstance(value, str) and _RE_DECIMAL.match(value):
+        return value
+    raise ValueError('%s: %r is not a decimal: pass digits as a str ("72.4"), an int or a Decimal'
+                     % (fn, value))
+
+
+class Converted(str):
+    """A converted value's decimal digits, a str, with `exact`: False where the
+    result has no finite decimal expansion and was rounded to 20 significant
+    digits."""
+
+    exact = True
+
+
+class Units:
+    """The engine's unit table, asked over the host call: every code, alias and
+    factor is the one the write path holds an effect to. Errors are the
+    engine's, raised as HostError."""
+
+    def __init__(self, host):
+        self._host = host
+        # The table does not change inside one invocation, so each answer
+        # is asked once: an adapter converts the same few units thousands
+        # of times a delivery.
+        self._memo = {}
+
+    def _ask(self, method, params):
+        key = (method,) + tuple(sorted(params.items()))
+        if key not in self._memo:
+            self._memo[key] = self._host._call(method, params)
+        return self._memo[key]
+
+    def convert(self, value, from_unit, to_unit, measure=None):
+        """Convert exact digits between two units of one measure -> a decimal
+        str whose `exact` says whether it is every digit. Aliases are read
+        (`°C`, `kWh`, `mmHg`). Every digit comes back when the result has a
+        finite decimal expansion; one without is rounded to 20 significant
+        digits and `exact` is False. The value holds at most 1000 digits.
+        `measure` names the measure to convert in where the units' own reading
+        is not meant: a deviation in Cel converts to [degF] in
+        `temperature-difference`, without the offset."""
+        params = {"value": _decimal_text("units.convert", value),
+                  "from": from_unit, "to": to_unit}
+        if measure is not None:
+            params["measure"] = measure
+        out = self._ask("units.convert", params)
+        converted = Converted(out.get("value"))
+        converted.exact = out.get("exact") is not False
+        return converted
+
+    def canonical(self, code):
+        """The code the engine stores for a unit spelling: `bpm` is `/min`,
+        `°C` is `Cel`, `kWh` is `kW.h`."""
+        return self._ask("units.canonical", {"code": code}).get("code")
+
+    def measure(self, code):
+        """The name of the measure a unit belongs to: `mass` for `kg`, `rate`
+        for `/min`. An ambiguous or unknown code raises."""
+        return self._ask("units.measure", {"code": code}).get("measure")
+
+
 class Host:
     """The body's host API: logging plus the capability-scoped reads, and the
-    SDK surface (records/functions/agents/effects/ids/page) namespaced beside
-    them."""
+    SDK surface (records/functions/agents/effects/ids/page/units) namespaced
+    beside them."""
 
     def __init__(self, inp, req_id, logs):
         self._config = inp.get("config")
@@ -628,6 +719,7 @@ class Host:
         self.agents = Agents(self)
         self.ids = Ids()
         self.page = Page(inp.get("resume"))
+        self.units = Units(self)
 
     @property
     def logs(self):

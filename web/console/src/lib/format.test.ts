@@ -133,6 +133,21 @@ describe("referenceID / referenceCell", () => {
   })
 })
 
+describe("cellValue", () => {
+  it("reads money and a quantity by their shape, anything else as keys", () => {
+    expect(cellValue({ amount: 1999, currency: "EUR" })).toBe("19.99 EUR")
+    expect(cellValue({ value: "37", unit: "Cel" })).toBe("37 °C")
+    expect(
+      cellValue([
+        { value: "0.5", unit: "ng/mL", comparator: "<" },
+        { value: "8000", unit: "{steps}" },
+      ])
+    ).toBe("<0.5 ng/mL, 8000 steps")
+    // A number where the digits belong is not the shape.
+    expect(cellValue({ value: 37, unit: "Cel" })).toBe("{value, unit}")
+  })
+})
+
 describe("referenceObjects", () => {
   it("reads the served object, one or repeated", () => {
     const one = { ref: "tasks.example.com/tasks/task/a" }

@@ -35,6 +35,14 @@ import {
 } from "@/lib/money"
 import { scalarText } from "@/lib/format"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
+import {
+  checkQuantity,
+  formatQuantityText,
+  parseQuantityText,
+  quantityExample,
+  readQuantity,
+  type Quantity,
+} from "@/lib/units"
 
 /** The `kind:` pin a reference wears when it is pinned to no kind at all. */
 export const TO_ANY = "any"
@@ -110,8 +118,19 @@ export interface PropSpec {
    * a field may itself be an object with fields, and may be repeated or keyed,
    * to the dialect's four levels, a kind's own property being level one. */
   fields?: PropSpec[]
+  /** The declared numeric bounds. A quantity's bounds are quantity values,
+   * read into `minQuantity`/`maxQuantity`, and never land here. */
   min?: number
   max?: number
+  /** `quantity`: the declared measure every unit belongs to (`mass`). */
+  measures?: string
+  /** `quantity`: the unit codes the declaration narrows to. */
+  units?: string[]
+  /** `quantity`: a value may carry a comparator (`<0.5 ng/mL`). */
+  comparator?: boolean
+  /** `quantity`: the declared bounds, each a quantity value (`40 kg`). */
+  minQuantity?: Quantity
+  maxQuantity?: Quantity
   pattern?: string
   /** The declared `writer:` role. Anything but the owner is host-managed and
    * never offered for editing. */
@@ -264,6 +283,23 @@ function transitionsOf(v: unknown): StateTransition[] | undefined {
   return out
 }
 
+/** A quantity property's own keys: `measures`, `units`, `comparator`, and
+ * `min`/`max` as quantity values. */
+function quantitySpecOf(
+  def: Record<string, unknown>
+): Pick<
+  PropSpec,
+  "measures" | "units" | "comparator" | "minQuantity" | "maxQuantity"
+> {
+  return {
+    measures: typeof def.measures === "string" ? def.measures : undefined,
+    units: stringList(def.units),
+    comparator: def.comparator === true,
+    minQuantity: readQuantity(def.min),
+    maxQuantity: readQuantity(def.max),
+  }
+}
+
 function specOf(name: string, def: Record<string, unknown>): PropSpec {
   const displayName =
     typeof def.displayName === "string" && def.displayName.trim()
@@ -291,6 +327,7 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     fields: fieldSpecs(def.fields),
     min: numberOr(def.min),
     max: numberOr(def.max),
+    ...(def.type === "quantity" ? quantitySpecOf(def) : {}),
     pattern: typeof def.pattern === "string" ? def.pattern : undefined,
     writer: typeof def.writer === "string" ? def.writer : undefined,
     description:
@@ -503,6 +540,8 @@ export function exampleFor(spec: PropSpec): string | undefined {
       return "19.99"
     case "money":
       return MONEY_EXAMPLE
+    case "quantity":
+      return quantityExample(spec)
     case "email":
       return "someone@example.com"
     case "url":
@@ -682,6 +721,8 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
 
   if (spec.kind === "money") return checkMoney(value, spec.min, spec.max)
 
+  if (spec.kind === "quantity") return checkQuantity(value, spec)
+
   if (isNumericKind(spec.kind)) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
       return "expected a number"
@@ -860,11 +901,14 @@ export function checkValue(spec: PropSpec, value: unknown): string | undefined {
 export function formatValue(spec: PropSpec, value: unknown): string {
   if (value === null || value === undefined) return ""
   if (controlFor(spec) === "secret") return ""
-  // Money is edited as its exact text, `19.99 EUR`, which parseValue reads
-  // back to the same value; a value the text cannot hold stays JSON.
-  if (spec.kind === "money" && !spec.keyed) {
+  // Money and a quantity are edited as their exact text, `19.99 EUR` and
+  // `72.5 kg`, which parseValue reads back to the same value; a value the
+  // text cannot hold stays JSON.
+  if ((spec.kind === "money" || spec.kind === "quantity") && !spec.keyed) {
     const items = Array.isArray(value) ? value : [value]
-    const texts = items.map(moneyText)
+    const texts = items.map(
+      spec.kind === "money" ? moneyText : formatQuantityText
+    )
     if (texts.every(Boolean)) return texts.join("\n")
   }
   if (Array.isArray(value)) {
@@ -929,6 +973,12 @@ function parseScalarText(spec: PropSpec, text: string): ParsedValue {
     // A currency chosen with no amount typed is no value yet.
     if (!splitMoneyText(text).amount) return {}
     const parsed = parseMoneyText(text)
+    if (parsed.error) return { error: parsed.error }
+    const problem = checkItem(spec, parsed.value)
+    return problem ? { error: problem } : { value: parsed.value }
+  }
+  if (spec.kind === "quantity") {
+    const parsed = parseQuantityText(text)
     if (parsed.error) return { error: parsed.error }
     const problem = checkItem(spec, parsed.value)
     return problem ? { error: problem } : { value: parsed.value }

@@ -673,6 +673,9 @@ host.ids.external(provider, account, external_id)
 host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
+host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str; .exact
+host.units.canonical(code)                        # "bpm" -> "/min"
+host.units.measure(code)                          # "kg" -> "mass"
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
@@ -779,6 +782,25 @@ to the runner boundary by the same scrubber. The key is absent when the bundle
 ships no settings, and one setting's own key is absent when nobody has written
 its value at all, so a body that needs one refuses in its own words
 ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+
+**Units come from the engine's table.** `host.units.convert`,
+`canonical` and `measure` are host calls answered by the same unit table
+the write path holds a quantity to ([units](units.md)); there is no Python
+copy of it. They read nothing from the repository, so no grant gates them
+and no budget is charged; a value holds at most 1000 digits, and a call made
+after the invocation's deadline is refused. `convert` takes the value as
+digits (a `str`, an `int` or a `Decimal`; a `float` is written as its
+shortest repr), reads aliases on both units (`°C`, `kWh`, `mmHg`) and
+answers a decimal `str`: every digit when the result has a finite decimal
+expansion (37 Cel is exactly 98.6 [degF]), else 20 significant digits (72.4
+kg is 159.61467782185136844 lb, rounded), and at most 1000 digits, so the
+answer can be written back: a longer one is rounded to the fraction digits
+its integer part leaves, and one that cannot fit raises a `HostError`. The
+answer's `exact` attribute is `False` exactly when it was rounded. Without `measure` the units are read as
+`MeasureOf` reads them, so Cel to [degF] is an absolute temperature;
+`measure="temperature-difference"` converts a deviation without the offset.
+A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
+engine's refusal.
 
 **Two ceilings.** `host.log(msg)` and `print` write a line to the server log
 the moment the body writes it, as `substrate: function log` with the function,

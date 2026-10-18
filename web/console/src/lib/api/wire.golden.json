@@ -523,6 +523,31 @@
     "pending": true,
     "webhookPath": false
   },
+  "UnitCode": {
+    "code": true,
+    "factor": false,
+    "offset": false,
+    "print": true
+  },
+  "UnitConversion": {
+    "exact": true,
+    "measure": true,
+    "unit": true,
+    "value": true
+  },
+  "UnitMeasure": {
+    "base": true,
+    "dimension": true,
+    "display": true,
+    "name": true,
+    "note": false,
+    "scale": true,
+    "units": true
+  },
+  "UnitTable": {
+    "aliases": true,
+    "measures": true
+  },
   "VocabularyPlan": {
     "blockers": false,
     "changelogSeq": false,
