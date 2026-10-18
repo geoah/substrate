@@ -458,6 +458,9 @@ type service struct {
 	// searchTopUpHook, set only by a test, runs before a lexical search's
 	// relaxed top-up: the seam that spends the budget between the passes.
 	searchTopUpHook func()
+	// searchScoreHook, set only by a test, runs before a lexical search
+	// scores its candidates: the seam that spends the budget before scoring.
+	searchScoreHook func()
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
