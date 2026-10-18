@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health data on a substrate: how it fits together</title>
+<style>
+  :root { --ink:var(--foreground,#1b1f24); --muted:var(--muted-foreground,#5c6670); --line:var(--border,#dde3ea); --bg:var(--background,#ffffff); --soft:var(--card,#f5f7fa); --accent:var(--primary,#2457a8); --accent-fg:var(--primary-foreground,#fff); --ok:var(--success,#1f7a4d); --warn:var(--warning,#9a5b00); --code:var(--secondary,#eef1f5); }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:8px 0 12px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0 0 6px; font-size:24px; }
+  header p { margin:0; color:var(--muted); max-width:70ch; }
+  nav { display:flex; flex-wrap:wrap; gap:6px; padding:10px 0; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+  nav button { border:1px solid var(--line); background:var(--soft); color:var(--ink); padding:7px 12px; border-radius:8px; cursor:pointer; font:inherit; font-size:14px; }
+  nav button[aria-selected="true"] { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  main { padding:16px 0 30px; }
+  section[hidden] { display:none; }
+  h2 { font-size:20px; margin:4px 0 10px; }
+  h3 { font-size:16px; margin:22px 0 8px; }
+  p { max-width:78ch; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:var(--soft); }
+  .card h4 { margin:0 0 6px; font-size:15px; }
+  .card p { margin:0 0 6px; font-size:14px; color:var(--muted); }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin:8px 0 14px; }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:var(--code); padding:1px 4px; border-radius:4px; }
+  table { border-collapse:collapse; width:100%; margin:8px 0 16px; font-size:14px; }
+  th, td { text-align:left; border-bottom:1px solid var(--line); padding:7px 8px; vertical-align:top; }
+  th { background:var(--soft); }
+  .flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:10px 0 18px; }
+  .flow .step { flex:1 1 180px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:var(--soft); cursor:pointer; }
+  .flow .step[aria-selected="true"] { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
+  .flow .step b { display:block; font-size:14px; }
+  .flow .step span { font-size:13px; color:var(--muted); }
+  .arrow { align-self:center; color:var(--muted); font-size:18px; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:8px 0 12px; }
+  .controls label { font-size:14px; color:var(--muted); }
+  select, input[type=number] { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  .note { border-left:3px solid var(--accent); padding:6px 12px; background:var(--soft); margin:10px 0; font-size:14px; }
+  .warn { border-left-color:var(--warn); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); background:var(--bg); margin-right:4px; }
+  .ok { color:var(--ok); } .bad { color:var(--warn); }
+  details { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:8px 0; background:var(--soft); }
+  summary { cursor:pointer; font-weight:600; }
+  .two { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:14px; } .two > div, .grid > div { min-width:0; } @media (max-width:800px){ .two { grid-template-columns:1fr; } }
+  footer { padding:12px 0; color:var(--muted); font-size:13px; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Health data on a substrate</h1>
+  <p>A walkthrough of the health-only (version 1) proposal in <code>docs/plans/health-data.md</code>; the all-domain version is <code>docs/plans/observations.md</code> for an engineer who wants to write health data into a substrate or build an app on top of it. Everything below is the substrate side: the records, the units, the reads. Providers (WHOOP, Oura, files) are mentioned only as the thing that writes.</p>
+</header>
+<nav aria-label="Sections">
+  <button data-tab="overview" aria-selected="true">Overview</button>
+  <button data-tab="flow">How data flows</button>
+  <button data-tab="records">The records</button>
+  <button data-tab="form">Value forms</button>
+  <button data-tab="units">Units and quantities</button>
+  <button data-tab="traces">Dense samples: traces</button>
+  <button data-tab="write">Writing data</button>
+  <button data-tab="read">Building apps: the aggregate read</button>
+  <button data-tab="labs">Labs</button>
+  <button data-tab="time">Time and days</button>
+</nav>
+<main>
+
+<section id="overview">
+  <h2>Five ideas, in order</h2>
+  <div class="grid">
+    <div class="card"><h4>1. Every value says what it is</h4><p>A stored number carries its <b>form</b> (instant, interval, counter or summary) and its <b>unit</b>. A nightly average is never confused with one reading.</p></div>
+    <div class="card"><h4>2. One value type for measured numbers</h4><p><code>quantity</code> is <code>{value, unit}</code>: exact digits plus a UCUM code. The server converts kg to lb, never kg to litres, and never mg/dL to mmol/L on its own.</p></div>
+    <div class="card"><h4>3. Small things are records, dense things are traces</h4><p>A weighing or a night's sleep is one record. An hour of heart rate every 5 seconds is one <b>trace</b> record holding 720 values.</p></div>
+    <div class="card"><h4>4. The server keeps a fast index it can always rebuild</h4><p>Each trace and observation is unpacked into a narrow samples table plus 15-minute rollups. The changelog stays the truth; the index is a cache that replay reproduces.</p></div>
+    <div class="card"><h4>5. One read answers "how did I sleep this month"</h4><p>The records route gains an <code>aggregate</code> mode: pick a metric, a bucket, reducers, and get 30 rows of numbers instead of 30,000 records.</p></div>
+  </div>
+  <h3>What a user's repository ends up holding</h3>
+  <table>
+    <tr><th>Layer</th><th>Who writes it</th><th>Example</th></tr>
+    <tr><td>Mirror records (vendor shape, vendor units)</td><td>a provider's sync function</td><td><code>providers.substrate.reamde.dev/whoop/recovery/...</code> with <code>score.hrvRmssdMilli: 62.4</code></td></tr>
+    <tr><td>Health records (one shape, canonical units)</td><td>an adapter function, or your app, or a file import</td><td><code>ada.example.com/health/observation/...</code> with <code>value: {value: "62.4", unit: "ms"}</code></td></tr>
+    <tr><td>Samples index and rollups (derived)</td><td>the engine, on every write</td><td>one row per sample, one row per 15 minutes</td></tr>
+  </table>
+  <p class="note warn">Version 2 of the plan (<code>docs/plans/observations.md</code>) widens this model to every measured thing and renames four things shown here: the forms <code>instant</code> and <code>interval</code> become <code>gauge</code> and <code>amount</code>; the trait and index are <code>observed</code>, <code>observed_points</code> and <code>observed_rollups</code>; every value gains an optional <code>about</code> (the thing observed, absent meaning you) and a <code>code</code> for categorical values; and the base kinds move to an <code>observations</code> package that <code>health</code> requires. Everything else on this page stands.</p>
+  <p class="note">Names in this page use <code>ada.example.com</code> as the user's authority. A sample package imports under the user's own authority, so the kind <code>health/observation</code> is <code>ada.example.com/health/observation</code> for Ada and <code>bob.example.com/health/observation</code> for Bob.</p>
+</section>
+
+<section id="flow" hidden>
+  <h2>How data flows</h2>
+  <p>Click a step to see what happens there and what the data looks like after it.</p>
+  <div class="flow" id="flowsteps">
+    <div class="step" data-step="0" aria-selected="true"><b>1. Source</b><span>WHOOP, Oura, a FIT file, your own app</span></div>
+    <div class="arrow">→</div>
+    <div class="step" data-step="1"><b>2. Mirror</b><span>vendor shape, vendor units, one record per upstream object</span></div>
+    <div class="arrow">→</div>
+    <div class="step" data-step="2"><b>3. Adapter</b><span>a function converts to health records</span></div>
+    <div class="arrow">→</div>
+    <div class="step" data-step="3"><b>4. Health records</b><span>observation, trace, sleep, workout, labresult</span></div>
+    <div class="arrow">→</div>
+    <div class="step" data-step="4"><b>5. Index</b><span>samples and rollups, derived by the fold</span></div>
+    <div class="arrow">→</div>
+    <div class="step" data-step="5"><b>6. Read</b><span>list, aggregate, downsample</span></div>
+  </div>
+  <div id="flowdetail"></div>
+  <h3>Where each path enters</h3>
+  <table>
+    <tr><th>Entry</th><th>Exists today?</th><th>Lands as</th></tr>
+    <tr><td>Cloud OAuth mirror (WHOOP, Oura, Withings, Dexcom)</td><td class="ok">yes</td><td>mirror records, then health records through an adapter</td></tr>
+    <tr><td>Push receiver (Health Auto Export posting JSON to a webhook trigger)</td><td class="ok">yes</td><td>health records written directly by the receiving function</td></tr>
+    <tr><td>File import (FIT, Apple export, lab PDF)</td><td class="bad">needs a blob read for functions</td><td>health records, with the original file kept as a blob</td></tr>
+    <tr><td>Your own app over the REST API</td><td class="ok">yes</td><td>health records, written with a token</td></tr>
+  </table>
+</section>
+
+<section id="records" hidden>
+  <h2>The records</h2>
+  <p>The <code>health</code> package is a sample: you import it and it is yours to extend. Scalars are generic (an <code>observation</code> or a <code>trace</code> keyed by a <code>metric</code>); sessions are typed (<code>sleep</code>, <code>workout</code>, <code>labresult</code>). Pick a kind to see a real-looking record.</p>
+  <div class="controls"><label for="kindsel">Kind</label><select id="kindsel"></select></div>
+  <div class="two">
+    <div><h3>What it is</h3><div id="kinddesc"></div></div>
+    <div><h3>Sample record (YAML envelope)</h3><pre id="kindyaml"></pre></div>
+  </div>
+  <h3>How the kinds point at each other</h3>
+  <p>A reference is the only link between records. Arrows below read "points at".</p>
+  <pre>observation ──metric──▶ metric          trace ──metric──▶ metric
+observation ──source──▶ source          trace ──source──▶ source
+observation ──origin──▶ (mirror row)    trace ──origins[]──▶ (mirror rows)
+lap ──workout──▶ workout (cascade)      set ──workout──▶ workout (cascade)
+set ──exercise──▶ exercise              workout ──plan──▶ plan,  workout ──gear──▶ gear
+labresult ──report──▶ labreport (cascade)   labresult ──metric──▶ metric
+sleep / workout / labreport ──source──▶ source</pre>
+</section>
+
+<section id="form" hidden>
+  <h2>Value forms</h2>
+  <p>Every stored measurement carries a <code>form</code>. The form decides which reducers are legal and how two sources that overlap are combined. This is the one field that keeps a vendor's daily summary out of an average of raw readings.</p>
+  <table>
+    <tr><th>form</th><th>means</th><th>time</th><th>legal reducers</th><th>example</th></tr>
+    <tr><td><code>instant</code></td><td>a reading at one moment</td><td><code>at</code></td><td>avg, min, max, first, last, count, stddev, percentile</td><td>heart rate 62 /min at 07:00</td></tr>
+    <tr><td><code>interval</code></td><td>an amount accrued over a span</td><td><code>at</code>, <code>endsAt</code></td><td>sum, count, min, max of the amounts</td><td>412 steps over [07:00, 07:15)</td></tr>
+    <tr><td><code>counter</code></td><td>a running total since a session start</td><td><code>at</code></td><td>none: the adapter differences it into intervals</td><td>FIT distance 3,210 m so far</td></tr>
+    <tr><td><code>summary</code></td><td>someone's statistic over a stated period</td><td><code>at</code>, <code>endsAt</code>, <code>statistic</code>, <code>period</code></td><td>read as is; never pooled with instants or intervals</td><td>WHOOP recovery 71 % for cycle 9f2k</td></tr>
+  </table>
+  <h3>Try it: what happens in one day bucket</h3>
+  <div class="controls">
+    <label for="formsel">Rows in the bucket</label>
+    <select id="formsel">
+      <option value="instants">720 heart-rate instants plus one nightly average (summary)</option>
+      <option value="intervals">steps from a watch and a phone, overlapping</option>
+      <option value="summaries">two vendor daily summaries from two sources</option>
+    </select>
+  </div>
+  <div id="formdemo"></div>
+</section>
+
+<section id="units" hidden>
+  <h2>Units and quantities</h2>
+  <p>A <code>quantity</code> property holds <code>{value, unit}</code> and, where the kind allows it, a <code>comparator</code>. The value is always a string of exact digits. The unit is a UCUM code from a table the server owns.</p>
+  <pre>weight:
+  type: quantity
+  dimension: mass            # kg, g, [lb_av] are admitted; anything else is refused
+  units: [kg, "[lb_av]"]     # optional narrowing
+
+# a value
+weight: {value: "72.50", unit: kg}</pre>
+  <h3>Try it: convert, filter, refuse</h3>
+  <div class="controls">
+    <label>Stored</label><input id="qv" type="number" value="72.5" step="0.1"><select id="qu"></select>
+    <label>Ask for</label><select id="qt"></select>
+  </div>
+  <div id="unitdemo"></div>
+  <h3>The rules an app can rely on</h3>
+  <table>
+    <tr><th>Rule</th><th>Why</th></tr>
+    <tr><td>Conversion only inside one dimension (mass to mass, length to length)</td><td>a unit table knows kg and lb; it does not know that glucose weighs 180.16 g/mol</td></tr>
+    <tr><td>mg/dL to mmol/L is a <b>derivation</b>, written as a second observation under a second LOINC code, stamped with the formula and version</td><td>the molar mass belongs to the analyte, not the unit; the server never guesses it</td></tr>
+    <tr><td>HbA1c % to mmol/mol uses a method formula, not a ratio</td><td>NGSP and IFCC are both dimensionless but differ by about 30 % if you treat them as a ratio</td></tr>
+    <tr><td>Temperature and temperature difference are two dimensions</td><td>a 0.3 °C deviation from baseline is 0.54 °F, not 32.54 °F</td></tr>
+    <tr><td>Arbitrary units (<code>[IU]</code>) convert to nothing except by prefix</td><td>IU of insulin and IU of vitamin D are different things sharing a symbol</td></tr>
+    <tr><td>An unknown unit on a lab result is kept verbatim, not rejected</td><td>the row still lists by date and code; <code>normalizationFailure</code> says why it has no canonical value</td></tr>
+    <tr><td>A comparator means "the true value is on this side"</td><td>a stored <code>&lt;5</code> matches <code>lt: 10</code>, not <code>lt: 3</code>; it is counted but not averaged</td></tr>
+  </table>
+</section>
+
+<section id="traces" hidden>
+  <h2>Dense samples: traces</h2>
+  <p>One record per sample would cost about 1 KB of changelog per sample. A <b>trace</b> packs one metric, from one source, over one fixed UTC period (an hour for continuous metrics, the session for a workout stream) into one record. The server computes the statistics on write and unpacks the values into the samples index.</p>
+  <div class="controls">
+    <label for="tracesel">Example</label>
+    <select id="tracesel">
+      <option value="hr">Heart rate, every 5 s, one hour (regular)</option>
+      <option value="glucose">CGM glucose, irregular offsets</option>
+      <option value="power">Cycling power, 1 Hz, one session</option>
+    </select>
+  </div>
+  <div class="two">
+    <div><pre id="traceyaml"></pre></div>
+    <div><h3>What the engine does with it</h3><div id="tracenote"></div></div>
+  </div>
+  <h3>Rules in one list</h3>
+  <ul>
+    <li>Identity is composed from source data, never minted: <code>&lt;provider&gt;/&lt;account&gt;/&lt;metric&gt;/&lt;period start&gt;</code>, never a sync page. Re-syncing with a different page size produces identical records.</li>
+    <li>Rewrites are normal (late data, corrections). A rewrite replaces the period whole and must carry a higher <code>revision</code>; a lower one is refused.</li>
+    <li>A trace is split where the UTC offset changes, so every sample knows its civil clock.</li>
+    <li>Size is bounded by sample count and bytes, so a day of 1 Hz data is not a valid period; an hour is.</li>
+    <li>You cannot filter on one sample inside a trace. A value you need to address on its own (a weighing, a lab result) is an <code>observation</code>.</li>
+  </ul>
+</section>
+
+<section id="write" hidden>
+  <h2>Writing data</h2>
+  <p>Three ways in, all through the ordinary write API. There is no health-specific endpoint.</p>
+  <h3>1. One reading, from your app</h3>
+  <pre>PUT /api/v1/ada.example.com/health/observation/scale-2026-10-07T06:41
+Authorization: Bearer &lt;token&gt;
+
+{
+  "properties": {
+    "metric": "weight",
+    "form": "instant",
+    "value": {"value": "72.50", "unit": "kg"},
+    "at": "2026-10-07T06:41:00Z",
+    "utcOffset": 180,
+    "source": "withings-body-plus",
+    "recordingMethod": "automatic"
+  }
+}</pre>
+  <p class="note">A bare id after <code>"metric":</code> is accepted because the property is pinned to the <code>metric</code> kind; the server stores it as <code>{"ref": "ada.example.com/health/metric/weight"}</code>. Writing the same document twice changes nothing: an identical rewrite appends no changelog entry.</p>
+  <h3>2. A vendor's daily number (a summary)</h3>
+  <pre>PUT /api/v1/ada.example.com/health/observation/whoop/george/9f2k/recovery
+
+{
+  "properties": {
+    "metric": "whoop_recovery",
+    "form": "summary",
+    "statistic": "last",
+    "period": "cycle",
+    "periodId": "9f2k",
+    "value": {"value": "71", "unit": "%"},
+    "at": "2026-10-06T22:10:00Z",
+    "endsAt": "2026-10-07T22:30:00Z",
+    "utcOffset": 180,
+    "source": "whoop-4",
+    "origin": "providers.substrate.reamde.dev/whoop/recovery/whoop/george/9f2k",
+    "revision": 4
+  }
+}</pre>
+  <h3>3. An hour of samples (a trace) from a function</h3>
+  <pre>host.effects.put(
+    "ada.example.com/health/trace",
+    f"oura/{account_id}/heart_rate/2026-10-07T06",   # <provider>/<account>/<metric>/<period>
+    properties={
+        "metric": "heart_rate", "source": "oura-ring-gen3", "form": "instant",
+        "at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
+        "utcOffsetStart": 180, "utcOffsetEnd": 180,
+        "unit": "/min", "interval": "PT5S",
+        "values": ["61", "62", None, "60", ...],   # None is a gap
+        "revision": 3,
+        "origins": [heartrate_row_ref],
+    },
+)</pre>
+  <h3>What the server checks on every write</h3>
+  <ul>
+    <li>the unit is in the dimension the property declares; a wrong dimension is a <code>422</code> naming the unit</li>
+    <li>the form is legal for the kind, and a summary has a statistic and a period</li>
+    <li>a trace has exactly one timing form, ordered offsets inside the period, equal array lengths</li>
+    <li>a lab result sets exactly one of value, codedValue, ratio, text, absentReason</li>
+    <li>a lower <code>revision</code> than the stored one is refused</li>
+  </ul>
+</section>
+
+<section id="read" hidden>
+  <h2>Building apps: the aggregate read</h2>
+  <p>Lists and single reads work as for any kind. The new thing is <code>aggregate=</code> on the records route: it reads the samples index (for a metric) or a numeric property (for any kind) and returns buckets of numbers. Build a request below and see the response shape.</p>
+  <div class="controls">
+    <label>Question</label>
+    <select id="qsel">
+      <option value="sleep">How did I sleep this month? (30 rows)</option>
+      <option value="hr">Daily heart rate over a year, in my own days</option>
+      <option value="steps">Daily steps from a watch and a phone</option>
+      <option value="recovery">WHOOP recovery per cycle (vendor summaries)</option>
+      <option value="glucose">Glucose after each meal (session windows)</option>
+      <option value="money">Spend per month (not health at all)</option>
+    </select>
+  </div>
+  <div class="two">
+    <div><h3>Request</h3><pre id="qreq"></pre></div>
+    <div><h3>Response</h3><pre id="qres"></pre></div>
+  </div>
+  <div id="qnote"></div>
+  <h3>The request, field by field</h3>
+  <table>
+    <tr><th>Field</th><th>Values</th><th>Plain words</th></tr>
+    <tr><td><code>metric</code> or <code>property</code></td><td>a metric reference, or a declared numeric property on the filtered kinds</td><td>what number to aggregate</td></tr>
+    <tr><td><code>from</code></td><td><code>raw</code>, <code>summaries</code>, <code>prefer-raw</code></td><td>derive from samples, read the vendor's numbers, or raw where present else the vendor's; never both in one bucket</td></tr>
+    <tr><td><code>range</code></td><td><code>gte</code>, <code>lt</code></td><td>half-open time span, clips samples</td></tr>
+    <tr><td><code>bucket</code></td><td><code>{every}</code>, <code>{calendar, timezone}</code>, <code>{calendar}</code>, <code>{records: filter}</code></td><td>physical windows, a named zone's days, each sample's own civil day, or another record's time span</td></tr>
+    <tr><td><code>reducers</code></td><td><code>avg</code>, <code>sum</code>, <code>min</code>, <code>max</code>, <code>count</code>, <code>first</code>, <code>last</code>, <code>stddev</code>, <code>{percentile}</code>, <code>{durationIn}</code></td><td>checked against the form; <code>sum</code> over heart rate is refused</td></tr>
+    <tr><td><code>unit</code></td><td>a UCUM code in the metric's dimension</td><td>convert the result, not the samples</td></tr>
+    <tr><td><code>sources</code></td><td><code>separate</code>, <code>{priority: [...]}</code>, <code>summaries</code></td><td>one row per source, or a winner per stored interval, or one vendor's summary per period</td></tr>
+    <tr><td><code>fill</code>, <code>rolling</code></td><td><code>null</code> / <code>zero</code> / <code>locf</code>; <code>{buckets, reducers}</code></td><td>dense buckets marked synthetic; rolling windows over buckets</td></tr>
+    <tr><td><code>budget</code></td><td><code>maxBuckets</code>, <code>maxSamples</code></td><td>a request over budget is refused up front, never silently cut</td></tr>
+  </table>
+  <p class="note">Functions get the same read as <code>host.records.aggregate(...)</code> and an agent gets it through its <code>query</code> tool, so an assistant answers "how did I sleep this month" from 30 numbers.</p>
+</section>
+
+<section id="labs" hidden>
+  <h2>Labs</h2>
+  <p>A lab report is a <code>labreport</code>; each analyte is a <code>labresult</code> pointing at it. Lab values need more than a number: a comparator, coded answers, ratios, text, an absent reason, the lab's own ranges and flags, and a status that moves when a result is corrected.</p>
+  <div class="controls"><label for="labsel">Result</label><select id="labsel">
+    <option value="glucose">Fasting glucose 92 mg/dL (plain quantity)</option>
+    <option value="crp">hs-CRP &lt;0.3 mg/L (below detection)</option>
+    <option value="ana">ANA negative (coded)</option>
+    <option value="titre">ANA titre 1:80 (ratio)</option>
+    <option value="unknown">A unit the table does not know</option>
+  </select></div>
+  <pre id="labyaml"></pre>
+  <h3>What a trend view must do</h3>
+  <ul>
+    <li>Group by the metric's <b>compatibility class</b> (analyte, LOINC property, specimen, method), not by name: serum glucose in mg/dL and in mmol/L are two LOINC codes and one class; serum and whole-blood glucose are two classes.</li>
+    <li>Show the range that came with each result; the catalogue range is a labelled fallback.</li>
+    <li>Count bounded values (<code>&lt;0.3</code>) but leave them out of averages, and say so.</li>
+    <li>A corrected result is the same record with <code>status: corrected</code>; the changelog keeps the old value.</li>
+  </ul>
+</section>
+
+<section id="time" hidden>
+  <h2>Time and days</h2>
+  <p>Every record carries a UTC instant and the UTC offset in force where the user was (<code>utcOffset</code>, in minutes). A "day" is then one of four things, and the request names which.</p>
+  <div class="controls"><label for="daysel">A sample at 2026-03-29 23:30 UTC, offset +180 (Athens, the night the clocks change)</label></div>
+  <table>
+    <tr><th>Mode</th><th>Request</th><th>That sample lands in</th><th>Use for</th></tr>
+    <tr><td>Physical window</td><td><code>{"every": "PT1H"}</code></td><td>the 23:00 to 00:00 UTC hour</td><td>charts, intraday</td></tr>
+    <tr><td>Named zone day</td><td><code>{"calendar": "day", "timezone": "Europe/Athens"}</code></td><td>2026-03-30, a 23-hour day</td><td>reports in your home zone</td></tr>
+    <tr><td>Recorded-local day</td><td><code>{"calendar": "day"}</code></td><td>2026-03-30, because the sample's own offset says 02:30 local</td><td>what the user experienced, even while travelling</td></tr>
+    <tr><td>Provider period</td><td><code>{"records": {"kinds": ["ada.example.com/health/sleep"]}}</code></td><td>whichever sleep or cycle spans it</td><td>resting HR during sleep, WHOOP cycles, meals</td></tr>
+  </table>
+  <ul>
+    <li>Sleep belongs to the day you wake up: a sleep record declares <code>dayAnchor: end</code>.</li>
+    <li>Vendor days that start at 04:00 (Oura activity) use <code>"offset": "PT4H"</code> on a calendar bucket.</li>
+    <li>A sample with no offset is bucketed by the request's zone when one is named, and refused otherwise. Never by zero, never by the server's clock.</li>
+    <li>Two WHOOP cycles can share one calendar date; they stay two summaries because each carries its own <code>periodId</code>.</li>
+  </ul>
+</section>
+
+</main>
+<footer>Source: docs/plans/health-data.md (revised 2026-10-08 after three reviews). Sample values are illustrative. Nothing on this page is built yet.</footer>
+
+<script>
+(function(){
+  // tabs
+  const tabs = document.querySelectorAll('nav button');
+  const sections = document.querySelectorAll('main > section');
+  function show(id){ tabs.forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===id)); sections.forEach(s=>s.hidden = s.id!==id); window.scrollTo(0,0); }
+  tabs.forEach(b=>b.addEventListener('click',()=>show(b.dataset.tab)));
+
+  // flow
+  const flow = [
+    {t:'Source', h:'<p>Data originates in a vendor cloud, a device export, a file, or your own app. Each source becomes a <code>source</code> record so every value can say where it came from and the user can rank sources per metric.</p><pre>kind: ada.example.com/health/source\nmetadata: {id: oura-ring-gen3}\ndata:\n  properties:\n    name: Oura Ring Gen3\n    kind: ring\n    account: providers.substrate.reamde.dev/oura/account/george\n    priorities: {heart_rate: 1, steps: 3}</pre>'},
+    {t:'Mirror', h:'<p>A provider sync writes one record per upstream object, in the vendor\'s own field names and units, with no derived values. This is the existing house rule and the WHOOP provider already does it.</p><pre>kind: providers.substrate.reamde.dev/whoop/recovery\nmetadata: {id: whoop/george/9f2k}\ndata:\n  properties:\n    cycle: {ref: providers.substrate.reamde.dev/whoop/cycle/whoop/george/9f2k}\n    score: {recoveryScore: 71, restingHeartRate: 49, hrvRmssdMilli: 62.4, spo2Percentage: 97.1, skinTempCelsius: 33.9}\n    scoreState: scored\n    at: 2026-10-07T05:12:00Z</pre>'},
+    {t:'Adapter', h:'<p>A small Python function in an adapter package (<code>healthwhoop</code>) runs when a mirror row is written. It computes the full set of health records that row implies, writes them with an <code>origin</code> back to the row and a <code>revision</code>, and deletes any it no longer implies. Units are converted here (kJ to kcal, ms to ms, fraction to percent) with a shared module.</p><pre>def main(input, host):\n    row = input["envelope"]["record"]\n    score = row["properties"]["score"]\n    rid = lambda role: f"whoop/{account_id}/{cycle_id}/{role}"   # composed from source ids, never minted\n    for metric, key, unit in [("whoop_recovery","recoveryScore","%"),\n                              ("resting_heart_rate","restingHeartRate","/min"),\n                              ("hrv_rmssd_night","hrvRmssdMilli","ms")]:\n        host.effects.put("ada.example.com/health/observation", rid(metric), properties={\n            "metric": metric, "form": "summary", "statistic": "last",\n            "period": "cycle", "periodId": cycle_id,\n            "value": {"value": str(score[key]), "unit": unit},\n            "at": cycle_start, "endsAt": cycle_end, "utcOffset": offset_minutes,\n            "source": "whoop-4", "origin": row_ref, "revision": row["version"]})</pre>'},
+    {t:'Health records', h:'<p>The user-owned kinds. Nothing vendor-specific survives except the <code>origin</code> pointer and vendor-named metrics for scores that have no cross-vendor meaning.</p><pre>kind: ada.example.com/health/observation\nmetadata: {id: whoop/george/9f2k/hrv_rmssd_night}\ndata:\n  properties:\n    metric: {ref: ada.example.com/health/metric/hrv_rmssd_night}\n    form: summary\n    statistic: last\n    period: cycle\n    periodId: 9f2k\n    value: {value: "62.4", unit: ms}\n    at: 2026-10-06T22:10:00Z\n    endsAt: 2026-10-07T22:30:00Z\n    utcOffset: 180\n    source: {ref: ada.example.com/health/source/whoop-4}\n    origin: {ref: providers.substrate.reamde.dev/whoop/recovery/whoop/george/9f2k}\n    revision: 4</pre>'},
+    {t:'Index', h:'<p>On the same write, the fold unpacks the value into a narrow <code>samples</code> row and updates the 15-minute rollup rows it touches. The columns carry the form, the unit, the offset and the kind, so an aggregate never has to look anything up and a grant on kinds still applies.</p><pre>samples (repository, kind, record_id, metric, source, form, ts, ts_end,\n         utc_offset_min, unit, value, value_base, statistic, bounded)\n\nsample_rollups (repository, kind, metric, source, form, utc_offset_min, bucket15,\n                n, sum, min, max, mean, m2, first_ts, first_value,\n                last_ts, last_value, covered_ms)   # instants and intervals only</pre><p>Both tables are derived: delete them and a rebuild from the changelog reproduces them byte for byte.</p>'},
+    {t:'Read', h:'<p>Three reads. A list (<code>GET /api/v1/records?filter=...</code>) returns records, as for any kind. An aggregate (<code>&amp;aggregate=...</code>) returns buckets of numbers. A downsample (<code>&amp;downsample=...</code>) returns the points a chart needs. Functions and agents reach the same reads.</p><pre>GET /api/v1/records?filter={"kinds":["ada.example.com/health/sleep"],\n  "properties":{"at":{"gte":"2026-09-01T00:00:00Z","lt":"2026-10-01T00:00:00Z"}}}\n→ 30 sleep records\n\nGET /api/v1/records?aggregate={"metric":{"ref":".../metric/hrv_rmssd_night"},\n  "from":"summaries","range":{...},"bucket":{"calendar":"day"},"reducers":["last"]}\n→ 30 rows of {start, end, values: {last: 62.4}, from: "summaries"}</pre>'}
+  ];
+  const steps = document.querySelectorAll('#flowsteps .step');
+  const detail = document.getElementById('flowdetail');
+  function showStep(i){ steps.forEach(s=>s.setAttribute('aria-selected', s.dataset.step==i)); detail.innerHTML = '<h3>'+flow[i].t+'</h3>'+flow[i].h; }
+  steps.forEach(s=>s.addEventListener('click',()=>showStep(+s.dataset.step)));
+  showStep(0);
+
+  // kinds
+  const kinds = {
+    metric: {d:'<p>The definition of a measurable thing: an analyte, a sensor channel, a vendor score. The catalogue ships about 70 wearable metrics and 240 lab markers as these records; you add one by writing a record.</p><p>The metric is a guide for apps. The engine never reads it to interpret a stored number; the number carries its own form and unit.</p>', y:`kind: ada.example.com/health/metric
+metadata: {id: glucose}
+data:
+  properties:
+    name: Glucose (serum, mass concentration)
+    codes:
+      - {system: loinc, code: "2345-7", display: "Glucose [Mass/volume] in Serum or Plasma"}
+      - {system: healthkit, code: HKQuantityTypeIdentifierBloodGlucose}
+    loincParts: {component: Glucose, property: MCnc, system: Ser/Plas, scale: Qn}
+    group: LG5900-7
+    compatibility: glucose-serum
+    dimension: mass-concentration
+    unit: mg/dL
+    form: instant
+    reducers: [avg, min, max, stddev, percentile, durationIn]
+    molarMass: "180.16"
+    conversions:
+      - {target: glucose_molar, formula: mass-to-molar, version: 1}
+    referenceLow: {value: "70", unit: mg/dL}
+    referenceHigh: {value: "99", unit: mg/dL}`},
+    observation: {d:'<p>One reading of one metric: a weighing, a blood pressure, a nightly HRV, a vendor\'s daily score. It carries its form, its unit, who measured it, and where it came from.</p><p>A blood pressure is one observation with two <code>components</code>, so the two numbers share one acquisition.</p>', y:`kind: ada.example.com/health/observation
+metadata: {id: omron-2026-10-07T07:02}
+data:
+  properties:
+    metric: {ref: ada.example.com/health/metric/blood_pressure}
+    form: instant
+    components:
+      - {metric: {ref: ada.example.com/health/metric/systolic}, value: {value: "118", unit: "mm[Hg]"}}
+      - {metric: {ref: ada.example.com/health/metric/diastolic}, value: {value: "76", unit: "mm[Hg]"}}
+    at: 2026-10-07T07:02:00Z
+    utcOffset: 180
+    source: {ref: ada.example.com/health/source/omron-m7}
+    recordingMethod: automatic
+    context: {bodyPosition: sitting, measurementSite: left_upper_arm}
+    revision: 1`},
+    trace: {d:'<p>One metric from one source over one fixed period, with the samples packed as arrays. See the "Dense samples" tab for the rules.</p>', y:`kind: ada.example.com/health/trace
+metadata: {id: oura/george/heart_rate/2026-10-07T06}
+data:
+  properties:
+    metric: {ref: ada.example.com/health/metric/heart_rate}
+    source: {ref: ada.example.com/health/source/oura-ring-gen3}
+    form: instant
+    at: 2026-10-07T06:00:00Z
+    endsAt: 2026-10-07T07:00:00Z
+    utcOffsetStart: 180
+    utcOffsetEnd: 180
+    unit: /min
+    interval: PT5S
+    values: ["61", "62", null, "60", "59", ...]   # 720 entries
+    revision: 3
+    origins:
+      - {ref: providers.substrate.reamde.dev/oura/heartrate/oura/george/2026-10-07T06}
+status:
+  stats: {count: 718, min: "48", max: "131", mean: 61.4, m2: 59032.1,
+          first: {at: 2026-10-07T06:00:00Z, value: "61"},
+          last: {at: 2026-10-07T06:59:55Z, value: "58"}, coverage: PT59M50S}`},
+    source: {d:'<p>A device, app, account or lab. The user ranks sources per metric here; the aggregate read uses that order when asked to pick a winner.</p>', y:`kind: ada.example.com/health/source
+metadata: {id: polar-h10}
+data:
+  properties:
+    name: Polar H10
+    kind: chest_strap
+    manufacturer: Polar
+    model: H10
+    account: {ref: providers.substrate.reamde.dev/polar/account/george}
+    priorities: {heart_rate: 1, rr_interval: 1}`},
+    sleep: {d:'<p>One night or nap. Stages are one layer (non-overlapping within a source) and <code>inBed</code> is a separate layer, because Apple\'s in-bed span overlaps its stages. Vendor scores are separate observations of vendor metrics.</p>', y:`kind: ada.example.com/health/sleep
+metadata: {id: oura/george/a8f2}
+data:
+  properties:
+    at: 2026-10-06T22:41:00Z
+    endsAt: 2026-10-07T05:58:00Z
+    utcOffsetStart: 180
+    utcOffsetEnd: 180
+    isNap: false
+    dayAnchor: end
+    inBed: [{at: 2026-10-06T22:30:00Z, endsAt: 2026-10-07T06:05:00Z}]
+    stages:
+      - {at: 2026-10-06T22:41:00Z, endsAt: 2026-10-06T22:55:00Z, stage: light}
+      - {at: 2026-10-06T22:55:00Z, endsAt: 2026-10-06T23:40:00Z, stage: deep}
+      - {at: 2026-10-06T23:40:00Z, endsAt: 2026-10-07T00:10:00Z, stage: rem}
+      # ...
+    stageMapping: {vendor: oura, version: 2}
+    timeAsleep: {value: "25020", unit: s}
+    timeInBed: {value: "27300", unit: s}
+    efficiency: {value: "92", unit: "%"}
+    lowestHeartRate: {value: "46", unit: /min}
+    averageHrv: {value: "58", unit: ms}
+    source: {ref: ada.example.com/health/source/oura-ring-gen3}
+    origin: {ref: providers.substrate.reamde.dev/oura/sleep/oura/george/a8f2}
+    revision: 2`},
+    workout: {d:'<p>One executed session. The thresholds and zones of that day are copied onto it so a later FTP change does not rewrite history. Per-second streams are <code>trace</code> records whose period is this session; laps and sets are child records.</p>', y:`kind: ada.example.com/health/workout
+metadata: {id: fit-2026-10-05-ride-01}
+data:
+  properties:
+    sport: cycling.road
+    sportFacets: [outdoor]
+    sportSource: {system: fit, sport: cycling, subSport: road, mappingVersion: 1}
+    at: 2026-10-05T07:10:00Z
+    endsAt: 2026-10-05T09:02:00Z
+    utcOffsetStart: 180
+    utcOffsetEnd: 180
+    elapsed: PT1H52M
+    timer: PT1H44M
+    moving: PT1H41M
+    distance: {value: "58340", unit: m}
+    ascent: {value: "612", unit: m}
+    energy: {value: "1210", unit: kcal}
+    averageHeartRate: {value: "142", unit: /min}
+    normalizedPower: {value: "214", unit: W}
+    thresholds: {ftp: {value: "255", unit: W}, lthr: {value: "168", unit: /min}, maxHeartRate: {value: "188", unit: /min}}
+    zoneTimes:
+      - {kind: power, zone: 2, duration: PT41M}
+      - {kind: power, zone: 3, duration: PT38M}
+    rpe: 7
+    file: {digest: blob-sha256-9d1c...}
+    gear: {ref: ada.example.com/health/gear/canyon-ultimate}
+    source: {ref: ada.example.com/health/source/garmin-edge-840}
+    revision: 1`},
+    set: {d:'<p>One strength set. The load carries a <code>loadMode</code> rather than a negative number for assistance, and the vendor\'s reported load stays verbatim.</p>', y:`kind: ada.example.com/health/set
+metadata: {id: hevy-w81/e2/s3}
+data:
+  properties:
+    workout: {ref: ada.example.com/health/workout/hevy-w81}
+    exercise: {ref: ada.example.com/health/exercise/barbell-back-squat}
+    index: 3
+    setType: working
+    reps: 5
+    load: {value: "100", unit: kg}
+    loadMode: external
+    loadSource: {value: "100", unit: kg}
+    rpe: 8
+    at: 2026-10-04T17:22:00Z
+    origin: {ref: providers.substrate.reamde.dev/hevy/workout/hevy-w81}`},
+    labreport: {d:'<p>One report from one lab, the FHIR DiagnosticReport. The PDF is a blob. OCR imports start in <code>review: pending</code>.</p>', y:`kind: ada.example.com/health/labreport
+metadata: {id: quest-2026-09-18-A4471}
+data:
+  properties:
+    lab: Quest Diagnostics
+    accession: A4471-22
+    orderedAt: 2026-09-15T00:00:00Z
+    issuedAt: 2026-09-18T14:02:00Z
+    status: final
+    file: {digest: blob-sha256-5e7a...}
+    source: {ref: ada.example.com/health/source/quest}
+    review: reviewed`},
+    labresult: {d:'<p>One analyte result, the FHIR Observation. See the "Labs" tab for the value shapes.</p>', y:`kind: ada.example.com/health/labresult
+metadata: {id: quest-2026-09-18-A4471/2345-7}
+data:
+  properties:
+    report: {ref: ada.example.com/health/labreport/quest-2026-09-18-A4471}
+    metric: {ref: ada.example.com/health/metric/glucose}
+    code: {system: loinc, code: "2345-7", display: "Glucose"}
+    value: {value: "92", unit: mg/dL}
+    sourceUnit: mg/dL
+    sourceValue: "92"
+    specimen: {type: serum, collectedAt: 2026-09-17T07:45:00Z, fasting: true}
+    referenceRanges: [{low: {value: "65", unit: mg/dL}, high: {value: "99", unit: mg/dL}, text: "65-99"}]
+    interpretation: [N]
+    at: 2026-09-17T07:45:00Z
+    status: final
+    revision: 1`},
+    tag: {d:'<p>A journal event: alcohol, caffeine, illness, travel, a note. The thing you correlate against.</p>', y:`kind: ada.example.com/health/tag
+metadata: {id: 7hq2kd9s3m1a}
+data:
+  properties:
+    kind: alcohol
+    at: 2026-10-04T20:30:00Z
+    endsAt: 2026-10-04T23:00:00Z
+    value: {value: "3", unit: "{drink}"}
+    note: birthday dinner
+    source: {ref: ada.example.com/health/source/manual}`}
+  };
+  const ksel = document.getElementById('kindsel');
+  Object.keys(kinds).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; ksel.appendChild(o); });
+  function showKind(){ document.getElementById('kinddesc').innerHTML = kinds[ksel.value].d; document.getElementById('kindyaml').textContent = kinds[ksel.value].y; }
+  ksel.addEventListener('change', showKind); showKind();
+
+  // form demo
+  const formDemos = {
+    instants: `<p>Rows: 720 <code>instant</code> heart-rate samples (avg 61) and one <code>summary</code> row "nightly average 54" from the vendor.</p>
+<table><tr><th>Request</th><th>Result</th><th>Why</th></tr>
+<tr><td><code>from: raw, reducers: [avg]</code></td><td class="ok">61 (count 720)</td><td>the summary row is ignored</td></tr>
+<tr><td><code>from: summaries, reducers: [avg]</code></td><td class="ok">54 (count 1, labelled "mean of summaries")</td><td>the 720 samples are ignored</td></tr>
+<tr><td><code>from: raw, reducers: [sum]</code></td><td class="bad">422: sum is not legal for form instant</td><td>heart rate is not an amount</td></tr>
+<tr><td>the first-draft design</td><td class="bad">61 pulled toward 54 by one row</td><td>this is the bug the form field prevents</td></tr></table>`,
+    intervals: `<p>Rows: watch steps 1,000 over 07:00 to 12:00; phone steps 2,000 over 13:00 to 19:00; both are <code>interval</code> amounts. Watch has priority 1, phone priority 2.</p>
+<table><tr><th>Request</th><th>Result</th><th>Why</th></tr>
+<tr><td><code>sources: separate</code></td><td class="ok">watch 1,000; phone 2,000</td><td>one row per source</td></tr>
+<tr><td><code>sources: {priority: [watch, phone]}</code>, day bucket</td><td class="ok">3,000</td><td>the winner is picked per stored interval; the phone's afternoon is uncovered by the watch, so it counts</td></tr>
+<tr><td>same, hour buckets</td><td class="ok">still totals 3,000</td><td>priority resolves before bucketing, so the total cannot change with the bucket width</td></tr>
+<tr><td>"first source with data per bucket" (first draft)</td><td class="bad">1,000</td><td>the lesson Open Wearables published: 4,157 against Apple's 14,079</td></tr></table>`,
+    summaries: `<p>Rows: WHOOP recovery 71 % for cycle 9f2k and Oura readiness 83 for day 2026-10-07. Both are <code>summary</code> rows of two different vendor metrics.</p>
+<table><tr><th>Request</th><th>Result</th><th>Why</th></tr>
+<tr><td><code>metric: whoop_recovery, from: summaries</code></td><td class="ok">71</td><td>a vendor score is its own metric</td></tr>
+<tr><td><code>metric: oura_readiness, from: summaries</code></td><td class="ok">83</td><td>never mapped onto WHOOP's</td></tr>
+<tr><td>a "readiness" metric pooling both</td><td class="bad">not possible: there is no such metric</td><td>the scores have no cross-vendor meaning, so the catalogue does not pretend they do</td></tr></table>`
+  };
+  const fsel = document.getElementById('formsel');
+  function showForm(){ document.getElementById('formdemo').innerHTML = formDemos[fsel.value]; }
+  fsel.addEventListener('change', showForm); showForm();
+
+  // units demo
+  const units = {
+    kg:{dim:'mass', f:1000}, g:{dim:'mass', f:1}, '[lb_av]':{dim:'mass', f:453.59237},
+    m:{dim:'length', f:1}, cm:{dim:'length', f:0.01}, '[in_i]':{dim:'length', f:0.0254},
+    'mg/dL':{dim:'mass concentration', f:1}, 'mmol/L':{dim:'substance concentration', f:1},
+    Cel:{dim:'temperature', affine:true}, '[degF]':{dim:'temperature', affine:true}, K:{dim:'temperature difference', f:1},
+    kcal:{dim:'energy', f:4184}, kJ:{dim:'energy', f:1000},
+    '/min':{dim:'rate', f:1}
+  };
+  const qu=document.getElementById('qu'), qt=document.getElementById('qt'), qv=document.getElementById('qv');
+  Object.keys(units).forEach(u=>{ for (const s of [qu,qt]) { const o=document.createElement('option'); o.value=u; o.textContent=u; s.appendChild(o);} });
+  qu.value='kg'; qt.value='[lb_av]';
+  function convert(v, a, b){
+    const A=units[a], B=units[b];
+    if (A.dim!==B.dim) return {refused:`refused: ${a} is ${A.dim}, ${b} is ${B.dim}. Conversion only happens inside one dimension.`+(A.dim==='mass concentration'&&B.dim==='substance concentration'?' mg/dL to mmol/L is a derivation using the analyte\'s molar mass, written as a second observation.':'')};
+    if (A.affine||B.affine){ let c = a==='Cel'? v : (v-32)*5/9; let out = b==='Cel'? c : c*9/5+32; return {value: out, note:'affine unit: an offset applies, so sum over this dimension is refused and a deviation from baseline must be stored as a temperature difference (K) instead.'}; }
+    return {value: v*A.f/B.f};
+  }
+  // el builds an element from text and child nodes: a value the reader
+  // typed is only ever a text node, never markup.
+  function el(tag, cls, ...kids){
+    const n=document.createElement(tag); if (cls) n.className=cls;
+    for (const k of kids) n.append(k);
+    return n;
+  }
+  function showUnit(){
+    const v=parseFloat(qv.value)||0, r=convert(v, qu.value, qt.value);
+    const out=document.getElementById('unitdemo');
+    if (r.refused) { out.replaceChildren(el('div','note warn', r.refused)); return; }
+    const shown=String(Number(r.value.toPrecision(6)));
+    const note=el('div','note', 'Stored ', el('code','', `{value: "${qv.value}", unit: ${qu.value}}`), ' reads as ',
+      el('b','', `${shown} ${qt.value}`), ' when the request asks for ', el('code','', `unit: ${qt.value}`), '. The stored digits never change.');
+    if (r.note) note.append(el('br',''), r.note);
+    const filter=el('p','', 'A filter ', el('code','', `{"weight": {"gte": {"value": "${shown}", "unit": "${qt.value}"}}}`),
+      ' matches this record: the comparison converts with exact rational arithmetic, never a rounded number.');
+    out.replaceChildren(note, filter);
+  }
+  [qu,qt,qv].forEach(e=>e.addEventListener('input', showUnit)); showUnit();
+
+  // traces
+  const traces = {
+    hr: {y:`kind: ada.example.com/health/trace
+metadata: {id: oura/george/heart_rate/2026-10-07T06}
+data:
+  properties:
+    metric: heart_rate
+    source: oura-ring-gen3
+    form: instant
+    at: 2026-10-07T06:00:00Z
+    endsAt: 2026-10-07T07:00:00Z
+    utcOffsetStart: 180
+    utcOffsetEnd: 180
+    unit: /min
+    interval: PT5S           # regular: 720 slots
+    values: ["61","62",null,"60","59","58",...]
+    revision: 3
+    origins: [{ref: providers.substrate.reamde.dev/oura/heartrate/...}]`, n:`<ul><li>Validates: one timing form (<code>interval</code>), 720 slots fit the hour, nulls are gaps, unit is in the metric's dimension.</li><li>Computes <code>stats</code> (count 718, min 48, max 131, mean 61.4, first, last, coverage) as a managed property; you cannot write it.</li><li>Unpacks 718 rows into <code>samples</code> with <code>ts = at + i * 5 s</code>, and recomputes the four 15-minute rollup rows for this source, metric and offset.</li><li>Size: about 8 KB of JSON. One changelog line instead of 720.</li></ul>`},
+    glucose: {y:`kind: ada.example.com/health/trace
+metadata: {id: dexcom/george/glucose/2026-10-07T06}
+data:
+  properties:
+    metric: glucose
+    source: dexcom-g7
+    form: instant
+    at: 2026-10-07T06:00:00Z
+    endsAt: 2026-10-07T07:00:00Z
+    utcOffsetStart: 180
+    utcOffsetEnd: 180
+    unit: mg/dL
+    offsets: [12000, 312000, 611000, 912000, ...]   # ms from at, irregular
+    values: ["98","101","104","103",...]
+    revision: 1
+    origins: [{ref: providers.substrate.reamde.dev/dexcom/egv/...}, ...]`, n:`<ul><li>Irregular form: <code>offsets</code> and <code>values</code> must have the same length and the offsets must be ordered and inside the hour.</li><li>Dexcom's out-of-range status flags ("LOW", "HIGH") are not numbers; the adapter writes null here and a separate <code>tag</code> or a bounded observation for the flag.</li><li>A later Dexcom backfill that adds a reading to this hour rewrites the whole trace at <code>revision: 2</code>.</li></ul>`},
+    power: {y:`kind: ada.example.com/health/trace
+metadata: {id: fit-2026-10-05-ride-01/power}
+data:
+  properties:
+    metric: power
+    source: garmin-edge-840
+    form: instant
+    session: {ref: ada.example.com/health/workout/fit-2026-10-05-ride-01}
+    at: 2026-10-05T07:10:00Z
+    endsAt: 2026-10-05T09:02:00Z
+    utcOffsetStart: 180
+    utcOffsetEnd: 180
+    unit: W
+    interval: PT1S           # 6,720 slots
+    values: ["0","0","145","188",...]
+    revision: 1
+    origins: [{ref: ada.example.com/health/workout/fit-2026-10-05-ride-01}]`, n:`<ul><li>The period is the session, not an hour, so a chart of the ride reads one record per channel (power, heart rate, cadence, speed, altitude, position).</li><li>About 40 KB of JSON per channel; FIT's distance counter is differenced into <code>interval</code> amounts by the importer, and the FIT file itself stays on the workout as a blob.</li><li>A session-scoped aggregate (<code>bucket: {records: {ids: [this workout]}}</code>) gives normalized power and zone time without the client touching the arrays.</li></ul>`}
+  };
+  const tsel=document.getElementById('tracesel');
+  function showTrace(){ document.getElementById('traceyaml').textContent=traces[tsel.value].y; document.getElementById('tracenote').innerHTML=traces[tsel.value].n; }
+  tsel.addEventListener('change', showTrace); showTrace();
+
+  // aggregate demo
+  const Q = {
+    sleep: {req:`GET /api/v1/records
+  ?filter={"kinds":["ada.example.com/health/sleep"]}
+  &aggregate={
+    "property": "timeAsleep",
+    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+    "bucket": {"calendar": "day"},
+    "reducers": ["sum", "count"],
+    "unit": "h"
+  }`, res:`{
+  "aggregate": {
+    "selector": {"property": "timeAsleep", "kinds": ["ada.example.com/health/sleep"]},
+    "unit": "h", "timeMode": "recorded-local", "bucket": {"calendar": "day"},
+    "exact": true, "head": 48211, "generation": "7f3a0c2e9b1d4e6f",
+    "rows": [
+      {"start": "2026-09-01T00:00:00+03:00", "end": "2026-09-02T00:00:00+03:00",
+       "values": {"sum": 7.1, "count": 1}},
+      {"start": "2026-09-02T00:00:00+03:00", "end": "2026-09-03T00:00:00+03:00",
+       "values": {"sum": 6.4, "count": 1}},
+      ... 28 more
+    ]
+  }
+}`, note:`<p class="note">A sleep record binds <code>dayAnchor: end</code>, so a night that starts on the 1st and ends on the 2nd lands in the 2nd. This is the records path (a declared quantity property on a kind), so the numbers are exact, not float.</p>`},
+    hr: {req:`GET /api/v1/records
+  ?aggregate={
+    "metric": {"ref": "ada.example.com/health/metric/heart_rate"},
+    "from": "raw",
+    "range": {"gte": "2026-01-01T00:00:00Z", "lt": "2027-01-01T00:00:00Z"},
+    "bucket": {"calendar": "day"},
+    "reducers": ["avg", "min", "max", "count", {"percentile": 0.05}],
+    "unit": "/min",
+    "sources": "separate",
+    "budget": {"maxBuckets": 400, "maxSamples": 10000000}
+  }`, res:`{
+  "aggregate": {
+    "metric": {"ref": "ada.example.com/health/metric/heart_rate"},
+    "unit": "/min", "timeMode": "recorded-local", "from": "raw", "exact": false,
+    "sources": [{"ref": ".../source/oura-ring-gen3"}],
+    "rows": [
+      {"start": "2026-03-29T00:00:00+02:00", "end": "2026-03-30T00:00:00+03:00",
+       "source": {"ref": ".../source/oura-ring-gen3"}, "from": "raw",
+       "values": {"avg": 61.2, "min": 48, "max": 151, "count": 16560, "percentile": 50},
+       "units": {"avg": "/min", "min": "/min", "max": "/min", "count": null, "percentile": "/min"},
+       "coverage": "PT22H58M"},
+      ...
+    ],
+    "head": 48211, "generation": "7f3a0c2e9b1d4e6f"
+  }
+}`, note:`<p class="note">No <code>timezone</code> in the bucket, so each sample's own offset decides its day. The 2026-03-29 row is 23 hours long (the clocks changed) and its <code>end</code> carries the new offset, so a caller can see it. avg, min, max and count come from the 15-minute rollups; the percentile scanned the samples under the budget.</p>`},
+    steps: {req:`GET /api/v1/records
+  ?aggregate={
+    "metric": {"ref": "ada.example.com/health/metric/steps"},
+    "from": "raw",
+    "range": {"gte": "2026-10-01T00:00:00Z", "lt": "2026-10-08T00:00:00Z"},
+    "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+    "reducers": ["sum"],
+    "sources": {"priority": [".../source/apple-watch", ".../source/iphone"]},
+    "fill": "zero"
+  }`, res:`{
+  "aggregate": {
+    "metric": {"ref": "ada.example.com/health/metric/steps"},
+    "unit": "{steps}", "timeMode": "zone", "timezone": "Europe/Athens", "from": "raw",
+    "sourcePolicy": {"priority": [".../source/apple-watch", ".../source/iphone"], "resolvedPer": "stored interval"},
+    "rows": [
+      {"start": "2026-10-01T00:00:00+03:00", "end": "2026-10-02T00:00:00+03:00",
+       "values": {"sum": 14079}, "sources": [".../apple-watch", ".../iphone"], "coverage": "PT15H20M"},
+      {"start": "2026-10-02T00:00:00+03:00", "end": "2026-10-03T00:00:00+03:00",
+       "values": {"sum": 0}, "synthetic": true},
+      ...
+    ]
+  }
+}`, note:`<p class="note">Steps are <code>interval</code> amounts, so <code>sum</code> is legal. The watch wins wherever it has an interval; the phone fills the spans the watch did not cover. The day with no data is present because of <code>fill: zero</code> and is marked <code>synthetic</code>.</p>`},
+    recovery: {req:`GET /api/v1/records
+  ?aggregate={
+    "metric": {"ref": "ada.example.com/health/metric/whoop_recovery"},
+    "from": "summaries",
+    "range": {"gte": "2026-09-01T00:00:00Z", "lt": "2026-10-01T00:00:00Z"},
+    "bucket": {"records": {"kinds": ["providers.substrate.reamde.dev/whoop/cycle"]}},
+    "reducers": ["last"]
+  }`, res:`{
+  "aggregate": {
+    "metric": {"ref": "ada.example.com/health/metric/whoop_recovery"},
+    "unit": "%", "timeMode": "records", "from": "summaries",
+    "rows": [
+      {"record": {"ref": "providers.substrate.reamde.dev/whoop/cycle/whoop/george/9f2k", "version": 6},
+       "start": "2026-09-30T22:10:00+03:00", "end": "2026-10-01T22:30:00+03:00",
+       "values": {"last": 71}, "from": "summaries"},
+      {"record": {"ref": ".../cycle/9f2j", "version": 4},
+       "start": "2026-09-29T21:55:00+03:00", "end": "2026-09-30T22:10:00+03:00",
+       "values": {"last": 64}, "from": "summaries"},
+      ...
+    ]
+  }
+}`, note:`<p class="note">This is the "rollups from pre-rolled data" case: the vendor's number is read as is, one per cycle, bucketed by the cycle record itself. Two cycles on one calendar date are two rows. Asking for <code>from: raw</code> here returns an empty result, because WHOOP exposes no raw samples; <code>prefer-raw</code> would fall back to these summaries per bucket and say so.</p>`},
+    glucose: {req:`GET /api/v1/records
+  ?aggregate={
+    "metric": {"ref": "ada.example.com/health/metric/glucose"},
+    "from": "raw",
+    "range": {"gte": "2026-10-01T00:00:00Z", "lt": "2026-10-08T00:00:00Z"},
+    "bucket": {"records": {"kinds": ["ada.example.com/health/tag"],
+                           "properties": {"kind": {"eq": "meal"}}},
+               "window": {"before": "PT15M", "after": "PT2H"}},
+    "reducers": ["first", "max", "last", {"durationIn": ["140", null], "hold": "PT10M"}],
+    "unit": "mmol/L",
+    "budget": {"maxRecords": 50}
+  }`, res:`{
+  "aggregate": {
+    "metric": {"ref": "ada.example.com/health/metric/glucose"},
+    "unit": "mmol/L", "timeMode": "records", "from": "raw", "exact": false,
+    "rows": [
+      {"record": {"ref": "ada.example.com/health/tag/7hq2kd9s3m1a", "version": 1},
+       "start": "2026-10-04T12:15:00+03:00", "end": "2026-10-04T14:30:00+03:00",
+       "values": {"first": 5.3, "max": 8.9, "last": 6.1, "durationIn": "PT35M"},
+       "units": {"first": "mmol/L", "max": "mmol/L", "last": "mmol/L", "durationIn": null},
+       "nonAdditive": true},
+      ...
+    ]
+  }
+}`, note:`<p class="note">Each meal tag's span, widened by the window, is one bucket. The stored unit is mg/dL; the request asked for mmol/L, which the server can do here because the metric declares the molar-mass conversion and the response is a derived view, labelled <code>exact: false</code>. <code>durationIn</code> above 140 mg/dL (given in the stored unit) holds each reading for at most 10 minutes. Rows are marked non-additive because two meals could overlap.</p>`},
+    money: {req:`GET /api/v1/records
+  ?filter={"kinds":["ada.example.com/expenses/receipt"],
+           "properties":{"category":{"eq":"groceries"}}}
+  &aggregate={
+    "property": "total",
+    "range": {"gte": "2026-01-01T00:00:00Z", "lt": "2027-01-01T00:00:00Z"},
+    "bucket": {"calendar": "month", "timezone": "Europe/Athens"},
+    "reducers": ["sum", "count"],
+    "unit": "EUR"
+  }`, res:`{
+  "aggregate": {
+    "selector": {"property": "total", "kinds": ["ada.example.com/expenses/receipt"]},
+    "unit": "EUR", "timeMode": "zone", "timezone": "Europe/Athens", "exact": true,
+    "rows": [
+      {"start": "2026-01-01T00:00:00+02:00", "end": "2026-02-01T00:00:00+02:00",
+       "values": {"sum": {"amount": 41230, "currency": "EUR"}, "count": 19}},
+      ...
+    ]
+  }
+}`, note:`<p class="note">The same read over a <code>money</code> property on a non-health kind: this is why aggregation is a mode of the records route and not a health endpoint. Money sums within one currency and is exact.</p>`}
+  };
+  const qsel=document.getElementById('qsel');
+  function showQ(){ document.getElementById('qreq').textContent=Q[qsel.value].req; document.getElementById('qres').textContent=Q[qsel.value].res; document.getElementById('qnote').innerHTML=Q[qsel.value].note; }
+  qsel.addEventListener('change', showQ); showQ();
+
+  // labs
+  const labs = {
+    glucose:`kind: ada.example.com/health/labresult
+metadata: {id: quest-2026-09-18-A4471/2345-7}
+data:
+  properties:
+    report: {ref: ada.example.com/health/labreport/quest-2026-09-18-A4471}
+    metric: {ref: ada.example.com/health/metric/glucose}
+    code: {system: loinc, code: "2345-7"}
+    value: {value: "92", unit: mg/dL}          # the one value shape that is set
+    sourceUnit: mg/dL
+    sourceValue: "92"
+    specimen: {type: serum, collectedAt: 2026-09-17T07:45:00Z, fasting: true}
+    referenceRanges: [{low: {value: "65", unit: mg/dL}, high: {value: "99", unit: mg/dL}}]
+    interpretation: [N]
+    at: 2026-09-17T07:45:00Z
+    status: final`,
+    crp:`kind: ada.example.com/health/labresult
+metadata: {id: quest-2026-09-18-A4471/30522-7}
+data:
+  properties:
+    report: {ref: ada.example.com/health/labreport/quest-2026-09-18-A4471}
+    metric: {ref: ada.example.com/health/metric/hs_crp}
+    code: {system: loinc, code: "30522-7"}
+    value: {value: "0.3", unit: mg/L, comparator: "<"}   # below the detection limit
+    sourceValue: "<0.3"
+    referenceRanges: [{high: {value: "1.0", unit: mg/L}, text: "<1.0 low risk"}]
+    interpretation: [N]
+    at: 2026-09-17T07:45:00Z
+    status: final
+# a filter {"value": {"lt": {"value": "1", "unit": "mg/L"}}} matches: the true value is certainly below 1
+# an average over hs-CRP counts this row as "bounded" and leaves it out of the mean`,
+    ana:`kind: ada.example.com/health/labresult
+metadata: {id: quest-2026-09-18-A4471/8061-4}
+data:
+  properties:
+    report: {ref: ada.example.com/health/labreport/quest-2026-09-18-A4471}
+    metric: {ref: ada.example.com/health/metric/ana_screen}
+    code: {system: loinc, code: "8061-4"}
+    codedValue: {system: snomed, code: "260385009", display: Negative}   # coded, no quantity
+    sourceValue: NEGATIVE
+    at: 2026-09-17T07:45:00Z
+    status: final`,
+    titre:`kind: ada.example.com/health/labresult
+metadata: {id: labcorp-2026-03-02-7781/10863-9}
+data:
+  properties:
+    report: {ref: ada.example.com/health/labreport/labcorp-2026-03-02-7781}
+    metric: {ref: ada.example.com/health/metric/ana_titre}
+    code: {system: loinc, code: "10863-9"}
+    ratio: {numerator: "1", denominator: "80"}            # a titre is a ratio, ordered by its denominator
+    sourceValue: "1:80"
+    interpretation: [A]
+    at: 2026-03-01T08:10:00Z
+    status: final`,
+    unknown:`kind: ada.example.com/health/labresult
+metadata: {id: medichecks-2026-05-11-M2210/ferritin}
+data:
+  properties:
+    report: {ref: ada.example.com/health/labreport/medichecks-2026-05-11-M2210}
+    metric: {ref: ada.example.com/health/metric/ferritin}
+    code: {system: loinc, code: "2276-4"}
+    sourceValue: "88"
+    sourceUnit: "ug/L (ThermoFisher)"                    # verbatim from the PDF
+    normalizationFailure: "unit not in the table"        # value is left empty; the row still lists by date and code
+    provenance: {page: 2, row: 14, confidence: 0.91}
+    at: 2026-05-10T09:00:00Z
+    status: final`
+  };
+  const lsel=document.getElementById('labsel');
+  function showLab(){ document.getElementById('labyaml').textContent=labs[lsel.value]; }
+  lsel.addEventListener('change', showLab); showLab();
+})();
+</script>
+</body>
+</html>
