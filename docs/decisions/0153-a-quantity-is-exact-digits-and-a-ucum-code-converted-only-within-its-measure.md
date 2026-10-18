@@ -157,5 +157,5 @@ let a metric record name the measure of an ambiguous compound; this record
 leaves that out of the write path, which reads nothing from a metric. The
 aggregate read does take the metric's `measures` as the measure it converts
 into, through core's `metric` trait
-(0156).
+([0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md)).
 Revisit if users need units faster than releases can add them.

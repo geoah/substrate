@@ -534,8 +534,8 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // absent (decision record 0049). So this is the fresh-repository case, and the
 // filter is what makes it admit: without it every sample carrying one would be
 // refused for vocabulary the reader never asked for. `healthwhoop` requires
-// the WHOOP provider, which lands under its own authority as shipped, and no
-// suggested mapping reads it.
+// the WHOOP provider and `healthapple` requires Apple Health; each lands
+// under its own authority as shipped, and no suggested mapping reads either.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))

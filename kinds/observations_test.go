@@ -79,6 +79,48 @@ func TestHealthRequiresObservations(t *testing.T) {
 	}
 }
 
+// The Apple Health adapter writes the observations and health samples' kinds
+// from the Apple Health provider's mirrors, so it requires all three with a
+// floor, as the other adapters do: an import into a repository missing one,
+// or holding an older one, is refused rather than landing a function whose
+// trigger and writes name kinds that are not there. The install follows its
+// requires: provider, observations, health, then the adapter.
+func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
+	adapter := shippedSample(t, "healthapple")
+	base := shippedSample(t, "observations")
+	health := shippedSample(t, "health")
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	provider, ok := cat.ByID("providers.substrate.reamde.dev/applehealth")
+	if !ok {
+		t.Fatal("no shipped applehealth provider")
+	}
+	for _, req := range []*catalog.Bundle{base, health, provider} {
+		if !slices.Contains(adapter.Requires, req.ID) {
+			t.Errorf("healthapple requires %v, not %s", adapter.Requires, req.ID)
+		}
+		if floor, ok := adapter.RequiresAtLeast[req.ID]; !ok || floor < 1 || floor > req.Version {
+			t.Errorf("healthapple's floor on %s is %d (set %v); the shipped one is version %d", req.ID, floor, ok, req.Version)
+		}
+	}
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.ResolveFunction(adapter.ID + "/adaptapplehealth"); err != nil {
+		t.Fatalf("the adapter's function did not install: %v", err)
+	}
+}
+
 // healthRecords reads the health sample's data records of one kind (a kind
 // reference under the samples authority, such as observations/metric), by id.
 func healthRecords(t *testing.T, kind string) map[string]map[string]any {
