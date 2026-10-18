@@ -63,7 +63,8 @@ export function ChangeValue({
     !scalar ||
     (typeof value === "object" &&
       scalar.kind !== "reference" &&
-      scalar.kind !== "money") ||
+      scalar.kind !== "money" &&
+      scalar.kind !== "quantity") ||
     (TEXT_KINDS.has(scalar.kind) && !scalar.values?.length) ||
     spec?.keyed
   if (prose && scalar?.kind !== "secret") {

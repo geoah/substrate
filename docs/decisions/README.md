@@ -311,6 +311,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0150](0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md) | A schedule lane fires its due triggers in parallel, one fire per trigger | proposed |
 | [0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md) | An agent delivery a restart interrupted is rerun once, at the first pass after the restart | proposed |
 | [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | proposed |
+| [0153](0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md) | A quantity is exact digits and a UCUM code, converted only within its measure | accepted |
 | [0164](0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md) | A webhook's signature is verified by the host when the trigger declares one | accepted |
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |

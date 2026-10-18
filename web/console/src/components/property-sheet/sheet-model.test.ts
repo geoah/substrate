@@ -201,6 +201,30 @@ describe("propertyWrite", () => {
     expect(listWrite(prices, stored, ["3.00"]).error).toMatch(/^Item 1: /)
   })
 
+  it("holds quantity list items as their exact text and keeps untouched ones", () => {
+    const readings = fieldOf({
+      ...propSpecsByName(task).find((s) => s.name === "tags")!,
+      kind: "quantity",
+      measures: "mass",
+      comparator: true,
+    })
+    const stored = [
+      { value: "72.50", unit: "kg" },
+      { value: "40", unit: "kg", comparator: "<" },
+    ]
+    const item = { ...readings.spec, repeated: false }
+    expect(listItems(stored, item)).toEqual(["72.50 kg", "<40 kg"])
+    expect(listWrite(readings, stored, ["72.50 kg", "<40 kg"])).toEqual({})
+    expect(listWrite(readings, stored, ["72.50 kg", "160 lb"])).toEqual({
+      properties: {
+        tags: [stored[0], { value: "160", unit: "[lb_av]" }],
+      },
+    })
+    expect(listWrite(readings, stored, ["72.50 kg", "3 km"]).error).toBe(
+      "Item 2: unit: km measures length, not mass"
+    )
+  })
+
   it("writes a picked reference as its path", () => {
     expect(
       propertyWrite(field("project"), undefined, {

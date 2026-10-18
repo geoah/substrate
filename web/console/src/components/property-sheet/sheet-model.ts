@@ -17,6 +17,7 @@ import {
   LockIcon,
   PhoneIcon,
   RepeatIcon,
+  RulerIcon,
   TagIcon,
   TypeIcon,
   type LucideIcon,
@@ -32,6 +33,7 @@ import {
   parseValue,
   type PropSpec,
 } from "@/lib/record-schema"
+import { formatQuantityText } from "@/lib/units"
 
 /** How a row is edited: on its own line, from a list that drops under it,
  * or in a panel that takes the row's full width. */
@@ -138,13 +140,16 @@ export function listWrite(
   return { properties: { [field.name]: values } }
 }
 
-/** A stored list's items as the strings a list editor holds. Money items are
- * held as their exact text (`19.99 EUR`), which the element's parse reads
- * back to the same value. */
+/** A stored list's items as the strings a list editor holds. Money and
+ * quantity items are held as their exact text (`19.99 EUR`, `72.5 kg`), which
+ * the element's parse reads back to the same value. */
 export function listItems(stored: unknown, item?: PropSpec): string[] {
   if (!Array.isArray(stored)) return []
   return stored.map((v) => {
     if (item?.kind === "money" && moneyText(v)) return moneyText(v)
+    if (item?.kind === "quantity" && formatQuantityText(v)) {
+      return formatQuantityText(v)
+    }
     return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
   })
 }
@@ -187,6 +192,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   float: HashIcon,
   decimal: HashIcon,
   money: BanknoteIcon,
+  quantity: RulerIcon,
 }
 
 /** A property's icon: a reference wears its target kind's own glyph icon, an
@@ -216,7 +222,7 @@ export function repeatedLayout(
   if (item.kind === "markdown" || item.kind === "text") return "lines"
   if (item.values?.length) return "chips"
   if (item.kind === "email" || item.kind === "phone") return "chips"
-  if (item.kind === "money") return "chips"
+  if (item.kind === "money" || item.kind === "quantity") return "chips"
   return values.every(
     (v) =>
       (typeof v === "string" && v.length <= CHIP_MAX && !v.includes("\n")) ||

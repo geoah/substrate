@@ -51,7 +51,12 @@ import (
 //
 //	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search", "params": {...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "call", "params": {"function": "<identity>", "input": ...}}
+//	child → parent   {"kind": "call", "reqId": N, "host": "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 //	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
+//
+// The three `units.*` calls answer from the engine's unit table (units.go):
+// they read nothing from the repository, so no grant gates them and no budget
+// is charged.
 //
 // A `call` runs the target function to completion INSIDE the caller's
 // invocation: the parent gates it on `permissions.call` and

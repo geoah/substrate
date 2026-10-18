@@ -96,6 +96,10 @@ import type {
   TriggerRan,
   TriggerReplayed,
   TriggerStatus,
+  UnitCode,
+  UnitConversion,
+  UnitMeasure,
+  UnitTable,
   VocabularyPlan,
   WebhookAccepted,
 } from "./types"
@@ -674,6 +678,32 @@ const triggerRan: Shape<TriggerRan> = { ran: true }
 const functionCalled: Shape<FunctionCalled> = { output: true, effects: true }
 const webhookAccepted: Shape<WebhookAccepted> = { fire: true }
 
+const unitTable: Shape<UnitTable> = { measures: true, aliases: true }
+
+const unitMeasure: Shape<UnitMeasure> = {
+  name: true,
+  base: true,
+  scale: true,
+  display: true,
+  dimension: true,
+  note: false,
+  units: true,
+}
+
+const unitCode: Shape<UnitCode> = {
+  code: true,
+  print: true,
+  factor: false,
+  offset: false,
+}
+
+const unitConversion: Shape<UnitConversion> = {
+  value: true,
+  unit: true,
+  measure: true,
+  exact: true,
+}
+
 const mirrors: Record<string, Record<string, boolean>> = {
   ErrorEnvelope: errorEnvelope,
   ErrorPayload: errorPayload,
@@ -740,6 +770,10 @@ const mirrors: Record<string, Record<string, boolean>> = {
   TriggerRan: triggerRan,
   FunctionCalled: functionCalled,
   WebhookAccepted: webhookAccepted,
+  UnitTable: unitTable,
+  UnitMeasure: unitMeasure,
+  UnitCode: unitCode,
+  UnitConversion: unitConversion,
 }
 
 /** The interfaces the modules in this directory export that mirror no Go

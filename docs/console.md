@@ -339,7 +339,12 @@ here throughout, and says to change it at the provider.
 
 **The properties** are a sheet: one row per property, its label (and
 its key, with Technical details on) on the left and its value on the right,
-with empty properties folded into one line that expands. Clicking a value
+with empty properties folded into one line that expands. A quantity reads to two
+decimal places (`97.18 %`, a kind's property declaring none of its own),
+or to its first two significant digits where it is under one (`0.004
+mIU/L`), the stored digits on hover; with Technical details on, as stored.
+A value with a comparator is a bound and reads every digit (`<0.005
+ng/mL`). Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
 a date and time, a textarea for prose, a list to pick from for an enum, the
 moves a state may make, a record picker for a reference, and, for the shapes

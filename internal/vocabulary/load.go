@@ -272,6 +272,9 @@ var actorDataKeys = map[string]bool{"authority": true, "package": true, "tier": 
 var datatypeDataKeys = map[string]bool{
 	"authority": true, "package": true, "base": true, "pattern": true, "min": true, "max": true,
 	"values": true, "description": true,
+	// A quantity refinement names its measure, narrows its units and admits
+	// a comparator; parseQuantitySpec refuses the three on any other base.
+	"measures": true, "units": true, "comparator": true,
 }
 
 var capabilityDataKeys = map[string]bool{
@@ -427,11 +430,14 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 			continue
 		}
 		p := l.parseProperty(where, local, map[string]any{
-			"type":    base,
-			"pattern": d.Data["pattern"],
-			"min":     d.Data["min"],
-			"max":     d.Data["max"],
-			"values":  d.Data["values"],
+			"type":       base,
+			"pattern":    d.Data["pattern"],
+			"min":        d.Data["min"],
+			"max":        d.Data["max"],
+			"values":     d.Data["values"],
+			"measures":   d.Data["measures"],
+			"units":      d.Data["units"],
+			"comparator": d.Data["comparator"],
 		}, false, 1)
 		if p == nil {
 			continue
@@ -1191,6 +1197,9 @@ var linkPropKeys = map[string]bool{
 	"type": true, "description": true, "displayName": true,
 	"required": true, "deprecated": true,
 	"values": true, "pattern": true, "min": true, "max": true,
+	// A quantity's own three keys are value constraints like the four above:
+	// a link quantity (a sensor's calibration offset) is still one flat value.
+	"measures": true, "units": true, "comparator": true,
 }
 
 // linkPropForbiddenKinds are the datatypes a link property may never be, each
@@ -1787,6 +1796,10 @@ var propKeys = map[string]bool{
 	"pattern": true, "min": true, "max": true,
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
+	// A quantity's own three: the measure every unit belongs to, a narrowing
+	// to listed codes, and whether a value may carry a comparator. Refused on
+	// every other datatype (parseProperty).
+	"measures": true, "units": true, "comparator": true,
 	// `keyed` is `repeated`'s twin (a map instead of a list) and `keyPattern` is
 	// the contract its keys hold to; `managed` says the engine stamps the
 	// property. Both are declared shape, so they ride into the Definition map
@@ -2106,8 +2119,36 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		p.Pattern = ref.Pattern
 		p.Min, p.Max = ref.Min, ref.Max
 		p.Values = ref.Values
+		p.Quantity = ref.Quantity
 	} else {
 		p.Datatype = kind
+	}
+	if p.Datatype == DatatypeQuantity {
+		// A quantity's bounds are quantities, read with its other keys; the
+		// number path below must not read a bound it would misunderstand.
+		for _, key := range []string{"min", "max"} {
+			switch v := d[key]; v.(type) {
+			case nil, map[string]any, map[any]any:
+			default:
+				l.errf("%s.%s: a quantity bound is a quantity value {value: \"40\", unit: kg}, not %v", where, key, v)
+				return nil
+			}
+		}
+		if !allowRefinement && (d["min"] != nil || d["max"] != nil) {
+			l.errf("%s: a quantity property type takes measures, units and comparator; declare min and max on the property", where)
+			return nil
+		}
+		p.Quantity = l.parseQuantitySpec(where, d, p.Quantity)
+		if p.Quantity == nil {
+			return nil
+		}
+	} else {
+		for _, key := range []string{"measures", "units", "comparator"} {
+			if v, declared := d[key]; declared && v != nil {
+				l.errf("%s.%s: only a quantity property declares %s", where, key, key)
+				return nil
+			}
+		}
 	}
 	if pat := mstr(d, "pattern"); pat != "" {
 		re, err := regexp.Compile(pat)
@@ -2139,6 +2180,11 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// amount the value denotes.
 	if p.Datatype == DatatypeMoney && (p.Pattern != nil || len(p.Values) > 0) {
 		l.errf("%s: a money property takes min and max, never a pattern or values", where)
+	}
+	// A quantity is an object too, and its bounds are quantities (parsed
+	// above, into Quantity).
+	if p.Datatype == DatatypeQuantity && (p.Pattern != nil || len(p.Values) > 0) {
+		l.errf("%s: a quantity property takes measures, units, comparator, min and max, never a pattern or values", where)
 	}
 	// NOTHING IS WRITTEN BACK. A property's `values` stay exactly as the author
 	// spelled them — bare scalars or {value, label} mappings — because the map this
@@ -2318,6 +2364,11 @@ func (l *loader) parseDefault(where string, p *Property, v any) any {
 		// runs over every declared default.
 		if _, ok := v.(map[string]any); !ok {
 			l.errf("%s.default: expected a money value {%s, %s}", where, MoneyAmount, MoneyCurrency)
+			return nil
+		}
+	case DatatypeQuantity:
+		if _, ok := v.(map[string]any); !ok {
+			l.errf("%s.default: expected a quantity value {%s, %s}", where, QuantityValue, QuantityUnit)
 			return nil
 		}
 	default:

@@ -34,6 +34,7 @@ import { CORE_PACKAGE } from "@/lib/core-kinds"
 import { temporalProperties } from "@/lib/definition"
 import { MONEY_TEXT_EXAMPLE, moneyText } from "@/lib/money"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
+import { formatQuantityText, quantityTextExample } from "@/lib/units"
 import type { EditPath as DocumentPath, Problem } from "@/lib/record-yaml"
 import {
   TO_ANY,
@@ -121,11 +122,19 @@ export function fieldOf(spec: PropSpec): FormField {
         ? spec.default
         : spec.kind === "money"
           ? moneyText(spec.default) || undefined
-          : undefined,
+          : spec.kind === "quantity"
+            ? formatQuantityText(spec.default) || undefined
+            : undefined,
     required: spec.required,
     description: spec.description,
-    // A form edits money as text, so its example is the text, not the YAML.
-    example: spec.kind === "money" ? MONEY_TEXT_EXAMPLE : exampleFor(spec),
+    // A form edits money and a quantity as text, so the example is the
+    // text, not the YAML.
+    example:
+      spec.kind === "money"
+        ? MONEY_TEXT_EXAMPLE
+        : spec.kind === "quantity"
+          ? quantityTextExample(spec)
+          : exampleFor(spec),
     spec,
   }
 }
