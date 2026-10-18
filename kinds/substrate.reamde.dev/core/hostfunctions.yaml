@@ -83,9 +83,10 @@ data:
         page, one hop
     - name: q
       type: string
-      description: search query; ranks instead of filtering, narrowed by filter.kinds
-        and filter.purposes alone, first hits; naming neither skips internal
-        kinds
+      description: >-
+        ranks instead of filtering: one or two distinctive words (a name,
+        code, number, place), never a list of common words; narrows by filter.kinds
+        or filter.purposes only, neither skips internal kinds
     - name: mode
       type: enum
       values:

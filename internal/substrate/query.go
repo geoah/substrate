@@ -242,6 +242,9 @@ type RankedPage struct {
 	Records []*Record         `json:"records"`
 	Scores  map[string]Scores `json:"scores"`
 	Pending int               `json:"pending"`
+	// Capped and Note are SearchResult's: the ranking is partial, and why.
+	Capped bool   `json:"capped,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 // Scores are one hit's raw per-arm scores: ts_rank for the lexical arm, cosine

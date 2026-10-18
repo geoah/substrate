@@ -144,6 +144,21 @@ func (p searchPlan) expr(b *builder, relaxed bool) string {
 	return "(" + strings.Join(groups, " || ") + ")"
 }
 
+// relaxes reports whether expr's relaxed form matches more than its strict
+// one: a single group of two or more positive operands, with no OR.
+func (p searchPlan) relaxes() bool {
+	if p.hasOr || len(p.groups) != 1 {
+		return false
+	}
+	pos := 0
+	for _, op := range p.groups[0] {
+		if !op.negated {
+			pos++
+		}
+	}
+	return pos > 1
+}
+
 // sql renders one operand. See the header for why a prefix reads through
 // `simple` and a folded spelling rides beside an accented one.
 func (op searchOperand) sql(b *builder) string {

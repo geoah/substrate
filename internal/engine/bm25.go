@@ -2,11 +2,14 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // THE LEXICAL ARM'S RANKING: BM25F over the weighted bands.
@@ -23,9 +26,10 @@ import (
 // Postgres carries no BM25, and the extensions that do are not in the stock
 // image an operator runs, so the arm computes it from what a tsvector already
 // holds: each lexeme's positions and their band labels. Candidates are
-// gathered by the index (the relaxed query, capped at bm25Pool rows, the ones
-// matching every word first), their per-band occurrence counts and lengths are
-// read in one statement, and the sum is computed here.
+// gathered in two bounded passes (lexical: the rows matching every word, then
+// a top-up from the relaxed query), capped at bm25Pool rows, their per-band
+// occurrence counts and lengths are read in one statement, and the sum is
+// computed here.
 //
 // A lexeme is a stem, so a band's length is its count of positions, and a
 // prefix term counts a completion at half the weight of the word itself: `plan*`
@@ -47,6 +51,16 @@ const (
 	// candidates matching every word first, then by ts_rank, so a cap only
 	// ever drops rows that miss a word and rank low without IDF.
 	bm25Pool = 400
+	// searchReadMax is the most matching rows one candidate pass reads before
+	// any ranking work (lexicalCandidates), newest first. Ranking reads each
+	// row's whole vector; a pass that ranked every row a common word matched
+	// was minutes on a large repository, and this many is tens of
+	// milliseconds.
+	searchReadMax = 2000
+	// DefaultSearchBudget is the wall clock one lexical search may spend
+	// (WithSearchBudget overrides it per service): past it the relaxed top-up
+	// is dropped, or the search fails when nothing was found yet.
+	DefaultSearchBudget = 5 * time.Second
 	// bm25PrefixWeight is what a completion of a prefix term counts, against
 	// the typed word itself.
 	bm25PrefixWeight = 0.5
@@ -269,25 +283,188 @@ func bm25IDF(n, df float64) float64 {
 	return math.Log(1 + (n-df+0.5)/(df+0.5))
 }
 
-// lexical ranks the records the plan matches: candidates by the relaxed
-// query, those matching the query as typed first, each scored by BM25F.
-func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string, restrict bool, k int) (map[eref]arm, error) {
+// lexicalCap says where a lexical search stopped short of ranking every
+// match: a pass met more matching rows than it reads (readCapped, at readMax),
+// or the relaxed top-up ran out of the budget and the strict pass's
+// candidates answered alone (budget).
+type lexicalCap struct {
+	readCapped bool
+	readMax    int
+	budget     bool
+}
+
+// lexicalPass is what both candidate passes of one search share.
+type lexicalPass struct {
+	plan     searchPlan
+	types    []string
+	restrict bool
+	// readMax is the most matching rows a pass reads before any ranking.
+	readMax int
+	// matchMax is the match count past which a pass matches on the row
+	// instead of through records_matching.
+	matchMax int
+}
+
+// lexical ranks the records the plan matches, each scored by BM25F. The
+// candidates come from two bounded passes: the rows matching the query as
+// typed, every word, and, only when those are fewer than the pool, a top-up
+// from the rows matching any word and not every word. Each pass reads at most
+// readMax matching rows, newest first, before any ts_rank or BM25 work, so a
+// query whose words half the repository holds costs what a rare one does: a
+// pass that ranked the whole relaxed match set took 172 s on a production
+// repository for `flight booking confirmation`.
+//
+// The whole arm runs under the service's search budget (DefaultSearchBudget).
+// A top-up that runs out of it is dropped and the strict candidates answer,
+// marked capped; a budget spent before any candidate was found is
+// substrate.ErrUnavailable naming it.
+func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string, restrict bool, k int) (map[eref]arm, lexicalCap, error) {
+	budget := ds.svc.searchBudget
+	began := time.Now()
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	var capped lexicalCap
+	failed := func(err error) (map[eref]arm, lexicalCap, error) {
+		if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			err = fmt.Errorf("%w: search ran past its %s budget before it ranked anything: use one or two distinctive words (a name, a code, a number)",
+				substrate.ErrUnavailable, budget)
+		}
+		return nil, capped, err
+	}
+
 	terms := plan.terms()
 	st, err := ds.searchStats(ctx)
 	if err != nil {
-		return nil, err
+		return failed(err)
 	}
 	idf, err := ds.termIDF(ctx, terms, st)
 	if err != nil {
-		return nil, err
+		return failed(err)
 	}
+	pool := max(bm25Pool, 4*k)
+	pass := lexicalPass{plan: plan, types: types, restrict: restrict, readMax: ds.svc.searchReadMax}
+	capped.readMax = pass.readMax
+	// A pass counts its matches through records_matching, capped, and reads
+	// them through it while there are few: each is a probe back to its row.
+	// Past the count it matches on the row instead, walking the repository
+	// newest first, where a common word fills the read quickly.
+	pass.matchMax = max(int(st.n/probeCost), pass.readMax)
+	if ds.svc.searchMatchMax >= 0 {
+		pass.matchMax = ds.svc.searchMatchMax
+	}
+	cands, over, err := ds.lexicalCandidates(ctx, pass, false, pool)
+	if err != nil {
+		return failed(err)
+	}
+	capped.readCapped = over
+	if len(cands) < pool && plan.relaxes() {
+		if hook := ds.svc.searchTopUpHook; hook != nil {
+			hook()
+		}
+		// The top-up leaves a fifth of the budget to score what was found.
+		tctx, tcancel := context.WithDeadline(ctx, began.Add(budget-budget/5))
+		more, over, err := ds.lexicalCandidates(tctx, pass, true, pool-len(cands))
+		expired := tctx.Err() != nil
+		tcancel()
+		switch {
+		case err == nil:
+			cands = append(cands, more...)
+			capped.readCapped = capped.readCapped || over
+		case expired && parent.Err() == nil:
+			capped.budget = true
+		default:
+			return failed(err)
+		}
+	}
+	out := map[eref]arm{}
+	if len(cands) == 0 {
+		return out, capped, nil
+	}
+	docs, err := ds.scoreCandidates(ctx, plan, terms, cands)
+	if err != nil {
+		return failed(err)
+	}
+	for id, d := range docs {
+		out[id] = arm{score: bm25Score(*d, idf, st), demoted: d.demoted, whole: d.whole}
+	}
+	return out, capped, nil
+}
 
+// lexicalCandidates is one candidate pass: the rows the strict query matches,
+// or with relaxed the rows the relaxed query matches and the strict one does
+// not. It reads at most readMax+1 matching rows, newest first, and only those
+// are ranked, by ts_rank, keeping take. over reports that more rows matched
+// than the pass read.
+func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, relaxed bool, take int) ([]eref, bool, error) {
+	probe := &builder{}
+	few, err := indexedMatch(ctx, ds.db, probe, pass.plan.expr(probe, relaxed), pass.matchMax)
+	if err != nil {
+		return nil, false, err
+	}
+	b := &builder{}
+	q := pass.plan.expr(b, relaxed)
+	clause := ""
+	if relaxed {
+		clause += ` AND NOT (r.fts @@ ` + pass.plan.expr(b, false) + `)`
+	}
+	if pass.restrict {
+		clause += ` AND r.kind = ANY(` + b.textArray(pass.types) + `)`
+	}
+	source := `records r WHERE r.deleted_at IS NULL AND r.fts @@ ` + q
+	if few {
+		source = `records_matching(` + q + `, NULL) m
+			JOIN records r ON r.kind = m.kind AND r.id = m.id
+			WHERE r.deleted_at IS NULL`
+	}
+	// The inner read stops at readMax+1 rows before anything is ranked: on
+	// the row it walks records_created_at_idx backwards and matches each row
+	// it meets, so the rows it reads are about readMax times the share of the
+	// repository the query misses. The one row past readMax only says the
+	// pass was cut; the newest readMax are ranked.
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT n.kind, n.id, n.seen FROM (
+			SELECT m.kind, m.id, m.fts, count(*) OVER () AS seen,
+			       row_number() OVER (ORDER BY m.created_at DESC, m.kind, m.id) AS nth
+			FROM (
+				SELECT r.kind, r.id, r.fts, r.created_at FROM `+source+clause+`
+				ORDER BY r.created_at DESC
+				LIMIT `+b.arg(pass.readMax+1)+`
+			) m
+		) n
+		WHERE n.nth <= `+b.arg(pass.readMax)+`
+		ORDER BY ts_rank(n.fts, `+pass.plan.expr(b, true)+`) DESC, n.kind, n.id
+		LIMIT `+b.arg(take), b.args...)
+	if err != nil {
+		return nil, false, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []eref
+	seen := 0
+	for rows.Next() {
+		var id eref
+		if err := rows.Scan(&id.Kind, &id.ID, &seen); err != nil {
+			return nil, false, err
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
+	}
+	return out, seen > pass.readMax, nil
+}
+
+// scoreCandidates reads, in one statement, each candidate's band lengths and
+// each (candidate, term) pair's weighted occurrences per band. A term's exact
+// lexemes are its word under `english`, the dictionary the row was indexed
+// with; a prefix term's starts are the word under `simple`, unstemmed, for the
+// reason tsquery.go gives.
+func (ds *dataset) scoreCandidates(ctx context.Context, plan searchPlan, terms []scoreTerm, cands []eref) (map[eref]*bm25Doc, error) {
 	b := &builder{}
 	strict := plan.expr(b, false)
-	relaxed := plan.expr(b, true)
-	clause := ""
-	if restrict {
-		clause = ` AND r.kind = ANY(` + b.textArray(types) + `)`
+	kinds, ids := make([]string, len(cands)), make([]string, len(cands))
+	for i, c := range cands {
+		kinds[i], ids[i] = c.Kind, c.ID
 	}
 	words := make([]string, len(terms))
 	prefix := make([]bool, len(terms))
@@ -295,37 +472,12 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 		words[i], prefix[i] = t.word, t.prefix
 	}
 	wordsArg, prefixArg := b.arg(words), b.arg(prefix)
-	pool := max(bm25Pool, 4*k)
-	// The pool ranks every match, so the cheaper source depends on how many
-	// there are: through records_matching, the one read of the index row level
-	// security allows (migration 0010), for a few; the whole repository,
-	// matched in place, once the probes would cost more than the scan.
-	probe := &builder{}
-	limit := int(st.n / probeCost)
-	if ds.svc.searchMatchMax >= 0 {
-		limit = ds.svc.searchMatchMax
-	}
-	few, err := indexedMatch(ctx, ds.db, probe, plan.expr(probe, true), limit)
-	if err != nil {
-		return nil, err
-	}
-	source := `records r WHERE r.deleted_at IS NULL AND r.fts @@ ` + relaxed
-	if few {
-		source = `records_matching(` + relaxed + `, NULL) m
-			JOIN records r ON r.kind = m.kind AND r.id = m.id
-			WHERE r.deleted_at IS NULL`
-	}
-	// One statement: the candidate pool, each candidate's band lengths, and
-	// each (candidate, term) pair's weighted occurrences per band. A term's
-	// exact lexemes are its word under `english`, the dictionary the row was
-	// indexed with; a prefix term's starts are the word under `simple`,
-	// unstemmed, for the reason tsquery.go gives.
 	rows, err := ds.db.QueryContext(ctx, `
 		WITH cand AS (
 			SELECT r.kind, r.id, r.fts, r.fts @@ `+strict+` AS whole, `+demotion("r")+` AS demoted
-			FROM `+source+clause+`
-			ORDER BY whole DESC, ts_rank(r.fts, `+relaxed+`) DESC, r.kind, r.id
-			LIMIT `+b.arg(pool)+`
+			FROM unnest(`+b.textArray(kinds)+`, `+b.textArray(ids)+`) AS c(kind, id)
+			JOIN records r ON r.kind = c.kind AND r.id = c.id
+			WHERE r.deleted_at IS NULL
 		), terms AS (
 			SELECT t.i::int AS i,
 			       ARRAY(SELECT lexeme FROM unnest(to_tsvector('english', t.word))) AS exact,
@@ -386,11 +538,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	out := make(map[eref]arm, len(docs))
-	for id, d := range docs {
-		out[id] = arm{score: bm25Score(*d, idf, st), demoted: d.demoted, whole: d.whole}
-	}
-	return out, nil
+	return docs, nil
 }
 
 // termIDF reads each term's document frequency in one statement, each count

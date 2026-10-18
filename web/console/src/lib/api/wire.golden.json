@@ -334,6 +334,8 @@
     "properties": false
   },
   "RankedPage": {
+    "capped": false,
+    "note": false,
     "pending": true,
     "records": true,
     "scores": true

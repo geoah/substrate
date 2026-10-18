@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/runner"
@@ -641,7 +643,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		hub:       in.hub,
 		replyTurn: -1,
 	}
-	if err := l.buildTools(); err != nil {
+	if err := l.buildTools(ctx); err != nil {
 		return nil, nil, err
 	}
 	defer func() {
@@ -845,6 +847,7 @@ loop:
 				l.toolEvent(substrate.AgentEventToolStarted, tc, toolTurn, nil, "")
 				out, ok = l.dispatch(lctx, tc)
 			}
+			out = l.capToolResult(out)
 			l.toolEvent(substrate.AgentEventToolFinished, tc, toolTurn, &ok, out)
 			// `ok` is stored, not inferred: a replayed transcript otherwise has
 			// to sniff the failure envelope out of the payload, and a
@@ -1529,7 +1532,7 @@ func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substr
 // never a Go literal here. Only WHERE the body lives differs (a host function
 // dispatches in this loop, anything else goes to the runner), which is what
 // agentTool.builtin carries.
-func (l *agentLoop) buildTools() error {
+func (l *agentLoop) buildTools(ctx context.Context) error {
 	l.byName = map[string]agentTool{}
 	add := func(name, description string, params any, t agentTool) {
 		l.byName[name] = t
@@ -1557,6 +1560,9 @@ func (l *agentLoop) buildTools() error {
 		if fn.Input != nil {
 			params = fn.Input
 		}
+		if t.Builtin == vocabulary.AgentToolQuery {
+			description += " " + l.queryLimits(ctx)
+		}
 		tool := agentTool{fn: fn, builtin: t.Builtin}
 		add(t.Name, description, params, tool)
 	}
@@ -1573,6 +1579,35 @@ func (l *agentLoop) buildTools() error {
 	return nil
 }
 
+// queryLimits is the line the engine appends to the `query` card, alias or
+// not: the limits in force for THIS agent and repository, read from the values
+// that enforce them, so the card cannot drift from them. The declaration's
+// card stays the static grammar (and sits at its 1000-character cap); what
+// differs per agent or per repository is written here. The other tools carry
+// no such line: a timeout or a truncation answers with an error or an envelope
+// that says what happened and what to do, in band.
+func (l *agentLoop) queryLimits(ctx context.Context) string {
+	svc := l.ds.svc
+	words := "Search with one or two distinctive words (a name, a code, a number, a place), never a list of common words: " +
+		"common words match most of the repository, and the lexical ranking reads words, not meaning. "
+	semantic := ""
+	// The claim is what the ranked read resolves (search.go): no row
+	// declaring embedModel is a repository whose ranked reads are lexical.
+	if claims, err := embedClaims(ctx, l.ds.db); err == nil {
+		if len(claims) == 0 {
+			semantic = "This repository has no embeddings provider, so q matches words only: semantic and hybrid fall back to lexical. "
+		} else {
+			semantic = "This repository has an embeddings provider, so hybrid (the default) also ranks by meaning. "
+		}
+	}
+	limits := fmt.Sprintf("Limits: a search stops at %s or at the newest %d matching records, and then answers \"capped\": true with a \"note\"; "+
+		"a call stops after %ds with the error \"tool call timed out…\"; a result over %s is replaced by "+
+		"{\"truncated\": true, \"bytes\", \"limit\", \"head\", \"note\"}. "+
+		"When one hits, narrow once (rarer words, filter.kinds, a smaller first), then answer from what you have.",
+		svc.searchBudget, svc.searchReadMax, int(l.toolTimeout()/time.Second), formatBytes(l.toolResultCap()))
+	return words + semantic + limits
+}
+
 // toolError shapes a failure the model sees — the structured `error` key v4
 // converged on; an empty tool result makes most models loop.
 func toolError(msg string) string {
@@ -1586,6 +1621,102 @@ func toolJSON(v any) string {
 		return toolError("marshal result: " + err.Error())
 	}
 	return string(out)
+}
+
+// toolContext bounds one `query` or function tool call by the agent's
+// budgets.toolTimeoutSeconds. ctx carries the loop's deadline, so a call never
+// outlives the run. Sub-agents run on budgets of their own, and `propose`,
+// `write` and `ask` write, where cutting a call mid-transaction would only
+// trade a slow answer for an unclear one.
+func (l *agentLoop) toolContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, l.toolTimeout())
+}
+
+func (l *agentLoop) toolTimeout() time.Duration {
+	s := l.ag.Budgets.ToolTimeoutSeconds
+	if s <= 0 {
+		s = vocabulary.DefaultAgentToolTimeoutSec
+	}
+	return time.Duration(s) * time.Second
+}
+
+// toolTimedOut answers the tool error of a call its own timeout ended, and
+// false when it did not: a call the loop's deadline or a stop ended is the
+// loop's to settle, and its context is done too.
+func (l *agentLoop) toolTimedOut(loop, call context.Context) (string, bool) {
+	if loop.Err() != nil || !errors.Is(call.Err(), context.DeadlineExceeded) {
+		return "", false
+	}
+	return toolError(fmt.Sprintf(toolTimeoutMessage, int(l.toolTimeout()/time.Second))), true
+}
+
+// toolTimeoutMessage is the error a call past its timeout answers; %d is the
+// timeout in seconds.
+const toolTimeoutMessage = "tool call timed out after %ds — narrow the call (fewer words, a filter, a smaller window) or answer from what you have"
+
+// capToolResult holds one tool result to the agent's
+// budgets.maxToolResultBytes. A result over it is replaced by a JSON envelope
+// carrying its head, cut on a UTF-8 boundary, and the envelope itself fits
+// the cap: it is what the model reads, what the tool row stores and what the
+// stream carries, so a thread that replays it stays small. A 1.7 MB result
+// replayed on every later turn of one run cost 730k input tokens a turn.
+func (l *agentLoop) capToolResult(out string) string {
+	return capToolResult(out, l.toolResultCap())
+}
+
+func (l *agentLoop) toolResultCap() int {
+	if n := l.ag.Budgets.MaxToolResultBytes; n > 0 {
+		return n
+	}
+	return vocabulary.DefaultAgentToolResultBytes
+}
+
+// toolResultCapNote is the truncation envelope's `note`; %s is the cap.
+const toolResultCapNote = "result exceeded the %s tool-result cap; ask for fewer rows, a filter or a smaller window"
+
+func capToolResult(out string, limit int) string {
+	if len(out) <= limit {
+		return out
+	}
+	note := fmt.Sprintf(toolResultCapNote, formatBytes(limit))
+	// The head is escaped into a JSON string, which can grow it: start from
+	// the cap less the envelope's fixed part and shrink until it fits.
+	head := limit - 256
+	for head > 0 {
+		cut := utf8Prefix(out, head)
+		env := map[string]any{"truncated": true, "bytes": len(out), "limit": limit, "head": cut, "note": note}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(env); err == nil {
+			if b := bytes.TrimRight(buf.Bytes(), "\n"); len(b) <= limit {
+				return string(b)
+			}
+		}
+		head -= max((buf.Len()-limit)+16, head/8)
+	}
+	b, _ := json.Marshal(map[string]any{"truncated": true, "bytes": len(out), "limit": limit, "head": "", "note": note})
+	return string(b)
+}
+
+// utf8Prefix is s cut to at most n bytes, never inside a rune.
+func utf8Prefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// formatBytes spells a byte count the way the note reads it: whole KiB where
+// it divides, bytes otherwise.
+func formatBytes(n int) string {
+	if n%1024 == 0 {
+		return strconv.Itoa(n/1024) + " KiB"
+	}
+	return strconv.Itoa(n) + " bytes"
 }
 
 // dispatch runs one tool call. A tool failure is a RESULT the model sees and
@@ -1642,7 +1773,14 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 	if remaining <= 0 {
 		return toolError(fmt.Sprintf("read budget exhausted (%d rows)", reads.Rows)), false
 	}
-	out, ok, rows := l.ds.runQueryTool(ctx, queryScope{kinds: reads.Kinds, rows: remaining}, args)
+	qctx, cancel := l.toolContext(ctx)
+	defer cancel()
+	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: reads.Kinds, rows: remaining}, args)
+	if late, timedOut := l.toolTimedOut(ctx, qctx); timedOut {
+		// A read the timeout cut may still answer ok: a search whose rows
+		// failed to load skips them, so what it returned is not the answer.
+		return late, false
+	}
 	l.readRows += rows
 	return out, ok
 }
@@ -2109,11 +2247,19 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 		// reaches it as it reaches a sub-agent.
 		stopHub: l.in.stopHub,
 	})
-	effects, output, err := l.ds.runCallable(fctx, fn, runner.Input{
+	// The timeout bounds the body alone: the effects below apply under the
+	// loop's context, so a call cut short applies none of them.
+	rctx, cancel := l.toolContext(fctx)
+	effects, output, err := l.ds.runCallable(rctx, fn, runner.Input{
 		Mode: runner.ModeCall, Args: input,
 		CausalDepth:    l.in.causalDepth,
 		IdempotencyKey: key,
 	})
+	late, timedOut := l.toolTimedOut(ctx, rctx)
+	cancel()
+	if timedOut {
+		return late, false
+	}
 	if err != nil {
 		return toolError(err.Error()), false
 	}

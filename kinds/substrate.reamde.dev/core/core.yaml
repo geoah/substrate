@@ -55,7 +55,9 @@ data:
   # substrate" where they said an undefined "body" and "host" (#49).
   # version 38: the `alert` kind, one record per ongoing problem the engine
   # raises and resolves (decision record 0148).
-  version: 38
+  # version 39: the query tool's `q` says to search with one or two
+  # distinctive words, never a list of common ones.
+  version: 39
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
