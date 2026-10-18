@@ -66,7 +66,7 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 		if p.Sensitive() && v == Redacted {
 			continue
 		}
-		cv, err := coerceValue(p, v)
+		cv, err := coerceProp(ty, name, p, v)
 		if err == nil {
 			err = storableText(cv)
 		}

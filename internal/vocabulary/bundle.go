@@ -64,6 +64,44 @@ const (
 	TraitOverrideCore  = PackageCore + "/" + TraitOverride
 )
 
+// The observed trait (decision 0154): a kind that binds it holds observed
+// values, one per record (`single`) or many packed over a fixed period
+// (`packed`), and the write path holds every record of it to the rules a
+// trait cannot state (observed.go). Its property list never grows: a later
+// need is a second trait bound beside it.
+const (
+	TraitObserved     = "observed"
+	TraitObservedCore = PackageCore + "/" + TraitObserved
+
+	// ObservedSingle and ObservedPacked are the trait's two variants.
+	ObservedSingle = "single"
+	ObservedPacked = "packed"
+)
+
+// The revised trait (decision 0162): a kind rewritten from an upstream that
+// numbers its versions, such as a night's sleep or a workout, whose
+// `revision` the write path never lets fall. `observed` holds the same rule
+// for observed values, and its property list cannot grow, so the session
+// kinds beside them bind this one.
+const (
+	TraitRevised     = "revised"
+	TraitRevisedCore = PackageCore + "/" + TraitRevised
+)
+
+// The traits beside `observed` that contract what the engine and the console
+// read from the records an observed value points at, and from a lab result
+// (decision 0154): `metric` on the catalogue entry a value's `metric`
+// reference names, `source` on the record its `source` names, and `result`
+// on a single kind that holds a laboratory's result shapes.
+const (
+	TraitMetric     = "metric"
+	TraitMetricCore = PackageCore + "/" + TraitMetric
+	TraitSource     = "source"
+	TraitSourceCore = PackageCore + "/" + TraitSource
+	TraitResult     = "result"
+	TraitResultCore = PackageCore + "/" + TraitResult
+)
+
 // ComputedSlotLen is the width of the slot a computed occurrence's id carries
 // after its series' id and a `_`: `YYYYMMDDTHHMMSSZ`. MaxSeriesIDLen keeps the
 // whole `<seriesId>_<slot>` inside MaxIDLen, and the write path holds a kind

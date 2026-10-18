@@ -754,7 +754,7 @@ and these are added:
 ## 13. The review of 2026-10-10 and what it changed
 
 Codex (gpt-6-astra) reviewed sections 1 to 12 on 2026-10-10 without editing
-them; the full text is `review/codex-review.md`.
+them; the full text is [review/codex-review.md](observations/review/codex-review.md).
 All fourteen findings change this plan in whole or in part, one sub-rule is
 declined, and one point stays an open question. Where a row below contradicts
 an earlier section, the row wins. The current end-to-end proposal, with the

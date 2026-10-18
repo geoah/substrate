@@ -849,6 +849,10 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.guardSettingWrite(sp); err != nil {
 		return nil, err
 	}
+	// A packed observed record's `stats` is the engine's and its `unit` is
+	// stored as a table code (observed.go): both settle before the managed
+	// check reads the write.
+	prepareObserved(sp)
 	// A managed property is the engine's to write, on a data kind exactly as
 	// on a declaration row (checkDeclarationWrite).
 	if err := t.checkManagedProps(sp); err != nil {
@@ -1108,6 +1112,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// `required` is a statement about the RECORD: the merged row is what has to
 	// satisfy it, so this runs on every write, references included.
 	if err := t.checkRequiredProps(sp, row); err != nil {
+		return nil, err
+	}
+	// An observed kind's merged row is held to the trait's rules on every
+	// write, a patch included, and a packed record's stats follow its values.
+	if err := t.checkObserved(sp, before, row, &accepted); err != nil {
 		return nil, err
 	}
 

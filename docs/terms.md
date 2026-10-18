@@ -64,6 +64,11 @@ nothing, there are none.
 | ---- | ---------- |
 | **quantity** | A value of the `quantity` datatype: exact decimal digits and a case-sensitive UCUM unit code, `{value, unit, comparator?}`. Decision record 0153. |
 | **measure** | A named quantity in the engine's [unit table](units.md) (`mass`, `energy`, `torque`): a dimension, a base unit and the codes that convert into it. A value converts and compares only within its measure; a declaration names it with `measures:`. |
+| **observed value** | A record of a kind that binds core's `observed` trait: one value (`observed(single)`, an observation) or many values of one metric over one fixed period (`observed(packed)`, a trace). Decision record 0154. |
+| **metric** | A record of the `observations` sample's `metric` kind: what can be measured, its codes in other systems and the measure its values convert into. |
+| **source** | On an observed value, the device, app, service or lab that produced it. The mirror row that delivered it is its `origin`. Not a declaration's managed `source`. |
+| **form** | What an observed value's number means, written on the value: `gauge` (a level), `amount` (accrued over a span), `counter` (a running total) or `summary` (a statistic its source computed). It decides which reducers apply. Decision record 0156. |
+| **hold** | How long a gauge's value stands after its point when no newer one arrives. Decision record 0158. |
 
 ## Installed things
 

@@ -312,6 +312,14 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md) | An agent delivery a restart interrupted is rerun once, at the first pass after the restart | proposed |
 | [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | proposed |
 | [0153](0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md) | A quantity is exact digits and a UCUM code, converted only within its measure | accepted |
+| [0154](0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md) | An observed value binds the core `observed` trait, which never gains a property | accepted |
+| [0155](0155-an-observed-value-names-what-it-is-about-with-an-about-reference.md) | An observed value names what it is about with an `about` reference | accepted |
+| [0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md) | The forms are `gauge`, `amount`, `counter` and `summary`, and they live on the value | accepted |
+| [0157](0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md) | A counter is stored as sent and differenced at read under one of three contracts | accepted |
+| [0158](0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md) | A gauge carries a hold, a null ends it, and its mean is time-weighted | accepted |
+| [0159](0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md) | The base observation kinds live in a sample every domain sample requires | accepted |
+| [0162](0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md) | An observed row names its origin and source, and composes its id from upstream data | accepted |
+| [0163](0163-positions-forecasts-and-money-stay-out-of-the-observed-index.md) | Positions, forecasts and money stay out of the observed index | accepted |
 | [0164](0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md) | A webhook's signature is verified by the host when the trigger declares one | accepted |
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |

@@ -633,7 +633,9 @@ func firstOr(names []string, fallback string) string {
 // parseTraitVariantProps reads one variant's properties. A variant's properties
 // are built-in datatypes only: the variants exist for the machinery bound to
 // record columns, and a refinement is package-local while a trait resolves
-// across packages.
+// across packages. `reference` is admitted as it is on a variant-free trait: a
+// contract datatype whose pin and onDelete the binding kind declares (core's
+// `observed` names its metric, source and the thing observed this way).
 func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[string]Datatype {
 	out := map[string]Datatype{}
 	for _, pname := range sortedKeys(props) {
@@ -642,7 +644,7 @@ func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[
 			continue
 		}
 		k := Datatype(fmt.Sprint(props[pname]))
-		if !builtinKinds[k] {
+		if !builtinKinds[k] && k != DatatypeReference {
 			l.errf("%s.%s: unknown property type %q", where, pname, k)
 			continue
 		}
@@ -1631,7 +1633,7 @@ func bindCapability(typeIdent, capName, variant, cols string, c *Trait) (*TraitB
 		}
 		// Non-hot trait properties are a type contract on the type's
 		// own declarations.
-		contracts = append(contracts, pendingCapProp{typeIdent, capName, pname, props[pname]})
+		contracts = append(contracts, pendingCapProp{typeIdent, capName, c.Identity(), pname, props[pname]})
 	}
 	return b, contracts, problems
 }
@@ -1648,6 +1650,7 @@ func sortedNames(props map[string]Datatype) []string {
 type pendingCapProp struct {
 	Kind     string // type identity
 	Cap      string
+	Trait    string // the trait's identity
 	Prop     string
 	Datatype Datatype
 }
@@ -2502,6 +2505,7 @@ func (r *Registry) Finalize() error {
 	for _, g := range authorities {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
+	problems = append(problems, r.observedMetricPins()...)
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.mappingSubjectProblems()...)
 	if len(problems) > 0 {
@@ -2520,6 +2524,7 @@ func (r *Registry) Install(g *Package) error {
 		return err
 	}
 	problems := r.resolvePackage(g)
+	problems = append(problems, r.observedMetricPins()...)
 	// The registry-wide invariants re-run whole: a re-registration may add a
 	// mapping whose violation lives on an already-loaded kind. Checked HERE
 	// and not only in Finalize, because the engine installs through this door
@@ -2575,6 +2580,7 @@ func (r *Registry) InstallAll(packages []*Package) error {
 	for _, g := range packages {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
+	problems = append(problems, r.observedMetricPins()...)
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.crossPackageMappingProblems(packages)...)
 	problems = append(problems, r.mappingSubjectProblems()...)
@@ -2896,10 +2902,11 @@ func (r *Registry) resolvePackage(g *Package) []string {
 				where, p.Cap, p.Prop, p.Datatype))
 			continue
 		}
-		if prop.Datatype != p.Datatype {
+		if !contractDatatypeMet(p.Datatype, prop.Datatype) {
 			problems = append(problems, fmt.Sprintf("%s: data.properties.%s: trait %s requires type %s, got %s",
 				where, p.Prop, p.Cap, p.Datatype, prop.Datatype))
 		}
+		problems = append(problems, contractShapeProblems(where, p.Prop, p.Trait, prop)...)
 	}
 	// The timeline traits EXPECT `temporal` on the same kind (a rule with no
 	// anchor names no instants), but the loader does not refuse a binding

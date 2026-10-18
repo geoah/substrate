@@ -878,6 +878,13 @@ console lists every provider's `accountconfig` accounts.
 [traits and interfaces](traits.md) is the worked tour: declaring a trait of
 your own, and every query surface binding unlocks.
 
+**Observed values.** Core's `observed` trait marks a kind whose records hold
+measured values, one per record (`observed(single)`) or many over a fixed
+period (`observed(packed)`). The substrate holds every write of such a kind to
+the rules its property list cannot state and computes a packed record's
+`stats`; [observations](observations.md) has the rules and the sample kinds
+that bind it.
+
 ## Validation and state machines
 
 The substrate has no verb endpoints: no "complete", no "accept", no "close".

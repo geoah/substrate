@@ -676,6 +676,24 @@ host.page.more(cursor)                            # the continuation to return
 host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str; .exact
 host.units.canonical(code)                        # "bpm" -> "/min"
 host.units.measure(code)                          # "kg" -> "mass"
+host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
+                    hold=None, about=None, channel=None, reset_rule=None,
+                    wrap_at=None, delta=None, circular=None, start=None, end=None)
+host.observed.local_day(at, utc_offset_minutes)   # "2026-10-07"
+host.observed.period_id(at, period)               # "2026-10-07T06"
+host.observed.decimal(value)                      # 1e-05 -> "0.00001"
+host.observed.number(value)                       # 26.0 -> "26"; None if not a number
+host.observed.quantity(value, unit)               # {"value": "61.3", "unit": "/min"}
+host.observed.duration(seconds)                   # 28489 -> "PT7H54M49S"
+host.observed.instant(at)                         # "2026-10-07T06:00:00Z"
+host.observed.parse_instant(text)                 # RFC 3339 -> aware datetime, or None
+host.observed.utc_offset(tzd_or_datetime)         # "+03:00" -> 180
+host.observed.percent(part, whole)                # {"value": "87.50", "unit": "%"}
+host.observed.record_id(provider, account, *parts)  # composed, hashed past 128 bytes
+host.observed.ref_id(reference, kind)             # the id a reference to kind names
+host.observed.sleep_name(nap, start, end, start_offset=None, end_offset=None)
+host.observed.workout_name(sport, start, offset=None)  # "Running, Sat 11 Oct 08:43"
+host.observed.reconcile(origins, outputs, *, owned, adapter=None, stored=None)
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
@@ -728,6 +746,12 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
 empty, so every `list` and `search` is refused and every `get` answers absent.
+A `list` whose `filter.referencing` names a record of a kind outside the
+allowlist trips as one naming that kind in `filter.kinds` does. The record
+the delivery's envelope names is the exception, a delete's included: a
+`list` may name it, which is how `host.observed.reconcile`
+finds what the body wrote from that record before, whatever kinds the
+trigger fires on.
 A forbidden kind answers exactly like an absent id, same nil shape and same
 budget charge, so a disallowed `get` is never an existence or kind oracle.
 Calls are charged before they run, `first` and `k` clamp to the remaining row
@@ -801,6 +825,103 @@ answer's `exact` attribute is `False` exactly when it was rounded. Without `meas
 `measure="temperature-difference"` converts a deviation without the offset.
 A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
 engine's refusal.
+
+**`host.observed` builds observed values in the body.** It is pure Python and
+writes nothing; [observations](observations.md) has the rules its output
+meets. `trace(points, ...)` packs `[(at, value)]` or `[(at, code)]`,
+each `at` a timezone-aware `datetime` and a value `None` where the source had
+nothing, into the property maps a trace kind (one binding core's
+`observed(packed)`) admits: one map per fixed UTC period (`period`, aligned to
+the epoch, so `PT1H` is the UTC hour), split where the points' UTC offset
+changes so each map has one offset, and split again before a map passes
+20,000 points or 1 MiB less 64 KiB of JSON with the `stats` the engine
+stamps on it (the 64 KiB is left for the properties the body adds, such as
+`origins`). A map takes `every` where the points are regularly spaced from
+its start and `offsets` in milliseconds otherwise, and names every key it
+does not use as `None` (`every` or `offsets`, `values` or `codes`, `unit` on
+a trace of codes, and `source`, `about`, `channel`, `hold`, `resetRule`,
+`wrapAt`, `delta` and `circular` where not given), so a put over a period
+stored in another shape or with other reading rules replaces them. Points
+that are all `None` make a trace of codes when `unit` is `None` and of
+numbers otherwise. `start` and
+`end` bound the span the delivery covers: each map claims only the part of
+its period inside `[start, end)`, so two deliveries that share an hour write
+two maps side by side, and a point outside them raises. A counter with
+`reset_rule="wrap"` needs `wrap_at`; `delta=True` marks temperature
+differences and `circular=True` angles. Ids are the caller's: compose each from
+`period_id(doc["at"], period)`, which writes `at` in UTC at the period's
+resolution (`2026-10-07T06` for `PT1H`) and adds the finer fields a split
+part's later start needs (`2026-10-07T06:40`). `local_day(at, offset)` is the
+civil date at that offset, the day a daily summary belongs to.
+
+`decimal`, `duration` and `instant` write a number, a length of time and an
+instant in the one spelling the engine stores: digits without an exponent
+(a float is its shortest repr written out, so `1e-05` is `0.00001`), the
+canonical ISO 8601 duration to the microsecond, and RFC 3339 UTC.
+`percent(part, whole)` is part over whole as a `%` quantity rounded half up
+to two places, the shape of a night's `efficiency`, and None where the whole
+is not above zero. `record_id(provider, account, *parts)` joins
+`<provider>/<part>/...` into an id and hashes it through `host.ids.external`
+only where it would leave the id alphabet or pass 128 bytes. It is the one
+rule a provider composes its mirror row ids by and an adapter its output
+ids by.
+
+The readers are what every adapter reads a mirror row through, so two
+adapters cannot read one field two ways. `number` writes a JSON number as
+the digits it was sent with, a whole float whole (`26.0` is `26`), and
+answers None for anything that is not a finite number; `quantity(value,
+unit)` is that beside the unit as the engine stores it. `parse_instant`
+reads RFC 3339 with its offset, and None for a timestamp without one;
+`utc_offset` is the minutes east of UTC of a designator (`+03:00`, `-0530`,
+`Z`) or an aware datetime. `ref_id(reference, kind)` is the id a stored
+reference names, in either spelling, with only the kind's prefix taken off.
+`sleep_name` and `workout_name` write the `name` heading a sleep and a
+workout carry, on the clock they were recorded on: `Night of Fri 10 Oct`,
+`Nap, Sun 12 Oct 14:30`, `Running, Sat 11 Oct 08:43`, and ` UTC` after the
+time where the offset is unknown. `host.units` asks the engine each
+question once per invocation, so a body need not keep its own memo.
+
+`reconcile(origins, outputs, *, owned, adapter=None)` is the per-origin
+loop every health adapter runs, and the one call here that reads and
+stages. `origins` is the path of the row the outputs come from (a list
+where one delivery answers for several); `outputs` maps `(kind, id)` to the
+properties the row implies now; `owned` maps each output kind to every
+property the body sets on it. It reads the stored records of those kinds
+whose `origin` or `origins` names the path, page by page (another
+reference, such as `derivedFrom`, does not count). That read needs no grant
+for the row the delivery's envelope names; every other origin's kind must
+be in `permissions.reads`. It then reads by id each
+output that read did not find, 500 ids to a call against the read budget,
+because another origin may hold it: an hour's trace built from several rows
+names all of them. Then it:
+
+- writes each output in one put naming every owned property, `None` for
+  one the row no longer implies, which the put clears;
+- leaves unwritten an output that already holds those properties,
+  `revision` aside;
+- writes `revision` as the higher of the one given and the one stored,
+  because the write path refuses a falling revision and a delivery that
+  reads its rows as they stand computes a lower one only when a row it was
+  built from went away;
+- deletes every output the origin's read holds that `outputs` does not
+  name, and never one only the read by id found.
+
+It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
+on every output where given, and takes `stored=` where the body has
+already read the records.
+
+```python
+device = "chest"
+docs = host.observed.trace(
+    [(sample_time, sample["bpm"]) for sample in samples],
+    metric={"ref": home + "/observations/metric/health/heart_rate"},
+    source={"ref": home + "/observations/source/strap/%s/%s" % (account_id, device)},
+    unit="/min", form="gauge", hold="PT4M")
+for doc in docs:
+    period = host.observed.period_id(datetime.fromisoformat(doc["at"]), "PT1H")
+    host.effects.put(home + "/observations/trace",
+                     "strap/%s/%s/heart_rate/%s" % (account_id, device, period), doc)
+```
 
 **Two ceilings.** `host.log(msg)` and `print` write a line to the server log
 the moment the body writes it, as `substrate: function log` with the function,

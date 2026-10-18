@@ -1,0 +1,147 @@
+# the catalogue entry for one observable thing. Writers find a metric by a
+# code they know (a LOINC code, a HealthKit identifier, a Home Assistant
+# device class) and point every value at it; readers find it by name. Binds
+# core's `metric` trait, which contracts what the engine and the console read
+# from it: `measures`, `unit`, `bucketPlace` and `rollups` for the aggregate
+# read and the observed index, and `name`, `form`, `codeSet`,
+# `displayPrecision` and `category` for a reader. The write rules and the
+# index read nothing else from it: hold and the counter contract are advice a
+# writer copies onto each value, and the value is what the index reads
+# (decision record 0156). A domain ships its own metrics with a
+# package-prefixed id (`health/heart_rate`); this package ships the physical
+# ones several domains share (metrics.yaml).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/observations/metric
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  description: >-
+    Something that can be measured, such as heart rate, a room's temperature
+    or a lab's LDL cholesterol. A catalogue entry: its names, the codes other
+    systems use for it, its unit and how its values are best read. Every observation
+    and trace points at one.
+  purpose: primary
+  names:
+    singular: metric
+  traits:
+    - substrate.reamde.dev/core/metric
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the metric's heading, one line
+    description:
+      type: markdown
+      description: what is measured and how to read it
+    # The same metric in other code systems. `system` is a URI where the
+    # system has one (`http://loinc.org`) and a short word otherwise:
+    # `healthkit`, `healthconnect`, `googlefit`, `whoop`, `garmin`,
+    # `homeassistant`, `cf` (a CF standard name).
+    codes:
+      type: object
+      repeated: true
+      description: the same metric in other code systems
+      fields:
+        system:
+          type: string
+          description: the code system, a URI such as http://loinc.org or
+            a word such as healthkit
+        code:
+          type: string
+          description: the code in that system
+        version:
+          type: string
+          description: the code system's version, where it matters
+        display:
+          type: string
+          description: the code system's own name for it
+    # ---- the metric contract, with `name` above ----
+    # a measure from the unit table (docs/units.md): `mass`, `rate`,
+    # `amount-concentration`. A string, not an enum, because the table grows
+    # by release and a declaration must not lag it; the write path refuses a
+    # name the table does not hold, and a unit outside the measure.
+    measures:
+      type: string
+      description: the measure every value's unit belongs to, from the unit
+        table, such as mass; the aggregate read converts into it
+    unit:
+      type: string
+      description: the unit writers store values in and the aggregate read
+        answers in by default, a UCUM code such as kg or /min
+    codeSet:
+      type: string
+      repeated: true
+      description: the codes a categorical metric's values take, such as awake,
+        light, deep, rem
+    # a string with listed values, because the trait contracts a string
+    form:
+      type: string
+      description: the form writers stamp on each value unless the source
+        says otherwise
+      values:
+        - gauge
+        - amount
+        - counter
+        - summary
+    displayPrecision:
+      type: int
+      min: 0
+      max: 12
+      description: the decimal places a reader shows
+    bucketPlace:
+      type: string
+      values:
+        - start
+        - end
+      description: where a read by the day or longer places a value's span;
+        end lands a night on the day it ends. Absent is start
+    # navigation only: nothing groups or filters by it server-side
+    category:
+      type: string
+      description: where a reader lists it, such as heart, sleep, body, labs
+    # the observed index keeps each listed tier of this metric's values
+    # summed ahead of a read; tier names are not lowercase words, so the
+    # list is plain strings and the write path holds them to 5m, 15m, 1h and
+    # 1d, finest first
+    rollups:
+      type: string
+      repeated: true
+      description: the rollup tiers the index keeps for this metric, from
+        5m, 15m, 1h and 1d, finest first. Absent keeps 15m, 1h and 1d; an
+        empty list keeps none
+    # ---- this metric kind's own ----
+    hold:
+      type: duration
+      description: how long a gauge value stands without a newer one, copied
+        onto each value
+    # the aggregate read's reducer names (count, sum, avg, min, max,
+    # first, last, stddev, percentile, durationIn, timeInState, increase,
+    # rate, circularMean): a string list, because an enum value is one
+    # lowercase word and three of these are camelCase
+    reducers:
+      type: string
+      repeated: true
+      description: the reducers that answer something useful for this metric,
+        such as avg or durationIn
+    # serum and whole-blood glucose share a measure and are not
+    # interchangeable. The class says so to a reader that combines metrics;
+    # nothing in the engine reads it.
+    compatibility:
+      type: string
+      description: the class within which values may be pooled, where the
+        measure alone is not enough
+    algorithm:
+      type: object
+      description: the vendor method behind a computed score
+      fields:
+        vendor:
+          type: string
+          description: who computes it, such as WHOOP
+        name:
+          type: string
+          description: the vendor's name for the method
+        version:
+          type: string
+          description: the method's version, where the vendor states one
