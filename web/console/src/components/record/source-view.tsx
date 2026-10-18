@@ -1,6 +1,6 @@
 /** The record's source, in technical mode: the YAML envelope (references
- * linked, the way to edit it beside it) or the JSON the API serves, for a
- * developer who reads or pipes the wire. */
+ * linked, the way to edit it beside it unless the record is read only) or
+ * the JSON the API serves, for a developer who reads or pipes the wire. */
 
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
@@ -20,10 +20,14 @@ export function SourceView({
   record,
   kind,
   kinds,
+  readOnly = false,
 }: {
   record: SubstrateRecord
   kind?: KindInfo
   kinds: KindInfo[]
+  /** A provider's copy or an adapter's output (`readOnlyReason`): no edit
+   * is offered. */
+  readOnly?: boolean
 }) {
   const [lens, setLens] = useState<"yaml" | "json">("yaml")
   const docs = useMemo(() => keyDocsOf(kind), [kind])
@@ -52,19 +56,21 @@ export function SourceView({
           {lens === "json" && (
             <CopyButton value={json} label="Copy the record’s JSON" />
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            render={
-              <Link
-                to="/data/$authority/$pkg/$name/$id/edit"
-                params={{ authority, pkg, name, id: record.id }}
-              />
-            }
-          >
-            <PencilIcon />
-            Edit YAML
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="outline"
+              size="sm"
+              render={
+                <Link
+                  to="/data/$authority/$pkg/$name/$id/edit"
+                  params={{ authority, pkg, name, id: record.id }}
+                />
+              }
+            >
+              <PencilIcon />
+              Edit YAML
+            </Button>
+          )}
         </span>
       </div>
       <div className="overflow-hidden rounded-lg border bg-panel">

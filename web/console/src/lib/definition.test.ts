@@ -94,6 +94,27 @@ describe("declaredProperties", () => {
   it("handles a kind with no definition at all", () => {
     expect(declaredProperties({ ...person, definition: {} })).toEqual([])
   })
+
+  it("names an observed kind's forms in the observations pages' words", () => {
+    const form = { type: "enum", values: ["gauge", "counter"] }
+    const observed: KindInfo = {
+      ...event,
+      definition: {
+        traits: ["substrate.reamde.dev/core/observed(single)"],
+        properties: { form },
+      },
+    }
+    expect(declaredProperties(observed)[0].values).toEqual([
+      { value: "gauge", label: "Level" },
+      { value: "counter", label: "Running total" },
+    ])
+    // Any other kind's `form` keeps its declaration's words.
+    const plain = { ...event, definition: { properties: { form } } }
+    expect(declaredProperties(plain)[0].values).toEqual([
+      { value: "gauge", label: "" },
+      { value: "counter", label: "" },
+    ])
+  })
 })
 
 describe("column and filter derivation", () => {

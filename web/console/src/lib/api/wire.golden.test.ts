@@ -1019,6 +1019,9 @@ const notOnTheWire: Record<string, string> = {
   ReferencingRow:
     "one (record, site) pair the console folds from a referencing page and its matches",
   ReferencingGroup: "a client-side fold of ReferencingRow rows",
+  // observations.ts
+  AggregateRead:
+    "the `filter` and `aggregate` query parameters of one read, each JSON on its own, never one body",
   // repository.ts
   RepositoryInfo:
     "one property read off the repository record; not the operator's substrate.RepositoryInfo",

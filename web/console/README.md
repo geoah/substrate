@@ -43,25 +43,27 @@ build; `mise run ci:console:test` runs the tests. Both are what CI runs.
 
 The live routes in `src/router.tsx`, each with the page it renders:
 
-| Route                                      | Page                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------- |
-| `/login`, `/register`                      | the door; everything else needs a session                                       |
-| `/`                                        | Home: what the repository holds and what just happened                          |
-| `/data`                                    | All data: every collection, and Add a collection                                |
-| `/data/$authority`                         | one authority's packages                                                        |
-| `/data/$authority/$pkg`                    | one package: its collections and the tools it ships                             |
-| `/data/$authority/$pkg/$name`              | browse a kind's records                                                         |
-| `/data/$authority/$pkg/$name/new`          | create a record                                                                 |
-| `/data/$authority/$pkg/$name/$id`          | one record, and `/edit` beside it                                               |
-| `/agents`, `/agents/$id`                   | the chat over every agent; the `$id` route is one agent's page                  |
-| `/tools`, `/tools/$authority/$pkg/$name`   | every function that can act on the data; the second route is one tool           |
-| `/providers`, `/providers/$authority/$pkg` | every provider, and one provider's accounts, sync state and settings            |
-| `/history`                                 | the changelog as sentences                                                      |
-| `/search`                                  | the ranked read (`GET /api/v1/records?q=`) as a page                            |
-| `/settings`                                | the console's settings: layout, the account, its tokens and the recovery export |
-| `/merge-requests/$id`                      | a duplicate-suggestion verdict                                                  |
-| `/change-requests/$id`                     | a proposed change, what accepting it would do, and its verdict                  |
-| `/actors/$actorId`                         | an actor's view                                                                 |
+| Route                                      | Page                                                                                                  |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `/login`, `/register`                      | the door; everything else needs a session                                                             |
+| `/`                                        | Home: what the repository holds and what just happened                                                |
+| `/data`                                    | All data: every collection, and Add a collection                                                      |
+| `/data/$authority`                         | one authority's packages                                                                              |
+| `/data/$authority/$pkg`                    | one package: its collections and the tools it ships                                                   |
+| `/data/$authority/$pkg/$name`              | browse a kind's records                                                                               |
+| `/data/$authority/$pkg/$name/new`          | create a record                                                                                       |
+| `/data/$authority/$pkg/$name/$id`          | one record, and `/edit` beside it                                                                     |
+| `/agents`, `/agents/$id`                   | the chat over every agent; the `$id` route is one agent's page                                        |
+| `/tools`, `/tools/$authority/$pkg/$name`   | every function that can act on the data; the second route is one tool                                 |
+| `/providers`, `/providers/$authority/$pkg` | every provider, and one provider's accounts, sync state and settings                                  |
+| `/history`                                 | the changelog as sentences                                                                            |
+| `/search`                                  | the ranked read (`GET /api/v1/records?q=`) as a page                                                  |
+| `/observations`                            | one row per stream in the records grid, and a Timeline panel drawing the selected streams             |
+| `/observations/timeline`                   | the chosen metrics over a range, overlaid in charts of up to two units, one aggregate read per metric |
+| `/settings`                                | the console's settings: layout, the account, its tokens and the recovery export                       |
+| `/merge-requests/$id`                      | a duplicate-suggestion verdict                                                                        |
+| `/change-requests/$id`                     | a proposed change, what accepting it would do, and its verdict                                        |
+| `/actors/$actorId`                         | an actor's view                                                                                       |
 
 Old addresses redirect: `/changelog` to `/history`; `/registry`,
 `/registry/$id`, `/connections`, `/connections/$authority/$pkg/$name/$id` and

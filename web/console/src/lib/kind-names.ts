@@ -154,8 +154,10 @@ const WORDS = new Set([
  * provider words through `packageDisplayName`. */
 export const ACRONYMS: Readonly<Record<string, string>> = {
   api: "API",
+  hrv: "HRV",
   html: "HTML",
   id: "ID",
+  iq: "IQ",
   json: "JSON",
   llm: "LLM",
   oauth: "OAuth",

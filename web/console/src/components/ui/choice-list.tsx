@@ -8,7 +8,8 @@
  *
  * `multiple` toggles membership and keeps the list open, a box at each
  * row's end as the reference picker draws it; single marks the chosen row
- * with a check. */
+ * with a check. Several chosen values come in the options' order, or with
+ * `ordered` in the order they were picked. */
 
 import { useState, type ReactNode, type Ref } from "react"
 import { CheckIcon } from "lucide-react"
@@ -49,6 +50,7 @@ export function ChoiceList({
   selected,
   onChange,
   multiple = false,
+  ordered = false,
   label,
   showValues,
   filter,
@@ -64,6 +66,9 @@ export function ChoiceList({
   /** Multiple: the whole next set. Single: the one value picked. */
   onChange: (next: string[]) => void
   multiple?: boolean
+  /** Multiple: a new pick goes last, for a caller whose values rank (a
+   * priority), instead of taking its place among the options. */
+  ordered?: boolean
   /** The list's accessible name ("Status"). */
   label: string
   /** Show the stored value beside the words. Follows Technical details by
@@ -96,6 +101,14 @@ export function ChoiceList({
   function pick(value: string) {
     if (!multiple) {
       onChange([value])
+      return
+    }
+    if (ordered) {
+      onChange(
+        chosen.has(value)
+          ? selected.filter((v) => v !== value)
+          : [...selected, value]
+      )
       return
     }
     const next = new Set(chosen)

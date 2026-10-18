@@ -56,6 +56,15 @@ export const INTERACTION_KIND_PRE_MOVE = `${CORE_PACKAGE}/llminteraction`
  * compares (a package-local look-alike can never answer for it). */
 export const SYNC_TRAIT = `${CORE_PACKAGE}/sync`
 
+/** Core's `observed` trait: a kind whose records hold measured values the
+ * engine indexes (decision 0154). Its two variants describe layout only, and
+ * the console tells them apart by whether the kind declares `values`. */
+export const OBSERVED_TRAIT = `${CORE_PACKAGE}/observed`
+
+/** Core's `metric` trait: every metric kind binds it, so the console finds
+ * the metric records by it, never by a sample's kind name. */
+export const METRIC_TRAIT = `${CORE_PACKAGE}/metric`
+
 /** The four core kinds a grant glob never reaches (`vocabulary.AuthKinds`,
  * record 0080): an entry has to spell one out to grant it. */
 export const AUTH_KINDS: readonly string[] = [

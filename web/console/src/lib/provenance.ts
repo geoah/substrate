@@ -13,7 +13,11 @@
  * the thing it is — and it does so without React, so the grouping, the dedupe and
  * the vocabulary are tested as functions. */
 
-import { actorIdentity, type ActorIdentity } from "@/lib/actor-identity"
+import {
+  actorIdentity,
+  providerOfKind,
+  type ActorIdentity,
+} from "@/lib/actor-identity"
 import { CORE_PACKAGE, splitKind } from "@/lib/api/http"
 import {
   readReference,
@@ -223,6 +227,58 @@ export function everyValueYours(record: SubstrateRecord): boolean {
 export function sourceName(actor: string): string {
   const identity = actorIdentity(actor)
   return identity.provider?.name ?? identity.name
+}
+
+/** A record an adapter wrote: one naming the provider record it was built
+ * from in core's `origin`, or the provider records a packed period was
+ * built from in `origins`. The owner decided these are read only: a
+ * correction is the owner's own record from the owner's own source, which
+ * that source's `priorities` rank above the provider's. */
+export interface AdapterOutput {
+  /** Who wrote it, in a sentence: the function managing its values, else
+   * the provider its origin record belongs to, else the origin's kind. */
+  writer: string
+  /** The installed code that manages its values, where one does. */
+  actor?: string
+  /** The provider record it was built from, a record path: the first of a
+   * packed period's `origins`. */
+  origin: string
+}
+
+export function adapterOutput(
+  record: SubstrateRecord
+): AdapterOutput | undefined {
+  const origins = record.properties?.origins
+  const origin =
+    readReference(record.properties?.origin)?.path ??
+    (Array.isArray(origins)
+      ? origins
+          .map((o) => readReference(o)?.path)
+          .find((p): p is string => Boolean(p))
+      : undefined)
+  if (!origin) return undefined
+  const actor = Object.values(record.propertyMeta ?? {})
+    .map((m) => m.manager)
+    .find((m) => m !== undefined && actorIdentity(m).cls === "function")
+  const originKind = splitRecordPath(origin)?.kind
+  const writer = actor
+    ? sourceName(actor)
+    : originKind
+      ? (providerOfKind(originKind)?.name ?? displayName(originKind))
+      : origin
+  return { writer, ...(actor ? { actor } : {}), origin }
+}
+
+/** Whether the console offers no edit of a record, and why: a provider's
+ * copy, which the owner changes upstream, or an adapter's output, which the
+ * owner corrects with a record of their own. Every door to an edit asks
+ * this, the record page's sheet and header, its YAML source and the edit
+ * route alike. */
+export function readOnlyReason(
+  record: SubstrateRecord
+): "provider" | "adapter" | undefined {
+  if (providerOfKind(record.kind)) return "provider"
+  return adapterOutput(record) ? "adapter" : undefined
 }
 
 /** The amber pill's words when live sources offer something else: the one

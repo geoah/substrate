@@ -106,6 +106,9 @@ declare module "@tanstack/react-table" {
      * (lib/column-widths.ts). Absent both knobs, the column flexes with the
      * density's default min and weight 1. */
     size?: FlexSize
+    /** A leading control column (a row's selection box): first in every
+     * order, and never listed in the Columns menu to hide or move. */
+    fixed?: boolean
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface TableMeta<TFeatures, TData> {

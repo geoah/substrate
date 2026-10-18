@@ -21,7 +21,9 @@
 // It does not catch an error in a route it does not visit, in an interaction
 // other than the register form, or in a state a fresh repository never
 // reaches: a record page, a list of records the user wrote, a connected
-// provider.
+// provider. The one state it seeds is measurements: before the three-metric
+// timeline it imports the observations and health samples and writes a few
+// values of three metrics, so that check proves the charts draw.
 //
 // /register creates a repository on every run, so point this at a throwaway
 // substrate whose door reads no invite code and no second factor, as
@@ -240,6 +242,75 @@ async function openDoor(origin) {
   }
 }
 
+/** Imports the observations and health samples into the signed-in
+ * repository and writes, over the last few hours, heart rate and heart rate
+ * variability values (two units, so they share a chart on two axes) and
+ * step counts (a third unit, a chart of its own). It runs in the page with
+ * the token the register form stored, as the console's own requests do. */
+async function seedObservations(page) {
+  const problem = await page.evaluate(async () => {
+    const token = localStorage.getItem("substrate.token")
+    const home = localStorage.getItem("substrate.repository")
+    if (!token || !home) return "no signed-in repository to seed"
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-Substrate-Actor": "console",
+    }
+    const send = async (method, path, body) => {
+      const res = await fetch(path, {
+        method,
+        headers,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      })
+      return res.ok ? "" : `${method} ${path} answered ${res.status}`
+    }
+    for (const sample of ["observations", "health"]) {
+      const id = encodeURIComponent(`samples.substrate.reamde.dev/${sample}`)
+      const failed = await send("POST", `/api/v1/catalog/${id}/import`)
+      if (failed) return failed
+    }
+    const kind = `${home}/observations/observation`
+    const metric = (id) => ({ ref: `${home}/observations/metric/health/${id}` })
+    const hour = 3_600_000
+    const now = Date.now()
+    for (let i = 1; i <= 6; i++) {
+      const at = new Date(now - i * hour)
+      const writes = [
+        {
+          metric: metric("heart_rate"),
+          form: "gauge",
+          value: { value: String(58 + i), unit: "/min" },
+          at: at.toISOString(),
+        },
+        {
+          metric: metric("hrv_rmssd"),
+          form: "gauge",
+          value: { value: String(40 + i), unit: "ms" },
+          at: at.toISOString(),
+        },
+        {
+          metric: metric("steps"),
+          form: "amount",
+          value: { value: String(300 * i), unit: "{steps}" },
+          at: at.toISOString(),
+          endsAt: new Date(at.getTime() + hour / 2).toISOString(),
+        },
+      ]
+      for (const properties of writes) {
+        const failed = await send("POST", "/api/v1/records", {
+          kind,
+          properties,
+        })
+        if (failed) return failed
+      }
+    }
+    return ""
+  })
+  if (problem) throw new Error(`seeding measurements: ${problem}`)
+}
+
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`
 }
@@ -318,6 +389,136 @@ const routes = [
       )
       const rows = await entries.count()
       return `"History", ${rows ? plural(rows, "change", "changes") : "its empty state"}`
+    },
+  },
+  {
+    path: "/observations",
+    async check(page) {
+      await shows(
+        page,
+        '"Observations" heading',
+        pageTitle(page, "Observations")
+      )
+      // A fresh repository binds no `observed` kind until a sample that
+      // records measurements is added, so its page says where they come from.
+      await loaded(
+        page,
+        "streams table or empty state",
+        page
+          .getByRole("columnheader", { name: "Metric", exact: true })
+          .or(page.getByText(/^Nothing here records measurements yet/)),
+        page.getByText(/^The streams didn.t load/)
+      )
+      const empty = await page
+        .getByText(/^Nothing here records measurements yet/)
+        .isVisible()
+      return `"Observations", ${empty ? "its empty state" : "its streams"}`
+    },
+  },
+  {
+    // The table's address and the Timeline panel: a sort, a grouping and
+    // the panel open with nothing selected, which says how to draw streams.
+    path: "/observations?sort=count:desc&group=metric&timeline=true",
+    async check(page) {
+      await shows(
+        page,
+        '"Observations" heading',
+        pageTitle(page, "Observations")
+      )
+      await loaded(
+        page,
+        "the Timeline panel or empty state",
+        page
+          .getByRole("region", { name: "Timeline of the selected streams" })
+          .or(page.getByText(/^Nothing here records measurements yet/)),
+        page.getByText(/^The streams didn.t load/)
+      )
+      const empty = await page
+        .getByText(/^Nothing here records measurements yet/)
+        .isVisible()
+      return `"Observations", ${empty ? "its empty state" : "grouped, with the Timeline panel"}`
+    },
+  },
+  {
+    path: "/observations/timeline",
+    async check(page) {
+      await shows(page, '"Timeline" heading', pageTitle(page, "Timeline"))
+      await loaded(
+        page,
+        "a chart or empty state",
+        page
+          .locator('[data-slot="timeline-lane"]')
+          .or(page.getByText(/^Nothing here records measurements yet/))
+          .or(page.getByText(/^Nothing has been measured yet/)),
+        page.getByText(/^This read failed/)
+      )
+      const lanes = await page.locator('[data-slot="timeline-lane"]').count()
+      return `"Timeline", ${lanes ? plural(lanes, "chart", "charts") : "its empty state"}`
+    },
+  },
+  {
+    // Three metrics of three units: two overlay on one chart, the left and
+    // the right axis, and the third splits into a chart of its own. The
+    // repository is seeded first, so the charts have points to draw and an
+    // empty state fails the check.
+    path: "/observations/timeline?metric=health/heart_rate,health/hrv_rmssd,health/steps",
+    async check(page) {
+      await seedObservations(page)
+      await page.reload({ waitUntil: "load" })
+      await shows(page, '"Timeline" heading', pageTitle(page, "Timeline"))
+      const lanes = page.locator('[data-slot="timeline-lane"]')
+      await loaded(
+        page,
+        "two charts",
+        lanes.nth(1),
+        page
+          .getByText(/^This read failed/)
+          .or(page.getByText(/^Nothing here records measurements yet/))
+          .or(page.getByText(/^Nothing has been measured yet/))
+          .or(page.getByText(/^No record names this metric/))
+      )
+      const count = await lanes.count()
+      if (count !== 2)
+        throw new Error(`${plural(count, "chart", "charts")}, want 2`)
+      // Each lane is named for the metrics it draws.
+      const names = await lanes.evaluateAll((all) =>
+        all.map((lane) => lane.getAttribute("aria-label") ?? "")
+      )
+      if (!/^Heart rate and Heart rate variability/.test(names[0] ?? "")) {
+        throw new Error(
+          `the first chart is ${JSON.stringify(names[0])}, want heart rate and HRV`
+        )
+      }
+      if (names[1] !== "Steps") {
+        throw new Error(
+          `the second chart is ${JSON.stringify(names[1])}, want Steps`
+        )
+      }
+      // Both draw, and the first reads its second unit on the right.
+      await expect(page, "two drawn charts", () =>
+        page
+          .locator('[data-slot="timeline-chart"]')
+          .nth(1)
+          .waitFor({ state: "visible" })
+      )
+      const series = await lanes
+        .nth(0)
+        .locator("[data-series]")
+        .evaluateAll(
+          (all) => new Set(all.map((s) => s.getAttribute("data-series"))).size
+        )
+      if (series < 2) {
+        throw new Error(
+          `the first chart draws ${plural(series, "series", "series")}, want 2`
+        )
+      }
+      const right = await lanes.nth(0).locator('[data-axis="right"]').count()
+      if (right !== 1) {
+        throw new Error(
+          `the first chart has ${plural(right, "right axis", "right axes")}, want 1`
+        )
+      }
+      return `"Timeline", 2 charts, ${series} series and a right axis on the first`
     },
   },
 ]

@@ -440,7 +440,7 @@ The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
 
-The sample ships two record views
+The sample ships two [record views](console.md#record-views)
 (`samples/health/views.yaml`), records of the seeded console package's
 `recordview` kind that describe a record page's layout. Each names its
 metrics by reference to the metric records, and the import lands both at
@@ -453,7 +453,7 @@ time moving, the heart rate over the workout, the time in five heart rate
 zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
 minute, five 19-beat bands from half of a 190 maximum) and the speed. Edit a
 view to change it, such as zone bounds from a measured maximum; a re-import
-keeps your edit. The console draws no record view yet.
+keeps your edit. The console draws a view above the record's property sheet.
 
 ### Lab results in both unit systems
 

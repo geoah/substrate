@@ -1,34 +1,14 @@
 /** Dates the way a person says them: "Today, 10:00", "Tomorrow", "Fri",
- * "26 Sep", "26 Sep 2025". The stored value always rides the title. */
+ * "Sep 26", "Sep 26, 2025", in the one format every surface uses
+ * (`friendlyDate`). The stored value always rides the title. */
 
-const DAY = 86_400_000
-
-function startOfDay(t: number): number {
-  const d = new Date(t)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
-}
+import { friendlyDate } from "@/lib/grid-values"
 
 /** The day, relative where that is shorter: Today, Tomorrow, Yesterday, a
  * weekday within the coming week, else the date (the year only once it
  * differs). */
 export function friendlyDay(iso: string, now = Date.now()): string {
-  const t = Date.parse(iso)
-  if (Number.isNaN(t)) return iso
-  const days = Math.round((startOfDay(t) - startOfDay(now)) / DAY)
-  if (days === 0) return "Today"
-  if (days === 1) return "Tomorrow"
-  if (days === -1) return "Yesterday"
-  const d = new Date(t)
-  if (days > 1 && days < 7) {
-    return d.toLocaleDateString("en-GB", { weekday: "short" })
-  }
-  const sameYear = d.getFullYear() === new Date(now).getFullYear()
-  return d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-  })
+  return friendlyDate(iso, now)
 }
 
 /** A bare `date` (`2026-10-03`) is a calendar day, not an instant: parsed as

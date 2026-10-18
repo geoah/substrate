@@ -46,6 +46,7 @@ import { KindRef } from "@/components/identity/kind-ref"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { SectionBoundary } from "@/components/page-error"
+import { AdapterNotice } from "@/components/record/adapter-notice"
 import { CreateSheet } from "@/components/record/create-sheet"
 import { PropertyForm } from "@/components/record/property-form"
 
@@ -87,6 +88,7 @@ import {
 } from "@/lib/record-yaml"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
+import { adapterOutput, readOnlyReason } from "@/lib/provenance"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
@@ -155,6 +157,22 @@ function RecordEditor({
       <EditorEmpty
         title="Couldn’t load this record"
         description={`${authority}/${name}/${id}: ${record.error.message}`}
+      />
+    )
+  }
+
+  // A provider's copy and an adapter's output are read only on every door,
+  // this route included: a save here would be a correction the next sync or
+  // the next delivery overwrites.
+  const locked =
+    mode === "edit" && record.data ? readOnlyReason(record.data) : undefined
+  if (locked && record.data) {
+    return (
+      <ReadOnlyRecord
+        record={record.data}
+        kind={kindInfo}
+        reason={locked}
+        params={{ authority, pkg, name, id: record.data.id }}
       />
     )
   }
@@ -711,6 +729,53 @@ function ProblemRow({
         )}
       </div>
     </li>
+  )
+}
+
+/** The edit route over a record the console offers no edit of: why, how
+ * the owner changes it instead, and the way back to it. */
+function ReadOnlyRecord({
+  record,
+  kind,
+  reason,
+  params,
+}: {
+  record: SubstrateRecord
+  kind: KindInfo
+  reason: "provider" | "adapter"
+  params: { authority: string; pkg: string; name: string; id: string }
+}) {
+  const adapter = reason === "adapter" ? adapterOutput(record) : undefined
+  return (
+    <div className="flex flex-1 p-6">
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FileQuestionIcon />
+          </EmptyMedia>
+          <EmptyTitle>This record is read only</EmptyTitle>
+          <EmptyDescription>
+            {adapter
+              ? "An adapter wrote it, and rewrites it when the provider’s data changes."
+              : "It is a provider’s copy: change it at the provider, and the next sync brings the change here."}
+          </EmptyDescription>
+        </EmptyHeader>
+        {adapter && (
+          <AdapterNotice
+            adapter={adapter}
+            recordKind={record.kind}
+            kind={kind}
+          />
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          render={<Link to="/data/$authority/$pkg/$name/$id" params={params} />}
+        >
+          Back to the record
+        </Button>
+      </Empty>
+    </div>
   )
 }
 

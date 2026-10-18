@@ -1,0 +1,266 @@
+/** The console gives no kind outside the seeded packages special treatment
+ * (decision record 0166): how a sample's kinds are presented comes from
+ * record views, which are data. This holds the console's own source to it,
+ * tests and fixtures aside: no string in it names a sample package, a
+ * provider, a shipped metric id or a sample's kind by its bare name. The
+ * names are read from the tree at test time (`samples/`, the providers under
+ * `kinds/`, every metric record a sample ships), so a new sample is held to
+ * the rule the day it lands. */
+
+import { describe, expect, it } from "vitest"
+import { parseAllDocuments } from "yaml"
+
+const sources = import.meta.glob<string>(["./**/*.ts", "./**/*.tsx"], {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})
+
+const sampleFiles = import.meta.glob<string>("../../../samples/*/*.yaml", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})
+
+const providerBundles = import.meta.glob<string>(
+  "../../../kinds/providers.substrate.reamde.dev/*/bundle.yaml",
+  { query: "?raw", import: "default", eager: true }
+)
+
+const seededPackages = import.meta.glob<string>(
+  "../../../kinds/substrate.reamde.dev/*/*.yaml",
+  { query: "?raw", import: "default", eager: true }
+)
+
+/** The directory a glob key names under its parent: `samples/<name>/…`. */
+function dirOf(path: string, parent: string): string {
+  const rest = path.slice(path.indexOf(`/${parent}/`) + parent.length + 2)
+  return rest.slice(0, rest.indexOf("/"))
+}
+
+/** The seeded packages (`core`, `llm`, `console`): the console may name
+ * them, and a sample sharing one's word (the `llm` sample) is held to the
+ * other patterns only. */
+const SEEDED = new Set(
+  Object.keys(seededPackages).map((p) => dirOf(p, "substrate.reamde.dev"))
+)
+
+const SAMPLES = [
+  ...new Set(Object.keys(sampleFiles).map((p) => dirOf(p, "samples"))),
+].filter((s) => !SEEDED.has(s))
+
+const PROVIDERS = Object.keys(providerBundles).map((p) =>
+  dirOf(p, "providers.substrate.reamde.dev")
+)
+
+/** Every metric id a sample ships (`health/heart_rate`), and every kind a
+ * sample declares by its bare name (`sleep`, `workout`). */
+const { METRIC_IDS, SAMPLE_KINDS } = (() => {
+  const metrics = new Set<string>()
+  const kinds = new Set<string>()
+  for (const raw of Object.values(sampleFiles)) {
+    for (const doc of parseAllDocuments(raw)) {
+      const d = doc.toJS() as {
+        kind?: string
+        metadata?: { id?: string }
+      } | null
+      const id = d?.metadata?.id
+      if (!d?.kind || !id) continue
+      if (d.kind.endsWith("/metric")) metrics.add(id)
+      if (d.kind.endsWith("/core/kind")) kinds.add(id.split("/").pop()!)
+    }
+  }
+  return { METRIC_IDS: [...metrics], SAMPLE_KINDS: [...kinds] }
+})()
+
+/** Every kind and property name the seeded packages declare: the console
+ * names those freely, whatever sample declares a kind of the same word. */
+const CORE_WORDS = (() => {
+  const words = new Set<string>()
+  const walk = (value: unknown, underProperties: boolean) => {
+    if (!value || typeof value !== "object") return
+    for (const [key, inner] of Object.entries(value)) {
+      if (underProperties) words.add(key)
+      walk(inner, key === "properties")
+    }
+  }
+  for (const raw of Object.values(seededPackages)) {
+    for (const doc of parseAllDocuments(raw)) {
+      const d = doc.toJS() as { metadata?: { id?: string } } | null
+      const id = d?.metadata?.id
+      if (id) words.add(id.split("/").pop()!)
+      walk(d, false)
+    }
+  }
+  return words
+})()
+
+/** Files that are not the console's code: tests, their fixtures and setup. */
+function exempt(path: string): boolean {
+  return (
+    /\.test\.tsx?$/.test(path) ||
+    /test-fixtures\.ts$/.test(path) ||
+    path.endsWith("/test-setup.ts")
+  )
+}
+
+/** Declarations left out of the scan, each for a reason no data answers
+ * yet. `WORDS` is the dictionary the name splitter reads for ANY kind's
+ * name, so a sample's word there is a word, not a branch on a kind.
+ * `PROPER` and `BRANDS` spell the shipped providers' names and colours,
+ * which no provider declares as data; moving them into the providers'
+ * bundles is the owner's open decision (commit efaa4235). */
+const DICTIONARIES: Record<string, readonly string[]> = {
+  "./lib/kind-names.ts": ["WORDS", "PROPER"],
+  "./lib/actor-identity.ts": ["BRANDS"],
+}
+
+/** The source without its comments, which may name a sample to explain a
+ * rule, and without the dictionaries above. */
+function code(path: string, source: string): string {
+  let body = source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+  for (const name of DICTIONARIES[path] ?? []) {
+    body = body.replace(
+      new RegExp(`(?:export )?const ${name}\\b[\\s\\S]*?\\n[\\]}]\\)?\\n`),
+      ""
+    )
+  }
+  return body
+}
+
+function escape(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/** The patterns a name may not appear in: as a whole string, as a string's
+ * first segment (`health/…`), or as the package segment of a kind
+ * reference under any authority (`ada.example.com/health/…`). */
+function packagePatterns(word: string, what: string) {
+  const w = escape(word)
+  return [
+    { name: `${what} ${word}`, pattern: new RegExp(`["'\`]${w}["'\`]`) },
+    {
+      name: `${what} ${word} as a path's first segment`,
+      pattern: new RegExp(`["'\`]${w}/[a-z]`),
+    },
+    {
+      name: `${what} ${word} in a kind reference`,
+      pattern: new RegExp(`[a-z0-9]\\.[a-z]{2,}/${w}/[a-z]`),
+    },
+  ]
+}
+
+const NAMES: { name: string; pattern: RegExp }[] = [
+  ...SAMPLES.flatMap((s) => packagePatterns(s, "the sample package")),
+  ...PROVIDERS.flatMap((p) => packagePatterns(p, "the provider")),
+  ...METRIC_IDS.flatMap((id) => {
+    const last = id.slice(id.lastIndexOf("/") + 1)
+    return [
+      {
+        name: `the shipped metric ${id}`,
+        pattern: new RegExp(`["'\`][^"'\`\\n]*${escape(id)}\\b`),
+      },
+      // A metric's own word, where it is one no sentence uses
+      // (`heart_rate`), also built by concatenation.
+      ...(last.includes("_")
+        ? [
+            {
+              name: `the shipped metric's word ${last}`,
+              pattern: new RegExp(`["'\`/]${escape(last)}["'\`]`),
+            },
+          ]
+        : []),
+    ]
+  }),
+  // A sample's kind by its bare name, where code branches on it: compared
+  // to, or a case of a switch. Its name as a word (a "note" on a row, a
+  // "page" of a table) is no branch. A word core declares as a kind or a
+  // property (`metric`, `source`) is core's to name.
+  ...SAMPLE_KINDS.filter((k) => !CORE_WORDS.has(k)).map((k) => ({
+    name: `a branch on the sample kind ${k}`,
+    pattern: new RegExp(`(?:[!=]==?\\s*|\\bcase\\s+)["'\`]${escape(k)}["'\`]`),
+  })),
+  // `health` is also a sync's health, a field of its own, so only these
+  // kind names are refused as keys.
+  {
+    name: "a sample's kind as an object key",
+    pattern: /(^|[{,\s])(sleep|workout)\??\s*:/m,
+  },
+  {
+    name: "a sample package by its shipped reference",
+    pattern: /samples\.substrate\.reamde\.dev\/[a-z]/,
+  },
+  {
+    name: "a provider by its shipped reference",
+    pattern: /providers\.substrate\.reamde\.dev\/[a-z]/,
+  },
+]
+
+/** Words a sample also uses as a name that mean something of the
+ * console's own in one file, by the pattern they meet there. Each is
+ * allowed in that file alone, so the same word anywhere else still fails. */
+const OWN_WORDS: Record<string, readonly string[]> = {
+  // The Observations pages, named for the core `observed` trait's records.
+  "./components/app-shell.tsx": ["the sample package observations"],
+  "./pages/observations.tsx": ["the sample package observations"],
+  "./lib/stream-table.ts": [
+    "the sample package observations as a path's first segment",
+  ],
+  // An icon's name.
+  "./lib/kind-glyph.ts": ["the sample package calendar"],
+  "./lib/tools.ts": ["the sample package calendar"],
+  // The plural of person.
+  "./lib/kind-names.ts": ["the sample package people"],
+  // A property a record's prose is read from.
+  "./lib/record-schema.ts": ["the sample package notes"],
+  // A page title's size, and a unit's printed note.
+  "./components/identity/page-title.ts": ["a branch on the sample kind page"],
+  "./lib/units.ts": ["a branch on the sample kind note"],
+}
+
+describe("the console's source", () => {
+  const files = Object.entries(sources).filter(([path]) => !exempt(path))
+
+  it("is read, and so are the names it is held to", () => {
+    expect(files.length).toBeGreaterThan(100)
+    expect(files.map(([path]) => path)).toContain("./pages/record.tsx")
+    expect(SAMPLES).toEqual(expect.arrayContaining(["health", "tasks"]))
+    expect(SAMPLES).not.toContain("llm")
+    expect(PROVIDERS).toEqual(expect.arrayContaining(["whoop", "google"]))
+    expect(METRIC_IDS).toEqual(expect.arrayContaining(["health/heart_rate"]))
+    expect(SAMPLE_KINDS).toEqual(expect.arrayContaining(["sleep", "workout"]))
+  })
+
+  it("names no sample, provider or shipped metric", () => {
+    const found: string[] = []
+    for (const [path, source] of files) {
+      const body = code(path, source)
+      for (const { name, pattern } of NAMES) {
+        if (OWN_WORDS[path]?.includes(name)) continue
+        const hit = pattern.exec(body)
+        if (hit) found.push(`${path}: ${name} (${hit[0]})`)
+      }
+    }
+    expect(found).toEqual([])
+  })
+
+  it("allows a word of the console's own only where it is one", () => {
+    const names = new Set(NAMES.map((n) => n.name))
+    for (const [path, allowed] of Object.entries(OWN_WORDS)) {
+      expect(sources[path], path).toBeDefined()
+      for (const name of allowed) expect(names.has(name), name).toBe(true)
+    }
+  })
+
+  it("catches a name it is meant to", () => {
+    const hits = (body: string) =>
+      NAMES.filter(({ pattern }) => pattern.test(body)).map((n) => n.name)
+    expect(hits('const k = "healthwhoop"')).not.toEqual([])
+    expect(hits("const m = `${pkg}/heart_rate`")).not.toEqual([])
+    expect(hits('if (provider === "whoop") {}')).not.toEqual([])
+    expect(hits('const ref = "ada.example.com/people/person"')).not.toEqual([])
+    expect(hits('const route = "/observations/timeline"')).toEqual([])
+  })
+})
