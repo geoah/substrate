@@ -38,19 +38,20 @@ data:
   authority: substrate.reamde.dev
   package: core
   description: >-
-    Read records. Pass kind + id for one record; q (+ mode, first, filter.kinds)
-    to rank by relevance; otherwise filter (+ orderBy, first, after, expand)
-    to list. A filter is {search, kinds, purposes, ids, implements, properties,
-    labels, deleted, referencing}: properties maps a name to a condition (eq,
-    in, prefix, match, gt, gte, lt, lte, contains, exists), timestamps RFC3339,
-    so a day is properties: {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}};
-    search is words against the indexed text, match against one text property,
-    both in q's grammar (words, "a phrase", -word, a OR b, prefix*); referencing:
-    {ref: "<kind>/<id>" or refs: [up to 256], property?} lists what points
-    AT them. A list answers {records, cursor, head, generation, included?,
-    matches?}: resend cursor as after for the next page; expand names reference
-    properties whose targets ride in included, keyed by "<kind>/<id>". Records
-    are addressed by their full reference (kind + id), never a bare id. Read-only.
+    Read records. Pass kind + id for one record; q + filter.kinds (required;
+    + mode, first) to rank by relevance; otherwise filter (+ orderBy, first,
+    after, expand) to list. A filter is {search, kinds, purposes, ids, implements,
+    properties, labels, deleted, referencing}: properties maps a name to a
+    condition (eq, in, prefix, match, gt, gte, lt, lte, contains, exists),
+    timestamps RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z",
+    lt: "2026-08-16T00:00:00Z"}}; search is words against the indexed text,
+    match against one text property, both in q's grammar (words, "a phrase",
+    -word, a OR b, prefix*); referencing: {ref: "<kind>/<id>" or refs: [up
+    to 256], property?} lists what points AT them. A list answers {records,
+    cursor, head, generation, included?, matches?}: resend cursor as after
+    for the next page; expand names reference properties whose targets ride
+    in included, keyed by "<kind>/<id>". Records are addressed by their full
+    reference (kind + id), never a bare id. Read-only.
   runtime: host
   arguments:
     - name: id
@@ -84,9 +85,9 @@ data:
     - name: q
       type: string
       description: >-
-        ranks instead of filtering: one or two distinctive words (a name,
-        code, number, place), never a list of common words; narrows by filter.kinds
-        or filter.purposes only, neither skips internal kinds
+        ranks within the kinds named in filter.kinds or kind, which q requires:
+        one or two distinctive words (a name, code, number, place), never
+        a list of common words
     - name: mode
       type: enum
       values:

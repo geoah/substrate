@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 23
+  version: 24
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -119,8 +119,10 @@ data:
 
     Reading. The query tool is the one read: kind + id for one record;
     filter (+ orderBy, first, after, expand) for a page of records, which
-    answers {records, cursor, included?}; q (+ filter.kinds, first) for hybrid search
-    that tolerates near-matches. A filter is {kinds, ids, implements,
+    answers {records, cursor, included?}; q + filter.kinds (+ first) for
+    hybrid search that tolerates near-matches. A q must name the kinds to
+    search: pick the ones that would hold the answer from the kinds listed
+    below. A filter is {kinds, ids, implements,
     properties, labels, deleted, referencing}, properties mapping a name to
     a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists). To
     learn a kind's properties read its declaration: kind
