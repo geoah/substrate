@@ -862,12 +862,17 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 // rows whole, without TABLESAMPLE, so the policy's index finds its rows
 // rather than a sample visiting every page of every repository; every
 // sampling method answers the same averages over a whole sample; and a
-// search arriving while another refreshes answers the statistics held.
+// search holding stale statistics answers them while its read refreshes them.
 func TestReadPlanSearchStatisticsSample(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	log := &queryLog{}
 	ds, _, _ := refIndexDataset(t, WithTestQueryTracer(log))
+	// The first read must land inside the search that started it, so log.sent
+	// sees its statement before the search answers.
+	ds.statsCache.mu.Lock()
+	ds.statsCache.wait = time.Minute
+	ds.statsCache.mu.Unlock()
 
 	q := log.sent(t, "avg(nullif(l.a, 0))", func() {
 		if _, err := ds.searchStats(ctx); err != nil {
@@ -897,34 +902,20 @@ func TestReadPlanSearchStatisticsSample(t *testing.T) {
 		}
 	}
 
-	// A refresh in flight: a search holding stale statistics answers them.
+	// Stale statistics: a search answers them at once and the read it starts
+	// lands for the next search.
 	stale := searchStats{n: -1, at: time.Now().Add(-2 * statsTTL)}
 	ds.statsCache.mu.Lock()
 	ds.statsCache.s = stale
 	ds.statsCache.mu.Unlock()
-	ds.statsCache.refresh.Lock()
-	type answer struct {
-		s   searchStats
-		err error
+	if got, err := ds.searchStats(ctx); err != nil || got.n != stale.n {
+		t.Fatalf("with stale statistics held the search answered n=%v (%v), want the held n=%v", got.n, err, stale.n)
 	}
-	answered := make(chan answer, 1)
-	go func() {
-		s, err := ds.searchStats(ctx)
-		answered <- answer{s, err}
-	}()
-	select {
-	case a := <-answered:
-		ds.statsCache.refresh.Unlock()
-		if a.err != nil || a.s.n != stale.n {
-			t.Fatalf("during a refresh the statistics answered n=%v (%v), want the held n=%v", a.s.n, a.err, stale.n)
+	deadline := time.Now().Add(30 * time.Second)
+	for ds.statsCache.held().n != float64(rows) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the refresh never landed: held n=%v, want %d", ds.statsCache.held().n, rows)
 		}
-	case <-time.After(10 * time.Second):
-		ds.statsCache.refresh.Unlock()
-		<-answered
-		t.Fatal("a search holding stale statistics waited on the refresh in flight")
-	}
-	// And the next search refreshes them.
-	if got, err := ds.searchStats(ctx); err != nil || got.n != float64(rows) {
-		t.Fatalf("after the refresh the statistics answered n=%v (%v), want %d", got.n, err, rows)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
