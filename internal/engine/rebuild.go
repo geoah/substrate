@@ -45,6 +45,12 @@ import (
 //	                   gets back the cursor this table held if its digest
 //	                   matches (keepPagedCursors), else a null one, and starts
 //	                   over.
+//	observed_streams, observed_segments, observed_rollups, observed_latest
+//	                   the observed index (observedindex.go): cleared, and
+//	                   left to the background re-derivation of every row of
+//	                   every observed kind (queueObservedRederivation), so a
+//	                   replay of years of readings holds the changelog lock
+//	                   for the records alone
 //
 // property_offers is neither replayed nor kept: it is recompute's projection
 // of what each live source offers each target (mapping.go syncOffers), the
@@ -106,6 +112,7 @@ type RebuildReport struct {
 // anything else.
 var foldTables = append([]string{
 	"refs", "former_ids", "annotations", "property_managers", "records",
+	"observed_streams", "observed_segments", "observed_rollups", "observed_latest",
 }, deliveryTables...)
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
@@ -183,14 +190,22 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err := t.markSearchIndexed(); err != nil {
 		return report, err
 	}
-	// And under the published declarations, so no kind owes a re-derivation.
+	// And under the published declarations, so no kind owes a re-derivation
+	// but the observed index, which the replay left to the background pass.
 	if _, err := t.exec(`DELETE FROM index_reprojections`); err != nil {
+		return report, err
+	}
+	owed, err := t.queueObservedRederivation()
+	if err != nil {
 		return report, err
 	}
 	if err := tx.Commit(); err != nil {
 		return report, err
 	}
 	rebuilt = true
+	if owed > 0 {
+		ds.kickIndexReprojection()
+	}
 	report.Took = time.Since(started)
 	return report, nil
 }
@@ -243,6 +258,10 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			return fmt.Errorf("substrate/engine: rebuild: clear %s: %w", table, err)
 		}
 	}
+	// The replay derives no observed segment, rollup or latest row: the
+	// caller queues every observed kind for the background re-derivation
+	// (queueObservedRederivation).
+	t.observed = &observedTouch{all: true}
 	// One cursor across every page, so each segment is read once (issue 745).
 	cur := log.Cursor(0)
 	defer func() { _ = cur.Close() }()
@@ -276,6 +295,7 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	if err := t.dropKeptCursors(); err != nil {
 		return err
 	}
+	t.observed = nil
 	if err := t.rederiveOffers(); err != nil {
 		return err
 	}
@@ -590,6 +610,18 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"trigger_failures": `SELECT to_jsonb(f) - 'repository' FROM (
 				SELECT id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
 				FROM trigger_failures ORDER BY id) f`,
+		// The observed index (observedindex.go), whole, each stream named by
+		// its key: a stream's id is private and a rebuild may allocate
+		// another, and its max_extent_ms is a bound that only grows.
+		"observed_segments": `SELECT to_jsonb(g) - 'repository' - 'stream' || jsonb_build_object('stream', ` + snapshotStream + `)
+				FROM observed_segments g JOIN observed_streams s ON s.id = g.stream ORDER BY g.kind, g.record_id`,
+		"observed_rollups": `SELECT to_jsonb(r) - 'repository' - 'stream' || jsonb_build_object('stream', ` + snapshotStream + `)
+				FROM observed_rollups r JOIN observed_streams s ON s.id = r.stream
+				ORDER BY s.metric, s.kind, s.source, s.about, s.channel, s.statistic,
+				         r.form, r.tier, r.bucket, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known`,
+		"observed_latest": `SELECT to_jsonb(l) - 'repository' - 'stream' || jsonb_build_object('stream', ` + snapshotStream + `)
+				FROM observed_latest l JOIN observed_streams s ON s.id = l.stream
+				ORDER BY s.metric, s.kind, s.source, s.about, s.channel, s.statistic`,
 		// A resume row whose last page named its cursor by hash comes back
 		// from the cursor the table held (decision 0141); an import into an
 		// empty database brings it back null.
@@ -631,6 +663,9 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 	}
 	return out, nil
 }
+
+// snapshotStream is a stream's key as the fold snapshot names it.
+const snapshotStream = `jsonb_build_array(s.metric, s.kind, s.source, s.about, s.channel, s.statistic)`
 
 // FoldSnapshot renders a repository's whole fold as one ordered JSON document:
 // what `repository rebuild` must reproduce, byte for byte. It is the

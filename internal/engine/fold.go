@@ -39,8 +39,10 @@ import (
 // and a rebuild derives again from the rows it replayed: `fts`, the
 // `orphaned_at` and `ambiguous_at` marks on `records` (orphans.go,
 // ambiguous.go; rebuild.go rederiveOffers derives them again beside
-// `property_offers`) and the refs projection (refs.go, derived again by
-// foldRecordOp). Two more carry state of their own: the trigger scan position
+// `property_offers`), the refs projection (refs.go, derived again by
+// foldRecordOp) and the observed index (observedindex.go and
+// observedsettle.go: points derived again by foldRecordOp, rollups and latest
+// rows by rederiveObservedAll). Two more carry state of their own: the trigger scan position
 // (functions.go advanceCursor), which acknowledges no delivery, so a restore
 // may lose it, and a merge's former-id flattening (rows.go moveFormerIDs),
 // which a rebuild does not reproduce (#821). foldpath_internal_test.go lists
@@ -414,11 +416,30 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 	case foldRecord:
 		return t.foldRecordOp(op)
 	case foldTombstone:
+		before, err := t.metricTiersOf(op.ref())
+		if err != nil {
+			return foldResult{}, err
+		}
 		changed, version, err := t.applyTombstone(op.ref(), op.Finalizer)
+		if err == nil && changed {
+			// A tombstone keeps its refs rows (decision 0027) and loses its
+			// observed segment: a deleted reading is in no aggregate.
+			err = t.dropObservedOf(op.ref())
+			if before != nil {
+				t.noteMetricTiers(op.ref(), before, nil)
+			}
+		}
 		return foldResult{changed: changed, version: version}, err
 	case foldPurge:
+		before, err := t.metricTiersOf(op.ref())
+		if err != nil {
+			return foldResult{}, err
+		}
 		if err := t.applyPurge(op.ref()); err != nil {
 			return foldResult{}, err
+		}
+		if before != nil {
+			t.noteMetricTiers(op.ref(), before, nil)
 		}
 		return foldResult{changed: true}, nil
 	case foldAnnotation:
@@ -483,6 +504,14 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		}
 	}
 	stamp := row.KindVersion
+	// A metric's rollup tiers before the write, to tell whether it moved
+	// them (observedindex.go noteMetricTiers).
+	var tiersBefore []time.Duration
+	metricTy, _ := t.derivationView().ByIdentity(ref.Kind)
+	isMetric := bindsMetric(metricTy)
+	if isMetric {
+		tiersBefore = rowTiers(row)
+	}
 	op.Delta.applyTo(row)
 	changed, created, version, err := t.upsertRecord(row, t.foldFTS(row), op.Delta.Force, op.Delta.Restored)
 	if err != nil {
@@ -519,10 +548,33 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// derives from its stored declaration (foldView), live and in a
 		// replay alike.
 		ty, _ := t.derivationView().ByIdentity(row.Kind)
+		// A repository migration folds before the stored vocabulary loads,
+		// so its registry need not hold the row's kind: the row's refs and
+		// observed points are left as they stand, not dropped as a kind's
+		// that is gone, and the pass behind the open re-derives every row of
+		// the kind under the loaded declarations (requestUnprojected).
+		if ty == nil && t.migrating {
+			if t.unprojected == nil {
+				t.unprojected = map[string]bool{}
+			}
+			t.unprojected[row.Kind] = true
+			return foldResult{changed: changed, created: created, row: row, version: version}, nil
+		}
 		if ty == nil || declaresReference(ty) {
 			if err := t.syncRefs(ref, ty, row.Props); err != nil {
 				return foldResult{}, err
 			}
+		}
+		// The observed index's points are the same kind of projection
+		// (observedindex.go), skipped the same way for a kind that cannot
+		// derive any.
+		if t.derivesObserved(ty) {
+			if err := t.syncObserved(ref, ty, row); err != nil {
+				return foldResult{}, err
+			}
+		}
+		if isMetric {
+			t.noteMetricTiers(ref, tiersBefore, row)
 		}
 	}
 	return foldResult{changed: changed, created: created, row: row, version: version}, nil

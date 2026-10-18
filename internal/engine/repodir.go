@@ -788,6 +788,9 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 		if err := t.rebuild(log, &report); err != nil {
 			return err
 		}
+		if _, err := t.queueObservedRederivation(); err != nil {
+			return err
+		}
 		if last {
 			n, err := ds.reconcileEmbeddings(ctx, tx, t.now)
 			if err != nil {

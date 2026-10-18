@@ -2,9 +2,10 @@ package engine
 
 // THE BACKGROUND REPROJECTION.
 //
-// Two of a row's columns are derived from the row and its kind's declaration
-// and from nothing else: its refs rows (refs.go deriveRefs) and its `fts`
-// (validate.go ftsBands). A declaration that moves a reference site or an
+// Three of a row's indexes are derived from the row and its kind's
+// declaration and from nothing else: its refs rows (refs.go deriveRefs), its
+// `fts` (validate.go ftsBands) and its observed points (observedindex.go
+// deriveObserved). A declaration that moves a reference site or an
 // `fts` flag moves what the kind's stored rows derive to, so the indexes
 // must be re-derived under the new declaration, or a rebuild, which folds
 // under it, ends at a different store. Every request on a repository waits
@@ -17,15 +18,18 @@ package engine
 // transaction reads next, and records the `fts` half here for the pass it
 // starts after its commit (kickIndexReprojection).
 //
-// Both derivations are PER TOP-LEVEL PROPERTY: deriveRefs walks each
-// declared property's value on its own and ftsBands reads each declared
-// property's value on its own, so a row that carries none of the properties
-// whose declaration moved derives the same refs rows and the same bands
-// under either declaration. The request names those properties, index by
-// index, and the pass reads only the rows that carry one, in pages, each
-// its own transaction under the shared registry-dependency lock, as the
+// The refs and `fts` derivations are PER TOP-LEVEL PROPERTY: deriveRefs
+// walks each declared property's value on its own and ftsBands reads each
+// declared property's value on its own, so a row that carries none of the
+// properties whose declaration moved derives the same refs rows and the
+// same bands under either declaration. The request names those properties,
+// index by index, and the pass reads only the rows that carry one, in pages,
+// each its own transaction under the shared registry-dependency lock, as the
 // open-time search reindex does (searchindex.go). A kind declared on one
-// side only names no property, and every row is re-derived.
+// side only names no property, and every row is re-derived. The observed
+// index is not per property: its shape is the kind's binding of the trait
+// and the measure its `value` declares (observedShape), so a request for it
+// re-derives every row of the kind or none.
 //
 // The request rows are written in the transaction that moves the
 // declarations, the upgrade's or the apply's, and each
@@ -64,12 +68,19 @@ type indexFilter struct {
 	moved      bool
 	every      bool
 	properties []string
+	// metrics narrows the observed index's request to the rows whose
+	// `metric` names one of them: the metrics whose rollup tiers moved. Nil
+	// with moved set is every row.
+	metrics []string
 }
 
 // wants reports whether a row with these properties re-derives this index.
 func (f indexFilter) wants(props map[string]any) bool {
 	if !f.moved {
 		return false
+	}
+	if f.metrics != nil {
+		return slices.Contains(f.metrics, referencePathOf(props["metric"]))
 	}
 	if f.every {
 		return true
@@ -94,6 +105,9 @@ func (f indexFilter) merge(o indexFilter) indexFilter {
 	if !out.every {
 		out.properties = unionStrings(f.properties, o.properties)
 	}
+	if f.metrics != nil && o.metrics != nil {
+		out.metrics = unionStrings(f.metrics, o.metrics)
+	}
 	return out
 }
 
@@ -108,10 +122,11 @@ func (f indexFilter) stored() any {
 
 // indexReprojection is one kind whose derived indexes must be re-derived
 // under the published declarations: a filter per index, and how far the
-// pass got.
+// pass got. The observed index re-derives every row or none: its shape is
+// the kind's binding of the trait, not a property's.
 type indexReprojection struct {
-	kind      string
-	refs, fts indexFilter
+	kind                string
+	refs, fts, observed indexFilter
 	// after is the id the last committed page recorded (resumeMark), empty
 	// before the first; the pass resumes after it.
 	after string
@@ -120,9 +135,18 @@ type indexReprojection struct {
 	requestedAt time.Time
 }
 
-// every reports whether either index re-derives every row of the kind.
+// every reports whether any index re-derives every row of the kind.
 func (r indexReprojection) every() bool {
-	return (r.refs.moved && r.refs.every) || (r.fts.moved && r.fts.every)
+	return (r.refs.moved && r.refs.every) || (r.fts.moved && r.fts.every) || (r.observed.moved && r.observed.metrics == nil)
+}
+
+// metrics are the metric paths whose rows the observed index re-derives,
+// for the page filter: none where it re-derives every row or none.
+func (r indexReprojection) metrics() []string {
+	if !r.observed.moved || r.observed.metrics == nil {
+		return []string{}
+	}
+	return r.observed.metrics
 }
 
 // properties is every property either index reads, for the page filter.
@@ -134,8 +158,8 @@ func (r indexReprojection) properties() []string {
 // identity, merging what each comparison finds about the same kind.
 type reprojectionSet map[string]*indexReprojection
 
-// add records that a kind's indexes moved, as the two filters say.
-func (s reprojectionSet) add(kind string, refs, fts indexFilter) {
+// add records that a kind's indexes moved, as the three filters say.
+func (s reprojectionSet) add(kind string, refs, fts, observed indexFilter) {
 	r := s[kind]
 	if r == nil {
 		r = &indexReprojection{kind: kind}
@@ -143,6 +167,7 @@ func (s reprojectionSet) add(kind string, refs, fts indexFilter) {
 	}
 	r.refs = r.refs.merge(refs)
 	r.fts = r.fts.merge(fts)
+	r.observed = r.observed.merge(observed)
 }
 
 // addMoved compares each named kind between two registries and records
@@ -154,8 +179,12 @@ func (s reprojectionSet) addMoved(before, after kindLookup, kinds map[string]boo
 	for _, ident := range sortedKeys(kinds) {
 		refs := filterOf(movedProperties(before, after, ident, referenceShape, propertyReferenceShape, false))
 		fts := filterOf(movedProperties(before, after, ident, ftsShape, propertyFTSShape, true))
-		if refs.moved || fts.moved {
-			s.add(ident, refs, fts)
+		var observed indexFilter
+		if observedShape(before, ident) != observedShape(after, ident) {
+			observed = indexFilter{moved: true, every: true}
+		}
+		if refs.moved || fts.moved || observed.moved {
+			s.add(ident, refs, fts, observed)
 		}
 	}
 }
@@ -178,16 +207,16 @@ func (s reprojectionSet) list() []indexReprojection {
 }
 
 // withEveryRow is a copy of the set in which each named kind re-derives
-// both indexes for every row, for kinds no declaration describes on either
-// side, such as the rows of a package that does not parse.
+// all three indexes for every row, for kinds no declaration describes on
+// either side, such as the rows of a package that does not parse.
 func (s reprojectionSet) withEveryRow(kinds []string) reprojectionSet {
 	out := make(reprojectionSet, len(s)+len(kinds))
 	for kind, r := range s {
-		out.add(kind, r.refs, r.fts)
+		out.add(kind, r.refs, r.fts, r.observed)
 	}
 	every := indexFilter{moved: true, every: true}
 	for _, kind := range kinds {
-		out.add(kind, every, every)
+		out.add(kind, every, every, every)
 	}
 	return out
 }
@@ -307,16 +336,18 @@ func kindsOfPackages(a, b *vocabulary.Registry, packages map[string]bool) map[st
 func (t *txn) requestReprojections(rs []indexReprojection) error {
 	for _, r := range rs {
 		if _, err := t.exec(`
-			INSERT INTO index_reprojections (kind, refs, refs_properties, fts, fts_properties)
-			VALUES ($1, $2, $3::text[], $4, $5::text[])
+			INSERT INTO index_reprojections (kind, refs, refs_properties, fts, fts_properties, observed, observed_metrics)
+			VALUES ($1, $2, $3::text[], $4, $5::text[], $6, $7::text[])
 			ON CONFLICT (repository, kind) DO UPDATE SET
 				refs = index_reprojections.refs OR EXCLUDED.refs,
-				refs_properties = `+mergedProperties("refs")+`,
+				refs_properties = `+mergedProperties("refs", "refs_properties")+`,
 				fts = index_reprojections.fts OR EXCLUDED.fts,
-				fts_properties = `+mergedProperties("fts")+`,
+				fts_properties = `+mergedProperties("fts", "fts_properties")+`,
+				observed = index_reprojections.observed OR EXCLUDED.observed,
+				observed_metrics = `+mergedProperties("observed", "observed_metrics")+`,
 				after_id = '',
 				requested_at = now()`,
-			r.kind, r.refs.moved, r.refs.stored(), r.fts.moved, r.fts.stored()); err != nil {
+			r.kind, r.refs.moved, r.refs.stored(), r.fts.moved, r.fts.stored(), r.observed.moved, observedStored(r.observed)); err != nil {
 			return fmt.Errorf("substrate/engine: request the index re-derivation of %s: %w", r.kind, err)
 		}
 	}
@@ -367,19 +398,20 @@ func (t *txn) rederiveMovedRefs(rs []indexReprojection) error {
 	return nil
 }
 
-// requestMovedFTS writes the pass's `fts` work for each kind of rs whose
-// searchable shape moved and that holds a stored row, in the vocabulary
-// apply's transaction, and answers the kinds it requested. The refs half is
-// not requested: the apply re-derived it already (rederiveMovedRefs). A kind
-// with no row is owed nothing: the apply holds the registry lock every data
-// write takes from resolving its kind to its commit, so no row is on its
-// way, and a row written after the commit derives under the published
-// declaration.
-func (t *txn) requestMovedFTS(rs []indexReprojection) ([]string, error) {
+// requestMovedBehindCommit writes the pass's `fts` and observed work for
+// each kind of rs whose searchable shape or observed binding moved and that
+// holds a stored row, in the vocabulary apply's transaction, and answers the
+// kinds it requested. The refs half is not requested: the apply re-derived
+// it already (rederiveMovedRefs). A kind with no row is owed nothing: the
+// apply holds the registry lock every data write takes from resolving its
+// kind to its commit, so no row is on its way, and a row written after the
+// commit derives under the published declaration. Until the pass reaches a
+// row, its points are the ones the replaced declaration derived.
+func (t *txn) requestMovedBehindCommit(rs []indexReprojection) ([]string, error) {
 	var owed []indexReprojection
 	var kinds []string
 	for _, r := range rs {
-		if !r.fts.moved {
+		if !r.fts.moved && !r.observed.moved {
 			continue
 		}
 		var stored bool
@@ -389,20 +421,29 @@ func (t *txn) requestMovedFTS(rs []indexReprojection) ([]string, error) {
 		if !stored {
 			continue
 		}
-		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts})
+		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts, observed: r.observed})
 		kinds = append(kinds, r.kind)
 	}
 	return kinds, t.requestReprojections(owed)
 }
 
-// mergedProperties is the SQL that widens one index's stored property list
-// by a new request's: the new one where the index had not moved, the stored
-// one where it does not move now, NULL (every row) where either is, and the
-// union otherwise. `index` is one of this file's two column stems, never
-// caller input.
-func mergedProperties(index string) string {
-	col := "index_reprojections." + index + "_properties"
-	new := "EXCLUDED." + index + "_properties"
+// observedStored is the observed index's metrics as the request row carries
+// them: NULL for every row, and nothing for an index that did not move.
+func observedStored(f indexFilter) any {
+	if !f.moved || f.metrics == nil {
+		return nil
+	}
+	return f.metrics
+}
+
+// mergedProperties is the SQL that widens one index's stored list (its
+// properties, or the observed index's metrics) by a new request's: the new
+// one where the index had not moved, the stored one where it does not move
+// now, NULL (every row) where either is, and the union otherwise. `index` and
+// `column` are this file's column names, never caller input.
+func mergedProperties(index, column string) string {
+	col := "index_reprojections." + column
+	new := "EXCLUDED." + column
 	return `CASE
 		WHEN NOT index_reprojections.` + index + ` THEN ` + new + `
 		WHEN NOT EXCLUDED.` + index + ` THEN ` + col + `
@@ -416,7 +457,7 @@ func (ds *dataset) pendingReprojections(ctx context.Context) ([]indexReprojectio
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT kind, refs, refs_properties IS NULL, COALESCE(to_jsonb(refs_properties), '[]'::jsonb),
 		       fts, fts_properties IS NULL, COALESCE(to_jsonb(fts_properties), '[]'::jsonb),
-		       after_id, requested_at
+		       observed, observed_metrics IS NULL, COALESCE(to_jsonb(observed_metrics), '[]'::jsonb), after_id, requested_at
 		FROM index_reprojections ORDER BY kind`)
 	if err != nil {
 		return nil, err
@@ -425,10 +466,15 @@ func (ds *dataset) pendingReprojections(ctx context.Context) ([]indexReprojectio
 	var out []indexReprojection
 	for rows.Next() {
 		var r indexReprojection
-		var refsProps, ftsProps []byte
+		var refsProps, ftsProps, metrics []byte
+		var everyMetric bool
 		if err := rows.Scan(&r.kind, &r.refs.moved, &r.refs.every, &refsProps,
-			&r.fts.moved, &r.fts.every, &ftsProps, &r.after, &r.requestedAt); err != nil {
+			&r.fts.moved, &r.fts.every, &ftsProps, &r.observed.moved, &everyMetric, &metrics, &r.after, &r.requestedAt); err != nil {
 			return nil, err
+		}
+		r.observed.every = r.observed.moved && everyMetric
+		if r.observed.moved && !everyMetric {
+			r.observed.metrics = jsonStrings(metrics)
 		}
 		r.refs.properties, r.fts.properties = jsonStrings(refsProps), jsonStrings(ftsProps)
 		out = append(out, r)
@@ -481,8 +527,8 @@ func (ds *dataset) stopIndexReprojection(final bool) {
 
 // reprojectIndexes runs the pass: every kind owed, each in pages of
 // reprojectionBatch rows by id, each page its own transaction, until nothing
-// is owed. It moves nothing but the refs rows and `fts` of the rows it
-// re-derives: no version, no updated_at, no changelog entry, because no
+// is owed. It moves nothing but the refs rows, `fts` and observed points of
+// the rows it re-derives: no version, no updated_at, no changelog entry, because no
 // record changed, only the indexes over it. Reads and writes are served
 // throughout, and a row keeps its old index rows until its page commits.
 //
@@ -562,7 +608,7 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 			}
 			kinds++
 			ds.svc.log.Info("substrate: re-derived the indexes of one kind",
-				"repository", repo, "kind", p.kind, "refs", p.refs.moved, "fts", p.fts.moved,
+				"repository", repo, "kind", p.kind, "refs", p.refs.moved, "fts", p.fts.moved, "observed", p.observed.moved,
 				"properties", p.properties(), "everyRow", p.every(), "rows", n,
 				"elapsed", time.Since(started).Round(time.Millisecond))
 		}
@@ -609,8 +655,23 @@ func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advan
 				if n, missed, err = t.reprojectRows(p, page, true); err != nil {
 					return err
 				}
+				// The page's rollups and latest rows before its progress:
+				// a metric write takes the observed lock and then writes
+				// this request's row (requestMetrics), so a page that held
+				// the row while it waited for the observed lock would
+				// deadlock with it, and Postgres could abort the owner's
+				// write.
+				if err := t.settleObserved(); err != nil {
+					return err
+				}
 				mark = resumeMark(resume, page, missed, len(held) > 0)
-				return t.advanceReprojection(p, mark)
+				if err := t.advanceReprojection(p, mark); err != nil {
+					return err
+				}
+				if hook := ds.svc.testReprojectionPageHook; hook != nil {
+					return hook(ctx, p.kind)
+				}
+				return nil
 			})
 		}); err != nil {
 			return redone, err
@@ -672,8 +733,9 @@ func resumeMark(resume string, page, missed []string, holding bool) string {
 func (ds *dataset) reprojectionPage(ctx context.Context, p indexReprojection, after string, batch int) ([]string, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id FROM records
-		WHERE kind = $1 AND id > $2 AND ($3::boolean OR props ?| $4::text[])
-		ORDER BY id LIMIT $5`, p.kind, after, p.every(), p.properties(), batch)
+		WHERE kind = $1 AND id > $2
+		  AND ($3::boolean OR props ?| $4::text[] OR coalesce(props->'metric'->>'ref', props->>'metric') = ANY($6::text[]))
+		ORDER BY id LIMIT $5`, p.kind, after, p.every(), p.properties(), batch, p.metrics())
 	if err != nil {
 		return nil, err
 	}
@@ -694,7 +756,7 @@ func (ds *dataset) reprojectionPage(ctx context.Context, p indexReprojection, af
 // as the fold reads them (fold.go foldView), and reports how many it wrote
 // and which ids it did not lock: a row a write holds, under skipLocked, or
 // one that is gone. Each index re-derives the rows its own filter names: a
-// row carrying only a property the other index reads derives the same rows
+// row carrying only a property another index reads derives the same rows
 // here, and is not written. A kind the registry no longer declares derives
 // no refs rows, so its stale ones go, and its `fts` lands at the
 // unknown-kind bands, which is what a rebuild folds for it. The caller holds
@@ -726,6 +788,21 @@ func (t *txn) reprojectRows(p indexReprojection, ids []string, skipLocked bool) 
 	}
 	if err := t.rederiveFTS(view, p.kind, reindex); err != nil {
 		return 0, nil, err
+	}
+	// Every locked row's points, live and tombstoned alike: a tombstone
+	// derives none, so its stale ones go. The rollups and latest rows
+	// follow before a page records its progress (reprojectKind), and at the
+	// end of a held row's transaction (inRawTx).
+	if p.observed.moved {
+		t.observedTouched().force = true
+		for _, row := range rows {
+			if !p.observed.wants(row.Props) {
+				continue
+			}
+			if err := t.syncObserved(row.ref(), ty, row); err != nil {
+				return 0, nil, err
+			}
+		}
 	}
 	var missed []string
 	if len(rows) < len(ids) {

@@ -4,15 +4,15 @@ An observation is a measured value: a weighing, an hour of heart rate, a
 nightly heart rate variability, a vendor's recovery score, an LDL result from
 a blood test. This page covers what holds one today: core's `observed` trait,
 the rules every write of an observed record is held to, the managed `stats`
-of a trace, the `observations` and `health` samples, and the host SDK
-helpers a function builds observed values with. The plan is
+of a trace, the `observations` and `health` samples, the host SDK helpers
+a function builds observed values with, and the observed index the fold
+derives from them. The plan is
 [observations](plans/observations.md).
 
-The observed index and the aggregate read, which consume these values, are
-not built yet. Where this page says what the index or a read does with a
-value (a metric's `rollups`, `measures` and `bucketPlace`, a source's
-`priorities`, a gauge's hold), it states the contract they are built to,
-not behavior a substrate has today.
+The aggregate read, which reduces these values, is not built yet. Where
+this page says what a read does with a value (a metric's `measures` and
+`bucketPlace`, a source's `priorities`, a gauge's hold), it states the
+contract the read is built to, not behavior a substrate has today.
 
 ## The observed trait
 
@@ -20,8 +20,8 @@ not behavior a substrate has today.
 variants. A kind binds `observed(single)` when each record holds one value,
 and `observed(packed)` when each record holds many values of one metric over
 one fixed period (a trace). Binding it does two things: every write of the
-kind is held to the rules below, and it is what the observed index will read
-the kind by, without knowing it by name. A kind that binds `observed` should bind
+kind is held to the rules below, and the observed index reads the kind
+without knowing it by name. A kind that binds `observed` should bind
 `temporal(range)` beside it, so the window read and every timeline query
 cover its records.
 
@@ -48,7 +48,7 @@ Properties of both variants:
 | `delta` | bool | true when the value is a temperature difference, such as a deviation |
 | `circular` | bool | true when the value is an angle averaged on the circle, such as a wind direction |
 | `wrapAt` | decimal | on a `wrap` counter, the value it wraps to zero at |
-| `utcOffset` | int | minutes east of UTC where the value was observed; on a trace, every point's |
+| `utcOffset` | int | minutes east of UTC where the value was observed; on a trace, every point's ([below](#points-nulls-and-offsets)) |
 | `measure` | string | the engine's: the measure the unit was read as when the record was written ([below](#the-measure-a-value-was-written-in)) |
 | `revision` | int | rises with each rewrite from the upstream; a lower one is refused |
 
@@ -503,4 +503,249 @@ document passes the size limits, narrowed to the span a delivery covers when
 the body names one; `period_id` gives
 the label a trace id ends with and `local_day` the civil date at an offset.
 [Functions](functions.md#the-sdk) has the signatures and an example.
+
+## The observed index
+
+The fold derives four tables from the rows of every kind that binds
+`observed`, the way it derives `refs`
+([decision 0160](decisions/0160-the-observed-index-keeps-a-segment-per-record-and-a-rollup-serves-only-exact-answers.md),
+migration `0013_observed_index`). It keeps one row per record, never one per
+point: a record's points stay in its own properties, and every reader that
+needs them derives them again with the same code the fold runs. A rollup
+row is a function of a stream's points in its bucket and of the tiers its
+metric names, and a counter's rollup row also reads the stream's reading
+before its bucket, which may be another record's ([below](#counters)).
+Nothing else enters, no clock. `repository rebuild` clears the tables and
+the background pass derives them again from the records; `repository verify`
+and the export never read them.
+
+A **stream** is one run of readings: the `kind`, `metric`, `source`, `about`
+and `channel` of a value, and a summary's `statistic`, so a night's average
+and its maximum at one instant are two streams. A reference column holds the
+target's record path (`ada.example.com/observations/metric/health/heart_rate`);
+an absent `source`, `about`, `channel` or `statistic` is the empty string.
+
+| Table | One row per | Holds |
+| --- | --- | --- |
+| `observed_streams` | stream | a private `bigint` id the other tables key by, and `max_extent_ms`, the longest extent of any record the stream has held |
+| `observed_segments` | observed record | its stream, `form`, `first_ts` and `last_ts` (its earliest and latest point), `end_ts` (the latest end of a span), `points` and `available` (its points, and those with a value or a code), `last_available`, `utc_offset_min`, `offset_known`, `codes` (the codes of its available points, the empty string for a number) and `fingerprint` |
+| `observed_rollups` | stream, form, tier, bucket and group (`code`, `unit`, `delta`, `utc_offset_min`, `offset_known`) | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `end_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
+| `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `comparator`, `utc_offset_min`, `offset_known`, `record_id`, and `points`, the stream's count of available points |
+
+The stream id is the engine's alone: no record, changelog line, API answer
+or test names it, and a rebuild may hand a stream another. A read of a
+stream's range `[lo, hi)` takes the segments that start in
+`[lo - max_extent_ms, hi)` and end at or after `lo`, one range of the index
+on `(stream, first_ts)`, and derives their points. `max_extent_ms` only
+grows: a bound too wide costs a read time, one too narrow would cost it
+points.
+
+The rules every column follows are written once, as Go, in
+`internal/observed`: the engine computes each rollup row with it, composes a
+coarser row with it, and the aggregate read reduces raw points with it, so a
+bucket answers the same from rollup rows and from points.
+
+### When rows are written
+
+A write records what each record it touched now derives, and at the end of
+the transaction, under the repository's observed lock, the index applies it.
+The record's fingerprint, a hash of everything the index reads from it (its
+stream, form, unit, hold, counter contract and every point), decides first:
+a write that changes none of that, such as a `quality` or a note, writes
+nothing. Otherwise the record's segment is replaced, and every bucket of
+every tier its old and its new points stood in is computed again, and the
+latest row of its stream. A tombstone takes the segment (a tombstone keeps
+its `refs` rows and loses its points: a deleted reading is in no aggregate);
+a put onto the tombstone derives it again; a purge leaves nothing.
+
+A single record derives a point only when it holds a `value` or a `code`;
+one that says why it has none (`absentReason`) or keeps the reading as
+received (`sourceValue`) derives nothing, and neither does a lab result
+holding only `ratio` or `text`. A summary derives a segment and no rollup
+row: summaries are never pooled with the other forms.
+
+A kind that starts or stops binding `observed`, or changes the measure its
+`value` declares, has every row derived again by the background pass behind
+the commit that changed it, the one that re-derives the search index
+([operations](operations.md#upgrading-the-binary)). A metric record whose
+`rollups` change has the rows of its streams derived again by the same
+pass. `repository rebuild` and the boot import of a repository directory
+clear the tables and queue every observed kind for the pass instead of
+deriving inside the replay, so the replay holds the repository's write lock
+for the records alone; `repository reindex --observed` queues the same work
+on a running index ([operations](operations.md#operator-recovery)). A
+tombstone and a purge while the pass owes a kind anything still take the
+record's segment, whatever the kind now declares: a purged
+row is gone before the pass could find it.
+
+`observed_index` records the version of the rules the tables were derived
+by (`observedIndexVersion` in `internal/engine/observedindex.go`). An open
+whose binary derives by newer rules, or finds none recorded, asks the same
+pass to derive every row of every observed kind again and records its own
+version. `TestObservedDerivationMatchesTheGolden` derives a fixed corpus and
+fails when what it derives moves: a change to the derivation, the rollup
+statistics, the composition, the tiers, the fingerprint or the latest rule
+bumps the version.
+
+### Points, nulls and offsets
+
+A trace's point is at `at` plus its offset (or its index times `every`). A
+gauge's and a counter's point is an instant; an amount's spans to the next
+point of the trace, to its start plus `every` with regular spacing, and to
+`endsAt` for the last. A single record's point spans `[at, endsAt)` where it
+has an `endsAt`, and a single gauge's value holds no longer than that: its
+hold is the shorter of its `hold` and `endsAt` minus `at`, so a door `open`
+at 10:00 with `endsAt` 10:05 and no `hold` is open for five minutes, not
+until the next point.
+
+A `null` in `values` or `codes` is an unavailable point. It ends the hold of
+the point before it and counts in nothing: not in `n`, not in `first` or
+`last`, not in the latest row. A counter's steps skip it, because an outage
+between two readings of a running total still accrued.
+
+A point is available when it holds a value or a code that is not empty, and
+unavailable otherwise. That one test decides every count: a segment's
+`available`, a trace's `stats`, the rollup rows and the latest row. An empty
+code a row stored before the write refused it is therefore an unavailable
+point, the same as a `null`.
+
+Every point takes its record's `utcOffset`: a single record's one value, and
+every point of a trace. A trace has one offset because its ends say nothing
+about when, or how often, the offset changed inside the period; a writer
+whose points cross an offset change (a clock change, a flight) splits the
+trace there, as `host.observed.trace` does. An absent offset is 0 with
+`offset_known` false, which a reader tells apart from a value written at
+offset 0. The aggregate read's recorded-local calendar refuses such a value,
+or places it by the request's `bucket.fallbackTimezone`; a calendar in a named zone places it by
+that zone like any other.
+
+A value converts in its measure's base unit (`temperature-difference` where
+`delta` is true: 0.3 `Cel` is 0.3 `K`), and an arbitrary unit, a level and
+`rad` convert to nothing. A point keeps its value's comparator (`<`, `<=`,
+`>=`, `>`, a lab's `<0.01`); a rollup row counts the points that carry one
+in `bounded`, and a reader answers such a value with its comparator.
+
+Points at one instant are ordered by record id, compared byte by byte (the
+record id columns sort `COLLATE "C"`), then by their index in the record.
+Every reader uses that order: a rollup row's first and last point, a raw
+read and the latest row pick the same point of a tie.
+
+### Rollup tiers
+
+A metric names the widths its streams are rolled up in, in its `rollups`:
+any of `5m`, `15m`, `1h` and `1d`, finest first. A metric that names none
+takes `15m`, `1h` and `1d`; one that names an empty list keeps no rollup
+row, and every read of it takes raw points. A tier's bucket starts at a
+multiple of its width **in the group's own offset**, and in UTC where the
+offset is unknown, so a `1d` row of a `+02:00` group is a local day and a
+`1h` row of a `+05:30` group starts at half past the UTC hour.
+
+The finest tier is computed from the points. Each coarser one is composed
+from the next finer tier's rows inside its bucket (`observed.Compose`): the
+counts and sums add, the extremes compare, the first and last are the first
+row's and the last row's, a gauge's held time walks the finer rows and
+carries the value between them, and a counter's steps add. Where the finer
+rows cannot say a coarser row exactly, it is computed from the points: a
+finer row of another alignment crosses its bucket (the day of a clock
+change), or an amount's spans overlap across finer rows. A write recomputes
+the buckets of every tier its points stood in.
+
+Within a bucket a stream's points of one form split into **groups** by
+`code`, `unit`, `delta`, `utc_offset_min` and `offset_known`, and each group
+is one row. The statistics are in the row's own `unit`, so two units with no
+common base never add; a reader converts each row to the unit it asks for.
+
+- A gauge's held time is built from every point of the bucket, whatever its
+  code: each available point holds until the next point (an unavailable one
+  included), its own `hold`, or the bucket's end, whichever comes first, and
+  the time is kept on the row of the point that held. A door's `closed`
+  therefore ends the `open` before it. `held_ms` is that time and `twa_sum`
+  the sum of value times held milliseconds, so a row's time-weighted mean is
+  `twa_sum / held_ms`. The value the bucket's last point holds past the
+  bucket's end is the read's to carry: `last_hold_ms` says how long after
+  `last_ts` it may hold (null for until the next point) and the next row's
+  `start_gap_ms` says where that next point is.
+- `max_gap_ms` is the bucket's largest gap between consecutive points, from
+  the bucket's start to its first point and from its last point to its end
+  included; `start_gap_ms` and `end_gap_ms` are those two ends. **A bucket
+  may answer a gauge's `avg` and `timeInState` from `held_ms` only when the
+  request's `maxGap` is absent or not below the bucket's `max_gap_ms`**;
+  otherwise the read takes a finer tier, and at the finest the raw points.
+- An amount belongs whole to the bucket its span starts in; `covered_ms` is
+  the union of its row's spans and `span_end` the end of the latest of them,
+  so the union lies inside `[first_ts, span_end)`. A read joining two rows
+  adds their `covered_ms` only where those extents do not overlap
+  (`internal/observed.UnionMs`).
+- A bucket holding only unavailable points still has a row, with `n` 0, so
+  the read sees where a hold stops.
+
+### Counters
+
+A counter is differenced at its rollup row, exactly, in `numeric`
+([decision 0157](decisions/0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md)).
+Each step runs from the stream's previous available reading to the next,
+under the later reading's contract:
+
+- `monotonic`: a drop is a reset to zero, so the step is the later reading. A
+  counter with no `resetRule` is read as `monotonic`.
+- `signed`: the step is the difference, which may be negative.
+- `wrap`: a drop wrapped at `wrapAt`, so the step is `wrapAt` minus the
+  earlier reading plus the later one.
+
+Under every contract, two readings naming two different `resetAt`, or written
+in two different units, start over: the step is the later reading. `resets`
+counts the steps that started over, wraps included. A row's `increase` holds
+every step whose later reading is in the row, the step in from the stream's
+previous reading included, wherever that is, and `covered_ms` the time those
+steps span; so the increase of a run of whole buckets is the sum of their
+rows, and `rate` is that sum over the sum of `covered_ms`. A correction to a
+reading therefore also recomputes the bucket of the stream's next reading. A
+row whose readings have no reading before them holds no step, and its
+`increase` and `resets` are null: no answer, not a change of zero.
+
+### The latest row
+
+`observed_latest` holds each stream's newest available point. A summary's
+`statistic` is part of its stream, so a night's `avg` and `max` summaries at
+one instant are two rows, and neither stands for the other. The aggregate
+read takes each row as a stream of its own, so a row of a bucketed read
+reads one statistic, and the latest read answers the newest of a group's
+rows with the sum of their `points`. A write moves `points` by the available
+points it added or took away, and the background pass counts it again from
+the segments, so a re-derivation repairs a count that drifted.
+
+Two points at one instant go to the greater record id in byte order, then
+the later point of one trace: the point the `last` reducer answers. A
+`revision` counts one record's rewrites, so it breaks no tie between two
+records.
+
+A write that moves a stream's newest point to another stream (a corrected
+`source`) recomputes both streams' rows, and a row left with no available
+point goes. A null after the newest value does not replace it: the row keeps
+the last value, and a reader that must say "unavailable since" finds the null
+among the stream's points.
+
+### How a sensor bridge writes
+
+A bridge that forwards a home's sensors (Home Assistant, a meter reader)
+writes each sensor's readings as **closed chunks**: one trace per sensor and
+hour, or per quarter hour, written once the period has ended and never
+appended to. Its id is composed from the sensor and the chunk's start
+(`homeassistant/sensor.kitchen_temperature/2026-10-25T14`), so a resend of
+the same chunk lands on the same record, and a resend with the same values
+moves nothing in the index: the segment's fingerprint holds. A chunk carries
+one `utcOffset`; the hour a clock changes splits where the offset changes.
+
+What each choice costs, measured on a durable Postgres
+([the benchmark](plans/observations/benchmark.md)):
+
+| Choice | Cost |
+| --- | --- |
+| One trace per sensor and hour | about 200 bytes a reading: 144 in the records and the changelog, 57 in the index; 8,760 writes a sensor a year, each about 160 ms on a disk that takes 40 ms to sync |
+| One trace per sensor and quarter hour | four times the writes, 35,040 a sensor a year, and four times the segments; each write costs about what an hour's does, so the write time is four times as much |
+| One record per reading | a records row, a changelog line and a segment for every reading, each carrying the fixed part of the 8.7 KB an hour's trace of 60 readings costs, and a write for each |
+| Appending to an open chunk | every append rewrites the whole record: its changelog line grows with the chunk, so an hour appended a minute at a time writes about 30 times its readings, and each append recomputes the chunk's buckets |
+
+A dashboard that shows the current value reads it from the bridge, or from
+the latest row once the chunk is written; the substrate keeps the history.
 

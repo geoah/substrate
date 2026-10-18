@@ -581,6 +581,12 @@ type txn struct {
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
 	interactionThread bool
+	// migrating marks a repository migration's transaction (repomigrate.go):
+	// it folds before the stored vocabulary loads, so a row whose kind the
+	// registry does not yet hold keeps its derived indexes as they stand,
+	// and unprojected names its kind for the pass behind the open.
+	migrating   bool
+	unprojected map[string]bool
 	// movingRecords marks a kind move carrying a record from one kind to
 	// another (move.go, record 0078). The row was admitted once already, under
 	// the old kind, so the CREATION-only contracts (an interaction's batch, a
@@ -638,6 +644,9 @@ type txn struct {
 	// deputy for an arbitrary create/delete.
 	effEmit    []string
 	effEmitSet bool
+	// observed is what this transaction's observed point writes touched,
+	// recomputed once at its end (observedsettle.go settleObserved).
+	observed *observedTouch
 	// heldRegistryDep records that this transaction already took the SHARED
 	// registry-dependency lock, so the several doors that need it (the write's
 	// entry, preRecordLocks, trigger and policy admission) can each ask without
@@ -712,6 +721,11 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	pass()
 	t.seqLocked = true
 	if err := fn(t); err != nil {
+		return err
+	}
+	// The observed index's rollups and latest rows, from the points the
+	// transaction's folds left (observedindex.go).
+	if err := t.settleObserved(); err != nil {
 		return err
 	}
 	if err := t.settleFold(); err != nil {
@@ -1207,6 +1221,11 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{ctx: ctx, ds: ds, tx: tx, wc: wc, now: nowUTC(), internal: true}
 	if err := fn(t); err != nil {
+		return err
+	}
+	// The background re-derivation writes observed points outside the fold
+	// (reprojection.go), and their rollups and latest rows follow them here.
+	if err := t.settleObserved(); err != nil {
 		return err
 	}
 	if len(t.folded) > 0 || len(t.pending) > 0 {

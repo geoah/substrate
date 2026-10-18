@@ -34,6 +34,9 @@ type Operator interface {
 	// RotateHistoryGeneration mints a new history generation
 	// (historygeneration.go).
 	RotateHistoryGeneration(ctx context.Context, repository string) (RotateReport, error)
+	// ReindexObserved queues the background re-derivation of a repository's
+	// observed index (observedreindex.go).
+	ReindexObserved(ctx context.Context, repository string) (ReindexReport, error)
 }
 
 var _ Operator = (*service)(nil)

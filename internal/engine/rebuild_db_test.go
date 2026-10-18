@@ -36,8 +36,11 @@ type folded interface {
 	FoldSnapshot(ctx context.Context) ([]byte, error)
 }
 
+// foldOf is the dataset's fold snapshot once the background pass owes
+// nothing: a rebuild leaves the observed index to it.
 func foldOf(t *testing.T, ds substrate.Dataset) []byte {
 	t.Helper()
+	engine.DrainIndexReprojection(t, ds)
 	f, ok := ds.(folded)
 	if !ok {
 		t.Fatal("the dataset does not expose its fold")
@@ -232,10 +235,23 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	cleared := writeSomeHistory(t, ds)
 	installPeopleSourcesWithDir(t, ds)
 	writeMappedHistory(t, ds)
+	writeObservedHistory(t, ds)
 
 	before := foldOf(t, ds)
 	if offersIn(t, before) == 0 {
 		t.Fatal("the fold holds no property_offers; the rebuild would prove nothing about them")
+	}
+	for _, table := range []string{"observed_segments", "observed_rollups", "observed_latest"} {
+		if strings.Contains(string(before), `"`+table+`": []`) || !strings.Contains(string(before), `"`+table+`": [`) {
+			t.Fatalf("the fold holds no %s row; the rebuild would prove nothing about them", table)
+		}
+	}
+	// The rebuild must DERIVE the observed index: emptied here, it is back
+	// only if the background pass behind the rebuild put it back.
+	for _, table := range []string{"observed_streams", "observed_segments", "observed_rollups", "observed_latest"} {
+		if _, err := rawDB(t, dsn).Exec(`DELETE FROM ` + table); err != nil {
+			t.Fatalf("empty %s: %v", table, err)
+		}
 	}
 	head := maxSeq(t, ds)
 

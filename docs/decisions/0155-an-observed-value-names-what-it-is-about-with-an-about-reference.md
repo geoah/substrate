@@ -35,7 +35,7 @@ repository's owner.
 
 `about` is optional and never cascades: deleting a room leaves its readings.
 It is on every observation and trace and in the index key
-(0160),
+([0160](0160-the-observed-index-keeps-a-segment-per-record-and-a-rollup-serves-only-exact-answers.md)),
 so a filter to one room, grouping by room and "hours the door was open" read
 rollups instead of raw points. It is on the value, not the metric or the
 source, because one metric is observed about many things, a sensor moves

@@ -213,8 +213,11 @@ func waitReprojection(t *testing.T, ds *dataset) {
 	}
 }
 
+// foldSnapshotOf is the dataset's fold snapshot once the background pass
+// owes nothing: a rebuild leaves the observed index to it.
 func foldSnapshotOf(t *testing.T, ds *dataset) string {
 	t.Helper()
+	DrainIndexReprojection(t, ds)
 	raw, err := ds.FoldSnapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)

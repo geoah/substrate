@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"slices"
@@ -176,6 +177,18 @@ func FoldTables() []string {
 	return append(slices.Clone(foldTables), "property_offers")
 }
 
+// FoldSnapshotOver is FoldSnapshot read through db, a connection row level
+// security does not bind. With no repository predicate the planner cannot
+// take a table's rows in key order from its primary key, so each ORDER BY
+// must decide the order on its own.
+func FoldSnapshotOver(ctx context.Context, db *sql.DB) ([]byte, error) {
+	snap, err := foldSnapshot(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(snap, "", "  ")
+}
+
 // WithTestCommitFault runs fn at each durable step of a write's commit
 // (dataset.go commitAndMirror), six stages. Around the manifest write that
 // precedes the first append in a new changelog dialect (repodir.go
@@ -323,6 +336,15 @@ func WithTestQueryTracer(tr pgx.QueryTracer) Option {
 // from it fails the page, as a database error would.
 func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error) Option {
 	return func(o *options) { o.reprojectionHook = hook }
+}
+
+// WithTestReprojectionPageHook sets a hook the background index
+// re-derivation runs inside each page's transaction, after the page's
+// statements and before its commit, with the kind it re-derived
+// (reprojection.go reprojectKind). A hook that blocks holds the page's locks
+// there; it should return when ctx ends. An error from it fails the page.
+func WithTestReprojectionPageHook(hook func(ctx context.Context, kind string) error) Option {
+	return func(o *options) { o.reprojectionPageHook = hook }
 }
 
 // WithTestWebhookClock is the clock the webhook door records each request's
@@ -660,4 +682,60 @@ func OAuthRefreshHands(ds substrate.Dataset) int {
 		}
 	}
 	return n
+}
+
+// ObservedPoint is one point the observed index derives from a stored
+// record's segment, as a test reads it: the index keeps no point, so this is
+// deriveObserved run again over the records the segments name.
+type ObservedPoint struct {
+	Kind, RecordID                                  string
+	Ord                                             int
+	Metric, Source, About, Channel, Statistic, Form string
+	TS, TSEnd                                       time.Time
+	Offset                                          int64
+	OffsetKnown                                     bool
+	Unit                                            string
+	Delta, Circular                                 bool
+	Value, Base                                     *float64
+	Exact                                           *string
+	Code, Comparator                                string
+	HoldMs                                          *int64
+	ResetRule, WrapAt                               *string
+	ResetAt                                         *time.Time
+}
+
+// ObservedPoints derives every point of every segment of the repository,
+// in (kind, record id, ord) order.
+func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint, error) {
+	d := ds.(*dataset)
+	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	st := newObsStore(ctx, tx, d.liveFoldView())
+	segs, err := st.scanSegments(`SELECT ` + segmentColumns + ` FROM observed_segments ORDER BY kind, record_id`)
+	if err != nil {
+		return nil, err
+	}
+	if err := st.derive(segs); err != nil {
+		return nil, err
+	}
+	var out []ObservedPoint
+	for _, g := range segs {
+		r := st.rows[g.ref]
+		if r == nil {
+			continue
+		}
+		for _, p := range r.points {
+			out = append(out, ObservedPoint{
+				Kind: r.key.kind, RecordID: r.id, Ord: p.ord,
+				Metric: r.key.metric, Source: r.key.source, About: r.key.about, Channel: r.key.channel,
+				Statistic: r.key.statistic, Form: r.form, TS: p.ts, TSEnd: p.tsEnd, Offset: p.offset, OffsetKnown: p.offsetKnown,
+				Unit: r.unit, Delta: r.delta, Circular: r.circular, Value: p.value, Base: p.base, Exact: p.exact,
+				Code: p.code, Comparator: p.comparator, HoldMs: r.holdMs, ResetRule: r.resetRule, WrapAt: r.wrapAt, ResetAt: r.resetAt,
+			})
+		}
+	}
+	return out, nil
 }

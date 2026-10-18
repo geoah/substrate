@@ -241,12 +241,11 @@ opt into twice:
   `trait: substrate.reamde.dev/core/metric`.
   [Observations](observations.md) has every rule and the sample kinds that
   bind it.
-- **`metric`** marks the catalogue entry an observed value names. It
-  contracts what the aggregate read is built to take (`measures`, `unit` and
-  `bucketPlace`), the rollup tiers the observed index is built to keep
-  (`rollups`), and what a reader shows (`name`, `form`, `codeSet`,
-  `displayPrecision` and `category`); neither the read nor the index exists
-  yet.
+- **`metric`** marks the catalogue entry an observed value names. The
+  observed index keeps the rollup tiers its `rollups` lists. It contracts
+  what the aggregate read is built to take (`measures`, `unit` and
+  `bucketPlace`), which does not exist yet, and what a reader shows (`name`,
+  `form`, `codeSet`, `displayPrecision` and `category`).
   Every write is held to the unit table and to the tier list
   ([observations](observations.md#the-metric-and-source-contracts)).
 - **`source`** marks the device, app, service or lab a value came from. Its

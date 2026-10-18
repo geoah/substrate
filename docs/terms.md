@@ -69,6 +69,11 @@ nothing, there are none.
 | **source** | On an observed value, the device, app, service or lab that produced it. The mirror row that delivered it is its `origin`. Not a declaration's managed `source`. |
 | **form** | What an observed value's number means, written on the value: `gauge` (a level), `amount` (accrued over a span), `counter` (a running total) or `summary` (a statistic its source computed). It decides which reducers apply. Decision record 0156. |
 | **hold** | How long a gauge's value stands after its point when no newer one arrives. Decision record 0158. |
+| **stream** | One run of readings: the kind, metric, source, about and channel a value names, and a summary's statistic. The index keys it by a private id. Decision record 0160. |
+| **point** | One value of an observed record: one per observation, one per point of a trace, derived from the record whenever the index or a read needs it. It is **available** when it holds a value or a code that is not empty; a `null` is an unavailable point and counts in nothing. |
+| **segment** | The observed index's one row per observed record: its stream, the span of its points, what it holds and a fingerprint of what the index reads from it. |
+| **rollup row** | One row of `observed_rollups`: one stream's points of one form in one bucket of one tier (`5m`, `15m`, `1h` or `1d`, as its metric's `rollups` name) and group, reduced to the statistics a read merges exactly. |
+| **group** | In the observed index, the points of one stream, form and bucket that share a code, unit, `delta` and UTC offset: one rollup row each. Never the old word for an authority. |
 
 ## Installed things
 
