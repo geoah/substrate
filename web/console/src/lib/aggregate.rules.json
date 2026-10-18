@@ -1,0 +1,87 @@
+{
+  "reducers": {
+    "amount": [
+      "count",
+      "sum",
+      "avg",
+      "min",
+      "max",
+      "first",
+      "last",
+      "stddev",
+      "percentile"
+    ],
+    "coded amount": [
+      "count",
+      "sum",
+      "min",
+      "max"
+    ],
+    "coded gauge": [
+      "count",
+      "first",
+      "last",
+      "timeInState"
+    ],
+    "counter": [
+      "count",
+      "first",
+      "last",
+      "min",
+      "max",
+      "increase",
+      "rate"
+    ],
+    "gauge": [
+      "count",
+      "avg",
+      "min",
+      "max",
+      "first",
+      "last",
+      "stddev",
+      "percentile",
+      "durationIn",
+      "circularMean"
+    ],
+    "summary": [
+      "count",
+      "first",
+      "last",
+      "sum",
+      "min",
+      "max",
+      "avg"
+    ]
+  },
+  "additiveStatistics": [
+    "sum",
+    "count"
+  ],
+  "budget": {
+    "maxBuckets": {
+      "default": 1440,
+      "cap": 10000
+    },
+    "maxGroups": {
+      "default": 200,
+      "cap": 2000
+    },
+    "maxSamples": {
+      "default": 1000000,
+      "cap": 2000000
+    }
+  },
+  "maxMetrics": 16,
+  "rollupTiers": [
+    "5m",
+    "15m",
+    "1h",
+    "1d"
+  ],
+  "defaultRollups": [
+    "15m",
+    "1h",
+    "1d"
+  ]
+}

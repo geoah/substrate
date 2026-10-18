@@ -1147,11 +1147,3 @@ func (s *obsSettle) requestMetrics() error {
 	s.t.afterCommit = append(s.t.afterCommit, s.t.ds.kickIndexReprojection)
 	return nil
 }
-
-// spanArrays are the spans' starts and ends as a statement's two arrays.
-func spanArrays(spans [][2]time.Time) (from, to []time.Time) {
-	for _, s := range spans {
-		from, to = append(from, s[0]), append(to, s[1])
-	}
-	return from, to
-}

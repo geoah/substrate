@@ -162,6 +162,24 @@ describe("envelopeError", () => {
     // A transport failure that never reached the substrate stays `network`.
     expect(envelopeError(0, undefined).code).toBe("network")
   })
+
+  it("carries the reason that narrows a code", () => {
+    const err = envelopeError(
+      503,
+      {
+        error: {
+          code: "unavailable",
+          reason: "observed_rederiving",
+          message: "the observed index this read selects is being re-derived",
+        },
+      },
+      2
+    )
+    expect(err.code).toBe("unavailable")
+    expect(err.reason).toBe("observed_rederiving")
+    expect(err.retryAfter).toBe(2)
+    expect(envelopeError(503, undefined).reason).toBe(undefined)
+  })
 })
 
 /** A route this console calls that an older substrate predates answers 404,

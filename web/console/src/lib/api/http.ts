@@ -101,7 +101,8 @@ export function envelopeError(
     status,
     err?.problems ?? [],
     err?.problemDetails ?? [],
-    retryAfter
+    retryAfter,
+    err?.reason
   )
 }
 

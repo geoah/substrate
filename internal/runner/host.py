@@ -9,7 +9,7 @@
 #                    {"op": "invoke", "reqId": N, "id": <key>, "input": {...}}
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
-#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call"|
+#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate"|"call"|
 #                     "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
@@ -179,6 +179,7 @@ class HostError(Exception):
 # namespaced beside them, the SDK surface:
 #
 #   host.records.get/list/search   typed, type-scoped reads (committed state)
+#   host.records.aggregate         the aggregate read, budgeted like a list
 #   host.functions.call             function-to-function composition
 #   host.agents.call                run an agent to settlement, its reply back
 #   host.effects.put/patch/delete/  the buffered-effects builder — each APPENDS
@@ -586,6 +587,16 @@ class Records:
         if order:
             q["orderBy"] = order
         return self._host.list(**q)
+
+    def aggregate(self, body):
+        """The aggregate read (docs/api.md): `body` is the records route's
+        parameters as one document, {"filter": ..., "aggregate": ...,
+        "downsample": ...}. `filter.kinds` names the observed kinds read (and
+        `aggregate.bucket.records.filter.kinds` the records mode's), each held
+        to the reads allowlist. Returns the result dict: `rows`, each with
+        `start`, `end` and `values`. One call, its rows against the row
+        budget."""
+        return self._host.aggregate(body)
 
     def search(self, q, kinds, k=None, mode=None):
         params = {"q": q, "kinds": _as_kinds(kinds)}
@@ -1384,6 +1395,11 @@ class Host:
         `orderBy` is either the compact string ("at:desc,createdAt") or a list
         of {"property": ..., "desc": bool}."""
         return self._call("list", query).get("page") or {}
+
+    def aggregate(self, body):
+        """An aggregate read ({filter, aggregate, downsample?}) -> the result
+        dict."""
+        return self._call("aggregate", body).get("result") or {}
 
     def search(self, **params):
         """Lexical/semantic search (q, mode, kinds, k) -> SearchResult: the hits

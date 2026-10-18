@@ -37,6 +37,13 @@ type fakeBackend struct {
 	aliases map[string]string
 	// orderBys is every list's sort, in call order.
 	orderBys [][]substrate.Order
+	// aggregates is every aggregate read served, in call order; aggregateRows
+	// is how many rows each answers.
+	aggregates    []substrate.AggregateQuery
+	aggregateRows int
+	// aggregatesRefused counts the reads refused on their budget before any
+	// work.
+	aggregatesRefused int
 	// logs is every line Log received, in order, and logged the instant of
 	// each, so a test can tell a line that arrived while the body ran from
 	// one that came with its end.
@@ -74,6 +81,29 @@ func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		}
 	}
 	return &substrate.Page{Records: out}, nil
+}
+
+func (f *fakeBackend) Aggregate(_ context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	f.aggregates = append(f.aggregates, q)
+	// The engine refuses a read whose rows pass budget.maxBuckets before it
+	// takes a point; the fake answers that refusal and does no work.
+	if q.Aggregate != nil && q.Aggregate.Budget != nil && q.Aggregate.Budget.MaxBuckets > 0 && f.aggregateRows > q.Aggregate.Budget.MaxBuckets {
+		b := q.Aggregate.Budget
+		f.aggregatesRefused++
+		return nil, &substrate.ValidationError{Problems: []string{fmt.Sprintf(
+			"aggregate.budget.maxBuckets: 1 series times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			f.aggregateRows, f.aggregateRows, b.MaxBuckets, substrate.AggregateMaxBucketsCap)}}
+	}
+	res := &substrate.AggregateResult{Exact: true, Rows: []substrate.AggregateRow{}}
+	for i := range f.aggregateRows {
+		v := fmt.Sprint(60 + i)
+		res.Rows = append(res.Rows, substrate.AggregateRow{
+			Start:  time.Date(2026, 9, 1+i, 0, 0, 0, 0, time.UTC),
+			End:    time.Date(2026, 9, 2+i, 0, 0, 0, 0, time.UTC),
+			Values: []substrate.AggregateValue{{Reducer: substrate.AggregateReducer{Name: "avg"}, Value: &v, Unit: "/min"}},
+		})
+	}
+	return res, nil
 }
 
 func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
@@ -1135,5 +1165,199 @@ func TestSweepRacingInvokesNeverClosesThePipeUnderThem(t *testing.T) {
 	// the race left in the map, dead or live, the lookup restarts or reuses it.
 	if res, err := r.Invoke(ctx, windowSpec, testInput(), nil); err != nil || res.Output != "ok" {
 		t.Fatalf("a delivery after the sweep stopped did not get through: %+v %v", res, err)
+	}
+}
+
+// TestAggregateHostCall: host.records.aggregate sends its body to the
+// backend whole, answers the result's rows, holds every kind it reads to the
+// allowlist (the streams' and the records bucket's) and pays one call and its
+// rows against the read budget.
+func TestAggregateHostCall(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "trend.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    res = host.records.aggregate({
+        "filter": {"kinds": ["widget"]},
+        "aggregate": {
+            "metric": {"ref": "g.test/observations/metric/heart_rate"},
+            "range": {"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-04T00:00:00Z"},
+            "bucket": {"calendar": "day", "timezone": "UTC"},
+            "reducers": ["avg", {"percentile": 0.05}],
+        },
+    })
+    rows = res["rows"]
+    return {"output": {"rows": len(rows), "first": rows[0]["values"][0]["value"], "unit": rows[0]["values"][0]["unit"]}}
+`,
+		TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget", "g.test/observations/metric"},
+		ReadRows:  10,
+	}
+	backend := widgetBackend()
+	backend.aggregateRows = 3
+	res, err := r.Invoke(context.Background(), spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	if out["rows"] != float64(3) || out["first"] != "60" || out["unit"] != "/min" {
+		t.Fatalf("output = %v", res.Output)
+	}
+	if len(backend.aggregates) != 1 {
+		t.Fatalf("aggregates served = %d", len(backend.aggregates))
+	}
+	q := backend.aggregates[0]
+	if q.Aggregate == nil || q.Aggregate.Metric.Ref != "g.test/observations/metric/heart_rate" || len(q.Aggregate.Reducers) != 2 ||
+		*q.Aggregate.Reducers[1].Percentile != 0.05 || q.Aggregate.Bucket.Timezone != "UTC" || q.Filter.Kinds[0] != "widget" {
+		t.Fatalf("the backend saw %+v", q)
+	}
+
+	// A read naming no kinds, a records bucket over a kind outside the
+	// allowlist, a metric of such a kind, or a reverse read of a record of
+	// one trips before the backend is asked, as the agent query tool refuses
+	// them.
+	for name, body := range map[string]string{
+		"no kinds": `{"aggregate": {"metric": {"ref": "g.test/observations/metric/heart_rate"}}}`,
+		"records bucket": `{"filter": {"kinds": ["widget"]}, "aggregate": {"bucket": {"records": ` +
+			`{"filter": {"kinds": ["secret.g.test"]}}}}}`,
+		"a metric outside": `{"filter": {"kinds": ["widget"]}, "aggregate": {"metric": {"ref": "g.test/secret/metric/x"}}}`,
+		"one of several metrics outside": `{"filter": {"kinds": ["widget"]}, "aggregate": {"metrics": [` +
+			`{"ref": "g.test/observations/metric/heart_rate"}, {"ref": "g.test/secret/metric/x"}]}}`,
+		"a reverse read outside": `{"filter": {"kinds": ["widget"], "referencing": {"ref": "g.test/secret/thing/x"}}, ` +
+			`"aggregate": {"metric": {"ref": "g.test/observations/metric/heart_rate"}}}`,
+		"a records bucket's reverse read outside": `{"filter": {"kinds": ["widget"]}, "aggregate": {"metric": ` +
+			`{"ref": "g.test/observations/metric/heart_rate"}, "bucket": {"records": {"filter": {"kinds": ["widget"], ` +
+			`"referencing": {"refs": ["g.test/widgets/widget/w1", "g.test/secret/thing/x"]}}}}}}`,
+	} {
+		bad := spec
+		bad.Function = "peek.g.test"
+		bad.Source = "import json\ndef main(input, host):\n    host.records.aggregate(json.loads('" + body + "'))\n    return {\"effects\": []}\n"
+		backend := widgetBackend()
+		_, err := r.Invoke(context.Background(), bad, testInput(), backend)
+		if !errors.Is(err, ErrReadForbidden) || len(backend.aggregates) != 0 {
+			t.Fatalf("%s: err = %v, aggregates served %d; want a read trip before the backend", name, err, len(backend.aggregates))
+		}
+	}
+
+	// The read is sent with its maxBuckets lowered to the rows left, so a
+	// read past the row budget is refused before it runs, and that refusal
+	// is a budget trip.
+	if b := q.Aggregate.Budget; b == nil || b.MaxBuckets != 10 || b.MaxGroups != 0 {
+		t.Fatalf("the backend saw budget %+v, want maxBuckets lowered to the 10 rows left", b)
+	}
+	over := spec
+	over.Function = "greedy.g.test"
+	over.ReadRows = 2
+	backend = widgetBackend()
+	backend.aggregateRows = 3
+	_, err = r.Invoke(context.Background(), over, testInput(), backend)
+	if !errors.Is(err, ErrReadBudget) {
+		t.Fatalf("over the row budget: err = %v, want a budget trip", err)
+	}
+	// The trip is the function's fault, never the caller's input: a
+	// ValidationError in its chain would answer the caller 422 on a field
+	// it never sent.
+	if ve := (*substrate.ValidationError)(nil); errors.As(err, &ve) {
+		t.Fatalf("over the row budget: the trip carries the read's ValidationError %v", ve)
+	}
+	// The read's advice to raise maxBuckets cannot help: the row budget
+	// lowers it again. The trip names the budget that does.
+	if msg := err.Error(); strings.Contains(msg, "raise maxBuckets") || !strings.Contains(msg, "permissions.reads.budgets.rows") {
+		t.Fatalf("over the row budget: %q; want the row budget's remedy, not the read's", msg)
+	}
+	if backend.aggregatesRefused != 1 || len(backend.aggregates) != 1 || backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
+		t.Fatalf("over the row budget: %d reads, %d refused before any work, want the one read refused at maxBuckets 2",
+			len(backend.aggregates), backend.aggregatesRefused)
+	}
+
+	// The request's own budget, under the rows left, is sent as written, and
+	// its refusal is the read's error, not a trip.
+	own := spec
+	own.Function = "tight.g.test"
+	own.Source = `
+def main(input, host):
+    try:
+        host.records.aggregate({"filter": {"kinds": ["widget"]},
+            "aggregate": {"metric": {"ref": "m"}, "budget": {"maxBuckets": 2}}})
+    except Exception as e:
+        return {"output": {"refused": str(e)}}
+    return {"output": {}}
+`
+	backend = widgetBackend()
+	backend.aggregateRows = 3
+	res, err = r.Invoke(context.Background(), own, testInput(), backend)
+	if err != nil {
+		t.Fatalf("a refusal of the request's own budget: %v", err)
+	}
+	if out, _ := res.Output.(map[string]any); !strings.Contains(fmt.Sprint(out["refused"]), "maxBuckets") ||
+		backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
+		t.Fatalf("a refusal of the request's own budget: output %v, sent %+v", res.Output, backend.aggregates[0].Aggregate.Budget)
+	}
+}
+
+// A list's reverse read is held like its kinds: the targets of
+// filter.referencing name records of a kind the allowlist must cover, since
+// the page says which records point at them. A target the allowlist covers
+// reads; one it does not trips before the backend is asked.
+func TestListReferencingIsHeldToTheAllowlist(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "reverse.g.test", Runtime: "python", TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"}, ReadRows: 10,
+	}
+	for _, x := range []struct {
+		target string
+		trips  bool
+	}{{"g.test/widgets/widget/w1", false}, {"g.test/secret/thing/x", true}} {
+		spec.Source = "def main(input, host):\n    host.records._host.list(filter={\"kinds\": [\"widget\"], \"referencing\": {\"ref\": \"" +
+			x.target + "\"}})\n    return {\"effects\": []}\n"
+		backend := widgetBackend()
+		_, err := r.Invoke(context.Background(), spec, testInput(), backend)
+		if x.trips && (!errors.Is(err, ErrReadForbidden) || len(backend.orderBys) != 0) {
+			t.Errorf("referencing %s: err = %v, lists served %d; want a read trip before the backend", x.target, err, len(backend.orderBys))
+		}
+		if !x.trips && (err != nil || len(backend.orderBys) != 1) {
+			t.Errorf("referencing %s: err = %v, lists served %d; want the one list", x.target, err, len(backend.orderBys))
+		}
+	}
+}
+
+// TestListReferencingTheDeliveredRecordIsAllowed: a trigger fires a body on
+// kinds its reads do not grant, and host.observed.reconcile finds what the
+// body produced from the delivered record by a reverse read from it. That
+// read passes; one from another record of the same kind, or from the same
+// path in a call that carries no delivery, still trips.
+func TestListReferencingTheDeliveredRecordIsAllowed(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "reverse.g.test", Runtime: "python", TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"}, ReadRows: 10,
+	}
+	delivery := testInput()
+	delivery.Envelope["change"] = map[string]any{"kind": "g.test/secret/thing", "id": "x", "op": "delete", "seq": int64(7)}
+	delivery.Envelope["record"] = nil
+	call := Input{Mode: ModeCall, Args: map[string]any{}}
+	for _, x := range []struct {
+		name   string
+		in     Input
+		target string
+		trips  bool
+	}{
+		{"the delivered record", delivery, "g.test/secret/thing/x", false},
+		{"another record of its kind", delivery, "g.test/secret/thing/y", true},
+		{"the same path in a call", call, "g.test/secret/thing/x", true},
+	} {
+		spec.Source = "def main(input, host):\n    host.records._host.list(filter={\"kinds\": [\"widget\"], \"referencing\": {\"ref\": \"" +
+			x.target + "\"}})\n    return {\"effects\": []}\n"
+		backend := widgetBackend()
+		_, err := r.Invoke(context.Background(), spec, x.in, backend)
+		if x.trips && (!errors.Is(err, ErrReadForbidden) || len(backend.orderBys) != 0) {
+			t.Errorf("%s: err = %v, lists served %d; want a read trip before the backend", x.name, err, len(backend.orderBys))
+		}
+		if !x.trips && (err != nil || len(backend.orderBys) != 1) {
+			t.Errorf("%s: err = %v, lists served %d; want the one list", x.name, err, len(backend.orderBys))
+		}
 	}
 }

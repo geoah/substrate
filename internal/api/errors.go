@@ -72,12 +72,18 @@ const restartRetryAfter = 30 * time.Second
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
 // least one second.
 func writeUnavailable(w http.ResponseWriter, retryAfter time.Duration, msg string) {
+	writeUnavailablePayload(w, retryAfter, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+}
+
+// writeUnavailablePayload is writeUnavailable for a payload that carries
+// more than the message (a reason).
+func writeUnavailablePayload(w http.ResponseWriter, retryAfter time.Duration, p substrate.ErrorPayload) {
 	secs := int(retryAfter.Seconds())
 	if secs < 1 {
 		secs = 1
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
-	writeError(w, http.StatusServiceUnavailable, codeUnavailable, msg)
+	writeJSON(w, http.StatusServiceUnavailable, substrate.ErrorEnvelope{Error: p})
 }
 
 // writeCompacted is the 410 emit for a change cursor the changelog cannot
@@ -127,6 +133,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeAuth, Message: err.Error()}
 	case errors.Is(err, substrate.ErrTooLarge):
 		return http.StatusRequestEntityTooLarge, substrate.ErrorPayload{Code: codeBadRequest, Message: err.Error()}
+	case errors.Is(err, substrate.ErrObservedRederiving):
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonObservedRederiving, Message: err.Error()}
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:
@@ -145,7 +153,7 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	status, p := problemFor(err)
 	if status == http.StatusServiceUnavailable {
-		writeUnavailableCause(w, r, err, p.Message)
+		writeUnavailableCause(w, r, err, p)
 		return
 	}
 	if status >= http.StatusInternalServerError {
@@ -164,7 +172,7 @@ func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 // must see. A refusal only a restart lifts is an ERROR, and its client is
 // told to come back later than a moment's wait. Any other is a WARN, and a
 // client's own cancellation a DEBUG.
-func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, msg string) {
+func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p substrate.ErrorPayload) {
 	retryAfter := time.Second
 	attrs := append(requestLogAttrs(r), "error", err)
 	switch {
@@ -176,7 +184,7 @@ func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, ms
 	default:
 		slog.Warn("request answered unavailable", attrs...)
 	}
-	writeUnavailable(w, retryAfter, msg)
+	writeUnavailablePayload(w, retryAfter, p)
 }
 
 // clientCanceled reports whether err is the request's own cancellation. Both

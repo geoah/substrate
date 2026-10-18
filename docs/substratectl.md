@@ -142,6 +142,106 @@ document (`kind`, `metadata`, `data`, and the server-set `status`),
 flat; the envelope is the CLI's YAML form. `status` is ignored on input, so the
 output applies back unchanged.
 
+`substratectl aggregate [metric...]` is the aggregate read
+([0161](decisions/0161-the-aggregate-read-is-a-mode-of-the-records-route-checked-before-it-runs.md)):
+it reduces a metric's observed points, or a declared number of the filtered
+kinds (`--property`), into time buckets. The argument is the metric record's
+full path; several arguments read several metrics over one range and bucket
+(`aggregate.metrics`), each row naming its metric. The flags build the
+request one field each, and a flag left out sends nothing, so the server's
+default applies. `--reducer` is repeatable and takes a name or a name with
+its argument: `percentile:0.05`, `durationIn:95,114`,
+`timeInState:open,closed`. Heart rate zones per week in Athens, one watch
+preferred over the other:
+
+```
+substratectl aggregate ada.example.com/observations/metric/health/heart_rate \
+  --gte 2026-04-06T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
+  --calendar week --week-start monday --timezone Europe/Athens \
+  --reducer durationIn:95,114 --reducer durationIn:114,133 --reducer durationIn:133,152 \
+  --policy priority --order strap/ada/chest,manual \
+  --unit min --max-gap PT5M
+```
+
+Daily steps for a year, one row per source, from a source's step amounts
+where they cover 90 percent of a day and from its daily total where they do
+not ([which sources write a total](observations.md#reading)). A `--calendar`
+with no `--timezone` is the recorded-local day. Four sources times 365 days
+pass the default `maxBuckets` of 1,440, so `--max-buckets` raises it:
+
+```
+substratectl aggregate ada.example.com/observations/metric/health/steps \
+  --gte 2025-10-05T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
+  --calendar day --from prefer-raw --reducer sum --unit '{steps}' \
+  --max-buckets 2000
+```
+
+The latest value of each metric from each source needs no range or bucket:
+
+```
+substratectl aggregate --latest --group-by metric,source \
+  --filter '{"properties":{"metric":{"in":["ada.example.com/observations/metric/health/body_mass","ada.example.com/observations/metric/health/body_fat_fraction"]}}}'
+```
+
+Time spent asleep per stage in each night, the nights being the
+`health/sleep` records that are not naps, WHOOP's night kept where two sources
+recorded one and WHOOP's stages kept inside it:
+
+```
+substratectl aggregate ada.example.com/observations/metric/health/sleep_stage \
+  --gte 2026-09-01T00:00:00+03:00 --lt 2026-10-01T00:00:00+03:00 \
+  --records ada.example.com/health/sleep --records-filter '{"properties":{"isNap":{"eq":false}}}' \
+  --records-utc-offsets utcOffsetStart,utcOffsetEnd \
+  --record-policy priority --record-order whoop/e2e --record-source source \
+  --policy priority --order whoop/e2e \
+  --group-by code --reducer sum --unit min
+```
+
+Each field the read takes has a flag:
+
+| Flags | Fields |
+| --- | --- |
+| `--kinds`, `--filter`, `--statistic` | `filter.kinds`, the whole filter, `filter.properties.statistic` |
+| `--property`, `--anchor`, `--utc-offset`, `--property-group-by` | `property.name`, `.anchor`, `.utcOffset`, `.groupBy` |
+| `--gte`, `--lt` | `range` |
+| `--every`, `--origin` | the fixed time mode |
+| `--calendar`, `--timezone`, `--fallback-timezone`, `--week-start` | the calendar time mode |
+| `--records`, `--records-filter`, `--records-utc-offsets` | the records time mode, `bucket.records` |
+| `--place` | `bucket.place` |
+| `--policy`, `--order` | `sources`, among the sources of points |
+| `--record-policy`, `--record-order`, `--record-source`, `--record-match` | `bucket.records.sources`, or `property.sources` beside `--property` |
+| `--reducer`, `--group-by`, `--unit`, `--from`, `--max-gap`, `--fill` | the fields of those names |
+| `--duration-unit` | `durationUnit`, the unit `durationIn` and `timeInState` answer their times in |
+| `--latest` | `latest`, each group's newest point instead of buckets |
+| `--rolling`, `--rolling-reducer`, `--rolling-through` | `rolling` |
+| `--max-buckets`, `--max-samples`, `--max-groups` | `budget` |
+| `--downsample N` | `downsample`, N chart columns instead of buckets |
+
+`--body FILE` (`-f`; `-` reads stdin) sends a JSON request instead, either
+`{"filter": ..., "aggregate": ..., "downsample": ...}` or the aggregate body
+alone, decoded as strictly as the server decodes it, and a flag given beside
+it replaces that one field. Each `metrics` entry's own `unit`,
+`durationUnit`, `reducers`, `from` and `statistic` have no flags and are
+written this way. The command
+checks `-o` before it sends the read.
+
+The table prints one line per row: start and end; then, where any row
+carries them, the group (`GROUP`, a summary's statistic and a property
+read's group properties included), the record a records-mode window came
+from (`RECORD`), the sources of a row whose group names none (`SOURCES`, so
+the rows the separate policy splits by source tell apart), the form
+(`FORM`), whether raw points or summaries served it (`FROM`), the time its
+points cover (`COVERAGE`), the values placed by `--fallback-timezone`
+(`OFFSETLESS`), the amounts a window cut (`PRORATED`) and `FLAGS`: `filled`
+for a row `--fill` made, `overlaps` for a records-mode window whose sums do
+not add, and `bounded=N` for values written with a comparator; then each
+value as `reducer=value unit`, a value with a comparator printed with it
+(`min=<0.01 m[IU]/L`). A coded first or last prints its code as the value, a
+`timeInState` value names its state (`timeInState:closed=3.5 h`), and a
+rolling value names its window and `n`, the buckets in it with a value
+(`rolling(7,n=6,avg of sum)=8123 {steps}`). `-o json` and `-o yaml` print the
+answer whole.
+
 ## Writing
 
 - `apply -f FILE` applies YAML manifests (`---`-separated; `-` reads stdin). A

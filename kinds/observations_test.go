@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
@@ -243,6 +244,37 @@ func TestHealthGaugesCarryAHold(t *testing.T) {
 	if gauges == 0 {
 		t.Fatal("no gauge metrics found")
 	}
+}
+
+// A METRIC'S REDUCERS ARE ONES ITS FORM TAKES. `reducers` is the catalogue's
+// advice on what answers something useful, and a reader builds its choices
+// from it: one the aggregate read refuses for the form is a 422 offered as a
+// choice. The table is the read's own (substrate.FormReducers).
+func TestHealthMetricReducersAreOnesTheirFormTakes(t *testing.T) {
+	for id, props := range healthRecords(t, "observations/metric") {
+		form, _ := props["form"].(string)
+		if _, coded := props["codeSet"]; coded {
+			form = "coded " + form
+		}
+		takes, ok := substrate.FormReducers[form]
+		if !ok {
+			t.Errorf("%s has form %q", id, form)
+			continue
+		}
+		reducers, _ := props["reducers"].([]any)
+		for _, r := range reducers {
+			if !slices.Contains(takes, r.(string)) {
+				t.Errorf("%s lists %s, which the aggregate read refuses for %s %s", id, r, article(form), form)
+			}
+		}
+	}
+}
+
+func article(form string) string {
+	if strings.HasPrefix(form, "amount") {
+		return "an"
+	}
+	return "a"
 }
 
 // A KIND AN ADAPTER REWRITES HOLDS ITS REVISION. Every observations and health

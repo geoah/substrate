@@ -45,3 +45,10 @@ func metricContract(ctx context.Context, q rowQuerier, reg *vocabulary.Registry,
 	}
 	return vocabulary.MetricContractOf(props), true, nil
 }
+
+// bindsSource reports whether a kind binds core's `source`, whose records'
+// `priorities` the aggregate read ranks sources by.
+func bindsSource(reg *vocabulary.Registry, kind string) bool {
+	k, ok := reg.ByIdentity(kind)
+	return ok && k.Implements(vocabulary.TraitSourceCore)
+}

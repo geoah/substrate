@@ -255,6 +255,10 @@ type obsStore struct {
 	// derived counts the points derived from stored records, which a read's
 	// trace reports.
 	derived int64
+	// charge, where set, is handed the points of each record before or
+	// atOrAfter is about to derive, before it derives them: an aggregate
+	// read counts them against maxSamples, and a refusal stops the walk.
+	charge func(n int64) error
 }
 
 func newObsStore(ctx context.Context, q dbx, view kindLookup) *obsStore {
@@ -343,6 +347,17 @@ func (st *obsStore) derive(segs []obsSegment) error {
 	return nil
 }
 
+// charged hands charge the points of a segment's record not yet derived.
+func (st *obsStore) charged(s obsSegment) error {
+	if st.charge == nil {
+		return nil
+	}
+	if _, ok := st.rows[s.ref]; ok {
+		return nil
+	}
+	return st.charge(int64(s.points))
+}
+
 // put records a record's derived rows, as a write derived them.
 func (st *obsStore) put(ref eref, r *observedRows) {
 	st.rows[ref] = r
@@ -429,6 +444,9 @@ func (st *obsStore) before(info *obsStreamInfo, form string, t time.Time, availa
 			if best != nil && reach.Before(best.At) {
 				continue
 			}
+			if err := st.charged(s); err != nil {
+				return nil, err
+			}
 			if err := st.derive([]obsSegment{s}); err != nil {
 				return nil, err
 			}
@@ -478,6 +496,9 @@ func (st *obsStore) atOrAfter(info *obsStreamInfo, form string, t time.Time, ava
 			}
 			if available && (s.available == 0 || s.lastAvailable.Before(t)) {
 				continue
+			}
+			if err := st.charged(s); err != nil {
+				return nil, err
 			}
 			if err := st.derive([]obsSegment{s}); err != nil {
 				return nil, err

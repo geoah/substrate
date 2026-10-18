@@ -50,7 +50,7 @@ Chosen: the first.
   equal. Nothing deduplicates on a similar timestamp or value: two
   deliveries of one device without a shared identity are two sources, and
   the read's source policy chooses between them
-  (0161).
+  ([0161](0161-the-aggregate-read-is-a-mode-of-the-records-route-checked-before-it-runs.md)).
   A source record ranks itself per metric in `priorities`, contracted by
   core's `source` trait and keyed by the metric's full record path; a bare
   metric id is refused, because a metric's kind is rehomed per repository

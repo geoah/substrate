@@ -39,7 +39,8 @@ API call that completes a task.
   and the cross-kind queries binding unlocks
 - [Observations](observations.md): measured values (readings, traces, lab
   results), core's `observed` trait and the rules every write of one is held
-  to, the `observations` and `health` samples, and the observed index
+  to, the `observations` and `health` samples, the observed index, and the
+  aggregate reads that answer a screen of a health app
 - [Vocabulary as records](vocabulary.md) — the declarable kinds, admission,
   and how the vocabulary evolves
 - [Projection](projection.md) — record mappings, managed properties, and merges

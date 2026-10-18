@@ -1,0 +1,788 @@
+package engine
+
+// The aggregate read's buckets (aggregate.go): the four time modes and the
+// bucket a request with none reads, the whole range.
+//
+//   - every: windows of one fixed length counted from an origin, on UTC
+//     instants.
+//   - calendar with a timezone: calendar units in that zone, so a day across
+//     a clock change is 23 or 25 hours.
+//   - calendar alone: the recorded-local calendar. Each point is placed by its
+//     own UTC offset, so a bucket is a span of wall clock and its UTC extent
+//     depends on the offsets of the points in it.
+//   - records: each matched record's [at, endsAt).
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"math/big"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/geoah/substrate/internal/observed"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+// bucketWidth is a rollup row's width.
+const bucketWidth = observed.BucketWidth
+
+// The bucket modes.
+const (
+	bucketRange    = "range"
+	bucketEvery    = "every"
+	bucketCalendar = "calendar"
+	bucketLocal    = "local"
+	bucketRecords  = "records"
+)
+
+var calendarUnits = []string{"hour", "day", "week", "month"}
+
+// bucketSpec is a request's bucket, parsed.
+type bucketSpec struct {
+	mode     string
+	every    time.Duration
+	origin   time.Time
+	calendar string
+	loc      *time.Location
+	// fallback is the zone the recorded-local calendar places a value
+	// written without a UTC offset by; nil refuses such a value.
+	fallback *time.Location
+	// placeEnd places a value with a span by its last instant (place end).
+	// placeNamed says the request named the place; where it did not, the
+	// metric's bucketPlace decides it (settlePlace).
+	placeEnd, placeNamed bool
+	weekStart            time.Weekday
+	// records mode
+	records *substrate.AggregateRecords
+	// bySource says records.sources' priority policy chooses among the
+	// windows.
+	bySource bool
+	// echo is the bucket as the response states it.
+	echo *substrate.AggregateBucket
+	// dates are a range of recorded-local dates' own (range.recordedLocal):
+	// the read takes the instants around them, and a day outside them is
+	// reduced and never answered (aggBucket.outside).
+	dates *localDates
+}
+
+// aggBucket is one output bucket.
+type aggBucket struct {
+	// start and end bound the bucket's points: UTC instants, clipped to the
+	// range; on a recorded-local bucket, the wall-clock bounds written as UTC.
+	start, end time.Time
+	local      bool
+	// lookback marks a bucket before the range that a rolling window reads:
+	// reduced, filled and rolled, never answered. A recorded-local day the
+	// range reaches before its first may be two buckets: the lookback one,
+	// holding the whole day the read takes, and the part in the range.
+	lookback bool
+	// outside marks a recorded-local day outside a range of recorded-local
+	// dates (bucketSpec.dates) that the instants around them reach: reduced,
+	// and a rolling window's place, but never answered or counted.
+	outside bool
+	// zone is where start is written, and end too unless endZone is set.
+	zone, endZone *time.Location
+	// record is the records mode's matched record.
+	record *substrate.AggregateRecord
+	// ends are a recorded-local bucket's first and last points and held time
+	// over every row in it, from the evidence each row is written from
+	// (markEnds): what a row fill makes there is written in, and on a
+	// several-metric read every row of it.
+	ends rowEnds
+}
+
+// rowEnds are what a recorded-local row's start and end are written at: the
+// offsets of its first and last points, or where it holds no point of its
+// own, of the first and last value held in it. A row keeps its own, so one
+// group's answer never depends on the other groups the read selects.
+type rowEnds struct {
+	first, last         *rowPoint
+	heldFirst, heldLast *rowHeld
+}
+
+// rowPoint is a point that opens or closes a recorded-local row, placed in
+// the order every reader takes points in, with its offset in minutes.
+type rowPoint struct {
+	at     time.Time
+	rid    string
+	ord    int64
+	stream int
+	off    int64
+}
+
+func (e *rowPoint) point() observed.Point {
+	return observed.Point{At: e.at, RecordID: e.rid, Ord: e.ord}
+}
+
+// rowHeld is a piece of time a value holds in a recorded-local row, with the
+// value's offset in minutes.
+type rowHeld struct {
+	from, to time.Time
+	stream   int
+	off      int64
+}
+
+// mark takes one point of a recorded-local row, a raw point or a rollup row's
+// first or last, and keeps the first and last by pointBefore, so neither the
+// order points and rows arrive in nor the bucket a row starts decides
+// which offset the row's start and end are written in.
+func (e *rowEnds) mark(p observed.Point, stream int, off int64) {
+	pt := &rowPoint{at: p.At, rid: p.RecordID, ord: p.Ord, stream: stream, off: off}
+	if e.first == nil || pointBefore(p, stream, e.first.point(), e.first.stream) {
+		e.first = pt
+	}
+	if e.last == nil || pointBefore(e.last.point(), e.last.stream, p, stream) {
+		e.last = pt
+	}
+}
+
+// hold takes one piece [from, to) of the time a value at the offset holds in
+// a recorded-local row, and keeps the earliest and the latest.
+func (e *rowEnds) hold(from, to time.Time, stream int, off int64) {
+	h := &rowHeld{from: from, to: to, stream: stream, off: off}
+	if e.heldFirst == nil || from.Before(e.heldFirst.from) || (from.Equal(e.heldFirst.from) && stream < e.heldFirst.stream) {
+		e.heldFirst = h
+	}
+	if e.heldLast == nil || to.After(e.heldLast.to) || (to.Equal(e.heldLast.to) && stream > e.heldLast.stream) {
+		e.heldLast = h
+	}
+}
+
+// merge takes another row's ends into these, by the order mark and hold
+// keep.
+func (e *rowEnds) merge(o *rowEnds) {
+	if o.first != nil {
+		if e.first == nil || pointBefore(o.first.point(), o.first.stream, e.first.point(), e.first.stream) {
+			e.first = o.first
+		}
+		if e.last == nil || pointBefore(e.last.point(), e.last.stream, o.last.point(), o.last.stream) {
+			e.last = o.last
+		}
+	}
+	if o.heldFirst != nil {
+		if e.heldFirst == nil || o.heldFirst.from.Before(e.heldFirst.from) || (o.heldFirst.from.Equal(e.heldFirst.from) && o.heldFirst.stream < e.heldFirst.stream) {
+			e.heldFirst = o.heldFirst
+		}
+		if e.heldLast == nil || o.heldLast.to.After(e.heldLast.to) || (o.heldLast.to.Equal(e.heldLast.to) && o.heldLast.stream > e.heldLast.stream) {
+			e.heldLast = o.heldLast
+		}
+	}
+}
+
+// offsets are the offsets a row's start and end are written at: its first
+// and last points', else its first and last held time's; ok is false where
+// it has neither.
+func (e *rowEnds) offsets() (start, end int64, ok bool) {
+	switch {
+	case e == nil:
+		return 0, 0, false
+	case e.first != nil:
+		return e.first.off, e.last.off, true
+	case e.heldFirst != nil:
+		return e.heldFirst.off, e.heldLast.off, true
+	}
+	return 0, 0, false
+}
+
+// pointBefore is observed.Before with the stream last: two streams of one
+// group may hold one record id at one instant (two kinds).
+func pointBefore(a observed.Point, sa int, b observed.Point, sb int) bool {
+	if observed.Before(a, b) {
+		return true
+	}
+	if observed.Before(b, a) {
+		return false
+	}
+	return sa < sb
+}
+
+// length is the time a row reports, the denominator of its coverage
+// fraction: on a recorded-local row from its first point's offset to its
+// last's, which is 31 hours on a day flown west, not 24, and no more of it
+// than the range holds.
+func (b *aggBucket) length(ends *rowEnds, rangeFrom, rangeTo time.Time) time.Duration {
+	start, end := b.shown(ends, rangeFrom, rangeTo)
+	return end.Sub(start)
+}
+
+// shown is a row's start and end as the response writes them. A
+// recorded-local row is written at its ends' offsets, or the range's where it
+// has none, and clipped to the range as a calendar bucket is: the range cuts
+// a day by instant, so a day at another offset than the range's is partial
+// where the range starts and ends, and its start or end says so.
+func (b *aggBucket) shown(ends *rowEnds, rangeFrom, rangeTo time.Time) (time.Time, time.Time) {
+	if !b.local {
+		endZone := b.zone
+		if b.endZone != nil {
+			endZone = b.endZone
+		}
+		return b.start.In(b.zone), b.end.In(endZone)
+	}
+	startOff, endOff, ok := ends.offsets()
+	if !ok {
+		startOff, endOff = offsetMinutes(rangeFrom), offsetMinutes(rangeTo)
+	}
+	start, end := wallAt(b.start, startOff), wallAt(b.end, endOff)
+	if start.Before(rangeFrom) {
+		start = rangeFrom.In(start.Location())
+	}
+	if end.After(rangeTo) {
+		end = rangeTo.In(end.Location())
+	}
+	return start, end
+}
+
+// rangeOf is the span a bucket's points are taken from: the range, or for a
+// lookback bucket the whole read, because a recorded-local lookback bucket
+// also holds the values in the range on its day (localBuckets). A UTC
+// lookback bucket ends before the range, so the range adds nothing to it.
+func (p *aggPlan) rangeOf(b *aggBucket) (from, to time.Time) {
+	if b.lookback {
+		return p.readFrom, p.to
+	}
+	return p.from, p.to
+}
+
+// wallAt writes a wall-clock time (encoded as UTC) at an offset.
+func wallAt(wall time.Time, offset int64) time.Time {
+	zone := time.FixedZone("", int(offset)*60)
+	return time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), wall.Second(), wall.Nanosecond(), zone)
+}
+
+// wallOf is the wall clock of an instant at an offset, encoded as UTC.
+func wallOf(t time.Time, offset int64) time.Time {
+	return t.UTC().Add(time.Duration(offset) * time.Minute)
+}
+
+func offsetMinutes(t time.Time) int64 {
+	_, off := t.Zone()
+	return int64(off / 60)
+}
+
+// parseBucket reads the request's bucket into p.bucket.
+func (p *aggPlan) parseBucket() error {
+	b := p.a.Bucket
+	spec := bucketSpec{weekStart: time.Monday, loc: p.from.Location()}
+	if b == nil {
+		spec.mode = bucketRange
+		p.bucket = spec
+		return nil
+	}
+	echo := *b
+	spec.echo = &echo
+	modes := 0
+	for _, set := range []bool{b.Every != "", b.Calendar != "", b.Records != nil} {
+		if set {
+			modes++
+		}
+	}
+	if modes != 1 {
+		return refuse("aggregate.bucket", "name one time mode: every, calendar or records")
+	}
+	switch b.Place {
+	case "":
+	case substrate.AggregatePlaceStart:
+		spec.placeNamed = true
+	case substrate.AggregatePlaceEnd:
+		if b.Records != nil {
+			return refuse("aggregate.bucket.place", "the records mode's windows take each point inside them; place is the every and calendar modes'")
+		}
+		spec.placeEnd, spec.placeNamed = true, true
+	default:
+		return refuse("aggregate.bucket.place", "%q is not a place; a value lands by its start or its end", b.Place)
+	}
+	if b.FallbackTimezone != "" {
+		if b.Calendar == "" || b.Timezone != "" {
+			return refuse("aggregate.bucket.fallbackTimezone", "a fallback zone places the values written without a UTC offset in the recorded-local calendar (calendar with no timezone); every, records and a calendar in a timezone place each value by its instant")
+		}
+		loc, err := time.LoadLocation(b.FallbackTimezone)
+		if err != nil {
+			return refuse("aggregate.bucket.fallbackTimezone", "%q is not a time zone the server knows", b.FallbackTimezone)
+		}
+		spec.fallback = loc
+	}
+	switch {
+	case b.Every != "":
+		spec.mode = bucketEvery
+		d, err := vocabulary.ParseISODuration(b.Every)
+		if err != nil {
+			return refuse("aggregate.bucket.every", "%v", err)
+		}
+		if d <= 0 {
+			return refuse("aggregate.bucket.every", "a bucket is longer than zero")
+		}
+		spec.every = d
+		spec.origin = time.Unix(0, 0).UTC()
+		if b.Origin != "" {
+			o, err := time.Parse(time.RFC3339Nano, b.Origin)
+			if err != nil {
+				return refuse("aggregate.bucket.origin", "%q is not an RFC 3339 instant", b.Origin)
+			}
+			spec.origin = o
+		}
+		if b.Timezone != "" || b.WeekStart != "" {
+			return refuse("aggregate.bucket", "timezone and weekStart are the calendar mode's; every counts fixed lengths from its origin")
+		}
+	case b.Calendar != "":
+		if b.Calendar == "minute" || b.Calendar == "year" {
+			return refuse("aggregate.bucket.calendar", "calendar %s was removed: bucket by every (PT1M) for minutes, and by month for longer spans", b.Calendar)
+		}
+		if !slices.Contains(calendarUnits, b.Calendar) {
+			return refuse("aggregate.bucket.calendar", "%q is not a calendar unit; it is one of %s", b.Calendar, strings.Join(calendarUnits, ", "))
+		}
+		spec.calendar = b.Calendar
+		spec.mode = bucketLocal
+		spec.loc = time.UTC
+		if b.Timezone != "" {
+			loc, err := time.LoadLocation(b.Timezone)
+			if err != nil {
+				return refuse("aggregate.bucket.timezone", "%q is not a time zone the server knows", b.Timezone)
+			}
+			spec.mode, spec.loc = bucketCalendar, loc
+		}
+		if b.Origin != "" {
+			return refuse("aggregate.bucket.origin", "an origin is the every mode's; a calendar bucket starts where the calendar does")
+		}
+		if b.WeekStart != "" {
+			wd, ok := weekdays[strings.ToLower(b.WeekStart)]
+			if !ok {
+				return refuse("aggregate.bucket.weekStart", "%q is not a day of the week", b.WeekStart)
+			}
+			spec.weekStart = wd
+			echo.WeekStart = strings.ToLower(b.WeekStart)
+		} else if b.Calendar == "week" {
+			echo.WeekStart = "monday"
+		}
+	default:
+		spec.mode = bucketRecords
+		spec.records = b.Records
+		if b.Timezone != "" || b.WeekStart != "" || b.Origin != "" {
+			return refuse("aggregate.bucket", "the records mode's windows are the records'; timezone, weekStart and origin are not its")
+		}
+		var err error
+		if spec.bySource, err = checkRecordSources("aggregate.bucket.records.sources", b.Records.Sources); err != nil {
+			return err
+		}
+		if o := b.Records.UTCOffsets; o != nil && o.Start == "" {
+			return refuse("aggregate.bucket.records.utcOffsets.start", "name the records' declared int property holding their UTC offset where they start, such as utcOffsetStart")
+		}
+	}
+	spec.echo = &echo
+	p.bucket = spec
+	return nil
+}
+
+var weekdays = map[string]time.Weekday{
+	"sunday": time.Sunday, "monday": time.Monday, "tuesday": time.Tuesday, "wednesday": time.Wednesday,
+	"thursday": time.Thursday, "friday": time.Friday, "saturday": time.Saturday,
+}
+
+// answers reports whether the read answers the bucket's rows: a lookback
+// bucket and a day outside a range of recorded-local dates it only reduces.
+func (b *aggBucket) answers() bool { return !b.lookback && !b.outside }
+
+// answered is the buckets a read answers: all but a rolling window's
+// lookback, which feeds the windows and answers no row. maxBuckets, the
+// caller's bound on the rows, counts these alone.
+func answered(buckets []*aggBucket) int {
+	n := 0
+	for _, b := range buckets {
+		if b.answers() {
+			n++
+		}
+	}
+	return n
+}
+
+// padded reports whether the read reduces days it never answers: a range of
+// recorded-local dates (range.recordedLocal) reads the instants around its
+// dates, so a group or series may hold values only on the days around them
+// and answer no row. Before a value is reduced, such a read holds its groups
+// and its series times every bucket it reduces to the caps, which bound the
+// work the padding adds (groupLimit, bucketLimit); once reduced, the groups
+// and series that answer a row are held to maxGroups and maxBuckets
+// (checkAnswered).
+func (p *aggPlan) padded() bool { return p.bucket.dates != nil }
+
+// groupLimit is the most groups the read may find before a value is
+// reduced.
+func (p *aggPlan) groupLimit() int {
+	if p.padded() {
+		return substrate.AggregateMaxGroupsCap
+	}
+	return p.maxGroups
+}
+
+// bucketLimit is the buckets each series is counted in before a value is
+// reduced, and the most series times those buckets.
+func (p *aggPlan) bucketLimit(buckets []*aggBucket) (n, limit int) {
+	if p.padded() {
+		return len(buckets), substrate.AggregateMaxBucketsCap
+	}
+	return answered(buckets), p.maxBuckets
+}
+
+// checkAnswered holds a padded read's groups and series that answer a row on
+// its dates to maxGroups, the series where it groups by code, and its series
+// times the buckets it answers to maxBuckets.
+func (p *aggPlan) checkAnswered(groups, series, buckets int) error {
+	if !p.padded() {
+		return nil
+	}
+	n := groups
+	if p.grouped[substrate.GroupCode] {
+		n = series
+	}
+	if n > p.maxGroups {
+		return refuse("aggregate.budget.maxGroups", "the read answers %d groups (series where grouped by code) on its dates, over %d; narrow the filter or group by fewer keys (the cap is %d)",
+			n, p.maxGroups, substrate.AggregateMaxGroupsCap)
+	}
+	if n := buckets * max(series, 1); n > p.maxBuckets {
+		return refuse("aggregate.budget.maxBuckets", "the read answers %d series on its dates, times %d buckets is %d, over %d; narrow the filter or raise maxBuckets (the cap is %d)",
+			series, buckets, n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
+	return nil
+}
+
+// checkLookback holds a rolling read's series times every bucket it reduces,
+// the lookback's included, to the maxBuckets cap: maxBuckets leaves the
+// lookback out, and the cap bounds the work it adds (its points count
+// against maxSamples as any point does).
+func (p *aggPlan) checkLookback(series int, buckets []*aggBucket) error {
+	if p.lookback == 0 {
+		return nil
+	}
+	if n := len(buckets) * max(series, 1); n > substrate.AggregateMaxBucketsCap {
+		return refuse("aggregate.rolling.buckets", "the window reads %d buckets before the range, so %d series times %d buckets is %d, over the cap of %d; roll over fewer buckets, widen the bucket or narrow the filter",
+			p.lookback, max(series, 1), len(buckets), n, substrate.AggregateMaxBucketsCap)
+	}
+	return nil
+}
+
+// buckets enumerates the output buckets, refusing past maxBuckets before it
+// builds them; a rolling window's lookback buckets are not counted. The
+// records mode reads its records here.
+func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggBucket, error) {
+	s := p.bucket
+	limit := p.maxBuckets
+	tooMany := func(n int) error {
+		return refuse("aggregate.budget.maxBuckets", "the range holds more than %d buckets (at least %d); widen the bucket, narrow the range or raise maxBuckets (the cap is %d)",
+			limit, n, substrate.AggregateMaxBucketsCap)
+	}
+	switch s.mode {
+	case bucketRange:
+		return []*aggBucket{{start: p.from, end: p.to, zone: p.from.Location()}}, nil
+	case bucketEvery:
+		first := everyStart(p.from, s.origin, s.every)
+		// The span saturates past 292 years, which is past every budget.
+		if n := int64((p.to.Sub(first)-1)/s.every) + 1; n > int64(limit) {
+			return nil, tooMany(int(min(n, 1<<30)))
+		}
+		var out []*aggBucket
+		for start := p.readFrom; start.Before(first); start = start.Add(s.every) {
+			out = append(out, &aggBucket{start: start.UTC(), end: start.Add(s.every).UTC(), zone: p.from.Location(), lookback: true})
+		}
+		for start := first; start.Before(p.to); start = start.Add(s.every) {
+			out = append(out, clipBucket(start, start.Add(s.every), p, p.from.Location()))
+		}
+		return out, nil
+	case bucketCalendar:
+		var out []*aggBucket
+		first := calStart(p.from, s)
+		for start := p.readFrom; start.Before(first); start = calNext(start, s) {
+			out = append(out, &aggBucket{start: start.UTC(), end: calNext(start, s).UTC(), zone: s.loc, lookback: true})
+		}
+		looked := len(out)
+		for start := first; start.Before(p.to); start = calNext(start, s) {
+			if len(out)-looked >= limit {
+				return nil, tooMany(len(out) - looked + 1)
+			}
+			out = append(out, clipBucket(start, calNext(start, s), p, s.loc))
+		}
+		return out, nil
+	case bucketLocal:
+		// The wall clock the range's own offsets name: a range written at
+		// +03:00 is the local days it says.
+		from, to := wallOf(p.from, offsetMinutes(p.from)), wallOf(p.to, offsetMinutes(p.to))
+		first := calStart(from, s)
+		var out []*aggBucket
+		for start := calStart(wallOf(p.readFrom, offsetMinutes(p.from)), s); start.Before(first); start = calNext(start, s) {
+			out = append(out, &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, lookback: true})
+		}
+		n := 0
+		for start := first; start.Before(to); start = calNext(start, s) {
+			b := &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, outside: s.dates.excludes(start)}
+			if b.answers() {
+				if n >= limit {
+					return nil, tooMany(n + 1)
+				}
+				n++
+			}
+			out = append(out, b)
+		}
+		return out, nil
+	case bucketRecords:
+		return ds.recordBuckets(ctx, tx, p)
+	}
+	return nil, fmt.Errorf("substrate/engine: unknown bucket mode %q", s.mode)
+}
+
+func clipBucket(start, end time.Time, p *aggPlan, zone *time.Location) *aggBucket {
+	if start.Before(p.from) {
+		start = p.from
+	}
+	if end.After(p.to) {
+		end = p.to
+	}
+	return &aggBucket{start: start.UTC(), end: end.UTC(), zone: zone}
+}
+
+// everyStart is the start of the every bucket holding t: the origin moved by
+// whole steps. The distance is taken in big integers, because a
+// time.Duration saturates at 292 years and an origin may lie further away.
+func everyStart(t, origin time.Time, every time.Duration) time.Time {
+	nanos := func(x time.Time) *big.Int {
+		n := new(big.Int).Mul(big.NewInt(x.Unix()), big.NewInt(int64(time.Second)))
+		return n.Add(n, big.NewInt(int64(x.Nanosecond())))
+	}
+	phase := new(big.Int).Sub(nanos(t), nanos(origin))
+	phase.Mod(phase, big.NewInt(int64(every)))
+	return t.Add(-time.Duration(phase.Int64()))
+}
+
+// firstEndingAfter is the index of the first of buckets whose end is after
+// t, len(buckets) where none is; the buckets are disjoint and in order. It is
+// a binary search, and check runs once per bucket it compares: a read places
+// each of its points and records in a bucket, and a scan would take points
+// times buckets.
+func firstEndingAfter(buckets []*aggBucket, t time.Time, check func() error) (int, error) {
+	lo, hi := 0, len(buckets)
+	for lo < hi {
+		if err := check(); err != nil {
+			return 0, err
+		}
+		mid := int(uint(lo+hi) >> 1)
+		if buckets[mid].end.After(t) {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo, nil
+}
+
+// localBucketAt is the recorded-local bucket holding a wall-clock time, a
+// lookback one or one of the range, created where the range's own
+// enumeration did not reach (a point whose offset puts it on a day the
+// range's offsets do not name). The buckets are in start order, a day's
+// lookback bucket before its bucket of the range.
+func localBucketAt(buckets []*aggBucket, wall time.Time, s bucketSpec, lookback bool) ([]*aggBucket, *aggBucket) {
+	start := calStart(wall, s)
+	i, found := slices.BinarySearchFunc(buckets, start, func(b *aggBucket, t time.Time) int {
+		if c := b.start.Compare(t); c != 0 {
+			return c
+		}
+		switch {
+		case b.lookback == lookback:
+			return 0
+		case b.lookback:
+			return -1
+		}
+		return 1
+	})
+	if found {
+		return buckets, buckets[i]
+	}
+	b := &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, lookback: lookback, outside: !lookback && s.dates.excludes(start)}
+	return slices.Insert(buckets, i, b), b
+}
+
+// calStart is the start of the calendar bucket holding t, in the spec's zone
+// (UTC for a wall clock), with the spec's week start.
+func calStart(t time.Time, s bucketSpec) time.Time {
+	w := t.In(s.loc)
+	var start time.Time
+	switch s.calendar {
+	case "hour":
+		// Back from t by the wall clock's part below the hour. Rebuilding the
+		// start with time.Date names one pass of a repeated hour, the second
+		// east of UTC, which lies after a t in the first.
+		return t.Add(-(time.Duration(w.Minute())*time.Minute + time.Duration(w.Second())*time.Second + time.Duration(w.Nanosecond())))
+	case "day":
+		start = time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, s.loc)
+	case "week":
+		back := (int(w.Weekday()) - int(s.weekStart) + 7) % 7
+		start = time.Date(w.Year(), w.Month(), w.Day()-back, 0, 0, 0, 0, s.loc)
+	case "month":
+		start = time.Date(w.Year(), w.Month(), 1, 0, 0, 0, 0, s.loc)
+	}
+	if start.After(t) {
+		start = calPrev(start, s)
+	}
+	return start
+}
+
+func calStep(start time.Time, s bucketSpec, n int) time.Time {
+	if s.calendar == "hour" {
+		return start.Add(time.Duration(n) * time.Hour)
+	}
+	b := start.In(s.loc)
+	switch s.calendar {
+	case "day":
+		return time.Date(b.Year(), b.Month(), b.Day()+n, 0, 0, 0, 0, s.loc)
+	case "week":
+		return time.Date(b.Year(), b.Month(), b.Day()+7*n, 0, 0, 0, 0, s.loc)
+	default:
+		return time.Date(b.Year(), b.Month()+time.Month(n), 1, 0, 0, 0, 0, s.loc)
+	}
+}
+
+func calNext(start time.Time, s bucketSpec) time.Time { return calStep(start, s, 1) }
+func calPrev(start time.Time, s bucketSpec) time.Time { return calStep(start, s, -1) }
+
+// recordBuckets reads the records time mode's records: those the filter
+// matches whose `at` lies in the range, each one bucket, less those the
+// records' source policy drops. Every record it reads, those the policy
+// weighs around the range included, counts against maxSamples
+// (p.recordsRead), which bounds the read before the next record is taken.
+func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggBucket, error) {
+	s := p.bucket
+	b := &builder{overRecords: true}
+	types, err := ds.buildFilter(ctx, tx, b, s.records.Filter)
+	if err != nil {
+		return nil, prefixValidation("aggregate.bucket.records.filter", err)
+	}
+	if err := planWithValues(ctx, tx, b); err != nil {
+		return nil, err
+	}
+	const path = "aggregate.bucket.records.sources"
+	source, match := `''`, `'[]'`
+	var pol *recordPolicy
+	if s.bySource {
+		if pol, err = newRecordPolicy(types, path, s.records.Sources); err != nil {
+			return nil, err
+		}
+		source, match = pol.source, pol.match
+	}
+	offStart, offEnd := `NULL::bigint`, `NULL::bigint`
+	if o := s.records.UTCOffsets; o != nil {
+		end := o.End
+		if end == "" {
+			end = o.Start
+		}
+		if offStart, err = propertyOffset(types, "aggregate.bucket.records.utcOffsets.start", o.Start); err != nil {
+			return nil, err
+		}
+		if offEnd, err = propertyOffset(types, "aggregate.bucket.records.utcOffsets.end", end); err != nil {
+			return nil, err
+		}
+	}
+	cols := `kind, id, version, at, ends_at, ` + source + `, ` + match + `, ` + offStart + `, ` + offEnd
+	base := b.clone()
+	inRange := func(b *builder) string { return `at >= ` + b.arg(p.from) + ` AND at < ` + b.arg(p.to) }
+	b.add(inRange(b))
+	limit := p.maxSamples
+	rows, err := tx.QueryContext(ctx, `SELECT `+cols+` FROM records WHERE `+strings.Join(b.where, " AND ")+
+		` ORDER BY at, kind, id LIMIT `+b.arg(limit+1), b.args...)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate records: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*aggBucket
+	var weighed []policyRecord
+	// maxSamples counts the records the filter matches, the ones whose
+	// window is empty (no endsAt) included: the LIMIT reads that many rows,
+	// so counting only the windows kept would end the read short without a
+	// word. maxBuckets counts the windows the read answers, once the source
+	// policy has dropped what it drops.
+	var matched int64
+	for rows.Next() {
+		var kind, id, source, match string
+		var version int64
+		var at time.Time
+		var endsAt sql.NullTime
+		var startOff, endOff sql.NullInt64
+		if err := rows.Scan(&kind, &id, &version, &at, &endsAt, &source, &match, &startOff, &endOff); err != nil {
+			return nil, err
+		}
+		if matched++; matched > limit {
+			return nil, refuse("aggregate.budget.maxSamples", "the records filter matches more than %d records in the range; narrow it or raise maxSamples (the cap is %d)",
+				limit, substrate.AggregateMaxSamplesCap)
+		}
+		end := at
+		if endsAt.Valid {
+			end = endsAt.Time
+		}
+		var w *aggBucket
+		if start, stop := at, end; stop.After(start) {
+			w = &aggBucket{
+				start: start.UTC(), end: stop.UTC(), zone: p.from.Location(), endZone: p.from.Location(),
+				record: &substrate.AggregateRecord{Ref: kind + "/" + id, Version: version},
+			}
+			if startOff.Valid {
+				w.zone = time.FixedZone("", int(startOff.Int64)*60)
+			}
+			if endOff.Valid {
+				w.endZone = time.FixedZone("", int(endOff.Int64)*60)
+			}
+		}
+		out = append(out, w)
+		if pol != nil {
+			weighed = append(weighed, newPolicyRecord(pol, sql.NullTime{Time: at, Valid: true}, endsAt, source, match))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if pol != nil && len(weighed) > 0 {
+		// maxSamples bounds every record the read weighs, the ones around
+		// the range the policy reads beside those it matches included.
+		left := int(limit - matched)
+		over := func() error {
+			return refuse("aggregate.budget.maxSamples", "the records filter matches %d records in the range, and the source policy weighs more around it than the %d left of maxSamples; narrow the filter or raise maxSamples (the cap is %d)",
+				matched, left, substrate.AggregateMaxSamplesCap)
+		}
+		around, err := policyContext(ctx, tx, base, pol, func(b *builder) string { return `NOT (` + inRange(b) + `)` }, weighed, left, over)
+		if err != nil {
+			return nil, err
+		}
+		matched += int64(len(around))
+		keep, err := keepBySource(ctx, append(weighed, around...))
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if !keep[i] {
+				out[i] = nil
+			}
+		}
+	}
+	out = slices.DeleteFunc(out, func(w *aggBucket) bool { return w == nil })
+	p.recordsRead = matched
+	if len(out) > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the read answers %d records' windows in the range, one bucket each, over %d; narrow the filter or raise maxBuckets (the cap is %d)",
+			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
+	return out, nil
+}
+
+// prefixValidation names where a validation refusal from a nested filter came
+// from.
+func prefixValidation(path string, err error) error {
+	var ve *substrate.ValidationError
+	if errors.As(err, &ve) {
+		out := make([]string, len(ve.Problems))
+		for i, pr := range ve.Problems {
+			out[i] = path + ": " + pr
+		}
+		return &substrate.ValidationError{Problems: out}
+	}
+	if errors.Is(err, substrate.ErrValidation) {
+		return fmt.Errorf("%w: %s: %s", substrate.ErrValidation, path, strings.TrimPrefix(err.Error(), substrate.ErrValidation.Error()+": "))
+	}
+	return err
+}

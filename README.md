@@ -28,7 +28,7 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
   versions without breaking the records underneath it.
 - **One small write API.** Five mutations (`put`, `patch`, `delete`,
   `merge`, `split`) over REST, and one records route that lists, ranks
-  (full-text and vector search) and tails them.
+  (full-text and vector search), tails and aggregates them.
 - **Bundles.** Vocabulary, functions and agents install and uninstall as one
   unit. The catalog compiled into the binary ships sync for Google, GitHub,
   Linear, Notion, Slack, Beeper and Whoop, so a mailbox or a calendar becomes

@@ -54,6 +54,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/sandbox"
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -998,9 +999,9 @@ func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, sta
 
 // readState meters one invocation's host calls and remembers the first trip:
 // the trip decides the delivery whatever the body does with the error. Calls
-// are charged BEFORE they execute — a failed call is never free — and list
-// and search are clamped to the remaining row budget before they run, so an
-// over-budget request never performs the work first.
+// are charged BEFORE they execute — a failed call is never free — and list,
+// search and aggregate are clamped to the remaining row budget before they
+// run, so an over-budget request never performs the work first.
 type readState struct {
 	spec    Spec
 	backend Backend
@@ -1147,6 +1148,62 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		// yet to buy vectors for, so a body can tell a partial semantic index
 		// from a full one. The SDKs' typed readers take `hits` alone.
 		return map[string]any{"hits": res.Hits, "pending": res.Pending}, nil
+	case "aggregate":
+		// The aggregate read pays like a list: one call, and its rows against
+		// the row budget. Every kind it reads is named and held to the
+		// allowlist: the streams' kinds in filter.kinds, in the records time
+		// mode the kinds whose records are the buckets, the targets of either
+		// filter's referencing, and the kind of every metric it names, whose
+		// record it looks up; the backend holds the kind whose records'
+		// priorities rank the sources. Its own budget is lowered to the rows
+		// left before it runs, so a read past the row budget is refused before
+		// it takes a point, and that refusal trips.
+		var q substrate.AggregateQuery
+		if err := strictjson.DecodeBytes(call.Params, &q, false); err != nil {
+			return nil, fmt.Errorf("aggregate: %w", err)
+		}
+		if err := s.requireTypes(q.Filter.Kinds, "aggregate"); err != nil {
+			return nil, err
+		}
+		if a := q.Aggregate; a != nil && a.Bucket != nil && a.Bucket.Records != nil {
+			if err := s.requireTypes(a.Bucket.Records.Filter.Kinds, "aggregate's records bucket"); err != nil {
+				return nil, err
+			}
+		}
+		named, err := q.RecordsNamed()
+		if err != nil {
+			return nil, fmt.Errorf("aggregate: %w", err)
+		}
+		if err := s.requireNamed(named, "aggregate"); err != nil {
+			return nil, err
+		}
+		if err := s.chargeCall(); err != nil {
+			return nil, s.trip(err)
+		}
+		rem, err := s.remainingRows()
+		if err != nil {
+			return nil, s.trip(err)
+		}
+		lowered := q.LimitRows(rem)
+		res, err := s.backend.Aggregate(ctx, q)
+		if errors.Is(err, ErrReadForbidden) {
+			return nil, s.trip(err)
+		}
+		if substrate.AggregateRowsRefused(err, lowered) {
+			// The read's refusal is left out: it is a ValidationError, which in
+			// the trip's chain would answer the caller 422 on a field the caller
+			// never sent, and its advice to raise maxBuckets cannot help, since
+			// the row budget lowers it again.
+			return nil, s.trip(fmt.Errorf("%w: aggregate could answer more rows than the %d left, which lowers %s to %d, so a larger value does not help; "+
+				"raise permissions.reads.budgets.rows or make the read answer fewer rows", ErrReadBudget, rem, strings.Join(lowered, " and "), rem))
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := s.chargeRows(len(res.Rows)); err != nil {
+			return nil, s.trip(err)
+		}
+		return map[string]any{"result": res}, nil
 	case "call":
 		var in struct {
 			Function string `json:"function"`

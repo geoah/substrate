@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/testdb"
 )
 
@@ -24,6 +25,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("SUBSTRATE_EGRESS_ALLOW") == "" {
 		_ = os.Setenv("SUBSTRATE_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}
+	engine.WidenAggregateSlots(64)
 	// testdb.Main: the data roots on tmpfs, the run, then every database the
 	// run made dropped (the migrated template among them).
 	os.Exit(testdb.Main(m))

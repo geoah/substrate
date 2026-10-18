@@ -7,8 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -661,6 +663,118 @@ func HoldVocabularyWrites(ds substrate.Dataset) (release func()) {
 	d := ds.(*dataset)
 	d.vocabularyWriteMu.Lock()
 	return d.vocabularyWriteMu.Unlock
+}
+
+// WidenAggregateSlots lets n aggregate reads run at once in this process. The
+// suite runs many repositories' small reads in parallel in one process, which
+// the production bound (aggregateSlots, sized for one server's memory) would
+// queue past its wait.
+func WidenAggregateSlots(n int) { aggregateSem = make(chan struct{}, n) }
+
+// SetAggregateDeadline bounds every aggregate read in this process to d
+// until the test ends. A test calling it must not run in parallel.
+func SetAggregateDeadline(t testing.TB, d time.Duration) {
+	saved := aggregateDeadline
+	aggregateDeadline = d
+	t.Cleanup(func() { aggregateDeadline = saved })
+}
+
+// AggregateRaw makes every aggregate read under the context take raw points
+// where rollup rows could serve, so a test holds the rollup answer against
+// the raw one.
+func AggregateRaw(ctx context.Context) context.Context {
+	return context.WithValue(ctx, aggregateRawKey{}, true)
+}
+
+// AggregateTrace counts what an aggregate read took from observed_rollups
+// and observed_points.
+type AggregateTrace struct{ t *aggTrace }
+
+// RollupRows is the rollup rows the read took.
+func (a AggregateTrace) RollupRows() int64 { return a.t.rollupRows }
+
+// RawPoints is the raw points the read took.
+func (a AggregateTrace) RawPoints() int64 { return a.t.rawPoints }
+
+// MergedRows is the rollup rows the reads' reductions merged.
+func (a AggregateTrace) MergedRows() int64 { return a.t.mergedRows }
+
+// AfterPlan sets a hook each metric read under the trace's context runs once
+// its plan has read every row and point it reduces, before the reduction.
+func (a AggregateTrace) AfterPlan(hook func()) { a.t.afterPlan = hook }
+
+// BeforeReducer sets a hook each metric read under the trace's context runs
+// as each reducer of a row begins, after the read's last check of its context
+// before it.
+func (a AggregateTrace) BeforeReducer(hook func()) { a.t.beforeReducer = hook }
+
+// Rows is the rows the reads assembled, every reducer answered.
+func (a AggregateTrace) Rows() int64 { return a.t.rows }
+
+// PlaceSteps is the steps the property reads counted placing their records.
+func (a AggregateTrace) PlaceSteps() int64 { return a.t.placeSteps }
+
+// DiscoverBatch sends form discovery's pairs of a stream and a window n at
+// a time.
+func (a AggregateTrace) DiscoverBatch(n int) { a.t.discoverBatch = n }
+
+// DiscoverPairs is the most pairs one form discovery statement read.
+func (a AggregateTrace) DiscoverPairs() int { return a.t.discoverPairs }
+
+// AggregateTraced counts what each aggregate read under the context takes.
+func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
+	t := &aggTrace{}
+	return context.WithValue(ctx, aggregateTraceKey{}, t), AggregateTrace{t: t}
+}
+
+// ExplainPlacedReads answers, by name, the plan of each statement a metric
+// read finds and reads one stream's segments meeting [from, to) with, as the
+// read binds them, under EXPLAIN ANALYZE on db with sequential scans priced
+// out, so a small table shows the rows each index range reads.
+func ExplainPlacedReads(ctx context.Context, db *sql.DB, placeEnd bool, metric, kind, source, form string, from, to time.Time) (map[string]string, error) {
+	var id, extent int64
+	if err := db.QueryRowContext(ctx, `SELECT id, max_extent_ms FROM observed_streams
+		WHERE metric = $1 AND kind = $2 AND source = $3 AND about = '' AND channel = '' AND statistic = ''`,
+		metric, kind, source).Scan(&id, &extent); err != nil {
+		return nil, err
+	}
+	a, b, lo := []time.Time{from}, []time.Time{to}, []time.Time{from.Add(-time.Duration(extent) * time.Millisecond)}
+	statements := []struct {
+		name, query string
+		args        []any
+	}{
+		{"discover", discoverSegmentsSQL, []any{[]int64{id}, []int{1}, lo, a, b, []int{1}, []string{form}}},
+		{"read", spanSegmentsSQL, []any{id, form, lo, a, b}},
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, st := range statements {
+		rows, err := tx.QueryContext(ctx, `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) `+st.query, st.args...)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", st.name, err)
+		}
+		var plan []string
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			plan = append(plan, line)
+		}
+		if err := finishRows(rows); err != nil {
+			return nil, fmt.Errorf("%s: %w", st.name, err)
+		}
+		out[st.name] = strings.Join(plan, "\n")
+	}
+	return out, nil
 }
 
 // SetOAuthClock points the OAuth facility's clock (its state expiry and its

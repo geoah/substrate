@@ -19,8 +19,8 @@ import (
 // DecodeBytes is the shared strict decode: exact-key check, unknown-field
 // refusal, and an END-OF-STREAM check. `useNumber` decodes JSON numbers as
 // json.Number rather than float64, for a caller that must see the exact
-// decimal text before any float rounding; every caller in the tree today
-// decodes without it.
+// decimal text before any float rounding, such as one that passes a filter
+// operand (an `any`) on to the server.
 //
 // The end-of-stream check requires a SECOND decode to return io.EOF rather than
 // trusting Decoder.More() (codex regress #16): More() reports whether another
@@ -76,6 +76,13 @@ func Keys(v any) []string {
 	return out
 }
 
+// Retiring is a type that names the keys it once took, each with what
+// replaced it: a strict decode refuses such a key with that reason, not as an
+// unknown field, so a caller still sending it learns what to send instead.
+type Retiring interface {
+	RetiredKeys() map[string]string
+}
+
 // exactKeyCheck refuses a top-level key that is not an EXACT-case json tag of
 // v, and refuses a duplicate key — the two silent drops DisallowUnknownFields
 // alone cannot catch (a miscased key binds case-insensitively; a duplicate is
@@ -92,7 +99,11 @@ func exactKeyCheck(raw []byte, v any) error {
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		return checkObjectKeys(raw, allowedKeys(t))
+		var retired map[string]string
+		if r, ok := v.(Retiring); ok {
+			retired = r.RetiredKeys()
+		}
+		return checkObjectKeys(raw, allowedKeys(t), retired)
 	case reflect.Slice, reflect.Array:
 		elem := t.Elem()
 		for elem.Kind() == reflect.Pointer {
@@ -142,9 +153,9 @@ func allowedKeys(t reflect.Type) map[string]bool {
 }
 
 // checkObjectKeys token-walks a JSON object's top-level keys, refusing an
-// unknown or duplicate one. A non-object (or malformed) body is left for the
-// struct decoder to report.
-func checkObjectKeys(raw []byte, allowed map[string]bool) error {
+// unknown or duplicate one, and a retired one by its reason. A non-object (or
+// malformed) body is left for the struct decoder to report.
+func checkObjectKeys(raw []byte, allowed map[string]bool, retired map[string]string) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	tok, err := dec.Token()
 	if err != nil {
@@ -162,6 +173,9 @@ func checkObjectKeys(raw []byte, allowed map[string]bool) error {
 		key, ok := kt.(string)
 		if !ok {
 			return nil
+		}
+		if why, ok := retired[key]; ok && !allowed[key] {
+			return fmt.Errorf("%s was removed: %s", key, why)
 		}
 		if !allowed[key] {
 			return fmt.Errorf("unknown field %q", key)
@@ -241,7 +255,7 @@ func checkArrayKeys(raw []byte, allowed map[string]bool) error {
 		return nil
 	}
 	for _, e := range elems {
-		if err := checkObjectKeys(e, allowed); err != nil {
+		if err := checkObjectKeys(e, allowed, nil); err != nil {
 			return err
 		}
 	}

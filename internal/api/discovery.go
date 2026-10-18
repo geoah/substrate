@@ -183,6 +183,9 @@ var features = []featureInfo{
 	// Search is `GET /records?q=`: served, and beta while the hit shape (the
 	// per-arm scores beside the page) is young.
 	{Name: "search", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceREST}},
+	// The aggregate read is `GET /records?aggregate=` (decision 0161): alpha
+	// while the observations it reduces are a first release.
+	{Name: "aggregate", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 	// The unit table and one exact conversion, `GET /units` and
 	// `GET /units/convert`: alpha while the table has not shipped.
 	{Name: "units", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},

@@ -1072,6 +1072,28 @@ func TestObservedSingleGaugeHoldsUntilItsEnd(t *testing.T) {
 		t.Errorf("the door's row holds %d ms, want 300000", held)
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
+	from := mustTime(t, "2026-10-07T10:00:00Z")
+	for _, maxGap := range []string{"", "PT1M"} {
+		res, err := r.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: r.source + "/door"}}},
+			Aggregate: &substrate.Aggregate{
+				Metric:       &substrate.AggregateMetric{Ref: r.metric + "/air_temperature"},
+				Range:        &substrate.AggregateRange{Gte: from.Format(time.RFC3339), Lt: from.Add(time.Hour).Format(time.RFC3339)},
+				Reducers:     []substrate.AggregateReducer{{Name: "timeInState", States: []string{"open"}}},
+				DurationUnit: "min", MaxGap: maxGap,
+			},
+		})
+		if err != nil {
+			t.Fatalf("aggregate (maxGap %q): %v", maxGap, err)
+		}
+		want := "5"
+		if maxGap != "" {
+			want = "1"
+		}
+		if len(res.Rows) != 1 || res.Rows[0].Values[0].Value == nil || *res.Rows[0].Values[0].Value != want {
+			t.Errorf("timeInState open over 10:00 to 11:00 (maxGap %q) = %+v, want %s min", maxGap, res.Rows, want)
+		}
+	}
 }
 
 // A value written without a UTC offset is stored at offset 0 with
@@ -1203,6 +1225,33 @@ func TestObservedLatestKeepsOneRowPerStatistic(t *testing.T) {
 	}
 	if got, want := latestRows(), "avg=hrv/2/avg:60/2 max=hrv/1/max:84/1"; got != want {
 		t.Errorf("after the tombstone the latest rows are %q, want %q", got, want)
+	}
+	latest, err := r.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: r.metric + "/health/heart_rate"}, Latest: true,
+	}})
+	if err != nil {
+		t.Fatalf("the latest read: %v", err)
+	}
+	if len(latest.Rows) != 1 || latest.Rows[0].Count != 3 {
+		t.Errorf("the latest read answers %+v, want one row counting the three summaries", latest.Rows)
+	}
+	read, err := r.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: r.metric + "/health/heart_rate"}, From: substrate.AggregateFromSummaries,
+		Range:    &substrate.AggregateRange{Gte: "2026-10-05T00:00:00Z", Lt: "2026-10-08T00:00:00Z"},
+		GroupBy:  []string{substrate.GroupStatistic},
+		Reducers: []substrate.AggregateReducer{{Name: "count"}},
+	}})
+	if err != nil {
+		t.Fatalf("the summaries read: %v", err)
+	}
+	var counts []string
+	for _, row := range read.Rows {
+		if row.Group != nil && row.Values[0].Value != nil {
+			counts = append(counts, row.Group.Statistic+"="+*row.Values[0].Value)
+		}
+	}
+	if got, want := strings.Join(counts, " "), "avg=2 max=1"; got != want {
+		t.Errorf("the summaries read counts %q, want %q", got, want)
 	}
 	r.rebuildMatches(t)
 }

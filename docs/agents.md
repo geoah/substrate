@@ -255,9 +255,25 @@ entry could name only a function.
   nothing. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
   `referencing` included), `orderBy`, `first`, `after` and `expand` list a
   page, which answers `{records, cursor, head, generation, included?,
-  matches?}` exactly as the route does. A `filter` bounding `at` on both
+  matches?}` exactly as the route does. `filter`, `orderBy`, `aggregate` and
+  `downsample` each take their JSON value (a list for `orderBy`, an object
+  for the rest) or the same value encoded as a JSON string, and any other
+  type is refused. A `filter` bounding `at` on both
   ends is the [window read](api.md#the-window-read), computed occurrences
-  included. It requires `permissions.reads`, a
+  included. `aggregate` is the [aggregate read](api.md#the-aggregate-read)
+  instead of a list, with `filter`, `kind` and `downsample` beside it; `id`,
+  `q`, `mode`, `first`, `after`, `orderBy` and `expand` beside it are refused
+  by name. Every kind it reads is held to the allowlist: `filter.kinds`, a
+  records bucket's kinds, the targets of either filter's `referencing`, the
+  kind of each metric `metric` and `metrics` name, whose record the read
+  looks up, and, where a `priority` policy names no `order`,
+  the kind of the source records whose priorities rank the sources. A metric read naming no kinds reads the allowlist's observed
+  kinds; a property read names its own. Before it runs, its
+  `budget.maxBuckets` (and on the latest read `budget.maxGroups`) is lowered
+  to the rows left, so a read whose series times the buckets it answers
+  could pass the budget is refused before it takes a point (a rolling
+  window's buckets before the range are not counted); the rows it answers count
+  against the row budget. It requires `permissions.reads`, a
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
