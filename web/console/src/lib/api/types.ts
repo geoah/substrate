@@ -249,16 +249,18 @@ export interface RankedPage {
   records: SubstrateRecord[]
   scores: Record<string, Scores>
   pending: number
-  /** The lexical arm stopped short of ranking every match (a bounded read of
-   * a common query's matches, or its time budget); `note` says why and how
-   * to narrow the query. Absent when the ranking is whole. */
+  /** The lexical arm stopped short of ranking every match by BM25F (a
+   * bounded read of a common query's matches, or its time budget, before the
+   * relaxed top-up or while scoring); `note` says which and how to narrow the
+   * query. Absent when the ranking is whole. */
   capped?: boolean
   note?: string
 }
 
-/** One hit's raw per-arm scores (`substrate.Scores`): ts_rank for the lexical
- * arm, cosine similarity for the semantic one, absent where an arm did not
- * rank. */
+/** One hit's raw per-arm scores (`substrate.Scores`): the BM25F sum for the
+ * lexical arm (unbounded), or ts_rank in (0, 1) when the page is capped
+ * because scoring ran out of the search budget; cosine similarity for the
+ * semantic one; absent where an arm did not rank. */
 export interface Scores {
   lexical?: number
   semantic?: number

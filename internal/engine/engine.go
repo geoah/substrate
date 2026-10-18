@@ -462,6 +462,9 @@ type service struct {
 	// DefaultAgentToolTimeoutSec when positive, so a test can show a function
 	// call outliving the `query` default without waiting 30 s.
 	queryToolTimeout time.Duration
+	// searchScoreHook, set only by a test, runs before a lexical search
+	// scores its candidates: the seam that spends the budget before scoring.
+	searchScoreHook func()
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend

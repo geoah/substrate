@@ -278,7 +278,7 @@ func TestLexicalSearchDegradesWhenTheTopUpRunsOutOfBudget(t *testing.T) {
 	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "both" {
 		t.Fatalf("hits = %v, want the strict match alone", res.Hits)
 	}
-	if !res.Capped || !strings.HasPrefix(res.Note, "search stopped at the 2s budget, so the hits are only records matching every word.") {
+	if !res.Capped || !strings.HasPrefix(res.Note, "Search stopped at the 2s budget, so the lexical hits are only records matching every word.") {
 		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
 	}
 }
