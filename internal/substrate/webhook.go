@@ -37,3 +37,28 @@ type WebhookPart struct {
 type WebhookAccepted struct {
 	Fire string `json:"fire"`
 }
+
+// WebhookTarget is what the door learns about a trigger from CheckWebhook,
+// before it reads a byte of the request.
+type WebhookTarget struct {
+	// MaxBody is the inline bytes the trigger admits: WebhookInlineDefault
+	// unless it declares `maxBody`.
+	MaxBody int64
+	// SignatureOnly is a trigger with no key and a declared signature: the
+	// request's signature is its one credential, and ReceiveWebhook checks
+	// it. Until then nothing has authenticated the sender, so every refusal
+	// the door makes while reading the request is the 404 a missing trigger
+	// gets, and a sender cannot learn the trigger exists from a 400 or 413.
+	SignatureOnly bool
+}
+
+// The inline bytes one webhook delivery may carry: its body, or its
+// multipart inline values together. A trigger is held to WebhookInlineDefault
+// unless its `source.webhook.maxBody` declares another bound, at most
+// WebhookInlineMax. The door reads the trigger's bound before it reads a
+// byte of the body, so an unauthenticated sender cannot make the server
+// buffer more than the trigger it names allows.
+const (
+	WebhookInlineDefault = 1 << 20
+	WebhookInlineMax     = 8 << 20
+)

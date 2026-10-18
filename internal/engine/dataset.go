@@ -195,6 +195,15 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
+	// webhookReplays is the door's memory of the signatures it admitted
+	// (webhooksignature.go): memory only, so a restart clears it.
+	webhookReplays webhookReplays
+	// webhookSecretWarnings paces the door's warning for a signing secret
+	// that does not resolve (webhooksignature.go).
+	webhookSecretWarnings webhookSecretWarnings
+	// webhookKeys holds each trigger's resolved signing key for a few
+	// seconds (webhooksignature.go): memory only.
+	webhookKeys webhookKeyCache
 	// spool is the webhook requests the door answered and the drain has not
 	// recorded yet (webhookspool.go).
 	spool webhookSpool

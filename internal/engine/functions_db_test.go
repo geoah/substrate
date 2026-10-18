@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -495,6 +496,63 @@ func TestTriggerReplayFromZeroIsIdempotent(t *testing.T) {
 	}
 	if st := statusOf(t, ds, trigID("mirror")); st.Lag != 0 {
 		t.Fatalf("lag after replay: %+v", st)
+	}
+}
+
+// A record trigger created with `fromStart` starts its cursor at 0, so it
+// delivers the rows written before it existed, the way an adapter imported
+// after its provider has synced must; one created without it starts at head
+// and delivers only what follows. An edit of the source leaves the cursor
+// where it is.
+func TestTriggerFromStartDeliversWhatWasWrittenBeforeIt(t *testing.T) {
+	t.Parallel()
+	const lateSource = `
+def main(input, host):
+    env = input["envelope"]
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": "l-" + env["change"]["id"],
+                         "properties": {"name": env["record"]["properties"]["name"]}}]}
+`
+	ds := newFnDataset(t, nil,
+		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource),
+		pyFn("late", map[string]any{}, []any{taskType}, lateSource))
+	ctx := context.Background()
+	before := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "before"}})
+	for fn, fromStart := range map[string]bool{"mirror": true, "late": false} {
+		record := map[string]any{"kinds": []any{widgetType}}
+		if fromStart {
+			record["fromStart"] = true
+		}
+		tr := trigOn(fn, record)
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "substrate.reamde.dev/core/trigger", ID: tr.ID, Properties: tr.Properties}); err != nil {
+			t.Fatalf("put the %s trigger: %v", fn, err)
+		}
+	}
+	if st := statusOf(t, ds, trigID("mirror")); st.Cursor != 0 {
+		t.Fatalf("a fromStart trigger's cursor at creation: %+v, want 0", st)
+	}
+	process(t, ds)
+	if got := mustGet(t, ds, taskType, "t-"+before.ID); got.Title != "before" {
+		t.Fatalf("the fromStart trigger converted %q, want the row written before it", got.Title)
+	}
+	if _, err := ds.Get(ctx, taskType, "l-"+before.ID); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("a trigger without fromStart delivered a row written before it: %v", err)
+	}
+	after := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "after"}})
+	process(t, ds)
+	for _, id := range []string{"t-" + after.ID, "l-" + after.ID} {
+		if got := mustGet(t, ds, taskType, id); got.Title != "after" {
+			t.Fatalf("%s: %q, want the row written after both triggers", id, got.Title)
+		}
+	}
+	// An edit keeps the cursor: fromStart is read when the trigger is created.
+	tr := trigOn("late", map[string]any{"kinds": []any{widgetType}, "fromStart": true})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "substrate.reamde.dev/core/trigger", ID: tr.ID, Properties: tr.Properties}); err != nil {
+		t.Fatalf("edit the late trigger: %v", err)
+	}
+	process(t, ds)
+	if _, err := ds.Get(ctx, taskType, "l-"+before.ID); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("an edit that adds fromStart rewound the cursor: %v", err)
 	}
 }
 

@@ -92,7 +92,7 @@ func TestASpooledWebhookIsNarrowedAndSealedBeforeItIsWritten(t *testing.T) {
 		},
 		Query: map[string][]string{"token": {"query-value"}},
 		Body:  []byte(`{"say":"sealed"}`),
-	})
+	}, nowUTC(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -72,13 +72,16 @@ const spoolFormat = 1
 // trigger declared then, and the request in the form the ledger would record
 // it: the headers already narrowed and the query dropped.
 type spooledWebhook struct {
-	Format     int            `json:"format"`
-	Trigger    string         `json:"trigger"`
-	FireID     string         `json:"fireId"`
-	ReceivedAt time.Time      `json:"receivedAt"`
-	After      int64          `json:"after"`
-	Declared   []string       `json:"declared,omitempty"`
-	Request    spooledRequest `json:"request"`
+	Format     int       `json:"format"`
+	Trigger    string    `json:"trigger"`
+	FireID     string    `json:"fireId"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	After      int64     `json:"after"`
+	Declared   []string  `json:"declared,omitempty"`
+	// Verified is set when the door checked the trigger's declared
+	// signature before it spooled the request (decision 0164).
+	Verified bool           `json:"signatureVerified,omitempty"`
+	Request  spooledRequest `json:"request"`
 }
 
 // spooledRequest is substrate.WebhookRequest less its query. Body and a
@@ -213,8 +216,9 @@ func (ds *dataset) spoolStats() metrics.SpoolStats {
 // sender is answered with. It refuses what inTx would refuse before it
 // writes anything, so the door does not answer for a request no drain in
 // this process could record, and it refuses with ErrWebhookSpoolFull at a
-// bound.
-func (ds *dataset) spoolWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest) (string, string, error) {
+// bound. at is the door's receipt time and verified says the door checked
+// the trigger's declared signature.
+func (ds *dataset) spoolWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time, verified bool) (string, string, error) {
 	if ds.svc.readOnly {
 		return "", "", ErrDirectoryReadOnly
 	}
@@ -229,13 +233,12 @@ func (ds *dataset) spoolWebhook(ctx context.Context, tr *trigger, req substrate.
 		return "", "", err
 	}
 	fid := webhookFirePrefix + wid
-	at := nowUTC()
 	var after int64
 	if err := ds.db.QueryRowContext(ctx, `SELECT coalesce(max(seq), 0) FROM changelog`).Scan(&after); err != nil {
 		return "", "", err
 	}
 	entry := spooledWebhook{
-		Format: spoolFormat, Trigger: tr.ID, FireID: fid, ReceivedAt: at, After: after,
+		Format: spoolFormat, Trigger: tr.ID, FireID: fid, ReceivedAt: at, After: after, Verified: verified,
 		Request: spooledRequest{
 			Method: req.Method, ContentType: req.ContentType,
 			Headers: make(map[string]string, len(req.Headers)), Body: req.Body,
@@ -380,7 +383,7 @@ func (ds *dataset) drainSpooled(ctx context.Context, name string) (drainedWebhoo
 		return drainedWebhook{}, err
 	}
 	if !recorded {
-		row, err := ds.admitWebhook(ctx, entry.Trigger, entry.declaredSet(), entry.Request.webhookRequest(), fid, entry.ReceivedAt, entry.After)
+		row, err := ds.admitWebhook(ctx, entry.Trigger, entry.declaredSet(), entry.Request.webhookRequest(), fid, entry.ReceivedAt, entry.After, entry.Verified)
 		switch {
 		case errors.Is(err, errWebhookRecorded):
 		case err != nil:

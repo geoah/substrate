@@ -289,7 +289,8 @@ record](#two-invocations-over-one-record)). `repository` carries the repository'
 kinds and webhook URLs under. A schedule or webhook delivery has no changelog
 entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
-`record`.
+`record`. `at` is RFC 3339 with the fraction of a second it was taken at, if
+any; a webhook's is the instant the door received the request.
 
 A delivery through the public webhook endpoint adds `request` beside them: the
 HTTP request as it arrived, minus the bytes of any file it carried.
@@ -297,7 +298,7 @@ HTTP request as it arrived, minus the bytes of any file it carried.
 ```yaml
 fire:
   id: hook-k7f3x2m9ab4c
-  at: 2026-09-02T12:00:00Z
+  at: 2026-09-02T12:00:00.418273Z
 repository:
   authority: geoah.example.com
 request:
@@ -320,12 +321,24 @@ request:
 
 A request that is not multipart carries `body` instead of `parts`:
 `{text: "…"}` when the bytes are valid UTF-8, `{base64: "…"}` otherwise. Both
-are byte-exact, so a body verifies a provider's signature (GitHub's
-`X-Hub-Signature-256` over the raw JSON) by re-encoding the text and hashing
-it against a secret it reads from its bundle's configuration. The host stores
+are byte-exact. A provider signature the trigger declares is verified by the
+door before the fire ([webhook signatures](#webhook-signatures)), and a
+request that passed carries `signatureVerified: true`; a scheme the
+declaration cannot express (GitHub's `sha256=` prefix on
+`X-Hub-Signature-256`) is the body's to verify, by re-encoding the text and
+hashing it against a secret it reads from its bundle's configuration. The host stores
 a part in the blob store when it declares a filename or a media type outside
-`text/*`, and hands every other part inline as `value`. A body under 1 MiB
-rides inline; a multipart request may total 32 MiB. An authenticated wake
+`text/*`, and hands every other part inline as `value`. A body up to 1 MiB
+rides inline, or up to the trigger's `maxBody` where it declares one (at
+most 8 MiB); a multipart request may total 32 MiB, its text parts held to
+the same bound. An [agent](agents.md)
+callable reads the request in its user message, which is stored as an
+`llm/message` record and sent to the model, so a request bound for one
+carries at most 1 MiB inline, its body or its parts' values together, and
+the door answers a larger one `413`. A retry or a resume runs a stored
+request through the callable the trigger names at that time, so a larger
+request stored for a function parks without a model turn once the trigger
+names an agent. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 
 **One `kind`, everywhere.** A kind is named by a reference:
@@ -946,6 +959,13 @@ data:
   a `create`, a `put` over a live row is an `update`
   ([change verbs](changelog.md#change-verbs)). Optional
   `coalesce: true` keeps only the latest matched change per record in a batch.
+  A new trigger's cursor starts at the changelog's head, so it delivers what
+  happens next. Optional `fromStart: true` starts it at 0 instead, the
+  position a replay from 0 sets, so the trigger also delivers the matching
+  changes written before it existed. It is read once, when the trigger is
+  created: an edit never moves the cursor. An adapter sample declares it, so
+  importing the adapter after its provider has synced converts the rows
+  already there.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
   guard. Every occurrence fires once, oldest first: a trigger that missed
@@ -968,7 +988,7 @@ data:
   authority and `trigger` the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
-  delivers one bare fire. Both its fields are optional. `key`: absent, the
+  delivers one bare fire. All four of its fields are optional. `key`: absent, the
   endpoint accepts every POST that reaches the server (a substrate on a private
   network wants exactly that); present, a request must carry it as a trailing
   path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
@@ -987,6 +1007,15 @@ data:
   now receives the body-describing headers alone: the record declares, or the
   header does not arrive
   ([decision 0097](decisions/0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md)).
+  `signature` is the provider's HMAC, which the door verifies before it
+  stores the request ([webhook signatures](#webhook-signatures)).
+  `maxBody` is the bytes a request's body may carry, or a multipart
+  request's text parts together: 1 MiB (1048576) when absent, at most 8 MiB
+  (8388608). The door reads the trigger, and checks its key, before it reads
+  a byte of the body, so a request that names no trigger, or a keyed trigger
+  without its key, is never read past the default. A sender has 30 seconds
+  per started MiB of the bound to deliver the body. An agent callable reads
+  at most 1 MiB whatever `maxBody` says.
 
 `callable` is a [reference](data-model.md#property-types) naming the function
 or [agent](agents.md) to run, written as one `<kind>/<id>` path (the example
@@ -1055,6 +1084,106 @@ boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch
 other records: a guard is a cheap filter, not the computation. The computation
 is the function body.
+
+### Webhook signatures
+
+A webhook trigger that declares `source.webhook.signature` has the door check
+each request's signature before the body becomes a blob, before a delivery is
+appended and before anything runs. The repository keeps no trace of a
+request that fails. On a trigger with no `key` the door answers it `404`, the
+answer it gives every refusal, so a POST cannot tell that the repository has
+the trigger installed; for the same reason, a body it cannot read, one past
+`maxBody` and headers past the cap are `404` there too, never `400`, `413` or
+`431`. A request that carried the trigger's `key` already
+proved it knows the endpoint, so it is answered `401` with the body `webhook
+signature refused`, which tells the sender the signature is what failed. The
+secret stays in the server, so the callable verifies only what the door
+cannot
+([decision 0164](decisions/0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md)).
+This is WHOOP's documented scheme as a trigger declares it:
+
+```yaml
+source:
+  webhook:
+    signature:
+      algorithm: hmac-sha256
+      signatureHeader: X-WHOOP-Signature
+      timestampHeader: X-WHOOP-Signature-Timestamp
+      timestampUnit: milliseconds
+      maxSkew: PT5M
+      message: "{timestamp}{body}"
+      encoding: base64
+      secret: oauthClientSecret
+```
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `algorithm` | yes | `hmac-sha256`, the one the door computes |
+| `signatureHeader` | yes | the header the provider puts the signature in |
+| `timestampHeader` | no | the header carrying the signed Unix time, in decimal digits with no leading zero |
+| `timestampUnit` | with `timestampHeader` | `seconds` or `milliseconds`, the unit of that time; refused without `timestampHeader`. The door never guesses it from the value: under `{timestamp}{body}`, the header `1791720000` with the body `123456` signs the same bytes as `1791720000123` with `456`, and a reader that took both units would admit either |
+| `maxSkew` | no | how far that time may sit from when the door received the request: an ISO duration from `PT1S` to `PT1H`, `PT5M` when absent; needs `timestampHeader` |
+| `message` | no | the signed bytes as a template: literal text, `{body}` exactly once (the raw body, byte-exact) and `{timestamp}` exactly when `timestampHeader` is declared; `{body}` when absent |
+| `encoding` | yes | `hex` or `base64`, how the header spells the MAC |
+| `secret` | yes | `substrate.reamde.dev/core/secret/<id>` for a [`secret` record](bundles.md#settings), or `oauthClientSecret` for the client secret of the callable's bundle's OAuth client input |
+
+The door refuses a request whose signature header is missing or does not
+match, whose timestamp is missing or outside `maxSkew`, whose body is
+multipart (the door keeps no raw bytes of one), or whose secret does not
+resolve: a missing or empty `secret` record, or a bundle whose `config` holds
+no client secret yet. A secret that does not resolve is also logged for the
+operator, at most once a minute per trigger, each line counting the refusals
+since the last one, because anyone who posts reaches that check. The key is
+checked first and a wrong one answers `404`, so a trigger may carry both. A
+store that fails while the door reads the secret refuses nothing: the door
+answers `500`, stores nothing, and checks the sender's retry afresh.
+`oauthClientSecret` on a callable whose bundle declares no `oauth2` block is
+refused when the trigger is written. A `secret` record whose id sits under a
+bundle's prefix is also injected into that bundle's functions
+([decision 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)),
+so a secret meant for the door alone takes an id outside every bundle's
+(`webhooks/github`).
+
+The door remembers the signatures it admitted under a declaration that signs
+a timestamp. A request that repeats one while its timestamp is still inside
+`maxSkew` is the same delivery: the door answers `202` with the first
+request's fire id and stores nothing, so a captured request posted again, or
+a provider's resend of a request whose answer it lost, runs once. While the
+first is still being stored, a repeat is answered `503` with `Retry-After`.
+The record
+lives in the server's memory, so a restart forgets it, and it holds 4096
+signatures per repository, forgetting first the one whose window closes
+soonest. A declaration with no `timestampHeader` has no window, and the door
+admits every repeat of a correctly signed body as a new delivery: its
+callable deduplicates by the provider's event id. The signature covers the
+signed timestamp and the body alone. A header the trigger keeps through
+`headers` reaches the callable unsigned, and `signatureVerified` says nothing
+about it.
+
+The door reuses a signing key it resolved for up to five seconds, so a
+stream of requests does not open the sealed secret once each. A secret
+rotated inside that window is checked against the old one until the window
+passes; an edit of the trigger takes effect at once, and a secret that did
+not resolve is looked up again on the next request.
+
+A request the door verified is stored with `request.signatureVerified: true`,
+and a resumed pending delivery or a retry by hand runs it without checking
+its timestamp again, however long after `maxSkew` it runs. A request stored
+while the trigger declared no signature carries no such mark. Once the
+trigger declares one, the resume, a retry by hand and the rerun of an
+interrupted agent delivery check that request's kept body and headers
+against the declaration, measuring the timestamp against `fire.at`, when the
+door received it, to the microsecond. An envelope stored before `fire.at`
+kept a fraction of a second names only the whole second: the check then
+uses the receipt the door recorded in the request's admission entry, and
+without one treats the receipt as the start of that second. A request that
+verifies runs. One that does not, because
+it is unsigned, its signature header is not among the headers the trigger
+kept, or its signature does not match, is parked with an error starting
+`webhook signature refused at delivery`, and the callable never runs it. A
+declaration that signs no timestamp checks the body alone and never reads
+the receipt. A store that fails during the check refuses nothing: the
+delivery is retried like any other transient failure.
 
 ## What makes this safe to run unattended
 

@@ -26,10 +26,26 @@ const actorWebhook substrate.Actor = "substrate.webhook"
 // authenticated wake's ("wake-").
 const webhookFirePrefix = "hook-"
 
+// maxAgentWebhookInline bounds the inline bytes of a request bound for an
+// agent callable: its body, or its multipart inline values. An agent reads
+// the request in its user message, which is an llm/message record in the
+// changelog and a turn sent to the model provider, so it is held to the 1 MiB
+// an authenticated agent call's body may carry, whatever `maxBody` the
+// trigger declares. A function callable reads the trigger's bound. The door
+// checks it at admission and agentFire before every run, because a stored
+// request runs through the callable its trigger names at that time.
+const maxAgentWebhookInline = 1 << 20
+
+// errAgentWebhookTooLarge parks a stored webhook request whose inline bytes
+// pass maxAgentWebhookInline when its trigger now calls an agent: the door
+// admitted it for a function. It is deterministic, because the stored bytes
+// are as large on every attempt.
+var errAgentWebhookTooLarge = errors.New("webhook request too large for an agent callable")
+
 // errWebhookRefused is every refusal the door must not explain: no such
 // repository, no such trigger, a trigger of another source, a disabled one, an
-// unresolvable callable, a wrong or missing key. One answer, so the endpoint
-// space cannot be probed.
+// unresolvable callable, a wrong or missing key, and a keyless trigger's
+// signature refusal. One answer, so the endpoint space cannot be probed.
 var errWebhookRefused = fmt.Errorf("%w: no such webhook", substrate.ErrNotFound)
 
 // webhookPath is a webhook trigger's endpoint, relative to the server root.
@@ -69,9 +85,9 @@ const (
 )
 
 // ReceiveWebhook is the public door (substrate.WebhookReceiver): resolve the
-// repository by its authority, the trigger by id, check the key when the
-// trigger declares one, write the request to the repository's spool, kick
-// the drain and return (decision 0167). The sender gets its answer once the
+// repository by its authority, the trigger by id, check the key and the
+// signature when the trigger declares them (decision 0164), write the request
+// to the repository's spool, kick the drain and return (decision 0167). The sender gets its answer once the
 // request is on disk, without waiting on the changelog lock; the drain
 // records it in the ledger and hands its fire to the background, and a
 // process that stops after the answer leaves the spool to the next
@@ -82,22 +98,74 @@ func (s *service) ReceiveWebhook(ctx context.Context, authority, triggerID, key 
 
 // CheckWebhook is the door's checks without the request
 // (substrate.Service): the HTTP layer asks it before it takes a delivery slot
-// or reads a body, so a request for no such webhook costs neither.
-// ReceiveWebhook runs the same checks again, so a key rotated between the two
-// calls still refuses.
-func (s *service) CheckWebhook(ctx context.Context, authority, triggerID, key string) error {
-	_, _, err := s.webhookTarget(ctx, authority, triggerID, key)
-	return err
+// or reads a body, so a request for no such webhook costs neither, and reads
+// the body under the inline bound it answers. ReceiveWebhook runs the same
+// checks again, so a key rotated between the two calls still refuses.
+func (s *service) CheckWebhook(ctx context.Context, authority, triggerID, key string) (substrate.WebhookTarget, error) {
+	_, tr, err := s.webhookTarget(ctx, authority, triggerID, key)
+	if err != nil {
+		return substrate.WebhookTarget{}, err
+	}
+	return substrate.WebhookTarget{
+		MaxBody:       tr.webhookMaxBody(),
+		SignatureOnly: tr.WebhookKey == "" && tr.WebhookSignature != nil,
+	}, nil
 }
 
 // receiveWebhook is ReceiveWebhook with the drain and the fire detached,
 // inline, held or not run.
+//
+// Past the trigger's checks, the declared signature's refusal answers
+// errWebhookSignature on a keyed trigger, because by then the request has
+// named a live trigger and carried its key, and errWebhookRefused on a
+// keyless one. A request too large for an agent callable answers ErrTooLarge
+// once it has passed the signature. A repeat of a signature the door admitted
+// inside its window answers the first admission's fire id and spools nothing
+// (webhookReplays).
 func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest, fire webhookFire) (string, error) {
 	ds, tr, err := s.webhookTarget(ctx, authority, triggerID, key)
 	if err != nil {
 		return "", err
 	}
-	name, fid, err := ds.spoolWebhook(ctx, tr, req)
+	// The signature is checked before anything is stored: a request its
+	// provider did not sign writes no spool file, stages no blob and appends
+	// no entry (decision 0164). The receipt time it is measured against is
+	// the one the spool and the ledger record.
+	at := s.webhookNow().UTC().Truncate(time.Microsecond)
+	presented, err := ds.checkWebhookSignature(ctx, tr, req, at)
+	if err != nil {
+		return "", err
+	}
+	// The door read the body under the trigger's bound; a caller that hands
+	// the service a request directly is held to the same one.
+	if n := int64(webhookInlineBytes(req)); n > tr.webhookMaxBody() {
+		return "", fmt.Errorf("%w: webhook carries %d inline bytes, and this trigger admits at most %d", substrate.ErrTooLarge, n, tr.webhookMaxBody())
+	}
+	if tr.Agent != nil {
+		if n := webhookInlineBytes(req); n > maxAgentWebhookInline {
+			return "", fmt.Errorf("%w: webhook carries %d inline bytes, and an agent callable reads at most 1 MiB", substrate.ErrTooLarge, n)
+		}
+	}
+	var replay *webhookReplay
+	var replayKey string
+	if !presented.signedAt.IsZero() {
+		replayKey = webhookReplayKey(tr.ID, presented.mac)
+		var first string
+		if replay, first = ds.webhookReplays.claim(replayKey, presented.signedAt.Add(tr.WebhookSignature.MaxSkew), at); replay == nil {
+			if first == "" {
+				return "", errWebhookReplayInFlight
+			}
+			return first, nil
+		}
+	}
+	name, fid, err := ds.spoolWebhook(ctx, tr, req, at, tr.WebhookSignature != nil)
+	if replay != nil {
+		if err != nil {
+			ds.webhookReplays.release(replayKey, replay)
+		} else {
+			ds.webhookReplays.admitted(replay, fid)
+		}
+	}
 	if err != nil {
 		return "", err
 	}
@@ -172,10 +240,11 @@ func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key s
 // inside it, beside the park (recordWebhook), so the drain waits on the
 // changelog lock once. after is the changelog head when the request was
 // spooled: the transaction refuses with errWebhookRecorded when an entry
-// above it already names the fire id.
-func (ds *dataset) admitWebhook(ctx context.Context, triggerID string, declared map[string]bool, req substrate.WebhookRequest, fid string, at time.Time, after int64) (foldFailure, error) {
+// above it already names the fire id. verified says the door checked the
+// trigger's declared signature before it spooled the request.
+func (ds *dataset) admitWebhook(ctx context.Context, triggerID string, declared map[string]bool, req substrate.WebhookRequest, fid string, at time.Time, after int64, verified bool) (foldFailure, error) {
 	blobs := ds.stageBlobs(actorWebhook)
-	row, err := ds.stageWebhook(ctx, declared, req, fid, at, blobs)
+	row, err := ds.stageWebhook(ctx, declared, req, fid, at, verified, blobs)
 	if err != nil {
 		return foldFailure{}, err
 	}
@@ -225,13 +294,20 @@ func (ds *dataset) recordWebhook(ctx context.Context, triggerID string, row fold
 // staged into the blob store and the pending row built around their digests.
 // It writes nothing to the changelog, so a process that stops after it
 // leaves only objects no manifest names, for the orphan sweep.
-func (ds *dataset) stageWebhook(ctx context.Context, declared map[string]bool, req substrate.WebhookRequest, fid string, at time.Time, blobs blobSpool) (foldFailure, error) {
+func (ds *dataset) stageWebhook(ctx context.Context, declared map[string]bool, req substrate.WebhookRequest, fid string, at time.Time, verified bool, blobs blobSpool) (foldFailure, error) {
 	parts, err := ds.spoolWebhookParts(ctx, blobs, req.Parts)
 	if err != nil {
 		return foldFailure{}, err
 	}
 	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
-	envelope["request"] = webhookRequestEnvelope(req, parts)
+	request := webhookRequestEnvelope(req, parts)
+	// The mark a later retry or resume reads (checkStoredWebhookSignature):
+	// this request passed the declared signature, so it is not checked
+	// again against a timestamp the retry's clock has left behind.
+	if verified {
+		request[requestSignatureVerified] = true
+	}
+	envelope["request"] = request
 	payload, err := ds.parkedEnvelope(ctx, envelope, declared, blobs)
 	if err != nil {
 		return foldFailure{}, err
@@ -600,20 +676,11 @@ func spoolParkedBody(ctx context.Context, blobs blobSpool, body, req map[string]
 	if _, referenced := body["blob"]; referenced {
 		return body, nil
 	}
-	var data []byte
-	encoding := ""
-	switch {
-	case body["text"] != nil:
-		text, _ := body["text"].(string)
-		data, encoding = []byte(text), "text"
-	case body["base64"] != nil:
-		enc, _ := body["base64"].(string)
-		decoded, err := base64.StdEncoding.DecodeString(enc)
-		if err != nil {
-			return nil, fmt.Errorf("substrate: parked body: %w", err)
-		}
-		data, encoding = decoded, "base64"
-	default:
+	data, encoding, ok, err := inlineBodyBytes(body)
+	if err != nil {
+		return nil, fmt.Errorf("substrate: parked body: %w", err)
+	}
+	if !ok {
 		return body, nil
 	}
 	mediaType, _ := req["contentType"].(string)
@@ -665,17 +732,15 @@ func spoolParkedParts(ctx context.Context, blobs blobSpool, parts []any) ([]any,
 // alone.
 func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string]any) error {
 	req, _ := envelope["request"].(map[string]any)
-	if body, _ := req["body"].(map[string]any); body != nil {
-		if digest, _ := body["blob"].(string); digest != "" {
-			_, data, err := ds.GetBlob(ctx, digest)
-			if err != nil {
-				return fmt.Errorf("substrate: parked body %s: %w", digest, err)
-			}
-			if encoding, _ := body["encoding"].(string); encoding == "base64" {
-				req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
-			} else {
-				req["body"] = map[string]any{"text": string(data)}
-			}
+	if body, _ := req["body"].(map[string]any); body != nil && body["blob"] != nil {
+		data, encoding, _, err := ds.storedBodyBytes(ctx, body)
+		if err != nil {
+			return fmt.Errorf("substrate: parked body: %w", err)
+		}
+		if encoding == "base64" {
+			req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
+		} else {
+			req["body"] = map[string]any{"text": string(data)}
 		}
 	}
 	parts, _ := req["parts"].([]any)
@@ -702,6 +767,82 @@ func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string
 		parts[i] = restored
 	}
 	return nil
+}
+
+// storedBodyBytes reads a stored request body's raw bytes in any of its
+// shapes: `{text}` and `{base64}` as the callable reads it, and `{blob,
+// encoding}` as the ledger parks it, read back from the blob store. encoding
+// is the shape the callable reads the bytes in, `text` or `base64`. ok is
+// false for a body in none of them. Every reader of a stored body goes
+// through here, so a new shape is one case and no reader is left decoding
+// it as empty.
+func (ds *dataset) storedBodyBytes(ctx context.Context, body map[string]any) (data []byte, encoding string, ok bool, err error) {
+	if body["blob"] == nil {
+		return inlineBodyBytes(body)
+	}
+	digest, _ := body["blob"].(string)
+	if _, data, err = ds.GetBlob(ctx, digest); err != nil {
+		return nil, "", false, fmt.Errorf("blob %s: %w", digest, err)
+	}
+	if encoding, _ = body["encoding"].(string); encoding != "base64" {
+		encoding = "text"
+	}
+	return data, encoding, true, nil
+}
+
+// inlineBodyBytes is storedBodyBytes for the two shapes that carry their
+// bytes in the envelope, `{text}` and `{base64}`, which need no blob store.
+func inlineBodyBytes(body map[string]any) (data []byte, encoding string, ok bool, err error) {
+	switch {
+	case body["base64"] != nil:
+		enc, _ := body["base64"].(string)
+		if data, err = base64.StdEncoding.DecodeString(enc); err != nil {
+			return nil, "", false, err
+		}
+		return data, "base64", true, nil
+	case body["text"] != nil:
+		text, _ := body["text"].(string)
+		return []byte(text), "text", true, nil
+	}
+	return nil, "", false, nil
+}
+
+// webhookInlineBytes is what of a request rides the envelope inline: the
+// body, or a multipart request's inline part values. File parts go to the
+// blob store and ride by digest.
+func webhookInlineBytes(req substrate.WebhookRequest) int {
+	n := len(req.Body)
+	for _, p := range req.Parts {
+		if p.Data == nil {
+			n += len(p.Value)
+		}
+	}
+	return n
+}
+
+// deliveredInlineBytes is webhookInlineBytes over a delivered envelope's
+// request, as fireEnvelope restored it: the body's raw bytes, counted from
+// its text or its padded base64 without decoding, or the multipart inline
+// part values. A file part rides by digest.
+func deliveredInlineBytes(envelope map[string]any) int {
+	req, _ := envelope["request"].(map[string]any)
+	n := 0
+	if body, _ := req["body"].(map[string]any); body != nil {
+		if text, ok := body["text"].(string); ok {
+			n += len(text)
+		} else if enc, ok := body["base64"].(string); ok {
+			n += base64.StdEncoding.DecodedLen(len(enc)) - strings.Count(enc[max(len(enc)-2, 0):], "=")
+		}
+	}
+	parts, _ := req["parts"].([]any)
+	for _, raw := range parts {
+		if part, ok := raw.(map[string]any); ok {
+			if value, ok := part["value"].(string); ok {
+				n += len(value)
+			}
+		}
+	}
+	return n
 }
 
 // webhookRequestEnvelope is the `request` the callable reads: method, media

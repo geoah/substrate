@@ -1378,8 +1378,8 @@ func (s *fakeService) ReceiveWebhook(_ context.Context, _, trigger, _ string, _ 
 	return "", noSuch("trigger", trigger)
 }
 
-func (s *fakeService) CheckWebhook(_ context.Context, _, trigger, _ string) error {
-	return noSuch("trigger", trigger)
+func (s *fakeService) CheckWebhook(_ context.Context, _, trigger, _ string) (substrate.WebhookTarget, error) {
+	return substrate.WebhookTarget{}, noSuch("trigger", trigger)
 }
 
 func containsString(hay []string, needle string) bool {

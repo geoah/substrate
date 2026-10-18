@@ -125,6 +125,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeAuth, Message: err.Error()}
+	case errors.Is(err, substrate.ErrTooLarge):
+		return http.StatusRequestEntityTooLarge, substrate.ErrorPayload{Code: codeBadRequest, Message: err.Error()}
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:

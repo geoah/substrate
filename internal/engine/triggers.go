@@ -63,6 +63,14 @@ type trigger struct {
 	// carries beside the body-describing set (decision 0097). Nil declares
 	// nothing, which is a fire with the body's headers alone.
 	WebhookHeaders map[string]bool
+	// WebhookSignature is what `source.webhook.signature` declared: the
+	// provider signature the door checks before it stores anything (decision
+	// 0164). Nil declares none, and the key, when set, is the one gate.
+	WebhookSignature *webhookSignature
+	// WebhookMaxBody is what `source.webhook.maxBody` declared: the inline
+	// bytes a delivery may carry, read by the door before the body. Zero
+	// declares none, which is substrate.WebhookInlineDefault.
+	WebhookMaxBody int64
 
 	CallableKind string
 	CallableID   string
@@ -78,6 +86,15 @@ type trigger struct {
 	// without moving its cursor.
 	Callable *vocabulary.Function
 	Agent    *vocabulary.Agent
+}
+
+// webhookMaxBody is the inline bytes a delivery to this trigger may carry:
+// its declared `maxBody`, else the door's default.
+func (t *trigger) webhookMaxBody() int64 {
+	if t.WebhookMaxBody > 0 {
+		return t.WebhookMaxBody
+	}
+	return substrate.WebhookInlineDefault
 }
 
 // runnable reports whether the trigger's callable resolved.
@@ -193,6 +210,10 @@ type recordSource struct {
 	Ops      []string
 	When     string
 	Coalesce bool
+	// FromStart is `source.record.fromStart`: the trigger's cursor starts at
+	// the changelog's start when the trigger is created, so it delivers the
+	// matching changes already written as well as those that follow.
+	FromStart bool
 	// program is the compiled guard, filled from the dataset's cache at
 	// load; nil when no guard is declared.
 	program cel.Program
@@ -268,7 +289,7 @@ var triggerSourceKeys = map[string]bool{
 // triggerSourceArms are the source keys that carry an arm.
 var triggerSourceArms = map[string]bool{"record": true, "schedule": true, "webhook": true}
 
-var triggerRecordKeys = map[string]bool{"kinds": true, "ops": true, "when": true, "coalesce": true}
+var triggerRecordKeys = map[string]bool{"kinds": true, "ops": true, "when": true, "coalesce": true, "fromStart": true}
 
 var triggerScheduleKeys = map[string]bool{"recurrence": true, "timezone": true, "startsAt": true}
 
@@ -351,12 +372,19 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	case "webhook":
 		m, isMap := source["webhook"].(map[string]any)
 		if source["webhook"] != nil && !isMap {
-			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key and headers")
+			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key, headers and signature")
 		}
 		for k := range m {
-			if k != "key" && k != "headers" {
-				return nil, fmt.Errorf("source.webhook: unknown key %q — key and headers are the fields", k)
+			if k != "key" && k != "headers" && k != "signature" && k != "maxBody" {
+				return nil, fmt.Errorf("source.webhook: unknown key %q; key, headers, signature and maxBody are the fields", k)
 			}
+		}
+		if raw, has := m["maxBody"]; has && raw != nil {
+			n, err := asInt(raw)
+			if err != nil || n < 1 || n > substrate.WebhookInlineMax {
+				return nil, fmt.Errorf("source.webhook.maxBody: the inline bytes a delivery may carry, 1 to %d (8 MiB)", substrate.WebhookInlineMax)
+			}
+			t.WebhookMaxBody = n
 		}
 		if raw, has := m["key"]; has && raw != nil {
 			key, ok := raw.(string)
@@ -370,6 +398,11 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 			return nil, err
 		}
 		t.WebhookHeaders = headers
+		sig, err := parseWebhookSignature(m["signature"])
+		if err != nil {
+			return nil, err
+		}
+		t.WebhookSignature = sig
 		t.Webhook = true
 	}
 	// A record delivery and a webhook fire already hand the body its input,
@@ -500,6 +533,13 @@ func parseRecordSource(raw any) (*recordSource, error) {
 		}
 		src.Coalesce = b
 	}
+	if raw, has := m["fromStart"]; has && raw != nil {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("source.record.fromStart: a boolean")
+		}
+		src.FromStart = b
+	}
 	return src, nil
 }
 
@@ -558,13 +598,20 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 	if checkCallable {
 		switch t.CallableKind {
 		case callableKindAgent:
-			if _, err := reg.ResolveAgent(t.CallableID); err != nil {
+			ag, err := reg.ResolveAgent(t.CallableID)
+			if err != nil {
 				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
+			if err := checkWebhookSecretSource(reg, t, ag.Package); err != nil {
+				return fmt.Errorf("%w: trigger %w", substrate.ErrValidation, err)
 			}
 		default:
 			fn, err := reg.ResolveFunction(t.CallableID)
 			if err != nil {
 				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
+			if err := checkWebhookSecretSource(reg, t, fn.Package); err != nil {
+				return fmt.Errorf("%w: trigger %w", substrate.ErrValidation, err)
 			}
 			// A HOST FUNCTION IS NOT A DELIVERY TARGET. The engine runs one under
 			// the grants of whoever called it, and a delivery has no caller to
@@ -806,14 +853,21 @@ func (ds *dataset) whenProgram(src string) (cel.Program, error) {
 // changelog seq — the trigger reacts to what happens next, and a write
 // between creation and the first dispatch is never skipped — and a schedule
 // source's fire state initializes at now, so the first fire is the next
-// occurrence. Both are ledger effects on a delivery entry of their own, so a
+// occurrence. A record source that declares `fromStart` initializes its
+// cursor at 0 instead, the position a replay from 0 sets, so an adapter
+// imported after the rows it reads were written converts them without a
+// hand. Both are ledger effects on a delivery entry of their own, so a
 // restore brings the trigger back at the position it started from.
 func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 	seq := t.maxSeq
+	src, _ := props["source"].(map[string]any)
+	if rec, _ := src["record"].(map[string]any); rec != nil && rec["fromStart"] == true {
+		seq = 0
+	}
 	if err := t.setCursorTx(id, seq); err != nil {
 		return err
 	}
-	if src, _ := props["source"].(map[string]any); src != nil {
+	if src != nil {
 		if _, has := src["schedule"]; has {
 			if err := t.setScheduleTx(id, t.now); err != nil {
 				return err

@@ -150,3 +150,35 @@ func TestTriggerArgumentsAreAdmittedOnAScheduleToAFunctionOnly(t *testing.T) {
 		}
 	}
 }
+
+// A webhook's maxBody is the inline bytes a delivery may carry: an integer
+// from 1 to 8 MiB, read into the trigger, and refused outside that when the
+// trigger is written. A trigger that declares none reads the 1 MiB default.
+func TestWebhookMaxBodyIsValidated(t *testing.T) {
+	callable := vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f")
+	parse := func(maxBody any) (*trigger, error) {
+		arm := map[string]any{}
+		if maxBody != nil {
+			arm["maxBody"] = maxBody
+		}
+		return parseTrigger("t1", map[string]any{"callable": callable, "source": map[string]any{"webhook": arm}})
+	}
+	tr, err := parse(nil)
+	if err != nil || tr.webhookMaxBody() != substrate.WebhookInlineDefault {
+		t.Fatalf("no maxBody: %v, bound %d, want %d", err, tr.webhookMaxBody(), substrate.WebhookInlineDefault)
+	}
+	tr, err = parse(float64(substrate.WebhookInlineMax))
+	if err != nil || tr.webhookMaxBody() != substrate.WebhookInlineMax {
+		t.Fatalf("maxBody 8 MiB: %v", err)
+	}
+	for name, v := range map[string]any{
+		"zero":       0,
+		"past 8 MiB": substrate.WebhookInlineMax + 1,
+		"a string":   "8MiB",
+		"a fraction": 1.5,
+	} {
+		if _, err := parse(v); err == nil || !strings.Contains(err.Error(), "source.webhook.maxBody") {
+			t.Errorf("%s: maxBody %v: err = %v, want the refusal", name, v, err)
+		}
+	}
+}

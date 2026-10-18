@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -27,13 +28,22 @@ type webhookSvc struct {
 	fid     string
 	err     error
 	refused map[string]bool
+	// maxBody is the inline bound a trigger declares; one not named here
+	// reads the default.
+	maxBody map[string]int64
+	// signatureOnly names the triggers with no key and a declared signature.
+	signatureOnly map[string]bool
 }
 
-func (s *webhookSvc) CheckWebhook(_ context.Context, _, trigger, _ string) error {
+func (s *webhookSvc) CheckWebhook(_ context.Context, _, trigger, _ string) (substrate.WebhookTarget, error) {
 	if s.refused[trigger] {
-		return substrate.ErrNotFound
+		return substrate.WebhookTarget{}, substrate.ErrNotFound
 	}
-	return nil
+	out := substrate.WebhookTarget{MaxBody: substrate.WebhookInlineDefault, SignatureOnly: s.signatureOnly[trigger]}
+	if n := s.maxBody[trigger]; n > 0 {
+		out.MaxBody = n
+	}
+	return out, nil
 }
 
 type webhookCall struct {
@@ -153,6 +163,157 @@ func TestWebhookRefusals(t *testing.T) {
 	}
 }
 
+// A request the trigger's declared signature refuses is a 401 whose body says
+// no more than that: the reason the service wrapped (a stale timestamp here)
+// never reaches the unauthenticated sender.
+func TestWebhookSignatureRefusalIsATerse401(t *testing.T) {
+	refusal := fmt.Errorf("%w: webhook signature refused (timestamp outside maxSkew)", substrate.ErrAuth)
+	_, h := webhookHandler("", refusal)
+	rec := postHook(h, "/webhooks/geoah.example.com/signed", []byte("{}"), nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var out substrate.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("body = %s: %v", rec.Body.String(), err)
+	}
+	if out.Error.Code != "auth" || out.Error.Message != "webhook signature refused" {
+		t.Fatalf("error = %+v, want auth and the fixed message", out.Error)
+	}
+}
+
+// A trigger with no key and a declared signature is not known to exist
+// until the service verifies the signature, so every refusal the door makes
+// while reading the request answers exactly as a missing trigger does: a
+// multipart body (signed or broken), a body past the bound and headers past
+// the cap. A trigger whose sender proved itself, or that is open to all,
+// keeps the transport's own answer.
+func TestWebhookKeylessSignedTriggerHidesTransportRefusals(t *testing.T) {
+	svc, h := webhookHandler("f", nil)
+	svc.refused = map[string]bool{"missing": true}
+	svc.signatureOnly = map[string]bool{"signed": true}
+	var form bytes.Buffer
+	mw := multipart.NewWriter(&form)
+	_ = mw.WriteField("n", "1")
+	_ = mw.Close()
+	for name, c := range map[string]struct {
+		body    []byte
+		headers map[string]string
+		open    int
+	}{
+		"multipart with no boundary": {[]byte("x"), map[string]string{"Content-Type": "multipart/form-data"}, http.StatusBadRequest},
+		"a whole multipart body":     {form.Bytes(), map[string]string{"Content-Type": mw.FormDataContentType()}, http.StatusAccepted},
+		"a body past the bound":      {bytes.Repeat([]byte("x"), substrate.WebhookInlineDefault+1), map[string]string{"Content-Type": "text/plain"}, http.StatusRequestEntityTooLarge},
+		"headers past the cap":       {nil, map[string]string{"X-Big": strings.Repeat("h", maxWebhookHeaderBytes)}, http.StatusRequestHeaderFieldsTooLarge},
+	} {
+		missing := postHook(h, "/webhooks/geoah.example.com/missing", c.body, c.headers)
+		signed := postHook(h, "/webhooks/geoah.example.com/signed", c.body, c.headers)
+		if missing.Code != http.StatusNotFound {
+			t.Fatalf("%s: a missing trigger answered %d", name, missing.Code)
+		}
+		if signed.Code != missing.Code || signed.Body.String() != missing.Body.String() || signed.Header().Get("Connection") != "close" {
+			t.Errorf("%s: the keyless signed trigger answered %d %q (Connection %q), a missing one %d %q",
+				name, signed.Code, signed.Body.String(), signed.Header().Get("Connection"), missing.Code, missing.Body.String())
+		}
+		if open := postHook(h, "/webhooks/geoah.example.com/open", c.body, c.headers); open.Code != c.open {
+			t.Errorf("%s: an open trigger answered %d, want %d", name, open.Code, c.open)
+		}
+	}
+	for _, call := range svc.calls {
+		if call.trigger == "signed" {
+			t.Fatalf("a refused request to the keyless signed trigger reached the service: %+v", call.req)
+		}
+	}
+}
+
+// While every delivery slot is held, a keyless signed trigger reaches the
+// slot and is told the door is busy, so a missing trigger answers the same
+// 503 then, and so does a multipart request to the signed one, which the
+// door refuses before the slot. The answers match in status, body, headers
+// and connection handling.
+func TestWebhookBusyDoorHidesKeylessSignedTriggers(t *testing.T) {
+	svc, h := webhookHandler("f", nil)
+	svc.refused = map[string]bool{"missing": true}
+	svc.signatureOnly = map[string]bool{"signed": true}
+	for range cap(webhookSem) {
+		webhookSem <- struct{}{}
+	}
+	defer func() {
+		for range cap(webhookSem) {
+			<-webhookSem
+		}
+	}()
+	for name, headers := range map[string]map[string]string{
+		"inline":    {"Content-Type": "application/json"},
+		"multipart": {"Content-Type": "multipart/form-data; boundary=xyz"},
+	} {
+		missing := postHook(h, "/webhooks/geoah.example.com/missing", []byte("{}"), headers)
+		signed := postHook(h, "/webhooks/geoah.example.com/signed", []byte("{}"), headers)
+		if signed.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s: the keyless signed trigger answered %d with every slot held, want 503", name, signed.Code)
+		}
+		if diff := webhookAnswerDiff(missing, signed); diff != "" {
+			t.Errorf("%s, every slot held: %s", name, diff)
+		}
+	}
+	if len(svc.calls) != 0 {
+		t.Fatalf("a request to a busy door reached the service: %d calls", len(svc.calls))
+	}
+}
+
+// A keyless signed trigger whose signature check refuses an unsigned request
+// answers it as a missing trigger does, down to closing the connection: an
+// empty POST that reaches ReceiveWebhook cannot be told from one that never
+// got past CheckWebhook.
+func TestWebhookKeylessSignatureRefusalMatchesAMissingTrigger(t *testing.T) {
+	svc, h := webhookHandler("", substrate.ErrNotFound)
+	svc.refused = map[string]bool{"missing": true}
+	svc.signatureOnly = map[string]bool{"signed": true}
+	missing := postHook(h, "/webhooks/geoah.example.com/missing", nil, nil)
+	signed := postHook(h, "/webhooks/geoah.example.com/signed", nil, nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("a missing trigger answered %d", missing.Code)
+	}
+	if diff := webhookAnswerDiff(missing, signed); diff != "" {
+		t.Error(diff)
+	}
+	if svc.last(t).trigger != "signed" {
+		t.Fatal("the signed trigger's request never reached ReceiveWebhook")
+	}
+}
+
+// webhookAnswerDiff names how two of the door's answers differ, or is empty.
+// X-Request-Id is fresh on every answer, so it is left out.
+func webhookAnswerDiff(a, b *httptest.ResponseRecorder) string {
+	if a.Code != b.Code || a.Body.String() != b.Body.String() {
+		return fmt.Sprintf("answers %d %q and %d %q", a.Code, a.Body.String(), b.Code, b.Body.String())
+	}
+	ha, hb := a.Header().Clone(), b.Header().Clone()
+	ha.Del("X-Request-Id")
+	hb.Del("X-Request-Id")
+	if !reflect.DeepEqual(ha, hb) {
+		return fmt.Sprintf("headers %v and %v", ha, hb)
+	}
+	return ""
+}
+
+// A body the service holds too large for what the trigger calls (an agent
+// reads at most 1 MiB) is a 413, as the door's own caps are. The trigger
+// declares 8 MiB, so the door reads the 2 MiB body and the 413 is the
+// service's ErrTooLarge, carrying its message, not the door's own bound.
+func TestWebhookTooLargeForTheCallableIs413(t *testing.T) {
+	const refusal = "an agent callable reads at most 1 MiB"
+	svc, h := webhookHandler("", fmt.Errorf("%w: %s", substrate.ErrTooLarge, refusal))
+	svc.maxBody = map[string]int64{"to-agent": 8 << 20}
+	rec := postHook(h, "/webhooks/geoah.example.com/to-agent", bytes.Repeat([]byte("x"), 2<<20), map[string]string{"Content-Type": "text/plain"})
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "bad_request") || !strings.Contains(rec.Body.String(), refusal) {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := len(svc.last(t).req.Body); got != 2<<20 {
+		t.Fatalf("the service got %d bytes, want the whole 2 MiB body", got)
+	}
+}
+
 // A repository whose webhook spool is full answers unavailable, which the
 // door says as 503 with Retry-After, so the sender redelivers later.
 func TestWebhookSpoolFullIsUnavailableWithRetryAfter(t *testing.T) {
@@ -163,11 +324,12 @@ func TestWebhookSpoolFullIsUnavailableWithRetryAfter(t *testing.T) {
 	}
 }
 
-// The bounds: a non-multipart body past 1 MiB is 413, headers past 16 KiB are
-// 431, and neither reaches the service.
+// The bounds: a non-multipart body past the trigger's inline bound (1 MiB
+// when it declares none) is 413, headers past 16 KiB are 431, and neither
+// reaches the service.
 func TestWebhookBounds(t *testing.T) {
 	svc, h := webhookHandler("f", nil)
-	rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), maxWebhookInline+1), map[string]string{"Content-Type": "text/plain"})
+	rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), substrate.WebhookInlineDefault+1), map[string]string{"Content-Type": "text/plain"})
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversize body: status = %d", rec.Code)
 	}
@@ -178,8 +340,55 @@ func TestWebhookBounds(t *testing.T) {
 	if len(svc.calls) != 0 {
 		t.Fatalf("a refused request reached the service: %d calls", len(svc.calls))
 	}
-	if rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), maxWebhookInline), map[string]string{"Content-Type": "text/plain"}); rec.Code != http.StatusAccepted {
+	if rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), substrate.WebhookInlineDefault), map[string]string{"Content-Type": "text/plain"}); rec.Code != http.StatusAccepted {
 		t.Fatalf("a body at the cap: status = %d", rec.Code)
+	}
+}
+
+// The inline bound is the trigger's: 1 MiB for one that declares no
+// maxBody, and up to 8 MiB for one that does (a Health Auto Export delivery
+// of a day at minute grouping passes 1 MiB, and the app never re-sends a
+// part the door refused). Pinned in bytes rather than through the
+// constants, so moving either fails here.
+func TestWebhookInlineBoundIsTheTriggers(t *testing.T) {
+	svc, h := webhookHandler("f", nil)
+	svc.maxBody = map[string]int64{"large": 8 << 20}
+	asJSON := map[string]string{"Content-Type": "application/json"}
+	if rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), 1<<20), asJSON); rec.Code != http.StatusAccepted {
+		t.Fatalf("1 MiB to a trigger that declares no maxBody: status = %d: %s", rec.Code, rec.Body.String())
+	}
+	over := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), 1<<20+1), asJSON)
+	if over.Code != http.StatusRequestEntityTooLarge || !strings.Contains(over.Body.String(), "exceeds 1 MiB") {
+		t.Fatalf("a byte past 1 MiB to a trigger that declares no maxBody: status = %d: %s", over.Code, over.Body.String())
+	}
+	under := postHook(h, "/webhooks/geoah.example.com/large", bytes.Repeat([]byte("x"), 8<<20-1), asJSON)
+	if under.Code != http.StatusAccepted {
+		t.Fatalf("a body one byte under 8 MiB to a trigger that declares 8 MiB: status = %d: %s", under.Code, under.Body.String())
+	}
+	if got := len(svc.last(t).req.Body); got != 8<<20-1 {
+		t.Fatalf("the service got %d bytes, want %d", got, 8<<20-1)
+	}
+	over = postHook(h, "/webhooks/geoah.example.com/large", bytes.Repeat([]byte("x"), 8<<20+1), asJSON)
+	if over.Code != http.StatusRequestEntityTooLarge || !strings.Contains(over.Body.String(), "exceeds 8 MiB") {
+		t.Fatalf("a byte past 8 MiB: status = %d: %s", over.Code, over.Body.String())
+	}
+	if len(svc.calls) != 2 {
+		t.Fatalf("a refused body reached the service: %d calls, want 2", len(svc.calls))
+	}
+}
+
+// The inline deadline scales with the trigger's bound at the default's rate,
+// 30 s per started MiB, so a trigger that declares no maxBody keeps 30 s.
+func TestWebhookInlineDeadlineScalesWithTheBound(t *testing.T) {
+	for bound, want := range map[int64]time.Duration{
+		1:       30 * time.Second,
+		1 << 20: 30 * time.Second,
+		2 << 20: time.Minute,
+		8 << 20: 4 * time.Minute,
+	} {
+		if got := inlineDeadline(bound); got != want {
+			t.Errorf("inlineDeadline(%d) = %s, want %s", bound, got, want)
+		}
 	}
 }
 
