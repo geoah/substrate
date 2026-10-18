@@ -969,6 +969,10 @@ description = "CI job `db rest`: providertest and testenv against the database, 
 # internal/providertest warms each provider closure's PEP 723 body through uv,
 # so the job caches ~/.cache/uv beside the Go caches. The acceptance drill is
 # one serial scenario longer than this job's budget, so it is `ci:drill`.
+# SUBSTRATE_REQUIRE_PROVIDER_SUITES turns the suite's skips for a missing
+# `uv` or `python3`, or an offline resolve, into failures: a job that ran no
+# provider case is red, not green.
+env = { SUBSTRATE_REQUIRE_PROVIDER_SUITES = "1" }
 run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ./internal/providertest/... ./internal/testenv/..."
 
 [tasks."ci:drill"]

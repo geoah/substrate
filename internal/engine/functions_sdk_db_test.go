@@ -336,6 +336,40 @@ def main(input, host):
 	}
 }
 
+// A delete effect holds the same precondition: a row written after the body
+// read it is not tombstoned, the delivery fails conflict, and the read's
+// version still deletes it.
+func TestEffectDeleteHonorsIfVersion(t *testing.T) {
+	t.Parallel()
+	ds := newFnDataset(t, nil, pyFn("verdelete", map[string]any{}, []any{taskType}, `
+def main(input, host):
+    a = input["args"]
+    host.effects.delete("samples.substrate.reamde.dev/tasks/task", a["id"],
+                        if_version=a["ifVersion"])
+    return {}
+`))
+	ctx := context.Background()
+	fn := fnPackage + "/verdelete"
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "v"}})
+	stale := task.Version
+	moved, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"name": "moved"}})
+	if err != nil {
+		t.Fatalf("owner patch: %v", err)
+	}
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"id": task.ID, "ifVersion": stale}); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("stale-version delete: want ErrConflict, got %v", err)
+	}
+	if got := mustGet(t, ds, task.Kind, task.ID); got.DeletedAt != nil {
+		t.Fatalf("a stale-version delete tombstoned the row")
+	}
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"id": task.ID, "ifVersion": moved.Version}); err != nil {
+		t.Fatalf("matching-version delete: %v", err)
+	}
+	if got, err := ds.Get(ctx, task.Kind, task.ID); err == nil && got.DeletedAt == nil {
+		t.Fatalf("the matching-version delete did not tombstone the row")
+	}
+}
+
 func TestSDKProposeStagesChangeRequest(t *testing.T) {
 	t.Parallel()
 	// propose is sugar over the ordinary put effect: the body names a target, a

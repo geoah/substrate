@@ -121,7 +121,20 @@ data:
   #
   # 19: `whoopsync` pins requests 2.34.2, past PYSEC-2026-2275
   # (CVE-2026-25645).
-  version: 19
+  #
+  # 21: `whoopsync` deletes a row whose object WHOOP answers 404 for when
+  # read back by id, moves a stream's cursor only once every read-back in
+  # its window has answered with the object or a 404, and never writes a
+  # payload older than the stored row's `updatedAt`; every mirror write and
+  # delete is staged under the version of the row it was compared with.
+  # `recovery` declares `cycleId`, the id a recovery is read back by when no
+  # cycle row exists, and the sync re-walks the recoveries written before it
+  # to fill it in. The sync imports its row mapping from the bundle's
+  # `whoop_mirror` module and pins requests 2.34.2. The
+  # `enabledCycles` description says a cycle runs from one sleep onset to
+  # the next, as WHOOP defines it, not wake to wake. ADDITIVE. Version 20
+  # was never released.
+  version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -210,6 +223,341 @@ data:
     - providers.substrate.reamde.dev/whoop/sleep
     - providers.substrate.reamde.dev/whoop/workout
     - providers.substrate.reamde.dev/whoop/whoopsync
+  # The functions' shared library: one module on the import path of every
+  # function the bundle installs. A body cannot import another body.
+  modules:
+    whoop_mirror.py: |
+      """The WHOOP closure's shared library: what every WHOOP function must
+      agree on, kept once.
+
+      A function body cannot import another body, so the mapping from a WHOOP v2
+      object to its mirror row, the origin the token may reach and the 429 hold
+      live here, in the bundle's `modules:`, and every body imports them. A WHOOP
+      object a body reads is therefore written as one shape.
+      """
+      import datetime as _dt
+      from urllib.parse import urlsplit as _urlsplit
+
+      PKG = "providers.substrate.reamde.dev/whoop"
+      ACCOUNT_KIND = PKG + "/account"
+      USER_KIND = PKG + "/user"
+      CYCLE_KIND = PKG + "/cycle"
+      RECOVERY_KIND = PKG + "/recovery"
+      SLEEP_KIND = PKG + "/sleep"
+      WORKOUT_KIND = PKG + "/workout"
+
+      DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
+      API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
+      LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+      # The three values the v2 schema closes `score_state` at, and the spelling the
+      # loader admits. THE SYNC CARRIES THE SAME TABLE THE DECLARATION DOES (§2): a
+      # value outside it leaves the property ABSENT rather than refusing the page,
+      # because one new WHOOP word must not cost an account its whole run.
+      SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
+                      "UNSCORABLE": "unscorable"}
+
+      CYCLE_SCORE = (("strain", "strain"), ("kilojoule", "kilojoule"),
+                     ("average_heart_rate", "averageHeartRate"),
+                     ("max_heart_rate", "maxHeartRate"))
+      RECOVERY_SCORE = (("user_calibrating", "userCalibrating"),
+                        ("recovery_score", "recoveryScore"),
+                        ("resting_heart_rate", "restingHeartRate"),
+                        ("hrv_rmssd_milli", "hrvRmssdMilli"),
+                        ("spo2_percentage", "spo2Percentage"),
+                        ("skin_temp_celsius", "skinTempCelsius"))
+      SLEEP_SCORE = (("respiratory_rate", "respiratoryRate"),
+                     ("sleep_performance_percentage", "sleepPerformancePercentage"),
+                     ("sleep_consistency_percentage", "sleepConsistencyPercentage"),
+                     ("sleep_efficiency_percentage", "sleepEfficiencyPercentage"))
+      STAGE_SUMMARY = (("total_in_bed_time_milli", "totalInBedTimeMilli"),
+                       ("total_awake_time_milli", "totalAwakeTimeMilli"),
+                       ("total_no_data_time_milli", "totalNoDataTimeMilli"),
+                       ("total_light_sleep_time_milli", "totalLightSleepTimeMilli"),
+                       ("total_slow_wave_sleep_time_milli", "totalSlowWaveSleepTimeMilli"),
+                       ("total_rem_sleep_time_milli", "totalRemSleepTimeMilli"),
+                       ("sleep_cycle_count", "sleepCycleCount"),
+                       ("disturbance_count", "disturbanceCount"))
+      SLEEP_NEEDED = (("baseline_milli", "baselineMilli"),
+                      ("need_from_sleep_debt_milli", "needFromSleepDebtMilli"),
+                      ("need_from_recent_strain_milli", "needFromRecentStrainMilli"),
+                      ("need_from_recent_nap_milli", "needFromRecentNapMilli"))
+      WORKOUT_SCORE = (("strain", "strain"),
+                       ("average_heart_rate", "averageHeartRate"),
+                       ("max_heart_rate", "maxHeartRate"), ("kilojoule", "kilojoule"),
+                       ("percent_recorded", "percentRecorded"),
+                       ("distance_meter", "distanceMeter"),
+                       ("altitude_gain_meter", "altitudeGainMeter"),
+                       ("altitude_change_meter", "altitudeChangeMeter"))
+      ZONE_DURATIONS = (("zone_zero_milli", "zoneZeroMilli"),
+                        ("zone_one_milli", "zoneOneMilli"),
+                        ("zone_two_milli", "zoneTwoMilli"),
+                        ("zone_three_milli", "zoneThreeMilli"),
+                        ("zone_four_milli", "zoneFourMilli"),
+                        ("zone_five_milli", "zoneFiveMilli"))
+
+
+      # ------------------------------------------------------------------ plumbing
+
+      def parse(value):
+          """An RFC 3339 instant, or None. WHOOP spells them with a `Z` and with
+          fractional seconds; fromisoformat takes both from 3.11."""
+          if not value:
+              return None
+          try:
+              return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+          except ValueError:
+              return None
+
+
+      def check_origin(url):
+          """The bundle-side origin pin.
+
+          A request that would carry the injected token may reach ONLY the pinned
+          production host over HTTPS, or loopback (the test seam and the mock
+          server). `apiBase` is an owner-editable config property, so it is checked,
+          never trusted.
+          """
+          u = _urlsplit(url)
+          host = (u.hostname or "").lower()
+          if host in LOOPBACK_HOSTS:
+              return
+          if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+              return
+          raise RuntimeError(
+              "whoop: refusing to send credentials to %s://%s:%s; only "
+              "https://api.prod.whoop.com or loopback"
+              % (u.scheme, host or "?", u.port or "-"))
+
+
+      def api_base(cfg):
+          """The data API's origin: the client input's `apiBase`, else WHOOP's."""
+          client = ((cfg.get("inputs") or {}).get("client") or {})
+          base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+          return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+      def held(props):
+          """Whether the account's 429 hold is still ahead. WHOOP named an instant to
+          come back, and a read before it earns the next 429, so every entry path
+          asks this, not only the schedule."""
+          hold = parse(props.get("retryNotBefore"))
+          return hold is not None and _dt.datetime.now(_dt.timezone.utc) < hold
+
+
+      def rid(host, aid, prefix, key):
+          """A row id: host.ids.external("whoop", account, "<prefix>/<WHOOP id>"),
+          so a re-read composes the same id and two accounts never collide."""
+          return host.ids.external("whoop", aid, prefix + "/" + str(key))
+
+
+      # ------------------------------------------------------------ guarded writes
+      # A mirror row is written under the version it was read at. A body's reads
+      # come before its effects commit, and two bodies (a sync and a webhook, two
+      # syncs) can read one row and write it in either order: unguarded, the later
+      # commit wins whatever its revision, and a write staged over a row since
+      # deleted brings it back. Under the version, the engine refuses a write to a
+      # row that moved, the delivery fails `conflict`, and its retry reads again.
+
+      def older(incoming, stored):
+          """Whether a payload's `updated_at` is before the stored row's. Equal is
+          not older: the same revision is written again and the engine drops it."""
+          a, b = parse(incoming), parse(stored)
+          return a is not None and b is not None and a < b
+
+
+      def stored_rows(host, kind, rids):
+          """{row id: row} for each of `rids` the mirror holds, live or deleted,
+          read in two list calls. A row id missing from the answer was never
+          written."""
+          rids = sorted({r for r in rids if r})
+          out = {}
+          if not rids:
+              return out
+          for deleted in (True, False):
+              page = host.list(filter={"kinds": [kind], "ids": rids,
+                                       "deleted": deleted}, first=len(rids))
+              for ent in page.get("records") or []:
+                  out[str(ent.get("id") or "")] = ent
+          return out
+
+
+      def write_row(host, kind, rid, props, row):
+          """Stage one mirror row under the version `row` was read at, None for a
+          row never written. A live row holding a later `updatedAt` is kept and
+          nothing is staged (False). A live row is patched; a deleted or absent
+          one is put whole, so a restored row keeps nothing the payload omits."""
+          live = row is not None and not row.get("deletedAt")
+          if live and older(props.get("updatedAt"),
+                            (row.get("properties") or {}).get("updatedAt")):
+              return False
+          if live:
+              host.effects.patch(kind, rid, properties=props,
+                                 if_version=host.version(row))
+          else:
+              host.effects.put(kind, rid, properties=props,
+                               if_version=host.version(row))
+          return True
+
+
+      # ----------------------------------------------------------- property shapes
+      # One rule, everywhere: from an AUTHORITATIVE payload a declared property the
+      # response omits is None, which the PATCH writes as a delete; a key carried as
+      # null is None too. `mint` is the non-null half, which is what a create may
+      # carry.
+
+      def take(dst, src, pairs, authoritative=True):
+          """One scalar each, with §1's presence rule.
+
+          An EXPLICIT EMPTY IS A CLEAR, and `""` is never written through: nothing
+          WHOOP sends has the empty string as a legal value, and half of these
+          properties are `datetime`, which would refuse it and take the whole page
+          down with it (§1, and the Slack v2 amendment behind it).
+          """
+          for api, prop in pairs:
+              if api in src:
+                  value = src[api]
+                  dst[prop] = None if value == "" else value
+              elif authoritative:
+                  dst[prop] = None
+          return dst
+
+
+      def mint(props):
+          return {k: v for k, v in props.items() if v is not None}
+
+
+      def score_state(props, rec):
+          """`score_state` onto the row, by the table the declaration carries (§2).
+
+          A word the table holds is the spelled enum value. A word it does not hold
+          leaves the property absent: the enum would refuse it, and losing one
+          property beats refusing the page. The key missing from an authoritative
+          payload is None, a delete.
+          """
+          if "score_state" not in rec:
+              props["scoreState"] = None
+              return
+          value = SCORE_STATES.get(str(rec.get("score_state") or "").upper())
+          if value is not None:
+              props["scoreState"] = value
+
+
+      def obj(src, pairs):
+          """One nested object, written whole or not at all (§1: a patch replaces an
+          object value entire). None when WHOOP sent no object: `score` is absent
+          unless the record is SCORED, and an empty object is not the same thing."""
+          if not isinstance(src, dict):
+              return None
+          out = take({}, src, pairs, authoritative=False)
+          return out or None
+
+
+      def span(props, rec):
+          """`start` and `end` into the temporal trait's slots (§4).
+
+          `end` is absent on the CURRENT cycle, and an authoritative payload's
+          absence is a clear: a cycle that comes back open has to lose its `endsAt`.
+          `at` is never nulled, because `start` is required on all three kinds that
+          bind a range and a record without one is malformed.
+          """
+          if rec.get("start"):
+              props["at"] = rec["start"]
+          props["endsAt"] = rec.get("end") or None
+
+
+      # --------------------------------------------------------- the row mappings
+      # Each answers (kind, row id, properties) for one WHOOP v2 object, or raises
+      # ValueError for a record that carries no id to key it on. `user_rid` is the
+      # member row the record belongs to.
+
+      def cycle_row(host, aid, user_rid, rec):
+          cid = rec.get("id")
+          if cid in (None, ""):
+              raise ValueError("cycle record carries no id")
+          props = {"account": aid, "cycleId": int(cid), "user": user_rid}
+          span(props, rec)
+          take(props, rec, (("timezone_offset", "timezoneOffset"),
+                            ("created_at", "createdAt"),
+                            ("updated_at", "updatedAt")))
+          score_state(props, rec)
+          props["score"] = obj(rec.get("score"), CYCLE_SCORE)
+          return CYCLE_KIND, rid(host, aid, "cycle", cid), props
+
+
+      def recovery_row(host, aid, user_rid, rec):
+          """A v2 recovery has no id of its own: its row is keyed on the cycle it
+          scores, which is how WHOOP addresses it, and keeps that `cycleId` to be
+          read back by."""
+          cid = rec.get("cycle_id")
+          if cid in (None, ""):
+              raise ValueError("recovery record carries no cycle_id, and a v2 "
+                               "recovery has no id of its own to fall back on")
+          sid = rec.get("sleep_id")
+          if sid in (None, ""):
+              raise ValueError("recovery record carries no sleep_id")
+          props = {"account": aid, "user": user_rid, "cycleId": int(cid),
+                   "cycle": rid(host, aid, "cycle", cid),
+                   "sleep": rid(host, aid, "sleep", sid)}
+          # `created_at` is the trait's `at` and is not redeclared.
+          if rec.get("created_at"):
+              props["at"] = rec["created_at"]
+          take(props, rec, (("updated_at", "updatedAt"),))
+          score_state(props, rec)
+          props["score"] = obj(rec.get("score"), RECOVERY_SCORE)
+          return RECOVERY_KIND, rid(host, aid, "recovery", cid), props
+
+
+      def sleep_row(host, aid, user_rid, rec):
+          sid = rec.get("id")
+          if sid in (None, ""):
+              raise ValueError("sleep record carries no id")
+          cid = rec.get("cycle_id")
+          if cid in (None, ""):
+              raise ValueError("sleep record carries no cycle_id")
+          props = {"account": aid, "sleepId": str(sid), "user": user_rid,
+                   "cycle": rid(host, aid, "cycle", cid)}
+          span(props, rec)
+          take(props, rec, (("v1_id", "v1Id"),
+                            ("timezone_offset", "timezoneOffset"),
+                            ("nap", "nap"), ("created_at", "createdAt"),
+                            ("updated_at", "updatedAt")))
+          score_state(props, rec)
+          score = obj(rec.get("score"), SLEEP_SCORE) or {}
+          raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
+          stages = obj(raw.get("stage_summary"), STAGE_SUMMARY)
+          if stages:
+              score["stageSummary"] = stages
+          needed = obj(raw.get("sleep_needed"), SLEEP_NEEDED)
+          if needed:
+              score["sleepNeeded"] = needed
+          props["score"] = score or None
+          return SLEEP_KIND, rid(host, aid, "sleep", sid), props
+
+
+      def workout_row(host, aid, user_rid, rec):
+          wid = rec.get("id")
+          if wid in (None, ""):
+              raise ValueError("workout record carries no id")
+          props = {"account": aid, "workoutId": str(wid), "user": user_rid}
+          span(props, rec)
+          take(props, rec, (("v1_id", "v1Id"),
+                            ("timezone_offset", "timezoneOffset"),
+                            ("sport_name", "sportName"), ("sport_id", "sportId"),
+                            ("created_at", "createdAt"),
+                            ("updated_at", "updatedAt")))
+          score_state(props, rec)
+          score = obj(rec.get("score"), WORKOUT_SCORE) or {}
+          raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
+          # v2 spells it `zone_durations`; v1 spelled it `zone_duration`. Both are
+          # read so a v1-era recording is not silently dropped, and the property
+          # takes the API's CURRENT name.
+          zones = obj(raw.get("zone_durations") or raw.get("zone_duration"),
+                      ZONE_DURATIONS)
+          if zones:
+              score["zoneDurations"] = zones
+          props["score"] = score or None
+          return WORKOUT_KIND, rid(host, aid, "workout", wid), props
 ---
 # ---- the config type: the `client` input's kind ----------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -371,8 +719,9 @@ data:
       type: bool
       writer: owner
       displayName: Cycles
-      description: mirror the physiological cycles — the wake-to-wake days
-        WHOOP scores strain over, and the identity a recovery hangs off
+      description: mirror the physiological cycles, the days WHOOP scores
+        strain over, each from one sleep onset to the next, and the identity
+        a recovery hangs off
     enabledRecovery:
       type: bool
       writer: owner
@@ -676,8 +1025,8 @@ data:
         against
 ---
 # ---- mirror: one physiological cycle ----------------------------------------
-# WHOOP's day. A cycle is NOT a calendar day: it runs wake to wake, so two
-# cycles can start on one UTC date and a cycle can span two. The cycle is the
+# WHOOP's day. A cycle is NOT a calendar day: it runs from one sleep onset to
+# the next, so two cycles can start on one UTC date and a cycle can span two. The cycle is the
 # identity everything day-shaped in WHOOP hangs off — a recovery scores a
 # cycle, not a date, and a sleep names the cycle it belongs to — and it is the
 # kind substrate's version 9 did not have, which is why its recovery rows
@@ -685,8 +1034,8 @@ data:
 #
 # TEMPORAL(RANGE), fed by `start` and `end` (§4): the API's instants land in
 # the trait's slots and are NOT redeclared, so there is no `start`/`end`
-# property here. The CURRENT cycle has no `end` — WHOOP omits it until the
-# member wakes — so `endsAt` is simply absent on it, and a records read
+# property here. The CURRENT cycle has no `end` (WHOOP omits it until the
+# next sleep starts a cycle), so `endsAt` is simply absent on it, and a records read
 # bounding `at` still finds it.
 kind: substrate.reamde.dev/core/kind
 metadata:
@@ -848,6 +1197,15 @@ data:
       description: >-
         `cycle_id` — the physiological cycle this recovery scores, and THIS
         ROW'S IDENTITY, because a v2 recovery has no id of its own
+    cycleId:
+      type: int
+      displayName: Cycle ID
+      # The id the sync reads this recovery back by. The `cycle` reference
+      # names a row id composed from it, which cannot be read backwards, and
+      # with the cycles toggle off the cycle row never exists.
+      description: >-
+        `cycle_id` as WHOOP sends it, the number GET /v2/cycle/{cycleId}/recovery
+        reads this recovery back by
     # ---- the object's own scalars, in the v2 Recovery schema's order ------
     scoreState:
       type: enum
@@ -1367,6 +1725,10 @@ data:
 # one is SKIPPED and COUNTED and the page keeps draining. Per-ACCOUNT
 # isolation: a page-level provider failure (a 401 on a revoked grant, a 5xx, a
 # dead network) stamps THAT account's syncStatus and the queue moves on.
+#
+# Deletions: WHOOP's collections carry no tombstone, so a stream that walks its
+# steady-state window reads back by id every row the mirror holds in that
+# window and the walk did not meet, and a 404 deletes the row.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/whoop/whoopsync
@@ -1380,6 +1742,18 @@ data:
   runtime: python
   timeout: PT60S
   permissions:
+    # The stored `updatedAt` of the rows a page names, the rows a drained
+    # stream's window holds, and a recovery's cycle row for the id it is read
+    # back by.
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/whoop/cycle
+        - providers.substrate.reamde.dev/whoop/recovery
+        - providers.substrate.reamde.dev/whoop/sleep
+        - providers.substrate.reamde.dev/whoop/workout
+      budgets:
+        calls: 200
+        rows: 2000
     writes:
       - providers.substrate.reamde.dev/whoop/user
       - providers.substrate.reamde.dev/whoop/cycle
@@ -1443,23 +1817,59 @@ data:
     `_due` refuses to start before it. A 5xx or a transport error is transient and
     the schedule's next tick retries it. A malformed RECORD is skipped and counted;
     records are independent and one of them must never cost the page.
+
+    REVISIONS AND DELETIONS. `updated_at` is the only revision WHOOP gives an
+    object: a payload older than the stored row's `updatedAt` is not written over
+    it (a page read before a later run rewrote the row), and an equal one is
+    written and dropped by the engine as unchanged, so re-reading a page changes
+    nothing. Every mirror write is staged under the version of the row it was
+    compared with (`whoop_mirror.write_row`): a row another run wrote or deleted
+    after this invocation read it fails the delivery `conflict`, and the retry
+    reads it again. A first page's conflict is retried at once; a later page's
+    parks the drain with its checkpoint, and the next scheduled fire starts over
+    from the cursors this run never advanced.
+
+    A deleted object simply stops appearing in its collection. A stream that had
+    a cursor when the run began walks a window of two or three days, so once its
+    pages run out, every row the mirror holds in that window and the walk did
+    not meet is read back by id, SCAN_PAGE rows of the window at a time, each
+    read under the row's version as it stands then: a 404 deletes the row, and
+    an object WHOOP still has is written like any page record. Both are staged
+    under that version, so a row another run wrote since fails the delivery
+    `conflict` rather than being deleted or overwritten. THE STREAM'S CURSOR
+    MOVES ONLY ONCE EVERY READ-BACK HAS ITS ANSWER. A 429 or a transport error
+    part-way leaves the cursor where it was, so the next run walks the same
+    window and reads the rest back. Any other refusal (a 401, a 403) says
+    nothing about whether the object is gone: it is recorded, the stream's
+    read-backs stop for this run, and its cursor stays where it was too. A
+    cold walk reconciles nothing.
+
+    RECOVERIES FROM BEFORE VERSION 21 carry no `cycleId`, and with cycles off
+    nothing else says how to read one back or what id its health records take.
+    While one is left, the recovery stream's floor reaches back
+    LEGACY_MARGIN_DAYS before the oldest of them, so the walk rewrites each with
+    its `cycleId`, and one the walk does not meet is no longer in WHOOP's
+    collection and is deleted, under the version the scan read it at.
     """
     import datetime as _dt
-    from urllib.parse import urlsplit as _urlsplit
+    from urllib.parse import quote as _quote
 
     import requests
 
-    AUTHORITY = "providers.substrate.reamde.dev/whoop"
-    USER_TYPE = AUTHORITY + "/user"
-    CYCLE_TYPE = AUTHORITY + "/cycle"
-    RECOVERY_TYPE = AUTHORITY + "/recovery"
-    SLEEP_TYPE = AUTHORITY + "/sleep"
-    WORKOUT_TYPE = AUTHORITY + "/workout"
-    ACCOUNT_TYPE = AUTHORITY + "/account"
-
-    DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
-    API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
-    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    # The bundle's shared module (`modules:` on the bundle document): the row
+    # mapping, the origin pin and the 429 hold.
+    from whoop_mirror import (ACCOUNT_KIND, CYCLE_KIND, RECOVERY_KIND, SLEEP_KIND,
+                              USER_KIND, WORKOUT_KIND, cycle_row, recovery_row,
+                              sleep_row, workout_row)
+    from whoop_mirror import api_base as _api_base
+    from whoop_mirror import check_origin as _check_origin
+    from whoop_mirror import held as _held
+    from whoop_mirror import mint as _mint
+    from whoop_mirror import parse as _parse
+    from whoop_mirror import rid as _rid
+    from whoop_mirror import stored_rows as _stored_rows
+    from whoop_mirror import take as _take
+    from whoop_mirror import write_row as _write_row
 
     # WHOOP caps a page at 25 and defaults to 10. It is a request parameter, so it
     # is part of the recording name the mock's exact lookup builds — and it is one
@@ -1502,12 +1912,35 @@ data:
     # A status line, never a body.
     REASON_MAX = 200
 
-    # The three values the v2 schema closes `score_state` at, and the spelling the
-    # loader admits. THE SYNC CARRIES THE SAME TABLE THE DECLARATION DOES (§2): a
-    # value outside it leaves the property ABSENT rather than refusing the page,
-    # because one new WHOOP word must not cost an account its whole run.
-    SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
-                    "UNSCORABLE": "unscorable"}
+
+    # Per stream: the mirror kind it writes, the collection field its row id is
+    # composed from (a recovery has no id and is keyed on the cycle it scores),
+    # the stored property holding that WHOOP id, and the read that fetches one
+    # object back by it.
+    KINDS = {"cycle": CYCLE_KIND, "recovery": RECOVERY_KIND, "sleep": SLEEP_KIND,
+             "workout": WORKOUT_KIND}
+    UPSTREAM_KEY = {"cycle": "id", "recovery": "cycle_id", "sleep": "id",
+                    "workout": "id"}
+    UPSTREAM_PROPERTY = {"cycle": "cycleId", "sleep": "sleepId",
+                         "workout": "workoutId"}
+    READ_BACK = {"cycle": "/v2/cycle/%s", "recovery": "/v2/cycle/%s/recovery",
+                 "sleep": "/v2/activity/sleep/%s",
+                 "workout": "/v2/activity/workout/%s"}
+    # The rows of a walked stream's window one reconciliation step lists. The
+    # rows the walk did not meet among them are read back before the next step,
+    # each spending one of WHOOP's 100 requests a minute.
+    SCAN_PAGE = 100
+    # How far before the oldest recovery without a `cycleId` its re-walk starts.
+    # WHOOP's `start` filter is on the cycle and a recovery's `at` is when it was
+    # created, a day at most after its cycle began, so a week of margin puts
+    # every such recovery's cycle inside the walk.
+    LEGACY_MARGIN_DAYS = 7
+    # The host reads one invocation may make: `permissions.reads.budgets.calls`.
+    # A reconciliation step that could cross it waits for the next invocation,
+    # whose budget is fresh; the costliest step is a scan, one list and up to a
+    # get per row it lists.
+    HOST_CALLS = 200
+    STEP_CALLS = SCAN_PAGE + 1
 
 
     # --------------------------------------------------------------- plumbing
@@ -1524,41 +1957,14 @@ data:
         return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-    def _parse(value):
-        """An RFC 3339 instant, or None. WHOOP spells them with a `Z` and with
-        fractional seconds; fromisoformat takes both from 3.11."""
-        if not value:
-            return None
-        try:
-            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-
-
-    def _check_origin(url):
-        """The bundle-side origin pin.
-
-        A request that would carry the injected token may reach ONLY the pinned
-        production host over HTTPS, or loopback (the test seam / the mock server).
-        `apiBase` is an owner-editable config property, so it is checked, never
-        trusted; the engine's `network` capability is declared-but-unenforced, so
-        this refusal is the defence until host-side egress enforcement exists.
-        """
-        u = _urlsplit(url)
-        host = (u.hostname or "").lower()
-        if host in LOOPBACK_HOSTS:
-            return
-        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
-            return
-        raise RuntimeError(
-            "whoop: refusing to send credentials to %s://%s:%s — only "
-            "https://api.prod.whoop.com or loopback"
-            % (u.scheme, host or "?", u.port or "-"))
-
-
     class _Permanent(Exception):
         """An answer asking again cannot change: a revoked grant, a missing scope,
         a malformed request. Recorded once; the stream is not retried this run."""
+
+
+    class _NotFound(_Permanent):
+        """A 404. On a read by id it is the one sign a deletion leaves, because
+        WHOOP's collections carry no tombstone."""
 
 
     class _RateLimited(Exception):
@@ -1615,6 +2021,8 @@ data:
             raise _Permanent("unauthorized (was the grant revoked at WHOOP?)")
         if resp.status_code == 403:
             raise _Permanent("forbidden (a scope this grant does not carry)")
+        if resp.status_code == 404:
+            raise _NotFound("whoop returned HTTP 404")
         if 400 <= resp.status_code < 500 and resp.status_code != 408:
             raise _Permanent("whoop returned HTTP %d" % resp.status_code)
         resp.raise_for_status()
@@ -1663,16 +2071,6 @@ data:
         `lastSyncedAt` would loop forever on a request dated in the future."""
         want = props.get("syncRequestedAt")
         return bool(want) and str(want) != str(props.get("syncRequestedAck") or "")
-
-
-    def _held(props):
-        """A 429 said WHEN, and that beats EVERY reason to start — a schedule, an
-        explicit `syncRequestedAt`, a record trigger, an operator's
-        `args.account`. Retrying inside the window is what earns the next one, so
-        this is checked on every entry path and not only on the cadence sweep
-        (Codex review, finding 2)."""
-        hold = _parse(props.get("retryNotBefore"))
-        return hold is not None and _dt.datetime.now(_dt.timezone.utc) < hold
 
 
     def _due(props):
@@ -1737,104 +2135,25 @@ data:
     # is keyed on the cycle it scores, which is literally how WHOOP addresses it
     # (`GET /v2/cycle/{cycleId}/recovery`).
 
-    def _rid(host, aid, prefix, key):
-        return host.ids.external("whoop", aid, prefix + "/" + str(key))
+    def _row_id(host, aid, key, rec):
+        """The row id one collection record lands at, or "" when it carries no
+        id to compose it from (the ingest then skips and counts it)."""
+        upstream = rec.get(UPSTREAM_KEY[key])
+        if upstream in (None, ""):
+            return ""
+        return _rid(host, aid, key, upstream)
+
+
+    def _ref_id(value):
+        """The record id a stored reference names, in either spelling."""
+        if isinstance(value, dict):
+            value = value.get("ref")
+        return str(value or "").rsplit("/", 1)[-1]
 
 
     # ------------------------------------------------------ property shapes
-    # One rule, everywhere: from an AUTHORITATIVE payload a declared property the
-    # response omits is None, which the PATCH writes as a delete; a key carried as
-    # null is None too. `_mint` is the non-null half, which is what a create may
-    # carry.
-
-    def _take(dst, src, pairs, authoritative=True):
-        """One scalar each, with §1's presence rule.
-
-        An EXPLICIT EMPTY IS A CLEAR, and `""` is never written through: nothing
-        WHOOP sends has the empty string as a legal value, and half of these
-        properties are `datetime`, which would refuse it and take the whole page
-        down with it (§1, and the Slack v2 amendment behind it).
-        """
-        for api, prop in pairs:
-            if api in src:
-                value = src[api]
-                dst[prop] = None if value == "" else value
-            elif authoritative:
-                dst[prop] = None
-        return dst
-
-
-    def _mint(props):
-        return {k: v for k, v in props.items() if v is not None}
-
-
-    def _score_state(props, rec):
-        """`score_state` onto the row, by the table the DECLARATION carries (§2).
-
-        Three outcomes, and they are three different facts:
-          * a word the table holds -> the spelled enum value;
-          * a word it does NOT hold -> the property is left ABSENT. The enum would
-            refuse a value it does not know, and losing one property beats refusing
-            the whole page; a new WHOOP word is a widening, so bump the package;
-          * the key missing from an AUTHORITATIVE payload -> None, a delete.
-        """
-        if "score_state" not in rec:
-            props["scoreState"] = None
-            return
-        value = SCORE_STATES.get(str(rec.get("score_state") or "").upper())
-        if value is not None:
-            props["scoreState"] = value
-
-
-    def _obj(src, pairs):
-        """One nested object, written WHOLE or not at all (§1: a patch replaces an
-        object value entire). None when WHOOP sent no object — `score` is absent
-        unless the record is SCORED, and an empty object is not the same thing."""
-        if not isinstance(src, dict):
-            return None
-        out = _take({}, src, pairs, authoritative=False)
-        return out or None
-
-
-    CYCLE_SCORE = (("strain", "strain"), ("kilojoule", "kilojoule"),
-                   ("average_heart_rate", "averageHeartRate"),
-                   ("max_heart_rate", "maxHeartRate"))
-    RECOVERY_SCORE = (("user_calibrating", "userCalibrating"),
-                      ("recovery_score", "recoveryScore"),
-                      ("resting_heart_rate", "restingHeartRate"),
-                      ("hrv_rmssd_milli", "hrvRmssdMilli"),
-                      ("spo2_percentage", "spo2Percentage"),
-                      ("skin_temp_celsius", "skinTempCelsius"))
-    SLEEP_SCORE = (("respiratory_rate", "respiratoryRate"),
-                   ("sleep_performance_percentage", "sleepPerformancePercentage"),
-                   ("sleep_consistency_percentage", "sleepConsistencyPercentage"),
-                   ("sleep_efficiency_percentage", "sleepEfficiencyPercentage"))
-    STAGE_SUMMARY = (("total_in_bed_time_milli", "totalInBedTimeMilli"),
-                     ("total_awake_time_milli", "totalAwakeTimeMilli"),
-                     ("total_no_data_time_milli", "totalNoDataTimeMilli"),
-                     ("total_light_sleep_time_milli", "totalLightSleepTimeMilli"),
-                     ("total_slow_wave_sleep_time_milli", "totalSlowWaveSleepTimeMilli"),
-                     ("total_rem_sleep_time_milli", "totalRemSleepTimeMilli"),
-                     ("sleep_cycle_count", "sleepCycleCount"),
-                     ("disturbance_count", "disturbanceCount"))
-    SLEEP_NEEDED = (("baseline_milli", "baselineMilli"),
-                    ("need_from_sleep_debt_milli", "needFromSleepDebtMilli"),
-                    ("need_from_recent_strain_milli", "needFromRecentStrainMilli"),
-                    ("need_from_recent_nap_milli", "needFromRecentNapMilli"))
-    WORKOUT_SCORE = (("strain", "strain"),
-                     ("average_heart_rate", "averageHeartRate"),
-                     ("max_heart_rate", "maxHeartRate"), ("kilojoule", "kilojoule"),
-                     ("percent_recorded", "percentRecorded"),
-                     ("distance_meter", "distanceMeter"),
-                     ("altitude_gain_meter", "altitudeGainMeter"),
-                     ("altitude_change_meter", "altitudeChangeMeter"))
-    ZONE_DURATIONS = (("zone_zero_milli", "zoneZeroMilli"),
-                      ("zone_one_milli", "zoneOneMilli"),
-                      ("zone_two_milli", "zoneTwoMilli"),
-                      ("zone_three_milli", "zoneThreeMilli"),
-                      ("zone_four_milli", "zoneFourMilli"),
-                      ("zone_five_milli", "zoneFiveMilli"))
-
+    # The rules every row shares are the shared module's (`take`, `mint`,
+    # `span`); the member's mailbox is this body's alone.
 
     def _email(value):
         """§2: a value that does not parse as a mailbox is not written. One bad
@@ -1848,43 +2167,40 @@ data:
         return v
 
 
-    def _span(props, rec):
-        """`start` and `end` into the temporal trait's slots.
-
-        They are the trait's and are NOT redeclared (§4). `end` is absent on the
-        CURRENT cycle, and because a collection payload is AUTHORITATIVE that
-        absence is a CLEAR and not something to leave alone: a cycle that WAS
-        closed and comes back open — which is what WHOOP sends the moment it
-        reopens one — has to lose its `endsAt`, or the row says the day ended and
-        the API says it did not. §4 decides where the instant lands; it does not
-        exempt the slot from §1's write contract. (Codex review, finding 7.)
-
-        `at` is never nulled: `start` is required on all three kinds that bind a
-        range, so an absent one is a malformed record and the caller skips it.
-        """
-        if rec.get("start"):
-            props["at"] = rec["start"]
-        props["endsAt"] = rec.get("end") or None
-
-
     class _Sink:
         """Stages the rows one page produces.
 
-        Every row is minted then patched: `put(if_absent=True)` with the payload's
-        non-null half, then `patch` with the whole of it, nulls included. The put
-        can never clobber a fuller row and the patch is what makes an AUTHORITATIVE
-        omission a delete.
+        A mirror row is written whole, nulls included, which is what makes an
+        AUTHORITATIVE omission a delete, and under the version of the row as
+        this invocation read it (`whoop_mirror.write_row`). The member row is
+        the exception: it carries no revision, so its thin mint is a create-only
+        put and its profile a plain patch.
         """
 
         def __init__(self, host, aid):
             self.host = host
             self.aid = aid
             self.seen = set()
+            # {row id: the stored row} for the rows the current page names.
+            self.stored = {}
+            # The mirror rows this invocation already staged. A second write to
+            # one would carry the version the first one moves past, and fail the
+            # whole delivery against its own write.
+            self.written = set()
 
         def write(self, kind, rid, props):
-            self.host.effects.put(kind, rid, properties=_mint(props), if_absent=True)
-            self.host.effects.patch(kind, rid, properties=props)
             self.seen.add(rid)
+            if (kind, rid) in self.written:
+                self.host.log("whoop: %s %s is named twice in one invocation; "
+                              "kept the first" % (kind.rsplit("/", 1)[-1], rid))
+                return rid
+            if not _write_row(self.host, kind, rid, props, self.stored.get(rid)):
+                # A page read before a newer write landed (a later run) must
+                # not put the older revision back.
+                self.host.log("whoop: %s %s is older than the stored row; kept it"
+                              % (kind.rsplit("/", 1)[-1], rid))
+                return rid
+            self.written.add((kind, rid))
             return rid
 
         # -- the member -----------------------------------------------------
@@ -1895,7 +2211,7 @@ data:
             hydrated."""
             rid = _rid(self.host, self.aid, "user", user_id)
             if rid not in self.seen:
-                self.host.effects.put(USER_TYPE, rid, if_absent=True, properties={
+                self.host.effects.put(USER_KIND, rid, if_absent=True, properties={
                     "account": self.aid, "userId": int(user_id)})
                 self.seen.add(rid)
             return rid
@@ -1919,98 +2235,26 @@ data:
                 _take(props, body, (("height_meter", "heightMeter"),
                                     ("weight_kilogram", "weightKilogram"),
                                     ("max_heart_rate", "maxHeartRate")))
-            self.host.effects.put(USER_TYPE, rid, properties=_mint(props),
+            self.host.effects.put(USER_KIND, rid, properties=_mint(props),
                                   if_absent=True)
-            self.host.effects.patch(USER_TYPE, rid, properties=props)
+            self.host.effects.patch(USER_KIND, rid, properties=props)
             self.seen.add(rid)
             return rid
 
         # -- the four streams ------------------------------------------------
+        # The mapping is the shared module's, so every WHOOP function writes
+        # the same shape for the same object.
         def cycle(self, rec, user_rid):
-            cid = rec.get("id")
-            if cid in (None, ""):
-                raise ValueError("cycle record carries no id")
-            props = {"account": self.aid, "cycleId": int(cid), "user": user_rid}
-            _span(props, rec)
-            _take(props, rec, (("timezone_offset", "timezoneOffset"),
-                               ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            props["score"] = _obj(rec.get("score"), CYCLE_SCORE)
-            return self.write(CYCLE_TYPE, _rid(self.host, self.aid, "cycle", cid),
-                              props)
+            return self.write(*cycle_row(self.host, self.aid, user_rid, rec))
 
         def recovery(self, rec, user_rid):
-            cid = rec.get("cycle_id")
-            if cid in (None, ""):
-                raise ValueError("recovery record carries no cycle_id — and a v2 "
-                                 "recovery has no id of its own to fall back on")
-            sid = rec.get("sleep_id")
-            if sid in (None, ""):
-                raise ValueError("recovery record carries no sleep_id")
-            props = {"account": self.aid, "user": user_rid,
-                     "cycle": _rid(self.host, self.aid, "cycle", cid),
-                     "sleep": _rid(self.host, self.aid, "sleep", sid)}
-            # `created_at` is the trait's `at` and is not redeclared.
-            if rec.get("created_at"):
-                props["at"] = rec["created_at"]
-            _take(props, rec, (("updated_at", "updatedAt"),))
-            _score_state(props, rec)
-            props["score"] = _obj(rec.get("score"), RECOVERY_SCORE)
-            return self.write(RECOVERY_TYPE,
-                              _rid(self.host, self.aid, "recovery", cid), props)
+            return self.write(*recovery_row(self.host, self.aid, user_rid, rec))
 
         def sleep(self, rec, user_rid):
-            sid = rec.get("id")
-            if sid in (None, ""):
-                raise ValueError("sleep record carries no id")
-            cid = rec.get("cycle_id")
-            if cid in (None, ""):
-                raise ValueError("sleep record carries no cycle_id")
-            props = {"account": self.aid, "sleepId": str(sid), "user": user_rid,
-                     "cycle": _rid(self.host, self.aid, "cycle", cid)}
-            _span(props, rec)
-            _take(props, rec, (("v1_id", "v1Id"),
-                               ("timezone_offset", "timezoneOffset"),
-                               ("nap", "nap"), ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            score = _obj(rec.get("score"), SLEEP_SCORE) or {}
-            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
-            stages = _obj(raw.get("stage_summary"), STAGE_SUMMARY)
-            if stages:
-                score["stageSummary"] = stages
-            needed = _obj(raw.get("sleep_needed"), SLEEP_NEEDED)
-            if needed:
-                score["sleepNeeded"] = needed
-            props["score"] = score or None
-            return self.write(SLEEP_TYPE, _rid(self.host, self.aid, "sleep", sid),
-                              props)
+            return self.write(*sleep_row(self.host, self.aid, user_rid, rec))
 
         def workout(self, rec, user_rid):
-            wid = rec.get("id")
-            if wid in (None, ""):
-                raise ValueError("workout record carries no id")
-            props = {"account": self.aid, "workoutId": str(wid), "user": user_rid}
-            _span(props, rec)
-            _take(props, rec, (("v1_id", "v1Id"),
-                               ("timezone_offset", "timezoneOffset"),
-                               ("sport_name", "sportName"), ("sport_id", "sportId"),
-                               ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            score = _obj(rec.get("score"), WORKOUT_SCORE) or {}
-            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
-            # v2 spells it `zone_durations`; v1 spelled it `zone_duration`. Both are
-            # read so a v1-era recording is not silently dropped, and the property
-            # takes the API's CURRENT name.
-            zones = _obj(raw.get("zone_durations") or raw.get("zone_duration"),
-                         ZONE_DURATIONS)
-            if zones:
-                score["zoneDurations"] = zones
-            props["score"] = score or None
-            return self.write(WORKOUT_TYPE,
-                              _rid(self.host, self.aid, "workout", wid), props)
+            return self.write(*workout_row(self.host, self.aid, user_rid, rec))
 
 
     _INGEST = {"cycle": _Sink.cycle, "recovery": _Sink.recovery,
@@ -2036,12 +2280,6 @@ data:
                 "dispatch": dispatch, "startedAt": started or _now()}
 
 
-    def _api_base(cfg):
-        client = ((cfg.get("inputs") or {}).get("client") or {})
-        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
-        return (base or DEFAULT_API_BASE).rstrip("/")
-
-
     def _elapsed_ms(started, ended):
         """How long a run took, in whole milliseconds, or None if either stamp is
         unreadable. A duration is never negative: a checkpoint that outlived a
@@ -2058,10 +2296,11 @@ data:
 
         The unit is a COLLECTION, because that is what this drain queues: `total`
         is the collections this account has enabled, `pending` the ones still to
-        walk, `done` the ones that ran out of pages, and `phase` the one the
-        budget was spent in — `profile` before any of them and `done` when the
-        account drained. A stream abandoned on a permanent failure counts as
-        neither done nor pending; it is named in `syncMessage`.
+        walk, `done` the ones that ran out of pages and read back what they
+        missed, and `phase` the one the budget was spent in — `profile` before
+        any of them and `done` when the account drained. A stream abandoned on
+        a permanent failure counts as neither done nor pending; it is named in
+        `syncMessage`.
         """
         enabled = _enabled(props)
         left = [k for k in (cur.get("streams") or []) if k in enabled]
@@ -2070,6 +2309,9 @@ data:
             phase = "profile"
         elif left:
             phase = left[0]
+        elif cur.get("scan"):
+            # Walked, and reading back what the walk did not meet.
+            phase = cur["scan"]["key"]
         else:
             phase = "done"
         return {"phase": phase, "done": len(drained), "total": len(enabled),
@@ -2181,7 +2423,7 @@ data:
             patch["lastSyncStartedAt"] = cur["startedAt"]
             if took is not None:
                 patch["lastSyncDurationMs"] = took
-        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=patch)
+        host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid, properties=patch)
 
 
     def _next_account(host, cur, queue):
@@ -2194,6 +2436,139 @@ data:
         return None
 
 
+    def _upstream_of(host, key, props):
+        """The WHOOP id a stored row is read back by. A recovery is addressed by
+        the cycle it scores: its own `cycleId`, or on a row written before it
+        carried one, its cycle row's."""
+        if key != "recovery":
+            return props.get(UPSTREAM_PROPERTY[key])
+        if props.get("cycleId") not in (None, ""):
+            return props["cycleId"]
+        cid = _ref_id(props.get("cycle"))
+        if not cid:
+            return None
+        cycle = host.records.get(CYCLE_KIND, cid)
+        return ((cycle or {}).get("properties") or {}).get("cycleId")
+
+
+    def _legacy_floor(host, aid):
+        """The floor that re-reads every recovery row this account holds with no
+        `cycleId` (written before version 21), or None when none is left."""
+        page = host.records.list(RECOVERY_KIND,
+                                 where={"account": {"eq": aid},
+                                        "cycleId": {"exists": False}},
+                                 first=1, order="at")
+        rows = page.get("records") or []
+        at = _parse(((rows[0].get("properties") or {}) if rows else {}).get("at"))
+        if at is None:
+            return None
+        return _iso(at - _dt.timedelta(days=LEGACY_MARGIN_DAYS))
+
+
+    def _scan(host, aid, cur):
+        """One step of a walked stream's reconciliation.
+
+        Lists the next SCAN_PAGE rows the mirror holds in the stream's window and
+        queues for a read-back the ones the walk did not meet. Once the window is
+        exhausted and every queued read-back has answered, the stream is drained
+        and its cursor may move. A recovery left from before version 21, with no
+        id to read it back by, is deleted when this walk was its re-walk: the
+        walk reached back past it and WHOOP's collection no longer holds it.
+        Returns the host reads it made."""
+        scan = cur["scan"]
+        key = scan["key"]
+        if scan.get("done"):
+            cur["drained"] = list(cur.get("drained") or []) + [[key, scan["end"]]]
+            (cur.get("seen") or {}).pop(key, None)
+            cur["scan"] = None
+            return 0
+        reads = 1
+        seen = set((cur.get("seen") or {}).get(key) or [])
+        page = host.records.list(KINDS[key],
+                                 where={"account": {"eq": aid},
+                                        "at": {"gte": cur["floors"][key]}},
+                                 first=SCAN_PAGE, after=scan.get("after") or None)
+        rows = page.get("records") or []
+        queued = []
+        for ent in rows:
+            rid = str(ent.get("id") or "")
+            if not rid or rid in seen:
+                continue
+            props = ent.get("properties") or {}
+            if key == "recovery" and props.get("cycleId") in (None, ""):
+                reads += 1
+            upstream = _upstream_of(host, key, props)
+            if upstream in (None, ""):
+                if key in (cur.get("legacy") or []):
+                    # Under the version listed: a run that rewrote the row since
+                    # (and filled its `cycleId`) fails this delivery `conflict`.
+                    host.effects.delete(KINDS[key], rid,
+                                        if_version=host.version(ent))
+                    cur["deleted"] = int(cur.get("deleted") or 0) + 1
+                    host.log("whoop: %s row %s has no WHOOP id and its re-walk did "
+                             "not meet it; deleted" % (key, rid))
+                else:
+                    host.log("whoop: %s row %s names no WHOOP id to read it back by"
+                             % (key, rid))
+                continue
+            queued.append([key, rid, str(upstream)])
+        cur["orphans"] = list(cur.get("orphans") or []) + queued
+        after = page.get("cursor") or ""
+        if rows and after:
+            scan["after"] = after
+        else:
+            scan["done"] = True
+        return reads
+
+
+    def _follow_up(host, base, token, sink, user_rid, cur):
+        """Read back the first row the reconciliation queued. A 404 deletes it;
+        an object WHOOP still has is written as a page record would be. Both
+        act under the row as it stands NOW, not as it stood when it was queued:
+        a run resumed after another wrote the row must not put an older
+        revision over it or delete what that run wrote. Any other refusal is
+        recorded, the row kept and the stream's reconciliation abandoned, so
+        its cursor does not move past a window whose deletions are unknown. A
+        429 or a transport error ends the run before the stream drains."""
+        orphans = list(cur.get("orphans") or [])
+        key, rid, upstream = orphans[0][:3]
+        cur["orphans"] = orphans[1:]
+        row = host.records.get(KINDS[key], rid)
+        if row is None or row.get("deletedAt"):
+            # Deleted since it was queued: nothing is left to reconcile.
+            return
+        try:
+            rec = _get(base, token, READ_BACK[key] % _quote(upstream, safe=""))
+        except _NotFound:
+            host.effects.delete(KINDS[key], rid, if_version=host.version(row))
+            cur["deleted"] = int(cur.get("deleted") or 0) + 1
+            host.log("whoop: %s %s is gone at WHOOP; deleted row %s"
+                     % (key, upstream, rid))
+            return
+        except _Permanent as e:
+            # Not a 404, so whether WHOOP still has the object is unknown. The
+            # stream never drains this run and `_stamp` keeps its cursor; the
+            # rest of its read-backs would get the same answer.
+            cur["failed"] = list(cur.get("failed") or []) + \
+                [[key + " read-back", str(e)[:60]]]
+            cur["orphans"] = [o for o in cur["orphans"] if o[0] != key]
+            if (cur.get("scan") or {}).get("key") == key:
+                cur["scan"] = None
+            (cur.get("seen") or {}).pop(key, None)
+            return
+        try:
+            uid = rec.get("user_id")
+            who = sink.user_stub(uid) if uid not in (None, "") else user_rid
+            if not who:
+                raise ValueError("record carries no user_id and no profile has "
+                                 "been read")
+            sink.stored = {rid: row}
+            _INGEST[key](sink, rec, who)
+        except Exception as e:                                      # noqa: BLE001
+            cur["skipped"] = int(cur.get("skipped") or 0) + 1
+            host.log("whoop: skip a %s read-back for %s: %s" % (key, sink.aid, e))
+
+
     def _sync_account(host, base, acct, aid, props, token, cur, queue):
         budget = _Budget()
         now = _dt.datetime.now(_dt.timezone.utc)
@@ -2203,8 +2578,16 @@ data:
             # STREAM, so every page of one stream reads the same interval and a
             # stalled stream's floor is its own.
             streams = _enabled(props)
-            cur.update({"queue": queue, "streams": streams,
-                        "floors": {k: _floor(props, k, now) for k in streams},
+            floors = {k: _floor(props, k, now) for k in streams}
+            reconcile = [k for k in streams
+                         if (props.get("syncCursors") or {}).get(k)]
+            legacy = []
+            if "recovery" in reconcile:
+                deep = _legacy_floor(host, aid)
+                if deep is not None and _parse(deep) < _parse(floors["recovery"]):
+                    floors["recovery"] = deep
+                    legacy = ["recovery"]
+            cur.update({"queue": queue, "streams": streams, "floors": floors,
                         # The instant the walk BEGAN, pinned here and carried
                         # through every invocation of the drain. A cursor stamped
                         # with the clock of whichever invocation happened to drain
@@ -2213,7 +2596,11 @@ data:
                         # past them (Codex review, finding 13).
                         "runStart": _iso(now),
                         "requested": str(props.get("syncRequestedAt") or ""),
-                        "drained": [], "failed": []})
+                        "drained": [], "failed": [],
+                        # Only a stream that already had a cursor walks a
+                        # window short enough to read back what it missed.
+                        "reconcile": reconcile, "legacy": legacy,
+                        "seen": {}, "scan": None, "orphans": [], "deleted": 0})
 
         sink = _Sink(host, aid)
         user_rid = cur.get("userRid") or ""
@@ -2243,19 +2630,30 @@ data:
                             [["body", str(e)[:60]]]
                 user_rid = sink.user_row(user_id, profile, body)
                 # The account's own identity, as a reference (§1).
-                host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
+                host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid,
                                    properties={"user": user_rid})
             cur.update({"profileDone": True, "userRid": user_rid})
             if budget.spent():
                 return {"more": host.page.more(cur)}
 
         streams = list(cur.get("streams") or [])
-        while streams:
+        # The host reads this invocation has made, against HOST_CALLS.
+        reads = 0
+        while streams or cur.get("orphans") or cur.get("scan"):
             # BEFORE the request, not after the stream: one read may take the whole
             # of `requests`' 20-second timeout, and a run killed before it
             # checkpoints replays the same page forever.
-            if budget.spent():
+            if budget.spent() or reads + STEP_CALLS > HOST_CALLS:
                 return {"more": host.page.more(cur)}
+            if cur.get("orphans"):
+                # A walked stream's read-backs, one per turn, before the next
+                # scan step and the next stream.
+                _follow_up(host, base, token, sink, user_rid, cur)
+                reads += 1
+                continue
+            if cur.get("scan"):
+                reads += _scan(host, aid, cur)
+                continue
             key = streams[0]
             path = next(p for k, _, p in STREAMS if k == key)
             params = {"limit": PAGE_LIMIT, "start": cur["floors"][key]}
@@ -2278,6 +2676,16 @@ data:
                 continue
 
             page = resp.get("records") or []
+            # The stored revision of every row this page names (`_Sink.write`
+            # keeps a newer row), and the rows the walk met, which the
+            # reconciliation leaves alone.
+            rids = [_row_id(host, aid, key, rec) for rec in page]
+            sink.stored = _stored_rows(host, KINDS[key], rids)
+            reads += 2
+            if key in (cur.get("reconcile") or []):
+                met = cur.setdefault("seen", {}).setdefault(key, [])
+                held = set(met)
+                met.extend(r for r in rids if r and r not in held)
             # THE REFERENCED ROW FIRST: one thin `user` mint per distinct member id
             # the page named, before any row that references it. GUARDED, because
             # this pass used to sit outside the per-record `try` and a `user_id`
@@ -2300,7 +2708,7 @@ data:
             if not user_rid and minted:
                 user_rid = sorted(minted.values())[0]
                 cur["userRid"] = user_rid
-                host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
+                host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid,
                                    properties={"user": user_rid})
             for rec in page:
                 # Records are independent: a malformed one is skipped and counted,
@@ -2320,14 +2728,18 @@ data:
             if token_next:
                 cur["nextToken"] = token_next
                 return {"more": host.page.more(cur)}
-            # This stream drained. Its new cursor is the RUN-START instant, never
-            # the local completion clock: a record WHOOP wrote while this walk was
-            # running is behind the floor of the next one only if the floor is the
-            # moment the walk began.
-            cur["drained"] = list(cur.get("drained") or []) \
-                + [[key, cur.get("runStart") or _iso(now)]]
+            # This stream's pages ran out. Its new cursor is the RUN-START instant,
+            # never the local completion clock: a record WHOOP wrote while this
+            # walk was running is behind the floor of the next one only if the
+            # floor is the moment the walk began. A reconciled stream banks it
+            # only once its window's read-backs have all answered (`_scan`).
+            end = cur.get("runStart") or _iso(now)
             streams = streams[1:]
             cur.update({"streams": streams, "nextToken": ""})
+            if key in (cur.get("reconcile") or []):
+                cur["scan"] = {"key": key, "after": "", "end": end}
+            else:
+                cur["drained"] = list(cur.get("drained") or []) + [[key, end]]
 
         # -- the account drained -------------------------------------------------
         _stamp(host, acct, aid, cur, error=None, completed=True)
@@ -2335,7 +2747,8 @@ data:
         if nxt:
             return nxt
         return {"output": {"account": aid, "records": cur.get("records") or 0,
-                           "skipped": cur.get("skipped") or 0}}
+                           "skipped": cur.get("skipped") or 0,
+                           "deleted": cur.get("deleted") or 0}}
 
 
     def main(input, host):
@@ -2355,7 +2768,7 @@ data:
             record = (input.get("envelope") or {}).get("record") or {}
             named = args.get("accounts") or (
                 [args["account"]] if args.get("account") else [])
-            if (record.get("kind") or "") == ACCOUNT_TYPE:
+            if (record.get("kind") or "") == ACCOUNT_KIND:
                 queue = [record.get("id")]
             elif named:
                 queue = [str(a) for a in named]
@@ -2400,7 +2813,7 @@ data:
                         # renders as `erroring` with the reason, not as one that
                         # has simply not run (substrate decision 0085).
                         host.effects.patch(
-                            (acct.get("kind") or ACCOUNT_TYPE), queue[0],
+                            (acct.get("kind") or ACCOUNT_KIND), queue[0],
                             properties={"syncStatus": want,
                                         "syncState": "erroring",
                                         "syncMessage": str(terr)[:400],

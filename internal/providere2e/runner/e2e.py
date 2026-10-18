@@ -1420,6 +1420,10 @@ def preferred_port(want: int) -> int:
         reaped = False
         while True:
             s = socket.socket()
+            # The mock binds with SO_REUSEADDR (http.server does), so the probe
+            # does too: a TIME_WAIT socket left by a run that just ended does
+            # not hold the port, while a live listener still does.
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", int(want)))
                 s.close()

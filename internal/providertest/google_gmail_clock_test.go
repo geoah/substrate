@@ -21,7 +21,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const googleGmailThreadType = googlePackage + "/gmailthread"
+const googleGmailThreadKind = googlePackage + "/gmailthread"
 
 // heavyGmail is one mailbox whose history delta runs over len(perPage)
 // pages: page n adds perPage[n] messages and deletes `deleted` messages
@@ -148,7 +148,7 @@ func (f *heavyGmail) emptiedThreads(t *testing.T, ds substrate.Dataset, aid stri
 			tid := "t-" + f.gone(page, i)
 			rid := runner.ExternalID("gmail-thread", aid, tid)
 			mustPut(t, ds, substrate.PutInput{
-				Kind: googleGmailThreadType, ID: rid,
+				Kind: googleGmailThreadKind, ID: rid,
 				Properties: map[string]any{"account": aid, "threadId": tid},
 			})
 			rows = append(rows, rid)
@@ -177,7 +177,7 @@ func heavyFires(t *testing.T, ds substrate.Dataset, fake *heavyGmail, aid string
 			"gmailLastSyncedAt": ago(3 * time.Hour), "gmailBackfillAnchorAt": ago(48 * time.Hour),
 			"gmailHistoryId": "8000", "gmailBackfillResume": resume,
 		})
-		cfg := stepConfig(googleAccountType, aid, props)
+		cfg := stepConfig(googleAccountKind, aid, props)
 		cfg["inputs"] = map[string]any{"client": map[string]any{
 			"properties": map[string]any{"apiBase": fake.ts.URL},
 		}}
@@ -203,7 +203,7 @@ func heavyFires(t *testing.T, ds substrate.Dataset, fake *heavyGmail, aid string
 			}
 			cursor = cur
 		}
-		row := mustGet(t, ds, googleAccountType, aid)
+		row := mustGet(t, ds, googleAccountKind, aid)
 		if row.Properties["gmailHistoryId"] == fake.historyID {
 			return took, effects
 		}
@@ -231,7 +231,7 @@ func assertRetracted(t *testing.T, ds substrate.Dataset, kind string, ids []stri
 func messagesIn(effects []engine.StepEffect) []string {
 	var ids []string
 	for _, ef := range effects {
-		if ef.Action == "put" && ef.Kind == googleGmailMsgType {
+		if ef.Action == "put" && ef.Kind == googleGmailMsgKind {
 			if id, ok := ef.Properties["messageId"].(string); ok && ef.Properties["payload"] != nil {
 				ids = append(ids, id)
 			}
@@ -262,7 +262,7 @@ func TestGoogleGmailASlowCPUHandsBackInsideTheMinute(t *testing.T) {
 	fake := &heavyGmail{historyID: "9000", perPage: []int{12, 3}, deleted: 2, htmlBytes: 600000, soup: true}
 	fake.start(t)
 	const aid = "acct-slowcpu"
-	mustPut(t, ds, substrate.PutInput{Kind: googleAccountType, ID: aid, Properties: map[string]any{"enabledGmail": true}})
+	mustPut(t, ds, substrate.PutInput{Kind: googleAccountKind, ID: aid, Properties: map[string]any{"enabledGmail": true}})
 	emptied := fake.emptiedThreads(t, ds, aid)
 
 	took, effects := heavyFires(t, ds, fake, aid, 50*time.Second, 2)
@@ -290,7 +290,7 @@ func TestGoogleGmailASlowCPUHandsBackInsideTheMinute(t *testing.T) {
 		}
 	}
 	var cut bool
-	for _, row := range listLive(t, ds, googleGmailMsgType) {
+	for _, row := range listLive(t, ds, googleGmailMsgKind) {
 		if body, _ := row.Properties["body"].(string); strings.Contains(body, "flattening the message's html took too long") {
 			cut = true
 		}
@@ -298,8 +298,8 @@ func TestGoogleGmailASlowCPUHandsBackInsideTheMinute(t *testing.T) {
 	if !cut {
 		t.Fatal("no body says its flatten was cut short")
 	}
-	assertRetracted(t, ds, googleGmailThreadType, emptied)
-	if resume, _ := mustGet(t, ds, googleAccountType, aid).Properties["gmailBackfillResume"].(map[string]any); len(resume) != 0 {
+	assertRetracted(t, ds, googleGmailThreadKind, emptied)
+	if resume, _ := mustGet(t, ds, googleAccountKind, aid).Properties["gmailBackfillResume"].(map[string]any); len(resume) != 0 {
 		t.Fatalf("resume = %v after the watermark landed, want nothing owed", resume)
 	}
 }
@@ -318,7 +318,7 @@ func TestGoogleGmailAHydrateFitsTheResponseFrame(t *testing.T) {
 	fake := &heavyGmail{historyID: "9000", perPage: []int{15}, htmlBytes: 600000}
 	fake.start(t)
 	const aid = "acct-frame"
-	mustPut(t, ds, substrate.PutInput{Kind: googleAccountType, ID: aid, Properties: map[string]any{"enabledGmail": true}})
+	mustPut(t, ds, substrate.PutInput{Kind: googleAccountKind, ID: aid, Properties: map[string]any{"enabledGmail": true}})
 
 	_, effects := heavyFires(t, ds, fake, aid, 50*time.Second, 1)
 
@@ -353,12 +353,12 @@ func TestGoogleGmailAHistoryPageEmptyingManyThreadsCompletes(t *testing.T) {
 	fake := &heavyGmail{historyID: "9000", perPage: []int{2}, deleted: 150, htmlBytes: 2000}
 	fake.start(t)
 	const aid = "acct-emptied"
-	mustPut(t, ds, substrate.PutInput{Kind: googleAccountType, ID: aid, Properties: map[string]any{"enabledGmail": true}})
+	mustPut(t, ds, substrate.PutInput{Kind: googleAccountKind, ID: aid, Properties: map[string]any{"enabledGmail": true}})
 	emptied := fake.emptiedThreads(t, ds, aid)
 
 	heavyFires(t, ds, fake, aid, 50*time.Second, 1)
 
-	assertRetracted(t, ds, googleGmailThreadType, emptied)
+	assertRetracted(t, ds, googleGmailThreadKind, emptied)
 	if got := len(gmailMessageIDs(t, ds)); got != 2 {
 		t.Fatalf("mirrored %d messages, want the page's 2", got)
 	}

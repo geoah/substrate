@@ -31,8 +31,8 @@ type effect struct {
 	// IfAbsent makes a put create-only: a live row is a no-op, and a
 	// tombstone counts as absent, so the put restores it.
 	IfAbsent bool
-	// IfVersion, when set, is an optimistic-concurrency precondition on a put
-	// or patch: the write applies only if the addressed record's stored version
+	// IfVersion, when set, is an optimistic-concurrency precondition on a put,
+	// a patch or a delete: the write applies only if the addressed record's stored version
 	// equals it, else the whole delivery fails ErrConflict. It is the safe
 	// read-then-conditional-write primitive — read a version through a host
 	// read, stage the write guarded by it. A non-existent record reads as
@@ -82,7 +82,7 @@ const (
 var effectKeys = map[string]map[string]bool{
 	effectPut:    {"action": true, "kind": true, "id": true, "ifAbsent": true, "ifVersion": true, "onConflict": true, "properties": true},
 	effectPatch:  {"action": true, "kind": true, "id": true, "properties": true, "offer": true, "ifVersion": true, "onConflict": true},
-	effectDelete: {"action": true, "kind": true, "id": true},
+	effectDelete: {"action": true, "kind": true, "id": true, "ifVersion": true, "onConflict": true},
 	effectMerge:  {"action": true, "kind": true, "id": true, "loser": true},
 	effectSplit:  {"action": true, "kind": true, "merge": true},
 }
@@ -181,6 +181,13 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 			// an intended contribution into a pinning direct write.
 			return ef, fmt.Errorf("patch: offer was removed in v1; contribute via a source type + recordmapping")
 		}
+	case effectDelete:
+		if err := decodeIfVersion(m, &ef); err != nil {
+			return ef, err
+		}
+		if err := decodeOnConflict(m, &ef); err != nil {
+			return ef, err
+		}
 	case effectMerge:
 		if !fn.Caps.AllowsMutation(vocabulary.MutationMerge) {
 			return ef, fmt.Errorf("merge needs the permissions.mutations grant %s lacks", fn.Identity())
@@ -202,7 +209,7 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 }
 
 // decodeIfVersion reads the optional optimistic-concurrency precondition off a
-// put or patch effect. It must be an integer version — a stale one fails the
+// put, patch or delete effect. It must be an integer version — a stale one fails the
 // whole delivery as a conflict, so a mistyped value must never silently drop
 // the precondition and let the write clobber a newer edit.
 func decodeIfVersion(m map[string]any, ef *effect) error {
@@ -218,8 +225,8 @@ func decodeIfVersion(m map[string]any, ef *effect) error {
 	return nil
 }
 
-// decodeOnConflict reads the optional lost-race policy off a put or patch
-// effect. It is refused without an `ifVersion` — there is no race to lose
+// decodeOnConflict reads the optional lost-race policy off a put, patch or
+// delete effect. It is refused without an `ifVersion` — there is no race to lose
 // without a precondition, so the key would read as a promise the engine does
 // not keep — and an unknown value is refused rather than defaulted, because
 // quietly reading a plausible-but-wrong word as park would turn a body's
@@ -442,7 +449,7 @@ func (t *txn) applyEffect(ef effect) error {
 		_, err := t.patch(eref{Kind: ef.Type, ID: ef.ID}, substrate.PatchInput{Properties: ef.Properties, IfVersion: ef.IfVersion})
 		return err
 	case effectDelete:
-		_, err := t.softDelete(eref{Kind: ef.Type, ID: ef.ID})
+		_, err := t.softDeleteIf(eref{Kind: ef.Type, ID: ef.ID}, ef.IfVersion)
 		return err
 	case effectMerge:
 		winner := eref{Kind: ef.Type, ID: ef.ID}

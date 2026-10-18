@@ -652,10 +652,10 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the seven **providers** under `kinds/providers.substrate.reamde.dev`, and the
-twelve **samples** under `samples/` (`people`, `tasks`, `messaging`,
+thirteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `observations`, `health`, and the worked examples
-`llm`, `notes`, `readinglist`, `pebble`, `firecrawl`). A repository takes a
-sample itself: registration seeds
+`llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`). A
+repository takes a sample itself: registration seeds
 `substrate.reamde.dev/core`, imports the `llm` sample onto the repository's
 own authority with its three keyless `provider` rows (`openai`, `anthropic`,
 `gemini`), and nothing else.

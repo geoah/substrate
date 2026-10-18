@@ -1,8 +1,8 @@
 # Bundles catalog
 
-The catalog in the binary serves nineteen bundles, in the two tiers
+The catalog in the binary serves twenty bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and twelve samples. This page covers twelve of them;
+draws: seven providers and thirteen samples. This page covers thirteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
@@ -19,8 +19,8 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
-a worked example to read and copy, imported under the repository's own
+**Six samples**: LLM, notes, the reading list, Firecrawl, Pebble and WHOOP to
+health. Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -73,6 +73,7 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+| WHOOP to health | Sample | none        | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -733,8 +734,8 @@ account's enabled toggles derive: `read:cycles` for `enabledCycles`,
 
 - **Kinds (7)**: `config` (the WHOOP OAuth app), `account` (the connection,
   and every cursor in the closure), and the mirrors `user` (the member),
-  `cycle` (the wake-to-wake day WHOOP scores strain over), `recovery` (the
-  verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
+  `cycle` (WHOOP's physiological day, from one sleep onset to the next,
+  which WHOOP scores strain over), `recovery` (the verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
   with `nap`) and `workout` (a recorded activity).
 - **Functions (1)**: `whoopsync` reads the member's profile and body
   measurement, then walks `/v2/cycle`, `/v2/recovery`, `/v2/activity/sleep`
@@ -820,8 +821,25 @@ current cycle has no `end` and so no `endsAt`. `recovery` binds
 `sleep.sleepId` and `workout.workoutId` are v2 UUID strings, each carrying the
 retired v1 integer beside it as `v1Id`; `cycle.cycleId` and `user.userId` are
 integers; a v2 recovery has no id of its own, so its row is keyed on the cycle
-it scores. The references are `recovery.cycle`, `recovery.sleep`,
+it scores and keeps that cycle's `cycleId`, which is what the sync reads it
+back by when no cycle row exists. The references are `recovery.cycle`, `recovery.sleep`,
 `sleep.cycle`, and `user` and `account` on every mirror.
+
+**Revisions and deletions.** WHOOP's `updated_at` is the only revision an
+object has: the sync never writes a payload whose `updated_at` is older
+than the stored row's `updatedAt`, and a payload equal to the stored row
+changes nothing, so re-reading a page is silent and a rescored cycle is
+rewritten. Each write is made under the version of the row it was compared
+with: if another run wrote or deleted the row in between, the write is
+refused as a conflict and retried against the row as it now stands. A
+deleted object just stops appearing in its collection. When a collection
+that already has a cursor drains, `whoopsync` reads back by id each row the
+mirror holds in that run's window (the 48 hours before the cursor, and later)
+that the walk did not see: a `404` deletes the row, and any other answer
+keeps it. The collection's cursor moves only once every read-back has
+answered, so a `429` part-way leaves the window to the next run. A first
+sync reads nothing back, and a deletion older than the window does not reach
+the mirror.
 
 **What it does not do.** No writeback, and no mirror carries a `json` blob, a
 sync cursor or a page token. There is no `sport` kind: `workout.sportName` is
@@ -1518,5 +1536,106 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
   -F "client=ring" \
   -F "audio=@empty.m4a;type=audio/mp4;filename=recording.m4a"
 ```
+
+## WHOOP to health (sample)
+
+Turns [WHOOP](#whoop) mirror rows into [observations](observations.md) and
+health records under the repository's own authority. WHOOP sends scored
+summaries, never raw samples, so it writes no traces. Its outputs are
+read-only to the owner: each delivery and replay rewrites them, so a
+correction is the owner's own record from a source ranked above WHOOP
+([correcting a value](observations.md#correcting-a-value-an-adapter-wrote)). Package
+`samples.substrate.reamde.dev/healthwhoop` requires `health` (and so
+`observations`) and the WHOOP provider at version 21 or later, the version
+that deletes a mirror row WHOOP deleted.
+
+- **Kinds**: none; it writes `observations/observation`, `observations/source`,
+  `health/sleep` and `health/workout`.
+- **Functions (1)**: `adaptwhoop` rebuilds every record one mirror row
+  implies and hands the set to `host.observed.reconcile`, which writes what
+  changed and deletes the records naming that row in `origin` that it no
+  longer implies. A deleted mirror row implies nothing, so its records go with
+  it. A sleep delivery rebuilds the recoveries that name the sleep, because
+  a recovery's records span its night, and a cycle delivery rebuilds the
+  cycle's recoveries whose sleep row is absent.
+- **Triggers (1)**: `healthwhoop-on-mirror` fires `adaptwhoop` on every
+  create, update and delete of a WHOOP `cycle`, `recovery`, `sleep` or
+  `workout` row. It declares `fromStart`, so the import creates it with its
+  cursor at the changelog's start and the rows the mirror held before the
+  import are converted without a replay by hand. Delivering a row already
+  converted writes nothing.
+
+| WHOOP field | Written as | Form | Unit |
+| --- | --- | --- | --- |
+| recovery `recoveryScore` | `health/whoop_recovery` | summary, `vendor`, period `sleep`, over the night it scores | `%` |
+| recovery `hrvRmssdMilli` | `health/hrv_rmssd` | summary, `vendor`, period `sleep`, over the night it scores | `ms` |
+| recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `sleep`, over the night it scores | `/min` |
+| recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `sleep`, over the night it scores | `%` |
+| recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `sleep`, over the night it scores | `Cel` |
+| cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `{score}` |
+| cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
+| cycle `averageHeartRate`, `maxHeartRate` | `health/heart_rate` | summary, `avg` and `max`, period `cycle` | `/min` |
+| workout `averageHeartRate`, `maxHeartRate` | `health/heart_rate`, channel `workout` | summary, `avg` and `max`, period `workout`, over the workout's span | `/min` |
+| sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
+| sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
+| sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
+| sleep | `health/sleep`: `name` (`Night of Tue 6 Oct` by the evening before the morning it ended, `Nap, Sun 27 Sep 14:20` by its local start), span, `isNap` (WHOOP's `nap`), `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency` (WHOOP's own), `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency`; WHOOP sends no latency | | |
+| workout | `health/workout`: `name` (`Running, Sat 10 Oct 07:08`, the sport and the local start, `Workout` for `other`), span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
+
+**Ids and spans.** Every id is composed from WHOOP's own identifiers, read off
+the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
+`resting_heart_rate`, `spo2`, `skin_temperature`, `strain`, `energy`),
+`whoop/<account>/<sleep id>/sleep`, `.../<sleep id>/stage/<code>`,
+`.../<sleep id>/sleep_performance` and `respiratory_rate`, and
+`whoop/<account>/<workout id>/workout`; the heart rate summaries are
+`heart_rate_avg` and `heart_rate_max` under the cycle id or the workout id.
+An id that would be longer than 128 characters, which a long account id
+causes, is replaced whole by its hash (`host.observed.record_id`). A
+cycle's observations span the cycle and carry its id in `periodId`, so two
+cycles on one date stay two; a workout's heart rate spans the workout and
+carries the workout id. The current cycle has no end yet, so its span ends
+at the cycle's `updatedAt` and moves as WHOOP rescores it.
+A recovery's observations measure the night the recovery scores: they span
+the sleep the recovery names and carry the sleep's id in `periodId`, as the
+night's sleep performance and respiratory rate do. A day read with
+`bucket.place` `end` therefore puts them on the wake day, the way it places
+any nightly summary, and a records-mode window over the
+WHOOP night holds them. A recovery whose sleep row is absent (sleeps toggled
+off, or the sleep in a later page) spans its cycle with `period` `cycle`
+until the sleep row lands; one whose cycle row is absent too writes nothing.
+A cycle runs from one sleep onset to the next, so a cycle's `at` is the
+evening the member fell asleep, and `place` `start` files its strain and
+energy under that evening's date.
+Every record carries `origin` (the mirror row), `revision` (WHOOP's
+`updated_at` in seconds since the epoch, for a recovery the later of its own
+and its sleep's) and the UTC offset WHOOP recorded. While WHOOP is still
+calibrating the member, the recovery score is written with `quality:
+estimated`. The source is `whoop/<account record id>`, class `watch`, pointing
+at the WHOOP account: the API names no hardware model.
+
+**A stage total spans the whole sleep.** WHOOP reports the minutes in each
+stage, not when each stage happened, so each total is one amount with its
+stage in `code` beside its minutes in `value`, over the sleep's span. WHOOP's
+`totalInBedTimeMilli` is every stage together, so it is the sleep's
+`timeInBed` and never an `in_bed` total, which would count the night twice.
+
+**Heart rate.** WHOOP's API has no heart rate samples, only each scored
+cycle's and workout's average and maximum. Each is a `summary` with the
+statistic it is, `avg` or `max`, not `vendor`. An aggregate read with `from:
+summaries` or `prefer-raw` reads one statistic per row, so it names WHOOP's
+with `filter.properties.statistic` (`avg` reads the averages beside the other
+sources' average summaries) or splits them with `groupBy: ["statistic"]`; a
+read that would pool both is refused. A raw read takes gauges alone and
+shows no WHOOP heart rate. A workout's two are on the `workout` channel: the
+`avg` reducer over summaries is the plain mean of the values in a bucket, so
+on one stream a day's average would mix the cycle's with the run's. Group by
+`channel` to read the two apart, or filter `channel` with `exists: false`
+for the cycles alone.
+
+**Skipped.** A field no metric and no health property holds is counted in the
+function's output and not written: a sleep's `sleepNeeded`,
+`totalNoDataTimeMilli` and `sleepCycleCount`, and a workout's
+`percentRecorded` and `altitudeChangeMeter`. A cycle's `step_count` never
+reaches the mirror.
 
 Next: [substratectl](substratectl.md), the command line over all of it.

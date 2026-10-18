@@ -1,0 +1,318 @@
+package providertest
+
+// The health adapters' Python tables repeat the health catalogue
+// (samples/health/metrics.yaml and the workout kind): the metric each vendor
+// field lands on, its unit, form and hold, the sleep stage codes and the
+// workout sport codes, and for WHOOP the API field each catalogue metric
+// lists as its `whoop` code. Nothing at write time compares the two, so a
+// metric renamed, a code dropped or a hold changed in one place would leave
+// the other writing something the catalogue no longer says. These tests read
+// both sides: the tables as written (TestAdapterTablesMatchTheCatalogue) and
+// the outputs an adapter wrote (assertCatalogued, called by the adapter
+// suites).
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+// catalogueMetric is what the tests read of one health catalogue metric.
+type catalogueMetric struct {
+	Measures string
+	Unit     string
+	Form     string
+	Hold     string
+	CodeSet  []string
+	// Codes is every code the metric lists, by system.
+	Codes map[string][]string
+}
+
+// healthCatalogue reads the shipped catalogue, keyed by metric id
+// (`health/heart_rate`).
+func healthCatalogue(t *testing.T) map[string]catalogueMetric {
+	t.Helper()
+	out := map[string]catalogueMetric{}
+	for _, m := range loadDocs(t, samplesDir+"/health/metrics.yaml") {
+		if kind, _ := m["kind"].(string); !strings.HasSuffix(kind, "/observations/metric") {
+			continue
+		}
+		id, _ := m["metadata"].(map[string]any)["id"].(string)
+		props, _ := m["data"].(map[string]any)["properties"].(map[string]any)
+		out[id] = catalogueMetricOf(props)
+	}
+	if len(out) == 0 {
+		t.Fatal("the health catalogue read empty")
+	}
+	return out
+}
+
+func catalogueMetricOf(props map[string]any) catalogueMetric {
+	str := func(k string) string { s, _ := props[k].(string); return s }
+	m := catalogueMetric{Measures: str("measures"), Unit: str("unit"), Form: str("form"), Hold: str("hold"), Codes: map[string][]string{}}
+	for _, c := range asList(props["codeSet"]) {
+		m.CodeSet = append(m.CodeSet, fmt.Sprint(c))
+	}
+	for _, c := range asList(props["codes"]) {
+		code, _ := c.(map[string]any)
+		m.Codes[fmt.Sprint(code["system"])] = append(m.Codes[fmt.Sprint(code["system"])], fmt.Sprint(code["code"]))
+	}
+	return m
+}
+
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
+}
+
+// workoutSports is the workout kind's sport code set.
+func workoutSports(t *testing.T) []string {
+	t.Helper()
+	for _, m := range loadDocs(t, samplesDir+"/health/workout.yaml") {
+		props, _ := m["data"].(map[string]any)["properties"].(map[string]any)
+		sport, _ := props["sport"].(map[string]any)
+		var out []string
+		for _, v := range asList(sport["values"]) {
+			out = append(out, fmt.Sprint(v))
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	t.Fatal("the workout kind declares no sport values")
+	return nil
+}
+
+// adapterTables reads a function body's module-level literal assignments and
+// every string literal in it, through Python's own parser: nothing in the
+// body runs.
+type adapterTables struct {
+	Tables  map[string]any `json:"tables"`
+	Strings []string       `json:"strings"`
+	// MetricRefs is every literal argument of a call to `metric_ref`.
+	MetricRefs []string `json:"metricRefs"`
+}
+
+const tablesProbe = `
+import ast, json, sys
+tree = ast.parse(sys.stdin.read())
+tables = {}
+for node in tree.body:
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        try:
+            tables[node.targets[0].id] = ast.literal_eval(node.value)
+        except ValueError:
+            pass
+strings = sorted({n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)})
+refs = sorted({n.args[0].value for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "metric_ref"
+               and n.args and isinstance(n.args[0], ast.Constant)})
+print(json.dumps({"tables": tables, "strings": strings, "metricRefs": refs}))
+`
+
+func readAdapterTables(t *testing.T, bundle, function string) adapterTables {
+	t.Helper()
+	var source string
+	for _, m := range loadDocs(t, bundle) {
+		if id, _ := m["metadata"].(map[string]any)["id"].(string); strings.HasSuffix(id, "/"+function) {
+			source, _ = m["data"].(map[string]any)["source"].(string)
+		}
+	}
+	if source == "" {
+		t.Fatalf("%s declares no function %s", bundle, function)
+	}
+	cmd := exec.Command("python3", "-I", "-c", tablesProbe)
+	cmd.Stdin = strings.NewReader(source)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("read %s's tables: %v\n%s", function, err, stderr.String())
+	}
+	var out adapterTables
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode %s's tables: %v", function, err)
+	}
+	return out
+}
+
+// rows is a table of tuples as lists of strings, None as "".
+func rows(t *testing.T, tables map[string]any, name string) [][]string {
+	t.Helper()
+	raw, ok := tables[name].([]any)
+	if !ok || len(raw) == 0 {
+		t.Fatalf("the table %s is missing or empty", name)
+	}
+	var out [][]string
+	for _, r := range raw {
+		var row []string
+		for _, v := range asList(r) {
+			if v == nil {
+				row = append(row, "")
+			} else {
+				row = append(row, fmt.Sprint(v))
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func mapping(t *testing.T, tables map[string]any, name string) map[string]any {
+	t.Helper()
+	m, ok := tables[name].(map[string]any)
+	if !ok || len(m) == 0 {
+		t.Fatalf("the table %s is missing or empty", name)
+	}
+	return m
+}
+
+// sameMeasure reports whether a unit belongs to the metric's measure, which
+// is what a value in that unit needs for the aggregate read to convert it.
+func sameMeasure(unit string, m catalogueMetric) bool {
+	got, err := vocabulary.ResolveMeasure(unit, m.Measures)
+	return err == nil && got.Name == m.Measures
+}
+
+// snakeCase is a WHOOP mirror field in the API's own spelling, the code the
+// catalogue lists: `hrvRmssdMilli` is `hrv_rmssd_milli`.
+func snakeCase(field string) string {
+	var b strings.Builder
+	for i, r := range field {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			r += 'a' - 'A'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+var healthMetricLiteral = regexp.MustCompile(`^health/[a-z0-9_]+$`)
+
+// TestAdapterTablesMatchTheCatalogue: every metric an adapter's tables or
+// literals name is in the catalogue, in a unit of the metric's measure;
+// WHOOP's mapped fields are the `whoop` codes the metric lists; every sleep
+// stage code is in `health/sleep_stage`'s code set and every sport code in
+// the workout kind's.
+func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
+	requirePython3(t)
+	catalogue := healthCatalogue(t)
+	sports := workoutSports(t)
+	metric := func(t *testing.T, id string) catalogueMetric {
+		t.Helper()
+		m, ok := catalogue[id]
+		if !ok {
+			t.Fatalf("%s is not a catalogue metric", id)
+		}
+		return m
+	}
+	stages := metric(t, "health/sleep_stage").CodeSet
+
+	t.Run("whoop", func(t *testing.T) {
+		got := readAdapterTables(t, samplesDir+"/healthwhoop/bundle.yaml", "adaptwhoop")
+		for _, s := range got.Strings {
+			if healthMetricLiteral.MatchString(s) {
+				metric(t, s)
+			}
+		}
+		// (score field, metric, unit, ...): the field is the metric's
+		// `whoop` code, and the unit is of the metric's measure.
+		check := func(table string, unitAt int) {
+			for _, row := range rows(t, got.Tables, table) {
+				field, id, unit := row[0], row[1], row[unitAt]
+				m := metric(t, id)
+				if !sameMeasure(unit, m) {
+					t.Errorf("%s: %s is written in %s, not a unit of %s's measure %s", table, field, unit, id, m.Measures)
+				}
+				if !slices.Contains(m.Codes["whoop"], snakeCase(field)) {
+					t.Errorf("%s: %s maps WHOOP's %s, which the metric does not list as a whoop code (it lists %v)", table, id, snakeCase(field), m.Codes["whoop"])
+				}
+			}
+		}
+		check("RECOVERY_READINGS", 2)
+		check("CYCLE_READINGS", 2)
+		check("SLEEP_READINGS", 2)
+		for _, row := range rows(t, got.Tables, "CYCLE_READINGS") {
+			if form, m := row[3], metric(t, row[1]); form != "summary" && form != m.Form {
+				t.Errorf("CYCLE_READINGS: %s is written as %s, the metric's form is %s", row[1], form, m.Form)
+			}
+		}
+		if id, _ := got.Tables["STAGE_METRIC"].(string); id != "health/sleep_stage" {
+			t.Errorf("STAGE_METRIC is %q", id)
+		}
+		for _, row := range rows(t, got.Tables, "STAGES") {
+			if !slices.Contains(stages, row[1]) {
+				t.Errorf("STAGES: %s maps to %q, not a health/sleep_stage code %v", row[0], row[1], stages)
+			}
+		}
+		for name, code := range mapping(t, got.Tables, "SPORTS") {
+			if !slices.Contains(sports, fmt.Sprint(code)) {
+				t.Errorf("SPORTS: %s maps to %v, not a workout sport", name, code)
+			}
+		}
+	})
+}
+
+// assertCatalogued holds every observation and trace an adapter wrote to the
+// metric it names, as the repository stores it: the metric exists; a raw
+// value has the metric's form and hold (a summary is any metric's, and
+// holds nothing); a number is in a unit of the metric's measure; a code is
+// one the metric's code set lists.
+func assertCatalogued(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	ctx := context.Background()
+	metrics := map[string]catalogueMetric{}
+	checked := 0
+	for _, kind := range []string{obsObservation, obsTrace} {
+		for _, row := range listLive(t, ds, kind) {
+			p := row.Properties
+			path := storedRefPath(p["metric"])
+			m, seen := metrics[path]
+			if !seen {
+				id := strings.TrimPrefix(path, obsMetric+"/")
+				rec, err := ds.Get(ctx, obsMetric, id)
+				if err != nil {
+					t.Errorf("%s/%s names %s, which the repository does not hold: %v", kind, row.ID, path, err)
+					continue
+				}
+				m = catalogueMetricOf(rec.Properties)
+				metrics[path] = m
+			}
+			checked++
+			form, _ := p["form"].(string)
+			hold, _ := p["hold"].(string)
+			if form != "summary" && (form != m.Form || hold != m.Hold) {
+				t.Errorf("%s/%s: a %s holding %q of %s, whose catalogue entry is a %s holding %q", kind, row.ID, form, hold, path, m.Form, m.Hold)
+			}
+			unit, _ := p["unit"].(string)
+			if q, ok := p["value"].(map[string]any); ok {
+				unit, _ = q["unit"].(string)
+			}
+			if unit != "" && m.Measures != "" && !sameMeasure(unit, m) {
+				t.Errorf("%s/%s: %s in %s, not a unit of the metric's measure %s", kind, row.ID, path, unit, m.Measures)
+			}
+			codes := []any{p["code"]}
+			codes = append(codes, asList(p["codes"])...)
+			for _, c := range codes {
+				if c != nil && !slices.Contains(m.CodeSet, fmt.Sprint(c)) {
+					t.Errorf("%s/%s: code %v is not in %s's code set %v", kind, row.ID, c, path, m.CodeSet)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("assertCatalogued found no observation or trace to check")
+	}
+}

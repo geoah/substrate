@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -23,6 +24,26 @@ import (
 
 // --- the gates ----------------------------------------------------------------
 
+// requiredEnv names the variable the CI job sets to say this suite must run:
+// with it set, a missing `uv` or `python3` fails the run instead of skipping
+// it, and a run in which no provider case ran fails the package (TestMain).
+// `-short` skips either way: it asks for no database.
+const requiredEnv = "SUBSTRATE_REQUIRE_PROVIDER_SUITES"
+
+var suiteRequired = os.Getenv(requiredEnv) != ""
+
+// casesRun counts the provider cases that ran, which TestMain reports.
+var casesRun atomic.Int64
+
+// skipOrFailf skips the run, or fails it where the run must not skip.
+func skipOrFailf(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if suiteRequired {
+		t.Fatalf(requiredEnv+" is set, and "+format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
 // requireUV skips a run that cannot warm a PEP 723 body. Every provider
 // closure ships at least one, so the apply itself is what wants uv.
 func requireUV(t *testing.T) {
@@ -31,7 +52,7 @@ func requireUV(t *testing.T) {
 		t.Skip("db test")
 	}
 	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's body warms through uv at install")
+		skipOrFailf(t, "uv is not on PATH: the closure's body warms through uv at install")
 	}
 }
 
@@ -43,7 +64,7 @@ func requirePython(t *testing.T) {
 		t.Skip("db test")
 	}
 	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not on PATH — the runner, the mock and the scenarios are Python")
+		skipOrFailf(t, "python3 is not on PATH: the runner, the mock and the scenarios are Python")
 	}
 }
 

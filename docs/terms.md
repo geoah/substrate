@@ -76,6 +76,7 @@ nothing, there are none.
 | **group** | In the observed index, the points of one stream, form and bucket that share a code, unit, `delta` and UTC offset: one rollup row each. In an aggregate read, the streams one combination of `groupBy` values selects: one row per bucket each. Never the old word for an authority. |
 | **bucket** | One time window of an aggregate read: a fixed length, a calendar unit in a zone, a recorded-local day, or a matched record's span. |
 | **recorded-local calendar** | The calendar time mode with no `timezone`: each value lands on the date its own UTC offset names, so a day spent abroad is that place's day. |
+| **adapter** | A sample whose function turns one provider's mirror rows into observed values and health records, stamping `adapter` (`healthwhoop@3`) on each. Also the code that speaks an `llm/provider`'s [wire](#installed-things). |
 
 ## Installed things
 

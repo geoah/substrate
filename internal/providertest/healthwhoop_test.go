@@ -1,0 +1,820 @@
+package providertest
+
+// The `healthwhoop` sample's adapter over the WHOOP provider's mirror, driven
+// through the dispatcher: the provider's sync (whoop_test.go's stepper and
+// fake, over testdata/whoop) writes the mirror rows, and the sample's record
+// trigger delivers each one to `adaptwhoop`, which writes the health records
+// docs/plans/observations/proposal/02a-whoop.md tables.
+
+import (
+	"context"
+	"fmt"
+	"maps"
+	"math"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/geoah/substrate/internal/runner"
+	"github.com/geoah/substrate/internal/substrate"
+)
+
+const (
+	healthWhoopRun = "healthwhoop-on-mirror"
+
+	// The proposal's worked example: one cycle, its recovery and its sleep.
+	whoopExampleCycle = "1047392"
+	whoopExampleSleep = "e3b0c442-98fc-4c14-9afb-1c1e0a7d4b9a"
+	// Two cycles that start on one local date, 2026-09-19 at +03:00.
+	whoopEarlyCycle = "1046422"
+	whoopLateCycle  = "1046463"
+	// The night WHOOP could not score.
+	whoopUnscoredCycle = "1046319"
+	// A run whose heart rate the worked example reads.
+	whoopExampleWorkout = "37a41337-1dee-49f3-99fb-cf5cfb59acb3"
+	// The night whoopRescoredCycle's recovery scores, and when it ended.
+	whoopRescoredNight    = "437ccafb-71c7-4b67-9de5-6d3ad757944c"
+	whoopRescoredNightEnd = "2026-10-09T03:29:49.339Z"
+)
+
+// healthOutputs are the kinds the adapter writes.
+var healthOutputs = []string{obsObservation, healthSleep, healthWorkout, obsSource}
+
+// newHealthWhoop is newWhoop with the health samples and the adapter imported
+// before anything syncs, so every mirror row the sync writes is delivered.
+func newHealthWhoop(t *testing.T) (substrate.Dataset, *fakeWhoop) {
+	t.Helper()
+	_, ds, fake := newWhoop(t)
+	importVocabulary(t, ds, "healthwhoop")
+	return ds, fake
+}
+
+// healthDrain runs the trigger chain to quiescence and fails on any parked
+// delivery: a refused write parks the whole delivery.
+func healthDrain(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	drainTriggers(t, ds)
+	if n := parkedFailures(t, ds); n != 0 {
+		statuses, _ := ds.TriggerStatuses(context.Background())
+		for _, st := range statuses {
+			if st.Parked > 0 {
+				t.Errorf("%s parked %d: %s", st.ID, st.Parked, st.LastParkedError)
+			}
+		}
+		t.Fatalf("%d deliveries parked", n)
+	}
+}
+
+// hw is an output id the adapter composes: whoop/<account>/<parts>.
+func hw(parts ...string) string {
+	return "whoop/" + whoopAccount + "/" + strings.Join(parts, "/")
+}
+
+func healthProps(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any {
+	t.Helper()
+	return mustGet(t, ds, kind, id).Properties
+}
+
+// healthVersions is the version of every live adapter output, by kind and id.
+func healthVersions(t *testing.T, ds substrate.Dataset) map[string]int64 {
+	t.Helper()
+	out := map[string]int64{}
+	for _, kind := range healthOutputs {
+		for _, row := range listLive(t, ds, kind) {
+			out[kind+"/"+row.ID] = row.Version
+		}
+	}
+	return out
+}
+
+// quantityOf reads a quantity property as its digits and unit.
+func quantityOf(t *testing.T, props map[string]any, name string) (string, string) {
+	t.Helper()
+	q, ok := props[name].(map[string]any)
+	if !ok {
+		t.Fatalf("%s is %v, want a quantity", name, props[name])
+	}
+	value, _ := q["value"].(string)
+	unit, _ := q["unit"].(string)
+	return value, unit
+}
+
+// metricOf is the metric id an observation names.
+func metricOf(props map[string]any) string {
+	return strings.TrimPrefix(storedRefPath(props["metric"]), obsMetric+"/")
+}
+
+// TestHealthWhoopWritesTheProposalsTable runs the thirty days through the
+// sync and the adapter and checks the worked example of 02a-whoop.md field by
+// field, the counts per metric, a month of sleeps with their stage totals,
+// two cycles on one date, the current cycle and the unscored one.
+func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+
+	cycleStart, cycleEnd := "2026-10-06T19:41:00.862Z", "2026-10-07T19:38:00.174Z"
+	t.Run("the worked example", func(t *testing.T) {
+		recoveryOrigin := whoopRecoveryKind + "/" + whoopRow("recovery", whoopExampleCycle)
+		// A recovery measures the night it scores: it spans that sleep, so a
+		// day read places it on the wake day beside the other sources'
+		// nightly summaries, and its revision is the later of the recovery's
+		// and the sleep's updated_at.
+		nightStart, nightEnd := "2026-10-06T19:41:00.271Z", "2026-10-07T03:55:49.771Z"
+		recoveryRevision := asInstant(t, "2026-10-07T06:27:02.319Z").Unix()
+		for _, c := range []struct{ role, metric, value, unit string }{
+			{"recovery", "health/whoop_recovery", "67", "%"},
+			{"hrv", "health/hrv_rmssd", "61.3", "ms"},
+			{"resting_heart_rate", "health/resting_heart_rate", "52", "/min"},
+			{"spo2", "health/spo2", "96.5", "%"},
+			{"skin_temperature", "health/skin_temperature", "33.8", "Cel"},
+		} {
+			p := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, c.role))
+			if v, u := quantityOf(t, p, "value"); v != c.value || u != c.unit {
+				t.Errorf("%s = %s %s, want %s %s", c.role, v, u, c.value, c.unit)
+			}
+			if metricOf(p) != c.metric || p["form"] != "summary" || p["statistic"] != "vendor" ||
+				p["period"] != "sleep" || p["periodId"] != whoopExampleSleep {
+				t.Errorf("%s is %v %v/%v/%v period %v, want %s summary vendor sleep %s",
+					c.role, metricOf(p), p["form"], p["statistic"], p["period"], p["periodId"], c.metric, whoopExampleSleep)
+			}
+			if !sameInstant(p["at"], asInstant(t, nightStart)) || !sameInstant(p["endsAt"], asInstant(t, nightEnd)) {
+				t.Errorf("%s spans %v to %v, want the night %s to %s", c.role, p["at"], p["endsAt"], nightStart, nightEnd)
+			}
+			if asInt(t, p["utcOffset"]) != 180 || asInt(t, p["revision"]) != recoveryRevision {
+				t.Errorf("%s utcOffset %v revision %v, want 180 and %d", c.role, p["utcOffset"], p["revision"], recoveryRevision)
+			}
+			if storedRefPath(p["origin"]) != recoveryOrigin {
+				t.Errorf("%s origin %v, want %s", c.role, p["origin"], recoveryOrigin)
+			}
+			if storedRefPath(p["source"]) != obsSource+"/whoop/"+whoopAccount {
+				t.Errorf("%s source %v", c.role, p["source"])
+			}
+		}
+		// Every recovery spans the night it scores, the current cycle's too:
+		// none ends at a cycle's end or at the open cycle's updatedAt.
+		recoveries := 0
+		for _, row := range listLive(t, ds, obsObservation) {
+			if metricOf(row.Properties) != "health/whoop_recovery" {
+				continue
+			}
+			recoveries++
+			sid, _ := row.Properties["periodId"].(string)
+			night := healthProps(t, ds, healthSleep, hw(sid, "sleep"))
+			if row.Properties["period"] != "sleep" || night["isNap"] == true ||
+				!sameInstant(row.Properties["at"], asInstant(t, night["at"])) ||
+				!sameInstant(row.Properties["endsAt"], asInstant(t, night["endsAt"])) {
+				t.Errorf("recovery %s spans %v to %v over period %v %s, want the night %v to %v",
+					row.ID, row.Properties["at"], row.Properties["endsAt"], row.Properties["period"], sid, night["at"], night["endsAt"])
+			}
+		}
+		if recoveries != 29 {
+			t.Errorf("%d recoveries checked against their nights, want 29", recoveries)
+		}
+		strain := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, "strain"))
+		if v, u := quantityOf(t, strain, "value"); v != "14.2" || u != "{score}" || strain["form"] != "summary" ||
+			storedRefPath(strain["origin"]) != whoopCycleKind+"/"+whoopRow("cycle", whoopExampleCycle) {
+			t.Errorf("strain = %s %s %v from %v", v, u, strain["form"], strain["origin"])
+		}
+		energy := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, "energy"))
+		if v, u := quantityOf(t, energy, "value"); v != "8125.4" || u != "kJ" || energy["form"] != "amount" ||
+			energy["statistic"] != nil || metricOf(energy) != "health/energy_expended" {
+			t.Errorf("energy = %s %s %v %v %s, want 8125.4 kJ, an amount of energy_expended", v, u, energy["form"], energy["statistic"], metricOf(energy))
+		}
+	})
+	t.Run("heart rate", func(t *testing.T) {
+		// Heart rate: the cycle's average and maximum over the cycle, and a run's
+		// over the run on the `workout` channel, each with the statistic it is.
+		cycleOrigin := whoopCycleKind + "/" + whoopRow("cycle", whoopExampleCycle)
+		cycleRevision := asInstant(t, "2026-10-07T19:58:00.853Z").Unix()
+		workoutOrigin := whoopWorkoutKind + "/" + whoopRow("workout", whoopExampleWorkout)
+		runStart, runEnd := "2026-10-10T04:08:05.615Z", "2026-10-10T04:48:18.355Z"
+		runRevision := asInstant(t, "2026-10-10T05:04:18.468Z").Unix()
+		for _, c := range []struct {
+			id, value, statistic, period, periodID, channel, start, end, origin string
+			revision                                                            int64
+		}{
+			{hw(whoopExampleCycle, "heart_rate_avg"), "74", "avg", "cycle", whoopExampleCycle, "", cycleStart, cycleEnd, cycleOrigin, cycleRevision},
+			{hw(whoopExampleCycle, "heart_rate_max"), "171", "max", "cycle", whoopExampleCycle, "", cycleStart, cycleEnd, cycleOrigin, cycleRevision},
+			{hw(whoopExampleWorkout, "heart_rate_avg"), "155", "avg", "workout", whoopExampleWorkout, "workout", runStart, runEnd, workoutOrigin, runRevision},
+			{hw(whoopExampleWorkout, "heart_rate_max"), "180", "max", "workout", whoopExampleWorkout, "workout", runStart, runEnd, workoutOrigin, runRevision},
+		} {
+			p := healthProps(t, ds, obsObservation, c.id)
+			if v, u := quantityOf(t, p, "value"); v != c.value || u != "/min" {
+				t.Errorf("%s = %s %s, want %s /min", c.id, v, u, c.value)
+			}
+			if metricOf(p) != "health/heart_rate" || p["form"] != "summary" || p["statistic"] != c.statistic ||
+				p["period"] != c.period || p["periodId"] != c.periodID {
+				t.Errorf("%s is %s %v/%v/%v period %v, want health/heart_rate summary %s %s %s",
+					c.id, metricOf(p), p["form"], p["statistic"], p["period"], p["periodId"], c.statistic, c.period, c.periodID)
+			}
+			if got, _ := p["channel"].(string); got != c.channel {
+				t.Errorf("%s is on channel %q, want %q", c.id, got, c.channel)
+			}
+			if !sameInstant(p["at"], asInstant(t, c.start)) || !sameInstant(p["endsAt"], asInstant(t, c.end)) {
+				t.Errorf("%s spans %v to %v, want %s to %s", c.id, p["at"], p["endsAt"], c.start, c.end)
+			}
+			if asInt(t, p["utcOffset"]) != 180 || asInt(t, p["revision"]) != c.revision || storedRefPath(p["origin"]) != c.origin {
+				t.Errorf("%s utcOffset %v revision %v origin %v, want 180, %d and %s",
+					c.id, p["utcOffset"], p["revision"], p["origin"], c.revision, c.origin)
+			}
+			if storedRefPath(p["source"]) != obsSource+"/whoop/"+whoopAccount || p["adapter"] != healthWhoopAdapter {
+				t.Errorf("%s source %v adapter %v", c.id, p["source"], p["adapter"])
+			}
+		}
+		// One stream per kind of span: the cycles' on no channel, the workouts'
+		// on `workout`, so a day's average never mixes the two.
+		channels := map[string]int{}
+		for _, row := range listLive(t, ds, obsObservation) {
+			if metricOf(row.Properties) == "health/heart_rate" {
+				ch, _ := row.Properties["channel"].(string)
+				channels[ch+"/"+fmt.Sprint(row.Properties["statistic"])]++
+			}
+		}
+		if want := map[string]int{"/avg": 29, "/max": 29, "workout/avg": 29, "workout/max": 29}; fmt.Sprint(channels) != fmt.Sprint(want) {
+			t.Errorf("heart rate summaries by channel and statistic %v, want %v", channels, want)
+		}
+	})
+	t.Run("headings", func(t *testing.T) {
+		// Each sleep and workout is titled on the clock it was recorded on: a
+		// night by the evening before the morning it ended, a nap (London, at
+		// +01:00) and a run by their local starts.
+		for kind, names := range map[string]map[string]string{
+			healthSleep: {
+				hw(whoopExampleSleep, "sleep"):                      "Night of Tue 6 Oct",
+				hw("a5eff5d0-2516-4920-b893-0baf8c01dd1c", "sleep"): "Nap, Sun 27 Sep 14:20",
+			},
+			healthWorkout: {hw(whoopExampleWorkout, "workout"): "Running, Sat 10 Oct 07:08"},
+		} {
+			for id, want := range names {
+				row := mustGet(t, ds, kind, id)
+				if row.Properties["name"] != want || row.Title != want {
+					t.Errorf("%s is named %v and titled %q, want %q", id, row.Properties["name"], row.Title, want)
+				}
+			}
+		}
+	})
+	t.Run("the sleep", func(t *testing.T) {
+		// The sleep: the typed record, its four stage totals and two scores.
+		night := healthProps(t, ds, healthSleep, hw(whoopExampleSleep, "sleep"))
+		for name, want := range map[string]string{
+			"timeInBed": "PT8H14M49S", "timeAsleep": "PT7H54M49S", "awake": "PT20M",
+			"light": "PT4H56M", "deep": "PT1H38M30S", "rem": "PT1H20M19S",
+		} {
+			if fmt.Sprint(night[name]) != want {
+				t.Errorf("sleep %s = %v, want %s", name, night[name], want)
+			}
+		}
+		if v, u := quantityOf(t, night, "efficiency"); v != "95.9580078" || u != "%" {
+			t.Errorf("sleep efficiency = %s %s", v, u)
+		}
+		if scores, _ := night["scores"].(map[string]any); fmt.Sprint(scores["sleepPerformance"]) != "100" ||
+			fmt.Sprint(scores["sleepConsistency"]) != "71" {
+			t.Errorf("sleep scores = %v", night["scores"])
+		}
+		for code, ms := range map[string]float64{"awake": 1200000, "light": 17760000, "deep": 5910000, "rem": 4819000} {
+			p := healthProps(t, ds, obsObservation, hw(whoopExampleSleep, "stage", code))
+			v, u := quantityOf(t, p, "value")
+			minutes, err := strconv.ParseFloat(v, 64)
+			if err != nil || u != "min" || math.Abs(minutes-ms/60000) > 1e-9 {
+				t.Errorf("stage %s = %s %s, want %v min", code, v, u, ms/60000)
+			}
+			if p["code"] != code || p["form"] != "amount" || metricOf(p) != "health/sleep_stage" ||
+				p["periodId"] != whoopExampleSleep || !sameInstant(p["at"], asInstant(t, "2026-10-06T19:41:00.271Z")) {
+				t.Errorf("stage %s is %v", code, p)
+			}
+		}
+		for role, metric := range map[string]string{
+			"sleep_performance": "health/whoop_sleep_performance", "respiratory_rate": "health/respiratory_rate",
+		} {
+			p := healthProps(t, ds, obsObservation, hw(whoopExampleSleep, role))
+			if metricOf(p) != metric || p["form"] != "summary" || p["period"] != "sleep" {
+				t.Errorf("%s is %v", role, p)
+			}
+		}
+	})
+	t.Run("counts", func(t *testing.T) {
+		// Counts per metric: 29 scored recoveries and cycles, 32 scored sleeps.
+		byMetric := map[string]int{}
+		for _, row := range listLive(t, ds, obsObservation) {
+			byMetric[metricOf(row.Properties)]++
+		}
+		for metric, want := range map[string]int{
+			"health/whoop_recovery": 29, "health/hrv_rmssd": 29, "health/resting_heart_rate": 29,
+			"health/spo2": 29, "health/skin_temperature": 29, "health/whoop_strain": 29,
+			"health/energy_expended": 29, "health/sleep_stage": 4 * 32,
+			"health/whoop_sleep_performance": 32, "health/respiratory_rate": 32,
+			// An average and a maximum per scored cycle and per scored workout.
+			"health/heart_rate": 2*29 + 2*29,
+		} {
+			if byMetric[metric] != want {
+				t.Errorf("%d observations of %s, want %d", byMetric[metric], metric, want)
+			}
+		}
+		if len(byMetric) != 11 {
+			t.Errorf("observations of %d metrics, want 11: %v", len(byMetric), byMetric)
+		}
+		if n := countLive(t, ds, healthWorkout); n != 29 {
+			t.Errorf("%d workouts, want 29", n)
+		}
+		// One sport code set for every source: WHOOP's weightlifting is the
+		// strength other adapters write, and a name with no value of its own is
+		// other; WHOOP's word stays in sportSource either way.
+		sports := map[string]string{}
+		for _, row := range listLive(t, ds, healthWorkout) {
+			sports[fmt.Sprint(row.Properties["sportSource"])] = fmt.Sprint(row.Properties["sport"])
+		}
+		if want := map[string]string{
+			"running": "running", "cycling": "cycling", "walking": "walking",
+			"weightlifting": "strength", "padel": "other", "activity": "other",
+		}; !maps.Equal(sports, want) {
+			t.Errorf("workout sports by WHOOP's name %v, want %v", sports, want)
+		}
+		if n := countLive(t, ds, obsSource); n != 1 {
+			t.Errorf("%d sources, want the one WHOOP", n)
+		}
+	})
+	t.Run("the month of sleeps", func(t *testing.T) {
+		// The month of sleeps: thirty nights, every scored one with its four
+		// stage totals beside it.
+		var nights, staged int
+		for _, row := range listLive(t, ds, healthSleep) {
+			if row.Properties["isNap"] == true {
+				continue
+			}
+			nights++
+			if row.Properties["rem"] == nil {
+				continue
+			}
+			staged++
+			sid := strings.TrimSuffix(strings.TrimPrefix(row.ID, hw()), "/sleep")
+			for _, code := range []string{"awake", "light", "deep", "rem"} {
+				if !whoopLive(t, ds, obsObservation, hw(sid, "stage", code)) {
+					t.Errorf("night %s has no %s total", sid, code)
+				}
+			}
+		}
+		if nights != 30 || staged != 29 {
+			t.Errorf("%d nights, %d with stages; want 30 and 29", nights, staged)
+		}
+	})
+	t.Run("the cycles", func(t *testing.T) {
+		// Two cycles on one local date stay two, told apart by periodId.
+		days := map[string]string{}
+		for _, cycle := range []string{whoopEarlyCycle, whoopLateCycle} {
+			p := healthProps(t, ds, obsObservation, hw(cycle, "strain"))
+			if p["periodId"] != cycle {
+				t.Errorf("strain of %s carries periodId %v", cycle, p["periodId"])
+			}
+			at, _ := time.Parse(time.RFC3339Nano, fmt.Sprint(p["at"]))
+			days[cycle] = at.Add(time.Duration(asInt(t, p["utcOffset"])) * time.Minute).Format(time.DateOnly)
+		}
+		if days[whoopEarlyCycle] != "2026-09-19" || days[whoopLateCycle] != "2026-09-19" {
+			t.Errorf("the two cycles start on local days %v, want both 2026-09-19", days)
+		}
+
+		// The current cycle has no end: its span ends at its updatedAt.
+		current := healthProps(t, ds, obsObservation, hw(whoopCurrentCycle, "strain"))
+		if !sameInstant(current["endsAt"], asInstant(t, "2026-10-10T14:42:00.093Z")) {
+			t.Errorf("the current cycle's strain ends %v, want its updatedAt", current["endsAt"])
+		}
+		// The unscored night implies a sleep and nothing else.
+		for _, role := range []string{"recovery", "strain", "energy"} {
+			if whoopLive(t, ds, obsObservation, hw(whoopUnscoredCycle, role)) {
+				t.Errorf("the unscorable cycle has a %s observation", role)
+			}
+		}
+	})
+	t.Run("the catalogue", func(t *testing.T) {
+		assertCatalogued(t, ds)
+	})
+}
+
+// TestHealthWhoopRerunChangesNothing: replaying the trigger over every mirror
+// change the sync made, and an identical re-sync, move no output.
+func TestHealthWhoopRerunChangesNothing(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	before := healthVersions(t, ds)
+	// 511 observations (116 of them heart rate), 33 sleeps, 29 workouts and
+	// the one source.
+	if len(before) != 574 {
+		t.Fatalf("%d outputs after the first run, want 574", len(before))
+	}
+
+	whoopSync(t, ds, fake, whoopSteady(nil))
+	healthDrain(t, ds)
+	if err := ds.ReplayTrigger(context.Background(), healthWhoopRun, 0); err != nil {
+		t.Fatalf("replay %s: %v", healthWhoopRun, err)
+	}
+	healthDrain(t, ds)
+
+	after := healthVersions(t, ds)
+	for k, v := range after {
+		if before[k] != v {
+			t.Errorf("%s moved from version %d to %d", k, before[k], v)
+		}
+	}
+	if len(after) != len(before) {
+		t.Fatalf("%d outputs after the rerun, want %d", len(after), len(before))
+	}
+}
+
+// An adapter imported after the provider has synced converts the rows the
+// mirror already holds: its trigger declares `fromStart`, so the import
+// creates it with its cursor at the changelog's start, and the outputs are
+// the same 574 an adapter imported first writes.
+func TestHealthWhoopImportedAfterTheSyncConvertsWhatIsThere(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	drainTriggers(t, ds)
+	importVocabulary(t, ds, "healthwhoop")
+	healthDrain(t, ds)
+	if got := len(healthVersions(t, ds)); got != 574 {
+		t.Fatalf("%d outputs after importing the adapter over a synced mirror, want 574", got)
+	}
+}
+
+// TestHealthWhoopFollowsARescoreAndADeletion: the second sync rescores cycle
+// 1047510 and loses a nap and a workout. The rescored cycle's outputs are
+// rewritten at the same ids with a higher revision; the lost rows' outputs
+// are deleted; the hand-logged workout that replaced one arrives.
+func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	strainID := hw(whoopRescoredCycle, "strain")
+	before := mustGet(t, ds, obsObservation, strainID)
+	napOutputs := []string{
+		hw(whoopDeletedNap, "stage", "awake"), hw(whoopDeletedNap, "stage", "light"),
+		hw(whoopDeletedNap, "stage", "deep"), hw(whoopDeletedNap, "stage", "rem"),
+		hw(whoopDeletedNap, "sleep_performance"), hw(whoopDeletedNap, "respiratory_rate"),
+	}
+	for _, id := range napOutputs {
+		if !whoopLive(t, ds, obsObservation, id) {
+			t.Fatalf("the nap's %s was never written", id)
+		}
+	}
+	if !whoopLive(t, ds, healthWorkout, hw(whoopDeletedWorkout, "workout")) {
+		t.Fatal("the auto-detected workout was never written")
+	}
+	workoutHR := []string{hw(whoopDeletedWorkout, "heart_rate_avg"), hw(whoopDeletedWorkout, "heart_rate_max")}
+	for _, id := range workoutHR {
+		if !whoopLive(t, ds, obsObservation, id) {
+			t.Fatalf("the auto-detected workout's %s was never written", id)
+		}
+	}
+	hrBefore := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, "heart_rate_max"))
+	recoveryBefore := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, "recovery"))
+
+	fake.setPhase(1)
+	whoopSync(t, ds, fake, whoopSteady(map[string]string{"sleep": "2026-10-06T00:00:00Z"}))
+	healthDrain(t, ds)
+
+	after := mustGet(t, ds, obsObservation, strainID)
+	if v, _ := quantityOf(t, after.Properties, "value"); v != "13.6118" {
+		t.Errorf("the rescored strain = %s, want 13.6118", v)
+	}
+	if asInt(t, after.Properties["revision"]) <= asInt(t, before.Properties["revision"]) || after.Version <= before.Version {
+		t.Errorf("the rescore moved revision %v -> %v and version %d -> %d, want both higher",
+			before.Properties["revision"], after.Properties["revision"], before.Version, after.Version)
+	}
+	if asInt(t, after.Properties["revision"]) != asInstant(t, "2026-10-10T15:31:47.865Z").Unix() {
+		t.Errorf("the rescored strain's revision = %v, want the rescore's updated_at", after.Properties["revision"])
+	}
+	// The recovery spans the sleep it scores, not the cycle, so a cycle
+	// rescore leaves it unwritten, at the revision and over the night it had.
+	recovery := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, "recovery"))
+	if recovery.Version != recoveryBefore.Version ||
+		fmt.Sprint(recovery.Properties["revision"]) != fmt.Sprint(recoveryBefore.Properties["revision"]) ||
+		!sameInstant(recovery.Properties["endsAt"], asInstant(t, whoopRescoredNightEnd)) {
+		t.Errorf("the rescored cycle's recovery moved to version %d revision %v ending %v (was %d, %v); want it unwritten over its night, ending %s",
+			recovery.Version, recovery.Properties["revision"], recovery.Properties["endsAt"],
+			recoveryBefore.Version, recoveryBefore.Properties["revision"], whoopRescoredNightEnd)
+	}
+	// A sleep rescore moves it: WHOOP moves the night's end, and the sleep's
+	// delivery rebuilds the recovery that names the sleep over the new span,
+	// at the sleep's revision.
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopSleepKind, ID: whoopRow("sleep", whoopRescoredNight),
+		Properties: map[string]any{"endsAt": "2026-10-09T03:41:12.500Z", "updatedAt": "2026-10-10T16:02:31.118Z"},
+	})
+	healthDrain(t, ds)
+	for _, role := range []string{"recovery", "hrv", "resting_heart_rate"} {
+		moved := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, role))
+		if !sameInstant(moved.Properties["endsAt"], asInstant(t, "2026-10-09T03:41:12.500Z")) ||
+			asInt(t, moved.Properties["revision"]) != asInstant(t, "2026-10-10T16:02:31.118Z").Unix() ||
+			moved.Properties["periodId"] != whoopRescoredNight {
+			t.Errorf("after the sleep rescore the %s ends %v at revision %v for period %v; want the rescored night's end, its revision and %s",
+				role, moved.Properties["endsAt"], moved.Properties["revision"], moved.Properties["periodId"], whoopRescoredNight)
+		}
+	}
+	for _, id := range append(napOutputs, hw(whoopDeletedNap, "sleep")) {
+		kind := obsObservation
+		if strings.HasSuffix(id, "/sleep") {
+			kind = healthSleep
+		}
+		if whoopLive(t, ds, kind, id) {
+			t.Errorf("%s outlived the nap WHOOP deleted", id)
+		}
+	}
+	if whoopLive(t, ds, healthWorkout, hw(whoopDeletedWorkout, "workout")) {
+		t.Error("the deleted workout's record survived")
+	}
+	for _, id := range workoutHR {
+		if whoopLive(t, ds, obsObservation, id) {
+			t.Errorf("%s outlived the workout WHOOP deleted", id)
+		}
+	}
+	// The rescore rewrites the cycle's heart rate at the same ids.
+	hrAfter := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, "heart_rate_max"))
+	if v, _ := quantityOf(t, hrAfter.Properties, "value"); v != "168" || hrAfter.Version <= hrBefore.Version ||
+		asInt(t, hrAfter.Properties["revision"]) != asInstant(t, "2026-10-10T15:31:47.865Z").Unix() {
+		t.Errorf("the rescored cycle's maximum heart rate is %s at version %d (was %d), revision %v; want 168 at a higher version and the rescore's revision",
+			v, hrAfter.Version, hrBefore.Version, hrAfter.Properties["revision"])
+	}
+	if v, _ := quantityOf(t, healthProps(t, ds, obsObservation, hw(whoopRescoredCycle, "heart_rate_avg")), "value"); v != "76" {
+		t.Errorf("the rescored cycle's average heart rate is %s, want 76", v)
+	}
+	late := healthProps(t, ds, healthWorkout, hw(whoopLateWorkout, "workout"))
+	// Padel has no value of its own in the workout kind's code set: it is
+	// `other`, and WHOOP's word stays in sportSource.
+	if late["sport"] != "other" || late["sportSource"] != "padel" {
+		t.Errorf("the hand-logged workout landed as sport %v from %v, want other from padel", late["sport"], late["sportSource"])
+	}
+	lateHR := healthProps(t, ds, obsObservation, hw(whoopLateWorkout, "heart_rate_avg"))
+	if v, _ := quantityOf(t, lateHR, "value"); v != "137" || lateHR["channel"] != "workout" {
+		t.Errorf("the hand-logged workout's average heart rate is %s on channel %v, want 137 on workout", v, lateHR["channel"])
+	}
+	// WHOOP's kilojoules are the whole energy spent, resting included.
+	if v, u := quantityOf(t, late, "totalEnergy"); v != "2816.74341" || u != "kJ" || late["activeEnergy"] != nil {
+		t.Errorf("the padel energy = total %s %s, active %v; want 2816.74341 kJ total and no active", v, u, late["activeEnergy"])
+	}
+	if zones, _ := late["zoneDurations"].(map[string]any); len(zones) != 6 || zones["zone5"] != "PT0S" {
+		t.Errorf("the padel zones = %v", late["zoneDurations"])
+	}
+}
+
+// TestHealthWhoopRecoveryWithoutItsSleepSpansTheCycle: with the sleep toggle
+// off no sleep row exists, so a recovery spans its cycle with `period: cycle`;
+// when the sleeps arrive, each one's delivery moves the recovery that names
+// it onto the night.
+func TestHealthWhoopRecoveryWithoutItsSleepSpansTheCycle(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(map[string]any{"enabledSleep": false}))
+	healthDrain(t, ds)
+	if n := countLive(t, ds, whoopSleepKind); n != 0 {
+		t.Fatalf("%d sleep rows with the sleep toggle off, want none", n)
+	}
+	id := hw(whoopExampleCycle, "hrv")
+	p := healthProps(t, ds, obsObservation, id)
+	if p["period"] != "cycle" || p["periodId"] != whoopExampleCycle ||
+		!sameInstant(p["at"], asInstant(t, "2026-10-06T19:41:00.862Z")) ||
+		!sameInstant(p["endsAt"], asInstant(t, "2026-10-07T19:38:00.174Z")) ||
+		asInt(t, p["revision"]) != asInstant(t, "2026-10-07T19:58:00.853Z").Unix() {
+		t.Errorf("without its sleep the recovery's hrv is %v %v over %v to %v at revision %v; want the cycle %s, its span and its revision",
+			p["period"], p["periodId"], p["at"], p["endsAt"], p["revision"], whoopExampleCycle)
+	}
+
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	p = healthProps(t, ds, obsObservation, id)
+	if p["period"] != "sleep" || p["periodId"] != whoopExampleSleep ||
+		!sameInstant(p["at"], asInstant(t, "2026-10-06T19:41:00.271Z")) ||
+		!sameInstant(p["endsAt"], asInstant(t, "2026-10-07T03:55:49.771Z")) {
+		t.Errorf("after the sleeps arrive the recovery's hrv is %v %v over %v to %v; want the night %s",
+			p["period"], p["periodId"], p["at"], p["endsAt"], whoopExampleSleep)
+	}
+	for _, row := range listLive(t, ds, obsObservation) {
+		if metricOf(row.Properties) == "health/whoop_recovery" && row.Properties["period"] != "sleep" {
+			t.Errorf("recovery %s still spans period %v after its sleep arrived", row.ID, row.Properties["period"])
+		}
+	}
+}
+
+// TestHealthWhoopRecoveryWithoutCycleIDKeepsItsIDs: a recovery row written
+// before the provider stored WHOOP's `cycleId` on it names its cycle only by
+// reference, so the adapter reads the id off the cycle row, and the outputs
+// keep their ids over the night and, the night gone, over the cycle. A
+// recovery whose cycle row is gone too has no id to compose: it writes
+// nothing, never ids under `None`.
+func TestHealthWhoopRecoveryWithoutCycleIDKeepsItsIDs(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	roles := []string{"recovery", "hrv", "resting_heart_rate", "spo2", "skin_temperature"}
+	cycles := []string{whoopExampleCycle, whoopRescoredCycle}
+	before := map[string]int64{}
+	for _, cid := range cycles {
+		for _, role := range roles {
+			before[hw(cid, role)] = mustGet(t, ds, obsObservation, hw(cid, role)).Version
+		}
+	}
+	noNone := func(when string) {
+		t.Helper()
+		for _, row := range listLive(t, ds, obsObservation) {
+			if strings.HasPrefix(row.ID, hw("None")+"/") {
+				t.Errorf("%s: output %s is under no cycle id", when, row.ID)
+			}
+		}
+	}
+
+	for _, cid := range cycles {
+		mustPut(t, ds, substrate.PutInput{
+			Kind: whoopRecoveryKind, ID: whoopRow("recovery", cid),
+			Properties: map[string]any{"cycleId": nil},
+		})
+	}
+	healthDrain(t, ds)
+	noNone("without cycleId")
+	for id, version := range before {
+		if !whoopLive(t, ds, obsObservation, id) {
+			t.Errorf("without cycleId the recovery's %s is gone", id)
+			continue
+		}
+		if got := mustGet(t, ds, obsObservation, id).Version; got != version {
+			t.Errorf("without cycleId the recovery's %s moved to version %d (was %d), want it unwritten", id, got, version)
+		}
+	}
+
+	// The night gone, the recovery spans its cycle, at the same ids.
+	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopSleepKind, whoopRow("sleep", whoopRescoredNight), substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	healthDrain(t, ds)
+	noNone("without its sleep")
+	for _, role := range roles {
+		if !whoopLive(t, ds, obsObservation, hw(whoopRescoredCycle, role)) {
+			t.Errorf("without its sleep the recovery's %s is gone", role)
+			continue
+		}
+		p := healthProps(t, ds, obsObservation, hw(whoopRescoredCycle, role))
+		if p["period"] != "cycle" || p["periodId"] != whoopRescoredCycle {
+			t.Errorf("without its sleep the recovery's %s spans %v %v, want the cycle %s", role, p["period"], p["periodId"], whoopRescoredCycle)
+		}
+	}
+
+	// The cycle row gone as well, the night's next delivery finds no cycle
+	// id: the recovery's outputs go, as a recovery's without a span do.
+	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopCycleKind, whoopRow("cycle", whoopExampleCycle), substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	healthDrain(t, ds)
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopSleepKind, ID: whoopRow("sleep", whoopExampleSleep),
+		Properties: map[string]any{"updatedAt": "2026-10-10T16:30:00.000Z"},
+	})
+	healthDrain(t, ds)
+	noNone("without a cycle id")
+	for _, role := range roles {
+		if whoopLive(t, ds, obsObservation, hw(whoopExampleCycle, role)) {
+			t.Errorf("the recovery's %s outlived the last row naming its cycle id", role)
+		}
+	}
+}
+
+// TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors: every output names
+// the adapter version that wrote it, and an upgrade of the adapter alone,
+// replayed over mirrors WHOOP did not change, rewrites each output at the
+// revision it holds (decision record 0162).
+func TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, healthWhoopAdapter)
+	next := upgradeAdapter(t, ds, healthWhoopAdapter)
+	replayAdapter(t, ds, healthWhoopRun)
+	assertAdapterRewrite(t, ds, next, before)
+}
+
+// TestHealthWhoopKeepsAnAccountIdWithSlashes: a record id may hold slashes,
+// and the adapter reads an account reference whole. The thirty days synced
+// under the account `team/watch` land under that account's ids and source,
+// never under its last segment, `watch`, which another account could share.
+func TestHealthWhoopKeepsAnAccountIdWithSlashes(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	const aid = "team/watch"
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopAccountKind, ID: aid,
+		Properties: syncProps(map[string]any{"backfillDepth": "all"},
+			"enabledProfile", "enabledCycles", "enabledRecovery", "enabledSleep", "enabledWorkouts"),
+	})
+	cfg := whoopConfig(fake, whoopProps(nil))
+	cfg["accounts"].([]any)[0].(map[string]any)["id"] = aid
+	s := newStepper(t, ds, whoopSyncFn, cfg)
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountKind, "id": aid}})
+	s.drainApplying(nil)
+	healthDrain(t, ds)
+
+	base := "whoop/" + aid + "/"
+	recovery := healthProps(t, ds, obsObservation, base+whoopExampleCycle+"/recovery")
+	if storedRefPath(recovery["source"]) != obsSource+"/whoop/"+aid {
+		t.Errorf("the recovery's source is %v, want whoop/%s", recovery["source"], aid)
+	}
+	src := healthProps(t, ds, obsSource, "whoop/"+aid)
+	if storedRefPath(src["account"]) != whoopAccountKind+"/"+aid {
+		t.Errorf("the source's account is %v, want %s", src["account"], aid)
+	}
+	if whoopLive(t, ds, obsSource, "whoop/watch") {
+		t.Error("a source was written for the account id's last segment")
+	}
+	n := 0
+	for _, kind := range []string{obsObservation, healthSleep, healthWorkout} {
+		for _, row := range listLive(t, ds, kind) {
+			n++
+			if !strings.HasPrefix(row.ID, base) {
+				t.Errorf("%s %s is not under %s", kind, row.ID, base)
+			}
+		}
+	}
+	if n != 573 {
+		t.Errorf("%d outputs under %s, want the 573 one account's thirty days imply", n, base)
+	}
+}
+
+// TestHealthWhoopHashesAnIDPastTheLimit: a 100-character account id is a
+// valid record id, and `whoop/<account>/<workout uuid>/workout` is 151
+// characters, past the 128 a record id may have. The adapter composes every
+// id through host.observed.record_id, so that output lands under the hash
+// and the delivery does not park; an id that fits is still written as is.
+func TestHealthWhoopHashesAnIDPastTheLimit(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	aid := strings.Repeat("a", 100)
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopAccountKind, ID: aid,
+		Properties: syncProps(map[string]any{"backfillDepth": "all"},
+			"enabledProfile", "enabledCycles", "enabledRecovery", "enabledSleep", "enabledWorkouts"),
+	})
+	cfg := whoopConfig(fake, whoopProps(nil))
+	cfg["accounts"].([]any)[0].(map[string]any)["id"] = aid
+	s := newStepper(t, ds, whoopSyncFn, cfg)
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountKind, "id": aid}})
+	s.drainApplying(nil)
+	healthDrain(t, ds)
+
+	readable := "whoop/" + aid + "/" + whoopExampleWorkout + "/workout"
+	if !whoopLive(t, ds, healthWorkout, runner.ExternalID("whoop", aid, readable)) {
+		t.Fatalf("the workout whose id would be %d characters is not under its hash", len(readable))
+	}
+	if !whoopLive(t, ds, obsObservation, "whoop/"+aid+"/"+whoopExampleCycle+"/recovery") {
+		t.Fatal("the recovery whose id fits was not written as is")
+	}
+	n := 0
+	for _, kind := range []string{obsObservation, healthSleep, healthWorkout} {
+		for _, row := range listLive(t, ds, kind) {
+			n++
+			if len(row.ID) > 128 {
+				t.Errorf("%s %s is longer than a record id may be", kind, row.ID)
+			}
+		}
+	}
+	if n != 573 {
+		t.Errorf("%d outputs for the account, want the 573 one account's thirty days imply", n)
+	}
+}
+
+// TestHealthWhoopConvertsRecoveriesSyncedBeforeCycleIDs: an account synced
+// recoveries and sleeps with cycles off under provider version 19, whose
+// recovery rows carry no `cycleId` and have no cycle row to read one off.
+// The adapter imported over that mirror has no id to compose a recovery's
+// outputs under. The first sync under version 21 re-walks those recoveries,
+// writes each one's `cycleId`, and the adapter converts them.
+func TestHealthWhoopConvertsRecoveriesSyncedBeforeCycleIDs(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	noCycles := func(props map[string]any) map[string]any {
+		props["enabledCycles"] = false
+		return props
+	}
+	whoopSync(t, ds, fake, noCycles(whoopProps(nil)))
+	for _, row := range listLive(t, ds, whoopRecoveryKind) {
+		if _, err := ds.Patch(t.Context(), substrate.ActorAPI, whoopRecoveryKind, row.ID,
+			substrate.PatchInput{Properties: map[string]any{"cycleId": nil}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drainTriggers(t, ds)
+	importVocabulary(t, ds, "healthwhoop")
+	healthDrain(t, ds)
+	roles := []string{"recovery", "hrv", "resting_heart_rate", "spo2", "skin_temperature"}
+	for _, role := range roles {
+		if whoopLive(t, ds, obsObservation, hw(whoopExampleCycle, role)) {
+			t.Fatalf("the recovery's %s was written with no cycle id to compose it from", role)
+		}
+	}
+
+	// The cycle is from 2026-10-06, before the steady window's floor: only a
+	// walk that reaches back past it rewrites its recovery.
+	fake.mu.Lock()
+	fake.windowed = true
+	fake.mu.Unlock()
+	whoopSync(t, ds, fake, noCycles(whoopSteady(nil)))
+	healthDrain(t, ds)
+	for _, role := range roles {
+		if !whoopLive(t, ds, obsObservation, hw(whoopExampleCycle, role)) {
+			t.Errorf("after the upgrade's sync the recovery's %s is still missing", role)
+		}
+	}
+}

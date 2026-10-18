@@ -2813,8 +2813,8 @@ func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref er
 }
 
 // softDelete tombstones one record inside the caller's transaction — the
-// delete path proper, shared by the Delete mutation and a function's delete
-// effect. It is softDeleteIf with no version precondition.
+// delete path proper, for an internal teardown. It is softDeleteIf with no
+// version precondition.
 func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 	return t.softDeleteIf(ref, nil)
 }

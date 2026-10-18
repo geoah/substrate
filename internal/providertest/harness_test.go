@@ -37,6 +37,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -69,6 +70,28 @@ const (
 
 // --- the gates ----------------------------------------------------------------
 
+// requiredEnv names the variable a CI job sets to say this suite must run:
+// with it set, a gate that would skip for a missing `uv` or `python3`, or an
+// offline dependency resolve, fails the case instead, and a run in which no
+// case passed a gate fails the package (TestMain). Without it a laptop with
+// neither tool skips, as before. `-short` skips either way: it asks for no
+// database.
+const requiredEnv = "SUBSTRATE_REQUIRE_PROVIDER_SUITES"
+
+var suiteRequired = os.Getenv(requiredEnv) != ""
+
+// gated counts the cases that passed a gate, which TestMain reports.
+var gated atomic.Int64
+
+// skipOrFailf skips the case, or fails it where the run must not skip.
+func skipOrFailf(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if suiteRequired {
+		t.Fatalf(requiredEnv+" is set, and "+format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
 // requireUV skips a suite that needs a database and a warmed PEP 723 body.
 // Every provider closure ships at least one body with dependencies, so the
 // install itself is what wants uv.
@@ -78,8 +101,9 @@ func requireUV(t *testing.T) {
 		t.Skip("db test")
 	}
 	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's body warms through uv at install")
+		skipOrFailf(t, "uv is not on PATH: the closure's body warms through uv at install")
 	}
+	gated.Add(1)
 }
 
 // requirePython skips a suite whose bodies are dependency-free: they register
@@ -90,8 +114,19 @@ func requirePython(t *testing.T) {
 		t.Skip("db test")
 	}
 	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not on PATH — the bodies register into the shared host")
+		skipOrFailf(t, "python3 is not on PATH: the bodies register into the shared host")
 	}
+	gated.Add(1)
+}
+
+// requirePython3 is requirePython for a case that reads the shipped bundles
+// with python3 and needs no database, so it runs under -short too.
+func requirePython3(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		skipOrFailf(t, "python3 is not on PATH: the case reads the bodies with Python's parser")
+	}
+	gated.Add(1)
 }
 
 // uvProvisionFailed reports whether an install failed because uv could not
@@ -321,7 +356,7 @@ func install(t *testing.T, ds substrate.Dataset, dir string, rewire func([]map[s
 	}
 	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
 		if uvProvisionFailed(err) {
-			t.Skipf("uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
+			skipOrFailf(t, "uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
 		}
 		t.Fatalf("install %s: %v", dir, err)
 	}
@@ -656,6 +691,22 @@ func listLive(t *testing.T, ds substrate.Dataset, kind string) []*substrate.Reco
 		}
 		q.After = page.Cursor
 	}
+}
+
+// live reports whether one record exists and is not deleted. Only
+// ErrNotFound reads as absent: any other error (a kind the repository does
+// not declare, a database fault) fails the test, so a negative assertion
+// cannot pass on a read that never happened.
+func live(t *testing.T, ds substrate.Dataset, kind, id string) bool {
+	t.Helper()
+	row, err := ds.Get(context.Background(), kind, id)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("get %s %s: %v", kind, id, err)
+	}
+	return row.DeletedAt == nil
 }
 
 // countLive counts the live records of one kind.

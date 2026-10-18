@@ -20,15 +20,15 @@ const slackSyncStateType = slackPackage + "/conversationsync"
 // conversationsync row: the events path moves no cursor and stamps nothing.
 func slackEvents(t *testing.T, ds substrate.Dataset, f *fakeSlack, callbacks ...map[string]any) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, slackAccountType, slackAccountID)
-	conn := mustGet(t, ds, slackConfigType, "default")
+	row := mustGet(t, ds, slackAccountKind, slackAccountID)
+	conn := mustGet(t, ds, slackConfigKind, "default")
 	cfg := map[string]any{
 		"accounts": []any{map[string]any{
-			"id": slackAccountID, "kind": slackAccountType,
+			"id": slackAccountID, "kind": slackAccountKind,
 			"version": row.Version, "properties": row.Properties,
 		}},
 		"inputs": map[string]any{"connector": map[string]any{
-			"id": conn.ID, "kind": slackConfigType, "version": conn.Version,
+			"id": conn.ID, "kind": slackConfigKind, "version": conn.Version,
 			"properties": map[string]any{"userToken": fakeToken, "apiBase": f.ts.URL},
 		}},
 	}
@@ -53,7 +53,7 @@ func slackEvents(t *testing.T, ds substrate.Dataset, f *fakeSlack, callbacks ...
 		}
 		effects, out, cur := s.step(resume)
 		for _, ef := range effects {
-			if ef.Kind == slackAccountType || ef.Kind == slackSyncStateType {
+			if ef.Kind == slackAccountKind || ef.Kind == slackSyncStateType {
 				t.Fatalf("the events path wrote %s %s %s: %v", ef.Action, ef.Kind, ef.ID, ef.Properties)
 			}
 		}
@@ -114,7 +114,7 @@ func TestSlackEventsApplyToTheMirror(t *testing.T) {
 	slackSetup(t, ds, f)
 	slackRun(t, ds, f, nil)
 
-	acct := mustGet(t, ds, slackAccountType, slackAccountID)
+	acct := mustGet(t, ds, slackAccountKind, slackAccountID)
 	states := listLive(t, ds, slackSyncStateType)
 	if len(states) != 1 {
 		t.Fatalf("want one conversationsync row after the walk, got %d", len(states))
@@ -233,7 +233,7 @@ func TestSlackEventsApplyToTheMirror(t *testing.T) {
 		t.Fatalf("the delete batch answered %v, want one applied and one skipped", out)
 	}
 
-	if now := mustGet(t, ds, slackAccountType, slackAccountID); now.Version != acct.Version {
+	if now := mustGet(t, ds, slackAccountKind, slackAccountID); now.Version != acct.Version {
 		t.Fatalf("the account moved from version %d to %d under the events path", acct.Version, now.Version)
 	}
 	if now := mustGet(t, ds, slackSyncStateType, state.ID); now.Version != state.Version {
@@ -293,7 +293,7 @@ func TestSlackEventsConversationsUsersPinsFiles(t *testing.T) {
 	f.channels = []map[string]any{slackChannel("C1")}
 	f.history["C1"] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
 	slackSetup(t, ds, f)
-	mustPut(t, ds, substrate.PutInput{Kind: slackAccountType, ID: slackAccountID, Properties: map[string]any{
+	mustPut(t, ds, substrate.PutInput{Kind: slackAccountKind, ID: slackAccountID, Properties: map[string]any{
 		"enabledMembers": true,
 	}})
 	slackRun(t, ds, f, nil)

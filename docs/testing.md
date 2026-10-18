@@ -25,6 +25,15 @@ required checks that need no database or Docker (`lint`, `lint go`,
 runs it, including the linters, the console, an image build and the provider
 suite, except the weekly live suite (`ci:llm`), which spends money.
 
+The two provider suites (`internal/providertest` and `internal/providere2e`)
+skip a case when `uv` or `python3` is missing or a dependency resolve fails
+offline, so a laptop without them still passes. The CI jobs that run them
+(`ci:db:rest` and the `providers e2e` workflow job) set
+`SUBSTRATE_REQUIRE_PROVIDER_SUITES=1`, which turns each such skip into a
+failure and fails a run in which no case ran. Each suite prints how many
+cases ran past those gates, with `-v` or on a failure, and writes the count
+to the job summary on GitHub Actions.
+
 **The short suite** is everything that needs no database: the API against its
 hand-written fake (`internal/api/fake_test.go`), the CLI's commands, the
 vocabulary, the sandbox, the runner's protocol. It is fast enough to run on

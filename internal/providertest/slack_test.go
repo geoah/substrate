@@ -26,8 +26,8 @@ import (
 const (
 	slackDir         = providersDir + "/slack"
 	slackPackage     = "providers.substrate.reamde.dev/slack"
-	slackAccountType = slackPackage + "/account"
-	slackConfigType  = slackPackage + "/config"
+	slackAccountKind = slackPackage + "/account"
+	slackConfigKind  = slackPackage + "/config"
 	slackSyncFn      = slackPackage + "/slacksync"
 	slackAccountID   = "acct"
 	slackTeam        = "T0TEST"
@@ -209,10 +209,10 @@ func slackMessage(ts, user string) map[string]any {
 func slackSetup(t *testing.T, ds substrate.Dataset, f *fakeSlack, rewrites ...[2]string) {
 	t.Helper()
 	installRewired(t, ds, slackDir, rewrites...)
-	mustPut(t, ds, substrate.PutInput{Kind: slackConfigType, ID: "default", Properties: map[string]any{
+	mustPut(t, ds, substrate.PutInput{Kind: slackConfigKind, ID: "default", Properties: map[string]any{
 		"userToken": fakeToken, "apiBase": f.ts.URL,
 	}})
-	mustPut(t, ds, substrate.PutInput{Kind: slackAccountType, ID: slackAccountID, Properties: map[string]any{
+	mustPut(t, ds, substrate.PutInput{Kind: slackAccountKind, ID: slackAccountID, Properties: map[string]any{
 		"enabledMessages": true, "backfillDepth": "all",
 	}})
 }
@@ -223,22 +223,22 @@ func slackSetup(t *testing.T, ds substrate.Dataset, f *fakeSlack, rewrites ...[2
 // row does not hold. It returns the account stamps the run wrote, in order.
 func slackRun(t *testing.T, ds substrate.Dataset, f *fakeSlack, override map[string]any) []map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, slackAccountType, slackAccountID)
+	row := mustGet(t, ds, slackAccountKind, slackAccountID)
 	props := maps.Clone(row.Properties)
 	maps.Copy(props, override)
-	conn := mustGet(t, ds, slackConfigType, "default")
+	conn := mustGet(t, ds, slackConfigKind, "default")
 	cfg := map[string]any{
 		"accounts": []any{map[string]any{
-			"id": slackAccountID, "kind": slackAccountType,
+			"id": slackAccountID, "kind": slackAccountKind,
 			"version": row.Version, "properties": props,
 		}},
 		"inputs": map[string]any{"connector": map[string]any{
-			"id": conn.ID, "kind": slackConfigType, "version": conn.Version,
+			"id": conn.ID, "kind": slackConfigKind, "version": conn.Version,
 			"properties": map[string]any{"userToken": fakeToken, "apiBase": f.ts.URL},
 		}},
 	}
 	s := newStepper(t, ds, slackSyncFn, cfg)
-	s.setEnvelope(map[string]any{"record": map[string]any{"kind": slackAccountType, "id": slackAccountID}})
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": slackAccountKind, "id": slackAccountID}})
 	var resume any
 	var stamps []map[string]any
 	for i := 0; ; i++ {
@@ -247,7 +247,7 @@ func slackRun(t *testing.T, ds substrate.Dataset, f *fakeSlack, override map[str
 		}
 		effects, _, cur := s.step(resume)
 		for _, ef := range effects {
-			if ef.Action == "patch" && ef.Kind == slackAccountType && ef.ID == slackAccountID {
+			if ef.Action == "patch" && ef.Kind == slackAccountKind && ef.ID == slackAccountID {
 				stamps = append(stamps, ef.Properties)
 			}
 		}
@@ -262,14 +262,14 @@ func slackRun(t *testing.T, ds substrate.Dataset, f *fakeSlack, override map[str
 // slackCursors is the account's stored drain state.
 func slackCursors(t *testing.T, ds substrate.Dataset) map[string]any {
 	t.Helper()
-	cur, _ := mustGet(t, ds, slackAccountType, slackAccountID).Properties["streamCursors"].(map[string]any)
+	cur, _ := mustGet(t, ds, slackAccountKind, slackAccountID).Properties["streamCursors"].(map[string]any)
 	return cur
 }
 
 // slackStatus is the account's stored syncStatus.
 func slackStatus(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
-	s, _ := mustGet(t, ds, slackAccountType, slackAccountID).Properties["syncStatus"].(string)
+	s, _ := mustGet(t, ds, slackAccountKind, slackAccountID).Properties["syncStatus"].(string)
 	return s
 }
 
@@ -394,11 +394,11 @@ func TestSlackRefusedItemsAreAskedOnce(t *testing.T) {
 
 	// The owner pastes a token again: the config record moves, and what the
 	// old token was refused is asked once more.
-	was := mustGet(t, ds, slackConfigType, "default").Version
-	mustPut(t, ds, substrate.PutInput{Kind: slackConfigType, ID: "default", Properties: map[string]any{
+	was := mustGet(t, ds, slackConfigKind, "default").Version
+	mustPut(t, ds, substrate.PutInput{Kind: slackConfigKind, ID: "default", Properties: map[string]any{
 		"userToken": fakeToken, "apiBase": f.ts.URL + "/",
 	}})
-	if now := mustGet(t, ds, slackConfigType, "default").Version; now == was {
+	if now := mustGet(t, ds, slackConfigKind, "default").Version; now == was {
 		t.Fatalf("the config edit did not move its version (%d)", now)
 	}
 	slackRun(t, ds, f, nil)

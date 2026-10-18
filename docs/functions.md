@@ -545,11 +545,11 @@ reference:
   A pointer at another record is one of the `properties`, written as the
   `{ref: "<kind>/<id>", …}` object or as the bare path, which the engine
   normalizes to it.
-- **`ifVersion`** (put and patch) is the optimistic-concurrency precondition: an
+- **`ifVersion`** (put, patch and delete) is the optimistic-concurrency precondition: an
   integer the write applies against only if the stored version equals it (a
   non-existent record is version 0), else the whole delivery fails
   `conflict`. It is the safe read-then-conditional-write primitive.
-- **`onConflict`** (put and patch, beside `ifVersion`) is what LOSING that race
+- **`onConflict`** (put, patch and delete, beside `ifVersion`) is what LOSING that race
   means. `park` is the default and today's behaviour: the delivery fails
   `conflict`, which is what a writer that expected to win wants. `yield` says
   the race is an ordinary outcome — the whole delivery rolls back, writes
@@ -560,7 +560,8 @@ reference:
   ([0093](decisions/0093-a-guarded-write-may-declare-that-losing-is-normal.md)).
 - **`patch`** `{action: patch, kind, id, ifVersion?, onConflict?, properties}`. A state value among the
   properties is a transition; re-asserting the current state is a no-op.
-- **`delete`** `{action: delete, kind, id}` tombstones.
+- **`delete`** `{action: delete, kind, id, ifVersion?, onConflict?}` tombstones.
+  Under `ifVersion`, a row written since the body read it is not deleted.
 - **`merge`** `{action: merge, kind, id, loser}` (`id` is the winner) and
   **`split`** `{action: split, kind, merge}`, both refused unless
   the `permissions.mutations` grant names them; the `*request` records stay the polite

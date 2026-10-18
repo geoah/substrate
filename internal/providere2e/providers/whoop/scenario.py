@@ -580,7 +580,7 @@ def main():
                    if not (want["cycles"].get(props(r).get("cycleId")) or {}).get("end")]
         ok(bool(current) and all(not props(r).get("endsAt") for r in current),
            "the CURRENT cycle has no `endsAt` at all — WHOOP omits `end` until "
-           "the member wakes, and an absent end is not a null one (%d)"
+           "the next sleep starts a cycle, and an absent end is not a null one (%d)"
            % len(current))
         # A recovery's `at` is its OWN `created_at` — the instant WHOOP
         # recorded the verdict. The row is keyed by its cycle, so the record it
