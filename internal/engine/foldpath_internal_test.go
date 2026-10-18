@@ -51,6 +51,20 @@ var foldWriteSites = map[string]string{
 	"ambiguous.go:markAmbiguous":     "the `ambiguous_at` mark, derived again by rederiveOffers",
 	"ambiguous.go:deriveAmbiguousOf": "the `ambiguous_at` marks of a source kind",
 	"rebuild.go:rederiveOffers":      "clears every `ambiguous_at` mark before deriving them again",
+	// The observed index (decision 0160): a record's segment is a function
+	// of its folded row and its kind's binding, recorded by syncObserved from
+	// foldRecordOp and written by settleObserved at the transaction's end with
+	// the rollups and latest rows of what it touched. A rebuild clears the
+	// tables (foldTables) and the background pass derives them again from
+	// every row (queueObservedRederivation).
+	"observedsettle.go:deleteSegments":     "the observed segments of rows a transaction wrote again or removed",
+	"observedsettle.go:insertSegmentBatch": "the observed segments of rows a transaction wrote",
+	"observedsettle.go:streamIDs":          "a stream's private id, which a rebuild may allocate again differently",
+	"observedsettle.go:widenExtents":       "a stream's longest record extent, a bound that only grows and that a rebuild derives again",
+	"observedsettle.go:dropUnnamedTiers":   "the rollup rows of tiers a metric no longer names, around the instants a transaction touched",
+	"observedsettle.go:replaceRows":        "the rollup rows of the buckets a transaction's segments touched, before they are computed again",
+	"observedsettle.go:insertRollupBatch":  "the rollup rows of the buckets a transaction's segments touched",
+	"observedsettle.go:recomputeLatest":    "the observed latest rows of the streams a transaction's segments touched",
 
 	// Merge and split rewrite the side stores with set-shaped statements and
 	// record a resync effect that restates the result (fold.go recordResync).

@@ -28,7 +28,11 @@ package engine
 //     search bands), because an import folded those rows before it ran.
 //   - It runs BEFORE the stored vocabulary loads (engine.go), so it sees the
 //     rows as they are and the binary's own registry, and nothing else. What
-//     it rewrites may be the very rows the load would refuse.
+//     it rewrites may be the very rows the load would refuse. A row it folds
+//     whose kind that registry does not hold keeps its refs rows and observed
+//     points as they stand, and its kind is recorded for the background pass
+//     to re-derive every row of it once the vocabulary has loaded
+//     (requestUnprojected), so a live store and a rebuilt one agree.
 //   - It is IDEMPOTENT. The ledger is the database's, and a repository
 //     directory imported into a fresh database carries its changelog and not
 //     the ledger, so every migration runs once more there and must find
@@ -53,6 +57,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -146,6 +152,7 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 	for _, m := range pending {
 		var did string
 		err := ds.inTxOn(ctx, own, substrate.ActorSystem, true, func(t *txn) error {
+			t.migrating = true
 			// The same lock the boot upgrade and every vocabulary apply take:
 			// a migration rewrites declaration rows, and nothing else may
 			// decide against the registry while it does.
@@ -159,6 +166,9 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			if err := t.requestUnprojected(); err != nil {
+				return err
+			}
 			did = summary
 			_, err = t.exec(`INSERT INTO repository_migrations (version, name) VALUES ($1, $2)`, m.Version, m.Name)
 			return err
@@ -170,6 +180,19 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 			"repository", logSafeID(ds.info.ID), "version", m.Version, "name", m.Name, "did", did)
 	}
 	return nil
+}
+
+// requestUnprojected records, for the pass behind the open, every kind whose
+// rows the migration folded without a declaration to derive them under: its
+// refs rows, search bands and observed points re-derive for every row once
+// the stored vocabulary has loaded (reprojection.go).
+func (t *txn) requestUnprojected() error {
+	every := indexFilter{moved: true, every: true}
+	var rs []indexReprojection
+	for _, kind := range slices.Sorted(maps.Keys(t.unprojected)) {
+		rs = append(rs, indexReprojection{kind: kind, refs: every, fts: every, observed: every})
+	}
+	return t.requestReprojections(rs)
 }
 
 // appliedRepositoryMigrations reads the ledger: version to recorded name.

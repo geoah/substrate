@@ -573,19 +573,20 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := t.rederiveMovedRefs(reshaped); err != nil {
 			return err
 		}
-		// `fts` re-derives BEHIND THE COMMIT, in the pass the boot upgrade
-		// leaves its reshaped kinds to (reprojection.go): a kind of many rows
-		// takes minutes, and this transaction holds the registry lock every
-		// write waits on. The request commits with the declarations, and
-		// until the pass reaches a row, a search answers for the declaration
+		// `fts` and the observed points re-derive BEHIND THE COMMIT, in the
+		// pass the boot upgrade leaves its reshaped kinds to
+		// (reprojection.go): a kind of many rows takes minutes, and this
+		// transaction holds the registry lock every write waits on. The
+		// request commits with the declarations, and until the pass reaches
+		// a row, a search and the observed index answer for the declaration
 		// the batch replaced.
-		owed, err := t.requestMovedFTS(reshaped)
+		owed, err := t.requestMovedBehindCommit(reshaped)
 		if err != nil {
 			return err
 		}
 		if len(owed) > 0 {
 			requested = true
-			ds.logApply("requesting the search index re-derivation behind the commit", "kinds", len(owed))
+			ds.logApply("requesting the search and observed index re-derivation behind the commit", "kinds", len(owed))
 		}
 		if b.extra != nil {
 			if err := b.extra(t); err != nil {

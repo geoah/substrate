@@ -140,26 +140,6 @@ func observedMeasure(ty *vocabulary.Kind, variant string, props map[string]any) 
 	return measureFor(unit, declaredMeasure(ty), delta)
 }
 
-// declaredMeasure is the measure an observed kind's `value` declares, "" where
-// it names none.
-func declaredMeasure(ty *vocabulary.Kind) string {
-	if p, ok := ty.Prop("value"); ok && p.Quantity != nil {
-		return p.Quantity.Measure
-	}
-	return ""
-}
-
-// measureFor is the measure a value converts in; vocabulary holds the rule,
-// so a trace's size check counts the measure this stamps.
-func measureFor(unit, declared string, delta bool) string {
-	return vocabulary.ObservedMeasureFor(unit, declared, delta)
-}
-
-func stringProp(props map[string]any, name string) string {
-	s, _ := props[name].(string)
-	return s
-}
-
 // coerceProp coerces one declared property's written value, as coerceValue
 // does, except that a packed observed record's `values` and `codes` keep a
 // null item: unavailable from that point on (decision 0158). Every other list

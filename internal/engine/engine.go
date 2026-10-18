@@ -146,6 +146,9 @@ type options struct {
 	// (export_test.go WithTestReprojectionHook): a hook run before each
 	// page with the kind it is about to re-derive. Tests only.
 	reprojectionHook func(ctx context.Context, kind string) error
+	// reprojectionPageHook is the same pass's seam inside a page's
+	// transaction (export_test.go WithTestReprojectionPageHook). Tests only.
+	reprojectionPageHook func(ctx context.Context, kind string) error
 	// inadmissible is the loader's test seam (export_test.go
 	// WithTestInadmissible): the stored packages it refuses as a binary
 	// whose contract tightened would, so a test parks a package without
@@ -532,6 +535,9 @@ type service struct {
 	// testReprojectionHook is the options' reprojection hook
 	// (reprojection.go reprojectKind). Tests only.
 	testReprojectionHook func(ctx context.Context, kind string) error
+	// testReprojectionPageHook is the options' hook inside a page's
+	// transaction (reprojection.go reprojectKind). Tests only.
+	testReprojectionPageHook func(ctx context.Context, kind string) error
 	// testInadmissible is the options' loader seam (vocabularywrite.go
 	// admitStored). Tests only.
 	testInadmissible map[string]bool
@@ -743,10 +749,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		digestYieldMax:     cmp.Or(o.digestYieldMax, digestYieldMax),
 		testDigestPaceHook: o.digestPaceHook,
 
-		searchReindexBatch:    o.searchReindexBatch,
-		testSearchReindexHook: o.searchReindexHook,
-		testReprojectionHook:  o.reprojectionHook,
-		testInadmissible:      o.inadmissible,
+		searchReindexBatch:       o.searchReindexBatch,
+		testSearchReindexHook:    o.searchReindexHook,
+		testReprojectionHook:     o.reprojectionHook,
+		testReprojectionPageHook: o.reprojectionPageHook,
+		testInadmissible:         o.inadmissible,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
@@ -1195,6 +1202,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
+		ds.checkObservedIndex,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,

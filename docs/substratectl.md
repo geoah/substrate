@@ -31,11 +31,11 @@ and it can run anywhere.
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
 verify`, `repository snapshot`, `repository rebuild`, `repository
-rotate-generation` and `repository reembed`. Every one of them needs `--dsn`
-(or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when that is unset) and
-refuses without it before touching anything. The ones
+rotate-generation`, `repository reembed` and `repository reindex`. Every one
+of them needs `--dsn` (or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when
+that is unset) and refuses without it before touching anything. The ones
 that open the repository directory (`verify`, `rebuild`, `reembed`,
-`snapshot`, `rotate-generation` and `user reset`) also need
+`reindex`, `snapshot`, `rotate-generation` and `user reset`) also need
 `SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
 `repository inspect` reports a missing root instead of refusing. The one
 exception is `repository rewrap`, which opens a copied repository directory

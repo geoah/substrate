@@ -49,7 +49,7 @@ Chosen: the first.
   one `avg` cannot mean two things. Rollups carry `twa_sum`, `held_ms`,
   `last_hold_ms` and `max_gap_ms`, so a gauge's `avg` is served from rollups
   whenever the request's `maxGap` allows
-  (0160).
+  ([0160](0160-the-observed-index-keeps-a-segment-per-record-and-a-rollup-serves-only-exact-answers.md)).
   A bucket whose values hold for no time (`PT0S`, a blood pressure) answers
   the mean of its values, each weighing one, which is the time-weighted mean
   of equal holds. Where any value of the bucket holds time, a `PT0S` value

@@ -318,6 +318,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0157](0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md) | A counter is stored as sent and differenced at read under one of three contracts | accepted |
 | [0158](0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md) | A gauge carries a hold, a null ends it, and its mean is time-weighted | accepted |
 | [0159](0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md) | The base observation kinds live in a sample every domain sample requires | accepted |
+| [0160](0160-the-observed-index-keeps-a-segment-per-record-and-a-rollup-serves-only-exact-answers.md) | The observed index keeps a segment per record, and a rollup serves only exact answers | accepted |
 | [0162](0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md) | An observed row names its origin and source, and composes its id from upstream data | accepted |
 | [0163](0163-positions-forecasts-and-money-stay-out-of-the-observed-index.md) | Positions, forecasts and money stay out of the observed index | accepted |
 | [0164](0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md) | A webhook's signature is verified by the host when the trigger declares one | accepted |

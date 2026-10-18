@@ -637,21 +637,25 @@ it trusts:
   background index re-derivation step failed; trying it again` and is tried
   again after a pause of up to a minute. Each page records the id it ended
   at, so a pass a shutdown interrupts resumes there at the next open, and
-  `repository rebuild` finishes it, because the replay derives every row. Until the pass reaches a row, a reverse read through a
+  `repository rebuild` finishes it for the refs and the search index,
+  because the replay derives every row; the observed index it queues for the
+  pass again. Until the pass reaches a row, a reverse read through a
   moved reference site and a search over a moved `fts` flag answer for the
   previous declaration of that row.
 
   A `POST …/vocabulary/apply` and a provider upgrade (the catalog's install
-  over an older version) use the same pass for the search index alone. Their
-  transaction holds the registry lock every write waits on, so it
-  re-derives only the refs rows of the rows carrying a moved reference
-  property, logging `substrate: vocabulary apply: re-deriving the refs
-  index`, and records the `fts` half for the pass, logging `substrate:
-  vocabulary apply: requesting the search index re-derivation behind the
-  commit` with `kinds`. The pass starts once the batch has committed and
-  logs the lines above. A reverse read is current when the batch answers;
-  until the pass reaches a row, a search over a moved `fts` flag answers
-  for the declaration the batch replaced. A batch whose commit answer was
+  over an older version) use the same pass for the search index and the
+  observed index. Their transaction holds the registry lock every write
+  waits on, so it re-derives only the refs rows of the rows carrying a
+  moved reference property, logging `substrate: vocabulary apply:
+  re-deriving the refs index`, and records the `fts` half and the observed
+  points of a kind that starts or stops binding the `observed` trait for
+  the pass, logging `substrate: vocabulary apply: requesting the search and
+  observed index re-derivation behind the commit` with `kinds`. The pass
+  starts once the batch has committed and logs the lines above. A reverse
+  read is current when the batch answers; until the pass reaches a row, a
+  search over a moved `fts` flag and the observed index of a rebound kind
+  answer for the declaration the batch replaced. A batch whose commit answer was
   lost leaves the repository refusing writes until restart, and may leave
   this process serving the declarations it replaced, so the pass stops
   there without touching a request, logging `substrate: the index
@@ -670,6 +674,17 @@ it trusts:
   is tried again after a pause of up to a minute. A reindex a shutdown
   interrupts starts again at the next open; `repository rebuild` finishes
   it, because the replay indexes every row.
+- **The observed index is re-derived in the background** when the binary
+  derives it by newer rules than the ones recorded in `observed_index`, or
+  when none are recorded (a repository written before migration 0013). The
+  open hands every row of every kind that binds the `observed` trait to the
+  pass that re-derives a reshaped kind's indexes, and logs `substrate: the
+  observed index was derived under older rules; re-deriving it behind the
+  open` with `from`, `to` and `kinds`. A rebuild and a boot import clear the
+  index and queue the same work instead of deriving it inside the replay,
+  so their transaction holds the repository's write lock for the records
+  alone; the pass starts once they commit. A metric record whose `rollups`
+  change queues the rows of its streams the same way.
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.
@@ -993,7 +1008,12 @@ in `repository_migrations` (`version`, `name`, `applied_at`, one row per
 repository), and never runs again on that database. The ledger is checked the
 way `schema_migrations` is: a recorded version this binary does not carry, a
 recorded name that differs, or a pending version below one already recorded
-refuses that repository's open by name, and the API answers `503`. A
+refuses that repository's open by name, and the API answers `503`. A row
+a migration rewrites whose kind the binary's registry does not yet hold keeps
+its refs rows and observed points as they stand, and its kind is queued in
+`index_reprojections`, so the background pass after the open re-derives the
+refs rows, search bands and observed points of every row of it under the
+loaded vocabulary. A
 migration is written to find nothing to do the second time, because a
 repository directory imported into a fresh database carries its changelog and
 not the database's ledger, so every migration runs once more there. That is
@@ -1014,7 +1034,8 @@ stored bare, resolving each word the way that binary did.
 table `repository rebuild` clears and fills again from the changelog
 (`internal/engine/rebuild.go`): `records` with its derived columns `fts`,
 `orphaned_at` and `ambiguous_at`, `refs`, `former_ids`, `annotations`,
-`property_managers`, `property_offers`, and the delivery ledger
+`property_managers`, `property_offers`, the three tables of the
+[observed index](observations.md#the-observed-index), and the delivery ledger
 (`trigger_cursors`, `trigger_schedule`, `trigger_failures`,
 `paged_cursors`; a rebuild brings a cursor back at its last acknowledged
 delivery, not at the scan position past it). A SQL migration changes their
@@ -1415,15 +1436,16 @@ These are the [operator hat](substratectl.md#two-hats): no token, `--dsn` (or
 `DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and a refusal before touching
 anything without them.
 
-**Four of them run beside a live server; four need it stopped; one takes no
+**Four of them run beside a live server; five need it stopped; one takes no
 database.** `repository list` and `repository inspect` read the tables
 directly; `repository verify` and `repository reembed` open the engine
 read-only, so they apply no migration, run no boot check and append nothing: `verify` reports an unfinished final transaction or a table
 ahead of its file as a finding instead of repairing it, and `reembed` writes
 queue rows, which are not changelog entries. `repository rebuild`,
-`repository rotate-generation`, `repository snapshot` and `user reset` open the
-repository as its changelog writer, and a running server holds that lock: the
-command refuses, naming the lock, until the server is stopped. `repository
+`repository reindex`, `repository rotate-generation`, `repository snapshot`
+and `user reset` open the repository as its changelog writer, and a running
+server holds that lock: the command refuses, naming the lock, until the
+server is stopped. `repository
 rewrap` acts on a copied directory before any boot has imported it, so it
 needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
@@ -1433,6 +1455,7 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada.exa
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.example.com
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository reindex ada.example.com --observed
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.example.com --identity-file ./recovery.key
@@ -1554,6 +1577,16 @@ the exec path needs nothing open at all.
   stderr every thirty seconds, as `verify` does. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.
+- **`repository reindex <repository> --observed`** queues every record of
+  every kind that binds the `observed` trait for the background pass that
+  derives the [observed index](observations.md#the-observed-index) again:
+  segments, rollup rows in every tier the metrics name, and latest rows,
+  their point counts included. It changes no record and appends nothing to
+  the changelog, and it is the repair for an index a fault left behind its
+  records, short of a rebuild. It prints the kinds and the records it
+  queued. The server re-derives them at its next start and logs the
+  progress lines of a reshaped kind's indexes. Stop the server first, as for
+  `rebuild`.
 - **`user reset <repository>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new

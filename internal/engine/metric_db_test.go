@@ -10,10 +10,11 @@ import (
 
 // The write path stamps an observed record's `measure` from its unit (a
 // difference of temperatures is a temperature-difference), drops one a
-// writer sends, and leaves none on a code.
+// writer sends, leaves none on a code, and the observed index converts in the
+// stamped one.
 func TestObservedMeasureIsStampedFromTheUnit(t *testing.T) {
 	t.Parallel()
-	r := openObserved(t)
+	r := openObservedIndex(t)
 	for _, c := range []struct {
 		kind, id string
 		props    map[string]any
@@ -49,6 +50,10 @@ func TestObservedMeasureIsStampedFromTheUnit(t *testing.T) {
 	if err != nil || rec.Properties["measure"] != "mass" {
 		t.Fatalf("a patch naming a measure: %v, measure %v", err, rec.Properties["measure"])
 	}
+	if got := r.points(t, r.trace, "hr"); len(got) != 2 || got[0].base.Float64 != 58.0/60 {
+		t.Errorf("the trace's points convert in its stamped measure: %+v", got)
+	}
+	r.rebuildMatches(t)
 }
 
 // A metric's record is held to the `metric` trait's rules on every write: a
