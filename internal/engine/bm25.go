@@ -48,8 +48,9 @@ var bm25Bands = [4]bm25Band{{3.0, 0.3}, {1.5, 0.5}, {1.0, 0.75}, {1.0, 0.75}}
 const (
 	bm25K1 = 1.2
 	// bm25Pool caps the candidates one lexical search scores. The pool is the
-	// candidates matching every word first, then by ts_rank, so a cap only
-	// ever drops rows that miss a word and rank low without IDF.
+	// candidates matching every word first, each pass's by the pre-rank
+	// (preRankNorm), so a cap drops partial matches before whole ones, and
+	// within a pass the rows the pre-rank puts last.
 	bm25Pool = 400
 	// searchReadMax is the most matching rows one candidate pass reads before
 	// any ranking work (lexicalCandidates), newest first. Ranking reads each
@@ -59,7 +60,8 @@ const (
 	searchReadMax = 2000
 	// DefaultSearchBudget is the wall clock one lexical search may spend
 	// (WithSearchBudget overrides it per service): past it the relaxed top-up
-	// is dropped, or the search fails when nothing was found yet.
+	// is dropped, scoring falls back to the pre-rank order, or the search
+	// fails when nothing was found yet.
 	DefaultSearchBudget = 5 * time.Second
 	// bm25PrefixWeight is what a completion of a prefix term counts, against
 	// the typed word itself.
@@ -286,12 +288,36 @@ func bm25IDF(n, df float64) float64 {
 // lexicalCap says where a lexical search stopped short of ranking every
 // match: a pass met more matching rows than it reads (readCapped, at readMax),
 // or the relaxed top-up ran out of the budget and the strict pass's
-// candidates answered alone (budget).
+// candidates answered alone (budget), or BM25F scoring ran out of it and the
+// candidates answered in their pre-rank order (unscored).
 type lexicalCap struct {
 	readCapped bool
 	readMax    int
 	budget     bool
+	unscored   bool
 }
+
+// lexicalCand is one candidate as a pass found it: whole when the strict pass
+// did, and its pre-rank, the length-normalized ts_rank the pass ordered by.
+type lexicalCand struct {
+	id      eref
+	whole   bool
+	demoted bool
+	rank    float64
+}
+
+// preRankNorm is ts_rank's normalization for the pre-rank, the cheap order
+// each candidate pass keeps its pool by. Bit 1 divides the rank by
+// log2(length + 1), the length counted in positions (tsrank.c; the manual's
+// "1 + the logarithm of the document length" is the same idea, not the same
+// number). Without it a long Drive file or mail repeating the words outranks a
+// short record naming them, fills the pool, and is also the costliest row to
+// score. The cost is the other way round: a long document titled by the word
+// ranks below many short records holding it once, and a pool full of those
+// cuts it before BM25F, which would have ranked it first, sees it. Bit 2
+// (divide by the length) cuts long documents much harder, and bit 32 only
+// rescales.
+const preRankNorm = 1
 
 // lexicalPass is what both candidate passes of one search share.
 type lexicalPass struct {
@@ -316,7 +342,10 @@ type lexicalPass struct {
 //
 // The whole arm runs under the service's search budget (DefaultSearchBudget).
 // A top-up that runs out of it is dropped and the strict candidates answer,
-// marked capped; a budget spent before any candidate was found is
+// marked capped. Scoring that runs out of it falls back to the order the
+// passes already hold, strict candidates first and then by pre-rank, marked
+// capped: that order costs no statement, so scoring may spend every
+// millisecond left. A budget spent before any candidate was found is
 // substrate.ErrUnavailable naming it.
 func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string, restrict bool, k int) (map[eref]arm, lexicalCap, error) {
 	budget := ds.svc.searchBudget
@@ -333,12 +362,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 		return nil, capped, err
 	}
 
-	terms := plan.terms()
 	st, err := ds.searchStats(ctx)
-	if err != nil {
-		return failed(err)
-	}
-	idf, err := ds.termIDF(ctx, terms, st)
 	if err != nil {
 		return failed(err)
 	}
@@ -365,6 +389,9 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 		// The top-up leaves a fifth of the budget to score what was found.
 		tctx, tcancel := context.WithDeadline(ctx, began.Add(budget-budget/5))
 		more, over, err := ds.lexicalCandidates(tctx, pass, true, pool-len(cands))
+		for i := range more {
+			more[i].whole = false
+		}
 		expired := tctx.Err() != nil
 		tcancel()
 		switch {
@@ -381,9 +408,31 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	if len(cands) == 0 {
 		return out, capped, nil
 	}
+	if hook := ds.svc.searchScoreHook; hook != nil {
+		hook()
+	}
+	// Past the budget with the caller still waiting, the candidates answer in
+	// the order the passes hold; a canceled caller gets the error.
+	preRanked := func(err error) (map[eref]arm, lexicalCap, error) {
+		if ctx.Err() == nil || parent.Err() != nil {
+			return failed(err)
+		}
+		capped.unscored = true
+		for _, c := range cands {
+			out[c.id] = arm{score: c.rank, demoted: c.demoted, whole: c.whole}
+		}
+		return out, capped, nil
+	}
+	// The IDF is read here, not before the passes, so a search that falls
+	// back never paid for it.
+	terms := plan.terms()
+	idf, err := ds.termIDF(ctx, terms, st)
+	if err != nil {
+		return preRanked(err)
+	}
 	docs, err := ds.scoreCandidates(ctx, plan, terms, cands)
 	if err != nil {
-		return failed(err)
+		return preRanked(err)
 	}
 	for id, d := range docs {
 		out[id] = arm{score: bm25Score(*d, idf, st), demoted: d.demoted, whole: d.whole}
@@ -394,9 +443,10 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 // lexicalCandidates is one candidate pass: the rows the strict query matches,
 // or with relaxed the rows the relaxed query matches and the strict one does
 // not. It reads at most readMax+1 matching rows, newest first, and only those
-// are ranked, by ts_rank, keeping take. over reports that more rows matched
-// than the pass read.
-func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, relaxed bool, take int) ([]eref, bool, error) {
+// are ranked, by ts_rank normalized by preRankNorm, keeping take. Every
+// candidate comes back whole; the caller knows which pass found it. over
+// reports that more rows matched than the pass read.
+func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, relaxed bool, take int) ([]lexicalCand, bool, error) {
 	probe := &builder{}
 	few, err := indexedMatch(ctx, ds.db, probe, pass.plan.expr(probe, relaxed), pass.matchMax)
 	if err != nil {
@@ -423,30 +473,31 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 	// repository the query misses. The one row past readMax only says the
 	// pass was cut; the newest readMax are ranked.
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT n.kind, n.id, n.seen FROM (
-			SELECT m.kind, m.id, m.fts, count(*) OVER () AS seen,
+		SELECT n.kind, n.id, n.seen, n.demoted, n.rank FROM (
+			SELECT m.kind, m.id, m.demoted, ts_rank(m.fts, `+pass.plan.rankExpr(b)+`, `+fmt.Sprint(preRankNorm)+`) AS rank,
+			       count(*) OVER () AS seen,
 			       row_number() OVER (ORDER BY m.created_at DESC, m.kind, m.id) AS nth
 			FROM (
-				SELECT r.kind, r.id, r.fts, r.created_at FROM `+source+clause+`
+				SELECT r.kind, r.id, r.fts, r.created_at, `+demotion("r")+` AS demoted FROM `+source+clause+`
 				ORDER BY r.created_at DESC
 				LIMIT `+b.arg(pass.readMax+1)+`
 			) m
 		) n
 		WHERE n.nth <= `+b.arg(pass.readMax)+`
-		ORDER BY ts_rank(n.fts, `+pass.plan.expr(b, true)+`) DESC, n.kind, n.id
+		ORDER BY n.rank DESC, n.kind, n.id
 		LIMIT `+b.arg(take), b.args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []eref
+	var out []lexicalCand
 	seen := 0
 	for rows.Next() {
-		var id eref
-		if err := rows.Scan(&id.Kind, &id.ID, &seen); err != nil {
+		c := lexicalCand{whole: true}
+		if err := rows.Scan(&c.id.Kind, &c.id.ID, &seen, &c.demoted, &c.rank); err != nil {
 			return nil, false, err
 		}
-		out = append(out, id)
+		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, false, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
@@ -459,12 +510,12 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 // lexemes are its word under `english`, the dictionary the row was indexed
 // with; a prefix term's starts are the word under `simple`, unstemmed, for the
 // reason tsquery.go gives.
-func (ds *dataset) scoreCandidates(ctx context.Context, plan searchPlan, terms []scoreTerm, cands []eref) (map[eref]*bm25Doc, error) {
+func (ds *dataset) scoreCandidates(ctx context.Context, plan searchPlan, terms []scoreTerm, cands []lexicalCand) (map[eref]*bm25Doc, error) {
 	b := &builder{}
 	strict := plan.expr(b, false)
 	kinds, ids := make([]string, len(cands)), make([]string, len(cands))
 	for i, c := range cands {
-		kinds[i], ids[i] = c.Kind, c.ID
+		kinds[i], ids[i] = c.id.Kind, c.id.ID
 	}
 	words := make([]string, len(terms))
 	prefix := make([]bool, len(terms))

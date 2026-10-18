@@ -247,8 +247,10 @@ type RankedPage struct {
 	Note   string `json:"note,omitempty"`
 }
 
-// Scores are one hit's raw per-arm scores: ts_rank for the lexical arm, cosine
-// similarity for the semantic one, 0 where an arm did not rank.
+// Scores are one hit's raw per-arm scores: the BM25F sum for the lexical arm
+// (unbounded), or ts_rank in (0, 1) when the page is capped because scoring
+// ran out of the search budget; cosine similarity for the semantic one; 0
+// where an arm did not rank.
 type Scores struct {
 	Lexical  float64 `json:"lexical,omitempty"`
 	Semantic float64 `json:"semantic,omitempty"`

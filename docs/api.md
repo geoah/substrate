@@ -965,6 +965,19 @@ repeats the word. A prefix (`lay*`) ranks the word itself above its
 completions. `filter.search` and `match` stay predicates: they require every
 word, exactly as the grammar reads.
 
+**How the lexical arm is bounded.** Each candidate pass reads at most 2000
+matching records, newest first, and the records matching every word are kept
+first. Within a pass, the best 400 (more for a large `first`) are kept by the
+pre-rank: `ts_rank` against the query's positive words, divided by log2 of
+the record's length plus one. A long text that repeats a word therefore does
+not crowd out short records naming it; the cost is that a long record titled
+by the word can be cut when many short records hold it. The arm runs under a
+5 s budget. When BM25F scoring of the candidates does not finish within it,
+the lexical hits are ordered by the pre-rank instead (in `lexical` mode the
+records matching every word still come first), and `scores.lexical` carries
+the pre-rank. Any of these cuts sets `capped: true` beside the ranking and a
+`note` saying which cut happened and how to narrow the query.
+
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
 arms and fuses them by rank (reciprocal rank fusion), so a record near the
 top of both ranks highest and neither arm's scale decides. Every hit's score
@@ -973,9 +986,11 @@ is then weighed by its kind's [purpose](vocabulary.md#the-reserved-keys):
 state, the vocabulary itself) ranks below the data it describes without being
 hidden; `filter.purposes` hides it. `first` is the hit count, 20 by default.
 The answer is the records in rank order, each one's raw per-arm scores under
-`scores` keyed by record path (`lexical` is the BM25F sum, unbounded,
-`semantic` cosine similarity, 0 where an arm did not rank), so a caller can
-threshold rather than trust a rank, and `pending`: the number of properties
+`scores` keyed by record path (`lexical` is the BM25F sum, unbounded, or
+`ts_rank` between 0 and 1 when scoring fell back as described above;
+`semantic` cosine similarity; 0 where an arm did not rank), so a caller can
+threshold rather than trust a rank, as long as it reads `note` on a `capped`
+page first, and `pending`: the number of properties
 the drain has yet to buy vectors for, counted whenever the semantic arm was
 asked for. Non-zero means the ranking covers a partial index (a repository
 [restored from its directory](operations.md#backups), a `reembed` in

@@ -144,6 +144,26 @@ func (p searchPlan) expr(b *builder, relaxed bool) string {
 	return "(" + strings.Join(groups, " || ") + ")"
 }
 
+// rankExpr is the tsquery the pre-rank scores against: every positive
+// operand of every group, OR'd. An exclusion is left out because ts_rank
+// gives a negated operand its floor score on every row it matches, which
+// flattened the pre-rank to an order by length alone; the candidate reads
+// already apply the exclusions. A query of exclusions alone ranks by expr.
+func (p searchPlan) rankExpr(b *builder) string {
+	var pos []string
+	for _, g := range p.groups {
+		for _, op := range g {
+			if !op.negated {
+				pos = append(pos, op.sql(b))
+			}
+		}
+	}
+	if len(pos) == 0 {
+		return p.expr(b, true)
+	}
+	return "(" + strings.Join(pos, " || ") + ")"
+}
+
 // relaxes reports whether expr's relaxed form matches more than its strict
 // one: a single group of two or more positive operands, with no OR.
 func (p searchPlan) relaxes() bool {

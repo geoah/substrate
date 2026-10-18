@@ -24,7 +24,7 @@ type SearchInput struct {
 // threshold (resolve-before-write needs the cosine, not a rank).
 type Hit struct {
 	Record   *Record `json:"record"`
-	Lexical  float64 `json:"lexical,omitempty"`  // BM25F, 0 when not ranked
+	Lexical  float64 `json:"lexical,omitempty"`  // BM25F sum, or ts_rank in (0, 1) when Capped's note says scoring fell back; 0 when not ranked
 	Semantic float64 `json:"semantic,omitempty"` // cosine similarity, 0 when absent
 }
 
@@ -38,9 +38,11 @@ type Hit struct {
 type SearchResult struct {
 	Hits    []Hit `json:"hits"`
 	Pending int   `json:"pending"`
-	// Capped says the lexical arm stopped short of ranking every match: it
-	// read a bounded share of a query's matches, or its time budget ran out
-	// and the records matching every word answered alone. Note says which,
+	// Capped says the lexical arm stopped short of ranking every match by
+	// BM25F: it read a bounded share of a query's matches, its time budget
+	// ran out before the relaxed top-up and the records matching every word
+	// answered alone, or it ran out while scoring and the lexical hits are
+	// ordered by ts_rank, which Hit.Lexical then carries. Note says which,
 	// and how to narrow the query.
 	Capped bool   `json:"capped,omitempty"`
 	Note   string `json:"note,omitempty"`
