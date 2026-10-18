@@ -377,6 +377,7 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 		fmt.Errorf("runner: invocation exceeded %s", spec.timeout()))
 	defer cancel()
 	state := &readState{spec: spec, backend: backend}
+	state.deliveredKind, state.deliveredID = deliveredRecord(in)
 	resp, err := p.roundtrip(ictx, spec.timeout(),
 		frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
 	// Every line the body wrote has reached the backend already, through
@@ -1008,6 +1009,9 @@ type readState struct {
 	tripped error
 	// logs is every line the body has written so far, in order.
 	logs []string
+	// deliveredKind and deliveredID name the record a record delivery's
+	// envelope carries, empty for any other input (deliveredRecord).
+	deliveredKind, deliveredID string
 }
 
 // log takes one line of the body's log off the wire and hands it on at once.
@@ -1087,6 +1091,13 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 			return nil, fmt.Errorf("list: %w", err)
 		}
 		if err := s.requireTypes(q.Filter.Kinds, "list"); err != nil {
+			return nil, err
+		}
+		named, err := q.Filter.Referencing.Named("filter.referencing")
+		if err != nil {
+			return nil, fmt.Errorf("list: %w", err)
+		}
+		if err := s.requireNamed(named, "list"); err != nil {
 			return nil, err
 		}
 		if err := s.chargeCall(); err != nil {
@@ -1261,6 +1272,52 @@ func (s *readState) requireTypes(types []string, what string) error {
 		}
 	}
 	return nil
+}
+
+// requireNamed holds the kind of each record a read names beyond its kinds
+// (a referencing target, a metric) to the allowlist: a reverse read reveals
+// which records point at the target, and a metric read takes the metric
+// record's measure and unit. A path that is not a record path is the
+// backend's to refuse by name.
+//
+// The record the delivery's envelope carries is exempt: the body was handed
+// it, and the reverse read from it is how a body finds what it produced from
+// that record before (host.observed.reconcile's stored side). A trigger fires
+// a body on kinds its reads never grant, so holding that read to the
+// allowlist parks every such delivery.
+func (s *readState) requireNamed(named []substrate.NamedRecord, what string) error {
+	for _, n := range named {
+		kind, id, ok := vocabulary.SplitRecordPath(n.Path)
+		if !ok {
+			continue
+		}
+		ident := s.resolved(kind)
+		if s.allowed(ident) || s.isDelivered(ident, id) {
+			continue
+		}
+		return s.trip(fmt.Errorf("%w: %s reads %s through %s", ErrReadForbidden, what, kind, n.At))
+	}
+	return nil
+}
+
+// isDelivered reports whether a resolved kind and an id name the record this
+// delivery's envelope carries.
+func (s *readState) isDelivered(ident, id string) bool {
+	return s.deliveredID != "" && id == s.deliveredID && ident == s.resolved(s.deliveredKind)
+}
+
+// deliveredRecord answers the kind and id of the record a delivery's envelope
+// names: its change, which a delete keeps after the record is gone. Only the
+// engine writes an envelope, so a body never names this record itself; a fire
+// carries no change and a call no envelope, and both name none.
+func deliveredRecord(in Input) (kind, id string) {
+	change, _ := in.Envelope["change"].(map[string]any)
+	kind, _ = change["kind"].(string)
+	id, _ = change["id"].(string)
+	if kind == "" || id == "" {
+		return "", ""
+	}
+	return kind, id
 }
 
 // resolved asks the backend for a kind reference's identity, leaving anything

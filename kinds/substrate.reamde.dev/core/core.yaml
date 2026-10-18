@@ -59,7 +59,10 @@ data:
   # distinctive words, never a list of common ones.
   # version 40: the query tool card says q requires filter.kinds or kind
   # (decision record 0172).
-  version: 40
+  # version 41: the `observed`, `revised`, `metric`, `source` and `result`
+  # traits, which the write path holds observed values, rewritten sessions,
+  # metrics, sources and lab results to (decision records 0154 and 0162).
+  version: 41
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -286,3 +289,213 @@ data:
     syncError: string
     syncErrorAt: datetime
     syncStreams: json
+---
+# observed values: a reading, a lab result, a vendor score, or an hour of
+# heart rate packed into one record. A kind that binds it is held on every
+# write to the rules a trait cannot state (engine observed.go): the form is
+# one of four words, a single value is a quantity or a code and never both,
+# a packed value list lines up with its offsets inside the period, a
+# revision never falls, and a trace's `stats` is computed by the engine from
+# its values. `at` and `endsAt` are the record's own time columns, as on
+# `temporal(range)`, which a binding kind binds beside this one so the window
+# read covers it.
+#
+# Contract-style, like `recurring`: the binding kind declares every
+# non-column property itself, with its own descriptions, `repeated: true` on
+# `offsets`, `values`, `codes` and `origins`, and the pins on the four
+# references. Its `metric` reference pins a kind that binds `metric` below,
+# or the `metric` trait itself, because the aggregate read takes a metric's
+# measure and unit through that trait. The list is complete from the first
+# version and never grows: a property added here would refuse every imported
+# kind that binds it at the next boot, so a later need is a second trait
+# bound beside this one (decision record 0154).
+#
+# `about` is the thing observed, absent meaning the owner (decision 0155);
+# `form` is gauge, amount, counter or summary (0156); `resetRule` with
+# `resetAt` and `wrapAt` describe a counter (0157); `hold` is how long a gauge
+# value stands (0158). `delta` marks a temperature difference and `circular`
+# an angle averaged on the circle; both live on the value so the index never
+# reads the metric record. `utcOffset` is minutes east of UTC, one for every
+# point of a trace. `measure` is the engine's, like `stats`: the measure the
+# value's unit resolved to when it was written, which the index converts in
+# from then on, so a later unit table that reads the code another way never
+# moves a stored value (decision 0153). A single record with neither a value
+# nor a code keeps the reading as received in `sourceValue` and `sourceUnit`,
+# or says why there is none in `absentReason`. `origin` (a trace's
+# `origins`) is the provider record an adapter built the row from, which
+# `host.observed.reconcile` keys on (decision 0162).
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/observed
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "observed values the substrate indexes: one value per record,
+    or many values packed into one record over a fixed period"
+  oneOf:
+    - name: single
+      properties:
+        at: datetime
+        endsAt: datetime
+        metric: reference
+        source: reference
+        about: reference
+        channel: string
+        form: string
+        value: quantity
+        code: string
+        statistic: string
+        period: string
+        hold: duration
+        resetRule: string
+        resetAt: datetime
+        delta: bool
+        circular: bool
+        wrapAt: decimal
+        utcOffset: int
+        measure: string
+        sourceValue: string
+        sourceUnit: string
+        absentReason: string
+        origin: reference
+        revision: int
+    - name: packed
+      properties:
+        at: datetime
+        endsAt: datetime
+        metric: reference
+        source: reference
+        about: reference
+        channel: string
+        form: string
+        unit: string
+        every: duration
+        offsets: int
+        values: decimal
+        codes: string
+        hold: duration
+        resetRule: string
+        resetAt: datetime
+        delta: bool
+        circular: bool
+        wrapAt: decimal
+        utcOffset: int
+        measure: string
+        origins: reference
+        revision: int
+        stats: json
+---
+# what an observed value is a value of: the catalogue entry every value's
+# `metric` reference points at. The aggregate read takes a metric's
+# `measures` as the measure it converts into, its `unit` as the unit it
+# answers in by default and its `bucketPlace` as where a read by the day
+# places a span; the observed index keeps the rollup tiers its `rollups`
+# names; the console reads the rest to label and draw it. The write rules and
+# the index read nothing else from it: what a stored number means is on the
+# value itself, so editing a metric never relabels one (decision 0156).
+#
+# Contract-style: the binding kind declares every property itself, with
+# `repeated: true` on `codeSet` and `rollups`. The engine holds on every
+# write what a trait cannot state (engine metric.go): `measures` names a
+# measure of the unit table and `unit` one of its units, `form` is one of the
+# four forms, `bucketPlace` is start or end, and `rollups` lists tier widths
+# from 5m, 15m, 1h and 1d, each dividing the next. Absent `rollups` keeps the
+# default tiers, 15m, 1h and 1d; an empty list keeps none, and a read of the
+# metric reads its raw values.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/metric
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "what an observed value is a value of: the measure and unit
+    a read converts into, how a read by the day places a span, the rollup
+    tiers the index keeps, and how a reader labels and draws it"
+  properties:
+    name: string
+    measures: string
+    unit: string
+    form: string
+    codeSet: string
+    displayPrecision: int
+    category: string
+    bucketPlace: string
+    rollups: string
+---
+# the device, app, service or lab an observed value came from, as the
+# aggregate read's source policy ranks it. `priorities` is keyed by a
+# metric's full record path (`<kind>/<id>`) and holds this source's rank for
+# that metric, 1 first: the priority policy's order when a request names
+# none (decision 0162). The engine holds on every write that each key is the
+# full record path of a record of a kind that binds `metric`, and that each
+# rank is 1 or more.
+#
+# Contract-style: the binding kind declares `priorities` itself, with
+# `keyed: true`.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/source
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a device, app, service or lab that produces observed values,
+    ranked per metric for the aggregate read's source policy"
+  properties:
+    priorities: int
+---
+# a result in the shapes a laboratory reports beside a plain number: a coded
+# finding, a ratio, free text. A kind that binds it beside `observed(single)`
+# holds exactly one shape per record (engine observed.go): `value`, the coded
+# result (`code`, `codedValue` or both), `ratio`, `text` or `absentReason`,
+# or none of them where `sourceValue` keeps a reading the substrate could not
+# normalize. Without this trait those names are ordinary properties.
+# `interpretation` (the lab's flags) and `referenceRanges` are what a reader
+# judges the value against.
+#
+# Contract-style: the binding kind declares every property itself. A trait
+# contracts a datatype and an object's fields are its own, so the four
+# object properties are `json` here, which a declared object meets, and the
+# loader holds their fields (vocabulary observed.go): `codedValue` an object
+# with string `system`, `code` and `display`; `ratio` one with decimal
+# `numerator` and `denominator`; `interpretation` a list of objects with
+# string `system`, `code` and `display`; `referenceRanges` a list of objects
+# with quantity `low` and `high` and string `text`.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/result
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a result in the shapes a laboratory reports beside a number:
+    a coded finding, a ratio or free text, with the lab's flags and reference
+    ranges"
+  properties:
+    codedValue: json
+    ratio: json
+    text: text
+    interpretation: json
+    referenceRanges: json
+---
+# a record an adapter rewrites from an upstream that numbers its versions: a
+# night's sleep, a workout, a lab report. The write path refuses a rewrite
+# whose `revision` is below the stored one, and one that removes it, the rule
+# `observed` holds for observed values, so a stale delivery never overwrites
+# a newer result; an equal one is admitted (decision record 0162). A second
+# trait rather than a property of `observed`, whose list never grows
+# (decision record 0154).
+#
+# Contract-style: the binding kind declares `revision` and `origin` itself,
+# with its own descriptions. `origin` is the provider record an adapter built
+# the row from, which `host.observed.reconcile` keys on, as it does on an
+# observed value's.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/revised
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a record rewritten from an upstream that numbers its versions;
+    a rewrite never lowers its revision"
+  properties:
+    revision: int
+    origin: reference

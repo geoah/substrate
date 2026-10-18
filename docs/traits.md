@@ -33,6 +33,14 @@ A trait contracts **presence and datatype only**. It carries no cardinality
 (a binding kind adds its own `repeated: true`) and no state values (each
 binding kind declares its own machine). That is deliberate: the trait
 is the shared question, and each kind keeps its own answer's shape.
+Core's `observed`, `revised`, `metric`, `source` and `result` are the
+exceptions, because the engine reads each property's shape. The loader
+refuses a binding kind whose `observed` `offsets`, `values`, `codes` or
+`origins` is not `repeated: true`, whose `metric` `codeSet` or `rollups` is
+not a list, or whose `source` `priorities` is not `keyed: true`, and one
+whose other properties of those traits are lists or keyed maps. `result`
+contracts four object properties as `json`, which a declared `object` meets,
+and the loader holds their fields.
 
 ## Declaring one
 
@@ -215,6 +223,47 @@ opt into twice:
   an ordinary record. The `scheduling` sample's **`occurrencelog`** is how a
   slot gets its done-or-skipped mark: a temporal record of its own in the
   same window.
+- **`observed`** marks a kind whose records hold observed values: one value
+  per record (`observed(single)`: a reading, a vendor score, a lab result) or
+  many values packed into one record over a fixed period (`observed(packed)`:
+  an hour of heart rate). Every write of an implementor, a patch included, is
+  held to the rules the trait's property list cannot state: `form` is
+  `gauge`, `amount`, `counter` or `summary`; a single record holds `value` or
+  `code`, never both, except an amount, which may carry its category in
+  `code`; a packed record's `offsets` line up with its
+  `values` or `codes` inside `[at, endsAt)`; `hold` goes only on a gauge and
+  `resetRule` only on a counter; a `revision` never falls. The substrate
+  computes a packed record's `stats` from its values and drops any a writer
+  sends. The trait's property list never grows: a later need is a second
+  trait bound beside it
+  ([decision 0154](decisions/0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md)).
+  An implementor's `metric` reference pins a kind that binds `metric`, or
+  `trait: substrate.reamde.dev/core/metric`.
+  [Observations](observations.md) has every rule and the sample kinds that
+  bind it.
+- **`metric`** marks the catalogue entry an observed value names. It
+  contracts what the aggregate read is built to take (`measures`, `unit` and
+  `bucketPlace`), the rollup tiers the observed index is built to keep
+  (`rollups`), and what a reader shows (`name`, `form`, `codeSet`,
+  `displayPrecision` and `category`); neither the read nor the index exists
+  yet.
+  Every write is held to the unit table and to the tier list
+  ([observations](observations.md#the-metric-and-source-contracts)).
+- **`source`** marks the device, app, service or lab a value came from. Its
+  `priorities`, keyed by a metric's full record path, are the order the
+  aggregate read's priority policy is built to take when a request names
+  none.
+- **`result`** marks a single observed kind that holds a laboratory's result
+  shapes: `codedValue`, `ratio` and `text` beside `value`, of which a record
+  holds exactly one, with the lab's `interpretation` and `referenceRanges`.
+  On a kind that does not bind it those names are ordinary properties.
+- **`revised`** marks a kind an adapter rewrites from an upstream that
+  numbers its versions, such as the health sample's `sleep`, `workout` and
+  `labreport`. A write of an implementor whose `revision` is below the stored
+  one, or that removes it, is refused, the rule `observed` holds for observed
+  values, so a stale delivery never reverts a newer result. Its `origin` is
+  the provider record the adapter built the row from
+  ([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
 - **`accountconfig`** and **`oauth2`** are how the substrate's OAuth
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to

@@ -118,6 +118,29 @@ func (r *Referencing) Targets() ([]string, error) {
 	return r.Refs, nil
 }
 
+// NamedRecord is a record path a request names beyond its filters' kinds,
+// and where it names it.
+type NamedRecord struct {
+	Path string
+	At   string
+}
+
+// Named are a referencing's targets, each named at at; none for a nil one.
+func (r *Referencing) Named(at string) ([]NamedRecord, error) {
+	if r == nil {
+		return nil, nil
+	}
+	targets, err := r.Targets()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]NamedRecord, len(targets))
+	for i, t := range targets {
+		out[i] = NamedRecord{Path: t, At: at}
+	}
+	return out, nil
+}
+
 // ReferenceSite is one place a record points at a referencing target: the
 // declared property, and the dotted address of a nested site
 // ("tools.fields.callable"), empty for a kind's own property.

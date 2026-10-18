@@ -85,6 +85,45 @@ Like every suggested mapping it lands only where the Linear provider is already
 installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
+## samples.substrate.reamde.dev/observations (a sample)
+
+Measured values and where they came from, the base every observing sample
+requires. [Observations](observations.md) has every property and the rules a
+write is held to.
+
+| Kind          | What it is                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `metric`      | Something that can be measured, binding core's `metric`: its names, codes in other systems, unit, rollup tiers and how its values are read. |
+| `observation` | One measured value, binding core's `observed(single)`: a number with its unit, or a code.                   |
+| `trace`       | The values of one metric from one source over one fixed period, binding `observed(packed)`.                  |
+| `source`      | The device, app, service or lab a value came from, binding core's `source`: its rank per metric.            |
+
+It ships six metric records several domains share: `air_temperature`,
+`relative_humidity`, `energy`, `power`, `illuminance` and
+`atmospheric_pressure`.
+
+## samples.substrate.reamde.dev/health (a sample)
+
+A person's body, sleep, training and blood tests, on top of `observations`,
+which it requires.
+
+| Kind        | What it is                                                                                            |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| `analyte`   | The lab facts about one blood test metric: LOINC parts, molar mass, conversions, a fallback range.   |
+| `sleep`     | One night or nap: its span, time in each stage, efficiency and the device's scores.                   |
+| `workout`   | One session: sport, span, distance, active and total energy, heart rate and time in each zone.        |
+| `labreport` | One report from a lab, with its status and the original document.                                     |
+| `labresult` | One analyte's result, binding `observed(single)` and `result`, with the lab's range, flag, specimen and status. |
+
+It ships a catalogue of 59 metric records with ids `health/<name>`, such as
+`health/heart_rate` and `health/ldl_cholesterol`, each with its LOINC,
+HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
+ships 18 `analyte` records, one for each metric of the nine lab pairs (one
+analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol).
+Its function `convertlab`, fired by its trigger `health-on-labresult` on every
+write of a `labresult`, writes the result again in the other metric of its
+pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).
+
 ## substrate.reamde.dev/core
 
 The substrate's own machinery, declared as kinds so it lists, reads, and
@@ -121,11 +160,17 @@ console-editable and changelog-visible like anything else
 
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor`) live in core too, and so do the six shipped traits:
-`temporal`, which puts a record on the timeline; `recurring` and `override`,
-the repeat rule and the moved occurrence ([traits](traits.md)); `sync`, the
-state a provider's function reports on one connected account; and
-`accountconfig` and `oauth2`, which the OAuth facility recognizes. Core also
+`agent`, `bundle`, `actor`) live in core too, and so do the eleven shipped
+traits: `temporal`, which puts a record on the timeline; `recurring` and
+`override`, the repeat rule and the moved occurrence ([traits](traits.md));
+`sync`, the state a provider's function reports on one connected account;
+`accountconfig` and `oauth2`, which the OAuth facility recognizes;
+`observed`, which marks a kind whose records hold observed values and holds
+every write of one to the trait's rules; `revised`, which refuses a
+rewrite whose `revision` is below the stored one; `metric` and `source`,
+what a reader takes from the metric and the source an observed value
+names; and `result`, a laboratory's result shapes beside
+a number. Core also
 ships four host functions as `function` records (`query`, `write`, `propose`,
 `ask`), the built-ins an agent calls ([agents](agents.md)).
 

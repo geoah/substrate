@@ -774,6 +774,17 @@ func (t *Kind) applyCapability(b TraitBinding) {
 	}
 }
 
+// Binding is the kind's binding of the trait with the given full identity,
+// variant included: what a host rule keyed on one trait reads.
+func (t *Kind) Binding(identity string) (TraitBinding, bool) {
+	for _, b := range t.Traits {
+		if strings.EqualFold(b.Identity, identity) {
+			return b, true
+		}
+	}
+	return TraitBinding{}, false
+}
+
 // Interfaces lists the interface names this type implements: one per bound
 // trait, one per declared machine.
 func (t *Kind) Interfaces() []string {
