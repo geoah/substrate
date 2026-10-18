@@ -73,6 +73,14 @@ func reasonStoppedBy(actor substrate.Actor) string {
 // context its stop and its shutdown do not cancel.
 const agentSettleTimeout = 30 * time.Second
 
+// agentFailedSettleTimeout bounds a detached turn's settle after a failed
+// write or model call (settleAfterFailure). It is longer than
+// agentSettleTimeout because a write usually fails by waiting out its own
+// budget behind a burst of background writes on the changelog lock, and a
+// settle given the same budget queues behind the same burst and fails the
+// same way.
+const agentFailedSettleTimeout = 2 * time.Minute
+
 // The two `reason`s of an overbudget thread the deadline ended. The second
 // says the run had its final phase: the nudge is sent and never stored, so
 // the reason is the thread's one record that the last turn ran under it.
@@ -778,9 +786,7 @@ loop:
 				l.ds.svc.log.Warn("substrate: agent thread overflowed its context and could not compact",
 					"thread", l.threadID, "error", cerr)
 			}
-			ectx, done := l.settleContext(ctx)
-			serr := l.settle(ectx, threadError, err.Error(), reply, nil)
-			done()
+			serr := l.settleAfterFailure(ctx, err.Error(), reply)
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
@@ -933,10 +939,7 @@ loop:
 		// thread as an error in a transaction of its own, on a budget of its
 		// own (the first may have spent it), so it does not stay `running`
 		// under its lease.
-		fctx, done := l.settleContext(ctx)
-		serr := l.settle(fctx, threadError, err.Error(), reply, nil)
-		done()
-		if serr != nil {
+		if serr := l.settleAfterFailure(ctx, err.Error(), reply); serr != nil {
 			l.ds.svc.log.Warn("substrate: settling a thread whose completion failed", "thread", l.threadID, "error", serr)
 		}
 		return nil, err
@@ -984,13 +987,41 @@ func (l *agentLoop) stopRequested() string {
 }
 
 // failWrite settles the thread `error` after one of the loop's own message
-// writes failed, on a budget of its own, so the thread does not stay
-// `running` under its lease and a stop does not answer that nothing runs.
+// writes failed, so the thread does not stay `running` under its lease and a
+// stop does not answer that nothing runs.
 func (l *agentLoop) failWrite(ctx context.Context, err error) error {
-	sctx, done := l.settleContext(ctx)
-	defer done()
-	if serr := l.settle(sctx, threadError, err.Error(), "", nil); serr != nil {
+	if serr := l.settleAfterFailure(ctx, "message write failed: "+err.Error(), ""); serr != nil {
 		l.ds.svc.log.Warn("substrate: settling a thread after a failed message write", "thread", l.threadID, "error", serr)
+	}
+	return err
+}
+
+// settleAfterFailure settles the thread `error` with reason after a write,
+// a read or a model call of the run failed. It patches only while the row
+// still carries the lease value this run wrote: another run may have
+// claimed the thread since. A settle that fails anyway leaves reason for
+// settleLostThreads, which otherwise could only say that the run was lost.
+//
+// A detached turn settles on a context of its own: its run context may have
+// ended and a failed write's budget is spent. That settle goes ahead of
+// queued background writers and waits up to agentFailedSettleTimeout,
+// because the usual cause is a burst of background writes on the changelog
+// lock. A call or a triggered run keeps its settle on its caller's context
+// (decision 0169; 0151 owns what a shutdown leaves of those).
+func (l *agentLoop) settleAfterFailure(ctx context.Context, reason, reply string) error {
+	sctx := ctx
+	if l.in.stopHub != nil {
+		timeout := l.ds.failedSettleTimeout
+		if timeout <= 0 {
+			timeout = agentFailedSettleTimeout
+		}
+		var cancel context.CancelFunc
+		sctx, cancel = context.WithTimeout(withForegroundWrites(context.WithoutCancel(ctx)), timeout)
+		defer cancel()
+	}
+	err := l.settleRow(sctx, threadError, reason, reply, true, nil)
+	if err != nil {
+		l.ds.noteLostRun(l, reason)
 	}
 	return err
 }
@@ -1157,8 +1188,12 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		// Registered before the rows are read: a resolution written into
 		// the thread from here on draws its ordinal from this loop.
 		l.ds.runningThreads.Store(l.threadID, l)
+		l.ds.clearLostRun(l.threadID)
 		rows, err := l.loadThreadRows(ctx)
 		if err != nil {
+			if serr := l.settleAfterFailure(ctx, "reading the thread failed: "+err.Error(), ""); serr != nil {
+				l.ds.svc.log.Warn("substrate: settling a thread whose rows could not be read", "thread", l.threadID, "error", serr)
+			}
 			return nil, err
 		}
 		history, origin, maxTurn := replayView(rows, l.ds.svc.log)
@@ -1211,7 +1246,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			userActor = l.actor
 		}
 		if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
-			return nil, err
+			return nil, l.failWrite(ctx, err)
 		}
 		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	}
@@ -1422,6 +1457,12 @@ func lastReplyOf(reply string) string {
 // transaction: the delivery's completion on the returning path, nil
 // otherwise.
 func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn) error) error {
+	return l.settleRow(ctx, status, reason, reply, false, then)
+}
+
+// settleRow is settle. With leased set it leaves a row this run's lease no
+// longer holds untouched (holdsLease).
+func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string, leased bool, then func(t *txn) error) error {
 	prompt, completion, cost := l.prompt, l.completion, l.cost
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
 		prompt, completion, cost = l.in.tally.prompt, l.in.tally.completion, l.in.tally.cost
@@ -1457,6 +1498,11 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		row, err := t.loadRow(eref{Kind: typeThread, ID: l.threadID}, true)
 		if err != nil {
 			return err
+		}
+		if leased && !l.holdsLease(row) {
+			l.ds.svc.log.Warn("substrate: a thread's settle was refused, the row no longer carries this run's lease",
+				"thread", l.threadID, "status", status)
+			return nil
 		}
 		base := func(key string) int {
 			if row == nil {
@@ -1509,6 +1555,21 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		l.settledStatus, l.settledReason = status, reason
 	}
 	return err
+}
+
+// holdsLease reports whether row is this run's claim: `running` and
+// carrying the lease value the run last wrote. Any other row was settled, or
+// claimed again after the lease expired (claimThread).
+func (l *agentLoop) holdsLease(row *erow) bool {
+	if row == nil || row.DeletedAt != nil {
+		return false
+	}
+	if status, _ := row.Props["status"].(string); status != threadRunning {
+		return false
+	}
+	lease, _ := row.Props["leaseUntil"].(string)
+	at, err := time.Parse(time.RFC3339Nano, lease)
+	return err == nil && at.Equal(l.leaseAt)
 }
 
 func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substrate.PutInput) error {
