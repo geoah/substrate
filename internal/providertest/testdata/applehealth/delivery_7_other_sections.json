@@ -1,0 +1,25 @@
+{
+  "_fixture": {
+    "sentAt": "2026-10-08 08:30:00 +0300",
+    "appVersion": "10.0.3",
+    "note": "Assembled for the provider tests from the shapes the app's help pages document for stateOfMind, medications, symptoms, cycleTracking, ecg and heartRateNotifications, plus the observed heart rate notification shape (heartNotification, source as an object, heartRateData with epoch start and end; Lybron/health-auto-export#68) and epoch ECG voltage dates (#69). Two symptoms share a name and a start. Not a recorded delivery."
+  },
+  "request": {
+    "method": "POST",
+    "contentType": "application/json",
+    "headers": {
+      "content-type": "application/json",
+      "content-length": "2840",
+      "user-agent": "Health%20Auto%20Export/10.0.3 CFNetwork/3860.100.1 Darwin/27.0.0",
+      "automation-name": "substrate other",
+      "automation-id": "8D3F7E2B-1C4A-4F5E-9B6D-7A8C9E0F1A2B",
+      "automation-aggregation": "minutes",
+      "automation-period": "Default",
+      "session-id": "C2B1A0F9-E8D7-4C6B-A5F4-E3D2C1B0A9F8"
+    },
+    "query": {},
+    "body": {
+      "text": "{\"data\": {\"stateOfMind\": [{\"id\": \"6F1D2C1A-0B7E-4C59-9A8E-1D2B3C4D5E6F\", \"start\": \"2026-10-07T19:30:00Z\", \"end\": \"2026-10-07T19:30:00Z\", \"kind\": \"momentary_emotion\", \"labels\": [\"calm\", \"hopeful\"], \"associations\": [\"fitness\", \"self_care\"], \"valence\": 0.42, \"valenceClassification\": \"slightly_pleasant\"}, {\"id\": \"0A9B8C7D-6E5F-4A3B-2C1D-0E9F8A7B6C5D\", \"start\": \"2026-10-07T21:00:00Z\", \"end\": \"2026-10-07T21:00:00Z\", \"kind\": \"daily_mood\", \"labels\": [\"happy\"], \"associations\": [\"family\"], \"valence\": 0.7, \"valenceClassification\": \"pleasant\", \"metadata\": {\"HKMetadataKeyAppleDeviceCalibrated\": \"1\"}}], \"medications\": [{\"displayText\": \"Vitamin D3\", \"nickname\": \"D3\", \"start\": \"2026-10-07 08:02:11 +0300\", \"end\": null, \"scheduledDate\": \"2026-10-07 08:00:00 +0300\", \"status\": \"Taken\", \"isArchived\": false, \"dosage\": 1, \"codings\": [{\"code\": \"316965\", \"system\": \"RxNorm\", \"version\": \"2026-09\"}]}, {\"displayText\": \"Vitamin D3\", \"start\": \"2026-10-08 09:40:00 +0300\", \"scheduledDate\": \"2026-10-08 08:00:00 +0300\", \"status\": \"Skipped\", \"isArchived\": false, \"codings\": []}], \"symptoms\": [{\"start\": \"2026-10-07 15:00:00 +0300\", \"end\": \"2026-10-07 17:30:00 +0300\", \"name\": \"Headache\", \"severity\": \"Mild\", \"userEntered\": true, \"source\": \"Ada’s iPhone\"}, {\"start\": \"2026-10-07 15:00:00 +0300\", \"end\": \"2026-10-07 16:00:00 +0300\", \"name\": \"Headache\", \"severity\": \"Moderate\", \"userEntered\": true, \"source\": \"Ada’s iPhone\"}], \"cycleTracking\": [{\"start\": \"2026-10-02 00:00:00 +0300\", \"end\": \"2026-10-03 00:00:00 +0300\", \"name\": \"Menstrual Flow\", \"value\": \"Medium\", \"isCycleStart\": true}, {\"start\": \"2026-10-05 00:00:00 +0300\", \"end\": null, \"name\": \"Contraceptive\", \"value\": \"\"}], \"ecg\": [{\"start\": \"2026-10-07 12:10:00 +0300\", \"end\": \"2026-10-07 12:10:30 +0300\", \"classification\": \"Sinus Rhythm\", \"severity\": \"Not Set\", \"averageHeartRate\": 64, \"numberOfVoltageMeasurements\": 4, \"samplingFrequency\": 512, \"source\": \"Ada’s Apple Watch\", \"voltageMeasurements\": [{\"date\": 1791364200.0, \"voltage\": -38.71, \"units\": \"mcV\"}, {\"date\": 1791364200.001953, \"voltage\": -41.02, \"units\": \"mcV\"}, {\"date\": 1791364200.003906, \"voltage\": -40.11, \"units\": \"mcV\"}, {\"date\": 1791364200.005859, \"voltage\": -36.5, \"units\": \"mcV\"}]}], \"heartRateNotifications\": [{\"start\": \"2026-10-07 23:10:00 +0300\", \"end\": \"2026-10-07 23:20:00 +0300\", \"threshold\": 120, \"heartRate\": [{\"hr\": 124, \"units\": \"bpm\", \"timestamp\": {\"start\": \"2026-10-07 23:10:00 +0300\", \"end\": \"2026-10-07 23:10:05 +0300\", \"interval\": {\"duration\": 5, \"units\": \"s\"}}}], \"heartRateVariation\": []}, {\"heartNotification\": \"High Heart Rate\", \"threshold\": 120, \"start\": \"2026-10-08 02:10:00 +0300\", \"end\": \"2026-10-08 02:20:00 +0300\", \"source\": {\"name\": \"Ada’s Apple Watch\", \"identifier\": \"com.apple.health.5C1F0A2E\"}, \"heartRateData\": [{\"qty\": 126, \"units\": \"count/min\", \"start\": 1791414600.0, \"end\": 1791414605.0}]}]}}"
+    }
+  }
+}

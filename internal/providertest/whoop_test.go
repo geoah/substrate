@@ -1064,3 +1064,46 @@ func whoopPatch(t *testing.T, ds substrate.Dataset, kind, id string, props map[s
 		t.Fatalf("patch %s/%s: %v", kind, id, err)
 	}
 }
+
+// TestShippedWebhookTriggersAreClosed pins how each shipped webhook trigger
+// keeps an install from taking unauthenticated requests. Apple Health has no
+// signature to declare: it ships disabled and keyless, and the key the owner
+// sets is its gate.
+func TestShippedWebhookTriggersAreClosed(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		dir, id         string
+		enabled, signed bool
+	}{
+		{appleHealthDir, "applehealth-webhook", false, false},
+	} {
+		var found bool
+		for _, d := range loadDocs(t, tc.dir+"/triggers.yaml") {
+			meta, _ := d["metadata"].(map[string]any)
+			if meta["id"] != tc.id {
+				continue
+			}
+			found = true
+			data, _ := d["data"].(map[string]any)
+			props, _ := data["properties"].(map[string]any)
+			source, _ := props["source"].(map[string]any)
+			arm, _ := source["webhook"].(map[string]any)
+			if props["enabled"] != tc.enabled {
+				t.Errorf("%s ships enabled = %v, want %v", tc.id, props["enabled"], tc.enabled)
+			}
+			if _, keyed := arm["key"]; keyed {
+				t.Errorf("%s ships a key; the owner chooses one", tc.id)
+			}
+			sig, _ := arm["signature"].(map[string]any)
+			if (sig != nil) != tc.signed {
+				t.Errorf("%s declares a signature = %v, want %v", tc.id, sig != nil, tc.signed)
+			}
+			if tc.signed && sig["secret"] != "oauthClientSecret" {
+				t.Errorf("%s signs with %v, want the OAuth client secret", tc.id, sig["secret"])
+			}
+		}
+		if !found {
+			t.Errorf("%s/triggers.yaml ships no %s", tc.dir, tc.id)
+		}
+	}
+}

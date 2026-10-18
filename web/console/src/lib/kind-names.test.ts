@@ -72,6 +72,7 @@ describe("kind display names", () => {
     expect(packageDisplayName("oauth")).toBe("OAuth")
     expect(packageDisplayName("github")).toBe("GitHub")
     expect(packageDisplayName("whoop")).toBe("WHOOP")
+    expect(packageDisplayName("applehealth")).toBe("Apple Health")
   })
 
   it("lowers a display name for a sentence, keeping acronyms and brands", () => {

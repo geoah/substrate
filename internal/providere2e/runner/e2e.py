@@ -2091,10 +2091,17 @@ def _test_rewire(fails: list) -> None:
         text = f.read_text().replace('"network":', "network:")
         out, n = allow_mock_host(text, host)
         props = len(re.findall(r"(?m)^\s*network:\s*$", "\n".join(_kind_docs(text))))
-        _check(n >= 1 and _kind_docs(text) == _kind_docs(out),
+        pinned = n == 0 if f.parent.name in NO_EGRESS else n >= 1
+        _check(pinned and _kind_docs(text) == _kind_docs(out),
                "%s: %d egress pin(s); %d kind propert%s named `network`, "
                "unquoted, untouched" % (_rel(f), n, props,
                                         "y" if props == 1 else "ies"), fails)
+
+
+# The provider bundles whose functions make no outbound call, so no function
+# declares `permissions.network` and the rewire has no pin to take the mock.
+# Apple Health is a receiver: the app on the phone posts to it.
+NO_EGRESS = {"applehealth"}
 
 
 def _kind_docs(text: str) -> list[str]:
