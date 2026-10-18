@@ -7,10 +7,10 @@ closure declares no mapping: `account.user` names that member and "mine" is a
 reference filter.
 
 `bundle.yaml` is the closure (the config and account kinds, the five mirrors,
-the `whoopsync` function and the trusted `oauth2:` metadata) and
-`triggers.yaml` is the delivery wiring: `whoop-on-connect`, `whoop-on-request`
-and `whoop-scheduled`, all three firing `whoopsync`. They are the contract;
-this file is not.
+the `whoopsync` and `whoopwebhook` functions and the trusted `oauth2:`
+metadata), and `triggers.yaml` is the delivery wiring (`whoop-on-connect`,
+`whoop-on-request` and `whoop-scheduled` fire `whoopsync`; `whoop-webhook`
+fires `whoopwebhook`). They are the contract; this file is not.
 
 ## Kinds
 
@@ -24,15 +24,40 @@ this file is not.
 | `sleep` | one sleep, a night or a nap |
 | `workout` | one recorded activity: sport, strain, zones and distance |
 
+## Webhooks
+
+WHOOP signs each webhook with the WHOOP app's client secret. The
+`whoop-webhook` trigger declares that signature, and the server checks it
+against the client secret on the `config` record before it stores the
+request ([decision 0164](../../../docs/decisions/0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md)).
+The secret stays in the server: `whoopwebhook` never receives it, and there is
+no second copy to paste anywhere. To receive webhooks, register
+`https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` as the
+app's webhook URL in WHOOP's developer dashboard.
+
+The trigger ships enabled because the check fails closed. Until the `config`
+record holds the client secret, the server answers every delivery `404`,
+stores nothing (no blob, no ledger entry, no invocation) and logs that the
+secret does not resolve. A delivery with a missing or wrong signature, or a
+timestamp more than five minutes from when the server received it, gets the
+same answer. It is `404`, the answer for a trigger that does not exist,
+because the trigger carries no key: a distinct answer would tell anyone who
+posts that the repository has WHOOP installed.
+
 The scopes to enable on the WHOOP app, what each toggle syncs, the read
-windows, how deletions reach the mirror and why revocation is manual:
+windows, what each webhook event does, how deletions reach the mirror and why
+revocation is manual:
 [docs/bundles-catalog.md#whoop](../../../docs/bundles-catalog.md#whoop).
 
 ## Upgrading from version 18
 
-The upgrade to version 21 adds the `recovery.cycleId` property and changes no
-property an installed repository holds. Take it from the console's Registry
-page, or with `substratectl install providers.substrate.reamde.dev/whoop`.
+The upgrade to version 23 adds the `whoopwebhook` function, the
+`whoop-webhook` trigger and the `refreshRequestedAt` property on `recovery`,
+`sleep` and `workout`, beside the `recovery.cycleId` property version 21
+added, and changes no property an installed repository holds. Taking the
+upgrade (the console's Registry page, or
+`substratectl install providers.substrate.reamde.dev/whoop`) writes the
+trigger; then register the webhook URL above.
 
 `whoopsync` now deletes mirror rows. When a stream that has a cursor drains
 its window, the sync reads back by id every row the mirror holds in that
@@ -47,14 +72,21 @@ row the walk does not return. Where the
 sample is installed, the health records built from a deleted row are deleted
 with it.
 
+An account that has recoveries on and sleeps off reconnects once:
+`enabledRecovery` now asks for `read:sleep`, and until the grant carries it,
+`whoopwebhook` cannot read the sleep a `recovery.updated` event names. It marks
+the recovery row for the sync to read back instead, and names WHOOP's `403` in
+its output.
+
 ## What the tests are checked against
 
-No test fixture is a response captured from a real WHOOP account. Under
-`internal/providertest/testdata/whoop`:
+No test fixture is a response or a webhook captured from a real WHOOP
+account. Under `internal/providertest/testdata/whoop`:
 
 | Fixture | Written from |
 | --- | --- |
-| the `GET_v2_*.json` pages | WHOOP's OpenAPI document and developer pages, for an invented member over 30 days |
+| the `GET_v2_*.json` pages | WHOOP's OpenAPI document and developer pages, for an invented member over 30 days; `NOTES.md` tags each fact as verified on an official page, read in this repository, recalled or inferred |
+| `inbound/*.json` webhook deliveries | WHOOP's webhook documentation, signed with the test's own secret (`inbound/SECRET.txt`); WHOOP's own byte serialization is unknown |
 
 The tests therefore prove the provider and the adapter agree with this
 reading of the API, not that WHOOP sends it.

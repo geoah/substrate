@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "136",
+   "x-whoop-signature": "bkEBJCrlHFtNTvflEbfa2bdDhIf3BFV5f/7OIQVxhPo=",
+   "x-whoop-signature-timestamp": "1791646802655"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"d728f6f4-45e8-4721-a301-2e2575cfef7f\",\"type\":\"sleep.deleted\",\"trace_id\":\"2e5dc8af-982d-476b-9744-1efc7c57aeee\"}"
+  }
+ },
+ "_fixture": "the 2026-10-04 nap; a nap has no recovery, so no recovery.deleted follows"
+}

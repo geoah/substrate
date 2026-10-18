@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "139",
+   "x-whoop-signature": "0HDEGxkWQdgMwXKuEXUdeKxO6dTkV8Zr6QOcZlhDArg=",
+   "x-whoop-signature-timestamp": "1791648133101"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"5f0c7a1e-2d4b-4c8a-9e6f-3b1d0a9c8e72\",\"type\":\"recovery.deleted\",\"trace_id\":\"3c981c11-58af-4cb8-962b-1b921fe6bb9b\"}"
+  }
+ },
+ "_fixture": "SHAPE ONLY, not part of the coherent series: WHOOP sends this when a main sleep is deleted; the id is that sleep's UUID"
+}

@@ -66,7 +66,7 @@ thing, and the Records column counts them.
 | Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
-| WHOOP         | Provider | OAuth          | 7     | 1         | 3       | 0      |
+| WHOOP         | Provider | OAuth          | 7     | 2         | 4       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
@@ -730,8 +730,9 @@ the WHOOP v2 API at `https://api.prod.whoop.com/developer`. Read only: nothing
 in this closure writes back to WHOOP. The bundle's `oauth2` block carries the
 endpoints and the toggle-to-scope map, so each consent requests the union the
 account's enabled toggles derive: `read:cycles` for `enabledCycles`,
-`read:recovery` and `read:cycles` for `enabledRecovery`, `read:sleep`,
-`read:workout`, `read:profile` with `read:body_measurement` for
+`read:recovery`, `read:cycles` and `read:sleep` for `enabledRecovery` (a
+recovery webhook names a sleep, which `whoopwebhook` reads for its cycle),
+`read:sleep`, `read:workout`, `read:profile` with `read:body_measurement` for
 `enabledProfile`, and `read:profile` with `offline` on every toggle.
 
 - **Kinds (7)**: `config` (the WHOOP OAuth app), `account` (the connection,
@@ -739,17 +740,20 @@ account's enabled toggles derive: `read:cycles` for `enabledCycles`,
   `cycle` (WHOOP's physiological day, from one sleep onset to the next,
   which WHOOP scores strain over), `recovery` (the verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
   with `nap`) and `workout` (a recorded activity).
-- **Functions (1)**: `whoopsync` reads the member's profile and body
+- **Functions (2)**: `whoopsync` reads the member's profile and body
   measurement, then walks `/v2/cycle`, `/v2/recovery`, `/v2/activity/sleep`
   and `/v2/activity/workout` in that order (cycles first, because a recovery
   and a sleep reference a cycle). One invocation asks for one page of 25
   records and hands its checkpoint back; a page that drains its collection
   lets the same invocation start the next while its 40-second budget lasts.
-- **Triggers (3)**: `whoop-on-connect` fires `whoopsync` the first time an
+  `whoopwebhook` takes one webhook WHOOP posts and rewrites or deletes the one
+  mirror row it names.
+- **Triggers (4)**: `whoop-on-connect` fires `whoopsync` the first time an
   account is connected, has a toggle on and has no `lastSyncedAt`;
   `whoop-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
   disagree; `whoop-scheduled` fires it hourly, and the body syncs the
-  accounts due by their own `syncFrequency`.
+  accounts due by their own `syncFrequency`. `whoop-webhook` is the webhook
+  endpoint, declares WHOOP's signature, and fires `whoopwebhook`.
 - **Mappings**: none shipped. The mirrors describe one member: `user` is that
   member's row, keyed on WHOOP's `user_id`, and `account.user` points at it.
   The `people` sample ships `googlecontactperson`, `googleaddressperson`,
@@ -828,20 +832,73 @@ back by when no cycle row exists. The references are `recovery.cycle`, `recovery
 `sleep.cycle`, and `user` and `account` on every mirror.
 
 **Revisions and deletions.** WHOOP's `updated_at` is the only revision an
-object has: the sync never writes a payload whose `updated_at` is older
-than the stored row's `updatedAt`, and a payload equal to the stored row
-changes nothing, so re-reading a page is silent and a rescored cycle is
-rewritten. Each write is made under the version of the row it was compared
-with: if another run wrote or deleted the row in between, the write is
-refused as a conflict and retried against the row as it now stands. A
-deleted object just stops appearing in its collection. When a collection
-that already has a cursor drains, `whoopsync` reads back by id each row the
-mirror holds in that run's window (the 48 hours before the cursor, and later)
-that the walk did not see: a `404` deletes the row, and any other answer
-keeps it. The collection's cursor moves only once every read-back has
-answered, so a `429` part-way leaves the window to the next run. A first
-sync reads nothing back, and a deletion older than the window does not reach
-the mirror.
+object has: the sync and the webhook never write a payload whose
+`updated_at` is older than the stored row's `updatedAt`, and a payload equal
+to the stored row changes nothing, so re-reading a page is silent and a
+rescored cycle is rewritten. Each write is made under the version of the row
+it was compared with: if another run or a webhook delivery wrote or deleted
+the row in between, the write is refused as a conflict and retried against
+the row as it now stands. A page can be read before a deletion lands, so a
+page record whose row is deleted is not written from the page: the sync reads
+the row, then the object by id, and writes the object over the deleted row
+only when WHOOP still has it. A deleted object just stops appearing in its
+collection. When a collection that already has a cursor drains, `whoopsync`
+reads back by id each row the mirror holds in that run's window (the 48
+hours before the cursor, and later) that the walk did not see: a `404`
+deletes the row, and any other answer keeps it. The collection's cursor
+moves only once every read-back has answered, so a `429` part-way leaves the
+window to the next run. A first sync reads nothing back, and a deletion
+older than the window reaches the mirror only through the webhook.
+
+**Webhooks.** WHOOP posts `{user_id, id, type, trace_id}` to one URL per WHOOP
+app when a sleep, a recovery or a workout is written or deleted; it sends no
+event for a cycle or the member. To receive them, set the app's webhook URL
+in WHOOP's developer dashboard to
+`https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with model
+version v2. `substratectl trigger status` prints the path in its `WEBHOOK`
+column.
+
+The `whoop-webhook` trigger declares WHOOP's signature: `X-WHOOP-Signature`
+is base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw
+body)), and the server checks it against the `config` record's client secret
+before it stores the request
+([webhook signatures](functions.md#webhook-signatures)). The secret never
+reaches a function. A delivery whose signature is missing or does not match,
+or whose timestamp is more than five minutes from when the server received
+it, is answered `404` and leaves nothing behind: the trigger carries no key,
+so a refusal gets the answer a trigger that does not exist gets. The trigger
+ships enabled because the check fails closed: until the `config` record holds
+the client secret, every delivery is refused the same way. A verified event is
+matched to every account whose `account.user` is the member row for its
+`user_id`, which the first sync writes, and each acts on it under its own
+pause, toggles and token. `sleep.updated` and `workout.updated`
+read the object by id and rewrite its row; a create arrives as `.updated`.
+`recovery.updated` carries the sleep's id, so the body reads that sleep for
+its `cycle_id` and then `GET /v2/cycle/{cycle_id}/recovery`. A `404` on any
+of those reads deletes the row. `sleep.deleted` and `workout.deleted` delete
+the row the id names, and `recovery.deleted` deletes the recovery whose
+`sleep` reference is the named sleep. The body reads each row before it asks
+WHOOP and writes it under that version, so a sync or another delivery that
+writes or deletes the row after that read fails the delivery as a conflict,
+and the retry reads again. A paused account drops every event, and a toggle
+that is off drops an update. An update the body cannot read now (a `429`, a
+`5xx`, no answer, a missing token, a `retryNotBefore` still in the future, or
+a `401` or `403`) marks the rows the event names with `refreshRequestedAt`,
+and the next sync after the hold reads each marked row back by id, whatever
+its age, and clears the mark. A `429` also sets the account's
+`retryNotBefore` from its `Retry-After`, so later deliveries mark instead of
+asking and the sync waits for it. An update for an object the mirror holds no
+row for cannot be marked: on a transient answer the delivery fails, so the
+request is kept, retried and then parked for a retry by hand; on a `401` or
+`403` it is dropped, and the output's `skipped` names the reason. A recovery
+event needs a recovery row to mark: its sleep row is marked too, but a sync
+reads a marked sleep back without its recovery. When one account of the
+member must keep the request and another finished, the finished account's
+rows commit and the parked delivery names only the accounts left to retry.
+An account connected with recoveries on before
+`enabledRecovery` requested `read:sleep` has its `recovery.updated` events
+marked this way until it reconnects. A deletion needs no read and is applied
+whatever the toggles say.
 
 **What it does not do.** No writeback, and no mirror carries a `json` blob, a
 sync cursor or a page token. There is no `sport` kind: `workout.sportName` is
