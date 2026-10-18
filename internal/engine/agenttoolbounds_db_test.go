@@ -2,7 +2,8 @@ package engine
 
 // One tool call is bounded on its own, inside the run: a `query` or function
 // call past the agent's toolTimeoutSeconds answers the model a tool error and
-// the run goes on, and a result past maxToolResultBytes is replaced by a
+// the run goes on, an agent that sets none gives a function call the
+// function's own timeout, and a result past maxToolResultBytes is replaced by a
 // truncation envelope in what the model reads, what the thread stores and
 // what the stream carries. The `query` card states the limits in force.
 
@@ -20,8 +21,9 @@ import (
 const boundsPackage = "bounds.test.dev/bounds"
 
 // provisionBoundsAgents installs a slow function, a function whose output is
-// large, and two agents on one provider row: `tight`, with a 1 s tool timeout
-// and a 4 KiB result cap, and `roomy`, on the defaults.
+// large, one that takes 2 s of its declared 3 s, one that never ends inside
+// its declared 1 s, and two agents on one provider row: `tight`, with a 1 s
+// tool timeout and a 4 KiB result cap, and `roomy`, on the defaults.
 func provisionBoundsAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
@@ -46,6 +48,8 @@ func provisionBoundsAgents(t *testing.T) (*dataset, *fakeLLM) {
 	tools := []any{
 		map[string]any{"function": boundsPackage + "/sleeper"},
 		map[string]any{"function": boundsPackage + "/bulky"},
+		map[string]any{"function": boundsPackage + "/napper"},
+		map[string]any{"function": boundsPackage + "/spinner"},
 		map[string]any{"function": vocabulary.HostFunctionQuery},
 	}
 	reads := map[string]any{"reads": map[string]any{"kinds": []any{boundsPackage + "/note"}}}
@@ -70,6 +74,28 @@ def main(input, host):
 			"source": `
 def main(input, host):
     return {"output": {"rows": ["résumé ✈ row %d" % i for i in range(20000)]}}
+`,
+		}),
+		vocabulary.FunctionManifest(boundsPackage, "napper", map[string]any{
+			"description": "takes two of the three seconds it declares",
+			"runtime":     vocabulary.RuntimePython,
+			"timeout":     "PT3S",
+			"source": `
+import time
+
+def main(input, host):
+    time.sleep(2)
+    return {"output": {"slept": 2}}
+`,
+		}),
+		vocabulary.FunctionManifest(boundsPackage, "spinner", map[string]any{
+			"description": "never ends inside the one second it declares",
+			"runtime":     vocabulary.RuntimePython,
+			"timeout":     "PT1S",
+			"source": `
+def main(input, host):
+    while True:
+        pass
 `,
 		}),
 		agent("tight", map[string]any{
@@ -135,6 +161,40 @@ func TestAgentToolCallTimesOutAndALargeResultIsCapped(t *testing.T) {
 	last, _ := json.Marshal(reqs[len(reqs)-1]["messages"])
 	if len(last) > 64<<10 || !strings.Contains(string(last), `\"truncated\":true`) {
 		t.Fatalf("the model's next request carried %d bytes of history: %.300s", len(last), last)
+	}
+}
+
+// An agent that sets no toolTimeoutSeconds gives a function call the
+// function's declared timeout, not the `query` default: napper declares 3 s
+// and takes 2 s, past a `query` default lowered to 1 s, and answers. A call
+// past its declared timeout answers the runner's error naming that timeout,
+// which the tool's bound sits behind.
+func TestAgentFunctionCallTakesTheFunctionsOwnTimeout(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := provisionBoundsAgents(t)
+	ds.svc.queryToolTimeout = time.Second
+	fake.script("broomy",
+		fakeTurn{calls: []fakeCall{{"napper", "{}"}}},
+		fakeTurn{calls: []fakeCall{{"spinner", "{}"}}},
+		fakeTurn{content: "done"},
+	)
+	res, err := ds.CallAgent(ctx, boundsPackage+"/roomy", "go")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Status != threadOK || res.Reply != "done" {
+		t.Fatalf("run = %+v", res)
+	}
+	rows := toolRowsOf(t, ds, res.Thread)
+	napper := toolRowNamed(t, rows, "napper")
+	if napper["ok"] != true || !strings.Contains(napper["content"].(string), `"slept":2`) {
+		t.Fatalf("napper was cut short: ok %v content %v", napper["ok"], napper["content"])
+	}
+	spinner := toolRowNamed(t, rows, "spinner")
+	content, _ := spinner["content"].(string)
+	if spinner["ok"] != false || !strings.Contains(content, "invocation exceeded 1s") || strings.Contains(content, "tool call timed out") {
+		t.Fatalf("spinner's row = ok %v content %v, want the runner's own timeout error", spinner["ok"], content)
 	}
 }
 

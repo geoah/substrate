@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 24
+  version: 25
   purpose: internal
   names:
     singular: agent
@@ -175,8 +175,9 @@ data:
           min: 1
           max: 600
           description: >-
-            wall clock for one query or function tool call, 30 when absent;
-            a call past it is a tool error the model sees
+            wall clock for one query or function tool call; a call past it
+            is a tool error the model sees. When absent a query call gets
+            30 and a function call its own declared timeout plus 5
         maxToolResultBytes:
           type: int
           min: 1024
