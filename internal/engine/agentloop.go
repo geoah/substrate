@@ -1601,7 +1601,7 @@ func (l *agentLoop) queryLimits(ctx context.Context) string {
 		}
 	}
 	limits := fmt.Sprintf("Limits: a search stops at %s or at the newest %d matching records, and then answers \"capped\": true with a \"note\"; "+
-		"a call stops after %ds with the error \"tool call timed out…\"; a result over %s is replaced by "+
+		"a query call stops after %ds with the error \"tool call timed out…\"; a result over %s is replaced by "+
 		"{\"truncated\": true, \"bytes\", \"limit\", \"head\", \"note\"}. "+
 		"When one hits, narrow once (rarer words, filter.kinds, a smaller first), then answer from what you have.",
 		svc.searchBudget, svc.searchReadMax, ceilSeconds(toolBound(l.ag.Budgets.ToolTimeoutSeconds, svc.queryToolTimeout, nil, time.Time{}, time.Time{})),
@@ -1636,24 +1636,26 @@ func (l *agentLoop) toolContext(ctx context.Context, fn *vocabulary.Function) (c
 	return cctx, cancel, bound
 }
 
-// functionToolStartGrace is how far past a function's declared timeout its
-// tool call runs when the agent sets no toolTimeoutSeconds. The runner starts
-// the declared clock only once the process is up, and its own "invocation
-// exceeded" error names the function's timeout, which tells the model more
-// than the tool error does; a bound equal to the declared timeout would win
-// that race every time.
+// functionToolStartGrace is added to a function's declared timeout when the
+// agent sets no toolTimeoutSeconds. The runner starts the declared clock only
+// once the process is up, and its own "invocation exceeded" error names the
+// function's timeout, which tells the model more than the tool error does; a
+// bound equal to the declared timeout would end the call first every time.
 const functionToolStartGrace = 5 * time.Second
 
 // toolBound is one tool call's wall clock. An agent's toolTimeoutSeconds
-// bounds both a `query` (fn nil) and a function call, below a function's
-// declared timeout too: it is the number the agent's author wrote. Without
-// one, a `query` takes queryDefault (DefaultAgentToolTimeoutSec when not
-// positive) and a function its own declared timeout plus
-// functionToolStartGrace, so a function allowed 50 s is not cut at 30 s for
-// being called by an agent. A non-zero deadline shortens the bound to the
+// bounds both a `query` (fn nil) and a function call, a function below its
+// declared timeout too. Without one, a `query` takes queryDefault
+// (DefaultAgentToolTimeoutSec when not positive), and a function its declared
+// timeout plus functionToolStartGrace, never less than the `query` default:
+// a function allowed 50 s is not cut at 30 s, and one allowed 5 s keeps the
+// 30 s a cold start may need. A non-zero deadline shortens the bound to the
 // time left before it.
 func toolBound(explicitSec int, queryDefault time.Duration, fn *vocabulary.Function, deadline, now time.Time) time.Duration {
-	var bound time.Duration
+	if queryDefault <= 0 {
+		queryDefault = vocabulary.DefaultAgentToolTimeoutSec * time.Second
+	}
+	bound := queryDefault
 	switch {
 	case explicitSec > 0:
 		bound = time.Duration(explicitSec) * time.Second
@@ -1662,11 +1664,7 @@ func toolBound(explicitSec int, queryDefault time.Duration, fn *vocabulary.Funct
 		if declared <= 0 {
 			declared = vocabulary.DefaultRunTimeout
 		}
-		bound = declared + functionToolStartGrace
-	case queryDefault > 0:
-		bound = queryDefault
-	default:
-		bound = vocabulary.DefaultAgentToolTimeoutSec * time.Second
+		bound = max(declared+functionToolStartGrace, queryDefault)
 	}
 	if !deadline.IsZero() {
 		bound = min(bound, deadline.Sub(now))
@@ -1684,8 +1682,8 @@ func toolTimedOut(loop, call context.Context, bound time.Duration) (string, bool
 	return toolError(fmt.Sprintf(toolTimeoutMessage, ceilSeconds(bound))), true
 }
 
-// ceilSeconds rounds up, so a bound the loop's deadline shortened to under a
-// second never reads as "after 0s".
+// ceilSeconds rounds up: a declared timeout may be fractional (PT0.25S), and
+// the error must not name less time than the call had.
 func ceilSeconds(d time.Duration) int {
 	return int((d + time.Second - 1) / time.Second)
 }

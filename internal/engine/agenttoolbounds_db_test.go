@@ -21,7 +21,7 @@ import (
 const boundsPackage = "bounds.test.dev/bounds"
 
 // provisionBoundsAgents installs a slow function, a function whose output is
-// large, one that takes 2 s of its declared 3 s, one that never ends inside
+// large, one that takes 2 s of its declared 10 s, one that never ends inside
 // its declared 1 s, and two agents on one provider row: `tight`, with a 1 s
 // tool timeout and a 4 KiB result cap, and `roomy`, on the defaults.
 func provisionBoundsAgents(t *testing.T) (*dataset, *fakeLLM) {
@@ -77,9 +77,9 @@ def main(input, host):
 `,
 		}),
 		vocabulary.FunctionManifest(boundsPackage, "napper", map[string]any{
-			"description": "takes two of the three seconds it declares",
+			"description": "takes two of the ten seconds it declares",
 			"runtime":     vocabulary.RuntimePython,
-			"timeout":     "PT3S",
+			"timeout":     "PT10S",
 			"source": `
 import time
 
@@ -165,10 +165,11 @@ func TestAgentToolCallTimesOutAndALargeResultIsCapped(t *testing.T) {
 }
 
 // An agent that sets no toolTimeoutSeconds gives a function call the
-// function's declared timeout, not the `query` default: napper declares 3 s
-// and takes 2 s, past a `query` default lowered to 1 s, and answers. A call
-// past its declared timeout answers the runner's error naming that timeout,
-// which the tool's bound sits behind.
+// function's declared timeout, not the `query` default: napper declares 10 s
+// and takes 2 s, past a `query` default lowered to 1 s, and answers. The
+// lowered default is also the floor of a function's bound, so 1 s would have
+// cut it. A call past its declared timeout gets the runner's error naming
+// that timeout, because the tool's bound sits 5 s behind it.
 func TestAgentFunctionCallTakesTheFunctionsOwnTimeout(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -228,7 +229,7 @@ func TestAgentQueryCardCarriesTheLimitsInForce(t *testing.T) {
 		"never a list of common words",
 		"This repository has no embeddings provider, so q matches words only: semantic and hybrid fall back to lexical.",
 		"a search stops at 5s or at the newest 2000 matching records",
-		"a call stops after 1s",
+		"a query call stops after 1s",
 		"a result over 4 KiB is replaced by",
 		"narrow once",
 	} {
@@ -244,7 +245,7 @@ func TestAgentQueryCardCarriesTheLimitsInForce(t *testing.T) {
 	roomy := card("broomy", "roomy")
 	for _, want := range []string{
 		"This repository has an embeddings provider, so hybrid (the default) also ranks by meaning.",
-		"a call stops after 30s",
+		"a query call stops after 30s",
 		"a result over 48 KiB is replaced by",
 	} {
 		if !strings.Contains(roomy, want) {

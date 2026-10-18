@@ -13,7 +13,7 @@ import (
 
 // An explicit toolTimeoutSeconds bounds every call; without one a `query`
 // takes the default and a function its declared timeout plus the start
-// grace; a deadline closer than either wins.
+// grace, never less than the default; a deadline closer than either wins.
 func TestToolBound(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
@@ -30,8 +30,12 @@ func TestToolBound(t *testing.T) {
 		{"query, lowered default", 0, time.Second, nil, time.Time{}, time.Second},
 		{"query, explicit budget", 12, 0, nil, time.Time{}, 12 * time.Second},
 		{"function declaring 50s, no budget", 0, 0, declares(50 * time.Second), time.Time{}, 55 * time.Second},
-		{"function declaring nothing, no budget", 0, 0, declares(0), time.Time{}, 10 * time.Second},
-		{"function, lowered query default", 0, time.Second, declares(3 * time.Second), time.Time{}, 8 * time.Second},
+		{"function declaring nothing, no budget", 0, 0, declares(0), time.Time{}, 30 * time.Second},
+		{"function declaring 5s, no budget", 0, 0, declares(5 * time.Second), time.Time{}, 30 * time.Second},
+		{"function declaring 25s, no budget", 0, 0, declares(25 * time.Second), time.Time{}, 30 * time.Second},
+		{"function declaring 26s, no budget", 0, 0, declares(26 * time.Second), time.Time{}, 31 * time.Second},
+		{"function, lowered query default", 0, time.Second, declares(10 * time.Second), time.Time{}, 15 * time.Second},
+		{"function declaring nothing, lowered query default", 0, time.Second, declares(0), time.Time{}, 10 * time.Second},
 		{"function, explicit budget below its timeout", 20, 0, declares(50 * time.Second), time.Time{}, 20 * time.Second},
 		{"function, explicit budget above its timeout", 90, 0, declares(50 * time.Second), time.Time{}, 90 * time.Second},
 		{"function, run deadline sooner", 0, 0, declares(50 * time.Second), now.Add(7 * time.Second), 7 * time.Second},

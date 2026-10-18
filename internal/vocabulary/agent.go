@@ -236,8 +236,10 @@ type AgentBudgets struct {
 	// ToolTimeoutSeconds bounds one `query` or function tool call; a call
 	// past it is a tool error the model sees, never a failed run. Zero is
 	// absent, which is not the same bound for both: a `query` call takes
-	// DefaultAgentToolTimeoutSec and a function call the function's own
-	// timeout, so a function declaring more than the default is not cut short.
+	// DefaultAgentToolTimeoutSec, and a function call the function's own
+	// timeout plus 5 s for starting the body, never less than
+	// DefaultAgentToolTimeoutSec, so a function declaring more than the
+	// default is not cut short and one declaring less loses nothing.
 	ToolTimeoutSeconds int
 	// MaxToolResultBytes caps one tool result: a larger one is replaced by
 	// a truncation envelope carrying its head.
