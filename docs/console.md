@@ -615,7 +615,7 @@ this repository holds of them. A card says in one pill where the provider
 stands (**On**, **Set up**, **Needs attention**, **Paused**) or offers
 **Add**, and one line says what is true right now. With Technical details on,
 **Other packages** lists every other bundle the repository holds (imported
-samples, the seeded `llm` package, anything applied directly) with its
+samples, the seeded `llm` and `console` packages, anything applied directly) with its
 version, state, update and removal, and states any pending upgrade of the
 seeded packages.
 

@@ -69,7 +69,8 @@ there, each an ordinary changelog entry attributed to the hand that wrote it and
 auditable in the [changelog](changelog.md):
 
 - **The seed, once, at creation.** Creating a repository writes the binary's
-  shipped vocabulary, the `substrate.reamde.dev` authority (`core` and `llm`),
+  shipped vocabulary, the `substrate.reamde.dev` authority (`core`, `llm` and
+  `console`),
   into the new repository's changelog as ordinary record entries, under the
   actor `bundle:core`, in the same transaction as the repository itself. The
   provider closures embedded beside it are the catalog, not the seed, and the

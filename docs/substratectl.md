@@ -285,8 +285,8 @@ answer whole.
   description over its limit (an agent's 200 characters, a kind's 400, a
   function's 1000) is refused with the problem line the server's `422`
   carries. A package that builds is then resolved against the other
-  packages among the files and the `core` and `llm` packages the binary
-  ships. Record documents get the envelope checks `apply` makes before it
+  packages among the files and the seeded packages the binary ships
+  (`core`, `llm` and `console`). Record documents get the envelope checks `apply` makes before it
   sends them. Three cases need the repository, and `validate` lists each
   one it meets: a package whose package document is not among the files
   (its members are checked under a placeholder header), a declaration

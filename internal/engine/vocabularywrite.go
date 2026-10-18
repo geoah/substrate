@@ -282,7 +282,8 @@ func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, er
 // document that fails to admit — a malformed trigger, an unresolvable callable,
 // a failed write — rolls the schema apply back with it, so a failed install
 // never leaves a live half-installed closure. The data documents
-// are UPSERTS: a re-install refreshes the wiring in place. The transaction's
+// are UPSERTS: a re-install refreshes the wiring in place, except a record the
+// owner wrote or deleted (ownerWrote), which it leaves as the owner left it. The transaction's
 // declarations are the candidate registry, so a data document may name a kind,
 // a mapping or a callable the same closure installs.
 func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
@@ -313,6 +314,15 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
 				}
+				if in.Kind != typeTrigger {
+					held, err := t.ownerWrote(eref{Kind: in.Kind, ID: in.ID})
+					if err != nil {
+						return fmt.Errorf("shipped record %s: %w", in.ID, err)
+					}
+					if held {
+						continue
+					}
+				}
 				if _, err := t.put(in); err != nil {
 					return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 				}
@@ -330,6 +340,31 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		}
 	}
 	return out, nil
+}
+
+// ownerWrote reports whether the repository's owner ever wrote or deleted
+// the record at ref: whether its changelog holds an entry under one of the
+// human doors (substrate.HumanActors). An install, import or upgrade writes a
+// shipped data record only where the owner never did, so an edit, a removed
+// property and a deletion all survive it, and a record only the shipped
+// closure and the engine wrote takes the newer shipped one (record 0166).
+// Delivery wiring (a trigger) is exempt at the caller: it names the callables
+// the same closure ships, so it moves with them. The check runs under the
+// record's advisory lock, so a concurrent writer of the same id serializes
+// behind it.
+func (t *txn) ownerWrote(ref eref) (bool, error) {
+	at, err := t.lockCanonical(ref)
+	if err != nil {
+		return false, err
+	}
+	humans := make([]string, 0, len(substrate.HumanActors))
+	for a := range substrate.HumanActors {
+		humans = append(humans, string(a))
+	}
+	var wrote bool
+	err = t.row(`SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor = ANY($3))`,
+		at.ID, at.Kind, humans).Scan(&wrote)
+	return wrote, err
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the
@@ -2464,10 +2499,10 @@ func admissionUnits(built []*vocabulary.Package) [][]*vocabulary.Package {
 }
 
 // seededPackageName reports whether a declaration group is one the binary
-// seeds: the two packages, and the authority row that owns them.
+// seeds: the three packages, and the authority row that owns them.
 func seededPackageName(name string) bool {
 	return name == vocabulary.PackageCore || name == vocabulary.PackageLLM ||
-		name == vocabulary.AuthorityPublisher
+		name == vocabulary.PackageConsole || name == vocabulary.AuthorityPublisher
 }
 
 // markGroupQuarantined records the quarantine state on the package's own row,

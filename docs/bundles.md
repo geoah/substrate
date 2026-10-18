@@ -732,6 +732,36 @@ Both are refused for any actor outside the three
 interactive clients (`api`, `console`, `substratectl`) with a 403, before the
 closure is touched: taking bundle code is a person's action.
 
+A door writes a shipped data record (a record view, a metric record, any
+record a closure ships beside its declarations) only where the repository's
+owner never wrote or deleted the one at its id: the record's changelog holds
+no entry under `api`, `console` or `substratectl`. An owner's edit, a property
+the owner removed and a record the owner deleted all stay as the owner left
+them through every re-import and upgrade, and a record only the closure and
+the engine wrote takes the newer shipped one. Triggers are the exception:
+they name the callables the same closure ships, so the door always writes
+them. To take a newer shipped record over an edited one, apply the shipped
+document by hand
+([0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)).
+An imported record carries the repository's authority, while the shipped
+file still names `samples.substrate.reamde.dev` in its ids and references.
+Applied unchanged, the file writes records of a copy the repository may not
+hold and leaves the imported record alone. `--as-mine` does not help: it
+rehomes from the authority a declaration names, and a views file holds none.
+Rewrite the authority with `sed`, and purge the record first: `apply` never
+prunes, and a put at a tombstone restores the old properties, so a property
+you added survives anything short of a purge. For the health sample's sleep
+view in a repository named `alice.example.com`:
+
+```bash
+bin/substratectl delete --purge substrate.reamde.dev/console/recordview alice.example.com/health/sleep
+sed 's/samples\.substrate\.reamde\.dev/alice.example.com/g' samples/health/views.yaml \
+  | bin/substratectl apply -f -
+```
+
+The file holds the workout view too, so the apply also writes that one back
+to the shipped view's properties.
+
 `POST …/catalog/{id}/install` is the **provider** door. The closure lands
 verbatim, under the authority that publishes it, with the shipped version it
 took stamped as `shippedVersion` on the package row, and the version bump the
