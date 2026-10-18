@@ -32,8 +32,9 @@ var (
 // the wait for a pool connection nor the wait on the lock.
 //
 // An owner write (ownerFirst: in practice an owner's put, patch or delete of a
-// data record through the API or the console, and the webhook spool drain's
-// admission of a request the door already answered) is not queued: it goes straight
+// data record through the API or the console, the webhook spool drain's
+// admission of a request the door already answered, and a detached chat
+// turn's settle after a failed write or model call) is not queued: it goes straight
 // on to the lock, and owner writes do not wait for one another here. It still
 // waits for the transaction holding the lock and at most one admitted
 // background writer; priority never shortens the transaction already holding
@@ -94,8 +95,13 @@ type foregroundWritesKey struct{}
 // drain's admission, which settles the request's blobs and parks it in one
 // transaction. The sender holds a 202 for a request that is in no list until
 // that commit, so it cannot queue behind every agent, sync and function
-// effect of the repository. Only the admission takes it: the fire the drain
-// spawns runs on its own context, as background.
+// effect of the repository. The admission takes it, and the fire the drain
+// spawns runs on its own context, as background. The one other taker is a
+// detached chat turn's settle after a failed write or model call
+// (agentloop.go settleAfterFailure): one row, written only on that failure,
+// whose thread otherwise stays `running` until its lease expires. Each
+// waiting settle holds one pool connection, and at most maxRunningChatTurns
+// of them wait at once.
 func withForegroundWrites(ctx context.Context) context.Context {
 	return context.WithValue(ctx, foregroundWritesKey{}, true)
 }
