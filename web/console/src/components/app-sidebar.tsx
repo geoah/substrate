@@ -1,6 +1,7 @@
 /** The sidebar: the repository at the top (the one account menu: settings,
  * theme, sign out), the search that opens ⌘K, the five places (Home, All
- * data, Agents, Tools, Providers), then the collections grouped the way a
+ * data, Agents, Tools, Providers, and Observations after All data where a
+ * kind records measurements), then the collections grouped the way a
  * person meets them ("Your data", one "From <Provider>" per provider) and, at
  * the foot, History, Settings and the Technical details switch. The
  * repository's name appears once: a second chip for it is a second door to
@@ -20,6 +21,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router"
 import {
+  ActivityIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   BotIcon,
@@ -92,6 +94,8 @@ import {
 } from "@/lib/collections"
 import { kindByIdentity, kindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
+import { OBSERVED_TRAIT } from "@/lib/core-kinds"
+import { kindHasTrait } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
 const ROW =
@@ -107,7 +111,14 @@ function useCloseOnPhone(): () => void {
 }
 
 type Place =
-  "/" | "/data" | "/agents" | "/tools" | "/providers" | "/history" | "/settings"
+  | "/"
+  | "/data"
+  | "/observations"
+  | "/agents"
+  | "/tools"
+  | "/providers"
+  | "/history"
+  | "/settings"
 
 function NavRow({
   to,
@@ -139,6 +150,15 @@ function NavRow({
       {extra}
     </Link>
   )
+}
+
+/** Observations, a place only where something records measurements: a kind
+ * binding core's `observed` trait. */
+function ObservationsRow() {
+  const registry = useQuery(kindsQueryOptions)
+  const any = (registry.data ?? []).some((k) => kindHasTrait(k, OBSERVED_TRAIT))
+  if (!any) return null
+  return <NavRow to="/observations" icon={ActivityIcon} label="Observations" />
 }
 
 /** A kind's record count, only when a page already counted it: the sidebar
@@ -667,6 +687,7 @@ export function AppSidebar({
         <nav aria-label="Places" className="flex flex-col">
           <NavRow to="/" icon={HomeIcon} label="Home" />
           <NavRow to="/data" icon={DatabaseIcon} label="All data" />
+          <ObservationsRow />
           <NavRow to="/agents" icon={BotIcon} label="Agents" />
           <NavRow to="/tools" icon={WrenchIcon} label="Tools" />
           <NavRow

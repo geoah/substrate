@@ -62,9 +62,9 @@ describe("friendlyDate", () => {
     expect(friendlyDate(at(25), now)).toBe("Tomorrow")
     expect(friendlyDate(at(23), now)).toBe("Yesterday")
     expect(friendlyDate(at(28), now)).toBe("Mon")
-    expect(friendlyDate(at(20), now)).toBe("20 Sep")
+    expect(friendlyDate(at(20), now)).toBe("Sep 20")
     expect(friendlyDate(new Date(2025, 9, 3).toISOString(), now)).toBe(
-      "3 Oct 2025"
+      "Oct 3, 2025"
     )
   })
 

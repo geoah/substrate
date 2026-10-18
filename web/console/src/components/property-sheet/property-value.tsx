@@ -16,6 +16,7 @@ import { QuantityValue } from "@/components/identity/quantity-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
+import { coverageWords } from "@/lib/observations-time"
 import { scalarText } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 import { REDACTED, elementSpec, type PropSpec } from "@/lib/record-schema"
@@ -126,6 +127,9 @@ function ScalarValue({
   if (spec.kind === "datetime" && typeof value === "string") {
     return <span title={value}>{friendlyDateTime(value)}</span>
   }
+  if (spec.kind === "duration" && typeof value === "string") {
+    return <span title={value}>{coverageWords(value)}</span>
+  }
   if (spec.kind === "url" && typeof value === "string") {
     return (
       <a
@@ -205,7 +209,10 @@ export function DeclaredValue({
         <ol className="flex w-full flex-col gap-2">
           {value.map((one: unknown, i) => (
             <li key={i} className="flex min-w-0 items-baseline gap-2">
-              <span className="text-xs text-faint tabular-nums">{i + 1}</span>
+              {/* A lone object needs no number to tell it apart. */}
+              {value.length > 1 && (
+                <span className="text-xs text-faint tabular-nums">{i + 1}</span>
+              )}
               <div className="min-w-0 flex-1">
                 <ScalarValue spec={item} value={one} dense />
               </div>

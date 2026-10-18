@@ -15,7 +15,7 @@ suites are where most of the behaviour is actually pinned down.
 | Race | `mise run test:race` | nothing | ~1 minute |
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
 | Console | `mise run console:test` | pnpm | seconds |
-| Console render | `mise run console:render <url>` | a running substrate; Chrome, or a chromium Playwright downloads | ~10 seconds |
+| Console render | `mise run console:render <url>` | a running substrate; Chrome, or a chromium Playwright downloads | ~25 seconds |
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
 | End-to-end | `mise run test:e2e` | Docker; leaves data | ~3 minutes |
 
@@ -343,7 +343,11 @@ Vitest with jsdom, beside the code it covers: most modules in
 tests. The new-record sheet's sweep over every shipped kind is the slowest
 of them, so it is cut across four files (`create-sheet.kinds-1.test.tsx` to
 `-4`) that vitest runs side by side, and on CI vitest runs one worker per
-core rather than leaving one idle.
+core rather than leaving one idle. Every run is in Europe/Athens (`TZ` in
+`vite.config.ts`), a zone whose clocks change, so a local-time test means the
+same on every machine and can cross an offset change; a suite that needs
+another zone sets it for its own file with `vi.stubEnv("TZ", …)`
+(`src/lib/observations-time.santiago.test.ts`).
 
 **The render check** (`web/console/scripts/render-smoke.mjs`) opens the
 console a running substrate serves in headless Chrome. jsdom cannot stand in
@@ -351,8 +355,12 @@ for it: #846 bumped `nuqs`, every page rendered blank, and every check passed
 until #864. It visits `/` (expecting the redirect to `/login`), `/login`,
 `/register` (it registers a new repository through the form and acknowledges
 the recovery key), then `/data` and `/history`, where it waits for the
-collections table or the change rows, or their empty states. It prints one
-line per route. A route fails on an uncaught page error, a console error, a
+collections table or the change rows, or their empty states, and the
+observations pages and the timeline, empty. Last, it imports the
+observations and health samples, writes six hours of heart rate, heart rate
+variability and steps, and opens the timeline on those three metrics, which
+must draw two charts: heart rate with HRV on two axes, then steps. It prints
+one line per route. A route fails on an uncaught page error, a console error, a
 same-origin response of 400 or more, a request lost to
 `net::ERR_NETWORK_CHANGED` that no retry answered, or its heading or content
 not appearing within 20 seconds. The one 4xx it accepts is the 404 a fresh
@@ -360,7 +368,7 @@ repository gives for
 `GET /api/v1/substrate.reamde.dev/core/consolepreference/navigation`.
 It does not see an error in a route it does not visit, in an interaction
 other than the register form, or in a page that needs records the user
-wrote.
+wrote other than those measurements.
 
 The image job runs it at the end of `.mise/imagesmoke.sh`, against the image
 it booted. `mise run console:render <url>` runs it against any substrate

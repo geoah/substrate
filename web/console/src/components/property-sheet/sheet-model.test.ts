@@ -255,10 +255,10 @@ describe("dates", () => {
       "Yesterday"
     )
     expect(friendlyDay(new Date(2026, 9, 20, 9).toISOString(), now)).toBe(
-      "20 Oct"
+      "Oct 20"
     )
     expect(friendlyDay(new Date(2025, 9, 20, 9).toISOString(), now)).toBe(
-      "20 Oct 2025"
+      "Oct 20, 2025"
     )
   })
 

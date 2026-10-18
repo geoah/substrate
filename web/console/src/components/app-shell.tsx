@@ -129,6 +129,14 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
       return [{ label: "History" }]
     case "search":
       return [{ label: "Search" }]
+    case "observations":
+      if (rest[0] === "timeline") {
+        return [
+          { label: "Observations", to: "/observations" },
+          { label: "Timeline" },
+        ]
+      }
+      return [{ label: "Observations" }]
     // A bundle's own settings, the account and its tokens all redirect: the
     // first to its provider, the others here.
     case "settings":

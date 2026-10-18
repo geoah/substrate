@@ -18,6 +18,8 @@
  * held to the engine's own answers by `units.prints.json`. The console does
  * not judge such a code: whether it belongs to a measure is the server's. */
 
+import { durationWords } from "@/lib/observations-time"
+
 import table from "./units.table.json"
 
 export interface Measure {
@@ -526,23 +528,6 @@ export function timeWords(digits: string, unit: string): string | undefined {
   const ms = Number(digits) * per
   if (!Number.isFinite(ms) || ms < 60_000) return undefined
   return durationWords(ms)
-}
-
-/** A length of time in a few words: `6d 22h 10m`, `59m 58s`, `0s`. */
-function durationWords(ms: number): string {
-  const parts: string[] = []
-  let rest = Math.round(ms / 1000)
-  const days = Math.floor(rest / 86_400)
-  rest -= days * 86_400
-  const hours = Math.floor(rest / 3600)
-  rest -= hours * 3600
-  const minutes = Math.floor(rest / 60)
-  const seconds = rest - minutes * 60
-  if (days) parts.push(`${days}d`)
-  if (hours) parts.push(`${hours}h`)
-  if (minutes) parts.push(`${minutes}m`)
-  if (seconds && !days) parts.push(`${seconds}s`)
-  return parts.length ? parts.slice(0, 3).join(" ") : "0s"
 }
 
 /** Whether a unit's times read in hours and minutes (`timeWords`). */

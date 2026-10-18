@@ -1,5 +1,6 @@
 /** The collection grid: one page of records in a sheet that scrolls both ways,
- * the header row pinned to the top and the title column pinned to the left.
+ * the header row pinned to the top and the title column (after any leading
+ * control column, such as a row's selection box) pinned to the left.
  * Columns are FIXED widths (a `colgroup` under `table-layout: fixed`): the
  * reader's drag override, else the column's own `meta.width`, else its flex
  * minimum; the table is their sum, stretched to the wrapper when the reader
@@ -71,6 +72,7 @@ export function DataGrid<TData extends RowData>({
   empty,
   scrollKey,
   marks,
+  selected,
   label,
   groups,
   className,
@@ -88,6 +90,8 @@ export function DataGrid<TData extends RowData>({
   /** Rows (by id) that just changed under the reader: tinted while `fresh`,
    * easing back while `fading`. */
   marks?: ReadonlyMap<string, "fresh" | "fading">
+  /** Rows (by id) the reader has selected: tinted, and `aria-selected`. */
+  selected?: ReadonlySet<string>
   /** The sheet's accessible name: the collection's display plural. */
   label: string
   /** Cut the rows into groups, each under a head. */
@@ -102,6 +106,17 @@ export function DataGrid<TData extends RowData>({
   const visible = table.getVisibleLeafColumns()
   const widths = visible.map((col) => columnPx(table, col.id))
   const total = widths.reduce((sum, px) => sum + px, 0)
+  // The leading control columns (a row's selection box) and the title column
+  // after them are pinned, each at the sum of the widths before it, so the
+  // title stays in view however far the sheet scrolls.
+  const controls = visible.findIndex((col) => !col.columnDef.meta?.fixed)
+  const title = controls < 0 ? visible.length - 1 : controls
+  const lefts = widths.map((_, i) =>
+    widths.slice(0, i).reduce((sum, px) => sum + px, 0)
+  )
+  const pinnedPx = (lefts[title] ?? 0) + (widths[title] ?? 0)
+  const pinned = (i: number) => i <= title
+  const pinStyle = (i: number) => (pinned(i) ? { left: lefts[i] } : undefined)
 
   const [resizingId, setResizingId] = useState<string | null>(null)
   function startResize(e: React.PointerEvent, id: string, from: number) {
@@ -137,23 +152,28 @@ export function DataGrid<TData extends RowData>({
 
   function drawRow(row: Row<DataTableFeatures, TData>) {
     const mark = marks?.get(row.id)
+    const picked = selected?.has(row.id)
     return (
       <tr
         key={row.id}
         data-slot="grid-row"
         data-changed={mark}
+        aria-selected={selected ? Boolean(picked) : undefined}
         className="group/row [&:hover>td]:bg-[color-mix(in_oklab,var(--background)_96%,var(--foreground))]"
       >
         {row.getVisibleCells().map((cell, i) => (
           <td
             key={cell.id}
+            style={pinStyle(i)}
             className={cn(
               rowH,
               "overflow-hidden border-b border-border bg-background px-2.5 text-ellipsis whitespace-nowrap",
               i > 0 && "border-l",
-              i === 0 &&
-                "sticky left-0 z-[1] font-medium shadow-[1px_0_0_var(--border)]",
+              pinned(i) && "sticky z-[1]",
+              i === title && "font-medium shadow-[1px_0_0_var(--border)]",
               cell.column.columnDef.meta?.cellClassName,
+              picked &&
+                "bg-[color-mix(in_oklab,var(--background)_93%,var(--primary))]",
               // Opaque, because the title column is pinned over the
               // cells that scroll under it.
               mark === "fresh" &&
@@ -188,7 +208,7 @@ export function DataGrid<TData extends RowData>({
         "min-h-0 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
         className
       )}
-      style={{ scrollPaddingTop: HEADER_PX, scrollPaddingLeft: widths[0] ?? 0 }}
+      style={{ scrollPaddingTop: HEADER_PX, scrollPaddingLeft: pinnedPx }}
     >
       <table
         className={cn(
@@ -211,6 +231,7 @@ export function DataGrid<TData extends RowData>({
                   <th
                     key={header.id}
                     scope="col"
+                    style={pinStyle(i)}
                     aria-sort={ariaSortOf(header.column.getIsSorted())}
                     // The upward shadow is the header's cover: the scroller
                     // clips it while the row sits at the top, and wherever an
@@ -220,8 +241,9 @@ export function DataGrid<TData extends RowData>({
                     className={cn(
                       "group/th sticky top-0 z-[2] h-[34px] overflow-hidden border-b border-border bg-background bg-clip-border px-2.5 text-left text-[12.5px] font-medium whitespace-nowrap text-faint shadow-[0_-2px_0_var(--background)]",
                       i > 0 && "border-l",
-                      i === 0 &&
-                        "left-0 z-[3] shadow-[1px_0_0_var(--border),0_-2px_0_var(--background)]",
+                      pinned(i) && "z-[3]",
+                      i === title &&
+                        "shadow-[1px_0_0_var(--border),0_-2px_0_var(--background)]",
                       meta?.headerClassName
                     )}
                   >
@@ -231,25 +253,28 @@ export function DataGrid<TData extends RowData>({
                           header.column.columnDef.header,
                           header.getContext()
                         )}
-                    <span
-                      role="presentation"
-                      className="group/resize absolute inset-y-0 right-0 z-10 flex w-2 cursor-col-resize touch-none justify-end select-none"
-                      onPointerDown={(e) =>
-                        startResize(e, header.column.id, widths[i])
-                      }
-                      onDoubleClick={(e) => {
-                        e.stopPropagation()
-                        clearResize(header.column.id)
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    {/* A control column keeps its width. */}
+                    {!meta?.fixed && (
                       <span
-                        className={cn(
-                          "h-full w-0.5 bg-primary opacity-0 transition-opacity group-hover/resize:opacity-60",
-                          resizingId === header.column.id && "opacity-100"
-                        )}
-                      />
-                    </span>
+                        role="presentation"
+                        className="group/resize absolute inset-y-0 right-0 z-10 flex w-2 cursor-col-resize touch-none justify-end select-none"
+                        onPointerDown={(e) =>
+                          startResize(e, header.column.id, widths[i])
+                        }
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
+                          clearResize(header.column.id)
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span
+                          className={cn(
+                            "h-full w-0.5 bg-primary opacity-0 transition-opacity group-hover/resize:opacity-60",
+                            resizingId === header.column.id && "opacity-100"
+                          )}
+                        />
+                      </span>
+                    )}
                   </th>
                 )
               })}
@@ -309,11 +334,12 @@ export function DataGrid<TData extends RowData>({
                   {visible.map((col, i) => (
                     <td
                       key={col.id}
+                      style={pinStyle(i)}
                       className={cn(
                         rowH,
                         "border-b border-border bg-background px-2.5",
                         i > 0 && "border-l",
-                        i === 0 && "sticky left-0 z-[1]"
+                        pinned(i) && "sticky z-[1]"
                       )}
                     >
                       <Skeleton

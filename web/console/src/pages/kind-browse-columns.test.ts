@@ -172,6 +172,7 @@ const TASK: KindInfo = {
         kind: "ada.example.com/people/person",
         repeated: true,
       },
+      awake: { type: "duration" },
     },
   },
 }
@@ -244,6 +245,16 @@ describe("a reference column", () => {
     })
     expect(container.querySelector("a")).toBeNull()
     expect(container.textContent).toBe("Untitled lead")
+  })
+})
+
+describe("a duration column", () => {
+  it("reads as hours, minutes and seconds, the stored text on hover", () => {
+    const { container } = renderCell(propertyColumnId("awake"), "PT8M12S")
+    expect(container.textContent).toBe("8m 12s")
+    expect(container.querySelector("[title]")?.getAttribute("title")).toBe(
+      "PT8M12S"
+    )
   })
 })
 

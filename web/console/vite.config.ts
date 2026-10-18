@@ -58,6 +58,10 @@ export default defineConfig({
     // suite that renders declares `// @vitest-environment jsdom` on its first
     // line, and `src/test-setup.ts` installs the browser gaps only there.
     environment: "node",
+    // One zone with daylight saving for every run, here and in CI, so a
+    // local-time test means the same everywhere and can cross an offset
+    // change (Athens moves its clocks at 03:00 and 04:00, not at midnight).
+    env: { TZ: "Europe/Athens" },
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test-setup.ts"],
     // vitest leaves one core to the main process by default, three workers

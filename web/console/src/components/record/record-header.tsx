@@ -22,6 +22,7 @@ import {
   writeError,
 } from "@/components/property-sheet/use-record-patch"
 import { useFocusReturn } from "@/components/property-sheet/focus-return"
+import { AdapterNotice } from "@/components/record/adapter-notice"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
@@ -47,7 +48,7 @@ import { deleteRecord } from "@/lib/api/sync"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { displayPlural, untitled } from "@/lib/kind-names"
-import { everyValueYours } from "@/lib/provenance"
+import { adapterOutput, everyValueYours } from "@/lib/provenance"
 import { fieldOf } from "@/lib/record-form"
 import { titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
@@ -196,6 +197,10 @@ export function RecordHeader({
 }) {
   const [technical] = useTechnicalDetails()
   const provider = providerOfKind(record.kind)
+  // An adapter's output is read only too: the owner corrects it with a
+  // record of their own (`AdapterNotice`).
+  const adapter = provider ? undefined : adapterOutput(record)
+  const locked = Boolean(provider) || Boolean(adapter)
   const facts = headerFacts(record, rows)
   const path = `${record.kind}/${record.id}`
   const { authority, pkg, name } = splitKind(record.kind)
@@ -227,9 +232,7 @@ export function RecordHeader({
     <PageHeader
       size="record"
       glyph={<KindGlyph kind={kind ?? record.kind} size="lg" />}
-      heading={
-        <Title record={record} kind={kind} readOnly={Boolean(provider)} />
-      }
+      heading={<Title record={record} kind={kind} readOnly={locked} />}
       actions={
         <div className="flex items-center gap-1">
           {technical && (
@@ -262,7 +265,7 @@ export function RecordHeader({
               <DropdownMenuItem onClick={() => void copyLink(record)}>
                 <LinkIcon /> Copy link
               </DropdownMenuItem>
-              {!provider && (
+              {!locked && (
                 <DropdownMenuItem
                   disabled={duplicate.isPending}
                   onClick={() => duplicate.mutate()}
@@ -286,6 +289,13 @@ export function RecordHeader({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem disabled>
                     Change it in {provider.name}
+                  </DropdownMenuItem>
+                </>
+              ) : adapter ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled>
+                    Written by {adapter.writer}
                   </DropdownMenuItem>
                 </>
               ) : (
@@ -326,7 +336,7 @@ export function RecordHeader({
                 {facts.changedBy ? ` by ${facts.changedBy}` : ""}
               </span>
             )}
-            {!provider && everyValueYours(record) && (
+            {!locked && everyValueYours(record) && (
               <span data-slot="all-yours">Every value is yours</span>
             )}
           </>
@@ -341,6 +351,9 @@ export function RecordHeader({
             it updates here.
           </span>
         </div>
+      )}
+      {adapter && (
+        <AdapterNotice adapter={adapter} recordKind={record.kind} kind={kind} />
       )}
       {deleting && (
         <DeleteDialog
