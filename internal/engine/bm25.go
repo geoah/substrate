@@ -92,8 +92,9 @@ const (
 	// that started it.
 	statsReadTimeout = 2 * time.Minute
 	// statsWait is how long a search with no statistics held waits for the
-	// read in flight before it ranks without them.
-	statsWait = time.Second
+	// read in flight before it ranks without them: long enough for a small
+	// repository's read, a small share of the search budget for a large one.
+	statsWait = 250 * time.Millisecond
 )
 
 // searchStats is one repository's collection statistics: live rows and the
@@ -110,9 +111,8 @@ type searchStatsCache struct {
 	mu sync.Mutex
 	s  searchStats
 	// refreshing is closed when the read in flight ends, and nil while none
-	// runs; err is what the last read failed with.
+	// runs.
 	refreshing chan struct{}
-	err        error
 	// wait overrides statsWait, for a test.
 	wait time.Duration
 }
@@ -120,53 +120,73 @@ type searchStatsCache struct {
 // searchStats returns the repository's collection statistics, reading them
 // when the held ones are older than statsTTL. The averages come from a sample
 // of about statsSample rows, because an exact average detoasts every row's
-// vector.
+// vector. It never fails a search: a read that has not landed answers no
+// statistics (see get).
 //
 // A band's average is over the rows that HAVE the band. Most kinds carry no
 // prose, so an average over every row put the prose band near zero positions
 // and read every record with a description as thirty times longer than
 // usual, which crushed any match in it.
 func (ds *dataset) searchStats(ctx context.Context) (searchStats, error) {
-	return ds.statsCache.get(ctx, ds.readSearchStats)
+	spawn := func(fn func(context.Context)) bool { return ds.spawn("search statistics", fn) }
+	warn := func(err error) {
+		ds.svc.log.Warn("substrate: search statistics read failed; searches rank with the statistics held, or none",
+			"repository", ds.Repository().ID, "error", err)
+	}
+	return ds.statsCache.get(ctx, ds.readSearchStats, spawn, warn), nil
 }
 
 // get answers the held statistics while they stand. Otherwise it starts one
-// read, on a context of its own: the sample took 5.6 s on a repository of
-// 620,000 rows, longer than a search's whole budget, and a read canceled
-// with the search that started it cached nothing, so every search paid for
-// it again and failed. A caller holding stale statistics answers those at
-// once; a caller holding none waits for the read up to statsWait and then
-// answers none, which ranks without IDF or length normalization until the
-// read lands. A read that fails is answered to the callers waiting on it.
-func (c *searchStatsCache) get(ctx context.Context, read func(context.Context) (searchStats, error)) (searchStats, error) {
+// read as a background task, which shutdown cancels and waits for: the
+// sample took about 5.7 s on a repository of 620,000 rows, longer than a
+// search's whole budget, and a read canceled with the search that started it
+// cached nothing, so every search paid for it again and failed. A caller
+// holding stale statistics answers those at once; a caller holding none waits
+// for the read up to statsWait and then answers none, which ranks every term
+// alike and without length normalization until the read lands. A failed read
+// is reported through warn and keeps what was held.
+func (c *searchStatsCache) get(ctx context.Context, read func(context.Context) (searchStats, error),
+	spawn func(func(context.Context)) bool, warn func(error),
+) searchStats {
 	c.mu.Lock()
 	if statsFresh(c.s) {
 		s := c.s
 		c.mu.Unlock()
-		return s, nil
+		return s
 	}
 	if c.refreshing == nil {
 		done := make(chan struct{})
 		c.refreshing = done
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), statsReadTimeout)
-		go func() {
+		started := spawn(func(bg context.Context) {
+			var s searchStats
+			var err error
+			// Deferred so a panicking read, which spawn contains, still ends
+			// the refresh: a refresh left open would hold every later search
+			// for statsWait and never read again.
+			defer func() {
+				c.mu.Lock()
+				if err == nil && !s.at.IsZero() {
+					c.s = s
+				}
+				c.refreshing = nil
+				c.mu.Unlock()
+				close(done)
+			}()
+			rctx, cancel := context.WithTimeout(bg, statsReadTimeout)
 			defer cancel()
-			s, err := read(rctx)
-			c.mu.Lock()
-			if err == nil {
-				c.s = s
+			if s, err = read(rctx); err != nil {
+				warn(err)
 			}
-			c.err = err
+		})
+		if !started {
 			c.refreshing = nil
-			c.mu.Unlock()
 			close(done)
-		}()
+		}
 	}
-	held, refreshing := c.s, c.refreshing
-	wait := c.wait
+	held, refreshing, wait := c.s, c.refreshing, c.wait
 	c.mu.Unlock()
-	if !held.at.IsZero() {
-		return held, nil
+	if !held.at.IsZero() || refreshing == nil {
+		return held
 	}
 	if wait <= 0 {
 		wait = statsWait
@@ -175,16 +195,10 @@ func (c *searchStatsCache) get(ctx context.Context, read func(context.Context) (
 	defer timer.Stop()
 	select {
 	case <-refreshing:
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if c.s.at.IsZero() {
-			return searchStats{}, c.err
-		}
-		return c.s, nil
 	case <-timer.C:
 	case <-ctx.Done():
 	}
-	return searchStats{}, nil
+	return c.held()
 }
 
 func (c *searchStatsCache) held() searchStats {
@@ -463,7 +477,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	// The IDF is read here, not before the passes, so a search that falls
 	// back never paid for it.
 	terms := plan.terms()
-	idf, err := ds.termIDF(ctx, terms, st)
+	idf, err := ds.idfFor(ctx, terms, st)
 	if err != nil {
 		return preRanked(err)
 	}
@@ -627,6 +641,20 @@ func (ds *dataset) scoreCandidates(ctx context.Context, plan searchPlan, terms [
 		return nil, err
 	}
 	return docs, nil
+}
+
+// idfFor is each term's IDF. Without statistics (the read has not landed)
+// every term weighs the same, bm25IDF of an empty repository, so the
+// document-frequency counts, which would only be thrown away, are not read.
+func (ds *dataset) idfFor(ctx context.Context, terms []scoreTerm, st searchStats) ([]float64, error) {
+	if st.at.IsZero() {
+		idf := make([]float64, len(terms))
+		for i := range idf {
+			idf[i] = bm25IDF(0, 0)
+		}
+		return idf, nil
+	}
+	return ds.termIDF(ctx, terms, st)
 }
 
 // termIDF reads each term's document frequency in one statement, each count
