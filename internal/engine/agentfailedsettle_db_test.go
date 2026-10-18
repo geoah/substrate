@@ -1,12 +1,15 @@
 package engine
 
-// A loop whose own message write fails settles its thread `error` naming the
-// write, on a context of its own: the run's context may have ended and the
-// write's budget is spent. A settle that fails anyway leaves its reason for
-// the lease reaper (settleLostThreads).
+// A detached chat turn whose own message write or model call fails settles
+// its thread `error` with the reason, on a context of its own and ahead of
+// queued background writers: the write's budget is spent and the usual
+// cause is a burst of background writes on the changelog lock. The settle
+// leaves a thread another run claimed since alone, and a settle that fails
+// anyway leaves its reason for the lease reaper (settleLostThreads).
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -15,32 +18,79 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// holdChangelogOnReply makes the first assistant row's write wait on the
-// repository's changelog lock, held by another transaction from just before
-// that write until release is called.
-func holdChangelogOnReply(t *testing.T, ds *dataset) (release func()) {
+// changelogHolder holds the repository's changelog lock from another
+// transaction, from hold until release.
+type changelogHolder struct {
+	ds             *dataset
+	held, released chan struct{}
+	once, freed    sync.Once
+}
+
+func newChangelogHolder(t *testing.T, ds *dataset) *changelogHolder {
 	t.Helper()
-	held, released := make(chan struct{}), make(chan struct{})
-	var once, closeOnce sync.Once
+	h := &changelogHolder{ds: ds, held: make(chan struct{}), released: make(chan struct{})}
+	t.Cleanup(h.release)
+	return h
+}
+
+// hold takes the lock once and returns when it is held.
+func (h *changelogHolder) hold() {
+	h.once.Do(func() {
+		go func() {
+			_ = h.ds.inTx(context.Background(), substrate.ActorSystem, true, func(*txn) error {
+				close(h.held)
+				<-h.released
+				return nil
+			})
+		}()
+	})
+	<-h.held
+}
+
+func (h *changelogHolder) release() { h.freed.Do(func() { close(h.released) }) }
+
+// releaseAfter frees the lock d after it was taken, without blocking.
+func (h *changelogHolder) releaseAfter(d time.Duration) {
+	go func() {
+		<-h.held
+		time.Sleep(d)
+		h.release()
+	}()
+}
+
+// onFirstReply runs fn just before the first assistant row is written; the
+// write then goes ahead.
+func onFirstReply(ds *dataset, fn func()) {
+	var once sync.Once
 	ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
-		if props["role"] != "assistant" {
-			return nil
+		if props["role"] == "assistant" {
+			once.Do(fn)
 		}
-		once.Do(func() {
-			go func() {
-				_ = ds.inTx(context.Background(), substrate.ActorSystem, true, func(*txn) error {
-					close(held)
-					<-released
-					return nil
-				})
-			}()
-			<-held
-		})
 		return nil
 	}
-	release = func() { closeOnce.Do(func() { close(released) }) }
-	t.Cleanup(release)
-	return release
+}
+
+// chatInBackground starts a detached chat turn and returns its outcome
+// channel and event log.
+func chatInBackground(ds *dataset, agent, message string) (<-chan error, *eventLog) {
+	log := newEventLog()
+	turn := make(chan error, 1)
+	go func() {
+		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/"+agent, "", message, log.emit)
+		turn <- err
+	}()
+	return turn, log
+}
+
+func waitTurn(t *testing.T, turn <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-turn:
+		return err
+	case <-time.After(30 * time.Second):
+		t.Fatal("the turn did not return")
+		return nil
+	}
 }
 
 // The production shape: a detached chat turn's reply write waits out its
@@ -53,24 +103,15 @@ func TestASettleAfterAWriteTimedOutOnTheChangelogLockLands(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	ds.agentWriteTimeout = 300 * time.Millisecond
 	ds.failedSettleTimeout = 30 * time.Second
-	release := holdChangelogOnReply(t, ds)
+	lock := newChangelogHolder(t, ds)
+	onFirstReply(ds, lock.hold)
+	// Past the write's budget and a second one like it: a settle on the
+	// write's budget would have given up by then.
+	lock.releaseAfter(1500 * time.Millisecond)
 	fake.script("chat", fakeTurn{content: "never lands"})
-	log := newEventLog()
-	turn := make(chan error, 1)
-	go func() {
-		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/chatter", "", "hi", log.emit)
-		turn <- err
-	}()
-	// Past the write's budget and a second one like it: the settle the
-	// write's own budget bounded would have failed by now.
-	time.AfterFunc(1500*time.Millisecond, release)
-	select {
-	case err := <-turn:
-		if err == nil {
-			t.Fatal("a turn whose reply could not be written succeeded")
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("the turn did not return")
+	turn, log := chatInBackground(ds, "chatter", "hi")
+	if err := waitTurn(t, turn); err == nil {
+		t.Fatal("a turn whose reply could not be written succeeded")
 	}
 	thread := log.snapshot()[0].Thread
 	if _, live := ds.runningThreads.Load(thread); live {
@@ -84,33 +125,126 @@ func TestASettleAfterAWriteTimedOutOnTheChangelogLockLands(t *testing.T) {
 	}
 }
 
-// A run that is not detached writes on its caller's context. When that
-// context's deadline ends the write, the settle still lands on a context of
-// its own instead of failing on the expired one.
-func TestASettleAfterAFailedWriteOutlivesTheRunsExpiredContext(t *testing.T) {
+// A model call fails while the changelog lock is held longer than a write's
+// budget: the settle waits for the lock and the thread ends `error` with the
+// model's failure, before the turn returns and without the reaper.
+func TestASettleAfterAModelErrorWaitsOutTheChangelogLock(t *testing.T) {
 	t.Parallel()
 	ds, fake := openAgentDataset(t)
-	ds.agentRowWrite = func(ctx context.Context, props map[string]any) error {
+	ds.agentWriteTimeout = 300 * time.Millisecond
+	ds.failedSettleTimeout = 30 * time.Second
+	lock := newChangelogHolder(t, ds)
+	arrived, answer := make(chan struct{}), make(chan struct{})
+	fake.script("chat", fakeTurn{status: 400, arrived: arrived, release: answer})
+	turn, log := chatInBackground(ds, "chatter", "hi")
+	waitArrived(t, arrived, "the model call")
+	lock.hold()
+	lock.releaseAfter(1500 * time.Millisecond)
+	close(answer)
+	_ = waitTurn(t, turn)
+	thread := log.snapshot()[0].Thread
+	props := threadProps(t, ds, thread)
+	if reason, _ := props["reason"].(string); props["status"] != threadError || !strings.Contains(reason, "400") {
+		t.Fatalf("thread = %v (%q), want error naming the model's failure", props["status"], reason)
+	}
+}
+
+// A run claimed the thread again after this run's lease expired (simulated
+// here by a new lease value on the row) before this run's reply write
+// failed: the settle leaves the newer claim alone.
+func TestASettleAfterAFailedWriteLeavesANewerClaimAlone(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	var newer string
+	var claimErr error
+	fake.script("chat", fakeTurn{content: "never lands"})
+	turn, log := chatInBackground(ds, "chatter", "hi")
+	ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
 		if props["role"] != "assistant" {
 			return nil
 		}
-		<-ctx.Done()
-		return ctx.Err()
+		thread := log.snapshot()[0].Thread
+		claimErr = ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
+			newer = t.now.Add(time.Hour).Format(time.RFC3339Nano)
+			_, err := t.patch(eref{Kind: typeThread, ID: thread}, substrate.PatchInput{Properties: map[string]any{
+				"status": threadRunning, "leaseUntil": newer,
+			}})
+			return err
+		})
+		return errors.New("the disk is full")
 	}
+	if err := waitTurn(t, turn); err == nil {
+		t.Fatal("a turn whose reply could not be written succeeded")
+	}
+	if claimErr != nil {
+		t.Fatalf("the newer claim: %v", claimErr)
+	}
+	props := threadProps(t, ds, log.snapshot()[0].Thread)
+	if props["status"] != threadRunning || props["leaseUntil"] != newer || props["reason"] != nil {
+		t.Fatalf("thread = %v (lease %v, reason %v), want the newer claim untouched", props["status"], props["leaseUntil"], props["reason"])
+	}
+}
+
+// The settle after a failed write goes ahead of background writers queued at
+// the write gate: with the lock held, one background writer admitted and two
+// queued, the reply write times out in the queue, and the settle commits
+// before the writer queued last runs.
+func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	ds.agentWriteTimeout = 300 * time.Millisecond
+	ds.failedSettleTimeout = 30 * time.Second
+	lock := newChangelogHolder(t, ds)
+	const writers = 3
+	var mu sync.Mutex
+	var seen []string // the thread status each background writer saw, in run order
+	var wg sync.WaitGroup
 	fake.script("chat", fakeTurn{content: "never lands"})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if _, err := ds.CallAgent(ctx, crewPackage+"/chatter", "hi"); err == nil {
-		t.Fatal("a run whose reply could not be written succeeded")
+	turn, log := chatInBackground(ds, "chatter", "hi")
+	onFirstReply(ds, func() {
+		thread := log.snapshot()[0].Thread
+		lock.hold()
+		for range writers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
+					row, err := t.loadRow(eref{Kind: typeThread, ID: thread}, false)
+					if err != nil || row == nil {
+						return err
+					}
+					status, _ := row.Props["status"].(string)
+					mu.Lock()
+					seen = append(seen, status)
+					mu.Unlock()
+					return nil
+				})
+			}()
+		}
+		// The reply write queues behind them.
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			admitted, queued, _ := gateState(&ds.gate)
+			if admitted && queued == writers-1 {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
+	waitUntil(t, "the settle to wait at the changelog lock as an owner write", func() bool {
+		_, _, owners := gateState(&ds.gate)
+		return owners == 1
+	})
+	lock.release()
+	_ = waitTurn(t, turn)
+	wg.Wait()
+	if got := threadProps(t, ds, log.snapshot()[0].Thread)["status"]; got != threadError {
+		t.Fatalf("thread = %v, want error", got)
 	}
-	threads := agentThreadsOf(t, ds, "chatter")
-	if len(threads) != 1 {
-		t.Fatalf("chatter threads = %+v, want one", threads)
-	}
-	reason, _ := threads[0]["reason"].(string)
-	if threads[0]["status"] != threadError || !strings.Contains(reason, "message write failed") ||
-		!strings.Contains(reason, context.DeadlineExceeded.Error()) {
-		t.Fatalf("thread = %v (%q), want error naming the write", threads[0]["status"], reason)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != writers || seen[writers-1] != threadError {
+		t.Fatalf("background writers saw %v, want the last one to see the settled thread", seen)
 	}
 }
 
@@ -122,13 +256,14 @@ func TestTheReaperNamesTheWriteALostRunFailedOn(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	ds.agentWriteTimeout = 200 * time.Millisecond
 	ds.failedSettleTimeout = 200 * time.Millisecond
-	release := holdChangelogOnReply(t, ds)
+	lock := newChangelogHolder(t, ds)
+	onFirstReply(ds, lock.hold)
 	fake.script("chat", fakeTurn{content: "never lands"})
-	log := newEventLog()
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", log.emit); err == nil {
+	turn, log := chatInBackground(ds, "chatter", "hi")
+	if err := waitTurn(t, turn); err == nil {
 		t.Fatal("a turn whose reply could not be written succeeded")
 	}
-	release()
+	lock.release()
 	thread := log.snapshot()[0].Thread
 	props := threadProps(t, ds, thread)
 	if props["status"] != threadRunning {
@@ -146,7 +281,7 @@ func TestTheReaperNamesTheWriteALostRunFailedOn(t *testing.T) {
 		!strings.Contains(reason, context.DeadlineExceeded.Error()) {
 		t.Fatalf("thread = %v (%q), want the lost run and its failed write named", props["status"], reason)
 	}
-	if _, kept := ds.lostRunReasons.Load(thread); kept {
-		t.Fatal("the reaper kept the reason after settling the thread")
+	if lost := ds.lostRunReason(thread); lost != "" {
+		t.Fatalf("the reaper kept the reason %q after settling the thread", lost)
 	}
 }

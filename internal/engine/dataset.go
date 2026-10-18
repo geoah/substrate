@@ -164,11 +164,11 @@ type dataset struct {
 	// loop returns (agentloop.go runAgent). A `running` thread outside it
 	// whose lease expired has no loop left to settle it (settleLostThreads).
 	runningThreads sync.Map
-	// lostRunReasons maps a thread id to the reason its loop could not settle
-	// it with, left when even the settle after a failed write failed, for
-	// settleLostThreads. A loop that opens the thread again clears it, so the
-	// reason never outlives the run it describes.
-	lostRunReasons sync.Map
+	// lostRuns, under lostMu, maps a thread id to the reason its loop failed
+	// with when even the settle after that failure failed, for
+	// settleLostThreads (agents.go noteLostRun).
+	lostMu   sync.Mutex
+	lostRuns map[string]string
 	// chatTurns counts the detached chat turns this process runs for the
 	// repository, from admission to settle (agents.go ChatAgent), against
 	// maxRunningChatTurns.

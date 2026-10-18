@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -732,7 +733,7 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var ids []string
+	var ids, running []string
 	now := nowUTC()
 	for rows.Next() {
 		var id, lease string
@@ -740,6 +741,7 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 			_ = rows.Close()
 			return err
 		}
+		running = append(running, id)
 		if leaseExpired(lease, now) {
 			ids = append(ids, id)
 		}
@@ -748,6 +750,7 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	ds.pruneLostRuns(running)
 	for _, id := range ids {
 		if _, live := ds.runningThreads.Load(id); live {
 			continue
@@ -777,8 +780,8 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 			if lease == "" {
 				reason = lostThreadReason + "an unknown time"
 			}
-			if lost, ok := ds.lostRunReasons.Load(id); ok {
-				reason += "; the run failed with: " + lost.(string)
+			if lost := ds.lostRunReason(id); lost != "" {
+				reason += "; the run failed with: " + lost
 			}
 			if _, err := t.patch(ref, substrate.PatchInput{Properties: map[string]any{
 				"status":     threadError,
@@ -793,12 +796,59 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("settle lost thread %s: %w", id, err)
 		}
-		ds.lostRunReasons.Delete(id)
+		ds.clearLostRun(id)
 		if settled {
 			ds.svc.log.Warn("substrate: agent thread lost its run, marked error", "thread", id)
 		}
 	}
 	return nil
+}
+
+// noteLostRun keeps reason for settleLostThreads while l still holds its
+// thread in runningThreads. A loop that opened the thread since replaced l
+// there, and the reason is not its run's, so nothing is kept. clearLostRun
+// takes the same lock after that loop registers, so the check and the store
+// cannot straddle it.
+func (ds *dataset) noteLostRun(l *agentLoop, reason string) {
+	ds.lostMu.Lock()
+	defer ds.lostMu.Unlock()
+	if v, ok := ds.runningThreads.Load(l.threadID); !ok || v != l {
+		return
+	}
+	if ds.lostRuns == nil {
+		ds.lostRuns = map[string]string{}
+	}
+	ds.lostRuns[l.threadID] = reason
+}
+
+func (ds *dataset) lostRunReason(id string) string {
+	ds.lostMu.Lock()
+	defer ds.lostMu.Unlock()
+	return ds.lostRuns[id]
+}
+
+func (ds *dataset) clearLostRun(id string) {
+	ds.lostMu.Lock()
+	defer ds.lostMu.Unlock()
+	delete(ds.lostRuns, id)
+}
+
+// pruneLostRuns drops every kept reason whose thread is no longer `running`
+// (running lists the ids that are) and has no loop of this process: the
+// thread was deleted or settled by another path, and the reaper will never
+// read the reason.
+func (ds *dataset) pruneLostRuns(running []string) {
+	ds.lostMu.Lock()
+	defer ds.lostMu.Unlock()
+	for id := range ds.lostRuns {
+		if slices.Contains(running, id) {
+			continue
+		}
+		if _, live := ds.runningThreads.Load(id); live {
+			continue
+		}
+		delete(ds.lostRuns, id)
+	}
 }
 
 // leaseExpired reports whether a thread's `leaseUntil` lies before now. A
