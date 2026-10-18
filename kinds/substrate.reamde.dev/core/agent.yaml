@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 23
+  version: 24
   purpose: internal
   names:
     singular: agent
@@ -170,6 +170,21 @@ data:
           min: 1
           max: 3
           description: how deep the sub-agent chain below may go
+        toolTimeoutSeconds:
+          type: int
+          min: 1
+          max: 600
+          description: >-
+            wall clock for one query or function tool call, 30 when absent;
+            a call past it is a tool error the model sees
+        maxToolResultBytes:
+          type: int
+          min: 1024
+          max: 1048576
+          description: >-
+            the most bytes of one tool result the model sees and the thread
+            keeps, 49152 when absent; a larger result is replaced by its head
+            and a truncation note
         # Not a bound on one invocation like the four above: the engine holds
         # the agent's next run once the rolling window's spend reaches it
         # (decision 0149). Spend is each root run's recorded cost, its

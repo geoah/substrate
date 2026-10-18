@@ -118,6 +118,16 @@ const (
 	MaxAgentDeadlineSec     = 600
 	DefaultAgentDepth       = 3
 	MaxAgentDepth           = 3
+	// DefaultAgentToolTimeoutSec bounds one `query` or function tool call;
+	// the loop's own deadline still ends it sooner.
+	DefaultAgentToolTimeoutSec = 30
+	MaxAgentToolTimeoutSec     = 600
+	// DefaultAgentToolResultBytes caps one tool result as the model sees it
+	// and the thread stores it: every later turn replays it, so one
+	// megabyte result is paid for on every completion after it.
+	DefaultAgentToolResultBytes = 48 << 10
+	MinAgentToolResultBytes     = 1 << 10
+	MaxAgentToolResultBytes     = 1 << 20
 	// MaxAgentSpendCentsPerDay is the largest whole number an `int` property
 	// holds exactly (decision 0012).
 	MaxAgentSpendCentsPerDay = 1<<53 - 1
@@ -222,6 +232,12 @@ type AgentBudgets struct {
 	MaxToolCalls    int
 	DeadlineSeconds int
 	Depth           int
+	// ToolTimeoutSeconds bounds one `query` or function tool call; a call
+	// past it is a tool error the model sees, never a failed run.
+	ToolTimeoutSeconds int
+	// MaxToolResultBytes caps one tool result: a larger one is replaced by
+	// a truncation envelope carrying its head.
+	MaxToolResultBytes int
 	// SpendCentsPerDay caps what the agent's root runs may spend in a rolling
 	// 24 hours, in US cents (decision 0149); nil is no cap and 0 holds every
 	// run. It is not a bound on one invocation: the engine holds the next
@@ -293,7 +309,7 @@ var agentPermissionKeys = map[string]bool{"reads": true, "writes": true}
 
 var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
-	"spendCentsPerDay": true,
+	"spendCentsPerDay": true, "toolTimeoutSeconds": true, "maxToolResultBytes": true,
 }
 
 var agentCompactionKeys = map[string]bool{
@@ -688,6 +704,14 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 	}
 	if a.Budgets.Depth, ok = l.boundedInt(where+": data.budgets.depth", budgets, "depth",
 		DefaultAgentDepth, MaxAgentDepth); !ok {
+		return false
+	}
+	if a.Budgets.ToolTimeoutSeconds, ok = l.boundedInt(where+": data.budgets.toolTimeoutSeconds", budgets, "toolTimeoutSeconds",
+		DefaultAgentToolTimeoutSec, MaxAgentToolTimeoutSec); !ok {
+		return false
+	}
+	if a.Budgets.MaxToolResultBytes, ok = l.boundedIntFrom(where+": data.budgets.maxToolResultBytes", budgets, "maxToolResultBytes",
+		DefaultAgentToolResultBytes, MinAgentToolResultBytes, MaxAgentToolResultBytes); !ok {
 		return false
 	}
 	// Absent is no cap, which is not the same as 0: a zero cap holds every run.

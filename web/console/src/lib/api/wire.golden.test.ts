@@ -336,6 +336,8 @@ const rankedPage: Shape<RankedPage> = {
   records: true,
   scores: true,
   pending: true,
+  capped: false,
+  note: false,
 }
 
 const scores: Shape<Scores> = {

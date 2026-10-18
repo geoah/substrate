@@ -249,6 +249,11 @@ export interface RankedPage {
   records: SubstrateRecord[]
   scores: Record<string, Scores>
   pending: number
+  /** The lexical arm stopped short of ranking every match (a bounded read of
+   * a common query's matches, or its time budget); `note` says why and how
+   * to narrow the query. Absent when the ranking is whole. */
+  capped?: boolean
+  note?: string
 }
 
 /** One hit's raw per-arm scores (`substrate.Scores`): ts_rank for the lexical

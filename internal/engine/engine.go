@@ -85,8 +85,15 @@ type options struct {
 	// (export_test.go), to put a small fixture on the row path.
 	searchMatchMax    int
 	searchMatchMaxSet bool
-	blobs             blobbytes.Backend
-	log               *slog.Logger
+	// searchBudget is the wall clock one lexical search may spend
+	// (WithSearchBudget); DefaultSearchBudget when not positive.
+	searchBudget time.Duration
+	// searchReadMax is the most matching rows one candidate pass reads
+	// (bm25.go lexicalCandidates); searchReadMax when not positive. Only a
+	// test sets it (export_test.go), to cut a pass on a small fixture.
+	searchReadMax int
+	blobs         blobbytes.Backend
+	log           *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -294,6 +301,14 @@ func WithHealthFailingAfter(d time.Duration) Option {
 	return func(o *options) { o.healthFailingAfter = d }
 }
 
+// WithSearchBudget sets the wall clock one lexical search may spend (bm25.go
+// lexical): past it the relaxed top-up is dropped and the search answers what
+// matched every word, marked capped, or fails when nothing was found yet. Zero
+// or less, or not given, is DefaultSearchBudget.
+func WithSearchBudget(d time.Duration) Option {
+	return func(o *options) { o.searchBudget = d }
+}
+
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open applies
 // no schema migration: it refuses a database missing one this binary carries
@@ -436,6 +451,13 @@ type service struct {
 	valuesBudget int
 	// searchMatchMax replaces the search match caps; negative keeps them.
 	searchMatchMax int
+	// searchBudget is one lexical search's wall clock, always positive.
+	searchBudget time.Duration
+	// searchReadMax is what one candidate pass reads, always positive.
+	searchReadMax int
+	// searchTopUpHook, set only by a test, runs before a lexical search's
+	// relaxed top-up: the seam that spends the budget between the passes.
+	searchTopUpHook func()
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
@@ -611,6 +633,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if !o.searchMatchMaxSet {
 		o.searchMatchMax = -1
 	}
+	if o.searchBudget <= 0 {
+		o.searchBudget = DefaultSearchBudget
+	}
+	if o.searchReadMax <= 0 {
+		o.searchReadMax = searchReadMax
+	}
 	if !o.conversionCeilingSet {
 		o.conversionCeiling = DefaultConversionCeiling
 	}
@@ -667,6 +695,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		blobs:        o.blobs,
 
 		searchMatchMax: o.searchMatchMax,
+		searchBudget:   o.searchBudget,
+		searchReadMax:  o.searchReadMax,
 
 		conversionCeiling:  o.conversionCeiling,
 		orphanGrace:        o.orphanGrace,

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pgvector/pgvector-go"
 
@@ -103,9 +104,11 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 	armK := max(2*k, 40)
 	var lex, sem map[eref]arm
 	if mode == substrate.SearchLexical || mode == substrate.SearchHybrid {
-		if lex, err = ds.lexical(ctx, plan, types, restrict, armK); err != nil {
+		var capped lexicalCap
+		if lex, capped, err = ds.lexical(ctx, plan, types, restrict, armK); err != nil {
 			return out, err
 		}
+		out.Capped, out.Note = capped.capped(), capped.note(ds.svc.searchBudget)
 	}
 	if semanticArm {
 		if sem, err = ds.semantic(ctx, provider, q, types, restrict, armK); err != nil {
@@ -347,6 +350,25 @@ type arm struct {
 	// whole is the lexical arm's: the row matches the query as typed, every
 	// word, and not only the relaxed candidate query.
 	whole bool
+}
+
+// capped reports whether the lexical arm stopped short of every match.
+func (c lexicalCap) capped() bool { return c.readCapped || c.budget }
+
+// note is what a capped search tells its caller, an agent above all: why the
+// ranking is partial and what narrows the next query. Empty when not capped.
+func (c lexicalCap) note(budget time.Duration) string {
+	var parts []string
+	if c.budget {
+		parts = append(parts, fmt.Sprintf("search stopped at the %s budget, so the hits are only records matching every word.", budget))
+	}
+	if c.readCapped {
+		parts = append(parts, fmt.Sprintf("more than %d records match, so only the newest %d matches were ranked.", c.readMax, c.readMax))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ") + " Use one or two distinctive words (a name, a code, a number), or filter.kinds, to narrow it."
 }
 
 // embedPending is how many (record, property) pairs wait in the repository's

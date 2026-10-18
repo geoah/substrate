@@ -481,6 +481,11 @@ func WithSearchMatchMax(n int) Option {
 	return func(o *options) { o.searchMatchMax, o.searchMatchMaxSet = n, true }
 }
 
+// WithSearchReadMax sets the most matching rows one lexical candidate pass
+// reads before ranking (bm25.go lexicalCandidates), so a test can cut a pass
+// on a fixture of a few rows.
+func WithSearchReadMax(n int) Option { return func(o *options) { o.searchReadMax = n } }
+
 // AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
 // for a test that takes one of the engine's locks by hand: a barrier test that
 // composed the key itself would park on a lock nothing else takes.

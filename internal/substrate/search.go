@@ -38,6 +38,12 @@ type Hit struct {
 type SearchResult struct {
 	Hits    []Hit `json:"hits"`
 	Pending int   `json:"pending"`
+	// Capped says the lexical arm stopped short of ranking every match: it
+	// read a bounded share of a query's matches, or its time budget ran out
+	// and the records matching every word answered alone. Note says which,
+	// and how to narrow the query.
+	Capped bool   `json:"capped,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 // Ranked shapes a search result as the ranked page the records route
@@ -45,7 +51,7 @@ type SearchResult struct {
 // and the pending count. Records starts non-nil so an empty ranking
 // serializes `[]`.
 func Ranked(res SearchResult) RankedPage {
-	out := RankedPage{Records: []*Record{}, Scores: map[string]Scores{}, Pending: res.Pending}
+	out := RankedPage{Records: []*Record{}, Scores: map[string]Scores{}, Pending: res.Pending, Capped: res.Capped, Note: res.Note}
 	for _, h := range res.Hits {
 		if h.Record == nil {
 			continue
