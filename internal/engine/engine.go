@@ -189,6 +189,10 @@ type options struct {
 	// clock when nil. A test that spends one window's codes advances it
 	// instead of sleeping through a real 30 second step.
 	now func() time.Time
+	// webhookNow is the instant the webhook door records as a request's
+	// receipt (export_test.go WithTestWebhookClock); nowUTC when nil. A test
+	// pins a receipt to the millisecond instead of racing the wall clock.
+	webhookNow func() time.Time
 	// queryTracer sees every statement the shared repository pool sends
 	// (export_test.go WithTestQueryTracer), so a test can assert which
 	// statements a read ran and not only what it answered. Tests only; nil
@@ -473,6 +477,9 @@ type service struct {
 	totpDisabled bool
 	// now is the clock the TOTP verifier reads; nowUTC outside a test.
 	now func() time.Time
+	// webhookNow is the webhook door's receipt clock (webhooks.go
+	// admitWebhook); nowUTC outside a test, never nil.
+	webhookNow func() time.Time
 	// readOnly is WithDirectoryReadOnly: this process is not the repository
 	// directories' writer and must not become one (repodir.go).
 	readOnly bool
@@ -584,7 +591,7 @@ func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, er
 }
 
 func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
-	o := options{log: slog.Default(), now: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
+	o := options{log: slog.Default(), now: nowUTC, webhookNow: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -713,6 +720,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
 		now:                o.now,
+		webhookNow:         o.webhookNow,
 		readOnly:           o.dirReadOnly,
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,

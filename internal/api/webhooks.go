@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -12,13 +13,18 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// The bounds on one public webhook delivery. A non-multipart body rides the
-// envelope whole, so it is held to what the runner protocol and an agent's
-// user message can carry; a multipart request may carry files, which the
-// engine spools to the blob store, so its total is bounded below the blob
-// store's own cap while its inline parts share the inline budget.
+// The bounds on one public webhook delivery. A non-multipart body is held in
+// memory whole and rides the envelope whole into the callable, so it is held
+// to the trigger's inline bound: substrate.WebhookInlineDefault, 1 MiB, unless
+// the trigger declares `source.webhook.maxBody`, up to
+// substrate.WebhookInlineMax (a day of minute-grouped Health Auto Export
+// samples passes 1 MiB). The door learns the bound from CheckWebhook before
+// it reads a byte, so a sender that names no trigger, or a keyed trigger
+// without its key, never gets the larger one. A multipart request may carry
+// files, which the engine spools to the blob store, so its total is bounded
+// below the blob store's own cap while its inline parts share the inline
+// bound.
 const (
-	maxWebhookInline      = 1 << 20
 	maxWebhookBody        = 32 << 20
 	maxWebhookHeaderBytes = 16 << 10
 	// maxConcurrentWebhooks bounds in-flight deliveries process-wide, the
@@ -28,11 +34,32 @@ const (
 )
 
 // A sender has this long from its headers to the end of its body, so one
-// that stalls mid-body cannot hold a delivery slot.
+// that stalls mid-body cannot hold a delivery slot. The inline deadline is
+// per started MiB of the trigger's bound (30 s for the 1 MiB default, 4 min
+// for 8 MiB), so a larger bound keeps the rate the default asks for and a
+// trigger that declares none holds a slot no longer than before.
 var (
 	webhookInlineDeadline    = 30 * time.Second
 	webhookMultipartDeadline = 2 * time.Minute
 )
+
+// inlineDeadline is the inline deadline for a trigger's inline bound.
+func inlineDeadline(maxBody int64) time.Duration {
+	mib := (maxBody + 1<<20 - 1) >> 20
+	if mib < 1 {
+		mib = 1
+	}
+	return time.Duration(mib) * webhookInlineDeadline
+}
+
+// sizeText names a byte bound the way a 413 says it: whole MiB where it is
+// one, bytes otherwise.
+func sizeText(n int64) string {
+	if n >= 1<<20 && n%(1<<20) == 0 {
+		return fmt.Sprintf("%d MiB", n>>20)
+	}
+	return fmt.Sprintf("%d bytes", n)
+}
 
 var webhookSem = make(chan struct{}, maxConcurrentWebhooks)
 
@@ -50,8 +77,10 @@ var webhookHeaderDenylist = map[string]bool{
 // and the trigger's own key, when it declares one, is the credential, read
 // from the trailing path segment, `?key=` or a bearer header. The request is
 // read into transport facts here and handed to the service, which answers
-// 404 for every refusal alike and 202 with the fire id once the delivery is
-// on its way; the callable's output is never a response.
+// 404 for every refusal alike, 401 for a request that carried a keyed
+// trigger's key and that the trigger's declared signature refuses (decision
+// 0164), and 202 with the fire id once the delivery is on its way; the
+// callable's output is never a response.
 //
 // The service's checks run before the door takes a slot or reads a byte, so
 // a request for no such webhook holds neither: eight of them with bodies that
@@ -60,18 +89,38 @@ var webhookHeaderDenylist = map[string]bool{
 func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	// The deadline runs from the start and stays set on every refusal, so
 	// net/http's drain of a refused request's unread body ends with it too.
+	start := time.Now()
+	multipartBody := false
 	deadline := webhookInlineDeadline
 	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType == "multipart/form-data" {
+		multipartBody = true
 		deadline = webhookMultipartDeadline
 	}
 	clear := bodyDeadline(w, deadline)
 	authority, trigger, key := pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r)
-	if err := h.svc.CheckWebhook(r.Context(), authority, trigger, key); err != nil {
+	target, err := h.svc.CheckWebhook(r.Context(), authority, trigger, key)
+	if err != nil {
 		// net/http reads the rest of a body before it answers, unless the
 		// answer closes the connection: a refusal reads none of it.
 		w.Header().Set("Connection", "close")
-		writeWebhookError(w, r, err)
+		refuseUnread(w, r, err)
 		return
+	}
+	// A signed trigger refuses a multipart request whatever it carries (the
+	// door keeps no raw bytes to check a MAC over), so the body is not read.
+	if target.SignatureOnly && multipartBody {
+		w.Header().Set("Connection", "close")
+		refuseUnread(w, r, substrate.ErrNotFound)
+		return
+	}
+	maxBody := target.MaxBody
+	if maxBody <= 0 {
+		maxBody = substrate.WebhookInlineDefault
+	}
+	if !multipartBody {
+		if d := inlineDeadline(maxBody); d > deadline {
+			clear = bodyDeadline(w, d-time.Since(start))
+		}
 	}
 	select {
 	case webhookSem <- struct{}{}:
@@ -81,8 +130,13 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		writeUnavailable(w, time.Second, "webhook door is busy, retry")
 		return
 	}
-	req, status, err := readWebhookRequest(w, r)
+	req, status, err := readWebhookRequest(w, r, maxBody)
 	if err != nil {
+		if target.SignatureOnly {
+			w.Header().Set("Connection", "close")
+			writeWebhookError(w, r, substrate.ErrNotFound)
+			return
+		}
 		writeError(w, status, codeBadRequest, err.Error())
 		return
 	}
@@ -95,11 +149,35 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, substrate.WebhookAccepted{Fire: fid})
 }
 
-// writeWebhookError answers a service refusal as the door's one 404 and
-// anything else as the error it is.
+// refuseUnread answers a refusal the door makes before it takes a slot. While
+// every slot is held, a 404 here answers as the busy door does: a keyless
+// signed trigger reaches the slot and gets the busy 503, so a missing one
+// answering 404 at the same moment would tell the two apart.
+func refuseUnread(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, substrate.ErrNotFound) && len(webhookSem) == cap(webhookSem) {
+		writeUnavailable(w, time.Second, "webhook door is busy, retry")
+		return
+	}
+	writeWebhookError(w, r, err)
+}
+
+// writeWebhookError answers a service refusal as the door's one 404, a
+// declared signature's refusal as a terse 401, and anything else as the
+// error it is. Every 404 closes the connection, the one the door makes before
+// it reads the body and the one a keyless signed trigger's signature check
+// makes after it, so neither the headers nor the connection's reuse tell a
+// missing trigger from a signed one.
 func writeWebhookError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, substrate.ErrNotFound) {
+		w.Header().Set("Connection", "close")
 		writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")
+		return
+	}
+	// The trigger's declared signature refused the request (decision 0164).
+	// The reason stays in the server: the sender is unauthenticated, and
+	// which check failed helps a forger.
+	if errors.Is(err, substrate.ErrAuth) {
+		writeError(w, http.StatusUnauthorized, codeAuth, "webhook signature refused")
 		return
 	}
 	writeSubstrateError(w, r, err)
@@ -124,9 +202,10 @@ func webhookKey(r *http.Request) string {
 
 // readWebhookRequest turns the HTTP request into the seam's transport facts,
 // or names the HTTP status that refuses it: 431 for headers past the cap, 413
-// for a body past its bound, 400 for multipart the reader cannot parse or a
-// body that did not arrive within its deadline.
-func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.WebhookRequest, int, error) {
+// for a body past its bound (maxInline for a non-multipart body and for the
+// inline parts of a multipart one), 400 for multipart the reader cannot parse
+// or a body that did not arrive within its deadline.
+func readWebhookRequest(w http.ResponseWriter, r *http.Request, maxInline int64) (substrate.WebhookRequest, int, error) {
 	req := substrate.WebhookRequest{Method: r.Method, Headers: map[string]string{}, Query: map[string][]string{}}
 	size := 0
 	for name, values := range r.Header {
@@ -150,18 +229,18 @@ func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.Webho
 	mediaType, params, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	req.ContentType = mediaType
 	if mediaType == "multipart/form-data" {
-		parts, status, err := readWebhookParts(w, r, params["boundary"])
+		parts, status, err := readWebhookParts(w, r, params["boundary"], maxInline)
 		if err != nil {
 			return req, status, err
 		}
 		req.Parts = parts
 		return req, 0, nil
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookInline))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxInline))
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			return req, http.StatusRequestEntityTooLarge, errors.New("webhook body exceeds 1 MiB; a larger payload must arrive as multipart/form-data file parts")
+			return req, http.StatusRequestEntityTooLarge, fmt.Errorf("webhook body exceeds %s; a larger payload must arrive as multipart/form-data file parts", sizeText(maxInline))
 		}
 		return req, http.StatusBadRequest, errors.New("webhook body unreadable")
 	}
@@ -176,14 +255,14 @@ func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.Webho
 // audio/mp4 with no filename, and it is still bytes for the blob store, not a
 // value for the envelope. Inline parts share the inline budget; the request
 // as a whole is held to the multipart bound.
-func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) ([]substrate.WebhookPart, int, error) {
+func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string, maxInline int64) ([]substrate.WebhookPart, int, error) {
 	if boundary == "" {
 		return nil, http.StatusBadRequest, errors.New("multipart/form-data without a boundary")
 	}
 	body := http.MaxBytesReader(w, r.Body, maxWebhookBody)
 	mr := multipart.NewReader(body, boundary)
 	var parts []substrate.WebhookPart
-	inline := 0
+	var inline int64
 	for {
 		p, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -213,9 +292,9 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) (
 			}
 			part.Data = data
 		} else {
-			inline += len(data)
-			if inline > maxWebhookInline {
-				return nil, http.StatusRequestEntityTooLarge, errors.New("webhook inline parts exceed 1 MiB")
+			inline += int64(len(data))
+			if inline > maxInline {
+				return nil, http.StatusRequestEntityTooLarge, fmt.Errorf("webhook inline parts exceed %s", sizeText(maxInline))
 			}
 			part.Value = string(data)
 		}

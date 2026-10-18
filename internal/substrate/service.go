@@ -70,8 +70,10 @@ type Service interface {
 	// CheckWebhook runs ReceiveWebhook's checks without a request and
 	// answers the same ErrNotFound for every refusal. The door asks it before
 	// it holds a delivery slot or reads a body, so a request for no such
-	// webhook costs neither; ReceiveWebhook checks again.
-	CheckWebhook(ctx context.Context, authority, trigger, key string) error
+	// webhook costs neither; ReceiveWebhook checks again. It answers the
+	// inline bytes the trigger admits, which the door reads the body under,
+	// and whether the request's signature is its only credential.
+	CheckWebhook(ctx context.Context, authority, trigger, key string) (WebhookTarget, error)
 
 	Close() error
 }

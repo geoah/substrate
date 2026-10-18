@@ -325,6 +325,14 @@ func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error)
 	return func(o *options) { o.reprojectionHook = hook }
 }
 
+// WithTestWebhookClock is the clock the webhook door records each request's
+// receipt by (webhooks.go admitWebhook), and nothing else, so a test that
+// measures a stored request's skew from its receipt names that instant to
+// the millisecond instead of sleeping to it.
+func WithTestWebhookClock(now func() time.Time) Option {
+	return func(o *options) { o.webhookNow = now }
+}
+
 // IndexReprojectionDone is closed when the dataset's latest background index
 // re-derivation has returned, finished or stopped; a dataset that started
 // none returns a closed channel.

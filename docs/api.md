@@ -1201,16 +1201,19 @@ the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
 path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
-reach the server.
+reach the server. When the trigger declares `source.webhook.signature`, the
+server verifies the provider's signature before it stores anything
+([functions](functions.md#webhook-signatures)).
 
 | Answer | When |
 | --- | --- |
-| `202 {"fire": "hook-…"}` | the request is on disk in the repository's spool, sealed; a drain records it in the changelog and starts the fire, and a restart drains and resumes it under the same id, which names its `triggerrun` row |
-| `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them, given before the body is read |
-| `400` | a multipart body the server cannot parse, or a body not received within 30 seconds (2 minutes for multipart) |
-| `413` | a non-multipart body over 1 MiB, or a multipart request over 32 MiB |
+| `202 {"fire": "hook-…"}` | the request is on disk in the repository's spool, sealed; a drain records it in the changelog and starts the fire, and a restart drains and resumes it under the same id, which names its `triggerrun` row. A repeat of a signed request the door admitted, inside its timestamp's `maxSkew`, gets the first request's fire id and stores nothing |
+| `401 auth` | the trigger declares a key and a signature, the request carries the key, and its signature is missing or wrong, its timestamp is missing or stale, its body is multipart, or the signing secret does not resolve; the body says `webhook signature refused` and nothing is stored, the spool included |
+| `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source, all given before the body is read; or a request the signature of a trigger with no key refuses. A trigger with no key and a signature also answers `404` in place of the `400`, `413` and `431` below, and refuses a multipart request unread, because nothing has authenticated the sender yet: one answer for all of them |
+| `400` | a multipart body the server cannot parse, or a body not received in time from the headers: 30 seconds per started MiB of the trigger's `maxBody` for a non-multipart body (30 seconds at the 1 MiB default, 4 minutes at 8 MiB), 2 minutes for multipart |
+| `413` | a non-multipart body past the trigger's `maxBody` (1 MiB when it declares none, at most 8 MiB), a multipart request over 32 MiB, or more than 1 MiB of body or inline part values for a trigger whose callable is an agent |
 | `431` | headers over 16 KiB |
-| `503` + `Retry-After` | more than eight deliveries in flight, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded |
+| `503` + `Retry-After` | more than eight deliveries in flight (while they are, a request the door would answer `404` before reading its body gets this `503` instead), a repeat of a signed request the door is still recording, the store failing while the door reads a signing secret, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded |
 
 A multipart/form-data request's file parts are stored in the repository's
 blob store (`PUT /api/v1/blobs`) before the fire; the callable reads their
@@ -1241,7 +1244,7 @@ The code set is closed. The client-error codes:
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
 | `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
-| `auth`         | 401  | Missing, invalid, or expired token, or a refused login.                                          |
+| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). |
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 

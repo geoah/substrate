@@ -32,3 +32,22 @@ func TestEnvelopesCarryTheAuthority(t *testing.T) {
 		})
 	}
 }
+
+// A fire's `at` keeps the fraction of a second it was taken at: a stored
+// webhook request's millisecond signature timestamp is measured against it.
+func TestFireEnvelopeKeepsFractionalSeconds(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		at   time.Time
+		want string
+	}{
+		{time.Date(2026, 10, 11, 12, 0, 0, 900_000_000, time.UTC), "2026-10-11T12:00:00.9Z"},
+		{time.Date(2026, 10, 11, 12, 0, 0, 123_456_000, time.FixedZone("", 3*3600)), "2026-10-11T09:00:00.123456Z"},
+		{time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC), "2026-10-11T12:00:00Z"},
+	} {
+		fire, _ := FireEnvelope("hook-1", c.at, "geoah.example.com")["fire"].(map[string]any)
+		if fire["at"] != c.want {
+			t.Errorf("FireEnvelope(%s) fire.at = %v, want %s", c.at, fire["at"], c.want)
+		}
+	}
+}

@@ -268,11 +268,15 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority stri
 //	    - {name: transcription, value: "…"}
 //	    - {name: audio, filename: rec.m4a, mediaType: audio/mp4, size: 4194304,
 //	       blob: blob-sha256-…}             # a file part, stored before the fire
+//
+// `at` keeps its fraction of a second: a webhook's is the instant the door
+// received the request, and a stored request's signature timestamp, which
+// may be in milliseconds, is measured against it on a retry.
 func FireEnvelope(fireID string, at time.Time, repositoryAuthority string) map[string]any {
 	return map[string]any{
 		"fire": map[string]any{
 			"id": fireID,
-			"at": at.UTC().Format(time.RFC3339),
+			"at": at.UTC().Format(time.RFC3339Nano),
 		},
 		"repository": map[string]any{"authority": repositoryAuthority},
 	}

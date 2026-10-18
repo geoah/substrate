@@ -7,6 +7,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,18 @@ def echo(input, host, rid):
 
 def main(input, host):
     return echo(input, host, "hook-echo")
+`
+
+// hookLenSource writes how many characters of body the request carried, so a
+// test can deliver a body larger than a property holds.
+var hookLenSource = `
+WIDGET = "` + widgetType + `"
+
+def main(input, host):
+    req = (input.get("envelope") or {}).get("request") or {}
+    body = (req.get("body") or {}).get("text") or ""
+    host.effects.put(WIDGET, "hook-len", properties={"name": str(len(body))})
+    return {"output": {}}
 `
 
 // hookGatedSource fails until a widget named gate exists, then echoes: the
@@ -149,34 +162,88 @@ func TestCheckWebhookAnswersWhatTheDoorWould(t *testing.T) {
 			hookTrigger("hook-keyed", webhookSource(hookKey), "hookecho", true),
 			hookTrigger("hook-off", webhookSource(""), "hookecho", false),
 			hookTrigger("hook-record", map[string]any{"record": map[string]any{"kinds": []any{gadgetType}}}, "hooknoop", true),
+			hookTrigger("hook-large", bigWebhookSource(hookKey, substrate.WebhookInlineMax), "hookecho", true),
+			hookTrigger("hook-signed", signedSource("", vocabulary.RecordPath("substrate.reamde.dev/core/secret", hookSecretID)), "hookecho", true),
+			hookTrigger("hook-signed-keyed", signedSource(hookKey, vocabulary.RecordPath("substrate.reamde.dev/core/secret", hookSecretID)), "hookecho", true),
 		},
 		pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource),
 		pyFn("hooknoop", map[string]any{}, []any{}, "def main(input, host):\n    return {}\n"),
 	)
 	authority := testdb.Repository(t)
-	for name, c := range map[string][3]string{
-		"an open endpoint": {authority, "hook-open", ""},
-		"the right key":    {authority, "hook-keyed", hookKey},
+	// SignatureOnly is a trigger whose signature is the request's one
+	// credential: keyless and signed. A keyed one's sender proved itself
+	// with the key, and an unsigned keyless one is open to anyone.
+	for name, c := range map[string]struct {
+		target [3]string
+		want   substrate.WebhookTarget
+	}{
+		"an open endpoint":         {[3]string{authority, "hook-open", ""}, substrate.WebhookTarget{MaxBody: substrate.WebhookInlineDefault}},
+		"the right key":            {[3]string{authority, "hook-keyed", hookKey}, substrate.WebhookTarget{MaxBody: substrate.WebhookInlineDefault}},
+		"a declared maxBody":       {[3]string{authority, "hook-large", hookKey}, substrate.WebhookTarget{MaxBody: substrate.WebhookInlineMax}},
+		"a keyless signed trigger": {[3]string{authority, "hook-signed", ""}, substrate.WebhookTarget{MaxBody: substrate.WebhookInlineDefault, SignatureOnly: true}},
+		"a keyed signed trigger":   {[3]string{authority, "hook-signed-keyed", hookKey}, substrate.WebhookTarget{MaxBody: substrate.WebhookInlineDefault}},
 	} {
-		if err := svc.CheckWebhook(ctx, c[0], c[1], c[2]); err != nil {
+		got, err := svc.CheckWebhook(ctx, c.target[0], c.target[1], c.target[2])
+		if err != nil {
 			t.Errorf("%s: %v", name, err)
+		} else if got != c.want {
+			t.Errorf("%s: the door reads %+v, want %+v", name, got, c.want)
 		}
 	}
 	for name, c := range map[string][3]string{
-		"unknown authority": {"nobody.example.com", "hook-open", ""},
-		"a bare label":      {testdb.RepositoryLabel(t), "hook-open", ""},
-		"unknown trigger":   {authority, "hook-missing", ""},
-		"disabled trigger":  {authority, "hook-off", ""},
-		"a record trigger":  {authority, "hook-record", ""},
-		"no key":            {authority, "hook-keyed", ""},
-		"a wrong key":       {authority, "hook-keyed", hookKey + "x"},
+		"unknown authority":               {"nobody.example.com", "hook-open", ""},
+		"a bare label":                    {testdb.RepositoryLabel(t), "hook-open", ""},
+		"unknown trigger":                 {authority, "hook-missing", ""},
+		"disabled trigger":                {authority, "hook-off", ""},
+		"a record trigger":                {authority, "hook-record", ""},
+		"no key":                          {authority, "hook-keyed", ""},
+		"a wrong key":                     {authority, "hook-keyed", hookKey + "x"},
+		"a large trigger without its key": {authority, "hook-large", ""},
 	} {
-		if err := svc.CheckWebhook(ctx, c[0], c[1], c[2]); !errors.Is(err, substrate.ErrNotFound) {
+		if _, err := svc.CheckWebhook(ctx, c[0], c[1], c[2]); !errors.Is(err, substrate.ErrNotFound) {
 			t.Errorf("%s: err = %v, want ErrNotFound", name, err)
 		}
 	}
 	if _, err := ds.Get(ctx, widgetType, "hook-echo"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("a check fired the callable: %v", err)
+	}
+}
+
+// bigWebhookSource is a keyed webhook arm that declares maxBody.
+func bigWebhookSource(key string, maxBody int64) map[string]any {
+	src := webhookSource(key)
+	src["webhook"].(map[string]any)["maxBody"] = maxBody
+	return src
+}
+
+// The service holds a request to its trigger's inline bound whoever hands it
+// over: a trigger that declares no maxBody refuses a body past 1 MiB as too
+// large and stores nothing, and one that declares 8 MiB delivers a body past
+// 1 MiB whole.
+func TestReceiveWebhookHoldsTheTriggersInlineBound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newHookDataset(t,
+		[]enginetest.Trigger{
+			hookTrigger("hook-small", webhookSource(hookKey), "hooklen", true),
+			hookTrigger("hook-large", bigWebhookSource(hookKey, substrate.WebhookInlineMax), "hooklen", true),
+		},
+		pyFn("hooklen", map[string]any{}, []any{widgetType}, hookLenSource),
+	)
+	authority := testdb.Repository(t)
+	body := []byte(`{"pad":"` + strings.Repeat("x", substrate.WebhookInlineDefault) + `"}`)
+	req := substrate.WebhookRequest{Method: "POST", ContentType: "application/json", Headers: map[string]string{"content-type": "application/json"}, Body: body}
+	if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-small", hookKey, req); !errors.Is(err, substrate.ErrTooLarge) {
+		t.Fatalf("a body past 1 MiB to a trigger that declares no maxBody: err = %v, want ErrTooLarge", err)
+	}
+	if _, err := ds.Get(ctx, widgetType, "hook-len"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the refused request fired the callable: %v", err)
+	}
+	if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-large", hookKey, req); err != nil {
+		t.Fatalf("a body past 1 MiB to a trigger that declares 8 MiB: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-len")["name"]; got != fmt.Sprint(len(body)) {
+		t.Fatalf("the callable read %v bytes, want the %d sent", got, len(body))
 	}
 }
 
@@ -510,8 +577,15 @@ def main(input, host):
 // and a delivery parked by a binary that wrote no authority into its payload.
 func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, string) {
 	t.Helper()
+	return newHookDatasetWithOptions(t, nil, triggers, fns...)
+}
+
+// newHookDatasetWithOptions is newHookDatasetWithDSN on a service opened
+// with opts, for a test that sets one of the engine's test clocks.
+func newHookDatasetWithOptions(t *testing.T, opts []engine.Option, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, string) {
+	t.Helper()
 	ctx := context.Background()
-	svc, dsn := newService(t)
+	svc, dsn := newService(t, opts...)
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
