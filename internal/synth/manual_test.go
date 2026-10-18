@@ -120,7 +120,8 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 }
 
 // A source's class says what sort of source it is, from the source kind's
-// own values: a lab is `lab` and the hand entry `manual`, so an app that
+// own values: a lab is `lab` and the hand entry `manual`, as the Garmin and
+// Google Fit adapters class the hand entries they see, so an app that
 // filters sources by class finds them.
 func TestManualSourcesCarryTheirClass(t *testing.T) {
 	t.Parallel()

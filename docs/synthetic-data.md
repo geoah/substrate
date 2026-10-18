@@ -14,7 +14,7 @@ the shapes; this is the volume.
 ## The person
 
 `synth.Persona` is a deterministic model of a body over a date range: every
-value derives from the seed and a key, so two runs agree to the byte and the
+value derives from the seed and a key, so two runs agree to the byte and four
 emitters run independently and still describe one life. The default
 (`synth.DefaultOptions`) is Ada, Athens, the 90 days ending 2026-10-11, with a
 cold from 2026-08-26 to 2026-08-29 (resting heart rate up, HRV down, sleep
@@ -38,8 +38,8 @@ NGSP HbA1c (`health/hba1c`).
 `Persona.Day(d)` is the ground truth for one local day: the night that ended
 that morning with its stages, the workouts with their heart-rate curves, the
 heart rate at any instant (the night that begins before the day ends
-included), steps per bucket, energy, recovery and strain in WHOOP's terms,
-the weigh-in, the blood pressure and
+included), steps per bucket, energy, stress and Body Battery in Garmin's
+terms, recovery and strain in WHOOP's, the weigh-in, the blood pressure and
 glucose readings if there were any. An emitter samples it at the resolution
 its provider sends and adds its own device noise with `Persona.Noisy`, keyed
 by provider, so a watch reads two beats off another watch and two scales
@@ -67,8 +67,28 @@ build one per goroutine.
 | Emitter | Writes | How it reaches a substrate |
 | --- | --- | --- |
 | `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
+| `googlefit` | `recordings/`: the Fit REST v1 data source list (17 derived and 16 raw streams), one recording per derived stream per UTC day with points (`..._datasets_<startNs>-<endNs>__limit-1000.json`) and one empty recording per stream for every other day, the windowed session list, the two-page session feed and the userinfo address; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `googlefitsync` over the recordings, then imports `healthgooglefit` and replays it |
+| `garmin` | `recordings/`: the connect step (the user id, the permissions, and one 202-then-409 answer per backfill type) and `e2e.json` for the runner; `deliveries/`: the pushes to `garmin-webhook`, each the `{"<summary type>": [...]}` envelope `garminpush` reads | `synth load` runs the provider e2e runner for the connect step (it installs the provider and writes the account), imports `healthgarmin`, arms the trigger and posts the deliveries one at a time |
 | `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, writes the `iphone` account, imports `healthapple`, arms the trigger and posts them one at a time |
 | `manual` | `labs.yaml`: three `labreport` records, 30 `labresult` records, the two labs' and the hand-entry `source` records, and one weigh-in typed in on a hotel scale on the trip's third day, when the range holds it | `synth load` writes them through `PUT /api/v1/...` after importing the samples; `substratectl apply -f` does the same |
+
+`googlefit` samples the persona the way a Pixel Watch 2 syncs to Fit. Heart
+rate is one point every 5 minutes with the watch's noise, and one a minute
+during workouts. Steps are 15-minute deltas about 5 percent high. Energy
+expended is hourly. Sleep stages are written as `com.google.sleep.segment`
+points, and oxygen saturation is one nightly average at wake. A Withings
+Body+ writes weigh-ins and body fat four mornings a week, a Withings BPM
+Connect blood pressure and a pulse on Sundays, and an Ascensia Contour Next
+One a fasting glucose in mmol/L on meter mornings. Height is entered once,
+and activity segments, active minutes and heart minutes cover every bout.
+Sessions are one sleep per night and nap and the Fit app's rides, strength
+and yoga (codes 1, 80 and 100), plus Strava's runs under Strava ids.
+Distance is written but never served, because the bundle asks for no
+location scope. The 90-day default is 1,236 files (19.7 MB). The
+`healthgooglefit` adapter writes its points under the sources
+`googlefit/<account>/google-pixel-watch-2.8d1f3c7a`, `withings-body.4a91be20`,
+`withings-bpm-connect.7c03d5e1`, `ascensia-contour-next-one.5e2a91c7`,
+`manual`, `com-strava` and `com-google-android-apps-fitness`.
 
 `applehealth` writes what the Health Auto Export app POSTs at the end of
 each local day. Heart rate comes from "Ada's Apple Watch" about every 5
@@ -109,6 +129,30 @@ each workout's 30-second series. The 90-day default is 17 recordings and
 `e2e.json` (0.2 MB); the `healthwhoop` adapter writes one source,
 `whoop/<account id>`, and no traces.
 
+`garmin` writes what one Forerunner 265 pushes through Garmin's Health and
+Activity API. The connect step answers the real `garminsync` over the
+runner's mock: the user id, the permissions, and 202 then 409 for each
+backfill type, as Garmin answers a repeated backfill request. The data
+arrives as pushes: heart rate every 5 minutes in the daily, 15-minute
+epochs split by activity type, stress every 3 minutes and Body Battery
+every 15 in the stress details, and for each night the stages, SpO2 every
+10 minutes, breathing every 15 and HRV every 5. On a Saturday evening at
+home the watch takes a two-minute health snapshot of heart rate, breathing,
+stress, SpO2 and HRV every five seconds. Each workout is an activity and its
+details, a sample every 30 seconds named for the city it started in: a run's
+samples carry the speed, the step cadence, running power and the altitude,
+with laps per kilometer; a ride's the speed, the pedal cadence and the
+altitude. The altitude climbs the summary's elevation gain and comes back
+down. A daily spans the persona's local day, so the dailies tile time across
+the trip. Dailies, epochs, stress details, sleeps, respiration, activity
+details and health snapshots go one day to a delivery; HRV, Pulse Ox, skin
+temperature, weigh-ins, blood pressure, user metrics, activities and Move IQ
+events go one week to a delivery, as a backfill would. The 90-day default is
+17 recordings, `e2e.json` and 623 deliveries (8.1 MB); the `healthgarmin`
+adapter writes under two sources: `garmin/<account>/forerunner265` for the
+activities, which name the device, and `garmin/<account>/account` for the
+summaries, which do not.
+
 `manual` writes the hand-entered records. Each lab result names the metric
 it lands on and a LOINC code that metric lists, with reference range bounds
 as quantities. The US lab's results land on the mass twins (for example
@@ -121,7 +165,10 @@ Recordings for a mock-driven provider are named by `synth.RecordingName`,
 the Go form of the rule in `internal/providere2e/runner/mockserver.py`
 (`recording_test.go` pins it against names the Python produced and reads the
 server's parameter sets from the file), so the provider e2e runner finds every
-one. A webhook provider's requests are saved as the `{"request": {...}}` envelopes the
+one. The runner's mock moves Google Fit's recorded instants to the run date
+unless `e2e.json` sets `timeShift: false`; the generated `e2e.json` sets it, so
+the Fit points keep the days the other emitters describe. A webhook
+provider's requests are saved as the `{"request": {...}}` envelopes the
 provider tests hold under `testdata/`, one file per delivery in posting
 order, with the trigger they go to.
 
@@ -188,8 +235,9 @@ provider's setup (the runner, an install, an import, a record) names none;
 the next load starts over, and skips the packages the repository already
 holds at the shipped version.
 The bearer comes from `SUBSTRATE_TOKEN`, never from argv, and is sent to the
-API alone, never to the webhook door, and an error the load prints spells
-the webhook key as `<webhook key>`. An interrupted load interrupts the
+API alone, never to the webhook door. A Garmin push carries the trigger's
+key in its path, as Garmin calls the door, and an error the load prints
+spells the key as `<webhook key>`. An interrupted load interrupts the
 runner, which leads a process group of its own so a Ctrl-C reaches it once,
 and waits up to a minute while the runner quiesces the account, stops its
 mock and removes its workdir; then it removes the temporary config that
@@ -202,16 +250,18 @@ holds the token.
   the ill days walk less and train not at all, days tile time, no night
   overlaps a workout, readings happen awake), the recording names and the
   mock server's parameter sets, a writer that replaces an earlier run, and
-  every emitter agreeing on every night and workout within a minute.
+  all four emitters agreeing on every night and workout within a minute.
 - `cmd/synth`'s tests drive `load` against a fake substrate: the import
   order, the authority check, the catalog read, the refusal of a
   repository holding provider data synth did not write, the webhook key and
   its absence from a printed error, the retries, `-resume`, the token kept
   off the webhook door, the absolute `-ctl` and recordings path the runner
-  is handed, and an interrupt the runner cleans up after.
+  is handed, and an interrupt the runner cleans up after. One
+  starts the runner's mock over generated Fit recordings and holds what it
+  serves to what was generated.
 - `internal/providertest` drives the emitted data through the real
   functions over the real engine: a delivery through `applehealthingest`, a
-  sync through the loopback fake over the
+  push through `garminpush`, a sync through the loopback fake over the
   generated recordings, the hand-entered records through `convertlab`, then
   the adapter samples by their own triggers. Those run under
   `mise run test:db:rest`.

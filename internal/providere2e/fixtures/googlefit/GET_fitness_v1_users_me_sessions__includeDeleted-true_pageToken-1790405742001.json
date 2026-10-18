@@ -1,0 +1,377 @@
+{
+ "session": [
+  {
+   "id": "1790417401000-7",
+   "name": "Walk",
+   "description": "",
+   "startTimeMillis": "1790417401000",
+   "endTimeMillis": "1790421715000",
+   "modifiedTimeMillis": "1790423635000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 7
+  },
+  {
+   "id": "Sleep1790463342000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790463342000",
+   "endTimeMillis": "1790492198000",
+   "modifiedTimeMillis": "1790493278000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1790494813000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1790494813000",
+   "endTimeMillis": "1790496686000",
+   "modifiedTimeMillis": "1790498846000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "1750000"
+  },
+  {
+   "id": "Sleep1790546143000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790546143000",
+   "endTimeMillis": "1790573750000",
+   "modifiedTimeMillis": "1790574230000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "Sleep1790627031000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790627031000",
+   "endTimeMillis": "1790653301000",
+   "modifiedTimeMillis": "1790654801000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1790655145000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1790655145000",
+   "endTimeMillis": "1790657571000",
+   "modifiedTimeMillis": "1790658651000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2329000"
+  },
+  {
+   "id": "Sleep1790712536000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790712536000",
+   "endTimeMillis": "1790739177000",
+   "modifiedTimeMillis": "1790740197000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1790782332000-80",
+   "name": "Strength training",
+   "description": "",
+   "startTimeMillis": "1790782332000",
+   "endTimeMillis": "1790785501000",
+   "modifiedTimeMillis": "1790787601000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 80
+  },
+  {
+   "id": "Sleep1790798656000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790798656000",
+   "endTimeMillis": "1790826798000",
+   "modifiedTimeMillis": "1790827098000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1790827941000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1790827941000",
+   "endTimeMillis": "1790830281000",
+   "modifiedTimeMillis": "1790831961000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2205000"
+  },
+  {
+   "id": "Sleep1790885244000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790885244000",
+   "endTimeMillis": "1790913809000",
+   "modifiedTimeMillis": "1790914469000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1790957108000-108",
+   "name": "Padel",
+   "description": "",
+   "startTimeMillis": "1790957108000",
+   "endTimeMillis": "1790961803000",
+   "modifiedTimeMillis": "1790964023000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 108
+  },
+  {
+   "id": "1791000531000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1791000531000",
+   "endTimeMillis": "1791002602000",
+   "modifiedTimeMillis": "1791004102000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2012000"
+  },
+  {
+   "id": "Sleep1790971314000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1790971314000",
+   "endTimeMillis": "1791003356000",
+   "modifiedTimeMillis": "1791004196000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "Sleep1791059969000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791059969000",
+   "endTimeMillis": "1791089629000",
+   "modifiedTimeMillis": "1791090709000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1791093812000-16",
+   "name": "Road ride",
+   "description": "",
+   "startTimeMillis": "1791093812000",
+   "endTimeMillis": "1791101624000",
+   "modifiedTimeMillis": "1791102464000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 16,
+   "activeTimeMillis": "7742000"
+  },
+  {
+   "id": "Sleep1791145004000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791145004000",
+   "endTimeMillis": "1791171833000",
+   "modifiedTimeMillis": "1791172253000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1791214346000-80",
+   "name": "Strength training",
+   "description": "",
+   "startTimeMillis": "1791214346000",
+   "endTimeMillis": "1791217027000",
+   "modifiedTimeMillis": "1791218587000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 80
+  },
+  {
+   "id": "Sleep1791231198000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791231198000",
+   "endTimeMillis": "1791257481000",
+   "modifiedTimeMillis": "1791258681000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "strava-16292089269",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1791259933000",
+   "endTimeMillis": "1791262333000",
+   "modifiedTimeMillis": "1791263713000",
+   "application": {
+    "packageName": "com.strava",
+    "version": "421.9"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2174000"
+  },
+  {
+   "id": "Sleep1791315660000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791315660000",
+   "endTimeMillis": "1791345349000",
+   "modifiedTimeMillis": "1791346309000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1791349537000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1791349537000",
+   "endTimeMillis": "1791351716000",
+   "modifiedTimeMillis": "1791353756000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2176000"
+  },
+  {
+   "id": "1791387145000-80",
+   "name": "Strength training",
+   "description": "",
+   "startTimeMillis": "1791387145000",
+   "endTimeMillis": "1791389839000",
+   "modifiedTimeMillis": "1791390259000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 80
+  },
+  {
+   "id": "Sleep1791401880000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791401880000",
+   "endTimeMillis": "1791430721000",
+   "modifiedTimeMillis": "1791431081000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1791432729000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1791432729000",
+   "endTimeMillis": "1791435322000",
+   "modifiedTimeMillis": "1791437122000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2505000"
+  },
+  {
+   "id": "Sleep1791491723000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791491723000",
+   "endTimeMillis": "1791516589000",
+   "modifiedTimeMillis": "1791518089000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1791561949000-108",
+   "name": "Padel",
+   "description": "",
+   "startTimeMillis": "1791561949000",
+   "endTimeMillis": "1791566488000",
+   "modifiedTimeMillis": "1791569128000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 108
+  },
+  {
+   "id": "Sleep1791575711000",
+   "name": "Sleep",
+   "description": "",
+   "startTimeMillis": "1791575711000",
+   "endTimeMillis": "1791606975000",
+   "modifiedTimeMillis": "1791607935000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 72
+  },
+  {
+   "id": "1791605285000-8",
+   "name": "Morning run",
+   "description": "",
+   "startTimeMillis": "1791605285000",
+   "endTimeMillis": "1791607698000",
+   "modifiedTimeMillis": "1791608658000",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 8,
+   "activeTimeMillis": "2292000"
+  }
+ ],
+ "deletedSession": [
+  {
+   "id": "1790952490000-7",
+   "name": "Afternoon walk",
+   "description": "",
+   "startTimeMillis": "1790952490000",
+   "endTimeMillis": "1790953810000",
+   "modifiedTimeMillis": "1791007960118",
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "activityType": 7
+  }
+ ],
+ "nextPageToken": "1791608658001"
+}

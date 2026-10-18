@@ -1,0 +1,4 @@
+{
+ "dataSourceId": "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas",
+ "point": []
+}

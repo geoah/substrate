@@ -164,7 +164,7 @@ var webhookKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 // its other properties, and answers whether it was enabled before. A key
 // the trigger already has is the owner's: arm refuses another one unless
 // replace says to replace it.
-func (c *client) arm(ctx context.Context, id, key string, replace bool) (bool, error) {
+func (c *client) arm(ctx context.Context, id, key string, replace bool, headers []string) (bool, error) {
 	rec, err := c.trigger(ctx, id)
 	if err != nil {
 		return false, err
@@ -183,6 +183,9 @@ func (c *client) arm(ctx context.Context, id, key string, replace bool) (bool, e
 		return false, fmt.Errorf("%s already has a webhook key: pass that key with -key, or -replace-key to replace it", id)
 	}
 	webhook["key"] = key
+	if len(headers) > 0 {
+		webhook["headers"] = headers
+	}
 	source["webhook"] = webhook
 	if err := c.patchTrigger(ctx, id, map[string]any{"enabled": true, "source": source}); err != nil {
 		return false, fmt.Errorf("arming %s: %w", id, err)
@@ -286,7 +289,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 	providers := fs.String("providers", "", "comma-separated providers; empty is every one with output in -dir")
 	key := fs.String("key", "", "the webhook key to arm the push triggers with (default $SYNTH_WEBHOOK_KEY)")
 	replaceKey := fs.Bool("replace-key", false, "replace a webhook key a push trigger already has")
-	resume := fs.String("resume", "", "take up an interrupted load at PROVIDER/NNNN, a provider and the number of its webhook delivery (0400 for the 400th): the providers before it and its own setup are skipped")
+	resume := fs.String("resume", "", "take up an interrupted load at PROVIDER/NNNN, such as garmin/0400: the providers before it and its own setup are skipped")
 	settle := fs.Duration("settle", 5*time.Minute, "how long to wait for each delivery's run")
 	repo := fs.String("repo", ".", "the substrate checkout the e2e runner and the bundles are read from (any directory inside it)")
 	ctl := fs.String("ctl", "", "the substratectl binary the runner applies bundles with (default <repo>/bin/substratectl)")
@@ -355,7 +358,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("%s: %w", e.Name(), err)
 		}
 		// A provider with recordings connects and syncs through the e2e
-		// runner first (WHOOP), which
+		// runner first (WHOOP, Google Fit, Garmin's connect step), which
 		// installs it rewired; a push provider is installed from the
 		// catalog. The samples come after the provider they require, and
 		// the records (the account) before the first delivery. A sample
@@ -904,7 +907,7 @@ func parseResume(v string) (string, int, error) {
 	provider, num, ok := strings.Cut(v, "/")
 	n, err := strconv.Atoi(num)
 	if !ok || provider == "" || err != nil || n < 1 {
-		return "", 0, fmt.Errorf("-resume %s: want PROVIDER/NNNN, a provider and the number of its webhook delivery", v)
+		return "", 0, fmt.Errorf("-resume %s: want PROVIDER/NNNN, such as garmin/0400", v)
 	}
 	return provider, n, nil
 }
@@ -965,7 +968,13 @@ func (p *poster) deliveries(ctx context.Context, provider, base string, from int
 			return fmt.Errorf("%s names no trigger", f)
 		}
 		if _, ok := armed[env.Trigger]; !ok {
-			wasEnabled, err := c.arm(ctx, env.Trigger, p.key, p.replaceKey)
+			var headers []string
+			for h := range env.Request.Headers {
+				if h == "garmin-client-id" {
+					headers = append(headers, h)
+				}
+			}
+			wasEnabled, err := c.arm(ctx, env.Trigger, p.key, p.replaceKey, headers)
 			if err != nil {
 				return fmt.Errorf("%w; take the load up with -resume %s/%04d", err, provider, i+1)
 			}

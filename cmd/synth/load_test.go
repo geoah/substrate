@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -65,6 +66,7 @@ func newFakeSubstrate(t *testing.T) *fakeSubstrate {
 		configs: map[string]map[string]string{},
 		triggers: map[string]map[string]any{
 			"applehealth-webhook": {"enabled": false, "source": map[string]any{"webhook": map[string]any{"headers": []any{"session-id"}}}},
+			"garmin-webhook":      {"enabled": false, "source": map[string]any{"webhook": map[string]any{}}},
 		},
 	}
 	f.ts = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -379,8 +381,8 @@ func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
 }
 
 // The repository token is for the API. A webhook post carries the key the
-// trigger was armed with and nothing else: an Apple Health delivery as its
-// own bearer, or a post with the key in its path.
+// trigger was armed with and nothing else: a Garmin push in its path, an
+// Apple Health delivery as its own bearer.
 func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
 	f := newFakeSubstrate(t)
 	dir := generated(t, testAuthority, synth.AppleHealth{})
@@ -397,7 +399,7 @@ func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
 		}
 	}
 	c := f.client()
-	if _, _, err := c.do(t.Context(), http.MethodPost, "/webhooks/"+testAuthority+"/applehealth-webhook/"+testKey, []byte("{}"), nil); err != nil {
+	if _, _, err := c.do(t.Context(), http.MethodPost, "/webhooks/"+testAuthority+"/garmin-webhook/"+testKey, []byte("{}"), nil); err != nil {
 		t.Fatal(err)
 	}
 	last := f.webhooks[len(f.webhooks)-1]
@@ -417,7 +419,7 @@ func TestAwaitSettledPollsAgainSoon(t *testing.T) {
 		waits = append(waits, d)
 		return nil
 	}
-	if _, err := c.awaitSettled(t.Context(), "applehealth-webhook", time.Minute); err != nil {
+	if _, err := c.awaitSettled(t.Context(), "garmin-webhook", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if want := []time.Duration{20 * time.Millisecond, 40 * time.Millisecond}; !slices.Equal(waits, want) {
@@ -425,27 +427,26 @@ func TestAwaitSettledPollsAgainSoon(t *testing.T) {
 	}
 }
 
-// A post that fails in transport is reported with its URL, and an Apple
-// Health delivery carries the trigger's key as its bearer. The key is the
-// only credential on that door, so the error the loader prints names the
+// A post that fails in transport is reported with its URL, and a Garmin
+// push carries the trigger's key in its path. The key is the only credential
+// on a door Garmin does not sign, so the error the loader prints names the
 // delivery and where to resume, never the key.
 func TestAFailedPostNamesNoWebhookKey(t *testing.T) {
 	f := newFakeSubstrate(t)
 	f.drop = true
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, testAuthority, synth.Garmin{})
 	c := f.client()
 	c.pause = func(context.Context, time.Duration) error { return nil }
 	p := &poster{c: c, key: testKey, settle: time.Minute, stdout: io.Discard}
-	err := p.deliveries(t.Context(), "applehealth", filepath.Join(dir, "applehealth"), 1)
-	if err == nil || !strings.Contains(err.Error(), "-resume applehealth/0001") {
-		t.Fatalf("a load whose posts all fail = %v, want a stop naming -resume applehealth/0001", err)
+	err := p.deliveries(t.Context(), "garmin", filepath.Join(dir, "garmin"), 1)
+	if err == nil || !strings.Contains(err.Error(), "-resume garmin/0001") {
+		t.Fatalf("a load whose posts all fail = %v, want a stop naming -resume garmin/0001", err)
 	}
 	if strings.Contains(err.Error(), testKey) {
 		t.Errorf("the error prints the webhook key: %v", err)
 	}
-	if len(f.webhooks) != postTries || f.webhooks[0].Header.Get("Authorization") != "Bearer "+testKey {
-		t.Errorf("%d posts, the first with Authorization %q; want %d, each with the key as its bearer",
-			len(f.webhooks), f.webhooks[0].Header.Get("Authorization"), postTries)
+	if len(f.webhooks) != postTries || !strings.HasSuffix(f.webhooks[0].URL.Path, "/"+testKey) {
+		t.Errorf("%d posts, the first to %s; want %d, each with the key in its path", len(f.webhooks), f.webhooks[0].URL.Path, postTries)
 	}
 }
 
@@ -515,6 +516,71 @@ func TestMain(m *testing.M) {
 		return
 	}
 	os.Exit(m.Run())
+}
+
+// runnerServes starts the mock the way the e2e runner does for one e2e.json
+// and prints what it answers for one path.
+const runnerServes = `
+import json, pathlib, sys, urllib.request
+runner, recordings, config, log, path = sys.argv[1:]
+sys.path.insert(0, runner)
+import e2e
+cfg = json.loads(pathlib.Path(config).read_text())
+# A fixed port may belong to a run in progress, whose mock the runner reaps.
+cfg["mockPort"] = 0
+proc, url = e2e.start_mock(pathlib.Path(recordings), "googlefit", pathlib.Path(log), cfg)
+try:
+    sys.stdout.write(urllib.request.urlopen(url + path, timeout=10).read().decode())
+finally:
+    proc.terminate()
+    proc.wait()
+`
+
+// The runner's mock moves Google Fit's recorded instants to the run date
+// unless e2e.json says not to. The generated days describe one life with
+// the other emitters' days, so the runner serves them as generated.
+func TestRunnerServesFitRecordingsAsGenerated(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	base := filepath.Join(generated(t, testAuthority, synth.GoogleFit{}), "googlefit")
+	runner, err := filepath.Abs(filepath.Join("..", "..", "internal", "providere2e", "runner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const sessions = "/fitness/v1/users/me/sessions"
+	cmd := exec.Command(python, "-I", "-B", "-c", runnerServes, runner,
+		filepath.Join(base, "recordings"), filepath.Join(base, "e2e.json"), filepath.Join(t.TempDir(), "mock.log"), sessions)
+	cmd.Env = append(os.Environ(), "SUBSTRATE_E2E_ROOT="+filepath.Dir(runner))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	served, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the runner's mock: %v\n%s", err, stderr.String())
+	}
+	recorded, err := os.ReadFile(filepath.Join(base, "recordings", synth.RecordingName("GET", sessions)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want struct {
+		Session []map[string]any `json:"session"`
+	}
+	if err := json.Unmarshal(served, &got); err != nil {
+		t.Fatalf("%v: %s", err, served)
+	}
+	if err := json.Unmarshal(recorded, &want); err != nil {
+		t.Fatal(err)
+	}
+	if len(want.Session) == 0 || len(got.Session) != len(want.Session) {
+		t.Fatalf("served %d sessions of %d", len(got.Session), len(want.Session))
+	}
+	for i, s := range want.Session {
+		if got.Session[i]["startTimeMillis"] != s["startTimeMillis"] || got.Session[i]["endTimeMillis"] != s["endTimeMillis"] {
+			t.Errorf("session %v is served from %v to %v, generated from %v to %v",
+				s["id"], got.Session[i]["startTimeMillis"], got.Session[i]["endTimeMillis"], s["startTimeMillis"], s["endTimeMillis"])
+		}
+	}
 }
 
 func TestCtlPathIsAbsolute(t *testing.T) {

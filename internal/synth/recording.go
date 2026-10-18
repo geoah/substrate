@@ -29,8 +29,8 @@ var SecretParams = map[string]bool{
 // PaginationParams are the pairs the server drops on its second try, so a
 // page-one recording named without them answers a request that carries them.
 // A page-two recording must therefore be named for a parameter NOT in this
-// set (WHOOP's `nextToken`), or carry the exact query (a `pageToken` a sync
-// sends beside `limit`).
+// set (WHOOP's `nextToken`), or carry the exact query (Google Fit's
+// `pageToken`, which the sync sends beside `limit`).
 var PaginationParams = map[string]bool{
 	"pageToken": true, "page_token": true, "nextPageToken": true, "cursor": true, "next_cursor": true,
 	"page": true, "per_page": true, "offset": true, "after": true, "before": true, "startAt": true, "start": true,

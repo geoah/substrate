@@ -69,7 +69,8 @@ GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watc
 
 An adapter's `record_id` ([the SDK](functions.md#the-sdk)) hashes an id that
 would leave the id alphabet or pass 128 bytes into one with no `/`, such as
-`applehealth-` and a 32-digit hexadecimal digest, which needs no encoding.
+Google Fit's `googlefit-bdc260a3bb2334ce971b24bf9b102a7a`, which needs no
+encoding.
 
 ### The records route
 
@@ -1216,7 +1217,7 @@ read takes the whole [filter grammar](#the-filter-grammar).
 A `source`, `about` or `metric` value is a record path, `{ref}`, or a bare id
 the read completes with the kind the selected kinds' reference pins, as the
 list's filter does: `manual` is `<authority>/observations/source/manual` and
-never `.../source/whoop/e2e/manual`. A bare id is a `422` where those kinds
+never `.../source/googlefit/x/manual`. A bare id is a `422` where those kinds
 pin no kind, any kind (`about`) or two. A path no stream holds answers no
 rows.
 
@@ -1517,14 +1518,14 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 - Under `priority` each bucket takes the summaries of the
   source the policy keeps there, so the one-statistic rule holds per source:
   each source's summaries are of one statistic, and two sources may differ.
-  A read of a ring's nightly HRV (`vendor`) and a watch's (`avg`), with
+  A read of WHOOP's nightly HRV (`vendor`) and Garmin's (`avg`), with
   `filter.properties.statistic` `{"in": ["avg", "vendor"]}` and `priority`
-  over `[watch, ring]`, answers each night from the watch and the nights
-  the watch missed from the ring; the row's `sources` say which. A row that would
+  over `[garmin, whoop]`, answers each night from Garmin and the nights
+  Garmin missed from WHOOP; the row's `sources` say which. A row that would
   take two statistics (a week of nights each source filled alone) is a `422`
   naming each source's statistic: read by the bucket each source fills alone,
   or name one statistic. So is a `rolling` window whose values come from
-  rows of two statistics (a seven-night baseline over the watch's and the ring's
+  rows of two statistics (a seven-night baseline over Garmin's and WHOOP's
   nights), at `aggregate.rolling`; on a read from summaries,
   `groupBy: ["statistic"]` rolls each statistic apart. Under `prefer-raw` a
   reducer answers `null` from a summary row of another statistic, so a

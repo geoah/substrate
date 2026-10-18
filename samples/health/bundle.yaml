@@ -33,7 +33,9 @@ data:
   # one, and a summary keeps its statistic and period.
   # 3: the record views of a sleep and a workout (views.yaml), records of the
   # seeded console package's `recordview` kind.
-  version: 3
+  # 4: the Garmin-only metrics `garmin_stress` and `garmin_body_battery`,
+  # which the Garmin adapter writes.
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds, one function and the metric catalogue (metrics.yaml) with the lab

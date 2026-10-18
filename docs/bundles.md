@@ -111,8 +111,8 @@ is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
-`linear`, `notion`, `whoop`, `beeper`, `slack` and `applehealth`, all
-published under `providers.substrate.reamde.dev`.
+`linear`, `notion`, `whoop`, `garmin`, `googlefit`, `beeper`, `slack` and
+`applehealth`, all published under `providers.substrate.reamde.dev`.
 Installing one from the catalog writes `source: published` on its package,
 and from then on only an install or an upgrade writes its declarations: a
 `POST …/vocabulary/apply` naming that package is `403` for every token,
@@ -303,15 +303,15 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the eight shipped ones are
+A **provider** is a package a publisher owns: the ten shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop`, `/beeper`, `/slack` and `/applehealth`. The
+`/whoop`, `/garmin`, `/googlefit`, `/beeper`, `/slack` and `/applehealth`. The
 tier is read from the tree the closure came from, never guessed from an OAuth
 block, from account kinds, or from the package's name: a token or webhook
 provider may declare no OAuth, and an account-shaped package is not
 necessarily one.
 
-An OAuth provider (Google, GitHub, WHOOP) ships, on top of the usual closure,
+An OAuth provider (Google, GitHub, WHOOP, Garmin, Google Fit) ships, on top of the usual closure,
 the pieces the substrate's OAuth facility recognizes by
 [trait](data-model.md#traits): an `accountconfig` kind (the Connection, one
 record per account, required to carry `tokenRef`, `tokenStatus` and
@@ -656,11 +656,11 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the eight **providers** under `kinds/providers.substrate.reamde.dev`, and the
-fourteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
+the ten **providers** under `kinds/providers.substrate.reamde.dev`, and the
+sixteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `observations`, `health`, and the worked examples
 `llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`,
-`healthapple`). A repository takes a sample
+`healthapple`, `healthgarmin`, `healthgooglefit`). A repository takes a sample
 itself: registration seeds
 `substrate.reamde.dev/core`, imports the `llm` sample onto the repository's
 own authority with its three keyless `provider` rows (`openai`, `anthropic`,
@@ -844,7 +844,7 @@ importing the bundle instead rehomes its requirements with it.
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing
 else: no `requires:`, no reference pinned at a sample kind, no core row. So the
-console can install any of the eight from a repository that has imported nothing,
+console can install any of the ten from a repository that has imported nothing,
 and the console's Add button is never disabled for a missing requirement.
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the

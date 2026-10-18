@@ -121,6 +121,44 @@ func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
 	}
 }
 
+// THE GARMIN ADAPTER INSTALLS AFTER WHAT IT READS AND WRITES. It requires the
+// garmin provider, whose mirror kinds its trigger watches, and the health
+// sample with its observations base, whose kinds it writes, each with a floor;
+// installed in `requires:` order on the seed alone, the whole chain admits.
+func TestHealthGarminRequiresHealthAndTheProvider(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	adapter := shippedSample(t, "healthgarmin")
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	for _, req := range []string{samples.Authority + "/observations", samples.Authority + "/health", "providers.substrate.reamde.dev/garmin"} {
+		b, ok := byPackage[req]
+		if !ok {
+			t.Fatalf("no shipped bundle %s", req)
+		}
+		if !slices.Contains(adapter.Requires, req) {
+			t.Errorf("healthgarmin requires %v, not %s", adapter.Requires, req)
+		}
+		if floor, ok := adapter.RequiresAtLeast[req]; !ok || floor < 1 || floor > b.Version {
+			t.Errorf("healthgarmin's floor on %s is %d (set %v); the shipped one is version %d", req, floor, ok, b.Version)
+		}
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/adaptgarmin"); err != nil {
+		t.Errorf("the adapter function did not install: %v", err)
+	}
+}
+
 // healthRecords reads the health sample's data records of one kind (a kind
 // reference under the samples authority, such as observations/metric), by id.
 func healthRecords(t *testing.T, kind string) map[string]map[string]any {
@@ -285,6 +323,76 @@ func TestHealthGaugesCarryAHold(t *testing.T) {
 	}
 	if gauges == 0 {
 		t.Fatal("no gauge metrics found")
+	}
+}
+
+// declaredProperties is every property name the kinds of one shipped package
+// declare, nested object properties included.
+func declaredProperties(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+	raw, err := fs.ReadFile(kinds.Bundles(), dir+"/bundle.yaml")
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	out := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if props, ok := x["properties"].(map[string]any); ok {
+				for name := range props {
+					out[name] = true
+				}
+			}
+			for _, child := range x {
+				walk(child)
+			}
+		case []any:
+			for _, child := range x {
+				walk(child)
+			}
+		}
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	for {
+		var doc struct {
+			Kind string         `yaml:"kind"`
+			Data map[string]any `yaml:"data"`
+		}
+		if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+		if doc.Kind == "substrate.reamde.dev/core/kind" {
+			walk(doc.Data)
+		}
+	}
+	return out
+}
+
+// A GARMIN CODE IS A FIELD GARMIN DOCUMENTS. A writer maps a Garmin field to a
+// metric by the catalogue's code, so a code the provider does not declare
+// (an alias some deliveries use, a guess) finds no metric for the field
+// Garmin actually sends.
+func TestHealthGarminCodesAreFieldsTheProviderDeclares(t *testing.T) {
+	fields := declaredProperties(t, "providers.substrate.reamde.dev/garmin")
+	n := 0
+	for id, props := range healthRecords(t, "observations/metric") {
+		codes, _ := props["codes"].([]any)
+		for _, raw := range codes {
+			c, _ := raw.(map[string]any)
+			if c["system"] != "garmin" {
+				continue
+			}
+			n++
+			if code, _ := c["code"].(string); !fields[code] {
+				t.Errorf("%s lists the Garmin code %q, which the Garmin provider declares nowhere", id, code)
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no Garmin codes found; the test reads the wrong place")
 	}
 }
 

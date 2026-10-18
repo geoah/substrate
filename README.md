@@ -34,12 +34,12 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
   trait is indexed, and the records route's aggregate read reduces it into
   time buckets: average heart rate per week, steps per local day across
   travel, one source preferred over another. The catalog's `observations`
-  and `health` samples and its two health adapters (WHOOP, Apple Health)
-  bring a wearable's data into one model; Garmin and Google Fit are planned
+  and `health` samples and its four health adapters (WHOOP, Garmin, Google
+  Fit, Apple Health) bring a wearable's data into one model
   ([docs/observations.md](docs/observations.md)).
 - **Bundles.** Vocabulary, functions and agents install and uninstall as one
   unit. The catalog compiled into the binary ships sync for Google, GitHub,
-  Linear, Notion, Slack, Beeper and Whoop, so a mailbox or
+  Linear, Notion, Slack, Beeper, Whoop, Garmin and Google Fit, so a mailbox or
   a calendar becomes records you own rather than an API you rent, a receiver
   for the Apple Health data the Health Auto Export app sends, plus Firecrawl
   functions agents can call to search and read the web.
@@ -364,7 +364,7 @@ The console's Agents page can then chat with `assistant`, which reads your
 tasks and writes them back through the same API as everything else.
 [docs/agents.md](docs/agents.md) has the rest: wires, pricing, sub-agents,
 budgets. The same catalog carries the provider bundles (Google, GitHub,
-Linear, Notion, Slack, Beeper, Whoop, Apple Health) and
+Linear, Notion, Slack, Beeper, Whoop, Garmin, Google Fit, Apple Health) and
 vocabularies (tasks, people, calendar, messaging and more):
 [docs/bundles.md](docs/bundles.md) is the model,
 [docs/bundles-catalog.md](docs/bundles-catalog.md) what ships

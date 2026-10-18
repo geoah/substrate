@@ -119,6 +119,9 @@ is wrong:
     already uses, so a 429/500/401/404 matrix needs no hand-made recording.
     A scenario drives the same thing BETWEEN two syncs by POSTing
     `{"rules": […]}` to `MOCK_URL/__mock/faults`.
+  * `timeShift`: `false` serves the recordings' instants as written, for a
+    provider whose recordings the mock otherwise moves to the run date
+    (mockserver.py's TIME_SHIFTS). Recordings dated on purpose set it.
 
 `providers/<p>/scenario.py` is yours too. It is run with:
 
@@ -1487,14 +1490,18 @@ def reap_orphan_mocks(port: int) -> bool:
 
 
 def start_mock(recordings: pathlib.Path, provider: str, log: pathlib.Path,
-               want_port: int = 0, faults: pathlib.Path | None = None):
-    port = preferred_port(want_port)
+               cfg: dict, faults: pathlib.Path | None = None):
+    """The mock over the recordings, as e2e.json's `mockPort` and `timeShift`
+    say."""
+    port = preferred_port(int(cfg.get("mockPort") or 0))
     fh = log.open("w")
     # `providers/<p>/e2e/faults.json`, when the provider agent wrote one, is
     # the run's failure matrix: statuses per endpoint, over the SAME
     # recordings the success path uses. A scenario that wants a failure only
     # for its second sync POSTs the rules to MOCK_URL/__mock/faults instead.
     extra = ["--faults", str(faults)] if faults and faults.is_file() else []
+    if cfg.get("timeShift") is False:
+        extra.append("--no-time-shift")
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "runner" / "mockserver.py"),
          "--dir", str(recordings), "--port", str(port), "--provider", provider,
@@ -1691,8 +1698,8 @@ def run(a) -> int:
     print("    workdir     %s" % work)
 
     faults = edir / (cfg.get("faults") or "faults.json")
-    proc, mock = start_mock(recordings, a.provider, work / "mock.log",
-                            int(cfg.get("mockPort") or 0), faults)
+    proc, mock = start_mock(recordings, a.provider, work / "mock.log", cfg,
+                            faults)
     say("mock upstream on %s%s" % (mock, "" if not faults.is_file()
                                    else "  (failure matrix %s)"
                                    % _rel(faults)))

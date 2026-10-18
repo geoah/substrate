@@ -1,0 +1,16 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "1328",
+   "garmin-client-id": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"bloodPressures\":[{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6aa4dec6\",\"systolic\":118,\"diastolic\":76,\"pulse\":58,\"sourceType\":\"DEVICE\",\"measurementTimeInSeconds\":1789189830,\"measurementTimeOffsetInSeconds\":10800},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6aae181a\",\"systolic\":121,\"diastolic\":79,\"pulse\":61,\"sourceType\":\"MANUAL\",\"measurementTimeInSeconds\":1789794330,\"measurementTimeOffsetInSeconds\":10800},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6abde876\",\"systolic\":116,\"diastolic\":74,\"pulse\":55,\"sourceType\":\"DEVICE\",\"measurementTimeInSeconds\":1790830710,\"measurementTimeOffsetInSeconds\":10800},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac14d4a\",\"systolic\":124,\"diastolic\":81,\"pulse\":66,\"sourceType\":\"MANUAL\",\"measurementTimeInSeconds\":1791053130,\"measurementTimeOffsetInSeconds\":10800},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac5d1ee\",\"systolic\":119,\"diastolic\":77,\"pulse\":57,\"sourceType\":\"DEVICE\",\"measurementTimeInSeconds\":1791349230,\"measurementTimeOffsetInSeconds\":10800},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac5d2a2\",\"systolic\":117,\"diastolic\":75,\"pulse\":56,\"sourceType\":\"DEVICE\",\"measurementTimeInSeconds\":1791349410,\"measurementTimeOffsetInSeconds\":10800}]}"
+  }
+ },
+ "_receivedAt": "2026-10-08T05:17:20Z"
+}

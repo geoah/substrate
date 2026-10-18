@@ -97,8 +97,8 @@ func orEmpty(m map[string]string) map[string]any {
 
 // Emitter turns the persona into one provider's data.
 type Emitter interface {
-	// Name is the provider's package name: whoop, applehealth, or manual
-	// for the hand-entered records.
+	// Name is the provider's package name: whoop, garmin, googlefit,
+	// applehealth, or manual for the hand-entered records.
 	Name() string
 	// Emit generates the output.
 	Emit(p *Persona) (*Output, error)
@@ -115,7 +115,7 @@ func init() { register(Manual{}) }
 // their syncs run while the pushes post, the hand-entered records last. An
 // emitter it does not list loads after `manual`, so a new provider is listed
 // here too.
-var loadOrder = []string{"whoop", "applehealth", "manual"}
+var loadOrder = []string{"whoop", "googlefit", "garmin", "applehealth", "manual"}
 
 // Emitters is every emitter, in load order; one registered under a name
 // the order does not list comes after them, by name.
