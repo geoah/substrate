@@ -5,14 +5,10 @@ nightly heart rate variability, a vendor's recovery score, an LDL result from
 a blood test. This page covers what holds one today: core's `observed` trait,
 the rules every write of an observed record is held to, the managed `stats`
 of a trace, the `observations` and `health` samples, the host SDK helpers
-a function builds observed values with, and the observed index the fold
-derives from them. The plan is
+a function builds observed values with, the observed index the fold derives
+from them, and the aggregate read that answers "average heart rate per week"
+from that index ([reading](#reading)). The plan is
 [observations](plans/observations.md).
-
-The aggregate read, which reduces these values, is not built yet. Where
-this page says what a read does with a value (a metric's `measures` and
-`bucketPlace`, a source's `priorities`, a gauge's hold), it states the
-contract the read is built to, not behavior a substrate has today.
 
 ## The observed trait
 
@@ -143,7 +139,7 @@ Their names are frozen: a sample's kind cannot be moved by an upgrade, and
 core's `metric` trait ([below](#the-metric-and-source-contracts)). The write
 rules and the observed index read nothing from it but its rollup tiers: each
 value carries its own form, unit and hold. The
-aggregate read takes two of its properties:
+[aggregate read](api.md#the-aggregate-read) takes two of its properties:
 `measures`, the measure every value of the read converts into (a stream
 whose unit is outside it is a `422`), and `unit`, the unit the read answers
 in when the request names none. Editing either changes every aggregate
@@ -573,16 +569,18 @@ pass. `repository rebuild` and the boot import of a repository directory
 clear the tables and queue every observed kind for the pass instead of
 deriving inside the replay, so the replay holds the repository's write lock
 for the records alone; `repository reindex --observed` queues the same work
-on a running index ([operations](operations.md#operator-recovery)). A
-tombstone and a purge while the pass owes a kind anything still take the
-record's segment, whatever the kind now declares: a purged
+on a running index ([operations](operations.md#operator-recovery)). While
+the pass owes a kind anything, an aggregate read over it is a `503`
+([readiness](api.md#readiness)). A tombstone and a purge in that window
+still take the record's segment, whatever the kind now declares: a purged
 row is gone before the pass could find it.
 
 `observed_index` records the version of the rules the tables were derived
 by (`observedIndexVersion` in `internal/engine/observedindex.go`). An open
 whose binary derives by newer rules, or finds none recorded, asks the same
 pass to derive every row of every observed kind again and records its own
-version. `TestObservedDerivationMatchesTheGolden` derives a fixed corpus and
+version. An aggregate read over an index recorded at older rules is a `503`
+too. `TestObservedDerivationMatchesTheGolden` derives a fixed corpus and
 fails when what it derives moves: a change to the derivation, the rollup
 statistics, the composition, the tiers, the fingerprint or the latest rule
 bumps the version.
@@ -616,14 +614,16 @@ whose points cross an offset change (a clock change, a flight) splits the
 trace there, as `host.observed.trace` does. An absent offset is 0 with
 `offset_known` false, which a reader tells apart from a value written at
 offset 0. The aggregate read's recorded-local calendar refuses such a value,
-or places it by the request's `bucket.fallbackTimezone`; a calendar in a named zone places it by
+or places it by the request's `bucket.fallbackTimezone`
+([api](api.md#the-four-time-modes)); a calendar in a named zone places it by
 that zone like any other.
 
 A value converts in its measure's base unit (`temperature-difference` where
 `delta` is true: 0.3 `Cel` is 0.3 `K`), and an arbitrary unit, a level and
 `rad` convert to nothing. A point keeps its value's comparator (`<`, `<=`,
 `>=`, `>`, a lab's `<0.01`); a rollup row counts the points that carry one
-in `bounded`, and a reader answers such a value with its comparator.
+in `bounded`, and a reader answers such a value with its comparator
+([censored values](api.md#censored-values)).
 
 Points at one instant are ordered by record id, compared byte by byte (the
 record id columns sort `COLLATE "C"`), then by their index in the record.
@@ -678,6 +678,20 @@ common base never add; a reader converts each row to the unit it asks for.
   (`internal/observed.UnionMs`).
 - A bucket holding only unavailable points still has a row, with `n` 0, so
   the read sees where a hold stops.
+
+### How a read picks its rows
+
+For each stream the read covers its windows with rows, the coarsest tier
+first. A tier's bucket is taken where it lies inside what is still to be
+covered, crosses none of the read's bucket boundaries (in the recorded-local
+calendar: lands in one local bucket at its own offset, and does not cross
+the range's start), overlaps no row of another alignment, and, for a gauge,
+is eligible under the request's `maxGap`. A stretch no row of a tier meets
+holds no point. What no tier covers is read from the points: the parts of
+an amount's or a counter's buckets, merged into the rows, or for a gauge or
+a recorded-local read the whole group. A year of Berlin days of a home
+sensor is one `1d` row a day, and the hour rows on the days around each
+clock change, where the `+01:00` and `+02:00` day rows overlap.
 
 ### Counters
 
@@ -749,3 +763,173 @@ What each choice costs, measured on a durable Postgres
 A dashboard that shows the current value reads it from the bridge, or from
 the latest row once the chunk is written; the substrate keeps the history.
 
+## Reading
+
+One record is a list read, as for any kind: today's WHOOP recovery is
+`filter.properties.periodId` equal to last night's sleep id beside `metric`
+equal to the `health/whoop_recovery` metric, and every body weight under 155 lb is
+`metric` equal to the `health/body_mass` metric and `value` less than
+`{"value": "155", "unit": "[lb_av]"}` (without the metric, muscle and bone
+mass rows match too). Everything bucketed is the records route's
+[aggregate read](api.md#the-aggregate-read): a metric, a range, a time mode,
+reducers checked against the form, and a source policy, answered from the
+rollup rows where they answer exactly and from the points otherwise. The
+requests below are the proposal's screens
+([reading the data](plans/observations/proposal/03-reading-the-data.md)),
+each one request. A source is named as the WHOOP adapter writes it
+(`whoop/e2e`, the demo repository's account) or as a hand-entered one
+(`manual`).
+
+Heart rate zones per week for six months is a raw read of a source's heart
+rate by the week over 26 weeks, with one `durationIn` reducer per zone (95
+to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute).
+`durationIn` reads raw points, and `maxSamples` counts every selected
+source's points, not only the ones the policy keeps. A source sampling
+every 5 minutes writes 288 heart rate points a day, so 26 weeks of it are
+about 52,000, inside the default `maxSamples` of 1,000,000. The 182 days of a one-second stream are 15.7
+million, past the cap of 2,000,000 one read may hold, so such a stream is
+read a few weeks at a time.
+
+Daily steps for a year on each sample's own local day. Under the default
+`separate` policy each source is a row of its own, and `prefer-raw` serves
+each source's day from its step amounts where they cover 90 percent of it
+and from its daily total (a `sum` summary) otherwise; each row's `from` says
+which. A day of a source with no total is served from
+its amounts whatever they cover. Four step sources times 365 days is 1,460
+series times buckets, over the default
+`maxBuckets` of 1,440 ([budgets](api.md#budgets)), so the read raises it:
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/steps"},
+   "from": "prefer-raw",
+   "range": {"gte": "2025-10-05T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "day"},
+   "reducers": ["sum"],
+   "unit": "{steps}",
+   "budget": {"maxBuckets": 2000}}}
+```
+
+Weight weekly with a four-week rolling mean, one row per source, from rollup
+rows alone:
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/body_mass"},
+   "range": {"gte": "2025-10-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+   "reducers": ["avg", "min", "max", "count"],
+   "rolling": {"buckets": 4, "reducers": ["avg"]},
+   "unit": "kg"}}
+```
+
+WHOOP's nightly heart rate variability per wake day, with the 30-night
+baseline before it: `place` `end` puts a night on the day it ends, however
+late it starts; the statistic filter keeps WHOOP's own value (`vendor`), a
+summary over the night; and the rolling window ending at the previous day
+leaves the night out of its own baseline (its `n` says how many nights the
+window held):
+
+```json
+{"filter": {"properties": {"source": {"eq": "whoop/e2e"}, "statistic": {"eq": "vendor"}}},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/hrv_rmssd"},
+   "from": "summaries",
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
+   "reducers": ["last"],
+   "rolling": {"buckets": 30, "reducers": ["avg"], "through": "previous"},
+   "unit": "ms"}}
+```
+
+Sleep stages per night: the coded stage amounts summed by code inside each
+`health/sleep` record that is not a nap, one row per night and code, each
+carrying the night's `record`. Every device writes the night as a sleep
+record of its own, so `bucket.records.sources` keeps one per night, the
+WHOOP's where it has one and a hand-entered one (`manual`) otherwise, and
+the request's
+`sources` keeps one device's stages inside it. `utcOffsets` writes each
+row's start and end at the night's own offsets, so a night slept abroad
+reads in the time it happened:
+
+```json
+{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/sleep_stage"},
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"records": {
+     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+     "sources": {"policy": "priority", "order": ["whoop/e2e", "manual"], "property": "source"},
+     "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
+   "groupBy": ["code"],
+   "reducers": ["sum"],
+   "sources": {"policy": "priority", "order": ["whoop/e2e", "manual"]},
+   "unit": "min"}}
+```
+
+A night and its recovery: WHOOP writes a recovery, and its heart rate
+variability, resting heart rate, SpO2 and skin temperature, over the night
+it scores, so each WHOOP night's records-mode window holds them. Each row
+carries the night's `record` beside its recovery:
+
+```json
+{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/whoop_recovery"},
+   "from": "summaries",
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"records": {
+     "filter": {"kinds": ["ada.example.com/health/sleep"],
+                "properties": {"source": {"eq": "whoop/e2e"}, "isNap": {"eq": false}}}}},
+   "reducers": ["last"],
+   "unit": "%"}}
+```
+
+A window is `[at, endsAt)`, so a source that stamps a nightly value at the
+instant the night ends puts it outside its night; such a value is read by
+the day it ends, `calendar` with `place` `end`.
+
+Training time and distance per sport per week, from the workout records
+themselves (a property read): each session once where several devices
+recorded it, WHOOP's first, and each week on the local days the
+sessions began:
+
+```json
+{"filter": {"kinds": ["ada.example.com/health/workout"]},
+ "aggregate": {
+   "property": {"name": "duration", "utcOffset": "utcOffsetStart", "groupBy": ["sport"],
+                "sources": {"policy": "priority", "property": "source", "match": ["sport"],
+                            "order": ["whoop/e2e", "manual"]}},
+   "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "week"},
+   "reducers": ["sum", "count"],
+   "unit": "h"}}
+```
+
+The same read with `"name": "distance"` and `"unit": "km"` is the weekly
+distance. The policy weighs only the records that hold the property read,
+so a higher-ranked device's workout without a distance leaves the next
+device's distance in.
+
+kWh per day from a meter that resets, reset-proof, for a meter a function
+writes as a counter under the `observations` sample's `energy` metric (no
+shipped adapter writes one):
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/energy"},
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+   "reducers": ["increase"],
+   "unit": "kW.h"}}
+```
+
+The current value of every stream, the dashboard, is
+[the latest read](api.md#the-latest-read), `"latest": true`. An 800-pixel chart of any range is
+`downsample={"points": 800}` beside a metric and a range
+([downsample](api.md#fill-rolling-and-downsample)).
+
+A function sends the same body to `host.records.aggregate`. An agent sends
+its three parts as the `query` tool's arguments of the same names, `filter`,
+`aggregate` and `downsample`, and `substratectl aggregate` builds it from
+flags.

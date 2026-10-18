@@ -40,6 +40,24 @@ import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
 import type {
   AffectedRecord,
+  Aggregate,
+  AggregateBucket,
+  AggregateBudget,
+  AggregateGroup,
+  AggregateHead,
+  AggregateMetric,
+  AggregateMetricRead,
+  AggregateProperty,
+  AggregateRange,
+  AggregateRecord,
+  AggregateRecordOffsets,
+  AggregateRecordSources,
+  AggregateRecords,
+  AggregateResult,
+  AggregateRolling,
+  AggregateRow,
+  AggregateSources,
+  AggregateValue,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -59,6 +77,7 @@ import type {
   ConversionConfirm,
   ConversionPlan,
   ConversionStep,
+  Downsample,
   ErrorEnvelope,
   ErrorPayload,
   FunctionCalled,
@@ -120,6 +139,7 @@ const errorEnvelope: Shape<ErrorEnvelope> = { error: true }
 
 const errorPayload: Shape<ErrorPayload> = {
   code: true,
+  reason: false,
   message: true,
   problems: false,
   problemDetails: false,
@@ -360,6 +380,159 @@ const occurrenceProblem: Shape<OccurrenceProblem> = {
   kind: true,
   id: true,
   message: true,
+}
+
+const aggregate: Shape<Aggregate> = {
+  metric: false,
+  metrics: false,
+  property: false,
+  latest: false,
+  from: false,
+  range: false,
+  bucket: false,
+  groupBy: false,
+  reducers: false,
+  sources: false,
+  unit: false,
+  durationUnit: false,
+  maxGap: false,
+  fill: false,
+  rolling: false,
+  budget: false,
+}
+
+const aggregateMetric: Shape<AggregateMetric> = { ref: true }
+
+const aggregateMetricRead: Shape<AggregateMetricRead> = {
+  ref: true,
+  unit: false,
+  durationUnit: false,
+  reducers: false,
+  from: false,
+  statistic: false,
+}
+
+const aggregateProperty: Shape<AggregateProperty> = {
+  name: true,
+  anchor: false,
+  utcOffset: false,
+  groupBy: false,
+  sources: false,
+}
+
+const aggregateRecordSources: Shape<AggregateRecordSources> = {
+  policy: false,
+  order: false,
+  property: false,
+  match: false,
+}
+
+const aggregateRange: Shape<AggregateRange> = {
+  gte: true,
+  lt: true,
+  recordedLocal: false,
+}
+
+const aggregateBucket: Shape<AggregateBucket> = {
+  every: false,
+  origin: false,
+  calendar: false,
+  timezone: false,
+  fallbackTimezone: false,
+  weekStart: false,
+  place: false,
+  records: false,
+}
+
+const aggregateRecords: Shape<AggregateRecords> = {
+  filter: true,
+  sources: false,
+  utcOffsets: false,
+}
+
+const aggregateRecordOffsets: Shape<AggregateRecordOffsets> = {
+  start: true,
+  end: false,
+}
+
+const aggregateSources: Shape<AggregateSources> = {
+  policy: false,
+  order: false,
+}
+
+const aggregateRolling: Shape<AggregateRolling> = {
+  buckets: true,
+  reducers: false,
+  through: false,
+}
+
+const aggregateBudget: Shape<AggregateBudget> = {
+  maxBuckets: false,
+  maxSamples: false,
+  maxGroups: false,
+}
+
+const downsample: Shape<Downsample> = { points: true }
+
+const aggregateResult: Shape<AggregateResult> = {
+  metric: false,
+  property: false,
+  unit: false,
+  units: false,
+  bucket: false,
+  from: false,
+  exact: true,
+  rows: true,
+  sources: false,
+  head: true,
+}
+
+const aggregateHead: Shape<AggregateHead> = {
+  changelog: true,
+  generation: true,
+}
+
+const aggregateRow: Shape<AggregateRow> = {
+  start: true,
+  end: true,
+  form: false,
+  group: false,
+  record: false,
+  from: false,
+  sources: false,
+  coverage: false,
+  values: true,
+  count: true,
+  offsetless: false,
+  prorated: false,
+  bounded: false,
+  synthetic: false,
+  nonAdditive: false,
+}
+
+const aggregateGroup: Shape<AggregateGroup> = {
+  source: false,
+  about: false,
+  code: false,
+  metric: false,
+  channel: false,
+  statistic: false,
+  currency: false,
+  properties: false,
+}
+
+const aggregateRecord: Shape<AggregateRecord> = { ref: true, version: true }
+
+const aggregateValue: Shape<AggregateValue> = {
+  reducer: true,
+  value: true,
+  unit: false,
+  code: false,
+  comparator: false,
+  at: false,
+  rolling: false,
+  of: false,
+  n: false,
 }
 
 const tokenInfo: Shape<TokenInfo> = {
@@ -729,6 +902,25 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ChangeRun: changeRun,
   ChangeRunPage: changeRunPage,
   Page: page,
+  Aggregate: aggregate,
+  AggregateMetric: aggregateMetric,
+  AggregateMetricRead: aggregateMetricRead,
+  AggregateProperty: aggregateProperty,
+  AggregateRange: aggregateRange,
+  AggregateBucket: aggregateBucket,
+  AggregateRecords: aggregateRecords,
+  AggregateSources: aggregateSources,
+  AggregateRecordSources: aggregateRecordSources,
+  AggregateRecordOffsets: aggregateRecordOffsets,
+  AggregateRolling: aggregateRolling,
+  AggregateBudget: aggregateBudget,
+  Downsample: downsample,
+  AggregateResult: aggregateResult,
+  AggregateHead: aggregateHead,
+  AggregateRow: aggregateRow,
+  AggregateGroup: aggregateGroup,
+  AggregateRecord: aggregateRecord,
+  AggregateValue: aggregateValue,
   RankedPage: rankedPage,
   Scores: scores,
   OperationalList: operationalList,

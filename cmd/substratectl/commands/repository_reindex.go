@@ -20,8 +20,9 @@ rollup rows in every tier its metrics name, and its latest rows.
 The index is derived from the records and never read by verify or the export,
 so this changes no record and appends nothing to the changelog. It is the
 repair for an index a fault left behind its records, short of a rebuild,
-which replays the whole changelog. The server logs the pass's progress as it
-does for a reshaped kind.
+which replays the whole changelog. Aggregate reads over the queued kinds are
+refused as unavailable (503, Retry-After) until the pass has finished, and
+the server logs its progress as it does for a reshaped kind.
 
 STOP THE SERVER FIRST. The command opens the repository as its changelog
 writer, and a running server holds that lock; it refuses rather than queue
@@ -50,7 +51,7 @@ and stops when the command exits; the server resumes it at its next start.
 			fmt.Fprintf(a.out, "repository %s: observed index queued for re-derivation\n", report.Repository)
 			fmt.Fprintf(a.out, "  kinds:   %s\n", strings.Join(report.Kinds, ", "))
 			fmt.Fprintf(a.out, "  records: %d\n", report.Records)
-			fmt.Fprintf(a.out, "the server re-derives them in the background at its next start\n")
+			fmt.Fprintf(a.out, "the server re-derives them in the background at its next start; aggregate reads over these kinds answer 503 until it finishes\n")
 			return nil
 		},
 	}

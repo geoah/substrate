@@ -49,7 +49,7 @@ import (
 // invocation — each carrying the invoke's reqId and answered by the
 // parent's next line:
 //
-//	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search", "params": {...}}
+//	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate", "params": {...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "call", "params": {"function": "<identity>", "input": ...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 //	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
@@ -191,6 +191,8 @@ type Backend interface {
 	Get(ctx context.Context, typ, id string) (*substrate.Record, error)
 	List(ctx context.Context, q substrate.Query) (*substrate.Page, error)
 	Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error)
+	// Aggregate is the aggregate read (substrate.Dataset.Aggregate).
+	Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error)
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
 	Log(line string)

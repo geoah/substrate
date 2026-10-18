@@ -12,13 +12,14 @@ import (
 )
 
 // THE RECORDS ROUTE. Every "read some records" question is one route,
-// `GET /api/v1/records`, in three modes told apart by their parameters:
+// `GET /api/v1/records`, in four modes told apart by their parameters:
 //
 //	?filter&orderBy&first&after|offset&expand&withAnnotations&count  the list
 //	?q&mode&filter&first                                  the ranked read
 //	?watch=1&filter&from&generation                       the tail
+//	?aggregate&downsample&filter                          the aggregate read
 //
-// The three share `filter`, and each names which of its arms it honors and
+// The four share `filter`, and each names which of its arms it honors and
 // refuses the rest by name: a silently ignored parameter returns unfiltered
 // rows that look filtered. The list carries the whole grammar; the ranked
 // read pushes `filter.kinds` alone into the ranking, because both arms cap
@@ -43,6 +44,10 @@ var (
 	// recordsWatchParams is the tail: the mode switch, the kind narrowing and
 	// the resume cursor.
 	recordsWatchParams = []string{"watch", "filter", "from", "generation"}
+	// recordsAggregateParams is the aggregate read (decision 0161): the
+	// body, the chart's columns beside it, and the filter that selects the
+	// streams or the records.
+	recordsAggregateParams = []string{"aggregate", "downsample", "filter"}
 )
 
 func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +60,8 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 	}
 	v := r.URL.Query()
 	switch {
+	case v.Has("aggregate") || v.Has("downsample"):
+		h.aggregateRecords(w, r, ds)
 	case v.Get("watch") == "1":
 		if bad := unsupportedParam(r, recordsWatchParams...); bad != "" {
 			writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported with watch=1")
@@ -165,6 +172,61 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, page)
 	}
+}
+
+// aggregateRecords is the aggregate read: `aggregate` and `downsample` decoded
+// strictly, the filter's arms held to what the read can test, and every other
+// refusal the dataset's, a 422 naming the limit, the form or the unit.
+func (h *handler) aggregateRecords(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) {
+	ctx := r.Context()
+	v := r.URL.Query()
+	if bad := unsupportedParam(r, recordsAggregateParams...); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported with aggregate")
+		return
+	}
+	if !v.Has("aggregate") {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"downsample needs aggregate beside it: the metric and the range the columns cut")
+		return
+	}
+	var q substrate.AggregateQuery
+	q.Aggregate = &substrate.Aggregate{}
+	if err := decodeJSONStrict(strings.NewReader(v.Get("aggregate")), q.Aggregate); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "aggregate: "+err.Error())
+		return
+	}
+	if v.Has("downsample") {
+		q.Downsample = &substrate.Downsample{}
+		if err := decodeJSONStrict(strings.NewReader(v.Get("downsample")), q.Downsample); err != nil {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "downsample: "+err.Error())
+			return
+		}
+	}
+	f, err := parseFilter(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	if q.Aggregate.Property == nil {
+		if arm := substrate.AggregateFilterArm(f); arm != "" {
+			writeError(w, http.StatusBadRequest, codeBadRequest, substrate.AggregateFilterArmMessage(arm))
+			return
+		}
+	}
+	if len(f.Kinds) > 0 {
+		kinds, ok := h.resolveKinds(w, r, ds, f.Kinds)
+		if !ok {
+			return
+		}
+		f.Kinds = kinds
+	}
+	q.Filter = f
+	res, err := ds.Aggregate(ctx, q)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // resolveKinds turns filter.kinds into kind identities, answering 404 for a

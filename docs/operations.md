@@ -684,7 +684,9 @@ it trusts:
   index and queue the same work instead of deriving it inside the replay,
   so their transaction holds the repository's write lock for the records
   alone; the pass starts once they commit. A metric record whose `rollups`
-  change queues the rows of its streams the same way.
+  change queues the rows of its streams the same way. While any of this is
+  owed for a kind, an aggregate read over it answers `503` with
+  `Retry-After`.
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.
@@ -1585,8 +1587,9 @@ the exec path needs nothing open at all.
   the changelog, and it is the repair for an index a fault left behind its
   records, short of a rebuild. It prints the kinds and the records it
   queued. The server re-derives them at its next start and logs the
-  progress lines of a reshaped kind's indexes. Stop the server first, as for
-  `rebuild`.
+  progress lines of a reshaped kind's indexes; until the pass ends, an
+  aggregate read over those kinds answers `503` with `Retry-After`. Stop the
+  server first, as for `rebuild`.
 - **`user reset <repository>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new

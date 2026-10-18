@@ -67,6 +67,13 @@ type Dataset interface {
 	// the window, read on one snapshot. internal/window expands and merges;
 	// the engine holds no expander.
 	Window(ctx context.Context, q WindowQuery) (*WindowPage, error)
+	// Aggregate is the aggregate read (aggregate.go, decision 0161): the
+	// observed index or a declared number of the filtered kinds, reduced
+	// into buckets on one snapshot. Every refusal (two selectors, a reducer
+	// the form does not take, a unit outside the measure, a request over
+	// budget) is an ErrValidation naming what it refuses, before any index
+	// row is read.
+	Aggregate(ctx context.Context, q AggregateQuery) (*AggregateResult, error)
 	Search(ctx context.Context, in SearchInput) (SearchResult, error)
 	Changes(ctx context.Context, after int64, f ChangeFilter, limit int) ([]Change, error)
 	// Head is the changelog's highest committed seq and its history

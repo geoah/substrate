@@ -278,6 +278,16 @@ func (c *client) search(ctx context.Context, q url.Values) (*substrate.RankedPag
 	return &page, nil
 }
 
+// aggregate is the aggregate read: the filter, the aggregate body and the
+// downsample beside it, answered as one AggregateResult.
+func (c *client) aggregate(ctx context.Context, q url.Values) (*substrate.AggregateResult, error) {
+	var res substrate.AggregateResult
+	if err := c.do(ctx, http.MethodGet, pathRecords, q, nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // setFilterKinds names the kinds a records read is scoped to, INSIDE the
 // `filter` parameter: the route has no kind in its path, so the kind rides
 // with the rest of the grammar. A filter the caller already built (--filter,

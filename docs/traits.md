@@ -242,16 +242,14 @@ opt into twice:
   [Observations](observations.md) has every rule and the sample kinds that
   bind it.
 - **`metric`** marks the catalogue entry an observed value names. The
-  observed index keeps the rollup tiers its `rollups` lists. It contracts
-  what the aggregate read is built to take (`measures`, `unit` and
-  `bucketPlace`), which does not exist yet, and what a reader shows (`name`,
-  `form`, `codeSet`, `displayPrecision` and `category`).
+  aggregate read takes its `measures`, `unit` and `bucketPlace`, the
+  observed index keeps the rollup tiers its `rollups` lists, and a reader
+  shows its `name`, `form`, `codeSet`, `displayPrecision` and `category`.
   Every write is held to the unit table and to the tier list
   ([observations](observations.md#the-metric-and-source-contracts)).
 - **`source`** marks the device, app, service or lab a value came from. Its
   `priorities`, keyed by a metric's full record path, are the order the
-  aggregate read's priority policy is built to take when a request names
-  none.
+  aggregate read's priority policy takes when a request names none.
 - **`result`** marks a single observed kind that holds a laboratory's result
   shapes: `codedValue`, `ratio` and `text` beside `value`, of which a record
   holds exactly one, with the lab's `interpretation` and `referenceRanges`.

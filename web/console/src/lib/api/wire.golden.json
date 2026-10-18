@@ -37,6 +37,144 @@
     "totalTokens": true,
     "turns": true
   },
+  "Aggregate": {
+    "bucket": false,
+    "budget": false,
+    "durationUnit": false,
+    "fill": false,
+    "from": false,
+    "groupBy": false,
+    "latest": false,
+    "maxGap": false,
+    "metric": false,
+    "metrics": false,
+    "property": false,
+    "range": false,
+    "reducers": false,
+    "rolling": false,
+    "sources": false,
+    "unit": false
+  },
+  "AggregateBucket": {
+    "calendar": false,
+    "every": false,
+    "fallbackTimezone": false,
+    "origin": false,
+    "place": false,
+    "records": false,
+    "timezone": false,
+    "weekStart": false
+  },
+  "AggregateBudget": {
+    "maxBuckets": false,
+    "maxGroups": false,
+    "maxSamples": false
+  },
+  "AggregateGroup": {
+    "about": false,
+    "channel": false,
+    "code": false,
+    "currency": false,
+    "metric": false,
+    "properties": false,
+    "source": false,
+    "statistic": false
+  },
+  "AggregateHead": {
+    "changelog": true,
+    "generation": true
+  },
+  "AggregateMetric": {
+    "ref": true
+  },
+  "AggregateMetricRead": {
+    "durationUnit": false,
+    "from": false,
+    "reducers": false,
+    "ref": true,
+    "statistic": false,
+    "unit": false
+  },
+  "AggregateProperty": {
+    "anchor": false,
+    "groupBy": false,
+    "name": true,
+    "sources": false,
+    "utcOffset": false
+  },
+  "AggregateRange": {
+    "gte": true,
+    "lt": true,
+    "recordedLocal": false
+  },
+  "AggregateRecord": {
+    "ref": true,
+    "version": true
+  },
+  "AggregateRecordOffsets": {
+    "end": false,
+    "start": true
+  },
+  "AggregateRecordSources": {
+    "match": false,
+    "order": false,
+    "policy": false,
+    "property": false
+  },
+  "AggregateRecords": {
+    "filter": true,
+    "sources": false,
+    "utcOffsets": false
+  },
+  "AggregateResult": {
+    "bucket": false,
+    "exact": true,
+    "from": false,
+    "head": true,
+    "metric": false,
+    "property": false,
+    "rows": true,
+    "sources": false,
+    "unit": false,
+    "units": false
+  },
+  "AggregateRolling": {
+    "buckets": true,
+    "reducers": false,
+    "through": false
+  },
+  "AggregateRow": {
+    "bounded": false,
+    "count": true,
+    "coverage": false,
+    "end": true,
+    "form": false,
+    "from": false,
+    "group": false,
+    "nonAdditive": false,
+    "offsetless": false,
+    "prorated": false,
+    "record": false,
+    "sources": false,
+    "start": true,
+    "synthetic": false,
+    "values": true
+  },
+  "AggregateSources": {
+    "order": false,
+    "policy": false
+  },
+  "AggregateValue": {
+    "at": false,
+    "code": false,
+    "comparator": false,
+    "n": false,
+    "of": false,
+    "reducer": true,
+    "rolling": false,
+    "unit": false,
+    "value": true
+  },
   "BundleClosure": {
     "agentDescriptions": false,
     "agents": true,
@@ -224,6 +362,9 @@
     "step": true,
     "to": false
   },
+  "Downsample": {
+    "points": true
+  },
   "ErrorEnvelope": {
     "error": true
   },
@@ -233,7 +374,8 @@
     "head": false,
     "message": true,
     "problemDetails": false,
-    "problems": false
+    "problems": false,
+    "reason": false
   },
   "FunctionCalled": {
     "effects": true,

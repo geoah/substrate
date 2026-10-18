@@ -118,7 +118,7 @@ func (h *handler) requireAuth(next http.Handler) http.Handler {
 			// The cause of a 503 is a database or an open failing, which the
 			// client is not shown, so the log is the only place it surfaces.
 			if status == http.StatusServiceUnavailable {
-				writeUnavailableCause(w, r, cause, msg)
+				writeUnavailableCause(w, r, cause, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
 				return
 			}
 			writeError(w, status, code, msg)

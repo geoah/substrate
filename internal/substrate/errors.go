@@ -89,7 +89,17 @@ var (
 	// client can stream (a triggered run) holds it. It wraps ErrConflict, so
 	// the API answers 409.
 	ErrNoRunningTurn = fmt.Errorf("%w: no running chat turn", ErrConflict)
+	// ErrObservedRederiving answers an aggregate read over an observed index
+	// the background pass still owes: the records moved under a changed
+	// declaration, a changed metric's `rollups`, a rebuild or an import, and
+	// the index holds what they derived before. It wraps ErrUnavailable, so
+	// the API answers 503 with Retry-After, and the payload's reason is
+	// ReasonObservedRederiving so a client tells it from every other 503.
+	ErrObservedRederiving = fmt.Errorf("%w: the observed index this read selects is being re-derived", ErrUnavailable)
 )
+
+// ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
+const ReasonObservedRederiving = "observed_rederiving"
 
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
@@ -102,8 +112,12 @@ type ErrorEnvelope struct {
 // `compacted` refusal only: the changelog head and history generation the
 // client re-lists from and resumes at, so a refused cursor names its
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
+// Reason narrows a code for a client that acts on the case, from a closed
+// set: ReasonObservedRederiving on `unavailable` alone today. A client that
+// does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`
+	Reason         string          `json:"reason,omitempty"`
 	Message        string          `json:"message"`
 	Problems       []string        `json:"problems,omitempty"`
 	ProblemDetails []ProblemDetail `json:"problemDetails,omitempty"`

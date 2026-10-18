@@ -46,7 +46,7 @@ Chosen: all three out of the index.
   balance or a price is a typed kind with a `money` property
   ([0140](0140-money-is-an-integer-amount-of-its-currencys-minor-unit.md)),
   aggregated through the aggregate read's `property` selector
-  (0161).
+  ([0161](0161-the-aggregate-read-is-a-mode-of-the-records-route-checked-before-it-runs.md)).
   A price per unit is money beside a quantity, not a UCUM code.
 
 ### Consequences

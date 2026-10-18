@@ -62,7 +62,10 @@ data:
   # version 41: the `observed`, `revised`, `metric`, `source` and `result`
   # traits, which the write path holds observed values, rewritten sessions,
   # metrics, sources and lab results to (decision records 0154 and 0162).
-  version: 41
+  # version 42: the query tool card takes `aggregate` and `downsample`, the
+  # aggregate read (decision record 0161): one metric, several, the property
+  # read or the latest read.
+  version: 42
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

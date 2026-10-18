@@ -73,7 +73,9 @@ nothing, there are none.
 | **point** | One value of an observed record: one per observation, one per point of a trace, derived from the record whenever the index or a read needs it. It is **available** when it holds a value or a code that is not empty; a `null` is an unavailable point and counts in nothing. |
 | **segment** | The observed index's one row per observed record: its stream, the span of its points, what it holds and a fingerprint of what the index reads from it. |
 | **rollup row** | One row of `observed_rollups`: one stream's points of one form in one bucket of one tier (`5m`, `15m`, `1h` or `1d`, as its metric's `rollups` name) and group, reduced to the statistics a read merges exactly. |
-| **group** | In the observed index, the points of one stream, form and bucket that share a code, unit, `delta` and UTC offset: one rollup row each. Never the old word for an authority. |
+| **group** | In the observed index, the points of one stream, form and bucket that share a code, unit, `delta` and UTC offset: one rollup row each. In an aggregate read, the streams one combination of `groupBy` values selects: one row per bucket each. Never the old word for an authority. |
+| **bucket** | One time window of an aggregate read: a fixed length, a calendar unit in a zone, a recorded-local day, or a matched record's span. |
+| **recorded-local calendar** | The calendar time mode with no `timezone`: each value lands on the date its own UTC offset names, so a day spent abroad is that place's day. |
 
 ## Installed things
 
@@ -115,7 +117,7 @@ nothing, there are none.
 | ---- | ---------- |
 | **token** | A bearer credential, itself a record. It has full access to its repository; it carries no scopes. |
 | **blob** | Content-addressed bytes whose digest is its id and whose manifest is an ordinary record. |
-| **records route** | `GET /api/v1/records`: the one read of many records, in three modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `offset`, `expand`), the ranked read (`q`) and the tail (`watch=1`). `POST` there creates one record under a server-assigned id. Decision record 0079. |
+| **records route** | `GET /api/v1/records`: the one read of many records, in four modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `offset`, `expand`), the ranked read (`q`), the tail (`watch=1`) and the aggregate read (`aggregate`, decision record 0161). `POST` there creates one record under a server-assigned id. Decision record 0079. |
 | **record path** | `/api/v1/{authority}/{package}/{kind}/{id}`: one record's URL, which is its reference value. Decision record 0033. |
 | **referencing** | The filter arm that reads a reference backwards: the records pointing at one record (`ref`) or at any of several (`refs`), each matched by its canonical and former ids. The page carries `matches` naming the property each pointed from. |
 | **expand** | The list parameter naming reference properties whose referents come back beside the page under `included`, keyed by record path, one hop. |

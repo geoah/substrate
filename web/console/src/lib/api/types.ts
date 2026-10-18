@@ -26,6 +26,11 @@ export type ErrorCode =
   | "unavailable"
   | "network"
 
+/** The closed set of `reason`s that narrow an error code for a client that
+ * acts on the case. `observed_rederiving` rides an `unavailable` (503): the
+ * aggregate read selects an observed index the server is re-deriving. */
+export type ErrorReason = "observed_rederiving"
+
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`
  * becomes `{path: "props.name", message: "required"}`), so a form maps a
@@ -38,9 +43,11 @@ export interface ProblemDetail {
 /** The refusal inside the REST error envelope (`substrate.ErrorPayload`,
  * served as `{error: ErrorPayload}`). `head` and `generation` ride a
  * `compacted` refusal only: the changelog head and history generation to
- * re-list from and resume at. */
+ * re-list from and resume at. `reason` narrows the code where a client acts
+ * on the case; a reason the console does not know is read as its code. */
 export interface ErrorPayload {
   code: Exclude<ErrorCode, "network">
+  reason?: ErrorReason
   message: string
   problems?: string[]
   problemDetails?: ProblemDetail[]
@@ -63,6 +70,7 @@ export class ApiError extends Error {
   problems: string[]
   problemDetails: ProblemDetail[]
   retryAfter?: number
+  reason?: ErrorReason
 
   constructor(
     code: ErrorCode,
@@ -70,7 +78,8 @@ export class ApiError extends Error {
     status: number,
     problems: string[] = [],
     problemDetails: ProblemDetail[] = [],
-    retryAfter?: number
+    retryAfter?: number,
+    reason?: ErrorReason
   ) {
     super(message)
     this.name = "ApiError"
@@ -79,6 +88,7 @@ export class ApiError extends Error {
     this.problems = problems
     this.problemDetails = problemDetails
     this.retryAfter = retryAfter
+    this.reason = reason
   }
 }
 
@@ -343,6 +353,279 @@ export interface OccurrenceProblem {
   kind: string
   id: string
   message: string
+}
+
+/** One reducer of the aggregate read: a bare name, or an object naming one
+ * reducer with its argument (`{percentile: 0.05}`, `{durationIn: [95, 114]}`,
+ * `{timeInState: ["open"]}`). A value's `reducer` is spelled as the request
+ * spelled it. */
+export type AggregateReducer =
+  | string
+  | { percentile: number }
+  | { durationIn: number[] }
+  | { timeInState: string[] }
+
+/** Where an aggregate reads from: raw points, vendor `summary` points, or
+ * raw where a bucket is covered and the summary otherwise. */
+export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
+
+/** A stream key a result may be grouped by; `statistic` on a read from
+ * summaries only. */
+export type AggregateGroupKey =
+  "source" | "about" | "code" | "metric" | "channel" | "statistic"
+
+/** The `aggregate` parameter of `GET /records` (`substrate.Aggregate`,
+ * decision 0161). Exactly one of `metric`, `metrics` and `property`, except
+ * the latest read (`latest: true`), which may name none. */
+export interface Aggregate {
+  metric?: AggregateMetric
+  /** Up to 16 metrics read over one range, bucket, groupBy and sources
+   * policy, each with its own unit, reducers, from and statistic; every row
+   * names its metric in `group.metric`. */
+  metrics?: AggregateMetricRead[]
+  property?: AggregateProperty
+  /** Each group's newest point instead of buckets: no range, bucket or
+   * reducers. */
+  latest?: boolean
+  /** `raw` by default. */
+  from?: AggregateFrom
+  range?: AggregateRange
+  bucket?: AggregateBucket
+  groupBy?: AggregateGroupKey[]
+  reducers?: AggregateReducer[]
+  sources?: AggregateSources
+  /** A unit of the metric's measure (or the property's). */
+  unit?: string
+  /** The unit `durationIn` and `timeInState` answer their times in. */
+  durationUnit?: string
+  /** An ISO 8601 duration capping a gauge's hold. */
+  maxGap?: string
+  /** `zero`: a bucket a series holds no row in answers zero. */
+  fill?: string
+  rolling?: AggregateRolling
+  budget?: AggregateBudget
+}
+
+export interface AggregateMetric {
+  ref: string
+}
+
+/** One metric of a several-metric read. `unit` defaults to the metric
+ * record's, `durationUnit`, `reducers` and `from` to the read's; `statistic`
+ * names the one summary statistic its summaries are read at. */
+export interface AggregateMetricRead {
+  ref: string
+  unit?: string
+  durationUnit?: string
+  reducers?: AggregateReducer[]
+  from?: AggregateFrom
+  statistic?: string
+}
+
+export interface AggregateProperty {
+  name: string
+  /** The datetime property placing a record in time; `at` by default. */
+  anchor?: string
+  /** The declared int property holding each record's UTC offset in minutes
+   * at its anchor, which the recorded-local calendar places it by. */
+  utcOffset?: string
+  /** Declared string, enum or reference properties to group the records
+   * by, each row naming its values in `group.properties`. */
+  groupBy?: string[]
+  /** Chooses among records several sources wrote of one thing. */
+  sources?: AggregateRecordSources
+}
+
+/** The records' source policy: `separate` (every record, the default) or
+ * `priority`, which drops a record whose `[at, endsAt)` overlaps a record of
+ * a higher-ranked source, the `match` properties equal. `property` names
+ * the records' declared property holding their source, and `order` ranks
+ * its values, first highest. */
+export interface AggregateRecordSources {
+  policy?: string
+  order?: string[]
+  property?: string
+  match?: string[]
+}
+
+/** The half-open range [gte, lt), RFC 3339 instants. */
+export interface AggregateRange {
+  gte: string
+  lt: string
+  /** `gte` and `lt` name whole recorded-local dates (dates, or midnights
+   * whose date is read as written): a day's row is in range where the date
+   * its own UTC offset names is. A recorded-local day read's only. */
+  recordedLocal?: boolean
+}
+
+/** One of the four time modes: `every` (+ `origin`), `calendar` with a
+ * `timezone`, `calendar` alone (the recorded-local calendar), or `records`. */
+export interface AggregateBucket {
+  every?: string
+  origin?: string
+  /** `hour`, `day`, `week` or `month`. */
+  calendar?: string
+  timezone?: string
+  /** The zone the recorded-local calendar places a value written without a
+   * UTC offset by; without it such a value is refused. */
+  fallbackTimezone?: string
+  weekStart?: string
+  /** Where a value with a span lands: `start` or `end`, the bucket its last
+   * instant lies in, so a night lands on the day it ends. Absent, the
+   * metric's `bucketPlace` decides. */
+  place?: string
+  records?: AggregateRecords
+}
+
+export interface AggregateRecords {
+  filter: RecordFilter
+  /** Keeps one source's record where several sources' records overlap. */
+  sources?: AggregateRecordSources
+  /** The properties a row's start and end are written at. */
+  utcOffsets?: AggregateRecordOffsets
+}
+
+/** The records' declared int properties holding their UTC offset in minutes
+ * where they start and end (`end` is `start`'s where absent); a record
+ * holding none is written at the range's offset. */
+export interface AggregateRecordOffsets {
+  start: string
+  end?: string
+}
+
+/** `separate` (the default), or `priority` with `order`. */
+export interface AggregateSources {
+  policy?: string
+  order?: string[]
+}
+
+/** A window of `buckets` buckets ending at the row's own (`through`
+ * `current`, the default) or at the one before it (`previous`). */
+export interface AggregateRolling {
+  buckets: number
+  reducers?: AggregateReducer[]
+  through?: string
+}
+
+export interface AggregateBudget {
+  maxBuckets?: number
+  maxSamples?: number
+  maxGroups?: number
+}
+
+/** The `downsample` parameter: `points` columns, each first, last, min and
+ * max (M4). Refused beside `reducers`, `rolling` and `fill`. */
+export interface Downsample {
+  points: number
+}
+
+/** The one answer of an aggregate read (`substrate.AggregateResult`). */
+export interface AggregateResult {
+  metric?: string
+  property?: string
+  /** Absent on a several-metric read, whose `units` names each metric's. */
+  unit?: string
+  /** A several-metric read's unit of each metric, by its record path. */
+  units?: Record<string, string>
+  bucket?: AggregateBucket
+  /** Absent on a several-metric read whose metrics read from different
+   * points. */
+  from?: string
+  /** False when a value came from a float reduction or a rounded unit
+   * conversion. */
+  exact: boolean
+  rows: AggregateRow[]
+  /** Every source that fed a row, by record path; `""` stands for a stream
+   * that names no source. */
+  sources?: string[]
+  head: AggregateHead
+}
+
+/** The changelog position and history generation the read was served at. */
+export interface AggregateHead {
+  changelog: number
+  generation: string
+}
+
+/** One bucket of one group. `start` and `end` carry their own offsets. */
+export interface AggregateRow {
+  start: string
+  end: string
+  /** `gauge`, `amount`, `counter` or `summary`; absent on a property read. */
+  form?: string
+  group?: AggregateGroup
+  /** The matched record, in the records time mode only. */
+  record?: AggregateRecord
+  /** `raw` or `summaries`: which served the row. */
+  from?: string
+  /** The sources that fed the row, by record path; `""` stands for a stream
+   * that names no source. */
+  sources?: string[]
+  /** An ISO 8601 duration. */
+  coverage?: string
+  /** Null where the row holds no value: the server writes an empty list as
+   * null (a coded state that held no time). */
+  values: AggregateValue[] | null
+  count: number
+  /** In the recorded-local calendar, the points among `count` written
+   * without a UTC offset and placed by `bucket.fallbackTimezone`. */
+  offsetless?: number
+  /** In the records mode, the amounts among `count` the window cut, each
+   * counted by the part of its span inside it. */
+  prorated?: number
+  /** The values among `count` written with a comparator (`<0.01`): every
+   * reducer that needs their number answers null for the row. */
+  bounded?: number
+  /** A row `fill` made. */
+  synthetic?: boolean
+  /** The records time mode: windows may overlap, so sums do not add up. */
+  nonAdditive?: boolean
+}
+
+/** A row's group: a record path for `source`, `about` and `metric`, the
+ * code for `code`, the summaries' statistic for
+ * `statistic`, a money property's currency, and on a property read each
+ * `property.groupBy` property's value (absent where the records hold none). */
+export interface AggregateGroup {
+  source?: string
+  about?: string
+  code?: string
+  metric?: string
+  channel?: string
+  statistic?: string
+  currency?: string
+  properties?: Record<string, string>
+}
+
+export interface AggregateRecord {
+  ref: string
+  version: number
+}
+
+/** One reducer's answer. `value` is a decimal string, or null: no answer (a
+ * reducer over a censored value included), or a coded `first`/`last`, whose
+ * answer is `code`. */
+export interface AggregateValue {
+  reducer: AggregateReducer
+  value: string | null
+  /** `<`, `<=`, `>=` or `>`: the true number lies beyond `value` (a
+   * censored first, last or latest value, or a min or max one decides). */
+  comparator?: string
+  /** Absent for `count`. */
+  unit?: string
+  /** The code a coded `first` or `last` answers, or the state a
+   * `timeInState` value is the time of. */
+  code?: string
+  /** On a downsample, the instant a column's `first`, `last`, `min` or
+   * `max` was taken at (of equal extremes, the earliest). A `min` or `max`
+   * served from rollup rows leaves it out where finding it would pass
+   * `maxSamples`. */
+  at?: string
+  /** A rolling value: `of` rolled over `rolling` buckets, `n` of which held
+   * a value. */
+  rolling?: number
+  of?: AggregateReducer
+  n?: number
 }
 
 /** One row of the cross-collection change feed. The payload's `properties` key

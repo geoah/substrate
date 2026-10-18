@@ -660,6 +660,7 @@ The whole surface:
 host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
+host.records.aggregate(body)                      # the aggregate read's result
 host.functions.call(function, input=None)         # permissions.call gated
 host.agents.call(agent, input)                    # permissions.agents gated
 host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
@@ -742,6 +743,41 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
 # page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
 ```
 
+`host.records.aggregate(body)` is the records route's
+[aggregate read](api.md#the-aggregate-read), its parameters as one document:
+`{"filter": ..., "aggregate": ..., "downsample": ...}`. `filter.kinds` names
+the observed kinds it reads (and `aggregate.bucket.records.filter.kinds` the
+records mode's), each held to the reads allowlist; a body that names none
+trips the allowlist. So are the kind of every metric `metric` and `metrics`
+name, whose record the read looks up, the targets of either filter's
+`referencing` (as a list's are), and, where a `priority` or `summaries`
+policy names no `order`, the kind of the source records whose priorities
+rank the sources. It answers the result dict, and pays one call and its
+rows against the read budget. Before the read runs, its `budget.maxBuckets`
+(and on the latest read `budget.maxGroups`) is lowered to the rows left. The
+read checks its series times the buckets it answers, the rows it could
+answer, against that before it takes a point (a rolling window's buckets
+before the range, and the records a records-mode source policy drops, are
+not counted), so a read that could pass the row budget is refused
+before it runs, however few points it holds: a read by day over 2025 and
+2026 makes 730 buckets, over the default 500 rows. That refusal is a budget
+trip like any other. A larger `budget.maxBuckets` does not help, because it
+is lowered again; a larger `permissions.reads.budgets.rows` does.
+
+```python
+# permissions.reads.kinds grants observations/trace and observations/metric
+res = host.records.aggregate({
+    "filter": {"kinds": ["ada.example.com/observations/trace"]},
+    "aggregate": {
+        "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+        "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+        "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+        "reducers": [{"percentile": 0.05}, "min"],
+    },
+})
+# res["rows"]: [{"start": "2026-09-01T00:00:00+03:00", "values": [...], ...}, ...]
+```
+
 **Reads are scoped and budgeted.** Reads see committed state, never this
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
@@ -749,7 +785,7 @@ empty, so every `list` and `search` is refused and every `get` answers absent.
 A `list` whose `filter.referencing` names a record of a kind outside the
 allowlist trips as one naming that kind in `filter.kinds` does. The record
 the delivery's envelope names is the exception, a delete's included: a
-`list` may name it, which is how `host.observed.reconcile`
+`list` or `aggregate` may name it, which is how `host.observed.reconcile`
 finds what the body wrote from that record before, whatever kinds the
 trigger fires on.
 A forbidden kind answers exactly like an absent id, same nil shape and same
