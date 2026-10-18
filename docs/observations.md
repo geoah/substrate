@@ -440,6 +440,21 @@ The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
 
+The sample ships two record views
+(`samples/health/views.yaml`), records of the seeded console package's
+`recordview` kind that describe a record page's layout. Each names its
+metrics by reference to the metric records, and the import lands both at
+ids under the repository's authority (`<authority>/health/sleep`). The sleep
+view reads the heart rate, heart rate variability (`hrv_rmssd`) and
+respiratory rate over the night, and the night's `sleep_stage` spans in the
+order awake, in bed, REM, asleep, light, deep, from the sleep's own source,
+with the time in each. The workout view reads the workout's distance and
+time moving, the heart rate over the workout, the time in five heart rate
+zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
+minute, five 19-beat bands from half of a 190 maximum) and the speed. Edit a
+view to change it, such as zone bounds from a measured maximum; a re-import
+keeps your edit. The console draws no record view yet.
+
 ### Lab results in both unit systems
 
 The sample ships an `analyte` record for each metric of the nine lab pairs

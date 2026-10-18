@@ -143,6 +143,7 @@ const WORDS = new Set([
   "type",
   "url",
   "user",
+  "view",
   "web",
   "workflow",
   "workout",

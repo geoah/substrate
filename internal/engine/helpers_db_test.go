@@ -61,7 +61,7 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 }
 
 // newDataset provisions a repository, imports the TASKS sample package and
-// returns its dataset. Creation seeds core and llm (and three keyless
+// returns its dataset. Creation seeds core, llm and console (and three keyless
 // provider rows), so a test that reads any
 // sample kind imports one; tasks `requires:` people and scheduling, so the
 // three arrive together and cover task, project, tasklog, person, team,
@@ -91,7 +91,7 @@ func newVocabularyDataset(t *testing.T, names ...string) (substrate.Service, sub
 }
 
 // newCoreDataset provisions a repository and stops there: the seeded
-// vocabulary (core and llm) and the three keyless provider rows. OpenForTest
+// vocabulary (core, llm and console) and the three keyless provider rows. OpenForTest
 // does not import the LLM sample; production Open does.
 func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, substrate.Dataset) {
 	t.Helper()

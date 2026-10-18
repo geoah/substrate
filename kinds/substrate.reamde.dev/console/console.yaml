@@ -1,0 +1,19 @@
+# What the console shows, as data, in its own seeded package (decision record
+# 0166). The console gives no kind outside the seeded packages special
+# treatment: how a sample's or a provider's kind is presented comes from
+# records of the kinds here, which a sample ships beside its kinds and an owner
+# edits, and never from keys on the kind declarations themselves.
+#
+# SEEDED, like core and llm: this package's source is `builtin`, so the seed,
+# the boot upgrade and the declaration-write refusal treat it as they treat
+# them, and a repository created before it existed receives it at its next
+# open. Its kinds are `internal`: a console reads them, and a reader never
+# browses them as data.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/console
+data:
+  authority: substrate.reamde.dev
+  package: console
+  # a maturity statement, not a routing key: no envelope carries a version.
+  version: 1

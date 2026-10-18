@@ -324,6 +324,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0163](0163-positions-forecasts-and-money-stay-out-of-the-observed-index.md) | Positions, forecasts and money stay out of the observed index | accepted |
 | [0164](0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md) | A webhook's signature is verified by the host when the trigger declares one | accepted |
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
+| [0166](0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md) | A record page's layout is a record in a seeded console package | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |
 | [0169](0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md) | A chat turn runs detached from its client, and its thread is attached by id | proposed |
 | [0170](0170-a-chat-thread-is-titled-by-its-first-message-then-by-its-model-and-an-owner-rename-holds.md) | A chat thread is titled by its first message, then by its model, and an owner rename holds | proposed |

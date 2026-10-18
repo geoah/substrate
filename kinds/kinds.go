@@ -24,16 +24,18 @@ import (
 )
 
 // SeedAuthority is the one authority whose packages are the seed. Its packages
-// are core and llm (record 0077), and [Seed] is the whole authority rather
-// than any named package: adding a third is adding a directory, because every
-// reader of the seed keys on the authority and on `source: builtin`.
+// are core, llm (record 0077) and console (record 0166), and [Seed] is the
+// whole authority rather than any named package: adding one is adding a
+// directory, because every reader of the seed keys on the authority and on
+// `source: builtin`.
 //
-// SeedCorePackage and SeedLLMPackage name the two the binary ships today, for
-// the callers that address one of them in particular.
+// SeedCorePackage, SeedLLMPackage and SeedConsolePackage name the three the
+// binary ships today, for the callers that address one of them in particular.
 const (
-	SeedAuthority   = "substrate.reamde.dev"
-	SeedCorePackage = SeedAuthority + "/core"
-	SeedLLMPackage  = SeedAuthority + "/llm"
+	SeedAuthority      = "substrate.reamde.dev"
+	SeedCorePackage    = SeedAuthority + "/core"
+	SeedLLMPackage     = SeedAuthority + "/llm"
+	SeedConsolePackage = SeedAuthority + "/console"
 )
 
 // The pattern is part of the contract: an authority directory it misses is a

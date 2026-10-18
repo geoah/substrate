@@ -729,11 +729,11 @@ func (r *Registry) resolveBundle(g *Package) []string {
 				where, req, floor, held.Version))
 		}
 	}
-	// The SEEDED packages need no `requires:` line: the binary writes both
+	// The SEEDED packages need no `requires:` line: the binary writes each
 	// into every repository at creation, so they are always present, and a
 	// bundle taking an `llm/provider` input is asking for a row of a kind
 	// nobody can be without (record 0077).
-	required := map[string]bool{PackageCore: true, PackageLLM: true, g.Identity: true}
+	required := map[string]bool{PackageCore: true, PackageLLM: true, PackageConsole: true, g.Identity: true}
 	for _, req := range b.Requires {
 		required[req] = true
 	}

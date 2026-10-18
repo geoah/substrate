@@ -309,7 +309,7 @@ func xaCaseIsolation(c *C) {
 		c.requiref(!mine[row.Kind+"/"+row.RecordID],
 			"the second user's changelog carries the first user's %s `%s` at seq %d", row.Kind, row.RecordID, row.Seq)
 		c.requiref(row.Kind != taskKind && row.Kind != personKind,
-			"the second user's changelog carries a %s row at seq %d; registration seeds core and llm alone", row.Kind, row.Seq)
+			"the second user's changelog carries a %s row at seq %d; registration seeds core, llm and console alone", row.Kind, row.Seq)
 		c.requiref(xaSeeded(row.Kind),
 			"the second user's changelog carries a %s row at seq %d, outside the seed", row.Kind, row.Seq)
 	}

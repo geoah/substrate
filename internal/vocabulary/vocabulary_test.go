@@ -3213,24 +3213,29 @@ func TestShippedSchemaLoads(t *testing.T) {
 		"substrate.reamde.dev/llm/provider", "substrate.reamde.dev/llm/thread",
 		"substrate.reamde.dev/llm/message", "substrate.reamde.dev/llm/interaction",
 		"substrate.reamde.dev/core/agent", "substrate.reamde.dev/core/function", "substrate.reamde.dev/core/bundle",
+		"substrate.reamde.dev/console/recordview",
 	} {
 		if _, ok := r.ByIdentity(ident); !ok {
 			t.Errorf("%s missing", ident)
 		}
 	}
-	// THE SEEDED TREE IS CORE AND LLM, beside the authority row that owns
-	// them. Every other package is one a repository installs; a domain
-	// package reappearing here would silently go back to being seeded into
-	// every new repository.
-	seeded := map[string]bool{vocabulary.PackageCore: true, vocabulary.PackageLLM: true}
+	// THE SEEDED TREE IS CORE, LLM AND CONSOLE, beside the authority row
+	// that owns them. Every other package is one a repository installs; a
+	// domain package reappearing here would silently go back to being seeded
+	// into every new repository.
+	seeded := map[string]bool{vocabulary.PackageCore: true, vocabulary.PackageLLM: true, vocabulary.PackageConsole: true}
 	for _, g := range r.PackageList() {
 		if g.IsAuthority() {
 			continue
 		}
 		if !seeded[g.Identity] {
-			t.Errorf("the seeded tree declares %s — only %s and %s are seeded; vocabulary ships as an installable package",
-				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM)
+			t.Errorf("the seeded tree declares %s: only %s, %s and %s are seeded; vocabulary ships as an installable package",
+				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM, vocabulary.PackageConsole)
 		}
+		delete(seeded, g.Identity)
+	}
+	for missing := range seeded {
+		t.Errorf("the seeded tree does not declare %s", missing)
 	}
 	// The actor domain is closed and flat: the three doors
 	// and the substrate's own hand.
