@@ -777,6 +777,9 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 			if lease == "" {
 				reason = lostThreadReason + "an unknown time"
 			}
+			if lost, ok := ds.lostRunReasons.Load(id); ok {
+				reason += "; the run failed with: " + lost.(string)
+			}
 			if _, err := t.patch(ref, substrate.PatchInput{Properties: map[string]any{
 				"status":     threadError,
 				"reason":     reason,
@@ -790,6 +793,7 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("settle lost thread %s: %w", id, err)
 		}
+		ds.lostRunReasons.Delete(id)
 		if settled {
 			ds.svc.log.Warn("substrate: agent thread lost its run, marked error", "thread", id)
 		}

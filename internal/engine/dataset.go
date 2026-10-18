@@ -164,6 +164,11 @@ type dataset struct {
 	// loop returns (agentloop.go runAgent). A `running` thread outside it
 	// whose lease expired has no loop left to settle it (settleLostThreads).
 	runningThreads sync.Map
+	// lostRunReasons maps a thread id to the reason its loop could not settle
+	// it with, left when even the settle after a failed write failed, for
+	// settleLostThreads. A loop that opens the thread again clears it, so the
+	// reason never outlives the run it describes.
+	lostRunReasons sync.Map
 	// chatTurns counts the detached chat turns this process runs for the
 	// repository, from admission to settle (agents.go ChatAgent), against
 	// maxRunningChatTurns.
@@ -246,6 +251,9 @@ type dataset struct {
 	// through before it is written, so a test can hold one.
 	agentWriteTimeout time.Duration
 	agentRowWrite     func(ctx context.Context, props map[string]any) error
+	// failedSettleTimeout is set only by tests: the budget of the settle
+	// after a failed write (zero is agentFailedSettleTimeout).
+	failedSettleTimeout time.Duration
 	// exporting is the repository's one export slot (export.go): set by
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.
