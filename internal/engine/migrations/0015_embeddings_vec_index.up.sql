@@ -1,0 +1,32 @@
+-- The semantic arm's candidates (decision 0174, engine/search.go
+-- semanticCandidates): an HNSW index over a half-precision copy of every
+-- stored vector, so a search reads the few hundred nearest chunks from the
+-- graph instead of scoring every vector the resolved pair has. 0001 shipped
+-- the table without one on purpose, while a repository held a few thousand
+-- chunks; a full scan of a few hundred thousand 1536-wide vectors is seconds
+-- to minutes a query on a small host.
+--
+-- Half precision halves the index, about 3 KB a chunk against 6 KB, so it has
+-- a chance of staying in memory where `shared_buffers` is small. The stored
+-- vectors stay full precision: the candidates are rescored exactly against
+-- them, so half precision decides which chunks are looked at and never the
+-- score a hit carries. The reader spells the same expression,
+-- `vec::halfvec(1536)` under `<=>`, or the planner cannot match the index.
+--
+-- One index over every repository's rows, as every index here is: the
+-- repository, the pair and the kinds are filters the scan applies as it walks
+-- the graph (`hnsw.iterative_scan`, set by the reader), not columns of the
+-- index.
+--
+-- The runner applies a migration inside a transaction, so this cannot build
+-- CONCURRENTLY, and it holds writes to `embeddings` while it builds. On an
+-- empty table the build is instant. An operator with a large table can build
+-- the same index by name before upgrading, outside any transaction and
+-- without blocking writes, and this statement is then a no-op (the type is
+-- qualified because the extension lives in `public`, as 0001 qualifies the
+-- column):
+--
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS embeddings_vec_hnsw_idx
+--       ON embeddings USING hnsw ((vec::public.halfvec(1536)) public.halfvec_cosine_ops);
+CREATE INDEX IF NOT EXISTS embeddings_vec_hnsw_idx
+    ON embeddings USING hnsw ((vec::public.halfvec(1536)) public.halfvec_cosine_ops);

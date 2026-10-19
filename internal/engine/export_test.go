@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
@@ -522,6 +523,59 @@ func WithValuesBudget(n int) Option { return func(o *options) { o.valuesBudget =
 // the row.
 func WithSearchMatchMax(n int) Option {
 	return func(o *options) { o.searchMatchMax, o.searchMatchMaxSet = n, true }
+}
+
+// WithTestSemanticHook runs fn with the semantic arm's context after the
+// query is embedded and before the candidate read (search.go semantic). A
+// hook that waits for ctx to end spends the arm's budget there; one that
+// cancels the caller's context stands for the request going away mid-arm.
+func WithTestSemanticHook(fn func(ctx context.Context)) Option {
+	return func(o *options) { o.searchSemanticHook = fn }
+}
+
+// SemanticCandidatePlan is the EXPLAIN of the semantic arm's candidate read
+// (search.go semanticCandidateQuery) for an arm of k records, planned on the
+// repository's own pool under the arm's scan settings, with sequential scans
+// and sorts priced out, so a test can tell whether the read's expression is
+// one the HNSW index serves. Both are priced out because on a near-empty
+// table a scan of the repository's rows by primary key and a sort is the
+// cheaper plan, and that plan says nothing about the index. kinds, when not empty, restricts the read as a search's
+// filter.kinds does.
+func SemanticCandidatePlan(ctx context.Context, d substrate.Dataset, kinds []string, k int) (string, error) {
+	ds := d.(*dataset)
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, set := range []string{`SET LOCAL enable_seqscan = off`, `SET LOCAL enable_sort = off`} {
+		if _, err := tx.ExecContext(ctx, set); err != nil {
+			return "", err
+		}
+	}
+	n := semanticCandidates(k)
+	if err := semanticScanSettings(ctx, tx, n); err != nil {
+		return "", err
+	}
+	q := make([]float32, vectorDim)
+	q[0] = 1
+	b := &builder{}
+	vec := b.arg(pgvector.NewVector(q))
+	query := semanticCandidateQuery(b, vec, &embedProvider{id: "vectors", model: "text-embedding-3-small"}, kinds, len(kinds) > 0, n)
+	rows, err := tx.QueryContext(ctx, `EXPLAIN `+query, b.args...)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			return "", err
+		}
+		plan = append(plan, line)
+	}
+	return strings.Join(plan, "\n"), rows.Err()
 }
 
 // WithSearchReadMax sets the most matching rows one lexical candidate pass
