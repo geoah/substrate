@@ -100,6 +100,9 @@ type options struct {
 	embedRequestBytes  int
 	blobs              blobbytes.Backend
 	log                *slog.Logger
+	// searchSemanticHook is the semantic arm's test seam (export_test.go
+	// WithTestSemanticHook); nil in production.
+	searchSemanticHook func(ctx context.Context, tx *sql.Tx)
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -482,6 +485,11 @@ type service struct {
 	// searchScoreHook, set only by a test, runs before a lexical search
 	// scores its candidates: the seam that spends the budget before scoring.
 	searchScoreHook func()
+	// searchSemanticHook, set only by a test, runs with the semantic arm's
+	// context and transaction after the scan settings and before the
+	// candidate read: the seam that runs a statement the arm's budget
+	// cancels, or cancels the caller, there.
+	searchSemanticHook func(ctx context.Context, tx *sql.Tx)
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
@@ -736,6 +744,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		embedRequestInputs: o.embedRequestInputs,
 		embedRequestBytes:  o.embedRequestBytes,
+
+		searchSemanticHook: o.searchSemanticHook,
 
 		conversionCeiling:  o.conversionCeiling,
 		orphanGrace:        o.orphanGrace,

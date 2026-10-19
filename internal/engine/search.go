@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,7 +113,19 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 		out.Capped, out.Note = capped.capped(), capped.note(ds.svc.searchBudget)
 	}
 	if semanticArm {
-		if sem, err = ds.semantic(ctx, provider, q, types, restrict, armK); err != nil {
+		sem, err = ds.semantic(ctx, provider, q, types, restrict, armK)
+		// A hybrid search whose semantic arm is down answers from its words,
+		// and says so: agents search through hybrid, and an embeddings
+		// provider outage must not turn every one of their searches into an
+		// error. It is not Capped, which tells an agent to narrow the query,
+		// and a narrower query would not bring the arm back.
+		var down *semanticDown
+		switch {
+		case err == nil:
+		case mode == substrate.SearchHybrid && errors.As(err, &down):
+			sem = nil
+			out.Note = strings.TrimSpace(out.Note + " " + down.note)
+		default:
 			return out, err
 		}
 	}
@@ -429,33 +442,131 @@ func (ds *dataset) refuseSemantic(ctx context.Context, provider *embedProvider, 
 	return nil
 }
 
+// Semantic arm sizing. The arm reads semanticCandidates(k) chunks from the
+// HNSW index and rescores them exactly; the HNSW search list must be at least
+// as long as the read for good recall.
+const (
+	// semanticCandidatesMin keeps a small arm reading enough chunks that a
+	// record split into many still competes with the rest.
+	semanticCandidatesMin = 100
+	// semanticCandidatesMax is pgvector's ceiling on hnsw.ef_search.
+	semanticCandidatesMax = 1000
+	// semanticScanTuples is how many index entries an iterative scan may
+	// visit looking for chunks the filters keep (pgvector's default is
+	// 20,000). A kind holding half a percent of the index yields about 100
+	// chunks in 20,000; the search budget bounds the walk, so the cap can be
+	// generous.
+	semanticScanTuples = 200_000
+	// semanticScanMemMultiplier lets that walk keep its visited set in four
+	// times work_mem before pgvector stops it short, as it would at the
+	// default of one long before semanticScanTuples entries.
+	semanticScanMemMultiplier = 4
+)
+
+// semanticCandidates is how many chunks the arm reads for an arm of k
+// records: four a record, since one record's chunks can take several of the
+// nearest places, within the two bounds above.
+func semanticCandidates(k int) int {
+	return min(max(4*k, semanticCandidatesMin), semanticCandidatesMax)
+}
+
+// semanticDown is a semantic arm that could not answer for a reason a hybrid
+// search answers around: the arm ran out of its budget or the embeddings
+// provider failed. note is the sentence the hybrid answer carries; the error
+// is what semantic mode returns.
+type semanticDown struct {
+	note string
+	err  error
+}
+
+func (e *semanticDown) Error() string { return e.err.Error() }
+func (e *semanticDown) Unwrap() error { return e.err }
+
+// semantic ranks the records nearest the query by cosine. The candidates are
+// the nearest chunks the HNSW index over half-precision copies finds
+// (semanticCandidateQuery), so a near neighbor can be missed; each is then
+// rescored exactly against its full-precision vector, so the score a hit
+// carries is never the half-precision one.
+//
+// The whole arm, the query's embedding included, runs under the service's
+// search budget, as the lexical arm does. Running out of it, or the provider
+// failing to embed the query, is a semanticDown the caller decides about. A
+// caller that went away gets its own error, never a semanticDown.
 func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q string, types []string, restrict bool, k int) (map[eref]arm, error) {
+	budget := ds.svc.searchBudget
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	failed := func(err error) (map[eref]arm, error) {
+		switch {
+		case parent.Err() != nil:
+			return nil, fmt.Errorf("substrate/engine: semantic search: %w", parent.Err())
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+			return nil, &semanticDown{
+				note: fmt.Sprintf("The semantic arm did not finish within the %s search budget, so the hits are ranked by their words only.", budget),
+				err:  fmt.Errorf("%w: semantic search ran past its %s budget", substrate.ErrUnavailable, budget),
+			}
+		}
+		return nil, fmt.Errorf("substrate/engine: semantic search: %w", err)
+	}
 	vecs, err := provider.Embed(ctx, []string{q})
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: embed query: %w", err)
+		if ctx.Err() != nil {
+			return failed(err)
+		}
+		// The note and the error name the row and not the endpoint's words:
+		// the client scrubs the row's own key, but a gateway's error can quote
+		// a masked key of the provider behind it, and an answer reaches
+		// agents, whose tool results are stored as records. The words go to
+		// the log.
+		ds.svc.log.Warn("substrate: the embeddings provider failed to embed a search query; hybrid search answers by its words only",
+			"repository", ds.Repository().ID, "provider", provider.id, "error", err.Error())
+		return nil, &semanticDown{
+			note: fmt.Sprintf("The embeddings provider llm/provider %q failed to embed the query, so the hits are ranked by their words only.", provider.id),
+			err:  fmt.Errorf("%w: the embeddings provider llm/provider %q failed to embed the query", substrate.ErrUnavailable, provider.id),
+		}
 	}
 	if len(vecs) != 1 {
 		return nil, fmt.Errorf("substrate/engine: embedder returned %d vectors for 1 text", len(vecs))
 	}
 	b := &builder{}
 	vec := b.arg(pgvector.NewVector(vecs[0]))
-	clause := ""
-	if restrict {
-		clause = ` AND e.kind = ANY(` + b.textArray(types) + `)`
-	}
-	// ONLY the resolved pair's vectors are scored. Cosine distance between two
-	// models' vectors is not a distance, so a half-finished re-embed returns
-	// fewer hits rather than a ranking mixed across models, and a vector whose
-	// producing model is unknown (the empty provenance) is never scored at all.
-	prov := ` AND em.provider = ` + b.arg(provider.id) + ` AND em.model = ` + b.arg(provider.model)
-	rows, err := ds.db.QueryContext(ctx, `
-		SELECT em.record_kind, em.record_id, MAX(1 - (em.vec <=> `+vec+`)) AS sim,
-		       bool_or(`+demotion("e")+`) AS demoted
-		FROM embeddings em JOIN records e ON e.kind = em.record_kind AND e.id = em.record_id
-		WHERE e.deleted_at IS NULL`+prov+clause+`
-		GROUP BY em.record_kind, em.record_id ORDER BY sim DESC LIMIT `+b.arg(k), b.args...)
+	n := semanticCandidates(k)
+	cands := semanticCandidateQuery(b, vec, provider, types, restrict, n)
+	// The candidates arrive in the graph's order, not by distance
+	// (relaxed_order), which is why the rescoring sorts again. Each record
+	// keeps its best chunk.
+	query := `
+		SELECT c.record_kind, c.record_id, MAX(1 - (c.vec <=> ` + vec + `::vector)) AS sim,
+		       bool_or(` + demotion("e") + `) AS demoted
+		FROM (` + cands + `) c JOIN records e ON e.kind = c.record_kind AND e.id = c.record_id
+		WHERE e.deleted_at IS NULL
+		GROUP BY c.record_kind, c.record_id ORDER BY sim DESC LIMIT ` + b.arg(k)
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: semantic search: %w", err)
+		return failed(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := semanticScanSettings(ctx, tx, n); err != nil {
+		if ctx.Err() != nil {
+			return failed(err)
+		}
+		// pgvector older than 0.8 has no iterative scan and refuses the
+		// setting. That is a database the arm cannot run on, not a failed
+		// search, so hybrid answers by its words and the log says why.
+		ds.svc.log.Warn("substrate: the semantic arm could not set up its index scan (it needs pgvector 0.8 or later); hybrid search answers by its words only",
+			"repository", ds.Repository().ID, "error", err.Error())
+		return nil, &semanticDown{
+			note: "The semantic arm could not set up its index scan on this database, so the hits are ranked by their words only.",
+			err:  fmt.Errorf("%w: semantic search could not set up its index scan: %w", substrate.ErrUnavailable, err),
+		}
+	}
+	if hook := ds.svc.searchSemanticHook; hook != nil {
+		hook(ctx, tx)
+	}
+	rows, err := tx.QueryContext(ctx, query, b.args...)
+	if err != nil {
+		return failed(err)
 	}
 	defer func() { _ = rows.Close() }()
 	out := map[eref]arm{}
@@ -463,11 +574,70 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 		var id eref
 		var a arm
 		if err := rows.Scan(&id.Kind, &id.ID, &a.score, &a.demoted); err != nil {
-			return nil, err
+			return failed(err)
 		}
 		out[id] = a
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return failed(err)
+	}
+	return out, nil
+}
+
+// semanticScanSettings sets, for the rest of tx, how the candidate read runs.
+// SET LOCAL ends with the transaction, which holds only this read.
+//
+//   - enable_seqscan off holds the planner to an index path: the HNSW graph,
+//     or, for a kind so narrow that reading all of its chunks is cheaper, the
+//     primary key. A sequential scan reads every vector of every repository
+//     out of TOAST, which costs far more than the planner estimates, and a
+//     cached generic plan cannot see how narrow the kinds are.
+//   - ef_search is the scan's candidate list, and a list shorter than the
+//     read caps it.
+//   - The iterative scan keeps walking when the filters (the repository, the
+//     pair, the kinds) reject what the list found, so a filtered read still
+//     returns up to n chunks, within semanticScanTuples index entries and
+//     semanticScanMemMultiplier times work_mem. Relaxed order is enough
+//     because the rescoring sorts again.
+func semanticScanSettings(ctx context.Context, tx *sql.Tx, n int) error {
+	for _, set := range []string{
+		`SET LOCAL enable_seqscan = off`,
+		`SET LOCAL hnsw.iterative_scan = relaxed_order`,
+		fmt.Sprintf(`SET LOCAL hnsw.ef_search = %d`, n),
+		fmt.Sprintf(`SET LOCAL hnsw.max_scan_tuples = %d`, semanticScanTuples),
+		fmt.Sprintf(`SET LOCAL hnsw.scan_mem_multiplier = %d`, semanticScanMemMultiplier),
+	} {
+		if _, err := tx.ExecContext(ctx, set); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// semanticCandidateQuery is the arm's candidate read: the n chunks nearest
+// vec, a bound parameter, by the half-precision distance the HNSW index
+// orders by. The ORDER BY must spell the index's expression,
+// `vec::halfvec(1536)` under `<=>` (migration 0015), or the planner scans
+// every vector instead. Every use of vec casts it `::vector` first: Postgres
+// deduces one type per parameter, and the rescoring needs the full-precision
+// one.
+//
+// ONLY the resolved pair's vectors are read. Cosine distance between two
+// models' vectors is not a distance, so a half-finished re-embed returns
+// fewer hits rather than a ranking mixed across models, and a vector whose
+// producing model is unknown (the empty provenance) is never scored at all.
+// The kind filter reads the chunk's own record_kind, not the record's, so the
+// scan rejects a chunk of another kind as it walks rather than after a join.
+func semanticCandidateQuery(b *builder, vec string, provider *embedProvider, types []string, restrict bool, n int) string {
+	clause := ""
+	if restrict {
+		clause = ` AND em.record_kind = ANY(` + b.textArray(types) + `)`
+	}
+	return `SELECT em.record_kind, em.record_id, em.vec
+		FROM embeddings em
+		WHERE em.provider = ` + b.arg(provider.id) + ` AND em.model = ` + b.arg(provider.model) + clause + `
+		ORDER BY em.vec::halfvec(1536) <=> ` + vec + `::vector::halfvec(1536)
+		LIMIT ` + strconv.Itoa(n)
 }
 
 // embedRequestInputs and embedRequestBytes cap one embeddings request the

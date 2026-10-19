@@ -1031,6 +1031,22 @@ records matching every word still come first), and `scores.lexical` carries
 the pre-rank. Any of these cuts sets `capped: true` beside the ranking and a
 `note` saying which cut happened and how to narrow the query.
 
+**How the semantic arm is bounded.** The arm reads its candidates from an
+approximate nearest-neighbor index (HNSW) over half-precision copies of the
+stored vectors: four chunks for every record the arm ranks, at least 100 and
+at most 1000. An approximate index can miss a near neighbor, so a record
+whose best chunk is close to the query is not certain to be found, and a
+search narrowed to a kind that holds few of the vectors may find fewer
+candidates. Each candidate is then rescored exactly against its
+full-precision vector, and `scores.semantic` is that exact cosine. The arm,
+embedding the query included, runs under the same 5 s budget as the lexical
+arm. When it does not finish within the budget, or the embeddings provider
+fails to embed the query, `hybrid` answers from the lexical arm alone with a
+`note` saying the hits are ranked by their words only and why; `capped` is
+not set, because a narrower query would not help. `semantic` mode has no
+other arm, so it fails with the `unavailable` code. The arm needs pgvector
+0.8 or later; on an older one, `hybrid` always answers by its words.
+
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
 arms and fuses them by rank (reciprocal rank fusion), so a record near the
 top of both ranks highest and neither arm's scale decides. Every hit's score
