@@ -56,9 +56,11 @@ instead of sorting the whole queue.
 
 Parallel workers were not taken: packing reaches the same throughput with one
 request in flight, which suits a small gateway and a rate limit, and keeps
-the commits in queue order. An attempts column was not taken: once requests
-fit the caps no shipped input is refused, so a refused value is rare, and
-moving it back needs no migration.
+the commits in queue order. An attempts column was not taken: once requests fit the caps OpenAI refuses
+no shipped input, so a refused value is rare, and moving it back needs no
+migration. A gateway is the exception, since it answers 400 for its own
+configuration (an `embedModel` it does not route), which is what the
+known-good check is for.
 
 ### Consequences
 
@@ -75,6 +77,10 @@ moving it back needs no migration.
 - Bad, because a batch in flight at the deadline finishes, so a tick can run
   past 50 seconds by one batch, and longer when a refused batch is retried
   one job at a time.
+- Bad, because a 429 is not a refusal: it ends that repository's tick with
+  an error in the log, and the next tick resumes. Against a tokens-a-minute
+  limit that is close to the limit's own pace, but a throttled backfill logs
+  an error every minute.
 - Bad, because during a backlog the drain now holds the database and the
   endpoint for most of every minute instead of a few seconds.
 
