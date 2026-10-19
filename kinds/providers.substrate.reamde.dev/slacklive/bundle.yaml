@@ -1,0 +1,2177 @@
+# The Slack live events bundle: Slack's Events API, delivered over Socket Mode,
+# applied to the Slack bundle's mirror rows.
+#
+# OPT-IN, AND NO WEBHOOK SHIPPED. The Slack bundle
+# (providers.substrate.reamde.dev/slack) polls; it sees a reaction, an edit or
+# a delete only while the message is within a day of its conversation's
+# history cursor. This bundle closes that gap for a deployment that runs the
+# Socket Mode bridge (cmd/slack-socket), which holds Slack's websocket and
+# POSTs batches of callbacks to a webhook trigger that fires `slackevents`.
+# The bundle ships NO trigger: the webhook door checks a key only when the
+# trigger declares one, so a shipped keyless record is one click (the
+# console's Resume) away from an open endpoint that writes Slack rows. The
+# operator writes the trigger record, key included, in one write (README.md).
+#
+# NO KIND OF ITS OWN. The rows it writes are the Slack bundle's, which this
+# bundle `requires:`. The one function, `slackevents`, writes them under its
+# own actor and reads the Slack account it lands on, because another
+# package's account never arrives on its config.
+#
+# ITS OWN TOKEN. An injected input must be the bundle's own kind, so the
+# Slack bundle's `config` record (the user token) cannot reach this function.
+# The token is this bundle's `userToken` secret (settings.yaml): the same
+# xoxp- user token, pasted a second time.
+#
+# Install:   the Slack bundle first, then
+#            substratectl apply -f bundle.yaml -f settings.yaml
+# Configure: fill in the `userToken` secret.
+# Enable:    write the keyed `slack-live-events` trigger record (README.md).
+# ---- the owned package ----------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/slacklive
+data:
+  authority: providers.substrate.reamde.dev
+  package: slacklive
+  # 1: the live events path of Slack bundle version 21, moved out of
+  # `slacksync` into this bundle's `slackevents` (Slack bundle version 22).
+  version: 1
+---
+# ---- the bundle document: the install unit --------------------------------
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/slacklive
+data:
+  authority: providers.substrate.reamde.dev
+  package: slacklive
+  description: >-
+    Applies Slack's live events (edits, deletes, reactions and new messages)
+    to the Slack bundle's copy within seconds, through the Socket Mode bridge.
+  # The Slack bundle declares every kind `slackevents` reads and writes. The
+  # floor is the version that took the live events path out of `slacksync`.
+  requires:
+    - providers.substrate.reamde.dev/slack
+  requiresAtLeast:
+    providers.substrate.reamde.dev/slack: 22
+  # NO declared input: the token and the API origin are the `secret` and
+  # `setting` records this bundle ships (settings.yaml), injected under
+  # config.settings by the id prefix they carry.
+  installs:
+    - providers.substrate.reamde.dev/slacklive/slackevents
+---
+# ---- function: slackevents ------------------------------------------------
+# One webhook delivery is one batch, `{"version": 1, "events": [...]}`, each
+# element the `payload` of a Socket Mode `events_api` envelope. The body pages
+# itself inside the function timeout. Its row makers are a COPY of
+# `slacksync`'s in ../slack/bundle.yaml (the body's docstring says which);
+# keep the two in step.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/slacklive/slackevents
+data:
+  authority: providers.substrate.reamde.dev
+  package: slacklive
+  description: >-
+    Apply one batch of Slack Events API callbacks, as the Socket Mode bridge
+    forwards them, to the Slack bundle's mirror rows: messages, edits, deletes,
+    thread replies, reactions (read whole through reactions.get), pins, conversations,
+    members, users and files. Moves no sync cursor.
+  runtime: python
+  timeout: PT30S
+  permissions:
+    writes:
+      - providers.substrate.reamde.dev/slack/team
+      - providers.substrate.reamde.dev/slack/user
+      - providers.substrate.reamde.dev/slack/conversation
+      - providers.substrate.reamde.dev/slack/message
+      - providers.substrate.reamde.dev/slack/bot
+      - providers.substrate.reamde.dev/slack/file
+    reads:
+      kinds:
+        # The account the batch lands on: its workspace, its owner, its
+        # toggles and its Retry-After deadline.
+        - providers.substrate.reamde.dev/slack/account
+        # The team row's `url` is the host a permalink is built from.
+        - providers.substrate.reamde.dev/slack/team
+        - providers.substrate.reamde.dev/slack/conversation
+        - providers.substrate.reamde.dev/slack/message
+        - providers.substrate.reamde.dev/slack/user
+        - providers.substrate.reamde.dev/slack/file
+      budgets:
+        calls: 600
+        rows: 4000
+    network:
+      - slack.com
+      - api.slack.com
+      - 127.0.0.1
+      - localhost
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.34.2",
+    # ]
+    # ///
+    """Slack live events: one batch of Events API callbacks applied to the Slack
+    bundle's mirror rows.
+
+    A webhook trigger the operator writes (README.md) delivers the batch the
+    Socket Mode bridge forwards, `{"version": 1, "events": [...]}`, each element the
+    `payload` of an `events_api` envelope. The rows are the Slack bundle's
+    (providers.substrate.reamde.dev/slack): this bundle declares no kind of its
+    own, reads the Slack account it lands on, and writes no cursor, no
+    `conversationsync` row and no account property, so the Slack bundle's walk
+    stays the pass that covers what the socket missed.
+
+    The user token arrives as the bundle's own `userToken` secret
+    (config.settings.userToken): an injected input must be the bundle's own kind,
+    so the Slack bundle's connector record never reaches this body. It leaves
+    this body ONLY toward a pinned origin, https on a slack.com host or loopback
+    (the test seam).
+
+    COPIED FROM `slacksync`. A bundle function is one self-contained module, so
+    the row makers below (ids, `_put`, the message, conversation, user and file
+    shapes, the Slack call) are copies of the ones in
+    kinds/providers.substrate.reamde.dev/slack/bundle.yaml, function `slacksync`.
+    The two must write the same rows under the same ids. Every top-level name
+    the two bodies share is identical except `_get` and `_call` (they take a
+    timeout here), `_message_props` (it builds reactions through
+    `_reaction_props`, which only this body has) and `main`;
+    TestSlackLiveCopyMatchesSlacksync in internal/providertest fails on any
+    other difference, so a change to a row maker there is made here too.
+    """
+    import base64
+    import datetime as _dt
+    import http.cookiejar
+    import json
+    import re
+    import time
+    import urllib.parse
+
+    import requests
+
+    TEAM_TYPE = "providers.substrate.reamde.dev/slack/team"
+    USER_TYPE = "providers.substrate.reamde.dev/slack/user"
+    CONV_TYPE = "providers.substrate.reamde.dev/slack/conversation"
+    MESSAGE_TYPE = "providers.substrate.reamde.dev/slack/message"
+    FILE_TYPE = "providers.substrate.reamde.dev/slack/file"
+    BOT_TYPE = "providers.substrate.reamde.dev/slack/bot"
+    ACCOUNT_TYPE = "providers.substrate.reamde.dev/slack/account"
+
+    DEFAULT_API = "https://slack.com"
+    HTTP_TIMEOUT = 20
+    REASON_MAX = 200
+    # What "come back later" means when Slack does not say. Slack's own guidance
+    # is one second per tier-3 call; a minute is the conservative read, and the
+    # cap stops a hostile or mistyped header from parking the account for a week.
+    DEFAULT_RETRY_AFTER = 60
+    MAX_RETRY_AFTER = 3600
+
+    # Slack's own mention encodings, decoded losslessly into references: a user
+    # mention and a channel link. The text itself is kept verbatim.
+    MENTION_RE = re.compile(r"<@([UWB][A-Z0-9]+)(?:\|[^>]*)?>")
+    CHANNEL_RE = re.compile(r"<#([CDG][A-Z0-9]+)(?:\|[^>]*)?>")
+
+    # MUTATION ENVELOPES, not messages. `message_changed` and `message_deleted`
+    # carry no identity of their own: their `ts` is the event's, and the message
+    # they speak about is nested (`message.ts`) or named (`deleted_ts`). They are
+    # consumed by `_mutate`, never mirrored as rows — writing the envelope would
+    # mint a message that never existed and leave the real one stale.
+    #
+    # EVERYTHING ELSE IS A MESSAGE. The denylist used to hold twenty subtypes —
+    # joins, leaves, topic and purpose changes, archives, bot adds, pins,
+    # posting-permission changes — and Slack persists every one of them in
+    # `conversations.history`. A mirror that drops them is not a mirror of the
+    # conversation; it is a mirror of its prose. `channel_topic` is how the
+    # mirror knows who set the topic and when.
+    MUTATION_SUBTYPES = {"message_changed", "message_deleted", "message_replied"}
+
+
+    # ---------------------------------------------------------------- origin
+
+    def _pinned(base):
+        u = urllib.parse.urlsplit(base)
+        host = (u.hostname or "").lower()
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return True
+        return u.scheme == "https" and (
+            host == "slack.com" or host.endswith(".slack.com"))
+
+
+    _TS_RE = re.compile(r"\s*(-?\d+)(?:\.(\d*))?\s*$")
+
+
+    def _exact(whole, micros):
+        """One instant, built from INTEGERS. `float(ts)` then
+        `fromtimestamp(...)` is two lossy steps — a binary float cannot hold
+        `1789491980.100249`, and rounding the microseconds away (or off by one)
+        makes every Slack instant in the mirror wrong by up to a second while the
+        `ts` beside it stays exact. Slack's `ts` is six fractional digits and
+        nothing else, so the two halves are converted separately and never meet a
+        float."""
+        try:
+            base = _dt.datetime.fromtimestamp(whole, _dt.timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return base.replace(microsecond=micros).isoformat()
+
+
+    def _ts_iso(ts):
+        """A Slack `ts` (`<seconds>.<6 digits>`) as an exact instant."""
+        m = _TS_RE.match(str(ts)) if ts is not None else None
+        if not m:
+            return None
+        frac = (m.group(2) or "")[:6].ljust(6, "0")
+        return _exact(int(m.group(1)), int(frac or 0))
+
+
+    def _epoch_iso(v):
+        """Epoch SECONDS as Slack sends them; 0 means never and is not written.
+
+        Slack writes a never-set epoch as `0`, which is a SENTINEL and not the
+        first instant of 1970. A field that must be able to CLEAR says so by
+        returning the sentinel marker, not by falling back to absence."""
+        m = _TS_RE.match(str(v)) if v is not None else None
+        if not m:
+            return None
+        whole = int(m.group(1))
+        if whole <= 0 and not (m.group(2) or "").strip("0"):
+            return None
+        frac = (m.group(2) or "")[:6].ljust(6, "0")
+        return _exact(whole, int(frac or 0))
+
+
+    def _ms_iso(v):
+        """Epoch MILLISECONDS — conversations.list `updated`, Slack's one
+        departure from seconds. Split, never divided: `n / 1000.0` loses the
+        millisecond on a large epoch."""
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return None
+        if n <= 0:
+            return None
+        return _exact(n // 1000, (n % 1000) * 1000)
+
+
+    def _wants(acct):
+        return bool((acct.get("properties") or {}).get("enabledMessages"))
+
+
+    # --------------------------------------------------------------- the API
+
+    class Slack(Exception):
+        """A Slack-reported failure, carrying the error word Slack used.
+
+        `error` stays the bare word: the permanent and refused sets, the
+        failure classes and the refusal keys all match on it. `detail` rides
+        the message alone."""
+
+        def __init__(self, method, error, detail=""):
+            super().__init__("%s: %s%s" % (method, error, detail))
+            self.method = method
+            self.error = error
+
+
+    class RateLimited(Exception):
+        """Slack asked us to come back later, and SAID WHEN.
+
+        Slack requires `Retry-After` to be honoured. Throwing the header away and
+        relying on the next scheduled tick retries either far too soon (a minute
+        cadence against a 30-second hold) or uselessly late (an hour against a
+        two-second one). The seconds ride on the exception, are persisted as a
+        not-before deadline on the account, and `_due` refuses to start before
+        it — for every call, `auth.test` included."""
+
+        def __init__(self, method, retry_after=0):
+            super().__init__("%s: rate limited" % method)
+            self.method = method
+            self.retry_after = int(retry_after or 0)
+
+        def not_before(self):
+            secs = self.retry_after if self.retry_after > 0 else DEFAULT_RETRY_AFTER
+            return (_dt.datetime.now(_dt.timezone.utc)
+                    + _dt.timedelta(seconds=min(secs, MAX_RETRY_AFTER))).isoformat()
+
+
+    # ONE SESSION PER PROCESS. The runner execs this module once and calls
+    # main() for every invocation of a drain, so a module-level session keeps
+    # its HTTPS connection to Slack alive across the hundreds of invocations a
+    # drain spends, where a bare requests.get paid a TCP and TLS handshake per
+    # call. The token rides each request's own header, never the session, and
+    # the cookie jar accepts nothing, so no account's call carries state from
+    # another account's.
+    _SESSION = requests.Session()
+    _SESSION.cookies.set_policy(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
+
+
+    def _get(url, params, headers, timeout=HTTP_TIMEOUT):
+        try:
+            return _SESSION.get(url, params=params, timeout=timeout, headers=headers)
+        except requests.exceptions.ConnectionError as e:
+            # A kept-alive connection Slack closed between invocations fails on
+            # its first reuse; the call is a read, so one fresh try is safe. A
+            # timeout is not a closed connection and is not retried.
+            if isinstance(e, requests.exceptions.Timeout):
+                raise
+            return _SESSION.get(url, params=params, timeout=timeout, headers=headers)
+
+
+    def _call(base, token, method, params=None, timeout=HTTP_TIMEOUT):
+        # ONE Slack Web API call. GET with the token in the Authorization header —
+        # never in the query, so no URL a proxy or a recording holds can carry the
+        # credential.
+        url = base + "/api/" + method
+        resp = _get(url, params or {}, {"Authorization": "Bearer " + token,
+                                         "Accept": "application/json"}, timeout)
+        if resp.status_code == 429:
+            raise RateLimited(method, _retry_after(resp))
+        if resp.status_code >= 400:
+            raise RuntimeError("slack %s: HTTP %d %s"
+                               % (method, resp.status_code, resp.text[:200]))
+        body = resp.json()
+        if not body.get("ok"):
+            err = body.get("error") or "unknown"
+            if err == "ratelimited":
+                raise RateLimited(method, _retry_after(resp))
+            raise Slack(method, err, _scopes(body))
+        return body
+
+
+    def _scopes(body):
+        """On `missing_scope`, the `needed` and `provided` scopes Slack sends
+        beside the error, as ` (needed a, provided b)`: the word alone does not
+        say which scope to grant. Either field may be absent."""
+        if body.get("error") != "missing_scope":
+            return ""
+        scopes = ["%s %s" % (k, body[k]) for k in ("needed", "provided")
+                  if body.get(k)]
+        return " (%s)" % ", ".join(scopes) if scopes else ""
+
+
+    def _retry_after(resp):
+        """Slack's own answer to "when may I come back". A body-level
+        `ratelimited` carries the header too."""
+        try:
+            return int((resp.headers or {}).get("Retry-After") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+
+    # ------------------------------------------------------- ids and effects
+
+    def _rid(host, aid, key):
+        return host.ids.external("slack", aid, key)
+
+
+    def _user_ref(host, aid, team, uid):
+        """A reference at a mirrored user, composed from its provider key."""
+        return _rid(host, aid, "%s/%s" % (team, uid)) if uid else None
+
+
+    def _team_ref(host, aid, team, tid):
+        """A team reference takes the same four arguments as every other maker so
+        one list helper serves them all; the workspace of the row is not part of a
+        team's own key."""
+        return _rid(host, aid, tid) if tid else None
+
+
+    def _conv_ref(host, aid, team, cid):
+        return _rid(host, aid, "%s/%s" % (team, cid)) if cid else None
+
+
+    def _msg_ref(host, aid, team, cid, ts):
+        return _rid(host, aid, "%s/%s/%s" % (team, cid, ts)) if (cid and ts) else None
+
+
+    def _file_ref(host, aid, team, fid):
+        return _rid(host, aid, "%s/%s" % (team, fid)) if fid else None
+
+
+    def _bot_ref(host, aid, team, bid):
+        return _rid(host, aid, "%s/%s" % (team, bid)) if bid else None
+
+
+    def _refs(host, aid, team, ids, maker):
+        """A list of references, de-duplicated, in the order the API gave them."""
+        out = []
+        for i in ids or []:
+            r = maker(host, aid, team, i)
+            if r and r not in out:
+                out.append(r)
+        return out
+
+
+    def _live(props):
+        """The same properties with the explicit deletes removed — what a MINT is
+        allowed to carry, since a create cannot delete a property it never had."""
+        return {k: v for k, v in props.items() if v is not None}
+
+
+    def _self_free(eid, props):
+        """The same properties with any reference at THIS row removed.
+
+        Slack sets `thread_ts == ts` on a thread's own parent, and that supplied
+        self-reference is a fact worth keeping — but the engine checks a
+        reference's target at write time, and at the moment of the CREATE the row
+        does not exist yet. So the mint goes without it and the patch, which runs
+        once the row is there, puts it back."""
+        return {k: v for k, v in props.items() if v != eid}
+
+
+    def _put(host, typ, eid, props):
+        """Mint-then-patch. The mint is if_absent because a provider key is
+        immutable; the patch moves only what this payload carried, so a thinner
+        read never erases what a fuller one filled in.
+
+        ABSENT and NULL are different, and both are load-bearing. A field the
+        payload did not carry is not in `props` at all. A field the payload
+        carried as `null` — or as an empty string, list or map — IS in `props`,
+        as `None` or as the empty value, because Slack saying "this status is
+        now cleared" has to clear it. Only the patch carries the deletes."""
+        host.effects.put(typ, eid, properties=_self_free(eid, _live(props)),
+                         if_absent=True)
+        host.effects.patch(typ, eid, properties=props)
+
+
+    # --------------------------------------------------------------- the rows
+
+    # profile: (property, API key, converter). `_C_*` are the converters that are
+    # not a straight copy.
+    _C_EPOCH = "epoch"
+    _C_DATE = "date"
+
+    _PROFILE_SCALARS = [
+        ("firstName", "first_name", None),
+        ("lastName", "last_name", None),
+        ("realName", "real_name", None),
+        ("realNameNormalized", "real_name_normalized", None),
+        ("displayName", "display_name", None),
+        ("displayNameNormalized", "display_name_normalized", None),
+        ("email", "email", None),
+        ("phone", "phone", None),
+        ("skype", "skype", None),
+        ("pronouns", "pronouns", None),
+        ("jobTitle", "title", None),
+        ("username", "username", None),
+        ("startDate", "start_date", _C_DATE),
+        ("avatarHash", "avatar_hash", None),
+        ("lastAvatarImageHash", "last_avatar_image_hash", None),
+        ("isCustomImage", "is_custom_image", None),
+        ("image24", "image_24", None),
+        ("image32", "image_32", None),
+        ("image48", "image_48", None),
+        ("image72", "image_72", None),
+        ("image192", "image_192", None),
+        ("image512", "image_512", None),
+        ("image1024", "image_1024", None),
+        ("imageOriginal", "image_original", None),
+        ("statusText", "status_text", None),
+        ("statusEmoji", "status_emoji", None),
+        ("statusTextCanonical", "status_text_canonical", None),
+        ("statusExpiration", "status_expiration", _C_EPOCH),
+        ("statusClearOnFocusEnd", "status_clear_on_focus_end", None),
+        ("alwaysActive", "always_active", None),
+        ("huddleState", "huddle_state", None),
+        ("huddleStateCallId", "huddle_state_call_id", None),
+        ("huddleStateExpirationTs", "huddle_state_expiration_ts", _C_EPOCH),
+        ("apiAppId", "api_app_id", None),
+        ("guestExpirationTs", "guest_expiration_ts", _C_EPOCH),
+        ("membershipsCount", "memberships_count", None),
+        ("whoCanShareContactCard", "who_can_share_contact_card", None),
+        ("updated", "updated", _C_EPOCH),
+    ]
+
+    _USER_SCALARS = [
+        ("name", "name", None),
+        ("deleted", "deleted", None),
+        ("color", "color", None),
+        ("realName", "real_name", None),
+        ("tzLabel", "tz_label", None),
+        ("tzOffset", "tz_offset", None),
+        ("locale", "locale", None),
+        ("isAdmin", "is_admin", None),
+        ("isOwner", "is_owner", None),
+        ("isPrimaryOwner", "is_primary_owner", None),
+        ("isRestricted", "is_restricted", None),
+        ("isUltraRestricted", "is_ultra_restricted", None),
+        ("restrictedUserType", "restricted_user_type", None),
+        ("isBot", "is_bot", None),
+        ("isAppUser", "is_app_user", None),
+        ("isStranger", "is_stranger", None),
+        ("isInvitedUser", "is_invited_user", None),
+        ("isEmailConfirmed", "is_email_confirmed", None),
+        ("isScimProvisioned", "is_scim_provisioned", None),
+        ("isWorkflowBot", "is_workflow_bot", None),
+        ("isExternal", "is_external", None),
+        ("isForgotten", "is_forgotten", None),
+        ("isProfileOnlyUser", "is_profile_only_user", None),
+        ("suspended", "suspended", None),
+        ("presence", "presence", None),
+        ("manualPresence", "manual_presence", None),
+        ("has2fa", "has_2fa", None),
+        ("twoFactorType", "two_factor_type", None),
+        ("whoCanShareContactCard", "who_can_share_contact_card", None),
+        ("updated", "updated", _C_EPOCH),
+        ("firstLogin", "first_login", _C_EPOCH),
+    ]
+
+
+    def _shape(src, table, clear=False):
+        """The API's fields under their camelCase names.
+
+        Three states, all distinct and all preserved:
+
+        * **absent** — the key is not in the payload. Nothing is written, so a
+          thin read never erases what a fuller one filled in.
+        * **null, or an empty string/list/map** — the key IS in the payload and
+          says the value is GONE. At the TOP LEVEL `None` is written, which
+          deletes the property; dropping it instead (which is what this did)
+          leaves a cleared status or a removed topic standing in the mirror
+          forever. An empty string becomes the delete rather than being written
+          through, because half these properties are `url`, `email`, `datetime`
+          or `timezone` and `""` is not a legal value of any of them. Inside an
+          OBJECT nothing is written: a patch replaces the whole object, so a
+          field left out of the new one is already gone.
+        * **a value** — converted by the table's converter and written.
+
+        A converter that cannot make sense of its input (a `0` epoch, Slack's
+        `0000-00-00` no-date) yields `None`, which CLEARS: the sentinel means
+        "not set", and "not set" is not the same as "do not touch".
+        """
+        out = {}
+        for prop, api, conv in table:
+            if api not in src:
+                continue
+            v = src[api]
+            if v is None or v == "" or v == [] or v == {}:
+                if clear:
+                    out[prop] = None
+                continue
+            if conv == _C_EPOCH:
+                v = _epoch_iso(v)
+            elif conv == _C_DATE:
+                # Slack's "unset" date is 0000-00-00, and there is no year zero —
+                # Postgres refuses it and the refusal takes the whole page down.
+                v = str(v)[:10]
+                if not re.fullmatch(r"[1-9]\d{3}-\d{2}-\d{2}", v or ""):
+                    v = None
+            if v is None and not clear:
+                continue
+            out[prop] = v
+        return out
+
+
+    def _tz(value):
+        """A zone Slack sends that is not an IANA name is not written: the dialect
+        refuses it, and refusing a page over one is worse."""
+        v = (value or "").strip()
+        return v if ("/" in v or v in ("UTC", "GMT")) else None
+
+
+    def _profile_props(host, aid, team, prof):
+        out = _shape(prof, _PROFILE_SCALARS)
+        if prof.get("guest_invited_by"):
+            out["guestInvitedBy"] = _user_ref(host, aid, team, prof["guest_invited_by"])
+        # T-021: `bot_id` on a profile is the BOT IDENTITY behind an app user, and
+        # this bundle mirrors bots — so it is a reference, not a string beside a
+        # kind we already hold (the owner's rule: never a user id when we mirror
+        # users, and the same test applies to a bot). The thin bot row is minted
+        # by `_put_user` before the user that points at it.
+        if prof.get("bot_id"):
+            out["bot"] = _bot_ref(host, aid, team, prof["bot_id"])
+        if prof.get("team"):
+            out["team"] = _team_ref(host, aid, team, prof["team"])
+        display = prof.get("status_emoji_display_info") or []
+        shaped = []
+        for e in display:
+            if not isinstance(e, dict):
+                continue
+            one = _shape(e, [("emojiName", "emoji_name", None),
+                             ("displayUrl", "display_url", None),
+                             ("displayAlias", "display_alias", None),
+                             ("unicode", "unicode", None)])
+            if one:
+                shaped.append(one)
+        if shaped:
+            out["statusEmojiDisplayInfo"] = shaped
+        # `fields` is a string->object map, and Slack sends an empty ARRAY when a
+        # workspace has no custom fields — a keyed property cannot take that.
+        fields = prof.get("fields")
+        if isinstance(fields, dict) and fields:
+            keyed = {}
+            for key, val in fields.items():
+                if isinstance(val, dict):
+                    one = _shape(val, [("value", "value", None), ("alt", "alt", None)])
+                    if one:
+                        keyed[key] = one
+            if keyed:
+                out["fields"] = keyed
+        return out
+
+
+    def _user_props(host, aid, team, u):
+        props = {"account": aid, "userId": u.get("id") or ""}
+        props.update(_shape(u, _USER_SCALARS, clear=True))
+        zone = _tz(u.get("tz"))
+        if zone:
+            props["tz"] = zone
+        if u.get("team_id"):
+            props["team"] = _team_ref(host, aid, team, u["team_id"])
+        prof = u.get("profile") or {}
+        shaped = _profile_props(host, aid, team, prof)
+        if shaped:
+            props["profile"] = shaped
+        ent = u.get("enterprise_user") or {}
+        if isinstance(ent, dict) and ent:
+            one = _shape(ent, [("enterpriseUserId", "id", None),
+                               ("enterpriseId", "enterprise_id", None),
+                               ("enterpriseName", "enterprise_name", None),
+                               ("isAdmin", "is_admin", None),
+                               ("isOwner", "is_owner", None),
+                               ("isPrimaryOwner", "is_primary_owner", None)])
+            teams = _refs(host, aid, team, ent.get("teams"), _team_ref)
+            if teams:
+                one["teams"] = teams
+            if one:
+                props["enterpriseUser"] = one
+        return props
+
+
+    def _merge_object(old, new):
+        """Presence-aware merge of one OBJECT property. T-021, guide amendment 6.
+
+        A top-level patch REPLACES an object value whole
+        (`../substrate/docs/api.md:833`), so "a thin read PATCHES what a fuller
+        one filled in" is simply not true of a nested object: writing a shaped
+        `profile` built from a payload that carried three of its fifty fields
+        deletes the other forty-seven. The amendment's answer is a READ plus a
+        merge, and the read is what `permissions.reads.kinds` now admits.
+
+        Presence, not truthiness, decides: a field the new payload carried wins —
+        including as `None`, which removes it — and a field it did not carry
+        keeps whatever the row already holds.
+        """
+        if not isinstance(old, dict) or not old:
+            return {k: v for k, v in (new or {}).items() if v is not None}
+        out = dict(old)
+        for key, val in (new or {}).items():
+            if val is None:
+                out.pop(key, None)
+            else:
+                out[key] = val
+        return out
+
+
+    # `user_profile` is Slack's THIN profile, inlined on a message beside its
+    # author: nine of the ~50 fields (measured on 1,466 of the owner's messages).
+    # It is the payload guide amendment 6 was written for — writing it whole
+    # would delete the other forty-one — and the two USER-level flags Slack files
+    # inside it belong on the user row, not in its profile object.
+    THIN_PROFILE_USER_FIELDS = ("is_restricted", "is_ultra_restricted")
+
+
+    def _put_user(host, aid, team, u, whole=True):
+        """One user row, with its embedded objects handled per amendment 6.
+
+        Also the one place a `profile.bot_id` becomes a `bot` reference: the thin
+        bot row is minted FIRST, because the sync upserts every referenced row
+        before the row that references it (§1).
+        """
+        eid = _user_ref(host, aid, team, u.get("id"))
+        if not eid:
+            return None
+        prof = u.get("profile") or {}
+        if isinstance(prof, dict) and prof.get("bot_id"):
+            _put(host, BOT_TYPE, _bot_ref(host, aid, team, prof["bot_id"]),
+                 {"account": aid, "botId": prof["bot_id"]})
+        props = _user_props(host, aid, team, u)
+        if not whole:
+            row = (host.records.get(USER_TYPE, eid) or {}).get("properties") or {}
+            for key in ("profile", "enterpriseUser"):
+                if key in props:
+                    merged = _merge_object(row.get(key), props[key])
+                    props[key] = merged or None
+        _put(host, USER_TYPE, eid, props)
+        return eid
+
+
+    _CONV_SCALARS = [
+        ("name", "name", None),
+        ("nameNormalized", "name_normalized", None),
+        ("isChannel", "is_channel", None),
+        ("isGroup", "is_group", None),
+        ("isIm", "is_im", None),
+        ("isMpim", "is_mpim", None),
+        ("isPrivate", "is_private", None),
+        ("isArchived", "is_archived", None),
+        ("isGeneral", "is_general", None),
+        ("isShared", "is_shared", None),
+        ("isOrgShared", "is_org_shared", None),
+        ("isExtShared", "is_ext_shared", None),
+        ("isPendingExtShared", "is_pending_ext_shared", None),
+        ("isMember", "is_member", None),
+        ("isOpen", "is_open", None),
+        ("isUserDeleted", "is_user_deleted", None),
+        ("isChannelAgentEnabled", "is_channel_agent_enabled", None),
+        ("isExtWsShared", "is_ext_ws_shared", None),
+        ("isFile", "is_file", None),
+        ("isOrgDefault", "is_org_default", None),
+        ("isOrgMandatory", "is_org_mandatory", None),
+        ("isGlobalShared", "is_global_shared", None),
+        ("isReadOnly", "is_read_only", None),
+        ("isThreadOnly", "is_thread_only", None),
+        ("isNonThreadable", "is_non_threadable", None),
+        ("isFrozen", "is_frozen", None),
+        ("frozenReason", "frozen_reason", None),
+        ("isStarred", "is_starred", None),
+        ("hasPins", "has_pins", None),
+        ("locale", "locale", None),
+        ("unlinked", "unlinked", None),
+        ("numMembers", "num_members", None),
+        ("priority", "priority", None),
+        ("previousNames", "previous_names", None),
+        ("unreadCount", "unread_count", None),
+        ("unreadCountDisplay", "unread_count_display", None),
+        ("noLatest", "no_latest", None),
+        ("retentionDuration", "retention_duration", None),
+        ("useCase", "use_case", None),
+        ("enterpriseId", "enterprise_id", None),
+        ("conversationHostId", "conversation_host_id", None),
+        ("lastRead", "last_read", _C_EPOCH),
+    ]
+
+    _CONV_TEAM_LISTS = [
+        ("sharedTeams", "shared_team_ids"),
+        ("pendingConnectedTeams", "pending_connected_team_ids"),
+        ("pendingShared", "pending_shared"),
+        ("connectedTeams", "connected_team_ids"),
+        ("connectedLimitedTeams", "connected_limited_team_ids"),
+        ("internalTeams", "internal_team_ids"),
+    ]
+
+
+    def _text_block(host, aid, team, block):
+        """topic / purpose: a value object with a reference inside it."""
+        if not isinstance(block, dict):
+            return None
+        out = {}
+        if block.get("value"):
+            out["value"] = block["value"]
+        if block.get("creator"):
+            out["creator"] = _user_ref(host, aid, team, block["creator"])
+        last = _epoch_iso(block.get("last_set"))
+        if last:
+            out["lastSet"] = last
+        return out or None
+
+
+    def _conv_props(host, aid, team, c):
+        cid = c.get("id") or ""
+        props = {"account": aid, "conversationId": cid}
+        props.update(_shape(c, _CONV_SCALARS, clear=True))
+        # `updated` is the one Slack field in MILLISECONDS.
+        upd = _ms_iso(c.get("updated"))
+        if upd:
+            props["updated"] = upd
+        # `context_team_id` is the workspace this conversation is being read in
+        # the context of, which is not the same fact as "the workspace it belongs
+        # to" — calling it `team` renamed an API field onto a meaning it does not
+        # have. It keeps its own name.
+        if "context_team_id" in c:
+            props["contextTeam"] = _team_ref(host, aid, team,
+                                             c.get("context_team_id"))
+        # A conversation HAS a creation instant, and the temporal trait is bound
+        # to it. Refusing the binding to keep a consumer's timeline tidy is a
+        # consumer's decision made in the mirror.
+        at = _epoch_iso(c.get("created"))
+        if at:
+            props["at"] = at
+        moved = _epoch_iso(c.get("is_moved"))
+        if moved:
+            props["isMoved"] = moved
+        if c.get("creator"):
+            props["creator"] = _user_ref(host, aid, team, c["creator"])
+        # On a 1:1 DM Slack calls the other person `user`.
+        if c.get("user"):
+            props["user"] = _user_ref(host, aid, team, c["user"])
+        parent = c.get("parent_conversation")
+        if isinstance(parent, str) and parent:
+            props["parentConversation"] = _conv_ref(host, aid, team, parent)
+        latest = c.get("latest")
+        if isinstance(latest, dict) and latest.get("ts"):
+            # Pointed at, never inlined, and never minted here: a conversation's
+            # newest message is mirrored by the history walk that reaches it.
+            props["latest"] = _msg_ref(host, aid, team, cid, latest["ts"])
+        for prop, api in _CONV_TEAM_LISTS:
+            refs = _refs(host, aid, team, c.get(api), _team_ref)
+            if refs:
+                props[prop] = refs
+        for prop, api in (("topic", "topic"), ("purpose", "purpose")):
+            shaped = _text_block(host, aid, team, c.get(api))
+            if shaped:
+                props[prop] = shaped
+        # T-021: the property is `properties`, the API's own name. It was renamed
+        # to `conversationProperties` on a reserved-name claim that is not true —
+        # the loader reserves `title`, `at`, `endsAt` and `dueAt` and nothing else
+        # (../substrate/internal/vocabulary/load.go:1246) — and the declaration
+        # carries `renamedFrom`, so the values move rather than the column being
+        # dropped and re-added.
+        if isinstance(c.get("properties"), dict) and c["properties"]:
+            props["properties"] = c["properties"]
+        return props
+
+
+    _FILE_SCALARS = [
+        ("name", "name", None),
+        ("fileTitle", "title", None),
+        ("mimetype", "mimetype", None),
+        ("filetype", "filetype", None),
+        ("prettyType", "pretty_type", None),
+        ("mode", "mode", None),
+        ("editable", "editable", None),
+        ("isExternal", "is_external", None),
+        ("externalType", "external_type", None),
+        ("isPublic", "is_public", None),
+        ("publicUrlShared", "public_url_shared", None),
+        ("displayAsBot", "display_as_bot", None),
+        ("username", "username", None),
+        ("size", "size", None),
+        ("isStarred", "is_starred", None),
+        ("numStars", "num_stars", None),
+        ("hasRichPreview", "has_rich_preview", None),
+        ("isModifiedByAi", "is_modified_by_ai", None),
+        ("mediaDisplayType", "media_display_type", None),
+        ("fileAccess", "file_access", None),
+        ("skippedShares", "skipped_shares", None),
+        ("commentsCount", "comments_count", None),
+        ("originalW", "original_w", None),
+        ("originalH", "original_h", None),
+        ("lines", "lines", None),
+        ("linesMore", "lines_more", None),
+        ("preview", "preview", None),
+        ("previewHighlight", "preview_highlight", None),
+        ("previewIsTruncated", "preview_is_truncated", None),
+        ("plainText", "plain_text", None),
+        ("urlPrivate", "url_private", None),
+        ("urlPrivateDownload", "url_private_download", None),
+        ("permalink", "permalink", None),
+        ("permalinkPublic", "permalink_public", None),
+        ("thumbTiny", "thumb_tiny", None),
+        ("thumbVideo", "thumb_video", None),
+        ("thumbVideoW", "thumb_video_w", None),
+        ("thumbVideoH", "thumb_video_h", None),
+        ("timestamp", "timestamp", _C_EPOCH),
+        # --- T-021: the rest of the file inventory ----------------------------
+        # 120 distinct fields were measured across the owner's file payloads and
+        # this bundle declared 76 of them, so a file row was an upload's metadata
+        # and its thumbnails and nothing else — no media, no canvas, no external
+        # resource, no access. Every field below is one the owner's own pull
+        # carries and the mirror was DROPPING.
+        #
+        # The MEDIA family: a transcoded rendition is a URL Slack guarantees
+        # absolute, so each is a `url`; the waveform is a list of levels.
+        ("aac", "aac", None),
+        ("mp4", "mp4", None),
+        ("mp4Low", "mp4_low", None),
+        ("hls", "hls", None),
+        ("hlsEmbed", "hls_embed", None),
+        ("vtt", "vtt", None),
+        ("deanimate", "deanimate", None),
+        ("deanimateGif", "deanimate_gif", None),
+        ("convertedPdf", "converted_pdf", None),
+        ("urlStaticPreview", "url_static_preview", None),
+        ("thumb360Gif", "thumb_360_gif", None),
+        ("thumb480Gif", "thumb_480_gif", None),
+        ("durationMs", "duration_ms", None),
+        ("audioWaveSamples", "audio_wave_samples", None),
+        ("isTranscriptionRegionSupported", "is_transcription_region_supported", None),
+        ("fullSizePreviewSupported", "full_size_preview_supported", None),
+        # The CANVAS / quip / external family. An `A…` is an app id and this
+        # bundle mirrors no app, so it stays a string (§3, the three-id rule);
+        # `canvas_creator_id` and `source_canvas_id` name a user and a file this
+        # bundle DOES mirror and are references, below.
+        ("canvasAgentCreatorId", "canvas_agent_creator_id", None),
+        ("canvasDefaultAgentId", "canvas_default_agent_id", None),
+        ("canvasPrintingEnabled", "canvas_printing_enabled", None),
+        ("canvasReadtime", "canvas_readtime", None),
+        ("quipThreadId", "quip_thread_id", None),
+        ("entityId", "entity_id", None),
+        ("externalId", "external_id", None),
+        ("externalUrl", "external_url", None),
+        ("editLink", "edit_link", None),
+        ("subtype", "subtype", None),
+        ("appId", "app_id", None),
+        ("appProvidesFileWorkObjects", "app_provides_file_work_objects", None),
+        # The ACCESS family: who may do what with this file, and how widely it
+        # has travelled. `has_more_shares` is one of the six fields `files.info`
+        # adds to an embedded file object and nothing else ever sends.
+        ("access", "access", None),
+        ("orgOrWorkspaceAccess", "org_or_workspace_access", None),
+        ("isRestrictedSharingEnabled", "is_restricted_sharing_enabled", None),
+        ("privateChannelsWithFileAccessCount",
+         "private_channels_with_file_access_count", None),
+        ("hasMoreShares", "has_more_shares", None),
+        ("teamPrefVersionHistoryEnabled", "team_pref_version_history_enabled", None),
+        ("isAiSuggested", "is_ai_suggested", None),
+        ("showBadge", "show_badge", None),
+        ("titleBlocks", "title_blocks", None),
+        ("updated", "updated", _C_EPOCH),
+        ("editTimestamp", "edit_timestamp", _C_EPOCH),
+        ("updateNotification", "update_notification", _C_EPOCH),
+    ]
+
+
+    def _file_props(host, aid, team, f):
+        props = {"account": aid, "fileId": f.get("id") or ""}
+        props.update(_shape(f, _FILE_SCALARS, clear=True))
+        at = _epoch_iso(f.get("created"))
+        if at:
+            # The file's own instant IS the trait's `at`, so it is not redeclared.
+            props["at"] = at
+        if f.get("user"):
+            props["user"] = _user_ref(host, aid, team, f["user"])
+        if f.get("user_team"):
+            props["userTeam"] = _team_ref(host, aid, team, f["user_team"])
+        for prop, api in (("channels", "channels"), ("groups", "groups"),
+                          ("ims", "ims")):
+            refs = _refs(host, aid, team, f.get(api), _conv_ref)
+            if refs:
+                props[prop] = refs
+        if isinstance(f.get("shares"), dict) and f["shares"]:
+            props["shares"] = f["shares"]
+        # T-021, the hydration fields. `canvas_creator_id` is a user this bundle
+        # mirrors and `source_canvas_id` is a FILE — a canvas is a file — so
+        # neither is a bare id beside a reference (§2, the owner's rule).
+        if f.get("canvas_creator_id"):
+            props["canvasCreator"] = _user_ref(host, aid, team, f["canvas_creator_id"])
+        if f.get("source_canvas_id"):
+            props["sourceCanvas"] = _file_ref(host, aid, team, f["source_canvas_id"])
+        if f.get("source_team"):
+            props["sourceTeam"] = _team_ref(host, aid, team, f["source_team"])
+        if "editors" in f:
+            props["editors"] = _refs(host, aid, team, f.get("editors"),
+                                     _user_ref) or None
+        # `teams_shared_with` is ONE array of TWO identity namespaces, exactly as
+        # `reply_users` is: a `T…` workspace this bundle mirrors and an `E…`
+        # enterprise grid org it does not. Guide amendment 5, applied — never one
+        # reference pinned at `team` with the enterprise ids minted into it.
+        if "teams_shared_with" in f:
+            ids = [t for t in (f.get("teams_shared_with") or []) if t]
+            props["teamsSharedWith"] = _refs(
+                host, aid, team, [t for t in ids if t[:1] == "T"], _team_ref) or None
+            props["enterprisesSharedWith"] = [t for t in ids if t[:1] == "E"] or None
+        # `dm_mpdm_users_with_file_access` is a list of {user_id, access}: the id
+        # is a user row, so it is a reference INSIDE the value object.
+        if "dm_mpdm_users_with_file_access" in f:
+            grants = []
+            for g in f.get("dm_mpdm_users_with_file_access") or []:
+                if not isinstance(g, dict):
+                    continue
+                one = _shape(g, [("access", "access", None)])
+                if g.get("user_id"):
+                    one["user"] = _user_ref(host, aid, team, g["user_id"])
+                if one:
+                    grants.append(one)
+            props["dmMpdmUsersWithFileAccess"] = grants or None
+        media = f.get("media_progress")
+        if isinstance(media, dict) and media:
+            one = _shape(media, [("offsetMs", "offset_ms", None),
+                                 ("maxOffsetMs", "max_offset_ms", None),
+                                 ("durationMs", "duration_ms", None),
+                                 ("mediaWatched", "media_watched", None)])
+            if one:
+                props["mediaProgress"] = one
+        icon = f.get("product_icon")
+        if isinstance(icon, dict) and icon:
+            one = _shape(icon, [("altText", "alt_text", None), ("url", "url", None)])
+            slack_file = icon.get("slack_file") or {}
+            if isinstance(slack_file, dict) and slack_file.get("id"):
+                one["slackFile"] = _file_ref(host, aid, team, slack_file["id"])
+            props["productIcon"] = one or None
+        elif "product_icon" in f:
+            props["productIcon"] = None
+        script = f.get("transcription")
+        if isinstance(script, dict) and script:
+            one = _shape(script, [("status", "status", None),
+                                  ("locale", "locale", None)])
+            preview = script.get("preview") or {}
+            if isinstance(preview, dict) and preview:
+                inner = _shape(preview, [("content", "content", None),
+                                         ("hasMore", "has_more", None)])
+                if inner:
+                    one["preview"] = inner
+            if one:
+                props["transcription"] = one
+        summary = f.get("ai_summary")
+        if isinstance(summary, dict) and summary:
+            one = _shape(summary, [("summaryId", "id", None),
+                                   ("content", "content", None),
+                                   ("status", "status", None),
+                                   ("unfurlEnabled", "unfurl_enabled", None)])
+            if one:
+                props["aiSummary"] = one
+        return props
+
+
+    def _bot_props(host, aid, team, bot_id, profile=None):
+        """A bot row. A bare `bot_id` mints the identity; a `bot_profile` (or a
+        bots.info read) fills the rest in, and never nulls what it does not
+        carry."""
+        props = {"account": aid, "botId": bot_id}
+        p = profile or {}
+        props.update(_shape(p, [("name", "name", None),
+                                ("appId", "app_id", None),
+                                ("deleted", "deleted", None),
+                                ("updated", "updated", _C_EPOCH)], clear=True))
+        if p.get("team_id"):
+            props["team"] = _team_ref(host, aid, team, p["team_id"])
+        if p.get("user_id"):
+            props["user"] = _user_ref(host, aid, team, p["user_id"])
+        icons = p.get("icons") or {}
+        shaped = _shape(icons, [("image36", "image_36", None),
+                                ("image48", "image_48", None),
+                                ("image72", "image_72", None)])
+        if shaped:
+            props["icons"] = shaped
+        return props
+
+
+    _MESSAGE_SCALARS = [
+        ("clientMsgId", "client_msg_id", None),
+        ("subtype", "subtype", None),
+        ("text", "text", None),
+        ("blocks", "blocks", None),
+        ("attachments", "attachments", None),
+        ("username", "username", None),
+        ("appId", "app_id", None),
+        ("upload", "upload", None),
+        ("displayAsBot", "display_as_bot", None),
+        ("hidden", "hidden", None),
+        ("isStarred", "is_starred", None),
+        ("isLocked", "is_locked", None),
+        ("subscribed", "subscribed", None),
+        ("channelType", "channel_type", None),
+        ("replyCount", "reply_count", None),
+        ("replyUsersCount", "reply_users_count", None),
+        ("triggerId", "trigger_id", None),
+        ("workflowId", "workflow_id", None),
+        ("topic", "topic", None),
+        ("purpose", "purpose", None),
+        ("name", "name", None),
+        ("oldName", "old_name", None),
+        ("lastRead", "last_read", _C_EPOCH),
+    ]
+
+
+    def _permalink(domain, channel, ts, thread_ts):
+        # Composed, never fetched: Slack documents the form, so a call per message
+        # buys nothing. Nothing rather than something broken when the workspace
+        # host is not known yet.
+        if not (domain and channel and ts):
+            return None
+        link = "https://%s/archives/%s/p%s" % (domain, channel, ts.replace(".", "", 1))
+        if thread_ts and thread_ts != ts:
+            link += "?thread_ts=" + thread_ts
+        return link
+
+
+    def _message_props(host, aid, team, channel, domain, msg):
+        """One message row: every documented field of the event, every relation a
+        reference, nothing computed."""
+        ts = msg.get("ts") or ""
+        text = msg.get("text") or ""
+        props = {"account": aid, "ts": ts, "type": "message",
+                 "channel": _conv_ref(host, aid, team, channel)}
+        props.update(_shape(msg, _MESSAGE_SCALARS, clear=True))
+        at = _ts_iso(ts)
+        if at:
+            # The ts IS the trait's instant; `ts` itself is declared beside it
+            # because it is the identity and the cursor Slack takes verbatim.
+            props["at"] = at
+        for prop, api in (("team", "team"), ("userTeam", "user_team"),
+                          ("sourceTeam", "source_team")):
+            if msg.get(api):
+                props[prop] = _team_ref(host, aid, team, msg[api])
+        for prop, api in (("user", "user"), ("parentUser", "parent_user_id"),
+                          ("inviter", "inviter")):
+            if msg.get(api):
+                props[prop] = _user_ref(host, aid, team, msg[api])
+        if msg.get("bot_id"):
+            props["bot"] = _rid(host, aid, "%s/%s" % (team, msg["bot_id"]))
+        # thread_ts names another message, so it is a reference and never a
+        # string beside one. Slack sets thread_ts == ts on a thread's own PARENT,
+        # and that supplied self-reference is a fact: it is what distinguishes a
+        # thread root from a message that was never threaded. Absence of
+        # thread_ts stays absence.
+        thread_ts = msg.get("thread_ts") or ""
+        if thread_ts:
+            props["parent"] = _msg_ref(host, aid, team, channel, thread_ts)
+        root = msg.get("root") or {}
+        if isinstance(root, dict) and root.get("ts"):
+            props["root"] = _msg_ref(host, aid, team, channel, root["ts"])
+        if msg.get("latest_reply"):
+            props["latestReply"] = _msg_ref(host, aid, team, channel,
+                                            msg["latest_reply"])
+            # The instant beside the reference: the reply row exists only
+            # once its thread is walked, and the walk can be hours behind.
+            at_reply = _ts_iso(msg["latest_reply"])
+            if at_reply:
+                props["latestReplyAt"] = at_reply
+        # `reply_users` is ONE array of TWO namespaces: Slack documents that it
+        # can hold bot ids, and a B… id is not a user. A reference pins one kind,
+        # so the array is split by the namespace Slack itself encodes in the
+        # prefix, and neither half ever mints the other's row.
+        if "reply_users" in msg:
+            ids = [u for u in (msg.get("reply_users") or []) if u]
+            props["replyUsers"] = _refs(
+                host, aid, team, [u for u in ids if u[:1] in ("U", "W")],
+                _user_ref) or None
+            props["replyBots"] = _refs(
+                host, aid, team, [u for u in ids if u[:1] == "B"],
+                _bot_ref) or None
+        # The mrkdwn decode: lossless and mechanical, beside the verbatim text.
+        # `text` is present on every persisted message, so an edit that removes
+        # the last mention CLEARS the derived list rather than leaving it stale.
+        if "text" in msg:
+            props["mentions"] = _refs(
+                host, aid, team, MENTION_RE.findall(text), _user_ref) or None
+            props["channelMentions"] = _refs(
+                host, aid, team, CHANNEL_RE.findall(text), _conv_ref) or None
+        if "files" in msg:
+            files = [f.get("id") for f in (msg.get("files") or [])
+                     if isinstance(f, dict) and f.get("id")]
+            props["files"] = _refs(host, aid, team, files, _file_ref) or None
+        if "x_files" in msg:
+            # `x_files` is the id-only companion of `files`: the same resources,
+            # named rather than embedded. Distinct property, thin targets minted
+            # by `_put_message` and hydrated by any later embed.
+            props["xFiles"] = _refs(host, aid, team, msg.get("x_files"),
+                                    _file_ref) or None
+        if "pinned_to" in msg:
+            props["pinnedTo"] = _refs(host, aid, team, msg.get("pinned_to"),
+                                      _conv_ref) or None
+        pin = msg.get("pinned_info") or {}
+        if isinstance(pin, dict) and pin:
+            one = {}
+            if pin.get("pinned_by"):
+                one["pinnedBy"] = _user_ref(host, aid, team, pin["pinned_by"])
+            when = _epoch_iso(pin.get("pinned_ts"))
+            if when:
+                one["pinnedTs"] = when
+            if one:
+                props["pinnedInfo"] = one
+        edited = msg.get("edited") or {}
+        if isinstance(edited, dict) and edited:
+            one = {}
+            if edited.get("user"):
+                one["user"] = _user_ref(host, aid, team, edited["user"])
+            when = _ts_iso(edited.get("ts"))
+            if when:
+                one["ts"] = when
+            if one:
+                props["edited"] = one
+        # Reactions CHURN. A reread that answers `reactions: []` — or that omits
+        # the last reactor from a list whose count did not change — has to clear
+        # what is there, so the presence of the key decides, never its length.
+        if "reactions" in msg:
+            props["reactions"] = _reaction_props(host, aid, team,
+                                                 msg.get("reactions"))
+        lang = msg.get("language") or {}
+        if isinstance(lang, dict) and lang:
+            one = _shape(lang, [("locale", "locale", None),
+                                ("isReliable", "is_reliable", None)])
+            if one:
+                props["language"] = one
+        icons = msg.get("icons") or {}
+        if isinstance(icons, dict) and icons:
+            one = _shape(icons, [("emoji", "emoji", None),
+                                 ("image64", "image_64", None)])
+            if one:
+                props["icons"] = one
+        # `metadata` is ONE API object: `{event_type, event_payload}`. It was
+        # flattened into two invented helper properties, which is a lift the
+        # guide does not allow and loses the object's own identity. The payload
+        # is heterogeneous by its event type — a justified `json` — and it keeps
+        # its own name and shape. An empty payload is a legal payload.
+        if "metadata" in msg:
+            meta = msg.get("metadata")
+            props["metadata"] = meta if isinstance(meta, dict) and meta else None
+        link = _permalink(domain, channel, ts, thread_ts)
+        if link:
+            props["permalink"] = link
+        return props
+
+
+    def _reaction_props(host, aid, team, reactions):
+        """A message's `reactions` as the row holds them, or None for none:
+        the whole set, never a delta, which is what both a history re-read and
+        a `reactions.get` answer."""
+        out = []
+        for r in reactions or []:
+            if not isinstance(r, dict):
+                continue
+            one = _shape(r, [("name", "name", None), ("count", "count", None),
+                             ("url", "url", None)])
+            if "users" in r:
+                one["users"] = _refs(host, aid, team, r.get("users"),
+                                     _user_ref) or None
+            if one:
+                out.append(one)
+        return out or None
+
+
+    def _keep(msg):
+        if msg.get("type") not in (None, "message"):
+            return False
+        if not msg.get("ts"):
+            return False
+        return (msg.get("subtype") or "") not in MUTATION_SUBTYPES
+
+
+    def _mutate(host, aid, team, channel, domain, msg):
+        """One mutation envelope, applied to the message it speaks about.
+
+        `message_changed` carries the WHOLE new message under `message`; the edit
+        lands on that message's own identity, never on the envelope's ts.
+        `message_deleted` names `deleted_ts`, and a deleted message is deleted —
+        a mirror that keeps it is not a mirror. The delete does not cascade
+        through thread membership: `parent`, `root` and `latestReply` are
+        references without `mustExist` precisely so a hole is legal.
+        `message_replied` is a reply-count notification about an existing parent
+        and carries no new content; its nested message is applied like a change.
+        """
+        sub = msg.get("subtype") or ""
+        if sub == "message_deleted":
+            gone = msg.get("deleted_ts") or (msg.get("previous_message") or {}).get("ts")
+            if gone:
+                host.effects.delete(MESSAGE_TYPE,
+                                    _msg_ref(host, aid, team, channel, gone))
+            return None
+        inner = msg.get("message")
+        if isinstance(inner, dict) and inner.get("ts"):
+            return _put_message(host, aid, team, channel, domain, inner)
+        return None
+
+
+    def _actors(msg):
+        """Every USER id one message names, wherever it names it.
+
+        `_unknown` collects the authors and reactors a later users.info fills in,
+        but the ORDERING guarantee is different and stricter: a row that is
+        referenced must exist before the reference lands. An editor, a pinner, a
+        file's uploader and a bot's user are all referenced by a message and none
+        of them was being minted — the reference resolved only when the same
+        person happened to be an author somewhere else in the cut."""
+        ids = set()
+        for key in ("user", "parent_user_id", "inviter"):
+            if msg.get(key):
+                ids.add(msg[key])
+        for holder in (msg.get("edited") or {}, msg.get("pinned_info") or {}):
+            for key in ("user", "pinned_by"):
+                if isinstance(holder, dict) and holder.get(key):
+                    ids.add(holder[key])
+        for f in msg.get("files") or []:
+            if isinstance(f, dict) and f.get("user"):
+                ids.add(f["user"])
+        prof = msg.get("bot_profile") or {}
+        if isinstance(prof, dict) and prof.get("user_id"):
+            ids.add(prof["user_id"])
+        for r in msg.get("reactions") or []:
+            if isinstance(r, dict):
+                ids |= {u for u in (r.get("users") or []) if u}
+        ids |= {u for u in (msg.get("reply_users") or []) if u and u[:1] != "B"}
+        ids |= set(MENTION_RE.findall(msg.get("text") or ""))
+        return {i for i in ids if i and i[:1] in ("U", "W")}
+
+
+    def _mint_actors(host, aid, team, msg):
+        """A THIN row for every user this message names, before the message that
+        names them. Identity and nothing else — a minted row carries what the
+        payload carried, and the payload carried an id."""
+        for uid in sorted(_actors(msg)):
+            _put(host, USER_TYPE, _user_ref(host, aid, team, uid),
+                 {"account": aid, "userId": uid})
+
+
+    def _put_thin_profile(host, aid, team, msg):
+        """`message.user_profile` — the author's profile as the message inlines it.
+
+        T-021. This was dropped on the floor: nine real profile fields, on 1,466
+        of the owner's messages, for authors a roster mint had left as an id. It
+        lands through the presence-aware merge, because it is THIN — a patch
+        replaces an object whole, and writing these nine as the profile would
+        delete the forty-one `users.list` had filled in.
+        """
+        prof = msg.get("user_profile")
+        uid = msg.get("user") or ""
+        if not (uid and isinstance(prof, dict) and prof):
+            return
+        u = {"id": uid, "profile": prof}
+        for key in THIN_PROFILE_USER_FIELDS:
+            if key in prof:
+                u[key] = prof[key]
+        _put_user(host, aid, team, u, whole=False)
+
+
+    def _put_message(host, aid, team, channel, domain, msg):
+        """Every row a message REFERENCES is upserted before the message itself:
+        its files, the bot identity behind a bot post, the users it names, and
+        the embedded ROOT of a broadcast reply — which arrives whole inside the
+        reply and used to be pointed at without ever being ingested."""
+        if not msg.get("ts"):
+            return None
+        if (msg.get("subtype") or "") in MUTATION_SUBTYPES:
+            return _mutate(host, aid, team, channel, domain, msg)
+        if not _keep(msg):
+            return None
+        ts = msg["ts"]
+        _mint_actors(host, aid, team, msg)
+        _put_thin_profile(host, aid, team, msg)
+        for f in msg.get("files") or []:
+            if isinstance(f, dict) and f.get("id"):
+                _put(host, FILE_TYPE, _file_ref(host, aid, team, f["id"]),
+                     _file_props(host, aid, team, f))
+        for fid in msg.get("x_files") or []:
+            # Named, not embedded: a thin row so the reference resolves, and
+            # nothing invented beyond the identity Slack supplied.
+            if fid:
+                _put(host, FILE_TYPE, _file_ref(host, aid, team, fid),
+                     {"account": aid, "fileId": fid})
+        if msg.get("bot_id"):
+            _put(host, BOT_TYPE, _bot_ref(host, aid, team, msg["bot_id"]),
+                 _bot_props(host, aid, team, msg["bot_id"], msg.get("bot_profile")))
+        # A bot named only by `reply_users` still needs its row before the
+        # reference at it lands.
+        for bid in (msg.get("reply_users") or []):
+            if bid and bid[:1] == "B":
+                _put(host, BOT_TYPE, _bot_ref(host, aid, team, bid),
+                     {"account": aid, "botId": bid})
+        root = msg.get("root")
+        if isinstance(root, dict) and root.get("ts") and root.get("ts") != ts:
+            # ONE level, and only where the root is a different message: a
+            # broadcast reply embeds its whole root, and `root` was a reference
+            # at a row nothing ever wrote. Bounded by construction — a root has
+            # no root of its own — and `root.root` is refused below.
+            inner = dict(root)
+            inner.pop("root", None)
+            _put_message(host, aid, team, channel, domain, inner)
+        eid = _msg_ref(host, aid, team, channel, ts)
+        _put(host, MESSAGE_TYPE, eid,
+             _message_props(host, aid, team, channel, domain, msg))
+        return eid
+
+
+    # ------------------------------------------------------------- the stamps
+
+    def _mint_conv_actors(host, aid, team, c):
+        """A conversation names a creator, a DM partner and the people who set
+        its topic and purpose. All four are references and none was minted."""
+        ids = {c.get("creator"), c.get("user")}
+        for key in ("topic", "purpose"):
+            block = c.get(key)
+            if isinstance(block, dict):
+                ids.add(block.get("creator"))
+        for uid in sorted(i for i in ids if i and i[:1] in ("U", "W")):
+            _put(host, USER_TYPE, _user_ref(host, aid, team, uid),
+                 {"account": aid, "userId": uid})
+
+    # PERMANENT failures. Slack has already answered the question and the answer
+    # will not change by asking again: the channel is gone, the caller is not in
+    # it, the token lacks the scope, the id does not resolve. Retrying one is not
+    # resilience, it is three wasted calls — and worse, a retried unit of work
+    # keeps `_pending` true forever, so the drain NEVER CONVERGES. The owner's
+    # seed ran 120 rounds against 5,129 conversations whose info the raw pull did
+    # not hold and ended `978 pending, [200 failed]` for exactly this reason.
+    PERMANENT_ERRORS = {
+        "channel_not_found", "not_in_channel", "is_archived", "user_not_found",
+        "users_not_found", "missing_scope", "not_allowed_token_type",
+        "no_permission", "thread_not_found", "message_not_found",
+        "account_inactive", "invalid_arguments", "method_not_supported_for_channel_type",
+        "team_access_not_granted", "restricted_action", "file_not_found",
+        "file_deleted", "bot_not_found", "not_authed", "invalid_auth",
+        # An EXPIRED OR MALFORMED CURSOR. Slack has already said the token is no
+        # good; asking with the same token again gets the same answer, and the
+        # walk that holds it restarts from the top on the next cold pass.
+        "invalid_cursor",
+    }
+
+
+    def _put_file_info(host, aid, team, f):
+        """One `files.info` answer, written whole.
+
+        The GRANTS and the canvas creator name users, and a reference needs a
+        row to land on (§1), so each is minted thin first.
+
+        The SHARES do not: `channels`/`groups`/`ims` name conversations the
+        walk may never touch — a file shared into a channel the token's user is
+        not in — and minting one would invent a conversation row the mirror has
+        no business holding. It is the same treatment `channelMentions` already
+        gets: a reference without `mustExist`, pointing outside the cut by
+        design."""
+        for g in f.get("dm_mpdm_users_with_file_access") or []:
+            if isinstance(g, dict) and g.get("user_id"):
+                _put(host, USER_TYPE, _user_ref(host, aid, team, g["user_id"]),
+                     {"account": aid, "userId": g["user_id"]})
+        for uid in (f.get("editors") or []):
+            if uid:
+                _put(host, USER_TYPE, _user_ref(host, aid, team, uid),
+                     {"account": aid, "userId": uid})
+        if f.get("canvas_creator_id"):
+            _put(host, USER_TYPE,
+                 _user_ref(host, aid, team, f["canvas_creator_id"]),
+                 {"account": aid, "userId": f["canvas_creator_id"]})
+        _put(host, FILE_TYPE, _file_ref(host, aid, team, f["id"]),
+             _file_props(host, aid, team, f))
+
+
+    # ----------------------------------------------------------- live events
+    #
+    # Above, `slacksync`'s row makers and the two helpers only this body has
+    # (`_reaction_props`, `_put_file_info`); below, this bundle's own events
+    # code. The webhook trigger the operator writes delivers what the Socket
+    # Mode bridge (cmd/slack-socket) forwards: one JSON body,
+    # `{"version": 1, "events": [...]}`, each element the `payload` of an
+    # `events_api` envelope (the outer event callback:
+    # `team_id`, `event_id`, `event_time` and the `event` itself). Slack
+    # redelivers an event nobody acknowledged and promises no order, so every
+    # write below survives being repeated and reordered:
+    #
+    #   * a message is mint-then-patch at its (channel, ts) identity, and a
+    #     payload whose edit is older than the row's is not written over it;
+    #   * a reaction is never a delta: `reactions.get` answers the message's
+    #     whole current set, and the row takes that set;
+    #   * a pin, an archive or a roster change sets the one fact it names.
+    #
+    # Within one batch the events run in `event_ts` order, a repeated
+    # `event_id` runs once, a message the batch deletes is not written by an
+    # earlier or later event of the same batch, and one message's reactions
+    # are read once.
+    #
+    # THE WALK STAYS THE COMPLETENESS PASS. The walk is the Slack bundle's
+    # `slacksync`. This path writes mirror rows and
+    # nothing else: no `conversationsync` row, no account property, no
+    # cursor. A message posted while the socket was down is read by the next
+    # history walk; a reaction, an edit or a delete on an older message is
+    # seen only when a walk reads that message again.
+    #
+    # BOUNDED like the walk. One invocation starts no Slack call past
+    # EVENT_PAGE_SECONDS or EVENT_PAGE_CALLS and no event past EVENT_PAGE_READS
+    # record reads; it hands the rest of the batch to the next page. The whole
+    # batch makes at most EVENT_BATCH_CALLS calls inside EVENT_BATCH_SECONDS,
+    # inside the engine's two-minute drain. A 429 ends the batch's calls: the
+    # events that need none are still applied, the ones that need one are
+    # counted `limited` and left to the walk. A Slack refusal of one target is
+    # that target's, and the batch goes on.
+
+    EVENTS_VERSION = 1
+    EVENT_PAGE_SECONDS = 10
+    EVENT_PAGE_CALLS = 20
+    EVENT_PAGE_READS = 450
+    # Shorter than the walk's: one invocation may start a call at
+    # EVENT_PAGE_SECONDS, and the function's timeout is thirty seconds.
+    EVENT_HTTP_TIMEOUT = 10
+    EVENT_BATCH_SECONDS = 75
+    EVENT_BATCH_CALLS = 150
+    EVENT_LOG_MAX = 20
+    # A refusal of the TOKEN, not of one target: every later call of the batch
+    # would get the same answer, so the first one ends the batch's calls the
+    # way a 429 does, and the output says so. This bundle's token is a second
+    # paste of the Slack bundle's, so it goes stale on its own when the first
+    # is rotated.
+    AUTH_ERRORS = {"invalid_auth", "not_authed", "account_inactive",
+                   "token_revoked", "token_expired"}
+
+
+    class _PageFull(Exception):
+        """This invocation has spent its share of calls; the event that asked
+        for one more runs again, from its start, on the next page."""
+
+
+    class _Counted:
+        """The host, with every record read counted against the page."""
+
+        def __init__(self, host, ev):
+            self._host = host
+            self._ev = ev
+            self.effects = host.effects
+            self.ids = host.ids
+            self.records = self
+
+        def get(self, kind, eid):
+            self._ev.reads += 1
+            return self._host.records.get(kind, eid)
+
+        def log(self, msg):
+            self._ev.log(msg)
+
+
+    def _ref_tail(value):
+        """The record id a stored reference names. A read hands a reference
+        back as `<kind>/<id>` or as `{"ref": "<kind>/<id>"}`, and a write takes
+        the bare id."""
+        if isinstance(value, dict):
+            value = value.get("ref") or value.get("id")
+        return str(value).rsplit("/", 1)[-1] if value else ""
+
+
+    def _instant(value):
+        """A stored or composed datetime as an aware datetime, or None. The
+        engine may hand a datetime back in another spelling than the one
+        written, so two are compared parsed, never as strings."""
+        if not value:
+            return None
+        try:
+            when = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return when if when.tzinfo else when.replace(tzinfo=_dt.timezone.utc)
+
+
+    def _throttled(props):
+        """Is the account inside a Retry-After the walk was given?"""
+        when = _instant(props.get("retryNotBefore"))
+        return bool(when and _dt.datetime.now(_dt.timezone.utc) < when)
+
+
+    class _Events:
+        """One invocation of the events path: the account the batch lands
+        on, what this invocation read and wrote, and the chain's own spend
+        (`cur`, carried between pages)."""
+
+        def __init__(self, host, base, token, aid, props, cur):
+            self.raw = host
+            self.host = _Counted(host, self)
+            self.base, self.token, self.aid = base, token, aid
+            self.cur = cur
+            self.team_ref = _ref_tail(props.get("team"))
+            self.owner_ref = _ref_tail(props.get("user"))
+            self.filter = (props.get("conversationFilter") or "").strip().lower()
+            self.members = bool(props.get("enabledMembers"))
+            self.team = ""
+            self.teams = {}
+            self.reads = 0
+            self.page_calls = 0
+            self.page_started = time.time()
+            self.logged = 0
+            # Committed conversation rows by id, None for absent.
+            self.convs = {}
+            # Message rows this invocation read or wrote, by record id; reads
+            # never see this invocation's own staged writes.
+            self.msgs = {}
+            self.deleted = set()
+            row = self.host.records.get(TEAM_TYPE, self.team_ref) or {}
+            url = (row.get("properties") or {}).get("url") or ""
+            self.domain = urllib.parse.urlsplit(url).hostname or ""
+
+        def log(self, msg):
+            self.logged += 1
+            if self.logged <= EVENT_LOG_MAX:
+                self.raw.log(msg)
+
+        def ours(self, tid):
+            """Is this callback from the account's own workspace? The account
+            holds the team as a reference, and a reference is a hash of the
+            team id, so the candidate is hashed and compared."""
+            if not isinstance(tid, str) or not tid:
+                return False
+            if tid not in self.teams:
+                self.teams[tid] = _team_ref(self.raw, self.aid, tid, tid) == self.team_ref
+            if self.teams[tid]:
+                self.team = tid
+            return self.teams[tid]
+
+        def spent(self):
+            return (self.reads >= EVENT_PAGE_READS
+                    or self.page_calls >= EVENT_PAGE_CALLS
+                    or time.time() - self.page_started >= EVENT_PAGE_SECONDS)
+
+        def fetched(self, key):
+            return key in (self.cur.get("fetched") or [])
+
+        def fetch(self, key):
+            self.cur["fetched"] = list(self.cur.get("fetched") or []) + [key]
+
+        def call(self, method, params):
+            """One Slack call, as (body, None), or (None, the outcome word the
+            event is counted under)."""
+            if self.cur.get("limited"):
+                return None, "limited"
+            if self.cur.get("authError"):
+                return None, "unauthorized"
+            if (self.cur.get("calls") or 0) >= EVENT_BATCH_CALLS or \
+                    time.time() - (self.cur.get("startedAt") or 0) >= EVENT_BATCH_SECONDS:
+                return None, "budget"
+            if self.page_calls and (self.page_calls >= EVENT_PAGE_CALLS or
+                                    time.time() - self.page_started >= EVENT_PAGE_SECONDS):
+                raise _PageFull()
+            self.page_calls += 1
+            self.cur["calls"] = (self.cur.get("calls") or 0) + 1
+            target = " ".join(str(v) for k, v in sorted(params.items()) if k != "full")
+            try:
+                return _call(self.base, self.token, method, params,
+                             timeout=EVENT_HTTP_TIMEOUT), None
+            except RateLimited as rl:
+                self.cur["limited"] = True
+                self.log("slack events: %s answered 429 (Retry-After %ss); the "
+                         "batch makes no more Slack calls" % (method, rl.retry_after))
+                return None, "limited"
+            except Slack as e:
+                if e.error in AUTH_ERRORS:
+                    self.cur["authError"] = e.error
+                    # Past the log cap on purpose: a stale token is the one
+                    # failure the operator has to act on.
+                    self.raw.log("slack events: Slack refused the userToken "
+                                 "(%s) on %s; the batch makes no more Slack "
+                                 "calls. Paste a current user token into the "
+                                 "slacklive userToken secret" % (e.error, method))
+                    return None, "unauthorized"
+                self.log("slack events: %s %s refused: %s" % (method, target, e.error))
+                return None, ("refused" if e.error in PERMANENT_ERRORS else "failed")
+            except Exception as e:  # noqa: BLE001 - one target's failure is its own
+                self.log("slack events: %s %s failed: %s"
+                         % (method, target, str(e)[:REASON_MAX]))
+                return None, "failed"
+
+        def message(self, eid):
+            """The message row's properties, None when there is none."""
+            if eid not in self.msgs:
+                row = self.host.records.get(MESSAGE_TYPE, eid)
+                self.msgs[eid] = (row.get("properties") or {}) if row else None
+            return self.msgs[eid]
+
+        def conv_row(self, cid):
+            """The conversation row's properties, None when there is none."""
+            if cid not in self.convs:
+                row = self.host.records.get(CONV_TYPE, _conv_ref(
+                    self.host, self.aid, self.team, cid))
+                self.convs[cid] = (row.get("properties") or {}) if row else None
+            return self.convs[cid]
+
+        def conversation(self, cid):
+            """The conversation a message lands in, minted when the mirror has
+            none yet (a DM opened since the last walk), or None when the
+            account's `conversationFilter` keeps its messages out.
+
+            `message.channel` is `mustExist`, so the row has to be there before
+            the message. One conversations.info fills it in; without the call
+            a thin row holds the id, and the walk fills it in later."""
+            props = self.conv_row(cid)
+            if props is None:
+                h, aid, team = self.host, self.aid, self.team
+                body, _word = self.call("conversations.info", {"channel": cid})
+                c = (body or {}).get("channel") or {}
+                if c.get("id") == cid:
+                    _mint_conv_actors(h, aid, team, c)
+                    props = _conv_props(h, aid, team, c)
+                else:
+                    props = {"account": aid, "conversationId": cid}
+                _put(h, CONV_TYPE, _conv_ref(h, aid, team, cid), props)
+                self.convs[cid] = props
+            if self.filter and self.filter not in (props.get("name") or "").lower():
+                return None
+            return props
+
+
+    def _event_batch(request):
+        """The batch's callbacks, or None and why there are none."""
+        body = request.get("body") or {}
+        text = body.get("text")
+        if text is None and body.get("base64"):
+            try:
+                text = base64.b64decode(body["base64"]).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                return None, "the request body is not UTF-8"
+        if not text:
+            return None, "the request carried no body"
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return None, "the request body is not JSON"
+        if not isinstance(doc, dict) or doc.get("version") != EVENTS_VERSION:
+            return None, ("the request body is not a version %d event batch"
+                          % EVENTS_VERSION)
+        events = doc.get("events")
+        if not isinstance(events, list):
+            return None, "the batch carries no `events` list"
+        return [e for e in events if isinstance(e, dict)], None
+
+
+    def _event_order(batch):
+        """The batch in the order it runs: by `event_ts`, the sidecar's order
+        breaking ties, each `event_id` once. Returns (callbacks, repeats)."""
+        seen, out, repeats = set(), [], 0
+        for i, cb in enumerate(batch):
+            eid = cb.get("event_id")
+            if isinstance(eid, str) and eid:
+                if eid in seen:
+                    repeats += 1
+                    continue
+                seen.add(eid)
+            e = cb.get("event") if isinstance(cb.get("event"), dict) else {}
+            when = 0.0
+            for v in (e.get("event_ts"), cb.get("event_time")):
+                try:
+                    when = float(v)
+                    break
+                except (TypeError, ValueError):
+                    continue
+            out.append((when, i, cb))
+        out.sort(key=lambda t: (t[0], t[1]))
+        return [cb for _w, _i, cb in out], repeats
+
+
+    def _event_of(ev, cb):
+        """The inner event of one of the account's own callbacks, or None."""
+        e = cb.get("event")
+        if cb.get("type") != "event_callback" or not isinstance(e, dict):
+            return None
+        if not ev.ours(cb.get("team_id")):
+            return None
+        return e
+
+
+    def _no_reactions(msg):
+        """A message payload without its reactions. Only `reactions.get`
+        writes them here: an event's copy is as old as the event, and a
+        `reactions.get` this or an earlier batch wrote is newer."""
+        out = {k: v for k, v in msg.items() if k != "reactions"}
+        if isinstance(out.get("root"), dict):
+            out["root"] = {k: v for k, v in out["root"].items() if k != "reactions"}
+        return out
+
+
+    def _not_older(row, payload):
+        """May this payload be written over the row? Only an edit orders two
+        versions of one message, so a payload is older when the row holds an
+        edit and the payload holds none or an earlier one: a redelivered
+        `message` event, or a `message_changed` that arrived late."""
+        stored = _instant(((row or {}).get("edited") or {}).get("ts"))
+        if stored is None:
+            return True
+        mine = _instant(_ts_iso(((payload.get("edited") or {}).get("ts"))))
+        return mine is not None and mine >= stored
+
+
+    def _overlay(row, props):
+        """A row as it reads after a mint-then-patch of these properties: a
+        value replaces, None removes, and what the write left out stays."""
+        out = dict(row or {})
+        for key, val in props.items():
+            if val is None:
+                out.pop(key, None)
+            else:
+                out[key] = val
+        return out
+
+
+    def _ev_put_message(ev, channel, payload):
+        h, aid, team = ev.host, ev.aid, ev.team
+        _put_message(h, aid, team, channel, ev.domain, payload)
+        for msg in (payload.get("root"), payload):
+            if isinstance(msg, dict) and msg.get("ts") and _keep(msg):
+                eid = _msg_ref(h, aid, team, channel, msg["ts"])
+                ev.msgs[eid] = _overlay(ev.message(eid), _message_props(
+                    h, aid, team, channel, ev.domain, msg))
+
+
+    def _ev_message(ev, e):
+        h, aid, team = ev.host, ev.aid, ev.team
+        channel = e.get("channel")
+        sub = e.get("subtype") or ""
+        if not isinstance(channel, str) or not channel:
+            return "skipped"
+        if sub == "message_deleted":
+            gone = e.get("deleted_ts") or (e.get("previous_message") or {}).get("ts")
+            if not gone:
+                return "skipped"
+            eid = _msg_ref(h, aid, team, channel, gone)
+            # A delete of a row that does not exist fails the whole delivery,
+            # and a message the mirror never held, or already deleted, has
+            # nothing to delete.
+            if ev.message(eid) is None:
+                return "skipped"
+            h.effects.delete(MESSAGE_TYPE, eid)
+            ev.msgs[eid] = None
+            return "applied"
+        msg = e
+        if sub in MUTATION_SUBTYPES:
+            msg = e.get("message")
+            if not isinstance(msg, dict):
+                return "skipped"
+        ts = msg.get("ts")
+        if not ts or (channel, ts) in ev.deleted:
+            return "skipped"
+        if ev.conversation(channel) is None:
+            return "skipped"
+        payload = _no_reactions(msg)
+        if not _not_older(ev.message(_msg_ref(h, aid, team, channel, ts)), payload):
+            return "stale"
+        _ev_put_message(ev, channel, payload)
+        _ev_thread(ev, channel, payload)
+        return "applied"
+
+
+    def _ev_thread(ev, channel, msg):
+        """A reply refreshes what its parent says about replies, where that is
+        exact without a call: the newest reply and its instant, the reply's
+        author among `replyUsers`, and the parent's own thread self-reference.
+        `replyCount` and `replyUsersCount` are counts an event cannot keep
+        exactly under redelivery, and wait for the walk."""
+        thread_ts, ts = msg.get("thread_ts"), msg.get("ts")
+        if not thread_ts or thread_ts == ts or (channel, thread_ts) in ev.deleted:
+            return
+        h, aid, team = ev.host, ev.aid, ev.team
+        peid = _msg_ref(h, aid, team, channel, thread_ts)
+        row = ev.message(peid)
+        if row is None:
+            return
+        patch = {}
+        at = _ts_iso(ts)
+        known = _instant(row.get("latestReplyAt"))
+        if at and (known is None or _instant(at) > known):
+            patch["latestReply"] = _msg_ref(h, aid, team, channel, ts)
+            patch["latestReplyAt"] = at
+        uid = msg.get("user") or ""
+        if uid[:1] in ("U", "W"):
+            users = [_ref_tail(r) for r in (row.get("replyUsers") or [])]
+            ref = _user_ref(h, aid, team, uid)
+            if ref not in users:
+                patch["replyUsers"] = users + [ref]
+        if _ref_tail(row.get("parent")) != peid:
+            patch["parent"] = peid
+        if patch:
+            h.effects.patch(MESSAGE_TYPE, peid, properties=patch)
+            ev.msgs[peid] = _overlay(row, patch)
+
+
+    def _ev_reaction(ev, e):
+        """`reaction_added` and `reaction_removed`: the message's whole set,
+        read now. A reaction on a file or a file comment has no message row to
+        hold it and is skipped."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        item = e.get("item") or {}
+        if item.get("type") != "message":
+            return "skipped"
+        channel, ts = item.get("channel"), item.get("ts")
+        if not (channel and ts) or (channel, ts) in ev.deleted:
+            return "skipped"
+        key = "reactions %s/%s" % (channel, ts)
+        if ev.fetched(key):
+            return "repeated"
+        if ev.conversation(channel) is None:
+            return "skipped"
+        body, word = ev.call("reactions.get", {"channel": channel,
+                                               "timestamp": ts, "full": "true"})
+        if body is None:
+            return word
+        ev.fetch(key)
+        msg = body.get("message") or {}
+        if msg.get("ts") != ts:
+            return "skipped"
+        reactions = msg.get("reactions") or []
+        eid = _msg_ref(h, aid, team, channel, ts)
+        row = ev.message(eid)
+        if row is None:
+            # A message the mirror never held: the answer is the whole
+            # message, so it lands whole, with its reactions present even when
+            # there are none.
+            _ev_put_message(ev, channel, dict(msg, reactions=reactions))
+            _ev_thread(ev, channel, msg)
+            return "applied"
+        _mint_actors(h, aid, team, {"reactions": reactions})
+        shaped = _reaction_props(h, aid, team, reactions)
+        h.effects.patch(MESSAGE_TYPE, eid, properties={"reactions": shaped})
+        ev.msgs[eid] = _overlay(row, {"reactions": shaped})
+        return "applied"
+
+
+    def _ev_pin(ev, e, added):
+        """`pin_added` and `pin_removed` on a message: this conversation joins
+        or leaves the row's `pinnedTo`. A pin on a message the mirror never
+        held writes the message the event carries first."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        item = e.get("item") or {}
+        if item.get("type") != "message":
+            return "skipped"
+        channel = item.get("channel") or e.get("channel_id") or ""
+        msg = item.get("message") or {}
+        ts = msg.get("ts") or ""
+        if not (channel and ts) or (channel, ts) in ev.deleted:
+            return "skipped"
+        eid = _msg_ref(h, aid, team, channel, ts)
+        row = ev.message(eid)
+        if row is None:
+            if not added or ev.conversation(channel) is None:
+                return "skipped"
+            _ev_put_message(ev, channel, _no_reactions(msg))
+            row = ev.message(eid) or {}
+        cref = _conv_ref(h, aid, team, channel)
+        pinned = [_ref_tail(r) for r in (row.get("pinnedTo") or [])]
+        patch = {}
+        if added:
+            if cref not in pinned:
+                pinned.append(cref)
+            info = {}
+            by = item.get("created_by") or e.get("user") or ""
+            if by[:1] in ("U", "W"):
+                _put(h, USER_TYPE, _user_ref(h, aid, team, by),
+                     {"account": aid, "userId": by})
+                info["pinnedBy"] = _user_ref(h, aid, team, by)
+            when = _epoch_iso(item.get("created")) or _ts_iso(e.get("event_ts"))
+            if when:
+                info["pinnedTs"] = when
+            if info:
+                patch["pinnedInfo"] = info
+        else:
+            pinned = [r for r in pinned if r != cref]
+            if not pinned:
+                patch["pinnedInfo"] = None
+        patch["pinnedTo"] = pinned or None
+        h.effects.patch(MESSAGE_TYPE, eid, properties=patch)
+        ev.msgs[eid] = _overlay(row, patch)
+        return "applied"
+
+
+    def _ev_conversation(ev, e):
+        """`channel_created`, `channel_rename` and `group_rename` carry the
+        conversation as an object; what it carries is written, and a field
+        it leaves out is left as the walk wrote it."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        c = e.get("channel")
+        if not isinstance(c, dict) or not c.get("id"):
+            return "skipped"
+        row = ev.conv_row(c["id"])
+        _mint_conv_actors(h, aid, team, c)
+        props = _conv_props(h, aid, team, c)
+        _put(h, CONV_TYPE, _conv_ref(h, aid, team, c["id"]), props)
+        ev.convs[c["id"]] = _overlay(row, props)
+        return "applied"
+
+
+    def _ev_archive(ev, e, archived):
+        h, aid, team = ev.host, ev.aid, ev.team
+        cid = e.get("channel")
+        if isinstance(cid, dict):
+            cid = cid.get("id")
+        if not isinstance(cid, str) or not cid:
+            return "skipped"
+        row = ev.conv_row(cid)
+        props = {"account": aid, "conversationId": cid, "isArchived": archived}
+        _put(h, CONV_TYPE, _conv_ref(h, aid, team, cid), props)
+        ev.convs[cid] = _overlay(row, props)
+        return "applied"
+
+
+    def _ev_member(ev, e, joined):
+        """`member_joined_channel` and `member_left_channel`. The owner's own
+        join or leave sets the conversation's `isMember`; anyone's moves the
+        `members` roster where the row holds one, which it does only when the
+        account walks rosters. A conversation the mirror does not hold yet is
+        left to the walk."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        cid, uid = e.get("channel"), e.get("user")
+        if not (isinstance(cid, str) and cid and isinstance(uid, str) and uid):
+            return "skipped"
+        row = ev.conv_row(cid)
+        if row is None:
+            return "skipped"
+        uref = _user_ref(h, aid, team, uid)
+        patch = {}
+        if uref == ev.owner_ref and row.get("isMember") is not joined:
+            patch["isMember"] = joined
+        if ev.members and isinstance(row.get("members"), list):
+            members = [_ref_tail(m) for m in row["members"]]
+            if joined and uref not in members:
+                patch["members"] = members + [uref]
+            elif not joined and uref in members:
+                patch["members"] = [m for m in members if m != uref] or None
+        if not patch:
+            return "skipped"
+        if joined and uid[:1] in ("U", "W"):
+            _put(h, USER_TYPE, uref, {"account": aid, "userId": uid})
+        h.effects.patch(CONV_TYPE, _conv_ref(h, aid, team, cid), properties=patch)
+        ev.convs[cid] = _overlay(row, patch)
+        return "applied"
+
+
+    def _ev_user(ev, e):
+        """`user_change` and `team_join` carry the whole member object, as
+        users.list does."""
+        u = e.get("user")
+        if not isinstance(u, dict) or not u.get("id"):
+            return "skipped"
+        _put_user(ev.host, ev.aid, ev.team, u, whole=True)
+        return "applied"
+
+
+    def _ev_file(ev, e):
+        """`file_shared` and `file_change` name the file and little else, so
+        the file is read from `files.info`, once per batch."""
+        fid = e.get("file_id") or (e.get("file") or {}).get("id")
+        if not isinstance(fid, str) or not fid:
+            return "skipped"
+        key = "file " + fid
+        if ev.fetched(key):
+            return "repeated"
+        body, word = ev.call("files.info", {"file": fid})
+        if body is None:
+            return word
+        ev.fetch(key)
+        f = body.get("file") or {}
+        if f.get("id") != fid:
+            return "skipped"
+        _put_file_info(ev.host, ev.aid, ev.team, f)
+        return "applied"
+
+
+    def _ev_file_deleted(ev, e):
+        """`file_deleted` marks a mirrored file the way a deleted file's embed
+        does when the walk reads it, `mode: tombstone`; the row stays, as the
+        walk keeps it. A file the mirror never held is not minted."""
+        h, aid, team = ev.host, ev.aid, ev.team
+        fid = e.get("file_id") or (e.get("file") or {}).get("id")
+        if not isinstance(fid, str) or not fid:
+            return "skipped"
+        eid = _file_ref(h, aid, team, fid)
+        if not h.records.get(FILE_TYPE, eid):
+            return "skipped"
+        _put(h, FILE_TYPE, eid, {"account": aid, "fileId": fid, "mode": "tombstone"})
+        return "applied"
+
+
+    EVENT_HANDLERS = {
+        "message": _ev_message,
+        "reaction_added": _ev_reaction,
+        "reaction_removed": _ev_reaction,
+        "pin_added": lambda ev, e: _ev_pin(ev, e, True),
+        "pin_removed": lambda ev, e: _ev_pin(ev, e, False),
+        "channel_created": _ev_conversation,
+        "channel_rename": _ev_conversation,
+        "group_rename": _ev_conversation,
+        "channel_archive": lambda ev, e: _ev_archive(ev, e, True),
+        "group_archive": lambda ev, e: _ev_archive(ev, e, True),
+        "channel_unarchive": lambda ev, e: _ev_archive(ev, e, False),
+        "group_unarchive": lambda ev, e: _ev_archive(ev, e, False),
+        # The walk keeps a deleted conversation's row and its messages: the
+        # conversation leaves conversations.list and Slack refuses its
+        # history. The event changes nothing the walk would not.
+        "channel_deleted": lambda ev, e: "skipped",
+        "group_deleted": lambda ev, e: "skipped",
+        "member_joined_channel": lambda ev, e: _ev_member(ev, e, True),
+        "member_left_channel": lambda ev, e: _ev_member(ev, e, False),
+        "user_change": _ev_user,
+        "team_join": _ev_user,
+        "file_shared": _ev_file,
+        "file_change": _ev_file,
+        "file_deleted": _ev_file_deleted,
+    }
+
+
+    def _events(input, host, accounts, token, base):
+        """One webhook delivery: a batch of Events API callbacks, applied to
+        the one live account's mirror rows. See "live events" above."""
+        request = (input.get("envelope") or {}).get("request")
+        if not isinstance(request, dict):
+            # An authenticated wake of the trigger fires with no request.
+            return {"output": {"skipped": "no request"}}
+        batch, why = _event_batch(request)
+        if why:
+            host.log("slack events: %s; nothing applied" % why)
+            return {"output": {"skipped": why}}
+        live = sorted(aid for aid, a in accounts.items() if _wants(a))
+        if not live:
+            host.log("slack events: no account has enabledMessages on; "
+                     "nothing applied")
+            return {"output": {"skipped": "no account"}}
+        aid = live[0]
+        props = accounts[aid].get("properties") or {}
+        if props.get("syncPaused"):
+            return {"output": {"skipped": "paused"}}
+        if not _ref_tail(props.get("team")):
+            # The account learns its workspace from the walk's auth.test.
+            host.log("slack events: the account has not synced yet, so its "
+                     "workspace is not known; nothing applied")
+            return {"output": {"skipped": "not synced"}}
+        resume = host.page.resume()
+        cur = resume if isinstance(resume, dict) and resume.get("events") else {
+            "events": EVENTS_VERSION, "at": 0, "calls": 0,
+            "startedAt": time.time(), "limited": _throttled(props),
+            "fetched": [], "counts": {}}
+        ev = _Events(host, base, token, aid, props, cur)
+        callbacks, repeats = _event_order(batch)
+        for cb in callbacks:
+            e = _event_of(ev, cb)
+            if e and e.get("type") == "message" and e.get("subtype") == "message_deleted":
+                gone = e.get("deleted_ts") or (e.get("previous_message") or {}).get("ts")
+                if e.get("channel") and gone:
+                    ev.deleted.add((e["channel"], gone))
+        counts = cur["counts"]
+        i = cur["at"]
+        while i < len(callbacks):
+            if i > cur["at"] and ev.spent():
+                break
+            cb = callbacks[i]
+            e = cb.get("event") if isinstance(cb.get("event"), dict) else {}
+            try:
+                handler = EVENT_HANDLERS.get(e.get("type") or "")
+                if cb.get("type") != "event_callback" or not e:
+                    word = "ignored"
+                elif not ev.ours(cb.get("team_id")):
+                    word = "foreign"
+                else:
+                    word = handler(ev, e) if handler else "ignored"
+            except _PageFull:
+                break
+            except Exception as err:  # noqa: BLE001 - one event's failure is its own
+                ev.log("slack events: a %s event (%s) failed: %s: %s"
+                       % (e.get("type") or "?", cb.get("event_id") or "no id",
+                          type(err).__name__, str(err)[:REASON_MAX]))
+                word = "failed"
+            counts[word] = counts.get(word, 0) + 1
+            i += 1
+        if i < len(callbacks):
+            return {"more": host.page.more(dict(cur, at=i))}
+        out = dict(counts, events=len(callbacks), repeats=repeats,
+                   calls=cur.get("calls") or 0, rateLimited=bool(cur.get("limited")))
+        if cur.get("authError"):
+            out["authError"] = cur["authError"]
+        host.log("slack events: %d events, %d repeated: %s; %d Slack calls%s%s"
+                 % (len(callbacks), repeats,
+                    ", ".join("%s %d" % kv for kv in sorted(counts.items())) or "none",
+                    out["calls"], ", rate limited" if out["rateLimited"] else "",
+                    ", token refused (%s)" % out["authError"] if "authError" in out else ""))
+        if ev.logged > EVENT_LOG_MAX:
+            host.log("slack events: %d more lines not logged" % (ev.logged - EVENT_LOG_MAX))
+        return {"output": out}
+
+
+    # ------------------------------------------------------------- the account
+
+    # The Slack bundle allows one live account per token, and so does this body:
+    # the lexicographically-first account with `enabledMessages` on.
+    ACCOUNT_PAGE = 50
+
+
+    def _accounts(host):
+        """The Slack bundle's account rows, by id. They are another package's
+        kind, so they never arrive on config.accounts: the body reads them."""
+        page = host.records.list([ACCOUNT_TYPE], first=ACCOUNT_PAGE) or {}
+        return {a["id"]: a for a in (page.get("records") or []) if a.get("id")}
+
+
+    def main(input, host):
+        settings = (input.get("config") or {}).get("settings") or {}
+        token = settings.get("userToken") or ""
+        base = (settings.get("apiBase") or DEFAULT_API).rstrip("/")
+
+        if not token:
+            host.log("slack events: the userToken secret is empty; fill it in "
+                     "with the Slack bundle's user token. Nothing applied")
+            return {"output": {"skipped": "unconfigured"}}
+        if not _pinned(base):
+            raise RuntimeError(
+                "slack events: apiBase %r is not a pinned origin (https on a "
+                "slack.com host, or loopback); refusing to send the user token"
+                % base)
+        return _events(input, host, _accounts(host), token, base)
