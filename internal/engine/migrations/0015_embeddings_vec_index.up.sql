@@ -29,26 +29,40 @@
 --   CREATE INDEX CONCURRENTLY IF NOT EXISTS embeddings_vec_hnsw_idx
 --       ON embeddings USING hnsw ((vec::public.halfvec(1536)) public.halfvec_cosine_ops);
 --
--- IF NOT EXISTS alone would accept any index of the name: a CONCURRENTLY
--- build that failed leaves one marked invalid, and one built on the
--- full-precision column or another operator class has the name too. Either
--- would make this statement a no-op that the reader can never use, so an
--- index of the name that is not a valid hnsw index with halfvec_cosine_ops is
--- dropped first and built again.
+-- IF NOT EXISTS alone would accept any relation of the name: a CONCURRENTLY
+-- build that failed leaves an invalid index, and one built on the
+-- full-precision column, on another expression or operator class, on part of
+-- the table or on another table has the name too. Each would make this
+-- statement a no-op the reader can never use. So the name is looked up beside
+-- the table it must index (never through the search path, which can reach
+-- another schema's relation of that name), and unless it is a valid,
+-- unconditional hnsw index on `embeddings` over `vec::halfvec(1536)` with
+-- halfvec_cosine_ops, it is dropped and built again.
 DO $$
 DECLARE
-    idx regclass := to_regclass('embeddings_vec_hnsw_idx');
+    tbl regclass := to_regclass('embeddings');
+    idx oid;
 BEGIN
+    SELECT c.oid INTO idx
+      FROM pg_class c
+     WHERE c.relname = 'embeddings_vec_hnsw_idx'
+       AND c.relnamespace = (SELECT relnamespace FROM pg_class WHERE oid = tbl);
     IF idx IS NOT NULL AND NOT EXISTS (
         SELECT 1
           FROM pg_index i
           JOIN pg_class c ON c.oid = i.indexrelid
           JOIN pg_am a ON a.oid = c.relam
           JOIN pg_opclass o ON o.oid = i.indclass[0]
-         WHERE i.indexrelid = idx AND i.indisvalid
-           AND a.amname = 'hnsw' AND o.opcname = 'halfvec_cosine_ops'
+         WHERE i.indexrelid = idx
+           AND i.indrelid = tbl
+           AND i.indisvalid
+           AND i.indnatts = 1
+           AND i.indpred IS NULL
+           AND a.amname = 'hnsw'
+           AND o.opcname = 'halfvec_cosine_ops'
+           AND regexp_replace(pg_get_expr(i.indexprs, i.indrelid), '[()[:space:]]|public[.]', '', 'g') = 'vec::halfvec1536'
     ) THEN
-        EXECUTE format('DROP INDEX %s', idx);
+        EXECUTE format('DROP INDEX %s', idx::regclass);
     END IF;
 END
 $$;

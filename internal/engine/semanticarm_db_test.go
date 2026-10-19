@@ -258,3 +258,96 @@ func TestSearchFailsWhenTheCallerCancelsDuringTheSemanticArm(t *testing.T) {
 		}
 	}
 }
+
+// The vector index migration rebuilds an index of its name that the reader
+// cannot use, and leaves alone both the index it builds and a relation of that
+// name in another schema. Each case runs the migration again, in a
+// transaction rolled back after it, over an arranged namesake.
+func TestTheVectorIndexMigrationReplacesAnIndexTheReaderCannotUse(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, err := sql.Open("pgx", engine.MigratedDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	migration, err := engine.MigrationSQL("0015_embeddings_vec_index.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const usable = `SELECT count(*) FROM pg_index i
+		JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_am a ON a.oid = c.relam
+		JOIN pg_opclass o ON o.oid = i.indclass[0]
+		WHERE i.indexrelid = to_regclass('embeddings_vec_hnsw_idx') AND i.indrelid = to_regclass('embeddings')
+		  AND i.indisvalid AND i.indpred IS NULL AND a.amname = 'hnsw' AND o.opcname = 'halfvec_cosine_ops'`
+	run := func(t *testing.T, arrange []string, check func(*sql.Tx)) {
+		t.Helper()
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		for _, stmt := range arrange {
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				t.Fatalf("arrange %q: %v", stmt, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, migration); err != nil {
+			t.Fatalf("run the migration again: %v", err)
+		}
+		var n int
+		if err := tx.QueryRowContext(ctx, usable).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("after the migration embeddings_vec_hnsw_idx is not the index the reader uses")
+		}
+		if check != nil {
+			check(tx)
+		}
+	}
+	oid := func(t *testing.T, tx *sql.Tx, rel string) int64 {
+		t.Helper()
+		var o int64
+		if err := tx.QueryRowContext(ctx, `SELECT coalesce(to_regclass($1)::oid::bigint, 0)`, rel).Scan(&o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	drop := `DROP INDEX embeddings_vec_hnsw_idx`
+	for name, arrange := range map[string][]string{
+		"full precision":         {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw (vec vector_cosine_ops)`},
+		"another operator class": {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw ((vec::halfvec(1536)) halfvec_l2_ops)`},
+		"part of the table":      {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw ((vec::halfvec(1536)) halfvec_cosine_ops) WHERE provider = 'other'`},
+		"another table":          {drop, `CREATE TABLE scratch_vectors (vec vector(1536))`, `CREATE INDEX embeddings_vec_hnsw_idx ON scratch_vectors USING hnsw ((vec::halfvec(1536)) halfvec_cosine_ops)`},
+		"invalid":                {`UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass('embeddings_vec_hnsw_idx')`},
+		"missing":                {drop},
+	} {
+		t.Run(name, func(t *testing.T) { run(t, arrange, nil) })
+	}
+	t.Run("the index it builds is kept", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		before := oid(t, tx, "embeddings_vec_hnsw_idx")
+		if _, err := tx.ExecContext(ctx, migration); err != nil {
+			t.Fatalf("run the migration again: %v", err)
+		}
+		if after := oid(t, tx, "embeddings_vec_hnsw_idx"); before == 0 || after != before {
+			t.Fatalf("the migration rebuilt the index it builds (oid %d, was %d)", after, before)
+		}
+	})
+	t.Run("another schema's namesake is left alone", func(t *testing.T) {
+		run(t, []string{
+			`CREATE SCHEMA scratch_other`,
+			`CREATE TABLE scratch_other.vectors (vec vector(1536))`,
+			`CREATE INDEX embeddings_vec_hnsw_idx ON scratch_other.vectors USING hnsw (vec vector_cosine_ops)`,
+		}, func(tx *sql.Tx) {
+			if oid(t, tx, "scratch_other.embeddings_vec_hnsw_idx") == 0 {
+				t.Fatal("the migration dropped another schema's index of its name")
+			}
+		})
+	})
+}

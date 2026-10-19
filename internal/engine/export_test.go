@@ -141,6 +141,13 @@ func MigratedDSN(t *testing.T) string {
 	return migratedTemplate.Clone(t)
 }
 
+// MigrationSQL is the text of one embedded migration file, so a test can run
+// it again against a schema it has arranged.
+func MigrationSQL(name string) (string, error) {
+	body, err := migrationsFS.ReadFile("migrations/" + name)
+	return string(body), err
+}
+
 // Migration is one SQL migration the binary embeds, by the version and name
 // schema_migrations records it under.
 type Migration struct {

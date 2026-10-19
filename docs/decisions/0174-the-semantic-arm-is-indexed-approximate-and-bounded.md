@@ -41,11 +41,16 @@ up to 200,000 index entries in `hnsw.max_scan_tuples` and four times
 exactly against its stored full-precision vector and keeps each record's
 best chunk. The read's transaction turns `enable_seqscan` off, so the
 planner picks the graph or, for a kind so narrow that reading all of its
-chunks is cheaper, the primary key, and never a scan of every vector: that
-scan reads each vector out of TOAST, far dearer than the planner prices it,
-and a cached generic plan cannot see how narrow the kinds are. An index of
-the name that is invalid (a failed `CONCURRENTLY` build) or of another
-access method or operator class is dropped and built again. Half precision halves the index
+chunks is cheaper, the primary key, but never a sequential scan of the table:
+that reads every vector of every repository out of TOAST, far dearer than the
+planner prices it, and a cached generic plan cannot see how narrow the kinds
+are. The primary-key path still reads, and sorts, every chunk of the kinds
+named, which is cheap only while those kinds are small. The migration looks
+its index name up beside the `embeddings` table, and an index of the name
+that is not a valid, unconditional hnsw index on `embeddings` over
+`vec::halfvec(1536)` with `halfvec_cosine_ops` (a failed `CONCURRENTLY`
+build, the full-precision column, another expression or operator class, part
+of the table, another table) is dropped and built again. Half precision halves the index
 (about 3 KB a chunk against 6 KB), which is the difference between an index
 that may stay in memory on that host and one that cannot; the stored
 vectors stay full precision, so a hit's score is the exact cosine.
@@ -108,7 +113,11 @@ settings alone, as a custom and as a generic plan, and refuses a scan of
 the table. Neither proves which index path the planner picks at scale; that
 is checked on a real repository after a backfill.
 `TestSemanticSearchFindsARareKindByMeaning` holds a search narrowed to a
-kind with one record among sixty of another.
+kind with one record among sixty of another; at that size it may take the
+primary key, so it does not measure the graph's recall.
+`TestTheVectorIndexMigrationReplacesAnIndexTheReaderCannotUse` runs the
+migration again over each unusable namesake, over its own index (kept) and
+beside another schema's namesake (left alone).
 `TestHybridSearchFallsBackToWordsWhenTheQueryEmbedFails`,
 `TestHybridSearchFallsBackToWordsWhenTheSemanticArmRunsOutOfBudget` (a
 statement the database is running when the budget ends) and
