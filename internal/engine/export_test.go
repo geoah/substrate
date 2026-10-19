@@ -331,6 +331,10 @@ func WithTestQueryTracer(tr pgx.QueryTracer) Option {
 	return func(o *options) { o.queryTracer = tr }
 }
 
+// EmbedBatchQuery is the drain's batch read (search.go embedBatchQuery), for a
+// test that plans it.
+const EmbedBatchQuery = embedBatchQuery
+
 // WithTestEmbedRequestCaps caps one embeddings request the drain sends at
 // inputs chunks and bytes bytes of text, so a small fixture spans several
 // requests. Zero keeps a default.

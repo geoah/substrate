@@ -76,3 +76,40 @@ func TestTheEmbedDrainStopsAtTheDeadline(t *testing.T) {
 		t.Fatalf("the drain took %d batches in a %s tick of 20 s batches, want 3", backlog.calls, embedTickBudget)
 	}
 }
+
+// The deadline is checked before every batch, not between rounds: four
+// repositories whose batches take 20 s each fit three batches in a 50 s tick,
+// and the fourth waits for the next tick instead of starting past the
+// deadline.
+func TestTheEmbedDrainChecksTheDeadlineBeforeEveryBatch(t *testing.T) {
+	t.Parallel()
+	clock := time.Unix(0, 0)
+	queues := make([]*fakeEmbedQueue, 4)
+	list := make([]embedQueue, 4)
+	for i := range queues {
+		queues[i] = &fakeEmbedQueue{id: string(rune('a' + i)), left: 10 * embedBatch, onCall: func() { clock = clock.Add(20 * time.Second) }}
+		list[i] = queues[i]
+	}
+	drainEmbedQueues(context.Background(), list, clock.Add(embedTickBudget), func() time.Time { return clock })
+	for i, want := range []int{1, 1, 1, 0} {
+		if queues[i].calls != want {
+			t.Fatalf("repository %s was asked %d times in a %s tick, want %d", queues[i].id, queues[i].calls, embedTickBudget, want)
+		}
+	}
+}
+
+// Successive ticks start at successive repositories, so the ones a round
+// could not reach before the deadline go first on a later tick.
+func TestTheEmbedDrainRotatesItsFirstRepository(t *testing.T) {
+	t.Parallel()
+	list := []embedQueue{&fakeEmbedQueue{id: "a"}, &fakeEmbedQueue{id: "b"}, &fakeEmbedQueue{id: "c"}}
+	for tick, want := range map[uint64]string{0: "abc", 1: "bca", 2: "cab", 3: "abc"} {
+		got := ""
+		for _, q := range rotateQueues(list, tick) {
+			got += q.Repository().ID
+		}
+		if got != want {
+			t.Fatalf("tick %d starts %q, want %q", tick, got, want)
+		}
+	}
+}

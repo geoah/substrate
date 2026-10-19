@@ -482,6 +482,11 @@ const (
 	embedRequestBytes  = 250_000
 )
 
+// embedBatchQuery takes a pass's jobs, oldest first. embed_queue_enqueued_idx
+// (migration 0014) serves the order, so a batch reads its own rows rather than
+// sorting the whole queue.
+const embedBatchQuery = `SELECT record_kind, record_id, property, generation FROM embed_queue ORDER BY enqueued_at LIMIT $1`
+
 // ProcessEmbedQueue drains up to batch pending pairs. Each job snapshots its
 // queue GENERATION and plans the chunks of its current text, then the changed
 // chunks of every job are embedded together, packed into as few requests as
@@ -526,8 +531,7 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	if batch <= 0 {
 		batch = 20
 	}
-	rows, err := ds.db.QueryContext(ctx,
-		`SELECT record_kind, record_id, property, generation FROM embed_queue ORDER BY enqueued_at LIMIT $1`, batch)
+	rows, err := ds.db.QueryContext(ctx, embedBatchQuery, batch)
 	if err != nil {
 		return 0, err
 	}
@@ -586,13 +590,19 @@ type embedJob struct {
 	plan *embedPlan
 }
 
-// embedDrain is one pass's state: the provider it buys from and how many jobs
-// it has applied.
+// embedDrain is one pass's state: the provider it buys from, how many jobs it
+// has applied, and whether the endpoint has accepted the known-good check
+// (nil until a refusal asked).
 type embedDrain struct {
 	ds       *dataset
 	provider *embedProvider
 	done     int
+	accepts  *bool
 }
+
+// embedCheckText is what the drain sends to tell a refused value from a
+// refusing endpoint: a short, plain input every embeddings model takes.
+const embedCheckText = "substrate embeddings check"
 
 // nextGroup takes whole jobs off the front of jobs while their chunks fit one
 // request together. The first job is always taken, so a job that passes a cap
@@ -609,12 +619,25 @@ func (d *embedDrain) nextGroup(jobs []*embedJob) (group, rest []*embedJob) {
 	return jobs, nil
 }
 
-// buy embeds a group's chunks and finishes its jobs. A rejected request of
-// several jobs is retried one job at a time, so only the job the endpoint
-// refuses is set aside; a rejected job of its own moves to the back of the
-// queue. Any other error ends the pass.
+// buy embeds a group's chunks and finishes its jobs. A refused request is
+// about its values only if the same endpoint accepts a known-good input
+// (endpointAccepts); otherwise the endpoint itself is refusing, a gateway
+// answers 400 for a model it does not route as readily as for an input it
+// cannot take, and the pass stops with nothing moved. A refused request of
+// several jobs is then retried one job at a time, so only the job the
+// endpoint refuses is set aside, and a refused job of its own moves to the
+// back of the queue. Any other error ends the pass.
 func (d *embedDrain) buy(ctx context.Context, group []*embedJob) error {
 	err := d.embed(ctx, group)
+	if errors.Is(err, embed.ErrRejected) {
+		accepts, cerr := d.endpointAccepts(ctx)
+		switch {
+		case cerr != nil:
+			err = cerr
+		case !accepts:
+			return fmt.Errorf("substrate/engine: the embeddings endpoint refuses a known-good input too, so it is the endpoint and not a value: %w", err)
+		}
+	}
 	switch {
 	case err == nil:
 		for _, j := range group {
@@ -637,6 +660,22 @@ func (d *embedDrain) buy(ctx context.Context, group []*embedJob) error {
 	default:
 		return fmt.Errorf("substrate/engine: embed %d queued values: %w", len(group), err)
 	}
+}
+
+// endpointAccepts asks the endpoint once per pass, and only after a refusal,
+// whether it embeds embedCheckText. An error that is not a refusal (a timeout,
+// a 5xx) is returned as is: the endpoint cannot be used right now.
+func (d *embedDrain) endpointAccepts(ctx context.Context) (bool, error) {
+	if d.accepts != nil {
+		return *d.accepts, nil
+	}
+	_, err := d.provider.Embed(ctx, []string{embedCheckText})
+	if err != nil && !errors.Is(err, embed.ErrRejected) {
+		return false, fmt.Errorf("substrate/engine: embed the endpoint check: %w", err)
+	}
+	accepts := err == nil
+	d.accepts = &accepts
+	return accepts, nil
 }
 
 // embed buys the vectors of every chunk the group's plans would write, in
@@ -686,6 +725,9 @@ func (d *embedDrain) finish(ctx context.Context, j *embedJob) error {
 	if applied {
 		d.done++
 	}
+	// The vectors are written; a long batch should not hold them until the
+	// pass ends.
+	j.plan.writes = nil
 	return nil
 }
 
@@ -694,9 +736,15 @@ func (d *embedDrain) finish(ctx context.Context, j *embedJob) error {
 // generation and only moves while that generation stands: an edit since the
 // plan has already re-queued the property with its new text.
 func (d *embedDrain) setAside(ctx context.Context, j *embedJob, cause error) error {
-	if _, err := d.ds.db.ExecContext(ctx,
+	res, err := d.ds.db.ExecContext(ctx,
 		`UPDATE embed_queue SET enqueued_at = now() WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND generation = $4`,
-		j.id.Kind, j.id.ID, j.prop, j.gen); err != nil {
+		j.id.Kind, j.id.ID, j.prop, j.gen)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		// An edit (or a purge) since the plan already moved the row, with the
+		// text this refusal was not about.
 		return err
 	}
 	d.ds.svc.log.Warn("substrate: the embeddings endpoint rejected a value; its job moved to the back of the queue",

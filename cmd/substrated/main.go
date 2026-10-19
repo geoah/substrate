@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -578,13 +579,30 @@ func randomStateKey() string {
 	return hex.EncodeToString(raw)
 }
 
+// embedTicks counts the drain's ticks, so each one starts its first round at
+// the next repository: when a round cannot finish before the deadline, the
+// repositories it did not reach are not the ones left out every time.
+var embedTicks atomic.Uint64
+
 func drainEmbeds(ctx context.Context, svc substrate.Service) {
 	sets := repositoryDatasets(ctx, svc)
 	queues := make([]embedQueue, len(sets))
 	for i, ds := range sets {
 		queues[i] = ds
 	}
-	drainEmbedQueues(ctx, queues, time.Now().Add(embedTickBudget), time.Now)
+	drainEmbedQueues(ctx, rotateQueues(queues, embedTicks.Add(1)), time.Now().Add(embedTickBudget), time.Now)
+}
+
+// rotateQueues starts the list at the tick's position, so successive ticks
+// start at successive repositories.
+func rotateQueues(queues []embedQueue, tick uint64) []embedQueue {
+	n := len(queues)
+	if n < 2 {
+		return queues
+	}
+	start := int(tick % uint64(n))
+	out := make([]embedQueue, 0, n)
+	return append(append(out, queues[start:]...), queues[:start]...)
 }
 
 // embedQueue is the part of a dataset the embed drain drives.
@@ -596,14 +614,20 @@ type embedQueue interface {
 // drainEmbedQueues takes one batch from each queue in turn, and again, until
 // every queue has applied nothing in its last batch or the deadline passes.
 // Taking the repositories in turn keeps one repository's backlog from holding
-// up the others' new writes for the whole tick. A queue whose batch failed
-// (the endpoint is down, a read failed) waits for the next tick.
+// up the others' new writes for the whole tick. The deadline is checked before
+// every batch, so a tick runs past it by at most the batch in flight. A queue
+// whose batch failed (the endpoint is down, a read failed) waits for the next
+// tick.
 func drainEmbedQueues(ctx context.Context, busy []embedQueue, deadline time.Time, now func() time.Time) {
 	embedded := map[string]int{}
 	var order []string
-	for len(busy) > 0 && now().Before(deadline) && ctx.Err() == nil {
+	for len(busy) > 0 {
 		var next []embedQueue
 		for _, q := range busy {
+			if !now().Before(deadline) || ctx.Err() != nil {
+				busy = nil
+				break
+			}
 			id := q.Repository().ID
 			n, err := q.ProcessEmbedQueue(ctx, embedBatch)
 			if err != nil {
@@ -620,6 +644,9 @@ func drainEmbedQueues(ctx context.Context, busy []embedQueue, deadline time.Time
 			if n > 0 {
 				next = append(next, q)
 			}
+		}
+		if busy == nil {
+			break
 		}
 		busy = next
 	}
