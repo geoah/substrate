@@ -633,7 +633,9 @@ func (d *embedDrain) buy(ctx context.Context, group []*embedJob) error {
 		accepts, cerr := d.endpointAccepts(ctx)
 		switch {
 		case cerr != nil:
-			err = cerr
+			// The check failed without a refusal: the endpoint cannot be
+			// used right now, and no job is the cause.
+			return cerr
 		case !accepts:
 			return fmt.Errorf("substrate/engine: the embeddings endpoint refuses a known-good input too, so it is the endpoint and not a value: %w", err)
 		}

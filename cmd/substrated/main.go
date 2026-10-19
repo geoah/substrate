@@ -630,14 +630,16 @@ func drainEmbedQueues(ctx context.Context, busy []embedQueue, deadline time.Time
 			}
 			id := q.Repository().ID
 			n, err := q.ProcessEmbedQueue(ctx, embedBatch)
-			if err != nil {
-				slog.Error("embed queue", "repository", id, "error", err)
-				continue
-			}
+			// A failed batch may have finished jobs before the request that
+			// failed; they count.
 			if _, seen := embedded[id]; !seen {
 				order = append(order, id)
 			}
 			embedded[id] += n
+			if err != nil {
+				slog.Error("embed queue", "repository", id, "error", err)
+				continue
+			}
 			// A batch that applied nothing found the queue empty, or holding
 			// only jobs it set aside or an edit overtook: the next tick looks
 			// again.
