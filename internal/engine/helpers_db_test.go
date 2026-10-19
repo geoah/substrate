@@ -326,6 +326,9 @@ type fakeEmbedServer struct {
 	width int
 	// authsSeen records the Authorization header of every request.
 	auths []string
+	// refuse, when set, answers a request with the status it returns, as an
+	// OpenAI error body, instead of vectors; 0 serves the request.
+	refuse func(inputs []string) int
 }
 
 func newFakeEmbedServer(t *testing.T) *fakeEmbedServer {
@@ -355,9 +358,18 @@ func (f *fakeEmbedServer) handle(w http.ResponseWriter, r *http.Request) {
 		f.fired = true
 	}
 	width := f.width
+	refuse := f.refuse
 	f.mu.Unlock()
 	if fire {
 		hook()
+	}
+	if refuse != nil {
+		if status := refuse(req.Input); status != 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"message":"refused by the test","type":"invalid_request_error"}}`))
+			return
+		}
 	}
 	if width == 0 {
 		width = 1536
@@ -380,6 +392,12 @@ func (f *fakeEmbedServer) counts() (calls, texts int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls, f.texts
+}
+
+func (f *fakeEmbedServer) setRefuse(fn func(inputs []string) int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refuse = fn
 }
 
 func (f *fakeEmbedServer) setHook(fn func()) {

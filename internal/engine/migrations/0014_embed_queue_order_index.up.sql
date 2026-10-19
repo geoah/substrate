@@ -1,0 +1,11 @@
+-- The embed drain takes the oldest queued values first (engine/search.go
+-- embedBatchQuery: ORDER BY enqueued_at LIMIT n, decision 0173). With no index
+-- on that order every batch sorts the repository's whole queue, and a
+-- repository that names an embeddings provider after years of writes starts
+-- with hundreds of thousands of rows queued (299,008 on one), so each batch of
+-- 64 read all of them. With it a batch reads its own rows. The repository
+-- leads, because the row-level-security policy narrows every read by it.
+--
+-- The runner applies a migration inside a transaction, so this cannot build
+-- CONCURRENTLY; a btree over a few hundred thousand rows builds in seconds.
+CREATE INDEX IF NOT EXISTS embed_queue_enqueued_idx ON embed_queue (repository, enqueued_at);

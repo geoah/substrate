@@ -8,6 +8,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -392,5 +393,297 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	}
 	if len(hits) == 0 || hits[0].Record.ID != book.ID {
 		t.Fatalf("the current text is not searchable after the second drain: %v", hitIDs(hits))
+	}
+}
+
+// TestEmbedQueueBatchesJobsIntoRequests: a pass embeds the changed chunks of
+// every job it took together, packed into requests under the caps, so a
+// backlog of short values costs one request per batch rather than one per
+// value, and a value longer than the caps spans several requests.
+func TestEmbedQueueBatchesJobsIntoRequests(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("one request for a batch of short values", func(t *testing.T) {
+		t.Parallel()
+		_, ds := newDataset(t)
+		installShelf(t, ds)
+		emb := newFakeEmbedServer(t)
+		installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+		ids := putBooks(t, ds)
+		if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+			t.Fatalf("drain = %d, %v, want %d, nil", n, err, len(ids))
+		}
+		if calls, texts := emb.counts(); calls != 1 || texts != len(ids) {
+			t.Fatalf("the drain sent %d requests for %d texts, want 1 for %d", calls, texts, len(ids))
+		}
+	})
+
+	t.Run("requests split at the byte cap", func(t *testing.T) {
+		t.Parallel()
+		_, ds := newDataset(t, engine.WithTestEmbedRequestCaps(0, 40))
+		installShelf(t, ds)
+		emb := newFakeEmbedServer(t)
+		installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+		// 15, 13, 15, 12 and 14 bytes: two values fit under 40, a third does
+		// not.
+		for _, blurb := range []string{"alpha marmalade", "beta zeppelin", "gamma tangerine", "delta walrus", "epsilon quince"} {
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": blurb, "description": blurb},
+			})
+		}
+		if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 5 {
+			t.Fatalf("drain = %d, %v, want 5, nil", n, err)
+		}
+		if calls, texts := emb.counts(); calls != 3 || texts != 5 {
+			t.Fatalf("the drain sent %d requests for %d texts, want 3 for 5", calls, texts)
+		}
+	})
+
+	t.Run("requests split at the caps", func(t *testing.T) {
+		t.Parallel()
+		_, ds := newDataset(t, engine.WithTestEmbedRequestCaps(3, 0))
+		installShelf(t, ds)
+		emb := newFakeEmbedServer(t)
+		installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+		for _, blurb := range []string{"alpha marmalade", "beta zeppelin", "gamma tangerine", "delta walrus", "epsilon quince"} {
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": blurb, "description": blurb},
+			})
+		}
+		// Five chunks of its own: 6,000 runes at 1,500 a chunk stepping 1,300.
+		long := mustPut(t, ds, owner, substrate.PutInput{
+			Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
+				"title": "Long", "description": strings.Repeat("the archipelago ledger ", 260) + "omega lighthouse",
+			},
+		})
+		if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 6 {
+			t.Fatalf("drain = %d, %v, want 6, nil", n, err)
+		}
+		// Three short values fill the first request; the next two cannot
+		// share one with the long value's five chunks; those five take two.
+		if calls, texts := emb.counts(); calls != 4 || texts != 10 {
+			t.Fatalf("the drain sent %d requests for %d texts, want 4 for 10", calls, texts)
+		}
+		if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 0 {
+			t.Fatalf("the queue did not drain: %d %v", n, err)
+		}
+		if got := semanticIDs(t, ds, "omega lighthouse"); len(got) == 0 || got[0] != long.ID {
+			t.Fatalf("the long value's last chunk is not searchable: %v", got)
+		}
+	})
+}
+
+// TestEmbedQueueSetsARejectedValueAside: the drain takes the oldest jobs
+// first, and a value the endpoint refuses (400, 413, 422) used to stop every
+// pass at the head of the queue, so nothing behind it was ever embedded. A
+// refused batch is retried one job at a time, the refused job moves to the
+// back of the queue, and the jobs behind it drain.
+func TestEmbedQueueSetsARejectedValueAside(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	emb := newFakeEmbedServer(t)
+	emb.setRefuse(func(inputs []string) int {
+		for _, s := range inputs {
+			if strings.Contains(s, "poison") {
+				return http.StatusBadRequest
+			}
+		}
+		return 0
+	})
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	book := func(blurb string) string {
+		return mustPut(t, ds, owner, substrate.PutInput{
+			Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": blurb, "description": blurb},
+		}).ID
+	}
+	bad := book("poison zeppelin narrative")
+	first := book("alpha unique marmalade prose")
+	second := book("gamma tangerine dictionary volume")
+
+	// One at a time, the refused job no longer holds the head: the endpoint
+	// takes the known-good check, so the refusal is the value's, the job moves
+	// back and the next pass takes the job behind it.
+	if n, err := ds.ProcessEmbedQueue(ctx, 1); err != nil || n != 0 {
+		t.Fatalf("pass over the refused job = %d, %v, want 0, nil", n, err)
+	}
+	if calls, _ := emb.counts(); calls != 2 {
+		t.Fatalf("the refused pass sent %d requests, want the refused one and the check", calls)
+	}
+	for _, want := range []string{first, second} {
+		if n, err := ds.ProcessEmbedQueue(ctx, 1); err != nil || n != 1 {
+			t.Fatalf("pass after the refused job = %d, %v, want 1, nil (%s)", n, err, want)
+		}
+	}
+	if got := semanticIDs(t, ds, "marmalade tangerine"); !sameSet(got, []string{first, second}) {
+		t.Fatalf("searchable after the refusal = %v, want %v", got, []string{first, second})
+	}
+	res, err := ds.Search(ctx, substrate.SearchInput{Q: "zeppelin", Mode: substrate.SearchSemantic})
+	if err != nil || res.Pending != 1 {
+		t.Fatalf("pending after the refusal = %d, %v, want 1", res.Pending, err)
+	}
+
+	// In one batch: the refused request, the check, then one request per
+	// job.
+	third := book("delta walrus anthology")
+	_, before := emb.counts()
+	callsBefore, _ := emb.counts()
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("batch with the refused job = %d, %v, want 1, nil", n, err)
+	}
+	calls, after := emb.counts()
+	if calls-callsBefore != 4 || after-before != 5 {
+		t.Fatalf("the batch took %d requests for %d texts, want 4 for 5", calls-callsBefore, after-before)
+	}
+	if got := semanticIDs(t, ds, "walrus anthology"); len(got) == 0 || got[0] != third {
+		t.Fatalf("the job batched with the refused one is not searchable: %v", got)
+	}
+
+	// An edit re-queues the value with its new text, and that embeds.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "shelf.test.dev/shelf/book", ID: bad, Properties: map[string]any{"description": "beta zeppelin narrative"},
+	})
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("pass after the edit = %d, %v, want 1, nil", n, err)
+	}
+	if got := semanticIDs(t, ds, "zeppelin narrative"); len(got) == 0 || got[0] != bad {
+		t.Fatalf("the edited value is not searchable: %v", got)
+	}
+}
+
+// TestEmbedQueueStopsOnAnUnusableEndpoint: a failure that is not about the
+// input (a 503 here; a timeout, a 429 or a refused key alike) means the
+// endpoint cannot be used right now. The pass stops with the error after one
+// request, without retrying job by job, and every job stays queued for the
+// next pass.
+func TestEmbedQueueStopsOnAnUnusableEndpoint(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	emb := newFakeEmbedServer(t)
+	emb.setRefuse(func([]string) int { return http.StatusServiceUnavailable })
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	ids := putBooks(t, ds)
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err == nil || n != 0 {
+		t.Fatalf("drain against a 503 = %d, %v, want 0 and the error", n, err)
+	}
+	if calls, _ := emb.counts(); calls != 1 {
+		t.Fatalf("the drain sent %d requests to an unusable endpoint, want 1", calls)
+	}
+	emb.setRefuse(nil)
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+		t.Fatalf("drain once the endpoint answers = %d, %v, want %d, nil", n, err, len(ids))
+	}
+}
+
+// TestEmbedQueueStopsWhenTheEndpointRefusesEverything: a gateway answers 400
+// for a model it does not route as readily as for an input it cannot take.
+// When the endpoint refuses the known-good check too, the refusal is the
+// endpoint's: the pass stops with the error after two requests and moves no
+// job, where setting every value aside would have retried each one alone and
+// warned for each.
+func TestEmbedQueueStopsWhenTheEndpointRefusesEverything(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	emb := newFakeEmbedServer(t)
+	emb.setRefuse(func([]string) int { return http.StatusBadRequest })
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	ids := putBooks(t, ds)
+	n, err := ds.ProcessEmbedQueue(ctx, 20)
+	if err == nil || n != 0 || !strings.Contains(err.Error(), "known-good input") {
+		t.Fatalf("drain against an endpoint refusing everything = %d, %v, want 0 and the endpoint's error", n, err)
+	}
+	if calls, _ := emb.counts(); calls != 2 {
+		t.Fatalf("the drain sent %d requests, want the refused batch and the check", calls)
+	}
+	emb.setRefuse(nil)
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+		t.Fatalf("drain once the endpoint answers = %d, %v, want %d, nil", n, err, len(ids))
+	}
+}
+
+// TestEmbedQueueKeepsAnEditMadeDuringARefusal: the text changed while its
+// refused request was out. The set-aside only moves the generation it planned,
+// so the edit's job keeps its place, and the next pass embeds the new text.
+func TestEmbedQueueKeepsAnEditMadeDuringARefusal(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	emb := newFakeEmbedServer(t)
+	emb.setRefuse(func(inputs []string) int {
+		for _, s := range inputs {
+			if strings.Contains(s, "poison") {
+				return http.StatusBadRequest
+			}
+		}
+		return 0
+	})
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	bad := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Bad", "description": "poison zeppelin narrative"},
+	}).ID
+	emb.setHook(func() {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: "shelf.test.dev/shelf/book", ID: bad, Properties: map[string]any{"description": "beta zeppelin narrative"},
+		})
+	})
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 0 {
+		t.Fatalf("pass refused while the text changed = %d, %v, want 0, nil", n, err)
+	}
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("pass after the edit = %d, %v, want 1, nil", n, err)
+	}
+	if got := semanticIDs(t, ds, "zeppelin narrative"); len(got) == 0 || got[0] != bad {
+		t.Fatalf("the edited text is not searchable: %v", got)
+	}
+}
+
+// TestEmbedBatchReadUsesTheQueueOrderIndex: the drain's batch read is served
+// by embed_queue_enqueued_idx, so a batch reads its own rows instead of
+// sorting the whole queue. Sequential scans and sorts are priced out because
+// a near-empty table would never pick an index otherwise; what is asserted is
+// that the index can serve the read.
+func TestEmbedBatchReadUsesTheQueueOrderIndex(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	raw := scopedDB(t, dsn, testdb.Repository(t))
+	tx, err := raw.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, set := range []string{`SET LOCAL enable_seqscan = off`, `SET LOCAL enable_sort = off`} {
+		if _, err := tx.ExecContext(ctx, set); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := tx.QueryContext(ctx, `EXPLAIN `+engine.EmbedBatchQuery, 64)
+	if err != nil {
+		t.Fatalf("explain the batch read: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, line)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(plan, "\n"); !strings.Contains(got, "embed_queue_enqueued_idx") {
+		t.Fatalf("the batch read does not use the queue order index:\n%s", got)
 	}
 }

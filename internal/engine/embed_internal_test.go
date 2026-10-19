@@ -67,12 +67,12 @@ func (r *fakeRows) Next(dest []driver.Value) error {
 // A read that fails for any reason but a missing row must not plan a skip:
 // commitEmbedding deletes the queue row of a skipped job, so the property
 // would not embed again until its text changed.
-func TestComputeEmbeddingKeepsQueueRowOnReadError(t *testing.T) {
+func TestPlanEmbeddingKeepsQueueRowOnReadError(t *testing.T) {
 	t.Parallel()
 	db := sql.OpenDB(fakeConnector{refuse: true})
 	defer db.Close()
 	ds := &dataset{db: db}
-	plan, err := ds.computeEmbedding(context.Background(), nil, eref{Kind: "a.example.substrate.reamde.dev/p/k", ID: "x"}, "body")
+	plan, err := ds.planEmbedding(context.Background(), nil, eref{Kind: "a.example.substrate.reamde.dev/p/k", ID: "x"}, "body")
 	if !errors.Is(err, errConnRefused) || plan != nil {
 		t.Fatalf("plan = %+v, err = %v: a failed read must return its error and no plan", plan, err)
 	}

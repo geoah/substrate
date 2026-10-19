@@ -13,6 +13,7 @@ import (
 
 	"github.com/pgvector/pgvector-go"
 
+	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -469,16 +470,45 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 	return out, rows.Err()
 }
 
-// ProcessEmbedQueue drains up to batch pending pairs. Each
-// job snapshots its queue GENERATION, embeds the current text OUTSIDE any
-// transaction (the embed is a slow network call), then writes the vectors and
-// drops the row in one transaction ONLY WHILE that generation still stands.
+// embedRequestInputs and embedRequestBytes cap one embeddings request the
+// drain sends. OpenAI takes at most 2,048 inputs and 300,000 tokens in one
+// request and refuses the whole request past either. A token is at least one
+// byte of UTF-8, so 250,000 bytes of text stays under the token cap in any
+// language, and 256 inputs keeps one request well inside the client's 30 s
+// timeout. A property whose chunks pass a cap on their own (a long transcript)
+// spans several requests.
+const (
+	embedRequestInputs = 256
+	embedRequestBytes  = 250_000
+)
+
+// embedBatchQuery takes a pass's jobs, oldest first. embed_queue_enqueued_idx
+// (migration 0014) serves the order, so a batch reads its own rows rather than
+// sorting the whole queue.
+const embedBatchQuery = `SELECT record_kind, record_id, property, generation FROM embed_queue ORDER BY enqueued_at LIMIT $1`
+
+// ProcessEmbedQueue drains up to batch pending pairs. Each job snapshots its
+// queue GENERATION and plans the chunks of its current text, then the changed
+// chunks of every job are embedded together, packed into as few requests as
+// the caps above allow: most queued values are one short chunk, so a batch is
+// usually one request rather than one per job. The embed is a slow network
+// call made outside any transaction, and each job then writes its vectors and
+// drops its row in one transaction ONLY WHILE its generation still stands.
 //
 // An edit during a slow embed re-enqueues and increments the generation
 // (rows.go enqueueEmbed), so the finalize sees a bumped generation, leaves the
-// newer job pending and DOES NOT commit the stale vectors — the edit is never
+// newer job pending and DOES NOT commit the stale vectors: the edit is never
 // lost to a slow embed, and two workers cannot both write, because the finalize
 // takes the queue row FOR UPDATE and the loser finds it already drained.
+//
+// A request the endpoint REJECTS for its input (embed.ErrRejected) is retried
+// one job at a time, and a job whose own request is rejected moves to the back
+// of the queue with a warning instead of stopping the pass. The drain takes
+// the oldest jobs first, so a value the endpoint never accepts would otherwise
+// stand at the head and block every job behind it on every pass. Any other
+// failure (a timeout, a 429 or a 5xx, a refused key) means the endpoint cannot
+// be used right now: the pass stops there and the next one retries, and the
+// jobs it already finished stay finished.
 //
 // The embeddings provider is the repository's own row, resolved on every pass:
 // a repository that names none drains nothing and reports 0, which is why the
@@ -501,24 +531,18 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	if batch <= 0 {
 		batch = 20
 	}
-	rows, err := ds.db.QueryContext(ctx,
-		`SELECT record_kind, record_id, property, generation FROM embed_queue ORDER BY enqueued_at LIMIT $1`, batch)
+	rows, err := ds.db.QueryContext(ctx, embedBatchQuery, batch)
 	if err != nil {
 		return 0, err
 	}
-	type item struct {
-		id   eref
-		prop string
-		gen  int64
-	}
-	var items []item
+	var jobs []*embedJob
 	for rows.Next() {
-		var it item
-		if err := rows.Scan(&it.id.Kind, &it.id.ID, &it.prop, &it.gen); err != nil {
+		j := &embedJob{}
+		if err := rows.Scan(&j.id.Kind, &j.id.ID, &j.prop, &j.gen); err != nil {
 			_ = rows.Close()
 			return 0, err
 		}
-		items = append(items, it)
+		jobs = append(jobs, j)
 	}
 	// A failed Next closes the rows itself and ends the loop early, so only
 	// rows.Err tells a short batch from a short queue.
@@ -528,27 +552,214 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	}
 	_ = rows.Close()
 
-	done := 0
-	for _, it := range items {
-		plan, err := ds.computeEmbedding(ctx, provider, it.id, it.prop)
-		if err != nil {
-			return done, err
-		}
-		applied, err := ds.commitEmbedding(ctx, provider, it.id, it.prop, it.gen, plan)
-		if err != nil {
-			return done, err
-		}
-		if applied {
-			done++
+	for _, j := range jobs {
+		if j.plan, err = ds.planEmbedding(ctx, provider, j.id, j.prop); err != nil {
+			return 0, err
 		}
 	}
-	return done, nil
+	d := &embedDrain{ds: ds, provider: provider}
+	// A job with nothing to buy (its record went away, its property is no
+	// longer embeddable, every chunk is unchanged) finishes without the
+	// network, and the rest are bought in queue order.
+	var buying []*embedJob
+	for _, j := range jobs {
+		if len(j.plan.writes) > 0 {
+			buying = append(buying, j)
+			continue
+		}
+		if err := d.finish(ctx, j); err != nil {
+			return d.done, err
+		}
+	}
+	for len(buying) > 0 {
+		var group []*embedJob
+		group, buying = d.nextGroup(buying)
+		if err := d.buy(ctx, group); err != nil {
+			return d.done, err
+		}
+	}
+	return d.done, nil
 }
 
-// embedWrite is one chunk's vector, ready for the finalize transaction.
+// embedJob is one queue row on its way through a drain pass: the pair it
+// names, the generation it was read at, and what it would write.
+type embedJob struct {
+	id   eref
+	prop string
+	gen  int64
+	plan *embedPlan
+}
+
+// embedDrain is one pass's state: the provider it buys from, how many jobs it
+// has applied, and whether the endpoint has accepted the known-good check
+// (nil until a refusal asked).
+type embedDrain struct {
+	ds       *dataset
+	provider *embedProvider
+	done     int
+	accepts  *bool
+}
+
+// embedCheckText is what the drain sends to tell a refused value from a
+// refusing endpoint: a short, plain input every embeddings model takes.
+const embedCheckText = "substrate embeddings check"
+
+// nextGroup takes whole jobs off the front of jobs while their chunks fit one
+// request together. The first job is always taken, so a job that passes a cap
+// on its own is a group of one, which buy splits into several requests.
+func (d *embedDrain) nextGroup(jobs []*embedJob) (group, rest []*embedJob) {
+	inputs, size := 0, 0
+	for i, j := range jobs {
+		n, b := len(j.plan.writes), j.plan.textBytes()
+		if i > 0 && (inputs+n > d.ds.svc.embedRequestInputs || size+b > d.ds.svc.embedRequestBytes) {
+			return jobs[:i], jobs[i:]
+		}
+		inputs, size = inputs+n, size+b
+	}
+	return jobs, nil
+}
+
+// buy embeds a group's chunks and finishes its jobs. A refused request is
+// about its values only if the same endpoint accepts a known-good input
+// (endpointAccepts); otherwise the endpoint itself is refusing, a gateway
+// answers 400 for a model it does not route as readily as for an input it
+// cannot take, and the pass stops with nothing moved. A refused request of
+// several jobs is then retried one job at a time, so only the job the
+// endpoint refuses is set aside, and a refused job of its own moves to the
+// back of the queue. Any other error ends the pass.
+func (d *embedDrain) buy(ctx context.Context, group []*embedJob) error {
+	err := d.embed(ctx, group)
+	if errors.Is(err, embed.ErrRejected) {
+		accepts, cerr := d.endpointAccepts(ctx)
+		switch {
+		case cerr != nil:
+			// The check failed without a refusal: the endpoint cannot be
+			// used right now, and no job is the cause.
+			return cerr
+		case !accepts:
+			return fmt.Errorf("substrate/engine: the embeddings endpoint refuses a known-good input too, so it is the endpoint and not a value: %w", err)
+		}
+	}
+	switch {
+	case err == nil:
+		for _, j := range group {
+			if err := d.finish(ctx, j); err != nil {
+				return err
+			}
+		}
+		return nil
+	case errors.Is(err, embed.ErrRejected) && len(group) > 1:
+		for _, j := range group {
+			if err := d.buy(ctx, []*embedJob{j}); err != nil {
+				return err
+			}
+		}
+		return nil
+	case errors.Is(err, embed.ErrRejected):
+		return d.setAside(ctx, group[0], err)
+	case len(group) == 1:
+		return fmt.Errorf("substrate/engine: embed %s.%s: %w", group[0].id.ID, group[0].prop, err)
+	default:
+		return fmt.Errorf("substrate/engine: embed %d queued values: %w", len(group), err)
+	}
+}
+
+// endpointAccepts asks the endpoint once per pass, and only after a refusal,
+// whether it embeds embedCheckText. An error that is not a refusal (a timeout,
+// a 5xx) is returned as is: the endpoint cannot be used right now.
+func (d *embedDrain) endpointAccepts(ctx context.Context) (bool, error) {
+	if d.accepts != nil {
+		return *d.accepts, nil
+	}
+	_, err := d.provider.Embed(ctx, []string{embedCheckText})
+	if err != nil && !errors.Is(err, embed.ErrRejected) {
+		return false, fmt.Errorf("substrate/engine: embed the endpoint check: %w", err)
+	}
+	accepts := err == nil
+	d.accepts = &accepts
+	return accepts, nil
+}
+
+// embed buys the vectors of every chunk the group's plans would write, in
+// requests under the caps, and stores each vector on its write.
+func (d *embedDrain) embed(ctx context.Context, group []*embedJob) error {
+	var texts []string
+	var dests []*embedWrite
+	size := 0
+	send := func() error {
+		if len(texts) == 0 {
+			return nil
+		}
+		vecs, err := d.provider.Embed(ctx, texts)
+		if err != nil {
+			return err
+		}
+		if len(vecs) != len(texts) {
+			return fmt.Errorf("substrate/engine: embedder returned %d vectors for %d chunks", len(vecs), len(texts))
+		}
+		for n, w := range dests {
+			w.vec = vecs[n]
+		}
+		texts, dests, size = nil, nil, 0
+		return nil
+	}
+	for _, j := range group {
+		for n := range j.plan.writes {
+			w := &j.plan.writes[n]
+			if len(texts) > 0 && (len(texts)+1 > d.ds.svc.embedRequestInputs || size+len(w.text) > d.ds.svc.embedRequestBytes) {
+				if err := send(); err != nil {
+					return err
+				}
+			}
+			texts, dests, size = append(texts, w.text), append(dests, w), size+len(w.text)
+		}
+	}
+	return send()
+}
+
+// finish commits one job's plan (commitEmbedding) and counts it when it
+// applied.
+func (d *embedDrain) finish(ctx context.Context, j *embedJob) error {
+	applied, err := d.ds.commitEmbedding(ctx, d.provider, j.id, j.prop, j.gen, j.plan)
+	if err != nil {
+		return err
+	}
+	if applied {
+		d.done++
+	}
+	// The vectors are written; a long batch should not hold them until the
+	// pass ends.
+	j.plan.writes = nil
+	return nil
+}
+
+// setAside moves a job the endpoint rejected to the back of the queue, so the
+// jobs behind it keep draining, and says so in the log. The row keeps its
+// generation and only moves while that generation stands: an edit since the
+// plan has already re-queued the property with its new text.
+func (d *embedDrain) setAside(ctx context.Context, j *embedJob, cause error) error {
+	res, err := d.ds.db.ExecContext(ctx,
+		`UPDATE embed_queue SET enqueued_at = now() WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND generation = $4`,
+		j.id.Kind, j.id.ID, j.prop, j.gen)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		// An edit (or a purge) since the plan already moved the row, with the
+		// text this refusal was not about.
+		return err
+	}
+	d.ds.svc.log.Warn("substrate: the embeddings endpoint rejected a value; its job moved to the back of the queue",
+		"repository", d.ds.Repository().ID, "kind", j.id.Kind, "id", j.id.ID, "property", j.prop, "error", cause.Error())
+	return nil
+}
+
+// embedWrite is one chunk to write: its text and hash from the plan, and its
+// vector once a request has bought it.
 type embedWrite struct {
 	chunk int
 	hash  string
+	text  string
 	vec   []float32
 }
 
@@ -564,10 +775,21 @@ type embedPlan struct {
 	writes       []embedWrite
 }
 
-// computeEmbedding reads the current text and embeds the changed chunks. It
-// makes NO writes: the generation it was computed against is only confirmed at
-// commitEmbedding, so nothing here can outrun a concurrent edit.
-func (ds *dataset) computeEmbedding(ctx context.Context, provider *embedProvider, id eref, prop string) (*embedPlan, error) {
+// textBytes is how much text the plan's writes would send.
+func (p *embedPlan) textBytes() int {
+	n := 0
+	for _, w := range p.writes {
+		n += len(w.text)
+	}
+	return n
+}
+
+// planEmbedding reads the current text and finds the chunks whose vector is
+// missing or stale. It makes NO writes and no network call: the drain buys the
+// vectors of every job's plan together, and the generation the plan was made
+// against is only confirmed at commitEmbedding, so nothing here can outrun a
+// concurrent edit.
+func (ds *dataset) planEmbedding(ctx context.Context, provider *embedProvider, id eref, prop string) (*embedPlan, error) {
 	row, err := scanRecord(ds.db.QueryRowContext(ctx,
 		`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2`, id.Kind, id.ID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -589,36 +811,42 @@ func (ds *dataset) computeEmbedding(ctx context.Context, provider *embedProvider
 	}
 	chunks := chunkText(scalarString(embedValue(row, prop)))
 	plan := &embedPlan{deleteBeyond: len(chunks)}
+	if len(chunks) == 0 {
+		return plan, nil
+	}
+	// One read for every stored chunk of the property, not one per chunk: a
+	// long transcript is a hundred chunks.
+	type stored struct{ hash, provider, model string }
+	have := map[int]stored{}
+	rows, err := ds.db.QueryContext(ctx,
+		`SELECT chunk, text_hash, provider, model FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
+		id.Kind, id.ID, prop)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var n int
+		var s stored
+		if err := rows.Scan(&n, &s.hash, &s.provider, &s.model); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		have[n] = s
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
 	for i, c := range chunks {
 		hash := chunkHash(c)
-		var have, haveProvider, haveModel string
-		err := ds.db.QueryRowContext(ctx,
-			`SELECT text_hash, provider, model FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND chunk = $4`,
-			id.Kind, id.ID, prop, i).Scan(&have, &haveProvider, &haveModel)
 		// The PROVENANCE is half the skip: unchanged text embedded by another
 		// pair is exactly what a re-embed exists to replace, so a stored chunk
 		// is kept only when its text and its producing pair both still stand.
-		if err == nil && have == hash && haveProvider == provider.id && haveModel == provider.model {
+		if s, ok := have[i]; ok && s.hash == hash && s.provider == provider.id && s.model == provider.model {
 			continue
 		}
-		plan.writes = append(plan.writes, embedWrite{chunk: i, hash: hash})
-	}
-	if len(plan.writes) == 0 {
-		return plan, nil
-	}
-	pending := make([]string, len(plan.writes))
-	for n, w := range plan.writes {
-		pending[n] = chunks[w.chunk]
-	}
-	vecs, err := provider.Embed(ctx, pending)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: embed %s.%s: %w", id.ID, prop, err)
-	}
-	if len(vecs) != len(pending) {
-		return nil, fmt.Errorf("substrate/engine: embedder returned %d vectors for %d chunks", len(vecs), len(pending))
-	}
-	for n := range plan.writes {
-		plan.writes[n].vec = vecs[n]
+		plan.writes = append(plan.writes, embedWrite{chunk: i, hash: hash, text: c})
 	}
 	return plan, nil
 }
@@ -700,7 +928,7 @@ func (ds *dataset) commitEmbedding(ctx context.Context, provider *embedProvider,
 }
 
 // chunkHash is the text_hash an embeddings row stores for one chunk: what the
-// drain skips on (computeEmbedding) and what an import compares against
+// drain skips on (planEmbedding) and what an import compares against
 // (reconcileEmbeddings), so the two can never disagree about "unchanged".
 func chunkHash(chunk string) string {
 	sum := sha256.Sum256([]byte(chunk))
