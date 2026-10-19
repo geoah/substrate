@@ -50,7 +50,9 @@ its index name up beside the `embeddings` table, and an index of the name
 that is not a valid, unconditional hnsw index on `embeddings` over
 `vec::halfvec(1536)` with `halfvec_cosine_ops` (a failed `CONCURRENTLY`
 build, the full-precision column, another expression or operator class, part
-of the table, another table) is dropped and built again. Half precision halves the index
+of the table, another table) is dropped and built again. A relation of the
+name that is not an index is left alone and the migration refuses, naming
+the clash, so the boot stops until an operator resolves it. Half precision halves the index
 (about 3 KB a chunk against 6 KB), which is the difference between an index
 that may stay in memory on that host and one that cannot; the stored
 vectors stay full precision, so a hit's score is the exact cosine.

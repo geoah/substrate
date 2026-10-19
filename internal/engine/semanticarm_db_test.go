@@ -275,11 +275,16 @@ func TestTheVectorIndexMigrationReplacesAnIndexTheReaderCannotUse(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The index the reader can use: found beside the embeddings table, never
+	// through the search path, and checked whole.
 	const usable = `SELECT count(*) FROM pg_index i
 		JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_am a ON a.oid = c.relam
 		JOIN pg_opclass o ON o.oid = i.indclass[0]
-		WHERE i.indexrelid = to_regclass('embeddings_vec_hnsw_idx') AND i.indrelid = to_regclass('embeddings')
-		  AND i.indisvalid AND i.indpred IS NULL AND a.amname = 'hnsw' AND o.opcname = 'halfvec_cosine_ops'`
+		WHERE c.relname = 'embeddings_vec_hnsw_idx'
+		  AND c.relnamespace = (SELECT relnamespace FROM pg_class WHERE oid = to_regclass('embeddings'))
+		  AND i.indrelid = to_regclass('embeddings') AND i.indisvalid AND i.indpred IS NULL AND i.indnatts = 1
+		  AND a.amname = 'hnsw' AND o.opcname = 'halfvec_cosine_ops'
+		  AND regexp_replace(pg_get_expr(i.indexprs, i.indrelid), '[()[:space:]]|public[.]', '', 'g') = 'vec::halfvec1536'`
 	run := func(t *testing.T, arrange []string, check func(*sql.Tx)) {
 		t.Helper()
 		tx, err := db.BeginTx(ctx, nil)
@@ -318,6 +323,7 @@ func TestTheVectorIndexMigrationReplacesAnIndexTheReaderCannotUse(t *testing.T) 
 	for name, arrange := range map[string][]string{
 		"full precision":         {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw (vec vector_cosine_ops)`},
 		"another operator class": {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw ((vec::halfvec(1536)) halfvec_l2_ops)`},
+		"another expression":     {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw (((vec + vec)::halfvec(1536)) halfvec_cosine_ops)`},
 		"part of the table":      {drop, `CREATE INDEX embeddings_vec_hnsw_idx ON embeddings USING hnsw ((vec::halfvec(1536)) halfvec_cosine_ops) WHERE provider = 'other'`},
 		"another table":          {drop, `CREATE TABLE scratch_vectors (vec vector(1536))`, `CREATE INDEX embeddings_vec_hnsw_idx ON scratch_vectors USING hnsw ((vec::halfvec(1536)) halfvec_cosine_ops)`},
 		"invalid":                {`UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass('embeddings_vec_hnsw_idx')`},
@@ -339,15 +345,40 @@ func TestTheVectorIndexMigrationReplacesAnIndexTheReaderCannotUse(t *testing.T) 
 			t.Fatalf("the migration rebuilt the index it builds (oid %d, was %d)", after, before)
 		}
 	})
+	// The bug this guards against: with no index of the name beside the
+	// table and another schema's namesake on the search path, a lookup through
+	// the search path found the stranger and dropped it.
 	t.Run("another schema's namesake is left alone", func(t *testing.T) {
+		var foreign int64
 		run(t, []string{
+			drop,
 			`CREATE SCHEMA scratch_other`,
 			`CREATE TABLE scratch_other.vectors (vec vector(1536))`,
 			`CREATE INDEX embeddings_vec_hnsw_idx ON scratch_other.vectors USING hnsw (vec vector_cosine_ops)`,
+			`SELECT set_config('search_path', current_setting('search_path') || ', scratch_other', true)`,
 		}, func(tx *sql.Tx) {
-			if oid(t, tx, "scratch_other.embeddings_vec_hnsw_idx") == 0 {
+			if err := tx.QueryRowContext(ctx, `SELECT coalesce(to_regclass('scratch_other.embeddings_vec_hnsw_idx')::oid::bigint, 0)`).Scan(&foreign); err != nil {
+				t.Fatal(err)
+			}
+			if foreign == 0 {
 				t.Fatal("the migration dropped another schema's index of its name")
 			}
 		})
+	})
+
+	t.Run("a relation of the name that is not an index refuses", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		for _, stmt := range []string{drop, `CREATE TABLE embeddings_vec_hnsw_idx (x int)`} {
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				t.Fatalf("arrange %q: %v", stmt, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, migration); err == nil || !strings.Contains(err.Error(), "not an index") {
+			t.Fatalf("the migration over a table of its index's name = %v, want the refusal naming the clash", err)
+		}
 	})
 }

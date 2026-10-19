@@ -42,11 +42,17 @@ DO $$
 DECLARE
     tbl regclass := to_regclass('embeddings');
     idx oid;
+    kind "char";
 BEGIN
-    SELECT c.oid INTO idx
+    SELECT c.oid, c.relkind INTO idx, kind
       FROM pg_class c
      WHERE c.relname = 'embeddings_vec_hnsw_idx'
        AND c.relnamespace = (SELECT relnamespace FROM pg_class WHERE oid = tbl);
+    -- A relation of the name that is not an index is somebody's data: the
+    -- migration refuses to touch it and says what to do.
+    IF idx IS NOT NULL AND kind <> 'i' THEN
+        RAISE EXCEPTION 'embeddings_vec_hnsw_idx names a relation of kind % beside the embeddings table, not an index; rename or drop it, then start substrate again', kind;
+    END IF;
     IF idx IS NOT NULL AND NOT EXISTS (
         SELECT 1
           FROM pg_index i
