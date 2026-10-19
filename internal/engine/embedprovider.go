@@ -193,12 +193,16 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 		       AND em.provider = $3 AND em.model = $4)`
 		args = append(args, provider.id, provider.model)
 	}
+	value := `r.props->>$2`
+	if col, ok := embedColumn(prop); ok {
+		value = `r.` + col
+	}
 	res, err := ds.db.ExecContext(ctx, `
 		INSERT INTO embed_queue (record_kind, record_id, property, generation, enqueued_at)
 		SELECT r.kind, r.id, $2, 1, now()
 		  FROM records r
 		 WHERE r.kind = $1 AND r.deleted_at IS NULL
-		   AND coalesce(btrim(r.props->>$2), '') <> '' `+stale+`
+		   AND coalesce(btrim(`+value+`), '') <> '' `+stale+`
 		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE
 		    SET generation = embed_queue.generation + 1, enqueued_at = EXCLUDED.enqueued_at`,
 		args...)
@@ -400,8 +404,11 @@ func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, pair *em
 // the live path keeps a tombstone's vectors until the purge, so the import
 // does too, and an undelete comes back searchable.
 func currentChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[string][]string, error) {
-	rows, err := q.QueryContext(ctx,
-		`SELECT id, props->$2 FROM records WHERE kind = $1 AND props ? $2`, kind, prop)
+	query, args := `SELECT id, props->$2 FROM records WHERE kind = $1 AND props ? $2`, []any{kind, prop}
+	if col, ok := embedColumn(prop); ok {
+		query, args = `SELECT id, to_jsonb(`+col+`) FROM records WHERE kind = $1 AND `+col+` <> ''`, []any{kind}
+	}
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +431,21 @@ func currentChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[stri
 		out[id] = chunkHashes(text)
 	}
 	return out, rows.Err()
+}
+
+// embedColumn names the records column a column-backed embeddable property is
+// stored in, for the SQL that reads embeddable values in bulk (embedValue is
+// the same rule for one loaded row). `embed` is string-family only, so of the
+// column-backed properties only `body` and `title` can be text; a declared body
+// is records.body (decision 0041) and never a props key.
+func embedColumn(prop string) (string, bool) {
+	switch prop {
+	case substrate.PropBody:
+		return "body", true
+	case substrate.PropTitle:
+		return "title", true
+	}
+	return "", false
 }
 
 // storedChunk is what an embeddings row says about the vector it holds: the

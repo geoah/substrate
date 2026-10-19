@@ -11,6 +11,7 @@ import (
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The vectors and the embed queue are Postgres-only, and the repository
@@ -459,6 +460,139 @@ func TestSemanticSearchWithNothingEmbeddableIsEmpty(t *testing.T) {
 func raw0(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
 	return scopedDB(t, dsn, testdb.Repository(t))
+}
+
+// TestADeclaredBodyIsEmbedded: a declared `body` is a column-backed property
+// (decision 0041), stored in records.body and never in props, and every path
+// that reads an embeddable value must read it there. Before, the drain, the
+// re-embed and the import reconcile all read props, so a body declared
+// `embed: true` (mail, issue and comment bodies) never got a vector: the drain
+// applied an empty plan, the re-embed queued nothing and a restore queued
+// nothing.
+func TestADeclaredBodyIsEmbedded(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pkg = "embedbody.example.substrate.reamde.dev/notes"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
+			map[string]any{"singular": "memo"},
+			map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"body": map[string]any{"type": "text", "embed": true},
+			}}),
+	}); err != nil {
+		t.Fatalf("declare the memo kind: %v", err)
+	}
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	bodies := []string{"alpha unique marmalade prose", "beta zeppelin narrative here", "gamma tangerine dictionary volume"}
+	ids := make([]string, 0, len(bodies))
+	for i, body := range bodies {
+		row := mustPut(t, ds, owner, substrate.PutInput{
+			Kind: pkg + "/memo", Properties: map[string]any{"name": "Memo " + string(rune('A'+i)), "body": body},
+		})
+		ids = append(ids, row.ID)
+	}
+	raw := scopedDB(t, dsn, testdb.Repository(t))
+	assertBodiesQueued(t, raw, ids)
+
+	// LIVE: the write queued each body and the drain embeds the text it holds.
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+		t.Fatalf("drain = %d, %v, want %d, nil", n, err, len(ids))
+	}
+	if _, texts := emb.counts(); texts != len(ids) {
+		t.Fatalf("the drain embedded %d texts, want one per body (%d)", texts, len(ids))
+	}
+	if n := countRows(t, raw, "embeddings"); n != len(ids) {
+		t.Fatalf("%d vectors stored, want one per body (%d)", n, len(ids))
+	}
+	want := semanticIDs(t, ds, "marmalade prose")
+	if len(want) != len(ids) || want[0] != ids[0] {
+		t.Fatalf("semantic search over the bodies = %v, want %s first", want, ids[0])
+	}
+
+	// RE-EMBED: re-pointed at another model, the re-embed queues every body
+	// the new model has not seen.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typeProvider, ID: "vectors",
+		Properties: map[string]any{"embedModel": "text-embedding-ada-002"},
+	})
+	report, err := ds.Reembed(ctx, false)
+	if err != nil {
+		t.Fatalf("reembed: %v", err)
+	}
+	if report.Enqueued != len(ids) {
+		t.Fatalf("reembed queued %d bodies, want %d", report.Enqueued, len(ids))
+	}
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+		t.Fatalf("drain after the re-embed = %d, %v, want %d, nil", n, err, len(ids))
+	}
+	if got := semanticIDs(t, ds, "marmalade prose"); len(got) != len(ids) || got[0] != ids[0] {
+		t.Fatalf("semantic search after the re-embed = %v, want %s first", got, ids[0])
+	}
+
+	// RESTORE: the directory holds no vectors, so the import queues every body
+	// and the drain buys them back.
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	root2 := copyRepositoryDir(t, root, id)
+	dsn2 := engine.MigratedDSN(t)
+	svc2 := mustReopen(t, dsn2, root2)
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the restored repository: %v", err)
+	}
+	raw2 := scopedDB(t, dsn2, testdb.Repository(t))
+	assertBodiesQueued(t, raw2, ids)
+	if n, err := ds2.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+		t.Fatalf("drain after the restore = %d, %v, want %d, nil", n, err, len(ids))
+	}
+	if got := semanticIDs(t, ds2, "marmalade prose"); len(got) != len(ids) || got[0] != ids[0] {
+		t.Fatalf("semantic search after the restore = %v, want %s first", got, ids[0])
+	}
+}
+
+// assertBodiesQueued holds the queue to exactly one row per id, each on
+// `body`.
+func assertBodiesQueued(t *testing.T, db *sql.DB, ids []string) {
+	t.Helper()
+	rows, err := db.Query(`SELECT record_id, property FROM embed_queue`)
+	if err != nil {
+		t.Fatalf("read the embed queue: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	got := map[string]bool{}
+	for rows.Next() {
+		var rid, prop string
+		if err := rows.Scan(&rid, &prop); err != nil {
+			t.Fatal(err)
+		}
+		if prop != "body" {
+			t.Fatalf("queue row %s is on %q, want body", rid, prop)
+		}
+		got[rid] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(ids) {
+		t.Fatalf("queued %d bodies, want %d: %v", len(got), len(ids), got)
+	}
+	for _, id := range ids {
+		if !got[id] {
+			t.Fatalf("body of %s not queued: %v", id, got)
+		}
+	}
 }
 
 // shelfRepository is a repository with the shelf fixture installed:
