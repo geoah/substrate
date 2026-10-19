@@ -1,5 +1,7 @@
 # The images of main: ghcr.io/geoah/substrate:main-<sha12> for every commit on
 # main whose ci run went green, and ghcr.io/geoah/substrate:latest for the tip.
+# The Socket Mode bridge gets the same two names under
+# ghcr.io/geoah/substrate-slack-socket, built from the same commit.
 #
 # Neither is a stable release tag in the usual sense: `latest` moves with
 # every green commit on main, and neither has release notes behind it. Both
@@ -111,6 +113,12 @@ jobs:
           cache: false
       # Skips the build when the registry already has main-<sha12>.
       - run: mise run image:main
+      # The Socket Mode bridge (cmd/slack-socket), the Dockerfile's
+      # `slack-socket` stage, under its own repository and the same rules.
+      - run: mise run image:main
+        env:
+          IMAGE: ghcr.io/geoah/substrate-slack-socket
+          TARGET: slack-socket
 
   latest:
     name: point latest at main's tip
@@ -148,3 +156,6 @@ jobs:
           install: false
           cache: false
       - run: mise run image:latest
+      - run: mise run image:latest
+        env:
+          IMAGE: ghcr.io/geoah/substrate-slack-socket

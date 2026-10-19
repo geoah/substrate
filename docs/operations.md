@@ -62,6 +62,13 @@ left at v0.113.0; it is not moved again. `GET
 published image instead, replace its `build: .` with
 `image: ghcr.io/geoah/substrate:0.85.0`.
 
+`ghcr.io/geoah/substrate-slack-socket` is the Slack Socket Mode bridge
+([`cmd/slack-socket`](../cmd/slack-socket/README.md)), the Dockerfile's
+`slack-socket` stage, for the same two platforms. It gets `main-<sha12>` and
+`latest` from the same workflow and under the same rules as the server, so a
+deployment pins the bridge and the server at the same commit. Releases do not
+publish it yet: it has no version tags.
+
 The server runs as uid 65532 and writes two paths: the data root
 (`SUBSTRATE_DATA_ROOT`, `/var/lib/substrate` in `compose.yaml`) and `/keys`,
 where the compose entrypoint mints the credential key. The image creates both,

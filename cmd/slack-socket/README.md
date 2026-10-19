@@ -119,6 +119,13 @@ The image is a stage of the repository's one Dockerfile:
 docker build --target slack-socket -t slack-socket .
 ```
 
+Every commit on `main` whose `ci` run went green is published as
+`ghcr.io/geoah/substrate-slack-socket:main-<sha12>` (the commit's first
+twelve hex digits), for `linux/amd64` and `linux/arm64`, and `latest` names
+the tip of `main`. The tags follow the server image's rules
+([operations](../../docs/operations.md#the-published-image)). Releases do not
+publish the bridge yet, so it has no version tags.
+
 It runs as uid 65532 and serves `/healthz` and `/metrics` on port 8080.
 
 ## Tests
