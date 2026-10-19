@@ -6,6 +6,7 @@ package embed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -25,6 +26,13 @@ const Dim = 1536
 
 // DefaultModel is cheap, fast and 1536-dim.
 const DefaultModel = "text-embedding-3-small"
+
+// ErrRejected marks a request the endpoint refused for what it was sent: HTTP
+// 400, 413 or 422. The same endpoint can still embed other inputs, so the
+// queue sets that value aside and keeps draining. Every other failure (a
+// timeout, a 429 or a 5xx, a refused key, an unknown model) says the endpoint
+// cannot be used right now, and is returned without it.
+var ErrRejected = errors.New("embed: the endpoint rejected the input")
 
 // modelDimensions maps base embedding model names to their vector dimensions.
 // It is the whole model set: decision record 0026 fixes the stored width at
@@ -162,8 +170,13 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	})
 	if err != nil {
 		// The message is rebuilt rather than wrapped: %w would carry the
-		// original text, key and all, to anything that unwraps it.
-		return nil, fmt.Errorf("embed: embedding request failed: %s", providersecret.Scrub(e.apiKey, err.Error()))
+		// original text, key and all, to anything that unwraps it. Only the
+		// sentinel is wrapped, and it carries no text of its own.
+		msg := providersecret.Scrub(e.apiKey, err.Error())
+		if rejected(err) {
+			return nil, fmt.Errorf("%w: %s", ErrRejected, msg)
+		}
+		return nil, fmt.Errorf("embed: embedding request failed: %s", msg)
 	}
 	// The queue pairs each vector with its input BY POSITION, so a short or
 	// long answer is a failure, never something to zip against.
@@ -190,6 +203,23 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		out[d.Index] = d.Embedding
 	}
 	return out, nil
+}
+
+// rejected reports whether the endpoint refused the request for its input.
+// go-openai answers an error body it can parse as an *APIError and any other
+// as a *RequestError, and both carry the status.
+func rejected(err error) bool {
+	status := 0
+	var apiErr *openai.APIError
+	var reqErr *openai.RequestError
+	switch {
+	case errors.As(err, &apiErr):
+		status = apiErr.HTTPStatusCode
+	case errors.As(err, &reqErr):
+		status = reqErr.HTTPStatusCode
+	}
+	return status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge ||
+		status == http.StatusUnprocessableEntity
 }
 
 // Dimension returns the model's output width.

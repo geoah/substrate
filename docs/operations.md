@@ -272,7 +272,9 @@ Three consequences an operator meets:
   re-pointing either stops the older vectors being scored. `substratectl
   --dsn … repository reembed <repository>` queues their replacement and the
   drain loop buys the vectors a batch at a time, so an interrupted re-embed
-  resumes by itself. There is no REST verb for it: it is an operator command,
+  resumes by itself. A value the endpoint refuses (HTTP 400, 413 or 422) moves
+  to the back of the queue with a warning in the log rather than stopping it
+  ([0173](decisions/0173-the-embed-drain-packs-values-into-capped-requests-and-sets-a-refused-one-aside.md)). There is no REST verb for it: it is an operator command,
   run on the box ([operator recovery](#operator-recovery)). A gateway swapped behind an unchanged row and model name
   is invisible to the provenance columns, so that case takes `reembed --all`.
 - A repository restored from its directory queues every embeddable property
@@ -703,7 +705,11 @@ collection every 5 minutes, OAuth refresh and finalizer processing every
 minute, the resolution sweep (the recovery path for a resume that a restart or
 a lost lease dropped, and for a `running` thread whose run died with its lease
 expired) every 2 minutes, and the embed-queue drain every minute,
-whether or not any repository holds an embedding provider yet. The GC sweep
+whether or not any repository holds an embedding provider yet. A drain tick
+takes batches of 64 queued values from each repository in turn until each
+queue is empty or 50 seconds have passed, and packs a batch's text into as few
+embeddings requests as 256 inputs and 250,000 bytes each allow, so a backlog
+drains at the endpoint's speed. The GC sweep
 also drops `idempotency_keys` rows past their 24 hour retention
 ([idempotency and retries](api.md#idempotency-and-retries)), and collects
 orphaned mapping targets where the deployment asked for it

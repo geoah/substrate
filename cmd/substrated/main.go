@@ -37,7 +37,12 @@ const (
 	resumeInterval = 2 * time.Minute
 	embedInterval  = time.Minute
 	embedBatch     = 64
-	oauthInterval  = time.Minute
+	// embedTickBudget is how long one tick of the embed drain keeps taking
+	// batches. A backlog (a provider named on a repository full of data, a
+	// restore, a re-embed) then drains at the endpoint's speed instead of
+	// embedBatch jobs a minute, and the tick ends before the next is due.
+	embedTickBudget = 50 * time.Second
+	oauthInterval   = time.Minute
 	// triggerDispatchPasses caps the repository passes the dispatcher runs at
 	// once. A pass takes a connection per statement or transaction and none
 	// while a function body runs, but each pass has a runner process or a
@@ -574,14 +579,53 @@ func randomStateKey() string {
 }
 
 func drainEmbeds(ctx context.Context, svc substrate.Service) {
-	for _, ds := range repositoryDatasets(ctx, svc) {
-		n, err := ds.ProcessEmbedQueue(ctx, embedBatch)
-		if err != nil {
-			slog.Error("embed queue", "repository", ds.Repository().ID, "error", err)
-			continue
+	sets := repositoryDatasets(ctx, svc)
+	queues := make([]embedQueue, len(sets))
+	for i, ds := range sets {
+		queues[i] = ds
+	}
+	drainEmbedQueues(ctx, queues, time.Now().Add(embedTickBudget), time.Now)
+}
+
+// embedQueue is the part of a dataset the embed drain drives.
+type embedQueue interface {
+	ProcessEmbedQueue(ctx context.Context, batch int) (int, error)
+	Repository() substrate.RepositoryInfo
+}
+
+// drainEmbedQueues takes one batch from each queue in turn, and again, until
+// every queue has applied nothing in its last batch or the deadline passes.
+// Taking the repositories in turn keeps one repository's backlog from holding
+// up the others' new writes for the whole tick. A queue whose batch failed
+// (the endpoint is down, a read failed) waits for the next tick.
+func drainEmbedQueues(ctx context.Context, busy []embedQueue, deadline time.Time, now func() time.Time) {
+	embedded := map[string]int{}
+	var order []string
+	for len(busy) > 0 && now().Before(deadline) && ctx.Err() == nil {
+		var next []embedQueue
+		for _, q := range busy {
+			id := q.Repository().ID
+			n, err := q.ProcessEmbedQueue(ctx, embedBatch)
+			if err != nil {
+				slog.Error("embed queue", "repository", id, "error", err)
+				continue
+			}
+			if _, seen := embedded[id]; !seen {
+				order = append(order, id)
+			}
+			embedded[id] += n
+			// A batch that applied nothing found the queue empty, or holding
+			// only jobs it set aside or an edit overtook: the next tick looks
+			// again.
+			if n > 0 {
+				next = append(next, q)
+			}
 		}
-		if n > 0 {
-			slog.Info("embed queue", "repository", ds.Repository().ID, "embedded", n)
+		busy = next
+	}
+	for _, id := range order {
+		if n := embedded[id]; n > 0 {
+			slog.Info("embed queue", "repository", id, "embedded", n)
 		}
 	}
 }

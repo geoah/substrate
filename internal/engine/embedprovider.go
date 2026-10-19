@@ -397,7 +397,7 @@ func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, pair *em
 
 // currentChunkHashes is every record's chunk hashes for one property, by
 // record id, hashed from the value the way the drain hashes it
-// (computeEmbedding: scalarString, then chunkText), so a repeated property
+// (planEmbedding: scalarString, then chunkText), so a repeated property
 // compares as its joined text and not as JSON array text. A record whose
 // value is absent or blank is left out: chunkText would give it no chunks, so
 // queuing it would only have the drain drop the row. Tombstones are included:

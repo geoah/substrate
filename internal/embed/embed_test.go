@@ -2,6 +2,7 @@ package embed
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,6 +62,56 @@ func TestEmbedErrorDoesNotCarryTheKey(t *testing.T) {
 			// the reader the reason for the failure.
 			if !strings.Contains(got, "Incorrect API key provided") {
 				t.Fatalf("the scrub ate the endpoint's message: %v", got)
+			}
+		})
+	}
+}
+
+// The queue sets a rejected value aside and keeps draining, but stops on an
+// endpoint it cannot use at all, so the two must not be confused: only a
+// refusal of the input (400, 413, 422) is ErrRejected, whatever body shape it
+// came with, and the scrub still runs on it.
+func TestEmbedTellsARejectedInputFromAnUnusableEndpoint(t *testing.T) {
+	t.Parallel()
+	const key = "sk-proj-notarealkey000000000000000000000000000cdef"
+	jsonBody := func(msg string) string {
+		return `{"error":{"message":"` + msg + `","type":"invalid_request_error"}}`
+	}
+	for _, tc := range []struct {
+		name     string
+		status   int
+		body     string
+		rejected bool
+	}{
+		{"400 with an error body", http.StatusBadRequest, jsonBody("This model's maximum context length is 8192 tokens, key " + key), true},
+		{"413 with a plain body", http.StatusRequestEntityTooLarge, "request entity too large", true},
+		{"422 with an error body", http.StatusUnprocessableEntity, jsonBody("input is invalid"), true},
+		{"401", http.StatusUnauthorized, jsonBody("Incorrect API key provided"), false},
+		{"429", http.StatusTooManyRequests, jsonBody("Rate limit reached"), false},
+		{"500 with a plain body", http.StatusInternalServerError, "upstream failed", false},
+		{"503", http.StatusServiceUnavailable, jsonBody("overloaded"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(srv.Close)
+			c, err := New(Config{BaseURL: srv.URL, APIKey: key, Model: DefaultModel})
+			if err != nil {
+				t.Fatalf("new: %v", err)
+			}
+			_, err = c.Embed(context.Background(), []string{"anything"})
+			if err == nil {
+				t.Fatalf("a %d was not reported as an error", tc.status)
+			}
+			if got := errors.Is(err, ErrRejected); got != tc.rejected {
+				t.Fatalf("a %d is ErrRejected = %v, want %v: %v", tc.status, got, tc.rejected, err)
+			}
+			if strings.Contains(err.Error(), key) {
+				t.Fatalf("the error carries the row's key: %v", err)
 			}
 		})
 	}

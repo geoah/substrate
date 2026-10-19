@@ -331,6 +331,13 @@ func WithTestQueryTracer(tr pgx.QueryTracer) Option {
 	return func(o *options) { o.queryTracer = tr }
 }
 
+// WithTestEmbedRequestCaps caps one embeddings request the drain sends at
+// inputs chunks and bytes bytes of text, so a small fixture spans several
+// requests. Zero keeps a default.
+func WithTestEmbedRequestCaps(inputs, bytes int) Option {
+	return func(o *options) { o.embedRequestInputs, o.embedRequestBytes = inputs, bytes }
+}
+
 // WithTestReprojectionHook sets a hook the background index re-derivation
 // runs before each page with the kind it is about to re-derive
 // (reprojection.go reprojectKind). A hook that blocks holds the pass there;

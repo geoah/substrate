@@ -92,8 +92,14 @@ type options struct {
 	// (bm25.go lexicalCandidates); searchReadMax when not positive. Only a
 	// test sets it (export_test.go), to cut a pass on a small fixture.
 	searchReadMax int
-	blobs         blobbytes.Backend
-	log           *slog.Logger
+	// embedRequestInputs and embedRequestBytes cap one embeddings request
+	// the drain sends (search.go embedRequestInputs); the defaults when not
+	// positive. Only a test sets them (export_test.go), to split a request
+	// on a small fixture.
+	embedRequestInputs int
+	embedRequestBytes  int
+	blobs              blobbytes.Backend
+	log                *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -462,6 +468,10 @@ type service struct {
 	searchBudget time.Duration
 	// searchReadMax is what one candidate pass reads, always positive.
 	searchReadMax int
+	// embedRequestInputs and embedRequestBytes cap one embeddings request
+	// the drain sends, always positive.
+	embedRequestInputs int
+	embedRequestBytes  int
 	// searchTopUpHook, set only by a test, runs before a lexical search's
 	// relaxed top-up: the seam that spends the budget between the passes.
 	searchTopUpHook func()
@@ -656,6 +666,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.searchBudget <= 0 {
 		o.searchBudget = DefaultSearchBudget
 	}
+	if o.embedRequestInputs <= 0 {
+		o.embedRequestInputs = embedRequestInputs
+	}
+	if o.embedRequestBytes <= 0 {
+		o.embedRequestBytes = embedRequestBytes
+	}
 	if o.searchReadMax <= 0 {
 		o.searchReadMax = searchReadMax
 	}
@@ -717,6 +733,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		searchMatchMax: o.searchMatchMax,
 		searchBudget:   o.searchBudget,
 		searchReadMax:  o.searchReadMax,
+
+		embedRequestInputs: o.embedRequestInputs,
+		embedRequestBytes:  o.embedRequestBytes,
 
 		conversionCeiling:  o.conversionCeiling,
 		orphanGrace:        o.orphanGrace,
