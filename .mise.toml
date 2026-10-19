@@ -74,7 +74,11 @@ zizmor = "1.30.1"
 experimental = true
 
 [env]
-IMAGE = "ghcr.io/geoah/substrate"
+# A default, not a value: mise's [env] overrides the caller's environment, so
+# a plain string here made `IMAGE=... mise run image:main` build and push the
+# server's repository anyway. The `latest` workflow names the bridge's
+# repository this way.
+IMAGE = "{{ get_env(name='IMAGE', default='ghcr.io/geoah/substrate') }}"
 
 # =============================================================================
 # Go
@@ -791,7 +795,7 @@ run = 'node scripts/render-smoke.mjs "$usage_base"'
 # =============================================================================
 
 [tasks."image:push"]
-description = "Build multi-arch and push. TAG=<tag> (default: dev)"
+description = "Build multi-arch and push. TAG=<tag> (default: dev), TARGET=<Dockerfile stage> (default: the server image)"
 # Two callers: a person pushing a one-off, and `image:main`, which the
 # `latest` workflow runs for every green commit on main. Releases do NOT come
 # through here: they go through goreleaser (`release` below), which versions
@@ -806,11 +810,17 @@ description = "Build multi-arch and push. TAG=<tag> (default: dev)"
 # of a version. The same two values go on the image as OCI labels, as
 # goreleaser labels a release, so a registry read says which commit an image
 # holds without pulling it and running `substratectl version`.
+#
+# TARGET builds another stage of the one Dockerfile under $IMAGE: the
+# `latest` workflow sets IMAGE=ghcr.io/geoah/substrate-slack-socket
+# TARGET=slack-socket for the Socket Mode bridge. Unset, the build is the
+# Dockerfile's last stage, the server image.
 run = '''
     set -e
     version="$(git describe --tags --always --dirty)"
     commit="$(git rev-parse HEAD)"
     docker buildx build --platform linux/amd64,linux/arm64 \
+      ${TARGET:+--target "$TARGET"} \
       --provenance=false --sbom=false \
       --build-arg "VERSION=$version" \
       --build-arg "COMMIT=$commit" \
