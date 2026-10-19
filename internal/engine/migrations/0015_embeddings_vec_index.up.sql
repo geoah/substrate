@@ -28,5 +28,30 @@
 --
 --   CREATE INDEX CONCURRENTLY IF NOT EXISTS embeddings_vec_hnsw_idx
 --       ON embeddings USING hnsw ((vec::public.halfvec(1536)) public.halfvec_cosine_ops);
+--
+-- IF NOT EXISTS alone would accept any index of the name: a CONCURRENTLY
+-- build that failed leaves one marked invalid, and one built on the
+-- full-precision column or another operator class has the name too. Either
+-- would make this statement a no-op that the reader can never use, so an
+-- index of the name that is not a valid hnsw index with halfvec_cosine_ops is
+-- dropped first and built again.
+DO $$
+DECLARE
+    idx regclass := to_regclass('embeddings_vec_hnsw_idx');
+BEGIN
+    IF idx IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+          FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indexrelid
+          JOIN pg_am a ON a.oid = c.relam
+          JOIN pg_opclass o ON o.oid = i.indclass[0]
+         WHERE i.indexrelid = idx AND i.indisvalid
+           AND a.amname = 'hnsw' AND o.opcname = 'halfvec_cosine_ops'
+    ) THEN
+        EXECUTE format('DROP INDEX %s', idx);
+    END IF;
+END
+$$;
+
 CREATE INDEX IF NOT EXISTS embeddings_vec_hnsw_idx
     ON embeddings USING hnsw ((vec::public.halfvec(1536)) public.halfvec_cosine_ops);

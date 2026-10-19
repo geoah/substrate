@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -525,44 +526,92 @@ func WithSearchMatchMax(n int) Option {
 	return func(o *options) { o.searchMatchMax, o.searchMatchMaxSet = n, true }
 }
 
-// WithTestSemanticHook runs fn with the semantic arm's context after the
-// query is embedded and before the candidate read (search.go semantic). A
-// hook that waits for ctx to end spends the arm's budget there; one that
-// cancels the caller's context stands for the request going away mid-arm.
-func WithTestSemanticHook(fn func(ctx context.Context)) Option {
+// WithTestSemanticHook runs fn with the semantic arm's context and
+// transaction after its scan settings and before the candidate read (search.go
+// semantic). A hook that runs a slow statement on tx spends the arm's budget
+// inside the database, as a slow index scan would; one that cancels the
+// caller's context stands for the request going away mid-arm.
+func WithTestSemanticHook(fn func(ctx context.Context, tx *sql.Tx)) Option {
 	return func(o *options) { o.searchSemanticHook = fn }
+}
+
+// explainLiteral renders one of the candidate read's arguments (the query vector,
+// a text, the kinds array) as a quoted SQL literal.
+func explainLiteral(v any) (string, error) {
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+	switch x := v.(type) {
+	case string:
+		return quote(x), nil
+	case []string:
+		elems := make([]string, len(x))
+		for i, e := range x {
+			elems[i] = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(e) + `"`
+		}
+		return quote("{" + strings.Join(elems, ",") + "}"), nil
+	case pgvector.Vector:
+		parts := make([]string, len(x.Slice()))
+		for i, f := range x.Slice() {
+			parts[i] = strconv.FormatFloat(float64(f), 'g', -1, 32)
+		}
+		return quote("[" + strings.Join(parts, ",") + "]"), nil
+	}
+	return "", fmt.Errorf("no literal for %T", v)
 }
 
 // SemanticCandidatePlan is the EXPLAIN of the semantic arm's candidate read
 // (search.go semanticCandidateQuery) for an arm of k records, planned on the
-// repository's own pool under the arm's scan settings, with sequential scans
-// and sorts priced out, so a test can tell whether the read's expression is
-// one the HNSW index serves. Both are priced out because on a near-empty
-// table a scan of the repository's rows by primary key and a sort is the
-// cheaper plan, and that plan says nothing about the index. kinds, when not empty, restricts the read as a search's
+// repository's own pool under the arm's own scan settings
+// (semanticScanSettings). priceOutSorts also turns sorts off: on a near-empty
+// table a primary-key scan and a sort is the cheaper plan, and that plan says
+// nothing about the index, so pricing it out shows whether the HNSW index can
+// serve the read at all. generic plans the read as a prepared statement's
+// generic plan, the one a connection's statement cache can settle on after a
+// few runs. kinds, when not empty, restricts the read as a search's
 // filter.kinds does.
-func SemanticCandidatePlan(ctx context.Context, d substrate.Dataset, kinds []string, k int) (string, error) {
+func SemanticCandidatePlan(ctx context.Context, d substrate.Dataset, kinds []string, k int, priceOutSorts, generic bool) (string, error) {
 	ds := d.(*dataset)
 	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
-	for _, set := range []string{`SET LOCAL enable_seqscan = off`, `SET LOCAL enable_sort = off`} {
-		if _, err := tx.ExecContext(ctx, set); err != nil {
-			return "", err
-		}
-	}
 	n := semanticCandidates(k)
 	if err := semanticScanSettings(ctx, tx, n); err != nil {
 		return "", err
+	}
+	if priceOutSorts {
+		if _, err := tx.ExecContext(ctx, `SET LOCAL enable_sort = off`); err != nil {
+			return "", err
+		}
 	}
 	q := make([]float32, vectorDim)
 	q[0] = 1
 	b := &builder{}
 	vec := b.arg(pgvector.NewVector(q))
 	query := semanticCandidateQuery(b, vec, &embedProvider{id: "vectors", model: "text-embedding-3-small"}, kinds, len(kinds) > 0, n)
-	rows, err := tx.QueryContext(ctx, `EXPLAIN `+query, b.args...)
+	explain, args := `EXPLAIN `+query, b.args
+	if generic {
+		// A prepared statement outlives the transaction, so it is named for
+		// this call and deallocated before the rollback.
+		name := fmt.Sprintf("semantic_candidates_%d", time.Now().UnixNano())
+		for _, stmt := range []string{`SET LOCAL plan_cache_mode = force_generic_plan`, `PREPARE ` + name + ` AS ` + query} {
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				return "", err
+			}
+		}
+		defer func() { _, _ = tx.ExecContext(ctx, `DEALLOCATE `+name) }()
+		// EXPLAIN EXECUTE takes its arguments as literals, not binds.
+		lits := make([]string, len(args))
+		for i, a := range args {
+			lit, err := explainLiteral(a)
+			if err != nil {
+				return "", err
+			}
+			lits[i] = lit
+		}
+		explain, args = `EXPLAIN EXECUTE `+name+`(`+strings.Join(lits, ", ")+`)`, nil
+	}
+	rows, err := tx.QueryContext(ctx, explain, args...)
 	if err != nil {
 		return "", err
 	}

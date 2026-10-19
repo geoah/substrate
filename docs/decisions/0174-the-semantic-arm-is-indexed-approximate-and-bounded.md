@@ -35,9 +35,17 @@ Migration 0015 builds `embeddings_vec_hnsw_idx` on
 `vec::halfvec(1536)` with `halfvec_cosine_ops`. The arm reads the nearest
 `clamp(4k, 100, 1000)` chunks from it for an arm of k records, filtered by
 the pair and the kinds as the scan walks the graph
-(`hnsw.iterative_scan = relaxed_order`, `hnsw.ef_search` set to the read),
-then rescores each candidate exactly against its stored full-precision
-vector and keeps each record's best chunk. Half precision halves the index
+(`hnsw.iterative_scan = relaxed_order`, `hnsw.ef_search` set to the read,
+up to 200,000 index entries in `hnsw.max_scan_tuples` and four times
+`work_mem` in `hnsw.scan_mem_multiplier`), then rescores each candidate
+exactly against its stored full-precision vector and keeps each record's
+best chunk. The read's transaction turns `enable_seqscan` off, so the
+planner picks the graph or, for a kind so narrow that reading all of its
+chunks is cheaper, the primary key, and never a scan of every vector: that
+scan reads each vector out of TOAST, far dearer than the planner prices it,
+and a cached generic plan cannot see how narrow the kinds are. An index of
+the name that is invalid (a failed `CONCURRENTLY` build) or of another
+access method or operator class is dropped and built again. Half precision halves the index
 (about 3 KB a chunk against 6 KB), which is the difference between an index
 that may stay in memory on that host and one that cannot; the stored
 vectors stay full precision, so a hit's score is the exact cosine.
@@ -55,14 +63,20 @@ budget (`DefaultSearchBudget`, 5 s). When it runs out, or the provider fails
 to embed the query, hybrid answers from the lexical arm alone and its
 `note` says the ranking is by words only and why. `capped` is not set: it
 tells an agent to narrow the query, and a narrower query does not bring the
-arm back. Semantic mode has no other arm and fails, `unavailable` for the
-budget. A caller that went away gets its own cancellation, never a
+arm back. Semantic mode has no other arm and fails with `unavailable`. The
+note and the error name the provider row, never the endpoint's words, which
+go to the log: a gateway's error can quote a masked key, and an answer
+reaches agents, whose tool results are stored as records. A database whose
+pgvector refuses the scan settings (older than 0.8) is treated like an arm
+that is down. A caller that went away gets its own cancellation, never a
 words-only answer.
 
 ### Consequences
 
-- Good, because a semantic query reads at most 1000 chunks from an index
-  instead of every vector, whatever the repository holds.
+- Good, because a semantic query reads at most 1000 candidate chunks from
+  an index instead of every vector, whatever the repository holds. That
+  bounds what is rescored, not the index entries the walk visits, which a
+  selective filter raises toward the 200,000 cap.
 - Good, because an embeddings provider outage or a slow index costs a
   hybrid search its meaning, not its answer.
 - Bad, because recall is approximate: a record whose nearest chunk the graph
@@ -74,21 +88,30 @@ words-only answer.
   `CREATE INDEX CONCURRENTLY` an operator runs first to make it a no-op.
 - Bad, because one index serves every repository on the database. A
   repository holding a small share of it, or a search filtered to a rare
-  kind, is found by the iterative scan walking past other rows, and
-  `hnsw.max_scan_tuples` (20,000 by default) stops that walk: a very
-  selective filter can return fewer candidates than asked, and fewer hits.
-- Bad, because the reader needs pgvector 0.8 or later for the iterative
-  scan.
+  kind, is found by the iterative scan walking past other rows, and the
+  walk stops at 200,000 entries or four times `work_mem`: a very selective
+  filter can return fewer candidates than asked, and fewer hits. The budget
+  bounds the walk's time.
+- Bad, because the arm needs pgvector 0.8 or later for the iterative scan;
+  on an older one every hybrid search answers by its words.
 - Bad, because the two arms run one after the other, each with its own
   budget, so a hybrid search can take up to twice the budget.
 
 ### Confirmation
 
 `TestSemanticCandidateReadUsesTheHNSWIndex`
-(internal/engine/semanticarm_db_test.go) plans the candidate read and
-requires the index in the plan, so a reader whose expression stops matching
-the index fails. `TestHybridSearchFallsBackToWordsWhenTheQueryEmbedFails`,
-`TestHybridSearchFallsBackToWordsWhenTheSemanticArmRunsOutOfBudget` and
+(internal/engine/semanticarm_db_test.go) plans the candidate read with
+sorts priced out and requires the index in the plan, so a reader whose
+expression stops matching the index fails.
+`TestSemanticCandidateReadNeverScansTheTable` plans it under the arm's own
+settings alone, as a custom and as a generic plan, and refuses a scan of
+the table. Neither proves which index path the planner picks at scale; that
+is checked on a real repository after a backfill.
+`TestSemanticSearchFindsARareKindByMeaning` holds a search narrowed to a
+kind with one record among sixty of another.
+`TestHybridSearchFallsBackToWordsWhenTheQueryEmbedFails`,
+`TestHybridSearchFallsBackToWordsWhenTheSemanticArmRunsOutOfBudget` (a
+statement the database is running when the budget ends) and
 `TestSearchFailsWhenTheCallerCancelsDuringTheSemanticArm` hold the fallback,
 the note and the errors. The existing semantic and hybrid tests hold the
 ranking on small data.

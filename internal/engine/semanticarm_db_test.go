@@ -7,7 +7,9 @@ package engine_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,25 +19,101 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The candidate read's ORDER BY spells the index's expression, so the planner
 // can answer it from embeddings_vec_hnsw_idx, with and without a kind filter.
-// Sequential scans and sorts are priced out (SemanticCandidatePlan) because
-// on an empty table either is cheaper than the graph; what is asserted is
-// that the index can serve the read at all, which a mismatched cast or
-// operator would make impossible.
+// Sorts are priced out on top of the arm's own settings because on an empty
+// table a primary-key scan and a sort is cheaper than the graph; what is
+// asserted is that the index can serve the read at all, which a mismatched
+// cast or operator would make impossible.
 func TestSemanticCandidateReadUsesTheHNSWIndex(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	for _, kinds := range [][]string{nil, {"shelf.test.dev/shelf/book"}} {
-		plan, err := engine.SemanticCandidatePlan(ctx, ds, kinds, 40)
+		plan, err := engine.SemanticCandidatePlan(ctx, ds, kinds, 40, true, false)
 		if err != nil {
 			t.Fatalf("explain the candidate read (kinds %v): %v", kinds, err)
 		}
 		if !strings.Contains(plan, "embeddings_vec_hnsw_idx") {
 			t.Fatalf("the candidate read (kinds %v) does not use the HNSW index:\n%s", kinds, plan)
+		}
+	}
+}
+
+// Under the arm's own settings, and nothing else, the candidate read never
+// scans the embeddings table: a sequential scan reads every vector out of
+// TOAST, far dearer than the planner prices it, so the arm holds the planner
+// to an index path, and the generic plan a statement cache settles on obeys
+// the same settings as a custom one.
+func TestSemanticCandidateReadNeverScansTheTable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	for _, kinds := range [][]string{nil, {"shelf.test.dev/shelf/book"}} {
+		for _, generic := range []bool{false, true} {
+			plan, err := engine.SemanticCandidatePlan(ctx, ds, kinds, 40, false, generic)
+			if err != nil {
+				t.Fatalf("explain the candidate read (kinds %v, generic %v): %v", kinds, generic, err)
+			}
+			if strings.Contains(plan, "Seq Scan on embeddings") {
+				t.Fatalf("the candidate read (kinds %v, generic %v) scans the table:\n%s", kinds, generic, plan)
+			}
+		}
+	}
+}
+
+// A search narrowed to a kind that holds a small share of the vectors finds
+// that kind's record by meaning: the kind filter rides the candidate read, so
+// the arm does not fill its candidates with the other kind's chunks and come
+// back empty.
+func TestSemanticSearchFindsARareKindByMeaning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	const pkg = "rarekind.example.substrate.reamde.dev/notes"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
+			map[string]any{"singular": "memo"},
+			map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"note": map[string]any{"type": "text", "embed": true},
+			}}),
+	}); err != nil {
+		t.Fatalf("declare the memo kind: %v", err)
+	}
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	for i := range 60 {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
+				"title": fmt.Sprintf("Book %d", i), "description": fmt.Sprintf("volume %d of the marmalade almanac", i),
+			},
+		})
+	}
+	memo := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: pkg + "/memo", Properties: map[string]any{"name": "Log", "note": "the lighthouse keeper writes at dawn"},
+	})
+	for {
+		n, err := ds.ProcessEmbedQueue(ctx, 64)
+		if err != nil {
+			t.Fatalf("drain: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	for _, mode := range []substrate.SearchMode{substrate.SearchSemantic, substrate.SearchHybrid} {
+		res, err := ds.Search(ctx, substrate.SearchInput{Q: "lighthouse keeper", Mode: mode, Kinds: []string{pkg + "/memo"}})
+		if err != nil {
+			t.Fatalf("%s search narrowed to the memo kind: %v", mode, err)
+		}
+		if len(res.Hits) == 0 || res.Hits[0].Record.ID != memo.ID || res.Hits[0].Semantic <= 0 {
+			t.Fatalf("%s search narrowed to the memo kind = %v, want the memo with a semantic score", mode, hitIDs(res.Hits))
 		}
 	}
 }
@@ -120,8 +198,8 @@ func TestHybridSearchFallsBackToWordsWhenTheQueryEmbedFails(t *testing.T) {
 	}
 
 	_, err = f.ds.Search(ctx, substrate.SearchInput{Q: "marmalade", Mode: substrate.SearchSemantic})
-	if err == nil || !strings.Contains(err.Error(), "embed query") {
-		t.Fatalf("semantic search with the embedder down = %v, want the embed error", err)
+	if !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(err.Error(), "failed to embed the query") {
+		t.Fatalf("semantic search with the embedder down = %v, want ErrUnavailable naming the failed embed", err)
 	}
 
 	// The provider back, the arm is back.
@@ -142,9 +220,11 @@ func TestHybridSearchFallsBackToWordsWhenTheSemanticArmRunsOutOfBudget(t *testin
 	var stall atomic.Bool
 	f := newSemanticFixture(t,
 		engine.WithSearchBudget(budget),
-		engine.WithTestSemanticHook(func(ctx context.Context) {
+		// A statement the database is running when the budget ends: the
+		// cancellation reaches Postgres, as it would for a slow index scan.
+		engine.WithTestSemanticHook(func(ctx context.Context, tx *sql.Tx) {
 			if stall.Load() {
-				<-ctx.Done()
+				_, _ = tx.ExecContext(ctx, `SELECT pg_sleep(30)`)
 			}
 		}))
 	stall.Store(true)
@@ -163,7 +243,7 @@ func TestHybridSearchFallsBackToWordsWhenTheSemanticArmRunsOutOfBudget(t *testin
 func TestSearchFailsWhenTheCallerCancelsDuringTheSemanticArm(t *testing.T) {
 	t.Parallel()
 	var cancel atomic.Pointer[context.CancelFunc]
-	f := newSemanticFixture(t, engine.WithTestSemanticHook(func(context.Context) {
+	f := newSemanticFixture(t, engine.WithTestSemanticHook(func(context.Context, *sql.Tx) {
 		if c := cancel.Load(); c != nil {
 			(*c)()
 		}

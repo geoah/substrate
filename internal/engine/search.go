@@ -451,6 +451,16 @@ const (
 	semanticCandidatesMin = 100
 	// semanticCandidatesMax is pgvector's ceiling on hnsw.ef_search.
 	semanticCandidatesMax = 1000
+	// semanticScanTuples is how many index entries an iterative scan may
+	// visit looking for chunks the filters keep (pgvector's default is
+	// 20,000). A kind holding half a percent of the index yields about 100
+	// chunks in 20,000; the search budget bounds the walk, so the cap can be
+	// generous.
+	semanticScanTuples = 200_000
+	// semanticScanMemMultiplier lets that walk keep its visited set in four
+	// times work_mem before pgvector stops it short, as it would at the
+	// default of one long before semanticScanTuples entries.
+	semanticScanMemMultiplier = 4
 )
 
 // semanticCandidates is how many chunks the arm reads for an arm of k
@@ -497,29 +507,27 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 				err:  fmt.Errorf("%w: semantic search ran past its %s budget", substrate.ErrUnavailable, budget),
 			}
 		}
-		return nil, err
+		return nil, fmt.Errorf("substrate/engine: semantic search: %w", err)
 	}
 	vecs, err := provider.Embed(ctx, []string{q})
 	if err != nil {
 		if ctx.Err() != nil {
 			return failed(err)
 		}
-		// The note names the row and not the endpoint's words: the client
-		// scrubs the row's own key, but a gateway's error can quote a masked
-		// key of the provider behind it, and a hybrid answer reaches agents,
-		// whose tool results are stored as records. The words go to the log.
-		ds.svc.log.Warn("substrate: the embeddings provider failed to embed a search query; hybrid search answered by its words only",
+		// The note and the error name the row and not the endpoint's words:
+		// the client scrubs the row's own key, but a gateway's error can quote
+		// a masked key of the provider behind it, and an answer reaches
+		// agents, whose tool results are stored as records. The words go to
+		// the log.
+		ds.svc.log.Warn("substrate: the embeddings provider failed to embed a search query; hybrid search answers by its words only",
 			"repository", ds.Repository().ID, "provider", provider.id, "error", err.Error())
 		return nil, &semanticDown{
 			note: fmt.Sprintf("The embeddings provider llm/provider %q failed to embed the query, so the hits are ranked by their words only.", provider.id),
-			err:  fmt.Errorf("substrate/engine: embed query: %w", err),
+			err:  fmt.Errorf("%w: the embeddings provider llm/provider %q failed to embed the query", substrate.ErrUnavailable, provider.id),
 		}
 	}
 	if len(vecs) != 1 {
 		return nil, fmt.Errorf("substrate/engine: embedder returned %d vectors for 1 text", len(vecs))
-	}
-	if hook := ds.svc.searchSemanticHook; hook != nil {
-		hook(ctx)
 	}
 	b := &builder{}
 	vec := b.arg(pgvector.NewVector(vecs[0]))
@@ -540,11 +548,25 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := semanticScanSettings(ctx, tx, n); err != nil {
-		return failed(err)
+		if ctx.Err() != nil {
+			return failed(err)
+		}
+		// pgvector older than 0.8 has no iterative scan and refuses the
+		// setting. That is a database the arm cannot run on, not a failed
+		// search, so hybrid answers by its words and the log says why.
+		ds.svc.log.Warn("substrate: the semantic arm could not set up its index scan (it needs pgvector 0.8 or later); hybrid search answers by its words only",
+			"repository", ds.Repository().ID, "error", err.Error())
+		return nil, &semanticDown{
+			note: "The semantic arm could not set up its index scan on this database, so the hits are ranked by their words only.",
+			err:  fmt.Errorf("%w: semantic search could not set up its index scan: %w", substrate.ErrUnavailable, err),
+		}
+	}
+	if hook := ds.svc.searchSemanticHook; hook != nil {
+		hook(ctx, tx)
 	}
 	rows, err := tx.QueryContext(ctx, query, b.args...)
 	if err != nil {
-		return failed(fmt.Errorf("substrate/engine: semantic search: %w", err))
+		return failed(err)
 	}
 	defer func() { _ = rows.Close() }()
 	out := map[eref]arm{}
@@ -557,25 +579,37 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 		out[id] = a
 	}
 	if err := rows.Err(); err != nil {
-		return failed(fmt.Errorf("substrate/engine: semantic search: %w", err))
+		return failed(err)
 	}
 	return out, nil
 }
 
-// semanticScanSettings sets, for the rest of tx, how the HNSW scan walks the
-// graph for a read of n chunks. ef_search is the scan's candidate list, and a
-// list shorter than the read caps it. The iterative scan keeps walking when
-// the filters (the repository, the pair, the kinds) reject what the list
-// found, so a filtered read still returns up to n chunks; without it a
-// repository holding a small share of the index would get a small share of
-// n. Relaxed order is enough because the rescoring sorts again. SET LOCAL
-// ends with the transaction.
+// semanticScanSettings sets, for the rest of tx, how the candidate read runs.
+// SET LOCAL ends with the transaction, which holds only this read.
+//
+//   - enable_seqscan off holds the planner to an index path: the HNSW graph,
+//     or, for a kind so narrow that reading all of its chunks is cheaper, the
+//     primary key. A sequential scan reads every vector of every repository
+//     out of TOAST, which costs far more than the planner estimates, and a
+//     cached generic plan cannot see how narrow the kinds are.
+//   - ef_search is the scan's candidate list, and a list shorter than the
+//     read caps it.
+//   - The iterative scan keeps walking when the filters (the repository, the
+//     pair, the kinds) reject what the list found, so a filtered read still
+//     returns up to n chunks, within semanticScanTuples index entries and
+//     semanticScanMemMultiplier times work_mem. Relaxed order is enough
+//     because the rescoring sorts again.
 func semanticScanSettings(ctx context.Context, tx *sql.Tx, n int) error {
-	if _, err := tx.ExecContext(ctx, `SET LOCAL hnsw.iterative_scan = relaxed_order`); err != nil {
-		return fmt.Errorf("substrate/engine: semantic search: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`SET LOCAL hnsw.ef_search = %d`, n)); err != nil {
-		return fmt.Errorf("substrate/engine: semantic search: %w", err)
+	for _, set := range []string{
+		`SET LOCAL enable_seqscan = off`,
+		`SET LOCAL hnsw.iterative_scan = relaxed_order`,
+		fmt.Sprintf(`SET LOCAL hnsw.ef_search = %d`, n),
+		fmt.Sprintf(`SET LOCAL hnsw.max_scan_tuples = %d`, semanticScanTuples),
+		fmt.Sprintf(`SET LOCAL hnsw.scan_mem_multiplier = %d`, semanticScanMemMultiplier),
+	} {
+		if _, err := tx.ExecContext(ctx, set); err != nil {
+			return err
+		}
 	}
 	return nil
 }
