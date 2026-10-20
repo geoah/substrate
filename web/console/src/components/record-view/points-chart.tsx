@@ -130,6 +130,9 @@ export function PointsChart({
               x1: clampX(x(next)),
               y0: Math.min(y0, y1),
               y1: Math.max(y0, y1),
+              // The bounds the result's own range names; an open side
+              // (an "under 3.0" range has no low) draws no edge.
+              edges: [p.high, p.low].filter(finite).map((v) => clampY(y(v))),
             }
           : undefined,
       }
@@ -265,17 +268,35 @@ export function PointsChart({
             </text>
           ))}
         </g>
+        {/* A result's reference range is where its value counts as normal,
+            so it is drawn in the good tone, with a dashed edge at each
+            bound the lab printed. */}
         {placed.map((d) =>
           d.range ? (
-            <rect
-              key={`range-${d.i}`}
-              data-slot="point-range"
-              x={d.range.x0}
-              y={d.range.y0}
-              width={Math.max(0, d.range.x1 - d.range.x0)}
-              height={d.range.y1 - d.range.y0}
-              fill="var(--hover)"
-            />
+            <g key={`range-${d.i}`}>
+              <rect
+                data-slot="point-range"
+                x={d.range.x0}
+                y={d.range.y0}
+                width={Math.max(0, d.range.x1 - d.range.x0)}
+                height={d.range.y1 - d.range.y0}
+                fill="var(--ok-soft)"
+              />
+              {d.range.edges.map((ey, n) => (
+                <line
+                  key={n}
+                  data-slot="point-range-edge"
+                  x1={d.range!.x0}
+                  x2={d.range!.x1}
+                  y1={ey}
+                  y2={ey}
+                  stroke="var(--ok)"
+                  strokeOpacity={0.55}
+                  strokeDasharray="4 3"
+                  shapeRendering="crispEdges"
+                />
+              ))}
+            </g>
           ) : null
         )}
         {placed.slice(1).map((d, n) => (

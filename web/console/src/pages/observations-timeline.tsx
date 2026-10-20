@@ -50,7 +50,11 @@ import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import type { AggregateFrom } from "@/lib/api/types"
 import { chosenValue, distinct, NONE, sameRef } from "@/lib/observations"
 import { FROM_CHOICES } from "@/lib/observations-reads"
-import { endPlacedBucket } from "@/lib/observations-time"
+import {
+  endPlacedBucket,
+  presetReaching,
+  RANGE_PRESETS,
+} from "@/lib/observations-time"
 import { groupFixed, planPlot, splitCharts } from "@/lib/overlay"
 import { shortRef } from "@/lib/stream-table"
 import {
@@ -128,6 +132,21 @@ export function ObservationsTimelinePage() {
   const shown = obs.streams.filter((s) =>
     metrics.some((m) => sameRef(s.metric, m))
   )
+  // The newest value the chosen streams hold. A range that starts after it
+  // (a provider that stopped syncing, a lab tested months ago) reads
+  // nothing, and the page says when the newest value is and offers the
+  // shortest range that reaches it.
+  const newest = shown
+    .filter(
+      (s) =>
+        !sources.length ||
+        sources.some((src) =>
+          src === NONE ? !s.source : Boolean(s.source && sameRef(s.source, src))
+        )
+    )
+    .reduce((max, s) => Math.max(max, Date.parse(s.end ?? s.at) || 0), 0)
+  const before = newest > 0 && newest < range.start ? newest : undefined
+  const reaching = before === undefined ? undefined : presetReaching(before)
   const none = (
     key: "source" | "about" | "channel",
     chosen: readonly string[],
@@ -343,6 +362,46 @@ export function ObservationsTimelinePage() {
       ) : (
         <>
           <StreamReadErrors obs={obs} className="mt-4" />
+          {before !== undefined && (
+            <p
+              data-slot="timeline-older"
+              className="mt-4 text-[12.5px] text-muted-foreground"
+            >
+              Nothing in this range: the newest value is from{" "}
+              {new Date(before).toLocaleDateString(undefined, {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+              .{" "}
+              {reaching ? (
+                <Button
+                  variant="link"
+                  className="h-auto p-0 text-[12.5px]"
+                  onClick={() => controls.onPreset(reaching)}
+                >
+                  Show the{" "}
+                  {(
+                    RANGE_PRESETS.find((p) => p.value === reaching)?.label ??
+                    reaching
+                  ).toLowerCase()}
+                </Button>
+              ) : (
+                <Button
+                  variant="link"
+                  className="h-auto p-0 text-[12.5px]"
+                  onClick={() =>
+                    controls.onCustom({
+                      start: before - 30 * 86_400_000,
+                      end: range.end,
+                    })
+                  }
+                >
+                  Show from a month before it
+                </Button>
+              )}
+            </p>
+          )}
           {charts.map((chart) => (
             <OverlayChart
               key={chart.map((p) => p.metric).join("\n")}

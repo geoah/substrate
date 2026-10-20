@@ -24,6 +24,17 @@ export function isRangePreset(value: unknown): value is RangePreset {
   return RANGE_PRESETS.some((p) => p.value === value)
 }
 
+/** The shortest preset whose window reaches back to `t`, a stream's newest
+ * value; undefined where even the last year does not. */
+export function presetReaching(
+  t: number,
+  now = Date.now()
+): RangePreset | undefined {
+  return RANGE_PRESETS.map((p) => p.value).find(
+    (p) => presetRange(p, now).start <= t
+  )
+}
+
 /** A half-open window `[start, end)` in epoch milliseconds. */
 export interface TimeRange {
   start: number

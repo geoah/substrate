@@ -567,6 +567,23 @@ describe("the timeline's requests", () => {
     ).toEqual({ eq: "max" })
   })
 
+  it("says when the newest value is where the range starts after it", async () => {
+    // The fixtures' newest heart rate is from 2026-10-07.
+    mount(
+      "?metric=health/heart_rate&range=custom&start=2026-10-14T00:00:00.000Z&end=2026-10-21T00:00:00.000Z",
+      false
+    )
+    const note = await screen.findByText(/the newest value is from/)
+    expect(note.textContent).toMatch(/Oct 7, 2026/)
+    expect(within(note).getByRole("button")).toBeTruthy()
+  })
+
+  it("says nothing of the newest value where the range holds it", async () => {
+    mount(`?metric=health/heart_rate&${WINDOW}`, false)
+    await lane("Heart rate")
+    expect(screen.queryByText(/the newest value is from/)).toBeNull()
+  })
+
   it("groups by metric, source or thing; a category metric always by code", async () => {
     const server = mount(`?metric=health/body_mass&group=code&${WINDOW}`)
     await waitFor(() =>

@@ -121,6 +121,22 @@ describe("PointsChart", () => {
     ).toBeCloseTo(224, 5)
   })
 
+  it("draws each range in the good tone with an edge at each printed bound", () => {
+    const view = render(chart())
+    const rects = [
+      ...view.container.querySelectorAll("rect[data-slot=point-range]"),
+    ]
+    for (const r of rects) expect(r.getAttribute("fill")).toBe("var(--ok-soft)")
+    const edges = (r: Element) =>
+      r.parentElement!.querySelectorAll("line[data-slot=point-range-edge]")
+    // The first and third readings print both bounds; the second only a
+    // high one, so its open side has no edge.
+    expect(edges(rects[0])).toHaveLength(2)
+    expect(edges(rects[1])).toHaveLength(1)
+    expect(edges(rects[2])).toHaveLength(2)
+    expect(edges(rects[0])[0].getAttribute("stroke")).toBe("var(--ok)")
+  })
+
   it("draws a converted reading hollow in its tone", () => {
     const view = render(chart())
     const hollow = view.container.querySelectorAll("circle[data-hollow]")
