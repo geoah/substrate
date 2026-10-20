@@ -13,6 +13,24 @@
       "id": "google-contacts-a10601044c7fbdcfccac0bbe45d28efe"
     },
     {
+      "provider": "apple",
+      "account": "addressbook",
+      "externalId": "6f1c2e9a-3b4d-4e5f-8a7b-9c0d1e2f3a4b",
+      "id": "apple-85bb44b13b0b7c81a18d0533e773a814"
+    },
+    {
+      "provider": "apple",
+      "account": "apple-85bb44b13b0b7c81a18d0533e773a814",
+      "externalId": "410FE041-5C4E-48DA-B4DE-04C15EA3DBAC:ABPerson",
+      "id": "apple-ad8a9ccf185d20237632d37b301b1c22"
+    },
+    {
+      "provider": "apple",
+      "account": "apple-85bb44b13b0b7c81a18d0533e773a814",
+      "externalId": "177C371E-701D-42F8-A03B-C61CA31627F6",
+      "id": "apple-a418423d223baa867f825ec3d5c95334"
+    },
+    {
       "provider": "Provider Name!!",
       "account": "acct",
       "externalId": "id",

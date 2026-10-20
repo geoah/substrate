@@ -1,18 +1,20 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-one bundles, in the two tiers
+The catalog in the binary serves twenty-two bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: eight providers and thirteen samples. This page covers fourteen of them;
+draws: nine providers and thirteen samples. This page covers fifteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
 
-**Eight providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack and
-Slack live events. Each is a package its publisher owns, installed under
+**Nine providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack,
+Slack live events and Apple. Each is a package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one but Slack live
-events syncs from the provider into the repository; Slack live events applies
+events and Apple syncs from the provider into the repository; Slack live events applies
 Slack's pushed events to the Slack bundle's rows and needs that bundle
-([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)). Three also ship one write each, a function
+([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)),
+and Apple's records are pushed by an app on the owner's device, so its package
+ships no function. Three also ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
 sync spends and writes no record; what it sent reaches the mirror only when
@@ -70,6 +72,7 @@ thing, and the Records column counts them.
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
+| Apple         | Provider | Owner token    | 2     | 0         | 0       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
@@ -1441,6 +1444,58 @@ second paste of the token goes stale on its own. A Slack refusal of one
 target (`message_not_found`, `missing_scope` when the user token lacks
 `reactions:read`) skips that event and the batch goes on. Every delivery logs one line counting what it applied, skipped and
 ignored.
+
+## Apple
+
+Package `providers.substrate.reamde.dev/apple`. Apple data that an app on
+the owner's device pushes into the repository, in Apple's own shape: today
+the Contacts framework (`CNContactStore`), and later Apple Health, whose
+kinds join this package. It is the one provider with no server side. The
+closure declares kinds and nothing else: no config, no account, no OAuth, no
+function and no triggers, because Apple's on-device frameworks have no API a
+sync could call.
+
+- **Kinds (2)**: `addressbook` (one device's contact store, as one install
+  of the pushing app sees it: `deviceName`, `lastSyncedAt` and
+  `contactCount`) and `contact` (one `CNContact`, field for field under
+  Apple's key names, plus `addressbook` and `displayName`).
+- **Functions, triggers**: none.
+- **Mappings**: none shipped. A person mapping can match on
+  `emailAddresses[].value` and copy `displayName` and `phoneNumbers[].value`,
+  as the `people` sample's `googlecontactperson` does for Google's contact.
+
+**The device writes with the owner's token.** A token has full access to its
+repository, and a published package refuses only writes to its
+declarations, never to its records, so the app uses the ordinary record
+routes: `PUT` on `/api/v1/providers.substrate.reamde.dev/apple/<kind>/<id>`
+to write a row, `PATCH` with a key set to `null` to clear a field that
+vanished from the contact (a put merges and never prunes), and `DELETE` for
+a contact gone from the device. No property declares a `writer:`
+restriction. Deleting an `addressbook` row collects its contacts on the next
+garbage-collection sweep, through the contact's `onDelete: cascade`
+reference.
+
+**Ids are computed on the device** with `ExternalID` from
+`internal/runner/ids.go`, the algorithm `host.ids.external` runs: the
+address book is `ExternalID("apple", "addressbook", <install UUID>)` and a
+contact is `ExternalID("apple", <address book id>, <CNContact.identifier>)`,
+because Apple's identifier is unique within one contact store and not across
+devices. The bundle's README has test vectors for a port.
+
+**Apple's values, as the device reads them.** Labels are plain strings;
+a built-in label arrives as a fixed English word ("mobile", "home fax")
+whatever the device language, and a custom label as typed. `displayName` is `CNContactFormatter`'s `.fullName`
+output. `birthday` and each `dates[]` entry carry `month` and `day` with
+`year` optional, because Apple allows a date without a year.
+`emailAddresses[].value` is the `email` datatype, as on Google's contact, so
+an address that does not parse refuses the write and the app leaves it out.
+Phone numbers are `CNPhoneNumber.stringValue` as typed, and URLs are strings.
+
+**What it does not do.** Nothing is read back or written to the device. The
+contact omits `note` (it needs an Apple entitlement), the image (it arrives
+later as a blob reference) and `nonGregorianBirthday`. No property is
+search-indexed, the same as Google's contact: a mapping's match probe reads
+the person side, not the contact.
 
 ## Firecrawl (sample)
 
