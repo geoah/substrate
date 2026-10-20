@@ -247,6 +247,48 @@ describe("RangeBar", () => {
     const bar = view.container.querySelector("[data-slot=range-bar]")!
     expect(bar.querySelectorAll("[data-slot=range-edge]")).toHaveLength(0)
     expect(bar.querySelectorAll("[data-slot=range-bound]")).toHaveLength(0)
+    cleanup()
+    // A stats bar naming its min alone prints nothing under it.
+    const min = render(<RangeBar value={48} min={0} bands={[]} unit="ms" />)
+    expect(
+      min.container.querySelectorAll("[data-slot=range-bound]")
+    ).toHaveLength(0)
+  })
+
+  it("prints a cut-off in the digits it was written with", () => {
+    const view = render(
+      <RangeBar
+        value={0.012}
+        min={0}
+        bands={[{ high: 0.014, label: "reference range", tone: "good" }]}
+        unit="ng/mL"
+        precision={2}
+        marked
+      />
+    )
+    expect(
+      [...view.container.querySelectorAll("[data-slot=range-bound]")].map(
+        (b) => b.textContent
+      )
+    ).toEqual(["0 ng/mL", "0.014 ng/mL"])
+  })
+
+  it("leaves out the zero where it would run into a bound near it", () => {
+    // Over 0.4 against a value of 9: the bound sits 4% from zero.
+    const view = render(
+      <RangeBar
+        value={9}
+        min={0}
+        bands={[{ low: 0.4, label: "reference range", tone: "good" }]}
+        unit="mU/L"
+        marked
+      />
+    )
+    expect(
+      [...view.container.querySelectorAll("[data-slot=range-bound]")].map(
+        (b) => b.textContent
+      )
+    ).toEqual(["0.4 mU/L"])
   })
 })
 

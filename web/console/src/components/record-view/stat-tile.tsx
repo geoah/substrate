@@ -17,7 +17,7 @@ import {
   type Band,
   type Tone,
 } from "@/lib/record-view"
-import { unitSymbol } from "@/lib/units"
+import { floatDigits, unitSymbol } from "@/lib/units"
 
 export interface StatTileProps {
   label: string
@@ -327,6 +327,57 @@ function boundPlace(percent: number) {
   return { left: `${percent}%`, transform: "translateX(-50%)" }
 }
 
+/** The gap, in percent of the bar, two printed bounds keep: about a label's
+ * width on a tile's bar, so their words never run into each other. */
+const BOUND_GAP = 25
+
+/** The bounds a reference range prints under its bar: each bound where it
+ * falls, bounds closer than `BOUND_GAP` printed together as one "135 to 145
+ * mmol/L" between them, and the scale's named start (`min`, the zero of a
+ * one-sided range) only where it keeps clear of them. A bound prints in
+ * full, the digits it was written with, never cut to two places. */
+function boundLabels(
+  edges: readonly { v: number }[],
+  min: number | undefined,
+  at: (v: number) => number,
+  unit?: string,
+  precision?: number
+): { at: number; text: string }[] {
+  const full = (v: number, u?: string) =>
+    readingText(floatDigits(v), u, Math.max(precision ?? 0, placesOf(v)))
+  const values = [...new Set(edges.map((e) => e.v))].sort((a, b) => a - b)
+  const groups: number[][] = []
+  for (const v of values) {
+    const last = groups.at(-1)
+    if (last && at(v) - at(last[0]) < BOUND_GAP) last.push(v)
+    else groups.push([v])
+  }
+  const out = groups.map((g) => {
+    const first = g[0]
+    const end = g.at(-1)!
+    return g.length === 1
+      ? { at: at(first), text: full(first, unit) }
+      : {
+          at: (at(first) + at(end)) / 2,
+          text: `${full(first)} to ${full(end, unit)}`,
+        }
+  })
+  if (
+    min !== undefined &&
+    !values.includes(min) &&
+    out.every((l) => Math.abs(l.at - at(min)) >= BOUND_GAP)
+  ) {
+    out.unshift({ at: at(min), text: full(min, unit) })
+  }
+  return out
+}
+
+/** A number's decimal places as written, float noise cleared. */
+function placesOf(v: number): number {
+  const m = /\.(\d+)$/.exec(floatDigits(v))
+  return m ? m[1].length : 0
+}
+
 export function RangeBar({
   value,
   min,
@@ -353,8 +404,9 @@ export function RangeBar({
   marked?: boolean
 }) {
   const known = [
-    min,
-    max,
+    // A reference range's scale holds its named start; a stats bar's
+    // padding is the values' own.
+    ...(marked ? [min, max] : []),
     value ?? undefined,
     ...bands.flatMap((b) => [b.low, b.high]),
     baseline?.low,
@@ -379,12 +431,8 @@ export function RangeBar({
           .map((v) => ({ v, tone: b.tone }))
       )
     : []
-  const printed = labelled
-    ? []
-    : [
-        ...(min !== undefined && !edges.some((e) => e.v === min) ? [min] : []),
-        ...new Set(edges.map((e) => e.v)),
-      ]
+  const printed =
+    labelled || !marked ? [] : boundLabels(edges, min, at, unit, precision)
   const valueAt = value === null ? undefined : at(value)
   const mark = toneColor(
     tone ??
@@ -468,14 +516,14 @@ export function RangeBar({
       )}
       {printed.length > 0 && (
         <div className="relative h-4 text-[11.5px] text-faint tabular-nums">
-          {printed.map((v) => (
+          {printed.map((l) => (
             <span
-              key={v}
+              key={l.text}
               data-slot="range-bound"
               className="absolute whitespace-nowrap"
-              style={boundPlace(at(v))}
+              style={boundPlace(l.at)}
             >
-              {text(v)}
+              {l.text}
             </span>
           ))}
         </div>

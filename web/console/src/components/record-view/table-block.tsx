@@ -506,9 +506,12 @@ function Points({
     return at === undefined || !resultReading(p) ? [] : [{ r, p, at }]
   })
   const unit = timed.length ? resultReading(timed[0].p)?.unit : undefined
+  // Each result in the newest's unit, converted within one measure; under
+  // a unitless newest result only the unitless ones draw, never every
+  // result in its own unit on one axis.
   const drawn = timed.flatMap((x) => {
     const reading = resultReading(x.p, unit)
-    return reading ? [{ ...x, reading }] : []
+    return reading && reading.unit === unit ? [{ ...x, reading }] : []
   })
   const other = timed.length - drawn.length
   const channels = new Set(drawn.map((x) => text(x.p.channel) ?? ""))

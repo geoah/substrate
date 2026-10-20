@@ -419,11 +419,14 @@ Under the properties, in order:
   `at`), the revision and the record that delivered it. Where the value and
   the bounds of its first reference range are plain numbers, the bounds in
   the value's unit or another unit of its measure (converted), a bar
-  labelled **Against its range** draws the value against that range: from
-  zero where no number is negative, the range in the good tone unless the
-  range's own `tone` names another (`poor` for a cut-off past which a value
-  is abnormal), a dashed line at each bound and each bound printed where it
-  falls. A range in another measure (mg/dL against mmol/L), or a value or
+  labelled **Against its range** draws the value against that range: a
+  one-sided range ("under 3") from zero where no number is negative, the
+  range in the good tone unless the range's own `tone` names another
+  (`poor` for a cut-off past which a value is abnormal), a dashed line at
+  each bound and each bound printed where it falls, in the digits it was
+  written with. Two bounds too close to print apart print once, together
+  ("3.9 to 5.6 mmol/L"), and the zero is left out where it would run into a
+  bound. A range in another measure (mg/dL against mmol/L), or a value or
   bound with a comparator (`<5`), is said in words alone. A trace (the `packed` variant, told apart by declaring
   `values`) draws its values over `[at, endsAt)` as a line broken wherever
   two values sit further apart than its `hold`, its managed `stats` as
@@ -598,8 +601,9 @@ properties the sheet folds away because a section shows them. Then come its
   range and source where `columns` is absent, and `chart` draws the values
   over time as points, each against its own reference range in that range's
   tone. The chart draws in the first result's unit and converts a result in
-  another unit of the same measure (g beside kg); one in another measure is
-  listed and not drawn. A result written as a bound (`<0.5`) draws as a
+  another unit of the same measure (g beside kg); one in another measure,
+  or one with a unit under a first result with none, is listed and not
+  drawn. A result written as a bound (`<0.5`) draws as a
   triangle toward its open side, joined to no other. Results of several
   channels (a DXA scan's trunk and arms) draw one line each, the channel
   named in the tooltip. `nest` names a

@@ -113,6 +113,12 @@ function rational(text: string | undefined): number {
   return Number(n) / (d === undefined ? 1 : Number(d))
 }
 
+/** A float's digits at twelve significant places, which clears a binary
+ * float's noise: `7099.999999999999` is `7100`, `0.1 + 0.2` is `0.3`. */
+export function floatDigits(v: number): string {
+  return String(Number(v.toPrecision(12)))
+}
+
 /** A value in one code as the same quantity in another, for a chart or a
  * comparison: the two codes must share a converts class of one measure
  * (`measure` where the value names one, else the code's own,
@@ -134,7 +140,11 @@ export function convertUnit(
   const t = m.factors?.[to]
   if (!f || !t) return undefined
   const base = value * rational(f.factor) + rational(f.offset)
-  return (base - rational(t.offset)) / rational(t.factor)
+  // Twelve significant places clear a binary float's noise: 23.4 kg is
+  // 23400 g, not 23399.999999999996.
+  return Number(
+    ((base - rational(t.offset)) / rational(t.factor)).toPrecision(12)
+  )
 }
 
 /** A measure's name as a heading: `temperature-difference` is "Temperature

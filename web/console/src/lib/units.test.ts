@@ -20,6 +20,7 @@ import {
   measureLabel,
   measureOf,
   convertUnit,
+  floatDigits,
   openingUnit,
   parseQuantityText,
   quantityExample,
@@ -394,6 +395,12 @@ describe("convertUnit", () => {
     expect(
       convertUnit(1, "Cel", "[degF]", "temperature-difference")
     ).toBeCloseTo(1.8, 9)
+  })
+
+  it("answers without a binary float's noise", () => {
+    expect(convertUnit(23.4, "kg", "g")).toBe(23400)
+    expect(convertUnit(7.1, "kg", "g")).toBe(7100)
+    expect(floatDigits(0.1 + 0.2)).toBe("0.3")
   })
 
   it("refuses units of two measures", () => {

@@ -359,6 +359,50 @@ it("converts a reading in another unit of the same measure and lists one of anot
   )
 })
 
+it("draws only the unitless results under a unitless newest result", async () => {
+  const MASS = `${METRIC}/body/lean_mass`
+  const lean = (
+    id: string,
+    at: string,
+    value: { value: string; unit?: string }
+  ) =>
+    record(RESULT.identity, id, {
+      metric: { ref: MASS },
+      at,
+      value,
+      source: { ref: GARMIN },
+    })
+  const BARE = lean("a", "2026-07-02T08:00:00Z", { value: "2.1" })
+  const G = lean("b", "2026-04-02T08:00:00Z", { value: "3000", unit: "g" })
+  mount(
+    {
+      name: "Lean mass",
+      sections: [
+        {
+          table: {
+            kind: { ref: `substrate.reamde.dev/core/kind/${RESULT.identity}` },
+            sharing: ["metric"],
+            chart: true,
+          },
+        },
+      ],
+    },
+    BARE,
+    RESULT,
+    [BARE, G]
+  )
+  const section = await screen.findByRole("region", { name: "Lean mass" })
+  const chart = await waitFor(() => {
+    const c = section.querySelector("[data-slot=points-chart]")
+    expect(c).toBeTruthy()
+    return c!
+  })
+  expect(chart.querySelectorAll("[data-slot=point]")).toHaveLength(1)
+  expect(section.textContent).toContain(
+    "1 result in a unit this chart cannot convert to is listed and not drawn."
+  )
+})
+
 it("draws one hairline chain per channel, and a bound as a marker", async () => {
   const region = (id: string, at: string, value: string, channel?: string) =>
     result(id, at, mmol(value), channel ? { channel } : {})

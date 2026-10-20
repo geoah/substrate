@@ -20,6 +20,7 @@ import { useWidth } from "@/hooks/use-width"
 import { splitKind } from "@/lib/definition"
 import { linearScale, niceDomain, tickLabels } from "@/lib/chart"
 import { readingText } from "@/lib/observations"
+import { floatDigits } from "@/lib/units"
 import { autoBucket, dayWords, type TimeRange } from "@/lib/observations-time"
 import { toneColor, toneSoft, type Band, type Tone } from "@/lib/record-view"
 import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
@@ -85,7 +86,7 @@ function edgeColor(tone: Tone): string {
 
 /** A reading in words, its comparator in front. */
 function valueWords(p: ChartPoint, unit?: string): string {
-  return readingText(String(p.value), unit, undefined, p.comparator)
+  return readingText(floatDigits(p.value), unit, undefined, p.comparator)
 }
 
 /** A reading's range in words: "range 2.6 to 3.4 mmol/L", "under 3
@@ -94,10 +95,10 @@ function pointRangeWords(p: ChartPoint, unit?: string): string {
   const low = finite(p.low) ? p.low : undefined
   const high = finite(p.high) ? p.high : undefined
   if (low !== undefined && high !== undefined) {
-    return `range ${readingText(String(low))} to ${readingText(String(high), unit)}`
+    return `range ${readingText(floatDigits(low))} to ${readingText(floatDigits(high), unit)}`
   }
-  if (high !== undefined) return `under ${readingText(String(high), unit)}`
-  if (low !== undefined) return `over ${readingText(String(low), unit)}`
+  if (high !== undefined) return `under ${readingText(floatDigits(high), unit)}`
+  if (low !== undefined) return `over ${readingText(floatDigits(low), unit)}`
   return "no range"
 }
 

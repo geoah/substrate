@@ -17,14 +17,17 @@ vi.mock("@tanstack/react-router", () => ({
     params,
     onFocus,
     onBlur,
+    "aria-label": label,
   }: {
     children: ReactNode
     params?: Record<string, string>
     onFocus?: () => void
     onBlur?: () => void
+    "aria-label"?: string
   }) => (
     <a
       data-params={JSON.stringify(params ?? {})}
+      aria-label={label}
       onFocus={onFocus}
       onBlur={onBlur}
     >
@@ -179,6 +182,30 @@ describe("PointsChart", () => {
     expect(tip).toContain("Derived from: Mar 2, 2024")
     fireEvent.pointerLeave(svg)
     expect(screen.queryByRole("status")).toBe(null)
+  })
+
+  it("names a converted reading and its range without float noise", () => {
+    const view = render(
+      <PointsChart
+        points={[
+          {
+            ...points[0],
+            value: 23399.999999999996,
+            low: 7099.999999999999,
+            high: 19899.999999999996,
+          },
+        ]}
+        domain={domain}
+        unit="g"
+        label="Example marker over time"
+      />
+    )
+    const link = view.container.querySelector("a[data-params]")!
+    expect(link.getAttribute("aria-label")).toContain("23,400 g")
+    fireEvent.focus(link)
+    const tip = screen.getByRole("status").textContent
+    expect(tip).toContain("23,400 g")
+    expect(tip).toContain("range 7,100 to 19,900 g")
   })
 
   it("rings a reading focused by keyboard and names it in the tooltip", () => {

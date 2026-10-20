@@ -355,9 +355,9 @@ describe("a single value", () => {
       observationKind
     )
     const bar = view.container.querySelector("[data-slot=range-bar]")!
-    // A scale of values never negative starts at zero, its top padded by
-    // 5%: 3.6 sits at 3.6 / 3.78 of it.
-    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(95.24, 1)
+    // A two-sided range keeps its own scale, padded by 5% of 2.6 to 3.6 at
+    // either end: 3.6 sits at 1.05 / 1.1 of it.
+    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(95.45, 1)
     const band = bar.querySelector("[data-band]") as HTMLElement
     expect(band.getAttribute("data-band")).toBe("reference range")
     // A lab's normal range is drawn in the good tone, a dashed edge at each
@@ -367,11 +367,35 @@ describe("a single value", () => {
     const printed = [...bar.querySelectorAll("[data-slot=range-bound]")].map(
       (b) => b.textContent
     )
-    expect(printed).toEqual(["0 mmol/L", "2.6 mmol/L", "3.4 mmol/L"])
+    expect(printed).toEqual(["2.6 mmol/L", "3.4 mmol/L"])
     // A high flag marks the value in the poor tone, beside its word.
     const marker = bar.querySelector("[data-slot=range-value]") as HTMLElement
     expect(marker.style.background).toBe("var(--destructive)")
     expect(view.container.textContent).toContain("high (2.6 to 3.4 mmol/L)")
+    cleanup()
+    // Bounds that would run into each other print once, together: glucose
+    // 19 against 3.9 to 5.6 puts them 10% of the bar apart.
+    const glucose = mount(
+      {
+        ...WEIGHING,
+        properties: {
+          ...WEIGHING.properties,
+          value: { value: "19", unit: "mmol/L" },
+          referenceRanges: [
+            {
+              low: { value: "3.9", unit: "mmol/L" },
+              high: { value: "5.6", unit: "mmol/L" },
+            },
+          ],
+        },
+      },
+      observationKind
+    )
+    expect(
+      [...glucose.container.querySelectorAll("[data-slot=range-bound]")].map(
+        (b) => b.textContent
+      )
+    ).toEqual(["3.9 to 5.6 mmol/L"])
     cleanup()
     // A range in another unit is said in words, never drawn.
     const other = mount(
