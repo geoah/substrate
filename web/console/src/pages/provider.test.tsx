@@ -807,6 +807,24 @@ describe("ProviderPage", () => {
       const note = await screen.findByRole("status")
       expect(note.textContent).toContain("Account connected")
       expect(note.textContent).toContain("george-home")
+      // It never synced, so the provider's on-connect trigger starts the
+      // first sync.
+      await waitFor(() =>
+        expect(note.textContent).toContain(
+          "is approved and its first sync is starting."
+        )
+      )
+    })
+
+    it("says a sync is starting when the returned account synced before", async () => {
+      search = { connected: `${ACCOUNT}/george-work` }
+      renderPage(<ProviderPage />)
+      const note = await screen.findByRole("status")
+      await waitFor(() =>
+        expect(note.textContent).toContain(
+          "george-work is approved and a sync is starting."
+        )
+      )
     })
 
     it("highlights the account the address names", async () => {

@@ -9,15 +9,24 @@ import { CircleCheckIcon, TriangleAlertIcon, XIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import type { OAuthReturnSearch } from "@/lib/oauth-return"
+import { approvedWords } from "@/lib/providers"
+import type { SyncFields } from "@/lib/sync"
 import { splitRecordPath } from "@/lib/record-path"
 import { cn } from "@/lib/utils"
 
 export function OAuthReturnNote({
   connected,
   error,
+  sync,
   onDismiss,
   className,
-}: OAuthReturnSearch & { onDismiss: () => void; className?: string }) {
+}: OAuthReturnSearch & {
+  /** The returned account's sync, when the page has it: the note then says
+   * what the approval starts (approvedWords). */
+  sync?: Pick<SyncFields, "paused" | "lastSyncedAt">
+  onDismiss: () => void
+  className?: string
+}) {
   if (!connected && !error) return null
   const account = connected ? (splitRecordPath(connected)?.id ?? connected) : ""
   const ok = !error
@@ -49,7 +58,7 @@ export function OAuthReturnNote({
               <span className="font-mono text-xs [overflow-wrap:anywhere]">
                 {account}
               </span>{" "}
-              is approved and its first sync is starting.
+              {approvedWords(sync)}
             </>
           ) : (
             <>

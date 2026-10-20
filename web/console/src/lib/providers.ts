@@ -470,6 +470,24 @@ export function syncWords(
   }
 }
 
+/** What follows an account's name when its approval returns: what the
+ * connect starts (decision 0176).
+ * A reconnect of an account that synced before and is not paused requests a
+ * sync; a first connect leaves the first sync to the provider's on-connect
+ * trigger; a paused account starts nothing. Without the account's sync
+ * fields (a kind that does not bind the `sync` trait, or a page with no
+ * account at hand) it says only that the account is approved. */
+export function approvedWords(
+  sync?: Pick<SyncFields, "paused" | "lastSyncedAt">
+): string {
+  if (!sync) return "is approved."
+  if (sync.paused) {
+    return "is approved. Its sync is paused, so nothing runs until you resume it."
+  }
+  if (!sync.lastSyncedAt) return "is approved and its first sync is starting."
+  return "is approved and a sync is starting."
+}
+
 /** The OAuth facility's `tokenStatus` as a person reads it, with the
  * facility's `tokenError` as the reason a broken sign-in gives. */
 export function connectionWords(

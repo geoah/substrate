@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
   andList,
+  approvedWords,
   bundleParams,
   choiceSentence,
   chosenCount,
@@ -993,5 +994,22 @@ describe("what a provider did", () => {
     expect(
       lastSyncOf(`${G}/account`, G, functions, triggers, runs)
     ).toBeUndefined()
+  })
+})
+
+describe("approvedWords", () => {
+  it("says what the approval starts", () => {
+    expect(approvedWords()).toBe("is approved.")
+    expect(
+      approvedWords({ paused: true, lastSyncedAt: "2026-10-19T10:00:00Z" })
+    ).toBe(
+      "is approved. Its sync is paused, so nothing runs until you resume it."
+    )
+    expect(approvedWords({ paused: false })).toBe(
+      "is approved and its first sync is starting."
+    )
+    expect(
+      approvedWords({ paused: false, lastSyncedAt: "2026-10-19T10:00:00Z" })
+    ).toBe("is approved and a sync is starting.")
   })
 })

@@ -86,6 +86,7 @@ import {
   type RequirementNode,
 } from "@/lib/bundles"
 import { currentStep } from "@/lib/providers"
+import { recordPath } from "@/lib/record-path"
 import { groupSettings, type SettingField } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 import { providerRoute } from "@/router"
@@ -97,10 +98,21 @@ export function ProviderPage() {
   const { account, connected, error } = providerRoute.useSearch()
   const navigate = useNavigate()
   const id = `${authority}/${pkg}`
+  const data = useProviders()
+  // The returned account, once its provider has loaded: the note says what
+  // the approval starts from its sync (approvedWords).
+  const returned = connected
+    ? data.providers
+        .find((p) => p.row.id === id)
+        ?.view?.accounts.find(
+          (a) => recordPath(a.record.kind, a.record.id) === connected
+        )
+    : undefined
   const oauthReturn = (
     <OAuthReturnNote
       connected={connected}
       error={error}
+      sync={returned?.syncable ? returned.sync : undefined}
       className="mt-6"
       onDismiss={() =>
         void navigate({
@@ -112,7 +124,6 @@ export function ProviderPage() {
       }
     />
   )
-  const data = useProviders()
   const settings = useQuery(settingRecordsQueryOptions)
   const settingFields = useMemo(
     () =>

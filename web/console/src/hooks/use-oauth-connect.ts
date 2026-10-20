@@ -18,18 +18,28 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { toast } from "@/components/ui/toast"
 import { parseSubstrateOAuthMessage, startOAuth } from "@/lib/api/bundles"
+import { approvedWords } from "@/lib/providers"
+import type { SyncFields } from "@/lib/sync"
 
 export interface ConnectTarget {
   /** The account's record path, `recordPath(kind, id)`. */
   record: string
   /** What the toasts call it. */
   label: string
+  /** The account's sync as the connect began, so the notice when the
+   * approval returns says what it starts (approvedWords); absent on a kind
+   * that does not bind the `sync` trait. */
+  sync?: Pick<SyncFields, "paused" | "lastSyncedAt">
   /** A tab the caller opened synchronously from its click. `null` is a tab
    * the browser refused (window.open's own answer), and reads as blocked. */
   tab?: Window | null
 }
 
-export function useOAuthConnect(record?: string, label?: string) {
+export function useOAuthConnect(
+  record?: string,
+  label?: string,
+  sync?: Pick<SyncFields, "paused" | "lastSyncedAt">
+) {
   const queryClient = useQueryClient()
   // The flow whose return the listener below awaits; unset while none is.
   const [awaiting, setAwaiting] = useState<ConnectTarget | undefined>()
@@ -46,6 +56,7 @@ export function useOAuthConnect(record?: string, label?: string) {
       const path = chosen?.record ?? record
       if (!path) throw new Error("There is no account to connect.")
       const name = chosen?.label ?? label ?? path
+      const fields = chosen ? chosen.sync : sync
       const tab =
         chosen?.tab === undefined
           ? window.open("about:blank", "_blank")
@@ -66,15 +77,20 @@ export function useOAuthConnect(record?: string, label?: string) {
           )
         }
         if (tab) tab.location.href = url
-        return { opened: Boolean(tab), record: path, label: name }
+        return {
+          opened: Boolean(tab),
+          record: path,
+          label: name,
+          sync: fields,
+        }
       } catch (error) {
         tab?.close()
         throw error
       }
     },
-    onSuccess: ({ opened, record, label }) => {
+    onSuccess: ({ opened, record, label, sync }) => {
       if (opened) {
-        setAwaiting({ record, label })
+        setAwaiting({ record, label, sync })
         toast.add({
           type: "success",
           title: "The provider opened in a new tab",
@@ -99,7 +115,7 @@ export function useOAuthConnect(record?: string, label?: string) {
 
   useEffect(() => {
     if (!awaiting) return
-    const { record, label } = awaiting
+    const { record, label, sync } = awaiting
     function onMessage(event: MessageEvent) {
       // Origin first: the callback page is served by the substrate that
       // serves this console, so anything else is a stranger's window.
@@ -114,7 +130,7 @@ export function useOAuthConnect(record?: string, label?: string) {
         toast.add({
           type: "success",
           title: "Account connected",
-          description: `${label} is approved and its first sync is starting.`,
+          description: `${label} ${approvedWords(sync)}`,
         })
         refresh()
       } else {

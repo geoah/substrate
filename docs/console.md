@@ -889,7 +889,9 @@ back to it:
   words, when it last synced and how often it does, and the verbs an account
   takes: **Connect** or **Reconnect**, **Sync now**, **Pause**, change what it
   brings in, and **Disconnect**. `?account=<id>` scrolls to one and highlights
-  it.
+  it. When an approval returns, the notice says what it starts: the first
+  sync on a new account, a sync on an account that synced before, nothing on
+  a paused one.
 - **What it adds**: what it brings in (its primary kinds, each with what it
   is, how many records it holds, when it last synced and which of your own
   kinds its records fill in through a mapping, with the supporting kinds
