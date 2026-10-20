@@ -475,6 +475,43 @@ func BreakSealedStore(ds substrate.Dataset) {
 	d.sealed = brokenSealedStore{}
 }
 
+// RepairSealedStore puts a dataset's sealed-file writer back to the files
+// themselves, undoing BreakSealedStore.
+func RepairSealedStore(ds substrate.Dataset) {
+	d := ds.(*dataset)
+	d.writerMu.Lock()
+	defer d.writerMu.Unlock()
+	d.sealed = nil
+}
+
+// BreakSealedStoreTimes replaces a dataset's sealed-file writer with one
+// whose Stage fails the next n calls and then writes the files as usual.
+func BreakSealedStoreTimes(ds substrate.Dataset, n int) {
+	d := ds.(*dataset)
+	d.writerMu.Lock()
+	defer d.writerMu.Unlock()
+	d.sealed = &failingSealedStore{left: n}
+}
+
+type failingSealedStore struct {
+	fileSealedStore
+	mu   sync.Mutex
+	left int
+}
+
+func (s *failingSealedStore) Stage(repoDir string, rec changelogfile.SealedRecord) error {
+	s.mu.Lock()
+	fail := s.left > 0
+	if fail {
+		s.left--
+	}
+	s.mu.Unlock()
+	if fail {
+		return ErrSealedStoreBroken
+	}
+	return s.fileSealedStore.Stage(repoDir, rec)
+}
+
 // ErrSealedStoreBroken is what BreakSealedStore's store fails with.
 var ErrSealedStoreBroken = errors.New("engine test: the sealed store is broken")
 
@@ -914,6 +951,47 @@ func OAuthRefreshHands(ds substrate.Dataset) int {
 	for k, e := range oauthRefreshes.entries {
 		if k.repository == repository {
 			n += e.users
+		}
+	}
+	return n
+}
+
+// SetOAuthCallBudget shortens the bound one refresh's provider call runs
+// under, so a test can run a call past it.
+func SetOAuthCallBudget(svc substrate.Service, d time.Duration) {
+	svc.(*service).testOAuthCallBudget = d
+}
+
+// SetOAuthBeforeStamp runs fn after a refused refresh found its credential
+// not replaced and before the refusal is stamped on the account.
+func SetOAuthBeforeStamp(svc substrate.Service, fn func()) {
+	svc.(*service).testOAuthBeforeStamp = fn
+}
+
+// LoseWriterLease makes svc refuse every write as a process that lost its
+// writer lease does, until the returned func is called. It holds the lease's
+// mutex meanwhile, so no heartbeat retakes the lease under the test.
+func LoseWriterLease(svc substrate.Service) (restore func()) {
+	l := svc.(*service).lease
+	l.mu.Lock()
+	l.lost.Store(true)
+	return sync.OnceFunc(func() {
+		l.lost.Store(false)
+		l.mu.Unlock()
+	})
+}
+
+// OAuthUnstoredTokens is how many credentials of ds's repository hold a
+// refreshed token in memory because its store failed. A test calls it once
+// every refresh it started has returned.
+func OAuthUnstoredTokens(ds substrate.Dataset) int {
+	repository := ds.(*dataset).scope.Repository
+	oauthRefreshes.mu.Lock()
+	defer oauthRefreshes.mu.Unlock()
+	n := 0
+	for k, e := range oauthRefreshes.entries {
+		if k.repository == repository && e.pending != nil {
+			n++
 		}
 	}
 	return n

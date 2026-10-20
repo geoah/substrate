@@ -420,6 +420,14 @@ type service struct {
 	// locks any of them (gc.go gcPass), so a test can restore a victim in
 	// that window and count the passes a sweep runs.
 	testGCPassHook func(victims int)
+	// testOAuthCallBudget, when set (tests only), replaces oauthCallBudget,
+	// so a test can run a token call past its bound without waiting 30 s.
+	testOAuthCallBudget time.Duration
+	// testOAuthBeforeStamp, when set (tests only), runs after a refused
+	// refresh found its credential not replaced and before the refusal is
+	// stamped on the account (oauth.go refreshCredential), so a test can land
+	// a reconnect in that window.
+	testOAuthBeforeStamp func()
 	// appRole is the role every repository-scoped pool assumes; empty when the
 	// cluster would not let the engine create its roles.
 	appRole string

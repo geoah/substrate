@@ -431,7 +431,28 @@ backs the credential off: neither the loop nor an invocation asks the provider
 again for a minute, then two, doubling up to six hours, and meanwhile an
 invocation gets the last refusal as the account's `tokenError`. A reconnect or
 a good refresh ends the backoff. It lives in memory, so a restart starts it
-over. A 5xx, a 408, a 429 or a network failure is retried on the next pass.
+over. A credential refused until its backoff step reaches an hour (the
+seventh refusal, about an hour after the first) is taken off the loop like an
+`invalid_grant` one, and its `tokenError` says how many times it was refused
+since when and asks for a reconnect; a later refusal of that grant, by an
+invocation once the backoff ends, keeps that wording with the count moved on.
+A refusal counts only against the grant
+it was sent for: a reconnect that lands while the old grant's refusal is in
+flight stays `connected`. A 5xx, a 408, a 429 or a network failure is retried
+on the next pass and never takes a credential off the loop. Once a refresh is
+sent, the call and the store of the fresh token run to their own bounds
+whatever the caller does, because a provider that rotates refresh tokens
+(WHOOP) has spent the old one by the time it answers; the store's bound starts
+once the provider has answered. A store that fails three times keeps the fresh
+token in memory and logs an error. The next refresh of that credential tries
+to store it first, and until a store lands the kept token stands in for the
+stored one, so a refresh that is due sends the kept refresh token, never the
+spent one. A restart before a store lands loses it, a reconnect drops it, and
+deleting the account revokes it beside the stored token. A process that cannot
+write (it lost its writer lease, or it is open read-only) sends no refresh at
+all, because the provider would spend the refresh token and the store would be
+refused
+([0180](decisions/0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md)).
 An invocation that refreshes a token on the spot reports a failure the same
 way. Two refreshes of one credential never overlap: the second waits for the
 first and uses the token it stored. Every token call gives up after 30

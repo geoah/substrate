@@ -49,6 +49,15 @@ type fakeProvider struct {
 	refuseCode   string
 	// refreshCalls counts every refresh request, answered or refused.
 	refreshCalls int
+	// rotate makes the provider rotate refresh tokens the way WHOOP does:
+	// each refresh must send current, is answered with the next one, and
+	// spends the one it sent, which is refused afterwards with `400
+	// invalid_request`. A code exchange starts over at rt-1.
+	rotate  bool
+	current string
+	issued  int
+	// sent is every refresh token a refresh request carried, in order.
+	sent []string
 }
 
 func newFakeProvider(t *testing.T) *fakeProvider {
@@ -70,10 +79,12 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 				return
 			}
 			p.exchanges++
+			p.current, p.issued = "rt-1", 1
 			out["access_token"] = "at-1"
 			out["refresh_token"] = "rt-1"
 		case "refresh_token":
 			p.refreshCalls++
+			p.sent = append(p.sent, r.Form.Get("refresh_token"))
 			if p.unavailable {
 				http.Error(w, "unavailable", http.StatusServiceUnavailable)
 				return
@@ -92,6 +103,20 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 					"error_description": "SECRET-PROVIDER-DETAIL client-1:s3cret rt-1",
 				})
 				return
+			}
+			if p.rotate {
+				if r.Form.Get("refresh_token") != p.current {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_request"})
+					return
+				}
+				p.refreshes++
+				p.issued++
+				p.current = fmt.Sprintf("rt-%d", p.issued)
+				out["access_token"] = fmt.Sprintf("at-%d", p.issued)
+				out["refresh_token"] = p.current
+				break
 			}
 			if r.Form.Get("refresh_token") != "rt-1" {
 				http.Error(w, "bad refresh", http.StatusBadRequest)
@@ -597,6 +622,13 @@ type barrierProvider struct {
 	holdExchange chan struct{} // exchange waits for close when non-nil
 	holdRefresh  chan struct{} // refresh waits for close when non-nil
 	arrived      chan string   // provider signals "exchange"/"refresh" arrival
+	// rotate, current and issued are fakeProvider's rotation.
+	rotate  bool
+	current string
+	issued  int
+	// refuseHeld answers a held refresh with `400 invalid_request` when it
+	// is set by the time the refresh is released.
+	refuseHeld bool
 }
 
 func newBarrierProvider(t *testing.T) *barrierProvider {
@@ -626,16 +658,29 @@ func newBarrierProvider(t *testing.T) *barrierProvider {
 			}
 			p.exchanges++
 			p.verifiers = append(p.verifiers, r.Form.Get("code_verifier"))
+			p.current, p.issued = "rt-1", 1
 			out["access_token"] = "at-1"
 			out["refresh_token"] = "rt-1"
 		case "refresh_token":
-			if r.Form.Get("refresh_token") != "rt-1" {
+			want := "rt-1"
+			if p.rotate {
+				want = p.current
+			}
+			if r.Form.Get("refresh_token") != want {
 				p.mu.Unlock()
-				http.Error(w, "bad refresh", http.StatusBadRequest)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_request"})
 				return
 			}
 			p.refreshes++
 			out["access_token"] = "at-2"
+			if p.rotate {
+				p.issued++
+				p.current = fmt.Sprintf("rt-%d", p.issued)
+				out["access_token"] = fmt.Sprintf("at-%d", p.issued)
+				out["refresh_token"] = p.current
+			}
 		default:
 			p.mu.Unlock()
 			http.Error(w, "bad grant", http.StatusBadRequest)
@@ -653,6 +698,15 @@ func newBarrierProvider(t *testing.T) *barrierProvider {
 		}
 		if grant == "refresh_token" && holdRe != nil {
 			<-holdRe
+			p.mu.Lock()
+			refuse := p.refuseHeld
+			p.mu.Unlock()
+			if refuse {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_request"})
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
