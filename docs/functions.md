@@ -1489,10 +1489,16 @@ repository.
   schedule trigger's parked fire also ends without a hand: when a later
   occurrence of the same trigger settles, dispatched or retried, every
   parked fire at or before it is retired through the same unpark, because retrying one would repeat the
-  work the settled fire just did. A record trigger's park, a webhook
-  request's park and an agent run a stop interrupted are never retired this
-  way
-  ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)). A
+  work the settled fire just did. A webhook request's park and an agent run
+  a stop interrupted are never retired this way
+  ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)).
+  A record trigger's park is retired only by a delivery that stamps a sync
+  (the record's kind binds `sync` and the callable is a function of the
+  kind's own package): when one settles ok, and the body left the record at
+  neither `erroring` nor `throttled`, every older park of a record change
+  naming the same record, of any trigger with the same callable, retires
+  with it, because the sync read the account as it stands
+  ([decision 0178](decisions/0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md)). A
   failure's id is the seq of the changelog entry that parked it, so it
   survives a restore ([backups](operations.md#backups)). A webhook request
   is recorded there minus what a replay does not need, from its drain on:
@@ -1520,8 +1526,12 @@ parked delivery writes one too, mode `manual`, in the transaction that
 settles it: `ok`, `skipped` when the guard no longer matches, or `parked`
 with the new error and attempt when it fails again
 ([decision 0152](decisions/0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md)).
-Parked runs are kept; the newest twenty non-parked runs per trigger stay, and
-so does the trigger's newest `ok` run however old, and older ones tombstone.
+The newest twenty runs per trigger stay and older ones tombstone. Three
+kinds of run are kept beside the twenty: the trigger's newest `ok` run
+however old, the parked runs after it, and a parked run whose delivery still
+stands parked. A park older than the newest `ok` run whose delivery was
+retried or forgotten leaves with the rest
+([decision 0178](decisions/0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md)).
 A manual run and a host call mint nothing.
 
 **A trigger whose deliveries park has one open alert.** The transaction that
@@ -1535,10 +1545,12 @@ references the trigger, the callable and, for a record trigger, the parked
 change's record, each once. A trigger has one alert
 however many deliveries park: a park within five minutes of the alert's last
 write changes nothing, and a later one rewrites `lastSeenAt`, `count` and
-`detail`. A retry that delivers, a forget and a settled schedule fire's
-retirement recount it, and set `state` to `resolved` once nothing of the
-trigger stands parked; the next park reopens it. The owner may put `resolved`
-by hand. Deleting the trigger leaves its alert as it stood. The alert is
+`detail`. A retry that delivers or skips, a forget, and a settled schedule
+fire's or sync's retirement recount it, and set `state` to `resolved` once
+nothing of the trigger stands parked; the next park reopens it. The owner may
+put `resolved` by hand. The next dispatcher pass after a trigger is deleted
+resolves its alerts
+([decision 0177](decisions/0177-a-failing-alert-needs-a-standing-park-and-ends-with-the-last-one-or-its-trigger.md)). The alert is
 written under the callable's actor, so a record trigger over `core/alert`
 never receives the alert about its own callable: such a trigger, on a function
 that calls a webhook or sends an email, is how to be notified, and one whose
@@ -1548,23 +1560,30 @@ alerts, and the console shows them on the provider's, agent's and tool's
 pages.
 
 **A trigger whose every delivery fails for an hour reads `failing`.** A
-dispatcher pass reads each enabled trigger's run rows, at most once a minute,
-and opens a second alert, keyed `trigger.failing/<trigger id>` at level
-`error`, when the trigger has parked runs since its newest `ok` run and the
-oldest of them is older than `SUBSTRATE_HEALTH_FAILING_AFTER` (`1h` by
-default). A run a retry by hand writes counts like a dispatched one, and a
+dispatcher pass reads each trigger's run rows, at most once a minute, and
+opens a second alert, keyed `trigger.failing/<trigger id>` at level `error`,
+when an enabled trigger has parked runs since its newest `ok` run, at least
+one of them for a delivery that still stands parked (or is being retried),
+and the oldest parked run from the first standing one on is older than
+`SUBSTRATE_HEALTH_FAILING_AFTER` (`1h` by default). A run a retry by hand writes counts like a dispatched one, and a
 skipped run neither starts nor ends the streak. `count` is those parked runs,
 `detail` the newest one's error, `firstSeenAt` the oldest one's time, and
 `about` the trigger and its callable; a later refresh of the open alert counts
 from its `firstSeenAt`. The next `ok` delivery of the trigger, dispatched or
-retried by hand, resolves it in the transaction that settles the delivery.
+retried by hand, resolves it in the transaction that settles the delivery;
+so does the transaction that ends the streak's last standing park (a
+forget, a retry that skips, a retirement), and the next pass resolves it when
+no park of the streak stands or the trigger is disabled or deleted. A park
+from before the newest `ok` run never holds it open, and a retry that fails
+again adds a parked run without moving `firstSeenAt`
+([decision 0177](decisions/0177-a-failing-alert-needs-a-standing-park-and-ends-with-the-last-one-or-its-trigger.md)).
 While it is open, `trigger status` and `sync status` read `health: failing`
 with `failingSince` set to its `firstSeenAt`; `lastOkAt` is the newest `ok`
 run. Only parks after the alert's last resolve reopen it, so the owner who
 resolves it by hand silences it until a delivery parks again and that park
-outlives the window. Forgetting parked deliveries is not a recovery: without
-an `ok` delivery the owner resolves the alert by hand, and a disabled trigger
-raises no new one.
+outlives the window; forgetting every park, or disabling the trigger,
+silences it the same way. A trigger whose parks were all forgotten while its
+callable is still broken reads `ok` until a new park outlives the window.
 
 **A direct call of a networked function writes a run row.** A call through
 the call API of a function that declares `permissions.network`, or whose

@@ -4,8 +4,8 @@ package engine
 // at or before its occurrence (issue #746): a provider's scheduled sync that
 // recovered no longer reads as 110 runs waiting to be tried again. A later
 // occurrence's park stays, another trigger's parks stay, and a record
-// trigger's park stays whatever its later deliveries do, because each one is
-// its own record's change.
+// trigger's park stays whatever a fire does, because each one is its own
+// record's change (syncsupersede_db_test.go has the one exception).
 
 import (
 	"context"
@@ -263,11 +263,14 @@ func TestAScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {
 	}
 }
 
-func TestARecordDeliveryThatSettlesLeavesItsTriggersParksParked(t *testing.T) {
+// A schedule fire of the same function names no record, so it retires no
+// record park, even of a sync kind (decision 0142's fire limit; 0178 retires
+// a record park only at a settled delivery of the same record).
+func TestAScheduleFireOfTheSameFunctionLeavesARecordParkParked(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := nowUTC().Add(-30 * time.Minute).Truncate(time.Minute)
-	ds := supersedeDataset(t, s, "create", "update")
+	ds := supersedeDataset(t, s, "create")
 
 	// The job's creation parks on the record trigger.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
@@ -281,26 +284,17 @@ func TestARecordDeliveryThatSettlesLeavesItsTriggersParksParked(t *testing.T) {
 		t.Fatalf("%s parked %+v (%v), want the creation's one park", supersedeRec, parked, err)
 	}
 
-	// The body is fixed. The record's next change delivers, and a schedule
-	// fire of the same function settles in the same pass; neither is the
-	// creation's delivery, so its park stays.
+	// The body is fixed and only a schedule fire of the same function
+	// settles: it is not the creation's delivery, so the park stays.
 	setJobSync(t, ds, supersedeOK)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, supersedeJob, "inbox", substrate.PatchInput{
-		Properties: map[string]any{"name": "inbox, renamed"},
-	}); err != nil {
-		t.Fatalf("patch job: %v", err)
-	}
 	rewindSchedule(t, ds, supersedeSync, s.Add(-time.Minute))
 	processOnce(t, ds)
-	if runs := runRowsFor(t, ds, supersedeRec, runStatusOK); runs != 1 {
-		t.Fatalf("%s wrote %d ok runs, want the patch's", supersedeRec, runs)
-	}
 	if runs := runRowsFor(t, ds, supersedeSync, runStatusOK); runs != 1 {
 		t.Fatalf("%s wrote %d ok runs, want the occurrence's", supersedeSync, runs)
 	}
 	left, err := ds.TriggerFailures(ctx, supersedeRec)
 	if err != nil || len(left) != 1 || left[0].ID != parked[0].ID {
-		t.Fatalf("%s parked %+v (%v) after later deliveries settled, want the creation's park %d", supersedeRec, left, err, parked[0].ID)
+		t.Fatalf("%s parked %+v (%v) after the fire settled, want the creation's park %d", supersedeRec, left, err, parked[0].ID)
 	}
 	sync, tr := jobStatus(t, ds, supersedeRec)
 	if tr.Parked != 1 || sync.Parked != 1 {

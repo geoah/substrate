@@ -254,9 +254,12 @@ func (t *txn) raiseParkedAlert(tr *trigger, record string, cause error) error {
 }
 
 // settleParkedAlert follows a transaction that retired parked deliveries of a
-// trigger (a retry that delivered, a forget, a settled schedule fire's
-// retirement of older parks): the open parked-deliveries alert takes the new
-// count, and resolves once none stand. It runs after the delivery entry.
+// trigger (a retry that delivered or skipped, a forget, a settled schedule
+// fire's or sync's retirement of older parks, a deleted trigger at the next
+// pass): the open parked-deliveries alert takes the new count, and resolves
+// once none stand. A trigger whose streak has no park standing is not
+// failing either, so its failing alert resolves with it (decision 0177). It
+// runs after the delivery entry.
 func (t *txn) settleParkedAlert(triggerID string) error {
 	actor, err := t.alertActorOfTrigger(triggerID)
 	if err != nil {
@@ -268,14 +271,28 @@ func (t *txn) settleParkedAlert(triggerID string) error {
 	}
 	key := parkedAlertKey(triggerID)
 	if count == 0 {
-		return t.resolveAlert(actor, key, map[string]any{"count": count})
+		if err := t.resolveAlert(actor, key, map[string]any{"count": count}); err != nil {
+			return err
+		}
+		return t.resolveFailingAlert(triggerID)
 	}
-	return t.updateOpenAlert(actor, key, func(row *erow) (map[string]any, error) {
+	err = t.updateOpenAlert(actor, key, func(row *erow) (map[string]any, error) {
 		if stored, ok := alertCount(row.Props["count"]); ok && stored == count {
 			return nil, nil
 		}
 		return map[string]any{"count": count}, nil
 	})
+	if err != nil {
+		return err
+	}
+	// A park that still stands may be one from before the trigger's newest
+	// ok run, which the streak does not count: the failing alert then ends
+	// here all the same.
+	reads, err := readFailing(t.ctx, t.tx, []string{triggerID})
+	if err != nil || len(reads) != 1 || !reads[0].open || reads[0].standing > 0 {
+		return err
+	}
+	return t.resolveFailingAlert(triggerID)
 }
 
 // alertActorOf is the actor an alert about the trigger's callable is written
@@ -289,13 +306,52 @@ func alertActorOf(tr *trigger) substrate.Actor {
 }
 
 // alertActorOfTrigger is alertActorOf for a trigger named by id. A trigger
-// row that is gone or does not parse answers the engine's actor.
+// row that is gone or does not parse answers the actor of the callable its
+// alerts name in `about` (alertActorOfAbout), so the resolve of a deleted
+// trigger's alert is written under the same actor as its raise. With no
+// such alert, or a callable that no longer resolves, it answers the
+// engine's actor.
 func (t *txn) alertActorOfTrigger(triggerID string) (substrate.Actor, error) {
 	tr, err := t.alertTrigger(triggerID)
-	if err != nil || tr == nil {
+	if err != nil {
 		return substrate.ActorSystem, err
 	}
-	return alertActorOf(tr), nil
+	if tr != nil {
+		return alertActorOf(tr), nil
+	}
+	for _, key := range []string{failingAlertKey(triggerID), parkedAlertKey(triggerID)} {
+		row, err := t.loadRow(eref{Kind: kindAlert, ID: alertID(key)}, false)
+		if err != nil {
+			return substrate.ActorSystem, err
+		}
+		if row == nil || row.DeletedAt != nil {
+			continue
+		}
+		if actor := t.alertActorOfAbout(row.Props["about"]); actor != substrate.ActorSystem {
+			return actor, nil
+		}
+	}
+	return substrate.ActorSystem, nil
+}
+
+// alertActorOfAbout reads the callable an alert's `about` names (a
+// core/function or core/agent reference, raiseParkedAlert and
+// raiseFailingAlert write one) and answers its actor, the engine's when none
+// resolves.
+func (t *txn) alertActorOfAbout(about any) substrate.Actor {
+	values, _ := about.([]any)
+	for _, v := range values {
+		for kind, callableKind := range map[string]string{kindFunction: callableKindFunction, kindAgent: callableKindAgent} {
+			id, ok := strings.CutPrefix(vocabulary.ReferentID(v, ""), kind+"/")
+			if !ok || id == "" {
+				continue
+			}
+			tr := &trigger{CallableKind: callableKind, CallableID: id}
+			tr.resolveCallable(t.declarations())
+			return alertActorOf(tr)
+		}
+	}
+	return substrate.ActorSystem
 }
 
 // alertTrigger reads a trigger named by id inside the transaction, its

@@ -661,7 +661,11 @@ the same callable (a scheduled run names no account, so each account of the
 kind counts it), and `lastParkedError` and `lastParkedAt` give the newest
 park's first error line and when it parked. A schedule's parks leave the
 count when a later fire of the same trigger settles, which retires them
-([functions](functions.md#driving-triggers));
+([functions](functions.md#driving-triggers)). An account's own parks (a
+request or connect delivery of its record) leave it when a later delivery
+of the same function on that account settles ok and leaves the account at
+neither `erroring` nor `throttled`
+([decision 0178](decisions/0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md));
 `substratectl sync status` prints the same, and the console renders it on
 each provider's page, with a Sync section on the record page of any binding
 kind. A function that keeps one stream declares it as `stream: <name>`, the

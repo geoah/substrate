@@ -800,6 +800,15 @@ func WithWebhookSpoolBounds(t interface{ Cleanup(func()) }, maxEntries int, maxB
 	t.Cleanup(func() { webhookSpoolMaxEntries, webhookSpoolMaxBytes = prevEntries, prevBytes })
 }
 
+// WithPruneBatch sets how many runs one settling transaction tombstones
+// (pruneBatch) for one test. The bound is process-wide, so a test that
+// calls it is not parallel.
+func WithPruneBatch(t interface{ Cleanup(func()) }, n int) {
+	prev := pruneBatch
+	pruneBatch = n
+	t.Cleanup(func() { pruneBatch = prev })
+}
+
 // SpoolStatsOf is the webhook spool's reading for one repository, as its
 // metrics report it.
 func SpoolStatsOf(ds substrate.Dataset) (entries int, bytes int64, oldest time.Time) {
