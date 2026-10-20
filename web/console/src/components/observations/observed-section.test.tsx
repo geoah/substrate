@@ -355,10 +355,19 @@ describe("a single value", () => {
       observationKind
     )
     const bar = view.container.querySelector("[data-slot=range-bar]")!
-    // 2.6 to 3.6 padded by 5% each side: 3.6 sits at 95.45%.
-    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(95.45, 1)
-    const band = bar.querySelector("[data-band]")!
+    // A scale of values never negative starts at zero, its top padded by
+    // 5%: 3.6 sits at 3.6 / 3.78 of it.
+    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(95.24, 1)
+    const band = bar.querySelector("[data-band]") as HTMLElement
     expect(band.getAttribute("data-band")).toBe("reference range")
+    // A lab's normal range is drawn in the good tone, a dashed edge at each
+    // bound, each bound printed where it falls.
+    expect(band.style.background).toBe("var(--ok-soft)")
+    expect(bar.querySelectorAll("[data-slot=range-edge]")).toHaveLength(2)
+    const printed = [...bar.querySelectorAll("[data-slot=range-bound]")].map(
+      (b) => b.textContent
+    )
+    expect(printed).toEqual(["0 mmol/L", "2.6 mmol/L", "3.4 mmol/L"])
     // A high flag marks the value in the poor tone, beside its word.
     const marker = bar.querySelector("[data-slot=range-value]") as HTMLElement
     expect(marker.style.background).toBe("var(--destructive)")
@@ -370,6 +379,73 @@ describe("a single value", () => {
       observationKind
     )
     expect(other.container.querySelector("[data-slot=range-bar]")).toBe(null)
+    cleanup()
+    // A bound in another unit of the same measure is converted: 3 mmol/L
+    // is 3000 umol/L.
+    const converted = mount(
+      result({ high: { value: "3000", unit: "umol/L" } }),
+      observationKind
+    )
+    expect(
+      converted.container.querySelector("[data-slot=range-bound]")?.textContent
+    ).toBe("0 mmol/L")
+    expect(
+      [...converted.container.querySelectorAll("[data-slot=range-bound]")].map(
+        (b) => b.textContent
+      )
+    ).toContain("3 mmol/L")
+  })
+
+  it("draws a one-sided range from zero and a cut-off in its own tone", () => {
+    const result = (
+      value: string,
+      range: Record<string, unknown>
+    ): SubstrateRecord => ({
+      ...WEIGHING,
+      properties: {
+        ...WEIGHING.properties,
+        value: { value, unit: "ng/mL" },
+        referenceRanges: [range],
+      },
+    })
+    const under = mount(
+      result("2.8", { high: { value: "3", unit: "ng/mL" } }),
+      observationKind
+    )
+    const bar = under.container.querySelector("[data-slot=range-bar]")!
+    // 0 to 3 padded by 5% at the top: 2.8 sits at 2.8 / 3.15 of it.
+    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(88.89, 1)
+    const band = bar.querySelector("[data-band]") as HTMLElement
+    expect(band.style.left).toBe("0%")
+    expect(bar.querySelectorAll("[data-slot=range-edge]")).toHaveLength(1)
+    expect(bar.textContent).toContain("3 ng/mL")
+    cleanup()
+    // A cut-off the lab marks poor (a high band with a low bound alone)
+    // is not drawn as normal.
+    const cut = mount(
+      result("2.8", {
+        low: { value: "4", unit: "ng/mL" },
+        text: "high",
+        tone: "poor",
+      }),
+      observationKind
+    )
+    const high = cut.container.querySelector("[data-band]") as HTMLElement
+    expect(high.getAttribute("data-band")).toBe("high")
+    expect(high.style.background).toBe("var(--bad-soft)")
+    cleanup()
+    // A bound such as <0.5 has no place on the scale: no bar.
+    const bound = mount(
+      {
+        ...result("0.5", { high: { value: "3", unit: "ng/mL" } }),
+        properties: {
+          ...result("0.5", { high: { value: "3", unit: "ng/mL" } }).properties,
+          value: { value: "0.5", unit: "ng/mL", comparator: "<" },
+        },
+      },
+      observationKind
+    )
+    expect(bound.container.querySelector("[data-slot=range-bar]")).toBe(null)
   })
 
   it("reads a value to its metric's declared places, and a bound whole", async () => {

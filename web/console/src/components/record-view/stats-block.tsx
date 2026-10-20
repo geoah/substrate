@@ -40,6 +40,7 @@ import {
   scaleBaseline,
   deltaWords,
   itemMetric,
+  partialWindow,
   readsByCode,
   statsReads,
   valueAt,
@@ -273,8 +274,11 @@ function MetricTile({
     v.comparator
   )
   const band = numeric === null ? undefined : bandOf(numeric, block.bands, path)
+  // A record's own window still running (today's cycle) holds part of what
+  // it will: its value is said so far, and compared with nothing.
+  const partial = bound ? partialWindow(bound) : false
   const daily =
-    block.baseline > 0
+    block.baseline > 0 && !partial
       ? baselineOf(
           itemRows(baseline, path, code),
           reducerKey(baselineReducer(item.reducer, info))
@@ -303,6 +307,7 @@ function MetricTile({
       band={band ? { label: band.label ?? "", tone: band.tone } : undefined}
       delta={delta}
       baseline={base}
+      qualifier={partial ? "so far" : undefined}
       note={
         base
           ? base.span > 1

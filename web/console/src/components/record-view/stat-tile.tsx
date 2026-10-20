@@ -25,6 +25,9 @@ export interface StatTileProps {
   value?: string
   /** What the tile says where there is no value. */
   words?: string
+  /** A word after the value that says what it is of, such as "so far"
+   * for a window still running. */
+  qualifier?: string
   /** The value as a number, for a dial or a bar. */
   numeric?: number | null
   unit?: string
@@ -62,7 +65,9 @@ export function StatTile(props: StatTileProps) {
     bands = [],
     note,
     href,
+    qualifier,
   } = props
+  const said = value !== undefined || props.figure !== undefined
   const symbol = unit ? unitSymbol(unit) : ""
   let figure: ReactNode
   if (show === "dial") {
@@ -95,9 +100,8 @@ export function StatTile(props: StatTileProps) {
         ) : (
           <span className="text-muted-foreground">{words ?? "no reading"}</span>
         )}
-        {(value !== undefined || props.figure !== undefined) && band && (
-          <BandWord band={band} />
-        )}
+        {said && qualifier && <Qualifier text={qualifier} />}
+        {said && band && <BandWord band={band} />}
       </div>
     )
   }
@@ -119,6 +123,7 @@ export function StatTile(props: StatTileProps) {
       {show === "dial" && value === undefined && words && (
         <span className="text-[12.5px] text-muted-foreground">{words}</span>
       )}
+      {show === "dial" && said && qualifier && <Qualifier text={qualifier} />}
       {show === "bar" && (
         <RangeBar
           value={numeric ?? null}
@@ -141,6 +146,17 @@ export function StatTile(props: StatTileProps) {
       )}
       {note && <span className="text-[12.5px] text-faint">{note}</span>}
     </div>
+  )
+}
+
+function Qualifier({ text }: { text: string }) {
+  return (
+    <span
+      data-slot="stat-qualifier"
+      className="text-[12.5px] text-muted-foreground"
+    >
+      {text}
+    </span>
   )
 }
 
@@ -303,6 +319,14 @@ function percentOf(v: number, min: number, max: number): number {
   return round(Math.min(100, Math.max(0, ((v - min) / span) * 100)))
 }
 
+/** Where a printed bound sits under the bar: centred on its place, and
+ * kept inside the bar at either end. */
+function boundPlace(percent: number) {
+  if (percent <= 10) return { left: `${percent}%` }
+  if (percent >= 90) return { right: `${100 - percent}%` }
+  return { left: `${percent}%`, transform: "translateX(-50%)" }
+}
+
 export function RangeBar({
   value,
   min,
@@ -312,6 +336,7 @@ export function RangeBar({
   unit,
   precision,
   tone,
+  marked = false,
 }: {
   value: number | null
   min?: number
@@ -323,8 +348,13 @@ export function RangeBar({
   /** The value marker's tone, where the caller judged it; else the tone of
    * the band holding the value. Sits beside the caller's word for it. */
   tone?: Tone
+  /** The bands are a reference range: each finite bound draws a dashed
+   * edge and is printed under the bar where the ends are not. */
+  marked?: boolean
 }) {
   const known = [
+    min,
+    max,
     value ?? undefined,
     ...bands.flatMap((b) => [b.low, b.high]),
     baseline?.low,
@@ -340,6 +370,21 @@ export function RangeBar({
   // end is no bound of anything, and read as one it misleads.
   const labelled = min !== undefined && max !== undefined
   const at = (v: number) => percentOf(v, lo, hi)
+  const text = (v: number) => readingText(String(round(v)), unit, precision)
+  // A reference range's bounds, each once, where they fall on the scale.
+  const edges = marked
+    ? bands.flatMap((b) =>
+        [b.low, b.high]
+          .filter((v): v is number => v !== undefined && Number.isFinite(v))
+          .map((v) => ({ v, tone: b.tone }))
+      )
+    : []
+  const printed = labelled
+    ? []
+    : [
+        ...(min !== undefined && !edges.some((e) => e.v === min) ? [min] : []),
+        ...new Set(edges.map((e) => e.v)),
+      ]
   const valueAt = value === null ? undefined : at(value)
   const mark = toneColor(
     tone ??
@@ -372,6 +417,19 @@ export function RangeBar({
             />
           )
         })}
+        {edges.map((e, i) => (
+          <div
+            key={`edge-${i}`}
+            data-slot="range-edge"
+            className="absolute top-0.5 h-3 w-0 -translate-x-1/2 border-l border-dashed"
+            style={{
+              left: `${at(e.v)}%`,
+              borderColor:
+                e.tone === "none" ? "var(--border-strong)" : toneColor(e.tone),
+              opacity: 0.55,
+            }}
+          />
+        ))}
         {baseline && (
           <>
             <div
@@ -404,8 +462,22 @@ export function RangeBar({
       </div>
       {labelled && (
         <div className="flex justify-between text-[11.5px] text-faint tabular-nums">
-          <span>{readingText(String(round(lo)), unit, precision)}</span>
-          <span>{readingText(String(round(hi)), unit, precision)}</span>
+          <span>{text(lo)}</span>
+          <span>{text(hi)}</span>
+        </div>
+      )}
+      {printed.length > 0 && (
+        <div className="relative h-4 text-[11.5px] text-faint tabular-nums">
+          {printed.map((v) => (
+            <span
+              key={v}
+              data-slot="range-bound"
+              className="absolute whitespace-nowrap"
+              style={boundPlace(at(v))}
+            >
+              {text(v)}
+            </span>
+          ))}
         </div>
       )}
     </div>

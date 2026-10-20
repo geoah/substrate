@@ -48,7 +48,38 @@ type consoleMeasure struct {
 	// value between: two codes convert exactly when they share a class. A
 	// code no other converts to is a class of one.
 	Converts [][]string `json:"converts"`
-	Note     string     `json:"note,omitempty"`
+	// Factors is each code's exact map to the measure's base,
+	// base = value * factor + offset, as rationals ("1/1000"), so the console
+	// converts a value between two codes of one class without asking the
+	// server. A code no rational factor reaches is left out.
+	Factors map[string]consoleFactor `json:"factors,omitempty"`
+	Note    string                   `json:"note,omitempty"`
+}
+
+type consoleFactor struct {
+	Factor string `json:"factor"`
+	Offset string `json:"offset,omitempty"`
+}
+
+// baseFactors is every code of a measure that converts at all, with its
+// exact map to the base.
+func baseFactors(m vocabulary.Measure) map[string]consoleFactor {
+	out := map[string]consoleFactor{}
+	for _, code := range m.Units {
+		factor, offset, err := vocabulary.ToBase(m.Name, code)
+		if err != nil {
+			continue
+		}
+		f := consoleFactor{Factor: factor.RatString()}
+		if offset.Sign() != 0 {
+			f.Offset = offset.RatString()
+		}
+		out[code] = f
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 type consolePrint struct {
@@ -92,7 +123,7 @@ func renderConsoleTable(t *testing.T) []byte {
 	for _, m := range vocabulary.Measures() {
 		tbl.Measures = append(tbl.Measures, consoleMeasure{
 			Name: m.Name, Base: m.Base, Scale: string(m.Scale), Display: m.Display,
-			Dimension: m.Dimension(), Units: m.Units, Converts: convertClasses(t, m), Note: m.Note,
+			Dimension: m.Dimension(), Units: m.Units, Converts: convertClasses(t, m), Factors: baseFactors(m), Note: m.Note,
 		})
 		for _, code := range m.Units {
 			tbl.Symbols[code] = vocabulary.UnitSymbol(code)

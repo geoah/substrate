@@ -73,7 +73,7 @@ const points: ChartPoint[] = [
     tone: "poor",
     title: "Example marker",
     hollow: true,
-    note: "Derived from: Mar 2, 2024",
+    notes: ["Derived from: Mar 2, 2024"],
   },
   {
     at: new Date(2025, 5, 20).getTime(),
@@ -189,6 +189,71 @@ describe("PointsChart", () => {
     expect(screen.getByRole("status").textContent).toContain("Example marker")
     fireEvent.blur(link)
     expect(screen.queryByRole("status")).toBe(null)
+  })
+
+  it("draws a bound as a marker toward its open side and off the hairline", () => {
+    const bounded: ChartPoint[] = [
+      { ...points[0], id: undefined },
+      {
+        at: new Date(2024, 8, 4).getTime(),
+        value: 0.5,
+        comparator: "<",
+        tone: "none",
+        title: "Example marker",
+      },
+      { ...points[2] },
+    ]
+    const view = render(
+      <PointsChart
+        points={bounded}
+        domain={domain}
+        unit="mmol/L"
+        label="Example marker over time"
+      />
+    )
+    const marker = view.container.querySelector("path[data-slot=point]")!
+    expect(marker.getAttribute("data-bound")).toBe("below")
+    expect(
+      view.container.querySelectorAll("circle[data-slot=point]")
+    ).toHaveLength(2)
+    // The two exact readings are joined across the bound.
+    expect(
+      view.container.querySelectorAll("line[data-slot=point-hairline]")
+    ).toHaveLength(1)
+    const svg = view.container.querySelector("svg")!
+    const dots = view.container.querySelectorAll("circle[data-slot=point]")
+    const x0 = Number(dots[0].getAttribute("cx"))
+    const x1 = Number(dots[1].getAttribute("cx"))
+    fireEvent.pointerMove(svg, { clientX: (x0 + x1) / 2 + 1 })
+    expect(screen.getByRole("status").textContent).toContain("<0.5 mmol/L")
+  })
+
+  it("joins readings of one series alone, and draws a range in its own tone", () => {
+    const series: ChartPoint[] = [
+      { ...points[0], id: undefined, series: "trunk" },
+      { ...points[1], series: "left_arm", rangeTone: "poor" },
+      { ...points[2], series: "trunk", notes: ["Channel: Trunk"] },
+      {
+        at: new Date(2025, 9, 1).getTime(),
+        value: 3.2,
+        tone: "good",
+        title: "Example marker",
+        series: "left_arm",
+      },
+    ]
+    const view = render(
+      <PointsChart
+        points={series}
+        domain={domain}
+        unit="mmol/L"
+        label="Example marker over time"
+      />
+    )
+    expect(
+      view.container.querySelectorAll("line[data-slot=point-hairline]")
+    ).toHaveLength(2)
+    const rects = view.container.querySelectorAll("rect[data-slot=point-range]")
+    expect(rects[1].getAttribute("fill")).toBe("var(--bad-soft)")
   })
 
   it("says so when there are no readings", () => {

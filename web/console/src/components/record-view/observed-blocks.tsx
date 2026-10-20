@@ -6,7 +6,7 @@
  * metric's spans as rows in the view's order of codes where the source
  * recorded them in sequence, and its time in each code. */
 
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import {
@@ -35,7 +35,6 @@ import {
   type AggregateRow,
 } from "@/lib/api/types"
 import {
-  bandedReducer,
   codeWords,
   distinct,
   metricWords,
@@ -62,6 +61,9 @@ import {
 import { codeColor, markOf } from "@/lib/overlay"
 import {
   chartBucketSize,
+  chartLineReducer,
+  chartMeasured,
+  chartMetricRows,
   chartReads,
   sequenceOf,
   spanRows,
@@ -109,9 +111,12 @@ function notSpans(info: MetricInfo, path: string): string | undefined {
 export function ChartBlockView({
   block,
   ctx,
+  onEmpty,
 }: {
   block: ChartBlock
   ctx: BlockContext
+  /** Said under `empty: hide`: whether the chart drew nothing. */
+  onEmpty?: (hidden: boolean) => void
 }) {
   const { bound, window } = ctx
   if (!bound?.window || !window) {
@@ -121,7 +126,15 @@ export function ChartBlockView({
       </Part>
     )
   }
-  return <BoundChart block={block} bound={bound} window={window} ctx={ctx} />
+  return (
+    <BoundChart
+      block={block}
+      bound={bound}
+      window={window}
+      ctx={ctx}
+      onEmpty={onEmpty}
+    />
+  )
 }
 
 /** A chart's every metric in as few reads as the server admits
@@ -131,11 +144,13 @@ function BoundChart({
   bound,
   window,
   ctx,
+  onEmpty,
 }: {
   block: ChartBlock
   bound: Bound
   window: TimeRange
   ctx: BlockContext
+  onEmpty?: (hidden: boolean) => void
 }) {
   const whole = block.bucket === "whole"
   // A whole read is over the record's window, whatever the zoom.
@@ -149,6 +164,26 @@ function BoundChart({
   const answer = useMetricsReads(reads, bound.observed, { hold: true })
   const infos = useMetricReads(block.metrics)
   const many = block.metrics.length > 1
+  // Under `empty: hide` a chart none of whose metrics was measured over the
+  // record's window (heart rate inside a night a source scored without
+  // samples) is left out once its reads are in; a failed read is still
+  // said. A zoom never hides it: the reset lives on the chart.
+  const hide = block.empty === "hide"
+  const settled = !answer.pending && !ctx.zoomed
+  const hidden =
+    hide &&
+    settled &&
+    !answer.errors.some(Boolean) &&
+    !block.metrics.some(
+      (metric, i) =>
+        !answer.dropped[readOf[i]]?.includes(metric) &&
+        chartMeasured(block, metric, answer.answers[readOf[i]])
+    )
+  useEffect(() => {
+    if (!hide || !settled) return
+    onEmpty?.(hidden)
+  }, [hide, settled, hidden, onEmpty])
+  if (hidden) return null
   return (
     <Part title={block.label}>
       {block.metrics.map((metric, i) => (
@@ -172,31 +207,22 @@ function BoundChart({
   )
 }
 
-/** The reducer a line draws: the first in the metric's own unit, else the
- * first named. */
-function lineReducer(reducers: readonly ChartReducer[]): ChartReducer {
-  return reducers.find((r) => bandedReducer(r.key)) ?? reducers[0]
-}
-
 function reducerWords(r: ChartReducer): string {
   return r.label ?? reducerChoiceWords(r.key)
 }
 
-/** One metric's rows of a chart's batched answer, with the unit the
- * answer names for it. A row naming no metric is the one metric's of a
- * read of one. */
+/** One metric's rows of a chart's batched answer (`chartMetricRows`),
+ * with the unit the answer names for it. */
 function metricAnswer(
   answer: AggregateResult | undefined,
-  metric: string,
-  alone: boolean
+  block: ChartBlock,
+  metric: string
 ): AggregateResult | undefined {
   if (!answer) return undefined
   return {
     ...answer,
     unit: answer.units?.[metric] ?? answer.unit,
-    rows: answer.rows.filter((r) =>
-      r.group?.metric ? sameRef(r.group.metric, metric) : alone
-    ),
+    rows: chartMetricRows(block, metric, answer),
   }
 }
 
@@ -232,10 +258,9 @@ function MetricChart({
 }) {
   const name = info?.name ?? metricWords(refIdOf(metric))
   const whole = block.bucket === "whole"
-  const alone = block.metrics.length === 1
   const answer = useMemo(
-    () => metricAnswer(batched, metric, alone),
-    [batched, metric, alone]
+    () => metricAnswer(batched, block, metric),
+    [batched, block, metric]
   )
   return (
     <div
@@ -305,7 +330,7 @@ function Line({
   const metricUnit = info?.unit
   const rows = useMemo(() => answer?.rows ?? [], [answer])
   const buckets = bucketsOf([rows])
-  const line = lineReducer(block.reducers)
+  const line = chartLineReducer(block.reducers)
   const [series] = seriesOn(buckets, rows, line.key)
   const keys = block.reducers.map((r) => r.key)
   const band = keys.includes("min") && keys.includes("max")

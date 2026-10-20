@@ -970,3 +970,62 @@ it("keeps a view of tables that hide when empty hidden until one has rows", asyn
   expect(empty.hidden).toBe(true)
   expect(empty.querySelector("table")).toBe(null)
 })
+
+it("leaves out a chart under empty: hide where no metric was measured, and its view with it", async () => {
+  const { container } = mount(
+    [
+      view("fitness/session-night", {
+        name: "Night",
+        window: { start: "begins", end: "ends", about: "who", source: "by" },
+        sections: [
+          {
+            chart: {
+              label: "Pulse",
+              metrics: [{ ref: PULSE }],
+              reducers: [{ reducer: "avg" }],
+              empty: "hide",
+            },
+          },
+        ],
+      }),
+    ],
+    RUN,
+    SESSION,
+    { curve: answer([]) }
+  )
+  const night = () =>
+    container.querySelector<HTMLElement>(
+      "section[data-record-view='fitness/session-night']"
+    )
+  // The chart is left out once its read answers nothing, and the view,
+  // all of whose blocks hide, stays hidden.
+  await waitFor(() =>
+    expect(night()?.querySelector("[role=group][aria-label=Pulse]")).toBe(null)
+  )
+  expect(night()!.hidden).toBe(true)
+  expect(night()!.textContent).not.toContain("was measured")
+})
+
+it("draws a chart under empty: hide where one metric holds a value", async () => {
+  mount([
+    view("fitness/session-night", {
+      name: "Night",
+      window: { start: "begins", end: "ends", about: "who", source: "by" },
+      sections: [
+        {
+          chart: {
+            label: "Pulse",
+            metrics: [{ ref: PULSE }],
+            reducers: [{ reducer: "avg" }],
+            empty: "hide",
+          },
+        },
+      ],
+    }),
+  ])
+  const night = await screen.findByRole("region", { name: "Night" })
+  await waitFor(() => expect(night.hidden).toBe(false))
+  await waitFor(() =>
+    expect(night.querySelector("[aria-roledescription=chart]")).toBeTruthy()
+  )
+})

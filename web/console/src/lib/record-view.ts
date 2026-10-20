@@ -34,6 +34,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import { groupDigits, isTimeUnit, roundDigits } from "@/lib/units"
 import {
   addressValue,
+  bandedReducer,
   DEFAULT_PRECISION,
   NONE,
   observedKinds,
@@ -215,6 +216,9 @@ export interface ChartBlock {
   /** The channel kept; `none` keeps the streams naming no channel. */
   channel?: string
   bands: Band[]
+  /** Whether a chart none of whose metrics was measured over the window
+   * says so or is left out. */
+  empty: "say" | "hide"
 }
 
 export interface SpansBlock {
@@ -302,7 +306,10 @@ export interface TableBlock {
   /** The listed kind's identity. */
   kind: string
   via?: string
-  sameAs?: string
+  /** Properties this record and the listed records hold alike: a
+   * view's `sharing`, or its older one-name spelling `sameAs`. Empty where
+   * the table lists by `via` or `inWindow`. */
+  sharing: string[]
   inWindow: boolean
   columns: string[]
   orderBy: string
@@ -622,6 +629,8 @@ function chartOf(b: Bag): Section {
   if (rawStatistic) return { problem: rawStatistic }
   const bands = bandsOf(b.bands, "This chart")
   if (typeof bands === "string") return { problem: bands }
+  const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
+  if (!empty) return { problem: `This chart's empty is ${said(b.empty)}.` }
   const reducers: ChartReducer[] = []
   for (const r of bags(b.reducers)) {
     const read = chartReducerOf(r)
@@ -642,6 +651,7 @@ function chartOf(b: Bag): Section {
       ...(text(b.statistic) ? { statistic: text(b.statistic) } : {}),
       ...(text(b.channel) ? { channel: text(b.channel) } : {}),
       bands,
+      empty,
     },
   }
 }
@@ -881,11 +891,20 @@ function tableOf(b: Bag): Section {
   if (!kind) return { problem: `${what} names no kind.` }
   const via = text(b.via)
   const sameAs = text(b.sameAs)
+  const listed = texts(b.sharing)
+  if (sameAs && listed.length) {
+    return {
+      problem: `${what} names both sharing and its older spelling sameAs; it names one.`,
+    }
+  }
+  // `sameAs` is the one-name spelling a view written before `sharing`
+  // holds: it reads as a list of one.
+  const sharing = sameAs ? [sameAs] : [...new Set(listed)]
   const inWindow = b.inWindow === true
-  const named = [via, sameAs, inWindow].filter(Boolean).length
+  const named = [via, sharing.length > 0, inWindow].filter(Boolean).length
   if (named !== 1) {
     return {
-      problem: `${what} names ${named} of via, sameAs and inWindow; a table names exactly one.`,
+      problem: `${what} names ${named} of via, sharing and inWindow; a table names exactly one.`,
     }
   }
   const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
@@ -896,7 +915,7 @@ function tableOf(b: Bag): Section {
       label: text(b.label),
       kind,
       ...(via ? { via } : {}),
-      ...(sameAs ? { sameAs } : {}),
+      sharing,
       inWindow,
       columns: texts(b.columns),
       orderBy: text(b.orderBy) ?? "at:desc",
@@ -1046,6 +1065,13 @@ export interface Bound {
   observed: string[]
   /** The window is the view's `last`, ending now. */
   lastWindow?: boolean
+}
+
+/** Whether a Bound is a record's own window still running: an open record
+ * read up to now, which holds part of what its whole window will. A view's
+ * `last` ends now too, but it is a whole stretch of time. */
+export function partialWindow(b: Bound): boolean {
+  return b.open && !b.lastWindow
 }
 
 /** Whether a view binds a window at all: a start or a `last`. */
@@ -1299,6 +1325,47 @@ export function chartReads(
   return { reads, readOf }
 }
 
+/** The reducer a chart's line draws: the first in the metric's own unit,
+ * else the first named. */
+export function chartLineReducer(
+  reducers: readonly ChartReducer[]
+): ChartReducer {
+  return reducers.find((r) => bandedReducer(r.key)) ?? reducers[0]
+}
+
+/** One metric's rows of a chart's batched answer. A row naming no metric
+ * is the one metric's of a read of one. */
+export function chartMetricRows(
+  block: Pick<ChartBlock, "metrics">,
+  metric: string,
+  answer: AggregateResult | undefined
+): AggregateRow[] {
+  const alone = block.metrics.length === 1
+  return (answer?.rows ?? []).filter((r) =>
+    r.group?.metric ? sameRef(r.group.metric, metric) : alone
+  )
+}
+
+/** Whether a chart's answer holds a value of one metric: a line's reducer
+ * in some bucket, or for a `whole` chart any of its reducers. A chart
+ * under `empty: hide` none of whose metrics was measured is left out. */
+export function chartMeasured(
+  block: Pick<ChartBlock, "metrics" | "reducers" | "bucket">,
+  metric: string,
+  answer: AggregateResult | undefined
+): boolean {
+  const keys =
+    block.bucket === "whole"
+      ? block.reducers.map((r) => r.key)
+      : [chartLineReducer(block.reducers).key]
+  return chartMetricRows(block, metric, answer).some((row) =>
+    keys.some((k) => {
+      const v = rowValue(row, k)
+      return Boolean(v) && v!.value !== null
+    })
+  )
+}
+
 /** Whether an item naming a code reads grouped by code: every coded
  * reducer but a time in a state, which names its code in the reducer and
  * answers it in a bucket that held none of the state (as 0) only where the
@@ -1409,7 +1476,11 @@ export function statsReads(
       ...(coded ? { groupBy: ["code"] } : {}),
     })
   )
-  if (block.baseline <= 0) return { value, baseline: [], itemRead }
+  // A record's own window still running holds part of a day, or part of
+  // a cycle: against whole days before it, any change would mislead.
+  if (block.baseline <= 0 || partialWindow(b)) {
+    return { value, baseline: [], itemRead }
+  }
   const first = new Date(b.window.start)
   const dayStart = new Date(
     first.getFullYear(),
@@ -1710,17 +1781,25 @@ export function tableParams(
   const properties: Record<string, Cond> = {}
   if (block.via) {
     properties[block.via] = { eq: `${record.kind}/${record.id}` }
-  } else if (block.sameAs) {
-    const v = record.properties?.[block.sameAs]
-    const value =
-      readReference(v)?.path ??
-      (typeof v === "number" || typeof v === "boolean" ? String(v) : undefined)
-    if (!value) {
-      return {
-        problem: `This table lists the records sharing this record's ${block.sameAs}, and this record holds none.`,
+  } else if (block.sharing.length) {
+    // A property this record holds narrows to its value; one it does not
+    // hold narrows to the records that hold none either, so a blood test
+    // (no channel) lists blood tests and a trunk result lists the trunk's.
+    let held = 0
+    for (const name of block.sharing) {
+      const value = sharedValue(record.properties?.[name])
+      if (value === undefined) {
+        properties[name] = { exists: false }
+      } else {
+        properties[name] = { eq: value }
+        held++
       }
     }
-    properties[block.sameAs] = { eq: value }
+    if (!held) {
+      return {
+        problem: `This table lists the records sharing this record's ${listWords(block.sharing)}, and this record holds ${block.sharing.length > 1 ? "none of them" : "none"}.`,
+      }
+    }
   } else if (block.inWindow) {
     if (!b?.window) {
       return {
@@ -1749,6 +1828,22 @@ export function tableParams(
     orderBy: block.orderBy,
     filter: { properties },
   }
+}
+
+/** A record's value as a list filter compares it: a reference's path, a
+ * string, a number or a boolean. Undefined for anything else, which the
+ * table reads as holding none. */
+function sharedValue(v: unknown): string | undefined {
+  return (
+    readReference(v)?.path ??
+    (typeof v === "number" || typeof v === "boolean" ? String(v) : undefined)
+  )
+}
+
+/** Names in a sentence: `metric`, `metric and channel`, `a, b and c`. */
+function listWords(names: readonly string[]): string {
+  if (names.length < 2) return names.join("")
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }
 
 // ── breakdown and values of the record ────────────────────────────────────

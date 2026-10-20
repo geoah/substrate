@@ -19,6 +19,7 @@ import {
   lastUnit,
   measureLabel,
   measureOf,
+  convertUnit,
   openingUnit,
   parseQuantityText,
   quantityExample,
@@ -381,5 +382,22 @@ describe("the declaration", () => {
     expect(quantityExample({ units: ["[lb_av]"] })).toBe(
       '{value: "72.5", unit: "[lb_av]"}'
     )
+  })
+})
+
+describe("convertUnit", () => {
+  it("converts within one class of one measure", () => {
+    expect(convertUnit(450, "g", "kg")).toBeCloseTo(0.45, 9)
+    expect(convertUnit(1.2, "ug/L", "ng/mL")).toBe(1.2)
+    expect(convertUnit(37, "Cel", "[degF]")).toBeCloseTo(98.6, 9)
+    // A difference of temperatures takes no offset.
+    expect(
+      convertUnit(1, "Cel", "[degF]", "temperature-difference")
+    ).toBeCloseTo(1.8, 9)
+  })
+
+  it("refuses units of two measures", () => {
+    expect(convertUnit(92, "mg/dL", "mmol/L")).toBeUndefined()
+    expect(convertUnit(1, "kg", "m")).toBeUndefined()
   })
 })

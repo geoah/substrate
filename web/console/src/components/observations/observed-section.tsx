@@ -31,17 +31,18 @@ import { tableDateTime } from "@/lib/format"
 import {
   codeWords,
   isForm,
-  interpretationTone,
   judgementWords,
   metricInfoOf,
   observedVariant,
   readingText,
   recordTimelineSearch,
+  resultReading,
   statisticWords,
   type ReadingShape,
 } from "@/lib/observations"
 import { coverageWords, durationMs, secondWords } from "@/lib/observations-time"
 import { numberOf } from "@/lib/observations-answer"
+import type { Band } from "@/lib/record-view"
 import { splitRecordPath } from "@/lib/record-path"
 import {
   breakAtGaps,
@@ -160,52 +161,39 @@ function Fact({
   )
 }
 
-/** The bar a result's value draws against its own first reference range:
- * only where the value is a plain number and each bound the range gives
- * is a quantity in the value's own unit (another unit is said in words,
- * never drawn). */
+/** The bar a result's value draws against its own first reference range
+ * (`resultReading`): only where the value is a plain number, not a bound
+ * such as `<0.5`, and every bound the range gives converts into the
+ * value's unit (another measure is said in words, never drawn). The range
+ * wears its own tone, a lab's normal range the good one, and a scale of
+ * values that are never negative starts at zero, so a value under a high
+ * bound alone sits where it is, not at the padded end. */
 function rangeBarOf(p: Record<string, unknown>):
   | {
       value: number
       unit?: string
-      band: { low?: number; high?: number; label: string; tone: "none" }
+      band: Band
       tone: "good" | "poor" | "none"
+      min?: number
     }
   | undefined {
-  const value = p.value as
-    { value?: unknown; unit?: unknown; comparator?: unknown } | undefined
-  if (!value || typeof value.value !== "string" || value.comparator) {
-    return undefined
-  }
-  const v = Number(value.value)
-  if (!Number.isFinite(v)) return undefined
-  const unit = str(value.unit)
-  const ranges = Array.isArray(p.referenceRanges) ? p.referenceRanges : []
-  const range = ranges[0] as
-    { low?: unknown; high?: unknown; text?: unknown } | undefined
-  if (!range || typeof range !== "object") return undefined
-  const bound = (q: unknown): number | null | undefined => {
-    if (q === undefined || q === null) return undefined
-    const b = q as { value?: unknown; unit?: unknown; comparator?: unknown }
-    if (typeof b.value !== "string" || b.comparator) return null
-    if (str(b.unit) !== unit) return null
-    const n = Number(b.value)
-    return Number.isFinite(n) ? n : null
-  }
-  const low = bound(range.low)
-  const high = bound(range.high)
-  if (low === null || high === null) return undefined
-  if (low === undefined && high === undefined) return undefined
+  const reading = resultReading(p)
+  if (!reading?.range || reading.comparator) return undefined
+  const { value, unit, range, tone } = reading
+  const nonNegative = [value, range.low, range.high].every(
+    (v) => v === undefined || v >= 0
+  )
   return {
-    value: v,
+    value,
     unit,
     band: {
-      low,
-      high,
-      label: str(range.text) ?? "reference range",
-      tone: "none",
+      ...(range.low !== undefined ? { low: range.low } : {}),
+      ...(range.high !== undefined ? { high: range.high } : {}),
+      label: range.label,
+      tone: range.tone,
     },
-    tone: interpretationTone(p.interpretation),
+    tone,
+    ...(nonNegative ? { min: 0 } : {}),
   }
 }
 
@@ -275,10 +263,12 @@ function ValueSection({
             <div data-slot="observed-range" className="mt-1 max-w-[240px]">
               <RangeBar
                 value={bar.value}
+                min={bar.min}
                 bands={[bar.band]}
                 unit={bar.unit}
                 precision={places}
                 tone={bar.tone}
+                marked
               />
             </div>
           </Fact>

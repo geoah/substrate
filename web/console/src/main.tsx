@@ -10,7 +10,7 @@ import {
   setSessionChangedHandler,
   setUnauthorizedHandler,
 } from "@/lib/api/session"
-import { ApiError } from "@/lib/api/types"
+import { retryDelay, retryRead } from "@/lib/api/retry"
 import { reloadOnStaleChunk } from "@/lib/stale-chunks"
 import { router } from "@/router"
 
@@ -28,18 +28,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      retry: (failureCount, error) => {
-        // Definitive answers (auth, not found, validation…) don't improve on
-        // retry; only transport-level trouble earns another attempt.
-        if (
-          error instanceof ApiError &&
-          error.code !== "network" &&
-          error.code !== "rate_limited"
-        ) {
-          return false
-        }
-        return failureCount < 2
-      },
+      // Definitive answers (auth, not found, validation) don't improve on
+      // retry; transport trouble and a busy server earn two more attempts.
+      retry: retryRead,
+      retryDelay,
     },
   },
 })

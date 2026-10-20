@@ -8,9 +8,10 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query"
-import { TriangleAlertIcon } from "lucide-react"
+import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
 
 import { IndexPending } from "@/components/observations/index-pending"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   aggregateQueryOptions,
@@ -95,9 +96,18 @@ export function Failed({
   if (indexPending(error))
     return <IndexPending error={error} onRetry={onRetry} />
   return (
-    <p className="text-[12.5px] text-destructive">
-      This read failed: {error.message}
-    </p>
+    <div
+      data-slot="read-failed"
+      className="flex flex-wrap items-center gap-2 text-[12.5px]"
+    >
+      <p className="text-destructive">This read failed: {error.message}</p>
+      {onRetry && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RefreshCwIcon />
+          Read again
+        </Button>
+      )}
+    </div>
   )
 }
 

@@ -9,6 +9,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -135,7 +136,8 @@ function refusal(status: number, problems: string[]): Response {
 function mount(
   sections: unknown[],
   answer?: Answer,
-  window: Record<string, unknown> = { start: "begins", end: "ends" }
+  window: Record<string, unknown> = { start: "begins", end: "ends" },
+  rec: SubstrateRecord = DAY
 ) {
   const seen: Aggregate[] = []
   vi.stubGlobal(
@@ -214,7 +216,7 @@ function mount(
     <QueryClientProvider client={client}>
       <RecordViews
         views={viewsOf([view])}
-        record={DAY}
+        record={rec}
         kind={CYCLE}
         kinds={[...KINDS, CYCLE]}
       />
@@ -323,6 +325,85 @@ it("draws a tile per item from one read, with bands, a baseline and its delta", 
     STEPS_METRIC,
   ])
   expect(seen.filter((a) => a.bucket)).toHaveLength(1)
+})
+
+it("labels a tile so far over an open record window and compares nothing", async () => {
+  // Today's cycle: begun, with no end yet.
+  const today = record(CYCLE.identity, "c-2", {
+    begins: "2026-10-11T04:00:00Z",
+    strain: 3.1,
+  })
+  const { seen } = mount(
+    [
+      {
+        stats: {
+          label: "Figures",
+          baseline: 30,
+          items: [
+            {
+              metric: { ref: RECOVERY },
+              label: "Recovery",
+              show: "dial",
+              min: 0,
+              max: 100,
+              better: "higher",
+            },
+            {
+              metric: { ref: HEART },
+              reducer: "avg",
+              label: "Average heart rate",
+              show: "bar",
+              better: "lower",
+            },
+            { metric: { ref: ENERGY }, reducer: "sum", label: "Energy" },
+          ],
+        },
+      },
+    ],
+    undefined,
+    { start: "begins", end: "ends", open: true },
+    today
+  )
+  const group = await screen.findByRole("group", { name: "Figures" })
+  await waitFor(() =>
+    expect(tile(group, "Energy").textContent).toContain("2,100")
+  )
+  for (const label of ["Recovery", "Average heart rate", "Energy"]) {
+    const t = tile(group, label)
+    expect(t.textContent).toContain("so far")
+    expect(t.querySelector("[data-slot=stat-delta]")).toBe(null)
+    expect(t.querySelector("[data-slot=range-baseline]")).toBe(null)
+  }
+  // No baseline read is issued for a window still running.
+  expect(seen.filter((a) => a.bucket)).toEqual([])
+})
+
+it("shows Read again on a failed read and reads again on a click", async () => {
+  let asked = 0
+  mount(
+    [
+      {
+        stats: {
+          label: "Figures",
+          items: [{ metric: { ref: RECOVERY }, label: "Recovery" }],
+        },
+      },
+    ],
+    () =>
+      asked++ === 0
+        ? refusal(422, ["aggregate.range: a passing refusal"])
+        : undefined
+  )
+  const group = await screen.findByRole("group", { name: "Figures" })
+  const again = await within(group).findByRole("button", {
+    name: "Read again",
+  })
+  expect(group.querySelector("[data-slot=read-failed]")).toBeTruthy()
+  fireEvent.click(again)
+  await waitFor(() =>
+    expect(tile(group, "Recovery").textContent).toContain("72")
+  )
+  expect(group.querySelector("[data-slot=read-failed]")).toBe(null)
 })
 
 it("drops a metric no record holds from the read and says so on its tile alone", async () => {

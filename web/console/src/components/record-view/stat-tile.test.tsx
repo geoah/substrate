@@ -215,4 +215,61 @@ describe("RangeBar", () => {
     const band = bar.querySelector("[data-band]") as HTMLElement
     expect(band.style.left).toBe("0%")
   })
+
+  it("places 2.8 under 3 near the bound of a scale from zero and prints the bound", () => {
+    const view = render(
+      <RangeBar
+        value={2.8}
+        min={0}
+        bands={[{ high: 3, label: "reference range", tone: "good" }]}
+        unit="ng/mL"
+        marked
+      />
+    )
+    const bar = view.container.querySelector("[data-slot=range-bar]")!
+    // 0 to 3 padded by 5% at the top: 2.8 sits at 2.8 / 3.15.
+    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(88.89, 1)
+    const band = bar.querySelector("[data-band]") as HTMLElement
+    expect(band.style.left).toBe("0%")
+    expect(band.style.background).toBe("var(--ok-soft)")
+    const edges = bar.querySelectorAll("[data-slot=range-edge]")
+    expect(edges).toHaveLength(1)
+    expect((edges[0] as HTMLElement).style.borderColor).toBe("var(--ok)")
+    expect(
+      [...bar.querySelectorAll("[data-slot=range-bound]")].map(
+        (b) => b.textContent
+      )
+    ).toEqual(["0 ng/mL", "3 ng/mL"])
+  })
+
+  it("draws no edge and prints no bound for a stats bar's bands", () => {
+    const view = render(<RangeBar value={50} bands={thirds} />)
+    const bar = view.container.querySelector("[data-slot=range-bar]")!
+    expect(bar.querySelectorAll("[data-slot=range-edge]")).toHaveLength(0)
+    expect(bar.querySelectorAll("[data-slot=range-bound]")).toHaveLength(0)
+  })
+})
+
+describe("StatTile so far", () => {
+  it("says the value so far beside the number and under a dial", () => {
+    const number = render(
+      <StatTile label="Strain" value="8.2" show="number" qualifier="so far" />
+    )
+    expect(
+      number.container.querySelector("[data-slot=stat-qualifier]")?.textContent
+    ).toBe("so far")
+    cleanup()
+    const dial = render(
+      <StatTile
+        label="Recovery"
+        value="70"
+        numeric={70}
+        show="dial"
+        min={0}
+        max={100}
+        qualifier="so far"
+      />
+    )
+    expect(dial.container.textContent).toContain("so far")
+  })
 })

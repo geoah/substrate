@@ -37,6 +37,9 @@ export interface Measure {
   /** The codes in classes the server converts a value between: two codes
    * convert exactly when one class holds both. */
   converts: string[][]
+  /** Each code's exact map to the base, `base = value * factor + offset`,
+   * as rationals (`1/1000`); a code no rational factor reaches is absent. */
+  factors?: Partial<Record<string, { factor: string; offset?: string }>>
   note?: string
 }
 
@@ -101,6 +104,37 @@ export function lookupMeasure(name: string | undefined): Measure | undefined {
 /** Whether the table lists a code under any measure. */
 export function isListedUnit(code: string): boolean {
   return Object.hasOwn(SYMBOLS, code)
+}
+
+/** A rational the table writes as `n/d` or `n`, as a number. */
+function rational(text: string | undefined): number {
+  if (!text) return 0
+  const [n, d] = text.split("/")
+  return Number(n) / (d === undefined ? 1 : Number(d))
+}
+
+/** A value in one code as the same quantity in another, for a chart or a
+ * comparison: the two codes must share a converts class of one measure
+ * (`measure` where the value names one, else the code's own,
+ * `measureOf`), and the answer is a float, never digits to store.
+ * Undefined where the two do not convert (mg/dL and mmol/L are two
+ * measures). */
+export function convertUnit(
+  value: number,
+  from: string,
+  to: string,
+  measure?: string
+): number | undefined {
+  if (from === to) return value
+  const m = lookupMeasure(measure ?? measureOf(from))
+  if (!m?.converts.some((c) => c.includes(from) && c.includes(to))) {
+    return undefined
+  }
+  const f = m.factors?.[from]
+  const t = m.factors?.[to]
+  if (!f || !t) return undefined
+  const base = value * rational(f.factor) + rational(f.offset)
+  return (base - rational(t.offset)) / rational(t.factor)
 }
 
 /** A measure's name as a heading: `temperature-difference` is "Temperature

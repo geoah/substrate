@@ -157,7 +157,11 @@ whole-blood glucose, and nothing in the engine reads it; `displayPrecision`
 is the decimal places a reader shows; `category` groups it for navigation;
 `bucketPlace` (`start` or `end`) says where a read places a value's span,
 which the aggregate read applies where the request names no `bucket.place`
-(`health/sleep_stage` sets `end`, so a night lands on the day it ends);
+(`health/sleep_stage` sets `end`, so a night lands on the day it ends, as
+do the nightly summaries of `whoop_recovery`, `whoop_sleep_performance`,
+`hrv_rmssd`, `resting_heart_rate`, `respiratory_rate`, `spo2` and
+`skin_temperature`, whose raw readings are instants and place the same
+either way);
 `rollups` lists the rollup tiers the observed index keeps for it;
 `algorithm` (`{vendor, name, version}`) names a vendor's scoring method. The sample ships
 six metrics several domains share: `air_temperature`, `relative_humidity`,
@@ -423,7 +427,7 @@ observation.
 | `sleep` | one night or nap: `name`, the heading the adapter writes on the clock the night was recorded on (`Night of Fri 10 Oct`, `Nap, Sun 12 Oct 14:30`) and the record's title, the span, `timeInBed`, `timeAsleep`, the stage durations `awake`, `light`, `deep` and `rem`, `latency`, `efficiency`, `respiratoryRate`, `disturbances` and the device's `scores` by their own names |
 | `workout` | one session: `name`, the heading the adapter writes from the sport and the local start (`Running, Sat 11 Oct 08:43`) and the record's title; `sport`, one code set every adapter maps onto (`running`, `walking`, `hiking`, `cycling`, `swimming`, `strength`, `yoga`, `rowing`, `hiit` and more, `other` for a sport with no value of its own) with the provider's own word in `sportSource`; the span, `duration`, `distance`, `activeEnergy` (above the resting rate) and `totalEnergy` (resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` by zone name, and the device's original `file` as a blob |
 | `labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
-| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age}`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
+| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age, tone}`; `tone` is how a reader draws the band, absent for the lab's normal range and `poor` for a cut-off past which a value is abnormal), `channel` (the body region of a regional body composition result, such as `trunk`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
 
 The catalogue (`samples/health/metrics.yaml`) is 59 `metric` records with ids
 `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose
@@ -448,7 +452,8 @@ reference to its declaration, and the import lands them at ids under the
 repository's authority (`<authority>/health/sleep`).
 
 - **`health/sleep`**: the heart rate, heart rate variability (`hrv_rmssd`)
-  and respiratory rate over the night; the night's `sleep_stage` spans in
+  and respiratory rate over the night, left out where none was measured
+  (WHOOP writes no samples inside a night); the night's `sleep_stage` spans in
   the order awake, in bed, REM, asleep, light, deep, from the sleep's own
   source, with the time in each; tiles of the night's own `timeAsleep`,
   `timeInBed`, `efficiency`, `disturbances` and `respiratoryRate`; and the
@@ -459,12 +464,15 @@ repository's authority (`<authority>/health/sleep`).
   over the workout; the time in five heart rate zones read from heart rate
   samples (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
   minute, five 19-beat bands from half of a 190 maximum); and the speed.
+  The heart rate, zone and speed charts are left out where nothing was
+  measured, as on a WHOOP workout.
 - **`health/labreport`**: the report's lab, accession, issue time, status
   and review, and a table of its results with the metric, value, flag and
   reference ranges, a converted twin under the lab's own row.
-- **`health/labresult`**: every result of the same metric over time as
-  points, each against the reference range its own lab printed, the page's
-  own result ringed, with the rows below.
+- **`health/labresult`**: every result of the same metric and channel over
+  time as points (a DXA scan's trunk lists the trunk's alone), each against
+  the reference range its own lab printed, the page's own result ringed,
+  with the rows below.
 - **`health/metric`**, on the observations sample's
   `samples.substrate.reamde.dev/observations/metric` kind: the lab results
   naming the metric, as the same points and rows. A metric no lab result

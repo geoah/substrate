@@ -1,8 +1,10 @@
 /** Sparse readings over months or years, such as a lab's results, drawn by
  * hand in SVG: a dot per reading in its tone (hollow where the caller marks
- * it), a hairline between consecutive readings, and each reading's
- * own reference range as a stepped wash from its instant to the next
- * reading's. The bucket model of `TimelineChart` does not fit a few
+ * it), a hairline between consecutive readings of one series, and each
+ * reading's own reference range as a stepped wash from its instant to the
+ * next reading's, in the range's tone. A reading written as a bound
+ * (`<0.5`) is a triangle pointing toward its open side and joins no
+ * hairline: its true value is somewhere past the mark. The bucket model of `TimelineChart` does not fit a few
  * readings years apart, so this chart places each one at its own instant.
  *
  * Hovering finds the nearest reading by x and one tooltip names it: its
@@ -26,16 +28,23 @@ export interface ChartPoint {
   /** The reading's instant, in milliseconds. */
   at: number
   value: number
+  /** A bound such as `<`: the true value lies past `value`. */
+  comparator?: string
   /** Its own reference range; an absent bound is open. */
   low?: number
   high?: number
+  /** How the range is drawn; a lab's normal range is good. */
+  rangeTone?: Tone
   tone: Tone
   /** What the reading is, for the tooltip. */
   title: string
-  /** A reading drawn as a ring, which the caller's note explains. */
+  /** A reading drawn as a ring, which the caller's notes explain. */
   hollow?: boolean
-  /** A line the tooltip adds, in the caller's words. */
-  note?: string
+  /** Lines the tooltip adds, in the caller's words. */
+  notes?: string[]
+  /** The line the reading belongs to, such as a body region: hairlines
+   * join readings of one series. */
+  series?: string
   /** The record it is, opened on a click. */
   kind?: string
   id?: string
@@ -49,6 +58,34 @@ const LEFT = AXIS_LEFT
 
 function finite(v: number | undefined): v is number {
   return v !== undefined && Number.isFinite(v)
+}
+
+/** Whether a reading is a bound below its digits (`<0.5`), above them
+ * (`>90`), or neither. */
+function boundSide(p: ChartPoint): "below" | "above" | undefined {
+  if (p.comparator === "<" || p.comparator === "<=") return "below"
+  if (p.comparator === ">" || p.comparator === ">=") return "above"
+  return undefined
+}
+
+/** A triangle around (`cx`, `cy`) pointing down for a bound below its
+ * digits and up for one above. */
+function trianglePath(cx: number, cy: number, side: "below" | "above") {
+  const r = 5
+  const tip = side === "below" ? cy + r : cy - r
+  const base = side === "below" ? cy - r * 0.6 : cy + r * 0.6
+  return `M${cx - r} ${base} L${cx + r} ${base} L${cx} ${tip} Z`
+}
+
+/** The stroke of a range's edge in its tone: a toneless one the strong
+ * border. */
+function edgeColor(tone: Tone): string {
+  return tone === "none" ? "var(--border-strong)" : toneColor(tone)
+}
+
+/** A reading in words, its comparator in front. */
+function valueWords(p: ChartPoint, unit?: string): string {
+  return readingText(String(p.value), unit, undefined, p.comparator)
 }
 
 /** A reading's range in words: "range 2.6 to 3.4 mmol/L", "under 3
@@ -109,6 +146,17 @@ export function PointsChart({
       if (finite(b.high)) values.push(b.high)
     }
     const { domain: yDomain, ticks } = niceDomain(values)
+    // Hairlines join consecutive readings of one series that are not
+    // bounds, in time order.
+    const joins: [number, number][] = []
+    const lastOf = new Map<string, number>()
+    order.forEach(({ p }, n) => {
+      if (boundSide(p)) return
+      const key = p.series ?? ""
+      const prev = lastOf.get(key)
+      if (prev !== undefined) joins.push([prev, n])
+      lastOf.set(key, n)
+    })
     const y = linearScale(yDomain, [top + height, top])
     const clampX = (v: number) => Math.min(right, Math.max(LEFT, v))
     const clampY = (v: number) => Math.min(top + height, Math.max(top, v))
@@ -133,6 +181,7 @@ export function PointsChart({
               // The bounds the result's own range names; an open side
               // (an "under 3.0" range has no low) draws no edge.
               edges: [p.high, p.low].filter(finite).map((v) => clampY(y(v))),
+              tone: p.rangeTone ?? "good",
             }
           : undefined,
       }
@@ -157,11 +206,22 @@ export function PointsChart({
       xLabels: axis.labels,
       placed,
       washes,
+      joins,
     }
   }, [points, domain, unit, bands, height, width])
 
-  const { top, right, svgHeight, y, ticks, labels, xLabels, placed, washes } =
-    layout
+  const {
+    top,
+    right,
+    svgHeight,
+    y,
+    ticks,
+    labels,
+    xLabels,
+    placed,
+    washes,
+    joins,
+  } = layout
 
   if (points.length === 0) {
     return (
@@ -269,8 +329,9 @@ export function PointsChart({
           ))}
         </g>
         {/* A result's reference range is where its value counts as normal,
-            so it is drawn in the good tone, with a dashed edge at each
-            bound the lab printed. */}
+            so it is drawn in the good tone unless the range names another
+            (a cut-off past which a value is abnormal), with a dashed edge
+            at each bound the lab printed. */}
         {placed.map((d) =>
           d.range ? (
             <g key={`range-${d.i}`}>
@@ -280,7 +341,7 @@ export function PointsChart({
                 y={d.range.y0}
                 width={Math.max(0, d.range.x1 - d.range.x0)}
                 height={d.range.y1 - d.range.y0}
-                fill="var(--ok-soft)"
+                fill={toneSoft(d.range.tone)}
               />
               {d.range.edges.map((ey, n) => (
                 <line
@@ -290,7 +351,7 @@ export function PointsChart({
                   x2={d.range!.x1}
                   y1={ey}
                   y2={ey}
-                  stroke="var(--ok)"
+                  stroke={edgeColor(d.range!.tone)}
                   strokeOpacity={0.55}
                   strokeDasharray="4 3"
                   shapeRendering="crispEdges"
@@ -299,14 +360,14 @@ export function PointsChart({
             </g>
           ) : null
         )}
-        {placed.slice(1).map((d, n) => (
+        {joins.map(([a, b]) => (
           <line
-            key={`hair-${d.i}`}
+            key={`hair-${placed[b].i}`}
             data-slot="point-hairline"
-            x1={placed[n].cx}
-            y1={placed[n].cy}
-            x2={d.cx}
-            y2={d.cy}
+            x1={placed[a].cx}
+            y1={placed[a].cy}
+            x2={placed[b].cx}
+            y2={placed[b].cy}
             stroke="var(--border-strong)"
           />
         ))}
@@ -345,16 +406,28 @@ export function PointsChart({
                   strokeWidth={2}
                 />
               )}
-              <circle
-                data-slot="point"
-                data-hollow={d.p.hollow ? "" : undefined}
-                cx={d.cx}
-                cy={d.cy}
-                r={4}
-                fill={d.p.hollow ? "var(--background)" : toneColor(d.p.tone)}
-                stroke={d.p.hollow ? toneColor(d.p.tone) : undefined}
-                strokeWidth={d.p.hollow ? 2 : undefined}
-              />
+              {boundSide(d.p) ? (
+                <path
+                  data-slot="point"
+                  data-bound={boundSide(d.p)}
+                  data-hollow={d.p.hollow ? "" : undefined}
+                  d={trianglePath(d.cx, d.cy, boundSide(d.p)!)}
+                  fill="var(--background)"
+                  stroke={toneColor(d.p.tone)}
+                  strokeWidth={2}
+                />
+              ) : (
+                <circle
+                  data-slot="point"
+                  data-hollow={d.p.hollow ? "" : undefined}
+                  cx={d.cx}
+                  cy={d.cy}
+                  r={4}
+                  fill={d.p.hollow ? "var(--background)" : toneColor(d.p.tone)}
+                  stroke={d.p.hollow ? toneColor(d.p.tone) : undefined}
+                  strokeWidth={d.p.hollow ? 2 : undefined}
+                />
+              )}
             </g>
           )
           const kind = d.p.kind ? splitKind(d.p.kind) : undefined
@@ -371,7 +444,7 @@ export function PointsChart({
                 name: kind.name,
                 id: d.p.id,
               }}
-              aria-label={`${d.p.title}, ${readingText(String(d.p.value), unit)}, ${dayWords(d.p.at, true)}`}
+              aria-label={`${d.p.title}, ${valueWords(d.p, unit)}, ${dayWords(d.p.at, true)}`}
               className="group cursor-pointer outline-none"
               onFocus={() => setActive(n)}
               onBlur={() => setActive(null)}
@@ -400,18 +473,18 @@ export function PointsChart({
           style={{ left: tipLeft, width: tipWidth }}
         >
           <span className="font-medium">{shown.p.title}</span>
-          <span className="tabular-nums">
-            {readingText(String(shown.p.value), unit)}
-          </span>
+          <span className="tabular-nums">{valueWords(shown.p, unit)}</span>
           <span className="text-muted-foreground">
             {pointRangeWords(shown.p, unit)}
           </span>
           <span className="text-muted-foreground">
             {dayWords(shown.p.at, true)}
           </span>
-          {shown.p.note && (
-            <span className="text-muted-foreground">{shown.p.note}</span>
-          )}
+          {shown.p.notes?.map((note) => (
+            <span key={note} className="text-muted-foreground">
+              {note}
+            </span>
+          ))}
         </div>
       )}
     </div>

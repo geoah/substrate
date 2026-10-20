@@ -18,9 +18,11 @@ import {
   breakdownItems,
   calendarGrid,
   cellFraction,
+  chartMeasured,
   chartReads,
   deltaWords,
   foldedBy,
+  partialWindow,
   RECORD_VIEW_KIND,
   recordViewOf,
   recordViewsParams,
@@ -596,6 +598,7 @@ describe("the blocks of version 2 read into blocks", () => {
       label: undefined,
       kind: WORKOUT.identity,
       via: "plan",
+      sharing: [],
       inWindow: false,
       columns: [],
       orderBy: "at:desc",
@@ -749,6 +752,69 @@ describe("the blocks of version 2 read into blocks", () => {
         trend: { empty: "fade", items: [{ metric: { ref: PULSE } }] },
       })
     ).toBe("This trend block's empty is fade.")
+  })
+
+  it("reads a table's sharing list, and sameAs as its older spelling of one name", () => {
+    const kind = WORKOUT.identity
+    expect(
+      blockIn({ table: { kind, sharing: ["metric", "channel", "metric"] } })
+    ).toMatchObject({ sharing: ["metric", "channel"] })
+    expect(blockIn({ table: { kind, sameAs: "metric" } })).toMatchObject({
+      sharing: ["metric"],
+    })
+    expect(
+      problemIn({ table: { kind, sameAs: "metric", sharing: ["channel"] } })
+    ).toBe(
+      "This table names both sharing and its older spelling sameAs; it names one."
+    )
+    expect(
+      problemIn({ table: { kind, via: "plan", sharing: ["metric"] } })
+    ).toBe(
+      "This table names 2 of via, sharing and inWindow; a table names exactly one."
+    )
+  })
+
+  it("reads a chart's empty, say where absent", () => {
+    const chart = { metrics: [{ ref: PULSE }], reducers: [{ reducer: "avg" }] }
+    expect(blockIn({ chart: { ...chart, empty: "hide" } })).toMatchObject({
+      empty: "hide",
+    })
+    expect(blockIn({ chart })).toMatchObject({ empty: "say" })
+    expect(problemIn({ chart: { ...chart, empty: "fade" } })).toBe(
+      "This chart's empty is fade."
+    )
+  })
+
+  it("says whether a chart's answer holds a value of a metric", () => {
+    const line = blockIn({
+      chart: {
+        metrics: [{ ref: PULSE }, { ref: STAGE }],
+        reducers: [{ reducer: "count" }, { reducer: "avg" }],
+      },
+    }) as ChartBlock
+    const row = (metric: string, values: Record<string, string | null>) => ({
+      start: "2026-10-11T05:00:00Z",
+      end: "2026-10-11T06:00:00Z",
+      count: 1,
+      group: { metric },
+      values: Object.entries(values).map(([reducer, value]) => ({
+        reducer,
+        value,
+      })),
+    })
+    const answer = {
+      rows: [row(PULSE, { count: "3", avg: "61" }), row(STAGE, { avg: null })],
+    } as unknown as Parameters<typeof chartMeasured>[2]
+    // A line draws avg, its first reducer in the metric's own unit.
+    expect(chartMeasured(line, PULSE, answer)).toBe(true)
+    expect(chartMeasured(line, STAGE, answer)).toBe(false)
+    expect(chartMeasured(line, PULSE, undefined)).toBe(false)
+    // A whole chart counts any of its reducers.
+    const whole = { ...line, bucket: "whole" as const }
+    const counted = {
+      rows: [row(STAGE, { count: "0", avg: null })],
+    } as unknown as Parameters<typeof chartMeasured>[2]
+    expect(chartMeasured(whole, STAGE, counted)).toBe(true)
   })
 
   it("reads a stats or trend block's empty, say where absent", () => {
@@ -1012,6 +1078,17 @@ describe("the reads of version 2", () => {
     expect(
       statsReads(bound, { ...block, baseline: 0 }, athens).baseline
     ).toEqual([])
+  })
+
+  it("issues no baseline read over a record's own open window, and one over a last window", () => {
+    const block = stats([{ metric: { ref: PULSE }, reducer: "avg" }])
+    const running: Bound = { ...bound, open: true }
+    expect(partialWindow(running)).toBe(true)
+    expect(statsReads(running, block, athens).value).toHaveLength(1)
+    expect(statsReads(running, block, athens).baseline).toEqual([])
+    const last: Bound = { ...bound, open: true, lastWindow: true }
+    expect(partialWindow(last)).toBe(false)
+    expect(statsReads(last, block, athens).baseline).toHaveLength(1)
   })
 
   it("splits a metric read two ways into two reads, and shares an entry read alike", () => {
@@ -1281,6 +1358,35 @@ describe("the reads of version 2", () => {
       gte: "2026-10-05T00:00:00+03:00",
       lt: "2026-10-12T00:00:00+03:00",
     })
+    // WHOOP's nights at 23:50 and at 00:20 each anchor on the day they end
+    // where the metric places by its end.
+    const late: Bound = {
+      ...bound,
+      window: {
+        start: Date.parse("2026-10-09T23:50:00+03:00"),
+        end: Date.parse("2026-10-10T07:30:00+03:00"),
+      },
+    }
+    const early: Bound = {
+      ...bound,
+      window: {
+        start: Date.parse("2026-10-11T00:20:00+03:00"),
+        end: Date.parse("2026-10-11T08:00:00+03:00"),
+      },
+    }
+    expect(trendRead(late, block, athens, ends)?.aggregate.range?.lt).toBe(
+      "2026-10-11T00:00:00+03:00"
+    )
+    expect(trendRead(early, block, athens, ends)?.aggregate.range?.lt).toBe(
+      "2026-10-12T00:00:00+03:00"
+    )
+    // A stats baseline is plain days: the server applies the metric's place.
+    const tiles = blockIn({
+      stats: { baseline: 7, items: [{ metric: { ref: STAGE } }] },
+    }) as StatsBlock
+    expect(
+      statsReads(late, tiles, athens, ends).baseline[0].aggregate.bucket
+    ).toEqual({ calendar: "day", timezone: athens })
   })
 
   it("lays out a strip's whole calendar, a day across the change of offset 25 hours", () => {
@@ -1351,6 +1457,33 @@ describe("the reads of version 2", () => {
     ).toMatchObject({
       orderBy: "at:asc",
       filter: { properties: { by: { eq: GARMIN } } },
+    })
+    // Every listed property narrows: one the record holds to its value, one
+    // it does not to the records that hold none either.
+    const trunk = record(WORKOUT.identity, "s2", {
+      metric: { ref: PULSE },
+      channel: "trunk",
+    })
+    expect(
+      tableParams(bound, table({ sharing: ["metric", "channel"] }), trunk)
+    ).toMatchObject({
+      filter: {
+        properties: { metric: { eq: PULSE }, channel: { eq: "trunk" } },
+      },
+    })
+    const blood = record(WORKOUT.identity, "s3", { metric: { ref: PULSE } })
+    expect(
+      tableParams(bound, table({ sharing: ["metric", "channel"] }), blood)
+    ).toMatchObject({
+      filter: {
+        properties: { metric: { eq: PULSE }, channel: { exists: false } },
+      },
+    })
+    expect(
+      tableParams(bound, table({ sharing: ["lab", "channel"] }), SESSION)
+    ).toEqual({
+      problem:
+        "This table lists the records sharing this record's lab and channel, and this record holds none of them.",
     })
     expect(tableParams(bound, table({ sameAs: "lab" }), SESSION)).toEqual({
       problem:
