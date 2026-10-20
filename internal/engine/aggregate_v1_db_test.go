@@ -292,17 +292,18 @@ func TestAggregatePlaceDefaultsToTheMetricsBucketPlace(t *testing.T) {
 }
 
 // WHOOP stamps a night's recovery at the sleep's onset, so a night that
-// starts at 23:50 and one that starts at 00:20 fell on two dates by start
-// and the 00:20 one shared a day with the night after it. The shipped health
-// sample's nightly metrics declare bucketPlace end: a day read naming no
-// place puts each night on the day it ends, and one naming start still
-// files them by onset.
-func TestAggregatePlaceEndLandsTwoNightsOnTheirWakeDays(t *testing.T) {
+// starts at 00:20 shared a day with the night after it when that one
+// started at 23:50 the same evening. The shipped health sample's nightly
+// metrics declare bucketPlace end: a day read naming no place puts each
+// night on the day it ends, and one naming start still files them by
+// onset, the 00:20 and the 23:50 nights both on 09-03.
+func TestAggregatePlaceEndLandsNightsOnTheirWakeDays(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	plus3 := time.FixedZone("", 3*3600)
 	late := time.Date(2026, 9, 1, 23, 50, 0, 0, plus3)
 	early := time.Date(2026, 9, 3, 0, 20, 0, 0, plus3)
+	next := time.Date(2026, 9, 3, 23, 50, 0, 0, plus3)
 	for _, metric := range []string{
 		"health/whoop_recovery", "health/whoop_sleep_performance", "health/hrv_rmssd",
 		"health/resting_heart_rate", "health/respiratory_rate", "health/spo2", "health/skin_temperature",
@@ -314,25 +315,27 @@ func TestAggregatePlaceEndLandsTwoNightsOnTheirWakeDays(t *testing.T) {
 		}[metric]
 		f.summary(metric+"/late", metric, "whoop", "vendor", "71", unit, late, 7*time.Hour+40*time.Minute)
 		f.summary(metric+"/early", metric, "whoop", "vendor", "82", unit, early, 7*time.Hour+40*time.Minute)
+		f.summary(metric+"/next", metric, "whoop", "vendor", "64", unit, next, 7*time.Hour+40*time.Minute)
 		read := func(place string) string {
 			t.Helper()
 			res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
 				Metric: &substrate.AggregateMetric{Ref: f.metricPath(metric)}, From: "summaries",
 				Range:    rng(late.Add(-24*time.Hour), early.Add(48*time.Hour)),
 				Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Athens", Place: place},
-				Reducers: reducers("last"),
+				Reducers: reducers("last", "count"),
 			})
 			var out []string
 			for _, row := range res.Rows {
 				v, _ := val(row, "last")
-				out = append(out, row.Start.In(plus3).Format("01-02")+"="+v)
+				n, _ := val(row, "count")
+				out = append(out, row.Start.In(plus3).Format("01-02")+"="+v+"x"+n)
 			}
 			return fmt.Sprint(out)
 		}
-		if got, want := read(""), "[09-02=71 09-03=82]"; got != want {
+		if got, want := read(""), "[09-02=71x1 09-03=82x1 09-04=64x1]"; got != want {
 			t.Errorf("%s by its own place: %s, want each night on its wake day %s", metric, got, want)
 		}
-		if got, want := read("start"), "[09-01=71 09-03=82]"; got != want {
+		if got, want := read("start"), "[09-01=71x1 09-03=64x2]"; got != want {
 			t.Errorf("%s by start: %s, want each night on its onset day %s", metric, got, want)
 		}
 	}
