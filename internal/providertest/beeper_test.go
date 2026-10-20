@@ -16,7 +16,9 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
@@ -35,10 +37,14 @@ const (
 
 // fakeBeeper is a Beeper Desktop with an empty inbox: no chat accounts, no
 // bridges, no labels and no chats, so a walk reaches `done` in a few steps.
-// denied, when set, is the status `/v1/info` answers instead.
+// denied, when set, is the status `/v1/info` answers instead. vanish, when
+// set, closes the listener once `/v1/info` has answered, so every later call
+// is refused: a desktop that went to sleep mid-walk.
 type fakeBeeper struct {
 	fakeAPI
 	denied int
+	vanish bool
+	gone   sync.Once
 }
 
 func newFakeBeeper(t *testing.T) *fakeBeeper {
@@ -54,7 +60,7 @@ func (f *fakeBeeper) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
-	denied := f.denied
+	denied, vanish := f.denied, f.vanish
 	f.mu.Unlock()
 	switch r.URL.Path {
 	case "/v1/info":
@@ -64,6 +70,9 @@ func (f *fakeBeeper) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"app": map[string]any{"version": "4.0.0"}})
+		if vanish {
+			f.gone.Do(func() { _ = f.ts.Listener.Close() })
+		}
 	case "/v1/accounts", "/v1/labels":
 		writeJSON(w, []any{})
 	case "/v1/bridges":
@@ -271,5 +280,85 @@ func TestBeeperDesktopErrorStillErrors(t *testing.T) {
 	}
 	if v, ok := beeperStored(t, ds)["unreachableSince"]; ok {
 		t.Fatalf("the stored row still holds unreachableSince = %v", v)
+	}
+}
+
+// TestBeeperUnreachableInEachPhaseKeepsItsQueue starts a walk in each phase
+// that catches its own per-unit failures (messages, contacts) against a
+// closed port. Each must pass the unreachable error up as a pause; one that
+// filed it as the chat's or the address book's failure would move on and
+// stamp `ok` with the unit failed.
+func TestBeeperUnreachableInEachPhaseKeepsItsQueue(t *testing.T) {
+	const chat = "!c1:beeper.local"
+	cases := map[string]struct {
+		cursors map[string]any
+		queue   string
+		want    any
+	}{
+		"messages": {
+			cursors: map[string]any{"phase": "messages", "msgq": []any{chat}, "cold": false},
+			queue:   "msgq", want: chat,
+		},
+		"contacts": {
+			cursors: map[string]any{"phase": "contacts", "contacts": []any{"whatsapp"}, "cold": false},
+			queue:   "contacts", want: "whatsapp",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			ds := newBeeper(t)
+			props := beeperProps(map[string]any{"enabledContacts": true})
+			props["lastSyncedAt"] = ago(0)
+			props["streamCursors"] = tc.cursors
+
+			stamp, effects := beeperSync(t, ds, closedBase(t), props)
+			assertPaused(t, "the stamp", stamp)
+			cur, _ := stamp["streamCursors"].(map[string]any)
+			if cur["phase"] != name {
+				t.Fatalf("streamCursors.phase = %v, want %s", cur["phase"], name)
+			}
+			if q, _ := cur[tc.queue].([]any); len(q) != 1 || q[0] != tc.want {
+				t.Fatalf("streamCursors.%s = %v, want [%v] kept", tc.queue, cur[tc.queue], tc.want)
+			}
+			if f, _ := cur["failed"].([]any); len(f) != 0 {
+				t.Fatalf("streamCursors.failed = %v, want nothing filed as failed", f)
+			}
+			for _, ef := range effects {
+				if ef.Kind == beeperChatsync {
+					if _, ok := ef.Properties["messagesStatus"]; ok {
+						t.Fatalf("an unreachable desktop was filed as the chat's failure: %+v", ef)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestBeeperReachedThenUnreachableStartsANewStretch holds that a run which
+// got an answer from Beeper before its connection failed does not keep the
+// previous stretch's instant: Beeper was there a moment ago.
+func TestBeeperReachedThenUnreachableStartsANewStretch(t *testing.T) {
+	ds := newBeeper(t)
+	beeperSync(t, ds, closedBase(t), beeperProps(nil))
+	stored := beeperStored(t, ds)
+	assertPaused(t, "the unreachable run", stored)
+	first, _ := stored["unreachableSince"].(string)
+
+	fake := newFakeBeeper(t)
+	fake.vanish = true
+	stamp, _ := beeperSync(t, ds, fake.ts.URL, stored)
+	assertPaused(t, "the run that lost Beeper mid-walk", stamp)
+	if n := slices.Index(fake.seenPaths(), "/v1/info"); n < 0 {
+		t.Fatalf("paths = %v, want /v1/info answered: the run must reach Beeper first", fake.seenPaths())
+	}
+	again, _ := stamp["unreachableSince"].(string)
+	if again == first {
+		t.Fatalf("unreachableSince = %v, want a new stretch after Beeper answered", again)
+	}
+	if again <= first {
+		t.Fatalf("unreachableSince = %v, want it later than %v", again, first)
+	}
+	if !strings.Contains(stamp["syncMessage"].(string), "(since ") {
+		t.Fatalf("syncMessage = %v", stamp["syncMessage"])
 	}
 }

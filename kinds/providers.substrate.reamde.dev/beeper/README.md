@@ -42,7 +42,9 @@ reachable (since <time>); syncing resumes when it is back", and no
 `syncError`. `unreachableSince` holds the first failed attempt of the stretch.
 The 15-minute tick keeps trying, at one connect attempt per tick, and Sync now
 works as usual. When a run reaches Beeper again, the walk resumes where it
-stopped and `unreachableSince` is deleted.
+stopped. A run that ends having reached Beeper deletes `unreachableSince`; a
+run that got an answer and then lost the connection starts a new stretch at
+its own attempt.
 
 A 401, a 5xx, a body that is not JSON, a read timeout, and the sandbox gate's
 refusal still read `erroring`, so a missing `SUBSTRATE_SANDBOX_EGRESS_ALLOW`

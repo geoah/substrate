@@ -1105,8 +1105,9 @@ it passes. A run that cannot reach Beeper Desktop at all (the computer asleep,
 the app closed, no route, no name) is `throttled` too, with "Beeper Desktop is
 not reachable (since <time>); syncing resumes when it is back" and no
 `syncError`: `unreachableSince` holds the first such attempt, the walk keeps
-its place, the next tick tries again, and the first run that reaches Beeper
-deletes it. A 4xx, a 5xx, a bad body and the sandbox gate's refusal still read
+its place, the next tick tries again, and the first run that ends having
+reached Beeper deletes it (a run that reached Beeper and then lost it starts
+a new stretch). A 4xx, a 5xx, a bad body and the sandbox gate's refusal still read
 `erroring`
 ([0183](decisions/0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md)).
 One chat that will not read is that chat's own business: the reason

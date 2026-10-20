@@ -1900,7 +1900,7 @@ data:
     UNREACHABLE_MESSAGE = ("Beeper Desktop is not reachable (since %s); syncing "
                            "resumes when it is back")
     # The errnos of a destination that is not there right now. EACCES and EPERM
-    # are absent on purpose: the sandbox's connect gate refuses a destination
+    # are left out: the sandbox's connect gate refuses a destination
     # outside the egress allowlist with one, and that is an operator's mistake
     # to read as a failure, not a computer asleep.
     UNREACHABLE_ERRNOS = frozenset(
@@ -2311,6 +2311,12 @@ data:
 
     # ---------------------------------------------------------------- the wire
 
+    # How many calls Beeper has answered in this process, whatever the status.
+    # A drain page compares it before and after its phase to learn whether the
+    # walk reached Beeper Desktop (decision 0183).
+    _ANSWERED = [0]
+
+
     def _call(base, token, path, params=None):
         """One GET. Beeper answers a plain JSON body — no `ok` envelope — and
         signals failure with the status and `{message, code}`."""
@@ -2318,6 +2324,7 @@ data:
                          headers={"Authorization": "Bearer " + token,
                                   "Accept": "application/json"},
                          timeout=HTTP_TIMEOUT)
+        _ANSWERED[0] += 1
         if r.status_code == 429:
             raise RateLimited(r.headers.get("Retry-After"))
         if r.status_code >= 400:
@@ -3093,15 +3100,18 @@ data:
                            aid, properties=props)
 
 
-    def _waiting(host, acct, aid, err, cursors, run=None):
+    def _waiting(host, acct, aid, err, cursors, run=None, reached=False):
         """Beeper Desktop could not be reached: the account is `throttled`, not
         `erroring` (decision 0183). The walk keeps its place, `unreachableSince`
         keeps the first unreachable attempt across runs, and no `syncError` is
         written. No `retryNotBefore` either: pending work keeps the account due,
-        so the next tick and Sync now both try again."""
+        so the next tick and Sync now both try again.
+
+        `reached` says this run got an answer from Beeper before the connection
+        failed. The earlier stretch is then over, and a new one starts now."""
         props = (acct or {}).get("properties") or {}
         now = _now_iso()
-        since = props.get("unreachableSince") or now
+        since = now if reached else (props.get("unreachableSince") or now)
         message = UNREACHABLE_MESSAGE % _since_text(since)
         patch = {
             "syncStatus": message,
@@ -3471,6 +3481,7 @@ data:
                        completed=False, run=resume)
                 return {"output": {"account": aid, "pending": True,
                                    "calls": resume.get("calls") or 0}}
+            answered = _ANSWERED[0]
             try:
                 nxt = PHASES[phase](host, base, token, _spend(resume))
             except RateLimited as rl:
@@ -3484,7 +3495,9 @@ data:
                 if _unreachable(e):
                     # The computer is asleep or the app closed: a pause, not a
                     # failure, and the walk keeps its place.
-                    _waiting(host, acct, aid, e, _carry(resume), run=resume)
+                    _waiting(host, acct, aid, e, _carry(resume), run=resume,
+                             reached=bool(resume.get("reached"))
+                             or _ANSWERED[0] > answered)
                     return {"output": {"account": aid, "unreachable": True}}
                 # A PERMANENT failure of a stream phase ENDS the walk. Leaving the
                 # phase where it stopped keeps `_pending` true, which reports the
@@ -3498,6 +3511,10 @@ data:
                           attempted=True, run=resume, at_phase=phase)
                 return {"output": {"account": aid, "erroring": True,
                                    "permanent": _permanent(e)}}
+            if _ANSWERED[0] > answered:
+                # Carried through this drain's pages only: `_carry` leaves it out
+                # of streamCursors, so the next run starts without it.
+                nxt = dict(nxt, reached=True)
             if (nxt.get("phase") or "done") == "done":
                 _stamp(host, acct, aid, _carry(nxt), run=nxt)
                 return {"output": {"account": aid, "calls": nxt.get("calls") or 0}}

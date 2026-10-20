@@ -210,6 +210,15 @@ class WaitingTest(unittest.TestCase):
             self.assertEqual(patch["syncStreams"][stream]["state"], "throttled")
             self.assertEqual(patch["syncStreams"][stream]["message"], patch["syncMessage"])
 
+    def test_a_run_that_reached_beeper_starts_a_new_stretch(self):
+        host = _Host()
+        BODY["_waiting"](host, _account(unreachableSince=EARLIER), "acct",
+                         EXC.ConnectTimeout("timed out"), _cursors(),
+                         run={"calls": 3}, reached=True)
+        patch = host.effects.ops[0][2]
+        self.assertEqual(patch["unreachableSince"], patch["lastSyncedAt"])
+        self.assertNotIn("12:45 UTC", patch["syncMessage"])
+
     def test_a_later_unreachable_run_keeps_the_first_instant(self):
         patch, _ = self.waiting({"unreachableSince": EARLIER})
         self.assertEqual(patch["unreachableSince"], EARLIER)
