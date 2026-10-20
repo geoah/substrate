@@ -303,9 +303,11 @@ type modelPrice struct {
 }
 
 // The cache rates a pricing row that states none is charged, as a factor of
-// its inputPer1M: Anthropic's and OpenAI's list ratios for a cache read and
-// for a 5-minute cache write. A model whose ratio differs (Opus 5.5 reads at
-// 0.05x, a 1-hour cache writes at 2x) needs its rate on the row.
+// its inputPer1M: Anthropic's list ratios for a cache read and a 5-minute
+// cache write. OpenAI's read ratio is 0.1x only on gpt-5 and gpt-5-mini
+// (0.25x on gpt-4.1 and o3, 0.5x on gpt-4o) and it bills no write. A model
+// whose ratio differs (Opus 5.5 reads at 0.05x, a 1-hour cache writes at 2x)
+// needs its rate on the row.
 const (
 	defaultCacheReadFactor  = 0.1
 	defaultCacheWriteFactor = 1.25

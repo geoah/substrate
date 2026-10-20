@@ -761,10 +761,12 @@ have spent so far. A root thread's cost includes its sub-agents', so a run
 counts against the cap of the agent that started it; a sub-agent's own cap is
 not enforced. A model the provider row has no price for counts 0. Since
 [decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)
-a cached prompt token is priced at its cache rate; a thread settled before the
-upgrade keeps the cost it recorded at the full input rate, so a cap sized
-against that older number is looser in real terms once those threads leave
-the window. A continued
+a cached prompt token is priced at its cache rate. A thread settled before the
+upgrade keeps the cost it recorded, and the cap moves in a direction that
+depends on the wire. On the `openai` wire the old stamp charged a cache read
+at the full input rate, so a cap sized against it is looser afterwards. On
+the `anthropic` wire the old stamp charged cache reads and writes nothing, so
+a run costs more afterwards and an unchanged cap holds agents sooner. A continued
 chat counts its whole thread once its last turn finishes in the window. A run
 that ends without its thread settling (a stop, a failed write, a panic, a
 thread deleted under it) keeps what it charged counted for the window, because
@@ -827,10 +829,11 @@ A thread's `costUSD` is, per 1M tokens, the uncached prompt times
 `cacheWritePer1M`, and the completion times `outputPer1M`
 ([decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)).
 Both cache rates are optional: absent, a read costs a tenth of `inputPer1M`
-and a write 1.25 times it, Anthropic's and OpenAI's list ratios for a
-5-minute cache. A model whose ratio differs states its rate: Claude Opus 5.5
-reads at a twentieth of its input price, and a 1-hour cache writes at twice
-it. A stated `"0"` is a free cache.
+and a write 1.25 times it, Anthropic's list ratios for a 5-minute cache. A
+model whose ratio differs states its rate: Claude Opus 5.5 reads at a
+twentieth of its input price, a 1-hour cache writes at twice it, and OpenAI
+reads at 0.25x on gpt-4.1 and o3 and 0.5x on gpt-4o and bills no write
+(state `cacheWritePer1M: "0"` there). A stated `"0"` is a free cache.
 
 ```yaml
 pricing:

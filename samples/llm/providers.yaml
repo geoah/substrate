@@ -48,7 +48,9 @@ data:
     # Anthropic's list prices. A row without cacheReadPer1M or
     # cacheWritePer1M is charged a tenth and 1.25 times inputPer1M for them
     # (decision record 0181); Opus 5.5 reads at a twentieth, so its rate is
-    # stated. Haiku 5.5's prices hold up to 100K prompt tokens.
+    # stated. Haiku 5.5's prices hold up to 100K prompt tokens and are five
+    # times higher past it, so its contextWindow is 100000: compaction keeps a
+    # thread under the tier, though one tool-heavy turn can still cross it.
     pricing:
       - model: claude-opus-5-5
         inputPer1M: "4"
@@ -73,7 +75,7 @@ data:
         inputPer1M: "0.10"
         outputPer1M: "0.50"
         cacheReadPer1M: "0.01"
-        contextWindow: 200000
+        contextWindow: 100000
       - model: claude-haiku-4-5
         inputPer1M: "1"
         outputPer1M: "5"

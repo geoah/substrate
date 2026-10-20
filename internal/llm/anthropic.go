@@ -853,14 +853,18 @@ func settleInput(block *anthropicContent) {
 }
 
 func anthropicResult(msg *anthropicMessage) *Result {
+	// This wire reports cache reads and writes beside input_tokens, never
+	// inside it, and the window holds all three. A negative count reads as
+	// none, as on the openai wire: the thread's tallies refuse a value below 0.
+	input := max(0, int(msg.Usage.InputTokens))
+	read := max(0, int(msg.Usage.CacheReadInputTokens))
+	write := max(0, int(msg.Usage.CacheCreationInputTokens))
 	res := &Result{
 		Usage: &Usage{
-			// This wire reports cache reads and writes beside input_tokens,
-			// never inside it, and the window holds all three.
-			PromptTokens:     int(msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens),
+			PromptTokens:     input + read + write,
 			CompletionTokens: int(msg.Usage.OutputTokens),
-			CacheReadTokens:  int(msg.Usage.CacheReadInputTokens),
-			CacheWriteTokens: int(msg.Usage.CacheCreationInputTokens),
+			CacheReadTokens:  read,
+			CacheWriteTokens: write,
 		},
 		Stop: anthropicStop(msg.StopReason),
 	}

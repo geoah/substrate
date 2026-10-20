@@ -416,9 +416,9 @@ func TestOpenAIReadsCacheCountsFromUsage(t *testing.T) {
 			usage: `{"prompt_tokens":378,"completion_tokens":51,"prompt_tokens_details":{"cached_tokens":256}}`,
 			want:  Usage{PromptTokens: 378, CompletionTokens: 51, CacheReadTokens: 256},
 		},
-		"counts past prompt tokens clamp": {
-			usage: `{"prompt_tokens":100,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":90,"cache_creation_tokens":40}}`,
-			want:  Usage{PromptTokens: 100, CompletionTokens: 1, CacheReadTokens: 90, CacheWriteTokens: 10},
+		"counts past prompt tokens are added to it": {
+			usage: `{"prompt_tokens":10,"completion_tokens":1,"cache_read_input_tokens":300,"cache_creation_input_tokens":40}`,
+			want:  Usage{PromptTokens: 350, CompletionTokens: 1, CacheReadTokens: 300, CacheWriteTokens: 40},
 		},
 		"odd counts are ignored": {
 			usage: `{"prompt_tokens":100,"completion_tokens":1,"prompt_tokens_details":{"cache_creation_tokens":null},"cache_read_input_tokens":-5}`,

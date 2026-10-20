@@ -141,12 +141,12 @@ above the usable window is a legal declaration under which every plan would
 find the whole history inside the kept tail, and an overflow could never
 recover.
 
-Trigger: `contextTokens > contextWindow - reserveTokens`. `llm.Usage` gains
-`ContextTokens`, the whole input the model saw: on the Anthropic wire
-`input_tokens` plus cache read and cache creation tokens, which
-`PromptTokens` leaves out (`anthropic.go:233`); on the OpenAI wire
-`prompt_tokens`, which already counts cached tokens. `PromptTokens` stays as
-it is, for cost. Nothing new is stored on the thread row. Where no usage
+Trigger: `contextTokens > contextWindow - reserveTokens`, where the size is
+`llm.Usage.PromptTokens`, the whole input the model saw: on the Anthropic wire
+`input_tokens` plus cache read and cache creation tokens, on the OpenAI wire
+`prompt_tokens`, which already counts them
+([decision 0181](../decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)).
+Nothing new is stored on the thread row for the trigger. Where no usage
 applies, the loop estimates four characters per token, plus four tokens per
 message and the system prompt.
 
@@ -155,7 +155,7 @@ Three check points, as in pi:
 1. At settle of a chat thread or a continuation, after the final assistant
    row is written and before `settle` patches the thread, so the
    summarizer's tokens land in the same tally patch. The size is the
-   `ContextTokens` (else `PromptTokens`) of the run's FIRST completion, which
+   `PromptTokens` of the run's FIRST completion, which
    measured the system prompt, the replayed history and the new user message
    exactly, plus the estimate of the final reply. Later completions in the run
    also carry tool exchanges that the next continuation does not replay.
@@ -289,7 +289,7 @@ call, or empty content rejects the summary. A partial summary is never saved.
    (compaction at settle and at open, a pending ask kept raw, a truncated
    summary rejected, an overflow retried once).
 2. **In-run pressure**: clear old tool results in the in-memory list when the
-   last `ContextTokens` crosses the threshold (keep the last 3 tool uses,
+   last `PromptTokens` crosses the threshold (keep the last 3 tool uses,
    replace older content with a one-line placeholder; rows untouched). On the
    Anthropic wire this can be `clear_tool_uses_20250919` server-side instead:
    one `context_management.edits` entry, sent with the

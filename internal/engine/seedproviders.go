@@ -58,7 +58,7 @@ var defaultLLMProviders = []struct {
 				map[string]any{"model": "claude-opus-5", "inputPer1M": "5", "outputPer1M": "25", "contextWindow": 200000},
 				map[string]any{"model": "claude-sonnet-5-5", "inputPer1M": "2", "outputPer1M": "10", "cacheReadPer1M": "0.20", "contextWindow": 200000},
 				map[string]any{"model": "claude-sonnet-5", "inputPer1M": "2", "outputPer1M": "10", "cacheReadPer1M": "0.20", "contextWindow": 200000},
-				map[string]any{"model": "claude-haiku-5-5", "inputPer1M": "0.10", "outputPer1M": "0.50", "cacheReadPer1M": "0.01", "contextWindow": 200000},
+				map[string]any{"model": "claude-haiku-5-5", "inputPer1M": "0.10", "outputPer1M": "0.50", "cacheReadPer1M": "0.01", "contextWindow": 100000},
 				map[string]any{"model": "claude-haiku-4-5", "inputPer1M": "1", "outputPer1M": "5", "cacheReadPer1M": "0.10", "contextWindow": 200000},
 			},
 		},

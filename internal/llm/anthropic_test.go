@@ -465,6 +465,30 @@ func TestAnthropicMapsStopReasonAndCacheCounts(t *testing.T) {
 	}
 }
 
+// A negative count reads as none: the thread's tallies refuse a value below 0,
+// and a row the settle cannot write would lose the whole run's accounting.
+func TestAnthropicReadsANegativeCountAsNone(t *testing.T) {
+	srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+			"content": []any{map[string]any{"type": "text", "text": "x"}}, "stop_reason": "end_turn",
+			"usage": map[string]any{
+				"input_tokens": 10, "output_tokens": 3,
+				"cache_read_input_tokens": -5, "cache_creation_input_tokens": -2,
+			},
+		})
+	})
+	res, err := srv.client(t, nil).Complete(context.Background(), Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if *res.Usage != (Usage{PromptTokens: 10, CompletionTokens: 3}) {
+		t.Fatalf("usage = %+v", res.Usage)
+	}
+}
+
 // A context overflow is the one provider failure the loop can act on, so it
 // wraps ErrContextTooLong; a rate-limit refusal that shares its words does
 // not, and neither does any other error. The key is scrubbed first.

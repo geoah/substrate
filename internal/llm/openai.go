@@ -311,7 +311,8 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 }
 
 // oneShot reads body, the reply the bodyDoer captured, for the cache counts
-// the SDK's Usage leaves out.
+// the SDK's Usage leaves out (cache_creation_tokens and the two top-level
+// fields; it parses cached_tokens, but the raw reply carries all four).
 func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest, body *[]byte) (*Result, error) {
 	resp, err := c.client.CreateChatCompletion(ctx, oreq)
 	if err != nil {
@@ -415,8 +416,9 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	}, nil
 }
 
-// openaiCacheUsage is the part of a reply's usage the SDK does not parse.
-// LiteLLM writes each cache count twice: inside prompt_tokens_details
+// openaiCacheUsage is a reply's cache counts, read from the raw reply. The
+// SDK parses cached_tokens but not cache_creation_tokens or the two
+// top-level fields, so all four are read here in one place. LiteLLM writes each cache count twice: inside prompt_tokens_details
 // (cached_tokens, cache_creation_tokens) and at the top level
 // (cache_read_input_tokens, cache_creation_input_tokens), the same two
 // numbers (calculate_usage in litellm/llms/anthropic/chat/transformation.py).
@@ -439,7 +441,9 @@ type openaiCacheUsage struct {
 // it. The details form wins over the top-level form and the two are never
 // summed. A reply that does not parse leaves both cache counts at 0, so an
 // odd gateway prices its input at the full rate and never loses the answer.
-// The counts are clamped so read plus write never exceeds prompt_tokens.
+// A reply whose read plus write exceeds prompt_tokens cannot be counting them
+// inside it, so there the counts are added to prompt_tokens, as on the
+// anthropic wire.
 func openaiUsage(prompt, completion int, raw []byte) *Usage {
 	u := &Usage{PromptTokens: prompt, CompletionTokens: completion}
 	var doc openaiCacheUsage
@@ -461,8 +465,9 @@ func openaiUsage(prompt, completion int, raw []byte) *Usage {
 	}
 	read := pick(dRead, doc.Usage.CacheReadInputTokens)
 	write := pick(dWrite, doc.Usage.CacheCreationInputTokens)
-	read = min(read, max(0, prompt))
-	write = min(write, max(0, prompt-read))
+	if read+write > prompt {
+		u.PromptTokens = max(0, prompt) + read + write
+	}
 	u.CacheReadTokens, u.CacheWriteTokens = read, write
 	return u
 }
