@@ -139,13 +139,15 @@ function RecordViewSection({
       : drawn
   // A view whose every block hides when empty (a table that holds rows
   // on a few records of its kind, a vendor's stats and trends on the
-  // records another source wrote) stays hidden until one of them draws
-  // something, so the other records' pages are unchanged.
+  // records another source wrote, a chart of samples a source never
+  // writes) stays hidden until one of them draws something, so the other
+  // records' pages are unchanged.
   const hiders = sections.flatMap(({ section, i }) =>
     "block" in section &&
     (section.block.type === "table" ||
       section.block.type === "stats" ||
-      section.block.type === "trend") &&
+      section.block.type === "trend" ||
+      section.block.type === "chart") &&
     section.block.empty === "hide"
       ? [i]
       : []
@@ -223,8 +225,8 @@ function BlockView({
 }: {
   block: Block
   ctx: BlockContext
-  /** Said by a table, stats or trend block that hides when empty: whether
-   * it drew nothing. */
+  /** Said by a chart, table, stats or trend block that hides when empty:
+   * whether it drew nothing. */
   onEmpty: (hidden: boolean) => void
 }) {
   switch (block.type) {
@@ -237,7 +239,7 @@ function BlockView({
     case "related":
       return <Related block={block} ctx={ctx} />
     case "chart":
-      return <ChartBlockView block={block} ctx={ctx} />
+      return <ChartBlockView block={block} ctx={ctx} onEmpty={onEmpty} />
     case "spans":
       return <SpansBlockView block={block} ctx={ctx} />
     case "stats":
@@ -366,7 +368,7 @@ function Referencing({
       {page.isPending ? (
         <Loading />
       ) : page.error ? (
-        <Failed error={page.error} />
+        <Failed error={page.error} onRetry={() => void page.refetch()} />
       ) : (
         <RelatedList
           paths={page.data.records.map((r) => `${r.kind}/${r.id}`)}

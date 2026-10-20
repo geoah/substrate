@@ -417,10 +417,17 @@ Under the properties, in order:
   source and thing it is about as record mentions, the form, the statistic
   and period of a vendor summary, when (one time where `endsAt` equals
   `at`), the revision and the record that delivered it. Where the value and
-  the bounds of its first reference range are plain numbers in one unit, a
-  bar labelled **Against its range** draws the value against that range; a
-  range in another unit, or a value or bound with a comparator (`<5`), is
-  said in words alone. A trace (the `packed` variant, told apart by declaring
+  the bounds of its first reference range are plain numbers, the bounds in
+  the value's unit or another unit of its measure (converted), a bar
+  labelled **Against its range** draws the value against that range: a
+  one-sided range ("under 3") from zero where no number is negative, the
+  range in the good tone unless the range's own `tone` names another
+  (`poor` for a cut-off past which a value is abnormal), a dashed line at
+  each bound and each bound printed where it falls, in the digits it was
+  written with. Two bounds too close to print apart print once, together
+  ("3.9 to 5.6 mmol/L"), and the zero is left out where it would run into a
+  bound. A range in another measure (mg/dL against mmol/L), or a value or
+  bound with a comparator (`<5`), is said in words alone. A trace (the `packed` variant, told apart by declaring
   `values`) draws its values over `[at, endsAt)` as a line broken wherever
   two values sit further apart than its `hold`, its managed `stats` as
   labelled values, and every value with its time in a table fifty to a
@@ -524,7 +531,10 @@ properties the sheet folds away because a section shows them. Then come its
   are labelled value ranges drawn behind the line, each with a `tone`
   (`good`, `fair`, `poor` or `none`), a `low` it includes and a `high` it
   excludes (an absent bound is open), and a `metric` where it belongs to one
-  metric of the block alone. An amount draws bars, a gauge a line.
+  metric of the block alone. An amount draws bars, a gauge a line. With
+  `empty: hide` a chart none of whose metrics was measured over the window
+  is left out, as a night's heart rate is on a sleep a source scored
+  without samples; a zoom never hides it.
 - **spans**: a coded amount metric's values over the window as spans, one
   row per code in the order `codes` lists them (a code it does not list goes
   last), each under its `label`. A metric of any other form, or one listing
@@ -556,7 +566,17 @@ properties the sheet folds away because a section shows them. Then come its
   days read by a reducer that adds up over time (`sum`, `count`,
   `timeInState`, `durationIn`) is compared with that many average days: a
   week's time open against seven days at the daily average. A record's own
-  window is never scaled, since an open one runs to now. A change of a value in `%`
+  window is never scaled, since an open one runs to now. A record's own
+  window still running (`open`, the current WHOOP cycle) holds part of its
+  whole: a tile whose metric grows over it (strain, calories) says its
+  value "so far" and compares it with nothing. A metric whose record places
+  a span by its end (`bucketPlace: end`, a night's recovery or HRV) is whole
+  once the night ends and is compared as on a closed window. Such a metric
+  lands a night on the day it ends, so its baseline days end at the start
+  of that day: the window's last day, or for a window running past it (a
+  cycle opening with a night), the day of the window's start plus 12 hours.
+  A sleep from 23:50 compares with the night before it as one from 00:20
+  does. A change of a value in `%`
   reads in points ("+9 points vs the 30-day average of 42 %"), any other
   with its relative change beside it. `better`
   (`higher` or `lower`) colours the change, and a tile in a band names it.
@@ -571,19 +591,31 @@ properties the sheet folds away because a section shows them. Then come its
   value is left out.
 - **table**: records of one `kind` (a reference to its declaration) as rows,
   with the `columns` it names. The rows are the records pointing here
-  through `via`, those holding the same value as this record in `sameAs`, or,
+  through `via`, those holding the same values as this record in every
+  property `sharing` lists (such as `metric` and `channel`; a property this
+  record holds none of narrows to the records holding none either), or,
   with `inWindow`, those starting inside the window; exactly one of the three.
+  `sameAs` is the older spelling of `sharing` with one name, and reads as
+  it ([0184](decisions/0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md)).
   A kind binding core's `observed(single)` shows time, value, flag, reference
   range and source where `columns` is absent, and `chart` draws the values
-  over time as points, each against its own reference range. `nest` names a
+  over time as points, each against its own reference range in that range's
+  tone. The chart draws in the first result's unit and converts a result in
+  another unit of the same measure (g beside kg); one in another measure,
+  or one with a unit under a first result with none, is listed and not
+  drawn. A result written as a bound (`<0.5`) draws as a
+  triangle toward its open side, joined to no other. Results of several
+  channels (a DXA scan's trunk and arms) draw one line each, the channel
+  named in the tooltip; among the readings of one instant the pointer's
+  height picks one, and its line is drawn in the text colour. `nest` names a
   reference property of the listed kind: a row naming another listed row
   sits under it, as a lab's converted twin does, and its point is hollow.
   A float or decimal column shows two fraction digits at most (`8.3985` as
   `8.4`), the stored digits on hover.
   `orderBy` (default `at:desc`) and `limit` (default 25) shape the read; with
   `empty: hide` a table with no rows is left out, and a view whose every
-  block is a table, stats or trend block under `empty: hide` stays hidden
-  until one of them draws something.
+  block is a chart, table, stats or trend block under `empty: hide` stays
+  hidden until one of them draws something.
 - **breakdown**: bars from the record's own properties, each as its share
   of the `total` property or of the bars' sum: a keyed map (`property`, such
   as a workout's `zoneDurations`, with `keys` giving the order and labels) or
@@ -603,9 +635,16 @@ A `baseline` repeats every value read once, by the calendar day over the
 days before the window, a gauge's `first` or `last` as `avg`. A chart splits its metrics over more reads only
 where their buckets together pass the server's bucket budget. The server
 serves two aggregate reads at a time per process, so a page queues the rest:
-the healthwhoop sample's cycle page costs eight, and
+the healthwhoop sample's cycle page costs eight (seven while the cycle is
+open, which reads no baseline for the values still growing), and
 `web/console/src/components/record-view/shipped-reads.test.tsx` holds every
 shipped view to its count. Tables issue one list read and breakdowns none.
+A read the server turns away while its aggregate slots are busy (`503
+unavailable`) is asked again twice, each after the `Retry-After` the server
+names; one turned away while the server re-derives an index is not, nor
+one whose `Retry-After` is longer than five seconds (a refusal only a
+restart lifts names 30). A
+block whose read failed says why, with **Read again**.
 
 The chart and spans blocks share one time axis: a zoom in one moves every
 line and spans block of the view, and the bars and totals stay whole. **Open
@@ -619,7 +658,8 @@ without both bounds or with its low not under its high, and a percentile
 without its rank. It says so too for a stats or trend item naming none or
 two of `metric`, `metricProperty` and `property`, a `timeInState` item
 without its `code`, a `from` outside its three words, a table naming none or
-two of `via`, `sameAs` and `inWindow`, and a breakdown naming both or
+two of `via`, `sharing` (or `sameAs`) and `inWindow`, or both `sharing`
+and `sameAs`, and a breakdown naming both or
 neither of `property` and `items`. A block that reads a window in a view
 that binds none says it has nothing to read. On a record that does not hold
 the window the view binds (no end yet without `open`, or an end before its

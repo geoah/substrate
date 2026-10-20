@@ -22,6 +22,7 @@ import {
   judgementWords,
   readingText,
   recordTimelineSearch,
+  resultReading,
   reducerKey,
   reducerChoiceWords,
   reducerLabel,
@@ -459,5 +460,63 @@ describe("a lab result's flag and range in words", () => {
     expect(
       judgementWords(undefined, [{ low: mg("3.14159"), high: mg("5.6789") }])
     ).toBe("range 3.14 to 5.68 mg/dL")
+  })
+})
+
+describe("a result read against its range", () => {
+  const q = (value: string, unit: string, comparator?: string) => ({
+    value,
+    unit,
+    ...(comparator ? { comparator } : {}),
+  })
+
+  it("keeps a bound's comparator and the flag's tone", () => {
+    expect(
+      resultReading({
+        value: q("0.5", "ng/mL", "<"),
+        interpretation: [{ code: "L" }],
+      })
+    ).toEqual({ value: 0.5, unit: "ng/mL", comparator: "<", tone: "poor" })
+    expect(resultReading({ text: "trace" })).toBeUndefined()
+  })
+
+  it("reads a range as the lab's normal one unless it names a tone", () => {
+    expect(
+      resultReading({
+        value: q("2.8", "ng/mL"),
+        referenceRanges: [{ high: q("3", "ng/mL") }, { low: q("9", "ng/mL") }],
+      })?.range
+    ).toEqual({ high: 3, label: "reference range", tone: "good" })
+    expect(
+      resultReading({
+        value: q("5", "ng/mL"),
+        referenceRanges: [{ low: q("4", "ng/mL"), text: "high", tone: "poor" }],
+      })?.range
+    ).toEqual({ low: 4, label: "high", tone: "poor" })
+  })
+
+  it("converts a bound within its measure and drops a range of another", () => {
+    expect(
+      resultReading({
+        value: q("3.6", "mmol/L"),
+        referenceRanges: [
+          { low: q("2600", "umol/L"), high: q("3.4", "mmol/L") },
+        ],
+      })?.range
+    ).toMatchObject({ low: 2.6, high: 3.4 })
+    expect(
+      resultReading({
+        value: q("3.6", "mmol/L"),
+        referenceRanges: [{ high: q("60", "mg/dL") }],
+      })?.range
+    ).toBeUndefined()
+  })
+
+  it("reads a value into another unit of its measure, or not at all", () => {
+    expect(
+      resultReading({ value: q("450", "g"), measure: "mass" }, "kg")?.value
+    ).toBeCloseTo(0.45, 6)
+    expect(resultReading({ value: q("1.2", "ug/L") }, "ng/mL")?.value).toBe(1.2)
+    expect(resultReading({ value: q("92", "mg/dL") }, "mmol/L")).toBeUndefined()
   })
 })

@@ -19,4 +19,6 @@ data:
   # 2 adds the stats, trend, table, lanes and breakdown blocks, the chart's
   # from, statistic, channel and bands, and the window's open, last, aboutSelf
   # and sourceSelf, with start and end optional (decision record 0175).
-  version: 2
+  # 3 adds the chart's empty and the table's sharing list beside the
+  # deprecated sameAs (decision record 0184).
+  version: 3

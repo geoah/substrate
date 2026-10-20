@@ -1,0 +1,822 @@
+# How the console lays out the record page of one kind: a list of sections,
+# each holding one block, rendered above the generic property sheet. A record
+# page with no view is the generic page.
+#
+# A BLOCK IS A FIELD OF A SECTION. The object grammar has no union, so a
+# section declares one optional field per block type and the console renders
+# the one that is set. A new block type is a new field here, which is an
+# upgrade of this package. `lanes` is declared ahead of the console that draws
+# it, so the next console needs no other upgrade; this one shows it as the
+# notice it shows for a block it does not draw (decision record 0175).
+#
+# THREE LOADER RULES BOUND THE SHAPE. A field nests four levels at most and a
+# level-4 field is a scalar, so a block's list holds scalars only and `bands`
+# sits at block level with a `metric` scope. `title`, `at`, `endsAt` and
+# `dueAt` are reserved field names, so a lanes row's title property is
+# `spanTitle`. An enum value is one lowercase word, so `from` and `reducer`
+# are strings the console checks.
+#
+# RULES THE GRAMMAR CANNOT STATE, which the console checks and shows as a
+# notice where the section would be, as it does a block it does not know:
+# - a section holds exactly one block;
+# - a related block names an outgoing `property`, or a `kind` and the `via`
+#   property on it, and not both;
+# - a durationIn reducer names `low` and `high`, low under high;
+# - a percentile reducer names `rank`, a timeInState reducer a `code`;
+# - `from` is raw, summaries or prefer-raw;
+# - a stats item names exactly one of `metric`, `metricProperty` and
+#   `property`, a trend item one of `metric` and `metricProperty`;
+# - a table names exactly one of `via`, `sameAs` and `inWindow`;
+# - a breakdown names `property` or `items`, not both;
+# - a lanes row names a `kind` or a `metric`, not both;
+# - a window names `about` or `aboutSelf`, `source` or `sourceSelf`, and
+#   `start` or `last`, never both of a pair.
+#
+# The blocks read the observations the sample packages declare, over the
+# window the view binds: the names of the record's own properties that hold
+# its start, its end, who it is about and what recorded it, or a `last` that
+# ends now. Names, never expressions. They name each metric by a reference to
+# the metric's record, never by its id alone: a record is its kind and its
+# id, so two metric kinds may each hold `health/heart_rate`, and the import's
+# rehoming moves a reference with the metric kind it names.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/console/recordview
+data:
+  authority: substrate.reamde.dev
+  package: console
+  description: >-
+    How the console lays out the record page of one kind: an ordered list
+    of sections of headings, text, chosen properties, related records and
+    charts, tiles, trends and tables of what was measured during the record.
+    A sample ships its views as records, and the owner edits them.
+  purpose: internal
+  names:
+    singular: recordview
+  displayTemplate: "{name}"
+  properties:
+    # A reference to the kind's DECLARATION rather than a string: the import's
+    # rehoming rewrites it with the kind it names, a filter on it reads the
+    # views of one kind, and the kind's page lists its views as `recordViews`.
+    # A dangling one is admitted, as every reference is, and lays out nothing.
+    appliesTo:
+      type: reference
+      kind: substrate.reamde.dev/core/kind
+      required: true
+      inverse: recordViews
+      inverseDescription: the record views that lay out this kind's record
+        pages
+      description: the kind whose record pages this view lays out
+    name:
+      type: string
+      description: the view's heading, shown above its sections
+    intro:
+      type: markdown
+      description: a short text under the heading
+    # The record's own properties the blocks read, by name.
+    window:
+      type: object
+      description: which of the record's own properties hold the window the
+        blocks read, who it is about and what recorded it; a record with no
+        window of its own reads the last `last` of time
+      fields:
+        start:
+          type: string
+          description: the property holding when the record starts, such as
+            at
+        end:
+          type: string
+          description: the property holding when the record ends, such as
+            endsAt; with open, a record whose end is unset is read up to now
+        open:
+          type: bool
+          default: false
+          description: a record whose end property is unset is read up to
+            now, and the page says so far
+        last:
+          type: duration
+          description: for a record with no start, the window ends now and
+            is this long, such as P1D or P7D
+        about:
+          type: string
+          description: the reference property naming who the record is about;
+            a record that names nobody reads the owner's observations
+        aboutSelf:
+          type: bool
+          default: false
+          description: the record itself is who the observations are about,
+            as a room or a car is
+        source:
+          type: string
+          description: the reference property naming the device or app that
+            recorded the record
+        sourceSelf:
+          type: bool
+          default: false
+          description: the record itself is the source that recorded them,
+            as a device page is
+    fold:
+      type: string
+      repeated: true
+      description: properties the generic sheet folds away, because a section
+        of the view shows them
+    sections:
+      type: object
+      repeated: true
+      description: the view's sections in page order; each holds exactly one
+        block, which the console checks
+      fields:
+        heading:
+          type: object
+          description: a section heading with an optional line under it
+          fields:
+            text:
+              type: string
+              required: true
+              description: the heading
+            note:
+              type: string
+              description: the line under the heading
+        text:
+          type: object
+          description: a paragraph
+          fields:
+            text:
+              type: markdown
+              required: true
+              description: the paragraph, in markdown
+        properties:
+          type: object
+          description: chosen properties of the record, in order
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            list:
+              type: object
+              repeated: true
+              required: true
+              description: the properties to show, in order
+              fields:
+                property:
+                  type: string
+                  required: true
+                  description: the property's name
+                label:
+                  type: string
+                  description: the label shown instead of the property's own
+        related:
+          type: object
+          description: records linked by an outgoing reference property, or
+            records of a kind that reference this one through via; one of
+            the two, which the console checks
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            property:
+              type: string
+              description: an outgoing reference property of this record
+            # A reference to the kind's declaration, as appliesTo is: the
+            # import rehomes it, and a pointer at any other kind's record is
+            # refused. A bare word reads as the id of a declaration nobody
+            # made, which the console shows as a notice.
+            kind:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              description: a kind whose records reference this one; give via
+                with it
+            via:
+              type: string
+              description: the reference property on that kind that points
+                here
+            show:
+              type: enum
+              default: list
+              values:
+                - list
+                - count
+              description: a list of the records or their count
+            limit:
+              type: int
+              min: 1
+              max: 100
+              description: the most records a list shows
+        chart:
+          type: object
+          description: what was measured during the record, read over its
+            window, one chart per metric
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            metrics:
+              type: reference
+              trait: substrate.reamde.dev/core/metric
+              repeated: true
+              required: true
+              description: the metric records to read, one chart each
+            # The aggregate read's reducer names (avg, min, max, durationIn and
+            # the rest): a string, because an enum value is one lowercase word
+            # and durationIn is camelCase. The console refuses one it does not
+            # know, as a notice.
+            reducers:
+              type: object
+              repeated: true
+              required: true
+              description: the reducers to read, in order; a line draws the
+                first, with min and max as its band
+              fields:
+                reducer:
+                  type: string
+                  required: true
+                  description: the aggregate read's reducer, such as avg or
+                    durationIn
+                low:
+                  type: float
+                  description: a durationIn band's lower bound in the metric's
+                    unit, required for durationIn and under high
+                high:
+                  type: float
+                  description: a durationIn band's upper bound in the metric's
+                    unit, required for durationIn
+                rank:
+                  type: float
+                  min: 0
+                  max: 1
+                  description: a percentile's rank, such as 0.9, required
+                    for percentile
+                label:
+                  type: string
+                  description: what the value is called, such as Zone 2
+            bucket:
+              type: enum
+              default: auto
+              values:
+                - auto
+                - whole
+                - minute
+                - hour
+                - day
+              description: auto sizes the buckets to the window and draws
+                a line; whole reads one value per reducer and draws bars
+            unit:
+              type: string
+              description: the unit the read answers in, such as min for a
+                durationIn
+            sources:
+              type: enum
+              default: prefer
+              values:
+                - prefer
+                - only
+                - priority
+              description: prefer reads the record's own source first, only
+                reads it alone, priority reads the sources' priorities
+            from:
+              type: string
+              default: raw
+              description: where the read takes its values, raw, summaries
+                or prefer-raw, which the console checks
+            statistic:
+              type: string
+              description: the one summary statistic a summaries read keeps,
+                such as vendor, avg or max
+            channel:
+              type: string
+              description: the channel the reads keep; none keeps the streams
+                naming no channel, and absent keeps every channel
+            bands:
+              type: object
+              repeated: true
+              description: labelled value ranges in the block's answer unit,
+                drawn beside its values; a band naming a metric applies to
+                that metric alone
+              fields:
+                low:
+                  type: float
+                  description: the lower bound, inclusive; absent is open
+                high:
+                  type: float
+                  description: the upper bound, exclusive; absent is open
+                label:
+                  type: string
+                  description: what the band is called, such as Optimal
+                tone:
+                  type: enum
+                  default: none
+                  values:
+                    - good
+                    - fair
+                    - poor
+                    - none
+                  description: how the band is coloured and worded
+                metric:
+                  type: reference
+                  trait: substrate.reamde.dev/core/metric
+                  description: the one metric of the block the band applies
+                    to; absent applies to every metric of the block
+        spans:
+          type: object
+          description: a coded amount metric over the record's window drawn
+            as spans, one row per code, such as sleep stages; the console
+            shows any other form as a notice
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            metric:
+              type: reference
+              trait: substrate.reamde.dev/core/metric
+              required: true
+              description: the coded amount metric record to read
+            codes:
+              type: object
+              repeated: true
+              description: the codes top to bottom, each with an optional
+                label; a code not listed goes last
+              fields:
+                code:
+                  type: string
+                  required: true
+                  description: the code
+                label:
+                  type: string
+                  description: what the code is called
+            totals:
+              type: bool
+              default: true
+              description: whether the time in each code is shown under the
+                spans
+            sources:
+              type: enum
+              default: only
+              values:
+                - prefer
+                - only
+                - priority
+              description: prefer reads the record's own source first, only
+                reads it alone, priority reads the sources' priorities
+        stats:
+          type: object
+          description: tiles, one per item, each one reducer of one metric
+            over the window or one property of the record, with a delta against
+            the days before the window
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            baseline:
+              type: int
+              min: 0
+              max: 400
+              default: 0
+              description: how many days before the window each metric item
+                is compared against, as the average, lowest and highest of
+                its daily values; 0 compares against nothing
+            channel:
+              type: string
+              description: the channel the reads keep; none keeps the streams
+                naming no channel, and absent keeps every channel
+            sources:
+              type: enum
+              default: prefer
+              values:
+                - prefer
+                - only
+                - priority
+              description: prefer reads the record's own source first, only
+                reads it alone, priority reads the sources' priorities
+            bands:
+              type: object
+              repeated: true
+              description: labelled value ranges in the block's answer unit,
+                drawn beside its values; a band naming a metric applies to
+                that metric alone
+              fields:
+                low:
+                  type: float
+                  description: the lower bound, inclusive; absent is open
+                high:
+                  type: float
+                  description: the upper bound, exclusive; absent is open
+                label:
+                  type: string
+                  description: what the band is called, such as Optimal
+                tone:
+                  type: enum
+                  default: none
+                  values:
+                    - good
+                    - fair
+                    - poor
+                    - none
+                  description: how the band is coloured and worded
+                metric:
+                  type: reference
+                  trait: substrate.reamde.dev/core/metric
+                  description: the one metric of the block the band applies
+                    to; absent applies to every metric of the block
+            empty:
+              type: enum
+              default: say
+              values:
+                - say
+                - hide
+              description: whether a block where no item holds a value says
+                so or is left out
+            items:
+              type: object
+              repeated: true
+              required: true
+              description: the tiles in order
+              fields:
+                metric:
+                  type: reference
+                  trait: substrate.reamde.dev/core/metric
+                  description: the metric record to read
+                metricProperty:
+                  type: string
+                  description: instead of metric, the record's reference property
+                    holding the metric to read, such as metric on a lab result
+                property:
+                  type: string
+                  description: instead of a metric, a property of the record
+                    shown as the tile's value; a dotted path reads into a
+                    keyed map
+                reducer:
+                  type: string
+                  description: the aggregate read's reducer, such as last,
+                    sum, avg, increase or timeInState; last where absent
+                from:
+                  type: string
+                  default: raw
+                  description: where the read takes its values, raw, summaries
+                    or prefer-raw, which the console checks
+                statistic:
+                  type: string
+                  description: the one summary statistic a summaries read
+                    keeps, such as vendor, avg or max
+                code:
+                  type: string
+                  description: the code a coded metric's value is taken for,
+                    such as open or rem
+                rank:
+                  type: float
+                  min: 0
+                  max: 1
+                  description: a percentile's rank, such as 0.9
+                low:
+                  type: float
+                  description: a durationIn band's lower bound, under high
+                high:
+                  type: float
+                  description: a durationIn band's upper bound
+                unit:
+                  type: string
+                  description: the unit the value answers in, such as kcal
+                    or h
+                label:
+                  type: string
+                  description: the tile's heading; the metric's name or the
+                    property's label where absent
+                show:
+                  type: enum
+                  default: number
+                  values:
+                    - number
+                    - dial
+                    - bar
+                  description: a number with its delta, a dial between min
+                    and max with the bands as arcs, or a bar with the baseline
+                    range behind the value
+                min:
+                  type: float
+                  description: a dial's or bar's lower end; 0 where absent
+                max:
+                  type: float
+                  description: a dial's or bar's upper end; the largest band
+                    bound or value where absent
+                better:
+                  type: enum
+                  default: none
+                  values:
+                    - higher
+                    - lower
+                    - none
+                  description: which direction of a change is good; a delta
+                    is coloured only where it is set
+                precision:
+                  type: int
+                  min: 0
+                  max: 12
+                  description: decimals shown; the metric's displayPrecision
+                    where absent
+        trend:
+          type: object
+          description: strips, one per item, of a metric bucketed over the
+            buckets ending with the one that holds the record, that bucket
+            highlighted
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            span:
+              type: int
+              min: 2
+              max: 400
+              default: 30
+              description: how many buckets the strip covers, the record's
+                last
+            bucket:
+              type: enum
+              default: day
+              values:
+                - day
+                - week
+                - month
+              description: the calendar bucket, in the reader's zone
+            rolling:
+              type: int
+              min: 0
+              max: 400
+              default: 0
+              description: draw the average over this many buckets, through
+                the bucket before each, as a dashed line; 0 draws none
+            channel:
+              type: string
+              description: the channel the reads keep; none keeps the streams
+                naming no channel, and absent keeps every channel
+            sources:
+              type: enum
+              default: prefer
+              values:
+                - prefer
+                - only
+                - priority
+              description: prefer reads the record's own source first, only
+                reads it alone, priority reads the sources' priorities
+            bands:
+              type: object
+              repeated: true
+              description: labelled value ranges in the block's answer unit,
+                drawn beside its values; a band naming a metric applies to
+                that metric alone
+              fields:
+                low:
+                  type: float
+                  description: the lower bound, inclusive; absent is open
+                high:
+                  type: float
+                  description: the upper bound, exclusive; absent is open
+                label:
+                  type: string
+                  description: what the band is called, such as Optimal
+                tone:
+                  type: enum
+                  default: none
+                  values:
+                    - good
+                    - fair
+                    - poor
+                    - none
+                  description: how the band is coloured and worded
+                metric:
+                  type: reference
+                  trait: substrate.reamde.dev/core/metric
+                  description: the one metric of the block the band applies
+                    to; absent applies to every metric of the block
+            empty:
+              type: enum
+              default: say
+              values:
+                - say
+                - hide
+              description: whether a block where no strip holds a value says
+                so or is left out
+            items:
+              type: object
+              repeated: true
+              required: true
+              description: the strips in order
+              fields:
+                metric:
+                  type: reference
+                  trait: substrate.reamde.dev/core/metric
+                  description: the metric record to read
+                metricProperty:
+                  type: string
+                  description: instead of metric, the record's reference property
+                    holding the metric to read, such as metric on a lab result
+                reducer:
+                  type: string
+                  description: the reducer per bucket, such as avg, sum or
+                    increase; last where absent
+                from:
+                  type: string
+                  default: raw
+                  description: where the read takes its values, raw, summaries
+                    or prefer-raw, which the console checks
+                statistic:
+                  type: string
+                  description: the one summary statistic a summaries read
+                    keeps, such as vendor, avg or max
+                code:
+                  type: string
+                  description: the code a coded metric's value is taken for,
+                    such as open or rem
+                rank:
+                  type: float
+                  min: 0
+                  max: 1
+                  description: a percentile's rank, such as 0.9
+                low:
+                  type: float
+                  description: a durationIn band's lower bound, under high
+                high:
+                  type: float
+                  description: a durationIn band's upper bound
+                unit:
+                  type: string
+                  description: the unit the values answer in, such as kcal
+                    or h
+                label:
+                  type: string
+                  description: the strip's heading; the metric's name where
+                    absent
+                show:
+                  type: enum
+                  default: auto
+                  values:
+                    - auto
+                    - line
+                    - bars
+                  description: auto draws by the metric's form and the reducer
+                better:
+                  type: enum
+                  default: none
+                  values:
+                    - higher
+                    - lower
+                    - none
+                  description: which direction of a change is good; a delta
+                    is coloured only where it is set
+        table:
+          type: object
+          description: records of one kind as rows with chosen columns, and
+            for an observed single-value kind their values over time with
+            each result's own reference range
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            # A reference to the kind's declaration, as related's kind is.
+            kind:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              required: true
+              description: the kind whose records are listed
+            via:
+              type: string
+              description: the reference property on that kind that points
+                at this record, such as report or metric
+            sameAs:
+              type: string
+              description: a property both this record and the listed kind
+                hold; lists the records whose value equals this record's
+            inWindow:
+              type: bool
+              default: false
+              description: lists the records that start inside the view's
+                window
+            columns:
+              type: string
+              repeated: true
+              description: the properties shown as columns, in order; absent
+                shows a default set for the kind
+            orderBy:
+              type: string
+              description: the list read's order, such as at:asc; at:desc
+                where absent
+            limit:
+              type: int
+              min: 1
+              max: 100
+              default: 25
+              description: the most rows shown
+            chart:
+              type: bool
+              default: false
+              description: draw the values over time as points, each with
+                its own reference range, above the rows; observed single-value
+                kinds only
+            nest:
+              type: string
+              description: a reference property of the listed kind; a row
+                whose value names another listed row is shown under it, its
+                point hollow
+            empty:
+              type: enum
+              default: say
+              values:
+                - say
+                - hide
+              description: whether a block with no rows says so or is left
+                out
+        # Declared ahead of the console that draws it: this console shows a notice.
+        lanes:
+          type: object
+          description: rows of spans on the view's time axis, each the records
+            of a kind inside the window or pointing here, or the held states
+            of a coded metric
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            sources:
+              type: enum
+              default: only
+              values:
+                - prefer
+                - only
+                - priority
+              description: as on spans, for the metric rows
+            rows:
+              type: object
+              repeated: true
+              required: true
+              description: the rows top to bottom
+              fields:
+                kind:
+                  type: reference
+                  kind: substrate.reamde.dev/core/kind
+                  description: a kind whose records starting inside the window
+                    are the row's spans, each from its at to its endsAt
+                via:
+                  type: string
+                  description: with kind, the reference property on it that
+                    points here; the row is then those records whatever their
+                    time
+                metric:
+                  type: reference
+                  trait: substrate.reamde.dev/core/metric
+                  description: a coded metric whose values are the row's spans,
+                    each held to the next value or its hold
+                label:
+                  type: string
+                  description: the row's name; the kind's or the metric's
+                    where absent
+                # title is reserved for every field, so the span's is spanTitle.
+                spanTitle:
+                  type: string
+                  description: a property of the kind whose value names each
+                    span, such as sport; the record's title where absent
+                limit:
+                  type: int
+                  min: 1
+                  max: 500
+                  default: 100
+                  description: the most records or values one row reads
+        breakdown:
+          type: object
+          description: bars from the record's own properties, a keyed map
+            or a list of properties, each as its share of a total property;
+            reads nothing
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            property:
+              type: string
+              description: a keyed property of the record, such as zoneDurations;
+                one bar per key
+            keys:
+              type: object
+              repeated: true
+              description: the keys top to bottom with their labels; a key
+                not listed goes last
+              fields:
+                key:
+                  type: string
+                  required: true
+                  description: the key in the map
+                label:
+                  type: string
+                  description: what the key is called
+            items:
+              type: object
+              repeated: true
+              description: instead of property, scalar properties of the record,
+                one bar each
+              fields:
+                property:
+                  type: string
+                  required: true
+                  description: the property's name
+                label:
+                  type: string
+                  description: the label shown instead of the property's own
+            total:
+              type: string
+              description: the property each bar is a share of, such as timeInBed;
+                the bars' sum where absent

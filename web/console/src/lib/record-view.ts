@@ -34,6 +34,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import { groupDigits, isTimeUnit, roundDigits } from "@/lib/units"
 import {
   addressValue,
+  bandedReducer,
   DEFAULT_PRECISION,
   NONE,
   observedKinds,
@@ -215,6 +216,9 @@ export interface ChartBlock {
   /** The channel kept; `none` keeps the streams naming no channel. */
   channel?: string
   bands: Band[]
+  /** Whether a chart none of whose metrics was measured over the window
+   * says so or is left out. */
+  empty: "say" | "hide"
 }
 
 export interface SpansBlock {
@@ -302,7 +306,10 @@ export interface TableBlock {
   /** The listed kind's identity. */
   kind: string
   via?: string
-  sameAs?: string
+  /** Properties this record and the listed records hold alike: a
+   * view's `sharing`, or its older one-name spelling `sameAs`. Empty where
+   * the table lists by `via` or `inWindow`. */
+  sharing: string[]
   inWindow: boolean
   columns: string[]
   orderBy: string
@@ -622,6 +629,8 @@ function chartOf(b: Bag): Section {
   if (rawStatistic) return { problem: rawStatistic }
   const bands = bandsOf(b.bands, "This chart")
   if (typeof bands === "string") return { problem: bands }
+  const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
+  if (!empty) return { problem: `This chart's empty is ${said(b.empty)}.` }
   const reducers: ChartReducer[] = []
   for (const r of bags(b.reducers)) {
     const read = chartReducerOf(r)
@@ -642,6 +651,7 @@ function chartOf(b: Bag): Section {
       ...(text(b.statistic) ? { statistic: text(b.statistic) } : {}),
       ...(text(b.channel) ? { channel: text(b.channel) } : {}),
       bands,
+      empty,
     },
   }
 }
@@ -881,11 +891,20 @@ function tableOf(b: Bag): Section {
   if (!kind) return { problem: `${what} names no kind.` }
   const via = text(b.via)
   const sameAs = text(b.sameAs)
+  const listed = texts(b.sharing)
+  if (sameAs && listed.length) {
+    return {
+      problem: `${what} names both sharing and its older spelling sameAs; it names one.`,
+    }
+  }
+  // `sameAs` is the one-name spelling a view written before `sharing`
+  // holds: it reads as a list of one.
+  const sharing = sameAs ? [sameAs] : [...new Set(listed)]
   const inWindow = b.inWindow === true
-  const named = [via, sameAs, inWindow].filter(Boolean).length
+  const named = [via, sharing.length > 0, inWindow].filter(Boolean).length
   if (named !== 1) {
     return {
-      problem: `${what} names ${named} of via, sameAs and inWindow; a table names exactly one.`,
+      problem: `${what} names ${named} of via, sharing and inWindow; a table names exactly one.`,
     }
   }
   const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
@@ -896,7 +915,7 @@ function tableOf(b: Bag): Section {
       label: text(b.label),
       kind,
       ...(via ? { via } : {}),
-      ...(sameAs ? { sameAs } : {}),
+      sharing,
       inWindow,
       columns: texts(b.columns),
       orderBy: text(b.orderBy) ?? "at:desc",
@@ -1046,6 +1065,13 @@ export interface Bound {
   observed: string[]
   /** The window is the view's `last`, ending now. */
   lastWindow?: boolean
+}
+
+/** Whether a Bound is a record's own window still running: an open record
+ * read up to now, which holds part of what its whole window will. A view's
+ * `last` ends now too, but it is a whole stretch of time. */
+export function partialWindow(b: Bound): boolean {
+  return b.open && !b.lastWindow
 }
 
 /** Whether a view binds a window at all: a start or a `last`. */
@@ -1299,6 +1325,47 @@ export function chartReads(
   return { reads, readOf }
 }
 
+/** The reducer a chart's line draws: the first in the metric's own unit,
+ * else the first named. */
+export function chartLineReducer(
+  reducers: readonly ChartReducer[]
+): ChartReducer {
+  return reducers.find((r) => bandedReducer(r.key)) ?? reducers[0]
+}
+
+/** One metric's rows of a chart's batched answer. A row naming no metric
+ * is the one metric's of a read of one. */
+export function chartMetricRows(
+  block: Pick<ChartBlock, "metrics">,
+  metric: string,
+  answer: AggregateResult | undefined
+): AggregateRow[] {
+  const alone = block.metrics.length === 1
+  return (answer?.rows ?? []).filter((r) =>
+    r.group?.metric ? sameRef(r.group.metric, metric) : alone
+  )
+}
+
+/** Whether a chart's answer holds a value of one metric: a line's reducer
+ * in some bucket, or for a `whole` chart any of its reducers. A chart
+ * under `empty: hide` none of whose metrics was measured is left out. */
+export function chartMeasured(
+  block: Pick<ChartBlock, "metrics" | "reducers" | "bucket">,
+  metric: string,
+  answer: AggregateResult | undefined
+): boolean {
+  const keys =
+    block.bucket === "whole"
+      ? block.reducers.map((r) => r.key)
+      : [chartLineReducer(block.reducers).key]
+  return chartMetricRows(block, metric, answer).some((row) =>
+    keys.some((k) => {
+      const v = rowValue(row, k)
+      return Boolean(v) && v!.value !== null
+    })
+  )
+}
+
 /** Whether an item naming a code reads grouped by code: every coded
  * reducer but a time in a state, which names its code in the reducer and
  * answers it in a bucket that held none of the state (as 0) only where the
@@ -1343,8 +1410,13 @@ function entrySpec(item: {
  * reads come first in `value`, then the coded ones; `itemRead[i]` is the
  * index in `value` of the read item i is answered by, -1 for a property
  * item or one whose metric `record` does not name. With `baseline > 0`,
- * `baseline[r]` repeats `value[r]` by the day over the `baseline` local
- * days before the window's day. Nothing is read without a window. */
+ * each value read's entries are read again by the day over the `baseline`
+ * local days before the window (`baselineRange`, which ends a day later for
+ * a metric placing a span by its end); `itemBaseline[i]` is the index in
+ * `baseline` of item i's read, -1 where it has none, as over a record's own
+ * window still running for a value that grows over it (`partialItem`), and
+ * `itemDays[i]` the days of that read item i compares with.
+ * Nothing is read without a window. */
 export function statsReads(
   b: Bound,
   block: StatsBlock,
@@ -1352,9 +1424,23 @@ export function statsReads(
   // The metric records: a coded metric's codes size its baseline's budget.
   infos: ReadonlyMap<string, MetricInfo> = new Map(),
   record?: SubstrateRecord
-): { value: AggregateRead[]; baseline: AggregateRead[]; itemRead: number[] } {
+): {
+  value: AggregateRead[]
+  baseline: AggregateRead[]
+  itemRead: number[]
+  itemBaseline: number[]
+  itemDays: (TimeRange | undefined)[]
+} {
   const itemRead = block.items.map(() => -1)
-  if (!b.window) return { value: [], baseline: [], itemRead }
+  if (!b.window) {
+    return {
+      value: [],
+      baseline: [],
+      itemRead,
+      itemBaseline: [...itemRead],
+      itemDays: block.items.map(() => undefined),
+    }
+  }
   type Entry = { ref: string; spec: StatItem; reducers: AggregateReducer[] }
   const families: Record<"plain" | "coded", Entry[][]> = {
     plain: [],
@@ -1409,8 +1495,118 @@ export function statsReads(
       ...(coded ? { groupBy: ["code"] } : {}),
     })
   )
-  if (block.baseline <= 0) return { value, baseline: [], itemRead }
-  const first = new Date(b.window.start)
+  // One baseline read per value read over the days its entries compare
+  // with. A metric placing a span by its end lands a night on the day it
+  // ends, so its days can end a day later than a start-placed metric's:
+  // the read covers both, and each item keeps its own days of it.
+  const baseline: AggregateRead[] = []
+  const baselineAt: number[] = reads.map(() => -1)
+  const daysOf = new Map<boolean, TimeRange>()
+  if (block.baseline > 0) {
+    for (const end of [false, true]) {
+      // A record's own window still running holds part of a day, or part
+      // of a cycle: against whole days before it, a value that grows over
+      // the window would mislead. A night's summary placed by its end is
+      // whole once the night ends, so it is compared.
+      if (!end && partialWindow(b)) continue
+      daysOf.set(end, baselineRange(b, block.baseline, end))
+    }
+    reads.forEach(({ entries, coded }, r) => {
+      const ranges = [
+        ...new Set(entries.map((e) => placesByEnd(infos, e.ref))),
+      ].flatMap((end) => daysOf.get(end) ?? [])
+      if (!ranges.length) return
+      const span = {
+        start: Math.min(...ranges.map((x) => x.start)),
+        end: Math.max(...ranges.map((x) => x.end)),
+      }
+      const days = Math.round((span.end - span.start) / 86_400_000)
+      // The server holds every entry's days, times its codes where grouped
+      // by code, to the read's budget together: past the default, the read
+      // asks for what its entries need, with a day more for a zone that is
+      // not the browser's.
+      const series = entries.reduce(
+        (n, e) =>
+          n + (coded ? Math.max(1, infos.get(e.ref)?.codeSet?.length ?? 1) : 1),
+        0
+      )
+      const buckets = (days + 1) * series
+      baselineAt[r] = baseline.length
+      baseline.push(
+        metricsReadOf(
+          b,
+          block.sources,
+          block.channel,
+          entriesOf(entries, true),
+          {
+            range: rangeOf(span),
+            bucket: bucketOf("day", timezone),
+            ...(coded ? { groupBy: ["code"] } : {}),
+            ...(buckets > MAX_BUCKETS
+              ? { budget: { maxBuckets: Math.min(MAX_BUCKETS_CAP, buckets) } }
+              : {}),
+          }
+        )
+      )
+    })
+  }
+  const itemBaseline = block.items.map((item, i) => {
+    const ref = itemMetric(item, record)
+    const days = ref ? daysOf.get(placesByEnd(infos, ref)) : undefined
+    return itemRead[i] < 0 || !days ? -1 : baselineAt[itemRead[i]]
+  })
+  const itemDays = block.items.map((item) => {
+    const ref = itemMetric(item, record)
+    return ref ? daysOf.get(placesByEnd(infos, ref)) : undefined
+  })
+  return { value, baseline, itemRead, itemBaseline, itemDays }
+}
+
+/** The rows of a baseline answer whose day lies in `days`, an item's own
+ * (`statsReads`'s `itemDays`): a row's middle decides, so a day bucketed
+ * in a zone not the browser's still falls on one side. */
+export function rowsInDays<T extends { start: string; end: string }>(
+  rows: readonly T[],
+  days?: TimeRange
+): T[] {
+  if (!days) return [...rows]
+  return rows.filter((row) => {
+    const mid = (Date.parse(row.start) + Date.parse(row.end)) / 2
+    return mid >= days.start && mid < days.end
+  })
+}
+
+/** Whether a metric's record places a value's span at its end. */
+function placesByEnd(
+  infos: ReadonlyMap<string, MetricInfo>,
+  ref: string
+): boolean {
+  return infos.get(ref)?.bucketPlace === "end"
+}
+
+/** Whether a stats item's value is part of what its window will hold: a
+ * record's own window still running (`partialWindow`), read from a metric
+ * that does not place a span by its end. A night's summary placed by its
+ * end (a recovery, last night's HRV) is whole once the night ends. */
+export function partialItem(b: Bound, info?: MetricInfo): boolean {
+  return partialWindow(b) && info?.bucketPlace !== "end"
+}
+
+/** The local days a stats baseline reads: `days` days ending at the start
+ * of the day the window's own value lands on. A start-placed metric lands
+ * on the window's first day, as does a view's `last` window. A metric
+ * placed by its end lands on the day its span ends: the window's last day,
+ * or for a window that runs past it (a cycle opening with a night), the
+ * day the night opening it ends, taken as the window's start plus 12
+ * hours. A sleep from 23:50 lands on the next day, so the night before it
+ * is among the days it compares with. */
+function baselineRange(b: Bound, days: number, end: boolean): TimeRange {
+  const w = b.window!
+  const at =
+    end && !b.lastWindow
+      ? Math.min(w.end - 1, w.start + 12 * 3_600_000)
+      : w.start
+  const first = new Date(at)
   const dayStart = new Date(
     first.getFullYear(),
     first.getMonth(),
@@ -1419,36 +1615,9 @@ export function statsReads(
   const from = new Date(
     first.getFullYear(),
     first.getMonth(),
-    first.getDate() - block.baseline
+    first.getDate() - days
   )
-  const range = rangeOf({ start: from.getTime(), end: dayStart.getTime() })
-  // The server holds every entry's days, times its codes where grouped by
-  // code, to the read's budget together: past the default, the read asks
-  // for what its entries need, with a day more for a zone that is not the
-  // browser's.
-  const baseline = reads.map(({ entries, coded }) => {
-    const series = entries.reduce(
-      (n, e) =>
-        n + (coded ? Math.max(1, infos.get(e.ref)?.codeSet?.length ?? 1) : 1),
-      0
-    )
-    const buckets = (block.baseline + 1) * series
-    return metricsReadOf(
-      b,
-      block.sources,
-      block.channel,
-      entriesOf(entries, true),
-      {
-        range,
-        bucket: bucketOf("day", timezone),
-        ...(coded ? { groupBy: ["code"] } : {}),
-        ...(buckets > MAX_BUCKETS
-          ? { budget: { maxBuckets: Math.min(MAX_BUCKETS_CAP, buckets) } }
-          : {}),
-      }
-    )
-  })
-  return { value, baseline, itemRead }
+  return { start: from.getTime(), end: dayStart.getTime() }
 }
 
 /** The reducer a stats item's baseline reads per day. A gauge's first or
@@ -1710,17 +1879,25 @@ export function tableParams(
   const properties: Record<string, Cond> = {}
   if (block.via) {
     properties[block.via] = { eq: `${record.kind}/${record.id}` }
-  } else if (block.sameAs) {
-    const v = record.properties?.[block.sameAs]
-    const value =
-      readReference(v)?.path ??
-      (typeof v === "number" || typeof v === "boolean" ? String(v) : undefined)
-    if (!value) {
-      return {
-        problem: `This table lists the records sharing this record's ${block.sameAs}, and this record holds none.`,
+  } else if (block.sharing.length) {
+    // A property this record holds narrows to its value; one it does not
+    // hold narrows to the records that hold none either, so a blood test
+    // (no channel) lists blood tests and a trunk result lists the trunk's.
+    let held = 0
+    for (const name of block.sharing) {
+      const value = sharedValue(record.properties?.[name])
+      if (value === undefined) {
+        properties[name] = { exists: false }
+      } else {
+        properties[name] = { eq: value }
+        held++
       }
     }
-    properties[block.sameAs] = { eq: value }
+    if (!held) {
+      return {
+        problem: `This table lists the records sharing this record's ${listWords(block.sharing)}, and this record holds ${block.sharing.length > 1 ? "none of them" : "none"}.`,
+      }
+    }
   } else if (block.inWindow) {
     if (!b?.window) {
       return {
@@ -1749,6 +1926,22 @@ export function tableParams(
     orderBy: block.orderBy,
     filter: { properties },
   }
+}
+
+/** A record's value as a list filter compares it: a reference's path, a
+ * string, a number or a boolean. Undefined for anything else, which the
+ * table reads as holding none. */
+function sharedValue(v: unknown): string | undefined {
+  return (
+    readReference(v)?.path ??
+    (typeof v === "number" || typeof v === "boolean" ? String(v) : undefined)
+  )
+}
+
+/** Names in a sentence: `metric`, `metric and channel`, `a, b and c`. */
+function listWords(names: readonly string[]): string {
+  if (names.length < 2) return names.join("")
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }
 
 // ── breakdown and values of the record ────────────────────────────────────

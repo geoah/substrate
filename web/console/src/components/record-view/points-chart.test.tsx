@@ -17,14 +17,17 @@ vi.mock("@tanstack/react-router", () => ({
     params,
     onFocus,
     onBlur,
+    "aria-label": label,
   }: {
     children: ReactNode
     params?: Record<string, string>
     onFocus?: () => void
     onBlur?: () => void
+    "aria-label"?: string
   }) => (
     <a
       data-params={JSON.stringify(params ?? {})}
+      aria-label={label}
       onFocus={onFocus}
       onBlur={onBlur}
     >
@@ -73,7 +76,7 @@ const points: ChartPoint[] = [
     tone: "poor",
     title: "Example marker",
     hollow: true,
-    note: "Derived from: Mar 2, 2024",
+    notes: ["Derived from: Mar 2, 2024"],
   },
   {
     at: new Date(2025, 5, 20).getTime(),
@@ -181,6 +184,30 @@ describe("PointsChart", () => {
     expect(screen.queryByRole("status")).toBe(null)
   })
 
+  it("names a converted reading and its range without float noise", () => {
+    const view = render(
+      <PointsChart
+        points={[
+          {
+            ...points[0],
+            value: 23399.999999999996,
+            low: 7099.999999999999,
+            high: 19899.999999999996,
+          },
+        ]}
+        domain={domain}
+        unit="g"
+        label="Example marker over time"
+      />
+    )
+    const link = view.container.querySelector("a[data-params]")!
+    expect(link.getAttribute("aria-label")).toContain("23,400 g")
+    fireEvent.focus(link)
+    const tip = screen.getByRole("status").textContent
+    expect(tip).toContain("23,400 g")
+    expect(tip).toContain("range 7,100 to 19,900 g")
+  })
+
   it("rings a reading focused by keyboard and names it in the tooltip", () => {
     const view = render(chart())
     const link = view.container.querySelector("a[data-params]")!
@@ -189,6 +216,137 @@ describe("PointsChart", () => {
     expect(screen.getByRole("status").textContent).toContain("Example marker")
     fireEvent.blur(link)
     expect(screen.queryByRole("status")).toBe(null)
+  })
+
+  it("draws a bound as a marker toward its open side and off the hairline", () => {
+    const bounded: ChartPoint[] = [
+      { ...points[0], id: undefined },
+      {
+        at: new Date(2024, 8, 4).getTime(),
+        value: 0.5,
+        comparator: "<",
+        tone: "none",
+        title: "Example marker",
+      },
+      { ...points[2] },
+    ]
+    const view = render(
+      <PointsChart
+        points={bounded}
+        domain={domain}
+        unit="mmol/L"
+        label="Example marker over time"
+      />
+    )
+    const marker = view.container.querySelector("path[data-slot=point]")!
+    expect(marker.getAttribute("data-bound")).toBe("below")
+    expect(
+      view.container.querySelectorAll("circle[data-slot=point]")
+    ).toHaveLength(2)
+    // The two exact readings are joined across the bound.
+    expect(
+      view.container.querySelectorAll("line[data-slot=point-hairline]")
+    ).toHaveLength(1)
+    const svg = view.container.querySelector("svg")!
+    const dots = view.container.querySelectorAll("circle[data-slot=point]")
+    const x0 = Number(dots[0].getAttribute("cx"))
+    const x1 = Number(dots[1].getAttribute("cx"))
+    fireEvent.pointerMove(svg, { clientX: (x0 + x1) / 2 + 1 })
+    expect(screen.getByRole("status").textContent).toContain("<0.5 mmol/L")
+  })
+
+  it("joins readings of one series alone, and draws a range in its own tone", () => {
+    const series: ChartPoint[] = [
+      { ...points[0], id: undefined, series: "trunk" },
+      { ...points[1], series: "left_arm", rangeTone: "poor" },
+      { ...points[2], series: "trunk", notes: ["Channel: Trunk"] },
+      {
+        at: new Date(2025, 9, 1).getTime(),
+        value: 3.2,
+        tone: "good",
+        title: "Example marker",
+        series: "left_arm",
+      },
+    ]
+    const view = render(
+      <PointsChart
+        points={series}
+        domain={domain}
+        unit="mmol/L"
+        label="Example marker over time"
+      />
+    )
+    expect(
+      view.container.querySelectorAll("line[data-slot=point-hairline]")
+    ).toHaveLength(2)
+    const rects = view.container.querySelectorAll("rect[data-slot=point-range]")
+    expect(rects[1].getAttribute("fill")).toBe("var(--bad-soft)")
+  })
+
+  it("tells apart the regions of one scan by the pointer's height, and lights the hovered one's line", () => {
+    const scan = new Date(2025, 5, 20).getTime()
+    const regional: ChartPoint[] = [
+      {
+        ...points[0],
+        id: undefined,
+        series: "trunk",
+        notes: ["Channel: Trunk"],
+      },
+      {
+        ...points[0],
+        id: undefined,
+        at: scan,
+        value: 3.3,
+        series: "trunk",
+        notes: ["Channel: Trunk"],
+      },
+      {
+        ...points[0],
+        id: undefined,
+        series: "arm",
+        value: 2.0,
+        notes: ["Channel: Arm"],
+      },
+      {
+        ...points[0],
+        id: undefined,
+        at: scan,
+        value: 2.1,
+        series: "arm",
+        notes: ["Channel: Arm"],
+      },
+    ]
+    const view = render(
+      <PointsChart
+        points={regional}
+        domain={domain}
+        unit="mmol/L"
+        label="Example marker over time"
+      />
+    )
+    const svg = view.container.querySelector("svg")!
+    // The scan's two readings share one x; the arm's 2.1 sits lower.
+    const dots = [...view.container.querySelectorAll("circle[data-slot=point]")]
+    const cx = dots.at(-1)!.getAttribute("cx")
+    const ys = dots
+      .filter((d) => d.getAttribute("cx") === cx)
+      .map((d) => Number(d.getAttribute("cy")))
+    expect(ys).toHaveLength(2)
+    fireEvent.pointerMove(svg, {
+      clientX: Number(cx),
+      clientY: Math.max(...ys),
+    })
+    expect(screen.getByRole("status").textContent).toContain("Channel: Arm")
+    expect(
+      view.container.querySelectorAll(
+        "line[data-slot=point-hairline][data-lit]"
+      )
+    ).toHaveLength(1)
+    fireEvent.pointerMove(svg, {
+      clientX: Number(cx),
+      clientY: Math.min(...ys),
+    })
+    expect(screen.getByRole("status").textContent).toContain("Channel: Trunk")
   })
 
   it("says so when there are no readings", () => {

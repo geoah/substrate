@@ -29,7 +29,36 @@
           "[oz_av]",
           "[stone_av]"
         ]
-      ]
+      ],
+      "factors": {
+        "[lb_av]": {
+          "factor": "45359237/100000000"
+        },
+        "[oz_av]": {
+          "factor": "45359237/1600000000"
+        },
+        "[stone_av]": {
+          "factor": "317514659/50000000"
+        },
+        "g": {
+          "factor": "1/1000"
+        },
+        "kg": {
+          "factor": "1"
+        },
+        "mg": {
+          "factor": "1/1000000"
+        },
+        "ng": {
+          "factor": "1/1000000000000"
+        },
+        "t": {
+          "factor": "1000"
+        },
+        "ug": {
+          "factor": "1/1000000000"
+        }
+      }
     },
     {
       "name": "length",
@@ -62,7 +91,39 @@
           "[mi_i]",
           "[nmi_i]"
         ]
-      ]
+      ],
+      "factors": {
+        "[ft_i]": {
+          "factor": "381/1250"
+        },
+        "[in_i]": {
+          "factor": "127/5000"
+        },
+        "[mi_i]": {
+          "factor": "201168/125"
+        },
+        "[nmi_i]": {
+          "factor": "1852"
+        },
+        "[yd_i]": {
+          "factor": "1143/1250"
+        },
+        "cm": {
+          "factor": "1/100"
+        },
+        "km": {
+          "factor": "1000"
+        },
+        "m": {
+          "factor": "1"
+        },
+        "mm": {
+          "factor": "1/1000"
+        },
+        "nm": {
+          "factor": "1/1000000000"
+        }
+      }
     },
     {
       "name": "area",
@@ -83,7 +144,21 @@
           "har",
           "[sft_i]"
         ]
-      ]
+      ],
+      "factors": {
+        "[sft_i]": {
+          "factor": "145161/1562500"
+        },
+        "cm2": {
+          "factor": "1/10000"
+        },
+        "har": {
+          "factor": "10000"
+        },
+        "m2": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "volume",
@@ -130,7 +205,60 @@
           "[tsp_m]",
           "[cft_i]"
         ]
-      ]
+      ],
+      "factors": {
+        "L": {
+          "factor": "1/1000"
+        },
+        "[cft_i]": {
+          "factor": "55306341/1953125000"
+        },
+        "[cup_m]": {
+          "factor": "3/12500"
+        },
+        "[cup_us]": {
+          "factor": "473176473/2000000000000"
+        },
+        "[foz_br]": {
+          "factor": "454609/16000000000"
+        },
+        "[foz_us]": {
+          "factor": "473176473/16000000000000"
+        },
+        "[gal_br]": {
+          "factor": "454609/100000000"
+        },
+        "[gal_us]": {
+          "factor": "473176473/125000000000"
+        },
+        "[pt_us]": {
+          "factor": "473176473/1000000000000"
+        },
+        "[qt_us]": {
+          "factor": "473176473/500000000000"
+        },
+        "[tbs_m]": {
+          "factor": "3/200000"
+        },
+        "[tbs_us]": {
+          "factor": "473176473/32000000000000"
+        },
+        "[tsp_m]": {
+          "factor": "1/200000"
+        },
+        "[tsp_us]": {
+          "factor": "157725491/32000000000000"
+        },
+        "dL": {
+          "factor": "1/10000"
+        },
+        "m3": {
+          "factor": "1"
+        },
+        "mL": {
+          "factor": "1/1000000"
+        }
+      }
     },
     {
       "name": "duration",
@@ -162,6 +290,35 @@
           "a"
         ]
       ],
+      "factors": {
+        "a": {
+          "factor": "31557600"
+        },
+        "d": {
+          "factor": "86400"
+        },
+        "h": {
+          "factor": "3600"
+        },
+        "min": {
+          "factor": "60"
+        },
+        "mo": {
+          "factor": "2629800"
+        },
+        "ms": {
+          "factor": "1/1000"
+        },
+        "s": {
+          "factor": "1"
+        },
+        "us": {
+          "factor": "1/1000000"
+        },
+        "wk": {
+          "factor": "604800"
+        }
+      },
       "note": "the month mo and the year a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year"
     },
     {
@@ -182,6 +339,19 @@
           "[degF]"
         ]
       ],
+      "factors": {
+        "Cel": {
+          "factor": "1",
+          "offset": "5463/20"
+        },
+        "K": {
+          "factor": "1"
+        },
+        "[degF]": {
+          "factor": "5/9",
+          "offset": "45967/180"
+        }
+      },
       "note": "an absolute temperature: Cel and [degF] convert with their offsets"
     },
     {
@@ -202,6 +372,17 @@
           "[degF]"
         ]
       ],
+      "factors": {
+        "Cel": {
+          "factor": "1"
+        },
+        "K": {
+          "factor": "1"
+        },
+        "[degF]": {
+          "factor": "5/9"
+        }
+      },
       "note": "a difference or deviation: the same codes, the offsets suppressed"
     },
     {
@@ -236,6 +417,38 @@
           "[Btu_IT]"
         ]
       ],
+      "factors": {
+        "J": {
+          "factor": "1"
+        },
+        "MJ": {
+          "factor": "1000000"
+        },
+        "W.h": {
+          "factor": "3600"
+        },
+        "[Btu_IT]": {
+          "factor": "52752792631/50000000"
+        },
+        "[Cal]": {
+          "factor": "4184"
+        },
+        "cal": {
+          "factor": "523/125"
+        },
+        "eV": {
+          "factor": "801088317/5000000000000000000000000000"
+        },
+        "kJ": {
+          "factor": "1000"
+        },
+        "kW.h": {
+          "factor": "3600000"
+        },
+        "kcal": {
+          "factor": "4184"
+        }
+      },
       "note": "the calorie cal is the thermochemical one (4.184 J); [Cal] is the nutrition Calorie, a kcal"
     },
     {
@@ -265,7 +478,33 @@
           "kcal/h",
           "[Btu_IT]/h"
         ]
-      ]
+      ],
+      "factors": {
+        "MW": {
+          "factor": "1000000"
+        },
+        "W": {
+          "factor": "1"
+        },
+        "[Btu_IT]/h": {
+          "factor": "52752792631/180000000000"
+        },
+        "[HP]": {
+          "factor": "37284993579113511/50000000000000"
+        },
+        "kW": {
+          "factor": "1000"
+        },
+        "kcal/d": {
+          "factor": "523/10800"
+        },
+        "kcal/h": {
+          "factor": "523/450"
+        },
+        "mW": {
+          "factor": "1/1000"
+        }
+      }
     },
     {
       "name": "apparent-power",
@@ -281,6 +520,11 @@
           "V.A"
         ]
       ],
+      "factors": {
+        "V.A": {
+          "factor": "1"
+        }
+      },
       "note": "volt-amperes: the same factor as the watt and never converted into it"
     },
     {
@@ -297,6 +541,11 @@
           "V.A{reactive}"
         ]
       ],
+      "factors": {
+        "V.A{reactive}": {
+          "factor": "1"
+        }
+      },
       "note": "UCUM has no code for var, so it is the annotated volt-ampere"
     },
     {
@@ -330,7 +579,39 @@
           "[psi]",
           "[in_i'Hg]"
         ]
-      ]
+      ],
+      "factors": {
+        "Pa": {
+          "factor": "1"
+        },
+        "[in_i'Hg]": {
+          "factor": "8465947/2500"
+        },
+        "[psi]": {
+          "factor": "8896443230521/1290320000"
+        },
+        "atm": {
+          "factor": "101325"
+        },
+        "bar": {
+          "factor": "100000"
+        },
+        "cm[H2O]": {
+          "factor": "196133/2000"
+        },
+        "hPa": {
+          "factor": "100"
+        },
+        "kPa": {
+          "factor": "1000"
+        },
+        "mbar": {
+          "factor": "100"
+        },
+        "mm[Hg]": {
+          "factor": "66661/500"
+        }
+      }
     },
     {
       "name": "speed",
@@ -353,7 +634,24 @@
           "[kn_i]",
           "[ft_i]/s"
         ]
-      ]
+      ],
+      "factors": {
+        "[ft_i]/s": {
+          "factor": "381/1250"
+        },
+        "[kn_i]": {
+          "factor": "463/900"
+        },
+        "[mi_i]/h": {
+          "factor": "1397/3125"
+        },
+        "km/h": {
+          "factor": "5/18"
+        },
+        "m/s": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "pace",
@@ -381,6 +679,29 @@
           "s/(500.m)"
         ]
       ],
+      "factors": {
+        "min/[mi_i]": {
+          "factor": "625/16764"
+        },
+        "min/km": {
+          "factor": "3/50"
+        },
+        "s/(100.[yd_i])": {
+          "factor": "25/2286"
+        },
+        "s/(100.m)": {
+          "factor": "1/100"
+        },
+        "s/(500.m)": {
+          "factor": "1/500"
+        },
+        "s/km": {
+          "factor": "1/1000"
+        },
+        "s/m": {
+          "factor": "1"
+        }
+      },
       "note": "the reciprocal of a speed: a mean pace is total time over total distance"
     },
     {
@@ -398,7 +719,15 @@
           "m/s2",
           "[g]"
         ]
-      ]
+      ],
+      "factors": {
+        "[g]": {
+          "factor": "196133/20000"
+        },
+        "m/s2": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "frequency",
@@ -415,7 +744,15 @@
           "Hz",
           "kHz"
         ]
-      ]
+      ],
+      "factors": {
+        "Hz": {
+          "factor": "1"
+        },
+        "kHz": {
+          "factor": "1000"
+        }
+      }
     },
     {
       "name": "rate",
@@ -439,6 +776,23 @@
           "/wk"
         ]
       ],
+      "factors": {
+        "/d": {
+          "factor": "1/86400"
+        },
+        "/h": {
+          "factor": "1/3600"
+        },
+        "/min": {
+          "factor": "1/60"
+        },
+        "/s": {
+          "factor": "1"
+        },
+        "/wk": {
+          "factor": "1/604800"
+        }
+      },
       "note": "events per time; an annotated rate ({beats}/min) converts only to the same annotation"
     },
     {
@@ -459,6 +813,14 @@
           "1"
         ]
       ],
+      "factors": {
+        "1": {
+          "factor": "1"
+        },
+        "{count}": {
+          "factor": "1"
+        }
+      },
       "note": "a count of things, named by an annotation alone ({steps}); two annotations never convert"
     },
     {
@@ -483,6 +845,23 @@
           "[ppb]"
         ]
       ],
+      "factors": {
+        "%": {
+          "factor": "1/100"
+        },
+        "1": {
+          "factor": "1"
+        },
+        "[ppb]": {
+          "factor": "1/1000000000"
+        },
+        "[ppm]": {
+          "factor": "1/1000000"
+        },
+        "[ppth]": {
+          "factor": "1/1000"
+        }
+      },
       "note": "a part of a whole"
     },
     {
@@ -499,6 +878,11 @@
           "mmol/mol"
         ]
       ],
+      "factors": {
+        "mmol/mol": {
+          "factor": "1/1000"
+        }
+      },
       "note": "an amount of substance per amount of substance (HbA1c IFCC); a mol over a mol under any prefixes belongs here and never converts to a fraction such as an NGSP %"
     },
     {
@@ -515,6 +899,11 @@
           "{score}"
         ]
       ],
+      "factors": {
+        "{score}": {
+          "factor": "1"
+        }
+      },
       "note": "a vendor's number on its own scale (WHOOP strain, WHOOP recovery): it converts to nothing but itself, never to a percent"
     },
     {
@@ -534,7 +923,18 @@
           "mmol",
           "umol"
         ]
-      ]
+      ],
+      "factors": {
+        "mmol": {
+          "factor": "1/1000"
+        },
+        "mol": {
+          "factor": "1"
+        },
+        "umol": {
+          "factor": "1/1000000"
+        }
+      }
     },
     {
       "name": "amount-concentration",
@@ -557,7 +957,24 @@
           "nmol/L",
           "pmol/L"
         ]
-      ]
+      ],
+      "factors": {
+        "mmol/L": {
+          "factor": "1"
+        },
+        "mol/L": {
+          "factor": "1000"
+        },
+        "nmol/L": {
+          "factor": "1/1000000"
+        },
+        "pmol/L": {
+          "factor": "1/1000000000"
+        },
+        "umol/L": {
+          "factor": "1/1000"
+        }
+      }
     },
     {
       "name": "mass-concentration",
@@ -594,7 +1011,45 @@
           "ug/m3",
           "kg/m3"
         ]
-      ]
+      ],
+      "factors": {
+        "g/L": {
+          "factor": "1"
+        },
+        "g/dL": {
+          "factor": "10"
+        },
+        "g/m3": {
+          "factor": "1/1000"
+        },
+        "kg/m3": {
+          "factor": "1"
+        },
+        "mg/L": {
+          "factor": "1/1000"
+        },
+        "mg/dL": {
+          "factor": "1/100"
+        },
+        "mg/m3": {
+          "factor": "1/1000000"
+        },
+        "ng/mL": {
+          "factor": "1/1000000"
+        },
+        "pg/mL": {
+          "factor": "1/1000000000"
+        },
+        "ug/L": {
+          "factor": "1/1000000"
+        },
+        "ug/dL": {
+          "factor": "1/100000"
+        },
+        "ug/m3": {
+          "factor": "1/1000000000"
+        }
+      }
     },
     {
       "name": "number-concentration",
@@ -620,6 +1075,26 @@
           "10*12/L"
         ]
       ],
+      "factors": {
+        "/L": {
+          "factor": "1000"
+        },
+        "/uL": {
+          "factor": "1000000000"
+        },
+        "10*12/L": {
+          "factor": "1000000000000000"
+        },
+        "10*3/uL": {
+          "factor": "1000000000000"
+        },
+        "10*6/uL": {
+          "factor": "1000000000000000"
+        },
+        "10*9/L": {
+          "factor": "1000000000000"
+        }
+      },
       "note": "things counted per volume, such as blood cells: 10*9/L and 10*3/uL are one value"
     },
     {
@@ -636,6 +1111,11 @@
           "U/L"
         ]
       ],
+      "factors": {
+        "U/L": {
+          "factor": "1/60000"
+        }
+      },
       "note": "enzyme activity per volume: U is 1 umol/min, a proper unit"
     },
     {
@@ -653,7 +1133,15 @@
           "kat",
           "U"
         ]
-      ]
+      ],
+      "factors": {
+        "U": {
+          "factor": "1/60000000"
+        },
+        "kat": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "arbitrary",
@@ -696,7 +1184,12 @@
         [
           "lx"
         ]
-      ]
+      ],
+      "factors": {
+        "lx": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "luminous-flux",
@@ -711,7 +1204,12 @@
         [
           "lm"
         ]
-      ]
+      ],
+      "factors": {
+        "lm": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "luminous-intensity",
@@ -726,7 +1224,12 @@
         [
           "cd"
         ]
-      ]
+      ],
+      "factors": {
+        "cd": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "luminance",
@@ -741,7 +1244,12 @@
         [
           "cd/m2"
         ]
-      ]
+      ],
+      "factors": {
+        "cd/m2": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "irradiance",
@@ -756,7 +1264,12 @@
         [
           "W/m2"
         ]
-      ]
+      ],
+      "factors": {
+        "W/m2": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "level",
@@ -840,7 +1353,15 @@
           "V",
           "mV"
         ]
-      ]
+      ],
+      "factors": {
+        "V": {
+          "factor": "1"
+        },
+        "mV": {
+          "factor": "1/1000"
+        }
+      }
     },
     {
       "name": "electric-current",
@@ -857,7 +1378,15 @@
           "A",
           "mA"
         ]
-      ]
+      ],
+      "factors": {
+        "A": {
+          "factor": "1"
+        },
+        "mA": {
+          "factor": "1/1000"
+        }
+      }
     },
     {
       "name": "electric-resistance",
@@ -874,7 +1403,15 @@
           "Ohm",
           "kOhm"
         ]
-      ]
+      ],
+      "factors": {
+        "Ohm": {
+          "factor": "1"
+        },
+        "kOhm": {
+          "factor": "1000"
+        }
+      }
     },
     {
       "name": "electric-charge",
@@ -893,7 +1430,18 @@
           "A.h",
           "mA.h"
         ]
-      ]
+      ],
+      "factors": {
+        "A.h": {
+          "factor": "3600"
+        },
+        "C": {
+          "factor": "1"
+        },
+        "mA.h": {
+          "factor": "18/5"
+        }
+      }
     },
     {
       "name": "electric-conductivity",
@@ -908,7 +1456,12 @@
         [
           "uS/cm"
         ]
-      ]
+      ],
+      "factors": {
+        "uS/cm": {
+          "factor": "1/10000"
+        }
+      }
     },
     {
       "name": "information",
@@ -937,7 +1490,33 @@
           "MiBy",
           "GiBy"
         ]
-      ]
+      ],
+      "factors": {
+        "By": {
+          "factor": "8"
+        },
+        "GBy": {
+          "factor": "8000000000"
+        },
+        "GiBy": {
+          "factor": "8589934592"
+        },
+        "KiBy": {
+          "factor": "8192"
+        },
+        "MBy": {
+          "factor": "8000000"
+        },
+        "MiBy": {
+          "factor": "8388608"
+        },
+        "bit": {
+          "factor": "1"
+        },
+        "kBy": {
+          "factor": "8000"
+        }
+      }
     },
     {
       "name": "data-rate",
@@ -958,7 +1537,21 @@
           "Mbit/s",
           "By/s"
         ]
-      ]
+      ],
+      "factors": {
+        "By/s": {
+          "factor": "8"
+        },
+        "Mbit/s": {
+          "factor": "1000000"
+        },
+        "bit/s": {
+          "factor": "1"
+        },
+        "kbit/s": {
+          "factor": "1000"
+        }
+      }
     },
     {
       "name": "angle",
@@ -982,6 +1575,17 @@
           "rad"
         ]
       ],
+      "factors": {
+        "'": {
+          "factor": "1/60"
+        },
+        "''": {
+          "factor": "1/3600"
+        },
+        "deg": {
+          "factor": "1"
+        }
+      },
       "note": "the radian rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself"
     },
     {
@@ -1005,7 +1609,24 @@
           "m3/h",
           "[gal_us]/min"
         ]
-      ]
+      ],
+      "factors": {
+        "L/h": {
+          "factor": "1/3600000"
+        },
+        "L/min": {
+          "factor": "1/60000"
+        },
+        "[gal_us]/min": {
+          "factor": "157725491/2500000000000"
+        },
+        "m3/h": {
+          "factor": "1/3600"
+        },
+        "mL/min": {
+          "factor": "1/60000000"
+        }
+      }
     },
     {
       "name": "mass-flow",
@@ -1020,7 +1641,12 @@
         [
           "g/s"
         ]
-      ]
+      ],
+      "factors": {
+        "g/s": {
+          "factor": "1/1000"
+        }
+      }
     },
     {
       "name": "force",
@@ -1037,7 +1663,15 @@
           "N",
           "[lbf_av]"
         ]
-      ]
+      ],
+      "factors": {
+        "N": {
+          "factor": "1"
+        },
+        "[lbf_av]": {
+          "factor": "8896443230521/2000000000000"
+        }
+      }
     },
     {
       "name": "torque",
@@ -1055,6 +1689,14 @@
           "[lbf_av].[ft_i]"
         ]
       ],
+      "factors": {
+        "N.m": {
+          "factor": "1"
+        },
+        "[lbf_av].[ft_i]": {
+          "factor": "3389544870828501/2500000000000000"
+        }
+      },
       "note": "the same dimension as energy, and never converted into it"
     },
     {
@@ -1072,7 +1714,15 @@
           "Bq/m3",
           "pCi/L"
         ]
-      ]
+      ],
+      "factors": {
+        "Bq/m3": {
+          "factor": "1"
+        },
+        "pCi/L": {
+          "factor": "37"
+        }
+      }
     },
     {
       "name": "absorbed-dose",
@@ -1090,6 +1740,14 @@
           "mGy"
         ]
       ],
+      "factors": {
+        "Gy": {
+          "factor": "1"
+        },
+        "mGy": {
+          "factor": "1/1000"
+        }
+      },
       "note": "energy absorbed per mass of tissue: never a dose equivalent and never a specific energy, though all three are J/kg"
     },
     {
@@ -1110,6 +1768,17 @@
           "uSv"
         ]
       ],
+      "factors": {
+        "Sv": {
+          "factor": "1"
+        },
+        "mSv": {
+          "factor": "1/1000"
+        },
+        "uSv": {
+          "factor": "1/1000000"
+        }
+      },
       "note": "an absorbed dose weighted by its radiation's effect: never converted to a Gy"
     },
     {
@@ -1125,7 +1794,12 @@
         [
           "uSv/h"
         ]
-      ]
+      ],
+      "factors": {
+        "uSv/h": {
+          "factor": "1/3600000000"
+        }
+      }
     },
     {
       "name": "radioactivity",
@@ -1145,6 +1819,17 @@
           "MBq"
         ]
       ],
+      "factors": {
+        "Bq": {
+          "factor": "1"
+        },
+        "MBq": {
+          "factor": "1000000"
+        },
+        "kBq": {
+          "factor": "1000"
+        }
+      },
       "note": "decays per second: never a frequency or a rate of events, though all three are s-1"
     },
     {
@@ -1160,7 +1845,12 @@
         [
           "kg/m2"
         ]
-      ]
+      ],
+      "factors": {
+        "kg/m2": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "oxygen-uptake-rate",
@@ -1178,6 +1868,14 @@
           "[MET]"
         ]
       ],
+      "factors": {
+        "[MET]": {
+          "factor": "7/120000000"
+        },
+        "mL/(kg.min)": {
+          "factor": "1/60000000"
+        }
+      },
       "note": "one MET is 3.5 mL/(kg.min)"
     },
     {
@@ -1193,7 +1891,12 @@
         [
           "W/kg"
         ]
-      ]
+      ],
+      "factors": {
+        "W/kg": {
+          "factor": "1"
+        }
+      }
     },
     {
       "name": "specific-energy",
@@ -1208,7 +1911,12 @@
         [
           "kcal/kg"
         ]
-      ]
+      ],
+      "factors": {
+        "kcal/kg": {
+          "factor": "4184"
+        }
+      }
     },
     {
       "name": "energy-per-distance",
@@ -1225,7 +1933,15 @@
           "kW.h/(100.km)",
           "W.h/km"
         ]
-      ]
+      ],
+      "factors": {
+        "W.h/km": {
+          "factor": "18/5"
+        },
+        "kW.h/(100.km)": {
+          "factor": "36"
+        }
+      }
     },
     {
       "name": "fuel-consumption",
@@ -1241,6 +1957,11 @@
           "L/(100.km)"
         ]
       ],
+      "factors": {
+        "L/(100.km)": {
+          "factor": "1/100000000"
+        }
+      },
       "note": "the reciprocal of a fuel economy, never converted into one"
     },
     {
@@ -1258,7 +1979,15 @@
           "[mi_i]/[gal_us]",
           "km/L"
         ]
-      ]
+      ],
+      "factors": {
+        "[mi_i]/[gal_us]": {
+          "factor": "48000000000/112903"
+        },
+        "km/L": {
+          "factor": "1000000"
+        }
+      }
     },
     {
       "name": "precipitation-rate",
@@ -1275,7 +2004,15 @@
           "mm/h",
           "[in_i]/h"
         ]
-      ]
+      ],
+      "factors": {
+        "[in_i]/h": {
+          "factor": "127/18000000"
+        },
+        "mm/h": {
+          "factor": "1/3600000"
+        }
+      }
     }
   ],
   "symbols": {

@@ -9,6 +9,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -135,7 +136,8 @@ function refusal(status: number, problems: string[]): Response {
 function mount(
   sections: unknown[],
   answer?: Answer,
-  window: Record<string, unknown> = { start: "begins", end: "ends" }
+  window: Record<string, unknown> = { start: "begins", end: "ends" },
+  rec: SubstrateRecord = DAY
 ) {
   const seen: Aggregate[] = []
   vi.stubGlobal(
@@ -186,8 +188,8 @@ function mount(
         ? entries.flatMap((e) =>
             (DAYS[e.ref] ?? []).map((value, i) =>
               row({
-                start: `2026-10-0${7 + i}T21:00:00Z`,
-                end: `2026-10-0${8 + i}T21:00:00Z`,
+                start: `2026-10-${String(7 + i).padStart(2, "0")}T21:00:00Z`,
+                end: `2026-10-${String(8 + i).padStart(2, "0")}T21:00:00Z`,
                 group: { metric: e.ref },
                 values: e.reducers!.map((r) => ({ reducer: r, value })),
               })
@@ -214,7 +216,7 @@ function mount(
     <QueryClientProvider client={client}>
       <RecordViews
         views={viewsOf([view])}
-        record={DAY}
+        record={rec}
         kind={CYCLE}
         kinds={[...KINDS, CYCLE]}
       />
@@ -323,6 +325,94 @@ it("draws a tile per item from one read, with bands, a baseline and its delta", 
     STEPS_METRIC,
   ])
   expect(seen.filter((a) => a.bucket)).toHaveLength(1)
+})
+
+it("labels a growing value so far over an open record window, and compares last night's score", async () => {
+  // Today's cycle: begun, with no end yet.
+  const today = record(CYCLE.identity, "c-2", {
+    begins: "2026-10-11T04:00:00Z",
+    strain: 3.1,
+  })
+  const { seen } = mount(
+    [
+      {
+        stats: {
+          label: "Figures",
+          baseline: 30,
+          items: [
+            {
+              metric: { ref: RECOVERY },
+              label: "Recovery",
+              show: "dial",
+              min: 0,
+              max: 100,
+              better: "higher",
+            },
+            {
+              metric: { ref: HEART },
+              reducer: "avg",
+              label: "Average heart rate",
+              show: "bar",
+              better: "lower",
+            },
+            { metric: { ref: ENERGY }, reducer: "sum", label: "Energy" },
+          ],
+        },
+      },
+    ],
+    undefined,
+    { start: "begins", end: "ends", open: true },
+    today
+  )
+  const group = await screen.findByRole("group", { name: "Figures" })
+  await waitFor(() =>
+    expect(tile(group, "Energy").textContent).toContain("2,100")
+  )
+  for (const label of ["Average heart rate", "Energy"]) {
+    const t = tile(group, label)
+    expect(t.textContent).toContain("so far")
+    expect(t.querySelector("[data-slot=stat-delta]")).toBe(null)
+    expect(t.querySelector("[data-slot=range-baseline]")).toBe(null)
+  }
+  // Recovery places the night by its end: the night opening the cycle is
+  // whole, so it is compared with the nights before it.
+  const recovery = tile(group, "Recovery")
+  expect(recovery.textContent).not.toContain("so far")
+  expect(recovery.textContent).toContain(
+    "+10 points vs the 3-day average of 62 %"
+  )
+  // One baseline read, over the days before the day the night ended.
+  const days = seen.filter((a) => a.bucket)
+  expect(days).toHaveLength(1)
+  expect(days[0].range?.lt).toBe("2026-10-11T00:00:00+03:00")
+})
+
+it("shows Read again on a failed read and reads again on a click", async () => {
+  let asked = 0
+  mount(
+    [
+      {
+        stats: {
+          label: "Figures",
+          items: [{ metric: { ref: RECOVERY }, label: "Recovery" }],
+        },
+      },
+    ],
+    () =>
+      asked++ === 0
+        ? refusal(422, ["aggregate.range: a passing refusal"])
+        : undefined
+  )
+  const group = await screen.findByRole("group", { name: "Figures" })
+  const again = await within(group).findByRole("button", {
+    name: "Read again",
+  })
+  expect(group.querySelector("[data-slot=read-failed]")).toBeTruthy()
+  fireEvent.click(again)
+  await waitFor(() =>
+    expect(tile(group, "Recovery").textContent).toContain("72")
+  )
+  expect(group.querySelector("[data-slot=read-failed]")).toBe(null)
 })
 
 it("drops a metric no record holds from the read and says so on its tile alone", async () => {
@@ -437,8 +527,8 @@ it("reads a time in a state ungrouped and draws a window without the state as 0"
       }
       return ["0", "3600000", "0"].map((value, i) =>
         row({
-          start: `2026-10-0${7 + i}T21:00:00Z`,
-          end: `2026-10-0${8 + i}T21:00:00Z`,
+          start: `2026-10-${String(7 + i).padStart(2, "0")}T21:00:00Z`,
+          end: `2026-10-${String(8 + i).padStart(2, "0")}T21:00:00Z`,
           group: { metric: SLEEP_STAGE },
           values: values(value),
         })
@@ -490,8 +580,8 @@ it("compares a gauge's last reading with the average of each earlier day's avera
       return entries.flatMap((e) =>
         [0, 1, 2].map((i) =>
           row({
-            start: `2026-10-0${7 + i}T21:00:00Z`,
-            end: `2026-10-0${8 + i}T21:00:00Z`,
+            start: `2026-10-${String(7 + i).padStart(2, "0")}T21:00:00Z`,
+            end: `2026-10-${String(8 + i).padStart(2, "0")}T21:00:00Z`,
             group: { metric: e.ref },
             values: e.reducers!.map((r) => ({
               reducer: r,

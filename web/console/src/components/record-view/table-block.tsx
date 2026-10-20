@@ -37,10 +37,11 @@ import { displayName } from "@/lib/kind-names"
 import {
   codeWords,
   DEFAULT_PRECISION,
+  firstRange,
   flagWords,
-  interpretationTone,
   rangeWords,
   readingText,
+  resultReading,
 } from "@/lib/observations"
 import { clockWords, dayWords, type TimeRange } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
@@ -129,10 +130,11 @@ function valueText(p: Props): string {
 
 /** The first reference range in words, and how many more there are. */
 function rangesText(v: unknown): string {
-  const ranges: unknown[] = Array.isArray(v) ? v : []
-  const first = isBag(ranges[0]) ? rangeWords(ranges[0]) : undefined
+  const range = firstRange(v)
+  const first = range ? rangeWords(range) : undefined
   if (!first) return ""
-  return ranges.length > 1 ? `${first} +${ranges.length - 1} more` : first
+  const more = Array.isArray(v) ? v.length - 1 : 0
+  return more > 0 ? `${first} +${more} more` : first
 }
 
 /** One column: its header and how a row's cell reads. */
@@ -313,22 +315,6 @@ function nestedOrder(
   return out
 }
 
-/** A numeric single value and its unit, where the record holds one. */
-function numericValue(p: Props): { value: number; unit?: string } | undefined {
-  const v = isBag(p.value) ? p.value : undefined
-  if (!v || v.value === undefined || v.value === null) return undefined
-  const n = Number(v.value)
-  return Number.isFinite(n) ? { value: n, unit: text(v.unit) } : undefined
-}
-
-/** A reference range bound as a number in `unit`; undefined where it is
- * absent or in another unit. */
-function boundIn(q: unknown, unit: string | undefined): number | undefined {
-  if (!isBag(q) || text(q.unit) !== unit) return undefined
-  const n = Number(q.value)
-  return Number.isFinite(n) ? n : undefined
-}
-
 export function TableBlockView({
   block,
   ctx,
@@ -474,10 +460,13 @@ function Rows({
 }
 
 /** The rows' values over time, each against its own first reference range
- * where its bounds are in the value's unit; the page's own record ringed,
- * a row holding the `nest` reference hollow, its tooltip naming what it
- * refers to by the property's label. The chart draws one unit, the first
- * point's: results in another are listed and not drawn. */
+ * (`resultReading`); the page's own record ringed, a row holding the
+ * `nest` reference hollow, its tooltip naming what it refers to by the
+ * property's label. The chart draws in one unit, the first result's: a
+ * result in another unit of the same measure (g beside kg) is converted,
+ * and one of another measure is listed and not drawn. A result written as
+ * a bound (`<0.5`) draws as a marker toward its open side. Results of
+ * several channels (a DXA scan's trunk and arms) draw one line each. */
 function Points({
   records,
   block,
@@ -511,32 +500,43 @@ function Points({
       : (splitRecordPath(to)?.id ?? to)
     return `${nestLabel}: ${named}`
   }
-  const all = records.flatMap((r) => {
+  const timed = records.flatMap((r) => {
     const p = r.properties ?? {}
     const at = instant(p.at)
-    const v = numericValue(p)
-    return at === undefined || !v ? [] : [{ r, p, at, v }]
+    return at === undefined || !resultReading(p) ? [] : [{ r, p, at }]
   })
-  const unit = all[0]?.v.unit
-  const drawn = all.filter((x) => x.v.unit === unit)
-  const other = all.length - drawn.length
-  const points: ChartPoint[] = drawn.map(({ r, p, at, v }) => {
-    const ranges: unknown[] = Array.isArray(p.referenceRanges)
-      ? p.referenceRanges
-      : []
-    const range = isBag(ranges[0]) ? ranges[0] : undefined
-    const low = range ? boundIn(range.low, v.unit) : undefined
-    const high = range ? boundIn(range.high, v.unit) : undefined
+  const unit = timed.length ? resultReading(timed[0].p)?.unit : undefined
+  // Each result in the newest's unit, converted within one measure; under
+  // a unitless newest result only the unitless ones draw, never every
+  // result in its own unit on one axis.
+  const drawn = timed.flatMap((x) => {
+    const reading = resultReading(x.p, unit)
+    return reading && reading.unit === unit ? [{ ...x, reading }] : []
+  })
+  const other = timed.length - drawn.length
+  const channels = new Set(drawn.map((x) => text(x.p.channel) ?? ""))
+  const points: ChartPoint[] = drawn.map(({ r, p, at, reading }) => {
     const value = isBag(p.value) ? p.value : {}
+    const channel = text(p.channel)
+    const range = reading.range
     return {
       at,
-      value: v.value,
-      ...(low !== undefined ? { low } : {}),
-      ...(high !== undefined ? { high } : {}),
-      tone: interpretationTone(p.interpretation),
-      title: `${readingText(String(value.value), v.unit, DEFAULT_PRECISION, text(value.comparator))} on ${dayWords(at, true)}`,
+      value: reading.value,
+      ...(reading.comparator ? { comparator: reading.comparator } : {}),
+      ...(range?.low !== undefined ? { low: range.low } : {}),
+      ...(range?.high !== undefined ? { high: range.high } : {}),
+      ...(range ? { rangeTone: range.tone } : {}),
+      tone: reading.tone,
+      // The lab's own digits and unit, whatever unit the chart draws in.
+      title: `${readingText(String(value.value), text(value.unit), DEFAULT_PRECISION, text(value.comparator))} on ${dayWords(at, true)}`,
       hollow: Boolean(block.nest && referenceAt(p, block.nest)),
-      note: nestNote(p),
+      notes: [
+        ...(channels.size > 1
+          ? [`Channel: ${channel ? codeWords(channel) : "none"}`]
+          : []),
+        ...(nestNote(p) ? [nestNote(p)!] : []),
+      ],
+      ...(channels.size > 1 ? { series: channel ?? "" } : {}),
       kind: r.kind,
       id: r.id,
     }
@@ -564,8 +564,8 @@ function Points({
       {other > 0 && (
         <Quiet>
           {other === 1
-            ? "1 result in another unit is listed and not drawn."
-            : `${other} results in another unit are listed and not drawn.`}
+            ? "1 result in a unit this chart cannot convert to is listed and not drawn."
+            : `${other} results in a unit this chart cannot convert to are listed and not drawn.`}
         </Quiet>
       )}
     </>

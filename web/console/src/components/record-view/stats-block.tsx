@@ -40,7 +40,9 @@ import {
   scaleBaseline,
   deltaWords,
   itemMetric,
+  partialItem,
   readsByCode,
+  rowsInDays,
   statsReads,
   valueAt,
   type Band,
@@ -48,6 +50,7 @@ import {
   type StatItem,
   type StatsBlock,
 } from "@/lib/record-view"
+import type { TimeRange } from "@/lib/observations-time"
 import { humanizeName } from "@/lib/record-schema"
 import { isTimeUnit } from "@/lib/units"
 
@@ -82,7 +85,13 @@ export function StatsBlockView({
     () =>
       bound && windowed && metricsIn
         ? statsReads(bound, block, ctx.timezone, infos, ctx.record)
-        : { value: [], baseline: [], itemRead: block.items.map(() => -1) },
+        : {
+            value: [],
+            baseline: [],
+            itemRead: block.items.map(() => -1),
+            itemBaseline: block.items.map(() => -1),
+            itemDays: block.items.map(() => undefined),
+          },
     [bound, windowed, metricsIn, block, ctx.timezone, infos, ctx.record]
   )
   const observed = bound?.observed ?? []
@@ -152,7 +161,8 @@ export function StatsBlockView({
                   path={paths[i]}
                   info={infos.get(paths[i] ?? "")}
                   answer={values.answers[reads.itemRead[i]]}
-                  baseline={baselines.answers[reads.itemRead[i]]}
+                  baseline={baselines.answers[reads.itemBaseline[i]]}
+                  baselineDays={reads.itemDays[i]}
                   dropped={dropped.has(paths[i] ?? "")}
                   windowed={windowed}
                   bound={bound}
@@ -212,6 +222,7 @@ function MetricTile({
   info,
   answer,
   baseline,
+  baselineDays,
   dropped,
   windowed,
   bound,
@@ -223,6 +234,8 @@ function MetricTile({
   info?: MetricInfo
   answer?: AggregateResult
   baseline?: AggregateResult
+  /** The days of `baseline` the item compares with. */
+  baselineDays?: TimeRange
   dropped: boolean
   windowed: boolean
   bound?: Bound
@@ -273,10 +286,14 @@ function MetricTile({
     v.comparator
   )
   const band = numeric === null ? undefined : bandOf(numeric, block.bands, path)
+  // A record's own window still running (today's cycle) holds part of what
+  // it will: a value that grows over it is said so far, and compared with
+  // nothing. Last night's summary in it is whole and compared.
+  const partial = bound ? partialItem(bound, info) : false
   const daily =
-    block.baseline > 0
+    block.baseline > 0 && !partial
       ? baselineOf(
-          itemRows(baseline, path, code),
+          rowsInDays(itemRows(baseline, path, code), baselineDays),
           reducerKey(baselineReducer(item.reducer, info))
         )
       : undefined
@@ -303,6 +320,7 @@ function MetricTile({
       band={band ? { label: band.label ?? "", tone: band.tone } : undefined}
       delta={delta}
       baseline={base}
+      qualifier={partial ? "so far" : undefined}
       note={
         base
           ? base.span > 1

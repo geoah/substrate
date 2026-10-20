@@ -92,6 +92,9 @@ data:
       - min
       - max
     displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: heart
 ---
 kind: samples.substrate.reamde.dev/observations/metric
@@ -131,6 +134,9 @@ data:
       - min
       - max
     displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: heart
 ---
 kind: samples.substrate.reamde.dev/observations/metric
@@ -202,6 +208,9 @@ data:
       - max
       - last
     displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: oxygen
 ---
 kind: samples.substrate.reamde.dev/observations/metric
@@ -234,6 +243,9 @@ data:
       - max
       - last
     displayPrecision: 1
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: temperature
 ---
 kind: samples.substrate.reamde.dev/observations/metric
@@ -299,6 +311,9 @@ data:
       - max
       - last
     displayPrecision: 1
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: respiration
 ---
 kind: samples.substrate.reamde.dev/observations/metric
@@ -1086,6 +1101,9 @@ data:
       - last
       - avg
     displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: scores
     algorithm:
       vendor: WHOOP
@@ -1137,6 +1155,9 @@ data:
       - last
       - avg
     displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
     category: scores
     algorithm:
       vendor: WHOOP

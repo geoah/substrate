@@ -33,6 +33,7 @@ import { FORM_WORDS } from "@/lib/observed-form"
 import { listWords } from "@/lib/tools"
 import { kindHasTrait } from "@/lib/traits"
 import {
+  convertUnit,
   displayDigits,
   displayQuantity,
   formatQuantity,
@@ -429,15 +430,115 @@ export function judgementWords(
   interpretation: unknown,
   referenceRanges: unknown
 ): string | undefined {
-  const ranges: unknown[] = Array.isArray(referenceRanges)
-    ? referenceRanges
-    : []
-  const range = ranges[0]
-  const bounds = isBag(range) ? rangeWords(range) : undefined
+  const range = firstRange(referenceRanges)
+  const bounds = range ? rangeWords(range) : undefined
   const flag = flagWords(interpretation) ?? ""
   if (flag && bounds) return `${flag} (${bounds})`
   if (flag) return flag
   return bounds ? `range ${bounds}` : undefined
+}
+
+/** The reference range a result is read against: the first the lab
+ * printed. The one place that would choose by `appliesTo` and `age`. */
+export function firstRange(
+  referenceRanges: unknown
+): Record<string, unknown> | undefined {
+  const ranges: unknown[] = Array.isArray(referenceRanges)
+    ? referenceRanges
+    : []
+  return isBag(ranges[0]) ? ranges[0] : undefined
+}
+
+/** How a reference range is drawn and worded: a lab's normal range is
+ * `good`; a cut-off past which a value is abnormal is `poor`. */
+export type RangeTone = "good" | "fair" | "poor" | "none"
+
+const RANGE_TONES: readonly RangeTone[] = ["good", "fair", "poor", "none"]
+
+/** A numeric result as a chart or a bar draws it. */
+export interface ResultReading {
+  value: number
+  unit?: string
+  /** A bound such as `<` in `<0.5 ng/mL`: the true value lies past it. */
+  comparator?: string
+  /** The tone the lab's flags give the value (`interpretationTone`). */
+  tone: "good" | "poor" | "none"
+  /** The first reference range, its bounds in the value's unit; absent
+   * where the result has none, or a bound is in a unit the value's does
+   * not convert to (mg/dL against mmol/L). */
+  range?: { low?: number; high?: number; label: string; tone: RangeTone }
+}
+
+/** A result's numeric value and its first reference range, read against
+ * one value-against-range rule wherever a reading is drawn. With `unit`,
+ * the value and its bounds are converted into it within their measure;
+ * undefined where the result holds no number, or one that does not convert
+ * into `unit`. A range's `tone` is absent on a lab's normal range, which
+ * reads as `good`. */
+export function resultReading(
+  p: Record<string, unknown>,
+  unit?: string
+): ResultReading | undefined {
+  const v = isBag(p.value) ? p.value : undefined
+  if (!v || (typeof v.value !== "string" && typeof v.value !== "number")) {
+    return undefined
+  }
+  const raw = Number(v.value)
+  if (!Number.isFinite(raw)) return undefined
+  const own = text(v.unit)
+  const measure = text(p.measure)
+  const into = unit ?? own
+  const value =
+    own === into
+      ? raw
+      : own && into
+        ? convertUnit(raw, own, into, measure)
+        : undefined
+  if (value === undefined) return undefined
+  const comparator = text(v.comparator)
+  return {
+    value,
+    ...(into ? { unit: into } : {}),
+    ...(comparator ? { comparator } : {}),
+    tone: interpretationTone(p.interpretation),
+    ...rangeIn(firstRange(p.referenceRanges), into, measure),
+  }
+}
+
+/** A range's bounds in `unit`, where every bound it gives converts. */
+function rangeIn(
+  range: Record<string, unknown> | undefined,
+  unit: string | undefined,
+  measure: string | undefined
+): Pick<ResultReading, "range"> {
+  if (!range) return {}
+  const bound = (q: unknown): number | null | undefined => {
+    if (q === undefined || q === null) return undefined
+    // A bound written as a bound (`<5`) has no place on a scale.
+    if (!isBag(q) || q.comparator) return null
+    if (typeof q.value !== "string" && typeof q.value !== "number") return null
+    const n = Number(q.value)
+    const from = text(q.unit)
+    if (!Number.isFinite(n)) return null
+    if (from === unit) return n
+    if (!from || !unit) return null
+    return convertUnit(n, from, unit, measure) ?? null
+  }
+  const low = bound(range.low)
+  const high = bound(range.high)
+  if (low === null || high === null) return {}
+  if (low === undefined && high === undefined) return {}
+  const tone = RANGE_TONES.includes(range.tone as RangeTone)
+    ? (range.tone as RangeTone)
+    : "good"
+  return {
+    range: {
+      ...(low !== undefined ? { low } : {}),
+      ...(high !== undefined ? { high } : {}),
+      label: text(range.text) ?? "reference range",
+      tone,
+    },
+  }
 }
 
 /** A result's flags in words, joined (`high, critical high`): each flag's

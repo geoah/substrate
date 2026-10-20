@@ -18,9 +18,13 @@ import {
   breakdownItems,
   calendarGrid,
   cellFraction,
+  chartMeasured,
   chartReads,
   deltaWords,
   foldedBy,
+  partialItem,
+  partialWindow,
+  rowsInDays,
   RECORD_VIEW_KIND,
   recordViewOf,
   recordViewsParams,
@@ -596,6 +600,7 @@ describe("the blocks of version 2 read into blocks", () => {
       label: undefined,
       kind: WORKOUT.identity,
       via: "plan",
+      sharing: [],
       inWindow: false,
       columns: [],
       orderBy: "at:desc",
@@ -749,6 +754,69 @@ describe("the blocks of version 2 read into blocks", () => {
         trend: { empty: "fade", items: [{ metric: { ref: PULSE } }] },
       })
     ).toBe("This trend block's empty is fade.")
+  })
+
+  it("reads a table's sharing list, and sameAs as its older spelling of one name", () => {
+    const kind = WORKOUT.identity
+    expect(
+      blockIn({ table: { kind, sharing: ["metric", "channel", "metric"] } })
+    ).toMatchObject({ sharing: ["metric", "channel"] })
+    expect(blockIn({ table: { kind, sameAs: "metric" } })).toMatchObject({
+      sharing: ["metric"],
+    })
+    expect(
+      problemIn({ table: { kind, sameAs: "metric", sharing: ["channel"] } })
+    ).toBe(
+      "This table names both sharing and its older spelling sameAs; it names one."
+    )
+    expect(
+      problemIn({ table: { kind, via: "plan", sharing: ["metric"] } })
+    ).toBe(
+      "This table names 2 of via, sharing and inWindow; a table names exactly one."
+    )
+  })
+
+  it("reads a chart's empty, say where absent", () => {
+    const chart = { metrics: [{ ref: PULSE }], reducers: [{ reducer: "avg" }] }
+    expect(blockIn({ chart: { ...chart, empty: "hide" } })).toMatchObject({
+      empty: "hide",
+    })
+    expect(blockIn({ chart })).toMatchObject({ empty: "say" })
+    expect(problemIn({ chart: { ...chart, empty: "fade" } })).toBe(
+      "This chart's empty is fade."
+    )
+  })
+
+  it("says whether a chart's answer holds a value of a metric", () => {
+    const line = blockIn({
+      chart: {
+        metrics: [{ ref: PULSE }, { ref: STAGE }],
+        reducers: [{ reducer: "count" }, { reducer: "avg" }],
+      },
+    }) as ChartBlock
+    const row = (metric: string, values: Record<string, string | null>) => ({
+      start: "2026-10-11T05:00:00Z",
+      end: "2026-10-11T06:00:00Z",
+      count: 1,
+      group: { metric },
+      values: Object.entries(values).map(([reducer, value]) => ({
+        reducer,
+        value,
+      })),
+    })
+    const answer = {
+      rows: [row(PULSE, { count: "3", avg: "61" }), row(STAGE, { avg: null })],
+    } as unknown as Parameters<typeof chartMeasured>[2]
+    // A line draws avg, its first reducer in the metric's own unit.
+    expect(chartMeasured(line, PULSE, answer)).toBe(true)
+    expect(chartMeasured(line, STAGE, answer)).toBe(false)
+    expect(chartMeasured(line, PULSE, undefined)).toBe(false)
+    // A whole chart counts any of its reducers.
+    const whole = { ...line, bucket: "whole" as const }
+    const counted = {
+      rows: [row(STAGE, { count: "0", avg: null })],
+    } as unknown as Parameters<typeof chartMeasured>[2]
+    expect(chartMeasured(whole, STAGE, counted)).toBe(true)
   })
 
   it("reads a stats or trend block's empty, say where absent", () => {
@@ -1014,6 +1082,110 @@ describe("the reads of version 2", () => {
     ).toEqual([])
   })
 
+  it("issues no baseline read over a record's own open window, and one over a last window", () => {
+    const block = stats([{ metric: { ref: PULSE }, reducer: "avg" }])
+    const running: Bound = { ...bound, open: true }
+    expect(partialWindow(running)).toBe(true)
+    expect(statsReads(running, block, athens).value).toHaveLength(1)
+    expect(statsReads(running, block, athens).baseline).toEqual([])
+    const last: Bound = { ...bound, open: true, lastWindow: true }
+    expect(partialWindow(last)).toBe(false)
+    expect(statsReads(last, block, athens).baseline).toHaveLength(1)
+  })
+
+  it("compares a night's summary placed by its end over an open window, and says a growing value so far", () => {
+    const ends = new Map<string, MetricInfo>([
+      [STAGE, { id: "body/stage", path: STAGE, bucketPlace: "end" }],
+    ])
+    const block = stats([
+      { metric: { ref: PULSE }, reducer: "avg" },
+      { metric: { ref: STAGE }, reducer: "count" },
+    ])
+    const running: Bound = { ...bound, open: true }
+    expect(partialItem(running, undefined)).toBe(true)
+    expect(partialItem(running, ends.get(STAGE))).toBe(false)
+    const reads = statsReads(running, block, athens, ends)
+    expect(reads.itemRead).toEqual([0, 0])
+    expect(reads.baseline).toHaveLength(1)
+    expect(reads.itemBaseline).toEqual([-1, 0])
+    expect(reads.itemDays[0]).toBeUndefined()
+  })
+
+  it("ends a night's baseline on the day the night ends, whether it starts at 23:50 or 00:20", () => {
+    const ends = new Map<string, MetricInfo>([
+      [STAGE, { id: "body/stage", path: STAGE, bucketPlace: "end" }],
+    ])
+    const block = stats(
+      [
+        { metric: { ref: PULSE }, reducer: "avg" },
+        { metric: { ref: STAGE }, reducer: "count" },
+      ],
+      7
+    )
+    const night = (start: string, end: string): Bound => ({
+      ...bound,
+      window: { start: Date.parse(start), end: Date.parse(end) },
+    })
+    const iso = (t?: number) => (t === undefined ? undefined : isoWithOffset(t))
+    // From 23:50 on the 9th: the night lands on the 10th, so the night
+    // that woke on the 9th is among the days it compares with.
+    const late = statsReads(
+      night("2026-10-09T23:50:00+03:00", "2026-10-10T07:00:00+03:00"),
+      block,
+      athens,
+      ends
+    )
+    expect(late.itemDays.map((d) => iso(d?.end))).toEqual([
+      "2026-10-09T00:00:00+03:00",
+      "2026-10-10T00:00:00+03:00",
+    ])
+    expect(late.itemDays.map((d) => iso(d?.start))).toEqual([
+      "2026-10-02T00:00:00+03:00",
+      "2026-10-03T00:00:00+03:00",
+    ])
+    // One read covers both items' days.
+    expect(late.baseline).toHaveLength(1)
+    expect(late.baseline[0].aggregate.range).toEqual({
+      gte: "2026-10-02T00:00:00+03:00",
+      lt: "2026-10-10T00:00:00+03:00",
+    })
+    // From 00:20 on the 10th: both land on the 10th.
+    const early = statsReads(
+      night("2026-10-10T00:20:00+03:00", "2026-10-10T07:00:00+03:00"),
+      block,
+      athens,
+      ends
+    )
+    expect(early.itemDays.map((d) => iso(d?.end))).toEqual([
+      "2026-10-10T00:00:00+03:00",
+      "2026-10-10T00:00:00+03:00",
+    ])
+    // A cycle opening with a 23:50 night and running past the next
+    // midnight compares the night with the days before the 10th, never
+    // with the night itself.
+    const cycle = statsReads(
+      night("2026-10-09T23:50:00+03:00", "2026-10-11T00:20:00+03:00"),
+      block,
+      athens,
+      ends
+    )
+    expect(iso(cycle.itemDays[1]?.end)).toBe("2026-10-10T00:00:00+03:00")
+  })
+
+  it("keeps the rows of a baseline that lie in an item's days", () => {
+    const row = (start: string, end: string) => ({ start, end })
+    const rows = [
+      row("2026-10-08T00:00:00+03:00", "2026-10-09T00:00:00+03:00"),
+      row("2026-10-09T00:00:00+03:00", "2026-10-10T00:00:00+03:00"),
+    ]
+    const days = {
+      start: Date.parse("2026-10-09T00:00:00+03:00"),
+      end: Date.parse("2026-10-10T00:00:00+03:00"),
+    }
+    expect(rowsInDays(rows, days)).toEqual([rows[1]])
+    expect(rowsInDays(rows, undefined)).toEqual(rows)
+  })
+
   it("splits a metric read two ways into two reads, and shares an entry read alike", () => {
     const twice = statsReads(
       bound,
@@ -1192,6 +1364,8 @@ describe("the reads of version 2", () => {
       value: [],
       baseline: [],
       itemRead: [-1],
+      itemBaseline: [-1],
+      itemDays: [undefined],
     })
   })
 
@@ -1281,6 +1455,35 @@ describe("the reads of version 2", () => {
       gte: "2026-10-05T00:00:00+03:00",
       lt: "2026-10-12T00:00:00+03:00",
     })
+    // WHOOP's nights at 23:50 and at 00:20 each anchor on the day they end
+    // where the metric places by its end.
+    const late: Bound = {
+      ...bound,
+      window: {
+        start: Date.parse("2026-10-09T23:50:00+03:00"),
+        end: Date.parse("2026-10-10T07:30:00+03:00"),
+      },
+    }
+    const early: Bound = {
+      ...bound,
+      window: {
+        start: Date.parse("2026-10-11T00:20:00+03:00"),
+        end: Date.parse("2026-10-11T08:00:00+03:00"),
+      },
+    }
+    expect(trendRead(late, block, athens, ends)?.aggregate.range?.lt).toBe(
+      "2026-10-11T00:00:00+03:00"
+    )
+    expect(trendRead(early, block, athens, ends)?.aggregate.range?.lt).toBe(
+      "2026-10-12T00:00:00+03:00"
+    )
+    // A stats baseline is plain days: the server applies the metric's place.
+    const tiles = blockIn({
+      stats: { baseline: 7, items: [{ metric: { ref: STAGE } }] },
+    }) as StatsBlock
+    expect(
+      statsReads(late, tiles, athens, ends).baseline[0].aggregate.bucket
+    ).toEqual({ calendar: "day", timezone: athens })
   })
 
   it("lays out a strip's whole calendar, a day across the change of offset 25 hours", () => {
@@ -1351,6 +1554,33 @@ describe("the reads of version 2", () => {
     ).toMatchObject({
       orderBy: "at:asc",
       filter: { properties: { by: { eq: GARMIN } } },
+    })
+    // Every listed property narrows: one the record holds to its value, one
+    // it does not to the records that hold none either.
+    const trunk = record(WORKOUT.identity, "s2", {
+      metric: { ref: PULSE },
+      channel: "trunk",
+    })
+    expect(
+      tableParams(bound, table({ sharing: ["metric", "channel"] }), trunk)
+    ).toMatchObject({
+      filter: {
+        properties: { metric: { eq: PULSE }, channel: { eq: "trunk" } },
+      },
+    })
+    const blood = record(WORKOUT.identity, "s3", { metric: { ref: PULSE } })
+    expect(
+      tableParams(bound, table({ sharing: ["metric", "channel"] }), blood)
+    ).toMatchObject({
+      filter: {
+        properties: { metric: { eq: PULSE }, channel: { exists: false } },
+      },
+    })
+    expect(
+      tableParams(bound, table({ sharing: ["lab", "channel"] }), SESSION)
+    ).toEqual({
+      problem:
+        "This table lists the records sharing this record's lab and channel, and this record holds none of them.",
     })
     expect(tableParams(bound, table({ sameAs: "lab" }), SESSION)).toEqual({
       problem:
