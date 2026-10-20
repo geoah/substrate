@@ -281,7 +281,7 @@ function MetricTile({
         )
       : undefined
   const base = daily
-    ? scaleBaseline(daily, item.reducer, bound?.window)
+    ? scaleBaseline(daily, item.reducer, bound?.window, bound?.lastWindow)
     : undefined
   const delta =
     base && numeric !== null

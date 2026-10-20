@@ -552,10 +552,11 @@ properties the sheet folds away because a section shows them. Then come its
   many days before the window: their average, lowest and highest. A daily
   value takes the item's reducer, except that a gauge (by its metric
   record's `form`) read by `first` or `last` takes each day's average, since
-  a day's last reading is one arbitrary instant. A window of several days
-  read by a reducer that adds up over time (`sum`, `count`, `timeInState`,
-  `durationIn`) is compared with that many average days: a week's time open
-  against seven days at the daily average. A change of a value in `%`
+  a day's last reading is one arbitrary instant. A `last` window of several
+  days read by a reducer that adds up over time (`sum`, `count`,
+  `timeInState`, `durationIn`) is compared with that many average days: a
+  week's time open against seven days at the daily average. A record's own
+  window is never scaled, since an open one runs to now. A change of a value in `%`
   reads in points ("+9 points vs the 30-day average of 42 %"), any other
   with its relative change beside it. `better`
   (`higher` or `lower`) colours the change, and a tile in a band names it.

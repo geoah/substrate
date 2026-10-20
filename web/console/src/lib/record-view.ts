@@ -1505,20 +1505,24 @@ export function baselineOf(
 const ADDITIVE = new Set(["sum", "count", "timeInState", "durationIn"])
 
 /** A baseline as the window reads it. A daily baseline answers one day, so
- * a window of several whole days read by an additive reducer (the time a
- * door stood open over the last week) is compared with that many average
- * days, not with one. Any other reducer, and a window of a day or less,
- * keeps the daily figures. `days` in the answer is the window's length in
- * days, 1 where nothing was scaled. */
+ * a view's `last` window of several days read by an additive reducer (the
+ * time a door stood open over the last week) is compared with that many
+ * average days, not with one. A record's own window is never scaled: an
+ * open one runs to now, which is no length the value was measured over (a
+ * cycle whose provider stopped syncing). Any other reducer, and a window of
+ * a day or less, keeps the daily figures. `span` in the answer is the
+ * number of days scaled by, 1 where nothing was. */
 export function scaleBaseline(
   base: { avg: number; low: number; high: number; days: number },
   reducer: AggregateReducer,
-  window?: TimeRange
+  window?: TimeRange,
+  lastWindow = false
 ): { avg: number; low: number; high: number; days: number; span: number } {
   const name = reducerKey(reducer).split(":")[0] ?? ""
-  const span = window
-    ? Math.max(1, Math.round((window.end - window.start) / 86_400_000))
-    : 1
+  const span =
+    window && lastWindow
+      ? Math.max(1, Math.round((window.end - window.start) / 86_400_000))
+      : 1
   if (!ADDITIVE.has(name) || span <= 1) return { ...base, span: 1 }
   return {
     avg: base.avg * span,

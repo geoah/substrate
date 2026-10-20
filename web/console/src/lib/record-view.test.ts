@@ -1570,7 +1570,7 @@ describe("scaleBaseline", () => {
   const week = { start: 0, end: 7 * day }
 
   it("compares a week of time in a state with seven average days", () => {
-    expect(scaleBaseline(daily, "timeInState", week)).toEqual({
+    expect(scaleBaseline(daily, "timeInState", week, true)).toEqual({
       avg: 6300,
       low: 2100,
       high: 16800,
@@ -1580,13 +1580,25 @@ describe("scaleBaseline", () => {
   })
 
   it("scales a sum and a time in a range, never an average", () => {
-    expect(scaleBaseline(daily, "sum", week).span).toBe(7)
-    expect(scaleBaseline(daily, { durationIn: [95, 114] }, week).span).toBe(7)
-    expect(scaleBaseline(daily, "avg", week)).toEqual({ ...daily, span: 1 })
+    expect(scaleBaseline(daily, "sum", week, true).span).toBe(7)
+    expect(
+      scaleBaseline(daily, { durationIn: [95, 114] }, week, true).span
+    ).toBe(7)
+    expect(scaleBaseline(daily, "avg", week, true)).toEqual({
+      ...daily,
+      span: 1,
+    })
+  })
+
+  it("never scales a record's own window, an open one included", () => {
+    expect(scaleBaseline(daily, "sum", { start: 0, end: 13 * day })).toEqual({
+      ...daily,
+      span: 1,
+    })
   })
 
   it("keeps the daily figures for a window of a day or less", () => {
-    expect(scaleBaseline(daily, "sum", { start: 0, end: day })).toEqual({
+    expect(scaleBaseline(daily, "sum", { start: 0, end: day }, true)).toEqual({
       ...daily,
       span: 1,
     })
