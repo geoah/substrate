@@ -137,7 +137,9 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 }
 
 // parkRefusedCredential takes a credential off the refresh loop's work list
-// after its provider refused the refresh token with `invalid_grant`: it
+// after its provider refused the refresh token with `invalid_grant`, or
+// refused it with another 4xx until the backoff step reached
+// oauthParkAfter (0180): it
 // clears the row's expires_at, the column expiringCredentials selects on,
 // and leaves the payload and updated_at as they are. The payload keeps the
 // token's real expiry, so an invocation still refreshes on demand. The write
@@ -200,6 +202,21 @@ func (ds *dataset) getCredential(ctx context.Context, ref string) (*oauth2.Token
 		return nil, eref{}, time.Time{}, fmt.Errorf("substrate/engine: decode credential %s: %w", ref, err)
 	}
 	return &tok, account, updatedAt, nil
+}
+
+// credentialReplaced reports whether the credential under ref is no longer
+// the generation seen: a reconnect stored a new one, or a teardown removed
+// it. A refusal of generation seen says nothing about either (0180).
+func (ds *dataset) credentialReplaced(ctx context.Context, ref string, seen time.Time) (bool, error) {
+	var updated time.Time
+	err := ds.db.QueryRowContext(ctx, `SELECT updated_at FROM sealed WHERE ref = $1`, ref).Scan(&updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !updated.Equal(seen), nil
 }
 
 // errCredentialGone marks a ref with no stored row: the account needs a

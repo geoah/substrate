@@ -137,3 +137,52 @@ func TestOAuthRefreshTurnIsExclusive(t *testing.T) {
 		t.Fatalf("%d entries left after every hand gave the turn back, want 0", n)
 	}
 }
+
+// The backoff counts the refusals of one generation from the first: seven
+// refusals read seven, since the first one, with the step at 64 minutes,
+// past oauthParkAfter. A new generation and a refresh that landed reset both.
+func TestOAuthBackoffCountsRefusalsOfAGeneration(t *testing.T) {
+	tbl := newTestRefreshTable()
+	k := refreshKey{repository: "ada.example.com", ref: "r1"}
+	e, err := tbl.take(context.Background(), k)
+	if err != nil {
+		t.Fatalf("take: %v", err)
+	}
+	defer tbl.give(k, e)
+	gen := backoffEpoch.Add(-time.Hour)
+	now := backoffEpoch
+	for i := 1; i <= 7; i++ {
+		step := tbl.arm(e, gen, now, errors.New("refused"))
+		if got, _, _ := tbl.refusalState(e); got != step {
+			t.Fatalf("refusal %d: the state's step is %v, arm returned %v", i, got, step)
+		}
+		if i < 7 && step >= oauthParkAfter {
+			t.Fatalf("refusal %d armed %v, at or past the park threshold %v", i, step, oauthParkAfter)
+		}
+		now = now.Add(step)
+	}
+	step, refusals, since := tbl.refusalState(e)
+	if step != 64*time.Minute || refusals != 7 || !since.Equal(backoffEpoch) {
+		t.Fatalf("after seven refusals: step %v, %d refusals since %v; want 64m, 7, %v", step, refusals, since, backoffEpoch)
+	}
+	if step < oauthParkAfter {
+		t.Fatalf("the seventh refusal's step %v is short of the park threshold %v", step, oauthParkAfter)
+	}
+
+	fresh := backoffEpoch
+	if got := tbl.backedOff(e, fresh, now); got != nil {
+		t.Fatalf("a new generation was answered with the old one's refusal: %v", got)
+	}
+	if _, refusals, since := tbl.refusalState(e); refusals != 0 || !since.IsZero() {
+		t.Fatalf("a new generation kept %d refusals since %v", refusals, since)
+	}
+	tbl.arm(e, fresh, now, errors.New("refused"))
+	tbl.arm(e, fresh, now.Add(time.Minute), errors.New("refused"))
+	if _, refusals, since := tbl.refusalState(e); refusals != 2 || !since.Equal(now) {
+		t.Fatalf("the new generation counts %d refusals since %v, want 2 since %v", refusals, since, now)
+	}
+	tbl.clear(e)
+	if step, refusals, since := tbl.refusalState(e); step != 0 || refusals != 0 || !since.IsZero() {
+		t.Fatalf("a landed refresh left step %v, %d refusals since %v", step, refusals, since)
+	}
+}
