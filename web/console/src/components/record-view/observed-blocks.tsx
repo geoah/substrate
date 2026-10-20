@@ -6,7 +6,7 @@
  * metric's spans as rows in the view's order of codes where the source
  * recorded them in sequence, and its time in each code. */
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import {
@@ -167,10 +167,12 @@ function BoundChart({
   // Under `empty: hide` a chart none of whose metrics was measured over the
   // record's window (heart rate inside a night a source scored without
   // samples) is left out once its reads are in; a failed read is still
-  // said. A zoom never hides it: the reset lives on the chart.
+  // said. A zoom changes nothing: a chart drawn over the whole window
+  // stays drawn (the reset lives on the one holding the zoom), and one
+  // left out stays out, whatever the zoomed part holds.
   const hide = block.empty === "hide"
   const settled = !answer.pending && !ctx.zoomed
-  const hidden =
+  const emptyNow =
     hide &&
     settled &&
     !answer.errors.some(Boolean) &&
@@ -179,6 +181,10 @@ function BoundChart({
         !answer.dropped[readOf[i]]?.includes(metric) &&
         chartMeasured(block, metric, answer.answers[readOf[i]])
     )
+  // What the chart decided over the whole window, kept through a zoom.
+  const [unzoomed, setUnzoomed] = useState(false)
+  if (settled && unzoomed !== emptyNow) setUnzoomed(emptyNow)
+  const hidden = ctx.zoomed ? unzoomed : emptyNow
   useEffect(() => {
     if (!hide || !settled) return
     onEmpty?.(hidden)

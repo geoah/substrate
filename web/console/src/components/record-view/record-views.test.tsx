@@ -241,6 +241,8 @@ function mount(
     curve?: AggregateResult
     /** Holds every line read after the first until it resolves: a zoom. */
     zoomAnswer?: Promise<void>
+    /** Metrics whose reads answer no rows. */
+    unmeasured?: string[]
   } = {}
 ) {
   const metrics = opts.metrics ?? METRICS
@@ -273,6 +275,8 @@ function mount(
       }
       if (aggregate) {
         if (aggregate.metric?.ref === STAGE) return ok(opts.totals ?? TOTALS)
+        const first = aggregate.metrics?.[0]?.ref
+        if (first && opts.unmeasured?.includes(first)) return ok(answer([]))
         if (
           aggregate.bucket &&
           seen.filter((s) => s.aggregate?.bucket).length > 1
@@ -1004,6 +1008,53 @@ it("leaves out a chart under empty: hide where no metric was measured, and its v
   )
   expect(night()!.hidden).toBe(true)
   expect(night()!.textContent).not.toContain("was measured")
+})
+
+it("keeps a chart left out under empty: hide out while another chart is zoomed", async () => {
+  const ENERGY = `${METRIC}/health/energy_expended`
+  const { container } = mount(
+    [
+      view("fitness/session", {
+        name: "During this session",
+        window: WINDOW,
+        sections: [
+          {
+            chart: {
+              label: "Pulse",
+              metrics: [{ ref: PULSE }],
+              reducers: [{ reducer: "avg" }],
+            },
+          },
+          {
+            chart: {
+              label: "Energy",
+              metrics: [{ ref: ENERGY }],
+              reducers: [{ reducer: "sum" }],
+              empty: "hide",
+            },
+          },
+        ],
+      }),
+    ],
+    RUN,
+    SESSION,
+    { unmeasured: [ENERGY] }
+  )
+  const section = await screen.findByRole("region", {
+    name: "During this session",
+  })
+  const energy = () =>
+    container.querySelector("[role=group][aria-label=Energy]")
+  const chart = await within(section).findByRole("group", {
+    name: "Heart rate during this session",
+  })
+  await waitFor(() => expect(energy()).toBe(null))
+  act(() => chart.focus())
+  fireEvent.keyDown(chart, { key: "ArrowRight" })
+  fireEvent.keyDown(chart, { key: "Enter" })
+  await screen.findByRole("button", { name: "Show the whole session" })
+  expect(energy()).toBe(null)
+  expect(section.textContent).not.toContain("was measured")
 })
 
 it("draws a chart under empty: hide where one metric holds a value", async () => {
