@@ -112,11 +112,29 @@ export function envelopeError(
 // instant serverNow derives from it is never later than the server's own.
 let serverOffsetMs: number | undefined
 
+// Who reads serverNow on a timer and must read it again when the offset
+// moves (useNow): the first response, or a clock that jumped, would
+// otherwise leave them on the browser's clock until their next tick.
+const serverClockListeners = new Set<() => void>()
+
+/** Call `fn` whenever the learned offset first arrives or moves by a second
+ * or more; returns the unsubscribe. Each response's header shifts the offset
+ * by under a second of travel and rounding, which no reader needs. */
+export function onServerClock(fn: () => void): () => void {
+  serverClockListeners.add(fn)
+  return () => serverClockListeners.delete(fn)
+}
+
 /** Learn the server's clock from one response's `Date` header. */
 export function noteServerDate(header: string | null, receivedAt = Date.now()) {
   if (!header) return
   const at = Date.parse(header)
-  if (!Number.isNaN(at)) serverOffsetMs = at - receivedAt
+  if (Number.isNaN(at)) return
+  const before = serverOffsetMs
+  serverOffsetMs = at - receivedAt
+  if (before === undefined || Math.abs(serverOffsetMs - before) >= 1000) {
+    for (const fn of serverClockListeners) fn()
+  }
 }
 
 /** Now by the server's clock, from the newest `Date` header the console read;

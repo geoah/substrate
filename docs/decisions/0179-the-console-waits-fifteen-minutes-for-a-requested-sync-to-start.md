@@ -4,7 +4,7 @@ date: 2026-10-20
 decision-makers: George Antoniadis
 ---
 
-# 0179. A waited-on sync request expires after fifteen minutes
+# 0179. The console waits fifteen minutes for a requested sync to start
 
 ## Context and Problem Statement
 
@@ -66,7 +66,12 @@ that the request's run started.
 
 `requestPending` and `requestUnstarted` in
 `web/console/src/lib/sync.test.ts`; the `syncWords` cases and "a failing
-account asked to sync again" in `web/console/src/lib/providers.test.ts`.
+account asked to sync again" in `web/console/src/lib/providers.test.ts`;
+`web/console/src/hooks/use-now.test.tsx`, which moves a mounted row to the
+server's clock when the first response arrives; and "says the sync has not
+started once a request waited fifteen minutes" in
+`web/console/src/pages/provider.test.tsx`, which crosses the bound on the
+minute tick.
 
 ## More Information
 

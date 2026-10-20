@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
@@ -26,7 +26,9 @@ import {
   type StandingInput,
   type StepFacts,
 } from "@/lib/providers"
+import { noteServerDate, resetServerClock } from "@/lib/api/http"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
+import { shortDate } from "@/lib/format"
 import { syncFieldsOf } from "@/lib/sync"
 
 function record(
@@ -330,6 +332,34 @@ describe("providerStanding", () => {
       expect(
         standing({ syncState: "throttled" }, "erroring: rate limited").problems
       ).toEqual([])
+    })
+
+    it("measures the request by the server's clock when no `now` is given", () => {
+      vi.useFakeTimers()
+      try {
+        // The browser runs 30 minutes behind the server; the request is 16
+        // minutes old by the server.
+        vi.setSystemTime(Date.parse("2026-10-20T08:26:00Z"))
+        noteServerDate("Tue, 20 Oct 2026 08:56:00 GMT")
+        const s = providerStanding({
+          ...base,
+          accounts: [
+            {
+              ...ada,
+              sync: syncFieldsOf({
+                ...failed,
+                syncRequestedAt: "2026-10-20T08:40:00Z",
+              }),
+            },
+          ],
+        })
+        expect(s.problems[0]?.detail).toContain(
+          "The sync you asked for 16m ago hasn’t started."
+        )
+      } finally {
+        resetServerClock()
+        vi.useRealTimers()
+      }
     })
 
     it("is failing again, saying the request has not started, once it is fifteen minutes old", () => {
@@ -674,6 +704,38 @@ describe("syncWords", () => {
     expect(
       syncWords(failing, "WHOOP", Date.parse("2026-10-20T08:54:00Z"))
     ).toEqual({ text: "Checking again…", tone: "active" })
+  })
+  it("dates a request older than two weeks with “on”", () => {
+    const failing = syncFieldsOf({
+      syncState: "erroring",
+      lastSyncStartedAt: "2026-09-30T08:00:00Z",
+      syncRequestedAt: "2026-10-01T12:00:00Z",
+    })
+    expect(
+      syncWords(failing, "WHOOP", Date.parse("2026-10-20T12:00:00Z")).text
+    ).toBe(
+      `The sync you asked for on ${shortDate("2026-10-01T12:00:00Z")} hasn’t started`
+    )
+  })
+  it("measures a request by the server's clock when no `now` is given", () => {
+    vi.useFakeTimers()
+    try {
+      // The browser runs 30 minutes behind the server; the request is 16
+      // minutes old by the server.
+      vi.setSystemTime(Date.parse("2026-10-20T08:26:00Z"))
+      noteServerDate("Tue, 20 Oct 2026 08:56:00 GMT")
+      const failing = syncFieldsOf({
+        syncState: "erroring",
+        lastSyncStartedAt: "2026-10-20T08:00:00Z",
+        syncRequestedAt: "2026-10-20T08:40:00Z",
+      })
+      expect(syncWords(failing, "WHOOP").text).toBe(
+        "The sync you asked for 16m ago hasn’t started"
+      )
+    } finally {
+      resetServerClock()
+      vi.useRealTimers()
+    }
   })
 })
 

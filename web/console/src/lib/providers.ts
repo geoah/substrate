@@ -12,7 +12,8 @@ import type {
 } from "@/lib/api/types"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { FUNCTION_KIND } from "@/lib/core-kinds"
-import { relativeTime } from "@/lib/format"
+import { serverNow } from "@/lib/api/http"
+import { relativeTime, shortDate } from "@/lib/format"
 import { mappedKind } from "@/lib/provenance"
 import { refId, toolName, writeKinds } from "@/lib/tools"
 import {
@@ -209,7 +210,7 @@ const ATTENTION = "Needs attention"
  * measured against (requestPending), the server's clock by default. */
 export function providerStanding(
   s: StandingInput,
-  now?: number
+  now: number = serverNow().getTime()
 ): ProviderStanding {
   if (s.quarantined) {
     return attention([
@@ -279,7 +280,7 @@ function attention(problems: ProviderProblem[]): ProviderStanding {
  * retried, an update your records block. */
 export function standingProblems(
   s: StandingInput,
-  now?: number
+  now: number = serverNow().getTime()
 ): ProviderProblem[] {
   const out: ProviderProblem[] = []
   for (const a of s.accounts) {
@@ -309,7 +310,7 @@ export function standingProblems(
       const detail = why ? [why] : []
       if (a.sync.requestedAt && requestUnstarted(a.sync, now)) {
         detail.push(
-          `The sync you asked for ${relativeTime(a.sync.requestedAt, now)} hasn’t started.`
+          `The sync you asked for ${askedWhen(a.sync.requestedAt, now)} hasn’t started.`
         )
       }
       out.push({
@@ -421,6 +422,17 @@ export interface Words {
   tone: WordTone
 }
 
+/** When the owner asked for a sync, as the "hasn’t started" line says it:
+ * relative while recent ("25m ago"), and "on <date>" once relativeTime
+ * gives up and answers a bare date. */
+function askedWhen(iso: string, now: number): string {
+  const at = Date.parse(iso)
+  if (!Number.isNaN(at) && now - at >= 14 * 24 * 60 * 60_000) {
+    return `on ${shortDate(iso)}`
+  }
+  return relativeTime(iso, now)
+}
+
 /** The core `sync` trait's five states as a person reads them. A failing
  * account whose sync request waits for its run reads "Checking again…": the
  * failure it holds is the run before the request's. Once the request has
@@ -439,7 +451,7 @@ export function syncWords(
     | "lastSyncStartedAt"
   >,
   providerName: string,
-  now?: number
+  now: number = serverNow().getTime()
 ): Words {
   if (f.paused) return { text: "Paused", tone: "warn" }
   switch (f.state) {
@@ -453,7 +465,7 @@ export function syncWords(
       }
       if (f.requestedAt && requestUnstarted(f, now)) {
         return {
-          text: `The sync you asked for ${relativeTime(f.requestedAt, now)} hasn’t started`,
+          text: `The sync you asked for ${askedWhen(f.requestedAt, now)} hasn’t started`,
           tone: "bad",
         }
       }

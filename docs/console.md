@@ -856,8 +856,8 @@ console waits up to 15 minutes by the server's clock: past that, with no run
 started and no acknowledgement, the account reads **The sync you asked for
 15m ago hasn’t started**, the failure needs attention again with that line
 under its reason, and **Sync now** asks once more
-([0179](decisions/0179-a-waited-on-sync-request-expires-after-fifteen-minutes.md)). An
-account's sync is failing when its `syncState` is `erroring`; a legacy
+([0179](decisions/0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md)).
+An account's sync is failing when its `syncState` is `erroring`; a legacy
 `syncStatus` that begins with `erroring` counts only on a record with no
 `syncState`, since a bundle rewrites that string only when a run ends. Sync
 now dates its request by the server's clock, read from the `Date` header of
