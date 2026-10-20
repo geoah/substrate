@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-10
 decision-makers: George Antoniadis
+amended-by: 0178
 ---
 
 # 0152. A hand retry writes a run row, and the newest ok run outlives retention

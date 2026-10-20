@@ -336,6 +336,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0175](0175-a-record-view-draws-tiles-trends-and-tables-from-one-batched-read-per-block.md) | A record view draws tiles, trends and tables from one batched read per block, and a band is view data | proposed |
 | [0176](0176-a-reconnect-requests-a-sync.md) | A reconnect requests a sync | proposed |
 | [0177](0177-a-failing-alert-needs-a-standing-park-and-ends-with-the-last-one-or-its-trigger.md) | A failing alert needs a standing park, and ends with the last one or its trigger | proposed |
+| [0178](0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md) | A sync delivery that settles ok retires the account's older parks of the same callable | proposed |
 | [0179](0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md) | The console waits fifteen minutes for a requested sync to start | proposed |
 | [0180](0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md) | A refresh stores its rotated token, and an hour of refusals parks the credential | proposed |
 | [0181](0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md) | A cached prompt token is priced at its cache rate | proposed |

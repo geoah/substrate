@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -999,6 +1000,11 @@ type settlement struct {
 	// by deliver once the guard passed on a record whose kind binds the
 	// trait, nil for every other delivery.
 	sync *syncStamp
+	// callable is the trigger's callable record path on a record delivery,
+	// dispatched or retried: a sync that settles ok retires the older parks
+	// of the same callable on the same record (retireSupersededSyncParks).
+	// Empty on a fire.
+	callable string
 	// supersedes is the occurrence a schedule fire delivers, dispatched or
 	// retried, zero on every other delivery: once it settles, the trigger's
 	// parked fires at or before it retire with it (retireSupersededFires).
@@ -1049,10 +1055,17 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 	if err != nil {
 		return err
 	}
+	var others map[string]int
+	if !res.skipped {
+		if others, err = s.retireSupersededSyncParks(t); err != nil {
+			return err
+		}
+		retired += others[s.trigger]
+	}
 	if err := t.settleDelivery(s.trigger); err != nil {
 		return err
 	}
-	if err := s.settleAlert(t, retired); err != nil {
+	if err := s.settleAlert(t, retired, others); err != nil {
 		return err
 	}
 	// A retry whose guard no longer matches settles here as a skip, which
@@ -1095,17 +1108,34 @@ func (s *settlement) retireClaim(t *txn) error {
 	if err := t.settleDelivery(s.trigger); err != nil {
 		return err
 	}
-	return s.settleAlert(t, 0)
+	return s.settleAlert(t, 0, nil)
 }
 
 // settleAlert settles the trigger's parked-deliveries alert once this
-// settlement retired a parked delivery: the failure a retry re-ran, or older
-// parked fires a settled occurrence retired. A claim in flight and an
-// admitted webhook request are not counted as parked (parkedCount), so
-// retiring one of them alone moves nothing. It runs after the delivery entry.
-func (s *settlement) settleAlert(t *txn, retired int) error {
+// settlement retired a parked delivery: the failure a retry re-ran, older
+// parked fires a settled occurrence retired, or older parks a settled sync
+// retired. A claim in flight and an admitted webhook request are not counted
+// as parked (parkedCount), so retiring one of them alone moves nothing.
+// others is the parks a settled sync retired per trigger
+// (retireSupersededSyncParks): every other trigger named there settles its
+// own alerts the same way. It runs after the delivery entry.
+func (s *settlement) settleAlert(t *txn, retired int, others map[string]int) error {
 	if (s.retire != 0 && s.pending == nil) || retired > 0 {
-		return t.settleParkedAlert(s.trigger)
+		if err := t.settleParkedAlert(s.trigger); err != nil {
+			return err
+		}
+	}
+	ids := make([]string, 0, len(others))
+	for id, n := range others {
+		if id != s.trigger && n > 0 {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if err := t.settleParkedAlert(id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1217,8 +1247,10 @@ func (s *settlement) release() {
 // row and the changelog keep the history. A row parked by an earlier binary
 // is a row like any other and retires at the next settled fire.
 //
-// A record trigger never supersedes: each of its parks is one record's
-// change, which no delivery of another change re-delivers. Nor is a webhook
+// A record trigger's parks retire here never: each is one record's change,
+// which no delivery of another change re-delivers. The one exception is a
+// delivery that stamps a sync (retireSupersededSyncParks, decision 0178).
+// Nor is a webhook
 // request's park retired (it carries its request as a payload), nor a fire
 // whose id is not an occurrence (a wake), nor an agent claim, in flight,
 // interrupted or interrupted again during its rerun, because its run may
@@ -1286,6 +1318,106 @@ func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 	return retired, nil
 }
 
+// retireSupersededSyncParks retires, once a delivery that stamped a sync
+// settles ok, the older record parks of the same callable on the same
+// account (decision 0178, amending 0142). A sync body reads the account and
+// the upstream as they stand, like a schedule fire, so the park of an
+// earlier request or connect of the account is work this delivery did
+// again. It answers how many rows it retired per trigger.
+//
+// The limits: only a delivery syncStampFor stamped (the record's kind binds
+// `sync`, the callable is a function of the kind's own package, never an
+// agent), and only when the body left the record at neither `erroring` nor
+// `throttled`, which say the account did not sync. Only parks of a record
+// change naming the same record of the same kind, of any trigger whose
+// callable is this one, parked before this delivery started. Never a
+// webhook request, a fire, a claim in flight, interrupted or in its rerun,
+// and never a row a hand holds in runningClaims. A schedule fire names no
+// record and retires no record park. The rows are DELETED through the
+// unpark fold on the settling delivery's own entry, at most supersedeBatch
+// of them, as retireSupersededFires does.
+func (s *settlement) retireSupersededSyncParks(t *txn) (map[string]int, error) {
+	if s.sync == nil || !s.sync.stamped || s.callable == "" {
+		return nil, nil
+	}
+	row, err := t.loadRow(s.sync.ref, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return nil, err
+	}
+	if state, _ := row.Props[propSyncState].(string); state == substrate.SyncStateErroring || state == substrate.SyncStateThrottled {
+		return nil, nil
+	}
+	held := []int64{}
+	s.ds.runningClaims.Range(func(k, _ any) bool {
+		if id, ok := k.(int64); ok && !s.superseded[id] {
+			held = append(held, id)
+		}
+		return true
+	})
+	heldJSON, err := json.Marshal(held)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := t.query(`
+		SELECT f.id, f.trigger_id FROM trigger_failures f
+		WHERE f.record_id = $1 AND f.fire_id = '' AND f.payload IS NULL AND f.parked_at < $2
+		  AND f.last_error NOT IN ($3, $4, $5, $6, $7, $8)
+		  AND f.id NOT IN (SELECT jsonb_array_elements_text($9::jsonb)::bigint)
+		  AND EXISTS (SELECT 1 FROM changelog c WHERE c.seq = f.seq AND c.kind = $10 AND c.record_id = f.record_id)
+		ORDER BY f.id`,
+		s.sync.ref.ID, s.sync.started, pendingWebhookError, inFlightError, legacyInFlightError,
+		interruptedAgentError, legacyInterruptedAgentError, rerunAgentError, string(heldJSON), s.sync.ref.Kind)
+	if err != nil {
+		return nil, err
+	}
+	type park struct {
+		id      int64
+		trigger string
+	}
+	var parks []park
+	for rows.Next() {
+		var p park
+		if err := rows.Scan(&p.id, &p.trigger); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		parks = append(parks, p)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// The callable is matched on the parsed trigger rather than in SQL: a
+	// stored reference has more than one shape.
+	same := map[string]bool{}
+	retired := map[string]int{}
+	n := 0
+	for _, p := range parks {
+		if n >= supersedeBatch {
+			break
+		}
+		match, seen := same[p.trigger]
+		if !seen {
+			tr, err := t.alertTrigger(p.trigger)
+			if err != nil {
+				return nil, err
+			}
+			match = tr != nil && tr.Record != nil && tr.callablePath() == s.callable
+			same[p.trigger] = match
+		}
+		// A hand that took the row since the snapshot keeps it.
+		if !match || !s.holdSuperseded(p.id) {
+			continue
+		}
+		if err := t.unparkTx(p.trigger, p.id); err != nil {
+			return nil, err
+		}
+		retired[p.trigger]++
+		n++
+	}
+	return retired, nil
+}
+
 // holdSuperseded takes the in-process claim on a parked fire this settlement
 // retires, false when another hand holds it. A settlement that rolled back
 // and settles again already holds the claims it took the first time.
@@ -1325,7 +1457,7 @@ func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
 	if err := t.settleDelivery(s.trigger); err != nil {
 		return err
 	}
-	if err := s.settleAlert(t, retired); err != nil {
+	if err := s.settleAlert(t, retired, nil); err != nil {
 		return err
 	}
 	if err := t.resolveFailingAlert(s.trigger); err != nil {
@@ -1342,7 +1474,7 @@ func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
 // record.
 func (ds *dataset) dispatchSettlement(tr *trigger, ch substrate.Change, from int64, started time.Time) *settlement {
 	s := &settlement{
-		ds: ds, trigger: tr.ID, seq: ch.Seq, started: started,
+		ds: ds, trigger: tr.ID, seq: ch.Seq, started: started, callable: tr.callablePath(),
 		acknowledge: func(t *txn) error { return t.advanceCursorTx(tr.ID, from, ch.Seq) },
 	}
 	s.record = func(t *txn, res deliverResult) error {
@@ -2368,11 +2500,15 @@ func (t *txn) putSystemRun(r runRecord, prune bool) error {
 	})
 }
 
-// pruneRuns enforces the retention: the newest runRetention non-parked runs
-// per trigger stay, older ones tombstone. Parked runs are exempt — failures
-// are kept — and so is the trigger's newest ok run, however old: it is where
-// the trigger's health counts its failures from (health.go, decision 0152),
-// and twenty skips must not erase it. It runs in every settling
+// pruneRuns enforces the retention: the newest runRetention runs per trigger
+// stay, older ones tombstone. Three kinds of run are exempt and take no
+// place among the twenty. The trigger's newest ok run, however old, is where
+// its health counts its failures from (health.go, decision 0152), and twenty
+// skips must not erase it. A parked run after that ok run is one health
+// counts in the current streak. A parked run whose delivery still stands in
+// the ledger is the history of a failure a person has yet to retry or
+// forget. Any other park belongs to an episode that ended and leaves with
+// the runs past the twenty (decision 0178). It runs in every settling
 // transaction, under the changelog lock, so it finds the trigger's runs
 // through refs (triggerRunsSQL).
 func (t *txn) pruneRuns(triggerID string) error {
@@ -2380,15 +2516,24 @@ func (t *txn) pruneRuns(triggerID string) error {
 	if err != nil {
 		return err
 	}
-	args := []any{typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention, runStatusOK}
+	args := []any{typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention, runStatusOK, triggerID}
 	if viaRefs {
 		args[1] = triggerID
 		args = append(args, typeTrigger)
 	}
-	runs := triggerRunsSQL(viaRefs, "$1", "$6", "$2", "$2")
+	runs := triggerRunsSQL(viaRefs, "$1", "$7", "$2", "$2")
 	rows, err := t.query(`
+		WITH okat AS (
+			SELECT max((run.props->>'finishedAt')::timestamptz) AS at `+runs+` AND run.props->>'status' = $5
+		)
 		SELECT id FROM (
-			SELECT run.id `+runs+` AND run.props->>'status' <> $3
+			SELECT run.id `+runs+`
+			  AND NOT (run.props->>'status' = $3 AND (
+			    (run.props->>'finishedAt')::timestamptz > COALESCE((SELECT at FROM okat), '-infinity'::timestamptz)
+			    OR EXISTS (
+			      SELECT 1 FROM trigger_failures f WHERE f.trigger_id = $6
+			        AND CASE WHEN f.fire_id = '' THEN f.seq::text = run.props->>'seq'
+			                 ELSE f.fire_id = run.props->>'fireId' END)))
 			ORDER BY run.created_at DESC, run.id DESC OFFSET $4
 		) old
 		WHERE id IS DISTINCT FROM (
@@ -3545,6 +3690,7 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 		return 0, fmt.Errorf("substrate/engine: trigger %s failure %d retried without its hold", tr.ID, failureID)
 	}
 	settle.seq, settle.fireID, settle.retire = int64(f.Seq), f.FireID, failureID
+	settle.callable = tr.callablePath()
 	// The retry, a hand's or the rerun of an interrupted agent delivery
 	// (decision 0151), writes its run as a dispatch does, mode manual, in the
 	// transaction that settles it (decision 0152): ok, or skipped when the
