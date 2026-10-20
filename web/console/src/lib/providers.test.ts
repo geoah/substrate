@@ -59,6 +59,9 @@ function states(f: StepFacts) {
   return setupSteps(f).map((s) => `${s.key}:${s.state}`)
 }
 
+const UNREACHABLE =
+  "Beeper Desktop is not reachable (since 2026-10-20 12:45 UTC); syncing resumes when it is back"
+
 describe("setupSteps", () => {
   it("makes adding the provider the current step until it is here", () => {
     expect(states({ ...FACTS, installed: false })).toEqual([
@@ -328,7 +331,7 @@ describe("providerStanding", () => {
         problems: [],
       })
       // A bundle that files a rate limit as `throttled` beside an
-      // `erroring: rate limited` string is slowed down, not failing.
+      // `erroring: rate limited` string is waiting, not failing.
       expect(
         standing({ syncState: "throttled" }, "erroring: rate limited").problems
       ).toEqual([])
@@ -417,6 +420,24 @@ describe("providerStanding", () => {
         standing({ ...failed, syncRequestedAt: at, syncPaused: true }).problems
       ).toHaveLength(1)
     })
+  })
+
+  it("reads a throttled account as waiting, not failing", () => {
+    // Beeper's sync while the owner's computer sleeps (decision 0183).
+    const s = providerStanding({
+      ...base,
+      accounts: [
+        {
+          ...ada,
+          sync: syncFieldsOf({
+            syncState: "throttled",
+            syncMessage: UNREACHABLE,
+          }),
+        },
+      ],
+    })
+    expect(s.problems).toEqual([])
+    expect(s.line).toBe("Connected · waiting")
   })
 
   it("reads a legacy erroring status as a failing sync", () => {
@@ -658,8 +679,16 @@ describe("syncWords", () => {
     expect(words({})).toBe("Not synced yet")
     expect(words({ syncState: "running" })).toBe("Syncing…")
     expect(words({ syncState: "ok" })).toBe("Up to date")
-    expect(words({ syncState: "throttled" })).toBe("Slowed down by Google")
+    expect(words({ syncState: "throttled" })).toBe("Waiting for Google")
     expect(words({ syncState: "ok", syncPaused: true })).toBe("Paused")
+  })
+  it("words a throttled sync as waiting whatever its reason", () => {
+    expect(
+      syncWords(
+        syncFieldsOf({ syncState: "throttled", syncMessage: UNREACHABLE }),
+        "Beeper"
+      )
+    ).toEqual({ text: "Waiting for Beeper", tone: "warn" })
   })
   it("quotes the first line of the error", () => {
     expect(

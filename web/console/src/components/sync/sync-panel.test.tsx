@@ -59,3 +59,14 @@ describe("SyncSummary last error", () => {
     expect(screen.getByText(ERROR)).toBeTruthy()
   })
 })
+
+describe("SyncSummary while the provider holds the sync back", () => {
+  it("reads Waiting with the body's reason beside it", () => {
+    const reason =
+      "Beeper Desktop is not reachable (since 2026-10-20 12:45 UTC); syncing resumes when it is back"
+    summary({ syncState: "throttled", syncMessage: reason })
+    expect(screen.getByText("Waiting")).toBeTruthy()
+    expect(screen.getByText(reason)).toBeTruthy()
+    expect(screen.queryByText("Last error")).toBeNull()
+  })
+})

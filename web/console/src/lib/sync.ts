@@ -249,8 +249,9 @@ export function syncFailing(
 
 /** The one dot a Connection row wears, from the token and the sync together:
  * a dead grant or a failing sync (syncFailing) is broken; a pending grant, a
- * paused or throttled sync is attention; a connected account whose sync is
- * fine is healthy; an account that never synced is idle. A failing account
+ * paused sync or a throttled one (waiting on its provider) is attention; a
+ * connected account whose sync is fine is healthy; an account that never
+ * synced is idle. A failing account
  * whose sync request waits for its run (requestPending) is being checked
  * again, and reads as a running one does, until the wait runs out. */
 export function healthOf(

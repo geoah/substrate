@@ -36,7 +36,7 @@ import {
 import { cn } from "@/lib/utils"
 
 /** Running is under way (its dot pulses), ok is fine, an error is bad,
- * throttled wants a look, never recedes. */
+ * throttled is waiting on the provider and wants a look, never recedes. */
 const STATE_TONE: Record<SyncState, PillTone> = {
   never: "neutral",
   running: "accent",
@@ -52,7 +52,7 @@ const STATE_WORD: Record<SyncState, string> = {
   running: "Syncing…",
   ok: "Up to date",
   erroring: "Having trouble",
-  throttled: "Slowed down",
+  throttled: "Waiting",
 }
 
 export function SyncStateBadge({
