@@ -357,7 +357,7 @@ export function SyncNowButton({
             ? "The request is on the record; the dispatcher picks it up on its next pass."
             : ran > 0
               ? `${ran} ${ran === 1 ? "delivery" : "deliveries"} ran.`
-              : "The triggers woke; nothing was due yet.",
+              : "The request is on the record; the run in progress or the dispatcher's next pass picks it up.",
       })
       refresh()
     },
