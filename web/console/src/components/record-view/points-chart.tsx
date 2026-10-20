@@ -232,15 +232,21 @@ export function PointsChart({
     )
   }
 
+  // The reading nearest the pointer across, and among readings at one
+  // instant (the regions of one scan) the one nearest it up and down.
   function nearest(event: PointerEvent<SVGSVGElement>): number | null {
     const box = event.currentTarget.getBoundingClientRect()
     const px = event.clientX - box.left
+    const py = event.clientY - box.top
     let best: number | null = null
     let gap = Infinity
+    let rise = Infinity
     placed.forEach((d, n) => {
       const g = Math.abs(d.cx - px)
-      if (g < gap) {
+      const r = Math.abs(d.cy - py)
+      if (g < gap - 0.5 || (Math.abs(g - gap) <= 0.5 && r < rise)) {
         gap = g
+        rise = r
         best = n
       }
     })
@@ -361,17 +367,25 @@ export function PointsChart({
             </g>
           ) : null
         )}
-        {joins.map(([a, b]) => (
-          <line
-            key={`hair-${placed[b].i}`}
-            data-slot="point-hairline"
-            x1={placed[a].cx}
-            y1={placed[a].cy}
-            x2={placed[b].cx}
-            y2={placed[b].cy}
-            stroke="var(--border-strong)"
-          />
-        ))}
+        {joins.map(([a, b]) => {
+          // The hovered reading's own line is drawn in the text colour, so
+          // one region's chain stands out among the others.
+          const lit =
+            shown !== undefined &&
+            (shown.p.series ?? "") === (placed[b].p.series ?? "")
+          return (
+            <line
+              key={`hair-${placed[b].i}`}
+              data-slot="point-hairline"
+              data-lit={lit ? "" : undefined}
+              x1={placed[a].cx}
+              y1={placed[a].cy}
+              x2={placed[b].cx}
+              y2={placed[b].cy}
+              stroke={lit ? "var(--foreground)" : "var(--border-strong)"}
+            />
+          )
+        })}
         {shown && (
           <line
             data-slot="chart-crosshair"

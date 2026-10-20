@@ -606,7 +606,8 @@ properties the sheet folds away because a section shows them. Then come its
   drawn. A result written as a bound (`<0.5`) draws as a
   triangle toward its open side, joined to no other. Results of several
   channels (a DXA scan's trunk and arms) draw one line each, the channel
-  named in the tooltip. `nest` names a
+  named in the tooltip; among the readings of one instant the pointer's
+  height picks one, and its line is drawn in the text colour. `nest` names a
   reference property of the listed kind: a row naming another listed row
   sits under it, as a lab's converted twin does, and its point is hollow.
   A float or decimal column shows two fraction digits at most (`8.3985` as

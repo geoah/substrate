@@ -283,6 +283,72 @@ describe("PointsChart", () => {
     expect(rects[1].getAttribute("fill")).toBe("var(--bad-soft)")
   })
 
+  it("tells apart the regions of one scan by the pointer's height, and lights the hovered one's line", () => {
+    const scan = new Date(2025, 5, 20).getTime()
+    const regional: ChartPoint[] = [
+      {
+        ...points[0],
+        id: undefined,
+        series: "trunk",
+        notes: ["Channel: Trunk"],
+      },
+      {
+        ...points[0],
+        id: undefined,
+        at: scan,
+        value: 3.3,
+        series: "trunk",
+        notes: ["Channel: Trunk"],
+      },
+      {
+        ...points[0],
+        id: undefined,
+        series: "arm",
+        value: 2.0,
+        notes: ["Channel: Arm"],
+      },
+      {
+        ...points[0],
+        id: undefined,
+        at: scan,
+        value: 2.1,
+        series: "arm",
+        notes: ["Channel: Arm"],
+      },
+    ]
+    const view = render(
+      <PointsChart
+        points={regional}
+        domain={domain}
+        unit="mmol/L"
+        label="Example marker over time"
+      />
+    )
+    const svg = view.container.querySelector("svg")!
+    // The scan's two readings share one x; the arm's 2.1 sits lower.
+    const dots = [...view.container.querySelectorAll("circle[data-slot=point]")]
+    const cx = dots.at(-1)!.getAttribute("cx")
+    const ys = dots
+      .filter((d) => d.getAttribute("cx") === cx)
+      .map((d) => Number(d.getAttribute("cy")))
+    expect(ys).toHaveLength(2)
+    fireEvent.pointerMove(svg, {
+      clientX: Number(cx),
+      clientY: Math.max(...ys),
+    })
+    expect(screen.getByRole("status").textContent).toContain("Channel: Arm")
+    expect(
+      view.container.querySelectorAll(
+        "line[data-slot=point-hairline][data-lit]"
+      )
+    ).toHaveLength(1)
+    fireEvent.pointerMove(svg, {
+      clientX: Number(cx),
+      clientY: Math.min(...ys),
+    })
+    expect(screen.getByRole("status").textContent).toContain("Channel: Trunk")
+  })
+
   it("says so when there are no readings", () => {
     render(<PointsChart points={[]} domain={domain} label="Example marker" />)
     expect(screen.getByText("No results in this range.")).toBeTruthy()
