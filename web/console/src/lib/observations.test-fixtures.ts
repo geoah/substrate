@@ -159,6 +159,7 @@ export const METRICS: SubstrateRecord[] = [
     name: "Recovery",
     form: "summary",
     unit: "%",
+    bucketPlace: "end",
   }),
   record(METRIC, "health/energy_expended", {
     title: "Energy expended",

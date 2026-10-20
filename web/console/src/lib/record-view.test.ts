@@ -22,7 +22,9 @@ import {
   chartReads,
   deltaWords,
   foldedBy,
+  partialItem,
   partialWindow,
+  rowsInDays,
   RECORD_VIEW_KIND,
   recordViewOf,
   recordViewsParams,
@@ -1091,6 +1093,99 @@ describe("the reads of version 2", () => {
     expect(statsReads(last, block, athens).baseline).toHaveLength(1)
   })
 
+  it("compares a night's summary placed by its end over an open window, and says a growing value so far", () => {
+    const ends = new Map<string, MetricInfo>([
+      [STAGE, { id: "body/stage", path: STAGE, bucketPlace: "end" }],
+    ])
+    const block = stats([
+      { metric: { ref: PULSE }, reducer: "avg" },
+      { metric: { ref: STAGE }, reducer: "count" },
+    ])
+    const running: Bound = { ...bound, open: true }
+    expect(partialItem(running, undefined)).toBe(true)
+    expect(partialItem(running, ends.get(STAGE))).toBe(false)
+    const reads = statsReads(running, block, athens, ends)
+    expect(reads.itemRead).toEqual([0, 0])
+    expect(reads.baseline).toHaveLength(1)
+    expect(reads.itemBaseline).toEqual([-1, 0])
+    expect(reads.itemDays[0]).toBeUndefined()
+  })
+
+  it("ends a night's baseline on the day the night ends, whether it starts at 23:50 or 00:20", () => {
+    const ends = new Map<string, MetricInfo>([
+      [STAGE, { id: "body/stage", path: STAGE, bucketPlace: "end" }],
+    ])
+    const block = stats(
+      [
+        { metric: { ref: PULSE }, reducer: "avg" },
+        { metric: { ref: STAGE }, reducer: "count" },
+      ],
+      7
+    )
+    const night = (start: string, end: string): Bound => ({
+      ...bound,
+      window: { start: Date.parse(start), end: Date.parse(end) },
+    })
+    const iso = (t?: number) => (t === undefined ? undefined : isoWithOffset(t))
+    // From 23:50 on the 9th: the night lands on the 10th, so the night
+    // that woke on the 9th is among the days it compares with.
+    const late = statsReads(
+      night("2026-10-09T23:50:00+03:00", "2026-10-10T07:00:00+03:00"),
+      block,
+      athens,
+      ends
+    )
+    expect(late.itemDays.map((d) => iso(d?.end))).toEqual([
+      "2026-10-09T00:00:00+03:00",
+      "2026-10-10T00:00:00+03:00",
+    ])
+    expect(late.itemDays.map((d) => iso(d?.start))).toEqual([
+      "2026-10-02T00:00:00+03:00",
+      "2026-10-03T00:00:00+03:00",
+    ])
+    // One read covers both items' days.
+    expect(late.baseline).toHaveLength(1)
+    expect(late.baseline[0].aggregate.range).toEqual({
+      gte: "2026-10-02T00:00:00+03:00",
+      lt: "2026-10-10T00:00:00+03:00",
+    })
+    // From 00:20 on the 10th: both land on the 10th.
+    const early = statsReads(
+      night("2026-10-10T00:20:00+03:00", "2026-10-10T07:00:00+03:00"),
+      block,
+      athens,
+      ends
+    )
+    expect(early.itemDays.map((d) => iso(d?.end))).toEqual([
+      "2026-10-10T00:00:00+03:00",
+      "2026-10-10T00:00:00+03:00",
+    ])
+    // A cycle opening with a 23:50 night and running past the next
+    // midnight compares the night with the days before the 10th, never
+    // with the night itself.
+    const cycle = statsReads(
+      night("2026-10-09T23:50:00+03:00", "2026-10-11T00:20:00+03:00"),
+      block,
+      athens,
+      ends
+    )
+    expect(iso(cycle.itemDays[1]?.end)).toBe("2026-10-10T00:00:00+03:00")
+  })
+
+  it("keeps the rows of a baseline that lie in an item's days", () => {
+    const row = (start: string, end: string) => ({ start, end })
+    const rows = [
+      row("2026-10-08T00:00:00+03:00", "2026-10-09T00:00:00+03:00"),
+      row("2026-10-09T00:00:00+03:00", "2026-10-10T00:00:00+03:00"),
+    ]
+    const days = {
+      start: Date.parse("2026-10-09T00:00:00+03:00"),
+      end: Date.parse("2026-10-10T00:00:00+03:00"),
+    }
+    expect(rowsInDays(rows, days)).toEqual([rows[1]])
+    expect(rowsInDays(rows, undefined)).toEqual(rows)
+  })
+
   it("splits a metric read two ways into two reads, and shares an entry read alike", () => {
     const twice = statsReads(
       bound,
@@ -1269,6 +1364,8 @@ describe("the reads of version 2", () => {
       value: [],
       baseline: [],
       itemRead: [-1],
+      itemBaseline: [-1],
+      itemDays: [undefined],
     })
   })
 

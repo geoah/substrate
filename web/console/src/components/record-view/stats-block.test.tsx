@@ -188,8 +188,8 @@ function mount(
         ? entries.flatMap((e) =>
             (DAYS[e.ref] ?? []).map((value, i) =>
               row({
-                start: `2026-10-0${7 + i}T21:00:00Z`,
-                end: `2026-10-0${8 + i}T21:00:00Z`,
+                start: `2026-10-${String(7 + i).padStart(2, "0")}T21:00:00Z`,
+                end: `2026-10-${String(8 + i).padStart(2, "0")}T21:00:00Z`,
                 group: { metric: e.ref },
                 values: e.reducers!.map((r) => ({ reducer: r, value })),
               })
@@ -327,7 +327,7 @@ it("draws a tile per item from one read, with bands, a baseline and its delta", 
   expect(seen.filter((a) => a.bucket)).toHaveLength(1)
 })
 
-it("labels a tile so far over an open record window and compares nothing", async () => {
+it("labels a growing value so far over an open record window, and compares last night's score", async () => {
   // Today's cycle: begun, with no end yet.
   const today = record(CYCLE.identity, "c-2", {
     begins: "2026-10-11T04:00:00Z",
@@ -368,14 +368,23 @@ it("labels a tile so far over an open record window and compares nothing", async
   await waitFor(() =>
     expect(tile(group, "Energy").textContent).toContain("2,100")
   )
-  for (const label of ["Recovery", "Average heart rate", "Energy"]) {
+  for (const label of ["Average heart rate", "Energy"]) {
     const t = tile(group, label)
     expect(t.textContent).toContain("so far")
     expect(t.querySelector("[data-slot=stat-delta]")).toBe(null)
     expect(t.querySelector("[data-slot=range-baseline]")).toBe(null)
   }
-  // No baseline read is issued for a window still running.
-  expect(seen.filter((a) => a.bucket)).toEqual([])
+  // Recovery places the night by its end: the night opening the cycle is
+  // whole, so it is compared with the nights before it.
+  const recovery = tile(group, "Recovery")
+  expect(recovery.textContent).not.toContain("so far")
+  expect(recovery.textContent).toContain(
+    "+10 points vs the 3-day average of 62 %"
+  )
+  // One baseline read, over the days before the day the night ended.
+  const days = seen.filter((a) => a.bucket)
+  expect(days).toHaveLength(1)
+  expect(days[0].range?.lt).toBe("2026-10-11T00:00:00+03:00")
 })
 
 it("shows Read again on a failed read and reads again on a click", async () => {
@@ -518,8 +527,8 @@ it("reads a time in a state ungrouped and draws a window without the state as 0"
       }
       return ["0", "3600000", "0"].map((value, i) =>
         row({
-          start: `2026-10-0${7 + i}T21:00:00Z`,
-          end: `2026-10-0${8 + i}T21:00:00Z`,
+          start: `2026-10-${String(7 + i).padStart(2, "0")}T21:00:00Z`,
+          end: `2026-10-${String(8 + i).padStart(2, "0")}T21:00:00Z`,
           group: { metric: SLEEP_STAGE },
           values: values(value),
         })
@@ -571,8 +580,8 @@ it("compares a gauge's last reading with the average of each earlier day's avera
       return entries.flatMap((e) =>
         [0, 1, 2].map((i) =>
           row({
-            start: `2026-10-0${7 + i}T21:00:00Z`,
-            end: `2026-10-0${8 + i}T21:00:00Z`,
+            start: `2026-10-${String(7 + i).padStart(2, "0")}T21:00:00Z`,
+            end: `2026-10-${String(8 + i).padStart(2, "0")}T21:00:00Z`,
             group: { metric: e.ref },
             values: e.reducers!.map((r) => ({
               reducer: r,

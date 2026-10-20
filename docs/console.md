@@ -565,8 +565,15 @@ properties the sheet folds away because a section shows them. Then come its
   week's time open against seven days at the daily average. A record's own
   window is never scaled, since an open one runs to now. A record's own
   window still running (`open`, the current WHOOP cycle) holds part of its
-  whole: each tile says its value "so far" and compares it with nothing,
-  and no baseline is read. A change of a value in `%`
+  whole: a tile whose metric grows over it (strain, calories) says its
+  value "so far" and compares it with nothing. A metric whose record places
+  a span by its end (`bucketPlace: end`, a night's recovery or HRV) is whole
+  once the night ends and is compared as on a closed window. Such a metric
+  lands a night on the day it ends, so its baseline days end at the start
+  of that day: the window's last day, or for a window running past it (a
+  cycle opening with a night), the day of the window's start plus 12 hours.
+  A sleep from 23:50 compares with the night before it as one from 00:20
+  does. A change of a value in `%`
   reads in points ("+9 points vs the 30-day average of 42 %"), any other
   with its relative change beside it. `better`
   (`higher` or `lower`) colours the change, and a tile in a band names it.

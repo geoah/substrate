@@ -1410,8 +1410,13 @@ function entrySpec(item: {
  * reads come first in `value`, then the coded ones; `itemRead[i]` is the
  * index in `value` of the read item i is answered by, -1 for a property
  * item or one whose metric `record` does not name. With `baseline > 0`,
- * `baseline[r]` repeats `value[r]` by the day over the `baseline` local
- * days before the window's day. Nothing is read without a window. */
+ * each value read's entries are read again by the day over the `baseline`
+ * local days before the window (`baselineRange`, which ends a day later for
+ * a metric placing a span by its end); `itemBaseline[i]` is the index in
+ * `baseline` of item i's read, -1 where it has none, as over a record's own
+ * window still running for a value that grows over it (`partialItem`), and
+ * `itemDays[i]` the days of that read item i compares with.
+ * Nothing is read without a window. */
 export function statsReads(
   b: Bound,
   block: StatsBlock,
@@ -1419,9 +1424,23 @@ export function statsReads(
   // The metric records: a coded metric's codes size its baseline's budget.
   infos: ReadonlyMap<string, MetricInfo> = new Map(),
   record?: SubstrateRecord
-): { value: AggregateRead[]; baseline: AggregateRead[]; itemRead: number[] } {
+): {
+  value: AggregateRead[]
+  baseline: AggregateRead[]
+  itemRead: number[]
+  itemBaseline: number[]
+  itemDays: (TimeRange | undefined)[]
+} {
   const itemRead = block.items.map(() => -1)
-  if (!b.window) return { value: [], baseline: [], itemRead }
+  if (!b.window) {
+    return {
+      value: [],
+      baseline: [],
+      itemRead,
+      itemBaseline: [...itemRead],
+      itemDays: block.items.map(() => undefined),
+    }
+  }
   type Entry = { ref: string; spec: StatItem; reducers: AggregateReducer[] }
   const families: Record<"plain" | "coded", Entry[][]> = {
     plain: [],
@@ -1476,12 +1495,118 @@ export function statsReads(
       ...(coded ? { groupBy: ["code"] } : {}),
     })
   )
-  // A record's own window still running holds part of a day, or part of
-  // a cycle: against whole days before it, any change would mislead.
-  if (block.baseline <= 0 || partialWindow(b)) {
-    return { value, baseline: [], itemRead }
+  // One baseline read per value read over the days its entries compare
+  // with. A metric placing a span by its end lands a night on the day it
+  // ends, so its days can end a day later than a start-placed metric's:
+  // the read covers both, and each item keeps its own days of it.
+  const baseline: AggregateRead[] = []
+  const baselineAt: number[] = reads.map(() => -1)
+  const daysOf = new Map<boolean, TimeRange>()
+  if (block.baseline > 0) {
+    for (const end of [false, true]) {
+      // A record's own window still running holds part of a day, or part
+      // of a cycle: against whole days before it, a value that grows over
+      // the window would mislead. A night's summary placed by its end is
+      // whole once the night ends, so it is compared.
+      if (!end && partialWindow(b)) continue
+      daysOf.set(end, baselineRange(b, block.baseline, end))
+    }
+    reads.forEach(({ entries, coded }, r) => {
+      const ranges = [
+        ...new Set(entries.map((e) => placesByEnd(infos, e.ref))),
+      ].flatMap((end) => daysOf.get(end) ?? [])
+      if (!ranges.length) return
+      const span = {
+        start: Math.min(...ranges.map((x) => x.start)),
+        end: Math.max(...ranges.map((x) => x.end)),
+      }
+      const days = Math.round((span.end - span.start) / 86_400_000)
+      // The server holds every entry's days, times its codes where grouped
+      // by code, to the read's budget together: past the default, the read
+      // asks for what its entries need, with a day more for a zone that is
+      // not the browser's.
+      const series = entries.reduce(
+        (n, e) =>
+          n + (coded ? Math.max(1, infos.get(e.ref)?.codeSet?.length ?? 1) : 1),
+        0
+      )
+      const buckets = (days + 1) * series
+      baselineAt[r] = baseline.length
+      baseline.push(
+        metricsReadOf(
+          b,
+          block.sources,
+          block.channel,
+          entriesOf(entries, true),
+          {
+            range: rangeOf(span),
+            bucket: bucketOf("day", timezone),
+            ...(coded ? { groupBy: ["code"] } : {}),
+            ...(buckets > MAX_BUCKETS
+              ? { budget: { maxBuckets: Math.min(MAX_BUCKETS_CAP, buckets) } }
+              : {}),
+          }
+        )
+      )
+    })
   }
-  const first = new Date(b.window.start)
+  const itemBaseline = block.items.map((item, i) => {
+    const ref = itemMetric(item, record)
+    const days = ref ? daysOf.get(placesByEnd(infos, ref)) : undefined
+    return itemRead[i] < 0 || !days ? -1 : baselineAt[itemRead[i]]
+  })
+  const itemDays = block.items.map((item) => {
+    const ref = itemMetric(item, record)
+    return ref ? daysOf.get(placesByEnd(infos, ref)) : undefined
+  })
+  return { value, baseline, itemRead, itemBaseline, itemDays }
+}
+
+/** The rows of a baseline answer whose day lies in `days`, an item's own
+ * (`statsReads`'s `itemDays`): a row's middle decides, so a day bucketed
+ * in a zone not the browser's still falls on one side. */
+export function rowsInDays<T extends { start: string; end: string }>(
+  rows: readonly T[],
+  days?: TimeRange
+): T[] {
+  if (!days) return [...rows]
+  return rows.filter((row) => {
+    const mid = (Date.parse(row.start) + Date.parse(row.end)) / 2
+    return mid >= days.start && mid < days.end
+  })
+}
+
+/** Whether a metric's record places a value's span at its end. */
+function placesByEnd(
+  infos: ReadonlyMap<string, MetricInfo>,
+  ref: string
+): boolean {
+  return infos.get(ref)?.bucketPlace === "end"
+}
+
+/** Whether a stats item's value is part of what its window will hold: a
+ * record's own window still running (`partialWindow`), read from a metric
+ * that does not place a span by its end. A night's summary placed by its
+ * end (a recovery, last night's HRV) is whole once the night ends. */
+export function partialItem(b: Bound, info?: MetricInfo): boolean {
+  return partialWindow(b) && info?.bucketPlace !== "end"
+}
+
+/** The local days a stats baseline reads: `days` days ending at the start
+ * of the day the window's own value lands on. A start-placed metric lands
+ * on the window's first day, as does a view's `last` window. A metric
+ * placed by its end lands on the day its span ends: the window's last day,
+ * or for a window that runs past it (a cycle opening with a night), the
+ * day the night opening it ends, taken as the window's start plus 12
+ * hours. A sleep from 23:50 lands on the next day, so the night before it
+ * is among the days it compares with. */
+function baselineRange(b: Bound, days: number, end: boolean): TimeRange {
+  const w = b.window!
+  const at =
+    end && !b.lastWindow
+      ? Math.min(w.end - 1, w.start + 12 * 3_600_000)
+      : w.start
+  const first = new Date(at)
   const dayStart = new Date(
     first.getFullYear(),
     first.getMonth(),
@@ -1490,36 +1615,9 @@ export function statsReads(
   const from = new Date(
     first.getFullYear(),
     first.getMonth(),
-    first.getDate() - block.baseline
+    first.getDate() - days
   )
-  const range = rangeOf({ start: from.getTime(), end: dayStart.getTime() })
-  // The server holds every entry's days, times its codes where grouped by
-  // code, to the read's budget together: past the default, the read asks
-  // for what its entries need, with a day more for a zone that is not the
-  // browser's.
-  const baseline = reads.map(({ entries, coded }) => {
-    const series = entries.reduce(
-      (n, e) =>
-        n + (coded ? Math.max(1, infos.get(e.ref)?.codeSet?.length ?? 1) : 1),
-      0
-    )
-    const buckets = (block.baseline + 1) * series
-    return metricsReadOf(
-      b,
-      block.sources,
-      block.channel,
-      entriesOf(entries, true),
-      {
-        range,
-        bucket: bucketOf("day", timezone),
-        ...(coded ? { groupBy: ["code"] } : {}),
-        ...(buckets > MAX_BUCKETS
-          ? { budget: { maxBuckets: Math.min(MAX_BUCKETS_CAP, buckets) } }
-          : {}),
-      }
-    )
-  })
-  return { value, baseline, itemRead }
+  return { start: from.getTime(), end: dayStart.getTime() }
 }
 
 /** The reducer a stats item's baseline reads per day. A gauge's first or
