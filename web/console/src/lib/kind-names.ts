@@ -49,6 +49,7 @@ const WORDS = new Set([
   "authority",
   "blob",
   "block",
+  "book",
   "bot",
   "bridge",
   "bundle",
