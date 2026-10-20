@@ -61,26 +61,30 @@ func TestSyncHealthIsTheWorstOfItsTriggers(t *testing.T) {
 	}
 }
 
-// The due rule: parks since the bound, the oldest older than the window, and
-// an open alert rewritten only after the repeat interval when a run parked
-// since its last write.
+// The due rule: parks since the bound, the oldest older than the window, at
+// least one park still standing in the ledger, and an open alert rewritten
+// only after the repeat interval when a run parked since its last write.
 func TestAFailingReadIsDueOnlyPastTheWindowAndWithSomethingNew(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	window := time.Hour
-	streak := failingRead{count: 3, oldest: now.Add(-2 * time.Hour), newest: now.Add(-time.Minute)}
-	quiet := failingRead{count: 3, oldest: streak.oldest, newest: now.Add(-20 * time.Minute)}
+	streak := failingRead{count: 3, oldest: now.Add(-2 * time.Hour), newest: now.Add(-time.Minute), standing: 1}
+	quiet := failingRead{count: 3, oldest: streak.oldest, newest: now.Add(-20 * time.Minute), standing: 1}
+	dismissed := streak
+	dismissed.standing = 0
 	for name, tc := range map[string]struct {
 		read failingRead
 		want bool
 	}{
-		"no parks since the bound":     {failingRead{}, false},
-		"inside the window":            {failingRead{count: 1, oldest: now.Add(-59 * time.Minute), newest: now.Add(-time.Minute)}, false},
-		"past the window, no alert":    {streak, true},
-		"open, written a minute ago":   {withOpen(streak, now.Add(-time.Minute)), false},
-		"open, stale, a park since":    {withOpen(streak, now.Add(-10*time.Minute)), true},
-		"open, stale, nothing since":   {withOpen(quiet, now.Add(-10*time.Minute)), false},
-		"exactly the window is enough": {failingRead{count: 1, oldest: now.Add(-window), newest: now.Add(-window)}, true},
+		"no parks since the bound":             {failingRead{standing: 1}, false},
+		"inside the window":                    {failingRead{count: 1, oldest: now.Add(-59 * time.Minute), newest: now.Add(-time.Minute), standing: 1}, false},
+		"past the window, no alert":            {streak, true},
+		"parks in the run rows, none standing": {dismissed, false},
+		"open, written a minute ago":           {withOpen(streak, now.Add(-time.Minute)), false},
+		"open, stale, a park since":            {withOpen(streak, now.Add(-10*time.Minute)), true},
+		"open, stale, nothing since":           {withOpen(quiet, now.Add(-10*time.Minute)), false},
+		"open, stale, none standing":           {withOpen(dismissed, now.Add(-10*time.Minute)), false},
+		"exactly the window is enough":         {failingRead{count: 1, oldest: now.Add(-window), newest: now.Add(-window), standing: 1}, true},
 	} {
 		if got := tc.read.due(now, window); got != tc.want {
 			t.Errorf("%s: due = %v, want %v", name, got, tc.want)

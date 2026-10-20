@@ -65,6 +65,13 @@ func TestTriggerRunsAreReadThroughRefs(t *testing.T) {
 
 	putRuns("kept", runStatusOK, runRetention)
 	putRuns("failing", runStatusParked, 3)
+	// The read counts parked runs only while a delivery of the trigger still
+	// stands in the ledger, from the oldest one (decision 0177).
+	if _, err := ds.db.ExecContext(ctx, `
+		INSERT INTO trigger_failures (id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
+		VALUES (-1, 'failing', 0, '', 'r', 1, 'boom', now() - interval '1 day')`); err != nil {
+		t.Fatalf("park a delivery of the failing trigger: %v", err)
+	}
 	if got := parked("failing"); got != 3 {
 		t.Fatalf("the failing trigger counts %d parked runs, want 3", got)
 	}

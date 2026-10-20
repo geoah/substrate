@@ -254,9 +254,12 @@ func (t *txn) raiseParkedAlert(tr *trigger, record string, cause error) error {
 }
 
 // settleParkedAlert follows a transaction that retired parked deliveries of a
-// trigger (a retry that delivered, a forget, a settled schedule fire's
-// retirement of older parks): the open parked-deliveries alert takes the new
-// count, and resolves once none stand. It runs after the delivery entry.
+// trigger (a retry that delivered or skipped, a forget, a settled schedule
+// fire's or sync's retirement of older parks, a deleted trigger at the next
+// pass): the open parked-deliveries alert takes the new count, and resolves
+// once none stand. A trigger with no park standing is not failing either,
+// so its failing alert resolves with it (decision 0177). It runs after the
+// delivery entry.
 func (t *txn) settleParkedAlert(triggerID string) error {
 	actor, err := t.alertActorOfTrigger(triggerID)
 	if err != nil {
@@ -268,7 +271,10 @@ func (t *txn) settleParkedAlert(triggerID string) error {
 	}
 	key := parkedAlertKey(triggerID)
 	if count == 0 {
-		return t.resolveAlert(actor, key, map[string]any{"count": count})
+		if err := t.resolveAlert(actor, key, map[string]any{"count": count}); err != nil {
+			return err
+		}
+		return t.resolveFailingAlert(triggerID)
 	}
 	return t.updateOpenAlert(actor, key, func(row *erow) (map[string]any, error) {
 		if stored, ok := alertCount(row.Props["count"]); ok && stored == count {
