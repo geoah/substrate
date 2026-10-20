@@ -103,7 +103,9 @@ A green run over a set that cannot reach a case proves nothing about that case.
 - **no failure matrix.** `tools/mockserver.py` can inject 429s, 500s and 404s
   per endpoint; this set does not use it, so the retry classes, the
   `retryNotBefore` deadline and the permanent/transient split are exercised by
-  reading, not by running.
+  reading, not by running. The scenario's section 13 injects its own 429 and
+  401 through the mock, and an unreachable Beeper Desktop by pointing the
+  config's `apiBase` at a closed loopback port, which no fixture can record.
 - **no second account.** One token addresses one Beeper Desktop, and the
   duplicate-account path (`ignored: duplicate account`) has no fixture.
 - **no multi-drain continuation.** The cut fits in one drain, so the bounded

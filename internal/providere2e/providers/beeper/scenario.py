@@ -41,7 +41,11 @@ WHAT IT ASSERTS, and why each one is worth a run:
    13. trait      the core `sync` trait (decision 0085): a finished walk is
                   `ok` with both streams acked against the request that drove
                   it, an injected 429 is `throttled`, an injected 401 is
-                  `erroring` with the cause, and the next run recovers
+                  `erroring` with the cause, and the next run recovers; an
+                  apiBase nothing listens on is `throttled` with "Beeper
+                  Desktop is not reachable" and `unreachableSince`, keeps
+                  its first instant on a second run, and the run after
+                  Desktop is back clears it (decision 0183)
    14. write      `sendmessage` sends through the config's token: the body it
                   sends, its output, no record written, Beeper's refusal
                   surfaced, a public apiBase refused unsent, and an agent
@@ -1098,6 +1102,8 @@ def main() -> int:
                "so a healthy account shows no stale error (%r)"
                % back.get("syncError"))
 
+        unreachable_desktop()
+
     section("14. sendmessage sends through the pasted token")
     sendmessage()
 
@@ -1114,6 +1120,89 @@ def main() -> int:
             last = sec
         print("    - %s" % msg)
     return 1
+
+
+UNREACHABLE = "Beeper Desktop is not reachable (since "
+
+
+def closed_port():
+    """A loopback port nothing listens on: bound, read and closed, so a
+    connect to it is refused at once rather than waiting out a timeout."""
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def unreachable_desktop():
+    """Decision 0183: a Beeper Desktop the sync cannot reach (the computer
+    asleep, the app closed) is a pause, not a failure. The config's apiBase
+    is pointed at a closed port, which is the same failure a sleeping
+    computer's address gives, and put back in a `finally`, so a failed check
+    here cannot leave section 14 without its mock."""
+    cfg = "/api/v1/%s/default" % os.environ.get("CONFIG_KIND", P + "/config")
+    had = props(api("GET", cfg)[1] or {}).get("apiBase")
+    gone = "http://127.0.0.1:%d" % closed_port()
+    st, body = api("PATCH", cfg, {"properties": {"apiBase": gone}})
+    if not ok(st < 400, "could not point apiBase at a closed port: %s %s"
+              % (st, json.dumps(body)[:200])):
+        return
+    try:
+        request_sync()
+        held = wait_for_state("throttled")
+        ok(held.get("syncState") == "throttled",
+           "an unreachable Beeper Desktop left syncState %r, not throttled"
+           % held.get("syncState"))
+        ok(str(held.get("syncMessage") or "").startswith(UNREACHABLE),
+           "an unreachable Beeper Desktop says %r" % held.get("syncMessage"))
+        ok(held.get("syncStatus") == held.get("syncMessage"),
+           "syncStatus %r and syncMessage %r disagree"
+           % (held.get("syncStatus"), held.get("syncMessage")))
+        ok(not held.get("syncError"),
+           "a pause wrote syncError %r" % held.get("syncError"))
+        since = held.get("unreachableSince")
+        ok(since, "a pause did not stamp unreachableSince")
+        for name in ("chats", "messages"):
+            entry = (held.get("syncStreams") or {}).get(name) or {}
+            ok(entry.get("state") == "throttled",
+               "stream %s is %r while Beeper Desktop is not reachable"
+               % (name, entry.get("state")))
+        ok(held.get("syncRequestedAck") != held.get("syncRequestedAt"),
+           "a paused run acknowledged the request it never served (%r)"
+           % held.get("syncRequestedAck"))
+
+        # A second unreachable run keeps the stretch's first instant.
+        was = held.get("lastSyncedAt") or ""
+        request_sync()
+        deadline = time.time() + 120
+        again = held
+        while time.time() < deadline:
+            time.sleep(2)
+            again = props(account_row())
+            if (again.get("lastSyncedAt") or "") != was \
+                    and again.get("syncState") != "running":
+                break
+        ok((again.get("lastSyncedAt") or "") != was,
+           "the second unreachable run never stamped lastSyncedAt")
+        ok(again.get("syncState") == "throttled",
+           "the second unreachable run left syncState %r"
+           % again.get("syncState"))
+        ok(again.get("unreachableSince") == since,
+           "unreachableSince moved from %r to %r on a second unreachable run"
+           % (since, again.get("unreachableSince")))
+    finally:
+        api("PATCH", cfg, {"properties": {"apiBase": had}})
+
+    if resync("after Beeper Desktop is back"):
+        back = props(account_row())
+        ok(back.get("syncState") == "ok",
+           "after Beeper Desktop is back syncState is %r"
+           % back.get("syncState"))
+        ok("unreachableSince" not in back or back.get("unreachableSince") is None,
+           "the run that reached Beeper left unreachableSince %r"
+           % back.get("unreachableSince"))
 
 
 SEND_FN = P + "/sendmessage"
