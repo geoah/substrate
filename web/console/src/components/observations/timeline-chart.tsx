@@ -59,11 +59,24 @@ export interface ChartSeries {
   stack?: string
   /** A newer answer is loading for this series: hold this one, quieter. */
   stale?: boolean
+  /** Draw its line dashed (a rolling average), with no end dots. */
+  dash?: boolean
+}
+
+/** A labelled value range washed behind the plot on the left axis: from
+ * `low` to `high`, an absent bound reaching the plot's edge. `color` is
+ * drawn as given, a soft status token. */
+export interface ChartBand {
+  low?: number
+  high?: number
+  color: string
+  label?: string
 }
 
 const TOP = 10
 /** Room above the plot for the axes' unit captions. */
 const CAPTION = 14
+/** The plot's height where the caller names none; a strip is 120. */
 const PLOT = 200
 const AXIS = 26
 const LEFT = AXIS_LEFT
@@ -79,13 +92,16 @@ interface YAxis {
 }
 
 /** The scale of one side's series: their values (a stack's whole height,
- * a level's band), anchored at zero where any is a bar. */
+ * a level's band) and the `bounds` that must stay on it (the bands'),
+ * anchored at zero where any is a bar. */
 function yAxisOf(
   series: readonly ChartSeries[],
   buckets: readonly Bucket[],
-  top: number
+  top: number,
+  plot: number,
+  bounds: readonly number[] = []
 ): YAxis {
-  const values: number[] = []
+  const values: number[] = bounds.filter((b) => Number.isFinite(b))
   const stacks = new Map<string, ChartSeries[]>()
   for (const s of series) {
     const m = s.mark ?? "line"
@@ -110,12 +126,12 @@ function yAxisOf(
   }
   const zero = series.some((s) => (s.mark ?? "line") !== "line")
   const { domain, ticks } = niceDomain(values, { zero })
-  const y = linearScale(domain, [top + PLOT, top])
+  const y = linearScale(domain, [top + plot, top])
   return {
     y,
     ticks,
     labels: tickLabels(ticks),
-    base: zero ? y(Math.max(domain[0], 0)) : top + PLOT,
+    base: zero ? y(Math.max(domain[0], 0)) : top + plot,
   }
 }
 
@@ -129,6 +145,9 @@ export function TimelineChart({
   onZoom,
   units,
   autoFocus = false,
+  bands,
+  highlight,
+  height: plotHeight = PLOT,
 }: {
   buckets: Bucket[]
   series: ChartSeries[]
@@ -145,6 +164,12 @@ export function TimelineChart({
   units?: { left?: string; right?: string }
   /** Take the focus on mount: the chart a keyboard zoom asked for. */
   autoFocus?: boolean
+  /** Value ranges washed behind the plot on the left axis. */
+  bands?: ChartBand[]
+  /** A bucket index whose column is tinted under the figures. */
+  highlight?: number
+  /** The plot's height in pixels, 200 by default. */
+  height?: number
 }) {
   const { ref, width } = useWidth(720)
   useEffect(() => {
@@ -170,11 +195,30 @@ export function TimelineChart({
         domain,
         size,
         width,
-        Boolean(units?.left || units?.right)
+        Boolean(units?.left || units?.right),
+        plotHeight,
+        bands ?? NO_BANDS
       ),
-    [buckets, series, domain, size, width, units?.left, units?.right]
+    [
+      buckets,
+      series,
+      domain,
+      size,
+      width,
+      units?.left,
+      units?.right,
+      plotHeight,
+      bands,
+    ]
   )
-  const { top, height, windows, lines, scaleOf } = layout
+  const { top, height, plot, windows, lines, scaleOf } = layout
+  const lit =
+    highlight !== undefined &&
+    Number.isInteger(highlight) &&
+    highlight >= 0 &&
+    highlight < windows.length
+      ? windows[highlight]
+      : undefined
 
   function bucketOf(event: PointerEvent<SVGSVGElement>): number {
     const box = event.currentTarget.getBoundingClientRect()
@@ -274,8 +318,18 @@ export function TimelineChart({
             x={windows[active].x0}
             y={top}
             width={windows[active].x1 - windows[active].x0}
-            height={PLOT}
+            height={plot}
             fill="var(--hover)"
+          />
+        )}
+        {lit && (
+          <rect
+            data-slot="chart-highlight"
+            x={lit.x0}
+            y={top}
+            width={lit.x1 - lit.x0}
+            height={plot}
+            fill="var(--selection)"
           />
         )}
         {selection && selection.hi > selection.lo && (
@@ -284,7 +338,7 @@ export function TimelineChart({
             x={windows[selection.lo].x0}
             y={top}
             width={windows[selection.hi].x1 - windows[selection.lo].x0}
-            height={PLOT}
+            height={plot}
             fill="var(--selection)"
           />
         )}
@@ -295,7 +349,7 @@ export function TimelineChart({
             x1={windows[active].mid}
             x2={windows[active].mid}
             y1={top}
-            y2={top + PLOT}
+            y2={top + plot}
             stroke="var(--border-strong)"
           />
         )}
@@ -318,7 +372,10 @@ export function TimelineChart({
           })}
       </svg>
       {buckets.length === 0 && (
-        <p className="absolute inset-x-0 top-[90px] text-center text-muted-foreground">
+        <p
+          className="absolute inset-x-0 text-center text-muted-foreground"
+          style={{ top: top + plot / 2 - 20 }}
+        >
           Nothing measured in this range.
         </p>
       )}
@@ -341,6 +398,8 @@ export function TimelineChart({
  * stacks, and the x axis's labels. */
 interface Layout {
   top: number
+  /** The plot's own height, between the top and the x axis. */
+  plot: number
   height: number
   right: number
   windows: { x0: number; x1: number; mid: number }[]
@@ -353,7 +412,11 @@ interface Layout {
   stacks: Map<string, ChartSeries[]>
   slotOf: (b: number, slot: string) => { left: number; bar: number }
   xLabels: { i: number; at: number; text: string }[]
+  /** The bands, scaled on the left axis (or the grid's). */
+  bands: { y0: number; y1: number; color: string; label?: string }[]
 }
+
+const NO_BANDS: ChartBand[] = []
 
 function layoutOf(
   buckets: readonly Bucket[],
@@ -361,12 +424,14 @@ function layoutOf(
   domain: TimeRange,
   size: BucketSize,
   width: number,
-  captioned: boolean
+  captioned: boolean,
+  plot: number = PLOT,
+  bands: readonly ChartBand[] = NO_BANDS
 ): Layout {
   const lefts = series.filter((s) => (s.axis ?? "left") === "left")
   const rights = series.filter((s) => s.axis === "right")
   const top = captioned ? TOP + CAPTION : TOP
-  const height = top + PLOT + AXIS
+  const height = top + plot + AXIS
   const axis = timeAxis(domain, size, width, rights.length > 0)
   const { x, right } = axis
   const windows = buckets.map((b) => {
@@ -377,9 +442,14 @@ function layoutOf(
 
   // The left axis reads its series, or, with every left series hidden,
   // the grid follows the right one.
+  const bounds = bands.flatMap((b) => [b.low, b.high]).filter(isNumber)
   const leftAxis =
-    lefts.length || !rights.length ? yAxisOf(lefts, buckets, top) : undefined
-  const rightAxis = rights.length ? yAxisOf(rights, buckets, top) : undefined
+    lefts.length || !rights.length
+      ? yAxisOf(lefts, buckets, top, plot, bounds)
+      : undefined
+  const rightAxis = rights.length
+    ? yAxisOf(rights, buckets, top, plot)
+    : undefined
   const grid = (leftAxis ?? rightAxis)!
   const scaleOf = (s: ChartSeries) =>
     (s.axis === "right" ? rightAxis : leftAxis)!
@@ -415,9 +485,25 @@ function layoutOf(
   const lines = series.filter((s) => (s.mark ?? "line") === "line")
 
   const xLabels = axis.labels
+  const bandAxis = leftAxis ?? grid
+  const scaledBands = bands.map((b) => {
+    const edge = (v: number | undefined, open: number) =>
+      v === undefined || !Number.isFinite(v)
+        ? open
+        : Math.min(top + plot, Math.max(top, bandAxis.y(v)))
+    const lowY = edge(b.low, top + plot)
+    const highY = edge(b.high, top)
+    return {
+      y0: Math.min(lowY, highY),
+      y1: Math.max(lowY, highY),
+      color: b.color,
+      label: b.label,
+    }
+  })
 
   return {
     top,
+    plot,
     height,
     right,
     windows,
@@ -429,7 +515,12 @@ function layoutOf(
     stacks,
     slotOf,
     xLabels,
+    bands: scaledBands,
   }
+}
+
+function isNumber(v: number | undefined): v is number {
+  return v !== undefined && Number.isFinite(v)
 }
 
 /** The grid, the y axes with their captions, and the baseline: under the
@@ -441,7 +532,7 @@ const Ground = memo(function Ground({
   layout: Layout
   units?: { left?: string; right?: string }
 }) {
-  const { top, right, grid, leftAxis, rightAxis } = layout
+  const { top, right, grid, leftAxis, rightAxis, bands } = layout
   return (
     <>
       {grid.ticks.map((t) => (
@@ -454,6 +545,29 @@ const Ground = memo(function Ground({
           stroke="var(--border)"
           shapeRendering="crispEdges"
         />
+      ))}
+      {bands.map((b, i) => (
+        <g key={i}>
+          <rect
+            data-slot="chart-band"
+            x={LEFT}
+            y={b.y0}
+            width={Math.max(0, right - LEFT)}
+            height={b.y1 - b.y0}
+            fill={b.color}
+          />
+          {b.label && b.y1 - b.y0 >= 12 && (
+            <text
+              x={right - 4}
+              y={(b.y0 + b.y1) / 2}
+              textAnchor="end"
+              dominantBaseline="middle"
+              className="fill-faint text-[11.5px]"
+            >
+              {b.label}
+            </text>
+          )}
+        </g>
       ))}
       {leftAxis && (
         <g data-axis="left">
@@ -530,7 +644,7 @@ const Figures = memo(function Figures({
   series: readonly ChartSeries[]
   buckets: readonly Bucket[]
 }) {
-  const { top, windows, scaleOf, slotOf, stacks, lines, xLabels } = layout
+  const { top, plot, windows, scaleOf, slotOf, stacks, lines, xLabels } = layout
   const mids = windows.map((w) => w.mid)
   return (
     <>
@@ -605,7 +719,7 @@ const Figures = memo(function Figures({
         <text
           key={l.i}
           x={l.at}
-          y={top + PLOT + 17}
+          y={top + plot + 17}
           textAnchor="middle"
           className="fill-faint text-[11.5px] tabular-nums"
         >
@@ -647,6 +761,7 @@ function LineSeries({
   const lastIndex = points.findLastIndex((p) => p.value !== null)
   const dots = points.filter(
     (p, i) =>
+      !series.dash &&
       p.value !== null &&
       (i === lastIndex ||
         ((points[i - 1]?.value ?? null) === null &&
@@ -664,6 +779,7 @@ function LineSeries({
         strokeWidth={2}
         strokeLinejoin="round"
         strokeLinecap="round"
+        strokeDasharray={series.dash ? "4 2" : undefined}
       />
       {dots.map((p) => (
         <circle

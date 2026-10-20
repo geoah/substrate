@@ -5,11 +5,12 @@
  * The blocks read what the view names and nothing else; a section the
  * console cannot draw says why where it would be. */
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { ChartLineIcon } from "lucide-react"
 
+import { BreakdownBlockView } from "./breakdown-block"
 import { ChartBlockView, SpansBlockView } from "./observed-blocks"
 import {
   Failed,
@@ -19,6 +20,10 @@ import {
   Quiet,
   type BlockContext,
 } from "./parts"
+import { spanWords } from "./span-words"
+import { StatsBlockView } from "./stats-block"
+import { TableBlockView } from "./table-block"
+import { TrendBlockView } from "./trend-block"
 import { RecordRef } from "@/components/identity/record-ref"
 import { SectionHead } from "@/components/identity/section-head"
 import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
@@ -37,6 +42,8 @@ import { readerTimezone, type TimeRange } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import {
   boundOf,
+  readsWindow,
+  viewNeedsWindow,
   viewTimelineSearch,
   type Block,
   type HeadingBlock,
@@ -82,9 +89,12 @@ function RecordViewSection({
   kinds: readonly KindInfo[]
 }) {
   const noun = lowerFirst(displayName(kind ?? record.kind))
+  // An open window ends at the time of reading; read once per mount, so a
+  // render does not move it and every block reads the same one.
+  const [now] = useState(() => Date.now())
   const bound = useMemo(
-    () => boundOf(view, record, kinds),
-    [view, record, kinds]
+    () => boundOf(view, record, kinds, now),
+    [view, record, kinds, now]
   )
   const timezone = useMemo(() => readerTimezone(), [])
   // A zoom reads part of the window, and every line and spans block
@@ -102,20 +112,69 @@ function RecordViewSection({
     onReset: () => setZoom(undefined),
     timezone,
   }
-  const search = bound ? viewTimelineSearch(bound, view) : undefined
+  const search = bound ? viewTimelineSearch(bound, view, record) : undefined
   const title = view.name ?? `${displayName(kind ?? record.kind)} view`
   // A view binding a window the record does not hold (no end yet, say)
   // leaves out the blocks that read it, and is left out itself where
-  // nothing else remains, as a page with no view would be.
-  const windowless = Boolean(view.window) && !bound
-  const sections = view.sections.filter(
-    (s) => !windowless || !("block" in s) || !readsWindow(s.block)
+  // nothing else remains, as a page with no view would be. A window the
+  // view cannot bind as written is said once, where the first of those
+  // blocks would be.
+  const windowless = viewNeedsWindow(view) && !bound?.window
+  const broken = view.windowProblem
+  const drawn = view.sections.flatMap((s, i) =>
+    "block" in s && readsWindow(s.block) && (broken || windowless)
+      ? []
+      : [{ section: s, i }]
   )
+  const firstWindowed = view.sections.findIndex(
+    (s) => "block" in s && readsWindow(s.block)
+  )
+  const sections =
+    broken && firstWindowed >= 0
+      ? [
+          ...drawn.filter((d) => d.i < firstWindowed),
+          { section: { problem: broken }, i: firstWindowed },
+          ...drawn.filter((d) => d.i > firstWindowed),
+        ]
+      : drawn
+  // A view whose every block hides when empty (a table that holds rows
+  // on a few records of its kind, a vendor's stats and trends on the
+  // records another source wrote) stays hidden until one of them draws
+  // something, so the other records' pages are unchanged.
+  const hiders = sections.flatMap(({ section, i }) =>
+    "block" in section &&
+    (section.block.type === "table" ||
+      section.block.type === "stats" ||
+      section.block.type === "trend") &&
+    section.block.empty === "hide"
+      ? [i]
+      : []
+  )
+  const allHide = sections.length > 0 && hiders.length === sections.length
+  const [filled, setFilled] = useState<ReadonlySet<number>>(() => new Set())
+  const onEmpty = useCallback((i: number, hidden: boolean) => {
+    setFilled((held) => {
+      if (held.has(i) === !hidden) return held
+      const next = new Set(held)
+      if (hidden) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }, [])
   if (!sections.length) return null
   return (
-    <section aria-label={title} data-record-view={view.id}>
+    <section
+      aria-label={title}
+      data-record-view={view.id}
+      hidden={allHide && filled.size === 0}
+    >
       <SectionHead
         title={title}
+        hint={
+          (bound?.lastWindow
+            ? spanWords(bound, noun).whole
+            : spanWords(bound, noun).soFar) || undefined
+        }
         actions={
           search && (
             <Button
@@ -141,23 +200,33 @@ function RecordViewSection({
           />
         </div>
       )}
-      {sections.map((section, i) =>
+      {sections.map(({ section, i }) =>
         "problem" in section ? (
           <Notice key={i}>{section.problem}</Notice>
         ) : (
-          <BlockView key={i} block={section.block} ctx={ctx} />
+          <BlockView
+            key={i}
+            block={section.block}
+            ctx={ctx}
+            onEmpty={(hidden) => onEmpty(i, hidden)}
+          />
         )
       )}
     </section>
   )
 }
 
-/** Whether a block reads the record's window. */
-function readsWindow(block: Block): boolean {
-  return block.type === "chart" || block.type === "spans"
-}
-
-function BlockView({ block, ctx }: { block: Block; ctx: BlockContext }) {
+function BlockView({
+  block,
+  ctx,
+  onEmpty,
+}: {
+  block: Block
+  ctx: BlockContext
+  /** Said by a table, stats or trend block that hides when empty: whether
+   * it drew nothing. */
+  onEmpty: (hidden: boolean) => void
+}) {
   switch (block.type) {
     case "heading":
       return <Heading block={block} />
@@ -171,6 +240,16 @@ function BlockView({ block, ctx }: { block: Block; ctx: BlockContext }) {
       return <ChartBlockView block={block} ctx={ctx} />
     case "spans":
       return <SpansBlockView block={block} ctx={ctx} />
+    case "stats":
+      return <StatsBlockView block={block} ctx={ctx} onEmpty={onEmpty} />
+    case "trend":
+      return <TrendBlockView block={block} ctx={ctx} onEmpty={onEmpty} />
+    case "table":
+      return <TableBlockView block={block} ctx={ctx} onEmpty={onEmpty} />
+    case "breakdown":
+      return <BreakdownBlockView block={block} ctx={ctx} />
+    case "lanes":
+      return <Notice>This console does not draw lanes yet.</Notice>
   }
 }
 

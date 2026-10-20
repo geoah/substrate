@@ -440,20 +440,44 @@ The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
 
-The sample ships two [record views](console.md#record-views)
+The sample ships five [record views](console.md#record-views)
 (`samples/health/views.yaml`), records of the seeded console package's
 `recordview` kind that describe a record page's layout. Each names its
-metrics by reference to the metric records, and the import lands both at
-ids under the repository's authority (`<authority>/health/sleep`). The sleep
-view reads the heart rate, heart rate variability (`hrv_rmssd`) and
-respiratory rate over the night, and the night's `sleep_stage` spans in the
-order awake, in bed, REM, asleep, light, deep, from the sleep's own source,
-with the time in each. The workout view reads the workout's distance and
-time moving, the heart rate over the workout, the time in five heart rate
-zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
-minute, five 19-beat bands from half of a 190 maximum) and the speed. Edit a
-view to change it, such as zone bounds from a measured maximum; a re-import
-keeps your edit. The console draws a view above the record's property sheet.
+metrics by reference to the metric records and each listed kind by
+reference to its declaration, and the import lands them at ids under the
+repository's authority (`<authority>/health/sleep`).
+
+- **`health/sleep`**: the heart rate, heart rate variability (`hrv_rmssd`)
+  and respiratory rate over the night; the night's `sleep_stage` spans in
+  the order awake, in bed, REM, asleep, light, deep, from the sleep's own
+  source, with the time in each; tiles of the night's own `timeAsleep`,
+  `timeInBed`, `efficiency`, `disturbances` and `respiratoryRate`; and the
+  four stage durations as shares of the time in bed.
+- **`health/workout`**: the distance and time moving; tiles of the
+  workout's `strain`, `averageHeartRate`, `maxHeartRate` and `totalEnergy`;
+  the device's `zoneDurations` as shares of the duration; the heart rate
+  over the workout; the time in five heart rate zones read from heart rate
+  samples (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
+  minute, five 19-beat bands from half of a 190 maximum); and the speed.
+- **`health/labreport`**: the report's lab, accession, issue time, status
+  and review, and a table of its results with the metric, value, flag and
+  reference ranges, a converted twin under the lab's own row.
+- **`health/labresult`**: every result of the same metric over time as
+  points, each against the reference range its own lab printed, the page's
+  own result ringed, with the rows below.
+- **`health/metric`**, on the observations sample's
+  `samples.substrate.reamde.dev/observations/metric` kind: the lab results
+  naming the metric, as the same points and rows. A metric no lab result
+  names lists none, and the view stays hidden, so the page of a metric such
+  as `health/heart_rate` is unchanged.
+
+The healthwhoop adapter ships two more
+([WHOOP to health](bundles-catalog.md#whoop-to-health-sample)): a WHOOP
+cycle's page and WHOOP's scores on a sleep's page.
+
+Edit a view to change it, such as zone bounds from a measured maximum; a
+re-import keeps your edit. The console draws a view above the record's
+property sheet.
 
 ### Lab results in both unit systems
 

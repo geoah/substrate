@@ -84,6 +84,16 @@ func viewName(t *testing.T, ds substrate.Dataset, id string) string {
 	return name
 }
 
+func viewIntro(t *testing.T, ds substrate.Dataset, id string) string {
+	t.Helper()
+	view, err := ds.Get(context.Background(), recordViewKind, id)
+	if err != nil {
+		t.Fatalf("read the %s view: %v", id, err)
+	}
+	intro, _ := view.Properties["intro"].(string)
+	return intro
+}
+
 func TestImportedRecordViewsFollowTheRehome(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
@@ -180,12 +190,14 @@ func TestInstalledAndImportedRecordViewsStayApart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list the views: %v", err)
 	}
-	if len(page.Records) != 4 {
+	// The health sample ships five views (sleep, workout, labreport,
+	// labresult and metric), one set per copy.
+	if len(page.Records) != 10 {
 		ids := make([]string, 0, len(page.Records))
 		for _, r := range page.Records {
 			ids = append(ids, r.ID)
 		}
-		t.Errorf("the two copies hold views %v, want four", ids)
+		t.Errorf("the two copies hold views %v, want ten", ids)
 	}
 }
 
@@ -247,6 +259,14 @@ func TestShippedRecordViewAppliedRehomedResetsAnEditedOne(t *testing.T) {
 		t.Fatalf("edit the sleep view: %v", err)
 	}
 
+	// The lab report view ships no intro, so the owner's stands for a
+	// property the shipped file does not set.
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, homeView("labreport"), substrate.PatchInput{
+		Properties: map[string]any{"intro": "My notes"},
+	}); err != nil {
+		t.Fatalf("edit the lab report view: %v", err)
+	}
+
 	// An apply merges: every property the shipped view sets comes back, and
 	// one the owner added and the shipped view does not set stays.
 	applyShippedViews(t, ds, homeAuthority)
@@ -260,8 +280,11 @@ func TestShippedRecordViewAppliedRehomedResetsAnEditedOne(t *testing.T) {
 	if !reflect.DeepEqual(merged.Properties["sections"], shipped.Properties["sections"]) {
 		t.Errorf("the applied view's sections differ from the shipped ones")
 	}
-	if merged.Properties["fold"] == nil {
-		t.Errorf("the apply pruned the owner's fold, but an apply never prunes")
+	if !reflect.DeepEqual(merged.Properties["fold"], shipped.Properties["fold"]) {
+		t.Errorf("the applied view folds %v, want the shipped %v", merged.Properties["fold"], shipped.Properties["fold"])
+	}
+	if got := viewIntro(t, ds, homeView("labreport")); got != "My notes" {
+		t.Errorf("the apply pruned the owner's intro (%q), but an apply never prunes", got)
 	}
 
 	// Purging the view first makes the apply land the shipped view whole: a

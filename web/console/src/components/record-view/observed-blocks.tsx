@@ -6,24 +6,29 @@
  * metric's spans as rows in the view's order of codes where the source
  * recorded them in sequence, and its time in each code. */
 
-import { useMemo, type ReactNode } from "react"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import {
+  Bars,
   Failed,
   Loading,
   Notice,
   Part,
   Quiet,
+  UNBOUND,
+  useMetricReads,
+  useMetricsReads,
   type BlockContext,
 } from "./parts"
+import { spanWords } from "./span-words"
 import { TimelineChart } from "@/components/observations/timeline-chart"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import { useWidth } from "@/hooks/use-width"
 import { aggregateQueryOptions } from "@/lib/api/observations"
-import { recordQueryOptions, recordsQueryOptions } from "@/lib/api/records"
+import { recordsQueryOptions } from "@/lib/api/records"
 import {
   ApiError,
   type AggregateResult,
@@ -33,12 +38,12 @@ import {
   bandedReducer,
   codeWords,
   distinct,
-  metricInfoOf,
   metricWords,
   readingText,
   reducerChoiceWords,
   refIdOf,
   sameRef,
+  shapeOf,
   type MetricInfo,
 } from "@/lib/observations"
 import {
@@ -54,11 +59,10 @@ import {
   windowWords,
   type TimeRange,
 } from "@/lib/observations-time"
-import { codeColor } from "@/lib/overlay"
-import { splitRecordPath } from "@/lib/record-path"
+import { codeColor, markOf } from "@/lib/overlay"
 import {
   chartBucketSize,
-  chartRead,
+  chartReads,
   sequenceOf,
   spanRows,
   spansListParams,
@@ -67,6 +71,7 @@ import {
   spansSourceCount,
   spansOf,
   spansTotalsRead,
+  toneSoft,
   type Bound,
   type ChartBlock,
   type ChartReducer,
@@ -77,38 +82,15 @@ import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
 import { listWords } from "@/lib/tools"
 import { unitSymbol } from "@/lib/units"
 
-/** Why a chart or spans block has nothing to read: its view binds no
- * window. A view that binds one the record does not hold leaves these
- * blocks out (`RecordViewSection`). */
-const UNBOUND = "Nothing to read here: the view binds no window."
-
-/** Whether a read found nothing to say: a repository with no such metric
- * record, which the server refuses by its `metric.ref`. */
+/** Whether a one-metric read found nothing to say: a repository with no
+ * such metric record, which the server refuses by its `metric.ref`. Any
+ * other refusal is the view's to fix, and shows. */
 function noMetric(error: Error | null): boolean {
   return (
     error instanceof ApiError &&
     error.status === 422 &&
-    error.problems.some((p) => p.startsWith("aggregate.metric"))
+    error.problems.some((p) => p.startsWith("aggregate.metric.ref:"))
   )
-}
-
-/** The metric record at a path, read for its name, unit and codes. */
-function useMetric(path: string): MetricInfo | undefined {
-  return useMetricRead(path).info
-}
-
-/** The metric record at a path, and whether its read is still out. */
-function useMetricRead(path: string): { info?: MetricInfo; pending: boolean } {
-  const parts = splitRecordPath(path)
-  const [authority = "", pkg = "", name = ""] = parts?.kind.split("/") ?? []
-  const read = useQuery({
-    ...recordQueryOptions(authority, pkg, name, parts?.id ?? ""),
-    retry: false,
-  })
-  return {
-    info: read.data?.kind ? metricInfoOf(read.data) : undefined,
-    pending: read.isPending,
-  }
 }
 
 /** Why a spans block cannot draw a metric: it draws a coded amount, whose
@@ -132,21 +114,54 @@ export function ChartBlockView({
   ctx: BlockContext
 }) {
   const { bound, window } = ctx
-  if (!bound || !window) {
+  if (!bound?.window || !window) {
     return (
       <Part title={block.label}>
         <Quiet>{UNBOUND}</Quiet>
       </Part>
     )
   }
+  return <BoundChart block={block} bound={bound} window={window} ctx={ctx} />
+}
+
+/** A chart's every metric in as few reads as the server admits
+ * (`chartReads`), each drawn from its own rows. */
+function BoundChart({
+  block,
+  bound,
+  window,
+  ctx,
+}: {
+  block: ChartBlock
+  bound: Bound
+  window: TimeRange
+  ctx: BlockContext
+}) {
+  const whole = block.bucket === "whole"
+  // A whole read is over the record's window, whatever the zoom.
+  const { reads, readOf } = chartReads(
+    bound,
+    block,
+    whole ? (bound.window ?? window) : window,
+    ctx.timezone
+  )
+  // A zoom keeps the line on screen until the zoomed read answers.
+  const answer = useMetricsReads(reads, bound.observed, { hold: true })
+  const infos = useMetricReads(block.metrics)
   const many = block.metrics.length > 1
   return (
     <Part title={block.label}>
-      {block.metrics.map((metric) => (
+      {block.metrics.map((metric, i) => (
         <MetricChart
           key={metric}
           block={block}
           metric={metric}
+          info={infos.get(metric)?.info}
+          answer={answer.answers[readOf[i]]}
+          pending={answer.pending}
+          error={answer.errors[readOf[i]]}
+          dropped={answer.dropped[readOf[i]].includes(metric)}
+          onRetry={answer.refetch}
           bound={bound}
           window={window}
           heading={many || !block.label}
@@ -167,9 +182,33 @@ function reducerWords(r: ChartReducer): string {
   return r.label ?? reducerChoiceWords(r.key)
 }
 
+/** One metric's rows of a chart's batched answer, with the unit the
+ * answer names for it. A row naming no metric is the one metric's of a
+ * read of one. */
+function metricAnswer(
+  answer: AggregateResult | undefined,
+  metric: string,
+  alone: boolean
+): AggregateResult | undefined {
+  if (!answer) return undefined
+  return {
+    ...answer,
+    unit: answer.units?.[metric] ?? answer.unit,
+    rows: answer.rows.filter((r) =>
+      r.group?.metric ? sameRef(r.group.metric, metric) : alone
+    ),
+  }
+}
+
 function MetricChart({
   block,
   metric,
+  info,
+  answer: batched,
+  pending,
+  error,
+  dropped,
+  onRetry,
   bound,
   window,
   heading,
@@ -177,6 +216,13 @@ function MetricChart({
 }: {
   block: ChartBlock
   metric: string
+  info?: MetricInfo
+  answer?: AggregateResult
+  pending: boolean
+  error: Error | null
+  /** The server refused this metric's entry: no record holds it. */
+  dropped: boolean
+  onRetry: () => void
   bound: Bound
   window: TimeRange
   /** Whether the metric's name heads it: a chart of several metrics, or
@@ -184,19 +230,13 @@ function MetricChart({
   heading: boolean
   ctx: BlockContext
 }) {
-  const info = useMetric(metric)
   const name = info?.name ?? metricWords(refIdOf(metric))
   const whole = block.bucket === "whole"
-  // A whole read is over the record's window, whatever the zoom.
-  const read = chartRead(
-    bound,
-    block,
-    metric,
-    whole ? bound.window : window,
-    ctx.timezone
+  const alone = block.metrics.length === 1
+  const answer = useMemo(
+    () => metricAnswer(batched, metric, alone),
+    [batched, metric, alone]
   )
-  const answer = useQuery(aggregateQueryOptions(read, bound.observed))
-  const error = noMetric(answer.error) ? null : answer.error
   return (
     <div
       className="flex flex-col gap-1.5"
@@ -206,30 +246,33 @@ function MetricChart({
       {heading && (
         <h4 className="text-[12.5px] text-muted-foreground">{name}</h4>
       )}
-      {answer.isPending ? (
+      {dropped ? (
+        <Quiet>No record names the metric {metric}.</Quiet>
+      ) : pending && !answer ? (
         whole ? (
           <Loading />
         ) : (
           <Skeleton className="h-[250px] w-full" />
         )
       ) : error ? (
-        <Failed error={error} onRetry={() => void answer.refetch()} />
+        <Failed error={error} onRetry={onRetry} />
       ) : whole ? (
         <ReducerBars
-          answer={answer.data}
+          answer={answer}
           reducers={block.reducers}
           label={block.label ?? name}
           name={name}
-          noun={ctx.noun}
+          during={spanWords(ctx.bound, ctx.noun).during}
         />
       ) : (
         <Line
-          answer={answer.data}
+          answer={answer}
           block={block}
           bound={bound}
           window={window}
           name={name}
-          unit={info?.unit}
+          metric={metric}
+          info={info}
           ctx={ctx}
         />
       )}
@@ -246,7 +289,8 @@ function Line({
   bound,
   window,
   name,
-  unit: metricUnit,
+  metric,
+  info,
   ctx,
 }: {
   answer?: AggregateResult
@@ -254,9 +298,11 @@ function Line({
   bound: Bound
   window: TimeRange
   name: string
-  unit?: string
+  metric: string
+  info?: MetricInfo
   ctx: BlockContext
 }) {
+  const metricUnit = info?.unit
   const rows = useMemo(() => answer?.rows ?? [], [answer])
   const buckets = bucketsOf([rows])
   const line = lineReducer(block.reducers)
@@ -278,7 +324,8 @@ function Line({
   if (!measured) {
     return (
       <Quiet>
-        No {lowerName(name)} was measured during this {ctx.noun}.
+        No {lowerName(name)} was measured{" "}
+        {spanWords(ctx.bound, ctx.noun).during}.
       </Quiet>
     )
   }
@@ -293,7 +340,7 @@ function Line({
             className="h-7 text-[12.5px] font-normal"
             onClick={ctx.onReset}
           >
-            Show the whole {ctx.noun}
+            Show {spanWords(ctx.bound, ctx.noun).whole}
           </Button>
         </div>
       )}
@@ -306,13 +353,21 @@ function Line({
             key: line.key,
             color: "var(--series-1)",
             points: series.points,
-            mark: "line",
+            mark: markOf(shapeOf(info), line.key),
             band,
           },
         ]}
+        bands={block.bands
+          .filter((b) => !b.metric || sameRef(b.metric, metric))
+          .map((b) => ({
+            low: b.low,
+            high: b.high,
+            color: toneSoft(b.tone),
+            label: b.label,
+          }))}
         domain={window}
         size={chartBucketSize(block.bucket, window)}
-        label={`${name} during this ${ctx.noun}`}
+        label={`${name} ${spanWords(ctx.bound, ctx.noun).during}`}
         units={{ left: unitSymbol(unit) || unit }}
         onZoom={(next) => ctx.onZoom(next)}
         tooltip={(b) => {
@@ -410,19 +465,20 @@ function ReducerBars({
   reducers,
   label,
   name,
-  noun,
+  during,
 }: {
   answer?: AggregateResult
   reducers: readonly ChartReducer[]
   label: string
   name: string
-  noun: string
+  /** The window in words: "during this cycle", "in the last 7 days". */
+  during: string
 }) {
   const row = answer?.rows[0]
   if (!row) {
     return (
       <Quiet>
-        No {lowerName(name)} was measured during this {noun}.
+        No {lowerName(name)} was measured {during}.
       </Quiet>
     )
   }
@@ -451,46 +507,6 @@ function ReducerBars({
   )
 }
 
-/** A bar per item, its length its share of the largest. */
-function Bars({
-  label,
-  items,
-}: {
-  label: string
-  items: {
-    key: string
-    name: ReactNode
-    amount: number | null
-    text: string
-    /** The bar's colour; the first series colour where absent. */
-    color?: string
-  }[]
-}) {
-  const most = Math.max(0, ...items.map((i) => i.amount ?? 0))
-  return (
-    <dl
-      aria-label={label}
-      className="grid max-w-[520px] grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 text-[13px]"
-    >
-      {items.map((item) => (
-        <div key={item.key} className="contents">
-          <dt className="text-muted-foreground">{item.name}</dt>
-          <div aria-hidden className="h-2 rounded-full bg-hover">
-            <div
-              className="h-2 rounded-full"
-              style={{
-                width: most ? `${((item.amount ?? 0) / most) * 100}%` : 0,
-                background: item.color ?? "var(--series-1)",
-              }}
-            />
-          </div>
-          <dd className="text-right tabular-nums">{item.text}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
 export function SpansBlockView({
   block,
   ctx,
@@ -499,7 +515,7 @@ export function SpansBlockView({
   ctx: BlockContext
 }) {
   const { bound, window } = ctx
-  if (!bound || !window) {
+  if (!bound?.window || !window) {
     return (
       <Part title={block.label}>
         <Quiet>{UNBOUND}</Quiet>
@@ -520,7 +536,9 @@ function BoundSpans({
   window: TimeRange
   ctx: BlockContext
 }) {
-  const metric = useMetricRead(block.metric)
+  const metric = useMetricReads([block.metric]).get(block.metric) ?? {
+    pending: true,
+  }
   const info = metric.info
   const name = info?.name ?? metricWords(refIdOf(block.metric))
   // Nothing is read before the metric record says it is a coded amount: a
@@ -610,7 +628,7 @@ function BoundSpans({
             words={words}
             label={label}
             name={name}
-            noun={ctx.noun}
+            during={spanWords(ctx.bound, ctx.noun).during}
           />
         ))}
     </Part>
@@ -625,20 +643,21 @@ function CodeTotals({
   words,
   label,
   name,
-  noun,
+  during,
 }: {
   answer?: AggregateResult
   palette: readonly string[]
   words: (code: string) => string
   label: string
   name: string
-  noun: string
+  /** The window in words: "during this cycle", "in the last 7 days". */
+  during: string
 }) {
   const rows = (answer?.rows ?? []).filter((r) => r.group?.code)
   if (!rows.length) {
     return (
       <Quiet>
-        No {lowerName(name)} was recorded for this {noun}.
+        No {lowerName(name)} was recorded {during}.
       </Quiet>
     )
   }

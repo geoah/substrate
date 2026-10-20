@@ -22,6 +22,7 @@ import {
   localWindowWords,
   offsetWords,
   presetRange,
+  presetReaching,
   rangeWords,
   readerTimezone,
   spanWords,
@@ -42,6 +43,14 @@ describe("ranges and buckets", () => {
     expect(new Date(week.end).getDate()).toBe(8)
     const year = presetRange("1y", now)
     expect(new Date(year.start).getFullYear()).toBe(2025)
+  })
+
+  it("finds the shortest preset that reaches back to a value", () => {
+    expect(presetReaching(now - 2 * DAY, now)).toBe("7d")
+    expect(presetReaching(now - 13 * DAY, now)).toBe("30d")
+    expect(presetReaching(now - 90 * DAY, now)).toBe("6m")
+    expect(presetReaching(now - 300 * DAY, now)).toBe("1y")
+    expect(presetReaching(now - 500 * DAY, now)).toBeUndefined()
   })
 
   it("reads a custom range of days, end inclusive", () => {

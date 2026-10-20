@@ -16,6 +16,7 @@ import { QuantityValue } from "@/components/identity/quantity-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { SectionHead } from "@/components/identity/section-head"
 import { CodeMark, Reading, ShapeWord } from "@/components/observations/marks"
+import { RangeBar } from "@/components/record-view/stat-tile"
 import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useWidth } from "@/hooks/use-width"
@@ -30,6 +31,7 @@ import { tableDateTime } from "@/lib/format"
 import {
   codeWords,
   isForm,
+  interpretationTone,
   judgementWords,
   metricInfoOf,
   observedVariant,
@@ -158,6 +160,55 @@ function Fact({
   )
 }
 
+/** The bar a result's value draws against its own first reference range:
+ * only where the value is a plain number and each bound the range gives
+ * is a quantity in the value's own unit (another unit is said in words,
+ * never drawn). */
+function rangeBarOf(p: Record<string, unknown>):
+  | {
+      value: number
+      unit?: string
+      band: { low?: number; high?: number; label: string; tone: "none" }
+      tone: "good" | "poor" | "none"
+    }
+  | undefined {
+  const value = p.value as
+    { value?: unknown; unit?: unknown; comparator?: unknown } | undefined
+  if (!value || typeof value.value !== "string" || value.comparator) {
+    return undefined
+  }
+  const v = Number(value.value)
+  if (!Number.isFinite(v)) return undefined
+  const unit = str(value.unit)
+  const ranges = Array.isArray(p.referenceRanges) ? p.referenceRanges : []
+  const range = ranges[0] as
+    { low?: unknown; high?: unknown; text?: unknown } | undefined
+  if (!range || typeof range !== "object") return undefined
+  const bound = (q: unknown): number | null | undefined => {
+    if (q === undefined || q === null) return undefined
+    const b = q as { value?: unknown; unit?: unknown; comparator?: unknown }
+    if (typeof b.value !== "string" || b.comparator) return null
+    if (str(b.unit) !== unit) return null
+    const n = Number(b.value)
+    return Number.isFinite(n) ? n : null
+  }
+  const low = bound(range.low)
+  const high = bound(range.high)
+  if (low === null || high === null) return undefined
+  if (low === undefined && high === undefined) return undefined
+  return {
+    value: v,
+    unit,
+    band: {
+      low,
+      high,
+      label: str(range.text) ?? "reference range",
+      tone: "none",
+    },
+    tone: interpretationTone(p.interpretation),
+  }
+}
+
 function ValueSection({
   record,
   open,
@@ -176,6 +227,7 @@ function ValueSection({
       ? undefined
       : str(p.endsAt)
   const judged = judgementWords(p.interpretation, p.referenceRanges)
+  const bar = rangeBarOf(p)
   const places = useMetricPlaces(p)
   return (
     <>
@@ -218,6 +270,19 @@ function ValueSection({
             </span>
           )}
         </Fact>
+        {bar && (
+          <Fact label="Against its range">
+            <div data-slot="observed-range" className="mt-1 max-w-[240px]">
+              <RangeBar
+                value={bar.value}
+                bands={[bar.band]}
+                unit={bar.unit}
+                precision={places}
+                tone={bar.tone}
+              />
+            </div>
+          </Fact>
+        )}
         <Fact label="Metric">
           {p.metric ? <ReferenceValue value={p.metric} /> : <EmptyValue />}
         </Fact>

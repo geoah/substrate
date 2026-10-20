@@ -9,7 +9,9 @@ at version 21 or later.
 `bundle.yaml` is the closure (the `adaptwhoop` function) and `triggers.yaml`
 is the delivery wiring: `healthwhoop-on-mirror` fires the function on every
 create, update and delete of a WHOOP cycle, recovery, sleep or workout row.
-They are the contract; this file is not.
+`views.yaml` holds two record views: a WHOOP cycle's page and WHOOP's scores
+on a sleep's page, with WHOOP's published bands as data. They are the
+contract; this file is not.
 
 A WHOOP sleep stage total is one `amount` observation of `health/sleep_stage`
 carrying both `code` (the stage) and `value` (the total in minutes), spanning
@@ -55,7 +57,9 @@ After an upgrade, the same replay from 0
 (`bin/substratectl trigger replay healthwhoop-on-mirror --from 0`) delivers
 every mirror row again, and each output is rewritten under the new version at
 the revision it already holds; mirror rows WHOOP never rescores are not
-reprocessed any other way.
+reprocessed any other way. Version 8 added the views alone and changes no
+output but its stamp, so an upgrade to it needs no replay: a replay would
+rewrite every output once with identical data.
 
 The mapping table, what is skipped and how deletions reach the outputs:
 [docs/bundles-catalog.md#whoop-to-health-sample](../../docs/bundles-catalog.md#whoop-to-health-sample).

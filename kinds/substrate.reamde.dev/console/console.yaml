@@ -16,4 +16,7 @@ data:
   authority: substrate.reamde.dev
   package: console
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 1
+  # 2 adds the stats, trend, table, lanes and breakdown blocks, the chart's
+  # from, statistic, channel and bands, and the window's open, last, aboutSelf
+  # and sourceSelf, with start and end optional (decision record 0175).
+  version: 2

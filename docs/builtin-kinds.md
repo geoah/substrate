@@ -123,8 +123,10 @@ analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol).
 Its function `convertlab`, fired by its trigger `health-on-labresult` on every
 write of a `labresult`, writes the result again in the other metric of its
 pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).
-It ships two [record views](console.md#record-views), the record pages of a
-sleep and a workout ([what the health sample adds](observations.md#what-the-health-sample-adds)).
+It ships five [record views](console.md#record-views): the record pages of a
+sleep, a workout, a lab report and a lab result, and a lab trend on the
+observations sample's `metric` kind
+([what the health sample adds](observations.md#what-the-health-sample-adds)).
 
 ## substrate.reamde.dev/core
 
@@ -206,7 +208,7 @@ it at its next open.
 
 | Kind         | What it is                                                                                       |
 | ------------ | ------------------------------------------------------------------------------------------------ |
-| `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart` or `spans` ([record views](console.md#record-views)). |
+| `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart`, `spans`, `stats` (tiles, dials and bars against a baseline), `trend` (daily, weekly or monthly strips), `table` (records of one kind as rows), `breakdown` (shares of the record's own properties) or `lanes` (declared, not yet drawn) ([record views](console.md#record-views)). |
 
 A sample ships its views as records; a re-import replaces a view the owner
 never wrote and leaves one the owner edited or deleted as the owner left it

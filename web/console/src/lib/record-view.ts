@@ -1,39 +1,54 @@
-/** Record views (decision record 0166) without React: a
+/** Record views (decision records 0166 and 0175) without React: a
  * `substrate.reamde.dev/console/recordview` record read into the blocks a
  * record page draws above its generic sheet, the window a view binds on a
- * record by its properties' names, and the reads its chart and spans blocks
- * make over that window. Nothing here names a sample or a metric: every
- * kind, metric, reducer and code comes from the view record. A metric is
- * the full record path the view's reference holds, never an id resolved
- * against some metric kind: two metric kinds may hold one id. */
+ * record by its properties' names, and the reads its blocks make over that
+ * window. Nothing here names a sample or a metric: every kind, metric,
+ * reducer, band and code comes from the view record. A metric is the full
+ * record path the view's reference holds, never an id resolved against some
+ * metric kind: two metric kinds may hold one id. */
 
 import type { AggregateRead } from "@/lib/api/observations"
 import { CORE_AUTHORITY, CORE_PACKAGE } from "@/lib/api/http"
 import type { ListParams } from "@/lib/api/records"
 import {
   readReference,
+  type Aggregate,
+  type AggregateMetricRead,
   type AggregateReducer,
   type AggregateResult,
+  type AggregateRow,
   type AggregateSources,
   type Cond,
   type KindInfo,
   type RecordFilter,
   type SubstrateRecord,
 } from "@/lib/api/types"
-import { ALL_REDUCERS } from "@/lib/aggregate-rules"
+import {
+  ALL_REDUCERS,
+  MAX_BUCKETS,
+  MAX_BUCKETS_CAP,
+  MAX_METRICS,
+} from "@/lib/aggregate-rules"
 import { OBSERVED_TRAIT } from "@/lib/core-kinds"
 import { splitRecordPath } from "@/lib/record-path"
-import { isTimeUnit } from "@/lib/units"
+import { groupDigits, isTimeUnit, roundDigits } from "@/lib/units"
 import {
   addressValue,
+  DEFAULT_PRECISION,
   NONE,
   observedKinds,
+  readingText,
   reducerKey,
   sameRef,
+  type MetricInfo,
 } from "@/lib/observations"
+import { numberOf, rowValue, type Bucket } from "@/lib/observations-answer"
 import {
   autoBucket,
+  bucketEstimate,
   bucketOf,
+  durationMs,
+  durationWords,
   isoWithOffset,
   type BucketSize,
   type TimeRange,
@@ -63,13 +78,84 @@ export function recordViewsParams(identity: string): ListParams {
   }
 }
 
+// ── tones and bands ───────────────────────────────────────────────────────
+
+/** How a band is coloured and worded. A tone is never the only signal: a
+ * word sits beside it. */
+export type Tone = "good" | "fair" | "poor" | "none"
+
+/** Which direction of a change is good. */
+export type Better = "higher" | "lower" | "none"
+
+/** Where a read takes its values. */
+export type ReadFrom = "raw" | "summaries" | "prefer-raw"
+
+/** A labelled value range, `low <= value < high`, an absent bound open; a
+ * band naming a metric applies to that metric alone. */
+export interface Band {
+  low?: number
+  high?: number
+  label?: string
+  tone: Tone
+  metric?: string
+}
+
+const TONES: readonly Tone[] = ["good", "fair", "poor", "none"]
+const BETTERS: readonly Better[] = ["higher", "lower", "none"]
+const READ_FROM: readonly ReadFrom[] = ["raw", "summaries", "prefer-raw"]
+
+/** The status token a tone's mark wears. */
+export function toneColor(tone: Tone): string {
+  switch (tone) {
+    case "good":
+      return "var(--ok)"
+    case "fair":
+      return "var(--warning)"
+    case "poor":
+      return "var(--destructive)"
+    case "none":
+      return "var(--faint)"
+  }
+}
+
+/** The colour a tone's words wear: the mark's, but a toneless word the
+ * faint text token, since the faint mark token is too light for text. */
+export function toneText(tone: Tone): string {
+  return tone === "none" ? "var(--faint-text)" : toneColor(tone)
+}
+
+/** The soft status token a tone's wash wears. */
+export function toneSoft(tone: Tone): string {
+  switch (tone) {
+    case "good":
+      return "var(--ok-soft)"
+    case "fair":
+      return "var(--warn-soft)"
+    case "poor":
+      return "var(--bad-soft)"
+    case "none":
+      return "var(--hover)"
+  }
+}
+
+// ── the view as the console reads it ──────────────────────────────────────
+
 /** Which of the record's own properties hold its window, who it is about
- * and what recorded it. */
+ * and what recorded it; or, for a record with no window of its own, the
+ * last `last` of time. */
 export interface ViewWindow {
-  start: string
-  end: string
+  start?: string
+  end?: string
+  /** A record whose end is unset is read up to now. */
+  open: boolean
+  /** An ISO 8601 duration: the window ends now and is this long. */
+  last?: string
   about?: string
+  /** The record itself is who the observations are about. */
+  aboutSelf: boolean
   source?: string
+  /** The record itself is the source that recorded them. */
+  sourceSelf: boolean
 }
 
 /** How a read takes the record's own source: first then the sources'
@@ -124,6 +210,11 @@ export interface ChartBlock {
   bucket: ChartBucket
   unit?: string
   sources: SourcePolicy
+  from: ReadFrom
+  statistic?: string
+  /** The channel kept; `none` keeps the streams naming no channel. */
+  channel?: string
+  bands: Band[]
 }
 
 export interface SpansBlock {
@@ -136,6 +227,118 @@ export interface SpansBlock {
   sources: SourcePolicy
 }
 
+/** One tile: one reducer of one metric over the window, or one property of
+ * the record. `metric` is the metric record's path; an item naming
+ * `metricProperty` reads the path the record's reference holds
+ * (`itemMetric`). */
+export interface StatItem {
+  metric?: string
+  metricProperty?: string
+  /** A property of the record; a dotted path reads into a keyed map. */
+  property?: string
+  reducer: AggregateReducer
+  /** The reducer's key in an answer (`reducerKey`). */
+  key: string
+  from: ReadFrom
+  statistic?: string
+  code?: string
+  unit?: string
+  label?: string
+  show: "number" | "dial" | "bar"
+  min?: number
+  max?: number
+  better: Better
+  precision?: number
+}
+
+export interface StatsBlock {
+  type: "stats"
+  label?: string
+  /** Days before the window each metric item is compared against; 0 none. */
+  baseline: number
+  channel?: string
+  sources: SourcePolicy
+  bands: Band[]
+  items: StatItem[]
+  /** Whether a block none of whose items holds a value says so or is
+   * left out. */
+  empty: "say" | "hide"
+}
+
+export interface TrendItem {
+  metric?: string
+  metricProperty?: string
+  reducer: AggregateReducer
+  key: string
+  from: ReadFrom
+  statistic?: string
+  code?: string
+  unit?: string
+  label?: string
+  show: "auto" | "line" | "bars"
+  better: Better
+}
+
+export interface TrendBlock {
+  type: "trend"
+  label?: string
+  /** Buckets the strip covers, the record's last. */
+  span: number
+  bucket: "day" | "week" | "month"
+  /** Buckets of the trailing average, through the bucket before; 0 none. */
+  rolling: number
+  channel?: string
+  sources: SourcePolicy
+  bands: Band[]
+  items: TrendItem[]
+  /** Whether a block none of whose strips holds a value says so or is
+   * left out. */
+  empty: "say" | "hide"
+}
+
+export interface TableBlock {
+  type: "table"
+  label?: string
+  /** The listed kind's identity. */
+  kind: string
+  via?: string
+  sameAs?: string
+  inWindow: boolean
+  columns: string[]
+  orderBy: string
+  limit: number
+  chart: boolean
+  nest?: string
+  empty: "say" | "hide"
+}
+
+export interface LaneRow {
+  /** A kind's identity, whose records are the row's spans. */
+  kind?: string
+  via?: string
+  /** A coded metric's record path. */
+  metric?: string
+  label?: string
+  spanTitle?: string
+  limit: number
+}
+
+export interface LanesBlock {
+  type: "lanes"
+  label?: string
+  sources: SourcePolicy
+  rows: LaneRow[]
+}
+
+export interface BreakdownBlock {
+  type: "breakdown"
+  label?: string
+  property?: string
+  keys: { key: string; label?: string }[]
+  items: { property: string; label?: string }[]
+  total?: string
+}
+
 export type Block =
   | HeadingBlock
   | TextBlock
@@ -143,8 +346,13 @@ export type Block =
   | RelatedBlock
   | ChartBlock
   | SpansBlock
+  | StatsBlock
+  | TrendBlock
+  | TableBlock
+  | LanesBlock
+  | BreakdownBlock
 
-/** The block types this console draws, in the order a notice names them. */
+/** The block types the grammar declares, in the order a notice names them. */
 export const BLOCK_TYPES = [
   "heading",
   "text",
@@ -152,6 +360,11 @@ export const BLOCK_TYPES = [
   "related",
   "chart",
   "spans",
+  "stats",
+  "trend",
+  "table",
+  "lanes",
+  "breakdown",
 ] as const
 
 /** One section: the block it holds, or why it cannot be drawn. */
@@ -162,6 +375,9 @@ export interface RecordView {
   name?: string
   intro?: string
   window?: ViewWindow
+  /** Why the window cannot be bound as written, which the blocks that read
+   * it say instead of reading. */
+  windowProblem?: string
   fold: string[]
   sections: Section[]
 }
@@ -202,6 +418,20 @@ function bags(v: unknown): Bag[] {
   return Array.isArray(v) ? v.filter(isBag) : []
 }
 
+function num(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined
+}
+
+function given(v: unknown): boolean {
+  return v !== undefined && v !== null
+}
+
+/** An integer setting clamped to its bounds, the fallback where unset. */
+function clampInt(v: unknown, lo: number, hi: number, fallback: number) {
+  const n = num(v)
+  return n === undefined ? fallback : Math.min(hi, Math.max(lo, Math.round(n)))
+}
+
 function oneOf<T extends string>(
   v: unknown,
   allowed: readonly T[],
@@ -217,24 +447,45 @@ function oneOf<T extends string>(
 export function recordViewOf(record: SubstrateRecord): RecordView {
   const p = record.properties ?? {}
   const w = isBag(p.window) ? p.window : undefined
-  const start = text(w?.start)
-  const end = text(w?.end)
+  const window: ViewWindow | undefined = w
+    ? {
+        ...(text(w.start) ? { start: text(w.start) } : {}),
+        ...(text(w.end) ? { end: text(w.end) } : {}),
+        open: w.open === true,
+        ...(text(w.last) ? { last: text(w.last) } : {}),
+        ...(text(w.about) ? { about: text(w.about) } : {}),
+        aboutSelf: w.aboutSelf === true,
+        ...(text(w.source) ? { source: text(w.source) } : {}),
+        sourceSelf: w.sourceSelf === true,
+      }
+    : undefined
+  const windowProblem = window ? windowProblemOf(window) : undefined
   return {
     id: record.id,
     name: text(p.name),
     intro: text(p.intro),
-    window:
-      start && end
-        ? {
-            start,
-            end,
-            ...(text(w?.about) ? { about: text(w?.about) } : {}),
-            ...(text(w?.source) ? { source: text(w?.source) } : {}),
-          }
-        : undefined,
+    window,
+    ...(windowProblem ? { windowProblem } : {}),
     fold: texts(p.fold),
     sections: bags(p.sections).map(sectionOf),
   }
+}
+
+/** The window rules the grammar cannot state. */
+function windowProblemOf(w: ViewWindow): string | undefined {
+  if (w.aboutSelf && w.about) {
+    return "This view's window names both about and aboutSelf; it names one."
+  }
+  if (w.sourceSelf && w.source) {
+    return "This view's window names both source and sourceSelf; it names one."
+  }
+  if (w.last && w.start) {
+    return "This view's window names both last and start; it names one."
+  }
+  if (w.last && durationMs(w.last) === undefined) {
+    return `This view's window's last is ${w.last}, which is no duration of weeks, days, hours, minutes or seconds.`
+  }
+  return undefined
 }
 
 function sectionOf(raw: Bag): Section {
@@ -310,40 +561,8 @@ function blockOf(type: Block["type"], b: Bag): Section {
         },
       }
     }
-    case "chart": {
-      const named = Array.isArray(b.metrics) ? b.metrics : []
-      if (!named.length) return { problem: "This chart names no metric." }
-      const metrics: string[] = []
-      for (const m of named) {
-        const path = metricPathIn(m)
-        if (!path) return { problem: `This chart ${notAMetric(m)}` }
-        metrics.push(path)
-      }
-      const bucket = oneOf(b.bucket, CHART_BUCKETS, "auto")
-      if (!bucket)
-        return { problem: `This chart's bucket is ${said(b.bucket)}.` }
-      const sources = oneOf(b.sources, SOURCE_POLICIES, "prefer")
-      if (!sources)
-        return { problem: `This chart's sources is ${said(b.sources)}.` }
-      const reducers: ChartReducer[] = []
-      for (const r of bags(b.reducers)) {
-        const read = chartReducerOf(r)
-        if (typeof read === "string") return { problem: read }
-        reducers.push(read)
-      }
-      if (!reducers.length) return { problem: "This chart names no reducer." }
-      return {
-        block: {
-          type,
-          label: text(b.label),
-          metrics,
-          reducers,
-          bucket,
-          unit: text(b.unit),
-          sources,
-        },
-      }
-    }
+    case "chart":
+      return chartOf(b)
     case "spans": {
       if (b.metric === undefined || b.metric === null) {
         return { problem: "This spans block names no metric." }
@@ -370,6 +589,389 @@ function blockOf(type: Block["type"], b: Bag): Section {
         },
       }
     }
+    case "stats":
+      return statsOf(b)
+    case "trend":
+      return trendOf(b)
+    case "table":
+      return tableOf(b)
+    case "lanes":
+      return lanesOf(b)
+    case "breakdown":
+      return breakdownOf(b)
+  }
+}
+
+function chartOf(b: Bag): Section {
+  const named = Array.isArray(b.metrics) ? b.metrics : []
+  if (!named.length) return { problem: "This chart names no metric." }
+  const metrics: string[] = []
+  for (const m of named) {
+    const path = metricPathIn(m)
+    if (!path) return { problem: `This chart ${notAMetric(m)}` }
+    metrics.push(path)
+  }
+  const bucket = oneOf(b.bucket, CHART_BUCKETS, "auto")
+  if (!bucket) return { problem: `This chart's bucket is ${said(b.bucket)}.` }
+  const sources = oneOf(b.sources, SOURCE_POLICIES, "prefer")
+  if (!sources)
+    return { problem: `This chart's sources is ${said(b.sources)}.` }
+  const from = oneOf(b.from, READ_FROM, "raw")
+  if (!from) return { problem: fromProblem("This chart", b.from) }
+  const rawStatistic = statisticProblem("This chart", from, b.statistic)
+  if (rawStatistic) return { problem: rawStatistic }
+  const bands = bandsOf(b.bands, "This chart")
+  if (typeof bands === "string") return { problem: bands }
+  const reducers: ChartReducer[] = []
+  for (const r of bags(b.reducers)) {
+    const read = chartReducerOf(r)
+    if (typeof read === "string") return { problem: read }
+    reducers.push(read)
+  }
+  if (!reducers.length) return { problem: "This chart names no reducer." }
+  return {
+    block: {
+      type: "chart",
+      label: text(b.label),
+      metrics,
+      reducers,
+      bucket,
+      unit: text(b.unit),
+      sources,
+      from,
+      ...(text(b.statistic) ? { statistic: text(b.statistic) } : {}),
+      ...(text(b.channel) ? { channel: text(b.channel) } : {}),
+      bands,
+    },
+  }
+}
+
+/** Why a read names a statistic it cannot keep: a statistic narrows a
+ * metric's summaries, and a raw read holds none. Undefined where it can. */
+function statisticProblem(
+  what: string,
+  from: ReadFrom,
+  statistic: unknown
+): string | undefined {
+  const named = text(statistic)
+  if (!named || from !== "raw") return undefined
+  return `${what} keeps the statistic ${named} and reads from raw; a statistic narrows a metric's summaries, so read from summaries or prefer-raw.`
+}
+
+function fromProblem(what: string, v: unknown): string {
+  return `${what} reads from ${said(v)}; from is raw, summaries or prefer-raw.`
+}
+
+/** A block's bands, or why one cannot be read. */
+function bandsOf(v: unknown, what: string): Band[] | string {
+  const out: Band[] = []
+  for (const raw of bags(v)) {
+    const tone = oneOf(raw.tone, TONES, "none")
+    if (!tone) {
+      return `${what} names a band whose tone is ${said(raw.tone)}; a tone is good, fair, poor or none.`
+    }
+    let metric: string | undefined
+    if (given(raw.metric)) {
+      metric = metricPathIn(raw.metric)
+      if (!metric) return `${what} has a band that ${notAMetric(raw.metric)}`
+    }
+    const low = num(raw.low)
+    const high = num(raw.high)
+    if (low !== undefined && high !== undefined && low >= high) {
+      return `${what} has a band whose low bound is not under its high one: ${low} to ${high}.`
+    }
+    out.push({
+      ...(low !== undefined ? { low } : {}),
+      ...(high !== undefined ? { high } : {}),
+      ...(text(raw.label) ? { label: text(raw.label) } : {}),
+      tone,
+      ...(metric ? { metric } : {}),
+    })
+  }
+  return out
+}
+
+/** The fields a stats item and a trend item share, or why one cannot be
+ * read. `what` names the block in a problem. */
+function readItemOf(
+  r: Bag,
+  what: string,
+  admitsProperty: boolean
+):
+  | {
+      metric?: string
+      metricProperty?: string
+      property?: string
+      reducer: AggregateReducer
+      key: string
+      from: ReadFrom
+      statistic?: string
+      code?: string
+      unit?: string
+      label?: string
+      better: Better
+    }
+  | string {
+  let metric: string | undefined
+  if (given(r.metric)) {
+    metric = metricPathIn(r.metric)
+    if (!metric) return `${what} has an item that ${notAMetric(r.metric)}`
+  }
+  const metricProperty = text(r.metricProperty)
+  const property = admitsProperty ? text(r.property) : undefined
+  const named = [metric, metricProperty, property].filter(Boolean).length
+  if (named !== 1) {
+    return admitsProperty
+      ? `${what} has an item naming ${named} of metric, metricProperty and property; an item names exactly one.`
+      : `${what} has an item naming ${named} of metric and metricProperty; an item names exactly one.`
+  }
+  const from = oneOf(r.from, READ_FROM, "raw")
+  if (!from) return fromProblem(`${what}'s item`, r.from)
+  const rawStatistic = statisticProblem(`${what}'s item`, from, r.statistic)
+  if (rawStatistic) return rawStatistic
+  const better = oneOf(r.better, BETTERS, "none")
+  if (!better) {
+    return `${what} has an item whose better is ${said(r.better)}; better is higher, lower or none.`
+  }
+  const code = text(r.code)
+  const name = text(r.reducer) ?? "last"
+  if (!ALL_REDUCERS.has(name)) {
+    return `${what} names a reducer this console does not read: ${name}.`
+  }
+  let reducer: AggregateReducer = name
+  if (name === "durationIn") {
+    const low = num(r.low)
+    const high = num(r.high)
+    if (low === undefined || high === undefined) {
+      return "A durationIn reducer needs a low and a high bound."
+    }
+    if (low >= high) {
+      return `A durationIn reducer's low bound must be under its high one: ${low} to ${high}.`
+    }
+    reducer = { durationIn: [low, high] }
+  } else if (name === "percentile") {
+    const rank = num(r.rank)
+    if (rank === undefined) return "A percentile reducer needs a rank."
+    reducer = { percentile: rank }
+  } else if (name === "timeInState") {
+    if (!code) return "A timeInState reducer needs a code."
+    reducer = { timeInState: [code] }
+  }
+  return {
+    ...(metric ? { metric } : {}),
+    ...(metricProperty ? { metricProperty } : {}),
+    ...(property ? { property } : {}),
+    reducer,
+    key: reducerKey(reducer),
+    from,
+    ...(text(r.statistic) ? { statistic: text(r.statistic) } : {}),
+    ...(code ? { code } : {}),
+    ...(text(r.unit) ? { unit: text(r.unit) } : {}),
+    ...(text(r.label) ? { label: text(r.label) } : {}),
+    better,
+  }
+}
+
+function statsOf(b: Bag): Section {
+  const what = "This stats block"
+  const sources = oneOf(b.sources, SOURCE_POLICIES, "prefer")
+  if (!sources) return { problem: `${what}'s sources is ${said(b.sources)}.` }
+  const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
+  if (!empty) return { problem: `${what}'s empty is ${said(b.empty)}.` }
+  const bands = bandsOf(b.bands, what)
+  if (typeof bands === "string") return { problem: bands }
+  const items: StatItem[] = []
+  for (const r of bags(b.items)) {
+    const read = readItemOf(r, what, true)
+    if (typeof read === "string") return { problem: read }
+    const show = oneOf(r.show, ["number", "dial", "bar"] as const, "number")
+    if (!show) {
+      return {
+        problem: `${what} has an item whose show is ${said(r.show)}; show is number, dial or bar.`,
+      }
+    }
+    const min = num(r.min)
+    const max = num(r.max)
+    const precision = num(r.precision)
+    items.push({
+      ...read,
+      show,
+      ...(min !== undefined ? { min } : {}),
+      ...(max !== undefined ? { max } : {}),
+      ...(precision !== undefined
+        ? { precision: clampInt(precision, 0, 12, 0) }
+        : {}),
+    })
+  }
+  if (!items.length) return { problem: `${what} names no item.` }
+  return {
+    block: {
+      type: "stats",
+      label: text(b.label),
+      baseline: clampInt(b.baseline, 0, 400, 0),
+      ...(text(b.channel) ? { channel: text(b.channel) } : {}),
+      sources,
+      bands,
+      items,
+      empty,
+    },
+  }
+}
+
+function trendOf(b: Bag): Section {
+  const what = "This trend block"
+  const span = given(b.span) ? num(b.span) : 30
+  if (span === undefined || span < 2) {
+    return {
+      problem: `${what}'s span is ${said(b.span)}; a span covers at least 2 buckets.`,
+    }
+  }
+  const bucket = oneOf(b.bucket, ["day", "week", "month"] as const, "day")
+  if (!bucket) {
+    return {
+      problem: `${what}'s bucket is ${said(b.bucket)}; a bucket is day, week or month.`,
+    }
+  }
+  const sources = oneOf(b.sources, SOURCE_POLICIES, "prefer")
+  if (!sources) return { problem: `${what}'s sources is ${said(b.sources)}.` }
+  const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
+  if (!empty) return { problem: `${what}'s empty is ${said(b.empty)}.` }
+  const bands = bandsOf(b.bands, what)
+  if (typeof bands === "string") return { problem: bands }
+  const items: TrendItem[] = []
+  for (const r of bags(b.items)) {
+    const read = readItemOf(r, what, false)
+    if (typeof read === "string") return { problem: read }
+    const show = oneOf(r.show, ["auto", "line", "bars"] as const, "auto")
+    if (!show) {
+      return {
+        problem: `${what} has an item whose show is ${said(r.show)}; show is auto, line or bars.`,
+      }
+    }
+    // One read holds a metric once, so two items of one metric must read
+    // it alike and differ in their reducer alone.
+    const twin = items.find((i) => i.metric && i.metric === read.metric)
+    if (twin && entrySpec(twin) !== entrySpec(read)) {
+      return {
+        problem: `${what} reads ${read.metric} twice from different points; a trend reads each metric one way.`,
+      }
+    }
+    items.push({ ...read, show })
+  }
+  if (!items.length) return { problem: `${what} names no item.` }
+  return {
+    block: {
+      type: "trend",
+      label: text(b.label),
+      span: Math.min(400, Math.round(span)),
+      bucket,
+      rolling: clampInt(b.rolling, 0, 400, 0),
+      ...(text(b.channel) ? { channel: text(b.channel) } : {}),
+      sources,
+      bands,
+      items,
+      empty,
+    },
+  }
+}
+
+function tableOf(b: Bag): Section {
+  const what = "This table"
+  const kind = kindOfDeclaration(b.kind)
+  if (!kind) return { problem: `${what} names no kind.` }
+  const via = text(b.via)
+  const sameAs = text(b.sameAs)
+  const inWindow = b.inWindow === true
+  const named = [via, sameAs, inWindow].filter(Boolean).length
+  if (named !== 1) {
+    return {
+      problem: `${what} names ${named} of via, sameAs and inWindow; a table names exactly one.`,
+    }
+  }
+  const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
+  if (!empty) return { problem: `${what}'s empty is ${said(b.empty)}.` }
+  return {
+    block: {
+      type: "table",
+      label: text(b.label),
+      kind,
+      ...(via ? { via } : {}),
+      ...(sameAs ? { sameAs } : {}),
+      inWindow,
+      columns: texts(b.columns),
+      orderBy: text(b.orderBy) ?? "at:desc",
+      limit: clampInt(b.limit, 1, 100, 25),
+      chart: b.chart === true,
+      ...(text(b.nest) ? { nest: text(b.nest) } : {}),
+      empty,
+    },
+  }
+}
+
+function lanesOf(b: Bag): Section {
+  const what = "This lanes block"
+  const sources = oneOf(b.sources, SOURCE_POLICIES, "only")
+  if (!sources) return { problem: `${what}'s sources is ${said(b.sources)}.` }
+  const rows: LaneRow[] = []
+  for (const r of bags(b.rows)) {
+    const kind = given(r.kind) ? kindOfDeclaration(r.kind) : undefined
+    let metric: string | undefined
+    if (given(r.metric)) {
+      metric = metricPathIn(r.metric)
+      if (!metric)
+        return { problem: `${what} has a row that ${notAMetric(r.metric)}` }
+    }
+    if (Boolean(kind) === Boolean(metric)) {
+      return {
+        problem: `${what} has a row naming ${kind ? "both" : "neither"} a kind and a metric; a row names one.`,
+      }
+    }
+    const via = text(r.via)
+    if (via && !kind) {
+      return { problem: `${what} has a row naming via without a kind.` }
+    }
+    rows.push({
+      ...(kind ? { kind } : {}),
+      ...(via ? { via } : {}),
+      ...(metric ? { metric } : {}),
+      ...(text(r.label) ? { label: text(r.label) } : {}),
+      ...(text(r.spanTitle) ? { spanTitle: text(r.spanTitle) } : {}),
+      limit: clampInt(r.limit, 1, 500, 100),
+    })
+  }
+  if (!rows.length) return { problem: `${what} names no row.` }
+  return { block: { type: "lanes", label: text(b.label), sources, rows } }
+}
+
+function breakdownOf(b: Bag): Section {
+  const what = "This breakdown"
+  const property = text(b.property)
+  const items = bags(b.items).flatMap((i) => {
+    const p = text(i.property)
+    return p
+      ? [{ property: p, ...(text(i.label) ? { label: text(i.label) } : {}) }]
+      : []
+  })
+  if (property ? items.length : !items.length) {
+    return {
+      problem: `${what} names ${property ? "both a property and items" : "neither a property nor items"}; it names one.`,
+    }
+  }
+  const keys = bags(b.keys).flatMap((k) => {
+    const key = text(k.key)
+    return key
+      ? [{ key, ...(text(k.label) ? { label: text(k.label) } : {}) }]
+      : []
+  })
+  return {
+    block: {
+      type: "breakdown",
+      label: text(b.label),
+      ...(property ? { property } : {}),
+      keys,
+      items,
+      ...(text(b.total) ? { total: text(b.total) } : {}),
+    },
   }
 }
 
@@ -430,42 +1032,106 @@ export function viewsOf(records: readonly SubstrateRecord[]): RecordView[] {
 
 // ── the window a view binds on one record ─────────────────────────────────
 
-/** What a view's chart and spans blocks read on one record: its window,
- * who it is about (absent where the view binds no `about` or the record
- * names nobody, which reads the owner's), what recorded it, and the
- * observed kinds the reads go through. */
+/** What a view's blocks read on one record: its window (absent where the
+ * record holds none the view binds), whether that window ends at the time
+ * of reading, who it is about (absent where the view binds no `about` or
+ * the record names nobody, which reads the owner's), what recorded it, and
+ * the observed kinds the reads go through. */
 export interface Bound {
-  window: TimeRange
+  window?: TimeRange
+  /** The window ends at the time of reading: "so far". */
+  open: boolean
   about?: string
   source?: string
   observed: string[]
+  /** The window is the view's `last`, ending now. */
+  lastWindow?: boolean
 }
 
-/** The view's window on a record: the instants its bound properties hold,
- * an end after the start, in a repository with an observed kind to read.
- * Undefined otherwise, and the chart and spans blocks then say they have
- * nothing to read. */
+/** Whether a view binds a window at all: a start or a `last`. */
+export function viewNeedsWindow(view: RecordView): boolean {
+  return Boolean(view.window?.start || view.window?.last)
+}
+
+/** Whether a block reads the record's window. */
+export function readsWindow(block: Block): boolean {
+  switch (block.type) {
+    case "chart":
+    case "spans":
+    case "lanes":
+    case "trend":
+      return true
+    case "table":
+      return block.inWindow
+    case "stats":
+      return block.items.some((i) => i.metric || i.metricProperty)
+    default:
+      return false
+  }
+}
+
+function instant(v: unknown): number | undefined {
+  if (typeof v !== "string") return undefined
+  const t = Date.parse(v)
+  return Number.isNaN(t) ? undefined : t
+}
+
+/** The view's window on a record. Undefined only where no kind of the
+ * repository binds core `observed`; otherwise a Bound, whose `window` is
+ * absent where the record holds none the view binds: no start, an end at
+ * or before the start, or no end on a view that is not `open`. */
 export function boundOf(
   view: RecordView,
   record: SubstrateRecord,
-  kinds: readonly KindInfo[]
+  kinds: readonly KindInfo[],
+  now = Date.now()
 ): Bound | undefined {
-  const w = view.window
-  if (!w) return undefined
-  const p = record.properties ?? {}
-  const at =
-    typeof p[w.start] === "string" ? Date.parse(p[w.start] as string) : NaN
-  const end =
-    typeof p[w.end] === "string" ? Date.parse(p[w.end] as string) : NaN
-  if (Number.isNaN(at) || Number.isNaN(end) || end <= at) return undefined
   const observed = observedKinds(kinds)
   if (!observed.length) return undefined
-  return {
-    window: { start: at, end },
-    about: w.about ? readReference(p[w.about])?.path : undefined,
-    source: w.source ? readReference(p[w.source])?.path : undefined,
-    observed: observed.map((k) => k.identity),
+  const w = view.window
+  const p = record.properties ?? {}
+  const self = `${record.kind}/${record.id}`
+  const about = w?.aboutSelf
+    ? self
+    : w?.about
+      ? readReference(p[w.about])?.path
+      : undefined
+  const source = w?.sourceSelf
+    ? self
+    : w?.source
+      ? readReference(p[w.source])?.path
+      : undefined
+  let window: TimeRange | undefined
+  let open = false
+  let lastWindow = false
+  const lastMs = w?.last ? durationMs(w.last) : undefined
+  if (lastMs) {
+    window = { start: now - lastMs, end: now }
+    open = true
+    lastWindow = true
+  } else if (w?.start) {
+    const start = instant(p[w.start])
+    const ended = w.end ? instant(p[w.end]) : undefined
+    const end = ended ?? (w.open ? now : undefined)
+    if (start !== undefined && end !== undefined && end > start) {
+      window = { start, end }
+      open = w.open && ended === undefined
+    }
   }
+  return {
+    ...(window ? { window } : {}),
+    open,
+    about,
+    source,
+    observed: observed.map((k) => k.identity),
+    ...(lastWindow ? { lastWindow } : {}),
+  }
+}
+
+/** The window of a Bound a block reads, which its caller checked. */
+function windowOf(b: Bound): TimeRange {
+  if (!b.window) throw new Error("This read needs a bound window.")
+  return b.window
 }
 
 function rangeOf(window: TimeRange) {
@@ -483,6 +1149,12 @@ function narrowing(b: Bound, policy: SourcePolicy): Record<string, Cond> {
   }
 }
 
+/** The channel a block keeps: `none` the streams naming none. */
+function channelCond(channel: string | undefined): Record<string, Cond> {
+  if (!channel) return {}
+  return { channel: channel === "none" ? { exists: false } : { eq: channel } }
+}
+
 /** Where sources overlap, which one answers. `prefer` puts the record's own
  * source first and the rest by priority; `only` narrows to it in the
  * filter and needs no order, except where the record names none. */
@@ -497,10 +1169,64 @@ function sourcesOf(
   }
 }
 
-function filterOf(b: Bound, policy: SourcePolicy): RecordFilter {
+function filterOf(
+  b: Bound,
+  policy: SourcePolicy,
+  channel?: string
+): RecordFilter {
   return {
     implements: OBSERVED_TRAIT,
-    properties: narrowing(b, policy),
+    properties: { ...narrowing(b, policy), ...channelCond(channel) },
+  }
+}
+
+/** One metric of a several-metric read. A unit of duration beside a time
+ * in a range or a state is the times' unit (`durationUnit`); any other
+ * converts the values. */
+export function metricEntry(
+  ref: string,
+  reducers: readonly AggregateReducer[],
+  from: ReadFrom,
+  statistic?: string,
+  unit?: string
+): AggregateMetricRead {
+  const timed = reducers.some((r) => {
+    const k = reducerKey(r)
+    return k.startsWith("durationIn") || k.startsWith("timeInState")
+  })
+  return {
+    ref,
+    reducers: [...reducers],
+    from,
+    ...(statistic ? { statistic } : {}),
+    ...(unit
+      ? isTimeUnit(unit) && timed
+        ? { durationUnit: unit }
+        : { unit }
+      : {}),
+  }
+}
+
+/** The one builder every block's several-metric read goes through: the
+ * observed filter with the block's narrowing and channel, the entries, the
+ * Bound's window as the range unless `extra` names another, and the
+ * sources order the policy asks for. */
+export function metricsReadOf(
+  b: Bound,
+  policy: SourcePolicy,
+  channel: string | undefined,
+  entries: readonly AggregateMetricRead[],
+  extra: Partial<Aggregate> = {}
+): AggregateRead {
+  const sources = sourcesOf(b, policy)
+  return {
+    filter: filterOf(b, policy, channel),
+    aggregate: {
+      metrics: [...entries],
+      ...(b.window ? { range: rangeOf(b.window) } : {}),
+      ...extra,
+      ...(sources ? { sources } : {}),
+    },
   }
 }
 
@@ -523,43 +1249,702 @@ export function chartBucketSize(
     : BUCKET_SIZES[bucket]
 }
 
-/** One metric of a chart over `window` (the record's, or a part zoomed
- * into): a line's buckets, or one row over the window where the chart's
- * bucket is `whole`. */
-export function chartRead(
+/** Every metric of a chart over `window` (the record's, or a part zoomed
+ * into) in as few reads as the server admits: a line's buckets, or one row
+ * per metric over the window where the chart's bucket is `whole`. Each row
+ * names its metric in `group.metric`. A read names at most `MAX_METRICS`
+ * metrics, and the server holds a read's series times buckets to its
+ * budget together, so where the metrics' buckets pass the default the read
+ * asks for the cap (the estimate is a guess), and holds no more metrics
+ * than fit under it. `readOf[i]` is the index of the read metric i is in. */
+export function chartReads(
   b: Bound,
   chart: ChartBlock,
-  metric: string,
   window: TimeRange,
   timezone: string
-): AggregateRead {
-  const sources = sourcesOf(b, chart.sources)
+): { reads: AggregateRead[]; readOf: number[] } {
+  const reducers = chart.reducers.map((r) => r.reducer)
+  const size =
+    chart.bucket === "whole" ? undefined : chartBucketSize(chart.bucket, window)
+  // One more bucket than the range spans: a range off the buckets' edges
+  // touches one at each end.
+  const perMetric = size ? bucketEstimate(window, size) + 1 : 1
+  const most = Math.max(
+    1,
+    Math.min(MAX_METRICS, Math.floor(MAX_BUCKETS_CAP / perMetric))
+  )
+  const reads: AggregateRead[] = []
+  const readOf: number[] = []
+  for (let at = 0; at < chart.metrics.length; at += most) {
+    const metrics = chart.metrics.slice(at, at + most)
+    metrics.forEach(() => readOf.push(reads.length))
+    reads.push(
+      metricsReadOf(
+        b,
+        chart.sources,
+        chart.channel,
+        metrics.map((m) =>
+          metricEntry(m, reducers, chart.from, chart.statistic, chart.unit)
+        ),
+        {
+          range: rangeOf(window),
+          ...(size ? { bucket: bucketOf(size, timezone) } : {}),
+          ...(perMetric * metrics.length > MAX_BUCKETS
+            ? { budget: { maxBuckets: MAX_BUCKETS_CAP } }
+            : {}),
+        }
+      )
+    )
+  }
+  return { reads, readOf }
+}
+
+/** Whether an item naming a code reads grouped by code: every coded
+ * reducer but a time in a state, which names its code in the reducer and
+ * answers it in a bucket that held none of the state (as 0) only where the
+ * read is not split by code. */
+export function readsByCode(item: {
+  code?: string
+  reducer: AggregateReducer
+}): boolean {
+  return (
+    Boolean(item.code) && !reducerKey(item.reducer).startsWith("timeInState")
+  )
+}
+
+// ── stats ─────────────────────────────────────────────────────────────────
+
+/** The metric record path an item reads: its own `metric`, or the path
+ * the record's `metricProperty` reference holds. */
+export function itemMetric(
+  item: Pick<StatItem, "metric" | "metricProperty">,
+  record?: SubstrateRecord
+): string | undefined {
+  if (item.metric) return item.metric
+  if (!item.metricProperty || !record) return undefined
+  return metricPathIn(record.properties?.[item.metricProperty])
+}
+
+/** How an item's metric is read, apart from its reducer: two items alike
+ * here share one entry. */
+function entrySpec(item: {
+  from: ReadFrom
+  statistic?: string
+  unit?: string
+}): string {
+  return JSON.stringify([item.from, item.statistic ?? "", item.unit ?? ""])
+}
+
+/** The reads of a stats block. A read names a metric once, so the k-th
+ * distinct way an item reads a metric goes to the k-th read of its family;
+ * items that read a metric alike share its entry, each adding its reducer.
+ * Items naming a code read in reads of their own, grouped by code
+ * (`readsByCode`; a time in a state reads with the plain ones). Plain
+ * reads come first in `value`, then the coded ones; `itemRead[i]` is the
+ * index in `value` of the read item i is answered by, -1 for a property
+ * item or one whose metric `record` does not name. With `baseline > 0`,
+ * `baseline[r]` repeats `value[r]` by the day over the `baseline` local
+ * days before the window's day. Nothing is read without a window. */
+export function statsReads(
+  b: Bound,
+  block: StatsBlock,
+  timezone: string,
+  // The metric records: a coded metric's codes size its baseline's budget.
+  infos: ReadonlyMap<string, MetricInfo> = new Map(),
+  record?: SubstrateRecord
+): { value: AggregateRead[]; baseline: AggregateRead[]; itemRead: number[] } {
+  const itemRead = block.items.map(() => -1)
+  if (!b.window) return { value: [], baseline: [], itemRead }
+  type Entry = { ref: string; spec: StatItem; reducers: AggregateReducer[] }
+  const families: Record<"plain" | "coded", Entry[][]> = {
+    plain: [],
+    coded: [],
+  }
+  const placed: { family: "plain" | "coded"; read: number }[] = []
+  block.items.forEach((item, i) => {
+    const ref = itemMetric(item, record)
+    if (!ref || item.property) return
+    const family = readsByCode(item) ? "coded" : "plain"
+    const reads = families[family]
+    let at = reads.findIndex((entries) =>
+      entries.some(
+        (e) => e.ref === ref && entrySpec(e.spec) === entrySpec(item)
+      )
+    )
+    if (at >= 0) {
+      const entry = reads[at].find((e) => e.ref === ref)!
+      if (!entry.reducers.some((r) => reducerKey(r) === item.key)) {
+        entry.reducers.push(item.reducer)
+      }
+    } else {
+      at = reads.findIndex((entries) => !entries.some((e) => e.ref === ref))
+      if (at < 0) {
+        reads.push([])
+        at = reads.length - 1
+      }
+      reads[at].push({ ref, spec: item, reducers: [item.reducer] })
+    }
+    placed[i] = { family, read: at }
+  })
+  const plainCount = families.plain.length
+  placed.forEach((p, i) => {
+    if (p) itemRead[i] = p.family === "plain" ? p.read : plainCount + p.read
+  })
+  const reads = [
+    ...families.plain.map((entries) => ({ entries, coded: false })),
+    ...families.coded.map((entries) => ({ entries, coded: true })),
+  ]
+  const entriesOf = (entries: Entry[], base = false) =>
+    entries.map((e) =>
+      metricEntry(
+        e.ref,
+        base ? baselineReducers(e.reducers, infos.get(e.ref)) : e.reducers,
+        e.spec.from,
+        e.spec.statistic,
+        e.spec.unit
+      )
+    )
+  const value = reads.map(({ entries, coded }) =>
+    metricsReadOf(b, block.sources, block.channel, entriesOf(entries), {
+      ...(coded ? { groupBy: ["code"] } : {}),
+    })
+  )
+  if (block.baseline <= 0) return { value, baseline: [], itemRead }
+  const first = new Date(b.window.start)
+  const dayStart = new Date(
+    first.getFullYear(),
+    first.getMonth(),
+    first.getDate()
+  )
+  const from = new Date(
+    first.getFullYear(),
+    first.getMonth(),
+    first.getDate() - block.baseline
+  )
+  const range = rangeOf({ start: from.getTime(), end: dayStart.getTime() })
+  // The server holds every entry's days, times its codes where grouped by
+  // code, to the read's budget together: past the default, the read asks
+  // for what its entries need, with a day more for a zone that is not the
+  // browser's.
+  const baseline = reads.map(({ entries, coded }) => {
+    const series = entries.reduce(
+      (n, e) =>
+        n + (coded ? Math.max(1, infos.get(e.ref)?.codeSet?.length ?? 1) : 1),
+      0
+    )
+    const buckets = (block.baseline + 1) * series
+    return metricsReadOf(
+      b,
+      block.sources,
+      block.channel,
+      entriesOf(entries, true),
+      {
+        range,
+        bucket: bucketOf("day", timezone),
+        ...(coded ? { groupBy: ["code"] } : {}),
+        ...(buckets > MAX_BUCKETS
+          ? { budget: { maxBuckets: Math.min(MAX_BUCKETS_CAP, buckets) } }
+          : {}),
+      }
+    )
+  })
+  return { value, baseline, itemRead }
+}
+
+/** The reducer a stats item's baseline reads per day. A gauge's first or
+ * last reading of a day is whatever the instrument said at one arbitrary
+ * instant (a room's light at midnight), so a gauge read by `first` or
+ * `last` is compared against each day's average; every other reducer, and
+ * any reducer of an amount, a counter, a summary or a category, reads
+ * per day as the item reads its window (a sum a day, a day's highest).
+ * The form is the metric record's. */
+export function baselineReducer(
+  reducer: AggregateReducer,
+  info?: Pick<MetricInfo, "form" | "codeSet">
+): AggregateReducer {
+  if (info?.form !== "gauge" || info.codeSet?.length) return reducer
+  const key = reducerKey(reducer)
+  return key === "first" || key === "last" ? "avg" : reducer
+}
+
+/** `baselineReducer` over an entry's reducers, each once. */
+function baselineReducers(
+  reducers: readonly AggregateReducer[],
+  info?: MetricInfo
+): AggregateReducer[] {
+  const out: AggregateReducer[] = []
+  for (const r of reducers) {
+    const mapped = baselineReducer(r, info)
+    if (!out.some((o) => reducerKey(o) === reducerKey(mapped))) out.push(mapped)
+  }
+  return out
+}
+
+/** The average, lowest and highest of the daily values one reducer
+ * answered in a baseline's rows, and how many days held one. Undefined
+ * where none did. */
+export function baselineOf(
+  rows: readonly AggregateRow[],
+  key: string
+): { avg: number; low: number; high: number; days: number } | undefined {
+  const values = rows.flatMap((r) => {
+    const n = numberOf(rowValue(r, key)?.value)
+    return n === null ? [] : [n]
+  })
+  if (!values.length) return undefined
   return {
-    filter: filterOf(b, chart.sources),
-    aggregate: {
-      metric: { ref: metric },
-      from: "raw",
-      range: rangeOf(window),
-      ...(chart.bucket === "whole"
-        ? {}
-        : {
-            bucket: bucketOf(chartBucketSize(chart.bucket, window), timezone),
-          }),
-      reducers: chart.reducers.map((r) => r.reducer),
-      // A unit of duration beside a time in a range is the times' unit,
-      // which the read takes as `durationUnit`; any other converts values.
-      ...(chart.unit
-        ? isTimeUnit(chart.unit) &&
-          chart.reducers.some((r) =>
-            reducerKey(r.reducer).startsWith("durationIn")
-          )
-          ? { durationUnit: chart.unit }
-          : { unit: chart.unit }
-        : {}),
-      ...(sources ? { sources } : {}),
-    },
+    avg: values.reduce((a, v) => a + v, 0) / values.length,
+    low: Math.min(...values),
+    high: Math.max(...values),
+    days: values.length,
   }
 }
+
+/** Reducers whose answer grows with the window: a sum, a count, the time
+ * spent in a state or a range. */
+const ADDITIVE = new Set(["sum", "count", "timeInState", "durationIn"])
+
+/** A baseline as the window reads it. A daily baseline answers one day, so
+ * a view's `last` window of several days read by an additive reducer (the
+ * time a door stood open over the last week) is compared with that many
+ * average days, not with one. A record's own window is never scaled: an
+ * open one runs to now, which is no length the value was measured over (a
+ * cycle whose provider stopped syncing). Any other reducer, and a window of
+ * a day or less, keeps the daily figures. `span` in the answer is the
+ * number of days scaled by, 1 where nothing was. */
+export function scaleBaseline(
+  base: { avg: number; low: number; high: number; days: number },
+  reducer: AggregateReducer,
+  window?: TimeRange,
+  lastWindow = false
+): { avg: number; low: number; high: number; days: number; span: number } {
+  const name = reducerKey(reducer).split(":")[0] ?? ""
+  const span =
+    window && lastWindow
+      ? Math.max(1, Math.round((window.end - window.start) / 86_400_000))
+      : 1
+  if (!ADDITIVE.has(name) || span <= 1) return { ...base, span: 1 }
+  return {
+    avg: base.avg * span,
+    low: base.low * span,
+    high: base.high * span,
+    days: base.days,
+    span,
+  }
+}
+
+// ── trend ─────────────────────────────────────────────────────────────────
+
+export type CalendarBucket = "day" | "week" | "month"
+
+/** The local start of the calendar bucket `t` lies in: midnight, the
+ * Monday of its week, the first of its month. */
+export function bucketStart(t: number, bucket: CalendarBucket): number {
+  const d = new Date(t)
+  switch (bucket) {
+    case "day":
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    case "week":
+      return new Date(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate() - ((d.getDay() + 6) % 7)
+      ).getTime()
+    case "month":
+      return new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  }
+}
+
+/** The start of the bucket `n` buckets after the one starting at `t` (a
+ * bucket start), in local calendar arithmetic, so a day across a change of
+ * offset is 23 or 25 hours. */
+export function shiftBucket(
+  t: number,
+  bucket: CalendarBucket,
+  n: number
+): number {
+  const d = new Date(t)
+  const [y, m, day] = [d.getFullYear(), d.getMonth(), d.getDate()]
+  switch (bucket) {
+    case "day":
+      return new Date(y, m, day + n).getTime()
+    case "week":
+      return new Date(y, m, day + 7 * n).getTime()
+    case "month":
+      return new Date(y, m + n, 1).getTime()
+  }
+}
+
+/** Every calendar bucket from the one holding `range.start` up to
+ * `range.end`, empty of rows: a strip's whole axis, so a bucket with no
+ * value still shows. */
+export function calendarGrid(
+  range: TimeRange,
+  bucket: CalendarBucket
+): Bucket[] {
+  const out: Bucket[] = []
+  for (
+    let t = bucketStart(range.start, bucket);
+    t < range.end;
+    t = shiftBucket(t, bucket, 1)
+  ) {
+    const end = shiftBucket(t, bucket, 1)
+    out.push({
+      start: t,
+      end,
+      startIso: isoWithOffset(t),
+      endIso: isoWithOffset(end),
+      rows: [],
+    })
+  }
+  return out
+}
+
+/** The instant whose bucket holds the record on a strip: the window's last
+ * instant for a `last` window or a metric placing a span at its end, else
+ * its start. Undefined without a window. */
+export function trendAnchor(
+  b: Bound,
+  bucketPlace?: "start" | "end"
+): number | undefined {
+  if (!b.window) return undefined
+  return b.lastWindow || bucketPlace === "end"
+    ? b.window.end - 1
+    : b.window.start
+}
+
+/** The range a trend reads: `span` buckets ending with the latest bucket an
+ * item's anchor lies in, starting `span - 1` buckets before the earliest. */
+export function trendRange(
+  b: Bound,
+  block: TrendBlock,
+  infos: ReadonlyMap<string, MetricInfo> = new Map(),
+  record?: SubstrateRecord
+): TimeRange | undefined {
+  const anchors = block.items.flatMap((item) => {
+    const ref = itemMetric(item, record)
+    const a = trendAnchor(b, ref ? infos.get(ref)?.bucketPlace : undefined)
+    return a === undefined ? [] : [a]
+  })
+  if (!anchors.length) {
+    const a = trendAnchor(b)
+    if (a === undefined) return undefined
+    anchors.push(a)
+  }
+  const earliest = bucketStart(Math.min(...anchors), block.bucket)
+  const latest = bucketStart(Math.max(...anchors), block.bucket)
+  return {
+    start: shiftBucket(earliest, block.bucket, -(block.span - 1)),
+    end: shiftBucket(latest, block.bucket, 1),
+  }
+}
+
+/** A trend block's one read: every item's metric by the calendar bucket
+ * over `trendRange`, with the trailing average through the bucket before
+ * where the block asks for one. Undefined without a window. */
+export function trendRead(
+  b: Bound,
+  block: TrendBlock,
+  timezone: string,
+  infos: ReadonlyMap<string, MetricInfo> = new Map(),
+  record?: SubstrateRecord
+): AggregateRead | undefined {
+  const range = trendRange(b, block, infos, record)
+  if (!range) return undefined
+  const entries: {
+    ref: string
+    item: TrendItem
+    reducers: AggregateReducer[]
+  }[] = []
+  for (const item of block.items) {
+    const ref = itemMetric(item, record)
+    if (!ref) continue
+    const held = entries.find((e) => e.ref === ref)
+    if (held) {
+      if (!held.reducers.some((r) => reducerKey(r) === item.key)) {
+        held.reducers.push(item.reducer)
+      }
+      continue
+    }
+    entries.push({ ref, item, reducers: [item.reducer] })
+  }
+  if (!entries.length) return undefined
+  const buckets = block.span * entries.length
+  const coded = block.items.some(readsByCode)
+  return metricsReadOf(
+    b,
+    block.sources,
+    block.channel,
+    entries.map((e) =>
+      metricEntry(e.ref, e.reducers, e.item.from, e.item.statistic, e.item.unit)
+    ),
+    {
+      range: rangeOf(range),
+      bucket: bucketOf(block.bucket, timezone),
+      ...(coded ? { groupBy: ["code"] } : {}),
+      ...(block.rolling > 0
+        ? {
+            rolling: {
+              buckets: block.rolling,
+              reducers: ["avg"],
+              through: "previous",
+            },
+          }
+        : {}),
+      ...(buckets > MAX_BUCKETS ? { budget: { maxBuckets: buckets } } : {}),
+    }
+  )
+}
+
+// ── table ─────────────────────────────────────────────────────────────────
+
+/** A table block's list read, or why it cannot be read. `about` narrows
+ * the list only where the listed kind declares an `about` property, and
+ * then never to everyone's. */
+export function tableParams(
+  b: Bound | undefined,
+  block: TableBlock,
+  record: SubstrateRecord,
+  listedKind?: KindInfo
+): ListParams | { problem: string } {
+  const properties: Record<string, Cond> = {}
+  if (block.via) {
+    properties[block.via] = { eq: `${record.kind}/${record.id}` }
+  } else if (block.sameAs) {
+    const v = record.properties?.[block.sameAs]
+    const value =
+      readReference(v)?.path ??
+      (typeof v === "number" || typeof v === "boolean" ? String(v) : undefined)
+    if (!value) {
+      return {
+        problem: `This table lists the records sharing this record's ${block.sameAs}, and this record holds none.`,
+      }
+    }
+    properties[block.sameAs] = { eq: value }
+  } else if (block.inWindow) {
+    if (!b?.window) {
+      return {
+        problem:
+          "This table lists the records inside the view's window, and this record holds no window.",
+      }
+    }
+    properties.at = {
+      gte: new Date(b.window.start).toISOString(),
+      lt: new Date(b.window.end).toISOString(),
+    }
+  }
+  const declared = listedKind?.definition?.properties as
+    Record<string, unknown> | undefined
+  // Narrowed only where `about` is a reference, the observed contract's
+  // "who this is about": a kind whose `about` means something else is
+  // listed whole.
+  const about =
+    declared && Object.hasOwn(declared, "about") ? declared.about : undefined
+  if (about === "reference" || (isBag(about) && about.type === "reference")) {
+    properties.about = b?.about ? { eq: b.about } : { exists: false }
+  }
+  return {
+    kinds: [block.kind],
+    first: block.limit,
+    orderBy: block.orderBy,
+    filter: { properties },
+  }
+}
+
+// ── breakdown and values of the record ────────────────────────────────────
+
+/** The value at a property of the record, or at a dotted path into a keyed
+ * map or object it holds. */
+export function valueAt(record: SubstrateRecord, path: string): unknown {
+  let at: unknown = record.properties ?? {}
+  for (const part of path.split(".")) {
+    if (!isBag(at)) return undefined
+    at = at[part]
+  }
+  return at
+}
+
+const DECIMAL = /^[+-]?\d+(\.\d+)?$/
+
+/** The datatypes a table cell holds a fraction in. */
+const FRACTIONAL = new Set(["float", "float64", "double", "number", "decimal"])
+
+/** How many fraction digits a table cell shows of a fractional property,
+ * which declares no display precision of its own. */
+export const CELL_FRACTION_DIGITS = 2
+
+/** A fractional property's value as a table cell shows it: at most
+ * `CELL_FRACTION_DIGITS` fraction digits, rounded on the digits, with the
+ * zeros the rounding leaves dropped (`8.3985` is `8.4`), and the digits
+ * grouped. An integer, and a value already that short, keep their
+ * digits. Undefined for any other datatype or value, which the cell draws
+ * as declared. */
+export function cellFraction(
+  datatype: string,
+  value: unknown
+): string | undefined {
+  if (!FRACTIONAL.has(datatype)) return undefined
+  let digits: string
+  if (typeof value === "number" && Number.isFinite(value)) {
+    digits = String(value)
+    if (!DECIMAL.test(digits)) digits = value.toFixed(CELL_FRACTION_DIGITS)
+  } else if (typeof value === "string" && DECIMAL.test(value)) {
+    digits = value
+  } else {
+    return undefined
+  }
+  digits = digits.replace(/^\+/, "")
+  let shown = roundDigits(digits, CELL_FRACTION_DIGITS)
+  if (shown !== digits && shown.includes(".")) {
+    shown = shown.replace(/0+$/, "").replace(/\.$/, "")
+  }
+  return groupDigits(shown)
+}
+
+/** A value a bar or a tile can draw: a number, a decimal, an ISO duration (in
+ * milliseconds) or a quantity, with its text. Undefined for anything
+ * else. */
+export function amountOf(
+  v: unknown,
+  precision = DEFAULT_PRECISION
+): { amount: number; text: string } | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) {
+    return { amount: v, text: readingText(String(v), undefined, precision) }
+  }
+  if (typeof v === "string") {
+    // A decimal travels as a string.
+    if (DECIMAL.test(v)) {
+      return { amount: Number(v), text: readingText(v, undefined, precision) }
+    }
+    const ms = durationMs(v)
+    if (ms !== undefined) return { amount: ms, text: durationWords(ms) }
+    return undefined
+  }
+  if (isBag(v) && given(v.value) && typeof v.unit === "string") {
+    const n = Number(v.value)
+    if (!Number.isFinite(n)) return undefined
+    return { amount: n, text: readingText(String(v.value), v.unit, precision) }
+  }
+  return undefined
+}
+
+export interface BreakdownItem {
+  key: string
+  name: string
+  amount: number | null
+  text: string
+  /** The bar's share of the total, 0 to 1. */
+  share?: number
+}
+
+/** A breakdown's bars from the record: one per key of the keyed property
+ * (listed keys first, in order, the rest after) or one per listed scalar
+ * property, each with its share of `total` or of the bars' sum. A value
+ * that is no number, duration or quantity is left out and named in
+ * `skipped`. */
+export function breakdownItems(
+  block: BreakdownBlock,
+  record: SubstrateRecord
+): { items: BreakdownItem[]; skipped: string[] } {
+  const named: { key: string; name: string; value: unknown }[] = []
+  if (block.property) {
+    const map = valueAt(record, block.property)
+    if (isBag(map)) {
+      const listed = block.keys.filter((k) => Object.hasOwn(map, k.key))
+      for (const k of listed) {
+        named.push({ key: k.key, name: k.label ?? k.key, value: map[k.key] })
+      }
+      for (const key of Object.keys(map)) {
+        if (!block.keys.some((k) => k.key === key)) {
+          named.push({ key, name: key, value: map[key] })
+        }
+      }
+    }
+  } else {
+    for (const i of block.items) {
+      const value = valueAt(record, i.property)
+      if (value === undefined || value === null) continue
+      named.push({ key: i.property, name: i.label ?? i.property, value })
+    }
+  }
+  const skipped: string[] = []
+  const items: BreakdownItem[] = []
+  for (const n of named) {
+    const a = amountOf(n.value)
+    if (!a) {
+      skipped.push(n.key)
+      continue
+    }
+    items.push({ key: n.key, name: n.name, amount: a.amount, text: a.text })
+  }
+  const total = block.total
+    ? amountOf(valueAt(record, block.total))?.amount
+    : items.reduce((s, i) => s + (i.amount ?? 0), 0)
+  if (total && total > 0) {
+    for (const i of items) {
+      if (i.amount !== null) i.share = i.amount / total
+    }
+  }
+  return { items, skipped }
+}
+
+/** The first band in order whose bounds hold `value` and that applies to
+ * `metric` (a band naming no metric applies to all). */
+export function bandOf(
+  value: number,
+  bands: readonly Band[],
+  metric?: string
+): Band | undefined {
+  return bands.find(
+    (band) =>
+      (band.low ?? -Infinity) <= value &&
+      value < (band.high ?? Infinity) &&
+      (!band.metric || sameRef(band.metric, metric))
+  )
+}
+
+/** A value's change against a baseline's average, in words, and the tone
+ * `better` gives it: "+4 ms (+6%) vs the 30-day average of 61 ms". A value
+ * in percent changes by points, with no relative part: "+9 points vs the
+ * 30-day average of 42 %". No tone where `better` is none or nothing
+ * changed. */
+export function deltaWords(
+  value: number,
+  avg: number,
+  better: Better,
+  unit?: string,
+  precision = 0,
+  days?: number
+): { text: string; tone: Tone } {
+  const change = value - avg
+  const round = (n: number) => Number(n.toFixed(precision))
+  const shown = round(change)
+  const sign = shown > 0 ? "+" : shown < 0 ? "-" : ""
+  const fmt = (n: number) => readingText(String(round(n)), unit, precision)
+  const average = days ? `the ${days}-day average` : "the average"
+  const percent = unit === "%"
+  const pct =
+    !percent && avg !== 0
+      ? Math.round((change / Math.abs(avg)) * 100)
+      : undefined
+  const pctText =
+    pct === undefined
+      ? ""
+      : ` (${pct > 0 ? "+" : pct < 0 ? "-" : ""}${Math.abs(pct)}%)`
+  const changed = percent
+    ? `${readingText(String(round(Math.abs(change))), undefined, precision)} ${Math.abs(shown) === 1 ? "point" : "points"}`
+    : fmt(Math.abs(change))
+  const text = `${sign}${changed}${pctText} vs ${average} of ${fmt(avg)}`
+  const tone: Tone =
+    better === "none" || shown === 0
+      ? "none"
+      : shown > 0 === (better === "higher")
+        ? "good"
+        : "poor"
+  return { text, tone }
+}
+
+// ── spans ─────────────────────────────────────────────────────────────────
 
 /** A coded metric's total per code over the whole window. */
 export function spansTotalsRead(b: Bound, spans: SpansBlock): AggregateRead {
@@ -569,7 +1954,7 @@ export function spansTotalsRead(b: Bound, spans: SpansBlock): AggregateRead {
     aggregate: {
       metric: { ref: spans.metric },
       from: "raw",
-      range: rangeOf(b.window),
+      range: rangeOf(windowOf(b)),
       groupBy: ["code"],
       reducers: ["sum"],
       unit: "min",
@@ -634,6 +2019,7 @@ export function spansListParams(
   if (source !== undefined) {
     narrow.source = source ? { eq: source } : { exists: false }
   }
+  const window = windowOf(b)
   return {
     kinds: b.observed,
     first: SPANS_PAGE,
@@ -643,8 +2029,8 @@ export function spansListParams(
         metric: { eq: spans.metric },
         ...narrow,
         at: {
-          gte: new Date(b.window.start).toISOString(),
-          lt: new Date(b.window.end).toISOString(),
+          gte: new Date(window.start).toISOString(),
+          lt: new Date(window.end).toISOString(),
         },
       },
     },
@@ -700,18 +2086,28 @@ export function spanRows(
 }
 
 /** The timeline over the record's window, with every metric the view's
- * line charts and spans read, about who the record is about. */
+ * line charts, spans, stats and trends read, about who the record is
+ * about. Undefined without a window or a metric. */
 export function viewTimelineSearch(
   b: Bound,
-  view: RecordView
+  view: RecordView,
+  record?: SubstrateRecord
 ): Record<string, string> | undefined {
+  if (!b.window) return undefined
   const metrics = new Set<string>()
   for (const s of view.sections) {
     if (!("block" in s)) continue
-    if (s.block.type === "chart" && s.block.bucket !== "whole") {
-      for (const m of s.block.metrics) metrics.add(m)
+    const block = s.block
+    if (block.type === "chart" && block.bucket !== "whole") {
+      for (const m of block.metrics) metrics.add(m)
     }
-    if (s.block.type === "spans") metrics.add(s.block.metric)
+    if (block.type === "spans") metrics.add(block.metric)
+    if (block.type === "stats" || block.type === "trend") {
+      for (const item of block.items) {
+        const m = itemMetric(item, record)
+        if (m) metrics.add(m)
+      }
+    }
   }
   if (!metrics.size) return undefined
   return {

@@ -37,7 +37,10 @@ data:
   # 7: every output id and the source id go through
   # host.observed.record_id, so a long account id hashes instead of
   # refusing the write; ADAPTER is healthwhoop@7.
-  version: 7
+  # 8: the cycle and sleep views (views.yaml); ADAPTER is healthwhoop@8.
+  # No output changes but the stamp, so 8 needs no replay: an output takes
+  # the new stamp when its origin's next delivery rewrites it.
+  version: 8
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # One function and its record trigger (triggers.yaml). No inputs and no
@@ -164,7 +167,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthwhoop-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthwhoop@7"
+    ADAPTER = "healthwhoop@8"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"

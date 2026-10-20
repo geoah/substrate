@@ -1,14 +1,18 @@
-# The record pages of a sleep and a workout, as DATA: records of the seeded
-# console package's `recordview` kind (decision record 0166), which the
-# console renders above the generic property sheet. The console names no
-# sample, so these records are the only place a sleep's hypnogram or a
-# workout's heart rate zones are asked for.
+# Five record views, as DATA: the record pages of a sleep, a workout, a lab
+# report and a lab result, and a lab trend on the observations sample's
+# `metric` kind. They are records of the seeded console package's
+# `recordview` kind (decision records 0166 and 0175), which the console
+# renders above the generic property sheet. The console names no sample, so
+# these records are the only place a sleep's hypnogram, a workout's heart
+# rate zones or a lab report's results table are asked for.
 #
 # An import or upgrade replaces a view its owner never wrote, and leaves one
 # the owner edited or deleted as the owner left it (docs/bundles.md, "The two
 # doors"). To take a newer shipped view over theirs, an owner applies this
 # file with the sample's authority rewritten to their own in every id and
 # reference, after purging the view to drop properties this file does not set.
+# Applied whole, the file writes all five views back to their shipped
+# properties; to take one view, apply its document alone.
 #
 # `appliesTo` names the kind's declaration and each metric is a reference to
 # the metric's record, so the import rehomes both with the kinds they name: a
@@ -29,6 +33,16 @@ data:
       end: endsAt
       about: about
       source: source
+    fold:
+      - timeInBed
+      - timeAsleep
+      - awake
+      - light
+      - deep
+      - rem
+      - efficiency
+      - disturbances
+      - respiratoryRate
     sections:
       - chart:
           label: Heart rate, heart rate variability and breathing
@@ -63,6 +77,33 @@ data:
               label: Deep
           totals: true
           sources: only
+      # The night's own numbers and stage totals, as the device that recorded
+      # the sleep wrote them: these read no observation.
+      - stats:
+          label: The night in numbers
+          items:
+            - property: timeAsleep
+              label: Asleep
+            - property: timeInBed
+              label: In bed
+            - property: efficiency
+              label: Efficiency
+            - property: disturbances
+              label: Disturbances
+            - property: respiratoryRate
+              label: Breathing
+      - breakdown:
+          label: Stages as a share of time in bed
+          items:
+            - property: awake
+              label: Awake
+            - property: light
+              label: Light
+            - property: deep
+              label: Deep
+            - property: rem
+              label: REM
+          total: timeInBed
 ---
 # Five heart rate zones of 19 beats each, from half of a 190 maximum, the
 # top one open to 220. An owner with a measured maximum edits the bounds here.
@@ -82,6 +123,11 @@ data:
     fold:
       - distance
       - duration
+      - strain
+      - averageHeartRate
+      - maxHeartRate
+      - totalEnergy
+      - zoneDurations
     sections:
       - properties:
           list:
@@ -89,6 +135,37 @@ data:
               label: Distance
             - property: duration
               label: Time moving
+      # The effort and the zones as the device counted them, from the
+      # workout's own properties: a source that writes no heart rate samples,
+      # as WHOOP does not, still shows its zones here.
+      - stats:
+          label: Effort
+          items:
+            - property: strain
+              label: Strain
+            - property: averageHeartRate
+              label: Average heart rate
+            - property: maxHeartRate
+              label: Max heart rate
+            - property: totalEnergy
+              label: Energy
+      - breakdown:
+          label: Time in heart rate zones, as the device counted them
+          property: zoneDurations
+          keys:
+            - key: zone0
+              label: Zone 0
+            - key: zone1
+              label: Zone 1
+            - key: zone2
+              label: Zone 2
+            - key: zone3
+              label: Zone 3
+            - key: zone4
+              label: Zone 4
+            - key: zone5
+              label: Zone 5
+          total: duration
       - chart:
           label: Heart rate
           metrics:
@@ -141,3 +218,95 @@ data:
               label: Highest
           bucket: auto
           sources: prefer
+---
+# A lab report carries no window of its own, so its page reads no
+# observation: it lists the report's results, a converted twin (one whose
+# `derivedFrom` is set) under the lab's own row.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: samples.substrate.reamde.dev/health/labreport
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/labreport
+    name: This report
+    window:
+      about: about
+    fold:
+      - lab
+      - accession
+      - issuedAt
+      - status
+      - review
+    sections:
+      - properties:
+          list:
+            - property: lab
+              label: Lab
+            - property: accession
+              label: Accession
+            - property: issuedAt
+              label: Issued
+            - property: status
+              label: Status
+            - property: review
+              label: Review
+      - table:
+          label: Results
+          kind: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/labresult
+          via: report
+          columns:
+            - metric
+            - value
+            - interpretation
+            - referenceRanges
+          orderBy: at:asc
+          limit: 100
+          nest: derivedFrom
+---
+# A lab result's page is every result of the same analyte over time, each
+# drawn against the reference range its own lab printed, the page's own
+# result ringed and a converted twin hollow.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: samples.substrate.reamde.dev/health/labresult
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/labresult
+    name: This analyte over time
+    intro: Every result of the same analyte, each against the range its own
+      lab printed.
+    window:
+      about: about
+    sections:
+      - table:
+          kind: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/labresult
+          sameAs: metric
+          chart: true
+          limit: 50
+          nest: derivedFrom
+          columns:
+            - at
+            - value
+            - interpretation
+            - referenceRanges
+            - source
+---
+# A view on the observations sample's metric kind: only this sample knows
+# which kind holds lab results, so the lab trend of a metric page is its
+# data. A metric no lab result names lists no rows, and `empty: hide` keeps
+# the view out, so every other metric page is unchanged.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: samples.substrate.reamde.dev/health/metric
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/observations/metric
+    name: Lab results
+    sections:
+      - table:
+          kind: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/labresult
+          via: metric
+          chart: true
+          limit: 100
+          nest: derivedFrom
+          empty: hide

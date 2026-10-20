@@ -31,6 +31,9 @@ export const ADDITIVE_STATISTICS: readonly string[] = rules.additiveStatistics
 export const MAX_BUCKETS = rules.budget.maxBuckets.default
 /** The most `budget.maxBuckets` may raise it to. */
 export const MAX_BUCKETS_CAP = rules.budget.maxBuckets.cap
+/** The most metrics one several-metric read may name
+ * (`substrate.AggregateMaxMetrics`). */
+export const MAX_METRICS: number = rules.maxMetrics
 /** The most groups one read may ask for (`budget.maxGroups`'s cap). */
 export const MAX_GROUPS_CAP = rules.budget.maxGroups.cap
 
