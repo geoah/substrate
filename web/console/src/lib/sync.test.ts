@@ -19,6 +19,8 @@ import {
   providerNextStep,
   providerViews,
   requestPending,
+  requestUnstarted,
+  REQUEST_WAIT_MS,
   requestServed,
   requestTriggers,
   syncFieldsOf,
@@ -120,39 +122,123 @@ describe("requestServed", () => {
 
 describe("requestPending", () => {
   const requestedAt = "2026-10-20T08:40:00.123456789Z"
+  // Five minutes after the request: every case below sits inside the wait,
+  // whatever the real clock reads.
+  const now = Date.parse("2026-10-20T08:45:00Z")
   it("waits while the request is newer than the last start and the ack", () => {
-    expect(requestPending({ paused: false })).toBe(false)
-    expect(requestPending({ paused: false, requestedAt })).toBe(true)
+    expect(requestPending({ paused: false }, now)).toBe(false)
+    expect(requestPending({ paused: false, requestedAt }, now)).toBe(true)
     expect(
-      requestPending({
-        paused: false,
-        requestedAt,
-        lastSyncStartedAt: "2026-10-20T08:00:00Z",
-        requestedAck: "2026-10-19T08:00:00Z",
-      })
+      requestPending(
+        {
+          paused: false,
+          requestedAt,
+          lastSyncStartedAt: "2026-10-20T08:00:00Z",
+          requestedAck: "2026-10-19T08:00:00Z",
+        },
+        now
+      )
     ).toBe(true)
   })
   it("is answered once a run starts after it or the ack reaches it", () => {
     expect(
-      requestPending({
-        paused: false,
-        requestedAt,
-        lastSyncStartedAt: "2026-10-20T08:40:05Z",
-      })
+      requestPending(
+        {
+          paused: false,
+          requestedAt,
+          lastSyncStartedAt: "2026-10-20T08:40:05Z",
+        },
+        now
+      )
     ).toBe(false)
     expect(
-      requestPending({ paused: false, requestedAt, requestedAck: requestedAt })
+      requestPending(
+        { paused: false, requestedAt, requestedAck: requestedAt },
+        now
+      )
     ).toBe(false)
   })
   it("waits for nothing on a paused account or an unreadable instant", () => {
-    expect(requestPending({ paused: true, requestedAt })).toBe(false)
-    expect(requestPending({ paused: false, requestedAt: "soon" })).toBe(false)
+    expect(requestPending({ paused: true, requestedAt }, now)).toBe(false)
+    expect(requestPending({ paused: false, requestedAt: "soon" }, now)).toBe(
+      false
+    )
     expect(
-      requestPending({
-        paused: false,
-        requestedAt,
-        lastSyncStartedAt: "earlier",
-      })
+      requestPending(
+        {
+          paused: false,
+          requestedAt,
+          lastSyncStartedAt: "earlier",
+        },
+        now
+      )
+    ).toBe(false)
+  })
+  it("stops waiting once the request is fifteen minutes old", () => {
+    const f = { paused: false, requestedAt: "2026-10-20T08:40:00Z" }
+    expect(requestPending(f, Date.parse("2026-10-20T08:54:59Z"))).toBe(true)
+    expect(requestPending(f, Date.parse("2026-10-20T08:55:00Z"))).toBe(false)
+    expect(REQUEST_WAIT_MS).toBe(15 * 60_000)
+  })
+  it("is answered by a newer start at any age", () => {
+    const f = {
+      paused: false,
+      requestedAt: "2026-10-20T08:40:00Z",
+      lastSyncStartedAt: "2026-10-20T08:40:02Z",
+    }
+    expect(requestPending(f, Date.parse("2026-10-20T08:41:00Z"))).toBe(false)
+    expect(requestPending(f, Date.parse("2026-10-20T10:00:00Z"))).toBe(false)
+  })
+})
+
+describe("requestUnstarted", () => {
+  const requestedAt = "2026-10-20T08:40:00Z"
+  const late = Date.parse("2026-10-20T08:55:00Z")
+  it("is true once the request waited fifteen minutes with no start or ack", () => {
+    expect(requestUnstarted({ paused: false, requestedAt }, late)).toBe(true)
+    expect(
+      requestUnstarted(
+        {
+          paused: false,
+          requestedAt,
+          lastSyncStartedAt: "2026-10-20T08:00:00Z",
+          requestedAck: "2026-10-19T08:00:00Z",
+        },
+        late
+      )
+    ).toBe(true)
+  })
+  it("is false under fifteen minutes", () => {
+    expect(
+      requestUnstarted(
+        { paused: false, requestedAt },
+        Date.parse("2026-10-20T08:54:59Z")
+      )
+    ).toBe(false)
+  })
+  it("is false on a paused account, an unreadable instant or no request", () => {
+    expect(requestUnstarted({ paused: true, requestedAt }, late)).toBe(false)
+    expect(requestUnstarted({ paused: false, requestedAt: "soon" }, late)).toBe(
+      false
+    )
+    expect(requestUnstarted({ paused: false }, late)).toBe(false)
+  })
+  it("is false once a start or an ack reaches the request", () => {
+    expect(
+      requestUnstarted(
+        {
+          paused: false,
+          requestedAt,
+          lastSyncStartedAt: "2026-10-20T08:40:05Z",
+        },
+        late
+      )
+    ).toBe(false)
+    expect(
+      requestUnstarted(
+        { paused: false, requestedAt, requestedAck: requestedAt },
+        late
+      )
     ).toBe(false)
   })
 })
@@ -197,11 +283,31 @@ describe("healthOf", () => {
       lastSyncStartedAt: "2026-10-20T08:00:00Z",
       syncRequestedAt: "2026-10-20T08:40:00Z",
     }
-    expect(healthOf("connected", syncFieldsOf(failing))).toBe("healthy")
+    const now = Date.parse("2026-10-20T08:45:00Z")
+    expect(healthOf("connected", syncFieldsOf(failing), undefined, now)).toBe(
+      "healthy"
+    )
     expect(
       healthOf(
         "connected",
-        syncFieldsOf({ ...failing, lastSyncStartedAt: "2026-10-20T08:40:02Z" })
+        syncFieldsOf({ ...failing, lastSyncStartedAt: "2026-10-20T08:40:02Z" }),
+        undefined,
+        now
+      )
+    ).toBe("broken")
+  })
+  it("is broken again once the request is fifteen minutes old", () => {
+    const failing = syncFieldsOf({
+      syncState: "erroring",
+      lastSyncStartedAt: "2026-10-20T08:00:00Z",
+      syncRequestedAt: "2026-10-20T08:40:00Z",
+    })
+    expect(
+      healthOf(
+        "connected",
+        failing,
+        undefined,
+        Date.parse("2026-10-20T08:55:00Z")
       )
     ).toBe("broken")
   })

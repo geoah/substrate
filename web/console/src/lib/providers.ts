@@ -12,10 +12,12 @@ import type {
 } from "@/lib/api/types"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { FUNCTION_KIND } from "@/lib/core-kinds"
+import { relativeTime } from "@/lib/format"
 import { mappedKind } from "@/lib/provenance"
 import { refId, toolName, writeKinds } from "@/lib/tools"
 import {
   requestPending,
+  requestUnstarted,
   syncFailing,
   type AccountView,
   type ProviderView,
@@ -203,8 +205,12 @@ const ATTENTION = "Needs attention"
 
 /** One state per provider, in the order a reader needs to hear it: broken
  * before paused before unfinished before on. A broken one carries every
- * reason it is broken. */
-export function providerStanding(s: StandingInput): ProviderStanding {
+ * reason it is broken. `now` is the instant a waited-on sync request is
+ * measured against (requestPending), the server's clock by default. */
+export function providerStanding(
+  s: StandingInput,
+  now?: number
+): ProviderStanding {
   if (s.quarantined) {
     return attention([
       {
@@ -226,15 +232,15 @@ export function providerStanding(s: StandingInput): ProviderStanding {
       problems: [],
     }
   }
-  const problems = standingProblems(s)
+  const problems = standingProblems(s, now)
   if (problems.length) return attention(problems)
-  const now = currentStep(s.steps)
-  if (now) {
+  const step = currentStep(s.steps)
+  if (step) {
     return {
       tone: "setup",
       pill: "Set up",
-      line: `Almost there · step ${now.n} of ${s.steps.length}`,
-      step: now.n,
+      line: `Almost there · step ${step.n} of ${s.steps.length}`,
+      step: step.n,
       problems: [],
     }
   }
@@ -249,7 +255,7 @@ export function providerStanding(s: StandingInput): ProviderStanding {
   return {
     tone: "on",
     pill: "On",
-    line: connectedLine(s.accounts),
+    line: connectedLine(s.accounts, now),
     problems: [],
   }
 }
@@ -271,7 +277,10 @@ function attention(problems: ProviderProblem[]): ProviderStanding {
  * first: an account that cannot sign in or sync, a gap in its setup once it
  * has accounts, a trigger that cannot run, runs that failed and wait to be
  * retried, an update your records block. */
-export function standingProblems(s: StandingInput): ProviderProblem[] {
+export function standingProblems(
+  s: StandingInput,
+  now?: number
+): ProviderProblem[] {
   const out: ProviderProblem[] = []
   for (const a of s.accounts) {
     const why = firstLine(
@@ -290,15 +299,23 @@ export function standingProblems(s: StandingInput): ProviderProblem[] {
       })
     } else if (
       syncFailing(a.sync, a.legacySyncStatus) &&
-      !requestPending(a.sync)
+      !requestPending(a.sync, now)
     ) {
       // A failing account whose request waits for its run raises nothing:
       // the failure is the run before the request's, and the run that
-      // answers it stamps a newer start and says whether it still fails.
+      // answers it stamps a newer start and says whether it still fails. A
+      // request that waited past the bound without a start raises it again,
+      // saying so (decision 0179).
+      const detail = why ? [why] : []
+      if (a.sync.requestedAt && requestUnstarted(a.sync, now)) {
+        detail.push(
+          `The sync you asked for ${relativeTime(a.sync.requestedAt, now)} hasn’t started.`
+        )
+      }
       out.push({
         code: "sync",
         summary: `Syncing ${a.label} is failing`,
-        detail: why ? [why] : undefined,
+        detail: detail.length ? detail : undefined,
         account: a.record.id,
         fixes: s.oauth ? ["sync-now", "reconnect"] : ["sync-now"],
       })
@@ -372,14 +389,20 @@ type StandingAccount = StandingInput["accounts"][number]
 
 /** A failing account whose sync request (Sync now, or the one a reconnect
  * stamps) still waits for its run: it reads as being checked again, not as
- * failing, until that run starts. */
-function rechecking(a: Pick<StandingAccount, "sync" | "legacySyncStatus">) {
-  return syncFailing(a.sync, a.legacySyncStatus) && requestPending(a.sync)
+ * failing, until that run starts or the wait runs out. */
+function rechecking(
+  a: Pick<StandingAccount, "sync" | "legacySyncStatus">,
+  now?: number
+) {
+  return syncFailing(a.sync, a.legacySyncStatus) && requestPending(a.sync, now)
 }
 
-function connectedLine(accounts: StandingInput["accounts"]): string {
+function connectedLine(
+  accounts: StandingInput["accounts"],
+  now?: number
+): string {
   if (!accounts.length) return "Ready"
-  if (accounts.some((a) => a.sync.state === "running" || rechecking(a))) {
+  if (accounts.some((a) => a.sync.state === "running" || rechecking(a, now))) {
     return "Connected · syncing"
   }
   if (accounts.every((a) => a.sync.paused)) return "Connected · paused"
@@ -400,7 +423,10 @@ export interface Words {
 
 /** The core `sync` trait's five states as a person reads them. A failing
  * account whose sync request waits for its run reads "Checking again…": the
- * failure it holds is the run before the request's. */
+ * failure it holds is the run before the request's. Once the request has
+ * waited REQUEST_WAIT_MS with no run started, it reads as a sync that has
+ * not started, since the trigger that answers it is not running or is far
+ * behind (decision 0179). `now` defaults to the server's clock. */
 export function syncWords(
   f: Pick<
     SyncFields,
@@ -412,7 +438,8 @@ export function syncWords(
     | "requestedAck"
     | "lastSyncStartedAt"
   >,
-  providerName: string
+  providerName: string,
+  now?: number
 ): Words {
   if (f.paused) return { text: "Paused", tone: "warn" }
   switch (f.state) {
@@ -421,7 +448,15 @@ export function syncWords(
     case "ok":
       return { text: "Up to date", tone: "ok" }
     case "erroring": {
-      if (requestPending(f)) return { text: "Checking again…", tone: "active" }
+      if (requestPending(f, now)) {
+        return { text: "Checking again…", tone: "active" }
+      }
+      if (f.requestedAt && requestUnstarted(f, now)) {
+        return {
+          text: `The sync you asked for ${relativeTime(f.requestedAt, now)} hasn’t started`,
+          tone: "bad",
+        }
+      }
       const why = firstLine(f.error ?? f.message ?? "")
       return {
         text: why ? `Having trouble: ${why}` : "Having trouble",

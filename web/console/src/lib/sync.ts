@@ -15,7 +15,7 @@ import type {
   SyncStream,
   TriggerStatus,
 } from "@/lib/api/types"
-import { splitKind } from "@/lib/api/http"
+import { serverNow, splitKind } from "@/lib/api/http"
 import { SYNC_TRAIT } from "@/lib/core-kinds"
 import { kindPackage } from "@/lib/definition"
 import { kindHasTrait } from "@/lib/traits"
@@ -149,30 +149,64 @@ export function requestServed(
   return Date.parse(f.requestedAck) >= Date.parse(f.requestedAt)
 }
 
-/** Whether the owner's last request is still waiting for its run: it is
- * newer than the last run's start and than its acknowledgement. Sync now
- * stamps a request, and so does a reconnect of an account that synced
- * before. While it waits, a stored failure describes the run before the
- * request; once the run starts, the dispatcher stamps a newer
- * `lastSyncStartedAt` and the run's own outcome is what shows. A paused
- * account runs nothing, so its request waits for nothing. An unreadable
- * instant answers false, so a failure stays shown when nothing proves it
- * old. */
-export function requestPending(
-  f: Pick<
-    SyncFields,
-    "paused" | "requestedAt" | "requestedAck" | "lastSyncStartedAt"
-  >
-): boolean {
-  if (f.paused || !f.requestedAt) return false
+/** How long the console waits for a requested run to start before it shows
+ * the failure again (decision 0179). The dispatcher passes within seconds
+ * and every shipped on-request trigger fires on the request's own change,
+ * so a start later than this is a trigger that will not run (disabled,
+ * missing, capped) or a backlog, and the owner should see it. */
+export const REQUEST_WAIT_MS = 15 * 60_000
+
+type RequestFields = Pick<
+  SyncFields,
+  "paused" | "requestedAt" | "requestedAck" | "lastSyncStartedAt"
+>
+
+/** The instant of a request no run has started or answered yet, else
+ * undefined: not paused, a readable request, and no start or ack at or after
+ * it. */
+function requestWaiting(f: RequestFields): number | undefined {
+  if (f.paused || !f.requestedAt) return undefined
   const requested = Date.parse(f.requestedAt)
-  if (Number.isNaN(requested)) return false
+  if (Number.isNaN(requested)) return undefined
   for (const other of [f.lastSyncStartedAt, f.requestedAck]) {
     if (!other) continue
     const at = Date.parse(other)
-    if (Number.isNaN(at) || at >= requested) return false
+    if (Number.isNaN(at) || at >= requested) return undefined
   }
-  return true
+  return requested
+}
+
+/** Whether the owner's last request is still waiting for its run: it is
+ * newer than the last run's start and than its acknowledgement, and younger
+ * than REQUEST_WAIT_MS. Sync now stamps a request, and so does a reconnect
+ * of an account that synced before. While it waits, a stored failure
+ * describes the run before the request; once the run starts, the dispatcher
+ * stamps a newer `lastSyncStartedAt` and the run's own outcome is what
+ * shows. The wait is bounded: past it, with no start and no ack, the request
+ * reads as not started (requestUnstarted) and the failure shows again. A
+ * paused account runs nothing, so its request waits for nothing. An
+ * unreadable instant answers false, so a failure stays shown when nothing
+ * proves it old. `now` defaults to the server's clock as the console last
+ * read it, a lower bound, so a browser clock running ahead cannot end the
+ * wait early. */
+export function requestPending(
+  f: RequestFields,
+  now: number = serverNow().getTime()
+): boolean {
+  const requested = requestWaiting(f)
+  return requested !== undefined && now - requested < REQUEST_WAIT_MS
+}
+
+/** Whether the owner's last request has waited REQUEST_WAIT_MS or longer
+ * with no run started and no ack: the trigger that answers it is not
+ * running, or is far behind. The same instants as requestPending, which is
+ * false exactly when this is true for a waiting request. */
+export function requestUnstarted(
+  f: RequestFields,
+  now: number = serverNow().getTime()
+): boolean {
+  const requested = requestWaiting(f)
+  return requested !== undefined && now - requested >= REQUEST_WAIT_MS
 }
 
 /** Whether the stored error still describes the sync: always while the state
@@ -218,14 +252,15 @@ export function syncFailing(
  * paused or throttled sync is attention; a connected account whose sync is
  * fine is healthy; an account that never synced is idle. A failing account
  * whose sync request waits for its run (requestPending) is being checked
- * again, and reads as a running one does. */
+ * again, and reads as a running one does, until the wait runs out. */
 export function healthOf(
   tokenStatus: string | undefined,
   sync: SyncFields,
-  legacySyncStatus?: string
+  legacySyncStatus?: string,
+  now?: number
 ): Health {
   if (tokenStatus === "erroring") return "broken"
-  if (syncFailing(sync, legacySyncStatus) && !requestPending(sync)) {
+  if (syncFailing(sync, legacySyncStatus) && !requestPending(sync, now)) {
     return "broken"
   }
   if (tokenStatus && tokenStatus !== "connected") return "attention"

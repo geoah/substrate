@@ -240,13 +240,23 @@ describe("providerStanding", () => {
       lastSyncStartedAt: "2026-10-20T08:00:00Z",
       syncRequestedAck: "2026-10-19T09:00:00Z",
     }
-    const standing = (props: Record<string, unknown>, legacy?: string) =>
-      providerStanding({
-        ...base,
-        accounts: [
-          { ...ada, sync: syncFieldsOf(props), legacySyncStatus: legacy },
-        ],
-      })
+    // Five minutes after the request below, so the request is still waited
+    // on whatever the real clock reads.
+    const soon = Date.parse("2026-10-20T08:45:00Z")
+    const standing = (
+      props: Record<string, unknown>,
+      legacy?: string,
+      now = soon
+    ) =>
+      providerStanding(
+        {
+          ...base,
+          accounts: [
+            { ...ada, sync: syncFieldsOf(props), legacySyncStatus: legacy },
+          ],
+        },
+        now
+      )
 
     it("is failing while no request waits", () => {
       const s = standing({
@@ -319,6 +329,51 @@ describe("providerStanding", () => {
       expect(
         standing({ syncState: "throttled" }, "erroring: rate limited").problems
       ).toEqual([])
+    })
+
+    it("is failing again, saying the request has not started, once it is fifteen minutes old", () => {
+      const late = Date.parse("2026-10-20T08:55:00Z")
+      const s = standing(
+        {
+          ...failed,
+          syncError: "oauthflow: refresh: provider answered 400",
+          syncRequestedAt: "2026-10-20T08:40:00Z",
+        },
+        undefined,
+        late
+      )
+      expect(s.tone).toBe("attention")
+      expect(s.problems).toEqual([
+        {
+          code: "sync",
+          summary: "Syncing ada@example.com is failing",
+          detail: [
+            "oauthflow: refresh: provider answered 400",
+            "The sync you asked for 15m ago hasn’t started.",
+          ],
+          account: "ada",
+          fixes: ["sync-now", "reconnect"],
+        },
+      ])
+      // The legacy-string account reads the same once its request is old.
+      expect(
+        standing(
+          { syncRequestedAt: "2026-10-20T08:40:00Z" },
+          "erroring: oauthflow: refresh: provider answered 400",
+          late
+        ).problems
+      ).toEqual([
+        {
+          code: "sync",
+          summary: "Syncing ada@example.com is failing",
+          detail: [
+            "erroring: oauthflow: refresh: provider answered 400",
+            "The sync you asked for 15m ago hasn’t started.",
+          ],
+          account: "ada",
+          fixes: ["sync-now", "reconnect"],
+        },
+      ])
     })
 
     it("is failing when the request was answered or the account is paused", () => {
@@ -588,7 +643,8 @@ describe("syncWords", () => {
       lastSyncStartedAt: "2026-10-20T08:00:00Z",
       syncRequestedAt: "2026-10-20T08:40:00Z",
     }
-    expect(syncWords(syncFieldsOf(failing), "WHOOP")).toEqual({
+    const soon = Date.parse("2026-10-20T08:45:00Z")
+    expect(syncWords(syncFieldsOf(failing), "WHOOP", soon)).toEqual({
       text: "Checking again…",
       tone: "active",
     })
@@ -600,6 +656,23 @@ describe("syncWords", () => {
       })
     ).toBe("Having trouble: whoop: HTTP 401")
     expect(words({ ...failing, syncPaused: true })).toBe("Paused")
+  })
+  it("says the sync hasn’t started once a request is fifteen minutes old", () => {
+    const failing = syncFieldsOf({
+      syncState: "erroring",
+      syncError: "oauthflow: refresh: provider answered 400",
+      lastSyncStartedAt: "2026-10-20T08:00:00Z",
+      syncRequestedAt: "2026-10-20T08:40:00Z",
+    })
+    expect(
+      syncWords(failing, "WHOOP", Date.parse("2026-10-20T08:55:00Z"))
+    ).toEqual({
+      text: "The sync you asked for 15m ago hasn’t started",
+      tone: "bad",
+    })
+    expect(
+      syncWords(failing, "WHOOP", Date.parse("2026-10-20T08:54:00Z"))
+    ).toEqual({ text: "Checking again…", tone: "active" })
   })
 })
 
