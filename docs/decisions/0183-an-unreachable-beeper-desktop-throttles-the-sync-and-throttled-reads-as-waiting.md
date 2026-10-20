@@ -23,7 +23,8 @@ apart.
   up
 - Stamp `throttled` on a failure to reach Beeper Desktop at all, with a "not
   reachable since" sentence, and keep the walk's place
-- Stamp `erroring` only after 24 hours without a completed run
+- Stamp `throttled` first, and `erroring` after 24 hours without a
+  completed run
 - Hide the failure in the console only
 
 ## Decision Outcome
@@ -41,8 +42,10 @@ on `syncMessage` and `syncStatus` ("Beeper Desktop is not reachable (since
 <time>); syncing resumes when it is back"), both streams `throttled`, and
 `lastSyncedAt`. It writes no `syncError` and no `retryNotBefore`, so the
 next tick and Sync now both try again. `unreachableSince` on the account
-keeps the first unreachable instant across runs; the first run that reaches
-Beeper, whatever Beeper answers, deletes it. The cursors are kept, so a walk
+keeps the first unreachable instant across runs. A run that ends having
+reached Beeper, whatever Beeper answered, deletes it, and a run that reached
+Beeper before a later connect failed starts a new stretch at its own
+attempt. The cursors are kept, so a walk
 the sleep interrupted resumes where it stopped, and the per-chat handlers
 re-raise one instead of filing it as that chat's failure.
 
@@ -53,12 +56,16 @@ classifier does not recognise stays `erroring` too.
 
 The console words `throttled` as "Waiting" and "Waiting for <provider>", and
 a provider whose every account is throttled as "Connected · waiting", for
-every provider, with the body's sentence as the reason beside it. It raised
+every provider, with the body's sentence as the reason after it ("Waiting
+for Beeper: Beeper Desktop is not reachable (since ...)"). It raised
 no "is failing" problem for `throttled` before and raises none now.
 
 Running Beeper Desktop in the cluster needs a third-party image vetted and
 run, and the owner's own Desktop would still be the one with the logins.
-Waiting 24 hours hides a real outage for a day. A console-only change leaves
+Turning a long throttled stretch into `erroring` is the better end state,
+and `unreachableSince` makes it a few lines in the body. It waits for a
+sync-health window that applies one threshold to every provider, rather
+than a Beeper-only 24-hour rule now. A console-only change leaves
 the record saying `erroring` to every other reader, the CLI's `sync status`
 and Mneme among them.
 
@@ -71,7 +78,9 @@ and Mneme among them.
 - Bad, because a Beeper Desktop that is gone for good (uninstalled, moved to
   another address) reads as waiting until someone looks. `unreachableSince`
   and the amber dot are the tell; nothing turns a long stretch into a
-  failure yet.
+  failure until the sync-health window exists. A stale `apiBase`, the API
+  switched off in Beeper (a refused connection) and a mistyped `.ts.net`
+  name all read this way.
 - Bad, because every tick while the computer sleeps still spends one
   connect attempt, up to the 20-second connect timeout.
 - Bad, because a Desktop that is up but hangs (a read timeout) still reads
@@ -84,6 +93,8 @@ and Mneme among them.
   the clearing.
 - `TestBeeperUnreachableDesktopPauses`,
   `TestBeeperUnreachableMidWalkKeepsItsPlace`,
+  `TestBeeperUnreachableInEachPhaseKeepsItsQueue`,
+  `TestBeeperReachedThenUnreachableStartsANewStretch`,
   `TestBeeperDesktopBackClearsTheStretch` and
   `TestBeeperDesktopErrorStillErrors` in
   `internal/providertest/beeper_test.go`.

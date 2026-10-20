@@ -628,8 +628,10 @@ request. `throttled` is the word for a provider holding the sync back that
 will let it through on its own: a 429's `Retry-After`, or a provider the body
 cannot reach at all and will try again (Beeper Desktop on a sleeping computer,
 [0183](decisions/0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md)).
-Its reason goes in `syncMessage`, it writes no `syncError`, and the console
-words it as waiting, not failing. A record-sourced run that meets a failure it already recorded still
+Its reason goes in `syncMessage`, and the console words it as waiting, not
+failing. Beeper's unreachable stamp writes no `syncError`; a rate-limit
+`throttled` stamp may (Google, GitHub and Linear record the 429 in the
+pair). A record-sourced run that meets a failure it already recorded still
 writes the failing `syncState`, and leaves an error pair the account holds as
 it stands: the settle reads a `running` it finds as a healthy run and clears
 the pair.
