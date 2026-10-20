@@ -629,6 +629,13 @@ type txn struct {
 	recomputeInitiator substrate.Actor
 	recomputing        bool
 	recomputeManagers  map[string]substrate.Actor
+	// propTiers names properties of one record's write that stand at a tier
+	// other than the transaction's (propTier): each is held to its `writer:`
+	// role at that tier, and its manager row records it. The OAuth callback
+	// sets it for its one patch (oauth.go completeOAuth), so the facility's
+	// own fields, the connector's error pair it clears and the owner's sync
+	// request it stamps land in one changelog entry.
+	propTiers *propTiers
 	// causedBy is the changelog seq that caused this transaction's writes —
 	// set only when a function's effects apply, stamped onto every changelog
 	// row so the causal-depth walk can follow the chain.

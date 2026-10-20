@@ -1196,45 +1196,101 @@ func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 	wantErr(t, err, substrate.ErrNotFound, "a full identity naming no account")
 }
 
-// TestOAuthReconnectClearsTheSyncError: the error pair on a `sync`-trait
-// account describes the grant a reconnect replaces, so the reconnect clears
-// it. The pair is `writer: connector`, which the facility's actor may not
-// write; the clear goes through the bundle tier. The state stays for the
-// next run to settle.
-func TestOAuthReconnectClearsTheSyncError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
+// syncAccountDocs is the mail closure with its account kind bound to the
+// core `sync` trait, carrying extra members beside the standard ones, its
+// OAuth endpoints pointed at baseURL.
+func syncAccountDocs(baseURL string, extra ...map[string]any) []map[string]any {
+	account := mbAccountTypeDoc()
+	data, _ := account["data"].(map[string]any)
+	data["traits"] = append(data["traits"].([]any), "substrate.reamde.dev/core/sync")
+	props, _ := data["properties"].(map[string]any)
+	for name, decl := range syncProps() {
+		if name != "name" {
+			props[name] = decl
+		}
+	}
+	members := append([]map[string]any{
+		mbConfigTypeDoc(), account, mbItemTypeDoc(), mbMessageTypeDoc(),
+		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource),
+	}, extra...)
+	docs := mbDocs(nil, members...)
+	mbPointOAuthAt(docs, baseURL)
+	return docs
+}
+
+// installSyncOAuthBundle stands up the oauth facility, the sync-trait mail
+// closure (syncAccountDocs), its config record and one pending account.
+func installSyncOAuthBundle(t *testing.T, extra ...map[string]any) (substrate.Service, substrate.Dataset, *fakeProvider, *substrate.Record) {
+	t.Helper()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
 		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
-	docs := mbStandardDocs()
-	mbPointOAuthAt(docs, p.ts.URL)
-	for _, d := range docs {
-		if meta, _ := d["metadata"].(map[string]any); d["kind"] != vocabulary.CoreKind(vocabulary.DocKind) || meta["id"] != mbAccountType {
-			continue
-		}
-		data, _ := d["data"].(map[string]any)
-		data["traits"] = append(data["traits"].([]any), "substrate.reamde.dev/core/sync")
-		props, _ := data["properties"].(map[string]any)
-		for name, decl := range syncProps() {
-			if name != "name" {
-				props[name] = decl
-			}
-		}
-	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, syncAccountDocs(p.ts.URL, extra...)); err != nil {
 		t.Fatalf("install bundle: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: p.configProps()})
 	account := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
 	})
+	return svc, ds, p, account
+}
+
+// syncConnector is a function actor of the mail package: the connector's
+// hand on the account's sync properties.
+var syncConnector = substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
+
+// failSyncedAccount puts the account where a failed refresh and the run it
+// broke leave it: synced once, its last run erroring with the refresh's
+// cause, and the facility's own tokenStatus at erroring.
+func failSyncedAccount(t *testing.T, ds substrate.Dataset, p *fakeProvider, account *substrate.Record) {
+	t.Helper()
+	mustPatch(t, ds, syncConnector, account.Kind, account.ID, substrate.PatchInput{Properties: map[string]any{
+		"lastSyncedAt":      "2026-10-19T10:00:00Z",
+		"lastSyncStartedAt": "2026-10-20T06:00:00Z",
+		"syncState":         substrate.SyncStateErroring,
+		"syncError":         "oauthflow: refresh: provider answered 400, error code invalid_request",
+		"syncErrorAt":       "2026-10-20T06:00:01Z",
+	}})
+	p.mu.Lock()
+	p.refuseRefresh = true
+	p.mu.Unlock()
+	if _, err := ds.RefreshOAuthTokens(context.Background()); err != nil {
+		t.Fatalf("refused refresh: %v", err)
+	}
+	p.mu.Lock()
+	p.refuseRefresh = false
+	p.mu.Unlock()
+	if got := mustGet(t, ds, account.Kind, account.ID); got.Properties["tokenStatus"] != "erroring" {
+		t.Fatalf("tokenStatus = %v after a refused refresh, want erroring", got.Properties["tokenStatus"])
+	}
+}
+
+// accountChanges lists the changelog entries addressed to the account.
+func accountChanges(t *testing.T, ds substrate.Dataset, account *substrate.Record) []substrate.Change {
+	t.Helper()
+	out, err := ds.Changes(context.Background(), 0, substrate.ChangeFilter{
+		Kinds: []string{account.Kind}, RecordID: account.ID,
+	}, 500)
+	if err != nil {
+		t.Fatalf("changes: %v", err)
+	}
+	return out
+}
+
+// TestOAuthReconnectClearsTheSyncError: the error pair on a `sync`-trait
+// account describes the grant a reconnect replaces, so the reconnect clears
+// it. The pair is `writer: connector`, which the facility's actor may not
+// write; the clear goes through the bundle tier. The state stays for the
+// next run to settle, and an account that never synced is asked for no run:
+// its first sync is the on-connect trigger's.
+func TestOAuthReconnectClearsTheSyncError(t *testing.T) {
+	t.Parallel()
+	svc, ds, _, account := installSyncOAuthBundle(t)
 	connectOAuthAccount(t, svc, ds, account)
 
-	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
-	mustPatch(t, ds, connector, account.Kind, account.ID, substrate.PatchInput{Properties: map[string]any{
+	mustPatch(t, ds, syncConnector, account.Kind, account.ID, substrate.PatchInput{Properties: map[string]any{
 		"syncState":   substrate.SyncStateErroring,
 		"syncError":   "token refresh failed: invalid_grant",
 		"syncErrorAt": "2026-09-20T10:00:00Z",
@@ -1254,4 +1310,209 @@ func TestOAuthReconnectClearsTheSyncError(t *testing.T) {
 	if got.Properties["syncState"] != substrate.SyncStateErroring {
 		t.Errorf("syncState = %v, want the stored erroring left for the next run", got.Properties["syncState"])
 	}
+	if v, ok := got.Properties["syncRequestedAt"]; ok {
+		t.Errorf("an account that never synced was asked for a sync: syncRequestedAt = %v", v)
+	}
+}
+
+// TestOAuthFirstConnectRequestsNoSync: the first connect leaves the first
+// sync to the provider's on-connect trigger; a request beside it would run
+// the backfill twice.
+func TestOAuthFirstConnectRequestsNoSync(t *testing.T) {
+	t.Parallel()
+	svc, ds, _, account := installSyncOAuthBundle(t)
+	connectOAuthAccount(t, svc, ds, account)
+
+	got := mustGet(t, ds, account.Kind, account.ID)
+	if got.Properties["tokenStatus"] != "connected" {
+		t.Fatalf("tokenStatus = %v, want connected", got.Properties["tokenStatus"])
+	}
+	if v, ok := got.Properties["syncRequestedAt"]; ok {
+		t.Fatalf("the first connect stamped syncRequestedAt = %v", v)
+	}
+}
+
+// TestOAuthReconnectRequestsASync: reconnecting an account that synced
+// before and is failing asks for a sync, so the run that says whether the new
+// grant works happens now. The request, the new status and the cleared error
+// pair are ONE changelog entry, the facility's, so a record trigger sees them
+// together; each property's manager row stands at its writer's tier.
+func TestOAuthReconnectRequestsASync(t *testing.T) {
+	t.Parallel()
+	svc, ds, p, account := installSyncOAuthBundle(t)
+	p.expiresIn = 30 // inside the refresh loop's window
+	connectOAuthAccount(t, svc, ds, account)
+	failSyncedAccount(t, ds, p, account)
+	before := len(accountChanges(t, ds, account))
+
+	connectOAuthAccount(t, svc, ds, account)
+
+	changes := accountChanges(t, ds, account)
+	if len(changes) != before+1 {
+		t.Fatalf("the reconnect wrote %d entries on the account, want 1: %+v", len(changes)-before, changes[before:])
+	}
+	entry := changes[before]
+	if entry.Actor != "substrate.oauth" {
+		t.Fatalf("the reconnect entry's actor = %s, want the OAuth facility", entry.Actor)
+	}
+	written := map[string]bool{}
+	names, _ := entry.Payload["properties"].([]any)
+	for _, n := range names {
+		written[fmt.Sprint(n)] = true
+	}
+	for _, name := range []string{"tokenStatus", "syncRequestedAt", "syncError", "syncErrorAt"} {
+		if !written[name] {
+			t.Errorf("the reconnect entry does not carry %s: %v", name, names)
+		}
+	}
+	if written["syncState"] {
+		t.Errorf("the reconnect wrote syncState: %v", names)
+	}
+
+	got := mustGet(t, ds, account.Kind, account.ID)
+	if got.Properties["tokenStatus"] != "connected" {
+		t.Fatalf("tokenStatus = %v, want connected", got.Properties["tokenStatus"])
+	}
+	for _, name := range []string{"syncError", "syncErrorAt"} {
+		if v, ok := got.Properties[name]; ok {
+			t.Errorf("%s survived the reconnect: %v", name, v)
+		}
+	}
+	if got.Properties["syncState"] != substrate.SyncStateErroring {
+		t.Errorf("syncState = %v, want erroring left for the requested run", got.Properties["syncState"])
+	}
+	requested := propTime(t, got, "syncRequestedAt")
+	if started := propTime(t, got, "lastSyncStartedAt"); !requested.After(started) {
+		t.Errorf("syncRequestedAt %s is not after the failed run's start %s", requested, started)
+	}
+	if m := got.PropertyMeta["syncRequestedAt"]; m.Manager != "substrate.oauth" || m.Tier != substrate.TierOwner {
+		t.Errorf("syncRequestedAt manager = %+v, want the facility at the owner tier", m)
+	}
+	if m := got.PropertyMeta["tokenStatus"]; m.Manager != "substrate.oauth" || m.Tier != substrate.TierMachine {
+		t.Errorf("tokenStatus manager = %+v, want the facility at the machine tier", m)
+	}
+}
+
+// TestOAuthReconnectOfAPausedAccountRequestsNoSync: the owner's pause stops
+// the sync, and a reconnect does not undo it by asking for a run.
+func TestOAuthReconnectOfAPausedAccountRequestsNoSync(t *testing.T) {
+	t.Parallel()
+	svc, ds, p, account := installSyncOAuthBundle(t)
+	p.expiresIn = 30
+	connectOAuthAccount(t, svc, ds, account)
+	failSyncedAccount(t, ds, p, account)
+	mustPatch(t, ds, owner, account.Kind, account.ID, substrate.PatchInput{Properties: map[string]any{"syncPaused": true}})
+
+	connectOAuthAccount(t, svc, ds, account)
+
+	got := mustGet(t, ds, account.Kind, account.ID)
+	if v, ok := got.Properties["syncRequestedAt"]; ok {
+		t.Fatalf("a paused account was asked for a sync: syncRequestedAt = %v", v)
+	}
+	if _, ok := got.Properties["syncError"]; ok {
+		t.Errorf("the error pair survived the reconnect of a paused account: %v", got.Properties)
+	}
+}
+
+// TestOAuthReconnectRequestDeliversOnce: the request the reconnect stamps
+// fires the account's on-request trigger exactly once, and the run's outcome
+// is what the account says next: a healthy run acknowledges the request and
+// settles ok, a failing one parks and stamps erroring again with a start
+// after the request, which is what brings the failure back on the console.
+func TestOAuthReconnectRequestDeliversOnce(t *testing.T) {
+	t.Parallel()
+	const okSource = `
+def main(input, host):
+    env = input["envelope"]
+    props = env["record"]["properties"]
+    return {"effects": [{"action": "patch", "kind": env["change"]["kind"], "id": env["change"]["id"],
+                         "properties": {"syncRequestedAck": props["syncRequestedAt"],
+                                        "lastSyncedAt": "2026-10-20T12:00:00Z"}}]}
+`
+	const failSource = `
+def main(input, host):
+    raise RuntimeError("oauthflow: refresh: provider answered 400, error code invalid_request")
+`
+	for _, tc := range []struct {
+		name, source string
+		ok           bool
+	}{
+		{"a healthy run settles ok", okSource, true},
+		{"a failing run is erroring again", failSource, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			fn := vocabulary.FunctionManifest(mbPackage, "accountsync", map[string]any{
+				"description": "syncs one mail account",
+				"runtime":     vocabulary.RuntimePython,
+				"source":      tc.source,
+				"permissions": map[string]any{"writes": []any{mbAccountType}},
+			})
+			svc, ds, p, account := installSyncOAuthBundle(t, fn)
+			p.expiresIn = 30
+			connectOAuthAccount(t, svc, ds, account)
+			failSyncedAccount(t, ds, p, account)
+			// The guard every shipped provider's on-request trigger carries:
+			// connected, and a request its acknowledgement has not answered.
+			const triggerID = "mail-on-request"
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: "substrate.reamde.dev/core/trigger", ID: triggerID,
+				Properties: map[string]any{
+					"enabled": true,
+					"source": map[string]any{"record": map[string]any{
+						"kinds": []any{mbAccountType}, "ops": []any{"create", "update"},
+						"when": `record != null && "tokenStatus" in record.properties && record.properties.tokenStatus == "connected" && "syncRequestedAt" in record.properties && (!("syncRequestedAck" in record.properties) || string(record.properties.syncRequestedAck) != string(record.properties.syncRequestedAt))`,
+					}},
+					"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", mbPackage+"/accountsync"),
+				},
+			})
+
+			connectOAuthAccount(t, svc, ds, account)
+			process(t, ds)
+			process(t, ds)
+
+			got := mustGet(t, ds, account.Kind, account.ID)
+			requested := propTime(t, got, "syncRequestedAt")
+			if tc.ok {
+				if runs := runRowsOf(t, ds, triggerID, "ok"); len(runs) != 1 {
+					t.Fatalf("ok runs = %d, want 1", len(runs))
+				}
+				if got.Properties["syncState"] != substrate.SyncStateOK {
+					t.Fatalf("syncState = %v, want ok (properties %v)", got.Properties["syncState"], got.Properties)
+				}
+				if got.Properties["syncRequestedAck"] == nil || !propTime(t, got, "syncRequestedAck").Equal(requested) {
+					t.Fatalf("syncRequestedAck = %v, want the request %s", got.Properties["syncRequestedAck"], requested)
+				}
+				return
+			}
+			parked, err := ds.TriggerFailures(ctx, triggerID)
+			if err != nil {
+				t.Fatalf("failures: %v", err)
+			}
+			if len(parked) != 1 {
+				t.Fatalf("parked = %d, want the one requested run", len(parked))
+			}
+			if got.Properties["syncState"] != substrate.SyncStateErroring {
+				t.Fatalf("syncState = %v, want erroring", got.Properties["syncState"])
+			}
+			if msg, _ := got.Properties["syncError"].(string); !strings.Contains(msg, "provider answered 400") {
+				t.Fatalf("syncError = %q, want the run's cause", msg)
+			}
+			if started := propTime(t, got, "lastSyncStartedAt"); !started.After(requested) {
+				t.Fatalf("lastSyncStartedAt %s is not after the request %s", started, requested)
+			}
+		})
+	}
+}
+
+// propTime reads a datetime property off a record.
+func propTime(t *testing.T, r *substrate.Record, name string) time.Time {
+	t.Helper()
+	s, _ := r.Properties[name].(string)
+	at, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t.Fatalf("%s = %v, want a timestamp", name, r.Properties[name])
+	}
+	return at
 }

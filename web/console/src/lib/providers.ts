@@ -14,7 +14,13 @@ import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { FUNCTION_KIND } from "@/lib/core-kinds"
 import { mappedKind } from "@/lib/provenance"
 import { refId, toolName, writeKinds } from "@/lib/tools"
-import type { AccountView, ProviderView, SyncFields } from "@/lib/sync"
+import {
+  requestPending,
+  syncFailing,
+  type AccountView,
+  type ProviderView,
+  type SyncFields,
+} from "@/lib/sync"
 
 // ── the four steps ───────────────────────────────────────────────────────────
 
@@ -283,9 +289,12 @@ export function standingProblems(s: StandingInput): ProviderProblem[] {
         fixes: ["reconnect"],
       })
     } else if (
-      a.sync.state === "erroring" ||
-      Boolean(a.legacySyncStatus?.startsWith("erroring"))
+      syncFailing(a.sync, a.legacySyncStatus) &&
+      !requestPending(a.sync)
     ) {
+      // A failing account whose request waits for its run raises nothing:
+      // the failure is the run before the request's, and the run that
+      // answers it stamps a newer start and says whether it still fails.
       out.push({
         code: "sync",
         summary: `Syncing ${a.label} is failing`,
@@ -359,9 +368,18 @@ export function standingProblems(s: StandingInput): ProviderProblem[] {
   return out
 }
 
+type StandingAccount = StandingInput["accounts"][number]
+
+/** A failing account whose sync request (Sync now, or the one a reconnect
+ * stamps) still waits for its run: it reads as being checked again, not as
+ * failing, until that run starts. */
+function rechecking(a: Pick<StandingAccount, "sync" | "legacySyncStatus">) {
+  return syncFailing(a.sync, a.legacySyncStatus) && requestPending(a.sync)
+}
+
 function connectedLine(accounts: StandingInput["accounts"]): string {
   if (!accounts.length) return "Ready"
-  if (accounts.some((a) => a.sync.state === "running")) {
+  if (accounts.some((a) => a.sync.state === "running" || rechecking(a))) {
     return "Connected · syncing"
   }
   if (accounts.every((a) => a.sync.paused)) return "Connected · paused"
@@ -380,9 +398,20 @@ export interface Words {
   tone: WordTone
 }
 
-/** The core `sync` trait's five states as a person reads them. */
+/** The core `sync` trait's five states as a person reads them. A failing
+ * account whose sync request waits for its run reads "Checking again…": the
+ * failure it holds is the run before the request's. */
 export function syncWords(
-  f: Pick<SyncFields, "state" | "paused" | "message" | "error">,
+  f: Pick<
+    SyncFields,
+    | "state"
+    | "paused"
+    | "message"
+    | "error"
+    | "requestedAt"
+    | "requestedAck"
+    | "lastSyncStartedAt"
+  >,
   providerName: string
 ): Words {
   if (f.paused) return { text: "Paused", tone: "warn" }
@@ -392,6 +421,7 @@ export function syncWords(
     case "ok":
       return { text: "Up to date", tone: "ok" }
     case "erroring": {
+      if (requestPending(f)) return { text: "Checking again…", tone: "active" }
       const why = firstLine(f.error ?? f.message ?? "")
       return {
         text: why ? `Having trouble: ${why}` : "Having trouble",

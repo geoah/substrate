@@ -18,6 +18,7 @@ import {
   providerConfigured,
   providerNextStep,
   providerViews,
+  requestPending,
   requestServed,
   requestTriggers,
   syncFieldsOf,
@@ -117,6 +118,45 @@ describe("requestServed", () => {
   })
 })
 
+describe("requestPending", () => {
+  const requestedAt = "2026-10-20T08:40:00.123456789Z"
+  it("waits while the request is newer than the last start and the ack", () => {
+    expect(requestPending({ paused: false })).toBe(false)
+    expect(requestPending({ paused: false, requestedAt })).toBe(true)
+    expect(
+      requestPending({
+        paused: false,
+        requestedAt,
+        lastSyncStartedAt: "2026-10-20T08:00:00Z",
+        requestedAck: "2026-10-19T08:00:00Z",
+      })
+    ).toBe(true)
+  })
+  it("is answered once a run starts after it or the ack reaches it", () => {
+    expect(
+      requestPending({
+        paused: false,
+        requestedAt,
+        lastSyncStartedAt: "2026-10-20T08:40:05Z",
+      })
+    ).toBe(false)
+    expect(
+      requestPending({ paused: false, requestedAt, requestedAck: requestedAt })
+    ).toBe(false)
+  })
+  it("waits for nothing on a paused account or an unreadable instant", () => {
+    expect(requestPending({ paused: true, requestedAt })).toBe(false)
+    expect(requestPending({ paused: false, requestedAt: "soon" })).toBe(false)
+    expect(
+      requestPending({
+        paused: false,
+        requestedAt,
+        lastSyncStartedAt: "earlier",
+      })
+    ).toBe(false)
+  })
+})
+
 describe("healthOf", () => {
   const ok = syncFieldsOf({ syncState: "ok" })
   it("is broken on a dead grant, an erroring sync or a legacy erroring status", () => {
@@ -141,6 +181,29 @@ describe("healthOf", () => {
       healthOf("connected", syncFieldsOf({ syncState: "throttled" }))
     ).toBe("attention")
     expect(healthOf(undefined, syncFieldsOf({}))).toBe("attention")
+  })
+  it("lets the trait's state win over a legacy erroring status", () => {
+    const legacy = "erroring: oauthflow: refresh: provider answered 400"
+    expect(
+      healthOf("connected", syncFieldsOf({ syncState: "running" }), legacy)
+    ).toBe("healthy")
+    expect(
+      healthOf("connected", syncFieldsOf({ syncState: "throttled" }), legacy)
+    ).toBe("attention")
+  })
+  it("reads a failing account whose request waits for its run as being checked again", () => {
+    const failing = {
+      syncState: "erroring",
+      lastSyncStartedAt: "2026-10-20T08:00:00Z",
+      syncRequestedAt: "2026-10-20T08:40:00Z",
+    }
+    expect(healthOf("connected", syncFieldsOf(failing))).toBe("healthy")
+    expect(
+      healthOf(
+        "connected",
+        syncFieldsOf({ ...failing, lastSyncStartedAt: "2026-10-20T08:40:02Z" })
+      )
+    ).toBe("broken")
   })
   it("is healthy when connected and synced, idle when connected and never synced", () => {
     expect(healthOf("connected", ok)).toBe("healthy")

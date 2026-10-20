@@ -334,3 +334,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0173](0173-the-embed-drain-packs-values-into-capped-requests-and-sets-a-refused-one-aside.md) | The embed drain packs values into capped requests and sets a refused one aside | proposed |
 | [0174](0174-the-semantic-arm-is-indexed-approximate-and-bounded.md) | The semantic arm is indexed, approximate and bounded | proposed |
 | [0175](0175-a-record-view-draws-tiles-trends-and-tables-from-one-batched-read-per-block.md) | A record view draws tiles, trends and tables from one batched read per block, and a band is view data | proposed |
+| [0176](0176-a-reconnect-requests-a-sync.md) | A reconnect requests a sync | proposed |

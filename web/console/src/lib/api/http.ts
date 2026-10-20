@@ -106,6 +106,33 @@ export function envelopeError(
   )
 }
 
+// The server's clock as the console last read it: the `Date` header of the
+// newest response against the browser's clock when it arrived. The header is
+// whole seconds and was written before the response travelled, so the
+// instant serverNow derives from it is never later than the server's own.
+let serverOffsetMs: number | undefined
+
+/** Learn the server's clock from one response's `Date` header. */
+export function noteServerDate(header: string | null, receivedAt = Date.now()) {
+  if (!header) return
+  const at = Date.parse(header)
+  if (!Number.isNaN(at)) serverOffsetMs = at - receivedAt
+}
+
+/** Now by the server's clock, from the newest `Date` header the console read;
+ * the browser's own clock until one arrives. It is a lower bound: a request
+ * stamped with it is never dated after the server's instant, so a value the
+ * server compares with its own stamps cannot lead them because the browser's
+ * clock runs ahead. */
+export function serverNow(): Date {
+  return new Date(Date.now() + (serverOffsetMs ?? 0))
+}
+
+/** Forget the learned clock (tests). */
+export function resetServerClock() {
+  serverOffsetMs = undefined
+}
+
 export async function request<T>(
   method: Method,
   path: string,
@@ -136,6 +163,7 @@ export async function request<T>(
     )
   }
 
+  noteServerDate(res.headers?.get("Date") ?? null)
   const text = await res.text()
   let parsed: unknown
   if (text) {

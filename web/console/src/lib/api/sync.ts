@@ -11,7 +11,14 @@ import { queryOptions } from "@tanstack/react-query"
 
 import { TRIGGER_KIND, TRIGGER_RUN_KIND } from "@/lib/core-kinds"
 
-import { collectionPath, corePath, request, rootPath, seg } from "./http"
+import {
+  collectionPath,
+  corePath,
+  request,
+  rootPath,
+  seg,
+  serverNow,
+} from "./http"
 import { listPath, patchRecord, recordPath } from "./records"
 import { splitKind } from "./http"
 import type {
@@ -150,10 +157,14 @@ export function retryParked(
 
 /** Ask for a run now: the owner's stamp on the trait's request property. The
  * on-request triggers on the kind fire on the write; `wakeTriggers` then
- * drains them without waiting for the dispatcher's next pass. */
+ * drains them without waiting for the dispatcher's next pass. The stamp is
+ * the server's clock (serverNow), as a reconnect's is: the console holds the
+ * request against the server-stamped `lastSyncStartedAt` to tell whether its
+ * run has started, and a browser clock running ahead would date the request
+ * after a run that already answered it and hide that run's failure. */
 export function requestSync(
   record: Pick<SubstrateRecord, "kind" | "id">,
-  at = new Date().toISOString()
+  at = serverNow().toISOString()
 ): Promise<SubstrateRecord> {
   const { authority, pkg, name } = splitKind(record.kind)
   return patchRecord(authority, pkg, name, record.id, {

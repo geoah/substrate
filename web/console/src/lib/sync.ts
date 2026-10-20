@@ -149,6 +149,32 @@ export function requestServed(
   return Date.parse(f.requestedAck) >= Date.parse(f.requestedAt)
 }
 
+/** Whether the owner's last request is still waiting for its run: it is
+ * newer than the last run's start and than its acknowledgement. Sync now
+ * stamps a request, and so does a reconnect of an account that synced
+ * before. While it waits, a stored failure describes the run before the
+ * request; once the run starts, the dispatcher stamps a newer
+ * `lastSyncStartedAt` and the run's own outcome is what shows. A paused
+ * account runs nothing, so its request waits for nothing. An unreadable
+ * instant answers false, so a failure stays shown when nothing proves it
+ * old. */
+export function requestPending(
+  f: Pick<
+    SyncFields,
+    "paused" | "requestedAt" | "requestedAck" | "lastSyncStartedAt"
+  >
+): boolean {
+  if (f.paused || !f.requestedAt) return false
+  const requested = Date.parse(f.requestedAt)
+  if (Number.isNaN(requested)) return false
+  for (const other of [f.lastSyncStartedAt, f.requestedAck]) {
+    if (!other) continue
+    const at = Date.parse(other)
+    if (Number.isNaN(at) || at >= requested) return false
+  }
+  return true
+}
+
 /** Whether the stored error still describes the sync: always while the state
  * is `erroring`, otherwise only when it is newer than the last finished run.
  * An error the engine did not clear (a scheduled run settles through the
@@ -170,19 +196,38 @@ export function syncErrorIsCurrent(
 
 export type Health = "healthy" | "attention" | "broken" | "idle"
 
+/** Whether the account's last run failed: the trait's `erroring`, or, on a
+ * record that carries no trait state, a legacy free-text `syncStatus` that
+ * begins with `erroring`, so a bundle that has not bound the trait yet still
+ * reads honestly. Where the trait's state is present it wins: the legacy
+ * string is rewritten only when a run ends, so it still holds the last
+ * failure while a requested run is `running`, and a bundle files a rate limit
+ * as `throttled` beside an `erroring: rate limited` string. */
+export function syncFailing(
+  sync: Pick<SyncFields, "state">,
+  legacySyncStatus?: string
+): boolean {
+  if (sync.state === "erroring") return true
+  return (
+    sync.state === "never" && Boolean(legacySyncStatus?.startsWith("erroring"))
+  )
+}
+
 /** The one dot a Connection row wears, from the token and the sync together:
- * a dead grant or an erroring sync is broken; a pending grant, a paused or
- * throttled sync is attention; a connected account whose sync is fine is
- * healthy; an account that never synced is idle. The legacy free-text
- * `syncStatus` that begins with `erroring` counts as broken too, so a bundle
- * that has not bound the trait yet still reads honestly. */
+ * a dead grant or a failing sync (syncFailing) is broken; a pending grant, a
+ * paused or throttled sync is attention; a connected account whose sync is
+ * fine is healthy; an account that never synced is idle. A failing account
+ * whose sync request waits for its run (requestPending) is being checked
+ * again, and reads as a running one does. */
 export function healthOf(
   tokenStatus: string | undefined,
   sync: SyncFields,
   legacySyncStatus?: string
 ): Health {
-  if (tokenStatus === "erroring" || sync.state === "erroring") return "broken"
-  if (legacySyncStatus?.startsWith("erroring")) return "broken"
+  if (tokenStatus === "erroring") return "broken"
+  if (syncFailing(sync, legacySyncStatus) && !requestPending(sync)) {
+    return "broken"
+  }
   if (tokenStatus && tokenStatus !== "connected") return "attention"
   if (sync.paused || sync.state === "throttled") return "attention"
   if (sync.state === "never" && !legacySyncStatus) {
