@@ -26,7 +26,13 @@ the request that asks for the next one, and the progress per stream. The
 trigger dispatcher stamps a record-sourced delivery's start, finish and
 park onto the same record. status reads every such record joined with the
 record triggers on its kind. To ask for a run, patch syncRequestedAt on
-the account; to stop one, patch syncPaused.`,
+the account; to stop one, patch syncPaused.
+
+TOKEN is the account's OAuth sign-in: connected, pending, or erroring with
+how long and the facility's reason. erroring means the provider refused the
+stored grant: only a reconnect (substratectl bundle connect) fixes it, and
+asking for another run does not. A provider that signs in with a pasted key
+leaves it empty.`,
 	}
 	cmd.AddCommand(a.syncStatusCommand())
 	return cmd
@@ -36,7 +42,7 @@ func (a *app) syncStatusCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Per-account sync state, health, message, last run, request, streams, parked and lagging triggers, and the newest parked run's reason",
+		Short: "Per-account sync state, health, whether its sign-in works, message, last run, request, streams, parked and lagging triggers, and the newest parked run's reason",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -49,7 +55,7 @@ func (a *app) syncStatusCommand() *cobra.Command {
 			}
 			return printList(a, output, res.Items, func() error {
 				tw := newTable(a.out)
-				fmt.Fprintln(tw, "KIND\tID\tSTATE\tHEALTH\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
+				fmt.Fprintln(tw, "KIND\tID\tSTATE\tHEALTH\tTOKEN\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
 				for _, s := range res.Items {
 					last := ""
 					if s.LastSyncedAt != nil {
@@ -68,8 +74,8 @@ func (a *app) syncStatusCommand() *cobra.Command {
 					// One line per account: a message carrying a newline would
 					// break the table.
 					message, _, _ = strings.Cut(message, "\n")
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
-						s.Kind, s.ID, s.State, a.health(s.Health, s.FailingSince), s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
+						s.Kind, s.ID, s.State, a.health(s.Health, s.FailingSince), a.signIn(s), s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
 				}
 				return tw.Flush()
 			})
@@ -87,6 +93,24 @@ func (a *app) health(health string, since *time.Time) string {
 		return health
 	}
 	return health + " " + humanAge(a.now(), *since)
+}
+
+// signIn renders the account's OAuth sign-in as one cell: the facility's
+// tokenStatus as is, and on `erroring` how long ago the facility last failed
+// to refresh and the first line of why, the LAST PARKED cell's shape. A kind
+// that carries no sign-in leaves the cell empty.
+func (a *app) signIn(s substrate.SyncStatus) string {
+	if s.TokenStatus != "erroring" {
+		return s.TokenStatus
+	}
+	cell := s.TokenStatus
+	if s.TokenErrorAt != nil {
+		cell += " " + humanAge(a.now(), *s.TokenErrorAt)
+	}
+	if reason, _, _ := strings.Cut(s.TokenError, "\n"); reason != "" {
+		cell += ": " + truncate(reason, 60)
+	}
+	return cell
 }
 
 // lastParked renders the newest parked delivery as its age and its reason:

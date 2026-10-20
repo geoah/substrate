@@ -1470,14 +1470,17 @@ func (f *fakeSubstrate) handleBundleStatus(w http.ResponseWriter, r *http.Reques
 
 // handleSyncStatus answers one `sync`-trait account joined with its trigger:
 // an erroring Gmail stream beside a healthy contacts one, a request the sync
-// has not yet acknowledged, and one parked delivery with its traceback.
+// has not yet acknowledged, one parked delivery with its traceback, and a
+// sign-in the provider refused three hours ago.
 func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	requested := time.Date(2026, 9, 19, 9, 0, 0, 0, time.UTC)
 	synced := requested.Add(-time.Hour)
+	refused := testNow.Add(-3 * time.Hour)
 	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.SyncStatus{{
 		Kind: "providers.substrate.reamde.dev/google/account", ID: "george-work", Title: "george@example.com",
 		State: substrate.SyncStateErroring, Error: "gmail: HTTP 403", Message: "ok (12 pending)",
+		TokenStatus: "erroring", TokenError: "provider answered 400, error code \"invalid_grant\"\nnever shown", TokenErrorAt: &refused,
 		LastSyncedAt: &synced, RequestedAt: &requested,
 		Streams: map[string]substrate.SyncStream{
 			"gmail":    {State: substrate.SyncStateErroring, Pending: 12},

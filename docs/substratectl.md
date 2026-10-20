@@ -337,7 +337,11 @@ characters; `-o json` carries the whole error.
 
 `substratectl sync status` is the synchronization read over every
 [connection](bundles.md#connections) whose kind binds the core `sync` trait:
-one line per account with its state, whether it is paused, when it last
+one line per account with its state, whether its sign-in works (`TOKEN`:
+`connected`, `pending`, or `erroring` with how long and the facility's
+reason; `erroring` means the provider refused the stored grant, which only a
+reconnect fixes and another run cannot; empty on a provider that signs in
+with a pasted key), whether it is paused, when it last
 synced, whether the owner's request has been served, each stream's state and
 backlog, the parked and lagging deliveries of the triggers on its kind summed,
 and the message or, on an erroring account, the error. To ask for a run,
