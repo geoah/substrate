@@ -33,6 +33,22 @@ The server reads the variable once, so restart it after setting it.
 `SUBSTRATE_EGRESS_ALLOW` is the gate for the server's own dials and does not
 admit a body's connect.
 
+## When Beeper Desktop is not reachable
+
+When the sync cannot reach Beeper Desktop at all (the computer asleep, the app
+closed, no route to its address, or a name that does not resolve), the
+account reads `syncState: throttled` with the message "Beeper Desktop is not
+reachable (since <time>); syncing resumes when it is back", and no
+`syncError`. `unreachableSince` holds the first failed attempt of the stretch.
+The 15-minute tick keeps trying, at one connect attempt per tick, and Sync now
+works as usual. When a run reaches Beeper again, the walk resumes where it
+stopped and `unreachableSince` is deleted.
+
+A 401, a 5xx, a body that is not JSON, a read timeout, and the sandbox gate's
+refusal still read `erroring`, so a missing `SUBSTRATE_SANDBOX_EGRESS_ALLOW`
+entry is not mistaken for a sleeping computer
+([decision 0183](../../../docs/decisions/0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md)).
+
 ## Kinds
 
 | Kind | What it is |

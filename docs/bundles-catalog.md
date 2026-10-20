@@ -1101,7 +1101,15 @@ count in `syncProgress.pending`), `syncMessage` carries the same sentence as
 `syncStatus`, and `syncStreams` breaks the run down into `chats` and
 `messages`, each with its own state, message, `pending` count and `lastAt`.
 A 429's `Retry-After` sets `retryNotBefore` and holds the whole account until
-it passes. One chat that will not read is that chat's own business: the reason
+it passes. A run that cannot reach Beeper Desktop at all (the computer asleep,
+the app closed, no route, no name) is `throttled` too, with "Beeper Desktop is
+not reachable (since <time>); syncing resumes when it is back" and no
+`syncError`: `unreachableSince` holds the first such attempt, the walk keeps
+its place, the next tick tries again, and the first run that reaches Beeper
+deletes it. A 4xx, a 5xx, a bad body and the sandbox gate's refusal still read
+`erroring`
+([0183](decisions/0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md)).
+One chat that will not read is that chat's own business: the reason
 lands on its `chatsync.messagesStatus`, the queue moves on, the unit of work
 goes onto `streamCursors.failed` with its attempt count (retried up to three
 times, and queued again at the top of the next walk), and `syncStatus` gains a
