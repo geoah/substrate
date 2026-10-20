@@ -16,7 +16,7 @@ data:
     the thread IS the run. Status, turns, tokens and cost accumulate as the
     loop goes, and a root thread's tally rolls up every sub-agent's spend,
     so one number answers what a chain cost.
-  version: 15
+  version: 16
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -117,7 +117,18 @@ data:
     promptTokens:
       type: int
       min: 0
-      description: prompt tokens; on the root thread, sub-agents included
+      description: prompt tokens the model saw, cache reads and writes included;
+        on the root thread, sub-agents included
+    cacheReadTokens:
+      type: int
+      min: 0
+      description: prompt tokens the provider served from its cache, part
+        of promptTokens; on the root thread, sub-agents included
+    cacheWriteTokens:
+      type: int
+      min: 0
+      description: prompt tokens the provider wrote to its cache, part of
+        promptTokens; on the root thread, sub-agents included
     completionTokens:
       type: int
       min: 0
@@ -129,8 +140,8 @@ data:
     costUSD:
       type: float
       min: 0
-      description: the provider row's pricing for the model applied to the
-        tally; 0 when unpriced
+      description: the provider row's rates applied to the uncached, cached,
+        written and completion tallies; 0 when unpriced
     startedAt:
       type: datetime
       required: true

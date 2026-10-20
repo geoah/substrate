@@ -27,7 +27,7 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  version: 13
+  version: 14
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -129,10 +129,13 @@ data:
             - max
           description: how hard a reasoning model thinks, when it takes the
             knob
-    # data-driven cost estimation: USD per 1M tokens per model id; a model
-    # absent from the table means the thread's costUSD stays 0 and only the
-    # token tally is authoritative. One row per model, keyed by the id AS SENT
-    # — a later row for the same model wins, so the table stays a table.
+    # data-driven cost estimation: USD per 1M tokens per model id. The cost
+    # stamp prices the uncached prompt at inputPer1M, cache reads at
+    # cacheReadPer1M, cache writes at cacheWritePer1M and the completion at
+    # outputPer1M (decision record 0181). A model absent from the table means
+    # the thread's costUSD stays 0 and only the token tally is authoritative.
+    # One row per model, keyed by the id AS SENT; a later row for the same
+    # model wins, so the table stays a table.
     pricing:
       type: object
       repeated: true
@@ -149,6 +152,19 @@ data:
           type: decimal
           min: 0
           description: USD per 1M output tokens, exact digits as a string
+        # Absent means the list ratio most models share; a model whose ratio
+        # differs (Opus 5.5 reads at 0.05x, a 1-hour cache writes at 2x)
+        # states its rate here.
+        cacheReadPer1M:
+          type: decimal
+          min: 0
+          description: USD per 1M prompt tokens the provider served from its
+            cache; absent means a tenth of inputPer1M
+        cacheWritePer1M:
+          type: decimal
+          min: 0
+          description: USD per 1M prompt tokens the provider wrote to its
+            cache; absent means 1.25 times inputPer1M
         # What compaction measures a thread against. It sits beside the
         # prices because both are facts about one model on one endpoint, and
         # a row edit changes it without a release.
