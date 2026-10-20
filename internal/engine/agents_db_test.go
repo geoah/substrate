@@ -53,6 +53,11 @@ type fakeTurn struct {
 	// promptTokens, when non-zero, is the turn's reported prompt_tokens: the
 	// context size compaction measures. Zero reports the default 10.
 	promptTokens int
+	// cacheReadTokens and cacheWriteTokens, when non-zero, are the parts of
+	// prompt_tokens the turn reports as served from and written to the cache,
+	// in usage.prompt_tokens_details the way LiteLLM writes them.
+	cacheReadTokens  int
+	cacheWriteTokens int
 	// finish is the turn's finish_reason; empty sends "stop". A "length"
 	// turn is a reply cut off by its output ceiling.
 	finish string
@@ -155,6 +160,11 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		finish = turn.finish
 	}
 	usage := map[string]any{"prompt_tokens": prompt, "completion_tokens": 5, "total_tokens": prompt + 5}
+	if turn.cacheReadTokens > 0 || turn.cacheWriteTokens > 0 {
+		usage["prompt_tokens_details"] = map[string]any{
+			"cached_tokens": turn.cacheReadTokens, "cache_creation_tokens": turn.cacheWriteTokens,
+		}
+	}
 	toolCalls := make([]map[string]any, 0, len(turn.calls))
 	for i, c := range turn.calls {
 		toolCalls = append(toolCalls, map[string]any{

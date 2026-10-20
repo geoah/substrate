@@ -138,16 +138,28 @@ type ToolCall struct {
 
 // Usage is the turn's token tally.
 type Usage struct {
-	// PromptTokens is the input the wire bills at the input price: on the
-	// anthropic wire that excludes cache reads and writes, which it reports
-	// apart, and the cost stamp prices exactly this number.
+	// PromptTokens is the whole input the model saw, cache reads and writes
+	// included: what the context window holds, and so what compaction
+	// measures against it. The openai wire's prompt_tokens already counts
+	// both (LiteLLM and OpenAI alike); the anthropic wire reports them
+	// beside input_tokens, so the adapter adds them in.
 	PromptTokens     int
 	CompletionTokens int
-	// ContextTokens is the whole input the model saw, cache included: what
-	// the context window holds, and so what compaction measures against it.
-	// The openai wire's prompt_tokens already counts cached tokens, so there
-	// it equals PromptTokens.
-	ContextTokens int
+	// CacheReadTokens and CacheWriteTokens are the parts of PromptTokens the
+	// provider served from, and wrote to, its prompt cache. Each is priced at
+	// its own rate; the rest of PromptTokens is priced at the input rate.
+	CacheReadTokens  int
+	CacheWriteTokens int
+}
+
+// UncachedPromptTokens is the part of PromptTokens priced at the input rate.
+// It never goes below 0, so a gateway that reports cache counts beside an
+// exclusive prompt_tokens undercharges rather than charging a negative.
+func (u *Usage) UncachedPromptTokens() int {
+	if u == nil {
+		return 0
+	}
+	return max(0, u.PromptTokens-u.CacheReadTokens-u.CacheWriteTokens)
 }
 
 // The neutral stop reasons a Result carries. Each wire maps its own words

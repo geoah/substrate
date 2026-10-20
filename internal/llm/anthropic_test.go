@@ -426,10 +426,10 @@ func TestAnthropicSurfacesAnAPIError(t *testing.T) {
 	}
 }
 
-// The wire's stop_reason maps onto the neutral set, and the context size adds
-// the cache reads and writes this wire reports beside input_tokens, while the
-// billed prompt stays input_tokens alone.
-func TestAnthropicMapsStopReasonAndContextTokens(t *testing.T) {
+// The wire's stop_reason maps onto the neutral set, and the prompt adds the
+// cache reads and writes this wire reports beside input_tokens, each also
+// carried apart so the cost stamp prices it at its own rate.
+func TestAnthropicMapsStopReasonAndCacheCounts(t *testing.T) {
 	for reason, want := range map[string]string{
 		"end_turn":      StopEnd,
 		"stop_sequence": StopEnd,
@@ -458,7 +458,7 @@ func TestAnthropicMapsStopReasonAndContextTokens(t *testing.T) {
 			if res.Stop != want {
 				t.Fatalf("stop = %q, want %q", res.Stop, want)
 			}
-			if res.Usage.PromptTokens != 10 || res.Usage.ContextTokens != 350 {
+			if *res.Usage != (Usage{PromptTokens: 350, CompletionTokens: 2, CacheReadTokens: 300, CacheWriteTokens: 40}) {
 				t.Fatalf("usage = %+v", res.Usage)
 			}
 		})
@@ -849,7 +849,7 @@ func TestAnthropicStreamSkipsWhatItDoesNotUse(t *testing.T) {
 	if len(res.ToolCalls) != 1 || res.ToolCalls[0].Arguments != "{}" {
 		t.Fatalf("tool calls = %+v, want one with arguments {}", res.ToolCalls)
 	}
-	if res.Stop != StopLength || res.Usage.CompletionTokens != 4 || res.Usage.ContextTokens != 31 {
+	if res.Stop != StopLength || res.Usage.CompletionTokens != 4 || res.Usage.PromptTokens != 31 || res.Usage.CacheReadTokens != 30 {
 		t.Fatalf("stop %q, usage %+v", res.Stop, res.Usage)
 	}
 }
@@ -1157,7 +1157,7 @@ func TestAnthropicReadsTokenCountsLeniently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("one-shot: %v", err)
 	}
-	if res.Content != "a" || *res.Usage != (Usage{PromptTokens: 12, CompletionTokens: 3, ContextTokens: 12}) {
+	if res.Content != "a" || *res.Usage != (Usage{PromptTokens: 12, CompletionTokens: 3}) {
 		t.Fatalf("content %q, usage %+v", res.Content, res.Usage)
 	}
 
@@ -1172,7 +1172,7 @@ func TestAnthropicReadsTokenCountsLeniently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("streamed: %v", err)
 	}
-	if res.Content != "ok" || *res.Usage != (Usage{PromptTokens: 11, CompletionTokens: 4, ContextTokens: 13}) {
+	if res.Content != "ok" || *res.Usage != (Usage{PromptTokens: 13, CompletionTokens: 4, CacheReadTokens: 2}) {
 		t.Fatalf("content %q, usage %+v", res.Content, res.Usage)
 	}
 }

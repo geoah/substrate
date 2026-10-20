@@ -855,11 +855,12 @@ func settleInput(block *anthropicContent) {
 func anthropicResult(msg *anthropicMessage) *Result {
 	res := &Result{
 		Usage: &Usage{
-			PromptTokens:     int(msg.Usage.InputTokens),
-			CompletionTokens: int(msg.Usage.OutputTokens),
 			// This wire reports cache reads and writes beside input_tokens,
 			// never inside it, and the window holds all three.
-			ContextTokens: int(msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens),
+			PromptTokens:     int(msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens),
+			CompletionTokens: int(msg.Usage.OutputTokens),
+			CacheReadTokens:  int(msg.Usage.CacheReadInputTokens),
+			CacheWriteTokens: int(msg.Usage.CacheCreationInputTokens),
 		},
 		Stop: anthropicStop(msg.StopReason),
 	}
