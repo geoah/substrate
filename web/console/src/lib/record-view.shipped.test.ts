@@ -61,7 +61,8 @@ const SAMPLE_KINDS = new Set(
 
 // Every metric a block reads, its bands included.
 function metricsOf(block: Block): string[] {
-  const banded = "bands" in block ? block.bands.flatMap((b) => b.metric ?? []) : []
+  const banded =
+    "bands" in block ? block.bands.flatMap((b) => b.metric ?? []) : []
   switch (block.type) {
     case "chart":
       return [...block.metrics, ...banded]
@@ -92,8 +93,12 @@ function kindsOf(block: Block): string[] {
 // The parsed view holds a listed kind's reference; the declaration's record
 // path is accepted too.
 function shippedKind(path: string): boolean {
-  const ref = path.startsWith(KIND_PREFIX) ? path.slice(KIND_PREFIX.length) : path
-  return SAMPLE_KINDS.has(ref) || ref.startsWith("providers.substrate.reamde.dev/")
+  const ref = path.startsWith(KIND_PREFIX)
+    ? path.slice(KIND_PREFIX.length)
+    : path
+  return (
+    SAMPLE_KINDS.has(ref) || ref.startsWith("providers.substrate.reamde.dev/")
+  )
 }
 
 const VIEWS: SubstrateRecord[] = Object.values(viewFiles)
@@ -121,9 +126,13 @@ describe("the shipped record views", () => {
     (_, record) => {
       const view = recordViewOf(record)
       expect(view.sections.length).toBeGreaterThan(0)
-      const blocks = view.sections.flatMap((s) => ("block" in s ? [s.block] : []))
+      const blocks = view.sections.flatMap((s) =>
+        "block" in s ? [s.block] : []
+      )
       // A window is required only where a block reads one.
-      expect(!blocks.some((b) => readsWindow(b)) || viewNeedsWindow(view)).toBe(true)
+      expect(!blocks.some((b) => readsWindow(b)) || viewNeedsWindow(view)).toBe(
+        true
+      )
       const problems = view.sections.flatMap((s) =>
         "problem" in s ? [s.problem] : []
       )
