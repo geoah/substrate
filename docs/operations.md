@@ -758,7 +758,11 @@ Every delivery of every pass, each record trigger's turn and each schedule
 fire, holds one of 16 process-wide delivery slots, so the dispatcher runs at
 most sixteen runner processes and sixteen transactions however many passes
 and lanes are busy; a delivery that finds every slot held waits for one. A
-wake, a retry by hand and a webhook fire take no slot. Schedule triggers that
+wake, a retry by hand and a webhook fire take no slot. A wake never walks a
+record trigger beside the pass's turn on it: whichever starts second runs
+nothing
+([decision 0182](decisions/0182-a-record-trigger-is-walked-by-one-caller-at-a-time.md)).
+Schedule triggers that
 name the same Python function still fire one after another, because the
 runner keeps one process per function. A fire that starts more than a
 minute after its occurrence logs `schedule fire dispatched late` with the

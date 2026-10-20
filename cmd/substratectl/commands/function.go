@@ -157,7 +157,7 @@ full spellings the repository declares under it.`,
 func (a *app) triggerWakeCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "wake <id>",
-		Short: "Scan a trigger now: webhook fires once, record drains, schedule checks",
+		Short: "Scan a trigger now: webhook fires once, record trigger delivers its backlog, schedule checks",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := a.client()
