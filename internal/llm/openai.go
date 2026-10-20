@@ -298,7 +298,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 	if onDelta == nil {
 		var body []byte
 		patch.response = &body
-		res, err := c.oneShot(context.WithValue(ctx, bodyPatchKey{}, patch), oreq)
+		res, err := c.oneShot(context.WithValue(ctx, bodyPatchKey{}, patch), oreq, &body)
 		if res != nil {
 			var tb thinkingBlocks
 			if json.Unmarshal(body, &tb) == nil && len(tb.Choices) > 0 {
@@ -310,12 +310,15 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 	return c.stream(context.WithValue(ctx, bodyPatchKey{}, patch), oreq, onDelta)
 }
 
-func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest) (*Result, error) {
+// oneShot reads body, the reply the bodyDoer captured, for the cache counts
+// the SDK's Usage leaves out (cache_creation_tokens and the two top-level
+// fields; it parses cached_tokens, but the raw reply carries all four).
+func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest, body *[]byte) (*Result, error) {
 	resp, err := c.client.CreateChatCompletion(ctx, oreq)
 	if err != nil {
 		return nil, c.scrubbed(err)
 	}
-	usage := openaiUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+	usage := openaiUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens, *body)
 	if len(resp.Choices) == 0 {
 		return &Result{Usage: usage}, errors.New("empty response: no choices")
 	}
@@ -373,7 +376,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			blocks = append(blocks, signed...)
 		}
 		if chunk.Usage != nil {
-			usage = openaiUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens)
+			usage = openaiUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens, raw)
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -413,10 +416,60 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	}, nil
 }
 
-// openaiUsage builds the neutral tally. This wire's prompt_tokens already
-// counts cached input, so it is the context size as well as the billed input.
-func openaiUsage(prompt, completion int) *Usage {
-	return &Usage{PromptTokens: prompt, CompletionTokens: completion, ContextTokens: prompt}
+// openaiCacheUsage is a reply's cache counts, read from the raw reply. The
+// SDK parses cached_tokens but not cache_creation_tokens or the two
+// top-level fields, so all four are read here in one place. LiteLLM writes each cache count twice: inside prompt_tokens_details
+// (cached_tokens, cache_creation_tokens) and at the top level
+// (cache_read_input_tokens, cache_creation_input_tokens), the same two
+// numbers (calculate_usage in litellm/llms/anthropic/chat/transformation.py).
+// OpenAI writes cached_tokens alone and reports no cache write.
+type openaiCacheUsage struct {
+	Usage *struct {
+		Details *struct {
+			CachedTokens        *anthropicCount `json:"cached_tokens"`
+			CacheCreationTokens *anthropicCount `json:"cache_creation_tokens"`
+		} `json:"prompt_tokens_details"`
+		CacheReadInputTokens     *anthropicCount `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens *anthropicCount `json:"cache_creation_input_tokens"`
+	} `json:"usage"`
+}
+
+// openaiUsage builds the neutral tally from the SDK's two counts and the raw
+// reply (one-shot body or the stream's usage chunk). This wire's
+// prompt_tokens already includes the cached and the written tokens on both
+// LiteLLM and OpenAI, so the cache counts are parts of it, never added to
+// it. The details form wins over the top-level form and the two are never
+// summed. A reply that does not parse leaves both cache counts at 0, so an
+// odd gateway prices its input at the full rate and never loses the answer.
+// A reply whose read plus write exceeds prompt_tokens cannot be counting them
+// inside it, so there the counts are added to prompt_tokens, as on the
+// anthropic wire.
+func openaiUsage(prompt, completion int, raw []byte) *Usage {
+	u := &Usage{PromptTokens: prompt, CompletionTokens: completion}
+	var doc openaiCacheUsage
+	if json.Unmarshal(raw, &doc) != nil || doc.Usage == nil {
+		return u
+	}
+	pick := func(detail, top *anthropicCount) int {
+		if detail != nil && *detail > 0 {
+			return int(*detail)
+		}
+		if top != nil && *top > 0 {
+			return int(*top)
+		}
+		return 0
+	}
+	var dRead, dWrite *anthropicCount
+	if d := doc.Usage.Details; d != nil {
+		dRead, dWrite = d.CachedTokens, d.CacheCreationTokens
+	}
+	read := pick(dRead, doc.Usage.CacheReadInputTokens)
+	write := pick(dWrite, doc.Usage.CacheCreationInputTokens)
+	if read+write > prompt {
+		u.PromptTokens = max(0, prompt) + read + write
+	}
+	u.CacheReadTokens, u.CacheWriteTokens = read, write
+	return u
 }
 
 // openaiStop maps the wire's finish_reason onto the neutral set. An empty

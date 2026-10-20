@@ -210,6 +210,8 @@ type agentInvocation struct {
 type agentTally struct {
 	prompt     int
 	completion int
+	cacheRead  int
+	cacheWrite int
 	cost       float64
 	effects    map[string]int
 	// spend is the root run's spend, keyed by the root thread (spend.go):
@@ -291,9 +293,58 @@ type providerConfig struct {
 type modelPrice struct {
 	inPer1M  float64
 	outPer1M float64
+	// cacheReadPer1M and cacheWritePer1M price the prompt tokens the provider
+	// served from, and wrote to, its cache (decision 0181).
+	cacheReadPer1M  float64
+	cacheWritePer1M float64
 	// contextWindow is the model's window in tokens; 0 means unknown, and a
 	// model with no window never compacts.
 	contextWindow int
+}
+
+// The cache rates a pricing row that states none is charged, as a factor of
+// its inputPer1M: Anthropic's list ratios for a cache read and a 5-minute
+// cache write. OpenAI's read ratio is 0.1x only on gpt-5 and gpt-5-mini
+// (0.25x on gpt-4.1 and o3, 0.5x on gpt-4o) and it bills no write. A model
+// whose ratio differs (Opus 5.5 reads at 0.05x, a 1-hour cache writes at 2x)
+// needs its rate on the row.
+const (
+	defaultCacheReadFactor  = 0.1
+	defaultCacheWriteFactor = 1.25
+)
+
+// cost prices one completion's usage in USD: the uncached prompt at the
+// input rate, cache reads and writes at theirs, the completion at the output
+// rate. An unpriced model costs 0.
+func (p modelPrice) cost(u *llm.Usage) float64 {
+	if u == nil {
+		return 0
+	}
+	return (float64(u.UncachedPromptTokens())*p.inPer1M +
+		float64(u.CacheReadTokens)*p.cacheReadPer1M +
+		float64(u.CacheWriteTokens)*p.cacheWritePer1M +
+		float64(u.CompletionTokens)*p.outPer1M) / 1e6
+}
+
+// pricingRow reads one row of a provider's pricing table. An absent or
+// unreadable cache rate takes the default ratio of the input rate; a stated
+// "0" is a free cache.
+func pricingRow(entry map[string]any) modelPrice {
+	in, _ := priceFloat(entry["inputPer1M"])
+	out, _ := priceFloat(entry["outputPer1M"])
+	window, _ := anyFloat(entry["contextWindow"])
+	read, ok := priceFloat(entry["cacheReadPer1M"])
+	if !ok {
+		read = in * defaultCacheReadFactor
+	}
+	write, ok := priceFloat(entry["cacheWritePer1M"])
+	if !ok {
+		write = in * defaultCacheWriteFactor
+	}
+	return modelPrice{
+		inPer1M: in, outPer1M: out, cacheReadPer1M: read, cacheWritePer1M: write,
+		contextWindow: int(window),
+	}
 }
 
 func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerConfig, error) {
@@ -339,10 +390,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		if model == "" {
 			continue
 		}
-		in, _ := priceFloat(entry["inputPer1M"])
-		out, _ := priceFloat(entry["outputPer1M"])
-		window, _ := anyFloat(entry["contextWindow"])
-		pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out, contextWindow: int(window)}
+		pc.pricing[model] = pricingRow(entry)
 	}
 
 	// What each wire needs from a row is internal/llm's own fact (llm.Wire.Policy);
@@ -560,6 +608,8 @@ type agentLoop struct {
 	toolCalls  int
 	prompt     int
 	completion int
+	cacheRead  int
+	cacheWrite int
 	cost       float64
 	readCalls  int
 	readRows   int
@@ -800,9 +850,6 @@ loop:
 			l.firstContext = l.estimateTokens(messages)
 			if usage != nil {
 				l.firstContext = usage.PromptTokens
-				if usage.ContextTokens > 0 {
-					l.firstContext = usage.ContextTokens
-				}
 			}
 		}
 		l.reasoning.settle(res.Reasoning)
@@ -1141,13 +1188,16 @@ func (l *agentLoop) charge(usage *llm.Usage) {
 	if usage == nil {
 		return
 	}
-	price := l.provider.pricing[l.model]
+	turnCost := l.provider.pricing[l.model].cost(usage)
 	l.prompt += usage.PromptTokens
 	l.completion += usage.CompletionTokens
-	turnCost := (float64(usage.PromptTokens)*price.inPer1M + float64(usage.CompletionTokens)*price.outPer1M) / 1e6
+	l.cacheRead += usage.CacheReadTokens
+	l.cacheWrite += usage.CacheWriteTokens
 	l.cost += turnCost
 	l.in.tally.prompt += usage.PromptTokens
 	l.in.tally.completion += usage.CompletionTokens
+	l.in.tally.cacheRead += usage.CacheReadTokens
+	l.in.tally.cacheWrite += usage.CacheWriteTokens
 	l.in.tally.cost += turnCost
 	l.ds.spend.charge(l.in.tally.spend, turnCost)
 }
@@ -1468,8 +1518,10 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 // longer holds untouched (holdsLease).
 func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string, leased bool, then func(t *txn) error) error {
 	prompt, completion, cost := l.prompt, l.completion, l.cost
+	cacheRead, cacheWrite := l.cacheRead, l.cacheWrite
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
 		prompt, completion, cost = l.in.tally.prompt, l.in.tally.completion, l.in.tally.cost
+		cacheRead, cacheWrite = l.in.tally.cacheRead, l.in.tally.cacheWrite
 	}
 	// What the row carries once this commits, for the root's spend: only a
 	// patch that committed puts the chain's cost on a row (spend.go).
@@ -1523,9 +1575,10 @@ func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string,
 			"status": status, "turns": base("turns") + l.turns,
 			"toolCalls":    base("toolCalls") + l.toolCalls,
 			"promptTokens": base("promptTokens") + prompt, "completionTokens": base("completionTokens") + completion,
-			"totalTokens": base("totalTokens") + prompt + completion,
-			"costUSD":     baseCost + cost,
-			"finishedAt":  nowUTC().Format(time.RFC3339Nano),
+			"totalTokens":     base("totalTokens") + prompt + completion,
+			"cacheReadTokens": base("cacheReadTokens") + cacheRead, "cacheWriteTokens": base("cacheWriteTokens") + cacheWrite,
+			"costUSD":    baseCost + cost,
+			"finishedAt": nowUTC().Format(time.RFC3339Nano),
 		}
 		// A settle with no reason clears an older one: a continued thread that
 		// ends ok must not keep the reason its last run died with.

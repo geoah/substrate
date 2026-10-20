@@ -109,10 +109,12 @@ func TestANewChatThreadOpensWithASubjectFromItsMessage(t *testing.T) {
 func TestTheFirstTurnTitlesTheThreadAndChargesTheRow(t *testing.T) {
 	t.Parallel()
 	ds, fake := openTitleDataset(t)
-	fake.script("name", fakeTurn{content: "Berlin has a lot to see."}, fakeTurn{content: `"Trip to Berlin".`})
+	fake.script("name", fakeTurn{content: "Berlin has a lot to see."},
+		fakeTurn{content: `"Trip to Berlin".`, promptTokens: 10, cacheReadTokens: 6})
 	res := chatOnce(t, ds, "", "what should I see in berlin")
-	// The title call's usage (10 in, 5 out at 1 and 5 USD per 1M) lands on
-	// the row's tallies beside the turn's own.
+	// The title call's usage (10 in, 6 of them cache reads, 5 out at 1 and
+	// 5 USD per 1M, reads at the default tenth) lands on the row's tallies
+	// beside the turn's own.
 	rec := waitThread(t, ds, res.Thread, func(r *substrate.Record) bool {
 		return r.Properties[propThreadSubject] == "Trip to Berlin"
 	})
@@ -125,7 +127,10 @@ func TestTheFirstTurnTitlesTheThreadAndChargesTheRow(t *testing.T) {
 	if got, _ := anyFloat(rec.Properties["totalTokens"]); got != 30 {
 		t.Fatalf("totalTokens %v, want the turn's 15 plus the title's 15", got)
 	}
-	if got, want := anyFloat2(rec.Properties["costUSD"]), 2*(10*1.0+5*5.0)/1e6; got < want-1e-12 || got > want+1e-12 {
+	if got, _ := anyFloat(rec.Properties["cacheReadTokens"]); got != 6 {
+		t.Fatalf("cacheReadTokens %v, want the title's 6", got)
+	}
+	if got, want := anyFloat2(rec.Properties["costUSD"]), (10*1.0+5*5.0+4*1.0+6*0.1+5*5.0)/1e6; got < want-1e-12 || got > want+1e-12 {
 		t.Fatalf("costUSD %v, want %v", got, want)
 	}
 	reqs := fake.requestsOf("name")

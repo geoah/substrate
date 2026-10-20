@@ -21,6 +21,9 @@ import (
 // Each pricing entry carries the model's contextWindow, which is what lets a
 // thread on it compact. Being create-only, the seed does not add it to a row
 // an older binary wrote; the owner patches that row.
+//
+// The rows are samples/llm/providers.yaml's, and
+// TestSeededProviderRowsMatchTheShippedSample holds the two equal.
 var defaultLLMProviders = []struct {
 	id    string
 	props map[string]any
@@ -51,9 +54,12 @@ var defaultLLMProviders = []struct {
 			// slash is load-bearing.
 			"baseURL": "https://api.anthropic.com/",
 			"pricing": []any{
+				map[string]any{"model": "claude-opus-5-5", "inputPer1M": "4", "outputPer1M": "20", "cacheReadPer1M": "0.20", "contextWindow": 200000},
 				map[string]any{"model": "claude-opus-5", "inputPer1M": "5", "outputPer1M": "25", "contextWindow": 200000},
-				map[string]any{"model": "claude-sonnet-5", "inputPer1M": "3", "outputPer1M": "15", "contextWindow": 200000},
-				map[string]any{"model": "claude-haiku-4-5", "inputPer1M": "1", "outputPer1M": "5", "contextWindow": 200000},
+				map[string]any{"model": "claude-sonnet-5-5", "inputPer1M": "2", "outputPer1M": "10", "cacheReadPer1M": "0.20", "contextWindow": 200000},
+				map[string]any{"model": "claude-sonnet-5", "inputPer1M": "2", "outputPer1M": "10", "cacheReadPer1M": "0.20", "contextWindow": 200000},
+				map[string]any{"model": "claude-haiku-5-5", "inputPer1M": "0.10", "outputPer1M": "0.50", "cacheReadPer1M": "0.01", "contextWindow": 100000},
+				map[string]any{"model": "claude-haiku-4-5", "inputPer1M": "1", "outputPer1M": "5", "cacheReadPer1M": "0.10", "contextWindow": 200000},
 			},
 		},
 	},

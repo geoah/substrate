@@ -148,7 +148,7 @@ func TestOpenAIOneShotCarriesSystemToolsAndUsage(t *testing.T) {
 	if res.Content != "hello back" || len(res.ToolCalls) != 0 {
 		t.Fatalf("result = %+v", res)
 	}
-	if res.Usage == nil || res.Usage.PromptTokens != 11 || res.Usage.CompletionTokens != 7 {
+	if res.Usage == nil || *res.Usage != (Usage{PromptTokens: 11, CompletionTokens: 7}) {
 		t.Fatalf("usage = %+v", res.Usage)
 	}
 	if srv.auth != "Bearer k" {
@@ -246,7 +246,7 @@ func TestOpenAIStreamsDeltasAndAccumulatesToolCalls(t *testing.T) {
 	if len(res.ToolCalls) != 1 || res.ToolCalls[0].Arguments != `{"id":"x"}` {
 		t.Fatalf("tool calls = %+v", res.ToolCalls)
 	}
-	if res.Usage == nil || res.Usage.PromptTokens != 5 || res.Usage.CompletionTokens != 9 || res.Usage.ContextTokens != 5 {
+	if res.Usage == nil || res.Usage.PromptTokens != 5 || res.Usage.CompletionTokens != 9 || res.Usage.CacheReadTokens != 0 || res.Usage.CacheWriteTokens != 0 {
 		t.Fatalf("usage = %+v", res.Usage)
 	}
 	// The finish reason rides a chunk before the usage chunk, which carries
@@ -359,8 +359,8 @@ func TestOpenAICompletionErrorDoesNotCarryTheKey(t *testing.T) {
 }
 
 // The wire's finish_reason maps onto the neutral set, and prompt_tokens is the
-// context size as well as the billed input, since it already counts cache.
-func TestOpenAIMapsFinishReasonAndContextTokens(t *testing.T) {
+// whole input, since it already counts cache.
+func TestOpenAIMapsFinishReasonAndPromptTokens(t *testing.T) {
 	for reason, want := range map[string]string{
 		"stop":           StopEnd,
 		"length":         StopLength,
@@ -385,10 +385,78 @@ func TestOpenAIMapsFinishReasonAndContextTokens(t *testing.T) {
 			if res.Stop != want {
 				t.Fatalf("stop = %q, want %q", res.Stop, want)
 			}
-			if res.Usage.PromptTokens != 70 || res.Usage.ContextTokens != 70 {
+			if *res.Usage != (Usage{PromptTokens: 70, CompletionTokens: 3}) {
 				t.Fatalf("usage = %+v", res.Usage)
 			}
 		})
+	}
+}
+
+// The cache counts the SDK does not parse are read from the raw reply on
+// both paths: LiteLLM's details form wins and its top-level twin is never
+// added to it, the top-level form alone still counts, OpenAI's cached_tokens
+// alone is a read with no write, counts past prompt_tokens clamp, and a null
+// or negative count reads as none.
+func TestOpenAIReadsCacheCountsFromUsage(t *testing.T) {
+	for name, tc := range map[string]struct {
+		usage string
+		want  Usage
+	}{
+		"litellm details and top level": {
+			usage: `{"prompt_tokens":378,"completion_tokens":51,"total_tokens":429,` +
+				`"prompt_tokens_details":{"cached_tokens":300,"text_tokens":38,"cache_creation_tokens":40},` +
+				`"cache_creation_input_tokens":40,"cache_read_input_tokens":300}`,
+			want: Usage{PromptTokens: 378, CompletionTokens: 51, CacheReadTokens: 300, CacheWriteTokens: 40},
+		},
+		"top level only": {
+			usage: `{"prompt_tokens":378,"completion_tokens":51,"cache_creation_input_tokens":40,"cache_read_input_tokens":300}`,
+			want:  Usage{PromptTokens: 378, CompletionTokens: 51, CacheReadTokens: 300, CacheWriteTokens: 40},
+		},
+		"openai cached tokens only": {
+			usage: `{"prompt_tokens":378,"completion_tokens":51,"prompt_tokens_details":{"cached_tokens":256}}`,
+			want:  Usage{PromptTokens: 378, CompletionTokens: 51, CacheReadTokens: 256},
+		},
+		"counts past prompt tokens are added to it": {
+			usage: `{"prompt_tokens":10,"completion_tokens":1,"cache_read_input_tokens":300,"cache_creation_input_tokens":40}`,
+			want:  Usage{PromptTokens: 350, CompletionTokens: 1, CacheReadTokens: 300, CacheWriteTokens: 40},
+		},
+		"odd counts are ignored": {
+			usage: `{"prompt_tokens":100,"completion_tokens":1,"prompt_tokens_details":{"cache_creation_tokens":null},"cache_read_input_tokens":-5}`,
+			want:  Usage{PromptTokens: 100, CompletionTokens: 1},
+		},
+	} {
+		for _, streamed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", name, streamed), func(t *testing.T) {
+				srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+					if !streamed {
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"role":"assistant","content":"x"},"finish_reason":"stop"}],"usage":%s}`, tc.usage)
+						return
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"},\"finish_reason\":\"stop\"}]}\n\n")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":%s}\n\n", tc.usage)
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+				})
+				client, _ := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+				var onDelta func(Delta)
+				if streamed {
+					onDelta = func(Delta) {}
+				}
+				res, err := client.Complete(context.Background(), Request{
+					Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+				}, onDelta)
+				if err != nil {
+					t.Fatalf("complete: %v", err)
+				}
+				if res.Usage == nil || *res.Usage != tc.want {
+					t.Fatalf("usage = %+v, want %+v", res.Usage, tc.want)
+				}
+				if got, want := res.Usage.UncachedPromptTokens(), tc.want.PromptTokens-tc.want.CacheReadTokens-tc.want.CacheWriteTokens; got != want {
+					t.Fatalf("uncached = %d, want %d", got, want)
+				}
+			})
+		}
 	}
 }
 

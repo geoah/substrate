@@ -140,17 +140,16 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 		l.ds.svc.log.Warn("substrate: thread title call returned no title; the thread keeps its first message as its subject",
 			"thread", l.threadID, "model", model, "stop", res.Stop)
 	}
-	var prompted, completed int
-	if res.Usage != nil {
-		prompted, completed = res.Usage.PromptTokens, res.Usage.CompletionTokens
+	usage := res.Usage
+	if usage == nil {
+		usage = &llm.Usage{}
 	}
-	price := l.provider.pricing[model]
-	cost := (float64(prompted)*price.inPer1M + float64(completed)*price.outPer1M) / 1e6
+	cost := l.provider.pricing[model].cost(usage)
 	l.ds.spend.charge(run, cost)
-	if title == "" && prompted+completed == 0 {
+	if title == "" && usage.PromptTokens+usage.CompletionTokens == 0 {
 		return
 	}
-	lifetime, patched, err := l.writeTitle(ctx, title, prompted, completed, cost)
+	lifetime, patched, err := l.writeTitle(ctx, title, usage, cost)
 	if err != nil {
 		l.ds.svc.log.Warn("substrate: thread title not written", "thread", l.threadID, "error", err)
 		return
@@ -165,7 +164,7 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 // is billed whether or not the subject lands; the subject lands only while
 // the agent still manages it. It reports the costUSD the patch wrote, and
 // whether a patch was made at all: a deleted thread takes none.
-func (l *agentLoop) writeTitle(ctx context.Context, title string, prompted, completed int, cost float64) (lifetime float64, patched bool, err error) {
+func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usage, cost float64) (lifetime float64, patched bool, err error) {
 	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		patched = false
 		t.causedBy = l.in.causedBy
@@ -189,9 +188,11 @@ func (l *agentLoop) writeTitle(ctx context.Context, title string, prompted, comp
 			return v
 		}
 		props := map[string]any{
-			"promptTokens":     int(num("promptTokens")) + prompted,
-			"completionTokens": int(num("completionTokens")) + completed,
-			"totalTokens":      int(num("totalTokens")) + prompted + completed,
+			"promptTokens":     int(num("promptTokens")) + usage.PromptTokens,
+			"completionTokens": int(num("completionTokens")) + usage.CompletionTokens,
+			"totalTokens":      int(num("totalTokens")) + usage.PromptTokens + usage.CompletionTokens,
+			"cacheReadTokens":  int(num("cacheReadTokens")) + usage.CacheReadTokens,
+			"cacheWriteTokens": int(num("cacheWriteTokens")) + usage.CacheWriteTokens,
 			"costUSD":          num("costUSD") + cost,
 		}
 		if title != "" {
