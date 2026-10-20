@@ -26,7 +26,8 @@
 # - `from` is raw, summaries or prefer-raw;
 # - a stats item names exactly one of `metric`, `metricProperty` and
 #   `property`, a trend item one of `metric` and `metricProperty`;
-# - a table names exactly one of `via`, `sameAs` and `inWindow`;
+# - a table names exactly one of `via`, `sharing` (or its older one-name
+#   spelling `sameAs`) and `inWindow`;
 # - a breakdown names `property` or `items`, not both;
 # - a lanes row names a `kind` or a `metric`, not both;
 # - a window names `about` or `aboutSelf`, `source` or `sourceSelf`, and
@@ -316,6 +317,14 @@ data:
                   trait: substrate.reamde.dev/core/metric
                   description: the one metric of the block the band applies
                     to; absent applies to every metric of the block
+            empty:
+              type: enum
+              default: say
+              values:
+                - say
+                - hide
+              description: whether a chart none of whose metrics was measured
+                over the window says so or is left out
         spans:
           type: object
           description: a coded amount metric over the record's window drawn
@@ -680,10 +689,21 @@ data:
               type: string
               description: the reference property on that kind that points
                 at this record, such as report or metric
+            sharing:
+              type: string
+              repeated: true
+              description: properties both this record and the listed kind
+                hold, such as metric and channel; lists the records whose
+                values all equal this record's, and that hold none where this
+                record holds none
+            # The older spelling of sharing with one name. A live view holds
+            # it, and a scalar never becomes a list in place, so it stays
+            # (decision record 0184).
             sameAs:
               type: string
-              description: a property both this record and the listed kind
-                hold; lists the records whose value equals this record's
+              deprecated: true
+              description: one property both this record and the listed kind
+                hold; the older spelling of sharing with one name
             inWindow:
               type: bool
               default: false

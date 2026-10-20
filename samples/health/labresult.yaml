@@ -54,7 +54,8 @@ data:
       description: whose result it is; absent means the repository's owner
     channel:
       type: string
-      description: unused by labs; part of the observed contract
+      description: the body region of a regional body composition result,
+        such as trunk or left_arm; absent for a blood test
     form:
       type: string
       required: true
@@ -177,6 +178,17 @@ data:
         age:
           type: string
           description: the age band the range applies to
+        tone:
+          type: enum
+          values:
+            - good
+            - fair
+            - poor
+            - none
+          description: how a reader draws and words the band; absent reads
+            as good, the lab's normal range, and poor marks a cut-off past
+            which a value is abnormal, such as a high band with a low bound
+            alone
     interpretation:
       type: object
       repeated: true

@@ -35,7 +35,10 @@ data:
   # seeded console package's `recordview` kind.
   # 4: lab report, lab result and lab metric views, and the sleep's and
   # workout's tiles and breakdowns (views.yaml).
-  # 5: WHOOP's nightly metrics place a value by its end (metrics.yaml).
+  # 5: WHOOP's nightly metrics place a value by its end (metrics.yaml); a
+  # reference range carries a tone (labresult.yaml); the sleep and workout
+  # charts hide where nothing was measured, and the lab result view lists
+  # the results of one body region (views.yaml).
   version: 5
 ---
 # ---- the bundle document: the import unit -------------------------------------

@@ -215,13 +215,19 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 // not move with the tree.
 const console1 = "testdata/console1"
 
-// treeAtConsole1 is the shipped tree with the console package put back to
-// version 1.
-func treeAtConsole1(t *testing.T) string {
+// console2 holds the console package as the binary at f15583784 shipped it
+// (version 2: the stats, trend, table, lanes and breakdown blocks; a table
+// names `sameAs` and a chart has no `empty`) and that binary's health sample
+// views, whose lab result view lists by `sameAs: metric`.
+const console2 = "testdata/console2"
+
+// treeAtConsole is the shipped tree with the console package put back to the
+// version a fixture directory holds.
+func treeAtConsole(t *testing.T, fixture string) string {
 	t.Helper()
 	tree := shippedTree(t)
 	for _, f := range []string{"console.yaml", "recordview.yaml"} {
-		raw, err := os.ReadFile(filepath.Join(console1, f))
+		raw, err := os.ReadFile(filepath.Join(fixture, f))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -232,15 +238,15 @@ func treeAtConsole1(t *testing.T) string {
 	return tree
 }
 
-// samplesAtConsole1 is the shipped sample catalog with the health sample's
-// views put back to the version 1 sleep and workout views.
-func samplesAtConsole1(t *testing.T) *catalog.Catalog {
+// samplesAtConsole is the shipped sample catalog with the health sample's
+// views put back to the ones a fixture directory holds.
+func samplesAtConsole(t *testing.T, fixture string) *catalog.Catalog {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.CopyFS(dir, samples.Samples()); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(console1, "health-views.yaml"))
+	raw, err := os.ReadFile(filepath.Join(fixture, "health-views.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +284,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 
 	// --- binary N: console package 1, the health sample imported with its
 	// version 1 views, an owner's edit and an owner's own view.
-	svc1 := openTree(t, dsn, treeAtConsole1(t))
+	svc1 := openTree(t, dsn, treeAtConsole(t, console1))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -289,7 +295,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	if v := packageRowVersion(t, ds1, vocabulary.PackageConsole); v != 1 {
 		t.Fatalf("binary N seeded the console package at version %d, want 1", v)
 	}
-	c := samplesAtConsole1(t)
+	c := samplesAtConsole(t, console1)
 	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
 		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds1); err != nil {
 			t.Fatalf("import %s on binary N: %v", id, err)
@@ -358,8 +364,8 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	}
 	_ = svc1.Close()
 
-	// --- binary N+1: the shipped tree, console package 2.
-	svc2 := openTree(t, dsn, shippedTree(t))
+	// --- binary N+1: the console package 2 tree.
+	svc2 := openTree(t, dsn, treeAtConsole(t, console2))
 	ds2, err := svc2.Dataset(ctx, name)
 	if err != nil {
 		t.Fatalf("open on binary N+1: %v", err)
@@ -422,6 +428,133 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	}
 }
 
+// A repository at console package 2, holding the version 4 health views (the
+// lab result view lists by `sameAs: metric`), an owner's edit and an owner's
+// own view naming `sameAs`, opened by the binary that ships package 3: the
+// boot upgrade lands version 3, every stored view reads back as it was and
+// still writes, and a view naming `sharing` and a chart's `empty`, which
+// binary N refuses, lands. Retyping `sameAs` into a list would fail here:
+// the engine refuses a scalar-to-list flip while live views hold the scalar.
+func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	const name = "console2.example.com"
+	metric := name + "/observations/metric"
+	labresult := "substrate.reamde.dev/core/kind/" + name + "/health/labresult"
+
+	// --- binary N: console package 2, the health sample imported with its
+	// version 4 views, an owner's edit and an owner's own view.
+	svc1 := openTree(t, dsn, treeAtConsole(t, console2))
+	if _, err := svc1.CreateRepository(ctx, name); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ds1, err := svc1.Dataset(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := packageRowVersion(t, ds1, vocabulary.PackageConsole); v != 2 {
+		t.Fatalf("binary N seeded the console package at version %d, want 2", v)
+	}
+	c := samplesAtConsole(t, console2)
+	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
+		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds1); err != nil {
+			t.Fatalf("import %s on binary N: %v", id, err)
+		}
+	}
+	lab, sleep := name+"/health/labresult", name+"/health/sleep"
+	if got, err := ds1.Get(ctx, recordViewKind, lab); err != nil {
+		t.Fatalf("read the lab result view on binary N: %v", err)
+	} else if table := got.Properties["sections"].([]any)[0].(map[string]any)["table"].(map[string]any); table["sameAs"] != "metric" {
+		t.Fatalf("binary N's lab result view lists by %v, want sameAs metric", table)
+	}
+	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, lab, substrate.PatchInput{
+		Properties: map[string]any{"name": "My analyte"},
+	}); err != nil {
+		t.Fatalf("edit the lab result view on binary N: %v", err)
+	}
+	own := map[string]any{
+		"appliesTo": labresult,
+		"name":      "Same analyte",
+		"window":    map[string]any{"about": "about"},
+		"sections": []any{
+			map[string]any{"table": map[string]any{
+				"kind": labresult, "sameAs": "metric", "chart": true, "limit": 20,
+			}},
+			map[string]any{"chart": map[string]any{
+				"metrics":  []any{metric + "/health/heart_rate"},
+				"reducers": []any{map[string]any{"reducer": "avg"}},
+			}},
+		},
+	}
+	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: recordViewKind, ID: "mine", Properties: own,
+	}); err != nil {
+		t.Fatalf("write the owner's view on binary N: %v", err)
+	}
+	// Views only version 3 admits: a table naming sharing, and a chart
+	// naming empty. Binary N refuses both.
+	sharing := maps.Clone(own)
+	sharing["sections"] = []any{map[string]any{"table": map[string]any{
+		"kind": labresult, "sharing": []any{"metric", "channel"}, "chart": true,
+	}}}
+	hiding := maps.Clone(own)
+	hiding["sections"] = []any{map[string]any{"chart": map[string]any{
+		"metrics":  []any{metric + "/health/heart_rate"},
+		"reducers": []any{map[string]any{"reducer": "avg"}},
+		"empty":    "hide",
+	}}}
+	v3 := map[string]map[string]any{"mine-sharing": sharing, "mine-hiding": hiding}
+	for id, v := range v3 {
+		if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: recordViewKind, ID: id, Properties: v,
+		}); !errors.Is(err, substrate.ErrValidation) {
+			t.Fatalf("binary N admitted the version 3 view %s: %v", id, err)
+		}
+	}
+	stored := map[string]map[string]any{}
+	for _, id := range []string{lab, sleep, "mine"} {
+		rec, err := ds1.Get(ctx, recordViewKind, id)
+		if err != nil {
+			t.Fatalf("read %s on binary N: %v", id, err)
+		}
+		stored[id] = rec.Properties
+	}
+	_ = svc1.Close()
+
+	// --- binary N+1: the shipped tree, console package 3.
+	svc2 := openTree(t, dsn, shippedTree(t))
+	ds2, err := svc2.Dataset(ctx, name)
+	if err != nil {
+		t.Fatalf("open on binary N+1: %v", err)
+	}
+	if v := packageRowVersion(t, ds2, vocabulary.PackageConsole); v != 3 {
+		t.Fatalf("the boot upgrade left the console package at version %d, want 3", v)
+	}
+	engine.DrainIndexReprojection(t, ds2)
+	for id, before := range stored {
+		rec, err := ds2.Get(ctx, recordViewKind, id)
+		if err != nil {
+			t.Fatalf("read %s after the upgrade: %v", id, err)
+		}
+		if !reflect.DeepEqual(rec.Properties, before) {
+			t.Errorf("the upgrade changed %s:\n got %v\nwant %v", id, rec.Properties, before)
+		}
+		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: recordViewKind, ID: id, Properties: rec.Properties,
+		}); err != nil {
+			t.Errorf("re-put %s after the upgrade: %v", id, err)
+		}
+	}
+	for id, v := range v3 {
+		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: recordViewKind, ID: id, Properties: v,
+		}); err != nil {
+			t.Errorf("the version 3 view %s was refused after the upgrade: %v", id, err)
+		}
+	}
+}
+
 func TestRecordViewRefusesAMalformedView(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -457,15 +590,17 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 		t.Fatalf("a trend of time in a heart rate zone was refused: %v", err)
 	}
 
-	// A stats or trend block, as a table, may be left out where none of its
-	// items holds a value: a vendor's scores on a record another source wrote.
+	// A chart, a stats or a trend block, as a table, may be left out where
+	// none of its items holds a value: a vendor's scores on a record another
+	// source wrote.
 	hiding := aRecordView(r.metric)
 	hiding["sections"].([]any)[6].(map[string]any)["stats"].(map[string]any)["empty"] = "hide"
 	hiding["sections"].([]any)[7].(map[string]any)["trend"].(map[string]any)["empty"] = "hide"
+	hiding["sections"].([]any)[4].(map[string]any)["chart"].(map[string]any)["empty"] = "hide"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: recordViewKind, ID: "hiding", Properties: hiding,
 	}); err != nil {
-		t.Fatalf("a stats and a trend block that hide when empty were refused: %v", err)
+		t.Fatalf("a chart, a stats and a trend block that hide when empty were refused: %v", err)
 	}
 
 	section := func(v map[string]any, i int) map[string]any {
@@ -540,6 +675,12 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 		{"a trend empty outside the list", func(v map[string]any) {
 			section(v, 7)["trend"].(map[string]any)["empty"] = "fade"
 		}, "empty"},
+		{"a chart empty outside the list", func(v map[string]any) {
+			section(v, 4)["chart"].(map[string]any)["empty"] = "fade"
+		}, "empty"},
+		{"a table sharing that is no list of names", func(v map[string]any) {
+			section(v, 8)["table"].(map[string]any)["sharing"] = map[string]any{"metric": true}
+		}, "sharing"},
 		{"a trend percentile rank above 1", func(v map[string]any) {
 			item := section(v, 7)["trend"].(map[string]any)["items"].([]any)[0].(map[string]any)
 			item["reducer"], item["rank"] = "percentile", 1.5

@@ -59,6 +59,9 @@ data:
               label: Highest
           bucket: auto
           sources: prefer
+          # A source that writes no samples inside the night, as WHOOP does
+          # not, leaves this chart empty: it is left out rather than said.
+          empty: hide
       - spans:
           label: Sleep stages
           metric: samples.substrate.reamde.dev/observations/metric/health/sleep_stage
@@ -179,6 +182,7 @@ data:
               label: Highest
           bucket: auto
           sources: prefer
+          empty: hide
       - chart:
           label: Time in heart rate zones
           metrics:
@@ -207,6 +211,7 @@ data:
           bucket: whole
           unit: min
           sources: prefer
+          empty: hide
       - chart:
           label: Speed
           metrics:
@@ -218,6 +223,7 @@ data:
               label: Highest
           bucket: auto
           sources: prefer
+          empty: hide
 ---
 # A lab report carries no window of its own, so its page reads no
 # observation: it lists the report's results, a converted twin (one whose
@@ -265,7 +271,9 @@ data:
 ---
 # A lab result's page is every result of the same analyte over time, each
 # drawn against the reference range its own lab printed, the page's own
-# result ringed and a converted twin hollow.
+# result ringed and a converted twin hollow. A regional body composition
+# result (a DXA scan's trunk, a scale's left arm) lists the results of its
+# own region alone: `sharing` names the channel beside the metric.
 kind: substrate.reamde.dev/console/recordview
 metadata:
   id: samples.substrate.reamde.dev/health/labresult
@@ -280,7 +288,9 @@ data:
     sections:
       - table:
           kind: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/labresult
-          sameAs: metric
+          sharing:
+            - metric
+            - channel
           chart: true
           limit: 50
           nest: derivedFrom
