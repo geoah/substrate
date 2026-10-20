@@ -43,7 +43,11 @@ A schedule fire still retires no record park.
 Run retention changes with it: a parked run older than the trigger's newest
 `ok` run whose delivery no longer stands leaves with the runs past the
 twenty. The newest `ok` run, the parks after it, and the run of a park still
-standing stay outside the twenty. This amends 0142's consequence that a
+standing stay outside the twenty. A settling transaction tombstones at most
+100 runs, oldest first, so the first settle after the deploy, which finds a
+trigger's whole backlog of ended parks at once (at least 110 on one production
+trigger), does not hold the changelog lock for all of it; the rest go at
+the trigger's next settles. This amends 0142's consequence that a
 retired park's error survives in a run row, and
 [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md)'s
 rule that parked runs are kept.
@@ -61,13 +65,20 @@ rule that parked runs are kept.
   retention, and always in the changelog.
 - Bad, because a park whose changelog entry is gone is never retired this
   way: the kind is matched through it.
+- Bad, because the first settles after the deploy each write up to 100
+  tombstones under the changelog lock.
 
 ### Confirmation
 
 `internal/engine/syncsupersede_db_test.go` (the rehearsal's step d is
-`TestASyncDeliveryThatSettlesOkRetiresTheAccountsOlderParks`),
+`TestASyncDeliveryThatSettlesOkRetiresTheAccountsOlderParks`; the
+`erroring` and `throttled` exception is
+`TestASyncDeliveryThatLeavesTheAccountErroringOrThrottledRetiresNothing`, the
+kind match `TestASyncDeliveryLeavesTheParkOfTheSameIDUnderAnotherKind`, and
+the held row `TestASyncDeliveryLeavesAParkAHandHolds`),
 `TestAScheduleFireOfTheSameFunctionLeavesARecordParkParked` in
 `schedulesupersede_db_test.go`, and
-`TestParkedRunsOlderThanTheNewestOkRunLeaveWithTheRetention` and
+`TestParkedRunsOlderThanTheNewestOkRunLeaveWithTheRetention`,
+`TestASettlePrunesAtMostOneBatchOfRuns` and
 `TestARecordDeliveryOfAPlainKindLeavesItsParksParked` in
 `health_fn_db_test.go`.

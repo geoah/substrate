@@ -365,7 +365,7 @@ The `HEALTH` column of `trigger status` and `sync status` reads `ok`, or
 `failing` and how long it has failed (`failing 3h`) while the trigger's
 `trigger.failing/<trigger id>` alert is open: every delivery since its newest
 `ok` run has parked for longer than `SUBSTRATE_HEALTH_FAILING_AFTER`, while
-a parked delivery of it stands ([how it opens and clears](functions.md#driving-triggers)). An account reads
+a parked delivery of that streak stands ([how it opens and clears](functions.md#driving-triggers)). An account reads
 `failing` when any trigger that runs its sync does. `-o json` carries
 `health`, `failingSince` and `lastOkAt`.
 

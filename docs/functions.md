@@ -1562,18 +1562,20 @@ pages.
 **A trigger whose every delivery fails for an hour reads `failing`.** A
 dispatcher pass reads each trigger's run rows, at most once a minute, and
 opens a second alert, keyed `trigger.failing/<trigger id>` at level `error`,
-when an enabled trigger has at least one parked delivery still standing,
-parked runs since its newest `ok` run and since its oldest standing
-delivery, and the oldest of those runs is older than
+when an enabled trigger has parked runs since its newest `ok` run, at least
+one of them for a delivery that still stands parked (or is being retried),
+and the oldest parked run from the first standing one on is older than
 `SUBSTRATE_HEALTH_FAILING_AFTER` (`1h` by default). A run a retry by hand writes counts like a dispatched one, and a
 skipped run neither starts nor ends the streak. `count` is those parked runs,
 `detail` the newest one's error, `firstSeenAt` the oldest one's time, and
 `about` the trigger and its callable; a later refresh of the open alert counts
 from its `firstSeenAt`. The next `ok` delivery of the trigger, dispatched or
 retried by hand, resolves it in the transaction that settles the delivery;
-so does the transaction that ends the trigger's last standing park (a
+so does the transaction that ends the streak's last standing park (a
 forget, a retry that skips, a retirement), and the next pass resolves it when
-no park stands or the trigger is disabled or deleted
+no park of the streak stands or the trigger is disabled or deleted. A park
+from before the newest `ok` run never holds it open, and a retry that fails
+again adds a parked run without moving `firstSeenAt`
 ([decision 0177](decisions/0177-a-failing-alert-needs-a-standing-park-and-ends-with-the-last-one-or-its-trigger.md)).
 While it is open, `trigger status` and `sync status` read `health: failing`
 with `failingSince` set to its `firstSeenAt`; `lastOkAt` is the newest `ok`

@@ -36,14 +36,22 @@ a forget and a retry both retire a row, so the ledger cannot say whether the
 callable works. Success still comes only from an `ok` run; the ledger gates
 and ends the alert:
 
-- The alert opens only while at least one delivery of the trigger stands in
-  `trigger_failures` (a park, an abandoned claim or a run in flight; an
-  admitted webhook request does not count), and the streak counts the parked
-  runs from the oldest standing row on. A park forgotten or retried away is
-  dismissed like a hand resolve: only a park after it starts a streak.
+- A parked run stands while a row of the trigger in `trigger_failures`
+  still carries its delivery: the same `seq`, or the same `fireId` on a
+  fire, and not an admitted webhook request. A park being retried still
+  stands. The alert opens only while at least one parked run after the
+  newest `ok` run stands, and the streak counts the parked runs from the
+  oldest of those on. A park forgotten or retried away is dismissed like a
+  hand resolve: only a park after it starts a streak. A park from before the
+  newest `ok` run never holds the alert open, and a failed retry writes one
+  more parked run of the same delivery without moving the streak's start.
+  This amends
+  [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md)'s
+  rule that trigger health reads the run rows alone.
 - `settleParkedAlert` resolves the failing alert in the transaction where the
-  trigger's parked count reaches zero: a forget, a retry that delivered or
-  skipped, or a retirement
+  trigger's parked count reaches zero, or where no parked run of the streak
+  stands any more: a forget, a retry that delivered or skipped, or a
+  retirement
   ([0142](0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md),
   [0178](0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md)).
 - The pass that reads health resolves, each in its own transaction that
@@ -51,7 +59,9 @@ and ends the alert:
   standing, the failing alert of a disabled or unparseable trigger, and the
   failing and parked alerts of a trigger that is gone. A trigger whose
   callable does not resolve keeps its alert; its parks stand and its status
-  carries the error.
+  carries the error. An alert of a deleted trigger resolves under the actor
+  of the callable its `about` names, as 0148 writes every alert, and under
+  the engine's only when that callable no longer resolves.
 
 ### Consequences
 
@@ -62,8 +72,9 @@ and ends the alert:
   0148's consequence.
 - Bad, because a trigger whose parks were all forgotten while its callable is
   still broken reads `ok` until a new park outlives the window.
-- Bad, because the pass counts `trigger_failures` per trigger once a minute,
-  and opens one transaction per stale alert, once.
+- Bad, because the pass matches each counted parked run against
+  `trigger_failures` once a minute, and opens one transaction per stale
+  alert, once.
 - Bad, because a disabled trigger's parks stay listed while its alert is
   resolved, and enabling it again reopens nothing until a new park outlives
   the window.
@@ -77,7 +88,9 @@ and ends the alert:
 `TestAParkForgottenInsideTheWindowOpensNoFailingAlert`,
 `TestForgettingTheLastParkResolvesTheFailingAlert`,
 `TestAnOpenFailingAlertWithNoStandingParkResolvesAtTheNextPass`,
-`TestDeletingATriggerResolvesItsAlerts`. `internal/engine/health_fn_db_test.go`:
+`TestDeletingATriggerResolvesItsAlerts`,
+`TestAForgottenParkAfterTheOkRunRaisesNothingWhileAnOlderParkStands`,
+`TestAFailedRetryKeepsTheStreaksFirstPark`. `internal/engine/health_fn_db_test.go`:
 `TestARetryThatSkipsTheLastParkResolvesTheFailingAlert`,
 `TestDisablingATriggerResolvesItsFailingAlert`. `internal/engine/health_test.go`:
 `TestAFailingReadIsDueOnlyPastTheWindowAndWithSomethingNew`.

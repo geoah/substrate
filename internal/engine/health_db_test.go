@@ -634,8 +634,140 @@ func TestDeletingATriggerResolvesItsAlerts(t *testing.T) {
 	}
 	clock.Advance(2 * time.Minute)
 	healthPass(t, ds)
-	requireAlertState(t, ds, triggerID, alertStateResolved)
-	if a := alertOf(t, ds, parkedAlertKey(triggerID)); a == nil || a.Properties["state"] != alertStateResolved {
-		t.Fatalf("the parked-deliveries alert is %v after the delete, want resolved", a)
+	failing := requireAlertState(t, ds, triggerID, alertStateResolved)
+	parked := alertOf(t, ds, parkedAlertKey(triggerID))
+	if parked == nil || parked.Properties["state"] != alertStateResolved {
+		t.Fatalf("the parked-deliveries alert is %v after the delete, want resolved", parked)
+	}
+	// The resolves are written under the callable the alerts are about, as
+	// their raises were (decision 0148), though the trigger row is gone.
+	scribe := substrate.AgentActor(vocabulary.SplitKindRef(crewPackage + "/scribe"))
+	for _, a := range []*substrate.Record{failing, parked} {
+		if got := alertWriter(t, ds, a.ID); got != scribe {
+			t.Fatalf("the alert %s was resolved by %q, want the scribe's actor %q", a.ID, got, scribe)
+		}
+	}
+}
+
+// alertWriter is the actor of the newest entry that wrote the alert.
+func alertWriter(t *testing.T, ds *dataset, id string) substrate.Actor {
+	t.Helper()
+	var actor string
+	if err := ds.db.QueryRowContext(context.Background(), `
+		SELECT actor FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq DESC LIMIT 1`,
+		kindAlert, id).Scan(&actor); err != nil {
+		t.Fatalf("the newest entry of alert %s: %v", id, err)
+	}
+	return substrate.Actor(actor)
+}
+
+// forgetRecord forgets the trigger's parked deliveries of one record.
+func forgetRecord(t *testing.T, ds *dataset, triggerID, record string) {
+	t.Helper()
+	ctx := context.Background()
+	failures, err := ds.TriggerFailures(ctx, triggerID)
+	if err != nil {
+		t.Fatalf("parked deliveries of %s: %v", triggerID, err)
+	}
+	n := 0
+	for _, f := range failures {
+		if f.RecordID != record {
+			continue
+		}
+		if err := ds.ForgetTriggerFailure(ctx, triggerID, f.ID); err != nil {
+			t.Fatalf("forget %d: %v", f.ID, err)
+		}
+		n++
+	}
+	if n == 0 {
+		t.Fatalf("no parked delivery of %s to forget", record)
+	}
+}
+
+// A park from before the trigger's newest ok run never holds the failing
+// alert open. w1 parks and stays parked, w2 delivers ok, w3 and w4 park and
+// are forgotten: past the window nothing opens, although w1's park stands.
+// Then w5 parks: the alert opens past the window counting w5 alone. Forgetting
+// w5 resolves it in the forget's own transaction, while w1 still stands
+// (decision 0177).
+func TestAForgottenParkAfterTheOkRunRaisesNothingWhileAnOlderParkStands(t *testing.T) {
+	t.Parallel()
+	ds, fake, triggerID, clock := healthAgentDataset(t)
+	parkScribe(t, ds, triggerID, "w1")
+	fake.script("sub", fakeTurn{content: "done"})
+	putCrewWidget(t, ds, "w2")
+	healthPass(t, ds)
+	if oks := runsOf(t, ds, triggerID, runStatusOK); len(oks) != 1 {
+		t.Fatalf("%d ok runs, want w2's", len(oks))
+	}
+	putCrewWidget(t, ds, "w3")
+	putCrewWidget(t, ds, "w4")
+	healthPass(t, ds)
+	if parks := runsOf(t, ds, triggerID, runStatusParked); len(parks) != 3 {
+		t.Fatalf("parked runs %+v, want w1's, w3's and w4's", parks)
+	}
+	forgetRecord(t, ds, triggerID, "w3")
+	forgetRecord(t, ds, triggerID, "w4")
+
+	clock.Advance(pastTheWindow)
+	healthPass(t, ds)
+	if a := failingAlertOf(t, ds, triggerID); a != nil {
+		t.Fatalf("forgotten parks opened a failing alert, held by w1's older park: %v", a.Properties)
+	}
+	if st := triggerStatusOf(t, ds, triggerID); st.Health != substrate.HealthOK || st.Parked != 1 {
+		t.Fatalf("the trigger reads %q with %d parked, want ok with w1's park", st.Health, st.Parked)
+	}
+
+	putCrewWidget(t, ds, "w5")
+	healthPass(t, ds)
+	parks := runsOf(t, ds, triggerID, runStatusParked)
+	clock.Advance(pastTheWindow)
+	healthPass(t, ds)
+	a := requireAlertState(t, ds, triggerID, alertStateOpen)
+	if n, ok := alertCount(a.Properties["count"]); !ok || n != 1 {
+		t.Fatalf("the alert counts %v parks, want w5's alone", a.Properties["count"])
+	}
+	if got := a.Properties["firstSeenAt"]; got != parks[len(parks)-1].at.Format(time.RFC3339Nano) {
+		t.Fatalf("the alert was first seen at %v, want w5's park %v", got, parks[len(parks)-1].at)
+	}
+
+	forgetRecord(t, ds, triggerID, "w5")
+	resolved := requireAlertState(t, ds, triggerID, alertStateResolved)
+	if st := triggerStatusOf(t, ds, triggerID); st.Health != substrate.HealthOK || st.Parked != 1 {
+		t.Fatalf("after the forget the trigger reads %q with %d parked, want ok with w1's park", st.Health, st.Parked)
+	}
+	clock.Advance(pastTheWindow)
+	healthPass(t, ds)
+	if again := failingAlertOf(t, ds, triggerID); again.Version != resolved.Version {
+		t.Fatalf("a pass after the forget rewrote the alert: version %d -> %d, %v", resolved.Version, again.Version, again.Properties["state"])
+	}
+}
+
+// A failed retry writes one more parked run of the same delivery and does
+// not move the streak's start: the alert counts both runs, first seen at the
+// first park.
+func TestAFailedRetryKeepsTheStreaksFirstPark(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _, triggerID, clock := healthAgentDataset(t)
+	first := parkScribe(t, ds, triggerID, "w1")[0]
+	failures, err := ds.TriggerFailures(ctx, triggerID)
+	if err != nil || len(failures) != 1 {
+		t.Fatalf("parked deliveries %v (%v), want 1", failures, err)
+	}
+	if _, err := ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID); !errors.Is(err, substrate.ErrParked) {
+		t.Fatalf("the retry answered %v, want it to park again", err)
+	}
+	if parks := runsOf(t, ds, triggerID, runStatusParked); len(parks) != 2 {
+		t.Fatalf("parked runs %+v, want the dispatch's and the retry's", parks)
+	}
+	clock.Advance(pastTheWindow)
+	healthPass(t, ds)
+	a := requireAlertState(t, ds, triggerID, alertStateOpen)
+	if n, ok := alertCount(a.Properties["count"]); !ok || n != 2 {
+		t.Fatalf("the alert counts %v parks, want the dispatch's and the retry's", a.Properties["count"])
+	}
+	if got := a.Properties["firstSeenAt"]; got != first.at.Format(time.RFC3339Nano) {
+		t.Fatalf("the alert was first seen at %v, want the first park %v", got, first.at)
 	}
 }

@@ -347,6 +347,46 @@ func TestParkedRunsOlderThanTheNewestOkRunLeaveWithTheRetention(t *testing.T) {
 	}
 }
 
+// A settle tombstones at most pruneBatch runs, oldest first: four parks
+// forgotten behind twenty newer runs leave two per settle, not all four in
+// the first one.
+func TestASettlePrunesAtMostOneBatchOfRuns(t *testing.T) {
+	engine.WithPruneBatch(t, 2)
+	ctx := context.Background()
+	ds, _ := boomHealthDataset(t)
+	triggerID := trigID("boom")
+	for _, w := range []string{"w1", "w2", "w3", "w4"} {
+		putWidget(t, ds, w)
+	}
+	process(t, ds)
+	fixBoom(t, ds)
+	putWidget(t, ds, "ok")
+	process(t, ds)
+	for i := range 20 {
+		putSkippedWidget(t, ds, "skip"+string(rune('a'+i)))
+	}
+	process(t, ds)
+	if got := runsByStatus(t, ds, triggerID); got["ok"] != 1 || got["parked"] != 4 || got["skipped"] != 20 {
+		t.Fatalf("the retention kept %v, want the ok run, the four standing parks and twenty skips", got)
+	}
+	failures, err := ds.TriggerFailures(ctx, triggerID)
+	if err != nil || len(failures) != 4 {
+		t.Fatalf("parked %+v (%v), want four", failures, err)
+	}
+	for _, f := range failures {
+		if err := ds.ForgetTriggerFailure(ctx, triggerID, f.ID); err != nil {
+			t.Fatalf("forget %d: %v", f.ID, err)
+		}
+	}
+	for i, want := range []int{2, 0} {
+		putSkippedWidget(t, ds, "more"+string(rune('a'+i)))
+		process(t, ds)
+		if got := runsByStatus(t, ds, triggerID); got["parked"] != want || got["ok"] != 1 {
+			t.Fatalf("after settle %d the retention kept %v, want %d parked runs and the ok run", i+1, got, want)
+		}
+	}
+}
+
 // An ok delivery of a kind that does not bind `sync` retires no park of
 // another record: each park is its own record's change (decision 0142).
 func TestARecordDeliveryOfAPlainKindLeavesItsParksParked(t *testing.T) {

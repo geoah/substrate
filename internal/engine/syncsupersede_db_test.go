@@ -318,3 +318,115 @@ func TestAParkNewerThanTheSettlingDeliveryStays(t *testing.T) {
 		t.Fatalf("%s parked %+v (%v), want the park ahead alone", supersedeRec, left, err)
 	}
 }
+
+// jobSyncAt is a job sync body that delivers and leaves the job it was
+// fired on at the given syncState.
+func jobSyncAt(state string) string {
+	return `
+def main(input, host):
+    c = input["envelope"]["change"]
+    return {"effects": [{"action": "patch", "kind": "` + supersedeJob + `",
+                         "id": c["id"], "properties": {"syncState": "` + state + `"}}]}
+`
+}
+
+// A delivery that settles ok but leaves the account at `erroring` or
+// `throttled` did not sync it, and retires nothing; one that leaves it at
+// `ok` retires the creation's park.
+func TestASyncDeliveryThatLeavesTheAccountErroringOrThrottledRetiresNothing(t *testing.T) {
+	t.Parallel()
+	ds := supersedeDataset(t, futureSchedule(), "create", "update")
+	putJob(t, ds, "inbox")
+	processOnce(t, ds)
+	if got := parksOf(t, ds, supersedeRec); len(got) != 1 {
+		t.Fatalf("%s parked %v, want the creation's", supersedeRec, got)
+	}
+	for i, state := range []string{substrate.SyncStateErroring, substrate.SyncStateThrottled} {
+		setJobSync(t, ds, jobSyncAt(state))
+		renameJob(t, ds, "inbox", "inbox "+state)
+		processOnce(t, ds)
+		if oks := runRowsFor(t, ds, supersedeRec, runStatusOK); oks != i+1 {
+			t.Fatalf("%s has %d ok runs after the %s delivery, want %d", supersedeRec, oks, state, i+1)
+		}
+		if got := parksOf(t, ds, supersedeRec); len(got) != 1 {
+			t.Fatalf("a delivery that left the job %s retired parks: %v left, want the creation's", state, got)
+		}
+	}
+	setJobSync(t, ds, jobSyncAt(substrate.SyncStateOK))
+	renameJob(t, ds, "inbox", "inbox, synced")
+	processOnce(t, ds)
+	if got := parksOf(t, ds, supersedeRec); len(got) != 0 {
+		t.Fatalf("%s parked %v after a delivery left the job ok, want none", supersedeRec, got)
+	}
+}
+
+// The kind is matched through the changelog: a park of the same callable on
+// a record with the same id under another kind stays.
+func TestASyncDeliveryLeavesTheParkOfTheSameIDUnderAnotherKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := supersedeDataset(t, futureSchedule(), "update")
+	note := supersedePkg + "/note"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.KindManifest(supersedePkg, map[string]any{"singular": "note"}, map[string]any{
+			"properties": map[string]any{"name": map[string]any{"type": "string"}},
+		}),
+	}); err != nil {
+		t.Fatalf("apply the note kind: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger, ID: "note-sync",
+		Properties: map[string]any{
+			"enabled":  true,
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{note}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath(kindFunction, supersedePkg+"/jobsync"),
+		},
+	}); err != nil {
+		t.Fatalf("put the note trigger: %v", err)
+	}
+	putJob(t, ds, "inbox")
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: note, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+	}); err != nil {
+		t.Fatalf("put the note: %v", err)
+	}
+	processOnce(t, ds)
+	if got := parksOf(t, ds, "note-sync"); len(got) != 1 || got[0] != "inbox" {
+		t.Fatalf("note-sync parked %v, want the note's creation", got)
+	}
+
+	setJobSync(t, ds, supersedeOK)
+	renameJob(t, ds, "inbox", "inbox, synced")
+	processOnce(t, ds)
+	if oks := runRowsFor(t, ds, supersedeRec, runStatusOK); oks != 1 {
+		t.Fatalf("%s has %d ok runs, want the job's request", supersedeRec, oks)
+	}
+	if got := parksOf(t, ds, "note-sync"); len(got) != 1 {
+		t.Fatalf("the job's sync retired the note's park: note-sync parked %v", got)
+	}
+}
+
+// A park a hand holds in runningClaims (a retry under way) is not retired
+// by another delivery's settle.
+func TestASyncDeliveryLeavesAParkAHandHolds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := supersedeDataset(t, futureSchedule(), "create", "update")
+	putJob(t, ds, "inbox")
+	processOnce(t, ds)
+	failures, err := ds.TriggerFailures(ctx, supersedeRec)
+	if err != nil || len(failures) != 1 {
+		t.Fatalf("parked %+v (%v), want the creation's", failures, err)
+	}
+	held := failures[0].ID
+	ds.runningClaims.Store(held, struct{}{})
+
+	setJobSync(t, ds, supersedeOK)
+	renameJob(t, ds, "inbox", "inbox, synced")
+	processOnce(t, ds)
+	ds.runningClaims.Delete(held)
+	left, err := ds.TriggerFailures(ctx, supersedeRec)
+	if err != nil || len(left) != 1 || left[0].ID != held {
+		t.Fatalf("%s parked %+v (%v), want the held park alone", supersedeRec, left, err)
+	}
+}

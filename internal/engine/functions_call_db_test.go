@@ -560,14 +560,15 @@ def main(input, host):
 
 func TestRunRetentionKeepsFailuresPrunesSuccesses(t *testing.T) {
 	t.Parallel()
-	// The ledger's cleanup policy: parked runs are kept, ok/skipped runs
-	// prune to the newest runRetention (20) per trigger.
+	// The ledger's cleanup policy: ok/skipped runs prune to the newest
+	// runRetention (20) per trigger, and a parked run whose delivery still
+	// stands in the ledger is kept (decision 0178).
 	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
-	// One poisoned delivery parks (kept forever)…
+	// One poisoned delivery parks, kept while its park stands…
 	poisoned := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	process(t, ds)
 

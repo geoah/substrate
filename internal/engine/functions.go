@@ -36,8 +36,9 @@ import (
 // a trigger's lag. Every settled delivery
 // attempt writes one `run` record (ok / skipped / parked) under the system
 // actor, in the transaction that commits the effects and the cursor motion
-// it describes; parked runs are kept, everything else prunes to the newest
-// runRetention per trigger. The cursor, the fire state, the parked failures
+// it describes. Runs prune to the newest runRetention per trigger, but the
+// newest ok run, a parked run after it and a parked run whose delivery still
+// stands in the ledger are kept (pruneRuns, decision 0178). The cursor, the fire state, the parked failures
 // and a paged drain's resume row are the DELIVERY LEDGER (delivery.go):
 // every motion is a fold effect on a `delivery` changelog entry, so a
 // restore folds them back.
@@ -76,6 +77,13 @@ var scheduleDrainPerPass = 10
 // transaction stays short; the rest retire at the next settled fire. A var,
 // so a test can lower it.
 var supersedeBatch = 1000
+
+// pruneBatch bounds the runs one settling transaction tombstones
+// (pruneRuns), oldest first. A settle past the retention prunes one or two,
+// but the first settle after decision 0178 finds every parked run of an
+// ended episode at once, and the transaction holds the changelog lock; the
+// rest go at the trigger's next settles. A var, so a test can lower it.
+var pruneBatch = 100
 
 // triggerPassBudget bounds the wall-clock one dispatcher pass spends on one
 // trigger: past it the trigger stops at the delivery in hand and the pass
@@ -1003,7 +1011,8 @@ type settlement struct {
 	// callable is the trigger's callable record path on a record delivery,
 	// dispatched or retried: a sync that settles ok retires the older parks
 	// of the same callable on the same record (retireSupersededSyncParks).
-	// Empty on a fire.
+	// A retry sets it on a fire too; a fire stamps no sync, so it is unread
+	// there. Empty on a dispatched fire.
 	callable string
 	// supersedes is the occurrence a schedule fire delivers, dispatched or
 	// retried, zero on every other delivery: once it settles, the trigger's
@@ -2501,14 +2510,16 @@ func (t *txn) putSystemRun(r runRecord, prune bool) error {
 }
 
 // pruneRuns enforces the retention: the newest runRetention runs per trigger
-// stay, older ones tombstone. Three kinds of run are exempt and take no
-// place among the twenty. The trigger's newest ok run, however old, is where
-// its health counts its failures from (health.go, decision 0152), and twenty
-// skips must not erase it. A parked run after that ok run is one health
-// counts in the current streak. A parked run whose delivery still stands in
-// the ledger is the history of a failure a person has yet to retry or
-// forget. Any other park belongs to an episode that ended and leaves with
-// the runs past the twenty (decision 0178). It runs in every settling
+// stay, older ones tombstone. Three kinds of run never tombstone. The
+// trigger's newest ok run, however old, is where its health counts its
+// failures from (health.go, decision 0152), and twenty skips must not erase
+// it; it holds one of the twenty places while it is among the newest twenty.
+// A parked run after that ok run is one health counts in the current streak,
+// and a parked run whose delivery still stands in the ledger is the history
+// of a failure a person has yet to retry or forget: neither takes a place.
+// Any other park belongs to an episode that ended and leaves with the runs
+// past the twenty (decision 0178), at most pruneBatch of them per settling
+// transaction, oldest first. It runs in every settling
 // transaction, under the changelog lock, so it finds the trigger's runs
 // through refs (triggerRunsSQL).
 func (t *txn) pruneRuns(triggerID string) error {
@@ -2527,7 +2538,7 @@ func (t *txn) pruneRuns(triggerID string) error {
 			SELECT max((run.props->>'finishedAt')::timestamptz) AS at `+runs+` AND run.props->>'status' = $5
 		)
 		SELECT id FROM (
-			SELECT run.id `+runs+`
+			SELECT run.id, run.created_at `+runs+`
 			  AND NOT (run.props->>'status' = $3 AND (
 			    (run.props->>'finishedAt')::timestamptz > COALESCE((SELECT at FROM okat), '-infinity'::timestamptz)
 			    OR EXISTS (
@@ -2539,7 +2550,8 @@ func (t *txn) pruneRuns(triggerID string) error {
 		WHERE id IS DISTINCT FROM (
 			SELECT run.id `+runs+` AND run.props->>'status' = $5
 			ORDER BY run.created_at DESC, run.id DESC LIMIT 1
-		)`, args...)
+		)
+		ORDER BY created_at, id LIMIT `+strconv.Itoa(pruneBatch), args...)
 	if err != nil {
 		return err
 	}

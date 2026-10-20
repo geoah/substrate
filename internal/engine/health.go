@@ -14,19 +14,19 @@ import (
 )
 
 // Trigger health (#879): a trigger whose runs since its newest ok run have
-// all parked, for longer than the server's window, while at least one of its
-// parked deliveries still stands, opens the alert keyed
-// `trigger.failing/<trigger id>` at level error (alerts.go, decision records
-// 0148 and 0177). The streak is read off the run rows: every delivery writes
-// one, a hand retry included, and retention keeps the newest ok run and the
-// parks after it (decisions 0152 and 0178). The ledger only gates the alert:
-// a streak with no park left standing is one a person dismissed. The
-// dispatcher raises the alert at the end of a pass. It resolves in the
-// settling transaction of the trigger's next ok delivery, in the transaction
-// that ends the trigger's last park (a forget, a retry that skipped, a
-// retirement), and at the next pass when no park stands or the trigger is
-// disabled or deleted. A status read derives health from the open alert
-// alone.
+// all parked, for longer than the server's window, while at least one of
+// those parked runs still has its delivery standing in the ledger, opens the
+// alert keyed `trigger.failing/<trigger id>` at level error (alerts.go,
+// decision records 0148 and 0177). The streak is read off the run rows:
+// every delivery writes one, a hand retry included, and retention keeps the
+// newest ok run and the parks after it (decisions 0152 and 0178). The
+// ledger only says which of those parked runs still stand: a streak with no
+// park left standing is one a person dismissed. The dispatcher raises the
+// alert at the end of a pass. It resolves in the settling transaction of the
+// trigger's next ok delivery, in the transaction that ends the streak's last
+// standing park (a forget, a retry that skipped, a retirement), and at the
+// next pass when no park of the streak stands or the trigger is disabled or
+// deleted. A status read derives health from the open alert alone.
 
 // DefaultHealthFailingAfter is the failing window when WithHealthFailingAfter
 // is not given (SUBSTRATE_HEALTH_FAILING_AFTER's default).
@@ -47,16 +47,20 @@ func failingAlertKey(triggerID string) string { return alertKeyTriggerFailing + 
 const healthReadMax = time.Minute
 
 // failingRead is one trigger's failing alert as it stands, and its parked
-// runs of the current episode: after its newest ok run, from the oldest
-// delivery still standing in the ledger, and from the open alert's
+// runs of the current episode: after its newest ok run, from the oldest of
+// them whose delivery still stands in the ledger, and from the open alert's
 // firstSeenAt (the episode's oldest park) or after the closed alert's last
 // resolve, so a refresh never counts an earlier episode's parks again. It
 // holds how many, the oldest and the newest, and the newest one's error in
-// full. standing is the trigger's ledger rows but an admitted webhook
-// request not yet run: a park, an abandoned claim and a run in flight all
-// stand, so a retry under way keeps the alert raisable. A park forgotten or
-// retried away no longer stands, so the parked runs before the oldest row
-// that does are not counted (decision 0177).
+// full. A parked run stands while a ledger row of the trigger carries its
+// delivery (its seq, or its fireId on a fire) and is not an admitted webhook
+// request not yet run: a park, and the same row while a retry of it is in
+// flight, so a retry under way keeps the alert raisable. A failed retry
+// writes one more parked run of the same delivery and moves nothing back.
+// standing is how many of the counted runs stand. A park forgotten or
+// retried away no longer stands, so the parked runs before the oldest that
+// does are not counted, and a park before the newest ok run never is
+// (decision 0177).
 type failingRead struct {
 	triggerID string
 	open      bool
@@ -290,31 +294,35 @@ func readFailing(ctx context.Context, q dbx, triggerIDs []string) ([]failingRead
 	}
 	runs := triggerRunsSQL(viaRefs, "$3", "$8", "t.id", "t.path")
 	rows, err := q.QueryContext(ctx, `
-		SELECT t.id, a.props->>'state', a.updated_at, a.deleted_at, p.n, p.oldest, p.newest, p.reason, s.n
+		SELECT t.id, a.props->>'state', a.updated_at, a.deleted_at, p.n, p.oldest, p.newest, p.reason, p.standing
 		FROM jsonb_to_recordset($1::jsonb) AS t(id text, alert text, path text)
 		LEFT JOIN records a ON a.kind = $2 AND a.id = t.alert
-		LEFT JOIN LATERAL (
-			SELECT count(*) AS n, min(f.parked_at) AS since
-			FROM trigger_failures f WHERE f.trigger_id = t.id AND f.last_error <> $7
-		) s ON true
 		LEFT JOIN LATERAL (
 			SELECT max((run.props->>'finishedAt')::timestamptz) AS at `+runs+` AND run.props->>'status' = $4
 		) ok ON true
 		LEFT JOIN LATERAL (
 			SELECT count(*) AS n, min(runs.at) AS oldest, max(runs.at) AS newest,
-			       (array_agg(runs.reason ORDER BY runs.at DESC))[1] AS reason
+			       (array_agg(runs.reason ORDER BY runs.at DESC))[1] AS reason,
+			       count(*) FILTER (WHERE runs.stands) AS standing
 			FROM (
-				SELECT (run.props->>'finishedAt')::timestamptz AS at, run.props->>'reason' AS reason
-				`+runs+` AND run.props->>'status' = $5
+				SELECT runs.*, min(runs.at) FILTER (WHERE runs.stands) OVER () AS since
+				FROM (
+					SELECT (run.props->>'finishedAt')::timestamptz AS at, run.props->>'reason' AS reason,
+					       EXISTS (
+					         SELECT 1 FROM trigger_failures f WHERE f.trigger_id = t.id AND f.last_error <> $7
+					           AND CASE WHEN f.fire_id = '' THEN f.seq::text = run.props->>'seq'
+					                    ELSE f.fire_id = run.props->>'fireId' END) AS stands
+					`+runs+` AND run.props->>'status' = $5
+				) runs
+				WHERE runs.at > COALESCE(ok.at, '-infinity'::timestamptz)
+				  AND CASE
+					WHEN a.id IS NULL THEN true
+					WHEN a.deleted_at IS NULL AND a.props->>'state' = $6
+					  THEN runs.at >= COALESCE((a.props->>'firstSeenAt')::timestamptz, '-infinity'::timestamptz)
+					ELSE runs.at > COALESCE(a.deleted_at, a.updated_at)
+				  END
 			) runs
-			WHERE runs.at > COALESCE(ok.at, '-infinity'::timestamptz)
-			  AND runs.at >= COALESCE(s.since, 'infinity'::timestamptz)
-			  AND CASE
-				WHEN a.id IS NULL THEN true
-				WHEN a.deleted_at IS NULL AND a.props->>'state' = $6
-				  THEN runs.at >= COALESCE((a.props->>'firstSeenAt')::timestamptz, '-infinity'::timestamptz)
-				ELSE runs.at > COALESCE(a.deleted_at, a.updated_at)
-			  END
+			WHERE runs.at >= COALESCE(runs.since, 'infinity'::timestamptz)
 		) p ON true`,
 		args...)
 	if err != nil {
