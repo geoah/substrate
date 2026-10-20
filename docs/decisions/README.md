@@ -340,4 +340,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0179](0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md) | The console waits fifteen minutes for a requested sync to start | proposed |
 | [0180](0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md) | A refresh stores its rotated token, and an hour of refusals parks the credential | proposed |
 | [0181](0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md) | A cached prompt token is priced at its cache rate | proposed |
+| [0182](0182-a-record-trigger-is-walked-by-one-caller-at-a-time.md) | A record trigger is walked by one caller at a time | proposed |
 | [0183](0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md) | An unreachable Beeper Desktop throttles the sync, and throttled reads as waiting | proposed |

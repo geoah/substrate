@@ -30,7 +30,9 @@ import (
 // schedule-sourced trigger owns a fire state instead: due RRULE occurrences
 // (oldest first, a bounded number per pass, stable fire ids) enter the same
 // delivery path with mode `schedule` and no changelog row underneath. Serial
-// per trigger, schedules in a lane beside the record sources (decision 0147),
+// per trigger, schedules in a lane beside the record sources (decision 0147);
+// a record trigger's backlog has one walk at a time in this process, a
+// wake's included (decision 0182),
 // each trigger bounded per pass by triggerPassBudget; a failed delivery
 // retries and then parks-and-advances, so one poisoned record never wedges
 // a trigger's lag. Every settled delivery
@@ -692,10 +694,23 @@ func (ds *dataset) dispatchable(triggers []loadedTrigger, warn bool) (schedules,
 // ends the turn with no statement: a row another writer commits after the
 // pass began and before this turn is read by the next pass, as one committed
 // after this turn is.
+//
+// A trigger another walk holds in this process, a pass's turn or a wake's,
+// ends the call at 0 with no statement (startRecordWalk, decision 0182).
 func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadline passDeadline, pass *passStart) (int, error) {
 	if pass.idleRecord(tr.ID) {
 		return 0, nil
 	}
+	// One walk per trigger at a time: a pass's skip beside a wake's
+	// failing delivery would win the cursor swap and the park would yield
+	// with no error recorded anywhere (decision 0182). Neither caller
+	// waits; the walk in progress reads to an empty page.
+	release, ok := ds.startRecordWalk(tr.ID)
+	if !ok {
+		ds.logWalkHeld(tr.ID, pass == nil)
+		return 0, nil
+	}
+	defer release()
 	cursor, err := ds.ensureCursor(ctx, tr.ID)
 	if err != nil {
 		return 0, err
@@ -1900,6 +1915,11 @@ type triggerActivity struct {
 	// without it a status read shows a delivery in hand as nothing in
 	// flight.
 	delivering map[*recordDelivery]struct{}
+	// walking is set while a walk of the trigger's backlog runs in this
+	// process, a pass's turn or a wake's. One walk per trigger at a time,
+	// so a failing delivery's park never loses the cursor swap to a skip
+	// the other walk recorded (decision 0182).
+	walking bool
 }
 
 // recordDelivery is one record delivery this process runs now
@@ -1959,6 +1979,23 @@ func (ds *dataset) startRecordDelivery(triggerID string) (*recordDelivery, func(
 	}
 }
 
+// startRecordWalk takes the trigger's walk for this process: ok is false
+// while a pass or a wake walks it. release gives it back.
+func (ds *dataset) startRecordWalk(triggerID string) (release func(), ok bool) {
+	ds.activityMu.Lock()
+	defer ds.activityMu.Unlock()
+	a := ds.activityLocked(triggerID)
+	if a.walking {
+		return nil, false
+	}
+	a.walking = true
+	return func() {
+		ds.activityMu.Lock()
+		defer ds.activityMu.Unlock()
+		a.walking = false
+	}, true
+}
+
 // setDeliveryClaim records the failure id a record delivery's own claim
 // holds, 0 for none. A nil delivery is a settlement no record delivery
 // tracks.
@@ -2002,7 +2039,8 @@ func (ds *dataset) pruneActivity(triggers []loadedTrigger) {
 	ds.activityMu.Lock()
 	defer ds.activityMu.Unlock()
 	for id, a := range ds.activity {
-		if !live[id] && len(a.delivering) == 0 {
+		// A walking entry stays: a fresh one would let a second walk in.
+		if !live[id] && len(a.delivering) == 0 && !a.walking {
 			delete(ds.activity, id)
 		}
 	}
@@ -2016,6 +2054,21 @@ func (ds *dataset) pruneActivity(triggers []loadedTrigger) {
 func (ds *dataset) logYield(triggerID, swap string, seq int64) {
 	ds.svc.log.Debug("substrate: record trigger yielded: its cursor moved under this pass",
 		"repository", ds.Repository().ID, "trigger", triggerID, "swap", swap, "seq", seq)
+}
+
+// logWalkHeld records a record trigger's walk that did not start because
+// another walk of it runs in this process (decision 0182). A pass's turn
+// logs at debug and comes back at its next pass. A wake logs at info: it
+// answers 0, and the walk in progress or the next pass delivers what it
+// asked for.
+func (ds *dataset) logWalkHeld(triggerID string, wake bool) {
+	if wake {
+		ds.svc.log.Info("substrate: trigger wake ran nothing: a walk of the trigger is in progress and delivers what the wake asked for",
+			"repository", ds.Repository().ID, "trigger", triggerID)
+		return
+	}
+	ds.svc.log.Debug("substrate: record trigger skipped this pass: a wake walks it",
+		"repository", ds.Repository().ID, "trigger", triggerID)
 }
 
 // logFireYield is logYield for a fire whose fire state moved under it: the
@@ -3515,7 +3568,9 @@ func (ds *dataset) RunTrigger(ctx context.Context, id, recordKind, recordID stri
 // fire, an record trigger drains its backlog, a schedule trigger checks its
 // due occurrence. The webhook fire id is minted per wake — one POST, one
 // delivery attempt. A wake is somebody's hand, so it runs without the
-// dispatcher's per-trigger budget: a record trigger drains to head.
+// dispatcher's per-trigger budget: a record trigger drains to head, unless
+// a walk of it is in progress, in which case the wake answers 0 and that
+// walk or the next pass delivers the rows (decision 0182).
 func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 	tr, createdAt, err := ds.triggerByID(ctx, id)
 	if err != nil {
