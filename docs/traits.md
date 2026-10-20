@@ -276,7 +276,8 @@ opt into twice:
   record under the callable's own actor, when the callable is a function of
   the package that declares the kind; a record whose owner set
   `syncPaused` has those deliveries skipped; and `GET /api/v1/sync/status`
-  lists the record joined with the record triggers on its kind, which the
+  lists the record, with the OAuth facility's sign-in beside the trait's
+  properties, joined with the record triggers on its kind, which the
   Accounts on the console's provider pages and `substratectl sync status`
   read. The body
   owns the rest through its effects: `syncMessage`, `lastSyncedAt`,

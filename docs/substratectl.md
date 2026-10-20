@@ -337,11 +337,20 @@ characters; `-o json` carries the whole error.
 
 `substratectl sync status` is the synchronization read over every
 [connection](bundles.md#connections) whose kind binds the core `sync` trait:
-one line per account with its state, whether it is paused, when it last
-synced, whether the owner's request has been served, each stream's state and
-backlog, the parked and lagging deliveries of the triggers on its kind summed,
-and the message or, on an erroring account, the error. To ask for a run,
-patch `syncRequestedAt` on the account; to stop one, patch `syncPaused`.
+one line per account with its state, whether its sign-in works, whether it
+is paused, when it last synced, whether the owner's request has been served,
+each stream's state and backlog, the parked and lagging deliveries of the
+triggers on its kind summed, and the message or, on an erroring account, the
+error. To ask for a run, patch `syncRequestedAt` on the account; to stop one,
+patch `syncPaused`.
+
+The `TOKEN` column is the account's OAuth sign-in: `connected`, or `erroring`
+with the age of the current reason and the reason itself. `erroring` means
+the last refresh failed. A refusal (a 4xx such as `invalid_grant`) needs a
+reconnect, and another run does not help. A 5xx or a timeout clears on the
+next good refresh. The cell is empty on a provider that signs in with a
+pasted key, and empty or `pending` on an account that has not finished its
+first consent.
 `-o json` or `-o yaml` prints the accounts as one array.
 
 `substratectl alerts` lists the open [alerts](functions.md#driving-triggers),

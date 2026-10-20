@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-20
 decision-makers: George Antoniadis
+amended-by: 0179
 ---
 
 # 0176. A reconnect requests a sync

@@ -36,9 +36,9 @@ func (h *handler) getTriggerStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // getSyncStatus is the synchronization read: every `sync`-trait record's
-// state, last run, request pair, progress and streams, each joined with the
-// record triggers on its kind. Computed on read, like the trigger status it
-// embeds (decision 0085).
+// state, sign-in, last run, request pair, progress and streams, each joined
+// with the record triggers on its kind. Computed on read, like the trigger
+// status it embeds (decision 0085).
 func (h *handler) getSyncStatus(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	statuses, err := ds.SyncStatuses(r.Context())

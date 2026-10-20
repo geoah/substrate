@@ -335,5 +335,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0174](0174-the-semantic-arm-is-indexed-approximate-and-bounded.md) | The semantic arm is indexed, approximate and bounded | proposed |
 | [0175](0175-a-record-view-draws-tiles-trends-and-tables-from-one-batched-read-per-block.md) | A record view draws tiles, trends and tables from one batched read per block, and a band is view data | proposed |
 | [0176](0176-a-reconnect-requests-a-sync.md) | A reconnect requests a sync | proposed |
+| [0179](0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md) | The console waits fifteen minutes for a requested sync to start | proposed |
 | [0180](0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md) | A refresh stores its rotated token, and an hour of refusals parks the credential | proposed |
 | [0181](0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md) | A cached prompt token is priced at its cache rate | proposed |

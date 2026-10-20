@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
   andList,
+  approvedWords,
   bundleParams,
   choiceSentence,
   chosenCount,
@@ -25,7 +26,9 @@ import {
   type StandingInput,
   type StepFacts,
 } from "@/lib/providers"
+import { noteServerDate, resetServerClock } from "@/lib/api/http"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
+import { shortDate } from "@/lib/format"
 import { syncFieldsOf } from "@/lib/sync"
 
 function record(
@@ -240,13 +243,23 @@ describe("providerStanding", () => {
       lastSyncStartedAt: "2026-10-20T08:00:00Z",
       syncRequestedAck: "2026-10-19T09:00:00Z",
     }
-    const standing = (props: Record<string, unknown>, legacy?: string) =>
-      providerStanding({
-        ...base,
-        accounts: [
-          { ...ada, sync: syncFieldsOf(props), legacySyncStatus: legacy },
-        ],
-      })
+    // Five minutes after the request below, so the request is still waited
+    // on whatever the real clock reads.
+    const soon = Date.parse("2026-10-20T08:45:00Z")
+    const standing = (
+      props: Record<string, unknown>,
+      legacy?: string,
+      now = soon
+    ) =>
+      providerStanding(
+        {
+          ...base,
+          accounts: [
+            { ...ada, sync: syncFieldsOf(props), legacySyncStatus: legacy },
+          ],
+        },
+        now
+      )
 
     it("is failing while no request waits", () => {
       const s = standing({
@@ -319,6 +332,79 @@ describe("providerStanding", () => {
       expect(
         standing({ syncState: "throttled" }, "erroring: rate limited").problems
       ).toEqual([])
+    })
+
+    it("measures the request by the server's clock when no `now` is given", () => {
+      vi.useFakeTimers()
+      try {
+        // The browser runs 30 minutes behind the server; the request is 16
+        // minutes old by the server.
+        vi.setSystemTime(Date.parse("2026-10-20T08:26:00Z"))
+        noteServerDate("Tue, 20 Oct 2026 08:56:00 GMT")
+        const s = providerStanding({
+          ...base,
+          accounts: [
+            {
+              ...ada,
+              sync: syncFieldsOf({
+                ...failed,
+                syncRequestedAt: "2026-10-20T08:40:00Z",
+              }),
+            },
+          ],
+        })
+        expect(s.problems[0]?.detail).toContain(
+          "The sync you asked for 16m ago hasn’t started."
+        )
+      } finally {
+        resetServerClock()
+        vi.useRealTimers()
+      }
+    })
+
+    it("is failing again, saying the request has not started, once it is fifteen minutes old", () => {
+      const late = Date.parse("2026-10-20T08:55:00Z")
+      const s = standing(
+        {
+          ...failed,
+          syncError: "oauthflow: refresh: provider answered 400",
+          syncRequestedAt: "2026-10-20T08:40:00Z",
+        },
+        undefined,
+        late
+      )
+      expect(s.tone).toBe("attention")
+      expect(s.problems).toEqual([
+        {
+          code: "sync",
+          summary: "Syncing ada@example.com is failing",
+          detail: [
+            "oauthflow: refresh: provider answered 400",
+            "The sync you asked for 15m ago hasn’t started.",
+          ],
+          account: "ada",
+          fixes: ["sync-now", "reconnect"],
+        },
+      ])
+      // The legacy-string account reads the same once its request is old.
+      expect(
+        standing(
+          { syncRequestedAt: "2026-10-20T08:40:00Z" },
+          "erroring: oauthflow: refresh: provider answered 400",
+          late
+        ).problems
+      ).toEqual([
+        {
+          code: "sync",
+          summary: "Syncing ada@example.com is failing",
+          detail: [
+            "erroring: oauthflow: refresh: provider answered 400",
+            "The sync you asked for 15m ago hasn’t started.",
+          ],
+          account: "ada",
+          fixes: ["sync-now", "reconnect"],
+        },
+      ])
     })
 
     it("is failing when the request was answered or the account is paused", () => {
@@ -588,7 +674,8 @@ describe("syncWords", () => {
       lastSyncStartedAt: "2026-10-20T08:00:00Z",
       syncRequestedAt: "2026-10-20T08:40:00Z",
     }
-    expect(syncWords(syncFieldsOf(failing), "WHOOP")).toEqual({
+    const soon = Date.parse("2026-10-20T08:45:00Z")
+    expect(syncWords(syncFieldsOf(failing), "WHOOP", soon)).toEqual({
       text: "Checking again…",
       tone: "active",
     })
@@ -600,6 +687,55 @@ describe("syncWords", () => {
       })
     ).toBe("Having trouble: whoop: HTTP 401")
     expect(words({ ...failing, syncPaused: true })).toBe("Paused")
+  })
+  it("says the sync hasn’t started once a request is fifteen minutes old", () => {
+    const failing = syncFieldsOf({
+      syncState: "erroring",
+      syncError: "oauthflow: refresh: provider answered 400",
+      lastSyncStartedAt: "2026-10-20T08:00:00Z",
+      syncRequestedAt: "2026-10-20T08:40:00Z",
+    })
+    expect(
+      syncWords(failing, "WHOOP", Date.parse("2026-10-20T08:55:00Z"))
+    ).toEqual({
+      text: "The sync you asked for 15m ago hasn’t started",
+      tone: "bad",
+    })
+    expect(
+      syncWords(failing, "WHOOP", Date.parse("2026-10-20T08:54:00Z"))
+    ).toEqual({ text: "Checking again…", tone: "active" })
+  })
+  it("dates a request older than two weeks with “on”", () => {
+    const failing = syncFieldsOf({
+      syncState: "erroring",
+      lastSyncStartedAt: "2026-09-30T08:00:00Z",
+      syncRequestedAt: "2026-10-01T12:00:00Z",
+    })
+    expect(
+      syncWords(failing, "WHOOP", Date.parse("2026-10-20T12:00:00Z")).text
+    ).toBe(
+      `The sync you asked for on ${shortDate("2026-10-01T12:00:00Z")} hasn’t started`
+    )
+  })
+  it("measures a request by the server's clock when no `now` is given", () => {
+    vi.useFakeTimers()
+    try {
+      // The browser runs 30 minutes behind the server; the request is 16
+      // minutes old by the server.
+      vi.setSystemTime(Date.parse("2026-10-20T08:26:00Z"))
+      noteServerDate("Tue, 20 Oct 2026 08:56:00 GMT")
+      const failing = syncFieldsOf({
+        syncState: "erroring",
+        lastSyncStartedAt: "2026-10-20T08:00:00Z",
+        syncRequestedAt: "2026-10-20T08:40:00Z",
+      })
+      expect(syncWords(failing, "WHOOP").text).toBe(
+        "The sync you asked for 16m ago hasn’t started"
+      )
+    } finally {
+      resetServerClock()
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -920,5 +1056,22 @@ describe("what a provider did", () => {
     expect(
       lastSyncOf(`${G}/account`, G, functions, triggers, runs)
     ).toBeUndefined()
+  })
+})
+
+describe("approvedWords", () => {
+  it("says what the approval starts", () => {
+    expect(approvedWords()).toBe("is approved.")
+    expect(
+      approvedWords({ paused: true, lastSyncedAt: "2026-10-19T10:00:00Z" })
+    ).toBe(
+      "is approved. Its sync is paused, so nothing runs until you resume it."
+    )
+    expect(approvedWords({ paused: false })).toBe(
+      "is approved and its first sync is starting."
+    )
+    expect(
+      approvedWords({ paused: false, lastSyncedAt: "2026-10-19T10:00:00Z" })
+    ).toBe("is approved and a sync is starting.")
   })
 })

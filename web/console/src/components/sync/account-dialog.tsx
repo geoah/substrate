@@ -38,6 +38,8 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { accountFormGroups } from "@/lib/account-form"
 import { splitKind } from "@/lib/definition"
 import { recordPath } from "@/lib/record-path"
+import { SYNC_TRAIT } from "@/lib/core-kinds"
+import { kindHasTrait, syncFieldsOf } from "@/lib/sync"
 import {
   initialValues,
   toProperties,
@@ -140,6 +142,11 @@ export function AccountDialog({
           record: recordPath(saved.kind, saved.id),
           label: accountName,
           tab,
+          // A new account never synced, so its notice says the first sync
+          // is starting.
+          sync: kindHasTrait(kind, SYNC_TRAIT)
+            ? syncFieldsOf(saved.properties ?? {})
+            : undefined,
         })
         return
       }

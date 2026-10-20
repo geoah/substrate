@@ -16,6 +16,7 @@ import {
 import { ToneText } from "@/components/providers/provider-marks"
 import { PauseButton, SyncNowButton } from "@/components/sync/sync-panel"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useNow } from "@/hooks/use-now"
 import {
   syncStatusesQueryOptions,
   triggerRecordsQueryOptions,
@@ -138,6 +139,9 @@ function AccountRow({
   useEffect(() => {
     if (highlighted) ref.current?.scrollIntoView?.({ block: "center" })
   }, [highlighted])
+  // A waited-on request turns into "hasn’t started" after a quarter hour;
+  // the minute tick shows that without waiting for the next refetch.
+  const now = useNow(60_000)
   const connected = !view.oauth || account.tokenStatus === "connected"
   const words = connected
     ? syncWords(
@@ -145,7 +149,8 @@ function AccountRow({
           ...account.sync,
           message: account.sync.message ?? account.legacySyncStatus,
         },
-        providerName
+        providerName,
+        now
       )
     : connectionWords(account.tokenStatus, providerName, account.tokenError)
   const every = enumLabel(account.kind, "syncFrequency", account.syncFrequency)

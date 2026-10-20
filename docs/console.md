@@ -851,8 +851,13 @@ acknowledgement (**Sync now**, or the request a reconnect makes): the account
 reads **Checking again…** and the card says it is syncing, because the
 failure is the run before the request. When the requested run starts, its
 outcome is what shows, so a sync that still fails needs attention again with
-the new reason ([0176](decisions/0176-a-reconnect-requests-a-sync.md)). An
-account's sync is failing when its `syncState` is `erroring`; a legacy
+the new reason ([0176](decisions/0176-a-reconnect-requests-a-sync.md)). The
+console waits up to 15 minutes by the server's clock: past that, with no run
+started and no acknowledgement, the account reads **The sync you asked for
+15m ago hasn’t started**, the failure needs attention again with that line
+under its reason, and **Sync now** asks once more
+([0179](decisions/0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md)).
+An account's sync is failing when its `syncState` is `erroring`; a legacy
 `syncStatus` that begins with `erroring` counts only on a record with no
 `syncState`, since a bundle rewrites that string only when a run ends. Sync
 now dates its request by the server's clock, read from the `Date` header of
@@ -884,7 +889,9 @@ back to it:
   words, when it last synced and how often it does, and the verbs an account
   takes: **Connect** or **Reconnect**, **Sync now**, **Pause**, change what it
   brings in, and **Disconnect**. `?account=<id>` scrolls to one and highlights
-  it.
+  it. When an approval returns, the notice says what it starts: the first
+  sync on a new account, a sync on an account that synced before, nothing on
+  a paused one.
 - **What it adds**: what it brings in (its primary kinds, each with what it
   is, how many records it holds, when it last synced and which of your own
   kinds its records fill in through a mapping, with the supporting kinds

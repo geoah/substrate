@@ -76,7 +76,8 @@ export function ConnectButton({
   const [confirming, setConfirming] = useState(false)
   const connect = useOAuthConnect(
     recordPath(view.record.kind, view.record.id),
-    view.label
+    view.label,
+    view.syncable ? view.sync : undefined
   )
   return (
     <>
@@ -118,7 +119,8 @@ export function AccountMenu({
   const [reconnecting, setReconnecting] = useState(false)
   const connect = useOAuthConnect(
     recordPath(view.record.kind, view.record.id),
-    view.label
+    view.label,
+    view.syncable ? view.sync : undefined
   )
   const disconnect = useMutation({
     mutationFn: () => deleteRecord(view.record),

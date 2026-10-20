@@ -86,6 +86,8 @@ import {
   type RequirementNode,
 } from "@/lib/bundles"
 import { currentStep } from "@/lib/providers"
+import type { SyncFields } from "@/lib/sync"
+import { recordPath } from "@/lib/record-path"
 import { groupSettings, type SettingField } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 import { providerRoute } from "@/router"
@@ -97,10 +99,39 @@ export function ProviderPage() {
   const { account, connected, error } = providerRoute.useSearch()
   const navigate = useNavigate()
   const id = `${authority}/${pkg}`
+  const data = useProviders()
+  // The returned account, once its provider has loaded: the note says what
+  // the approval starts from its sync (approvedWords).
+  const returned = connected
+    ? data.providers
+        .find((p) => p.row.id === id)
+        ?.view?.accounts.find(
+          (a) => recordPath(a.record.kind, a.record.id) === connected
+        )
+    : undefined
+  // The sync as the note first read it, kept: the account records are live,
+  // and the on-connect run stamping lastSyncedAt must not turn "its first
+  // sync is starting" into "a sync is starting" for a sync already done.
+  const [kept, setKept] = useState<{
+    connected: string
+    sync?: Pick<SyncFields, "paused" | "lastSyncedAt">
+  }>()
+  if (connected && returned && kept?.connected !== connected) {
+    setKept({
+      connected,
+      sync: returned.syncable
+        ? {
+            paused: returned.sync.paused,
+            lastSyncedAt: returned.sync.lastSyncedAt,
+          }
+        : undefined,
+    })
+  }
   const oauthReturn = (
     <OAuthReturnNote
       connected={connected}
       error={error}
+      sync={connected && kept?.connected === connected ? kept.sync : undefined}
       className="mt-6"
       onDismiss={() =>
         void navigate({
@@ -112,7 +143,6 @@ export function ProviderPage() {
       }
     />
   )
-  const data = useProviders()
   const settings = useQuery(settingRecordsQueryOptions)
   const settingFields = useMemo(
     () =>

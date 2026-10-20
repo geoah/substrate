@@ -952,8 +952,8 @@ export type SyncState = "never" | "running" | "ok" | "erroring" | "throttled"
 
 /** One `sync`-trait record's synchronization as `GET /api/v1/sync/status`
  * lists it (`substrate.SyncStatus`): the trait's properties read off the
- * record, joined with the status of every record trigger whose source names
- * the record's kind. */
+ * record, the OAuth facility's sign-in beside them, joined with the status
+ * of every record trigger whose source names the record's kind. */
 export interface SyncStatus {
   kind: string
   id: string
@@ -964,6 +964,14 @@ export interface SyncStatus {
   state: string
   message?: string
   paused: boolean
+  /** The OAuth facility's `tokenStatus` on the same record (`connected`,
+   * `erroring`, or a bundle's seeded `pending`), absent on a kind that
+   * carries none. `tokenError` is the last refresh failure's first line and
+   * `tokenErrorAt` when that reason first appeared, absent while the sign-in
+   * works. A 4xx refusal needs a reconnect; a 5xx clears on its own. */
+  tokenStatus?: string
+  tokenError?: string
+  tokenErrorAt?: string
   lastSyncedAt?: string
   lastSyncStartedAt?: string
   lastSyncDurationMs?: number

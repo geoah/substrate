@@ -10,6 +10,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -21,6 +22,7 @@ import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/toast"
+import { SUBSTRATE_OAUTH_SOURCE } from "@/lib/api/bundles"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import type {
@@ -374,7 +376,7 @@ function renderPage(ui: ReactElement, technical = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const view = render(
     <ConsolePreferencesContext.Provider
       value={{
         preferences: {
@@ -394,6 +396,7 @@ function renderPage(ui: ReactElement, technical = false) {
       </QueryClientProvider>
     </ConsolePreferencesContext.Provider>
   )
+  return { ...view, client }
 }
 
 describe("ProviderPage", () => {
@@ -686,6 +689,23 @@ describe("ProviderPage", () => {
       expect(posts[1].body).toEqual({ record: `${ACCOUNT}/new-acct` })
       expect(open).toHaveBeenCalledWith("about:blank", "_blank")
       await waitFor(() => expect(tab.location.href).toBe(CONSENT_URL))
+      // The consent tab reports back: the new account never synced, so the
+      // notice says its first sync is starting.
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            origin: window.location.origin,
+            data: {
+              source: SUBSTRATE_OAUTH_SOURCE,
+              ok: true,
+              record: `${ACCOUNT}/new-acct`,
+            },
+          })
+        )
+      })
+      expect(
+        await screen.findByText(/is approved and its first sync is starting\./)
+      ).toBeTruthy()
     })
 
     it("says what a connected account brings in, and which is off", async () => {
@@ -807,6 +827,97 @@ describe("ProviderPage", () => {
       const note = await screen.findByRole("status")
       expect(note.textContent).toContain("Account connected")
       expect(note.textContent).toContain("george-home")
+      // It never synced, so the provider's on-connect trigger starts the
+      // first sync.
+      await waitFor(() =>
+        expect(note.textContent).toContain(
+          "is approved and its first sync is starting."
+        )
+      )
+    })
+
+    it("says a sync is starting when the returned account synced before", async () => {
+      search = { connected: `${ACCOUNT}/george-work` }
+      renderPage(<ProviderPage />)
+      const note = await screen.findByRole("status")
+      await waitFor(() =>
+        expect(note.textContent).toContain(
+          "george-work is approved and a sync is starting."
+        )
+      )
+    })
+
+    it("keeps the first-sync note once the on-connect run has synced", async () => {
+      search = { connected: `${ACCOUNT}/george-home` }
+      const { client } = renderPage(<ProviderPage />)
+      const note = await screen.findByRole("status")
+      await waitFor(() =>
+        expect(note.textContent).toContain(
+          "is approved and its first sync is starting."
+        )
+      )
+      // The run the approval started finishes and stamps lastSyncedAt.
+      serve({
+        accounts: [
+          WORK,
+          account("george-home", {
+            ...PERSONAL.properties,
+            tokenStatus: "connected",
+            lastSyncedAt: new Date().toISOString(),
+          }),
+        ],
+      })
+      const reads = () =>
+        fetchMock.mock.calls.filter(
+          ([url]) =>
+            filterOf(String(url)).implements ===
+            "substrate.reamde.dev/core/accountconfig"
+        ).length
+      const before = reads()
+      await act(async () => {
+        await client.invalidateQueries()
+      })
+      await waitFor(() => expect(reads()).toBeGreaterThan(before))
+      // The home account now reads as synced, and the note still says what
+      // the approval started.
+      expect(
+        await within(await row("home@example.com")).findByText("just now")
+      ).toBeTruthy()
+      expect(screen.getByRole("status").textContent).toContain(
+        "is approved and its first sync is starting."
+      )
+    })
+
+    it("says the sync has not started once a request waited fifteen minutes", async () => {
+      vi.useFakeTimers({
+        toFake: ["Date", "setInterval", "clearInterval"],
+      })
+      try {
+        serve({
+          accounts: [
+            account("george-work", {
+              ...WORK.properties,
+              syncRequestedAt: new Date(Date.now() - 14 * 60_000).toISOString(),
+            }),
+            PERSONAL,
+          ],
+        })
+        renderPage(<ProviderPage />)
+        const work = await row("george@example.com")
+        expect(within(work).getByText("Checking again…")).toBeTruthy()
+        // Two minute ticks later the request is 16 minutes old: the row says
+        // so without a refetch.
+        act(() => {
+          vi.advanceTimersByTime(2 * 60_000)
+        })
+        expect(
+          await within(work).findByText(
+            "The sync you asked for 16m ago hasn’t started"
+          )
+        ).toBeTruthy()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it("highlights the account the address names", async () => {

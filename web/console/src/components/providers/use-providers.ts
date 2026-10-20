@@ -8,6 +8,7 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { useLiveRecords } from "@/hooks/use-live-records"
+import { useNow } from "@/hooks/use-now"
 import { accountFormGroups } from "@/lib/account-form"
 import { providerInfo, type ProviderInfo } from "@/lib/actor-identity"
 import {
@@ -88,7 +89,8 @@ function entryOf(
   row: BundleRow,
   view: ProviderView | undefined,
   kinds: KindInfo[],
-  triggers: readonly TriggerStatus[]
+  triggers: readonly TriggerStatus[],
+  now: number
 ): ProviderEntry {
   const accountKind = view?.accountKind ?? accountKindOf(kinds, row.id)
   const toggles = accountToggles(accountKind)
@@ -114,19 +116,22 @@ function entryOf(
     steps,
     toggles,
     updateAvailable: upgradeAvailable(row) && !upgradeBlocked(row),
-    standing: providerStanding({
-      installed,
-      enabled: row.status?.enabled ?? false,
-      quarantined: Boolean(row.status?.quarantined),
-      quarantineReason: row.status?.quarantineReason,
-      upgradeBlockers:
-        installed && upgradeBlocked(row) ? (row.upgrade?.blockers ?? []) : [],
-      otherSetup,
-      steps,
-      oauth: view?.oauth,
-      accounts: view?.accounts ?? [],
-      triggers: installed ? bundleTriggers(triggers, row.id) : [],
-    }),
+    standing: providerStanding(
+      {
+        installed,
+        enabled: row.status?.enabled ?? false,
+        quarantined: Boolean(row.status?.quarantined),
+        quarantineReason: row.status?.quarantineReason,
+        upgradeBlockers:
+          installed && upgradeBlocked(row) ? (row.upgrade?.blockers ?? []) : [],
+        otherSetup,
+        steps,
+        oauth: view?.oauth,
+        accounts: view?.accounts ?? [],
+        triggers: installed ? bundleTriggers(triggers, row.id) : [],
+      },
+      now
+    ),
   }
 }
 
@@ -150,6 +155,9 @@ export function useProviders() {
   // Not waited on: a provider's parked and broken runs join its state once
   // they are read.
   const triggerStatuses = useQuery(triggerStatusesQueryOptions)
+  // A waited-on sync request reads as failing again after a quarter hour
+  // (providerStanding); the minute tick moves the card without a refetch.
+  const now = useNow(60_000)
 
   const kinds = useMemo(() => registry.data ?? [], [registry.data])
   const home = repository.data?.authority ?? ""
@@ -193,14 +201,14 @@ export function useProviders() {
           r.tier === "provider" || (!r.tier && r.status && viewOf.has(r.id))
       )
       .map((r) =>
-        entryOf(r, viewOf.get(r.id), kinds, triggerStatuses.data ?? [])
+        entryOf(r, viewOf.get(r.id), kinds, triggerStatuses.data ?? [], now)
       )
       .sort(
         (a, b) =>
           Number(!a.row.status) - Number(!b.row.status) ||
           a.info.name.localeCompare(b.info.name)
       )
-  }, [rows, views, kinds, triggerStatuses.data])
+  }, [rows, views, kinds, triggerStatuses.data, now])
 
   // Everything else this repository holds: imported samples, the seeded
   // llm package, anything applied directly.
