@@ -841,11 +841,28 @@ and one trigger's record page is the trigger.
 each: the shipped catalog's [providers](bundles-catalog.md) joined with what
 this repository holds of them. A card says in one pill where the provider
 stands (**On**, **Set up**, **Needs attention**, **Paused**) or offers
-**Add**, and one line says what is true right now. With Technical details on,
-**Other packages** lists every other bundle the repository holds (imported
-samples, the seeded `llm` and `console` packages, anything applied directly) with its
-version, state, update and removal, and states any pending upgrade of the
-seeded packages.
+**Add**, and one line says what is true right now. **Needs attention** lists
+each reason under **Why it needs attention**: a provider that failed to load,
+an account whose sign-in stopped working, an account whose last sync failed,
+a gap in its setup, a trigger that cannot run, failed runs waiting to be
+retried, an update your records block. A failed sync is not one of them while
+its account holds a sync request newer than its last run's start and its
+acknowledgement (**Sync now**, or the request a reconnect makes): the account
+reads **Checking again…** and the card says it is syncing, because the
+failure is the run before the request. When the requested run starts, its
+outcome is what shows, so a sync that still fails needs attention again with
+the new reason ([0176](decisions/0176-a-reconnect-requests-a-sync.md)). An
+account's sync is failing when its `syncState` is `erroring`; a legacy
+`syncStatus` that begins with `erroring` counts only on a record with no
+`syncState`, since a bundle rewrites that string only when a run ends. Sync
+now dates its request by the server's clock, read from the `Date` header of
+the console's last response, so a browser clock running ahead cannot date it
+after the run that answers it.
+
+With Technical details on, **Other packages** lists every other bundle the
+repository holds (imported samples, the seeded `llm` and `console` packages,
+anything applied directly) with its version, state, update and removal, and
+states any pending upgrade of the seeded packages.
 
 A provider's page, `/providers/{authority}/{package}` (a provider is a bundle,
 and a bundle's id is its package), is where it is set up and where you come

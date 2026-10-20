@@ -1207,7 +1207,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// `writer:`-restricted property (tokenRef/tokenStatus/grantedScopes →
 	// oauth; syncToken/lastSyncedAt/syncStatus → connector; email/toggles →
 	// owner) accepts a change only from its role's actor.
-	if err := t.checkPropertyOwnership(sp.ty, accepted); err != nil {
+	if err := t.checkPropertyOwnership(sp.ty, sp.ref(), accepted); err != nil {
 		return nil, err
 	}
 
@@ -1275,7 +1275,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				}
 				managers[name] = string(actor)
 			default:
-				actor, tier := t.actor, t.tier
+				actor, tier := t.actor, t.propTier(sp.ref(), name)
 				// A SUBJECT SLOT IS THE MAPPING'S, whoever's write filled it
 				// (record 96). The value is not the writer's opinion — it is
 				// match-or-mint's answer, or the id the writer already had —
@@ -1594,13 +1594,13 @@ func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
 // including internal writes — so the OAuth facility, the connector function
 // and the owner each write only their own hands; the console blacklist is a
 // convenience, not the boundary.
-func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, accepted []string) error {
+func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, ref eref, accepted []string) error {
 	for _, name := range accepted {
 		p, ok := ty.Prop(name)
 		if !ok || p.Writer == "" {
 			continue
 		}
-		if !t.actorMayWriteProp(p.Writer) {
+		if !t.mayWriteProp(p.Writer, t.propTier(ref, name)) {
 			return fmt.Errorf("%w: %s.%s is written by the %q role, not %s",
 				substrate.ErrForbidden, ty.Identity, name, p.Writer, t.actor)
 		}
@@ -1647,20 +1647,39 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 	return nil
 }
 
-// actorMayWriteProp reports whether this transaction's actor fills a
-// property-writer role: oauth is the facility's own actor, connector is a
-// bundle-tier write context (installed code; the tier is write-context
+// mayWriteProp reports whether this transaction's actor, writing at tier,
+// fills a property-writer role: oauth is the facility's own actor, connector
+// is a bundle-tier write context (installed code; the tier is write-context
 // data), owner is an owner-tier one.
-func (t *txn) actorMayWriteProp(writer string) bool {
+func (t *txn) mayWriteProp(writer string, tier substrate.Tier) bool {
 	switch writer {
 	case vocabulary.WriterOAuth:
 		return t.actor == actorOAuth
 	case vocabulary.WriterConnector:
-		return t.tier == substrate.TierBundle
+		return tier == substrate.TierBundle
 	case vocabulary.WriterOwner:
-		return t.tier == substrate.TierOwner
+		return tier == substrate.TierOwner
 	}
 	return true
+}
+
+// propTiers is the tier each named property of one record's write stands
+// at, where it is not the transaction's own (txn.propTiers).
+type propTiers struct {
+	ref   eref
+	tiers map[string]substrate.Tier
+}
+
+// propTier answers the tier one property of a write to ref stands at: the
+// one propTiers names for it on that record, else the transaction's. A write
+// to any other record in the same transaction keeps the transaction's tier.
+func (t *txn) propTier(ref eref, name string) substrate.Tier {
+	if o := t.propTiers; o != nil && o.ref == ref {
+		if tier, ok := o.tiers[name]; ok {
+			return tier
+		}
+	}
+	return t.tier
 }
 
 // storeSecretProps moves every ACCEPTED secret-typed property value into the

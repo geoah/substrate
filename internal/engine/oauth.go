@@ -540,14 +540,8 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 		if err := t.putCredential(ref, account, tok); err != nil {
 			return err
 		}
-		// Before the facility's own patch, so the clear lands while the row
-		// still carries the old tokenStatus: an on-connect trigger guarded on
-		// `connected` does not match it and fire a second time.
 		ty, err := t.resolveType(row.Kind)
 		if err != nil {
-			return err
-		}
-		if err := t.syncClearErrorOnReconnect(ty, row); err != nil {
 			return err
 		}
 		// The secret-typed ref, the status, and the granted scope set land on
@@ -574,6 +568,14 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 				}
 			}
 		}
+		// A `sync`-trait account's half of the reconnect rides the same patch
+		// at the tiers its properties' writers need: one changelog entry, so
+		// a record trigger sees the new status, the cleared error and the
+		// sync request together and fires once.
+		tiers := map[string]substrate.Tier{}
+		syncOnReconnect(ty, row, t.now, props, tiers)
+		t.propTiers = &propTiers{ref: account, tiers: tiers}
+		defer func() { t.propTiers = nil }()
 		_, err = t.patch(account, substrate.PatchInput{
 			Properties:    props,
 			AddFinalizers: []string{finalizerOAuth},

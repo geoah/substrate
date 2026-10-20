@@ -288,7 +288,11 @@ opt into twice:
   `syncRequestedAt`. A write by the kind's own package that moves
   `lastSyncedAt` and leaves `syncState` at `ok` clears an error pair older
   than the new `lastSyncedAt`, so a schedule-fired run that recovers clears
-  it too.
+  it too. An OAuth reconnect clears the error pair and, on an account that
+  has synced before and is not paused, stamps `syncRequestedAt` in the same
+  patch as the new `tokenStatus`, so the account's on-request trigger runs
+  the sync that says whether the new grant works
+  ([decision 0176](decisions/0176-a-reconnect-requests-a-sync.md)).
   `syncState` is a string, not a machine: `never`, `running`, `ok`,
   `erroring` or `throttled`
   ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).

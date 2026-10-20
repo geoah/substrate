@@ -379,7 +379,13 @@ identity references it mints once it knows whose token it holds
 holding the feature toggles, `syncFrequency` and `backfillDepth`. The role is
 declared on a property of any shape, a scalar, an object or a reference, and
 enforced in the write path for REST and the CLI alike, not just in the
-console, which offers only the owner's properties for editing.
+console, which offers only the owner's properties for editing. A role is
+checked against the tier its property is written at, and the OAuth
+callback's patch is the one write that holds properties at different tiers:
+it writes the facility's own properties as `substrate.oauth`, clears
+`syncError` and `syncErrorAt` at the bundle tier, and stamps
+`syncRequestedAt` at the owner tier as the owner's request
+([0176](decisions/0176-a-reconnect-requests-a-sync.md)).
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
 account record as `record`, its record path
@@ -561,9 +567,14 @@ transaction of its own so the run is visible while it runs; `ok` and
 run that ends `ok` clears a `syncError` and `syncErrorAt` older than the run);
 and `erroring`, `syncError` and `syncErrorAt` in the transaction that parks a
 delivery that failed out, so no reader meets a parked delivery whose record
-still says `running`. An OAuth reconnect clears the error pair too, under the
-kind's package actor at the bundle tier, and leaves `syncState` for the next
-run. The stamps are written under the CALLABLE's own actor at
+still says `running`. An OAuth reconnect clears the error pair too, at the
+bundle tier, and leaves `syncState` for the next run; on an account that has
+synced before and is not paused it also stamps `syncRequestedAt`, at the owner
+tier, so the account's on-request trigger runs that next run now. The clear,
+the request and the new `tokenStatus` are one patch, so the trigger sees them
+in one change and fires once. A first connect stamps no request: the
+on-connect trigger runs the first sync
+([0176](decisions/0176-a-reconnect-requests-a-sync.md)). The stamps are written under the CALLABLE's own actor at
 the bundle tier, the write context the body's effects use: `writer: connector`
 holds, and a record trigger never delivers its own callable's writes, so a
 stamp cannot fire the trigger that made it. A record whose owner set

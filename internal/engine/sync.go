@@ -33,6 +33,9 @@ const (
 	// propSyncStreams is the body's, merged here per stream
 	// (syncMergeStreams).
 	propSyncStreams = "syncStreams"
+	// propSyncRequestedAt is the owner's, stamped here only by a reconnect
+	// (syncOnReconnect).
+	propSyncRequestedAt = "syncRequestedAt"
 )
 
 // syncErrorMax bounds the error text a park stamps onto the record: a
@@ -245,28 +248,51 @@ func (t *txn) writesAsPackage(pkg string) bool {
 		strings.HasPrefix(a, substrate.AgentActorPrefix+suffix)
 }
 
-// syncClearErrorOnReconnect rides the OAuth facility's reconnect: a fresh
-// grant replaces the one the last error was about, so the pair goes with it.
-// The pair is `writer: connector`, which the facility's own actor may not
-// write, so the clear is written under the kind's package actor at the
-// bundle tier, the hand the open-time sweep uses. `syncState` is left alone:
-// the next run is what says whether the account is healthy.
-func (t *txn) syncClearErrorOnReconnect(ty *vocabulary.Kind, row *erow) error {
+// syncOnReconnect completes the OAuth facility's reconnect patch on a
+// `sync`-trait account (oauth.go completeOAuth), adding to props and naming
+// each added property's tier in tiers.
+//
+// The error pair goes: a fresh grant replaces the one the last error was
+// about. The pair is `writer: connector`, which the facility's own actor may
+// not write, so it is cleared at the bundle tier.
+//
+// An account that has synced before and is not paused gets a sync request,
+// `syncRequestedAt` at the owner tier: the reconnect is the owner's own act,
+// begun with their token. Without it nothing asks for the run that says
+// whether the new grant works, and the account keeps reading as failing until
+// its schedule comes round (decision 0176). It lands in the same patch as
+// `tokenStatus`, so the provider's on-request trigger sees one change with
+// both and fires once. A first connect stamps nothing: the provider's
+// on-connect trigger runs the first sync, and a request beside it would run
+// that backfill twice. `syncState` is left alone: the run is what says
+// whether the account is healthy.
+//
+// A property whose declared writer the named tier cannot fill is left out,
+// so a kind that redeclares a role differently skips that half instead of
+// failing the connect.
+func syncOnReconnect(ty *vocabulary.Kind, row *erow, now time.Time, props map[string]any, tiers map[string]substrate.Tier) {
 	if !ty.Implements(vocabulary.TraitSyncCore) {
-		return nil
+		return
 	}
-	if row.Props[propSyncError] == nil && row.Props[propSyncErrorAt] == nil {
-		return nil
+	for _, name := range []string{propSyncError, propSyncErrorAt} {
+		if row.Props[name] != nil && writerRoleIs(ty, name, vocabulary.WriterConnector) {
+			props[name] = nil
+			tiers[name] = substrate.TierBundle
+		}
 	}
-	authority, pkg := vocabulary.SplitPackageRef(ty.Package)
-	actor := substrate.BundleActor(authority, pkg)
-	return t.asSyncWriter(actor, func() error {
-		_, err := t.patch(eref{Kind: ty.Identity, ID: row.ID}, substrate.PatchInput{Properties: map[string]any{
-			propSyncError:   nil,
-			propSyncErrorAt: nil,
-		}})
-		return err
-	})
+	if row.Props[propLastSyncedAt] == nil || syncBool(row.Props, propSyncPaused) ||
+		!writerRoleIs(ty, propSyncRequestedAt, vocabulary.WriterOwner) {
+		return
+	}
+	props[propSyncRequestedAt] = now.Format(time.RFC3339Nano)
+	tiers[propSyncRequestedAt] = substrate.TierOwner
+}
+
+// writerRoleIs reports whether ty declares name with the writer role, or with
+// none, which any hand may fill.
+func writerRoleIs(ty *vocabulary.Kind, name, role string) bool {
+	p, ok := ty.Prop(name)
+	return ok && (p.Writer == "" || p.Writer == role)
 }
 
 // syncPark rides the transaction that parks the delivery: `erroring`, the

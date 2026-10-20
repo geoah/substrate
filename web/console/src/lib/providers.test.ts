@@ -232,6 +232,107 @@ describe("providerStanding", () => {
     ])
   })
 
+  describe("a failing account asked to sync again", () => {
+    // The production case: a refresh failed, the run broke on it, and the
+    // owner reconnected, which stamped a request after the failed run.
+    const failed = {
+      syncState: "erroring",
+      lastSyncStartedAt: "2026-10-20T08:00:00Z",
+      syncRequestedAck: "2026-10-19T09:00:00Z",
+    }
+    const standing = (props: Record<string, unknown>, legacy?: string) =>
+      providerStanding({
+        ...base,
+        accounts: [
+          { ...ada, sync: syncFieldsOf(props), legacySyncStatus: legacy },
+        ],
+      })
+
+    it("is failing while no request waits", () => {
+      const s = standing({
+        ...failed,
+        syncError: "oauthflow: refresh: provider answered 400",
+      })
+      expect(s.problems.map((p) => p.code)).toEqual(["sync"])
+    })
+
+    it("raises nothing and reads as syncing while the request waits for its run", () => {
+      const s = standing({
+        ...failed,
+        syncRequestedAt: "2026-10-20T08:40:00Z",
+      })
+      expect(s).toEqual({
+        tone: "on",
+        pill: "On",
+        line: "Connected · syncing",
+        problems: [],
+      })
+      expect(
+        standing({}, "erroring: oauthflow: refresh: provider answered 400")
+          .problems
+      ).toHaveLength(1)
+      expect(
+        standing(
+          { syncRequestedAt: "2026-10-20T08:40:00Z" },
+          "erroring: oauthflow: refresh: provider answered 400"
+        ).problems
+      ).toEqual([])
+    })
+
+    it("is failing again, with the new reason, once the requested run fails", () => {
+      const s = standing({
+        ...failed,
+        syncRequestedAt: "2026-10-20T08:40:00Z",
+        lastSyncStartedAt: "2026-10-20T08:40:02Z",
+        syncError: "whoop: HTTP 401",
+      })
+      expect(s.problems).toEqual([
+        {
+          code: "sync",
+          summary: "Syncing ada@example.com is failing",
+          detail: ["whoop: HTTP 401"],
+          account: "ada",
+          fixes: ["sync-now", "reconnect"],
+        },
+      ])
+    })
+
+    it("raises nothing while the requested run is in flight beside a legacy erroring status", () => {
+      // The run started: the dispatcher wrote `running` and its start, and
+      // the bundle rewrites the legacy string only when the run ends.
+      const legacy =
+        "erroring: oauthflow: refresh: provider answered 400, error code invalid_request"
+      const running = {
+        syncState: "running",
+        syncMessage: "oauthflow: refresh: provider answered 400",
+        syncRequestedAt: "2026-10-20T08:40:00Z",
+        lastSyncStartedAt: "2026-10-20T08:40:01Z",
+      }
+      expect(standing(running, legacy)).toEqual({
+        tone: "on",
+        pill: "On",
+        line: "Connected · syncing",
+        problems: [],
+      })
+      // A bundle that files a rate limit as `throttled` beside an
+      // `erroring: rate limited` string is slowed down, not failing.
+      expect(
+        standing({ syncState: "throttled" }, "erroring: rate limited").problems
+      ).toEqual([])
+    })
+
+    it("is failing when the request was answered or the account is paused", () => {
+      const at = "2026-10-20T08:40:00Z"
+      expect(
+        standing({ ...failed, syncRequestedAt: at, syncRequestedAck: at })
+          .problems
+      ).toHaveLength(1)
+      expect(
+        standing({ ...failed, syncRequestedAt: at, syncPaused: true }).problems
+      ).toHaveLength(1)
+    })
+  })
+
   it("reads a legacy erroring status as a failing sync", () => {
     const s = providerStanding({
       ...base,
@@ -479,6 +580,26 @@ describe("syncWords", () => {
       words({ syncState: "erroring", syncError: "gmail: HTTP 403\ntrace" })
     ).toBe("Having trouble: gmail: HTTP 403")
     expect(words({ syncState: "erroring" })).toBe("Having trouble")
+  })
+  it("says it is checking again while a request waits for its run", () => {
+    const failing = {
+      syncState: "erroring",
+      syncError: "oauthflow: refresh: provider answered 400",
+      lastSyncStartedAt: "2026-10-20T08:00:00Z",
+      syncRequestedAt: "2026-10-20T08:40:00Z",
+    }
+    expect(syncWords(syncFieldsOf(failing), "WHOOP")).toEqual({
+      text: "Checking again…",
+      tone: "active",
+    })
+    expect(
+      words({
+        ...failing,
+        lastSyncStartedAt: "2026-10-20T08:40:02Z",
+        syncError: "whoop: HTTP 401",
+      })
+    ).toBe("Having trouble: whoop: HTTP 401")
+    expect(words({ ...failing, syncPaused: true })).toBe("Paused")
   })
 })
 
