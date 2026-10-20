@@ -479,10 +479,18 @@ export function syncWords(
         tone: "bad",
       }
     }
-    case "throttled":
+    case "throttled": {
       // Held back by the provider (a rate limit, or a desktop app that is
-      // not reachable) and resuming on its own; the reason is the message.
-      return { text: `Waiting for ${providerName}`, tone: "warn" }
+      // not reachable) and resuming on its own. The reason is the message;
+      // an error pair left from an earlier failed run is not this one's.
+      const why = firstLine(f.message ?? "")
+      return {
+        text: why
+          ? `Waiting for ${providerName}: ${why}`
+          : `Waiting for ${providerName}`,
+        tone: "warn",
+      }
+    }
     default:
       return { text: "Not synced yet", tone: "muted" }
   }

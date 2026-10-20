@@ -682,13 +682,18 @@ describe("syncWords", () => {
     expect(words({ syncState: "throttled" })).toBe("Waiting for Google")
     expect(words({ syncState: "ok", syncPaused: true })).toBe("Paused")
   })
-  it("words a throttled sync as waiting whatever its reason", () => {
+  it("words a throttled sync as waiting, with its reason", () => {
     expect(
       syncWords(
         syncFieldsOf({ syncState: "throttled", syncMessage: UNREACHABLE }),
         "Beeper"
       )
-    ).toEqual({ text: "Waiting for Beeper", tone: "warn" })
+    ).toEqual({ text: `Waiting for Beeper: ${UNREACHABLE}`, tone: "warn" })
+  })
+  it("does not quote an earlier run's error on a throttled sync", () => {
+    expect(
+      words({ syncState: "throttled", syncError: "502 invalid token" })
+    ).toBe("Waiting for Google")
   })
   it("quotes the first line of the error", () => {
     expect(
