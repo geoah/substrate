@@ -121,6 +121,9 @@ func TestAggregatePlacesANightByItsEnd(t *testing.T) {
 		return fmt.Sprint(out)
 	}
 	for _, bucket := range []substrate.AggregateBucket{{Calendar: "day", Timezone: "Europe/Athens"}, {Calendar: "day"}} {
+		// health/hrv_rmssd places by its end where the read names no place,
+		// so the read by start names it.
+		bucket.Place = "start"
 		byStart := f.agg(context.Background(), substrate.Filter{}, read("health/hrv_rmssd", "summaries", bucket, "count"))
 		if got, want := days(byStart, "count"), "[09-03=2 09-05=1]"; got != want {
 			t.Errorf("%s nights by start: %s, want %s", bucket.Timezone, got, want)

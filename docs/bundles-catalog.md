@@ -1652,9 +1652,10 @@ carries the workout id. The current cycle has no end yet, so its span ends
 at the cycle's `updatedAt` and moves as WHOOP rescores it.
 A recovery's observations measure the night the recovery scores: they span
 the sleep the recovery names and carry the sleep's id in `periodId`, as the
-night's sleep performance and respiratory rate do. A day read with
-`bucket.place` `end` therefore puts them on the wake day, the way it places
-any nightly summary, and a records-mode window over the
+night's sleep performance and respiratory rate do. Their metrics declare
+`bucketPlace` `end`, so a day read puts them on the wake day with no
+`bucket.place`, the way it places any nightly summary, and a records-mode
+window over the
 WHOOP night holds them. A recovery whose sleep row is absent (sleeps toggled
 off, or the sleep in a later page) spans its cycle with `period` `cycle`
 until the sleep row lands; one whose cycle row is absent too writes nothing.

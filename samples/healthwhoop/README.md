@@ -35,8 +35,9 @@ A recovery's five readings (`health/whoop_recovery`, `hrv_rmssd`,
 `resting_heart_rate`, `spo2` and `skin_temperature`) measure the night the
 recovery scores, so they span that sleep, with `period` `sleep` and the
 sleep's id as `periodId`, which the night's sleep performance and
-respiratory rate carry too. A day read with `bucket.place` `end` puts them
-on the wake day, beside the nightly summaries of the other sources. A
+respiratory rate carry too. Their metrics place a value by its end, so a day
+read puts them on the wake day with no `bucket.place`, beside the nightly
+summaries of the other sources. A
 recovery whose sleep row is absent (sleeps toggled off) spans its cycle
 until the sleep arrives.
 
