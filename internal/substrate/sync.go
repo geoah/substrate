@@ -15,7 +15,7 @@ const (
 
 // SyncStatus is one `sync`-trait record's synchronization as `GET
 // /api/v1/sync/status` lists it: the trait's own properties read off the
-// record, joined with the status of every record-sourced trigger whose
+// record, the OAuth facility's sign-in beside them, joined with the status of every record-sourced trigger whose
 // source names the record's kind. Nothing here is stored beyond the record;
 // the triggers half is the same computation `…/trigger/status` answers.
 type SyncStatus struct {
@@ -27,6 +27,17 @@ type SyncStatus struct {
 	State   string `json:"state"`
 	Message string `json:"message,omitempty"`
 	Paused  bool   `json:"paused"`
+	// TokenStatus is the OAuth facility's `tokenStatus` on the same record
+	// (`connected`, `pending`, `erroring`), absent on a kind that carries
+	// none (a provider that signs in with a pasted key). TokenError and
+	// TokenErrorAt are why and since when the facility last failed to
+	// refresh the grant, as it stamps them on a kind that declares both
+	// (docs/bundles.md, the OAuth facility); absent while the sign-in works.
+	// A reader of this row alone can tell a dead sign-in, which only a
+	// reconnect fixes, from a run that failed.
+	TokenStatus  string     `json:"tokenStatus,omitempty"`
+	TokenError   string     `json:"tokenError,omitempty"`
+	TokenErrorAt *time.Time `json:"tokenErrorAt,omitempty"`
 	// The last run: when it finished, when it started and how long it took.
 	LastSyncedAt       *time.Time `json:"lastSyncedAt,omitempty"`
 	LastSyncStartedAt  *time.Time `json:"lastSyncStartedAt,omitempty"`

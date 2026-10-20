@@ -243,6 +243,48 @@ func TestStatusReadsCarryTheLatestParkedReason(t *testing.T) {
 	}
 }
 
+// TestSyncStatusCarriesTheSignIn: a sync status row carries the account's
+// OAuth sign-in, so a refused grant reads as one on the status alone; a row
+// with no sign-in leaves all three keys out.
+func TestSyncStatusCarriesTheSignIn(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	at := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	ds.syncStatuses = []substrate.SyncStatus{
+		{
+			Kind: "providers.substrate.reamde.dev/whoop/account", ID: "geoah", State: substrate.SyncStateErroring,
+			TokenStatus: "erroring", TokenError: `provider answered 400, error code "invalid_grant"`, TokenErrorAt: &at,
+			Health: substrate.HealthOK, Triggers: []substrate.TriggerStatus{},
+		},
+		{
+			Kind: "providers.substrate.reamde.dev/slack/workspace", ID: "work", State: substrate.SyncStateOK,
+			Health: substrate.HealthOK, Triggers: []substrate.TriggerStatus{},
+		},
+	}
+
+	rec := env.do(t, http.MethodGet, "/api/v1/sync/status", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items = %s, want two", rec.Body.String())
+	}
+	refused := body.Items[0]
+	if refused["tokenStatus"] != "erroring" || refused["tokenError"] != `provider answered 400, error code "invalid_grant"` || refused["tokenErrorAt"] != "2026-10-08T09:00:00Z" {
+		t.Fatalf("refused row = %v, want the sign-in's status, reason and when", refused)
+	}
+	for _, key := range []string{"tokenStatus", "tokenError", "tokenErrorAt"} {
+		if v, ok := body.Items[1][key]; ok {
+			t.Fatalf("a row with no sign-in carries %s = %v", key, v)
+		}
+	}
+}
+
 // TestStatusReadsCarryHealth: a healthy row says `ok` and leaves
 // failingSince out, and a row that never delivered leaves lastOkAt out too.
 func TestStatusReadsCarryHealth(t *testing.T) {

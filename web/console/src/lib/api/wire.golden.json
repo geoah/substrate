@@ -604,6 +604,9 @@
     "state": true,
     "streams": false,
     "title": false,
+    "tokenError": false,
+    "tokenErrorAt": false,
+    "tokenStatus": false,
     "triggers": true
   },
   "SyncStream": {

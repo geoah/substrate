@@ -952,7 +952,7 @@ export type SyncState = "never" | "running" | "ok" | "erroring" | "throttled"
 
 /** One `sync`-trait record's synchronization as `GET /api/v1/sync/status`
  * lists it (`substrate.SyncStatus`): the trait's properties read off the
- * record, joined with the status of every record trigger whose source names
+ * record, the OAuth facility's sign-in beside them, joined with the status of every record trigger whose source names
  * the record's kind. */
 export interface SyncStatus {
   kind: string
@@ -964,6 +964,13 @@ export interface SyncStatus {
   state: string
   message?: string
   paused: boolean
+  /** The OAuth facility's `tokenStatus` on the same record (`connected`,
+   * `pending`, `erroring`), absent on a kind that carries none.
+   * `tokenError` and `tokenErrorAt` are why and since when the facility last
+   * failed to refresh the grant, absent while the sign-in works. */
+  tokenStatus?: string
+  tokenError?: string
+  tokenErrorAt?: string
   lastSyncedAt?: string
   lastSyncStartedAt?: string
   lastSyncDurationMs?: number

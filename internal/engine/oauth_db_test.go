@@ -1251,8 +1251,9 @@ func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 }
 
 // syncAccountDocs is the mail closure with its account kind bound to the
-// core `sync` trait, carrying extra members beside the standard ones, its
-// OAuth endpoints pointed at baseURL.
+// core `sync` trait and declaring the facility's tokenError and tokenErrorAt
+// (as the shipped github and google account kinds do), carrying extra
+// members beside the standard ones, its OAuth endpoints pointed at baseURL.
 func syncAccountDocs(baseURL string, extra ...map[string]any) []map[string]any {
 	account := mbAccountTypeDoc()
 	data, _ := account["data"].(map[string]any)
@@ -1263,6 +1264,8 @@ func syncAccountDocs(baseURL string, extra ...map[string]any) []map[string]any {
 			props[name] = decl
 		}
 	}
+	props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
+	props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
 	members := append([]map[string]any{
 		mbConfigTypeDoc(), account, mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource),
@@ -1465,6 +1468,54 @@ func TestOAuthReconnectOfAPausedAccountRequestsNoSync(t *testing.T) {
 	}
 	if _, ok := got.Properties["syncError"]; ok {
 		t.Errorf("the error pair survived the reconnect of a paused account: %v", got.Properties)
+	}
+}
+
+// TestSyncStatusCarriesTheSignIn: a refused refresh shows on the account's
+// sync status row as well as on the record, so a reader of the status alone
+// can tell a dead sign-in from a failing run; a reconnect clears it there.
+func TestSyncStatusCarriesTheSignIn(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, p, account := installSyncOAuthBundle(t)
+	p.expiresIn = 30
+	connectOAuthAccount(t, svc, ds, account)
+	failSyncedAccount(t, ds, p, account)
+
+	row := func() substrate.SyncStatus {
+		t.Helper()
+		statuses, err := ds.SyncStatuses(ctx)
+		if err != nil {
+			t.Fatalf("sync statuses: %v", err)
+		}
+		for _, s := range statuses {
+			if s.Kind == account.Kind && s.ID == account.ID {
+				return s
+			}
+		}
+		t.Fatalf("sync statuses = %+v, want a row for the account", statuses)
+		return substrate.SyncStatus{}
+	}
+
+	s := row()
+	if s.TokenStatus != "erroring" {
+		t.Fatalf("tokenStatus = %q, want erroring", s.TokenStatus)
+	}
+	if !strings.Contains(s.TokenError, "400") || !strings.Contains(s.TokenError, "invalid_grant") {
+		t.Fatalf("tokenError = %q, want the status and the RFC 6749 code", s.TokenError)
+	}
+	if s.TokenErrorAt == nil {
+		t.Fatal("tokenErrorAt is absent on an erroring sign-in")
+	}
+	if want := propTime(t, mustGet(t, ds, account.Kind, account.ID), "tokenErrorAt"); !s.TokenErrorAt.Equal(want) {
+		t.Fatalf("tokenErrorAt = %s, want the record's %s", s.TokenErrorAt, want)
+	}
+
+	connectOAuthAccount(t, svc, ds, account)
+	s = row()
+	if s.TokenStatus != "connected" || s.TokenError != "" || s.TokenErrorAt != nil {
+		t.Fatalf("after a reconnect: tokenStatus %q, tokenError %q, tokenErrorAt %v; want connected and no reason",
+			s.TokenStatus, s.TokenError, s.TokenErrorAt)
 	}
 }
 

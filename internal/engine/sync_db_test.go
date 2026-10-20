@@ -128,6 +128,9 @@ func TestSyncDeliveryStampsRunningThenOK(t *testing.T) {
 	if s.LastSyncedAt == nil || s.LastSyncStartedAt == nil || s.Progress == nil || s.Progress.Done != 3 || s.Progress.Total != 3 {
 		t.Fatalf("sync status fields = %+v", s)
 	}
+	if s.TokenStatus != "" || s.TokenError != "" || s.TokenErrorAt != nil {
+		t.Fatalf("a kind with no sign-in reads one: %+v", s)
+	}
 	if len(s.Triggers) != 1 || s.Triggers[0].ID != trigID("drain") || s.Triggers[0].Kind != substrate.TriggerKindRecord {
 		t.Fatalf("sync status triggers = %+v, want the job trigger", s.Triggers)
 	}

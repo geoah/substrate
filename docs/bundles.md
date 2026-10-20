@@ -424,6 +424,9 @@ marks `tokenStatus: erroring` when that fails, and skips disabled bundles.
 Beside `erroring` it writes `tokenError` (the provider's HTTP status and RFC
 6749 error code, never its description) and `tokenErrorAt`, on an account kind
 that declares both `writer: oauth`; a good refresh or a reconnect clears them.
+On a `sync`-trait account all three also appear on its `GET
+/api/v1/sync/status` row and in the `TOKEN` column of `substratectl sync
+status`.
 A provider that answers `invalid_grant` has rejected the refresh token itself,
 so the loop stops refreshing that credential until a reconnect stores a new
 one. Any 4xx answer other than 408 and 429, `invalid_grant` included, also
@@ -641,7 +644,10 @@ example, `coalesce: true` so one request is one delivery per stream.
 
 **Reading it.** `GET /api/v1/sync/status` lists every binding record's
 sync properties joined with the status of the record triggers on its kind
-(cursor, head, lag, parked, pending), one row per account. The row's
+(cursor, head, lag, parked, pending), one row per account. The row also
+carries the OAuth facility's `tokenStatus`, `tokenError` and `tokenErrorAt`
+off the same record, so a reader of the status alone can tell a refused
+sign-in, which only a reconnect fixes, from a failing run. The row's
 `parked` also counts the parks of a schedule or webhook trigger that fires
 the same callable (a scheduled run names no account, so each account of the
 kind counts it), and `lastParkedError` and `lastParkedAt` give the newest
