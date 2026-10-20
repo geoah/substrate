@@ -33,15 +33,17 @@ data:
   # one, and a summary keeps its statistic and period.
   # 3: the record views of a sleep and a workout (views.yaml), records of the
   # seeded console package's `recordview` kind.
-  version: 3
+  # 4: lab report, lab result and lab metric views, and the sleep's and
+  # workout's tiles and breakdowns (views.yaml).
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds, one function and the metric catalogue (metrics.yaml) with the lab
 # analytes (metrics_analytes.yaml) as data. The metric rows are records of
 # the base package's kind, so a re-import of this sample rewrites them and
-# its removal leaves them. The record views of a sleep and a workout
-# (views.yaml) are data too, and a re-import replaces one only where its
-# owner has not edited it.
+# its removal leaves them. The record views (views.yaml: a sleep, a workout,
+# a lab report, a lab result, and a lab trend on the metric kind) are data
+# too, and a re-import replaces one only where its owner has not edited it.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/health

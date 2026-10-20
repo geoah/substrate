@@ -1600,6 +1600,16 @@ that deletes a mirror row WHOOP deleted.
   cursor at the changelog's start and the rows the mirror held before the
   import are converted without a replay by hand. Delivering a row already
   converted writes nothing.
+- **Views (2)**: [record views](console.md#record-views) in
+  `samples/healthwhoop/views.yaml`. `healthwhoop/cycle`, on the provider's
+  `providers.substrate.reamde.dev/whoop/cycle` kind, shows the cycle's
+  recovery, strain and sleep performance as dials in WHOOP's published
+  bands, its energy and heart rate, the night's heart rate variability,
+  resting heart rate, respiratory rate, blood oxygen and skin temperature
+  against the 30 nights before it, the stage totals, the scores' last 30
+  days and the workouts inside the cycle. A cycle with no end yet reads up
+  to now. `healthwhoop/sleep`, on `samples.substrate.reamde.dev/health/sleep`,
+  adds WHOOP's scores for the night beside the health sample's own view.
 
 | WHOOP field | Written as | Form | Unit |
 | --- | --- | --- | --- |

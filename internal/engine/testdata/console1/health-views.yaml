@@ -1,0 +1,143 @@
+# The record pages of a sleep and a workout, as DATA: records of the seeded
+# console package's `recordview` kind (decision record 0166), which the
+# console renders above the generic property sheet. The console names no
+# sample, so these records are the only place a sleep's hypnogram or a
+# workout's heart rate zones are asked for.
+#
+# An import or upgrade replaces a view its owner never wrote, and leaves one
+# the owner edited or deleted as the owner left it (docs/bundles.md, "The two
+# doors"). To take a newer shipped view over theirs, an owner applies this
+# file with the sample's authority rewritten to their own in every id and
+# reference, after purging the view to drop properties this file does not set.
+#
+# `appliesTo` names the kind's declaration and each metric is a reference to
+# the metric's record, so the import rehomes both with the kinds they name: a
+# view lands pointing at the repository's own `health/sleep` and its own
+# metric records. The ids carry the sample's authority so the import rewrites
+# them too: `recordview` is a seeded kind no import moves, so the id is what
+# keeps a copy installed verbatim and an imported copy apart.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: samples.substrate.reamde.dev/health/sleep
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/sleep
+    name: During this sleep
+    intro: What was measured between the sleep's start and its end.
+    window:
+      start: at
+      end: endsAt
+      about: about
+      source: source
+    sections:
+      - chart:
+          label: Heart rate, heart rate variability and breathing
+          metrics:
+            - samples.substrate.reamde.dev/observations/metric/health/heart_rate
+            - samples.substrate.reamde.dev/observations/metric/health/hrv_rmssd
+            - samples.substrate.reamde.dev/observations/metric/health/respiratory_rate
+          reducers:
+            - reducer: avg
+              label: Average
+            - reducer: min
+              label: Lowest
+            - reducer: max
+              label: Highest
+          bucket: auto
+          sources: prefer
+      - spans:
+          label: Sleep stages
+          metric: samples.substrate.reamde.dev/observations/metric/health/sleep_stage
+          codes:
+            - code: awake
+              label: Awake
+            - code: in_bed
+              label: In bed
+            - code: rem
+              label: REM
+            - code: asleep
+              label: Asleep
+            - code: light
+              label: Light
+            - code: deep
+              label: Deep
+          totals: true
+          sources: only
+---
+# Five heart rate zones of 19 beats each, from half of a 190 maximum, the
+# top one open to 220. An owner with a measured maximum edits the bounds here.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: samples.substrate.reamde.dev/health/workout
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/workout
+    name: During this workout
+    intro: What was measured between the workout's start and its end.
+    window:
+      start: at
+      end: endsAt
+      about: about
+      source: source
+    fold:
+      - distance
+      - duration
+    sections:
+      - properties:
+          list:
+            - property: distance
+              label: Distance
+            - property: duration
+              label: Time moving
+      - chart:
+          label: Heart rate
+          metrics:
+            - samples.substrate.reamde.dev/observations/metric/health/heart_rate
+          reducers:
+            - reducer: avg
+              label: Average
+            - reducer: min
+              label: Lowest
+            - reducer: max
+              label: Highest
+          bucket: auto
+          sources: prefer
+      - chart:
+          label: Time in heart rate zones
+          metrics:
+            - samples.substrate.reamde.dev/observations/metric/health/heart_rate
+          reducers:
+            - reducer: durationIn
+              low: 95
+              high: 114
+              label: Zone 1
+            - reducer: durationIn
+              low: 114
+              high: 133
+              label: Zone 2
+            - reducer: durationIn
+              low: 133
+              high: 152
+              label: Zone 3
+            - reducer: durationIn
+              low: 152
+              high: 171
+              label: Zone 4
+            - reducer: durationIn
+              low: 171
+              high: 220
+              label: Zone 5
+          bucket: whole
+          unit: min
+          sources: prefer
+      - chart:
+          label: Speed
+          metrics:
+            - samples.substrate.reamde.dev/observations/metric/health/speed
+          reducers:
+            - reducer: avg
+              label: Average
+            - reducer: max
+              label: Highest
+          bucket: auto
+          sources: prefer

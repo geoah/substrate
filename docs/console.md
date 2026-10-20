@@ -416,7 +416,11 @@ Under the properties, in order:
   HL7 v3 code such as `H` reads as "high"), the metric,
   source and thing it is about as record mentions, the form, the statistic
   and period of a vendor summary, when (one time where `endsAt` equals
-  `at`), the revision and the record that delivered it. A trace (the `packed` variant, told apart by declaring
+  `at`), the revision and the record that delivered it. Where the value and
+  the bounds of its first reference range are plain numbers in one unit, a
+  bar labelled **Against its range** draws the value against that range; a
+  range in another unit, or a value or bound with a comparator (`<5`), is
+  said in words alone. A trace (the `packed` variant, told apart by declaring
   `values`) draws its values over `[at, endsAt)` as a line broken wherever
   two values sit further apart than its `hold`, its managed `stats` as
   labelled values, and every value with its time in a table fifty to a
@@ -477,11 +481,19 @@ for a table's saved filters and columns, which live elsewhere.
 
 A view binds its **window** by the names of the record's own properties:
 `start` and `end` (such as `at` and `endsAt`), and optionally `about` (who
-the record is about) and `source` (what recorded it). The chart and spans
-blocks read the observations of who the record names, and the owner's where
-the view binds no `about` or the record names nobody, never everyone's. Its `fold` lists properties the sheet folds
-away because a section shows them. Then come its `sections`, in order, each
-holding one block:
+the record is about) and `source` (what recorded it). Every field is
+optional. With `open`, a record whose end is unset (the current WHOOP cycle)
+is read up to now, and the section says "so far". `last` gives a window to a
+record that holds none, such as a room or a meter: the window ends now and is
+`last` long (`P1D`, `P7D`). `aboutSelf` makes the record itself who every
+read is about, as a room is, and `sourceSelf` makes it the source, as a
+device page is; neither is set beside its named twin, and `last` is not set
+beside `start`. A view that binds `about` alone has no window: its table
+blocks narrow by the record's subject and nothing else. The blocks read the
+observations of who the record names, and the owner's where the view binds
+no `about` or the record names nobody, never everyone's. Its `fold` lists
+properties the sheet folds away because a section shows them. Then come its
+`sections`, in order, each holding one block:
 
 - **heading**: a heading, and an optional `note` under it.
 - **text**: a paragraph, in Markdown.
@@ -505,6 +517,14 @@ holding one block:
   `rank` for a percentile, and a `label` each. `sources` is `prefer` (the record's own
   source first, then the sources' priorities; the sources that drew the line
   are named under it), `only` (the record's own source alone) or `priority`.
+  `from` says where the read takes its values: `raw` (the default),
+  `summaries` or `prefer-raw`; `statistic` keeps the one summary statistic
+  a summaries read wants, such as `vendor` or `avg`; `channel` keeps one
+  channel, and the word `none` keeps the streams naming no channel. `bands`
+  are labelled value ranges drawn behind the line, each with a `tone`
+  (`good`, `fair`, `poor` or `none`), a `low` it includes and a `high` it
+  excludes (an absent bound is open), and a `metric` where it belongs to one
+  metric of the block alone. An amount draws bars, a gauge a line.
 - **spans**: a coded amount metric's values over the window as spans, one
   row per code in the order `codes` lists them (a code it does not list goes
   last), each under its `label`. A metric of any other form, or one listing
@@ -519,35 +539,108 @@ holding one block:
   fed the most of them), and where several sources fed the totals the block
   says which one the rows show. The block reads the first 500 spans and
   says so where there are more.
+- **stats**: tiles, one per item. An item is one `reducer` (`last` where
+  absent) of one `metric` over the window, the metric a reference property
+  of the record holds (`metricProperty`, such as a lab result's `metric`), or
+  one `property` of the record, where a dotted path reads into a keyed map
+  (`scores.sleepConsistency`). An item takes the chart's `from` and
+  `statistic`, and `code` for `timeInState`, `rank` for a percentile and
+  `low` and `high` for `durationIn`. `show` is `number`, `dial` (an arc
+  between `min` and `max` with the block's bands as arcs, for a bounded
+  score) or `bar` (the value against the baseline's range). With `baseline`
+  set, each metric tile compares the value against the daily values of that
+  many days before the window: their average, lowest and highest. A daily
+  value takes the item's reducer, except that a gauge (by its metric
+  record's `form`) read by `first` or `last` takes each day's average, since
+  a day's last reading is one arbitrary instant. A window of several days
+  read by a reducer that adds up over time (`sum`, `count`, `timeInState`,
+  `durationIn`) is compared with that many average days: a week's time open
+  against seven days at the daily average. A change of a value in `%`
+  reads in points ("+9 points vs the 30-day average of 42 %"), any other
+  with its relative change beside it. `better`
+  (`higher` or `lower`) colours the change, and a tile in a band names it.
+  With `empty: hide` a block where no item holds a value is left out.
+- **trend**: strips, one per item, of a metric bucketed by `day`, `week` or
+  `month` over `span` buckets ending with the bucket that holds the record,
+  that bucket highlighted. `rolling` adds the average over that many buckets
+  before each as a dashed line, and the caption gives the record's bucket
+  against it. An item names its reducer per bucket as a stats item does,
+  with `code`, `rank` or `low` and `high`. `show` is `auto` (by the metric's
+  form), `line` or `bars`. With `empty: hide` a block where no strip holds a
+  value is left out.
+- **table**: records of one `kind` (a reference to its declaration) as rows,
+  with the `columns` it names. The rows are the records pointing here
+  through `via`, those holding the same value as this record in `sameAs`, or,
+  with `inWindow`, those starting inside the window; exactly one of the three.
+  A kind binding core's `observed(single)` shows time, value, flag, reference
+  range and source where `columns` is absent, and `chart` draws the values
+  over time as points, each against its own reference range. `nest` names a
+  reference property of the listed kind: a row naming another listed row
+  sits under it, as a lab's converted twin does, and its point is hollow.
+  A float or decimal column shows two fraction digits at most (`8.3985` as
+  `8.4`), the stored digits on hover.
+  `orderBy` (default `at:desc`) and `limit` (default 25) shape the read; with
+  `empty: hide` a table with no rows is left out, and a view whose every
+  block is a table, stats or trend block under `empty: hide` stays hidden
+  until one of them draws something.
+- **breakdown**: bars from the record's own properties, each as its share
+  of the `total` property or of the bars' sum: a keyed map (`property`, such
+  as a workout's `zoneDurations`, with `keys` giving the order and labels) or
+  a list of scalar properties (`items`). It reads nothing.
+- **lanes**: rows of spans on the view's time axis: a kind's records inside
+  the window or pointing here, or a coded metric's held states. The grammar
+  declares it so the next console draws it without another package version;
+  this console shows a notice where it would be.
+
+**Reads.** Each block that reads observations issues one batched aggregate
+read naming all its metrics, never one read per metric. A read names a
+metric once, so a stats block issues one more read for each further way it
+reads a metric it already reads (another `from`, `statistic` or `unit`);
+items that read a metric the same way share one read, each adding its
+reducer. Items naming a `code` read in reads of their own, grouped by code.
+A `baseline` repeats every value read once, by the calendar day over the
+days before the window, a gauge's `first` or `last` as `avg`. A chart splits its metrics over more reads only
+where their buckets together pass the server's bucket budget. The server
+serves two aggregate reads at a time per process, so a page queues the rest:
+the healthwhoop sample's cycle page costs eight, and
+`web/console/src/components/record-view/shipped-reads.test.tsx` holds every
+shipped view to its count. Tables issue one list read and breakdowns none.
 
 The chart and spans blocks share one time axis: a zoom in one moves every
 line and spans block of the view, and the bars and totals stay whole. **Open
-in the timeline** opens the same window with every metric the view's lines
-and spans read. The engine refuses a view whose blocks do not match their
+in the timeline** opens the same window with every metric the view's lines,
+spans, stats and trends read. The engine refuses a view whose blocks do not match their
 declared shapes. What the declaration cannot say, the console says where the
 section would be: a section with no block or two, a block type this console
 does not draw (one a newer console package added), a related block naming
 both or neither of its two ways, a reducer it does not read, a `durationIn`
 without both bounds or with its low not under its high, and a percentile
-without its rank. A chart or spans block in a view that binds no window says
-it has nothing to read. On a record that does not hold the window the view
-binds (no end yet, or an end before its start), the view leaves its chart and
-spans blocks out, and is left out itself where nothing else remains.
+without its rank. It says so too for a stats or trend item naming none or
+two of `metric`, `metricProperty` and `property`, a `timeInState` item
+without its `code`, a `from` outside its three words, a table naming none or
+two of `via`, `sameAs` and `inWindow`, and a breakdown naming both or
+neither of `property` and `items`. A block that reads a window in a view
+that binds none says it has nothing to read. On a record that does not hold
+the window the view binds (no end yet without `open`, or an end before its
+start), the view leaves out the blocks that read the window, and is left out
+itself where nothing else remains.
 
 **How a sample ships views.** A sample ships its views as data records beside
 its kinds, naming each kind's declaration in `appliesTo`
 (`substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/sleep`),
 and the import rehomes that reference with the kind. The health sample ships
-two ([what the health sample adds](observations.md#what-the-health-sample-adds)).
+five and the healthwhoop sample two
+([what the health sample adds](observations.md#what-the-health-sample-adds)).
+A view on a provider's kind keeps its `appliesTo` through the import,
+because only `samples.substrate.reamde.dev` is rewritten.
 
-**Upgrades.** An import or an upgrade replaces a shipped view that nothing
-but the import has written, and leaves a view alone once you edited any
-property of it (the property ledger names who last wrote each), so your edit
-survives. To take a newer shipped view over an edited one, delete yours and
-import the sample again. A view whose only edit was removing a property reads
-as unedited, because a removed property has no writer, and is replaced.
-`substratectl apply -f` of a sample's files writes its views directly, as
-any apply does, and replaces an edited view.
+**Upgrades.** An import or an upgrade replaces a shipped view that only the
+import has written. A view you wrote, edited, trimmed or deleted through the
+API, the console or `substratectl` stays as you left it on every re-import
+and upgrade. To take a newer shipped view over yours, apply the sample's file
+with `substratectl apply -f`, its authority rewritten to your repository's
+([the two doors](bundles.md#the-two-doors) gives the command), purging the
+view first where you added a property the shipped view does not set.
 
 ## The record editor
 

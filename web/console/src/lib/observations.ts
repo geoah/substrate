@@ -405,7 +405,7 @@ const INTERPRETATION_SYSTEM =
  * (`Normal`, `Above range`) and kept as written otherwise (`HIGH`, `pH
  * low`); else its code, in words where it is an HL7 v3 code and the flag
  * names that system or none; else the code as written. */
-function flagWords(flag: Record<string, unknown>): string | undefined {
+function oneFlagWords(flag: Record<string, unknown>): string | undefined {
   const display = text(flag.display)
   if (display) {
     return /^[A-Z][^A-Z]*$/.test(display)
@@ -429,24 +429,55 @@ export function judgementWords(
   interpretation: unknown,
   referenceRanges: unknown
 ): string | undefined {
-  const flags = (Array.isArray(interpretation) ? interpretation : []).flatMap(
-    (f) => {
-      const word = isBag(f) ? flagWords(f) : undefined
-      return word ? [word] : []
-    }
-  )
   const ranges: unknown[] = Array.isArray(referenceRanges)
     ? referenceRanges
     : []
   const range = ranges[0]
   const bounds = isBag(range) ? rangeWords(range) : undefined
-  const flag = flags.join(", ")
+  const flag = flagWords(interpretation) ?? ""
   if (flag && bounds) return `${flag} (${bounds})`
   if (flag) return flag
   return bounds ? `range ${bounds}` : undefined
 }
 
-function rangeWords(range: Record<string, unknown>): string | undefined {
+/** A result's flags in words, joined (`high, critical high`): each flag's
+ * `display`, else its code (`oneFlagWords`). Undefined where it has none. */
+export function flagWords(interpretation: unknown): string | undefined {
+  const words = (Array.isArray(interpretation) ? interpretation : []).flatMap(
+    (f) => {
+      const word = isBag(f) ? oneFlagWords(f) : undefined
+      return word ? [word] : []
+    }
+  )
+  return words.length ? words.join(", ") : undefined
+}
+
+/** The HL7 v3 interpretation codes that read as out of range. */
+const POOR_CODES = new Set(["H", "L", "A", "HH", "LL", "AA", "HU", "LU"])
+
+/** The tone a result's flags give it: `good` for a normal code, `poor` for
+ * a code out of range, `none` otherwise. Only a flag naming the HL7 v3
+ * system, or none, is read; another system's codes mean something else.
+ * A poor flag wins over a normal one. */
+export function interpretationTone(
+  interpretation: unknown
+): "good" | "poor" | "none" {
+  let tone: "good" | "poor" | "none" = "none"
+  for (const f of Array.isArray(interpretation) ? interpretation : []) {
+    if (!isBag(f)) continue
+    const system = text(f.system)
+    if (system && system !== INTERPRETATION_SYSTEM) continue
+    const code = text(f.code)
+    if (!code) continue
+    if (POOR_CODES.has(code)) return "poor"
+    if (code === "N") tone = "good"
+  }
+  return tone
+}
+
+/** A reference range in words: `60 to 120 mg/dL`, `under 120 mg/dL`,
+ * `over 40 mg/dL`, else its text. */
+export function rangeWords(range: Record<string, unknown>): string | undefined {
   const low = isQuantity(range.low) ? range.low : undefined
   const high = isQuantity(range.high) ? range.high : undefined
   if (low && high) {

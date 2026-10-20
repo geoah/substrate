@@ -49,6 +49,7 @@ vi.mock("@tanstack/react-router", () => ({
   }) => <a data-search={JSON.stringify(search ?? {})}>{children}</a>,
 }))
 
+import { spanWords } from "./span-words"
 import { RecordViews } from "./record-views"
 import { useRecordViews } from "@/hooks/use-record-views"
 
@@ -238,6 +239,8 @@ function mount(
     spansMore?: boolean
     /** A line chart's answer, `CURVE` where absent. */
     curve?: AggregateResult
+    /** Holds every line read after the first until it resolves: a zoom. */
+    zoomAnswer?: Promise<void>
   } = {}
 ) {
   const metrics = opts.metrics ?? METRICS
@@ -270,7 +273,26 @@ function mount(
       }
       if (aggregate) {
         if (aggregate.metric?.ref === STAGE) return ok(opts.totals ?? TOTALS)
-        return ok(aggregate.bucket ? (opts.curve ?? CURVE) : BANDS)
+        if (
+          aggregate.bucket &&
+          seen.filter((s) => s.aggregate?.bucket).length > 1
+        ) {
+          await opts.zoomAnswer
+        }
+        const answered = aggregate.bucket ? (opts.curve ?? CURVE) : BANDS
+        // A several-metric read names each row's metric.
+        const metric = aggregate.metrics?.[0]?.ref
+        return ok(
+          metric
+            ? {
+                ...answered,
+                rows: answered.rows.map((r) => ({
+                  ...r,
+                  group: { ...r.group, metric },
+                })),
+              }
+            : answered
+        )
       }
       const kinds = filter.kinds ?? []
       if (kinds.includes(RECORD_VIEW_KIND)) {
@@ -422,9 +444,8 @@ describe("a record view", () => {
     })
     const line = seen.find((s) => s.aggregate?.bucket)!
     expect(line.aggregate).toMatchObject({
-      metric: { ref: PULSE },
+      metrics: [{ ref: PULSE, reducers: ["avg", "min", "max"] }],
       bucket: { every: "PT1M" },
-      reducers: ["avg", "min", "max"],
       sources: { policy: "priority", order: [GARMIN] },
     })
     expect(line.filter.properties).toEqual({ about: { exists: false } })
@@ -440,8 +461,13 @@ describe("a record view", () => {
     expect(bands.textContent).toContain("12m")
     const whole = seen.find((s) => s.aggregate && !s.aggregate.bucket)!
     expect(whole.aggregate).toMatchObject({
-      reducers: [{ durationIn: [95, 114] }, { durationIn: [114, 133] }],
-      durationUnit: "min",
+      metrics: [
+        {
+          ref: PULSE,
+          reducers: [{ durationIn: [95, 114] }, { durationIn: [114, 133] }],
+          durationUnit: "min",
+        },
+      ],
     })
     // The timeline over the same window, with the line's metric.
     const link = within(section).getByText("Open in the timeline").closest("a")!
@@ -459,6 +485,55 @@ describe("a record view", () => {
     expect(seen.filter((s) => s.aggregate && !s.aggregate.bucket)).toHaveLength(
       1
     )
+  })
+
+  // useQueries starts each new read with no answer of its own, so the
+  // chart asks for the newest one of the same read over another range.
+  it("keeps the line on screen while a zoom reads", async () => {
+    let release = () => {}
+    const zoomAnswer = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { seen, container } = mount(
+      [
+        view("fitness/session", {
+          name: "During this session",
+          window: WINDOW,
+          sections: [
+            {
+              chart: {
+                label: "Pulse",
+                metrics: [{ ref: PULSE }],
+                reducers: [{ reducer: "avg" }],
+              },
+            },
+          ],
+        }),
+      ],
+      RUN,
+      SESSION,
+      { zoomAnswer }
+    )
+    const section = await screen.findByRole("region", {
+      name: "During this session",
+    })
+    const chart = await within(section).findByRole("group", {
+      name: "Heart rate during this session",
+    })
+    act(() => chart.focus())
+    fireEvent.keyDown(chart, { key: "ArrowRight" })
+    fireEvent.keyDown(chart, { key: "Enter" })
+    await screen.findByRole("button", { name: "Show the whole session" })
+    await waitFor(() =>
+      expect(seen.filter((s) => s.aggregate?.bucket)).toHaveLength(2)
+    )
+    expect(
+      within(section).getByRole("group", {
+        name: "Heart rate during this session",
+      })
+    ).toBeTruthy()
+    expect(container.querySelector("[data-slot=skeleton]")).toBe(null)
+    release()
   })
 
   it("draws coded spans in the view's order of codes, under its labels, and the time in each", async () => {
@@ -749,4 +824,149 @@ it("captions a line with its reducer's own unit, and a count with none", async (
     curve: minutes("count", "12"),
   })
   expect(await caption()).toBeUndefined()
+})
+
+it("says this console does not draw lanes, and draws the rest", async () => {
+  mount([
+    view("fitness/session", {
+      name: "Lanes",
+      window: WINDOW,
+      sections: [
+        { lanes: { label: "States", rows: [{ metric: { ref: STAGE } }] } },
+        { heading: { text: "After" } },
+      ],
+    }),
+  ])
+  const section = await screen.findByRole("region", { name: "Lanes" })
+  expect(within(section).getByRole("note").textContent).toBe(
+    "This console does not draw lanes yet."
+  )
+  expect(within(section).getByRole("heading", { name: "After" })).toBeTruthy()
+})
+
+it("says so far over a window that ends at the time of reading", async () => {
+  const running = record(SESSION.identity, "run-3", {
+    begins: "2026-10-11T05:25:00Z",
+    by: { ref: GARMIN },
+  })
+  mount(
+    [
+      view("fitness/session", {
+        name: "Open",
+        window: { ...WINDOW, open: true },
+        sections: [{ heading: { text: "Now" } }],
+      }),
+      view("fitness/session-closed", {
+        name: "Closed",
+        window: WINDOW,
+        sections: [{ heading: { text: "Then" } }],
+      }),
+    ],
+    running
+  )
+  const open = await screen.findByRole("region", { name: "Open" })
+  expect(open.textContent).toContain("so far")
+  const closed = await screen.findByRole("region", { name: "Closed" })
+  expect(closed.textContent).not.toContain("so far")
+})
+
+it("words a view's last window by its length, never as the record or so far", async () => {
+  mount([
+    view("fitness/session-week", {
+      name: "Week",
+      window: { last: "P7D", aboutSelf: true },
+      sections: [{ heading: { text: "Lately" } }],
+    }),
+  ])
+  const week = await screen.findByRole("region", { name: "Week" })
+  expect(week.textContent).toContain("the last 7 days")
+  expect(week.textContent).not.toContain("so far")
+})
+
+it("says a chart over a last window measured nothing in the last day", async () => {
+  mount(
+    [
+      view("fitness/session-day", {
+        name: "Day",
+        window: { last: "P1D", aboutSelf: true },
+        sections: [
+          {
+            chart: {
+              label: "Pulse",
+              metrics: [{ ref: PULSE }],
+              reducers: [{ reducer: "avg" }],
+            },
+          },
+        ],
+      }),
+    ],
+    RUN,
+    SESSION,
+    { curve: answer([]) }
+  )
+  const day = await screen.findByRole("region", { name: "Day" })
+  await waitFor(() =>
+    expect(day.textContent).toContain(
+      "No heart rate was measured in the last day."
+    )
+  )
+  expect(day.textContent).not.toContain("this session")
+})
+
+it("says a last window's span in words a block can use", () => {
+  const last = (ms: number) => ({
+    window: { start: 0, end: ms },
+    open: true,
+    lastWindow: true,
+    observed: [],
+  })
+  expect(spanWords(last(86_400_000), "room")).toEqual({
+    during: "in the last day",
+    whole: "the last day",
+    soFar: "",
+  })
+  expect(spanWords(last(7 * 86_400_000), "room").during).toBe(
+    "in the last 7 days"
+  )
+  expect(spanWords(last(6 * 3_600_000), "room").whole).toBe("the last 6 hours")
+  expect(
+    spanWords(
+      { window: { start: 0, end: 1 }, open: true, observed: [] },
+      "cycle"
+    )
+  ).toEqual({
+    during: "during this cycle",
+    whole: "the whole cycle",
+    soFar: "so far",
+  })
+})
+
+it("keeps a view of tables that hide when empty hidden until one has rows", async () => {
+  const tableOf = (kind: string) => ({
+    table: {
+      kind: { ref: `substrate.reamde.dev/core/kind/${kind}` },
+      via: "session",
+      empty: "hide",
+    },
+  })
+  const { seen, container } = mount([
+    view("fitness/a-empty", {
+      name: "No routes",
+      sections: [tableOf(ROUTE.identity)],
+    }),
+    view("fitness/b-laps", { name: "Laps", sections: [tableOf(LAP.identity)] }),
+  ])
+  const laps = await screen.findByRole("region", { name: "Laps" })
+  await waitFor(() => expect(laps.hidden).toBe(false))
+  await waitFor(() =>
+    expect(seen.some((s) => s.filter.kinds?.includes(ROUTE.identity))).toBe(
+      true
+    )
+  )
+  await act(async () => {})
+  const empty = container.querySelector<HTMLElement>(
+    "section[data-record-view='fitness/a-empty']"
+  )!
+  expect(empty.hidden).toBe(true)
+  expect(empty.querySelector("table")).toBe(null)
 })

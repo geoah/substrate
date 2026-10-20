@@ -759,8 +759,12 @@ sed 's/samples\.substrate\.reamde\.dev/alice.example.com/g' samples/health/views
   | bin/substratectl apply -f -
 ```
 
-The file holds the workout view too, so the apply also writes that one back
-to the shipped view's properties.
+The file holds four other views (the workout, lab report, lab result and lab
+metric views), and the apply writes each of them back to the shipped view's
+properties, undoing any edit you made there. To take one view alone, write the
+`sed` output to a file, delete every other document from it, and apply that
+file. The healthwhoop sample's `views.yaml` holds two views, its cycle and its
+sleep view, the same way.
 
 `POST …/catalog/{id}/install` is the **provider** door. The closure lands
 verbatim, under the authority that publishes it, with the shipped version it

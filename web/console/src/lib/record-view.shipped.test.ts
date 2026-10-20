@@ -1,14 +1,22 @@
 /** The record views the samples ship (each sample's `views.yaml`), read the way
  * the console reads every view: none holds a section the console would
- * draw as a notice, and every metric a chart or a spans block names is the
- * full path of one a sample ships. The engine holds the views to their declared shape on
+ * draw as a notice, every metric a block names is the full path of one a
+ * sample ships, every kind a table or a lanes row lists is one a sample
+ * declares or a provider's, and a view binds a window wherever one of its
+ * blocks reads one. The engine holds the views to their declared shape on
  * write; the rules only the console checks are held here. */
 
 import { describe, expect, it } from "vitest"
 import { parseAllDocuments } from "yaml"
 
 import type { SubstrateRecord } from "@/lib/api/types"
-import { RECORD_VIEW_KIND, recordViewOf } from "@/lib/record-view"
+import type { Block } from "@/lib/record-view"
+import {
+  RECORD_VIEW_KIND,
+  readsWindow,
+  recordViewOf,
+  viewNeedsWindow,
+} from "@/lib/record-view"
 
 const viewFiles = import.meta.glob<string>("../../../../samples/*/views.yaml", {
   query: "?raw",
@@ -40,6 +48,54 @@ const METRIC_PATHS = new Set(
     .map((d) => `${d.kind}/${d.metadata!.id!}`)
 )
 
+const KIND_DECLARATION = "substrate.reamde.dev/core/kind"
+const KIND_PREFIX = `${KIND_DECLARATION}/`
+
+// Every kind a sample declares, by its reference.
+const SAMPLE_KINDS = new Set(
+  Object.values(sampleFiles)
+    .flatMap(docs)
+    .filter((d) => d?.kind === KIND_DECLARATION && d.metadata?.id)
+    .map((d) => d.metadata!.id!)
+)
+
+// Every metric a block reads, its bands included.
+function metricsOf(block: Block): string[] {
+  const banded = "bands" in block ? block.bands.flatMap((b) => b.metric ?? []) : []
+  switch (block.type) {
+    case "chart":
+      return [...block.metrics, ...banded]
+    case "spans":
+      return [block.metric]
+    case "stats":
+    case "trend":
+      return [...block.items.flatMap((i) => i.metric ?? []), ...banded]
+    case "lanes":
+      return block.rows.flatMap((r) => r.metric ?? [])
+    default:
+      return []
+  }
+}
+
+// Every kind a block lists.
+function kindsOf(block: Block): string[] {
+  switch (block.type) {
+    case "table":
+      return [block.kind]
+    case "lanes":
+      return block.rows.flatMap((r) => r.kind ?? [])
+    default:
+      return []
+  }
+}
+
+// The parsed view holds a listed kind's reference; the declaration's record
+// path is accepted too.
+function shippedKind(path: string): boolean {
+  const ref = path.startsWith(KIND_PREFIX) ? path.slice(KIND_PREFIX.length) : path
+  return SAMPLE_KINDS.has(ref) || ref.startsWith("providers.substrate.reamde.dev/")
+}
+
 const VIEWS: SubstrateRecord[] = Object.values(viewFiles)
   .flatMap(docs)
   .filter((d) => d?.kind === RECORD_VIEW_KIND)
@@ -57,28 +113,25 @@ describe("the shipped record views", () => {
   it("are read", () => {
     expect(VIEWS.length).toBeGreaterThan(0)
     expect(METRIC_PATHS.size).toBeGreaterThan(0)
+    expect(SAMPLE_KINDS.size).toBeGreaterThan(0)
   })
 
   it.each(VIEWS.map((v) => [v.id, v] as const))(
-    "%s draws every section and names shipped metrics",
+    "%s draws every section and names shipped metrics and kinds",
     (_, record) => {
       const view = recordViewOf(record)
       expect(view.sections.length).toBeGreaterThan(0)
-      expect(view.window).toBeDefined()
+      const blocks = view.sections.flatMap((s) => ("block" in s ? [s.block] : []))
+      // A window is required only where a block reads one.
+      expect(!blocks.some((b) => readsWindow(b)) || viewNeedsWindow(view)).toBe(true)
       const problems = view.sections.flatMap((s) =>
         "problem" in s ? [s.problem] : []
       )
       expect(problems).toEqual([])
-      const named = view.sections.flatMap((s) =>
-        "block" in s
-          ? s.block.type === "chart"
-            ? s.block.metrics
-            : s.block.type === "spans"
-              ? [s.block.metric]
-              : []
-          : []
-      )
+      const named = blocks.flatMap(metricsOf)
       expect(named.filter((m) => !METRIC_PATHS.has(m))).toEqual([])
+      const listed = blocks.flatMap(kindsOf)
+      expect(listed.filter((k) => !shippedKind(k))).toEqual([])
     }
   )
 })

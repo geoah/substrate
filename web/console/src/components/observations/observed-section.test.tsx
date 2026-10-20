@@ -337,6 +337,41 @@ describe("a single value", () => {
     expect(within(facts).queryByText("Until")).toBe(null)
   })
 
+  it("draws a result against its own range in the value's unit", () => {
+    const result = (range: Record<string, unknown>): SubstrateRecord => ({
+      ...WEIGHING,
+      properties: {
+        ...WEIGHING.properties,
+        value: { value: "3.6", unit: "mmol/L" },
+        interpretation: [{ code: "H" }],
+        referenceRanges: [range],
+      },
+    })
+    const view = mount(
+      result({
+        low: { value: "2.6", unit: "mmol/L" },
+        high: { value: "3.4", unit: "mmol/L" },
+      }),
+      observationKind
+    )
+    const bar = view.container.querySelector("[data-slot=range-bar]")!
+    // 2.6 to 3.6 padded by 5% each side: 3.6 sits at 95.45%.
+    expect(Number(bar.getAttribute("data-value-at"))).toBeCloseTo(95.45, 1)
+    const band = bar.querySelector("[data-band]")!
+    expect(band.getAttribute("data-band")).toBe("reference range")
+    // A high flag marks the value in the poor tone, beside its word.
+    const marker = bar.querySelector("[data-slot=range-value]") as HTMLElement
+    expect(marker.style.background).toBe("var(--destructive)")
+    expect(view.container.textContent).toContain("high (2.6 to 3.4 mmol/L)")
+    cleanup()
+    // A range in another unit is said in words, never drawn.
+    const other = mount(
+      result({ high: { value: "60", unit: "mg/dL" } }),
+      observationKind
+    )
+    expect(other.container.querySelector("[data-slot=range-bar]")).toBe(null)
+  })
+
   it("reads a value to its metric's declared places, and a bound whole", async () => {
     const hrv: SubstrateRecord = {
       ...WEIGHING,
