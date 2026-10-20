@@ -407,6 +407,9 @@ function connectedLine(
     return "Connected · syncing"
   }
   if (accounts.every((a) => a.sync.paused)) return "Connected · paused"
+  if (accounts.every((a) => a.sync.state === "throttled")) {
+    return "Connected · waiting"
+  }
   if (accounts.every((a) => a.sync.state === "never")) {
     return "Connected · first sync on its way"
   }
@@ -433,7 +436,8 @@ function askedWhen(iso: string, now: number): string {
   return relativeTime(iso, now)
 }
 
-/** The core `sync` trait's five states as a person reads them. A failing
+/** The core `sync` trait's five states as a person reads them; throttled
+ * reads as waiting, because the sync resumes by itself. A failing
  * account whose sync request waits for its run reads "Checking again…": the
  * failure it holds is the run before the request's. Once the request has
  * waited REQUEST_WAIT_MS with no run started, it reads as a sync that has
@@ -475,8 +479,18 @@ export function syncWords(
         tone: "bad",
       }
     }
-    case "throttled":
-      return { text: `Slowed down by ${providerName}`, tone: "warn" }
+    case "throttled": {
+      // Held back by the provider (a rate limit, or a desktop app that is
+      // not reachable) and resuming on its own. The reason is the message;
+      // an error pair left from an earlier failed run is not this one's.
+      const why = firstLine(f.message ?? "")
+      return {
+        text: why
+          ? `Waiting for ${providerName}: ${why}`
+          : `Waiting for ${providerName}`,
+        tone: "warn",
+      }
+    }
     default:
       return { text: "Not synced yet", tone: "muted" }
   }

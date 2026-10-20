@@ -166,7 +166,14 @@ data:
   # (CVE-2024-47081) and PYSEC-2026-2275 (CVE-2026-25645), and drops an
   # unused `import re`; both functions raise their HTTP and JSON errors
   # `from` the exception that caused them.
-  version: 22
+  #
+  # 23: a failure to reach Beeper Desktop at all (the computer asleep, the
+  # app closed, no route, no name) stamps `throttled` with
+  # `unreachableSince` and no `syncError`, and keeps the walk's place; the
+  # per-chat handlers no longer file one as that chat's failure. A 4xx, a
+  # 5xx, a bad body or the sandbox gate's refusal still stamps `erroring`
+  # (decision 0183). Adds `account.unreachableSince`.
+  version: 23
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -424,14 +431,22 @@ data:
       description: >-
         the instant a 429's Retry-After named, honoured by the scheduler for
         every call. Absent when nothing is holding the account back
+    unreachableSince:
+      type: datetime
+      writer: connector
+      displayName: Unreachable since
+      description: >-
+        when the current stretch of runs that could not reach Beeper Desktop
+        began (the computer asleep or the app closed); absent once a run reaches
+        it
     syncStatus:
       type: string
       writer: connector
       displayName: Sync status
       description: >-
-        the last sync outcome — ok, ok (N pending), erroring: <reason>, ignored:
-        duplicate account, and a trailing [N failed] when work has exhausted
-        its retries
+        the last sync outcome: ok, ok (N pending), erroring: <reason>, ignored:
+        duplicate account, Beeper Desktop is not reachable (since <time>)…,
+        and a trailing [N failed]
     # --- the core `sync` trait's connector hands (decision 0085) -------------
     # The ten properties the trait contracts that the CONNECTOR writes; the
     # owner's two (`syncRequestedAt`, `syncPaused`) are above. The sync body
@@ -442,14 +457,18 @@ data:
     # ONE function drives both streams, so there is no second body to clear a
     # live failure of: `syncState` is the whole run's outcome and the
     # per-stream entries below are the breakdown.
+    #
+    # A run that cannot reach Beeper Desktop at all is `throttled`, not
+    # `erroring`: the next run that reaches it catches up by itself, so it is
+    # a pause with nothing for the owner to fix (decision 0183).
     syncState:
       type: string
       writer: connector
       displayName: Sync state
       description: >-
         never | running | ok | erroring | throttled — the account-level state.
-        `ok` while a bounded drain still has work (the count rides in syncProgress),
-        `throttled` while a 429's Retry-After holds it
+        `ok` while a bounded drain still has work, `throttled` while a 429
+        holds it or Beeper Desktop is not reachable
     syncMessage:
       type: string
       writer: connector
@@ -1831,7 +1850,9 @@ data:
     watching it.
     """
     import datetime as _dt
+    import errno
     import ipaddress
+    import socket
     import time
     import urllib.parse
 
@@ -1874,6 +1895,20 @@ data:
     FAILED_MAX = 200
     IGNORED_STATUS = ("ignored: duplicate account (one token addresses one "
                       "Beeper Desktop)")
+    # The account's sentence while Beeper Desktop cannot be reached. Its opening
+    # words are what a reader matches on, so they do not change (decision 0183).
+    UNREACHABLE_MESSAGE = ("Beeper Desktop is not reachable (since %s); syncing "
+                           "resumes when it is back")
+    # The errnos of a destination that is not there right now. EACCES and EPERM
+    # are left out: the sandbox's connect gate refuses a destination
+    # outside the egress allowlist with one, and that is an operator's mistake
+    # to read as a failure, not a computer asleep.
+    UNREACHABLE_ERRNOS = frozenset(
+        getattr(errno, n) for n in ("ECONNREFUSED", "ETIMEDOUT", "EHOSTUNREACH",
+                                    "ENETUNREACH", "EHOSTDOWN", "ENETDOWN")
+        if hasattr(errno, n))
+    # urllib3's wrappers, matched by name so the body does not import urllib3.
+    UNREACHABLE_CLASSES = ("ConnectTimeoutError", "NameResolutionError")
 
     BACKFILL_DAYS = {"none": 0, "last2d": 2, "last30d": 30, "last90d": 90,
                      "last1y": 365, "all": -1}
@@ -2276,6 +2311,12 @@ data:
 
     # ---------------------------------------------------------------- the wire
 
+    # How many calls Beeper has answered in this process, whatever the status.
+    # A drain page compares it before and after its phase to learn whether the
+    # walk reached Beeper Desktop (decision 0183).
+    _ANSWERED = [0]
+
+
     def _call(base, token, path, params=None):
         """One GET. Beeper answers a plain JSON body — no `ok` envelope — and
         signals failure with the status and `{message, code}`."""
@@ -2283,6 +2324,7 @@ data:
                          headers={"Authorization": "Bearer " + token,
                                   "Accept": "application/json"},
                          timeout=HTTP_TIMEOUT)
+        _ANSWERED[0] += 1
         if r.status_code == 429:
             raise RateLimited(r.headers.get("Retry-After"))
         if r.status_code >= 400:
@@ -2895,6 +2937,69 @@ data:
         return isinstance(err, Beeper) and _is_permanent_status(err.status)
 
 
+    def _causes(err):
+        """`err` and what it wraps: requests puts urllib3's MaxRetryError in
+        `args[0]`, which carries the socket error on `.reason`. Bounded, because
+        a chain is data and a loop in it must not hang the run."""
+        seen, out, todo = set(), [], [err]
+        while todo and len(out) < 16:
+            e = todo.pop(0)
+            if e is None or id(e) in seen:
+                continue
+            seen.add(id(e))
+            out.append(e)
+            args = getattr(e, "args", None) or ()
+            if args and isinstance(args[0], BaseException):
+                todo.append(args[0])
+            for attr in ("reason", "__cause__", "__context__"):
+                nxt = getattr(e, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+        return out
+
+
+    def _unreachable(err):
+        """Did this call fail to reach Beeper Desktop at all: a connect timeout,
+        a refused connection, no route to the host or network, or a name that
+        does not resolve? Those are the computer asleep or the app closed, and
+        the next run that reaches it catches up by itself.
+
+        Everything else stays a failure: a read timeout (the app took the
+        connection and did not answer), TLS and proxy failures, any answer
+        Beeper gave, and the sandbox gate's EACCES refusal. A chain this does
+        not recognise is a failure too, so a miss errs toward the alarm."""
+        exc = requests.exceptions
+        if isinstance(err, exc.ConnectTimeout):
+            return True
+        if not isinstance(err, exc.ConnectionError):
+            return False
+        if isinstance(err, (exc.SSLError, exc.ProxyError)):
+            return False
+        for e in _causes(err)[1:]:
+            if isinstance(e, socket.gaierror):
+                return True
+            if isinstance(e, OSError) and e.errno in (errno.EACCES, errno.EPERM):
+                return False
+            if isinstance(e, OSError) and e.errno in UNREACHABLE_ERRNOS:
+                return True
+            if isinstance(e, (socket.timeout, TimeoutError)):
+                return True
+            if type(e).__name__ in UNREACHABLE_CLASSES:
+                return True
+        return False
+
+
+    def _since_text(iso):
+        """A stored instant as the minute a person reads, in UTC."""
+        try:
+            when = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except ValueError:
+            return str(iso)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        return when.astimezone(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
     def _failed(resume, kind, ident, err, **rest):
         """One unit of work that failed, KEPT — and retried only if retrying can
         possibly help. A PERMANENT one is recorded ONCE and never retried, because
@@ -2957,6 +3062,10 @@ data:
         }
         if completed and not pending:
             props["lastCompletedAt"] = now
+        # This run reached Beeper, so a stretch of unreachable runs is over. A
+        # null deletes the property; an ordinary run writes no delete at all.
+        if ((acct or {}).get("properties") or {}).get("unreachableSince"):
+            props["unreachableSince"] = None
         # The core `sync` trait, BESIDE the pair above and derived from the same
         # facts (T-084). A rate-limited stop is the trait's `throttled`; a bounded
         # one is `ok` with the count in `syncProgress`.
@@ -2978,6 +3087,9 @@ data:
             props["lastSyncedAt"] = _now_iso()
         if cursors is not None:
             props["streamCursors"] = cursors
+        # Beeper answered, even if with a refusal: the unreachable stretch is over.
+        if ((acct or {}).get("properties") or {}).get("unreachableSince"):
+            props["unreachableSince"] = None
         # `at_phase` is the phase the walk DIED in, which a permanent failure
         # rewrites to `done` in the cursors before it gets here — so the stream
         # that failed is named explicitly rather than read back off them.
@@ -2986,6 +3098,34 @@ data:
                             at_phase=at_phase))
         host.effects.patch(((acct or {}).get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE,
                            aid, properties=props)
+
+
+    def _waiting(host, acct, aid, err, cursors, run=None, reached=False):
+        """Beeper Desktop could not be reached: the account is `throttled`, not
+        `erroring` (decision 0183). The walk keeps its place, `unreachableSince`
+        keeps the first unreachable attempt across runs, and no `syncError` is
+        written. No `retryNotBefore` either: pending work keeps the account due,
+        so the next tick and Sync now both try again.
+
+        `reached` says this run got an answer from Beeper before the connection
+        failed. The earlier stretch is then over, and a new one starts now."""
+        props = (acct or {}).get("properties") or {}
+        now = _now_iso()
+        since = now if reached else (props.get("unreachableSince") or now)
+        message = UNREACHABLE_MESSAGE % _since_text(since)
+        patch = {
+            "syncStatus": message,
+            # An attempt, so the on-connect guard stays closed.
+            "lastSyncedAt": now,
+            "streamCursors": cursors,
+            "unreachableSince": since,
+        }
+        patch.update(_trait(props, cursors, "throttled", message, now, run=run))
+        # The technical reason stays in the run's log; the account carries the
+        # sentence a person reads.
+        host.log("beeper: Beeper Desktop is not reachable: %s" % (err,))
+        host.effects.patch(((acct or {}).get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE,
+                           aid, properties=patch)
 
 
     def _budget_left(resume, calls=1):
@@ -3080,6 +3220,9 @@ data:
         except RateLimited:
             raise
         except Exception as e:  # noqa: BLE001 — one address book's failure is its own
+            if _unreachable(e):
+                # The desktop is gone, not this address book: the walk pauses here.
+                raise
             return _failed(resume, "contacts", caid, e, contacts=queue[1:],
                            contact=None)
         for u in (body.get("items") or []):
@@ -3152,6 +3295,9 @@ data:
         except RateLimited:
             raise
         except Exception as e:  # noqa: BLE001 — one chat's failure is its own
+            if _unreachable(e):
+                # The desktop is gone, not this chat: the walk pauses here.
+                raise
             # The reason lands on the chat's STATE row, never on the mirror, and
             # the queue moves on: one unreadable chat never stops the rest.
             _chatsync_put(host, aid, cid,
@@ -3199,6 +3345,9 @@ data:
         except RateLimited:
             raise
         except Exception as e:  # noqa: BLE001
+            if _unreachable(e):
+                # The desktop is gone, not this chat: the walk pauses here.
+                raise
             # One chat's failure is that chat's business. The queue moves on and
             # the reason lands on the STATE row, never on the mirror.
             _chatsync_put(host, aid, cid,
@@ -3332,6 +3481,7 @@ data:
                        completed=False, run=resume)
                 return {"output": {"account": aid, "pending": True,
                                    "calls": resume.get("calls") or 0}}
+            answered = _ANSWERED[0]
             try:
                 nxt = PHASES[phase](host, base, token, _spend(resume))
             except RateLimited as rl:
@@ -3342,6 +3492,13 @@ data:
                 return {"output": {"account": aid, "rateLimited": True,
                                    "retryAfter": rl.retry_after}}
             except Exception as e:  # noqa: BLE001 — every failure is the account's status
+                if _unreachable(e):
+                    # The computer is asleep or the app closed: a pause, not a
+                    # failure, and the walk keeps its place.
+                    _waiting(host, acct, aid, e, _carry(resume), run=resume,
+                             reached=bool(resume.get("reached"))
+                             or _ANSWERED[0] > answered)
+                    return {"output": {"account": aid, "unreachable": True}}
                 # A PERMANENT failure of a stream phase ENDS the walk. Leaving the
                 # phase where it stopped keeps `_pending` true, which reports the
                 # account due on every tick forever — the 401 that can never come
@@ -3354,6 +3511,10 @@ data:
                           attempted=True, run=resume, at_phase=phase)
                 return {"output": {"account": aid, "erroring": True,
                                    "permanent": _permanent(e)}}
+            if _ANSWERED[0] > answered:
+                # Carried through this drain's pages only: `_carry` leaves it out
+                # of streamCursors, so the next run starts without it.
+                nxt = dict(nxt, reached=True)
             if (nxt.get("phase") or "done") == "done":
                 _stamp(host, acct, aid, _carry(nxt), run=nxt)
                 return {"output": {"account": aid, "calls": nxt.get("calls") or 0}}
