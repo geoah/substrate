@@ -111,8 +111,9 @@ func TestStatusTablesShowHealth(t *testing.T) {
 }
 
 // TOKEN says whether the account's sign-in works: an erroring one reads with
-// how long and the first line of the facility's reason, so the table alone
-// tells a dead grant, which only a reconnect fixes, from a failing run.
+// the reason's age and its first line, without the flow's prefix and with
+// the provider's error code whole, so the table alone tells a refused grant
+// from a provider outage and from a failing run.
 func TestSyncStatusShowsTheSignIn(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -123,6 +124,9 @@ func TestSyncStatusShowsTheSignIn(t *testing.T) {
 	}
 	if !strings.Contains(out, `erroring 3h: provider answered 400, error code "invalid_grant"`) {
 		t.Errorf("sync status does not show the refused sign-in:\n%s", out)
+	}
+	if strings.Contains(out, "oauthflow:") {
+		t.Errorf("the sign-in cell keeps the flow's prefix:\n%s", out)
 	}
 	if strings.Contains(out, "never shown") {
 		t.Errorf("the sign-in cell carries the reason's second line:\n%s", out)
@@ -137,7 +141,7 @@ func TestSyncStatusShowsTheSignIn(t *testing.T) {
 
 	a := &app{now: func() time.Time { return testNow }}
 	at := testNow.Add(-3 * time.Hour)
-	long := strings.Repeat("x", 80) + "\nsecond line"
+	long := strings.Repeat("x", 200) + "\nsecond line"
 	for _, tc := range []struct {
 		name string
 		s    substrate.SyncStatus
@@ -148,7 +152,12 @@ func TestSyncStatusShowsTheSignIn(t *testing.T) {
 		{"pending", substrate.SyncStatus{TokenStatus: "pending"}, "pending"},
 		{"erroring alone", substrate.SyncStatus{TokenStatus: "erroring"}, "erroring"},
 		{"erroring with when", substrate.SyncStatus{TokenStatus: "erroring", TokenErrorAt: &at}, "erroring 3h"},
-		{"erroring with why", substrate.SyncStatus{TokenStatus: "erroring", TokenErrorAt: &at, TokenError: long}, "erroring 3h: " + truncate(strings.Repeat("x", 80), 60)},
+		{"erroring with why", substrate.SyncStatus{TokenStatus: "erroring", TokenErrorAt: &at, TokenError: long}, "erroring 3h: " + truncate(strings.Repeat("x", 200), signInReasonMax)},
+		// The engine's own strings: the flow's prefix goes, the code stays.
+		{"refused grant", substrate.SyncStatus{TokenStatus: "erroring", TokenErrorAt: &at, TokenError: `oauthflow: refresh: provider answered 400, error code "invalid_grant"`}, `erroring 3h: provider answered 400, error code "invalid_grant"`},
+		{"refused request", substrate.SyncStatus{TokenStatus: "erroring", TokenErrorAt: &at, TokenError: `oauthflow: refresh: provider answered 400, error code "invalid_request"`}, `erroring 3h: provider answered 400, error code "invalid_request"`},
+		{"outage", substrate.SyncStatus{TokenStatus: "erroring", TokenErrorAt: &at, TokenError: "oauthflow: refresh: provider answered 503"}, "erroring 3h: provider answered 503"},
+		{"no refresh token", substrate.SyncStatus{TokenStatus: "erroring", TokenError: "oauthflow: no refresh token"}, "erroring: no refresh token"},
 	} {
 		if got := a.signIn(tc.s); got != tc.want {
 			t.Errorf("%s: signIn = %q, want %q", tc.name, got, tc.want)

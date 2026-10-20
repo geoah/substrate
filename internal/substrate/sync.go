@@ -15,9 +15,10 @@ const (
 
 // SyncStatus is one `sync`-trait record's synchronization as `GET
 // /api/v1/sync/status` lists it: the trait's own properties read off the
-// record, the OAuth facility's sign-in beside them, joined with the status of every record-sourced trigger whose
-// source names the record's kind. Nothing here is stored beyond the record;
-// the triggers half is the same computation `…/trigger/status` answers.
+// record, the OAuth facility's sign-in beside them, joined with the status
+// of every record-sourced trigger whose source names the record's kind.
+// Nothing here is stored beyond the record; the triggers half is the same
+// computation `…/trigger/status` answers.
 type SyncStatus struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
@@ -28,13 +29,15 @@ type SyncStatus struct {
 	Message string `json:"message,omitempty"`
 	Paused  bool   `json:"paused"`
 	// TokenStatus is the OAuth facility's `tokenStatus` on the same record
-	// (`connected`, `pending`, `erroring`), absent on a kind that carries
-	// none (a provider that signs in with a pasted key). TokenError and
-	// TokenErrorAt are why and since when the facility last failed to
-	// refresh the grant, as it stamps them on a kind that declares both
-	// (docs/bundles.md, the OAuth facility); absent while the sign-in works.
-	// A reader of this row alone can tell a dead sign-in, which only a
-	// reconnect fixes, from a run that failed.
+	// (`connected`, `erroring`, or a bundle's seeded `pending`), absent on a
+	// kind that carries none (a provider that signs in with a pasted key) and
+	// on an account that has not finished its first consent. TokenError is
+	// the last refresh failure's first line and TokenErrorAt when that reason
+	// first appeared, as the facility stamps them on a kind that declares
+	// both (docs/bundles.md, the OAuth facility); absent while the sign-in
+	// works. `erroring` means the last refresh failed: a refusal (a 4xx such
+	// as invalid_grant) needs a reconnect, and a 5xx or a timeout clears on
+	// the next good refresh.
 	TokenStatus  string     `json:"tokenStatus,omitempty"`
 	TokenError   string     `json:"tokenError,omitempty"`
 	TokenErrorAt *time.Time `json:"tokenErrorAt,omitempty"`

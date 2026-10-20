@@ -646,8 +646,9 @@ example, `coalesce: true` so one request is one delivery per stream.
 sync properties joined with the status of the record triggers on its kind
 (cursor, head, lag, parked, pending), one row per account. The row also
 carries the OAuth facility's `tokenStatus`, `tokenError` and `tokenErrorAt`
-off the same record, so a reader of the status alone can tell a refused
-sign-in, which only a reconnect fixes, from a failing run. The row's
+off the same record, so a reader of the status alone can tell a failing
+sign-in from a failing run. A refusal (a 4xx such as `invalid_grant`) needs a
+reconnect; a 5xx or a timeout clears on the next good refresh. The row's
 `parked` also counts the parks of a schedule or webhook trigger that fires
 the same callable (a scheduled run names no account, so each account of the
 kind counts it), and `lastParkedError` and `lastParkedAt` give the newest

@@ -1480,7 +1480,7 @@ func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.SyncStatus{{
 		Kind: "providers.substrate.reamde.dev/google/account", ID: "george-work", Title: "george@example.com",
 		State: substrate.SyncStateErroring, Error: "gmail: HTTP 403", Message: "ok (12 pending)",
-		TokenStatus: "erroring", TokenError: "provider answered 400, error code \"invalid_grant\"\nnever shown", TokenErrorAt: &refused,
+		TokenStatus: "erroring", TokenError: "oauthflow: refresh: provider answered 400, error code \"invalid_grant\"\nnever shown", TokenErrorAt: &refused,
 		LastSyncedAt: &synced, RequestedAt: &requested,
 		Streams: map[string]substrate.SyncStream{
 			"gmail":    {State: substrate.SyncStateErroring, Pending: 12},

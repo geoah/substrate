@@ -28,11 +28,13 @@ park onto the same record. status reads every such record joined with the
 record triggers on its kind. To ask for a run, patch syncRequestedAt on
 the account; to stop one, patch syncPaused.
 
-TOKEN is the account's OAuth sign-in: connected, pending, or erroring with
-how long and the facility's reason. erroring means the provider refused the
-stored grant: only a reconnect (substratectl bundle connect) fixes it, and
-asking for another run does not. A provider that signs in with a pasted key
-leaves it empty.`,
+TOKEN is the account's OAuth sign-in: connected, or erroring with the age
+of the current reason and the reason itself. erroring means the last
+refresh failed. A refusal (a 4xx such as invalid_grant) needs a reconnect
+(substratectl bundle connect), and asking for another run does not help. A
+5xx or a timeout clears on the next good refresh. The cell is empty on a
+provider that signs in with a pasted key, and empty or pending on an
+account that has not finished its first consent.`,
 	}
 	cmd.AddCommand(a.syncStatusCommand())
 	return cmd
@@ -96,9 +98,12 @@ func (a *app) health(health string, since *time.Time) string {
 }
 
 // signIn renders the account's OAuth sign-in as one cell: the facility's
-// tokenStatus as is, and on `erroring` how long ago the facility last failed
-// to refresh and the first line of why, the LAST PARKED cell's shape. A kind
-// that carries no sign-in leaves the cell empty.
+// tokenStatus as is, and on `erroring` the age of the current reason (the
+// facility restamps tokenErrorAt only when the reason changes) and the
+// reason's first line, the LAST PARKED cell's shape. The reason drops the
+// flow's `oauthflow: refresh: ` prefix and is cut later than the other
+// cells: its tail carries the provider's error code, which tells a refused
+// grant from an outage. A kind that carries no sign-in leaves the cell empty.
 func (a *app) signIn(s substrate.SyncStatus) string {
 	if s.TokenStatus != "erroring" {
 		return s.TokenStatus
@@ -107,11 +112,19 @@ func (a *app) signIn(s substrate.SyncStatus) string {
 	if s.TokenErrorAt != nil {
 		cell += " " + humanAge(a.now(), *s.TokenErrorAt)
 	}
-	if reason, _, _ := strings.Cut(s.TokenError, "\n"); reason != "" {
-		cell += ": " + truncate(reason, 60)
+	reason, _, _ := strings.Cut(s.TokenError, "\n")
+	reason = strings.TrimPrefix(reason, "oauthflow: refresh: ")
+	reason = strings.TrimPrefix(reason, "oauthflow: ")
+	if reason != "" {
+		cell += ": " + truncate(reason, signInReasonMax)
 	}
 	return cell
 }
+
+// signInReasonMax bounds the TOKEN cell's reason. It holds a whole
+// `provider answered 400, error code "invalid_request"` with room for a
+// count and a reconnect ask around it.
+const signInReasonMax = 140
 
 // lastParked renders the newest parked delivery as its age and its reason:
 // a park older than the account's last completed run leaves the account's
