@@ -604,7 +604,10 @@ is written as the loop runs under the agent's actor, carrying `agent`,
 `ok`/`overbudget`/`error`/`stopped`, where `stopped` is a chat turn a client
 stopped or a server shutdown ended), `agentDepth`, the tallies (`turns`, `toolCalls`,
 the token counts, `costUSD`), and
-`startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
+`startedAt`/`finishedAt`. `promptTokens` is the whole input the model saw;
+`cacheReadTokens` and `cacheWriteTokens` are the parts of it the provider
+served from and wrote to its prompt cache, which `costUSD` prices at the
+row's cache rates ([providers](#providers)). A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the
 tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
 sub-agent call's row), and the required `thread` it belongs to. An
@@ -756,7 +759,12 @@ Spend is what the threads recorded: the `costUSD` of every root thread whose
 `finishedAt` falls inside the window, times 100, plus what runs still going
 have spent so far. A root thread's cost includes its sub-agents', so a run
 counts against the cap of the agent that started it; a sub-agent's own cap is
-not enforced. A model the provider row has no price for counts 0. A continued
+not enforced. A model the provider row has no price for counts 0. Since
+[decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)
+a cached prompt token is priced at its cache rate; a thread settled before the
+upgrade keeps the cost it recorded at the full input rate, so a cap sized
+against that older number is looser in real terms once those threads leave
+the window. A continued
 chat counts its whole thread once its last turn finishes in the window. A run
 that ends without its thread settling (a stop, a failed write, a panic, a
 thread deleted under it) keeps what it charged counted for the window, because
@@ -814,12 +822,22 @@ that speaks to a gateway. A model absent from the table leaves the thread's
 never [compacts](#threads-messages-and-cost). A new repository's seeded rows
 carry it for their models.
 
+A thread's `costUSD` is, per 1M tokens, the uncached prompt times
+`inputPer1M`, cache reads times `cacheReadPer1M`, cache writes times
+`cacheWritePer1M`, and the completion times `outputPer1M`
+([decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)).
+Both cache rates are optional: absent, a read costs a tenth of `inputPer1M`
+and a write 1.25 times it, Anthropic's and OpenAI's list ratios for a
+5-minute cache. A model whose ratio differs states its rate: Claude Opus 5.5
+reads at a twentieth of its input price, and a 1-hour cache writes at twice
+it. A stated `"0"` is a free cache.
+
 ```yaml
 pricing:
-  - {model: claude-opus-5, inputPer1M: "5", outputPer1M: "25", contextWindow: 200000}
+  - {model: claude-opus-5-5, inputPer1M: "4", outputPer1M: "20", cacheReadPer1M: "0.20", contextWindow: 200000}
 ```
 
-The two rates are `decimal` properties, so they are written as quoted strings:
+The rates are `decimal` properties, so they are written as quoted strings:
 a bare YAML number rides a float and is refused
 ([data model](data-model.md#property-types)).
 
@@ -902,7 +920,7 @@ data:
     wire: anthropic
     apiKey: sk-ant-…
     pricing:
-      - {model: claude-opus-5, inputPer1M: "5", outputPer1M: "25"}
+      - {model: claude-opus-5-5, inputPer1M: "4", outputPer1M: "20", cacheReadPer1M: "0.20"}
 ---
 # Azure OpenAI. The deployment endpoint is the row's, and so is the key.
 kind: substrate.reamde.dev/llm/provider
