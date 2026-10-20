@@ -357,7 +357,7 @@ export function SyncNowButton({
             ? "The request is on the record; the dispatcher picks it up on its next pass."
             : ran > 0
               ? `${ran} ${ran === 1 ? "delivery" : "deliveries"} ran.`
-              : "The request is on the record; the run in progress or the dispatcher's next pass picks it up.",
+              : "Nothing ran now. The request is on the record: a run in progress or a later pass delivers it, unless the delivery failed, which the account's sync state shows.",
       })
       refresh()
     },

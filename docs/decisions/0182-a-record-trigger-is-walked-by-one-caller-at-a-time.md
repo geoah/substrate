@@ -37,15 +37,16 @@ reads the cursor, for a pass's turn and a wake alike, and gives it back when
 the walk ends, a panic included. A pass's turn that finds a wake walking the
 trigger moves on to the next trigger and comes back at the next pass. A wake
 that finds a pass or another wake walking it runs nothing and answers
-`{"ran": 0}` at once; the walk in progress reads the changelog until a read
-comes back empty, so it delivers the woken rows, or the next pass does. An
+`{"ran": 0}` at once. The walk in progress or a later pass delivers the
+woken rows: a wake's walk and a pass's turn within its budget read the
+changelog until a read returns no changes, and a pass's turn past its
+budget stops after the delivery in hand. An
 idle pass still checks idleness first and takes no hold. A trigger that is
 walking keeps its activity entry through the pass's prune.
 
 The dispatcher already delivers every row, so a wake only speeds a delivery
 up. A wake that waited would hang the Sync now request for the whole delivery
-in hand, minutes for a sync, in the common case where the pass got there
-first. A wake that only nudges the dispatcher changes the verb's answer and
+in hand, minutes for a sync, whenever the pass got there first. A wake that only nudges the dispatcher changes the verb's answer and
 needs a path into substrated's per-repository queue. An advisory lock buys
 nothing while a repository has one writer process
 ([0083](0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)),
@@ -58,7 +59,9 @@ and holds a connection for the walk.
 - Good, because neither caller waits on the other.
 - Bad, because `ran: 0` no longer tells "nothing was due" from "another walk
   has it" on the wire. A wake during a pass's turn delivers nothing itself;
-  its rows land within that walk or at the next pass (5 seconds by default).
+  its rows land in the walk in progress or a later pass. A later pass starts
+only after the current pass has given every other record trigger its turn
+budget, so the wait can run well past the dispatcher's tick.
 - Bad, because a wake with no budget can hold a trigger through a long
   backlog, and the pass skips that trigger on every tick meanwhile.
 - Bad, because the hold is per process, and is complete only while 0083

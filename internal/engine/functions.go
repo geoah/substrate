@@ -704,7 +704,7 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 	// One walk per trigger at a time: a pass's skip beside a wake's
 	// failing delivery would win the cursor swap and the park would yield
 	// with no error recorded anywhere (decision 0182). Neither caller
-	// waits; the walk in progress reads to an empty page.
+	// waits; the walk in progress or a later pass delivers the rows.
 	release, ok := ds.startRecordWalk(tr.ID)
 	if !ok {
 		ds.logWalkHeld(tr.ID, pass == nil)
@@ -2063,7 +2063,7 @@ func (ds *dataset) logYield(triggerID, swap string, seq int64) {
 // asked for.
 func (ds *dataset) logWalkHeld(triggerID string, wake bool) {
 	if wake {
-		ds.svc.log.Info("substrate: trigger wake ran nothing: a walk of the trigger is in progress and delivers what the wake asked for",
+		ds.svc.log.Info("substrate: trigger wake ran nothing: a walk of the trigger is in progress; it or a later pass delivers what the wake asked for",
 			"repository", ds.Repository().ID, "trigger", triggerID)
 		return
 	}

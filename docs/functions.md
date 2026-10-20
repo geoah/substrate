@@ -986,7 +986,10 @@ the body says so, with a guarded write
 ([0093](decisions/0093-a-guarded-write-may-declare-that-losing-is-normal.md)).
 Two walks of one record trigger never overlap, a wake's included
 ([0182](decisions/0182-a-record-trigger-is-walked-by-one-caller-at-a-time.md));
-this section is about two triggers, or a direct call beside one.
+this section is about two triggers, a direct call beside one, or a hand
+retry of a parked delivery (`retry`), which takes no walk hold and can run
+while a walk of the same trigger delivers a newer change for the same
+account.
 
 **Stamp the version you read, and declare that losing is fine.** The version is
 already in hand — `envelope["record"]["version"]` for a record delivery,
@@ -1252,8 +1255,9 @@ drains to head.
 **One walk per record trigger at a time.** A pass's turn and a `wake` take
 the same per-trigger hold in the process, and neither waits for it. A wake
 that finds a pass or another wake walking the trigger runs nothing and
-answers `{"ran": 0}`; the walk in progress reads to an empty page, so it
-delivers the woken rows, or the next pass does. A pass that finds a wake
+answers `{"ran": 0}`; the walk in progress or a later pass delivers the
+woken rows. A pass's turn that has spent its budget stops after the delivery
+in hand, so the woken rows may wait for a later pass. A pass that finds a wake
 walking the trigger moves on and comes back at its next pass. Without the
 hold, a pass could skip a change a wake's paged delivery had already
 acknowledged and move the cursor, and the wake's park would lose the cursor
@@ -1438,7 +1442,8 @@ repository.
 - `POST …/trigger/{id}/wake` scans now: a webhook fires once with no
   `request`, a record trigger drains its backlog to head (the dispatcher's per-trigger
   budget does not apply) unless another walk of it is in progress, in which
-  case it answers `{"ran": 0}` and that walk delivers, a schedule checks its
+  case it answers `{"ran": 0}` and the walk in progress or a later pass
+  delivers, a schedule checks its
   due occurrence.
 - `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
   request in the envelope, `202` with `{"fire": id}` once the request is on
