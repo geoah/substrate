@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { retryDelay, retryRead } from "./retry"
 import { ApiError } from "./types"
 
-const busy = new ApiError("unavailable", "busy", 503, [], [], 7)
+const busy = new ApiError("unavailable", "busy", 503, [], [], 2)
 const rederiving = new ApiError(
   "unavailable",
   "re-deriving",
@@ -32,6 +32,13 @@ describe("retryRead", () => {
     expect(retryRead(0, invalid)).toBe(false)
   })
 
+  it("never waits out a long Retry-After, such as a restart's 30 seconds", () => {
+    const restart = new ApiError("unavailable", "restart", 503, [], [], 30)
+    expect(retryRead(0, restart)).toBe(false)
+    const brief = new ApiError("unavailable", "busy", 503, [], [], 5)
+    expect(retryRead(0, brief)).toBe(true)
+  })
+
   it("asks again after transport trouble", () => {
     expect(retryRead(0, offline)).toBe(true)
     expect(retryRead(0, new TypeError("fetch failed"))).toBe(true)
@@ -40,7 +47,7 @@ describe("retryRead", () => {
 
 describe("retryDelay", () => {
   it("waits the Retry-After the server named, else backs off", () => {
-    expect(retryDelay(0, busy)).toBe(7000)
+    expect(retryDelay(0, busy)).toBe(2000)
     expect(retryDelay(0, offline)).toBe(1000)
     expect(retryDelay(2, offline)).toBe(4000)
     expect(retryDelay(9, offline)).toBe(30_000)

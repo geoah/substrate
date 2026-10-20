@@ -634,13 +634,15 @@ A `baseline` repeats every value read once, by the calendar day over the
 days before the window, a gauge's `first` or `last` as `avg`. A chart splits its metrics over more reads only
 where their buckets together pass the server's bucket budget. The server
 serves two aggregate reads at a time per process, so a page queues the rest:
-the healthwhoop sample's cycle page costs eight (six while the cycle is
-open, which reads no baseline), and
+the healthwhoop sample's cycle page costs eight (seven while the cycle is
+open, which reads no baseline for the values still growing), and
 `web/console/src/components/record-view/shipped-reads.test.tsx` holds every
 shipped view to its count. Tables issue one list read and breakdowns none.
 A read the server turns away while its aggregate slots are busy (`503
 unavailable`) is asked again twice, each after the `Retry-After` the server
-names; one turned away while the server re-derives an index is not. A
+names; one turned away while the server re-derives an index is not, nor
+one whose `Retry-After` is longer than five seconds (a refusal only a
+restart lifts names 30). A
 block whose read failed says why, with **Read again**.
 
 The chart and spans blocks share one time axis: a zoom in one moves every
