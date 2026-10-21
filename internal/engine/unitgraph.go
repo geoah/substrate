@@ -115,8 +115,11 @@ func (c *unitGraphCache) put(repo string, at *unitGraphAt) {
 	sort.Slice(list, func(i, j int) bool { return list[i].at.revision > list[j].at.revision })
 	c.total++
 	if len(list) > unitGraphsPerRepository {
+		// The dropped slots are cleared, or the backing array keeps their
+		// graphs reachable past what total counts.
+		clear(list[unitGraphsPerRepository:])
+		c.total -= len(list) - unitGraphsPerRepository
 		list = list[:unitGraphsPerRepository]
-		c.total--
 	}
 	c.repos[repo] = list
 	for c.total > unitGraphsPerProcess {
@@ -140,8 +143,9 @@ func (c *unitGraphCache) evictOne() {
 		c.total = 0
 		return
 	}
-	list := c.repos[oldRepo]
-	list = append(list[:oldIdx:oldIdx], list[oldIdx+1:]...)
+	// slices.Delete clears the vacated tail slot, so the backing array keeps
+	// no pointer at the evicted graph.
+	list := slices.Delete(c.repos[oldRepo], oldIdx, oldIdx+1)
 	if len(list) == 0 {
 		delete(c.repos, oldRepo)
 	} else {
