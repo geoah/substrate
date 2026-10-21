@@ -228,7 +228,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	first := cycles[len(cycles)-1]
 	id := strconv.FormatInt(int64(first["id"].(float64)), 10)
 	rec := healthProps(t, ds, obsObservation, hw(id, "recovery"))
-	if v, u := quantityOf(t, rec, "value"); v != strconv.Itoa(p.Day(days[0]).Recovery) || u != "%" {
+	if v, u := quantityOf(t, rec, "value"); v != strconv.Itoa(p.Day(days[0]).Recovery) || u != "percent" {
 		t.Errorf("the first recovery is %s %s, the persona's is %d %%", v, u, p.Day(days[0]).Recovery)
 	}
 	if n := parkedFailures(t, ds); n != 0 {

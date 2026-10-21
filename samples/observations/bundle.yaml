@@ -15,13 +15,14 @@
 #   trace        many values over a fixed period, binding observed(packed)
 #   source       the device, app, service or lab a value came from
 #
-# The write rules and the observed index read nothing from a metric or a
-# source: what an indexed number means (its form, unit, hold, counter
-# contract, delta and circular flags) is on the observation or trace itself,
-# so editing a metric never relabels a stored value (decision record 0156).
-# The aggregate read takes a metric's `measures` and `unit` as the measure it
-# converts into and the unit it answers in by default, and a source's
-# `priorities` as the priority policy's default order.
+# The observed index reads nothing from a metric or a source: what an
+# indexed number means (its form, unit, hold, counter contract, delta and
+# circular flags) is on the observation or trace itself, so editing a metric
+# never relabels a stored value (decision record 0156). The write rules hold
+# every value to the units its metric admits (decision record 0186), the
+# aggregate read takes a metric's `unit` as the unit it answers in by
+# default, and a source's `priorities` as the priority policy's default
+# order.
 #
 # A domain never edits a base kind: health-only context is a `qualifiers`
 # code on an observation, and health-only definition data is a health kind
@@ -40,7 +41,11 @@ data:
   # full record path.
   # version 3: the metric declares `units`, the unit records a value may be
   # written in (decision record 0186).
-  version: 3
+  # version 4: the metric's `unit` is a reference to a unit record and its
+  # `measures` is gone; an observation and a trace retire the managed
+  # `measure`. Every quantity converts through the repository's unit graph
+  # (decision record 0186).
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds and six data records (metrics.yaml): the physical metrics several

@@ -40,7 +40,11 @@ data:
   # 8: the cycle and sleep views (views.yaml); ADAPTER is healthwhoop@8.
   # No output changes but the stamp, so 8 needs no replay: an output takes
   # the new stamp when its origin's next delivery rewrites it.
-  version: 8
+  # 9: every unit is written as the id of a unit record (`percent`, `1/min`,
+  # `score`), the spelling the repository stores since decision record
+  # 0186, so a reconcile compares a stored value with what it would write;
+  # ADAPTER is healthwhoop@9.
+  version: 9
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # One function and its record trigger (triggers.yaml). No inputs and no
@@ -60,10 +64,12 @@ data:
     - samples.substrate.reamde.dev/health
     - providers.substrate.reamde.dev/whoop
   requiresAtLeast:
-    samples.substrate.reamde.dev/observations: 1
-    # 2 declares the sleep's and the workout's `name`, which this adapter
+    # 4 names each metric's unit as a unit record, whose id this adapter
     # writes.
-    samples.substrate.reamde.dev/health: 2
+    samples.substrate.reamde.dev/observations: 4
+    # 2 declares the sleep's and the workout's `name`, which this adapter
+    # writes; 6 anchors the sleep's and the workout's quantities to units.
+    samples.substrate.reamde.dev/health: 6
     # 21 is the version that deletes a mirror row WHOOP deleted, which is
     # what lets this adapter delete the outputs of one.
     providers.substrate.reamde.dev/whoop: 21
@@ -167,7 +173,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthwhoop-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthwhoop@8"
+    ADAPTER = "healthwhoop@9"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -204,22 +210,22 @@ data:
     # summary is WHOOP's own computation over the cycle (`statistic: vendor`,
     # `period: cycle`); an amount is the cycle's total.
     CYCLE_READINGS = (
-        ("strain", "health/whoop_strain", "{score}", "summary", "strain"),
+        ("strain", "health/whoop_strain", "score", "summary", "strain"),
         ("kilojoule", "health/energy_expended", "kJ", "amount", "energy"),
     )
     # A recovery's five readings: (score field, metric id, unit, id role).
     RECOVERY_READINGS = (
-        ("recoveryScore", "health/whoop_recovery", "%", "recovery"),
+        ("recoveryScore", "health/whoop_recovery", "percent", "recovery"),
         ("hrvRmssdMilli", "health/hrv_rmssd", "ms", "hrv"),
-        ("restingHeartRate", "health/resting_heart_rate", "/min", "resting_heart_rate"),
-        ("spo2Percentage", "health/spo2", "%", "spo2"),
+        ("restingHeartRate", "health/resting_heart_rate", "1/min", "resting_heart_rate"),
+        ("spo2Percentage", "health/spo2", "percent", "spo2"),
         ("skinTempCelsius", "health/skin_temperature", "Cel", "skin_temperature"),
     )
     # A sleep's two scores over the night: (score field, metric id, unit, id
     # role).
     SLEEP_READINGS = (
-        ("sleepPerformancePercentage", "health/whoop_sleep_performance", "%", "sleep_performance"),
-        ("respiratoryRate", "health/respiratory_rate", "/min", "respiratory_rate"),
+        ("sleepPerformancePercentage", "health/whoop_sleep_performance", "percent", "sleep_performance"),
+        ("respiratoryRate", "health/respiratory_rate", "1/min", "respiratory_rate"),
     )
     # WHOOP's stage totals and the `health/sleep_stage` code each one is.
     STAGE_METRIC = "health/sleep_stage"
@@ -346,7 +352,7 @@ data:
             workout, one summary per statistic over its span."""
             out = []
             for field, statistic, role in HEART_RATE:
-                value = self.obs.quantity(score.get(field), "/min")
+                value = self.obs.quantity(score.get(field), "1/min")
                 if value is not None:
                     out.append(self.observation(
                         self.oid(aid, key, role), HEART_RATE_METRIC, "summary", origin,
@@ -512,9 +518,9 @@ data:
                     if stages.get("totalInBedTimeMilli") is not None:
                         typed["timeInBed"] = self.duration(stages["totalInBedTimeMilli"])
                     typed["efficiency"] = self.obs.quantity(
-                        score.get("sleepEfficiencyPercentage"), "%")
+                        score.get("sleepEfficiencyPercentage"), "percent")
                     typed["respiratoryRate"] = self.obs.quantity(
-                        score.get("respiratoryRate"), "/min")
+                        score.get("respiratoryRate"), "1/min")
                     typed["disturbances"] = stages.get("disturbanceCount")
                     scores = {}
                     for field, key in (("sleepPerformancePercentage", "sleepPerformance"),
@@ -534,7 +540,7 @@ data:
                         desired.append(self.observation(
                             self.oid(aid, sid, "stage", code), STAGE_METRIC, "amount",
                             origin, revision, code=code,
-                            value={"value": minutes, "unit": self.host.units.canonical("min")},
+                            value={"value": minutes, "unit": "min"},
                             **common))
                     for field, metric, unit, role in SLEEP_READINGS:
                         value = self.obs.quantity(score.get(field), unit)
@@ -573,8 +579,8 @@ data:
                          "at": p.get("at"), "endsAt": p.get("endsAt"),
                          "distance": self.obs.quantity(score.get("distanceMeter"), "m"),
                          "totalEnergy": self.obs.quantity(score.get("kilojoule"), "kJ"),
-                         "averageHeartRate": self.obs.quantity(score.get("averageHeartRate"), "/min"),
-                         "maxHeartRate": self.obs.quantity(score.get("maxHeartRate"), "/min"),
+                         "averageHeartRate": self.obs.quantity(score.get("averageHeartRate"), "1/min"),
+                         "maxHeartRate": self.obs.quantity(score.get("maxHeartRate"), "1/min"),
                          "elevationGain": self.obs.quantity(score.get("altitudeGainMeter"), "m"),
                          "strain": self.obs.number(score.get("strain"))}
                 a, b = self.obs.parse_instant(p.get("at")), self.obs.parse_instant(p.get("endsAt"))

@@ -96,30 +96,30 @@ data:
         the span
     distance:
       type: quantity
-      measures: length
+      unit: m
       description: how far
     # the split the metric catalogue keeps (health/active_energy and
     # health/energy_expended): WHOOP reports the total, Apple and Garmin the
     # active part, and the two never add
     activeEnergy:
       type: quantity
-      measures: energy
+      unit: kJ
       description: the energy spent above the resting rate during it
     totalEnergy:
       type: quantity
-      measures: energy
+      unit: kJ
       description: all the energy spent during it, resting and active together
     averageHeartRate:
       type: quantity
-      measures: rate
+      unit: 1/min
       description: the average heart rate
     maxHeartRate:
       type: quantity
-      measures: rate
+      unit: 1/min
       description: the highest heart rate
     elevationGain:
       type: quantity
-      measures: length
+      unit: m
       description: the height climbed
     strain:
       type: decimal

@@ -38,6 +38,11 @@ data:
     - properties:
         - metric
         - at
+  # `measure` was the measure the engine's unit table read the unit as,
+  # which the unit graph does not have (decision record 0186)
+  retired:
+    properties:
+      - measure
   properties:
     # ---- the observed(packed) contract ----
     metric:
@@ -68,7 +73,8 @@ data:
         - counter
     unit:
       type: string
-      description: the UCUM code every value is in; a trace of codes has none
+      description: the unit id every value is in, such as kg; a trace of codes
+        has none
     every:
       type: duration
       description: the spacing of regular points from at
@@ -117,11 +123,6 @@ data:
       max: 1080
       description: minutes east of UTC for every point in the period; absent
         means unknown, and a trace splits where it changes
-    measure:
-      type: string
-      managed: true
-      description: the measure the unit was read as when the trace was written,
-        set by the substrate
     origins:
       type: reference
       kind: any

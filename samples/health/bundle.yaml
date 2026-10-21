@@ -39,7 +39,13 @@ data:
   # reference range carries a tone (labresult.yaml); the sleep and workout
   # charts hide where nothing was measured, and the lab result view lists
   # the results of one body region (views.yaml).
-  version: 5
+  # 6: every quantity converts through the repository's unit graph (decision
+  # record 0186): each metric's `unit` is a reference to a unit record and
+  # `measures` is gone, a sleep's and a workout's quantities name their
+  # `unit`, a lab result retires the managed `measure`, and `convertlab`
+  # reads a target metric's unit reference and tells a mass from an amount
+  # concentration with host.units.converts.
+  version: 6
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds, one function and the metric catalogue (metrics.yaml) with the lab
@@ -61,9 +67,9 @@ data:
   requires:
     - samples.substrate.reamde.dev/observations
   requiresAtLeast:
-    # 2 is the metric that binds core's `metric`, which a lab result's
-    # metric reference must pin.
-    samples.substrate.reamde.dev/observations: 2
+    # 4 is the metric whose `unit` is a reference to a unit record, which
+    # convertlab reads.
+    samples.substrate.reamde.dev/observations: 4
   installs:
     - samples.substrate.reamde.dev/health/analyte
     - samples.substrate.reamde.dev/health/sleep
@@ -75,8 +81,8 @@ data:
 # ---- lab results in the other unit system ------------------------------------
 # Fired by `health-on-labresult` (triggers.yaml) on every create, update and
 # delete of a lab result. A mass and an amount concentration of one analyte
-# are two metrics and two measures (metrics.yaml), so a read of LDL in mmol/L
-# cannot answer a result a lab reported in mg/dL. This function writes each
+# are two metrics whose units no linear conversion joins (metrics.yaml), so a
+# read of LDL in mmol/L cannot answer a result a lab reported in mg/dL. This function writes each
 # result's value in the paired metric too, as a derived lab result, using the
 # conversions the `analyte` records list (metrics_analytes.yaml).
 kind: substrate.reamde.dev/core/function
@@ -117,7 +123,7 @@ data:
     again, which also keeps the body from feeding itself), an input with no
     `value` (a coded, ratio, text or absent result), a counter (a running
     total, which a lab never reports), a conversion onto the input's own
-    metric, a value or a target whose measure the formula does not read, and
+    metric, a value or a target whose unit the formula does not read, and
     an amount or a summed summary under an NGSP/IFCC formula, whose intercept
     does not carry over a sum. Each skip is counted in the output.
 
@@ -147,6 +153,7 @@ data:
     LABRESULT = HOME + "/health/labresult"
     ANALYTE = HOME + "/health/analyte"
     METRIC = HOME + "/observations/metric"
+    UNIT = "substrate.reamde.dev/core/unit"
     FORMULA_VERSION = "1"
     MAX_ID = 128
 
@@ -161,8 +168,10 @@ data:
     COPIED = ("source", "about", "report", "form", "statistic", "period",
               "hold", "at", "endsAt", "utcOffset", "specimen", "method",
               "status", "interpretation", "revision")
-    # Each formula's input and output unit; molar-mass reads the input's measure.
-    AFFINE = {"ngsp-to-ifcc": ("%", "mmol/mol"), "ifcc-to-ngsp": ("mmol/mol", "%")}
+    # Each formula's input and output unit, by unit id; molar-mass reads
+    # whether the input is a mass or an amount concentration by which of the
+    # two bases its unit converts to.
+    AFFINE = {"ngsp-to-ifcc": ("percent", "mmol/mol"), "ifcc-to-ngsp": ("mmol/mol", "percent")}
     MASS, AMOUNT = "mass-concentration", "amount-concentration"
     MOLAR_BASE = {MASS: "g/L", AMOUNT: "mol/L"}
 
@@ -212,7 +221,7 @@ data:
     class _Run:
         def __init__(self, host):
             self.host = host
-            self.units = {}
+            self.concentrations = {}
             self.factors = {}
             self.metric_units = {}
             self.wrote = 0
@@ -222,18 +231,17 @@ data:
         def skip(self, why):
             self.skipped[why] = self.skipped.get(why, 0) + 1
 
-        def measure(self, unit):
-            """The measure a unit belongs to, or None for one the table cannot
-            place."""
-            if unit not in self.units:
-                try:
-                    self.units[unit] = self.host.units.measure(unit)
-                except Exception:
-                    self.units[unit] = None
-            return self.units[unit]
+        def concentration(self, unit):
+            """MASS or AMOUNT for a unit that converts to that base through the
+            repository's linear conversions, else None."""
+            if unit not in self.concentrations:
+                self.concentrations[unit] = next(
+                    (kind for kind, base in MOLAR_BASE.items() if self.host.units.converts(unit, base)), None)
+            return self.concentrations[unit]
 
         def factor(self, frm, to):
-            """What one `frm` is in `to`, both of one measure."""
+            """What one `frm` is in `to`, two units joined by linear
+            conversions."""
             if frm == to:
                 return Decimal(1)
             if (frm, to) not in self.factors:
@@ -241,9 +249,11 @@ data:
             return self.factors[(frm, to)]
 
         def target_unit(self, path):
+            """The unit id a metric's `unit` reference names, or None."""
             if path not in self.metric_units:
                 row = self.host.records.get(METRIC, _id_in(path, METRIC))
-                self.metric_units[path] = ((row or {}).get("properties") or {}).get("unit")
+                unit = ((row or {}).get("properties") or {}).get("unit")
+                self.metric_units[path] = _id_in(_path(unit), UNIT) or None
             return self.metric_units[path]
 
         def apply(self, formula, analyte, conversion, quantity, unit):
@@ -258,7 +268,7 @@ data:
                 if raw is None:
                     return None
                 grams = Decimal(str(raw))
-                source, target = self.measure(frm), self.measure(unit)
+                source, target = self.concentration(frm), self.concentration(unit)
                 if grams <= 0 or {source, target} != {MASS, AMOUNT}:
                     return None
                 base = x * self.factor(frm, MOLAR_BASE[source])
@@ -270,7 +280,7 @@ data:
                     return None
                 slope, intercept = Decimal(str(params["slope"])), Decimal(str(params["intercept"]))
                 reads, writes = AFFINE[formula]
-                if self.measure(frm) != self.measure(reads) or self.measure(unit) != self.measure(writes):
+                if not self.host.units.converts(frm, reads) or not self.host.units.converts(unit, writes):
                     return None
                 x = x * self.factor(frm, reads)
                 out = (x - intercept) * slope if formula == "ngsp-to-ifcc" else x / slope + intercept
