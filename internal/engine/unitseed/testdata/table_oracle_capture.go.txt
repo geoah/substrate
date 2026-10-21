@@ -1,0 +1,228 @@
+// The program that wrote table_oracle.json. It is kept here, as text the Go
+// tool does not build, because the table it reads is gone from this tree.
+//
+// Source: commit 741ce8b0f5d46d981e8dd426b1a378ac64576e4b ("docs(plans):
+// record how step 4 fixes the review and migrates old imports", the head of
+// feat/dynamic-units-4), the last commit holding the engine's unit table
+// (internal/vocabulary/unitstable.go). It runs as a test of package
+// vocabulary_test there, beside unitseed_test.go, whose helpers it uses
+// (shippedGraph, seedID, tableMap, seedAnnotations).
+//
+// Procedure, from the repository's root:
+//
+//	mkdir /tmp/capture && git archive 741ce8b0f | tar -x -C /tmp/capture
+//	cp internal/engine/unitseed/testdata/table_oracle_capture.go.txt \
+//	  /tmp/capture/internal/vocabulary/table_oracle_capture_test.go
+//	(cd /tmp/capture && TABLE_ORACLE_COMMIT=741ce8b0f5d46d981e8dd426b1a378ac64576e4b \
+//	  TABLE_ORACLE_OUT=/tmp/table_oracle.json \
+//	  go test -count=1 -run '^TestCaptureTableOracle$' ./internal/vocabulary/)
+//
+// /tmp/table_oracle.json is then byte for byte this directory's file.
+//
+// It wrote 216 units in 67 components and 316 spellings on 2026-10-21.
+// Never rerun it against a later commit: the file is the table's answer.
+
+package vocabulary_test
+
+// The capture of internal/engine/unitseed/testdata/table_oracle.json, run once
+// at the last commit that held the engine's unit table. Every map and every
+// component boundary below is read from the table (Measures, ConvertIn
+// through tableMap, UnitCodes, UnitAliases); the graph built from the seed is
+// only asserted against, never copied.
+
+import (
+	"encoding/json"
+	"math/big"
+	"os"
+	"slices"
+	"sort"
+	"testing"
+
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+type oracleUnit struct {
+	Root   string `json:"root"`
+	Factor string `json:"factor,omitempty"`
+	Offset string `json:"offset,omitempty"`
+	Delta  string `json:"delta"`
+}
+
+type oracleEdge struct {
+	to             string
+	factor, offset *big.Rat
+	difference     bool
+}
+
+func TestCaptureTableOracle(t *testing.T) {
+	out := os.Getenv("TABLE_ORACLE_OUT")
+	if out == "" {
+		t.Skip("TABLE_ORACLE_OUT names no file")
+	}
+	g := shippedGraph(t)
+	id := func(code string) string { return seedID(t, code) }
+
+	// Every pair the table converts inside a measure is an edge, read from
+	// the table alone.
+	edges := map[string][]oracleEdge{}
+	for _, u := range g.Units() {
+		edges[u.ID] = nil
+	}
+	for _, m := range vocabulary.Measures() {
+		difference := m.Scale == vocabulary.ScaleDifference
+		for _, a := range m.Units {
+			for _, b := range m.Units {
+				if a == b {
+					continue
+				}
+				f, o, ok := tableMap(m.Name, a, b)
+				if !ok {
+					continue
+				}
+				edges[id(a)] = append(edges[id(a)], oracleEdge{to: id(b), factor: f, offset: o, difference: difference})
+			}
+		}
+	}
+	// Components: the classes the table's edges join. The root is the
+	// smallest id in byte order, the graph's documented rule.
+	comp := map[string]string{}
+	for start := range edges {
+		if _, done := comp[start]; done {
+			continue
+		}
+		members := []string{start}
+		seen := map[string]bool{start: true}
+		for i := 0; i < len(members); i++ {
+			for _, e := range edges[members[i]] {
+				if !seen[e.to] {
+					seen[e.to] = true
+					members = append(members, e.to)
+				}
+			}
+		}
+		sort.Strings(members)
+		for _, m := range members {
+			comp[m] = members[0]
+		}
+	}
+	// Maps to the root: absolute ones through the non-difference measures'
+	// edges, a difference's through every edge's factor alone.
+	walk := func(root string, useDifference bool) map[string][2]*big.Rat {
+		maps := map[string][2]*big.Rat{root: {big.NewRat(1, 1), new(big.Rat)}}
+		queue := []string{root}
+		for len(queue) > 0 {
+			y := queue[0]
+			queue = queue[1:]
+			for x, es := range edges {
+				for _, e := range es {
+					if e.to != y || (e.difference && !useDifference) {
+						continue
+					}
+					if _, done := maps[x]; done {
+						continue
+					}
+					// y = x*f + o and root = y*F + O, so root = x*(f*F) + (o*F + O).
+					F, O := maps[y][0], maps[y][1]
+					f := new(big.Rat).Mul(e.factor, F)
+					o := new(big.Rat).Add(new(big.Rat).Mul(e.offset, F), O)
+					if useDifference {
+						o = new(big.Rat)
+					}
+					maps[x] = [2]*big.Rat{f, o}
+					queue = append(queue, x)
+				}
+			}
+		}
+		return maps
+	}
+	units := map[string]oracleUnit{}
+	roots := map[string]bool{}
+	for _, r := range comp {
+		roots[r] = true
+	}
+	for root := range roots {
+		abs, diff := walk(root, false), walk(root, true)
+		for u, r := range comp {
+			if r != root {
+				continue
+			}
+			d, ok := diff[u]
+			if !ok {
+				t.Fatalf("%s: no map to its root %s", u, root)
+			}
+			ou := oracleUnit{Root: root, Delta: d[0].RatString()}
+			if a, ok := abs[u]; ok {
+				ou.Factor, ou.Offset = a[0].RatString(), a[1].RatString()
+			}
+			units[u] = ou
+		}
+	}
+
+	// The capture is held to the step-4 graph, which the parity tests held
+	// to the table: if the two disagree the capture is wrong.
+	for _, u := range g.Units() {
+		members := g.Component(u.ID)
+		var want []string
+		for v, r := range comp {
+			if r == comp[u.ID] {
+				want = append(want, v)
+			}
+		}
+		sort.Strings(want)
+		sort.Strings(members)
+		if !slices.Equal(members, want) {
+			t.Errorf("%s: the graph's component %v, the table's %v", u.ID, members, want)
+		}
+		if r, _ := g.Root(u.ID); r != comp[u.ID] {
+			t.Errorf("%s: the graph's root %s, the table's %s", u.ID, r, comp[u.ID])
+		}
+	}
+
+	// Spellings: every code the table listed, every input alias and the
+	// annotated counts, from the table; and every spelling the seed's
+	// records declare (id, code, aliases).
+	spellings := map[string]string{}
+	add := func(s, u string) {
+		if prev, ok := spellings[s]; ok && prev != u {
+			t.Fatalf("%q names %s and %s", s, prev, u)
+		}
+		spellings[s] = u
+	}
+	for _, code := range append(vocabulary.UnitCodes(), seedAnnotations...) {
+		add(code, id(code))
+	}
+	for alias, code := range vocabulary.UnitAliases() {
+		add(alias, id(code))
+	}
+	for _, u := range g.Units() {
+		add(u.ID, u.ID)
+		if u.Code != "" {
+			add(u.Code, u.ID)
+		}
+		for _, a := range u.Aliases {
+			add(a, u.ID)
+		}
+	}
+	for s, u := range spellings {
+		if got, ok := g.Resolve(s); !ok || got != u {
+			t.Errorf("%q: the graph resolves %q, %v; the table %s", s, got, ok, u)
+		}
+	}
+	if t.Failed() {
+		return
+	}
+	raw, err := json.MarshalIndent(map[string]any{
+		"source": map[string]string{
+			"commit":    os.Getenv("TABLE_ORACLE_COMMIT"),
+			"procedure": "internal/engine/unitseed/testdata/table_oracle_capture.go.txt, run at the commit",
+		},
+		"units": units, "spellings": spellings,
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(out, append(raw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d units, %d components, %d spellings", len(units), len(roots), len(spellings))
+}

@@ -4,9 +4,16 @@ package unitseed_test
 // the source of the units and conversions every repository is seeded with,
 // edited by hand. These tests hold them to what the engine's old unit table
 // promised: every spelling a writer sent before still names the same unit,
-// and units the table kept apart stay apart.
+// units the table kept apart stay apart, and every unit converts to its
+// component's root at the table's exact factor and offset
+// (testdata/table_oracle.json, captured from the table).
 
 import (
+	"encoding/json"
+	"math/big"
+	"os"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -195,6 +202,139 @@ func TestShippedTemperatures(t *testing.T) {
 		if vocabulary.FormatRational(f) != c.factor || vocabulary.FormatRational(o) != c.offset {
 			t.Errorf("%s to %s (delta %v): x * %s + %s, want x * %s + %s", c.from, c.to, c.delta,
 				vocabulary.FormatRational(f), vocabulary.FormatRational(o), c.factor, c.offset)
+		}
+	}
+}
+
+// tableOracle is testdata/table_oracle.json: the engine's old unit table's
+// answer for every shipped unit, captured from the table itself at the last
+// commit that held it (testdata/table_oracle_capture.go.txt says which commit
+// and how). It is frozen: nothing in this tree can answer as the table did.
+type tableOracle struct {
+	Source struct {
+		Commit    string `json:"commit"`
+		Procedure string `json:"procedure"`
+	} `json:"source"`
+	// Units maps each unit id to the root of the component the table's
+	// conversions joined it into (the smallest id in it), its exact map to
+	// that root (root = value * factor + offset) and a difference's factor.
+	Units map[string]struct {
+		Root   string `json:"root"`
+		Factor string `json:"factor"`
+		Offset string `json:"offset"`
+		Delta  string `json:"delta"`
+	} `json:"units"`
+	// Spellings maps every spelling the table read (its codes, its input
+	// aliases, the annotated counts) and every spelling a seed record
+	// declared to the unit id it names.
+	Spellings map[string]string `json:"spellings"`
+}
+
+func readTableOracle(t *testing.T) tableOracle {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/table_oracle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var o tableOracle
+	if err := json.Unmarshal(raw, &o); err != nil {
+		t.Fatal(err)
+	}
+	if o.Source.Commit == "" || len(o.Units) == 0 || len(o.Spellings) == 0 {
+		t.Fatal("testdata/table_oracle.json names no source commit, unit or spelling")
+	}
+	return o
+}
+
+func oracleRat(t *testing.T, s string) *big.Rat {
+	t.Helper()
+	r, ok := new(big.Rat).SetString(s)
+	if !ok {
+		t.Fatalf("testdata/table_oracle.json: %q is no rational", s)
+	}
+	return r
+}
+
+// TestShippedSeedMatchesTheTableOracle holds every shipped unit to the old
+// table's numbers: the same units, each in the component the table's
+// conversions made (so no two units the table kept apart convert, and none
+// it joined are apart), at the exact factor and offset to that component's
+// root, absolute and as a difference. A factor that is consistent but wrong
+// passes every structural test; this one refuses it.
+func TestShippedSeedMatchesTheTableOracle(t *testing.T) {
+	g := shippedGraph(t)
+	o := readTableOracle(t)
+
+	var got, want []string
+	for _, u := range g.Units() {
+		got = append(got, u.ID)
+	}
+	for id := range o.Units {
+		want = append(want, id)
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("the seed ships the units %v; the table answered for %v", got, want)
+	}
+
+	members := map[string][]string{}
+	for id, u := range o.Units {
+		members[u.Root] = append(members[u.Root], id)
+	}
+	for id, u := range o.Units {
+		if root, _ := g.Root(id); root != u.Root {
+			t.Errorf("%s: the root is %s; the table's component's is %s", id, root, u.Root)
+		}
+		component := g.Component(id)
+		sort.Strings(component)
+		wantMembers := slices.Clone(members[u.Root])
+		sort.Strings(wantMembers)
+		if !slices.Equal(component, wantMembers) {
+			t.Errorf("%s: the component is %v; the table's is %v", id, component, wantMembers)
+		}
+		f, off, err := g.Linear(id, u.Root, false)
+		if err != nil {
+			t.Errorf("%s to %s: %v", id, u.Root, err)
+			continue
+		}
+		if f.Cmp(oracleRat(t, u.Factor)) != 0 || off.Cmp(oracleRat(t, u.Offset)) != 0 {
+			t.Errorf("%s to %s: x * %s + %s; the table says x * %s + %s",
+				id, u.Root, f.RatString(), off.RatString(), u.Factor, u.Offset)
+		}
+		f, off, err = g.Linear(id, u.Root, true)
+		if err != nil {
+			t.Errorf("%s to %s as a difference: %v", id, u.Root, err)
+			continue
+		}
+		if f.Cmp(oracleRat(t, u.Delta)) != 0 || off.Sign() != 0 {
+			t.Errorf("%s to %s as a difference: x * %s + %s; the table says x * %s",
+				id, u.Root, f.RatString(), off.RatString(), u.Delta)
+		}
+	}
+}
+
+// TestShippedSpellingsMatchTheTableOracle holds the seed's spellings to the
+// captured map both ways: every spelling the table read or the seed declared
+// still names its unit, and the seed declares no spelling the map lacks, so
+// a new or moved alias is a change to this file's fixture, made on purpose.
+func TestShippedSpellingsMatchTheTableOracle(t *testing.T) {
+	g := shippedGraph(t)
+	o := readTableOracle(t)
+	for spelling, want := range o.Spellings {
+		if got, ok := g.Resolve(spelling); !ok || got != want {
+			t.Errorf("%q resolves to %q, %v; the table named %s", spelling, got, ok, want)
+		}
+	}
+	for _, u := range g.Units() {
+		declared := append([]string{u.ID, u.Code}, u.Aliases...)
+		for _, s := range declared {
+			if s == "" {
+				continue
+			}
+			if want, ok := o.Spellings[s]; !ok || want != u.ID {
+				t.Errorf("%s declares the spelling %q; the captured map says %q, %v", u.ID, s, want, ok)
+			}
 		}
 	}
 }
