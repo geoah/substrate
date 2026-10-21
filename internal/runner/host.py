@@ -780,15 +780,26 @@ class Units:
             self._memo[key] = self._host._call(method, params)
         return self._memo[key]
 
-    def convert(self, value, from_unit, to_unit, delta=False):
+    def convert(self, value, from_unit, to_unit, *retired, delta=False, **unknown):
         """Convert exact digits between two units -> a decimal str whose
         `exact` says whether it is every digit. Codes and aliases are read
         (`°C`, `kWh`, `mmHg`). Every digit comes back when the result has a
         finite decimal expansion; one without is rounded to 20 significant
         digits and `exact` is False, as is every answer an expression
         conversion computes. The value holds at most 1000 digits.
-        `delta=True` converts a difference, without the offset: a deviation
-        of 0.3 Cel is 0.54 degF."""
+        `delta=True`, keyword only, converts a difference, without the
+        offset: a deviation of 0.3 Cel is 0.54 degF."""
+        # The retired fourth argument was a measure name; read as a truthy
+        # delta it would silently drop the offset, so it is refused instead.
+        if retired or "measure" in unknown:
+            raise ValueError("units.convert: the measure argument is retired: pass "
+                             "delta=True to convert a difference (what measure="
+                             "\"temperature-difference\" meant), and nothing otherwise")
+        if unknown:
+            raise TypeError("units.convert: unexpected keyword argument %r"
+                            % sorted(unknown)[0])
+        if not isinstance(delta, bool):
+            raise ValueError("units.convert: delta is True or False, got %r" % (delta,))
         params = {"value": _decimal_text("units.convert", value),
                   "from": from_unit, "to": to_unit}
         if delta:

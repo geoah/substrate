@@ -12,6 +12,7 @@ package runner
 // is done.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,14 +77,23 @@ func (s *readState) serveUnitCall(ctx context.Context, call hostCall) (out any, 
 func serveGraphUnits(ctx context.Context, g *vocabulary.UnitGraph, call hostCall) (any, error) {
 	switch call.Host {
 	case hostUnitsConvert:
+		// measure is the retired spelling of delta. Read as absent it would
+		// convert a difference with the offset, so it is refused by name, and
+		// any other key a body could not have meant is refused with it.
 		var in struct {
-			Value string `json:"value"`
-			From  string `json:"from"`
-			To    string `json:"to"`
-			Delta bool   `json:"delta"`
+			Value   string          `json:"value"`
+			From    string          `json:"from"`
+			To      string          `json:"to"`
+			Delta   bool            `json:"delta"`
+			Measure json.RawMessage `json:"measure"`
 		}
-		if err := json.Unmarshal(call.Params, &in); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(call.Params))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&in); err != nil {
 			return nil, fmt.Errorf("%s: %w", call.Host, err)
+		}
+		if in.Measure != nil {
+			return nil, fmt.Errorf("%s: measure is retired: pass delta=True to convert a difference, and nothing otherwise", call.Host)
 		}
 		c, err := g.Convert(ctx, in.Value, in.From, in.To, in.Delta)
 		if err != nil {

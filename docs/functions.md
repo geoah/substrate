@@ -675,7 +675,7 @@ host.ids.external(provider, account, external_id)
 host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
-host.units.convert(value, from_unit, to_unit, delta=False)  # a decimal str; .exact
+host.units.convert(value, from_unit, to_unit, *, delta=False)  # a decimal str; .exact
 host.units.canonical(spelling)                    # "bpm" -> "1/min"
 host.units.converts(a, b)                         # "kg", "lb" -> True
 host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
@@ -861,7 +861,8 @@ A longer one is rounded to the fraction digits its integer part leaves, and
 one that cannot fit raises a `HostError`. The answer's `exact` attribute is
 `False` exactly when it was rounded, or when the route crossed an
 expression conversion. `delta=True` converts a difference, dropping every
-offset: a deviation of 0.3 `Cel` is 0.54 `degF`. Two units no route joins
+offset: a deviation of 0.3 `Cel` is 0.54 `degF`. `delta` is a keyword and a
+bool; a fourth positional argument or `measure=` raises `ValueError`. Two units no route joins
 (`kg` to `J`) raise a `HostError` carrying the engine's refusal.
 `canonical` answers the unit id a spelling resolves to, and raises for a
 spelling no unit answers. `converts(a, b)` is `True` where linear

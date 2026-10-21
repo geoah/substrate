@@ -178,3 +178,71 @@ def main(input, host):
 		t.Fatalf("eight unit calls under a budget of seven: %v", err)
 	}
 }
+
+// The retired measure argument is refused on both sides of the host call,
+// never read as something else: host.py's fourth positional argument was a
+// measure name, and a truthy string read as delta=True dropped the offset
+// (0 Cel answered 0 degF, not 32). The engine refuses a measure key the
+// payload still carries, and delta is a bool by keyword only.
+func TestUnitsConvertRefusesTheRetiredMeasure(t *testing.T) {
+	ctx := context.Background()
+	g := graphFixture(t)
+	for name, params := range map[string]map[string]any{
+		"measure":      {"value": "0", "from": "Cel", "to": "degF", "measure": "temperature"},
+		"null measure": {"value": "0", "from": "Cel", "to": "degF", "measure": nil},
+		"unknown key":  {"value": "0", "from": "Cel", "to": "degF", "deltas": true},
+		"string delta": {"value": "0", "from": "Cel", "to": "degF", "delta": "temperature"},
+	} {
+		if out, err := serveGraphUnits(ctx, g, unitsCall(t, hostUnitsConvert, params)); err == nil {
+			t.Errorf("%s: answered %v, want a refusal", name, out)
+		}
+	}
+
+	r := New()
+	backend := widgetBackend()
+	backend.units = graphFixture(t)
+	spec := Spec{
+		Repository: "t1", Function: "units.g.retired",
+		Runtime: "python",
+		Source: `
+def refused(f):
+    try:
+        f()
+    except Exception as e:
+        return type(e).__name__ + ": " + str(e)
+    return "answered"
+
+def main(input, host):
+    c = host.units.convert
+    return {"effects": [], "output": {
+        "positional": refused(lambda: c("0", "Cel", "degF", "temperature")),
+        "positionalDifference": refused(lambda: c("0", "Cel", "degF", "temperature-difference")),
+        "keyword": refused(lambda: c("0", "Cel", "degF", measure="temperature")),
+        "stringDelta": refused(lambda: c("0", "Cel", "degF", delta="yes")),
+        "unknown": refused(lambda: c("0", "Cel", "degF", deltas=True)),
+        "absolute": c("0", "Cel", "degF"),
+        "difference": c("0.3", "Cel", "degF", delta=True),
+    }}
+`,
+		TimeoutMs: 5000, ReadCalls: 8,
+	}
+	res, err := r.Invoke(ctx, spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	for _, key := range []string{"positional", "positionalDifference", "keyword"} {
+		if got, _ := out[key].(string); !strings.Contains(got, "measure argument is retired") || !strings.Contains(got, "delta=True") {
+			t.Errorf("%s = %q, want a refusal naming the retired measure and delta=True", key, got)
+		}
+	}
+	if got, _ := out["stringDelta"].(string); !strings.Contains(got, "delta is True or False") {
+		t.Errorf("stringDelta = %q, want a refusal of a non-bool delta", got)
+	}
+	if got, _ := out["unknown"].(string); !strings.HasPrefix(got, "TypeError") {
+		t.Errorf("unknown = %q, want a TypeError", got)
+	}
+	if out["absolute"] != "32" || out["difference"] != "0.54" {
+		t.Errorf("absolute = %v, difference = %v; want 32 and 0.54", out["absolute"], out["difference"])
+	}
+}
