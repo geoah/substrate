@@ -94,6 +94,7 @@ import { CORE_PACKAGE } from "@/lib/api/http"
 import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
+import { useUnits } from "@/hooks/use-units"
 
 /** One side of the pair: its kind reference and id, and the title the
  * request carries for it. */
@@ -166,6 +167,7 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
 // ── side-by-side ────────────────────────────────────────────────────────────
 
 function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
+  const units = useUnits()
   const value = side === "loser" ? row.loser : row.winner
   const manager = side === "loser" ? row.loserManager : row.winnerManager
 
@@ -183,7 +185,8 @@ function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
       </span>
     )
   }
-  const text = value === undefined || value === null ? "" : cellValue(value)
+  const text =
+    value === undefined || value === null ? "" : cellValue(units, value)
   // A long repeated value truncates; the count says what the ellipsis hides
   // (codex finding, 2026-08-06). The full join rides the title.
   const count = Array.isArray(value) && value.length > 1 ? value.length : 0

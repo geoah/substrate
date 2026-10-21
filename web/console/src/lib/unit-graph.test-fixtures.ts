@@ -112,3 +112,27 @@ export const fixtureTable: Pick<
     },
   ],
 }
+
+/** The same graph as one repository edited it: a unit the engine's table
+ * does not hold (`sack25`, 25 kg, printed `sack`) and the pound's factor
+ * changed to 500 g, so 1 kg is 2 lb here and 2.20462 lb in the table. */
+export const editedTable: Pick<
+  UnitTable,
+  "units" | "conversions" | "revision"
+> = {
+  ...fixtureTable,
+  revision: 8,
+  units: [
+    ...fixtureTable.units.map((u) =>
+      u.id === "lb" ? { ...u, factor: "500" } : u
+    ),
+    {
+      id: "sack25",
+      name: "sack",
+      symbol: "sack",
+      aliases: [],
+      root: "g",
+      factor: "25000",
+    },
+  ],
+}

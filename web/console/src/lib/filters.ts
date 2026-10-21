@@ -20,7 +20,8 @@ import type { DeclaredProperty } from "@/lib/definition"
 import { enumLabel } from "@/lib/grid-values"
 import { parseMoneyText } from "@/lib/money"
 import { stateWord } from "@/lib/state-words"
-import { parseQuantityText, type Comparator } from "@/lib/units"
+import type { UnitReader } from "@/lib/unit-reader"
+import type { Comparator } from "@/lib/units"
 
 export type FilterOp = "eq" | "contains" | "prefix" | "match"
 
@@ -65,7 +66,11 @@ export function decodeFilters(tokens: string[] | null): ActiveFilter[] {
 
 /** Coerce a text value to the declared kind, so `?filter=` compares like for
  * like (jsonb equality is typed). */
-function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
+function coerceValue(
+  units: UnitReader,
+  raw: string,
+  prop?: DeclaredProperty
+): unknown {
   const kind = prop?.kind
   if (kind === "int" || kind === "float") {
     const n = Number(raw)
@@ -84,7 +89,7 @@ function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
   // operand carries no comparator, so text that is not one plain quantity is
   // sent as typed for the server to refuse by name.
   if (kind === "quantity") {
-    const parsed = parseQuantityText(raw).value
+    const parsed = units.parse(raw).value
     return parsed && !parsed.comparator ? parsed : raw
   }
   return raw
@@ -101,12 +106,13 @@ const RANGE: Record<Comparator, "lt" | "lte" | "gte" | "gt"> = {
  * the comparison it names, `lt` {155 [lb_av]}; two of them on one property
  * are a range. Anything else is undefined, and stays an exact value. */
 function quantityRange(
+  units: UnitReader,
   f: ActiveFilter,
   prop?: DeclaredProperty
 ): Cond | undefined {
   if (prop?.kind !== "quantity" || prop.repeated || prop.keyed) return undefined
   if (f.op !== "eq") return undefined
-  const parsed = parseQuantityText(f.value).value
+  const parsed = units.parse(f.value).value
   if (!parsed?.comparator) return undefined
   const { comparator, ...operand } = parsed
   return { [RANGE[comparator]]: operand }
@@ -115,6 +121,7 @@ function quantityRange(
 /** Fold the active filters into one wire filter. Comma in an `eq` value means
  * membership (`in`); several rows on one field also fold to `in`. */
 export function toRecordFilter(
+  units: UnitReader,
   filters: ActiveFilter[],
   props: DeclaredProperty[]
 ): RecordFilter | undefined {
@@ -126,7 +133,7 @@ export function toRecordFilter(
     if (f.op === "contains") {
       properties[f.field] = {
         ...properties[f.field],
-        contains: coerceValue(f.value, prop),
+        contains: coerceValue(units, f.value, prop),
       }
       continue
     }
@@ -138,7 +145,7 @@ export function toRecordFilter(
       properties[f.field] = { ...properties[f.field], match: f.value }
       continue
     }
-    const range = quantityRange(f, prop)
+    const range = quantityRange(units, f, prop)
     if (range) {
       properties[f.field] = { ...properties[f.field], ...range }
       continue
@@ -150,7 +157,7 @@ export function toRecordFilter(
           .filter(Boolean)
       : [f.value]
     const list = eqValues.get(f.field) ?? []
-    for (const part of parts) list.push(coerceValue(part, prop))
+    for (const part of parts) list.push(coerceValue(units, part, prop))
     eqValues.set(f.field, list)
   }
   for (const [field, values] of eqValues) {

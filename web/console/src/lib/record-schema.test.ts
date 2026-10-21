@@ -20,6 +20,7 @@ import {
   titleProperty,
   type PropSpec,
 } from "./record-schema"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 /** An agent-like kind: the projection must cover it with no special-casing. */
 const agentKind: KindInfo = {
@@ -185,103 +186,171 @@ describe("seedValue", () => {
 
 describe("exampleFor", () => {
   it("shows a worked value per datatype, so a blank create is not a blank page", () => {
-    expect(exampleFor(spec(wideKind, "seenAt"))).toBe("2026-01-31T09:00:00Z")
-    expect(exampleFor(spec(wideKind, "baseURL"))).toBe("https://example.com")
-    expect(exampleFor(spec(wideKind, "every"))).toBe("PT47M12S")
-    expect(exampleFor(spec(wideKind, "price"))).toBe("19.99")
+    expect(exampleFor(TABLE_UNITS, spec(wideKind, "seenAt"))).toBe(
+      "2026-01-31T09:00:00Z"
+    )
+    expect(exampleFor(TABLE_UNITS, spec(wideKind, "baseURL"))).toBe(
+      "https://example.com"
+    )
+    expect(exampleFor(TABLE_UNITS, spec(wideKind, "every"))).toBe("PT47M12S")
+    expect(exampleFor(TABLE_UNITS, spec(wideKind, "price"))).toBe("19.99")
     // An enum's example is one of its own admitted values, never invented.
-    expect(exampleFor(spec(agentKind, "model"))).toBe("opus")
+    expect(exampleFor(TABLE_UNITS, spec(agentKind, "model"))).toBe("opus")
   })
 })
 
 describe("checkValue", () => {
   it("admits what the substrate admits", () => {
     expect(
-      checkValue(spec(wideKind, "seenAt"), "2026-01-31T09:00:00Z")
+      checkValue(TABLE_UNITS, spec(wideKind, "seenAt"), "2026-01-31T09:00:00Z")
     ).toBeUndefined()
-    expect(checkValue(spec(wideKind, "born"), "2026-01-31")).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "born"), "2026-01-31")
+    ).toBeUndefined()
     // ISO 8601 is the one duration grammar, minus years and months.
-    expect(checkValue(spec(wideKind, "every"), "PT47M12S")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "every"), "P2DT3H")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "price"), "19.99")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "price"), "0.00")).toBeUndefined()
     expect(
-      checkValue(spec(wideKind, "mailbox"), "a@example.com")
+      checkValue(TABLE_UNITS, spec(wideKind, "every"), "PT47M12S")
     ).toBeUndefined()
     expect(
-      checkValue(spec(wideKind, "baseURL"), "https://example.com")
+      checkValue(TABLE_UNITS, spec(wideKind, "every"), "P2DT3H")
     ).toBeUndefined()
-    expect(checkValue(spec(wideKind, "zone"), "Europe/London")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "calls"), 5)).toBeUndefined()
-    expect(checkValue(spec(wideKind, "headers"), { a: 1 })).toBeUndefined()
-    expect(checkValue(spec(agentKind, "functions"), ["a", "b"])).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "price"), "19.99")
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "price"), "0.00")
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "mailbox"), "a@example.com")
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "baseURL"), "https://example.com")
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "zone"), "Europe/London")
+    ).toBeUndefined()
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "calls"), 5)).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "headers"), { a: 1 })
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(agentKind, "functions"), ["a", "b"])
+    ).toBeUndefined()
     // A secret reads back redacted; writing the sentinel back is a no-op.
-    expect(checkValue(spec(wideKind, "apiKey"), "<redacted>")).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "apiKey"), "<redacted>")
+    ).toBeUndefined()
     // Nothing is ever a problem: null is the delete marker.
-    expect(checkValue(spec(wideKind, "calls"), null)).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "calls"), null)
+    ).toBeUndefined()
   })
 
   it("names the reason a value is wrong, on the datatype's own terms", () => {
     // The issue's own example: apiKey is a string, so a bare 123 is wrong.
-    expect(checkValue(spec(wideKind, "apiKey"), 123)).toMatch(/string/)
-    expect(checkValue(spec(wideKind, "seenAt"), "yesterday")).toMatch(
-      /timestamp/
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "apiKey"), 123)).toMatch(
+      /string/
     )
-    expect(checkValue(spec(wideKind, "born"), "31/01/2026")).toMatch(
-      /civil date/
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "seenAt"), "yesterday")
+    ).toMatch(/timestamp/)
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "born"), "31/01/2026")
+    ).toMatch(/civil date/)
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "every"), "soon")).toMatch(
+      /duration/
     )
-    expect(checkValue(spec(wideKind, "every"), "soon")).toMatch(/duration/)
     // A bare P names no duration, years have no fixed length, and Go's own
     // syntax is the retired spelling.
-    expect(checkValue(spec(wideKind, "every"), "P")).toMatch(/duration/)
-    expect(checkValue(spec(wideKind, "every"), "P1Y")).toMatch(/duration/)
-    expect(checkValue(spec(wideKind, "every"), "47m12s")).toMatch(/ISO 8601/)
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "every"), "P")).toMatch(
+      /duration/
+    )
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "every"), "P1Y")).toMatch(
+      /duration/
+    )
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "every"), "47m12s")).toMatch(
+      /ISO 8601/
+    )
     // A decimal is a string of digits: a JSON number rode float64 to get here.
-    expect(checkValue(spec(wideKind, "price"), 19.99)).toMatch(/string/)
-    expect(checkValue(spec(wideKind, "price"), "1.9e2")).toMatch(/decimal/)
-    expect(checkValue(spec(wideKind, "price"), "-0.01")).toMatch(/>= 0/)
-    expect(checkValue(spec(wideKind, "mailbox"), "nobody")).toMatch(/mailbox/)
-    expect(checkValue(spec(wideKind, "baseURL"), "example.com")).toMatch(
-      /absolute URL/
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "price"), 19.99)).toMatch(
+      /string/
     )
-    expect(checkValue(spec(wideKind, "zone"), "Middle/Earth")).toMatch(
-      /time zone/
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "price"), "1.9e2")).toMatch(
+      /decimal/
     )
-    expect(checkValue(spec(wideKind, "calls"), "5")).toMatch(/number/)
-    expect(checkValue(spec(wideKind, "calls"), 1.5)).toMatch(/integer/)
-    expect(checkValue(spec(wideKind, "calls"), 99)).toMatch(/<= 10/)
-    expect(checkValue(spec(wideKind, "code"), "abcd")).toMatch(/does not match/)
-    expect(checkValue(spec(agentKind, "model"), "gpt")).toMatch(/opus/)
-    expect(checkValue(spec(agentKind, "enabled"), 3)).toMatch(/boolean/)
-    expect(checkValue(spec(wideKind, "status"), "archived")).toMatch(/proposed/)
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "price"), "-0.01")).toMatch(
+      />= 0/
+    )
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "mailbox"), "nobody")
+    ).toMatch(/mailbox/)
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "baseURL"), "example.com")
+    ).toMatch(/absolute URL/)
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "zone"), "Middle/Earth")
+    ).toMatch(/time zone/)
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "calls"), "5")).toMatch(
+      /number/
+    )
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "calls"), 1.5)).toMatch(
+      /integer/
+    )
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "calls"), 99)).toMatch(
+      /<= 10/
+    )
+    expect(checkValue(TABLE_UNITS, spec(wideKind, "code"), "abcd")).toMatch(
+      /does not match/
+    )
+    expect(checkValue(TABLE_UNITS, spec(agentKind, "model"), "gpt")).toMatch(
+      /opus/
+    )
+    expect(checkValue(TABLE_UNITS, spec(agentKind, "enabled"), 3)).toMatch(
+      /boolean/
+    )
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "status"), "archived")
+    ).toMatch(/proposed/)
   })
 
   it("checks a repeated property item by item", () => {
-    expect(checkValue(spec(agentKind, "functions"), "nope")).toMatch(/list of/)
-    expect(checkValue(spec(agentKind, "functions"), ["a", 2])).toMatch(/\[1\]/)
+    expect(
+      checkValue(TABLE_UNITS, spec(agentKind, "functions"), "nope")
+    ).toMatch(/list of/)
+    expect(
+      checkValue(TABLE_UNITS, spec(agentKind, "functions"), ["a", 2])
+    ).toMatch(/\[1\]/)
   })
 
   it("knows a reference is a path, and that only a pin completes a bare id", () => {
     const anyRef = spec(wideKind, "callable")
     expect(
-      checkValue(anyRef, "substrate.reamde.dev/core/function/f")
+      checkValue(TABLE_UNITS, anyRef, "substrate.reamde.dev/core/function/f")
     ).toBeUndefined()
     // Unpinned, a bare id names nothing: the refusal quotes it back, as the
     // engine's does.
-    expect(checkValue(anyRef, "f")).toMatch(/full "<kind>\/<id>" path/)
-    expect(checkValue(anyRef, "f")).toMatch(/"f"/)
-    expect(checkValue(anyRef, "")).toMatch(/needs an id/)
+    expect(checkValue(TABLE_UNITS, anyRef, "f")).toMatch(
+      /full "<kind>\/<id>" path/
+    )
+    expect(checkValue(TABLE_UNITS, anyRef, "f")).toMatch(/"f"/)
+    expect(checkValue(TABLE_UNITS, anyRef, "")).toMatch(/needs an id/)
     // The released pair is not a value any more, and says so by shape.
     expect(
-      checkValue(anyRef, {
+      checkValue(TABLE_UNITS, anyRef, {
         kind: "substrate.reamde.dev/core/function",
         id: "f",
       })
     ).toMatch(/path string/)
     // A pinned kind supplies what the bare id omits, on the server and here.
-    expect(checkValue(spec(wideKind, "owner"), "alice")).toBeUndefined()
     expect(
-      checkValue(spec(wideKind, "owner"), "substrate.reamde.dev/core/actor/a")
+      checkValue(TABLE_UNITS, spec(wideKind, "owner"), "alice")
+    ).toBeUndefined()
+    expect(
+      checkValue(
+        TABLE_UNITS,
+        spec(wideKind, "owner"),
+        "substrate.reamde.dev/core/actor/a"
+      )
     ).toBeUndefined()
   })
 
@@ -289,22 +358,22 @@ describe("checkValue", () => {
     // The server serves every reference as the object, link properties or not,
     // so the shape validates on a declaration that hangs none off it.
     expect(
-      checkValue(spec(wideKind, "callable"), {
+      checkValue(TABLE_UNITS, spec(wideKind, "callable"), {
         ref: "substrate.reamde.dev/core/function/f",
       })
     ).toBeUndefined()
     expect(
-      checkValue(spec(wideKind, "owner"), {
+      checkValue(TABLE_UNITS, spec(wideKind, "owner"), {
         ref: "substrate.reamde.dev/core/actor/a",
       })
     ).toBeUndefined()
     // The pin completes a bare id inside the object too.
     expect(
-      checkValue(spec(wideKind, "owner"), { ref: "alice" })
+      checkValue(TABLE_UNITS, spec(wideKind, "owner"), { ref: "alice" })
     ).toBeUndefined()
     // A key beside `ref` is link data, and this declaration declares none.
     expect(
-      checkValue(spec(wideKind, "owner"), {
+      checkValue(TABLE_UNITS, spec(wideKind, "owner"), {
         ref: "substrate.reamde.dev/core/actor/a",
         round: 2,
       })
@@ -315,23 +384,29 @@ describe("checkValue", () => {
 describe("blobref: the read shape applies back", () => {
   it("admits the digest string and the manifest a read handed back", () => {
     const one = spec(wideKind, "attachment")
-    expect(checkValue(one, DIGEST)).toBeUndefined()
-    expect(checkValue(one, MANIFEST)).toBeUndefined()
+    expect(checkValue(TABLE_UNITS, one, DIGEST)).toBeUndefined()
+    expect(checkValue(TABLE_UNITS, one, MANIFEST)).toBeUndefined()
     // A blob whose manifest is gone reads as the bare {digest}.
-    expect(checkValue(one, { digest: DIGEST })).toBeUndefined()
+    expect(checkValue(TABLE_UNITS, one, { digest: DIGEST })).toBeUndefined()
     const many = spec(wideKind, "attachments")
-    expect(checkValue(many, [MANIFEST, DIGEST])).toBeUndefined()
+    expect(checkValue(TABLE_UNITS, many, [MANIFEST, DIGEST])).toBeUndefined()
   })
 
   it("refuses an object that names no blob, on the item it sits in", () => {
     const one = spec(wideKind, "attachment")
-    expect(checkValue(one, { name: "layout.png" })).toMatch(/under `digest`/)
-    expect(checkValue(one, { digest: 7 })).toMatch(/under `digest`/)
-    expect(checkValue(one, { digest: "sha256:abc" })).toMatch(/blob digest/)
-    expect(checkValue(one, 7)).toMatch(/string/)
-    expect(checkValue(spec(wideKind, "attachments"), [DIGEST, {}])).toMatch(
-      /\[1\]/
+    expect(checkValue(TABLE_UNITS, one, { name: "layout.png" })).toMatch(
+      /under `digest`/
     )
+    expect(checkValue(TABLE_UNITS, one, { digest: 7 })).toMatch(
+      /under `digest`/
+    )
+    expect(checkValue(TABLE_UNITS, one, { digest: "sha256:abc" })).toMatch(
+      /blob digest/
+    )
+    expect(checkValue(TABLE_UNITS, one, 7)).toMatch(/string/)
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "attachments"), [DIGEST, {}])
+    ).toMatch(/\[1\]/)
   })
 
   it("edits as the digest, reads as the whole manifest", () => {
@@ -343,7 +418,7 @@ describe("blobref: the read shape applies back", () => {
     expect(editableValue(one, DIGEST)).toBe(DIGEST)
     expect(editableValue(many, [MANIFEST, DIGEST])).toEqual([DIGEST, DIGEST])
     expect(formatValue(one, editableValue(one, MANIFEST))).toBe(DIGEST)
-    expect(parseValue(one, DIGEST)).toEqual({ value: DIGEST })
+    expect(parseValue(TABLE_UNITS, one, DIGEST)).toEqual({ value: DIGEST })
     // A read-only rendering keeps name, mediaType, size and status.
     expect(formatValue(one, MANIFEST)).toContain('"name": "layout.png"')
     expect(formatValue(one, MANIFEST)).toContain('"size": 2048')
@@ -355,38 +430,46 @@ describe("money", () => {
 
   it("checks the stored shape and the bound on the number it denotes", () => {
     expect(controlFor(spec(wideKind, "cost"))).toBe("text")
-    expect(checkValue(spec(wideKind, "cost"), cost)).toBeUndefined()
-    expect(checkValue(spec(wideKind, "cost"), "19.90 EUR")).toMatch(
-      /is an object/
-    )
-    expect(checkValue(spec(wideKind, "cost"), { ...cost, amount: -1 })).toMatch(
-      />= 0/
-    )
-    expect(checkValue(spec(wideKind, "costs"), [cost, { amount: 1 }])).toMatch(
-      /^\[1\]: /
-    )
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "cost"), cost)
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "cost"), "19.90 EUR")
+    ).toMatch(/is an object/)
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "cost"), { ...cost, amount: -1 })
+    ).toMatch(/>= 0/)
+    expect(
+      checkValue(TABLE_UNITS, spec(wideKind, "costs"), [cost, { amount: 1 }])
+    ).toMatch(/^\[1\]: /)
   })
 
   it("edits as its exact text and reads back to the same value", () => {
     const one = spec(wideKind, "cost")
     expect(formatValue(one, cost)).toBe("19.90 EUR")
-    expect(parseValue(one, "19.90 EUR")).toEqual({ value: cost })
-    expect(parseValue(one, "-1 EUR").error).toMatch(/>= 0/)
-    expect(parseValue(one, "19.90").error).toBe("choose a currency")
+    expect(parseValue(TABLE_UNITS, one, "19.90 EUR")).toEqual({ value: cost })
+    expect(parseValue(TABLE_UNITS, one, "-1 EUR").error).toMatch(/>= 0/)
+    expect(parseValue(TABLE_UNITS, one, "19.90").error).toBe(
+      "choose a currency"
+    )
     // A currency chosen with no amount typed is no value yet.
-    expect(parseValue(one, "EUR")).toEqual({})
-    expect(parseValue(spec(wideKind, "costs"), "19.90 EUR\nEUR")).toEqual({
+    expect(parseValue(TABLE_UNITS, one, "EUR")).toEqual({})
+    expect(
+      parseValue(TABLE_UNITS, spec(wideKind, "costs"), "19.90 EUR\nEUR")
+    ).toEqual({
       value: [cost],
     })
     const many = spec(wideKind, "costs")
     const list = [cost, { amount: 500, currency: "JPY" }]
     expect(formatValue(many, list)).toBe("19.90 EUR\n500 JPY")
-    expect(parseValue(many, "19.90 EUR\n500 JPY")).toEqual({ value: list })
+    expect(parseValue(TABLE_UNITS, many, "19.90 EUR\n500 JPY")).toEqual({
+      value: list,
+    })
   })
 
   it("seeds blank and shows the YAML shape as its example", () => {
     expect(seedValue(spec(wideKind, "cost"))).toBe("")
-    expect(exampleFor(spec(wideKind, "cost"))).toBe(
+    expect(exampleFor(TABLE_UNITS, spec(wideKind, "cost"))).toBe(
       "{amount: 1999, currency: EUR}"
     )
   })
@@ -441,50 +524,59 @@ describe("quantity", () => {
     const one = spec(labKind, "weight")
     expect(controlFor(one)).toBe("text")
     expect(controlFor(spec(labKind, "readings"))).toBe("list")
-    expect(checkValue(one, weight)).toBeUndefined()
-    expect(checkValue(one, "72.5 kg")).toMatch(/is an object/)
-    expect(checkValue(one, { ...weight, value: 72.5 })).toMatch(
+    expect(checkValue(TABLE_UNITS, one, weight)).toBeUndefined()
+    expect(checkValue(TABLE_UNITS, one, "72.5 kg")).toMatch(/is an object/)
+    expect(checkValue(TABLE_UNITS, one, { ...weight, value: 72.5 })).toMatch(
       /written as a string/
     )
-    expect(checkValue(one, { value: "72", unit: "g" })).toMatch(
+    expect(checkValue(TABLE_UNITS, one, { value: "72", unit: "g" })).toMatch(
       /not one of the declared units/
     )
-    expect(checkValue(one, { value: "39", unit: "kg" })).toBe(
+    expect(checkValue(TABLE_UNITS, one, { value: "39", unit: "kg" })).toBe(
       "must be >= 40 kg"
     )
     // Across units the bound is the server's to convert.
-    expect(checkValue(one, { value: "80", unit: "[lb_av]" })).toBeUndefined()
-    expect(checkValue(one, { ...weight, comparator: "<" })).toMatch(
-      /states values exactly/
-    )
     expect(
-      checkValue(spec(labKind, "result"), {
+      checkValue(TABLE_UNITS, one, { value: "80", unit: "[lb_av]" })
+    ).toBeUndefined()
+    expect(
+      checkValue(TABLE_UNITS, one, { ...weight, comparator: "<" })
+    ).toMatch(/states values exactly/)
+    expect(
+      checkValue(TABLE_UNITS, spec(labKind, "result"), {
         value: "0.5",
         unit: "ng/mL",
         comparator: "<",
       })
     ).toBeUndefined()
     expect(
-      checkValue(spec(labKind, "readings"), [weight, { value: "1" }])
+      checkValue(TABLE_UNITS, spec(labKind, "readings"), [
+        weight,
+        { value: "1" },
+      ])
     ).toMatch(/^\[1\]: /)
   })
 
   it("edits as its exact text and reads back to the same value", () => {
     const one = spec(labKind, "weight")
     expect(formatValue(one, weight)).toBe("72.5 kg")
-    expect(parseValue(one, "72.5 kg")).toEqual({ value: weight })
-    expect(parseValue(one, "160 lb")).toEqual({
+    expect(parseValue(TABLE_UNITS, one, "72.5 kg")).toEqual({ value: weight })
+    expect(parseValue(TABLE_UNITS, one, "160 lb")).toEqual({
       value: { value: "160", unit: "[lb_av]" },
     })
-    expect(parseValue(one, "39 kg").error).toBe("must be >= 40 kg")
-    expect(parseValue(one, "72.5").error).toBe("choose a unit")
-    expect(parseValue(spec(labKind, "result"), "<0.5 ng/mL")).toEqual({
+    expect(parseValue(TABLE_UNITS, one, "39 kg").error).toBe("must be >= 40 kg")
+    expect(parseValue(TABLE_UNITS, one, "72.5").error).toBe("choose a unit")
+    expect(
+      parseValue(TABLE_UNITS, spec(labKind, "result"), "<0.5 ng/mL")
+    ).toEqual({
       value: { value: "0.5", unit: "ng/mL", comparator: "<" },
     })
     const many = spec(labKind, "readings")
     const list = [weight, { value: "37", unit: "Cel" }]
     expect(formatValue(many, list)).toBe("72.5 kg\n37 Cel")
-    expect(parseValue(many, "72.5 kg\n37 °C")).toEqual({ value: list })
+    expect(parseValue(TABLE_UNITS, many, "72.5 kg\n37 °C")).toEqual({
+      value: list,
+    })
   })
 
   it("seeds its default, else blank, and shows the YAML shape in its unit", () => {
@@ -494,10 +586,10 @@ describe("quantity", () => {
     })
     expect(seedValue(spec(labKind, "readings"))).toEqual([])
     expect(seedValue(spec(labKind, "result"))).toBe("")
-    expect(exampleFor(spec(labKind, "temperature"))).toBe(
+    expect(exampleFor(TABLE_UNITS, spec(labKind, "temperature"))).toBe(
       '{value: "37", unit: Cel}'
     )
-    expect(exampleFor(spec(labKind, "weight"))).toBe(
+    expect(exampleFor(TABLE_UNITS, spec(labKind, "weight"))).toBe(
       '{value: "72.5", unit: kg}'
     )
   })
@@ -506,29 +598,39 @@ describe("quantity", () => {
 describe("parseValue / formatValue", () => {
   it("round-trips a value through its control's text", () => {
     const calls = spec(wideKind, "calls")
-    expect(parseValue(calls, "7")).toEqual({ value: 7 })
+    expect(parseValue(TABLE_UNITS, calls, "7")).toEqual({ value: 7 })
     expect(formatValue(calls, 7)).toBe("7")
 
     const functions = spec(agentKind, "functions")
-    expect(parseValue(functions, "a\nb")).toEqual({ value: ["a", "b"] })
+    expect(parseValue(TABLE_UNITS, functions, "a\nb")).toEqual({
+      value: ["a", "b"],
+    })
     expect(formatValue(functions, ["a", "b"])).toBe("a\nb")
 
     const headers = spec(wideKind, "headers")
-    expect(parseValue(headers, '{"a":1}')).toEqual({ value: { a: 1 } })
+    expect(parseValue(TABLE_UNITS, headers, '{"a":1}')).toEqual({
+      value: { a: 1 },
+    })
     expect(formatValue(headers, { a: 1 })).toBe('{\n  "a": 1\n}')
   })
 
   it("blank is not a value", () => {
-    expect(parseValue(spec(wideKind, "baseURL"), "  ")).toEqual({})
-    expect(parseValue(spec(agentKind, "functions"), "\n")).toEqual({})
+    expect(parseValue(TABLE_UNITS, spec(wideKind, "baseURL"), "  ")).toEqual({})
+    expect(parseValue(TABLE_UNITS, spec(agentKind, "functions"), "\n")).toEqual(
+      {}
+    )
   })
 
   it("hands back the datatype's complaint instead of a value", () => {
-    expect(parseValue(spec(wideKind, "seenAt"), "yesterday").error).toMatch(
-      /timestamp/
-    )
-    expect(parseValue(spec(wideKind, "headers"), "{oops").error).toMatch(/JSON/)
-    expect(parseValue(spec(wideKind, "calls"), "many").error).toMatch(/number/)
+    expect(
+      parseValue(TABLE_UNITS, spec(wideKind, "seenAt"), "yesterday").error
+    ).toMatch(/timestamp/)
+    expect(
+      parseValue(TABLE_UNITS, spec(wideKind, "headers"), "{oops").error
+    ).toMatch(/JSON/)
+    expect(
+      parseValue(TABLE_UNITS, spec(wideKind, "calls"), "many").error
+    ).toMatch(/number/)
   })
 
   it("never renders a stored secret", () => {

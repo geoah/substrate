@@ -49,6 +49,7 @@ import {
   type FormValue,
   type FormValues,
 } from "@/lib/record-form"
+import { useUnits } from "@/hooks/use-units"
 
 export interface AccountDialogProps {
   /** The provider's `accountconfig` kind. */
@@ -86,9 +87,10 @@ export function AccountDialog({
   open,
   onOpenChange,
 }: AccountDialogProps) {
+  const units = useUnits()
   const queryClient = useQueryClient()
   const registry = useQuery(kindsQueryOptions)
-  const groups = useMemo(() => accountFormGroups(kind), [kind])
+  const groups = useMemo(() => accountFormGroups(units, kind), [units, kind])
   const mode: FormMode = record ? "patch" : "create"
   const seed = useMemo(
     () => initialValues(groups.all, record),

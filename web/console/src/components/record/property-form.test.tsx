@@ -25,6 +25,7 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { propertiesOf, templateYAML } from "@/lib/record-yaml"
 import { PropertyForm } from "./property-form"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 const providerKind: KindInfo = {
   identity: "substrate.reamde.dev/llm/provider",
@@ -191,7 +192,7 @@ afterEach(cleanup)
 
 describe("the form lens", () => {
   it("composes a control per declared property, with its one-liner", () => {
-    renderForm(templateYAML(providerKind))
+    renderForm(templateYAML(TABLE_UNITS, providerKind))
     expect(screen.getByLabelText(/^Name/)).toBeTruthy()
     expect(screen.getByText("the endpoint")).toBeTruthy()
     // The enum is chosen from what the kind admits, not typed into a box.
@@ -206,18 +207,18 @@ describe("the form lens", () => {
   // A worked example in the data voice reads like a stored value; the
   // placeholder says it is an example.
   it("marks a worked example as one", () => {
-    renderForm(templateYAML(providerKind))
+    renderForm(templateYAML(TABLE_UNITS, providerKind))
     const url = screen.getByPlaceholderText("e.g. https://example.com")
     expect((url as HTMLInputElement).value).toBe("")
   })
 
   it("never offers a host-managed property (writer: oauth)", () => {
-    renderForm(templateYAML(providerKind))
+    renderForm(templateYAML(TABLE_UNITS, providerKind))
     expect(screen.queryByLabelText(/Token ref/)).toBeNull()
   })
 
   it("writes an edit into the document, one key at a time", () => {
-    const text = templateYAML(providerKind)
+    const text = templateYAML(TABLE_UNITS, providerKind)
     const { onChange } = renderForm(text)
     fireEvent.change(screen.getByLabelText(/^Name/), {
       target: { value: "the gateway" },
@@ -231,7 +232,7 @@ describe("the form lens", () => {
   })
 
   it("writes a number as a number, and JSON as parsed JSON", () => {
-    const { onChange } = renderForm(templateYAML(providerKind))
+    const { onChange } = renderForm(templateYAML(TABLE_UNITS, providerKind))
     fireEvent.change(screen.getByLabelText(/Max retries/), {
       target: { value: "3" },
     })
@@ -247,7 +248,7 @@ describe("the form lens", () => {
   })
 
   it("keeps a draft that cannot be a value out of the document, and says why", () => {
-    const { onChange } = renderForm(templateYAML(providerKind))
+    const { onChange } = renderForm(templateYAML(TABLE_UNITS, providerKind))
     fireEvent.change(screen.getByLabelText(/Extras/), {
       target: { value: "{oops" },
     })
@@ -279,12 +280,12 @@ data:
   })
 
   it("freezes a state on an edit, and offers the machine's states on a create", () => {
-    renderForm(templateYAML(providerKind))
+    renderForm(templateYAML(TABLE_UNITS, providerKind))
     fireEvent.click(screen.getByLabelText("Status"))
     expect(choices()).toContain("live")
     cleanup()
 
-    renderForm(templateYAML(providerKind), { record })
+    renderForm(templateYAML(TABLE_UNITS, providerKind), { record })
     expect(screen.getByLabelText("Status").tagName).toBe("OUTPUT")
     expect(
       screen.getByText(/changes by moving it on the record’s page/)
@@ -292,7 +293,7 @@ data:
   })
 
   it("edits a repeated object as rows of its declared fields, not as JSON", () => {
-    const text = templateYAML(providerKind)
+    const text = templateYAML(TABLE_UNITS, providerKind)
     const { onChange } = renderForm(text)
     // A repeated object starts empty and grows a row at a time.
     fireEvent.click(screen.getByRole("button", { name: "Add Pricing row" }))
@@ -516,7 +517,7 @@ describe("a markdown field", () => {
   }
 
   it("edits as a document and writes Markdown into the YAML", async () => {
-    const { onChange } = renderKindForm(note, templateYAML(note))
+    const { onChange } = renderKindForm(note, templateYAML(TABLE_UNITS, note))
     const box = await screen.findByRole(
       "textbox",
       { name: "Body" },
@@ -535,7 +536,10 @@ describe("the form lens over the widened dialect", () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it("edits a keyed SCALAR map as key/value rows, into the document", () => {
-    const { onChange } = renderKindForm(mappingKind, templateYAML(mappingKind))
+    const { onChange } = renderKindForm(
+      mappingKind,
+      templateYAML(TABLE_UNITS, mappingKind)
+    )
     fireEvent.click(screen.getByRole("button", { name: "Add Keys entry" }))
     fireEvent.change(screen.getByLabelText("Keys key 1"), {
       target: { value: "displayName" },
@@ -549,7 +553,10 @@ describe("the form lens over the widened dialect", () => {
   })
 
   it("holds a keyed map's keys to the declared contract, off the document", () => {
-    const { onChange } = renderKindForm(mappingKind, templateYAML(mappingKind))
+    const { onChange } = renderKindForm(
+      mappingKind,
+      templateYAML(TABLE_UNITS, mappingKind)
+    )
     fireEvent.click(screen.getByRole("button", { name: "Add Keys entry" }))
     fireEvent.change(screen.getByLabelText("Keys key 1"), {
       target: { value: "Display Name" },
@@ -564,7 +571,10 @@ describe("the form lens over the widened dialect", () => {
   })
 
   it("edits a keyed OBJECT map as a key beside the object's own fields", () => {
-    const { onChange } = renderKindForm(mappingKind, templateYAML(mappingKind))
+    const { onChange } = renderKindForm(
+      mappingKind,
+      templateYAML(TABLE_UNITS, mappingKind)
+    )
     fireEvent.click(screen.getByRole("button", { name: "Add Map entry" }))
     fireEvent.change(screen.getByLabelText("Map key 1"), {
       target: { value: "summary" },
@@ -599,9 +609,13 @@ data:
 
   it("nests an object's fields three levels down, and writes each back", async () => {
     stubCollections()
-    const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
-      kinds: REGISTRY,
-    })
+    const { onChange } = renderKindForm(
+      agentKind,
+      templateYAML(TABLE_UNITS, agentKind),
+      {
+        kinds: REGISTRY,
+      }
+    )
     // permissions.reads.budgets.calls: the deepest the dialect goes.
     fireEvent.change(screen.getByLabelText("Calls"), {
       target: { value: "20" },
@@ -622,7 +636,9 @@ data:
 
   it("offers the KIND dropdown on a pointer nested inside permissions", async () => {
     stubCollections()
-    renderKindForm(agentKind, templateYAML(agentKind), { kinds: REGISTRY })
+    renderKindForm(agentKind, templateYAML(TABLE_UNITS, agentKind), {
+      kinds: REGISTRY,
+    })
     // `permissions.writes` is pinned two levels down, and
     // `permissions.reads.kinds` three. The pin has to survive the projection
     // to that depth, or the control is a text box asking somebody to remember
@@ -654,9 +670,13 @@ data:
 
   it("offers the records a pointer is pinned to, and inserts the path", async () => {
     stubCollections()
-    const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
-      kinds: REGISTRY,
-    })
+    const { onChange } = renderKindForm(
+      agentKind,
+      templateYAML(TABLE_UNITS, agentKind),
+      {
+        kinds: REGISTRY,
+      }
+    )
     fireEvent.click(screen.getByLabelText(/^Provider/))
     await waitFor(() => expect(offered()).toEqual(["claude"]))
     fireEvent.click(screen.getByText("the gateway"))
@@ -666,10 +686,14 @@ data:
 
   it("keeps free text open: a record can be minted at any time", () => {
     stubCollections()
-    const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
-      kinds: REGISTRY,
-      technical: true,
-    })
+    const { onChange } = renderKindForm(
+      agentKind,
+      templateYAML(TABLE_UNITS, agentKind),
+      {
+        kinds: REGISTRY,
+        technical: true,
+      }
+    )
     pickTyped(/^Provider/, "not-listed-yet")
     // The PIN completes what was typed: a bare id is the authored short form,
     // and the write carries the path it names.
@@ -680,9 +704,13 @@ data:
 
   it("picks a function inside a tool row, host functions listed like any other", async () => {
     stubCollections()
-    const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
-      kinds: REGISTRY,
-    })
+    const { onChange } = renderKindForm(
+      agentKind,
+      templateYAML(TABLE_UNITS, agentKind),
+      {
+        kinds: REGISTRY,
+      }
+    )
     fireEvent.click(screen.getByRole("button", { name: "Add Tools row" }))
     fireEvent.click(screen.getByLabelText(/^Function/))
     await waitFor(() =>
@@ -698,7 +726,7 @@ data:
 
   it("never offers the agent being edited as its own sub-agent", async () => {
     stubCollections()
-    renderKindForm(agentKind, templateYAML(agentKind), {
+    renderKindForm(agentKind, templateYAML(TABLE_UNITS, agentKind), {
       kinds: REGISTRY,
       record: agentRecord({ provider: `${PROVIDER}/claude` }),
     })
@@ -708,9 +736,13 @@ data:
 
   it("stacks a repeated pointer as rows, and removes one", async () => {
     stubCollections()
-    const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
-      kinds: REGISTRY,
-    })
+    const { onChange } = renderKindForm(
+      agentKind,
+      templateYAML(TABLE_UNITS, agentKind),
+      {
+        kinds: REGISTRY,
+      }
+    )
     fireEvent.click(screen.getByLabelText("Add Agents"))
     await waitFor(() => expect(offered()).toContain("crew.test.dev/librarian"))
     fireEvent.click(screen.getByText("crew.test.dev/librarian"))
@@ -806,7 +838,9 @@ data:
 
   it("asks for a DECLARATION's id, and shows the shape it is spelled in", () => {
     stubCollections()
-    renderKindForm(agentKind, templateYAML(agentKind), { kinds: REGISTRY })
+    renderKindForm(agentKind, templateYAML(TABLE_UNITS, agentKind), {
+      kinds: REGISTRY,
+    })
     const id = screen.getByLabelText<HTMLInputElement>(/^Record id/)
     expect(id.placeholder).toBe("<authority>/<package>/<name>")
     expect(id.getAttribute("aria-invalid")).toBe("true")
@@ -815,9 +849,13 @@ data:
 
   it("derives a declaration's authority from its id, and never asks for it", () => {
     stubCollections()
-    const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
-      kinds: REGISTRY,
-    })
+    const { onChange } = renderKindForm(
+      agentKind,
+      templateYAML(TABLE_UNITS, agentKind),
+      {
+        kinds: REGISTRY,
+      }
+    )
     // No input for it: the label in front of the slash has already been typed.
     expect(screen.queryByLabelText(/^Authority/)).toBeNull()
     fireEvent.change(screen.getByLabelText(/^Record id/), {
@@ -831,7 +869,10 @@ data:
   })
 
   it("still asks an ORDINARY kind for everything, id included", () => {
-    const { onChange } = renderKindForm(mappingKind, templateYAML(mappingKind))
+    const { onChange } = renderKindForm(
+      mappingKind,
+      templateYAML(TABLE_UNITS, mappingKind)
+    )
     const id = screen.getByLabelText<HTMLInputElement>(/^Record id/)
     expect(id.placeholder).toMatch(/mints one/)
     expect(id.getAttribute("aria-invalid")).not.toBe("true")
@@ -842,7 +883,9 @@ data:
 
   it("renders every row action as a button, and names what it adds", () => {
     stubCollections()
-    renderKindForm(agentKind, templateYAML(agentKind), { kinds: REGISTRY })
+    renderKindForm(agentKind, templateYAML(TABLE_UNITS, agentKind), {
+      kinds: REGISTRY,
+    })
     // A declaration nests, so one form holds several lists: each add says
     // which one it grows rather than all of them reading "Add". A pointer's
     // add is the dropdown's own trigger, which is a button all the same.
@@ -864,7 +907,10 @@ data:
         properties: { keys: { type: "string", keyed: true } },
       },
     }
-    const { onChange } = renderKindForm(spaced, templateYAML(spaced))
+    const { onChange } = renderKindForm(
+      spaced,
+      templateYAML(TABLE_UNITS, spaced)
+    )
     fireEvent.click(screen.getByRole("button", { name: "Add Keys entry" }))
     fireEvent.change(screen.getByLabelText("Keys key 1"), {
       target: { value: " helper " },

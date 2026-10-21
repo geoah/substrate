@@ -13,6 +13,7 @@ import type { KindInfo } from "@/lib/api/types"
 import { buildFormFields, type FormField } from "@/lib/record-form"
 import { SYNC_TRAIT } from "@/lib/core-kinds"
 import { kindHasTrait, SYNC_OWNER_HANDS } from "@/lib/sync"
+import type { UnitReader } from "@/lib/unit-reader"
 
 export interface AccountFormGroups {
   /** The bool properties: what to sync. */
@@ -23,9 +24,12 @@ export interface AccountFormGroups {
   all: FormField[]
 }
 
-export function accountFormGroups(kind: KindInfo): AccountFormGroups {
+export function accountFormGroups(
+  units: UnitReader,
+  kind: KindInfo
+): AccountFormGroups {
   const syncable = kindHasTrait(kind, SYNC_TRAIT)
-  const all = buildFormFields(kind).filter(
+  const all = buildFormFields(units, kind).filter(
     (f) => !(syncable && SYNC_OWNER_HANDS.includes(f.name))
   )
   return {

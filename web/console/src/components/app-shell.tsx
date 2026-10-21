@@ -24,6 +24,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { UnitsProvider } from "@/components/units-provider"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   actorIdentity,
@@ -420,7 +421,9 @@ export function useSidebarPeek(): SidebarPeek & {
 export function AppShell() {
   return (
     <ConsolePreferencesProvider>
-      <ShellBody />
+      <UnitsProvider>
+        <ShellBody />
+      </UnitsProvider>
     </ConsolePreferencesProvider>
   )
 }

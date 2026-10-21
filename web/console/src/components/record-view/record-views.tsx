@@ -52,6 +52,7 @@ import {
   type RelatedBlock,
   type TextBlock,
 } from "@/lib/record-view"
+import { useUnits } from "@/hooks/use-units"
 
 export function RecordViews({
   views,
@@ -282,9 +283,10 @@ function Properties({
   block: PropertiesBlock
   ctx: BlockContext
 }) {
+  const units = useUnits()
   const rows = useMemo(
-    () => sheetRows(ctx.record, ctx.kind, true).all,
-    [ctx.record, ctx.kind]
+    () => sheetRows(units, ctx.record, ctx.kind, true).all,
+    [units, ctx.record, ctx.kind]
   )
   const shown = block.list.flatMap((item) => {
     const row = rows.find((r) => r.name === item.property)

@@ -18,6 +18,7 @@ import {
   typeLabel,
   type PropSpec,
 } from "@/lib/record-schema"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** One thing the editor can offer. `apply` is what lands in the document when
  * it differs from the label (a key completes with its colon and a space). */
@@ -111,7 +112,7 @@ function objectAt(
   return spec?.fields?.length ? spec : undefined
 }
 
-function suggestValues(spec: PropSpec): Suggestion[] {
+function suggestValues(units: UnitReader, spec: PropSpec): Suggestion[] {
   if (spec.values?.length) {
     return spec.values.map((v) => ({
       label: v.value,
@@ -132,7 +133,7 @@ function suggestValues(spec: PropSpec): Suggestion[] {
       { label: "false", type: "value" },
     ]
   }
-  const example = exampleFor(spec)
+  const example = exampleFor(units, spec)
   return example ? [{ label: example, detail: "example", type: "value" }] : []
 }
 
@@ -205,6 +206,7 @@ function writtenFields(lines: string[], line: number): Set<string> {
  * a partial key completes to a key, a partial value after `name:` completes to
  * that property's admitted values. */
 export function completionsAt(
+  units: UnitReader,
   text: string,
   line: number,
   column: number,
@@ -240,7 +242,7 @@ export function completionsAt(
       ? byName.get(key)
       : object?.fields?.find((f) => f.name === key)
     if (!spec) return null
-    const options = suggestValues(spec)
+    const options = suggestValues(units, spec)
     return options.length ? { from, options } : null
   }
 

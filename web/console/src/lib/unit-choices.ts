@@ -53,3 +53,21 @@ export function everydayUnits(
   if (!everyday) return [...units]
   return units.filter((u) => everyday.includes(u) || u === picked)
 }
+
+/** `everydayUnits` for units spelled another way than the table's codes (a
+ * repository graph's ids): each spelling, the list's and the offered ones,
+ * is compared as `canonical` reads it. */
+export function everydayUnitsBy(
+  units: readonly string[],
+  stored: string | undefined,
+  picked: string | undefined,
+  canonical: (unit: string) => string
+): string[] {
+  const key = stored ? canonical(stored) : undefined
+  const everyday = key
+    ? Object.entries(EVERYDAY).find(([code]) => canonical(code) === key)?.[1]
+    : undefined
+  if (!everyday) return [...units]
+  const held = new Set(everyday.map(canonical))
+  return units.filter((u) => held.has(canonical(u)) || u === picked)
+}

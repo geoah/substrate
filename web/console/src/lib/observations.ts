@@ -32,16 +32,13 @@ import { METRIC_TRAIT, OBSERVED_TRAIT } from "@/lib/core-kinds"
 import { FORM_WORDS } from "@/lib/observed-form"
 import { listWords } from "@/lib/tools"
 import { kindHasTrait } from "@/lib/traits"
+import type { UnitReader, UnitReading } from "@/lib/unit-reader"
 import {
-  convertUnit,
   displayDigits,
-  displayQuantity,
-  formatQuantity,
   groupDigits,
   isQuantity,
   roundDigits,
   timeWords,
-  withSymbol,
 } from "@/lib/units"
 
 // ── discovery ──────────────────────────────────────────────────────────────
@@ -352,6 +349,7 @@ export function codeWords(code: string): string {
  * reading" where there is none. A bound keeps its comparator in front
  * (`<0.01 ng/mL`): the true value lies beyond the digits. */
 export function readingText(
+  units: UnitReader,
   value: string | null | undefined,
   unit?: string,
   precision?: number,
@@ -363,8 +361,8 @@ export function readingText(
   if (time) return `${bound}${time}`
   const shown = precision === undefined ? value : roundDigits(value, precision)
   const digits = `${bound}${groupDigits(shown)}`
-  return unit && formatQuantity({ value: shown, unit })
-    ? withSymbol(digits, unit)
+  return unit && units.format({ value: shown, unit })
+    ? units.withSymbol(digits, unit)
     : digits
 }
 
@@ -427,11 +425,12 @@ function oneFlagWords(flag: Record<string, unknown>): string | undefined {
  * 40 mg/dL`. The lab's own words for the flag (`flagWords`) and the first
  * range's bounds; undefined where the record has neither. */
 export function judgementWords(
+  units: UnitReader,
   interpretation: unknown,
   referenceRanges: unknown
 ): string | undefined {
   const range = firstRange(referenceRanges)
-  const bounds = range ? rangeWords(range) : undefined
+  const bounds = range ? rangeWords(units, range) : undefined
   const flag = flagWords(interpretation) ?? ""
   if (flag && bounds) return `${flag} (${bounds})`
   if (flag) return flag
@@ -476,6 +475,7 @@ export interface ResultReading {
  * into `unit`. A range's `tone` is absent on a lab's normal range, which
  * reads as `good`. */
 export function resultReading(
+  units: UnitReader,
   p: Record<string, unknown>,
   unit?: string
 ): ResultReading | undefined {
@@ -486,13 +486,13 @@ export function resultReading(
   const raw = Number(v.value)
   if (!Number.isFinite(raw)) return undefined
   const own = text(v.unit)
-  const measure = text(p.measure)
+  const reading = { measure: text(p.measure), delta: p.delta === true }
   const into = unit ?? own
   const value =
     own === into
       ? raw
       : own && into
-        ? convertUnit(raw, own, into, measure)
+        ? units.convert(raw, own, into, reading)
         : undefined
   if (value === undefined) return undefined
   const comparator = text(v.comparator)
@@ -501,7 +501,7 @@ export function resultReading(
     ...(into ? { unit: into } : {}),
     ...(comparator ? { comparator } : {}),
     tone: interpretationTone(p.interpretation),
-    ...rangeIn(firstRange(p.referenceRanges), into, measure),
+    ...rangeIn(units, firstRange(p.referenceRanges), into, reading),
   }
 }
 
@@ -512,7 +512,10 @@ export function resultReading(
  * wears its own tone, a lab's normal range the good one, and a one-sided
  * range of values that are never negative starts at zero, so a value
  * under a high bound alone sits where it is, not at the padded end. */
-export function resultBar(p: Record<string, unknown>):
+export function resultBar(
+  units: UnitReader,
+  p: Record<string, unknown>
+):
   | {
       value: number
       unit?: string
@@ -521,7 +524,7 @@ export function resultBar(p: Record<string, unknown>):
       min?: number
     }
   | undefined {
-  const reading = resultReading(p)
+  const reading = resultReading(units, p)
   if (!reading?.range || reading.comparator) return undefined
   const { value, unit, range, tone } = reading
   // Only a one-sided range ("under 3") starts at zero: a two-sided one
@@ -546,9 +549,10 @@ export function resultBar(p: Record<string, unknown>):
 
 /** A range's bounds in `unit`, where every bound it gives converts. */
 function rangeIn(
+  units: UnitReader,
   range: Record<string, unknown> | undefined,
   unit: string | undefined,
-  measure: string | undefined
+  reading: UnitReading
 ): Pick<ResultReading, "range"> {
   if (!range) return {}
   const bound = (q: unknown): number | null | undefined => {
@@ -561,7 +565,7 @@ function rangeIn(
     if (!Number.isFinite(n)) return null
     if (from === unit) return n
     if (!from || !unit) return null
-    return convertUnit(n, from, unit, measure) ?? null
+    return units.convert(n, from, unit, reading) ?? null
   }
   const low = bound(range.low)
   const high = bound(range.high)
@@ -617,16 +621,19 @@ export function interpretationTone(
 
 /** A reference range in words: `60 to 120 mg/dL`, `under 120 mg/dL`,
  * `over 40 mg/dL`, else its text. */
-export function rangeWords(range: Record<string, unknown>): string | undefined {
+export function rangeWords(
+  units: UnitReader,
+  range: Record<string, unknown>
+): string | undefined {
   const low = isQuantity(range.low) ? range.low : undefined
   const high = isQuantity(range.high) ? range.high : undefined
   if (low && high) {
     return low.unit === high.unit && !low.comparator
-      ? `${displayDigits(low.value)} to ${displayQuantity(high)}`
-      : `${displayQuantity(low)} to ${displayQuantity(high)}`
+      ? `${displayDigits(low.value)} to ${units.display(high)}`
+      : `${units.display(low)} to ${units.display(high)}`
   }
-  if (high) return `under ${displayQuantity(high)}`
-  if (low) return `over ${displayQuantity(low)}`
+  if (high) return `under ${units.display(high)}`
+  if (low) return `over ${units.display(low)}`
   return text(range.text)
 }
 

@@ -55,6 +55,9 @@ import {
   type PlotSource,
 } from "./overlay"
 import { selectionByMetric } from "./stream-table"
+import { UnitGraph } from "@/lib/unit-graph"
+import { editedTable } from "@/lib/unit-graph.test-fixtures"
+import { TABLE_UNITS, graphUnits, pendingUnits } from "@/lib/unit-reader"
 
 /** The shipped health catalogue's metric records, read as the console reads
  * a repository's, under the fixtures' metric kind. */
@@ -86,6 +89,7 @@ function source(streams: Stream[] = streamsOf(LATEST)): PlotSource {
     metricOf: (v) => INFOS[v] ?? INFOS[`${METRIC}/${v}`],
     metricName: (v) => (INFOS[v] ?? INFOS[`${METRIC}/${v}`])?.name ?? v,
     metricPath: (v) => (INFOS[v] ?? INFOS[`${METRIC}/${v}`])?.path,
+    units: TABLE_UNITS,
   }
 }
 
@@ -109,7 +113,7 @@ describe("the unit each answer reads in", () => {
   it("is no unit for a count, whatever it counts", () => {
     expect(answerUnitOf("count", "/min")).toBe(COUNT_UNIT)
     expect(answerUnitOf("count", "kg")).toBe(answerUnitOf("count", "/min"))
-    expect(unitWords(COUNT_UNIT)).toBe("count")
+    expect(unitWords(TABLE_UNITS, COUNT_UNIT)).toBe("count")
   })
 
   it("is a duration for time in each category, the unit over seconds for a rate", () => {
@@ -148,7 +152,7 @@ describe("axes", () => {
       plot("Weight", "kg"),
     ])
     expect(plan.leftOut.map((p) => p.name)).toEqual(["Weight"])
-    expect(leftOutWords(plan)).toBe(
+    expect(leftOutWords(TABLE_UNITS, plan)).toBe(
       "Up to two units in one chart: Weight (kg) is left out. Deselect it, or deselect Heart rate (/min) or HRV (ms) to draw it here."
     )
   })
@@ -161,14 +165,14 @@ describe("axes", () => {
       plot("Body fat", "%"),
       plot("Muscle", "kg"),
     ])
-    expect(leftOutWords(plan)).toBe(
+    expect(leftOutWords(TABLE_UNITS, plan)).toBe(
       "Up to two units in one chart: Weight and Muscle (kg) and Body fat (%) are left out. Deselect them, or deselect Steps (steps) or Heart rate (/min) to draw them here."
     )
   })
 
   it("says nothing while two units hold every metric", () => {
     expect(
-      leftOutWords(assignAxes([plot("A", "kg"), plot("B", "kg")]))
+      leftOutWords(TABLE_UNITS, assignAxes([plot("A", "kg"), plot("B", "kg")]))
     ).toBeUndefined()
   })
 
@@ -572,6 +576,23 @@ describe("one metric's plot", () => {
     expect(
       planPlot(source(), BODY_MASS, { ...SCOPE, unit: "[lb_av]" })
     ).toMatchObject({ unit: "[lb_av]", outputUnit: "[lb_av]" })
+  })
+
+  it("offers the repository graph's units, and none while it loads", () => {
+    const edited = {
+      ...source(),
+      units: graphUnits(new UnitGraph(editedTable)),
+    }
+    const plotted = planPlot(edited, BODY_MASS, SCOPE)
+    expect(plotted.units).toEqual(["kg", "g", "lb", "sack25", "ug"])
+    expect(
+      planPlot(edited, BODY_MASS, { ...SCOPE, unit: "sack25" })
+    ).toMatchObject({ unit: "sack25", outputUnit: "sack25" })
+    expect(
+      planPlot(source(), BODY_MASS, { ...SCOPE, unit: "sack25" }).outputUnit
+    ).not.toBe("sack25")
+    const loading = { ...source(), units: pendingUnits("loading") }
+    expect(planPlot(loading, BODY_MASS, SCOPE).units).toEqual(["kg"])
   })
 
   it("prefers the chosen sources in the order they were chosen", () => {

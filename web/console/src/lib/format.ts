@@ -4,7 +4,8 @@
 
 import { readReference } from "@/lib/api/types"
 import { isMoney, moneyText } from "@/lib/money"
-import { formatQuantity, isQuantity } from "@/lib/units"
+import type { UnitReader } from "@/lib/unit-reader"
+import { isQuantity } from "@/lib/units"
 import { splitRecordPath } from "@/lib/record-path"
 
 const MINUTE = 60_000
@@ -174,11 +175,12 @@ export function referenceObjects(value: unknown): unknown[] | undefined {
  * which is what those three members say whatever declared them, and one in
  * exactly the quantity shape as its title form (`37 °C`), which reads the
  * same in every locale. */
-export function cellValue(value: unknown): string {
+export function cellValue(units: UnitReader, value: unknown): string {
   if (value === null || value === undefined) return ""
-  if (Array.isArray(value)) return value.map(cellValue).join(", ")
+  if (Array.isArray(value))
+    return value.map((v) => cellValue(units, v)).join(", ")
   if (isMoney(value)) return moneyText(value)
-  if (isQuantity(value)) return formatQuantity(value)
+  if (isQuantity(value)) return units.format(value)
   if (typeof value === "object") {
     const keys = Object.keys(value)
     return keys.length ? `{${keys.join(", ")}}` : "{}"

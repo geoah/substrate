@@ -148,6 +148,7 @@ import {
 } from "@/pages/kind-browse-columns"
 import { kindBrowseRoute } from "@/router"
 import { kindDescription } from "@/lib/kind-copy"
+import { useUnits } from "@/hooks/use-units"
 
 const PAGE_SIZE = 50
 const DEFAULT_SORT = "updatedAt:desc"
@@ -180,6 +181,7 @@ function childNoun(kind: KindInfo): string {
 }
 
 export function KindBrowsePage() {
+  const units = useUnits()
   // The route params are the kind reference, segment for segment.
   const { authority, pkg, name } = kindBrowseRoute.useParams()
   const [technical] = useTechnicalDetails()
@@ -294,12 +296,12 @@ export function KindBrowsePage() {
     [kindInfo]
   )
   const recordFilter = useMemo(() => {
-    const base = toRecordFilter(filters, filterFields)
+    const base = toRecordFilter(units, filters, filterFields)
     // A word typed into the box matches as it is typed, the start of a longer
     // word included.
     const words = typeaheadQuery(search)
     return words ? { ...base, search: words } : base
-  }, [filters, filterFields, search])
+  }, [units, filters, filterFields, search])
 
   const nestProperty = useMemo(
     () => (kindInfo ? nestingProperty(kindInfo) : undefined),
@@ -455,12 +457,12 @@ export function KindBrowsePage() {
   const columns = useMemo(
     () =>
       kindInfo
-        ? buildColumns(kindInfo, registry.data ?? [], referenceTitles, {
+        ? buildColumns(units, kindInfo, registry.data ?? [], referenceTitles, {
             technical,
             childNoun: noun,
           })
         : [],
-    [kindInfo, registry.data, referenceTitles, technical, noun]
+    [units, kindInfo, registry.data, referenceTitles, technical, noun]
   )
   const defaultHidden = useMemo(
     () => (kindInfo ? defaultHiddenColumns(kindInfo) : []),

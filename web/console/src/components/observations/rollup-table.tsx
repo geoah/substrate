@@ -34,8 +34,10 @@ import {
   type BucketSize,
 } from "@/lib/observations-time"
 import { namedSources, rollupText, rowValue } from "@/lib/observations-answer"
-import { isTimeUnit, unitSymbol } from "@/lib/units"
+import type { UnitReader } from "@/lib/unit-reader"
+import { isTimeUnit } from "@/lib/units"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 /** The rows the box shows before it scrolls, and the head's and a row's
  * heights, which the table's classes set. */
@@ -61,6 +63,7 @@ const GROUP_WORDS: Record<AggregateGroupKey, string> = {
 /** A reducer's column head: its words, and the unit its values carry,
  * unless they are times its cells say in hours and minutes. */
 function headOf(
+  units: UnitReader,
   reducer: AggregateReducer,
   rows: readonly AggregateRow[]
 ): string {
@@ -68,7 +71,7 @@ function headOf(
   const unit = rows
     .map((row) => rowValue(row, key)?.unit)
     .find((u): u is string => Boolean(u))
-  const symbol = unit && !isTimeUnit(unit) ? unitSymbol(unit) : ""
+  const symbol = unit && !isTimeUnit(unit) ? units.symbol(unit) : ""
   return symbol ? `${reducerLabel(reducer)} (${symbol})` : reducerLabel(reducer)
 }
 
@@ -103,6 +106,7 @@ export function RollupTable({
   /** The zone that placed a point written without a UTC offset. */
   fallbackZone?: string
 }) {
+  const units = useUnits()
   // Folded by default, so a timeline of several metrics reads chart after
   // chart; one click shows the numbers.
   const [open, setOpen] = useState(false)
@@ -156,7 +160,7 @@ export function RollupTable({
                 {channels && <th scope="col">Channel</th>}
                 {reducers.map((r) => (
                   <th key={reducerKey(r)} scope="col" className="text-right!">
-                    {headOf(r, rows)}
+                    {headOf(units, r, rows)}
                   </th>
                 ))}
                 <th scope="col" className="text-right!">

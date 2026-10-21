@@ -55,8 +55,7 @@ import {
   type LaneSpec,
 } from "@/lib/observations-reads"
 import { listWords } from "@/lib/tools"
-import { unitChoices } from "@/lib/unit-choices"
-import { unitSymbol } from "@/lib/units"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** How a series is drawn: a line, bars, or bars stacked per category. */
 export type ChartMark = "line" | "bars" | "stack"
@@ -99,9 +98,9 @@ export function answerUnitOf(
 }
 
 /** An axis's unit in words, as its caption and the legend say it. */
-export function unitWords(unit: string): string {
+export function unitWords(units: UnitReader, unit: string): string {
   if (unit === COUNT_UNIT) return "count"
-  return (unit && unitSymbol(unit)) || "no unit"
+  return (unit && units.symbol(unit)) || "no unit"
 }
 
 /** One y axis of a chart: its unit, its side, and the metrics on it. */
@@ -158,16 +157,17 @@ export function splitCharts<T extends { unit: string }>(
  * which unit, and what to deselect to draw them. Undefined where nothing
  * is left out. */
 export function leftOutWords<T extends { unit: string; name: string }>(
+  units: UnitReader,
   plan: AxisPlan<T>
 ): string | undefined {
   if (!plan.leftOut.length) return undefined
   const named = (plots: readonly T[]) => {
-    const units: string[] = []
-    for (const p of plots) if (!units.includes(p.unit)) units.push(p.unit)
+    const shown: string[] = []
+    for (const p of plots) if (!shown.includes(p.unit)) shown.push(p.unit)
     return listWords(
-      units.map(
+      shown.map(
         (u) =>
-          `${listWords(plots.filter((p) => p.unit === u).map((p) => p.name))} (${unitWords(u)})`
+          `${listWords(plots.filter((p) => p.unit === u).map((p) => p.name))} (${unitWords(units, u)})`
       )
     )
   }
@@ -189,6 +189,8 @@ export interface PlotSource {
   metricOf: (value: string) => MetricInfo | undefined
   metricName: (value: string) => string
   metricPath: (value: string) => string | undefined
+  /** The unit reader the plot's unit choices come from. */
+  units: UnitReader
 }
 
 /** The choices one chart's metrics are read under. */
@@ -447,7 +449,9 @@ export function planPlot(
       selected.find((s) => s.unit)
     )?.unit
   const timed = reducer.startsWith("durationIn")
-  const units = timed ? DURATION_UNITS : unitChoices(stored, info?.measures)
+  const units = timed
+    ? DURATION_UNITS
+    : obs.units.choices(stored, info?.measures)
   const picked =
     scope.unit && units.includes(scope.unit)
       ? scope.unit

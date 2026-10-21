@@ -670,8 +670,12 @@ const NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/
 
 /** Read the text an editor holds, or a person types, back into the value:
  * `72.5 kg`, `<0.5 ng/mL`, `37 °C`, `62 bpm`. The digits are held to the
- * decimal grammar and the unit is read through `canonicalUnit`. */
-export function parseQuantityText(text: string): {
+ * decimal grammar and the unit is read through `canonical`, the table's
+ * `canonicalUnit` unless a reader names its own (lib/unit-reader.ts). */
+export function parseQuantityText(
+  text: string,
+  canonical: (input: string) => string = canonicalUnit
+): {
   value?: Quantity
   error?: string
 } {
@@ -699,7 +703,7 @@ export function parseQuantityText(text: string): {
   if (decimal.error) return { error: decimal.error }
   const written = after.trim()
   if (!written) return { error: "choose a unit" }
-  const unit = canonicalUnit(written)
+  const unit = canonical(written)
   if (/\s/.test(unit)) {
     return {
       error: `"${written}" is not a unit: a unit is one code without spaces (kg, [lb_av], mmol/L)`,
@@ -751,19 +755,25 @@ export function openingUnit(
 const LAST_UNIT = "substrate.console.lastUnit"
 
 /** The unit this reader picked last, which a blank quantity input opens on
- * where its declaration says nothing closer. */
-export function lastUnit(): string | undefined {
+ * where its declaration says nothing closer; `known` holds it to the units
+ * the reader in use holds, the table's unless a reader names its own. */
+export function lastUnit(
+  known: (unit: string) => boolean = isListedUnit
+): string | undefined {
   try {
     const code = localStorage.getItem(LAST_UNIT) ?? ""
-    return isListedUnit(code) ? code : undefined
+    return known(code) ? code : undefined
   } catch {
     return undefined
   }
 }
 
-export function rememberUnit(code: string): void {
+export function rememberUnit(
+  code: string,
+  known: (unit: string) => boolean = isListedUnit
+): void {
   try {
-    if (isListedUnit(code)) localStorage.setItem(LAST_UNIT, code)
+    if (known(code)) localStorage.setItem(LAST_UNIT, code)
   } catch {
     // Storage denied: the next blank input opens on the declaration alone.
   }

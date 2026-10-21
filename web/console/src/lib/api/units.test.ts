@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** The graph client: GET /api/v1/units read into a graph cached by server,
- * repository and revision, the reader the switch selects, and the server's
- * conversion asked for a difference. */
+ * repository and revision, and the server's conversion asked for a
+ * difference. */
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -15,7 +15,6 @@ import {
   forgetUnitGraphs,
   graphOf,
   unitGraphQueryOptions,
-  unitReader,
   unitRecordChanged,
 } from "./units"
 
@@ -65,19 +64,7 @@ describe("the unit graph cache", () => {
   })
 })
 
-describe("unitReader", () => {
-  it("reads the graph where the switch hands one, and the table where not", () => {
-    const graph = graphOf(table(1), "r", "s")
-    const g = unitReader(graph)
-    expect(g.canonical("[lb_av]")).toBe("lb")
-    expect(g.convert(1, "Cel", "degF", true)).toBe(1.8)
-    expect(g.convert(1, "kg", "K")).toBeUndefined()
-    const t = unitReader()
-    expect(t.graph).toBeUndefined()
-    expect(t.canonical("lb")).toBe("[lb_av]")
-    expect(t.convert(1, "Cel", "[degF]", true)).toBe(1.8)
-  })
-
+describe("convertOnServer", () => {
   it("asks the server to convert a difference", async () => {
     const fetch = vi.fn(
       async () =>

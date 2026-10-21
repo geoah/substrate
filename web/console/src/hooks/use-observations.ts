@@ -24,6 +24,7 @@ import {
 } from "@tanstack/react-query"
 
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
+import { useUnits } from "@/hooks/use-units"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { aggregateQueryOptions } from "@/lib/api/observations"
 import {
@@ -60,6 +61,7 @@ import {
 } from "@/lib/observations-reads"
 import { splitRecordPath } from "@/lib/record-path"
 import { titleReadScope } from "@/lib/reference-titles"
+import type { UnitReader } from "@/lib/unit-reader"
 
 const NO_KINDS: KindInfo[] = []
 const NO_ROWS: AggregateRow[] = []
@@ -149,6 +151,8 @@ export interface Observations {
    * priority read resolves overlapping sources in when the request names
    * none. */
   rankOf: (source: string, metric: string) => number | undefined
+  /** The unit reader a plot's unit choices come from (`useUnits`). */
+  units: UnitReader
 }
 
 /** What a surface asks discovery for besides its narrowing. */
@@ -358,6 +362,7 @@ export function useObservations(
   }, [withPoints, streams])
 
   const { error: registryError, refetch: refetchRegistry } = registry
+  const units = useUnits()
   return useMemo(() => {
     const metricPath = (value: string) => refPathOf(value, pins.metric)
     const sameMetric = (a: string | undefined, b: string | undefined) =>
@@ -422,8 +427,10 @@ export function useObservations(
         const rank = ranks.get(path)?.[metricPath(metric) ?? metric]
         return typeof rank === "number" ? rank : undefined
       },
+      units,
     }
   }, [
+    units,
     registry.isPending,
     registryError,
     refetchRegistry,

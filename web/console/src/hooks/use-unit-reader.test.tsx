@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-/** The unit reader a component takes: the engine's table until the server
- * says its switch is on, then the repository's graph, dropped and fetched
- * again when the change stream names a unit or conversion record. */
+/** The unit reader a component takes: the engine's table where the server
+ * says its switch is off, the repository's graph where it is on, and neither
+ * while the graph loads or after it failed. The graph is fetched again when
+ * the change stream names a unit or conversion record. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, renderHook, waitFor } from "@testing-library/react"
@@ -12,27 +13,38 @@ import { forgetUnitGraphs } from "@/lib/api/units"
 import type { ChangeRow } from "@/lib/api/types"
 import { fixtureTable } from "@/lib/unit-graph.test-fixtures"
 
-const watch = vi.hoisted(() => ({
-  calls: [] as {
-    filter?: { kinds?: string[] }
-    onRow: (row: ChangeRow) => void
-  }[],
-}))
+interface Watch {
+  filter?: { kinds?: string[] }
+  onRow: (row: ChangeRow) => void
+  onStatus?: (status: string) => void
+  onCompacted?: () => void
+  stopped: boolean
+}
+
+const watch = vi.hoisted(() => ({ calls: [] as Watch[] }))
 
 vi.mock("@/lib/api/changes", () => ({
-  watchChanges: (opts: {
-    filter?: { kinds?: string[] }
-    onRow: (row: ChangeRow) => void
-  }) => {
-    watch.calls.push(opts)
-    return { stop: () => undefined }
+  watchChanges: (opts: Omit<Watch, "stopped">) => {
+    const held: Watch = { ...opts, stopped: false }
+    watch.calls.push(held)
+    return {
+      stop: () => {
+        held.stopped = true
+      },
+    }
   },
 }))
 
 import { useUnitReader } from "./use-unit-reader"
 
-function serve(graphOn: boolean, revisions: number[]) {
-  let served = 0
+/** A server whose switch is `graphOn` and whose graph is at `revision`,
+ * which a test moves; `units` answers the graph route in its place. */
+function serve(
+  graphOn: boolean,
+  revision = 1,
+  units?: () => Promise<Response>
+) {
+  const server = { revision, fetched: 0 }
   const fetch = vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes("server.json")) {
@@ -42,13 +54,13 @@ function serve(graphOn: boolean, revisions: number[]) {
         })
       )
     }
-    const revision = revisions[Math.min(served, revisions.length - 1)]
-    served++
+    server.fetched++
+    if (units) return units()
     return Promise.resolve(
       new Response(
         JSON.stringify({
           ...fixtureTable,
-          revision,
+          revision: server.revision,
           measures: [],
           aliases: {},
           unseeded: [],
@@ -58,16 +70,26 @@ function serve(graphOn: boolean, revisions: number[]) {
     )
   })
   vi.stubGlobal("fetch", fetch)
-  return fetch
+  return Object.assign(server, { fetch })
 }
 
-function wrapper() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+function client() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } })
+}
+
+function wrapper(held = client()) {
   return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={held}>{children}</QueryClientProvider>
   )
+}
+
+const UNIT_ROW: ChangeRow = {
+  seq: 9,
+  ts: "2026-10-21T00:00:00Z",
+  actor: "api",
+  op: "put",
+  recordId: "lb-g",
+  kind: "substrate.reamde.dev/core/conversion",
 }
 
 afterEach(() => {
@@ -79,34 +101,62 @@ afterEach(() => {
 
 describe("useUnitReader", () => {
   it("reads the table while the switch is off, and never fetches the graph", async () => {
-    const fetch = serve(false, [1])
+    const server = serve(false)
     const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.status).toBe("table"))
     expect(result.current.graph).toBeUndefined()
     expect(result.current.canonical("lb")).toBe("[lb_av]")
-    expect(fetch.mock.calls.some((c) => String(c[0]).endsWith("/units"))).toBe(
-      false
-    )
+    expect(server.fetched).toBe(0)
     expect(watch.calls).toHaveLength(0)
   })
 
   it("reads the graph once the switch is on, and drops it on a unit change", async () => {
-    serve(true, [1, 2])
+    const server = serve(true)
     const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.graph?.revision).toBe(1))
+    expect(result.current.status).toBe("ready")
     expect(result.current.canonical("[lb_av]")).toBe("lb")
     expect(watch.calls.at(-1)?.filter?.kinds).toEqual([
       "substrate.reamde.dev/core/unit",
       "substrate.reamde.dev/core/conversion",
     ])
-    watch.calls.at(-1)!.onRow({
-      seq: 9,
-      ts: "2026-10-21T00:00:00Z",
-      actor: "api",
-      op: "put",
-      recordId: "lb-g",
-      kind: "substrate.reamde.dev/core/conversion",
-    })
+    server.revision = 2
+    watch.calls.at(-1)!.onRow(UNIT_ROW)
     await waitFor(() => expect(result.current.graph?.revision).toBe(2))
+  })
+
+  it("answers nothing from the table while the graph loads", async () => {
+    serve(true, 1, () => new Promise<Response>(() => undefined))
+    const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
+    expect(result.current.status).toBe("loading")
+    await waitFor(() => expect(watch.calls).toHaveLength(1))
+    const units = result.current
+    expect(units.status).toBe("loading")
+    expect(units.graph).toBeUndefined()
+    // The table converts these and prints Cel as °C; the pending reader
+    // does neither.
+    expect(units.convert(1, "kg", "[lb_av]")).toBeUndefined()
+    expect(units.symbol("Cel")).toBe("Cel")
+    expect(units.unitsFor({ measures: "mass" })).toEqual([])
+    expect(units.check({ value: "1", unit: "kg" })).toMatch(/still loading/)
+    expect(units.format({ value: "37", unit: "Cel" })).toBe("37 Cel")
+  })
+
+  it("says why when the graph fails, and answers nothing from the table", async () => {
+    serve(true, 1, () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ error: { code: "internal", message: "boom" } }),
+          { status: 500 }
+        )
+      )
+    )
+    const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
+    await waitFor(() => expect(result.current.status).toBe("error"))
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.convert(1, "kg", "[lb_av]")).toBeUndefined()
+    expect(result.current.check({ value: "1", unit: "kg" })).toMatch(
+      /did not load/
+    )
   })
 })

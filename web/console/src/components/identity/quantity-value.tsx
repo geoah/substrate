@@ -5,11 +5,9 @@
  * quantity reads as the JSON it is, so a malformed row is still visible. */
 
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import {
-  displayQuantity,
-  formatQuantity,
-  formatQuantityText,
-} from "@/lib/units"
+import { useUnits } from "@/hooks/use-units"
+import { unitsUnavailable } from "@/lib/unit-reader"
+import { formatQuantityText } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
 export function QuantityValue({
@@ -24,9 +22,8 @@ export function QuantityValue({
   className?: string
 }) {
   const [technical] = useTechnicalDetails()
-  const shown = technical
-    ? formatQuantity(value)
-    : displayQuantity(value, places)
+  const units = useUnits()
+  const shown = technical ? units.format(value) : units.display(value, places)
   if (!shown) {
     return (
       <span className={cn("font-mono text-xs break-all", className)}>
@@ -34,10 +31,17 @@ export function QuantityValue({
       </span>
     )
   }
+  // Until a graph-enabled server's units load, a value reads as stored, its
+  // unit as the id the write took, and says why.
+  const unavailable = unitsUnavailable(units)
   return (
     <span
       className={cn("tabular-nums", className)}
-      title={technical ? formatQuantityText(value) : formatQuantity(value)}
+      aria-busy={units.status === "loading" || undefined}
+      title={
+        unavailable ??
+        (technical ? formatQuantityText(value) : units.format(value))
+      }
     >
       {shown}
     </span>

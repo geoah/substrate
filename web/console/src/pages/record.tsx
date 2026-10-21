@@ -54,6 +54,7 @@ import { readOnlyReason } from "@/lib/provenance"
 import { foldedBy } from "@/lib/record-view"
 import { kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
+import { useUnits } from "@/hooks/use-units"
 
 const NO_KINDS: KindInfo[] = []
 
@@ -118,6 +119,7 @@ export function RecordDocument({
   kind?: KindInfo
   kinds: KindInfo[]
 }) {
+  const units = useUnits()
   const [technical] = useTechnicalDetails()
   const [source, setSource] = useState(false)
   const [holders, setHolders] = useState(false)
@@ -133,8 +135,8 @@ export function RecordDocument({
   )
   const mappings = useQuery(recordMappingsQueryOptions(mappingIds))
   const body = useMemo(
-    () => sheetRows(record, kind, readOnly).body,
-    [record, kind, readOnly]
+    () => sheetRows(units, record, kind, readOnly).body,
+    [units, record, kind, readOnly]
   )
   const syncable = kindHasTrait(kind, SYNC_TRAIT)
   // A kind binding observed opens on its measurement, and its sheet folds

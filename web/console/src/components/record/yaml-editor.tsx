@@ -59,6 +59,8 @@ import {
 import { validateApplyDoc, type ApplyContext } from "@/lib/record-yaml"
 import { completionsAt } from "@/lib/yaml-completion"
 import { specOnLine } from "@/lib/yaml-annotations"
+import { useUnits } from "@/hooks/use-units"
+import type { UnitReader } from "@/lib/unit-reader"
 
 const HIGHLIGHT = HighlightStyle.define([
   {
@@ -169,6 +171,7 @@ export function YamlEditor({
   ctx?: ApplyContext
   label?: string
 }) {
+  const units = useUnits()
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
 
@@ -180,9 +183,9 @@ export function YamlEditor({
   // The live props, read by extensions that outlive the render that made them.
   // They are refreshed in an effect, never during render: the editor is built
   // once, and what it reads must be what the last commit said.
-  const latest = useRef({ kind, ctx, onChange, specs })
+  const latest = useRef({ kind, ctx, onChange, specs, units })
   useEffect(() => {
-    latest.current = { kind, ctx, onChange, specs }
+    latest.current = { kind, ctx, onChange, specs, units }
   })
 
   useEffect(() => {
@@ -191,6 +194,7 @@ export function YamlEditor({
     const complete = (context: CompletionContext): CompletionResult | null => {
       const line = context.state.doc.lineAt(context.pos)
       const found = completionsAt(
+        latest.current.units,
         context.state.doc.toString(),
         line.number - 1,
         context.pos - line.from,
@@ -220,6 +224,7 @@ export function YamlEditor({
     const diagnostics = (editor: EditorView): Diagnostic[] => {
       const doc = editor.state.doc
       const problems = validateApplyDoc(
+        latest.current.units,
         doc.toString(),
         latest.current.kind,
         latest.current.ctx
@@ -248,7 +253,7 @@ export function YamlEditor({
         pos: line.from,
         end: line.to,
         above: true,
-        create: () => ({ dom: specCard(spec) }),
+        create: () => ({ dom: specCard(latest.current.units, spec) }),
       }
     })
 
@@ -317,7 +322,7 @@ export function YamlEditor({
 
 /** What the kind says about the property on the hovered line. CodeMirror owns
  * this node, so the card is built rather than rendered. */
-function specCard(spec: PropSpec): HTMLElement {
+function specCard(units: UnitReader, spec: PropSpec): HTMLElement {
   const dom = document.createElement("div")
   dom.className = "flex max-w-sm flex-col gap-1 px-3 py-2 text-xs"
 
@@ -350,7 +355,7 @@ function specCard(spec: PropSpec): HTMLElement {
   } else if (spec.states?.length) {
     line(`states: ${spec.states.join(", ")}`, true)
   } else {
-    const example = exampleFor(spec)
+    const example = exampleFor(units, spec)
     if (example) line(`e.g. ${example}`, true)
   }
   return dom

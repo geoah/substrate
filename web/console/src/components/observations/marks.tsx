@@ -17,8 +17,8 @@ import {
   type ReadingShape,
 } from "@/lib/observations"
 import { splitRecordPath } from "@/lib/record-path"
-import { formatQuantity } from "@/lib/units"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 /** A record a group value names: its `RecordRef` where the value or the
  * reference's pin says its kind, else the id as it came (the answer named a
@@ -118,6 +118,7 @@ export function Reading({
   bound?: string
   className?: string
 }) {
+  const units = useUnits()
   if (value === null || value === undefined) {
     return bound ? (
       <span
@@ -138,11 +139,11 @@ export function Reading({
         className={cn("tabular-nums", className)}
         title={`${comparator ?? ""}${value}`}
       >
-        {readingText(shown, unit, undefined, comparator)}
+        {readingText(units, shown, unit, undefined, comparator)}
       </span>
     )
   }
-  if (unit && formatQuantity({ value, unit })) {
+  if (unit && units.format({ value, unit })) {
     return (
       <QuantityValue
         value={{ value, unit, ...(comparator ? { comparator } : {}) }}

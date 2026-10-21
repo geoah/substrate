@@ -1,10 +1,14 @@
-/** The console's unit reader (lib/api/units.ts unitReader): the repository's
- * unit graph where the server's switch is on, the engine's table where it is
- * not or until the graph has loaded. While it is mounted, a change to any
- * unit or conversion record in the change stream drops the cached graph, so
- * the next read fetches the new revision. */
+/** The console's unit reader (lib/unit-reader.ts): the engine's table where
+ * the server's `units.graph` switch is off, the repository's graph where it
+ * is on, and a pending reader while either answer is outstanding, so a
+ * graph-enabled server never gets a table answer.
+ *
+ * Mount it once, through `UnitsProvider` (components/units-provider.tsx):
+ * each mount opens a watch on the change stream, and a change to any unit or
+ * conversion record drops the cached graph, so the next read fetches the new
+ * revision. */
 
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { watchChanges } from "@/lib/api/changes"
@@ -14,30 +18,45 @@ import {
   CONVERSION_KIND,
   UNIT_KIND,
   unitGraphQueryOptions,
-  unitReader,
   unitRecordChanged,
-  type UnitReader,
 } from "@/lib/api/units"
+import {
+  TABLE_UNITS,
+  graphUnits,
+  pendingUnits,
+  type UnitReader,
+} from "@/lib/unit-reader"
 
 export function useUnitReader(): UnitReader {
   const queryClient = useQueryClient()
-  const { data: on } = useQuery(unitGraphSwitchQueryOptions)
+  const { data: on, isPending: switchPending } = useQuery(
+    unitGraphSwitchQueryOptions
+  )
   const repository = getRepository()
   const graphQuery = unitGraphQueryOptions(repository)
-  const { data: graph } = useQuery({ ...graphQuery, enabled: on === true })
+  const {
+    data: graph,
+    error,
+    isError,
+  } = useQuery({ ...graphQuery, enabled: on === true })
+  const key = JSON.stringify(graphQuery.queryKey)
   useEffect(() => {
     if (on !== true) return
+    const queryKey = JSON.parse(key) as unknown[]
+    const refetch = () => void queryClient.invalidateQueries({ queryKey })
     const handle = watchChanges({
       filter: { kinds: [UNIT_KIND, CONVERSION_KIND] },
       onRow: (row) => {
-        if (unitRecordChanged(row.kind)) {
-          void queryClient.invalidateQueries({ queryKey: graphQuery.queryKey })
-        }
+        if (unitRecordChanged(row.kind)) refetch()
       },
     })
     return () => handle.stop()
-    // The query key names the server and the repository.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [on, queryClient, JSON.stringify(graphQuery.queryKey)])
-  return unitReader(on === true ? graph : undefined)
+  }, [on, queryClient, key])
+  return useMemo(() => {
+    if (switchPending) return pendingUnits("loading")
+    if (on !== true) return TABLE_UNITS
+    if (graph) return graphUnits(graph)
+    if (isError) return pendingUnits("error", error)
+    return pendingUnits("loading")
+  }, [switchPending, on, graph, isError, error])
 }

@@ -82,7 +82,7 @@ import {
 } from "@/lib/record-view"
 import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
 import { listWords } from "@/lib/tools"
-import { unitSymbol } from "@/lib/units"
+import { useUnits } from "@/hooks/use-units"
 
 /** Whether a one-metric read found nothing to say: a repository with no
  * such metric record, which the server refuses by its `metric.ref`. Any
@@ -333,6 +333,7 @@ function Line({
   info?: MetricInfo
   ctx: BlockContext
 }) {
+  const units = useUnits()
   const metricUnit = info?.unit
   const rows = useMemo(() => answer?.rows ?? [], [answer])
   const buckets = bucketsOf([rows])
@@ -399,7 +400,7 @@ function Line({
         domain={window}
         size={chartBucketSize(block.bucket, window)}
         label={`${name} ${spanWords(ctx.bound, ctx.noun).during}`}
-        units={{ left: unitSymbol(unit) || unit }}
+        units={{ left: units.symbol(unit) || unit }}
         onZoom={(next) => ctx.onZoom(next)}
         tooltip={(b) => {
           const row = series.points[b]?.row
@@ -417,7 +418,13 @@ function Line({
                       <div key={r.key} className="contents">
                         <dt className="text-faint">{reducerWords(r)}</dt>
                         <dd className="text-right whitespace-nowrap tabular-nums">
-                          {readingText(v?.value, v?.unit, 0, v?.comparator)}
+                          {readingText(
+                            units,
+                            v?.value,
+                            v?.unit,
+                            0,
+                            v?.comparator
+                          )}
                         </dd>
                       </div>
                     )
@@ -505,6 +512,7 @@ function ReducerBars({
   /** The window in words: "during this cycle", "in the last 7 days". */
   during: string
 }) {
+  const units = useUnits()
   const row = answer?.rows[0]
   if (!row) {
     return (
@@ -531,7 +539,7 @@ function ReducerBars({
               ? "none"
               : ms
                 ? durationWords(n * ms)
-                : readingText(v?.value, unit, 0, v?.comparator),
+                : readingText(units, v?.value, unit, 0, v?.comparator),
         }
       })}
     />

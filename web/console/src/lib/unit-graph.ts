@@ -13,7 +13,8 @@
  *
  * This is the console's second unit path: until the server's switch is on
  * (`units.graph` in discovery) lib/units.ts reads the engine's table, and
- * `unitReader` (lib/api/units.ts) picks between the two. */
+ * hooks/use-unit-reader.ts picks between the two readers of
+ * lib/unit-reader.ts. */
 
 import type {
   Quantity,

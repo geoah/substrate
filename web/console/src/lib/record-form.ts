@@ -34,7 +34,8 @@ import { CORE_PACKAGE } from "@/lib/core-kinds"
 import { temporalProperties } from "@/lib/definition"
 import { MONEY_TEXT_EXAMPLE, moneyText } from "@/lib/money"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
-import { formatQuantityText, quantityTextExample } from "@/lib/units"
+import type { UnitReader } from "@/lib/unit-reader"
+import { formatQuantityText } from "@/lib/units"
 import type { EditPath as DocumentPath, Problem } from "@/lib/record-yaml"
 import {
   TO_ANY,
@@ -106,10 +107,13 @@ export interface FormField {
   /** A worked value for the datatype, shown as the control's placeholder. */
   example?: string
   spec: PropSpec
+  /** The unit reader a quantity is parsed and checked through, and its
+   * fields' fields after it. */
+  units: UnitReader
 }
 
 /** One property as a form field: the control its declaration earns. */
-export function fieldOf(spec: PropSpec): FormField {
+export function fieldOf(units: UnitReader, spec: PropSpec): FormField {
   const control = controlFor(spec)
   return {
     name: spec.name,
@@ -133,16 +137,22 @@ export function fieldOf(spec: PropSpec): FormField {
       spec.kind === "money"
         ? MONEY_TEXT_EXAMPLE
         : spec.kind === "quantity"
-          ? quantityTextExample(spec)
-          : exampleFor(spec),
+          ? units.textExample(spec)
+          : exampleFor(units, spec),
     spec,
+    units,
   }
 }
 
 /** The editable fields for a kind: every OWNER-WRITABLE declared property, in
  * the declaration's (alphabetical) order. */
-export function buildFormFields(kind: KindInfo): FormField[] {
-  return propSpecsByName(kind).filter(ownerWritable).map(fieldOf)
+export function buildFormFields(
+  units: UnitReader,
+  kind: KindInfo
+): FormField[] {
+  return propSpecsByName(kind)
+    .filter(ownerWritable)
+    .map((spec) => fieldOf(units, spec))
 }
 
 /** The same fields with the ones a person MUST fill first: an editor asks for
@@ -209,14 +219,14 @@ export function asKeyedRows(value: FormValue): KeyedRow[] {
 
 /** The fields of an object property, as form fields in their own right. */
 export function objectFields(field: FormField): FormField[] {
-  return (field.spec.fields ?? []).map(fieldOf)
+  return (field.spec.fields ?? []).map((spec) => fieldOf(field.units, spec))
 }
 
 /** One ITEM of a container, as a field in its own right: what one row of a
  * keyed map is edited as. It inherits the container's label, which a caller
  * rendering many rows replaces: a row's name is its key. */
 export function elementField(field: FormField): FormField {
-  return fieldOf(elementSpec(field.spec))
+  return fieldOf(field.units, elementSpec(field.spec))
 }
 
 /** Seed one field from a stored value (absent on a create). A secret NEVER
@@ -391,9 +401,13 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
   if (field.control === "list") {
     const items = parseList(typeof value === "string" ? value : "")
     if (!items.length) return {}
-    return parseValue(field.spec, items.join("\n"))
+    return parseValue(field.units, field.spec, items.join("\n"))
   }
-  return parseValue(field.spec, typeof value === "string" ? value : "")
+  return parseValue(
+    field.units,
+    field.spec,
+    typeof value === "string" ? value : ""
+  )
 }
 
 /** One pointer, coerced to the flat record PATH the substrate stores. A blank
@@ -603,7 +617,7 @@ export function validate(
     // The assembled value against its whole declaration, which is where a
     // REQUIRED field four levels down is finally asked for: coercion builds
     // what the controls hold, and only the declaration knows what is missing.
-    const deep = checkValue(field.spec, submitted.value)
+    const deep = checkValue(field.units, field.spec, submitted.value)
     if (deep) {
       errors.push({ name: field.name, message: `${field.label}: ${deep}.` })
       continue

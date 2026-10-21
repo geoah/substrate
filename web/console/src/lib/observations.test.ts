@@ -20,6 +20,7 @@ import {
   observedPins,
   observedVariant,
   judgementWords,
+  rangeWords,
   readingText,
   recordTimelineSearch,
   resultReading,
@@ -56,6 +57,9 @@ import {
   observationKind,
   traceKind,
 } from "@/lib/observations.test-fixtures"
+import { UnitGraph } from "@/lib/unit-graph"
+import { editedTable } from "@/lib/unit-graph.test-fixtures"
+import { TABLE_UNITS, graphUnits, pendingUnits } from "@/lib/unit-reader"
 
 const OBSERVED = "substrate.reamde.dev/core/observed"
 const DAY = 86_400_000
@@ -258,8 +262,12 @@ describe("forms and reducers", () => {
   })
 
   it("keeps a bound's comparator and says why a bounded row has no number", () => {
-    expect(readingText("0.01", "ng/mL", undefined, "<")).toBe("<0.01 ng/mL")
-    expect(readingText("1200", "{steps}", 0, ">=")).toBe(">=1,200 steps")
+    expect(readingText(TABLE_UNITS, "0.01", "ng/mL", undefined, "<")).toBe(
+      "<0.01 ng/mL"
+    )
+    expect(readingText(TABLE_UNITS, "1200", "{steps}", 0, ">=")).toBe(
+      ">=1,200 steps"
+    )
     const row = { count: 3, bounded: 1 }
     expect(boundWords(row, { value: null })).toBe(
       "1 of 3 values was written as a bound (such as <0.01), so this has no number"
@@ -275,10 +283,12 @@ describe("forms and reducers", () => {
     expect(roundDigits("61.9372442", 2)).toBe("61.94")
     expect(roundDigits("72.40", 2)).toBe("72.40")
     expect(roundDigits("9812", 0)).toBe("9812")
-    expect(readingText("160.011509893784", "[lb_av]", 1)).toBe("160.0 lb")
+    expect(readingText(TABLE_UNITS, "160.011509893784", "[lb_av]", 1)).toBe(
+      "160.0 lb"
+    )
     // A tooltip's stage minutes read as a sleep's page reads them.
-    expect(readingText("282.6", "min", 2)).toBe("4h 42m 36s")
-    expect(readingText("61200", "{steps}", 0)).toBe("61,200 steps")
+    expect(readingText(TABLE_UNITS, "282.6", "min", 2)).toBe("4h 42m 36s")
+    expect(readingText(TABLE_UNITS, "61200", "{steps}", 0)).toBe("61,200 steps")
     // Half up on the digits themselves, which a binary float is not.
     expect(roundDigits("1.005", 2)).toBe("1.01")
     expect(roundDigits("2.675", 2)).toBe("2.68")
@@ -415,23 +425,29 @@ describe("a lab result's flag and range in words", () => {
   const mg = (value: string) => ({ value, unit: "mg/dL" })
   it("says the lab's flag and its range's bounds", () => {
     const normal = [{ code: "N", display: "Normal" }]
-    expect(judgementWords(normal, [{ high: mg("120") }])).toBe(
+    expect(judgementWords(TABLE_UNITS, normal, [{ high: mg("120") }])).toBe(
       "normal (under 120 mg/dL)"
     )
     expect(
-      judgementWords([{ code: "H" }], [{ low: mg("60"), high: mg("120") }])
+      judgementWords(
+        TABLE_UNITS,
+        [{ code: "H" }],
+        [{ low: mg("60"), high: mg("120") }]
+      )
     ).toBe("high (60 to 120 mg/dL)")
-    expect(judgementWords([], [{ low: mg("40") }])).toBe("range over 40 mg/dL")
-    expect(judgementWords(normal, undefined)).toBe("normal")
-    expect(judgementWords(undefined, [{ text: "optimal" }])).toBe(
+    expect(judgementWords(TABLE_UNITS, [], [{ low: mg("40") }])).toBe(
+      "range over 40 mg/dL"
+    )
+    expect(judgementWords(TABLE_UNITS, normal, undefined)).toBe("normal")
+    expect(judgementWords(TABLE_UNITS, undefined, [{ text: "optimal" }])).toBe(
       "range optimal"
     )
-    expect(judgementWords(undefined, undefined)).toBeUndefined()
+    expect(judgementWords(TABLE_UNITS, undefined, undefined)).toBeUndefined()
   })
 
   it("says an HL7 flag's code in words, and keeps a lab's own spelling", () => {
     const words = (flag: Record<string, string>) =>
-      judgementWords([flag], undefined)
+      judgementWords(TABLE_UNITS, [flag], undefined)
     expect(words({ code: "LL" })).toBe("critical low")
     expect(
       words({
@@ -453,12 +469,14 @@ describe("a lab result's flag and range in words", () => {
 
   it("reads a range's small bounds to their significant digits", () => {
     const ng = (value: string) => ({ value, unit: "ng/mL" })
-    expect(judgementWords(undefined, [{ high: ng("0.014") }])).toBe(
-      "range under 0.014 ng/mL"
-    )
+    expect(
+      judgementWords(TABLE_UNITS, undefined, [{ high: ng("0.014") }])
+    ).toBe("range under 0.014 ng/mL")
     // Both bounds are cut the same way.
     expect(
-      judgementWords(undefined, [{ low: mg("3.14159"), high: mg("5.6789") }])
+      judgementWords(TABLE_UNITS, undefined, [
+        { low: mg("3.14159"), high: mg("5.6789") },
+      ])
     ).toBe("range 3.14 to 5.68 mg/dL")
   })
 })
@@ -472,23 +490,23 @@ describe("a result read against its range", () => {
 
   it("keeps a bound's comparator and the flag's tone", () => {
     expect(
-      resultReading({
+      resultReading(TABLE_UNITS, {
         value: q("0.5", "ng/mL", "<"),
         interpretation: [{ code: "L" }],
       })
     ).toEqual({ value: 0.5, unit: "ng/mL", comparator: "<", tone: "poor" })
-    expect(resultReading({ text: "trace" })).toBeUndefined()
+    expect(resultReading(TABLE_UNITS, { text: "trace" })).toBeUndefined()
   })
 
   it("reads a range as the lab's normal one unless it names a tone", () => {
     expect(
-      resultReading({
+      resultReading(TABLE_UNITS, {
         value: q("2.8", "ng/mL"),
         referenceRanges: [{ high: q("3", "ng/mL") }, { low: q("9", "ng/mL") }],
       })?.range
     ).toEqual({ high: 3, label: "reference range", tone: "good" })
     expect(
-      resultReading({
+      resultReading(TABLE_UNITS, {
         value: q("5", "ng/mL"),
         referenceRanges: [{ low: q("4", "ng/mL"), text: "high", tone: "poor" }],
       })?.range
@@ -497,7 +515,7 @@ describe("a result read against its range", () => {
 
   it("converts a bound within its measure and drops a range of another", () => {
     expect(
-      resultReading({
+      resultReading(TABLE_UNITS, {
         value: q("3.6", "mmol/L"),
         referenceRanges: [
           { low: q("2600", "umol/L"), high: q("3.4", "mmol/L") },
@@ -505,7 +523,7 @@ describe("a result read against its range", () => {
       })?.range
     ).toMatchObject({ low: 2.6, high: 3.4 })
     expect(
-      resultReading({
+      resultReading(TABLE_UNITS, {
         value: q("3.6", "mmol/L"),
         referenceRanges: [{ high: q("60", "mg/dL") }],
       })?.range
@@ -514,9 +532,59 @@ describe("a result read against its range", () => {
 
   it("reads a value into another unit of its measure, or not at all", () => {
     expect(
-      resultReading({ value: q("450", "g"), measure: "mass" }, "kg")?.value
+      resultReading(
+        TABLE_UNITS,
+        { value: q("450", "g"), measure: "mass" },
+        "kg"
+      )?.value
     ).toBeCloseTo(0.45, 6)
-    expect(resultReading({ value: q("1.2", "ug/L") }, "ng/mL")?.value).toBe(1.2)
-    expect(resultReading({ value: q("92", "mg/dL") }, "mmol/L")).toBeUndefined()
+    expect(
+      resultReading(TABLE_UNITS, { value: q("1.2", "ug/L") }, "ng/mL")?.value
+    ).toBe(1.2)
+    expect(
+      resultReading(TABLE_UNITS, { value: q("92", "mg/dL") }, "mmol/L")
+    ).toBeUndefined()
+  })
+
+  it("converts through the repository's graph where the server reads one", () => {
+    // The repository's pound is 500 g; the table's is 453.59237 g.
+    const edited = graphUnits(new UnitGraph(editedTable))
+    const p = {
+      value: q("1", "kg"),
+      referenceRanges: [{ low: q("1", "sack25"), high: q("2", "sack25") }],
+    }
+    expect(resultReading(edited, p, "lb")).toMatchObject({
+      value: 2,
+      unit: "lb",
+      range: { low: 50, high: 100 },
+    })
+    expect(resultReading(TABLE_UNITS, p, "[lb_av]")?.value).toBeCloseTo(
+      2.20462,
+      5
+    )
+    expect(
+      resultReading(edited, { value: q("4", "sack25") }, "kg")?.value
+    ).toBe(100)
+    expect(rangeWords(edited, { low: q("1", "sack25") })).toBe("over 1 sack")
+    expect(readingText(edited, "2", "sack25")).toBe("2 sack")
+  })
+
+  it("converts a difference through the graph by the row's delta", () => {
+    const edited = graphUnits(new UnitGraph(editedTable))
+    expect(
+      resultReading(edited, { value: q("1", "Cel"), delta: true }, "degF")
+        ?.value
+    ).toBe(1.8)
+    expect(
+      resultReading(edited, { value: q("1", "Cel") }, "degF")?.value
+    ).toBeCloseTo(33.8, 6)
+  })
+
+  it("converts nothing while the graph loads", () => {
+    const loading = pendingUnits("loading")
+    expect(
+      resultReading(loading, { value: q("1", "kg") }, "[lb_av]")
+    ).toBeUndefined()
+    expect(resultReading(loading, { value: q("1", "kg") })?.value).toBe(1)
   })
 })

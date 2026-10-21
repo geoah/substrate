@@ -56,6 +56,7 @@ import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { templateYAML } from "@/lib/record-yaml"
 import { RecordEditorForm } from "./record-editor"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 const taskKind: KindInfo = {
   identity: "samples.substrate.reamde.dev/tasks/task",
@@ -129,7 +130,7 @@ function renderEditor(
             kind={taskKind}
             kinds={[taskKind]}
             record={over.record}
-            seed={over.seed ?? templateYAML(taskKind)}
+            seed={over.seed ?? templateYAML(TABLE_UNITS, taskKind)}
           />
         </Toaster>
       </QueryClientProvider>

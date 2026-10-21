@@ -53,6 +53,7 @@ import { fieldOf } from "@/lib/record-form"
 import { titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 import { duplicateProperties, headerFacts, recordLink } from "./record-model"
+import { useUnits } from "@/hooks/use-units"
 
 async function copyLink(record: SubstrateRecord) {
   try {
@@ -76,6 +77,7 @@ function Title({
   kind?: KindInfo
   readOnly: boolean
 }) {
+  const units = useUnits()
   const title = recordTitle(record.properties)
   // A heading the server derives from a template holding no one property is
   // not typed into: a written `title` there is ignored and the edit reverts.
@@ -120,7 +122,7 @@ function Title({
       <>
         <input
           autoFocus
-          aria-label={fieldOf(spec).label}
+          aria-label={fieldOf(units, spec).label}
           value={text}
           disabled={patch.isPending}
           placeholder={untitled(record.kind)}
@@ -195,6 +197,7 @@ export function RecordHeader({
   holders: boolean
   onHolders: (on: boolean) => void
 }) {
+  const units = useUnits()
   const [technical] = useTechnicalDetails()
   const provider = providerOfKind(record.kind)
   // An adapter's output is read only too: the owner corrects it with a
@@ -210,7 +213,7 @@ export function RecordHeader({
   const duplicate = useMutation({
     mutationFn: () =>
       createRecord(authority, pkg, name, {
-        properties: duplicateProperties(record, kind),
+        properties: duplicateProperties(units, record, kind),
       }),
     onSuccess: async (copy) => {
       await client.invalidateQueries({ queryKey: ["records"] })

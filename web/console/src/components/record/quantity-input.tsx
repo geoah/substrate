@@ -9,14 +9,9 @@
 
 import { useState, type KeyboardEvent, type Ref } from "react"
 
-import {
-  measureLabel,
-  openingUnit,
-  rememberUnit,
-  unitLabel,
-  unitsFor,
-  type QuantityDeclaration,
-} from "@/lib/units"
+import { useUnits } from "@/hooks/use-units"
+import { unitsUnavailable } from "@/lib/unit-reader"
+import { measureLabel, type QuantityDeclaration } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
 interface Parts {
@@ -97,6 +92,11 @@ export function QuantityInput({
   boxClassName?: string
   className?: string
 }) {
+  const units = useUnits()
+  // A graph-enabled server's units are the repository's: until they load the
+  // control offers none and takes no value, rather than the table's.
+  const unavailable = unitsUnavailable(units)
+  const off = disabled || unavailable !== undefined
   // Controlled by the text, with the parts this control wrote kept beside it:
   // a unit chosen before any digits is not in the text, and a text from
   // outside (a list's row after the one above it goes) is read afresh.
@@ -104,10 +104,16 @@ export function QuantityInput({
     text: value,
     parts: partsOf(value),
   }))
-  const [opening] = useState(() => openingUnit(spec))
+  // The unit a blank value opens on is read once the reader answers, and
+  // kept from then on.
+  const [opened, setOpened] = useState<string | undefined>(() =>
+    unavailable ? undefined : units.opening(spec)
+  )
+  const opening = opened ?? (unavailable ? "" : units.opening(spec))
+  if (opened === undefined && !unavailable) setOpened(opening)
   const own = held.text === value ? held.parts : partsOf(value)
   const parts = { ...own, unit: own.unit || opening }
-  const groups = unitsFor(spec)
+  const groups = unavailable ? [] : units.unitsFor(spec)
   const offered = groups.some((g) => g.units.includes(parts.unit))
   const showComparator = Boolean(spec.comparator || parts.comparator)
 
@@ -119,7 +125,7 @@ export function QuantityInput({
 
   const option = (code: string) => (
     <option key={code} value={code}>
-      {unitLabel(code)}
+      {units.label(code)}
     </option>
   )
 
@@ -133,7 +139,7 @@ export function QuantityInput({
         <select
           aria-label={`${label}, comparator`}
           title="Exactly, or a bound the value lies beyond"
-          disabled={disabled}
+          disabled={off}
           value={parts.comparator}
           onChange={(e) => change({ ...parts, comparator: e.target.value })}
           className={cn(boxClassName, "w-14 shrink-0")}
@@ -154,7 +160,7 @@ export function QuantityInput({
         aria-label={`${label}, value`}
         aria-invalid={invalid || undefined}
         autoFocus={autoFocus}
-        disabled={disabled}
+        disabled={off}
         placeholder="0"
         value={parts.value}
         onChange={(e) => change({ ...parts, value: e.target.value })}
@@ -164,15 +170,17 @@ export function QuantityInput({
       <select
         aria-label={`${label}, unit`}
         aria-invalid={(invalid && !parts.unit) || undefined}
-        disabled={disabled}
+        disabled={off}
         value={parts.unit}
         onChange={(e) => {
-          rememberUnit(e.target.value)
+          units.remember(e.target.value)
           change({ ...parts, unit: e.target.value })
         }}
         className={cn(boxClassName, "w-auto max-w-56 min-w-0")}
       >
-        {!parts.unit && <option value="">Unit…</option>}
+        {!parts.unit && (
+          <option value="">{unavailable ? "Units loading…" : "Unit…"}</option>
+        )}
         {/* A unit no list offers (a stored compound, `GJ`) stays chosen, so
             the value it holds is written back as it was. */}
         {parts.unit && !offered && option(parts.unit)}
@@ -187,6 +195,11 @@ export function QuantityInput({
               </optgroup>
             ))}
       </select>
+      {unavailable && (
+        <span role="status" className="text-xs text-muted-foreground">
+          {unavailable}
+        </span>
+      )}
     </div>
   )
 }

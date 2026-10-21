@@ -24,6 +24,8 @@ import { floatDigits } from "@/lib/units"
 import { autoBucket, dayWords, type TimeRange } from "@/lib/observations-time"
 import { toneColor, toneSoft, type Band, type Tone } from "@/lib/record-view"
 import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
+import { useUnits } from "@/hooks/use-units"
+import type { UnitReader } from "@/lib/unit-reader"
 
 export interface ChartPoint {
   /** The reading's instant, in milliseconds. */
@@ -85,20 +87,26 @@ function edgeColor(tone: Tone): string {
 }
 
 /** A reading in words, its comparator in front. */
-function valueWords(p: ChartPoint, unit?: string): string {
-  return readingText(floatDigits(p.value), unit, undefined, p.comparator)
+function valueWords(units: UnitReader, p: ChartPoint, unit?: string): string {
+  return readingText(units, floatDigits(p.value), unit, undefined, p.comparator)
 }
 
 /** A reading's range in words: "range 2.6 to 3.4 mmol/L", "under 3
  * mmol/L", "over 3 mmol/L", or "no range". */
-function pointRangeWords(p: ChartPoint, unit?: string): string {
+function pointRangeWords(
+  units: UnitReader,
+  p: ChartPoint,
+  unit?: string
+): string {
   const low = finite(p.low) ? p.low : undefined
   const high = finite(p.high) ? p.high : undefined
   if (low !== undefined && high !== undefined) {
-    return `range ${readingText(floatDigits(low))} to ${readingText(floatDigits(high), unit)}`
+    return `range ${readingText(units, floatDigits(low))} to ${readingText(units, floatDigits(high), unit)}`
   }
-  if (high !== undefined) return `under ${readingText(floatDigits(high), unit)}`
-  if (low !== undefined) return `over ${readingText(floatDigits(low), unit)}`
+  if (high !== undefined)
+    return `under ${readingText(units, floatDigits(high), unit)}`
+  if (low !== undefined)
+    return `over ${readingText(units, floatDigits(low), unit)}`
   return "no range"
 }
 
@@ -125,6 +133,7 @@ export function PointsChart({
   /** The plot's height in pixels. */
   height?: number
 }) {
+  const units = useUnits()
   const { ref, width } = useWidth(720)
   const [active, setActive] = useState<number | null>(null)
 
@@ -459,7 +468,7 @@ export function PointsChart({
                 name: kind.name,
                 id: d.p.id,
               }}
-              aria-label={`${d.p.title}, ${valueWords(d.p, unit)}, ${dayWords(d.p.at, true)}`}
+              aria-label={`${d.p.title}, ${valueWords(units, d.p, unit)}, ${dayWords(d.p.at, true)}`}
               className="group cursor-pointer outline-none"
               onFocus={() => setActive(n)}
               onBlur={() => setActive(null)}
@@ -488,9 +497,11 @@ export function PointsChart({
           style={{ left: tipLeft, width: tipWidth }}
         >
           <span className="font-medium">{shown.p.title}</span>
-          <span className="tabular-nums">{valueWords(shown.p, unit)}</span>
+          <span className="tabular-nums">
+            {valueWords(units, shown.p, unit)}
+          </span>
           <span className="text-muted-foreground">
-            {pointRangeWords(shown.p, unit)}
+            {pointRangeWords(units, shown.p, unit)}
           </span>
           <span className="text-muted-foreground">
             {dayWords(shown.p.at, true)}

@@ -18,6 +18,7 @@ import { displayName, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecsByName, titleEditor } from "@/lib/record-schema"
 import { sheetRows } from "@/components/property-sheet/sheet-rows"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** How many rows a group shows before "Show all". */
 export const GROUP_FOLD = 10
@@ -226,10 +227,11 @@ export function countWords(total: number, partial: boolean): string {
  * body, and the title the kind heads itself with, marked as the copy. A state
  * is copied as it stands: a create may name any declared state. */
 export function duplicateProperties(
+  units: UnitReader,
   record: SubstrateRecord,
   kind: KindInfo | undefined
 ): Record<string, unknown> {
-  const { all, body } = sheetRows(record, kind)
+  const { all, body } = sheetRows(units, record, kind)
   const out: Record<string, unknown> = {}
   for (const row of all) {
     if (row.lock || !row.filled || row.spec.kind === "secret") continue

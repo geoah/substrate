@@ -42,6 +42,7 @@ import {
 import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 const NO_MAPPINGS: SubstrateRecord[] = []
 const NONE_MOVED: ReadonlySet<string> = new Set()
@@ -182,15 +183,16 @@ export function PropertySheet({
   elsewhere,
   moved = NONE_MOVED,
 }: PropertySheetProps) {
+  const units = useUnits()
   const draft = useSheetDraft()
   // A draft shows what it may write, arranged as a new record asks for it;
   // its fold holds what is left rather than what is empty.
   const { all, filled, empty } = useMemo(() => {
-    const rows = sheetRows(record, kind, readOnly)
+    const rows = sheetRows(units, record, kind, readOnly)
     if (!draft) return rows
     const { shown, folded } = draft.arrange(rows.all)
     return { all: [...shown, ...folded], filled: shown, empty: folded }
-  }, [record, kind, readOnly, draft])
+  }, [units, record, kind, readOnly, draft])
   const [showEmpty, setShowEmpty] = useState(false)
   const [showElsewhere, setShowElsewhere] = useState(false)
   const away = useMemo(

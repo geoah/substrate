@@ -23,6 +23,7 @@ import type { KindInfo } from "@/lib/api/types"
 import { KIND_KIND } from "@/lib/core-kinds"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { templateYAML } from "@/lib/record-yaml"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 import { CreateSheet } from "./create-sheet"
 
@@ -84,7 +85,7 @@ export function renderSheet(
   kind: KindInfo,
   kinds: KindInfo[] = KINDS,
   technical = true,
-  text = templateYAML(kind)
+  text = templateYAML(TABLE_UNITS, kind)
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, enabled: false } },

@@ -5,24 +5,12 @@
  * record in the change stream drops it (`unitRecordChanged`), and so does a
  * repository switch, whose query key differs.
  *
- * `unitReader` is the one place the console chooses how it converts: through
- * the graph where the server's switch is on (`units.graph` in discovery),
- * else through lib/units.ts's copy of the engine's table. */
+ * hooks/use-unit-reader.ts chooses between this graph and the engine's
+ * table (lib/unit-reader.ts) from discovery's `units.graph`. */
 
 import { queryOptions } from "@tanstack/react-query"
 
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/core-kinds"
-import {
-  canonicalUnit,
-  checkQuantity,
-  convertUnit,
-  formatQuantity,
-  unitSymbol,
-  unitsFor,
-  type QuantityDeclaration,
-  type UnitGroup,
-} from "@/lib/units"
-import { unitChoices } from "@/lib/unit-choices"
 import { UnitGraph } from "@/lib/unit-graph"
 
 import { request, rootPath } from "./http"
@@ -101,54 +89,4 @@ export function convertOnServer(
     "GET",
     `${rootPath("units", "convert")}?${params}`
   )
-}
-
-/** The unit operations the console's components call, through the graph
- * where the server's switch is on and through the engine's table where it
- * is not. */
-export interface UnitReader {
-  graph?: UnitGraph
-  symbol(unit: string): string
-  canonical(input: string): string
-  convert(
-    value: number,
-    from: string,
-    to: string,
-    delta?: boolean
-  ): number | undefined
-  unitsFor(spec?: QuantityDeclaration): UnitGroup[]
-  check(value: unknown, spec?: QuantityDeclaration): string | undefined
-  choices(stored: string | undefined, measures?: string): string[]
-  format(value: unknown): string
-}
-
-/** The reader for a graph, or the table's for none. */
-export function unitReader(graph?: UnitGraph): UnitReader {
-  if (!graph) {
-    return {
-      symbol: unitSymbol,
-      canonical: canonicalUnit,
-      convert: (value, from, to, delta) =>
-        convertUnit(
-          value,
-          from,
-          to,
-          delta ? "temperature-difference" : undefined
-        ),
-      unitsFor,
-      check: checkQuantity,
-      choices: unitChoices,
-      format: formatQuantity,
-    }
-  }
-  return {
-    graph,
-    symbol: (unit) => graph.symbol(unit),
-    canonical: (input) => graph.canonical(input),
-    convert: (value, from, to, delta) => graph.convert(value, from, to, delta),
-    unitsFor: (spec) => graph.unitsFor(spec),
-    check: (value, spec) => graph.checkQuantity(value, spec),
-    choices: (stored) => graph.unitChoices(stored),
-    format: (value) => graph.formatQuantity(value),
-  }
 }

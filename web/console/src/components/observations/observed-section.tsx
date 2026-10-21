@@ -52,6 +52,7 @@ import {
   type TracePoint,
   type TraceStats,
 } from "@/lib/observations-trace"
+import { useUnits } from "@/hooks/use-units"
 
 const PAGE = 50
 
@@ -167,6 +168,7 @@ function ValueSection({
   record: SubstrateRecord
   open: React.ReactNode
 }) {
+  const units = useUnits()
   const p = record.properties ?? {}
   const value = p.value as
     { value?: unknown; unit?: unknown; comparator?: unknown } | undefined
@@ -177,8 +179,8 @@ function ValueSection({
     str(p.endsAt) && at && Date.parse(str(p.endsAt)!) === Date.parse(at)
       ? undefined
       : str(p.endsAt)
-  const judged = judgementWords(p.interpretation, p.referenceRanges)
-  const bar = resultBar(p)
+  const judged = judgementWords(units, p.interpretation, p.referenceRanges)
+  const bar = resultBar(units, p)
   const places = useMetricPlaces(p)
   return (
     <>
@@ -508,6 +510,7 @@ function Sparkline({
   holdMs?: number
   bars: boolean
 }) {
+  const units = useUnits()
   const { ref, width } = useWidth(640)
   const [active, setActive] = useState<number | null>(null)
   // Laid out once per trace and width: a hover moves the marker alone.
@@ -584,7 +587,7 @@ function Sparkline({
         className="h-5 text-[12.5px] text-muted-foreground tabular-nums"
       >
         {picked
-          ? `${secondWords(picked.at)}: ${readingText(picked.value, unit)}`
+          ? `${secondWords(picked.at)}: ${readingText(units, picked.value, unit)}`
           : `${stamp(window.start)} to ${stamp(window.end)}`}
       </p>
       <div

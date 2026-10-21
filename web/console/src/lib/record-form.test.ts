@@ -18,6 +18,7 @@ import {
   validate,
 } from "./record-form"
 import { propSpecsByName } from "./record-schema"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 function typeWith(
   properties: Record<string, Record<string, unknown>>
@@ -87,7 +88,7 @@ const typedAccountType = typeWith({
 
 describe("buildFormFields", () => {
   it("keeps owner-writable, drops every writer!=owner property (by role, not name)", () => {
-    const names = buildFormFields(accountType).map((f) => f.name)
+    const names = buildFormFields(TABLE_UNITS, accountType).map((f) => f.name)
     // Owner fields only: explicit `writer: owner` (email) and unset (toggles,
     // cadence) both survive; every host/connector-managed property is gone.
     expect(names).toEqual([
@@ -128,7 +129,9 @@ describe("buildFormFields", () => {
       },
       backfillDepth: { type: "string" },
     })
-    const names = buildFormFields(oauthOwnedAccount).map((f) => f.name)
+    const names = buildFormFields(TABLE_UNITS, oauthOwnedAccount).map(
+      (f) => f.name
+    )
     expect(names).not.toContain("email")
     expect(names).not.toContain("grantedScopes")
     // Only the owner-writable feature toggles + cadence + backfill remain.
@@ -137,14 +140,14 @@ describe("buildFormFields", () => {
 
   it("maps kinds to controls: secret→secret, repeated→list, bool→bool, email→text", () => {
     const byName = Object.fromEntries(
-      buildFormFields(configKind).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, configKind).map((f) => [f.name, f])
     )
     expect(byName.clientSecret.control).toBe("secret")
     expect(byName.scopes.control).toBe("list")
     expect(byName.clientId.control).toBe("text")
     expect(byName.authorizationEndpoint.inputType).toBe("url")
     const acct = Object.fromEntries(
-      buildFormFields(accountType).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, accountType).map((f) => [f.name, f])
     )
     expect(acct.enabledContacts.control).toBe("bool")
     expect(acct.email.inputType).toBe("email")
@@ -153,7 +156,7 @@ describe("buildFormFields", () => {
 
 describe("initialValues", () => {
   it("seeds text/bool/list from the record but NEVER a secret", () => {
-    const fields = buildFormFields(configKind)
+    const fields = buildFormFields(TABLE_UNITS, configKind)
     const record = {
       properties: {
         clientId: "123.apps.googleusercontent.com",
@@ -168,7 +171,7 @@ describe("initialValues", () => {
   })
 
   it("starts every field empty/false when creating (no record)", () => {
-    const values = initialValues(buildFormFields(accountType))
+    const values = initialValues(buildFormFields(TABLE_UNITS, accountType))
     expect(values.email).toBe("")
     expect(values.enabledContacts).toBe(false)
   })
@@ -176,7 +179,7 @@ describe("initialValues", () => {
 
 describe("toProperties", () => {
   it("account create: bools always sent, blank text omitted, email carried", () => {
-    const fields = buildFormFields(accountType)
+    const fields = buildFormFields(TABLE_UNITS, accountType)
     const values = initialValues(fields)
     values.email = "alice@example.com"
     values.enabledContacts = true
@@ -191,7 +194,7 @@ describe("toProperties", () => {
   })
 
   it("config: a blank secret is omitted (the sealed value stands), scopes parse to a list", () => {
-    const fields = buildFormFields(configKind)
+    const fields = buildFormFields(TABLE_UNITS, configKind)
     const values = initialValues(fields)
     values.clientId = "id"
     values.clientSecret = ""
@@ -203,7 +206,7 @@ describe("toProperties", () => {
   })
 
   it("config: a filled secret IS sent", () => {
-    const fields = buildFormFields(configKind)
+    const fields = buildFormFields(TABLE_UNITS, configKind)
     const values = initialValues(fields)
     values.clientSecret = "s3cr3t"
     expect(toProperties(fields, values).clientSecret).toBe("s3cr3t")
@@ -220,7 +223,7 @@ describe("parseList", () => {
 describe("schema-driven controls", () => {
   it("maps an enum property (declared values) to a select carrying its options", () => {
     const byName = Object.fromEntries(
-      buildFormFields(typedAccountType).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, typedAccountType).map((f) => [f.name, f])
     )
     expect(byName.syncFrequency.control).toBe("select")
     expect(byName.syncFrequency.options).toEqual([
@@ -234,7 +237,7 @@ describe("schema-driven controls", () => {
 
   it("carries each option's authored label off the `{value, label}` wire shape", () => {
     const byName = Object.fromEntries(
-      buildFormFields(typedAccountType).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, typedAccountType).map((f) => [f.name, f])
     )
     // The raw value stays the option value; the label is the human name.
     const labels = Object.fromEntries(
@@ -258,7 +261,7 @@ describe("schema-driven controls", () => {
       },
     })
     const byName = Object.fromEntries(
-      buildFormFields(plainEnum).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, plainEnum).map((f) => [f.name, f])
     )
     expect(byName.cadence.options).toEqual([
       { value: "off", label: "" },
@@ -268,7 +271,7 @@ describe("schema-driven controls", () => {
 
   it("marks required fields from the declared `required: true`", () => {
     const byName = Object.fromEntries(
-      buildFormFields(typedConfigKind).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, typedConfigKind).map((f) => [f.name, f])
     )
     expect(byName.clientId.required).toBe(true)
     expect(byName.clientSecret.required).toBe(true)
@@ -278,7 +281,7 @@ describe("schema-driven controls", () => {
 describe("field labels", () => {
   it("uses the schema `displayName` when declared", () => {
     const byName = Object.fromEntries(
-      buildFormFields(typedAccountType).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, typedAccountType).map((f) => [f.name, f])
     )
     expect(byName.syncFrequency.label).toBe("Sync cadence")
     expect(byName.enabledContacts.label).toBe("Sync contacts")
@@ -286,7 +289,7 @@ describe("field labels", () => {
 
   it("humanizes the camelCase id when no `displayName` is declared", () => {
     const byName = Object.fromEntries(
-      buildFormFields(typedAccountType).map((f) => [f.name, f])
+      buildFormFields(TABLE_UNITS, typedAccountType).map((f) => [f.name, f])
     )
     expect(byName.backfillDepth.label).toBe("Backfill depth")
     expect(byName.email.label).toBe("Email")
@@ -309,12 +312,12 @@ describe("humanizeName", () => {
 
 describe("default seeding", () => {
   it("create: seeds an enum field from its declared `default`", () => {
-    const values = initialValues(buildFormFields(typedAccountType))
+    const values = initialValues(buildFormFields(TABLE_UNITS, typedAccountType))
     expect(values.syncFrequency).toBe("daily")
   })
 
   it("patch: seeds from the stored value, ignoring the declared default", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const record = {
       properties: { email: "alice@example.com", syncFrequency: "hourly" },
     } as unknown as SubstrateRecord
@@ -323,7 +326,7 @@ describe("default seeding", () => {
   })
 
   it("patch: a stored-absent default field stays empty (default seeds create only)", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const record = {
       properties: { email: "alice@example.com" },
     } as unknown as SubstrateRecord
@@ -334,7 +337,7 @@ describe("default seeding", () => {
 
 describe("validate", () => {
   it("create: a blank secret is a hard error (an empty config must NOT configure)", () => {
-    const fields = buildFormFields(typedConfigKind)
+    const fields = buildFormFields(TABLE_UNITS, typedConfigKind)
     const values = initialValues(fields) // clientId "", clientSecret ""
     const errors = validate(fields, values, "create")
     const byName = Object.fromEntries(errors.map((e) => [e.name, e.message]))
@@ -344,7 +347,7 @@ describe("validate", () => {
 
   it("create: a required secret is required even without a declared flag", () => {
     // configKind.clientSecret has no `required`, but a create still demands it.
-    const fields = buildFormFields(configKind)
+    const fields = buildFormFields(TABLE_UNITS, configKind)
     const values = initialValues(fields)
     values.clientId = "id"
     const errors = validate(fields, values, "create")
@@ -352,14 +355,14 @@ describe("validate", () => {
   })
 
   it("create: a blank required email account is rejected", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const values = initialValues(fields)
     const errors = validate(fields, values, "create")
     expect(errors.map((e) => e.name)).toContain("email")
   })
 
   it("create: a filled required config passes", () => {
-    const fields = buildFormFields(typedConfigKind)
+    const fields = buildFormFields(TABLE_UNITS, typedConfigKind)
     const values = initialValues(fields)
     values.clientId = "123.apps.googleusercontent.com"
     values.clientSecret = "s3cr3t"
@@ -367,7 +370,7 @@ describe("validate", () => {
   })
 
   it("patch: a blank secret is fine (it preserves the sealed value)", () => {
-    const fields = buildFormFields(typedConfigKind)
+    const fields = buildFormFields(TABLE_UNITS, typedConfigKind)
     const values = initialValues(fields)
     values.clientId = "id"
     values.clientSecret = "" // unchanged
@@ -375,7 +378,7 @@ describe("validate", () => {
   })
 
   it("patch: clearing a required field (null) is rejected", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const values = initialValues(fields)
     values.email = null // explicit clear
     const errors = validate(fields, values, "patch")
@@ -385,7 +388,7 @@ describe("validate", () => {
 
 describe("toProperties explicit clear", () => {
   it("patch: an explicitly-cleared text field sends null to delete the key", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const values = initialValues(fields)
     values.email = "alice@example.com"
     values.backfillDepth = null // cleared
@@ -394,7 +397,7 @@ describe("toProperties explicit clear", () => {
   })
 
   it("create: a cleared/blank field is omitted (nothing to delete)", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const values = initialValues(fields)
     values.email = "alice@example.com"
     values.backfillDepth = null
@@ -403,7 +406,7 @@ describe("toProperties explicit clear", () => {
   })
 
   it("patch: a merely-blank (untouched) field is omitted, not cleared", () => {
-    const fields = buildFormFields(typedAccountType)
+    const fields = buildFormFields(TABLE_UNITS, typedAccountType)
     const values = initialValues(fields)
     values.email = "alice@example.com"
     values.backfillDepth = "" // left blank, never touched
@@ -422,7 +425,7 @@ describe("reference fields", () => {
     },
     callable: { type: "reference", kind: "any" },
   })
-  const fieldsOf = () => buildFormFields(pointerKind)
+  const fieldsOf = () => buildFormFields(TABLE_UNITS, pointerKind)
 
   // A SERVED reference is the object `{ref: "<kind>/<id>"}` whether or not the
   // declaration carries link properties (decision 0044), so this is the shape
@@ -538,6 +541,7 @@ describe("reference fields", () => {
 
   it("keeps a declaration id whole: the kind joins in front of its slash", () => {
     const fields = buildFormFields(
+      TABLE_UNITS,
       typeWith({
         of: { type: "reference", kind: "substrate.reamde.dev/core/kind" },
       })
@@ -585,7 +589,7 @@ describe("link data on a reference", () => {
       properties: { role: { type: "string" }, since: { type: "date" } },
     },
   })
-  const fields = () => buildFormFields(kind)
+  const fields = () => buildFormFields(TABLE_UNITS, kind)
   const stored = {
     properties: {
       employer: { ref: `${ORG}/acme`, role: "CTO" },

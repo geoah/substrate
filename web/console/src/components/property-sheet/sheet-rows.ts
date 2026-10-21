@@ -18,6 +18,7 @@ import {
   titleProperty,
   type PropSpec,
 } from "@/lib/record-schema"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** Why a row is not editable in place. */
 export type RowLock =
@@ -108,6 +109,7 @@ export interface SheetRows {
 /** Every row a record page shows for `record`. `readOnly` locks the whole
  * sheet (a provider's copy). */
 export function sheetRows(
+  units: UnitReader,
   record: SubstrateRecord,
   kind: KindInfo | undefined,
   readOnly = false
@@ -149,7 +151,7 @@ export function sheetRows(
     rows.push({
       name: spec.name,
       spec,
-      field: lock ? undefined : fieldOf(spec),
+      field: lock ? undefined : fieldOf(units, spec),
       value,
       filled: isFilled(value),
       lock,
