@@ -141,8 +141,8 @@ func scanRecord(sc scanner) (*erow, error) {
 // loadRow reads a record by its full (type, id) identity, optionally taking
 // the row lock the write path serializes on.
 func (t *txn) loadRow(ref eref, forUpdate bool) (*erow, error) {
-	if t.bulkAbsent(ref) {
-		return nil, nil
+	if handled, err := t.bulkLoad(ref); handled {
+		return nil, err
 	}
 	q := `SELECT ` + recordCols + ` FROM records WHERE kind = $1 AND id = $2`
 	if forUpdate {
@@ -194,6 +194,11 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 	finalizers, err := jsonb(nonNilStrings(r.Finalizers))
 	if err != nil {
 		return false, false, 0, err
+	}
+	// A bulk run's record is absent, so the INSERT below would create it at
+	// version 1; the run sends it with the others (bulkwrite.go).
+	if t.queueRecord(r, fts, states, props, labels, finalizers) {
+		return true, true, 1, nil
 	}
 	row := t.row(`
 		INSERT INTO records (
@@ -298,9 +303,6 @@ func changeProps(entries []changeEntry) []any {
 }
 
 func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ string, payload map[string]any) error {
-	if t.bulk != nil {
-		return t.appendBulk(actor, op, recordID, typ, payload)
-	}
 	// The entry takes the effects the transaction folded since the previous
 	// one: the payload IS the delta, and a rebuild replays it (fold.go). A
 	// transaction that appends more than one entry slices its effect stream at
@@ -317,14 +319,20 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	if err != nil {
 		return err
 	}
-	if err := t.lockChangelog(); err != nil {
-		return err
-	}
 	// caused_by is NULL on every write a function did not author, so the
 	// causal-depth walk terminates on the first direct write.
 	var causedBy sql.NullInt64
 	if t.causedBy > 0 {
 		causedBy = sql.NullInt64{Int64: t.causedBy, Valid: true}
+	}
+	// A bulk run sends its entries in one INSERT (bulkwrite.go) and records
+	// each as below.
+	if t.bulk != nil {
+		t.bulk.entries = append(t.bulk.entries, bulkEntry{actor: actor, op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy})
+		return nil
+	}
+	if err := t.lockChangelog(); err != nil {
+		return err
 	}
 	// RETURNING payload::text hands back the payload AS STORED: jsonb
 	// re-renders what Go sent (key order, number lexemes), and the checksum
@@ -343,6 +351,14 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
 		return err
 	}
+	t.appended(actor, op, recordID, typ, causedBy, seq, stored)
+	return nil
+}
+
+// appended records one inserted changelog row on the transaction: its seq,
+// its address and the pending line its checksum and file write read, with
+// the payload as stored.
+func (t *txn) appended(actor substrate.Actor, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte) {
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
@@ -358,7 +374,6 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
 		PayloadText: stored,
 	})
-	return nil
 }
 
 // tombstone soft-deletes a record: the delete verb's effect, GC's cascade and
@@ -649,6 +664,11 @@ func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tie
 		}
 		n, err := res.RowsAffected()
 		return n > 0, err
+	}
+	// A bulk run's record holds no manager row, so the INSERT below would
+	// add one (bulkwrite.go).
+	if t.queueManager(ref, property, actor, tier, principal, at) {
+		return true, nil
 	}
 	// A different principal is a different write, so it moves the row: the
 	// ledger names the token behind the last accepted change, not merely the

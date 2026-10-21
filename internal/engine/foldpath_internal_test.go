@@ -42,17 +42,18 @@ var foldWriteSites = map[string]string{
 
 	// Derived storage no entry carries: each is a function of the folded rows
 	// and the declarations, and a rebuild derives it again.
-	"fold.go:rederiveFTS":          "`fts`, the search index over the folded row",
-	"refs.go:syncRefs":             "the refs projection of one row, derived again by foldRecordOp on replay",
-	"refs.go:syncRefsOfRows":       "the refs projection of a page of rows, for a declaration change",
-	"unitgraph.go:replaceUnitUses": "the unit spellings one row's values store, derived again by foldRecordOp on replay",
-	"unitgraph.go:afterUnitFold":   "the unit graph's revision, moved once per changed unit or conversion row, which a replay moves the same",
-	// A bulk run of creating puts (bulkwrite.go) writes, a table at a time,
-	// what foldRecordOp and applyManager write for the effects its entries
-	// carry, and a replay applies those effects one by one
-	// (TestBulkSeedMatchesThePerRecordPath).
-	"bulkwrite.go:flushBulkRows":     "a bulk run's created rows, their unit uses and the graph revision, as foldRecordOp writes them",
-	"bulkwrite.go:flushBulkManagers": "a bulk run's manager rows, as applyManager writes them",
+	"fold.go:rederiveFTS":           "`fts`, the search index over the folded row",
+	"refs.go:syncRefs":              "the refs projection of one row, derived again by foldRecordOp on replay",
+	"refs.go:syncRefsOfRows":        "the refs projection of a page of rows, for a declaration change",
+	"unitgraph.go:replaceUnitUses":  "the unit spellings one row's values store, derived again by foldRecordOp on replay",
+	"unitgraph.go:moveUnitRevision": "the unit graph's revision, moved once per changed unit or conversion row, which a replay moves the same",
+	// A bulk run of creating puts (bulkwrite.go) folds every effect through
+	// foldRecordOp and applyManager, whose write leaves queue the statement
+	// they would send for a record the run creates; these send each queue as
+	// one statement (foldPrimitives says who may call them).
+	"bulkwrite.go:flushBulkRecords":  "upsertRecord's INSERTs of a bulk run's created rows",
+	"bulkwrite.go:flushBulkUses":     "replaceUnitUses' INSERTs for a bulk run's created rows",
+	"bulkwrite.go:flushBulkManagers": "applyManager's INSERTs for a bulk run's created rows",
 	"orphans.go:syncOrphaned":        "the `orphaned_at` mark, derived again by rederiveOffers",
 	"orphans.go:clearOrphanMarks":    "the `orphaned_at` marks of a kind no mapping targets any more",
 	"mapping.go:afterTombstone":      "the `orphaned_at` mark of a tombstoned target",
@@ -109,6 +110,24 @@ var foldPrimitives = map[string][]string{
 	"applyResync":     {"fold.go:foldOne"},
 	"applyDelivery":   {"fold.go:foldOne"},
 	"upsertPage":      {"delivery.go:applyDelivery"},
+	// A bulk run batches the statements of the fold's own write leaves and
+	// nothing else (bulkwrite.go): each queue is filled by the leaf whose
+	// statement it defers, so a live bulk write and a replay decide every
+	// row in the same code.
+	"queueRecord":   {"rows.go:upsertRecord"},
+	"queueUses":     {"unitgraph.go:replaceUnitUses"},
+	"queueRevision": {"unitgraph.go:afterUnitFold"},
+	"queueRefs":     {"refs.go:syncRefs"},
+	"queueManager":  {"rows.go:applyManager"},
+	// A bulk run's flush sends what the fold's leaves queued, once, at the
+	// end of the run that queued it.
+	"flushBulk":         {"bulkwrite.go:putBulk"},
+	"flushBulkRecords":  {"bulkwrite.go:flushBulk"},
+	"flushBulkUses":     {"bulkwrite.go:flushBulk"},
+	"flushBulkRevision": {"bulkwrite.go:flushBulk"},
+	"flushBulkRefs":     {"bulkwrite.go:flushBulk"},
+	"flushBulkManagers": {"bulkwrite.go:flushBulk"},
+	"moveUnitRevision":  {"unitgraph.go:afterUnitFold", "bulkwrite.go:flushBulkRevision"},
 }
 
 // foldWriteRe matches one write statement's head. The table is a name,

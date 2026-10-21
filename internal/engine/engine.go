@@ -135,6 +135,11 @@ type options struct {
 	// perRecordSeed seeds the units one put at a time instead of in one bulk
 	// run, the test seam that holds the two to one answer.
 	perRecordSeed bool
+	// bulkFault and seedPath are the bulk seed's test seams (export_test.go
+	// WithTestBulkFault, WithTestSeedPath): a hook run after each table a
+	// bulk run's flush writes, and one told which path a seed took.
+	bulkFault func(stage string) error
+	seedPath  func(repository, refusal string)
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -578,6 +583,10 @@ type service struct {
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
+	// testBulkFault and testSeedPath are the options' bulk seed seams
+	// (bulkwrite.go flushBulk, unitseed.go seedUnits). Tests only.
+	testBulkFault func(stage string) error
+	testSeedPath  func(repository, refusal string)
 	// testSnapshotFault is the options' snapshot seam (snapshot.go).
 	testSnapshotFault func(stage, dir string) error
 	// testInvokeHook is the options' runner seam (runner.go). Tests only.
@@ -809,6 +818,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,
 		testCommitFault:   o.commitFault,
+		testBulkFault:     o.bulkFault,
+		testSeedPath:      o.seedPath,
 		testSnapshotFault: o.snapshotFault,
 		progressEvery:     o.progressEvery,
 		testInvokeHook:    o.invokeHook,

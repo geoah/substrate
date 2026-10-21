@@ -307,9 +307,17 @@ func (t *txn) afterUnitFold(kind string) error {
 	}
 	t.unitTouched = true
 	t.unitLocal = nil
+	if t.queueRevision() {
+		return nil
+	}
+	return t.moveUnitRevision(1)
+}
+
+// moveUnitRevision moves the unit graph's revision by n.
+func (t *txn) moveUnitRevision(n int) error {
 	if _, err := t.exec(`
-		INSERT INTO unit_graph (revision) VALUES (1)
-		ON CONFLICT (repository) DO UPDATE SET revision = unit_graph.revision + 1`); err != nil {
+		INSERT INTO unit_graph (revision) VALUES ($1)
+		ON CONFLICT (repository) DO UPDATE SET revision = unit_graph.revision + $1`, n); err != nil {
 		return fmt.Errorf("substrate/engine: move the unit graph revision: %w", err)
 	}
 	return nil
@@ -409,6 +417,9 @@ func (t *txn) syncUnitUses(ref eref, before, after []string, created bool) error
 // replaceUnitUses writes a row's unit_uses rows as uses, deleting what it
 // held first unless the row is new.
 func (t *txn) replaceUnitUses(ref eref, uses []string, held bool) error {
+	if !held && t.queueUses(ref, uses) {
+		return nil
+	}
 	if held {
 		if _, err := t.exec(`DELETE FROM unit_uses WHERE kind = $1 AND record_id = $2`, ref.Kind, ref.ID); err != nil {
 			return fmt.Errorf("substrate/engine: unit uses of %s %s: %w", ref.Kind, ref.ID, err)

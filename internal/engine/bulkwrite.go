@@ -7,17 +7,22 @@ package engine
 // (unitseed.go): 365 records through the per-record path cost a registration
 // about 1.4 s, nearly all of it round trips.
 //
-// Nothing about what is written changes. Each put runs the ordinary put path
-// (putSpec, apply), so its coercion, checks, title, managers and changelog
-// payload are the ones a single put makes, and its effects go through fold
-// and appendChange as always. Under t.bulk those two, and the reads the path
-// makes of a record known absent, are answered in Go and queued; flushBulk
-// then applies the queued effects as foldRecordOp and appendChange would
-// have, one statement per table: the created rows, their refs and unit uses,
-// their managers, the unit graph's revision, and the changelog entries with
-// the seqs a per-record append would have taken. A rebuild replays those
-// entries through foldOne one effect at a time and reaches the same tables
-// (TestBulkSeedMatchesThePerRecordPath).
+// ONLY THE STATEMENTS ARE BATCHED. Each put runs the ordinary put path
+// (putSpec, apply), and each effect it folds goes through fold, foldOne and
+// foldRecordOp or applyManager, the code a rebuild replays the entry through,
+// so what a record, its unit uses, its refs and its managers become is
+// decided by the one fold. Under t.bulk the fold's write leaves (upsertRecord,
+// replaceUnitUses, afterUnitFold, syncRefs, applyManager) and appendChange
+// queue the statement they would send for a record the run creates, with the
+// answer that statement gives for an absent row, and flushBulk sends each
+// table's queue as one statement: the created rows, their unit uses, the unit
+// graph's revision, their refs (syncRefsOfRows), their managers, and the
+// changelog entries with the seqs a per-record append would have taken. Every
+// other effect, and a leaf the run cannot batch, runs its statement at once.
+//
+// A record the run creates is absent until the flush, so loadRow answers nil
+// for it in Go, and a second fold of it in the same run is refused rather
+// than read as a second creation.
 //
 // The run takes no per-record advisory lock: inTx holds the repository's
 // changelog lock from the transaction's start, and every writer that could
@@ -27,6 +32,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -38,29 +44,58 @@ type bulkWrite struct {
 	// tombstone and no former-id trail: loadRow answers nil for them and
 	// checkID reads nothing.
 	absent map[eref]bool
-	rows   []bulkRow
-	// managers are the run's manager effects, in fold order.
-	managers []foldOp
+	// folded are the records whose creation is queued; a second fold of one
+	// is refused.
+	folded map[eref]bool
+
+	records  []bulkRecord
+	uses     struct{ kinds, ids, units []string }
+	revision int
+	refs     []bulkRefs
+	managers []bulkManager
 	entries  []bulkEntry
 }
 
-// bulkRow is one created row as foldRecordOp would have written it.
-type bulkRow struct {
-	ref eref
-	ty  *vocabulary.Kind
-	row *erow
-	fts [3]string
+// bulkRecord is the INSERT upsertRecord would have sent for an absent row.
+type bulkRecord struct {
+	row                              *erow
+	fts                              [3]string
+	states, props, labels, finalizer []byte
 }
 
-// bulkEntry is one changelog entry as appendChange would have inserted it.
+// bulkRefs is one row's syncRefs, for syncRefsOfRows.
+type bulkRefs struct {
+	ty  *vocabulary.Kind
+	row *erow
+}
+
+// bulkManager is the INSERT applyManager would have sent for a property of
+// an absent record, which holds no manager row to conflict with.
+type bulkManager struct {
+	ref                        eref
+	property, actor, tier, who string
+}
+
+// bulkEntry is the INSERT appendChange would have sent.
 type bulkEntry struct {
 	actor    substrate.Actor
 	op       substrate.Op
 	recordID string
 	kind     string
 	raw      []byte
-	causedBy int64
+	causedBy sql.NullInt64
 }
+
+// The stages a bulk run's flush reports to its test seam (WithTestBulkFault),
+// once each table's statement has run.
+const (
+	bulkAfterRecords  = "records"
+	bulkAfterUses     = "uses"
+	bulkAfterRevision = "revision"
+	bulkAfterRefs     = "refs"
+	bulkAfterManagers = "managers"
+	bulkAfterEntries  = "entries"
+)
 
 // bulkEligible reports whether a kind's creating puts may run in bulk: a
 // kind whose write touches nothing beyond the record, its refs, its unit
@@ -89,28 +124,43 @@ func (t *txn) bulkEligible(ty *vocabulary.Kind) bool {
 	return true
 }
 
-// putBulk puts every input as a creation in one bulk run, or answers false
+// bulkRefusal says why putBulk declined a run, "" where it ran it. A test
+// seam reads it (WithTestSeedPath).
+type bulkRefusal string
+
+const (
+	bulkRan        bulkRefusal = ""
+	bulkNested     bulkRefusal = "a bulk run or an unappended effect is open"
+	bulkEmpty      bulkRefusal = "nothing to write"
+	bulkIneligible bulkRefusal = "a kind that cannot run in bulk"
+	bulkRepeated   bulkRefusal = "an input names a record twice"
+	bulkHeld       bulkRefusal = "a row, a tombstone or a former id names an input"
+	bulkOff        bulkRefusal = "the bulk run is off"
+)
+
+// putBulk puts every input as a creation in one bulk run, or answers why not
 // with nothing written where the run cannot take them all: a kind that is
-// not eligible, an input that names a record a row, a tombstone or a
-// former id already answers, or a transaction with effects not yet appended.
-func (t *txn) putBulk(ins []substrate.PutInput) (bool, error) {
-	if t.bulk != nil || len(t.folded) > 0 || len(ins) == 0 {
-		return false, nil
+// not eligible, an input that names a record a row, a tombstone or a former
+// id already answers, or a transaction with effects not yet appended.
+func (t *txn) putBulk(ins []substrate.PutInput) (bulkRefusal, error) {
+	switch {
+	case t.bulk != nil || len(t.folded) > 0:
+		return bulkNested, nil
+	case len(ins) == 0:
+		return bulkEmpty, nil
 	}
-	kinds := map[string]bool{}
 	refs := make(map[eref]bool, len(ins))
 	var ids, idKinds []string
 	for _, in := range ins {
 		ty, err := t.resolveType(in.Kind)
 		if err != nil || in.ID == "" || !t.bulkEligible(ty) {
-			return false, nil
+			return bulkIneligible, nil
 		}
 		ref := eref{Kind: ty.Identity, ID: in.ID}
 		if refs[ref] {
-			return false, nil
+			return bulkRepeated, nil
 		}
 		refs[ref] = true
-		kinds[ty.Identity] = true
 		ids, idKinds = append(ids, in.ID), append(idKinds, ty.Identity)
 	}
 	var held bool
@@ -120,22 +170,22 @@ func (t *txn) putBulk(ins []substrate.PutInput) (bool, error) {
 			WHERE EXISTS (SELECT 1 FROM records r WHERE r.kind = u.kind AND r.id = u.id)
 			   OR EXISTS (SELECT 1 FROM former_ids f WHERE f.record_kind = u.kind AND f.former_id = u.id))`,
 		idKinds, ids).Scan(&held); err != nil {
-		return false, fmt.Errorf("substrate/engine: bulk put: %w", err)
+		return "", fmt.Errorf("substrate/engine: bulk put: %w", err)
 	}
 	if held {
-		return false, nil
+		return bulkHeld, nil
 	}
-	t.bulk = &bulkWrite{absent: refs}
+	t.bulk = &bulkWrite{absent: refs, folded: map[eref]bool{}}
 	defer func() { t.bulk = nil }()
 	for _, in := range ins {
 		if _, err := t.put(in); err != nil {
-			return false, err
+			return "", err
 		}
 	}
 	if err := t.flushBulk(); err != nil {
-		return false, err
+		return "", err
 	}
-	return true, nil
+	return bulkRan, nil
 }
 
 // bulkAbsent reports whether the running bulk run creates ref, which no row
@@ -144,115 +194,117 @@ func (t *txn) bulkAbsent(ref eref) bool {
 	return t.bulk != nil && t.bulk.absent[ref]
 }
 
-// foldBulk is fold's half of a bulk run: a creating record effect is applied
-// to a fresh row in Go, as foldRecordOp applies it to the row it loads, and
-// a manager effect on a record the run creates is queued. It answers false
-// for any other effect, which the fold applies as always.
-func (t *txn) foldBulk(op foldOp) (foldResult, bool, error) {
-	ref := op.ref()
+// bulkLoad is loadRow's answer for a record the run creates: nil, the
+// absent row, until the run has folded it once. A second fold would read
+// nil again and create the row twice, so it is refused.
+func (t *txn) bulkLoad(ref eref) (handled bool, err error) {
 	if !t.bulkAbsent(ref) {
-		return foldResult{}, false, nil
+		return false, nil
 	}
-	switch {
-	case op.Kind == foldRecord && op.Delta != nil && op.Delta.Created:
-		if err := t.beforeUnitFold(ref.Kind); err != nil {
-			return foldResult{}, true, err
-		}
-		row := &erow{
-			ID: ref.ID, Kind: ref.Kind,
-			States: map[string]string{}, Props: map[string]any{}, Labels: map[string]any{},
-			CreatedAt: t.now, UpdatedAt: t.now,
-		}
-		op.Delta.applyTo(row)
-		row.Version = 1
-		ty, _ := t.derivationView().ByIdentity(ref.Kind)
-		t.bulk.rows = append(t.bulk.rows, bulkRow{ref: ref, ty: ty, row: row, fts: t.foldFTS(row)})
-		return foldResult{changed: true, created: true, row: row, version: 1}, true, nil
-	case op.Kind == foldManager && op.Actor != "":
-		t.bulk.managers = append(t.bulk.managers, op)
-		return foldResult{changed: true}, true, nil
+	if t.bulk.folded[ref] {
+		return true, fmt.Errorf("substrate/engine: a bulk run folds %s %s a second time", ref.Kind, ref.ID)
 	}
-	return foldResult{}, false, nil
+	return true, nil
 }
 
-// appendBulk is appendChange's half of a bulk run: the entry is built as
-// appendChange builds it and queued, and flushBulk inserts it.
-func (t *txn) appendBulk(actor substrate.Actor, op substrate.Op, recordID, typ string, payload map[string]any) error {
-	if len(t.folded) > 0 {
-		if payload == nil {
-			payload = map[string]any{}
+// queueRecord takes upsertRecord's INSERT of a record the run creates; false
+// where the statement must run now: no run, a record the run does not
+// create, or a row with an instant column, which the batched INSERT does not
+// carry.
+func (t *txn) queueRecord(r *erow, fts [3]string, states, props, labels, finalizers []byte) bool {
+	ref := eref{Kind: r.Kind, ID: r.ID}
+	if !t.bulkAbsent(ref) {
+		return false
+	}
+	t.bulk.folded[ref] = true
+	if r.At != nil || r.EndsAt != nil || r.DueAt != nil {
+		return false
+	}
+	t.bulk.records = append(t.bulk.records, bulkRecord{row: r, fts: fts, states: states, props: props, labels: labels, finalizer: finalizers})
+	return true
+}
+
+// queueUses takes replaceUnitUses' INSERT for a record the run creates.
+func (t *txn) queueUses(ref eref, uses []string) bool {
+	if !t.bulkAbsent(ref) {
+		return false
+	}
+	u := &t.bulk.uses
+	for _, unit := range uses {
+		u.kinds, u.ids, u.units = append(u.kinds, ref.Kind), append(u.ids, ref.ID), append(u.units, unit)
+	}
+	return true
+}
+
+// queueRevision takes afterUnitFold's move of the graph's revision: moves
+// add, so the run's moves are one statement whatever record made them.
+func (t *txn) queueRevision() bool {
+	if t.bulk == nil {
+		return false
+	}
+	t.bulk.revision++
+	return true
+}
+
+// queueRefs takes syncRefs for a record the run creates.
+func (t *txn) queueRefs(ref eref, ty *vocabulary.Kind, props map[string]any) bool {
+	if !t.bulkAbsent(ref) {
+		return false
+	}
+	t.bulk.refs = append(t.bulk.refs, bulkRefs{ty: ty, row: &erow{ID: ref.ID, Kind: ref.Kind, Props: props}})
+	return true
+}
+
+// queueManager takes applyManager's INSERT for a record the run creates,
+// stamped with the transaction's clock, which is every live write's.
+func (t *txn) queueManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string, at time.Time) bool {
+	if actor == "" || !at.Equal(t.now) || !t.bulkAbsent(ref) {
+		return false
+	}
+	t.bulk.managers = append(t.bulk.managers, bulkManager{ref: ref, property: property, actor: string(actor), tier: string(tier), who: principal})
+	return true
+}
+
+// flushBulk sends a bulk run's queues, one statement per table.
+func (t *txn) flushBulk() error {
+	b := t.bulk
+	for _, step := range []struct {
+		stage string
+		run   func(*bulkWrite) error
+	}{
+		{bulkAfterRecords, t.flushBulkRecords},
+		{bulkAfterUses, t.flushBulkUses},
+		{bulkAfterRevision, t.flushBulkRevision},
+		{bulkAfterRefs, t.flushBulkRefs},
+		{bulkAfterManagers, t.flushBulkManagers},
+		{bulkAfterEntries, t.flushBulkEntries},
+	} {
+		if err := step.run(b); err != nil {
+			return err
 		}
-		payload[foldPayloadKey] = t.folded
-		t.folded = nil
+		if err := t.ds.svc.bulkFault(step.stage); err != nil {
+			return err
+		}
 	}
-	raw, err := jsonb(payload)
-	if err != nil {
-		return err
-	}
-	t.bulk.entries = append(t.bulk.entries, bulkEntry{actor: actor, op: op, recordID: recordID, kind: typ, raw: raw, causedBy: t.causedBy})
 	return nil
 }
 
-// flushBulk applies a bulk run's queue: what foldRecordOp, the manager fold
-// and appendChange would have written record by record, one statement per
-// table.
-func (t *txn) flushBulk() error {
-	b := t.bulk
-	if err := t.flushBulkRows(b.rows); err != nil {
-		return err
-	}
-	if err := t.flushBulkManagers(b.managers); err != nil {
-		return err
-	}
-	return t.flushBulkEntries(b.entries)
-}
-
-func (t *txn) flushBulkRows(rows []bulkRow) error {
-	if len(rows) == 0 {
+// flushBulkRecords is upsertRecord's INSERT for every queued row, for rows
+// no conflict can meet: a row the run believed absent and found is an
+// error, never a silent update.
+func (t *txn) flushBulkRecords(b *bulkWrite) error {
+	if len(b.records) == 0 {
 		return nil
 	}
 	var ids, kinds, titles, bodies, states, props, labels, finalizers, ftsA, ftsB, ftsC []string
 	var kindVersions []int64
-	var useKinds, useIDs, useUnits []string
-	unitFolds := 0
-	byKind := map[string][]*erow{}
-	tys := map[string]*vocabulary.Kind{}
-	var order []string
-	for _, r := range rows {
+	for _, r := range b.records {
 		row := r.row
-		if row.At != nil || row.EndsAt != nil || row.DueAt != nil {
-			return fmt.Errorf("substrate/engine: bulk put of %s %s: a row with an instant column is no bulk row", r.ref.Kind, r.ref.ID)
-		}
-		for _, v := range []struct {
-			dst *[]string
-			src any
-		}{{&states, row.States}, {&props, row.Props}, {&labels, row.Labels}, {&finalizers, nonNilStrings(row.Finalizers)}} {
-			raw, err := jsonb(v.src)
-			if err != nil {
-				return err
-			}
-			*v.dst = append(*v.dst, string(raw))
-		}
 		ids, kinds, titles, bodies = append(ids, row.ID), append(kinds, row.Kind), append(titles, row.Title), append(bodies, row.Body)
+		states, props, labels, finalizers = append(states, string(r.states)), append(props, string(r.props)), append(labels, string(r.labels)), append(finalizers, string(r.finalizer))
 		ftsA, ftsB, ftsC = append(ftsA, r.fts[0]), append(ftsB, r.fts[1]), append(ftsC, r.fts[2])
 		kindVersions = append(kindVersions, row.KindVersion)
-		for _, u := range rowUnitUses(r.ty, row.Props) {
-			useKinds, useIDs, useUnits = append(useKinds, row.Kind), append(useIDs, row.ID), append(useUnits, u)
-		}
-		if isUnitGraphKind(row.Kind) {
-			unitFolds++
-		}
-		t.noteMetricRules(r.ty, r.ref, row)
-		if r.ty == nil || declaresReference(r.ty) {
-			if _, seen := byKind[row.Kind]; !seen {
-				order = append(order, row.Kind)
-			}
-			byKind[row.Kind] = append(byKind[row.Kind], row)
-			tys[row.Kind] = r.ty
-		}
 	}
-	// upsertRecord's INSERT, for rows no conflict can meet: a row the run
-	// believed absent and found is an error, never a silent update.
 	if _, err := t.exec(`
 		INSERT INTO records (
 			id, kind, title, body, states, at, ends_at, due_at, props, labels,
@@ -268,25 +320,47 @@ func (t *txn) flushBulkRows(rows []bulkRow) error {
 			$10::text[], $11::text[], $12::text[], $13::bigint[])
 			AS u(id, kind, title, body, states, props, labels, finalizers, a, b, c, kind_version)`,
 		t.now, ids, kinds, titles, bodies, states, props, labels, finalizers, ftsA, ftsB, ftsC, kindVersions); err != nil {
-		return fmt.Errorf("substrate/engine: bulk put of %d records: %w", len(rows), err)
+		return fmt.Errorf("substrate/engine: bulk put of %d records: %w", len(b.records), err)
 	}
-	if len(useUnits) > 0 {
-		if _, err := t.exec(`
-			INSERT INTO unit_uses (kind, record_id, unit)
-			SELECT * FROM unnest($1::text[], $2::text[], $3::text[])`, useKinds, useIDs, useUnits); err != nil {
-			return fmt.Errorf("substrate/engine: unit uses of %d records: %w", len(rows), err)
-		}
+	return nil
+}
+
+// flushBulkUses is replaceUnitUses' INSERT for every queued row.
+func (t *txn) flushBulkUses(b *bulkWrite) error {
+	if len(b.uses.units) == 0 {
+		return nil
 	}
-	if unitFolds > 0 {
-		// afterUnitFold once per row, in one statement: the revision moves by
-		// one for every unit or conversion row the run created.
-		t.unitTouched = true
-		t.unitLocal = nil
-		if _, err := t.exec(`
-			INSERT INTO unit_graph (revision) VALUES ($1)
-			ON CONFLICT (repository) DO UPDATE SET revision = unit_graph.revision + $1`, unitFolds); err != nil {
-			return fmt.Errorf("substrate/engine: move the unit graph revision: %w", err)
+	if _, err := t.exec(`
+		INSERT INTO unit_uses (kind, record_id, unit)
+		SELECT * FROM unnest($1::text[], $2::text[], $3::text[])`, b.uses.kinds, b.uses.ids, b.uses.units); err != nil {
+		return fmt.Errorf("substrate/engine: unit uses of a bulk put: %w", err)
+	}
+	return nil
+}
+
+// flushBulkRevision is afterUnitFold's statement once for the run's moves.
+func (t *txn) flushBulkRevision(b *bulkWrite) error {
+	if b.revision == 0 {
+		return nil
+	}
+	return t.moveUnitRevision(b.revision)
+}
+
+// flushBulkRefs is syncRefs for every queued row, through syncRefsOfRows a
+// kind at a time.
+func (t *txn) flushBulkRefs(b *bulkWrite) error {
+	byKind := map[string][]*erow{}
+	tys := map[string]*vocabulary.Kind{}
+	var order []string
+	for _, r := range b.refs {
+		kind := r.row.Kind
+		if _, seen := byKind[kind]; !seen {
+			order = append(order, kind)
+			tys[kind] = r.ty
+		} else if tys[kind] != r.ty {
+			return fmt.Errorf("substrate/engine: a bulk run derives the refs of %s under two declarations", kind)
 		}
+		byKind[kind] = append(byKind[kind], r.row)
 	}
 	for _, kind := range order {
 		if err := t.syncRefsOfRows(kind, tys[kind], byKind[kind]); err != nil {
@@ -296,17 +370,15 @@ func (t *txn) flushBulkRows(rows []bulkRow) error {
 	return nil
 }
 
-func (t *txn) flushBulkManagers(ops []foldOp) error {
-	if len(ops) == 0 {
+// flushBulkManagers is applyManager's INSERT for every queued manager.
+func (t *txn) flushBulkManagers(b *bulkWrite) error {
+	if len(b.managers) == 0 {
 		return nil
 	}
 	var kinds, ids, props, actors, tiers, principals []string
-	for _, op := range ops {
-		if op.UpdatedAt != nil {
-			return fmt.Errorf("substrate/engine: bulk manager of %s %s carries its own time", op.Ref, op.ID)
-		}
-		kinds, ids, props = append(kinds, op.Ref), append(ids, op.ID), append(props, op.Property)
-		actors, tiers, principals = append(actors, op.Actor), append(tiers, op.Tier), append(principals, op.Principal)
+	for _, m := range b.managers {
+		kinds, ids, props = append(kinds, m.ref.Kind), append(ids, m.ref.ID), append(props, m.property)
+		actors, tiers, principals = append(actors, m.actor), append(tiers, m.tier), append(principals, m.who)
 	}
 	if _, err := t.exec(`
 		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
@@ -319,10 +391,11 @@ func (t *txn) flushBulkManagers(ops []foldOp) error {
 	return nil
 }
 
-// flushBulkEntries inserts the run's entries at the seqs appendChange would
-// have given them, one after another from the head, and records each as
-// appendChange does.
-func (t *txn) flushBulkEntries(entries []bulkEntry) error {
+// flushBulkEntries is appendChange's INSERT for every queued entry, at the
+// seqs one append after another would have taken, each recorded as
+// appendChange records it.
+func (t *txn) flushBulkEntries(b *bulkWrite) error {
+	entries := b.entries
 	if len(entries) == 0 {
 		return nil
 	}
@@ -333,7 +406,7 @@ func (t *txn) flushBulkEntries(entries []bulkEntry) error {
 	var caused []int64
 	for _, e := range entries {
 		actors, ops, ids, kinds = append(actors, string(e.actor)), append(ops, string(e.op)), append(ids, e.recordID), append(kinds, e.kind)
-		payloads, caused = append(payloads, string(e.raw)), append(caused, e.causedBy)
+		payloads, caused = append(payloads, string(e.raw)), append(caused, e.causedBy.Int64)
 	}
 	rows, err := t.query(`
 		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by)
@@ -369,20 +442,7 @@ func (t *txn) flushBulkEntries(entries []bulkEntry) error {
 	}
 	sort.Slice(got, func(i, j int) bool { return got[i].seq < got[j].seq })
 	for i, e := range entries {
-		seq := got[i].seq
-		if seq > t.maxSeq {
-			t.maxSeq = seq
-		}
-		causedBy := sql.NullInt64{Int64: e.causedBy, Valid: e.causedBy > 0}
-		if e.op != substrate.OpDelivery {
-			t.entries = append(t.entries, changeEntry{seq: seq, op: e.op, kind: e.kind, id: e.recordID})
-		}
-		t.pending = append(t.pending, pendingEntry{
-			Seq: seq, TS: t.now, Actor: string(e.actor), Principal: t.principal,
-			Op: string(e.op), RecordID: e.recordID, Kind: e.kind,
-			CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
-			PayloadText: got[i].text,
-		})
+		t.appended(e.actor, e.op, e.recordID, e.kind, e.causedBy, got[i].seq, got[i].text)
 	}
 	return nil
 }
