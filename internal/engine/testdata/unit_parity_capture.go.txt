@@ -1,0 +1,63 @@
+// The program that wrote unit_parity.json. It is kept here, as text the Go
+// tool does not build, because the table path it runs is gone from this tree.
+//
+// Source: commit 741ce8b0f5d46d981e8dd426b1a378ac64576e4b ("docs(plans):
+// record how step 4 fixes the review and migrates old imports", the head of
+// feat/dynamic-units-4), the last commit holding the engine's unit table. It
+// runs as an internal test of package engine there, beside
+// unitswitch_internal_db_test.go, whose helpers it uses (openParity,
+// parityReadings, parityObserve, parityFilterAnswers, parityAnswers), with
+// the switch off, so every answer is the table's.
+//
+// Procedure, from the repository's root, with Docker running (the test opens
+// a Postgres container):
+//
+//	mkdir /tmp/capture && git archive 741ce8b0f | tar -x -C /tmp/capture
+//	cp internal/engine/testdata/unit_parity_capture.go.txt \
+//	  /tmp/capture/internal/engine/unit_parity_capture_db_test.go
+//	(cd /tmp/capture && UNIT_PARITY_OUT=/tmp/unit_parity.json \
+//	  go test -count=1 -run '^TestCaptureUnitParity$' ./internal/engine/)
+//
+// /tmp/unit_parity.json is then byte for byte this directory's file (checked
+// on 2026-10-21). Never rerun it against a later commit: the file is the
+// table's answer.
+
+package engine
+
+// The capture of internal/engine/testdata/unit_parity.json: the engine's old
+// unit table's answers to every parity probe and read, through the table path
+// (WithUnitGraph(false)) of the last commit that held it.
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"testing"
+
+	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/substrate"
+)
+
+func TestCaptureUnitParity(t *testing.T) {
+	out := os.Getenv("UNIT_PARITY_OUT")
+	if out == "" {
+		t.Skip("UNIT_PARITY_OUT names no file")
+	}
+	ds := openParity(t, false, testdb.Repository(t))
+	for id, props := range parityReadings {
+		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	parityObserve(t, ds)
+	raw, err := json.MarshalIndent(map[string]any{
+		"filters":    parityFilterAnswers(t, ds),
+		"aggregates": parityAnswers(t, ds),
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(out, append(raw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

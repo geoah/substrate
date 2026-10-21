@@ -1234,11 +1234,13 @@ func parityAnswers(t *testing.T, ds *dataset) map[string]map[string]string {
 }
 
 // unitParityFile holds the answers the engine's old unit table gave to every
-// parity probe and read, captured from the table path the commit before it
-// was removed (decision 0186, step 5 of docs/plans/dynamic-units.md). The
-// graph over the shipped units must keep answering them. It is frozen: no
-// code here can answer as the table did, so a probe added later has no
-// entry, and an answer the graph gives that the table did not is a failure.
+// parity probe and read, captured from the table path (WithUnitGraph(false))
+// of commit 741ce8b0f, the last that held the table (decision 0186, step 5 of
+// docs/plans/dynamic-units.md), by testdata/unit_parity_capture.go.txt, which
+// says how to run it again. The graph over the shipped units must keep
+// answering them. It is frozen: no code here can answer as the table did, so
+// the probes and reads may not change while it stands, and the test refuses
+// a probe, read or reducer the file and the code do not both hold.
 const unitParityFile = "testdata/unit_parity.json"
 
 type unitParity struct {
@@ -1270,6 +1272,13 @@ func TestShippedUnitsAnswerAsTheTableDid(t *testing.T) {
 	if len(want.Filters) == 0 || len(want.Aggregates) == 0 {
 		t.Fatalf("%s holds no answers", unitParityFile)
 	}
+	sameKeys(t, "the filter probes", got.Filters, want.Filters)
+	sameKeys(t, "the aggregate reads", got.Aggregates, want.Aggregates)
+	for label, reds := range want.Aggregates {
+		if g, ok := got.Aggregates[label]; ok {
+			sameKeys(t, label+"'s reducers", g, reds)
+		}
+	}
 	for probe, w := range want.Filters {
 		if g, ok := got.Filters[probe]; !ok || g != w {
 			t.Errorf("%s: the graph answers [%s], the table [%s]", probe, g, w)
@@ -1281,6 +1290,23 @@ func TestShippedUnitsAnswerAsTheTableDid(t *testing.T) {
 			if !near(got.Aggregates[label][red], w, 1e-9*max(1, math.Abs(x))) {
 				t.Errorf("%s %s: the graph answers %s, the table %s", label, red, got.Aggregates[label][red], w)
 			}
+		}
+	}
+}
+
+// sameKeys refuses a key one map holds and the other does not: a probe the
+// code runs with no captured answer is unchecked, and so is an answer no
+// probe asks for any more.
+func sameKeys[V any](t *testing.T, what string, got, want map[string]V) {
+	t.Helper()
+	for k := range got {
+		if _, ok := want[k]; !ok {
+			t.Errorf("%s: %q is asked and %s holds no answer for it", what, k, unitParityFile)
+		}
+	}
+	for k := range want {
+		if _, ok := got[k]; !ok {
+			t.Errorf("%s: %s answers %q and nothing asks it", what, unitParityFile, k)
 		}
 	}
 }
