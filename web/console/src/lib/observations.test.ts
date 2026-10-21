@@ -139,6 +139,17 @@ describe("forms and reducers", () => {
     })
   })
 
+  it("reads a metric's unit reference as the unit's id", () => {
+    const record = METRICS.find((m) => m.id === "health/body_mass")!
+    const named = (unit: unknown) =>
+      metricInfoOf({ ...record, properties: { ...record.properties, unit } })
+        .unit
+    expect(named({ ref: "substrate.reamde.dev/core/unit/kg" })).toBe("kg")
+    expect(named("substrate.reamde.dev/core/unit/1/min")).toBe("1/min")
+    expect(named("kg")).toBe("kg")
+    expect(named({ ref: 3 })).toBeUndefined()
+  })
+
   it("offers the reducers each form allows, the default first", () => {
     // Every reducer docs/api.md's form table lists, as reducer keys.
     const heart = info("health/heart_rate")
