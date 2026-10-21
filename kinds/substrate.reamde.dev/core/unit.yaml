@@ -1,0 +1,117 @@
+# Units and conversions as records (decision record 0186). A quantity
+# stores a unit record's id (`kg`), and the server converts between two units
+# by chaining the conversion records that join them: the repository's unit
+# graph (internal/vocabulary/unitgraph.go). Every repository is seeded with
+# the shipped table (internal/engine/unitseed) at registration and at every
+# open; a record the owner wrote or deleted is left as the owner left it.
+#
+# The write path holds each record to its shape (CheckUnitRecord,
+# CheckConversionRecord) and the whole transaction to the graph: two units
+# answering one spelling, a cycle of linear conversions that does not compose
+# to the identity, a deleted unit a stored value names and a split of two
+# units stored values use are each refused at the end of the transaction.
+#
+# `factor`, `offset` and `turn` are strings because they are exact rationals
+# (`"0.45359237"`, `"5/9"`): a number has already lost digits by the time it
+# reaches the server.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/unit
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One unit a quantity may be written in. The record id is what a stored
+    value carries (`kg`, `lb`, `Cel`); a writer may also send the `code` or
+    an alias, which the write stores as the id. Conversion records join units
+    so the server can convert between them.
+  purpose: internal
+  names:
+    singular: unit
+  displayTemplate: "{name|localName}"
+  properties:
+    name:
+      type: string
+      required: true
+      displayName: Name
+      description: what the unit is called, such as kilogram
+    symbol:
+      type: string
+      displayName: Symbol
+      description: what a title prints after a value; the id where it is absent,
+        and nothing where it is empty
+    code:
+      type: string
+      displayName: Code
+      description: the UCUM spelling, for interchange with other systems;
+        a writer may send it in place of the id
+    aliases:
+      type: string
+      repeated: true
+      displayName: Aliases
+      description: other spellings a writer may send; each is stored as the
+        id
+    scale:
+      type: enum
+      displayName: Scale
+      description: how values combine, absent for a ratio unit whose values
+        add and average
+      values:
+        - value: level
+          label: Level (values do not add)
+        - value: powerlevel
+          label: Power level (values neither add nor average)
+    turn:
+      type: string
+      displayName: Turn
+      description: one full circle in this unit, as exact digits or a fraction
+        (360 for degrees); a circular value needs it
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/conversion
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    How a value in one unit converts to another. A linear conversion writes
+    an exact factor and an optional offset (to = from * factor + offset) and
+    converts both ways exactly; an expression conversion writes a CEL expression
+    over the double `value` and its inverse, and converts one value at a time.
+  purpose: internal
+  names:
+    singular: conversion
+  displayTemplate: "{localName}"
+  properties:
+    from:
+      type: reference
+      kind: substrate.reamde.dev/core/unit
+      required: true
+      displayName: From
+      description: the unit a value converts from
+    to:
+      type: reference
+      kind: substrate.reamde.dev/core/unit
+      required: true
+      displayName: To
+      description: the unit a value converts to
+    factor:
+      type: string
+      displayName: Factor
+      description: the exact multiplier, above zero, as digits or a fraction
+        (0.45359237, 5/9); a linear conversion writes it
+    offset:
+      type: string
+      displayName: Offset
+      description: the exact amount added after the factor, as digits or a
+        fraction; absent is zero
+    expr:
+      type: string
+      displayName: Expression
+      description: a CEL expression over the double `value` returning a double,
+        for a conversion no factor states; written with its inverse
+    inverse:
+      type: string
+      displayName: Inverse
+      description: the CEL expression that converts back; nothing proves it
+        undoes the expression, so its author owns that
