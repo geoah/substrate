@@ -90,7 +90,7 @@ type MetricContract struct {
 func MetricContractOf(props map[string]any) MetricContract {
 	c := MetricContract{}
 	c.Measures, _ = props[MetricMeasures].(string)
-	c.Unit, _ = props[MetricUnit].(string)
+	c.Unit = metricUnitText(props[MetricUnit])
 	c.UnitValue = props[MetricUnit]
 	c.BucketPlace, _ = props[MetricBucketPlace].(string)
 	names := DefaultRollups
@@ -113,6 +113,21 @@ func MetricContractOf(props map[string]any) MetricContract {
 		c.Rollups = []time.Duration{}
 	}
 	return c
+}
+
+// metricUnitText is a metric's `unit` as text: a spelling, or the id of the
+// unit record a reference names (decision 0186).
+func metricUnitText(raw any) string {
+	switch v := raw.(type) {
+	case string:
+		return v
+	case map[string]any:
+		path, _ := v[ReferenceValueKey].(string)
+		if kind, id, ok := SplitRecordPath(path); ok && kind == KindUnit {
+			return id
+		}
+	}
+	return ""
 }
 
 // CheckMetric holds one record of a kind that binds `metric` to the rules the

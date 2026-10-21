@@ -1,15 +1,15 @@
 package vocabulary_test
 
-// The shipped metric catalogues read through the unit table: every metric's
-// `unit` belongs to its declared `measures:`, so an aggregate read in the
-// metric's unit converts every stream a writer stores in it.
+// The shipped metric catalogues read through the shipped unit graph
+// (decision 0186): every metric's `unit` is a reference to a shipped unit, so
+// a repository that imports the catalogue holds every unit it names, and the
+// metrics that must never pool are in apart components.
 
 import (
 	"bytes"
 	"errors"
 	"io"
 	"io/fs"
-	"math/big"
 	"strings"
 	"testing"
 
@@ -22,7 +22,7 @@ import (
 var metricCatalogues = []string{"observations/metrics.yaml", "health/metrics.yaml"}
 
 type catalogueMetric struct {
-	id, measure, unit string
+	id, unit string
 }
 
 func readMetricCatalogues(t *testing.T) []catalogueMetric {
@@ -42,8 +42,9 @@ func readMetricCatalogues(t *testing.T) []catalogueMetric {
 				} `yaml:"metadata"`
 				Data struct {
 					Properties struct {
-						Measures string `yaml:"measures"`
-						Unit     string `yaml:"unit"`
+						Unit struct {
+							Ref string `yaml:"ref"`
+						} `yaml:"unit"`
 					} `yaml:"properties"`
 				} `yaml:"data"`
 			}
@@ -52,10 +53,14 @@ func readMetricCatalogues(t *testing.T) []catalogueMetric {
 			} else if err != nil {
 				t.Fatalf("decode %s: %v", name, err)
 			}
-			if !strings.HasSuffix(doc.Kind, "/observations/metric") || doc.Data.Properties.Unit == "" {
+			if !strings.HasSuffix(doc.Kind, "/observations/metric") || doc.Data.Properties.Unit.Ref == "" {
 				continue
 			}
-			out = append(out, catalogueMetric{doc.Metadata.ID, doc.Data.Properties.Measures, doc.Data.Properties.Unit})
+			kind, id, ok := vocabulary.SplitRecordPath(doc.Data.Properties.Unit.Ref)
+			if !ok || kind != vocabulary.KindUnit {
+				t.Fatalf("metric %s: unit %q is no reference to a %s record", doc.Metadata.ID, doc.Data.Properties.Unit.Ref, vocabulary.KindUnit)
+			}
+			out = append(out, catalogueMetric{doc.Metadata.ID, id})
 		}
 	}
 	if len(out) == 0 {
@@ -64,36 +69,35 @@ func readMetricCatalogues(t *testing.T) []catalogueMetric {
 	return out
 }
 
-func TestEveryMetricUnitBelongsToItsMeasure(t *testing.T) {
+func TestEveryMetricUnitIsAShippedUnit(t *testing.T) {
+	g := shippedGraph(t)
 	for _, m := range readMetricCatalogues(t) {
-		if _, err := vocabulary.ResolveMeasure(m.unit, m.measure); err != nil {
-			t.Errorf("metric %s: unit %s under measures %q: %v", m.id, m.unit, m.measure, err)
+		if _, ok := g.Unit(m.unit); !ok {
+			t.Errorf("metric %s: unit %s is no shipped unit", m.id, m.unit)
 		}
 	}
 }
 
-// A metric read in a unit of another measure is refused, never converted:
-// HbA1c's NGSP % never reads in IFCC mmol/mol, and a vendor score never reads
-// as a percent.
-func TestAMetricRefusesAUnitOfAnotherMeasure(t *testing.T) {
+// A metric read in a unit no linear conversion reaches is refused, never
+// converted: HbA1c's NGSP percent never reads in IFCC mmol/mol, and a vendor
+// score never reads as a percent.
+func TestAMetricRefusesAUnitOfAnotherComponent(t *testing.T) {
+	g := shippedGraph(t)
 	byID := map[string]catalogueMetric{}
 	for _, m := range readMetricCatalogues(t) {
 		byID[m.id] = m
 	}
 	for id, to := range map[string]string{
 		"health/hba1c":        "mmol/mol",
-		"health/hba1c_ifcc":   "%",
-		"health/whoop_strain": "%",
+		"health/hba1c_ifcc":   "percent",
+		"health/whoop_strain": "percent",
 	} {
 		m, ok := byID[id]
 		if !ok {
 			t.Errorf("metric %s is not in the catalogue", id)
 			continue
 		}
-		if _, err := vocabulary.ResolveMeasure(to, m.measure); err == nil {
-			t.Errorf("metric %s (measures %q) admits a read in %s", id, m.measure, to)
-		}
-		if _, err := vocabulary.ConvertIn(m.measure, big.NewRat(1, 1), m.unit, to); err == nil {
+		if _, _, err := g.Linear(m.unit, to, false); err == nil {
 			t.Errorf("metric %s converts %s to %s", id, m.unit, to)
 		}
 	}

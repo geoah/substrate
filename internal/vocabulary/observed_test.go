@@ -532,9 +532,13 @@ func TestObservedBindingHoldsListAndSingleShapes(t *testing.T) {
 		{"observation", "origin", map[string]any{"repeated": true}, "requires origin to hold one value"},
 		{"metric", "rollups", map[string]any{"repeated": nil}, "trait substrate.reamde.dev/core/metric requires rollups to be a list"},
 		{"metric", "unit", map[string]any{"repeated": true}, "requires unit to hold one value"},
+		{"metric", "units", map[string]any{"repeated": nil}, "requires units to be a list"},
+		// A metric's units are unit records (decision 0186).
+		{"metric", "unit", map[string]any{"kind": "any"}, "requires unit to pin kind substrate.reamde.dev/core/unit"},
+		{"metric", "units", map[string]any{"kind": "samples.substrate.reamde.dev/observations/source"}, "requires units to pin kind substrate.reamde.dev/core/unit"},
 		{"source", "priorities", map[string]any{"keyed": nil}, "trait substrate.reamde.dev/core/source requires priorities to be a keyed map"},
 		// The metric a value names carries the metric contract, or the
-		// aggregate read has no measure to convert into.
+		// write rules and the aggregate read have no unit to read.
 		{"observation", "metric", map[string]any{"kind": "any"}, "pins no kind; an observed value's metric pins a kind that binds substrate.reamde.dev/core/metric"},
 		{"trace", "metric", map[string]any{"kind": "samples.substrate.reamde.dev/observations/source"}, "which does not bind substrate.reamde.dev/core/metric"},
 		{"trace", "metric", map[string]any{"kind": nil, "trait": "substrate.reamde.dev/core/source"}, "pins trait substrate.reamde.dev/core/source"},

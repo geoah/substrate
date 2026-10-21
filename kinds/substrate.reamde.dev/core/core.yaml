@@ -67,7 +67,11 @@ data:
   # read or the latest read.
   # version 43: the `unit` and `conversion` kinds, the records a quantity's
   # unit converts through (decision record 0186).
-  version: 43
+  # version 44: every quantity converts through the repository's unit graph
+  # (decision record 0186): the `metric` trait drops `measures`, its `unit`
+  # becomes a reference to a unit record and it gains `units`; both
+  # `observed` variants drop the managed `measure`.
+  version: 44
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -309,8 +313,8 @@ data:
 # non-column property itself, with its own descriptions, `repeated: true` on
 # `offsets`, `values`, `codes` and `origins`, and the pins on the four
 # references. Its `metric` reference pins a kind that binds `metric` below,
-# or the `metric` trait itself, because the aggregate read takes a metric's
-# measure and unit through that trait. The list is complete from the first
+# or the `metric` trait itself, because the write rules and the aggregate read
+# take a metric's units through that trait. The list is complete from the first
 # version and never grows: a property added here would refuse every imported
 # kind that binds it at the next boot, so a later need is a second trait
 # bound beside this one (decision record 0154).
@@ -318,14 +322,14 @@ data:
 # `about` is the thing observed, absent meaning the owner (decision 0155);
 # `form` is gauge, amount, counter or summary (0156); `resetRule` with
 # `resetAt` and `wrapAt` describe a counter (0157); `hold` is how long a gauge
-# value stands (0158). `delta` marks a temperature difference and `circular`
-# an angle averaged on the circle; both live on the value so the index never
-# reads the metric record. `utcOffset` is minutes east of UTC, one for every
-# point of a trace. `measure` is the engine's, like `stats`: the measure the
-# value's unit resolved to when it was written, which the index converts in
-# from then on, so a later unit table that reads the code another way never
-# moves a stored value (decision 0153). A single record with neither a value
-# nor a code keeps the reading as received in `sourceValue` and `sourceUnit`,
+# value stands (0158). `delta` marks a difference, which converts by the
+# factor alone, and `circular` an angle averaged on the circle; both live on
+# the value so the index never reads the metric record. `utcOffset` is minutes
+# east of UTC, one for every point of a trace. `stats` is the engine's. A
+# value's unit, and a trace's `unit`, is the id of a unit record of the
+# repository's unit graph (decision 0186). A single record with neither a
+# value nor a code keeps the reading as received in `sourceValue` and
+# `sourceUnit`,
 # or says why there is none in `absentReason`. `origin` (a trace's
 # `origins`) is the provider record an adapter built the row from, which
 # `host.observed.reconcile` keys on (decision 0162).
@@ -358,7 +362,6 @@ data:
         circular: bool
         wrapAt: decimal
         utcOffset: int
-        measure: string
         sourceValue: string
         sourceUnit: string
         absentReason: string
@@ -385,26 +388,31 @@ data:
         circular: bool
         wrapAt: decimal
         utcOffset: int
-        measure: string
         origins: reference
         revision: int
         stats: json
 ---
 # what an observed value is a value of: the catalogue entry every value's
-# `metric` reference points at. The aggregate read takes a metric's
-# `measures` as the measure it converts into, its `unit` as the unit it
-# answers in by default and its `bucketPlace` as where a read by the day
-# places a span; the observed index keeps the rollup tiers its `rollups`
-# names; the console reads the rest to label and draw it. The write rules and
-# the index read nothing else from it: what a stored number means is on the
-# value itself, so editing a metric never relabels one (decision 0156).
+# `metric` reference points at. `unit` and `units` are references to unit
+# records (decision 0186): every value pointing at the metric is written in
+# a unit the metric admits, `unit` and every unit that converts to it through
+# linear conversions, or only `unit` and the listed `units` where it lists
+# some. The aggregate read answers in `unit` by default and takes its
+# `bucketPlace` as where a read by the day places a span; the observed index
+# keeps the rollup tiers its `rollups` names; the console reads the rest to
+# label and draw it. The index reads nothing else from it: what a stored
+# number means is on the value itself, so editing a metric never relabels one
+# (decision 0156).
 #
 # Contract-style: the binding kind declares every property itself, with
-# `repeated: true` on `codeSet` and `rollups`. The engine holds on every
-# write what a trait cannot state (engine metric.go): `measures` names a
-# measure of the unit table and `unit` one of its units, `form` is one of the
-# four forms, `bucketPlace` is start or end, and `rollups` lists tier widths
-# from 5m, 15m, 1h and 1d, each dividing the next. Absent `rollups` keeps the
+# `repeated: true` on `units`, `codeSet` and `rollups` and the pin on both
+# unit references. The engine holds on every write what a trait cannot state
+# (engine metric.go): `unit` and each listed unit name a live unit record and
+# each listed unit converts to `unit`, `form` is one of the four forms,
+# `bucketPlace` is start or end, and `rollups` lists tier widths from 5m,
+# 15m, 1h and 1d, each dividing the next. At the end of every transaction a
+# value's metric admits its unit, and a metric edit or deletion that strands
+# a stored value is refused. Absent `rollups` keeps the
 # default tiers, 15m, 1h and 1d; an empty list keeps none, and a read of the
 # metric reads its raw values.
 kind: substrate.reamde.dev/core/trait
@@ -413,13 +421,13 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  description: "what an observed value is a value of: the measure and unit
-    a read converts into, how a read by the day places a span, the rollup
-    tiers the index keeps, and how a reader labels and draws it"
+  description: "what an observed value is a value of: the units its values
+    take, how a read by the day places a span, the rollup tiers the index
+    keeps, and how a reader labels and draws it"
   properties:
     name: string
-    measures: string
-    unit: string
+    unit: reference
+    units: reference
     form: string
     codeSet: string
     displayPrecision: int

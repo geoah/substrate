@@ -31,11 +31,13 @@ var QuantityComparators = []string{"<", "<=", ">=", ">"}
 
 // QuantitySpec is what a quantity property declares beyond its datatype.
 type QuantitySpec struct {
-	// Measure is the declared `measures:`: every stored unit belongs to it.
-	// Empty admits every unit that names its own measure (MeasureOf).
+	// Measure is the measure the engine's table reads a stored unit in. No
+	// declaration names one since the unit graph switch (decision 0186), so
+	// the loader leaves it empty; the table path reads it until the table is
+	// removed.
 	Measure string
-	// Units is the declared `units:`, a narrowing to listed codes; nil admits
-	// every unit of the measure.
+	// Units is the declared `units:`, a narrowing to listed unit spellings;
+	// nil admits every unit of the anchor's linear component.
 	Units []string
 	// Comparator is the declared `comparator: true`: a value may carry one.
 	Comparator bool
@@ -44,12 +46,10 @@ type QuantitySpec struct {
 	Min, Max *QuantityBound
 	// Unit is the declared `unit:` (decision 0186): a unit spelling every
 	// value's unit must share a linear component with, resolved against the
-	// repository's unit graph. A declaration that names it reads `units` and
-	// its bounds as graph spellings too, and never names `measures`. Inert
-	// until the unit graph switch (engine WithUnitGraph).
+	// repository's unit graph.
 	Unit string
 	// Delta is the declared `delta: true`: every value is a difference,
-	// which converts by the factor alone. Inert until the switch.
+	// which converts by the factor alone.
 	Delta bool
 }
 
@@ -259,22 +259,16 @@ func CanonicalDecimalUnbounded(s string) (string, error) {
 	return out, nil
 }
 
-// parseQuantitySpec reads a quantity property's own keys: `measures`,
-// `units`, `comparator`, and `min`/`max` as quantity values. inherited is a
-// refinement's spec, which the property's own keys override.
+// parseQuantitySpec reads a quantity property's own keys: `unit`, `units`,
+// `delta`, `comparator`, and `min`/`max` as quantity values. inherited is a
+// refinement's spec, which the property's own keys override. Every unit is a
+// spelling of the repository's unit graph (decision 0186), held here to its
+// shape alone.
 func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *QuantitySpec) *QuantitySpec {
 	s := &QuantitySpec{}
 	if inherited != nil {
 		*s = *inherited
 		s.Units = slices.Clone(inherited.Units)
-	}
-	if raw, declared := d["measures"]; declared && raw != nil {
-		name, ok := raw.(string)
-		if _, known := LookupMeasure(name); !ok || !known {
-			l.errf("%s.measures: %v is not a measure; the unit table names %s", where, raw, measureNames())
-			return nil
-		}
-		s.Measure = name
 	}
 	if raw, declared := d["unit"]; declared && raw != nil {
 		unit, ok := raw.(string)
@@ -296,89 +290,7 @@ func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *Qu
 		}
 		s.Delta = b
 	}
-	if s.GraphDialect() && s.Measure != "" {
-		l.errf("%s: a quantity names its units by `unit` (the repository's unit graph) or by `measures` (the engine's table), not both", where)
-		return nil
-	}
-	if s.GraphDialect() {
-		return l.parseGraphQuantitySpec(where, d, s)
-	}
-	if raw, declared := d["units"]; declared && raw != nil {
-		list, ok := raw.([]any)
-		if !ok || len(list) == 0 {
-			l.errf("%s.units: a list of unit codes, at least one", where)
-			return nil
-		}
-		s.Units = nil
-		for _, item := range list {
-			code, ok := item.(string)
-			if !ok {
-				l.errf("%s.units: %v is not a unit code", where, item)
-				return nil
-			}
-			canonical, err := CanonicalUnit(code)
-			switch {
-			case err != nil:
-				l.errf("%s.units: %v", where, err)
-				return nil
-			case canonical != code:
-				l.errf("%s.units: write the code %q, not %q: a declaration names units as they are stored", where, canonical, code)
-				return nil
-			case slices.Contains(s.Units, code):
-				l.errf("%s.units: %s is listed twice", where, code)
-				return nil
-			}
-			if _, err := ResolveMeasure(code, s.Measure); err != nil {
-				l.errf("%s.units: %v", where, err)
-				return nil
-			}
-			s.Units = append(s.Units, code)
-		}
-	}
-	// A narrowed list that the measure no longer holds (a refinement's units
-	// under a use site's other measure) is refused like a listed one.
-	for _, code := range s.Units {
-		if _, err := ResolveMeasure(code, s.Measure); err != nil {
-			l.errf("%s.units: %v", where, err)
-			return nil
-		}
-	}
-	if raw, declared := d["comparator"]; declared && raw != nil {
-		b, ok := raw.(bool)
-		if !ok {
-			l.errf("%s.comparator: true or false", where)
-			return nil
-		}
-		s.Comparator = b
-	}
-	for _, key := range []string{"min", "max"} {
-		raw, declared := d[key]
-		if !declared || raw == nil {
-			continue
-		}
-		b, err := parseQuantityBound(raw, s)
-		if err != nil {
-			l.errf("%s.%s: %v", where, key, err)
-			return nil
-		}
-		if key == "min" {
-			s.Min = b
-		} else {
-			s.Max = b
-		}
-	}
-	if s.Min != nil && s.Max != nil {
-		hi, err := ConvertIn(s.Measure, s.Max.Rat(), s.Max.Unit, s.Min.Unit)
-		switch {
-		case err != nil:
-			l.errf("%s: max %s does not compare with min %s: %v", where, s.Max, s.Min, err)
-			return nil
-		case hi.Cmp(s.Min.Rat()) < 0:
-			l.errf("%s: max %s is below min %s", where, s.Max, s.Min)
-			return nil
-		}
-	}
-	return s
+	return l.parseGraphQuantitySpec(where, d, s)
 }
 
 // parseGraphQuantitySpec reads the rest of a declaration that names `unit`:
@@ -488,72 +400,4 @@ func boundDigits(raw any) (string, error) {
 		return "", fmt.Errorf("%s: %w", QuantityValue, err)
 	}
 	return c, nil
-}
-
-// parseQuantityBound reads one declared bound: a quantity value whose unit the
-// declaration admits. A bound needs `measures:`, because without one a stored
-// value of another measure has nothing to be compared with, and every code
-// the declaration lists (its `units:`, else its measure's codes) must convert
-// into the bound's unit, or the bound would refuse every value in that code:
-// the count measure's {count} never reaches 1, and rad reaches deg only
-// through pi. A code the measure admits without listing it (kg{body_wt}
-// under mass) is not checked here; CheckBounds refuses it at write.
-func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
-	m := asMapOrNil(raw)
-	if m == nil {
-		return nil, fmt.Errorf(`a quantity bound is a quantity value {value: "40", unit: kg}`)
-	}
-	if s.Measure == "" {
-		return nil, fmt.Errorf("a quantity bound needs `measures:` on the property, so every value it compares converts")
-	}
-	for k := range m {
-		if k != QuantityValue && k != QuantityUnit {
-			return nil, fmt.Errorf("a bound holds %s and %s, and %q is neither", QuantityValue, QuantityUnit, k)
-		}
-	}
-	c, err := boundDigits(m[QuantityValue])
-	if err != nil {
-		return nil, err
-	}
-	unit, _ := m[QuantityUnit].(string)
-	if unit == "" {
-		return nil, fmt.Errorf("a bound names its %s", QuantityUnit)
-	}
-	canonical, err := CanonicalUnit(unit)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", QuantityUnit, err)
-	}
-	if canonical != unit {
-		return nil, fmt.Errorf("%s: write the code %q, not %q", QuantityUnit, canonical, unit)
-	}
-	if _, err := ResolveMeasure(unit, s.Measure); err != nil {
-		return nil, fmt.Errorf("%s: %w", QuantityUnit, err)
-	}
-	m2, _ := LookupMeasure(s.Measure)
-	listed := s.Units
-	if len(listed) == 0 {
-		if m2.Scale == ScaleArbitrary {
-			// An assay measure admits every arbitrary unit, listed or not.
-			return nil, fmt.Errorf("an arbitrary measure converts nothing, so a bound needs `units:` listing its one unit, %s", unit)
-		}
-		listed = m2.Units
-	}
-	one := big.NewRat(1, 1)
-	for _, code := range listed {
-		if _, err := ConvertIn(s.Measure, one, code, unit); err != nil {
-			if len(s.Units) > 0 {
-				return nil, fmt.Errorf("%s: the listed unit %s does not convert to it: %w", QuantityUnit, code, err)
-			}
-			return nil, fmt.Errorf("%s does not convert to %s, so a bound needs `units:` listing the codes that do: %w", code, unit, err)
-		}
-	}
-	return &QuantityBound{Value: c, Unit: unit}, nil
-}
-
-func measureNames() string {
-	var names []string
-	for _, m := range Measures() {
-		names = append(names, m.Name)
-	}
-	return strings.Join(names, ", ")
 }
