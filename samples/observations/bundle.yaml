@@ -38,7 +38,9 @@ data:
   # metric binds core's `metric` trait and declares its `rollups`, and the
   # source binds core's `source` trait, its `priorities` keyed by a metric's
   # full record path.
-  version: 2
+  # version 3: the metric declares `units`, the unit records a value may be
+  # written in (decision record 0186).
+  version: 3
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds and six data records (metrics.yaml): the physical metrics several

@@ -70,6 +70,15 @@ data:
       type: string
       description: the unit writers store values in and the aggregate read
         answers in by default, a UCUM code such as kg or /min
+    # read once the engine converts through the repository's unit graph
+    # (decision record 0186): absent admits every unit that converts exactly
+    # to `unit`, and a list narrows that, `unit` always admitted
+    units:
+      type: reference
+      kind: substrate.reamde.dev/core/unit
+      repeated: true
+      description: the units a value may be written in, besides unit; absent
+        admits every unit that converts exactly to unit
     codeSet:
       type: string
       repeated: true

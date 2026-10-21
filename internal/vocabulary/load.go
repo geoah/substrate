@@ -1199,9 +1199,9 @@ var linkPropKeys = map[string]bool{
 	"type": true, "description": true, "displayName": true,
 	"required": true, "deprecated": true,
 	"values": true, "pattern": true, "min": true, "max": true,
-	// A quantity's own three keys are value constraints like the four above:
-	// a link quantity (a sensor's calibration offset) is still one flat value.
-	"measures": true, "units": true, "comparator": true,
+	// A quantity's own keys are value constraints like the four above: a link
+	// quantity (a sensor's calibration offset) is still one flat value.
+	"measures": true, "units": true, "comparator": true, "unit": true, "delta": true,
 }
 
 // linkPropForbiddenKinds are the datatypes a link property may never be, each
@@ -1801,8 +1801,10 @@ var propKeys = map[string]bool{
 	"fields": true, "writer": true, "displayName": true,
 	// A quantity's own three: the measure every unit belongs to, a narrowing
 	// to listed codes, and whether a value may carry a comparator. Refused on
-	// every other datatype (parseProperty).
-	"measures": true, "units": true, "comparator": true,
+	// every other datatype (parseProperty). `unit` and `delta` are decision
+	// 0186's: the anchor unit of the repository's unit graph, and whether
+	// every value is a difference.
+	"measures": true, "units": true, "comparator": true, "unit": true, "delta": true,
 	// `keyed` is `repeated`'s twin (a map instead of a list) and `keyPattern` is
 	// the contract its keys hold to; `managed` says the engine stamps the
 	// property. Both are declared shape, so they ride into the Definition map
@@ -2146,7 +2148,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			return nil
 		}
 	} else {
-		for _, key := range []string{"measures", "units", "comparator"} {
+		for _, key := range []string{"measures", "units", "comparator", "unit", "delta"} {
 			if v, declared := d[key]; declared && v != nil {
 				l.errf("%s.%s: only a quantity property declares %s", where, key, key)
 				return nil
