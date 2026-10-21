@@ -447,9 +447,10 @@ func TestBulkSeedMatchesThePerRecordPath(t *testing.T) {
 	dsn, root := engine.MigratedDSN(t), t.TempDir()
 	// One server at a time per database: the bulk repository's, then the
 	// per-record one's, over one data root.
+	paths := &seedPaths{}
 	register := func(repo string, opts ...engine.Option) substrate.Service {
 		t.Helper()
-		svc := reopenWith(t, dsn, root, append([]engine.Option{engine.WithUnitSeed(true)}, opts...)...)
+		svc := reopenWith(t, dsn, root, append([]engine.Option{engine.WithUnitSeed(true), engine.WithTestSeedPath(paths.hook)}, opts...)...)
 		if _, err := svc.CreateRepository(ctx, repo); err != nil {
 			t.Fatalf("create %s: %v", repo, err)
 		}
@@ -457,6 +458,7 @@ func TestBulkSeedMatchesThePerRecordPath(t *testing.T) {
 	}
 	bulkRepo, singleRepo := testdb.Repository(t), testdb.RepositoryLabel(t)+"1.example.com"
 	bulkSvc := register(bulkRepo)
+	paths.want(t, "the bulk registration", "")
 	bulk := seedState(t, bulkSvc, bulkRepo)
 	ds, err := bulkSvc.Dataset(ctx, bulkRepo)
 	if err != nil {
@@ -469,23 +471,32 @@ func TestBulkSeedMatchesThePerRecordPath(t *testing.T) {
 	rebuiltEqualsLive(t, bulkSvc, ds, "after the bulk seed")
 	_ = bulkSvc.Close()
 	singleSvc := register(singleRepo, engine.WithTestPerRecordSeed())
+	paths.want(t, "the per-record registration", engine.BulkRefusedOff)
 	if single := seedState(t, singleSvc, singleRepo); bulk != single {
 		t.Fatalf("the bulk seed differs from the per-record one\n%s", firstDifference([]byte(single), []byte(bulk)))
 	}
 }
 
-// A repository holding some of the shipped records takes the rest one put
-// at a time, and one holding none takes them in bulk at its open: either
-// way the open ends with every shipped record and a fold a rebuild
-// reproduces.
-func TestTheOpenSeedsInBulkOrOneByOne(t *testing.T) {
+// A repository that holds a unit of the owner's and none of the shipped
+// records takes them in one bulk run at its open: a record outside the plan
+// does not hold the run back. The open ends with every shipped record and a
+// fold a rebuild reproduces. TestASeedOverAHeldRecordGoesOneByOne holds the
+// other path.
+func TestTheOpenSeedsInBulkBesideAnOwnersUnit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, dsn, root := unitSeededRepository(t, false)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "furlong", Properties: map[string]any{"name": "furlong"}}); err != nil {
 		t.Fatalf("put a unit of the owner's: %v", err)
 	}
-	svc, ds = reopenSeeded(t, svc, dsn, root)
+	_ = svc.Close()
+	paths := &seedPaths{}
+	svc = reopenWith(t, dsn, root, engine.WithUnitSeed(true), engine.WithTestSeedPath(paths.hook))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths.want(t, "the open", "")
 	units, convs := shippedCounts()
 	if tab := unitsOf(t, ds); len(tab.Units) != units+1 || len(tab.Conversions) != convs {
 		t.Fatalf("after the open: %d units and %d conversions, want %d and %d", len(tab.Units), len(tab.Conversions), units+1, convs)

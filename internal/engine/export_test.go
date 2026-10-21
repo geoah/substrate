@@ -239,6 +239,36 @@ func WithTestPerRecordSeed() Option {
 	return func(o *options) { o.perRecordSeed = true }
 }
 
+// WithTestBulkFault runs fn after each table a bulk run's flush writes
+// (bulkwrite.go flushBulk), with one of the BulkAfter stages; an error from
+// fn ends the flush there, and the transaction rolls back.
+func WithTestBulkFault(fn func(stage string) error) Option {
+	return func(o *options) { o.bulkFault = fn }
+}
+
+// WithTestSeedPath tells fn, for every seed that writes something, which
+// path it took: refusal is "" for one bulk run, else why the seed went one
+// put at a time.
+func WithTestSeedPath(fn func(repository, refusal string)) Option {
+	return func(o *options) { o.seedPath = fn }
+}
+
+// The stages WithTestBulkFault reports, in the order the flush runs them.
+const (
+	BulkAfterRecords  = bulkAfterRecords
+	BulkAfterUses     = bulkAfterUses
+	BulkAfterRevision = bulkAfterRevision
+	BulkAfterRefs     = bulkAfterRefs
+	BulkAfterManagers = bulkAfterManagers
+	BulkAfterEntries  = bulkAfterEntries
+)
+
+// The reasons WithTestSeedPath reports a seed went one put at a time.
+const (
+	BulkRefusedHeld = string(bulkHeld)
+	BulkRefusedOff  = string(bulkOff)
+)
+
 // WriterLeaseKeySQL is the lease's advisory-lock key expression, for a test
 // that takes or probes a lease from a session of its own. It is the expression
 // docs/operations.md publishes for reading `pg_locks`.
