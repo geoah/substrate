@@ -344,4 +344,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0183](0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md) | An unreachable Beeper Desktop throttles the sync, and throttled reads as waiting | proposed |
 | [0184](0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md) | A record view grows by adding a field, never by retyping one | proposed |
 | [0185](0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md) | A table draws its results as tiles, and every tile takes one size | proposed |
-| [0186](0186-units-and-conversions-are-repository-records-and-a-value-converts-through-their-graph.md) | Units and conversions are repository records, and a value converts through their graph | proposed |
+| [0186](0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md) | Units and conversions are core records, and a value converts through the repository's graph | proposed |
