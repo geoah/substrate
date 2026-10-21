@@ -208,10 +208,11 @@ func CheckConversionRecord(id string, props map[string]any) (ConversionRecord, e
 	if c.From == c.To {
 		return c, fmt.Errorf("to: a conversion joins two units, and this one names %s twice", c.From)
 	}
-	_, hasFactor := props["factor"]
-	_, hasOffset := props["offset"]
-	_, hasExpr := props["expr"]
-	_, hasInverse := props["inverse"]
+	// A null property is an absent one, as every property reader here reads
+	// it, so the form is chosen by what the record writes.
+	written := func(key string) bool { return props[key] != nil }
+	hasFactor, hasOffset := written("factor"), written("offset")
+	hasExpr, hasInverse := written("expr"), written("inverse")
 	switch {
 	case hasFactor && (hasExpr || hasInverse):
 		return c, fmt.Errorf("a conversion is linear (factor, offset) or an expression (expr, inverse), never both")
@@ -223,9 +224,12 @@ func CheckConversionRecord(id string, props map[string]any) (ConversionRecord, e
 		return c, fmt.Errorf("a conversion writes a factor (and an optional offset), or expr and inverse")
 	}
 	if hasFactor {
-		factor, _, err := rationalProperty(props, "factor")
+		factor, set, err := rationalProperty(props, "factor")
 		if err != nil {
 			return c, err
+		}
+		if !set {
+			return c, fmt.Errorf("factor: a linear conversion writes a factor")
 		}
 		if factor.Sign() <= 0 {
 			return c, fmt.Errorf("factor: a factor is above zero, so every linear conversion is increasing")

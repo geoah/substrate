@@ -196,6 +196,14 @@ func TestCheckConversionRecord(t *testing.T) {
 	if err != nil || c.Linear() || c.Expr == "" || c.Inverse == "" {
 		t.Errorf("read %+v, %v", c, err)
 	}
+	// A null property is an absent one: a null factor beside an expression
+	// leaves an expression conversion.
+	c, err = vocabulary.CheckConversionRecord("a-b", map[string]any{
+		"from": ref("a"), "to": ref("b"), "factor": nil, "offset": nil, "expr": "value", "inverse": "value",
+	})
+	if err != nil || c.Linear() {
+		t.Errorf("a null factor beside an expression: read %+v, %v", c, err)
+	}
 	for name, cc := range map[string]struct {
 		props map[string]any
 		why   string
@@ -206,6 +214,8 @@ func TestCheckConversionRecord(t *testing.T) {
 		"both forms":     {map[string]any{"from": ref("a"), "to": ref("b"), "factor": "2", "expr": "value", "inverse": "value"}, "never both"},
 		"no form":        {map[string]any{"from": ref("a"), "to": ref("b")}, "writes a factor"},
 		"bare offset":    {map[string]any{"from": ref("a"), "to": ref("b"), "offset": "1"}, "offset belongs"},
+		"null factor":    {map[string]any{"from": ref("a"), "to": ref("b"), "factor": nil}, "writes a factor"},
+		"null, offset":   {map[string]any{"from": ref("a"), "to": ref("b"), "factor": nil, "offset": "1"}, "offset belongs"},
 		"no inverse":     {map[string]any{"from": ref("a"), "to": ref("b"), "expr": "value * 2.0"}, "together"},
 		"zero factor":    {map[string]any{"from": ref("a"), "to": ref("b"), "factor": "0"}, "above zero"},
 		"negative":       {map[string]any{"from": ref("a"), "to": ref("b"), "factor": "-2"}, "above zero"},
