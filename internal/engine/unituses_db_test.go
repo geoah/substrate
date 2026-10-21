@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -253,7 +254,28 @@ func TestAnOldRepositoryOpensWithTheSeedAndTheBackfill(t *testing.T) {
 		t.Fatalf("the open seeded %d units and %d conversions, skipped %v; want %d and %d", len(tab.Units), len(tab.Conversions), tab.Unseeded, units, convs)
 	}
 	wantSplitRefused(t, ds, "lb-kg", "still being derived")
+	// A filter whose arms unit_uses would choose answers no partial page
+	// while the uses are owed: 150 [lb_av] has no use yet, so it would match
+	// no arm and drop out of an answer that looked complete.
+	heavier := substrate.Query{Filter: substrate.Filter{Kinds: []string{hold}, Properties: map[string]substrate.Cond{
+		"weight": {Gt: map[string]any{"value": "1", "unit": "kg"}},
+	}}, OrderBy: []substrate.Order{{Property: "createdAt"}}}
+	if p, err := ds.List(ctx, heavier); !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(fmt.Sprint(err), "still being derived") {
+		t.Errorf("a quantity filter while the uses are owed: page %v, err = %v, want ErrUnavailable", p, err)
+	}
 	release()
+	engine.DrainIndexReprojection(t, ds)
+	p, err := ds.List(ctx, heavier)
+	if err != nil {
+		t.Fatalf("a quantity filter once the uses are derived: %v", err)
+	}
+	var ids []string
+	for _, r := range p.Records {
+		ids = append(ids, r.ID)
+	}
+	if got := strings.Join(ids, ","); got != "pounds,kilos" {
+		t.Errorf("a quantity filter once the uses are derived = %s, want pounds,kilos", got)
+	}
 	fold := rebuiltEqualsLive(t, svc, ds, "after the backfill")
 	if got, want := unitUsesOf(t, fold, hold), []string{"kilos kg", "ounces [oz_av]", "pounds [lb_av]"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("the holds' uses = %v, want %v", got, want)

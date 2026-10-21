@@ -26,6 +26,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"math/big"
 	"slices"
@@ -284,6 +285,9 @@ func (ds *dataset) usedSpellings(ctx context.Context, x dbx, b *builder, key str
 	for _, d := range decls {
 		kinds = append(kinds, d.kind)
 	}
+	if err := unitUsesReady(ctx, x, kinds); err != nil {
+		return nil, err
+	}
 	spellings := sortedKeys(byKey)
 	rows, err := x.QueryContext(ctx, `
 		SELECT s FROM unnest($1::text[]) s
@@ -310,6 +314,27 @@ func (ds *dataset) usedSpellings(ctx context.Context, x dbx, b *builder, key str
 			substrate.ErrValidation, key, maxQuantityUnits)
 	}
 	return out, nil
+}
+
+// unitUsesReady refuses, with ErrUnavailable, a filter whose arms
+// unit_uses would choose while the pass behind the open still owes a
+// filtered kind's rows their uses, read in the read's own snapshot: a value
+// whose use is not derived yet would match no arm, and the read would answer
+// without it. A repository whose uses follow an older rule than this
+// binary's, before the open asked for them again, is refused the same way.
+func unitUsesReady(ctx context.Context, x dbx, kinds []string) error {
+	var pending bool
+	var version sql.NullInt64
+	err := x.QueryRowContext(ctx, `SELECT
+			EXISTS (SELECT 1 FROM index_reprojections WHERE units AND kind = ANY($1::text[])),
+			(SELECT version FROM unit_uses_index)`, kinds).Scan(&pending, &version)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: read the unit uses owed: %w", err)
+	}
+	if pending || (version.Valid && version.Int64 < unitUsesVersion) {
+		return fmt.Errorf("%w: the units stored values use are still being derived behind the open; retry the read once that finishes", substrate.ErrUnavailable)
+	}
+	return nil
 }
 
 // graphQuantityClause is one comparison for one group of kinds: the operand
