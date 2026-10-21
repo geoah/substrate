@@ -12,7 +12,7 @@ package engine
 // the version diff per declaration, the narrowings whose live rows must be
 // counted, and the guard lines settled without a count. The boot path stages,
 // counts inside its transaction and projects; PlanShippedUpgrade stages, counts
-// over the bare pool and answers `GET /api/v1/vocabulary/upgrade`. One diff and
+// in one read snapshot and answers `GET /api/v1/vocabulary/upgrade`. One diff and
 // one guard set, so what the read reports blocked is exactly what the boot
 // refused, and a guard added to one door is added to both.
 
@@ -459,7 +459,7 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 
 // PlanShippedUpgrade reports what this binary's boot upgrade would do to each
 // shipped package here, and the guard lines it refuses on: the same staging
-// and the same counts the boot runs (st.guards), over the bare pool, writing
+// and the same counts the boot runs (st.guards), in one read snapshot, writing
 // nothing. The boot refuses the shipped set as a whole, so every package with
 // something to write carries the whole blocker list, which is exactly the list
 // the refusal logged; the conversion steps are each package's own
@@ -472,7 +472,12 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 	if len(st.upgrade) == 0 {
 		return st.plans, nil
 	}
-	blockers, plan, err := st.guards(dbReader{ctx: ctx, db: ds.db, ds: ds}, ds.svc.conversionCeiling)
+	q, done, err := ds.previewReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	blockers, plan, err := st.guards(q, ds.svc.conversionCeiling)
 	if err != nil {
 		return nil, err
 	}

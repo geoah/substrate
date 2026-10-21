@@ -251,6 +251,9 @@ func (ds *dataset) unitGraph(ctx context.Context, q dbx) (*unitGraphAt, error) {
 	if at := ds.svc.unitGraphs.get(ds.scope.Repository, rev); at != nil {
 		return at, nil
 	}
+	if hook := ds.svc.unitGraphLoadHook; hook != nil {
+		hook()
+	}
 	at, err := loadUnitGraph(ctx, q, rev)
 	if err != nil {
 		return nil, err

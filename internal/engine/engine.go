@@ -508,6 +508,10 @@ type service struct {
 	// the drain sends, always positive.
 	embedRequestInputs int
 	embedRequestBytes  int
+	// unitGraphLoadHook, set only by a test, runs on a graph cache miss
+	// between the revision read and the row read: the seam a concurrent
+	// conversion commits in.
+	unitGraphLoadHook func()
 	// searchTopUpHook, set only by a test, runs before a lexical search's
 	// relaxed top-up: the seam that spends the budget between the passes.
 	searchTopUpHook func()

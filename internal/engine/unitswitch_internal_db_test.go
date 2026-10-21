@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1214,4 +1215,71 @@ func TestPropertyAggregateConvertsThroughTheGraph(t *testing.T) {
 	}
 	_, _, err = read("K")
 	wantValidation(t, "a property read in another component", err, "K does not convert to kg")
+}
+
+// --- review fixes ------------------------------------------------------------
+
+// thingDocs is the thing kind's batch with decl as its declaration.
+func thingDocs(decl map[string]any) []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(thingsPackage, 0),
+		vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
+		vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, decl),
+	}
+}
+
+// A preview reads the unit graph and the rows it judges in one snapshot: a
+// conversion committed between the preview's revision read and its row read
+// neither changes the preview's answer nor lands in the cache under the
+// revision the preview read.
+func TestDeclarationPreviewReadsTheGraphInOneSnapshot(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	ctx := context.Background()
+	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb")})
+	rev, err := readUnitRevision(ctx, ds.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1 lb is 0.45359237 kg, under a 1 kg max; at 2000 g to the pound it
+	// is 2 kg, past it.
+	docs := thingDocs(withProp(thingDeclaration(), "weight", map[string]any{
+		"type": "quantity", "unit": "kg", "max": map[string]any{"value": "1", "unit": "kg"},
+	}))
+	ds.svc.unitGraphs.forget(ds.scope.Repository)
+	var fired atomic.Bool
+	ds.svc.unitGraphLoadHook = func() {
+		if fired.Swap(true) {
+			return
+		}
+		if err := putConversionErr(ds, "lb-g", "lb", "g", map[string]any{"factor": "2000"}); err != nil {
+			t.Errorf("the concurrent conversion: %v", err)
+		}
+		// The write cached the revision it read; dropping it leaves the
+		// preview's load as the one that publishes rev.
+		ds.svc.unitGraphs.forget(ds.scope.Repository)
+	}
+	plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorAPI, docs)
+	ds.svc.unitGraphLoadHook = nil
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !fired.Load() {
+		t.Fatal("the preview loaded no graph: the narrowing did not read it")
+	}
+	if len(plan.Blockers) != 0 {
+		t.Fatalf("the preview judged a value through a graph committed after its snapshot: %v", plan.Blockers)
+	}
+	at := ds.svc.unitGraphs.get(ds.scope.Repository, rev)
+	if at == nil {
+		t.Fatalf("no graph cached at revision %d", rev)
+	}
+	f, _, err := at.graph.Linear("lb", "kg", false)
+	if err != nil || f.RatString() != "45359237/100000000" {
+		t.Fatalf("the graph cached at revision %d converts lb to kg by %v (%v), want 0.45359237", rev, f, err)
+	}
+	// After the commit the preview reads the new graph and refuses.
+	if plan, err = ds.PlanVocabularyApply(ctx, substrate.ActorAPI, docs); err != nil || len(plan.Blockers) != 1 {
+		t.Fatalf("the preview after the commit: %v %v", plan.Blockers, err)
+	}
 }
