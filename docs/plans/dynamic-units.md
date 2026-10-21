@@ -5,7 +5,7 @@ This is the work plan for
 which makes units and conversions core records and replaces the engine's
 closed unit table of
 [0153](../decisions/0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md).
-Steps 1 and 2 are implemented; the rest is not. Line numbers are against `main` at
+Steps 1, 2 and 3 are implemented; the rest is not. Line numbers are against `main` at
 `7d0a0cdfc`.
 This revision takes in the owner's answers of 2026-10-21 and a design review
 of the first draft.
@@ -540,6 +540,96 @@ change).
 
 Size: the largest step. About 2,800 lines of Go, 900 of TypeScript and 2,800
 of tests.
+
+### Details step 3 decided
+
+The step 3 code settles these as follows. The switch is `WithUnitGraph`, set
+by `SUBSTRATE_UNIT_GRAPH` (default off) and reported as `units.graph` in
+`GET /.well-known/substrate/server.json`; every test below runs with it on,
+the rest of the suite with it off.
+
+- The `metric` trait does not gain `units` in this step. A trait property is
+  a contract every binding kind must declare, so adding one parks the core
+  upgrade in every repository whose imported `observations` copy lacks it.
+  The sample `metric` kind declares `units` (observations version 3), and
+  the engine reads `unit` and `units` off the metric row, each a unit id or
+  a reference to a unit record (`vocabulary.MetricUnitOf`). Step 4 adds
+  `units` to the trait together with the other trait edits.
+- `unit` and `delta` are dialect keys on a property and a link property,
+  not on a `propertytype` refinement, whose document swap is step 4's. A
+  declaration naming `unit` is the graph dialect: its `units` and bounds are
+  held to their shape only (a spelling of at most 128 bytes), and `unit`
+  beside `measures` is refused. The table path ignores `unit` and `units` of
+  such a declaration. Under the switch `measures` is not read.
+- Coercion is a value, `coercer{graphUnits}`, threaded through every
+  coercion door (writes, change-request diffs, declared defaults,
+  backfills, restores). Under the switch it holds a quantity to its shape;
+  `resolveQuantities` then stores the unit id and holds the leaf to the
+  declaration, a bound converted exactly with `delta` read from the property
+  or, for an observed `value`, from the row.
+- The end of a transaction under the switch runs `checkDeclaredUnits` (a
+  kind the transaction declared or changed: every spelling resolves, a
+  listed unit lies in the anchor's component, every admitted unit reaches
+  each bound) and `checkMetricValues` after `checkUnitGraph`. A value whose
+  metric is not a live record of a kind binding `metric`, or whose unit the
+  metric does not admit, is a validation error (422); a metric edit, restore
+  or delete that strands stored values, tombstones included, is a conflict
+  (409). The sample's `mustExist` on `observation.metric` refuses a value of
+  a missing metric at write, before the end-of-transaction rule.
+- Search text under the switch is the digits and the stored id
+  (`vocabulary.QuantitySearchText`), not the code: the code is editable, and
+  a code in the index would make the fold read the graph and leave stale
+  text after a code edit. Titles print the graph's symbol at write.
+- No migration 0017. A filter probes each spelling of the operand's
+  component (id, code and aliases, by `vocabulary.UnitSpellingKey`) against
+  `unit_uses` through `unit_uses_unit_idx (repository, unit, kind)`, and
+  compiles an arm for every spelling under a used key, so rows written
+  before the switch, which hold table codes, still match. At most 256 used
+  spellings, as before.
+- An operand outside a declaration's anchor component is refused; an
+  unanchored declaration matches nothing outside the operand's component.
+  An order keys every spelling of every unit of the one component the
+  candidate declarations anchor to, built once per graph in its memo, so a
+  row's key is a function of the row and the graph.
+- A cursor's signature carries `|units@<revision>` when its builder read
+  the graph (a quantity filter or order); the refusal names the graph
+  change. A declared index on a quantity is refused at the apply.
+- The narrowing guard judges quantity narrowings through the graph
+  (`narrowing.strandsIn`, the transaction's graph or the preview's
+  dataset's). A named or moved `unit` and a flipped `delta` narrow.
+- The observed index under the switch keeps no `base`; a row's fingerprint
+  carries its unit's turn (as float bits), so a turn edit moves it, and a
+  table row's fingerprint is unchanged. A unit write that moves any turn
+  queues every observed kind holding a `circular: true` row for
+  re-derivation. `observedIndexVersion` stays 1 until step 4.
+- The aggregate plan keeps the request's unit as written and resolves it in
+  `aggregateUnitsGraph`; `aggUnits.factor` asks `Linear`; levels read
+  `Scale`; a circular mean answers in the read's unit; a factor or an answer
+  past float64 is refused (`aggregate.unit`). Durations, in both modes, read
+  the fixed list `ms`, `s`, `min`, `h`, `d`, `wk` (timeunits.go), which gives
+  the table's answers for those six; under the switch `durationUnit` admits
+  only them. The property read converts through the graph too.
+- `Backend.Units` answers nil before the switch, and the runner then serves
+  the table, uncharged. Under it the graph loads at the first unit call and
+  each call charges one read call. `host.units.converts(a, b)` answers a
+  linear route in both modes (the table: one measure). `units.measure` and
+  `measure=` are refused under the switch; `delta=True` is the difference.
+- `GET /api/v1/units/convert` takes `delta`; under the switch it refuses
+  `measure`, without it it refuses `delta`.
+- The console's graph is `lib/unit-graph.ts`, cached in `lib/api/units.ts`
+  by origin, repository and revision; `useUnitReader` chooses it from
+  discovery and drops it on a unit or conversion change. No component calls
+  the hook yet: moving each importer of `@/lib/units` to it is step 5's
+  list. `QuantityDeclaration` and `PropSpec` read `unit` and `delta`.
+
+Step 4 must know: turning the switch on needs the seed in every
+repository before `upgradeShippedVocabulary` checks a declaration naming a
+unit (`checkDeclaredUnits` refuses an unseeded spelling); the trait edits
+include `units`; `checkMetricValues` reads one row per distinct metric per
+transaction, and the provider-sync benchmark decides whether that needs a
+batch; repositories written before the switch keep table codes in their
+rows, which every path above resolves, so only `observedIndexVersion` forces
+a re-derivation.
 
 ## Step 4: the switch
 
