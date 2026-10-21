@@ -322,6 +322,10 @@ func (t *txn) afterUnitFold(kind string) error {
 // record. It reads the values and not the declaration, so a row derives the
 // same spellings under any declaration of its kind; only the two top-level
 // cases read the kind's bindings.
+//
+// Each spelling is kept as its vocabulary.UnitSpellingKey, not as stored: a
+// metric keeps the `µg` its writer sent, and the guard probes a unit's
+// spellings by the same key, so `µg`, `μg` and `ug` are one use of ug.
 func rowUnitUses(ty *vocabulary.Kind, props map[string]any) []string {
 	seen := map[string]bool{}
 	for _, v := range props {
@@ -330,8 +334,8 @@ func rowUnitUses(ty *vocabulary.Kind, props map[string]any) []string {
 	if ty != nil {
 		b, observed := observedBinding(ty)
 		if bindsMetric(ty) || (observed && b.Variant == vocabulary.ObservedPacked) {
-			if u, ok := props[vocabulary.QuantityUnit].(string); ok && u != "" {
-				seen[u] = true
+			if u, ok := props[vocabulary.QuantityUnit].(string); ok {
+				addUnitUse(seen, u)
 			}
 		}
 	}
@@ -350,8 +354,8 @@ func collectQuantityUnits(v any, seen map[string]bool) {
 	switch t := v.(type) {
 	case map[string]any:
 		if _, ok := t[vocabulary.QuantityValue].(string); ok {
-			if u, ok := t[vocabulary.QuantityUnit].(string); ok && u != "" {
-				seen[u] = true
+			if u, ok := t[vocabulary.QuantityUnit].(string); ok {
+				addUnitUse(seen, u)
 			}
 		}
 		for _, inner := range t {
@@ -361,6 +365,14 @@ func collectQuantityUnits(v any, seen map[string]bool) {
 		for _, inner := range t {
 			collectQuantityUnits(inner, seen)
 		}
+	}
+}
+
+// addUnitUse keeps one stored spelling under its key; a blank one names no
+// unit.
+func addUnitUse(seen map[string]bool, spelling string) {
+	if key := vocabulary.UnitSpellingKey(spelling); key != "" {
+		seen[key] = true
 	}
 }
 
@@ -395,8 +407,9 @@ func (t *txn) replaceUnitUses(ref eref, uses []string, held bool) error {
 // unitUsesVersion is the rule rowUnitUses derives by. A repository whose
 // unit_uses_index row is behind it, its rows written before the table
 // existed or under an older rule, has every row's uses derived again behind
-// the open (checkUnitUses); a change to rowUnitUses moves it.
-const unitUsesVersion = 1
+// the open (checkUnitUses); a change to rowUnitUses moves it. Version 2
+// keys each spelling by vocabulary.UnitSpellingKey.
+const unitUsesVersion = 2
 
 // checkUnitUses is the open ladder's step: a repository whose unit uses are
 // behind this binary's rule asks the pass behind the open to derive every
@@ -661,13 +674,21 @@ func unitSpellings(u vocabulary.UnitRecord) []string {
 }
 
 // usedUnitSpellings finds which spellings of the affected units a stored
-// value or a declaration names, each with one place that names it.
+// value or a declaration names, each with one place that names it. A
+// spelling is probed and answered as its vocabulary.UnitSpellingKey, the key
+// unit_uses holds, so a value stored as `µg` is found by the unit whose code
+// is `ug`.
 func (t *txn) usedUnitSpellings(was *vocabulary.UnitGraph, affected map[string]bool) (map[string]string, error) {
-	var spellings []string
+	keys := map[string]bool{}
 	for _, id := range sortedKeys(affected) {
 		u, _ := was.Unit(id)
-		spellings = append(spellings, unitSpellings(u)...)
+		for _, s := range unitSpellings(u) {
+			if key := vocabulary.UnitSpellingKey(s); key != "" {
+				keys[key] = true
+			}
+		}
 	}
+	spellings := sortedKeys(keys)
 	used := map[string]string{}
 	rows, err := t.query(`
 		SELECT s, k FROM unnest($1::text[]) s,
@@ -714,9 +735,10 @@ func (t *txn) usedUnitSpellings(was *vocabulary.UnitGraph, affected map[string]b
 	return used, nil
 }
 
-// declaredUnitSpellings is every unit spelling a declaration names: a
-// quantity property's listed `units`, its bounds and its default, at any
-// depth, each with the property that names it.
+// declaredUnitSpellings is every unit spelling a declaration names, by its
+// vocabulary.UnitSpellingKey: a quantity property's listed `units`, its
+// bounds and its default, at any depth, each with the property that names
+// it.
 func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 	out := map[string]string{}
 	if reg == nil {
@@ -729,8 +751,9 @@ func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 		}
 		place := "the declaration of " + kind + " " + path
 		add := func(s string) {
-			if _, held := out[s]; !held && s != "" {
-				out[s] = place
+			key := vocabulary.UnitSpellingKey(s)
+			if _, held := out[key]; !held && key != "" {
+				out[key] = place
 			}
 		}
 		if q := p.Quantity; q != nil {

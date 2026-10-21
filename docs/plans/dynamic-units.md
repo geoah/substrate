@@ -313,8 +313,12 @@ The step 2 code settles these as follows.
   purge deletes them, so the guard needs no live and tombstoned split. The
   fold derives the rows from the values alone: every object with a string
   `value` and a non-empty string `unit`, at any depth, plus the top-level
-  `unit` of a kind that binds `metric` or packed `observed`. Only those two
-  cases read the declaration, so a declaration change moves no row.
+  `unit` of a kind that binds `metric` or packed `observed`. Each spelling is
+  kept as `vocabulary.UnitSpellingKey` (trimmed, both micro signs as `u`, the
+  superscript digits as ASCII), and the guard probes a unit's id, code and
+  aliases by the same key: a metric keeps the `µg` its writer sent, and that
+  is a use of the unit whose code is `ug`. The stored value is not
+  rewritten. Rule version 2 (`unitUsesVersion`) is this keying.
 - A reference to a unit record is read from `refs` (any source kind but
   `conversion`), not copied into `unit_uses`. A declaration's listed `units`,
   `min`, `max` and quantity `default` are read from the transaction's

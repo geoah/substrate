@@ -663,3 +663,21 @@ func TestFormatRationalReadsBack(t *testing.T) {
 		}
 	}
 }
+
+// A stored spelling's key is the form Resolve tries last: trimmed, both micro
+// signs as u, the superscript digits as ASCII, a power of ten as UCUM's 10*.
+func TestUnitSpellingKey(t *testing.T) {
+	for in, want := range map[string]string{
+		" kg ":   "kg",
+		"µg":     "ug",
+		"μg":     "ug",
+		"m²":     "m2",
+		"10³/μL": "10*3/uL",
+		"ug":     "ug",
+		"  ":     "",
+	} {
+		if got := vocabulary.UnitSpellingKey(in); got != want {
+			t.Errorf("UnitSpellingKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

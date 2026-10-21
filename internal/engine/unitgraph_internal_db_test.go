@@ -613,3 +613,74 @@ func TestUnitUsesAreDerivedBehindTheOpen(t *testing.T) {
 	}
 	wantConflict(t, "a split once the uses are derived", deleteRecord(ds, vocabulary.KindConversion, "lb-g", false), "leaves")
 }
+
+// sampleMetricKind imports the observations sample and answers its metric
+// kind, whose `unit` keeps the spelling its writer sent.
+func sampleMetricKind(t *testing.T, ds *dataset) string {
+	t.Helper()
+	importVocabulary(t, ds, "observations")
+	for _, k := range ds.registry().Kinds() {
+		if strings.HasSuffix(k.Identity, "/observations/metric") {
+			return k.Identity
+		}
+	}
+	t.Fatal("the observations sample brought no metric kind")
+	return ""
+}
+
+// A stored spelling counts as a use of the unit it normalizes to: a metric
+// that keeps `µg` (the micro sign) or `μg` (the Greek mu, on a tombstone)
+// uses ug, whose own spellings are `ug` and `mcg`, and one that keeps `m²`
+// uses m2. Deleting either unit is refused until those values are purged.
+func TestANormalizedSpellingIsAUse(t *testing.T) {
+	t.Parallel()
+	ds := openUnitsDataset(t)
+	metric := sampleMetricKind(t, ds)
+	ctx := context.Background()
+	putUnit(t, ds, "ug", map[string]any{"name": "microgram", "code": "ug", "aliases": []any{"mcg"}})
+	putConversion(t, ds, "ug-g", "ug", "g", map[string]any{"factor": "0.000001"})
+	putUnit(t, ds, "m2", map[string]any{"name": "square meter", "code": "m2"})
+	for _, m := range []struct{ id, measures, unit string }{
+		{"micro_sign", "mass", "µg"},
+		{"greek_mu", "mass", "μg"},
+		{"square", "area", "m²"},
+	} {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: m.id, Properties: map[string]any{
+			"name": m.id, "measures": m.measures, "unit": m.unit, "form": "gauge",
+		}}); err != nil {
+			t.Fatalf("put the metric %s: %v", m.id, err)
+		}
+		rec, err := ds.Get(ctx, metric, m.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Properties["unit"]; got != m.unit {
+			t.Fatalf("the metric %s stores unit %q, want the %q its writer sent", m.id, got, m.unit)
+		}
+	}
+	if err := deleteRecord(ds, metric, "greek_mu", false); err != nil {
+		t.Fatalf("tombstone the metric: %v", err)
+	}
+	deleteUG := func() error {
+		return ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+			for _, ref := range []eref{{vocabulary.KindConversion, "ug-g"}, {vocabulary.KindUnit, "ug"}} {
+				if _, err := tx.softDelete(ref); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	wantConflict(t, "a micro sign", deleteUG(), "a stored value of "+metric)
+	wantConflict(t, "a superscript", deleteRecord(ds, vocabulary.KindUnit, "m2", false), "a stored value of "+metric)
+	if err := deleteRecord(ds, metric, "micro_sign", true); err != nil {
+		t.Fatalf("purge the micro sign metric: %v", err)
+	}
+	wantConflict(t, "a Greek mu on a tombstone", deleteUG(), "a stored value of "+metric)
+	if err := deleteRecord(ds, metric, "greek_mu", true); err != nil {
+		t.Fatalf("purge the tombstone: %v", err)
+	}
+	if err := deleteUG(); err != nil {
+		t.Errorf("delete ug once its last use is purged: %v", err)
+	}
+}
