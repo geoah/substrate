@@ -609,16 +609,6 @@ var refusedSpellings = map[string]string{
 	"count": "a bare count names nothing counted: write the annotation for what was counted, such as `{steps}` or `{floors}`",
 }
 
-// unitCharacters are the characters an alias lookup rewrites before it tries
-// again: both micro signs, which look alike and are two code points, and the
-// superscript digits.
-var unitCharacters = map[rune]string{
-	'µ': "u", // MICRO SIGN
-	'μ': "u", // GREEK SMALL LETTER MU
-	'²': "2",
-	'³': "3",
-}
-
 // unitPrints are the print symbols of table codes whose atom-by-atom rendering
 // is not what a reader expects to see.
 var unitPrints = map[string]string{
