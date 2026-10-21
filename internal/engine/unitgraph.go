@@ -766,7 +766,8 @@ func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 
 // Units answers the repository's units and conversions at one revision, read
 // in one snapshot: each unit with its linear component's root and its exact
-// map to it, and each conversion as written. The engine's old table rides beside them at the
+// map to it, each conversion as written, and the shipped records the last
+// seed skipped (unitseed.go). The engine's old table rides beside them at the
 // API until the switch removes it.
 func (ds *dataset) Units(ctx context.Context) (substrate.UnitTable, error) {
 	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
@@ -815,6 +816,18 @@ func (ds *dataset) unitTable(at *unitGraphAt) substrate.UnitTable {
 			rc.Offset = vocabulary.FormatRational(c.Offset)
 		}
 		out.Conversions = append(out.Conversions, rc)
+	}
+	held := map[string]bool{}
+	for _, u := range out.Units {
+		held[vocabulary.KindUnit+"/"+u.ID] = true
+	}
+	for _, c := range out.Conversions {
+		held[vocabulary.KindConversion+"/"+c.ID] = true
+	}
+	for _, s := range ds.unseededUnits() {
+		if !held[s.Kind+"/"+s.ID] {
+			out.Unseeded = append(out.Unseeded, s)
+		}
 	}
 	return out
 }
