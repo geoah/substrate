@@ -1514,3 +1514,42 @@ func TestOverflowingAnswerIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A declared default is held to what every create omitting the property
+// holds it to: a default past its bound, in another component, or holding
+// such a quantity in an object field is refused at the apply, and one the
+// declaration admits lands on a create that omits it.
+func TestDeclaredQuantityDefaultIsHeldToItsDeclaration(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	capped := func(def any) map[string]any {
+		return map[string]any{
+			"type": "quantity", "unit": "kg",
+			"max": map[string]any{"value": "10", "unit": "kg"}, "default": def,
+		}
+	}
+	for _, c := range []struct {
+		what string
+		prop map[string]any
+		want string
+	}{
+		{"past its max", capped(qty("11", "kg")), "capped.default.value"},
+		{"in another component", capped(qty("1", "K")), "K does not convert to kg"},
+		{"past its max in pounds", capped(qty("23", "lb")), "must be <= 10 kg"},
+		{"in an object field", map[string]any{
+			"type": "object", "fields": map[string]any{"mass": capped(qty("11", "kg"))},
+		}, "capped.fields.mass.default.value: must be <= 10 kg"},
+	} {
+		err := applyThing(ds, withProp(thingDeclaration(), "capped", c.prop))
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("a default %s: err = %v, want %q", c.what, err, c.want)
+		}
+	}
+	if err := applyThing(ds, withProp(thingDeclaration(), "capped", capped(qty("20", "lb")))); err != nil {
+		t.Fatalf("a default under its max: %v", err)
+	}
+	rec := putThing(t, ds, "d", map[string]any{"weight": qty("1", "kg")})
+	if storedUnit(t, rec, "capped") != "lb" {
+		t.Fatalf("the default stored %v", rec.Properties["capped"])
+	}
+}

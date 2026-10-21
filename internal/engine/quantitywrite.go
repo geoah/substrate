@@ -13,6 +13,8 @@ package engine
 // stored is never checked again by a write that does not carry it.
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -233,14 +235,14 @@ func checkGraphQuantity(g *vocabulary.UnitGraph, spec *vocabulary.QuantitySpec, 
 		}
 		in, err := convertExact(g, value, id, b.bound.Unit, delta)
 		if err != nil {
-			return fmt.Errorf("cannot compare with %s %s: %w", b.name, graphQuantityText(g, b.bound.Value, b.bound.Unit), err)
+			return fmt.Errorf("%s: cannot compare with %s %s: %w", vocabulary.QuantityValue, b.name, graphQuantityText(g, b.bound.Value, b.bound.Unit), err)
 		}
 		cmp := in.Cmp(b.bound.Rat())
 		if b.below && cmp < 0 {
-			return fmt.Errorf("must be >= %s", graphQuantityText(g, b.bound.Value, b.bound.Unit))
+			return fmt.Errorf("%s: must be >= %s", vocabulary.QuantityValue, graphQuantityText(g, b.bound.Value, b.bound.Unit))
 		}
 		if !b.below && cmp > 0 {
-			return fmt.Errorf("must be <= %s", graphQuantityText(g, b.bound.Value, b.bound.Unit))
+			return fmt.Errorf("%s: must be <= %s", vocabulary.QuantityValue, graphQuantityText(g, b.bound.Value, b.bound.Unit))
 		}
 	}
 	return nil
@@ -370,14 +372,34 @@ func declaredUnitProblems(g *vocabulary.UnitGraph, where string, p *vocabulary.P
 			}
 		}
 	}
-	if p.Default != nil {
-		seen := map[string]bool{}
-		collectQuantityUnits(p.Default, seen)
-		for _, s := range sortedKeys(seen) {
-			resolve("default", s)
-		}
+	return append(out, graphDefaultProblems(g, where, p)...)
+}
+
+// graphDefaultProblems holds a declared default to everything a create
+// that omits the property holds the value to: its shape, then every
+// quantity in it resolved and held to its declaration through the graph
+// (admitted units, bounds, `delta`). Graph-mode coercion checks the shape
+// alone, so a default only this check refuses is one every such create
+// would.
+func graphDefaultProblems(g *vocabulary.UnitGraph, where string, p *vocabulary.Property) []string {
+	if p.Default == nil || !holdsQuantity(p) {
+		return nil
 	}
-	return out
+	raw, err := json.Marshal(p.Default)
+	if err != nil {
+		return []string{fmt.Sprintf("%s.default: %v", where, err)}
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return []string{fmt.Sprintf("%s.default: %v", where, err)}
+	}
+	coerced, err := coercer{graphUnits: true}.value(p, v)
+	if err != nil {
+		return []string{fmt.Sprintf("%s.default: %v", where, err)}
+	}
+	return resolveQuantityValues(g, p, coerced, where+".default", false)
 }
 
 // resolveDefault resolves the units of a coerced default a conversion or a
