@@ -11,8 +11,10 @@ package engine
 // rule, the human doors alone): an owner's edit and an owner's deletion
 // stand. A shipped record whose write would make the graph name a problem it
 // did not name before (a spelling the owner's own unit answers, a cycle the
-// owner's factor contradicts) is skipped and reported, so the transaction's
-// own end (checkUnitGraph) passes and the open never fails for it.
+// owner's factor contradicts), or take a unit from a stored value (a refresh
+// that splits two units records use, which the use guard refuses), is
+// skipped and reported, so the transaction's own end (checkUnitGraph) passes,
+// the rest of the seed lands, and the open never fails for it.
 
 import (
 	"bytes"
@@ -144,12 +146,30 @@ func readSeedRows(ctx context.Context, q dbx) (map[eref]seedRow, map[eref]bool, 
 	return stored, owner, errors.Join(owned.Err(), owned.Close())
 }
 
+// unseededUnit is one shipped record the last seed left unwritten. absent
+// marks one the repository did not hold live, which the answer lists only
+// while it is still absent; a refresh the seed held back is listed until the
+// next open plans again.
+type unseededUnit struct {
+	rec    substrate.UnseededRecord
+	absent bool
+}
+
+// seedUseCheck answers why the graph a seed would leave (now) takes a unit
+// from a stored value, against the graph the seed found (was), or "" where it
+// takes none. It is the transaction end's use guard (guardUnitUses), asked
+// before the writes, so a refresh it would refuse is skipped and the rest of
+// the seed lands.
+type seedUseCheck func(was, now *vocabulary.UnitGraph) (string, error)
+
 // planUnitSeed decides what the seed writes: every shipped record the
 // repository lacks or holds differently, the owner's records left out, and
-// of those every one the graph admits. It tries them all at once first and,
-// where that names a new problem, one at a time in seed order, so a
-// conversion whose unit was skipped is skipped too.
-func planUnitSeed(shipped []shippedUnitRecord, stored map[eref]seedRow, owner map[eref]bool) ([]shippedUnitRecord, []substrate.UnseededRecord) {
+// of those every one the graph admits and uses admits (nil checks no use).
+// It tries them all at once first and, where that names a new problem or a
+// use the graph would take, one at a time in seed order, so a conversion
+// whose unit was skipped is skipped too, and a refresh that would split
+// units stored values use is skipped alone.
+func planUnitSeed(shipped []shippedUnitRecord, stored map[eref]seedRow, owner map[eref]bool, uses seedUseCheck) ([]shippedUnitRecord, []unseededUnit, error) {
 	live := map[eref]map[string]any{}
 	for ref, r := range stored {
 		if !r.deleted {
@@ -168,7 +188,7 @@ func planUnitSeed(shipped []shippedUnitRecord, stored map[eref]seedRow, owner ma
 		cands = append(cands, s)
 	}
 	if len(cands) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	written := func(set map[eref]map[string]any, s shippedUnitRecord) map[eref]map[string]any {
 		next := make(map[eref]map[string]any, len(set)+1)
@@ -187,28 +207,56 @@ func planUnitSeed(shipped []shippedUnitRecord, stored map[eref]seedRow, owner ma
 		next[s.ref()] = merged
 		return next
 	}
-	base := seedProblems(live)
+	useProblem := func(was, now *vocabulary.UnitGraph) (string, error) {
+		if uses == nil {
+			return "", nil
+		}
+		return uses(was, now)
+	}
+	was, base := seedGraph(live)
 	all := live
 	for _, c := range cands {
 		all = written(all, c)
 	}
-	if len(newProblems(seedProblems(all), base)) == 0 {
-		return cands, nil
+	allGraph, allProblems := seedGraph(all)
+	if len(newProblems(allProblems, base)) == 0 {
+		why, err := useProblem(was, allGraph)
+		if err != nil {
+			return nil, nil, err
+		}
+		if why == "" {
+			return cands, nil, nil
+		}
 	}
 	var writes []shippedUnitRecord
-	var skipped []substrate.UnseededRecord
+	var skipped []unseededUnit
+	skip := func(c shippedUnitRecord, reason string) {
+		r, held := stored[c.ref()]
+		skipped = append(skipped, unseededUnit{
+			rec:    substrate.UnseededRecord{Kind: c.kind, ID: c.id, Reason: reason},
+			absent: !held || r.deleted,
+		})
+	}
 	cur, curP := live, base
 	for _, c := range cands {
 		next := written(cur, c)
-		p := seedProblems(next)
+		g, p := seedGraph(next)
 		if fresh := newProblems(p, curP); len(fresh) > 0 {
-			skipped = append(skipped, substrate.UnseededRecord{Kind: c.kind, ID: c.id, Reason: strings.Join(fresh, "; ")})
+			skip(c, strings.Join(fresh, "; "))
+			continue
+		}
+		why, err := useProblem(was, g)
+		if err != nil {
+			return nil, nil, err
+		}
+		if why != "" {
+			skip(c, why)
 			continue
 		}
 		writes = append(writes, c)
 		cur, curP = next, p
 	}
-	return writes, skipped
+	return writes, skipped, nil
 }
 
 // coversProps reports whether a put of shipped onto a row holding stored
@@ -222,8 +270,9 @@ func coversProps(stored, shipped map[string]any) bool {
 	return true
 }
 
-// seedProblems is every problem the graph of a set of rows names, as text.
-func seedProblems(set map[eref]map[string]any) map[string]bool {
+// seedGraph is the graph of a set of rows and every problem it names, as
+// text.
+func seedGraph(set map[eref]map[string]any) (*vocabulary.UnitGraph, map[string]bool) {
 	refs := make([]eref, 0, len(set))
 	for ref := range set {
 		refs = append(refs, ref)
@@ -248,11 +297,11 @@ func seedProblems(set map[eref]map[string]any) map[string]bool {
 			convs = append(convs, *c)
 		}
 	}
-	_, problems := vocabulary.BuildUnitGraph(units, convs)
+	g, problems := vocabulary.BuildUnitGraph(units, convs)
 	for _, p := range problems {
 		out[p.Error()] = true
 	}
-	return out
+	return g, out
 }
 
 // newProblems lists the problems of now that was does not name, sorted.
@@ -268,38 +317,53 @@ func newProblems(now, was map[string]bool) []string {
 }
 
 // seedUnits writes the seed inside the transaction, as its actor, and
-// answers what it skipped. A binary whose tree declares neither kind, or a
-// service that seeds no units, writes nothing.
-func (t *txn) seedUnits() ([]substrate.UnseededRecord, error) {
+// answers how many records it wrote and what it skipped. A binary whose tree
+// declares neither kind, or a service that seeds no units, writes nothing.
+func (t *txn) seedUnits() (int, []unseededUnit, error) {
 	if !t.ds.svc.seedUnits {
-		return nil, nil
+		return 0, nil, nil
 	}
 	for _, kind := range []string{vocabulary.KindUnit, vocabulary.KindConversion} {
 		if _, err := t.resolveType(kind); err != nil {
-			return nil, nil
+			return 0, nil, nil
 		}
 	}
 	shipped, err := shippedUnitRecords()
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	stored, owner, err := readSeedRows(t.ctx, t.tx)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
-	writes, skipped := planUnitSeed(shipped, stored, owner)
+	writes, skipped, err := planUnitSeed(shipped, stored, owner, t.seedUseProblem)
+	if err != nil {
+		return 0, nil, err
+	}
 	for _, w := range writes {
 		if _, err := t.put(substrate.PutInput{Kind: w.kind, ID: w.id, Properties: w.props}); err != nil {
-			return nil, fmt.Errorf("substrate/engine: seed %s %s: %w", w.kind, w.id, err)
+			return 0, nil, fmt.Errorf("substrate/engine: seed %s %s: %w", w.kind, w.id, err)
 		}
 	}
-	return skipped, nil
+	return len(writes), skipped, nil
+}
+
+// seedUseProblem is the use guard as the seed plan asks it: a conflict is
+// the reason a record is skipped, any other error ends the seed.
+func (t *txn) seedUseProblem(was, now *vocabulary.UnitGraph) (string, error) {
+	err := t.guardUnitUses(was, now)
+	if err == nil || !errors.Is(err, substrate.ErrConflict) {
+		return "", err
+	}
+	return strings.TrimPrefix(err.Error(), substrate.ErrConflict.Error()+": "), nil
 }
 
 // ensureShippedUnits is the open's catch-up: the plan is read outside any
 // transaction first, so an open with nothing to seed takes no changelog
-// lock, and the seed transaction plans again under it. A failure is logged
-// and never fails the open: the repository opens on the units it holds.
+// lock, and the seed transaction plans again under it, the use guard
+// included. A failure is logged and never fails the open: the repository
+// opens on the units it holds, and every record the seed meant to write is
+// listed as unseeded with the failure.
 func (ds *dataset) ensureShippedUnits(ctx context.Context) error {
 	if ds.svc.readOnly || !ds.svc.seedUnits {
 		return nil
@@ -318,36 +382,67 @@ func (ds *dataset) ensureShippedUnits(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	writes, skipped := planUnitSeed(shipped, stored, owner)
+	writes, skipped, err := planUnitSeed(shipped, stored, owner, nil)
+	if err != nil {
+		return err
+	}
 	if len(writes) > 0 {
+		var n int
+		var planned []unseededUnit
 		err := ds.inTx(ctx, substrate.ActorSeed, true, func(t *txn) error {
-			s, err := t.seedUnits()
-			skipped = s
+			var err error
+			n, planned, err = t.seedUnits()
 			return err
 		})
 		if err != nil {
 			ds.svc.log.Error("substrate: the shipped units could not be seeded; the repository opens on the units it holds",
 				"repository", ds.scope.Repository, "error", err)
-			return nil
+			if planned != nil {
+				skipped = planned
+			}
+			skipped = append(skipped, failedSeed(writes, stored, skipped, err)...)
+		} else {
+			skipped = planned
+			ds.svc.log.Info("substrate: seeded the shipped units", "repository", ds.scope.Repository, "records", n)
 		}
-		ds.svc.log.Info("substrate: seeded the shipped units", "repository", ds.scope.Repository, "records", len(writes)-len(skipped))
 	}
 	for _, s := range skipped {
-		ds.svc.log.Warn("substrate: a shipped unit record contradicts the repository's graph and was not seeded",
-			"repository", ds.scope.Repository, "kind", s.Kind, "id", s.ID, "reason", s.Reason)
+		ds.svc.log.Warn("substrate: a shipped unit record was not seeded",
+			"repository", ds.scope.Repository, "kind", s.rec.Kind, "id", s.rec.ID, "reason", s.rec.Reason)
 	}
 	ds.setUnseededUnits(skipped)
 	return nil
 }
 
-func (ds *dataset) setUnseededUnits(s []substrate.UnseededRecord) {
-	ds.unseededMu.Lock()
-	defer ds.unseededMu.Unlock()
-	ds.unseeded = append([]substrate.UnseededRecord(nil), s...)
+// failedSeed lists each planned write a failed seed transaction left
+// unwritten, the ones already listed aside, with the failure as its reason.
+func failedSeed(writes []shippedUnitRecord, stored map[eref]seedRow, listed []unseededUnit, cause error) []unseededUnit {
+	held := map[eref]bool{}
+	for _, s := range listed {
+		held[eref{Kind: s.rec.Kind, ID: s.rec.ID}] = true
+	}
+	var out []unseededUnit
+	for _, w := range writes {
+		if held[w.ref()] {
+			continue
+		}
+		r, ok := stored[w.ref()]
+		out = append(out, unseededUnit{
+			rec:    substrate.UnseededRecord{Kind: w.kind, ID: w.id, Reason: "the seed transaction failed and wrote nothing: " + cause.Error()},
+			absent: !ok || r.deleted,
+		})
+	}
+	return out
 }
 
-func (ds *dataset) unseededUnits() []substrate.UnseededRecord {
+func (ds *dataset) setUnseededUnits(s []unseededUnit) {
 	ds.unseededMu.Lock()
 	defer ds.unseededMu.Unlock()
-	return append([]substrate.UnseededRecord(nil), ds.unseeded...)
+	ds.unseeded = append([]unseededUnit(nil), s...)
+}
+
+func (ds *dataset) unseededUnits() []unseededUnit {
+	ds.unseededMu.Lock()
+	defer ds.unseededMu.Unlock()
+	return append([]unseededUnit(nil), ds.unseeded...)
 }

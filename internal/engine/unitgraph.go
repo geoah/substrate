@@ -871,8 +871,8 @@ func (ds *dataset) unitTable(at *unitGraphAt) substrate.UnitTable {
 		held[vocabulary.KindConversion+"/"+c.ID] = true
 	}
 	for _, s := range ds.unseededUnits() {
-		if !held[s.Kind+"/"+s.ID] {
-			out.Unseeded = append(out.Unseeded, s)
+		if !s.absent || !held[s.rec.Kind+"/"+s.rec.ID] {
+			out.Unseeded = append(out.Unseeded, s.rec)
 		}
 	}
 	return out

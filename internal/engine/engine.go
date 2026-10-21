@@ -1465,7 +1465,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		}
 		// The shipped units, onto the kinds the seed just declared. A fresh
 		// repository holds nothing they could contradict.
-		if _, err := t.seedUnits(); err != nil {
+		if _, _, err := t.seedUnits(); err != nil {
 			return err
 		}
 		// Every row a creation writes is indexed under this binary's rules,

@@ -684,3 +684,52 @@ func TestANormalizedSpellingIsAUse(t *testing.T) {
 		t.Errorf("delete ug once its last use is purged: %v", err)
 	}
 }
+
+// A seed transaction that fails writes nothing, the open goes on, and every
+// record it meant to write and the repository still lacks is listed as
+// unseeded with the failure; a record the owner holds is not.
+func TestAFailedSeedListsWhatItLeftAbsent(t *testing.T) {
+	t.Parallel()
+	ds := openUnitsDataset(t)
+	ctx := context.Background()
+	ds.svc.seedUnits = true
+	ds.svc.testCommitFault = func(stage string) error {
+		if stage == commitAfterPrepare {
+			return errors.New("the disk is full")
+		}
+		return nil
+	}
+	err := ds.ensureShippedUnits(ctx)
+	ds.svc.testCommitFault = nil
+	if err != nil {
+		t.Fatalf("a failed seed failed the open: %v", err)
+	}
+	tab, err := ds.Units(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]string{}
+	for _, s := range tab.Unseeded {
+		listed[s.Kind+"/"+s.ID] = s.Reason
+	}
+	for _, ref := range []string{vocabulary.KindUnit + "/oz", vocabulary.KindConversion + "/oz-kg"} {
+		if r := listed[ref]; !strings.Contains(r, "the disk is full") {
+			t.Errorf("%s: listed for %q, want the failure named", ref, r)
+		}
+	}
+	if _, ok := listed[vocabulary.KindUnit+"/kg"]; ok {
+		t.Errorf("the owner's kg is listed as unseeded: %v", listed)
+	}
+	if _, ok := unitOf(tab, "oz"); ok {
+		t.Error("the failed seed wrote oz")
+	}
+}
+
+func unitOf(tab substrate.UnitTable, id string) (substrate.RepositoryUnit, bool) {
+	for _, u := range tab.Units {
+		if u.ID == id {
+			return u, true
+		}
+	}
+	return substrate.RepositoryUnit{}, false
+}

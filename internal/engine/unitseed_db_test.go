@@ -214,6 +214,72 @@ func TestSeedSkipsAConflictingShippedEdge(t *testing.T) {
 	}
 }
 
+// installPointers declares one kind whose `to` references a unit record, a
+// use of that unit the guard reads from refs.
+func installPointers(t *testing.T, ds substrate.Dataset) string {
+	t.Helper()
+	const pkg = "units.test.dev/pointers"
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+		Name: "pointers", Authority: pkg,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "pointer"}, map[string]any{
+				"properties": map[string]any{"to": map[string]any{"type": "reference", "kind": vocabulary.KindUnit}},
+			}),
+		},
+	}); err != nil {
+		t.Fatalf("install the pointer kind: %v", err)
+	}
+	return pkg + "/pointer"
+}
+
+// A writer other than the owner retargets the shipped oz-kg to two custom
+// units that records then use. The next open's refresh of oz-kg would split
+// them, so it is skipped and listed, open after open, while the rest of the
+// seed lands: a deleted shipped unit and its conversion come back and an
+// edited one is repaired.
+func TestSeedSkipsARefreshThatSplitsUsedUnits(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn, root := unitSeededRepository(t, true)
+	pointer := installPointers(t, ds)
+	ctx := context.Background()
+	unit := func(id string) map[string]any { return map[string]any{"ref": vocabulary.KindUnit + "/" + id} }
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "widget", Properties: map[string]any{"name": "widget"}})
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "gadget", Properties: map[string]any{"name": "gadget"}})
+	mustPut(t, ds, substrate.ActorSystem, substrate.PutInput{Kind: vocabulary.KindConversion, ID: "oz-kg", Properties: map[string]any{
+		"from": unit("widget"), "to": unit("gadget"), "factor": "2",
+	}})
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: "w", Properties: map[string]any{"to": unit("widget")}})
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: "g", Properties: map[string]any{"to": unit("gadget")}})
+	for _, ref := range []struct{ kind, id string }{{vocabulary.KindConversion, "st-kg"}, {vocabulary.KindUnit, "st"}} {
+		if _, err := ds.Delete(ctx, substrate.ActorSystem, ref.kind, ref.id, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("another writer deletes %s: %v", ref.id, err)
+		}
+	}
+	mustPatch(t, ds, substrate.ActorSystem, vocabulary.KindUnit, "g", substrate.PatchInput{Properties: map[string]any{"name": "GRAM"}})
+
+	for open := range 2 {
+		svc, ds = reopenSeeded(t, svc, dsn, root)
+		tab := unitsOf(t, ds)
+		if c, _ := conversionByID(tab, "oz-kg"); c.From != "widget" || c.To != "gadget" {
+			t.Errorf("open %d: oz-kg = %+v, want it left from widget to gadget", open, c)
+		}
+		if len(tab.Unseeded) != 1 || tab.Unseeded[0].ID != "oz-kg" || !strings.Contains(tab.Unseeded[0].Reason, "apart") {
+			t.Errorf("open %d: unseeded = %+v, want oz-kg alone, naming the split", open, tab.Unseeded)
+		}
+		if _, ok := unitByID(tab, "st"); !ok {
+			t.Errorf("open %d: the deleted shipped unit st did not come back", open)
+		}
+		if _, ok := conversionByID(tab, "st-kg"); !ok {
+			t.Errorf("open %d: the deleted shipped conversion st-kg did not come back", open)
+		}
+		if g, _ := unitByID(tab, "g"); g.Name != "gram" {
+			t.Errorf("open %d: g's name = %q, want the shipped gram back", open, g.Name)
+		}
+	}
+}
+
 // installHolds declares one kind holding a quantity, for the tests here that
 // store a value.
 func installHolds(t *testing.T, ds substrate.Dataset) string {

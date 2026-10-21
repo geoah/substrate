@@ -224,10 +224,10 @@ type dataset struct {
 	// the window's settled spend and the repository cap, what running agent
 	// chains have charged, and which triggers are held.
 	spend spendLedger
-	// unseeded, under unseededMu, is what the last unit seed skipped
-	// (unitseed.go), which GET /api/v1/units lists.
+	// unseeded, under unseededMu, is what the last unit seed skipped or
+	// failed to write (unitseed.go), which GET /api/v1/units lists.
 	unseededMu sync.Mutex
-	unseeded   []substrate.UnseededRecord
+	unseeded   []unseededUnit
 
 	mu  sync.RWMutex
 	reg *vocabulary.Registry

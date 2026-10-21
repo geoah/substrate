@@ -365,11 +365,19 @@ The step 2 code settles these as follows.
   every shipped property is stored with an equal value. A put merges, so a
   refresh never removes a property a later seed drops. A non-owner
   tombstone is written again, which resurrects it. Conflicts are found with
-  one build of all candidates, and only if that names a new problem, one
-  build per candidate in seed order.
+  one build of all candidates, and only if that names a new problem or the
+  use guard refuses it, one build per candidate in seed order. The plan
+  inside the seed transaction asks the use guard (`guardUnitUses`, against
+  the graph the seed found) for each step, so a refresh that would split
+  units records use (a shipped conversion another writer retargeted) is
+  skipped alone and the rest of the seed lands. The plan outside the
+  transaction checks no use.
 - `unseeded` lists what the last open's seed skipped, kept in memory on the
-  dataset and filtered to records still absent. A record the owner holds is
-  never listed: that is the owner's choice, not a conflict.
+  dataset. A record the repository lacked is listed while it is still
+  absent; a refresh the seed held back is listed until the next open plans
+  again. A seed transaction that fails lists every record it meant to write
+  with the failure as the reason, and the open goes on. A record the owner
+  holds is never listed: that is the owner's choice, not a conflict.
 - `WithUnitSeed` controls the seed. It is on by default and off in
   `OpenForTest`. The testenv, providertest and catalog harnesses open with the
   production default, so they seed. The seed adds about 1.4 s to a
