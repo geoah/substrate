@@ -55,11 +55,53 @@ func ParseRational(s string) (*big.Rat, error) {
 }
 
 // FormatRational writes an exact rational the way ParseRational reads it:
-// decimal digits where the value has a finite decimal expansion ("0.45359237"),
-// else a fraction in lowest terms ("5/9").
+// decimal digits where the value has a finite decimal expansion that fits
+// MaxRationalDigits ("0.45359237"), else a fraction in lowest terms ("5/9"),
+// else a fraction with one part written as decimal digits ("1/0.3048"), so
+// every value ParseRational reads is written back as text it reads. A value
+// no form fits (a composed map past the record bound) is written in lowest
+// terms.
 func FormatRational(r *big.Rat) string {
-	if digits, exact := RatDecimal(r, ConvertedDigits); exact {
+	if digits, exact := RatDecimal(r, ConvertedDigits); exact && readsAs(digits, r) {
 		return digits
 	}
+	if s := r.RatString(); readsAs(s, r) {
+		return s
+	}
+	if s, ok := scaledRational(r); ok {
+		return s
+	}
 	return r.RatString()
+}
+
+// scaledRational writes r as a fraction with a decimal part: an integer over
+// a decimal with e places is r / 10^e in lowest terms, and a decimal with e
+// places over an integer is r * 10^e. A rational ParseRational read as
+// a/10^m over b/10^n is one of them, with e = |n - m| and parts no longer
+// than the ones it read, so the smallest e that fits is found within
+// MaxRationalDigits.
+func scaledRational(r *big.Rat) (string, bool) {
+	sign := ""
+	if r.Sign() < 0 {
+		sign = "-"
+	}
+	abs := new(big.Rat).Abs(r)
+	scale := new(big.Int)
+	for e := 1; e <= MaxRationalDigits; e++ {
+		scale.Exp(big.NewInt(10), big.NewInt(int64(e)), nil)
+		down := new(big.Rat).SetFrac(abs.Num(), new(big.Int).Mul(abs.Denom(), scale))
+		if s := sign + down.Num().String() + "/" + placePoint(down.Denom().String(), e); readsAs(s, r) {
+			return s, true
+		}
+		up := new(big.Rat).SetFrac(new(big.Int).Mul(abs.Num(), scale), abs.Denom())
+		if s := sign + placePoint(up.Num().String(), e) + "/" + up.Denom().String(); readsAs(s, r) {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+func readsAs(s string, r *big.Rat) bool {
+	got, err := ParseRational(s)
+	return err == nil && got.Cmp(r) == 0
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"testing"
@@ -602,5 +603,63 @@ func TestAnExpressionRouteKeepsTheLinearStretchExact(t *testing.T) {
 	// as zero.
 	if _, err := g.Convert(context.Background(), "1", "a0", "c", false); err == nil || !strings.Contains(err.Error(), "a0 to a6: the value converts past the range of a float") {
 		t.Errorf("1 a0 to c: %v", err)
+	}
+}
+
+// Every rational ParseRational reads, FormatRational writes as text
+// ParseRational reads back to the same value, including those whose
+// terminating decimal or lowest-terms fraction is past MaxRationalDigits.
+func TestFormatRationalReadsBack(t *testing.T) {
+	nines, tiny := strings.Repeat("9", 64), "0."+strings.Repeat("0", 62)+"1"
+	cases := map[string]string{
+		// 1/2^100 terminates in 101 digits.
+		"1/1267650600228229401496703205376":  "1/1267650600228229401496703205376",
+		"-1/1267650600228229401496703205376": "-1/1267650600228229401496703205376",
+		// 127 digits whole: no decimal and no lowest-terms fraction fits.
+		nines + "/" + tiny: nines + "/" + tiny,
+		tiny + "/" + nines: "",
+		"5/9":              "5/9",
+		"0.45359237":       "0.45359237",
+	}
+	for in, want := range cases {
+		r := gRat(t, in)
+		out := vocabulary.FormatRational(r)
+		back, err := vocabulary.ParseRational(out)
+		if err != nil || back.Cmp(r) != 0 {
+			t.Errorf("%s formats as %q, which reads as %v, %v", in, out, back, err)
+		}
+		if want != "" && out != want {
+			t.Errorf("%s formats as %q, want %q", in, out, want)
+		}
+	}
+	rnd := rand.New(rand.NewPCG(1, 2))
+	part := func() string {
+		n := 1 + rnd.IntN(vocabulary.MaxRationalDigits)
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = byte('0' + rnd.IntN(10))
+		}
+		if n > 1 && rnd.IntN(2) == 0 {
+			p := 1 + rnd.IntN(n-1)
+			return string(b[:p]) + "." + string(b[p:])
+		}
+		return string(b)
+	}
+	for range 2000 {
+		in := part()
+		if rnd.IntN(4) > 0 {
+			in += "/" + part()
+		}
+		if rnd.IntN(2) == 0 {
+			in = "-" + in
+		}
+		r, err := vocabulary.ParseRational(in)
+		if err != nil {
+			continue
+		}
+		out := vocabulary.FormatRational(r)
+		if back, err := vocabulary.ParseRational(out); err != nil || back.Cmp(r) != 0 {
+			t.Fatalf("%s formats as %q, which reads as %v, %v", in, out, back, err)
+		}
 	}
 }
