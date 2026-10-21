@@ -1704,3 +1704,32 @@ func TestKindlessFilterSkipsAnUnrelatedAnchor(t *testing.T) {
 	_, err = ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "1", "deg")})
 	wantValidation(t, "an operand no kind's anchor reaches", err, "compares against a quantity value")
 }
+
+// The apply's narrowing guard judges stored quantities through the graph:
+// a unit list that leaves out a stored unit, or a bound a stored value
+// passes once converted, is refused with the count, and the same change
+// over values it admits lands.
+func TestQuantityNarrowingCountsThroughTheGraph(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "g", map[string]any{"weight": qty("500", "g")})
+	putThing(t, ds, "l", map[string]any{"weight": qty("3", "lb")})
+	listed := withProp(thingDeclaration(), "weight", map[string]any{"type": "quantity", "unit": "kg", "units": []any{"lb"}})
+	err := applyThing(ds, listed)
+	if err == nil || !strings.Contains(err.Error(), "1 live records hold a value it refuses") {
+		t.Fatalf("a unit list leaving out g: err = %v", err)
+	}
+	capped := withProp(thingDeclaration(), "weight", map[string]any{
+		"type": "quantity", "unit": "kg", "max": map[string]any{"value": "1", "unit": "kg"},
+	})
+	err = applyThing(ds, capped)
+	if err == nil || !strings.Contains(err.Error(), "1 live records hold a value it refuses") {
+		t.Fatalf("a max of 1 kg over 3 lb: err = %v", err)
+	}
+	if err := deleteRecord(ds, thingKind, "l", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyThing(ds, capped); err != nil {
+		t.Fatalf("a max of 1 kg over 500 g: %v", err)
+	}
+}
