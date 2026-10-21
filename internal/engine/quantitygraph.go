@@ -214,11 +214,21 @@ func graphOperand(g *vocabulary.UnitGraph, raw any) (string, *big.Rat, error) {
 // unit_uses per spelling over the declaring kinds, else, for a read with no
 // table behind it, every spelling of the component.
 func (ds *dataset) usedSpellings(ctx context.Context, x dbx, b *builder, key string, g *vocabulary.UnitGraph, oid string, decls []quantityDecl) (map[string]string, error) {
+	// A stored value's spelling is what an arm matches; unit_uses keys each
+	// by vocabulary.UnitSpellingKey, so a used key answers every spelling of
+	// the component under it, the key itself included.
 	candidates := map[string]string{}
+	byKey := map[string][]string{}
 	for _, id := range g.Component(oid) {
 		u, _ := g.Unit(id)
 		for _, s := range unitSpellings(u) {
-			candidates[s] = id
+			for _, form := range []string{s, vocabulary.UnitSpellingKey(s)} {
+				if _, held := candidates[form]; !held && form != "" {
+					candidates[form] = id
+					key := vocabulary.UnitSpellingKey(form)
+					byKey[key] = append(byKey[key], form)
+				}
+			}
 		}
 	}
 	if b.rowProps != nil {
@@ -243,7 +253,7 @@ func (ds *dataset) usedSpellings(ctx context.Context, x dbx, b *builder, key str
 	for _, d := range decls {
 		kinds = append(kinds, d.kind)
 	}
-	spellings := sortedKeys(candidates)
+	spellings := sortedKeys(byKey)
 	rows, err := x.QueryContext(ctx, `
 		SELECT s FROM unnest($1::text[]) s
 		WHERE EXISTS (SELECT 1 FROM unit_uses WHERE unit = s AND kind = ANY($2::text[]))`, spellings, kinds)
@@ -253,11 +263,13 @@ func (ds *dataset) usedSpellings(ctx context.Context, x dbx, b *builder, key str
 	defer func() { _ = rows.Close() }()
 	out := map[string]string{}
 	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
+		var key string
+		if err := rows.Scan(&key); err != nil {
 			return nil, err
 		}
-		out[s] = candidates[s]
+		for _, form := range byKey[key] {
+			out[form] = candidates[form]
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
