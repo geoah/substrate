@@ -505,6 +505,45 @@ export function resultReading(
   }
 }
 
+/** The bar a result's value draws against its own first reference range
+ * (`resultReading`): only where the value is a plain number, not a bound
+ * such as `<0.5`, and every bound the range gives converts into the
+ * value's unit (another measure is said in words, never drawn). The range
+ * wears its own tone, a lab's normal range the good one, and a one-sided
+ * range of values that are never negative starts at zero, so a value
+ * under a high bound alone sits where it is, not at the padded end. */
+export function resultBar(p: Record<string, unknown>):
+  | {
+      value: number
+      unit?: string
+      band: { low?: number; high?: number; label: string; tone: RangeTone }
+      tone: "good" | "poor" | "none"
+      min?: number
+    }
+  | undefined {
+  const reading = resultReading(p)
+  if (!reading?.range || reading.comparator) return undefined
+  const { value, unit, range, tone } = reading
+  // Only a one-sided range ("under 3") starts at zero: a two-sided one
+  // keeps its band wide enough to read, its bounds clear of each other.
+  const oneSided = (range.low === undefined) !== (range.high === undefined)
+  const nonNegative = [value, range.low, range.high].every(
+    (v) => v === undefined || v >= 0
+  )
+  return {
+    value,
+    unit,
+    band: {
+      ...(range.low !== undefined ? { low: range.low } : {}),
+      ...(range.high !== undefined ? { high: range.high } : {}),
+      label: range.label,
+      tone: range.tone,
+    },
+    tone,
+    ...(oneSided && nonNegative ? { min: 0 } : {}),
+  }
+}
+
 /** A range's bounds in `unit`, where every bound it gives converts. */
 function rangeIn(
   range: Record<string, unknown> | undefined,

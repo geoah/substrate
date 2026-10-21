@@ -20,6 +20,7 @@ import {
   cellFraction,
   chartMeasured,
   chartReads,
+  changeSinceWords,
   deltaWords,
   foldedBy,
   partialItem,
@@ -35,6 +36,7 @@ import {
   spansTotalsRead,
   statsReads,
   tableParams,
+  tileHistoryParams,
   toneColor,
   toneText,
   toneSoft,
@@ -606,6 +608,7 @@ describe("the blocks of version 2 read into blocks", () => {
       orderBy: "at:desc",
       limit: 100,
       chart: false,
+      show: "rows",
       empty: "say",
     })
     expect(
@@ -773,6 +776,19 @@ describe("the blocks of version 2 read into blocks", () => {
       problemIn({ table: { kind, via: "plan", sharing: ["metric"] } })
     ).toBe(
       "This table names 2 of via, sharing and inWindow; a table names exactly one."
+    )
+  })
+
+  it("reads a table's show, rows where absent", () => {
+    const kind = WORKOUT.identity
+    expect(blockIn({ table: { kind, via: "plan" } })).toMatchObject({
+      show: "rows",
+    })
+    expect(
+      blockIn({ table: { kind, via: "plan", show: "tiles" } })
+    ).toMatchObject({ show: "tiles" })
+    expect(problemIn({ table: { kind, via: "plan", show: "cards" } })).toBe(
+      "This table's show is cards."
     )
   })
 
@@ -1836,5 +1852,77 @@ describe("scaleBaseline", () => {
       scaleBaseline(daily, "sum", { start: 0, end: 8 * 3_600_000 }).span
     ).toBe(1)
     expect(scaleBaseline(daily, "sum")).toEqual({ ...daily, span: 1 })
+  })
+})
+
+describe("a table's tiles", () => {
+  const RESULT = "example.com/lab/result"
+  const LDL = "example.com/observations/metric/lab/ldl"
+  const HDL = "example.com/observations/metric/lab/hdl"
+  const at = (id: string, metric: string, when: string): SubstrateRecord => ({
+    id,
+    kind: RESULT,
+    properties: { metric: { ref: metric }, at: when },
+    labels: {},
+    version: 1,
+    createdAt: when,
+    updatedAt: when,
+  })
+  const table = {
+    kinds: [RESULT],
+    first: 25,
+    orderBy: "at:asc",
+    filter: {
+      properties: {
+        report: { eq: "example.com/lab/report/march" },
+        about: { exists: false },
+      },
+    },
+  }
+
+  it("reads the earlier results of the listed metrics, newest first, about the same subject", () => {
+    expect(
+      tileHistoryParams(table, [
+        at("a", LDL, "2026-03-02T08:00:00Z"),
+        at("b", HDL, "2026-03-02T07:30:00Z"),
+        at("c", LDL, "2026-03-02T08:00:00Z"),
+      ])
+    ).toEqual({
+      kinds: [RESULT],
+      first: 100,
+      orderBy: "at:desc",
+      filter: {
+        properties: {
+          metric: { in: [HDL, LDL] },
+          at: { lt: "2026-03-02T07:30:00.000Z" },
+          about: { exists: false },
+        },
+      },
+    })
+  })
+
+  it("reads nothing where no result names a metric and a time", () => {
+    expect(tileHistoryParams(table, [])).toBeUndefined()
+    expect(
+      tileHistoryParams(table, [
+        { ...at("a", LDL, "2026-03-02T08:00:00Z"), properties: {} },
+      ])
+    ).toBeUndefined()
+  })
+
+  it("says a change since the previous result with its relative part, and a percent's in points", () => {
+    const then = new Date(2025, 9, 15, 9, 0).getTime()
+    expect(changeSinceWords(4.13, 3.9, then, "mmol/L")).toBe(
+      "+0.23 mmol/L (+6%) since Oct 15, 2025"
+    )
+    expect(changeSinceWords(3.5, 3.9, then, "mmol/L")).toBe(
+      "-0.4 mmol/L (-10%) since Oct 15, 2025"
+    )
+    expect(changeSinceWords(4.26, 5.26, then, "%")).toBe(
+      "-1 point since Oct 15, 2025"
+    )
+    expect(changeSinceWords(3.9, 3.9, then, "mmol/L")).toBe(
+      "No change since Oct 15, 2025"
+    )
   })
 })

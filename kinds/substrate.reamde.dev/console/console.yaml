@@ -21,4 +21,6 @@ data:
   # and sourceSelf, with start and end optional (decision record 0175).
   # 3 adds the chart's empty and the table's sharing list beside the
   # deprecated sameAs (decision record 0184).
-  version: 3
+  # 4 adds the table's show, which draws observed results as tiles
+  # (decision record 0185).
+  version: 4
