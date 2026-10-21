@@ -870,6 +870,49 @@ func quantityRereadsDeleted(path []fieldStep, cur, cand *vocabulary.Property) fu
 	})
 }
 
+// quantityDeltaFlips reports whether the candidate reads a value as a
+// difference where the current declaration reads it as an absolute value, or
+// the reverse (decision 0186).
+func quantityDeltaFlips(cur, cand *vocabulary.QuantitySpec) bool {
+	return (cur != nil && cur.Delta) != (cand != nil && cand.Delta)
+}
+
+// quantityDeltaRereadsIn judges one stored root value for a flipped `delta`
+// under the switch: true when a quantity under the declared path has a unit
+// whose linear component holds two units an offset apart, where a difference
+// and an absolute value convert to different numbers (10 Cel is 10 K as a
+// difference and 283.15 K as a temperature). A spelling the graph does not
+// resolve counts too: no graph can say how it would be reread. Before the
+// switch `delta` is inert, so nothing counts.
+func quantityDeltaRereadsIn(path []fieldStep) func(*vocabulary.UnitGraph) func([]byte) bool {
+	return func(g *vocabulary.UnitGraph) func([]byte) bool {
+		return quantityLeaves(path, func(leaf map[string]any) bool {
+			written, _ := leaf[vocabulary.QuantityUnit].(string)
+			id, ok := g.Resolve(written)
+			return !ok || affineComponent(g, id)
+		})
+	}
+}
+
+// affineComponent reports whether two units of id's linear component map to
+// its root with different offsets.
+func affineComponent(g *vocabulary.UnitGraph, id string) bool {
+	_, off, ok := g.ToRoot(id)
+	if !ok {
+		return true
+	}
+	for _, other := range g.Component(id) {
+		if _, o, ok := g.ToRoot(other); ok && o.Cmp(off) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// strandsNothing is the table path's judge for a narrowing only the graph
+// reads.
+func strandsNothing([]byte) bool { return false }
+
 // quantityLeaves is true when judge holds for any quantity-shaped value under
 // the declared path of one stored root value.
 func quantityLeaves(path []fieldStep, judge func(map[string]any) bool) func([]byte) bool {

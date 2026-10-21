@@ -1322,6 +1322,24 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 				strands: quantityRereadsDeleted(path, curP, candP),
 			})
 		}
+		if quantityDeltaFlips(curP.Quantity, candP.Quantity) {
+			deletedQuery, deletedArgs := deletedValues(ident, path[0])
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it would reread; rewrite them first",
+					ident, subject, change),
+				query:     propValuesQuery,
+				args:      []any{ident, path[0].key},
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn(path),
+			}, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d deleted records hold a value it would reread on a restore; restore and rewrite them, or wait for the collector to purge them",
+					ident, subject, change),
+				query:     deletedQuery,
+				args:      deletedArgs,
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn(path),
+			})
+		}
 	}
 	return out
 }
@@ -1384,6 +1402,22 @@ func linkConstraintNarrowings(ident, pname, lname string, refStep fieldStep, cur
 					ident, pname, lname, change),
 				query: deletedQuery, args: deletedArgs,
 				strands: quantityRereadsDeleted([]fieldStep{refStep, {key: lname}}, curL, candL),
+			})
+		}
+		if quantityDeltaFlips(curL.Quantity, candL.Quantity) {
+			deletedQuery, deletedArgs := deletedValues(ident, refStep)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it would reread; rewrite them first",
+					ident, pname, lname, change),
+				query: linkPropValuesQuery, args: []any{ident, pname, lname},
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn(path),
+			}, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d deleted records hold a value it would reread on a restore; restore and rewrite them, or wait for the collector to purge them",
+					ident, pname, lname, change),
+				query: deletedQuery, args: deletedArgs,
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn([]fieldStep{refStep, {key: lname}}),
 			})
 		}
 	}

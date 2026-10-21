@@ -1283,3 +1283,93 @@ func TestDeclarationPreviewReadsTheGraphInOneSnapshot(t *testing.T) {
 		t.Fatalf("the preview after the commit: %v %v", plan.Blockers, err)
 	}
 }
+
+// applyThing declares the thing kind with decl.
+func applyThing(ds *dataset, decl map[string]any) error {
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, thingDocs(decl))
+	return err
+}
+
+// deltaThing is the thing declaration with a `delta` quantity at the top,
+// in an object field and in a link property, and a mass difference.
+func deltaThing(delta bool) map[string]any {
+	decl := thingDeclaration()
+	props := decl["properties"].(map[string]any)
+	props["rise"] = map[string]any{"type": "quantity", "unit": "K", "delta": delta}
+	props["gain"] = map[string]any{"type": "quantity", "unit": "kg", "delta": delta}
+	props["parts"] = map[string]any{"type": "object", "fields": map[string]any{
+		"mass": map[string]any{"type": "quantity", "unit": "kg"},
+		"rise": map[string]any{"type": "quantity", "unit": "K", "delta": delta},
+	}}
+	props["peer"] = map[string]any{
+		"type": "reference", "kind": "any",
+		"properties": map[string]any{
+			"load": map[string]any{"type": "quantity", "unit": "kg"},
+			"rise": map[string]any{"type": "quantity", "unit": "K", "delta": delta},
+		},
+	}
+	return decl
+}
+
+// Flipping `delta` rereads every stored value in a unit an offset away from
+// another (10 Cel is 10 K as a difference and 283.15 K as a temperature), so
+// it is refused while a live record or a tombstone holds one, at the top, in
+// an object field and in a link property. A unit of a component with no
+// offset reads the same either way and admits the flip.
+func TestFlippedDeltaThatRereadsAValueIsRefused(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	if err := applyThing(ds, deltaThing(true)); err != nil {
+		t.Fatalf("declare the differences: %v", err)
+	}
+	putThing(t, ds, "g", map[string]any{"gain": qty("2", "lb")})
+	flip := func(name string) error {
+		decl := deltaThing(true)
+		switch name {
+		case "rise", "gain":
+			decl["properties"].(map[string]any)[name].(map[string]any)["delta"] = false
+		case "parts.rise":
+			decl["properties"].(map[string]any)["parts"].(map[string]any)["fields"].(map[string]any)["rise"].(map[string]any)["delta"] = false
+		case "peer.rise":
+			decl["properties"].(map[string]any)["peer"].(map[string]any)["properties"].(map[string]any)["rise"].(map[string]any)["delta"] = false
+		}
+		return applyThing(ds, decl)
+	}
+	if err := flip("gain"); err != nil {
+		t.Fatalf("a mass difference read as a mass: %v", err)
+	}
+	if err := applyThing(ds, deltaThing(true)); err != nil {
+		t.Fatalf("restore the declaration: %v", err)
+	}
+	for _, c := range []struct {
+		name, id string
+		props    map[string]any
+		want     string
+	}{
+		{"rise", "r", map[string]any{"rise": qty("10", "Cel")}, `property "rise" declares`},
+		{"parts.rise", "p", map[string]any{"parts": map[string]any{"rise": qty("1", "degF")}}, `object "parts" field "rise" declares`},
+		{"peer.rise", "l", map[string]any{"peer": map[string]any{"ref": thingKind + "/g", "rise": qty("1", "K")}}, `link property "rise" declares`},
+	} {
+		putThing(t, ds, c.id, c.props)
+		err := flip(c.name)
+		if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "live") || !strings.Contains(err.Error(), "reread") {
+			t.Errorf("%s flipped over a live value: err = %v", c.name, err)
+		}
+		if err := deleteRecord(ds, thingKind, c.id, false); err != nil {
+			t.Fatal(err)
+		}
+		err = flip(c.name)
+		if err == nil || !strings.Contains(err.Error(), "deleted records hold a value it would reread") {
+			t.Errorf("%s flipped over a tombstone: err = %v", c.name, err)
+		}
+		if err := deleteRecord(ds, thingKind, c.id, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := flip(c.name); err != nil {
+			t.Errorf("%s flipped once nothing holds a value: %v", c.name, err)
+		}
+		if err := applyThing(ds, deltaThing(true)); err != nil {
+			t.Fatalf("restore the declaration: %v", err)
+		}
+	}
+}
