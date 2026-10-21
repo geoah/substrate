@@ -222,7 +222,6 @@ data:
         def __init__(self, host):
             self.host = host
             self.concentrations = {}
-            self.factors = {}
             self.metric_units = {}
             self.wrote = 0
             self.deleted = 0
@@ -239,14 +238,13 @@ data:
                     (kind for kind, base in MOLAR_BASE.items() if self.host.units.converts(unit, base)), None)
             return self.concentrations[unit]
 
-        def factor(self, frm, to):
-            """What one `frm` is in `to`, two units joined by linear
-            conversions."""
+        def convert(self, value, frm, to):
+            """value in `frm` as a Decimal in `to`, two units joined by linear
+            conversions. The value itself goes through the host, never a
+            factor read off one unit: a conversion may carry an offset."""
             if frm == to:
-                return Decimal(1)
-            if (frm, to) not in self.factors:
-                self.factors[(frm, to)] = Decimal(_digits(self.host.units.convert("1", frm, to)))
-            return self.factors[(frm, to)]
+                return value
+            return Decimal(_digits(self.host.units.convert(value, frm, to)))
 
         def target_unit(self, path):
             """The unit id a metric's `unit` reference names, or None."""
@@ -271,9 +269,9 @@ data:
                 source, target = self.concentration(frm), self.concentration(unit)
                 if grams <= 0 or {source, target} != {MASS, AMOUNT}:
                     return None
-                base = x * self.factor(frm, MOLAR_BASE[source])
+                base = self.convert(x, frm, MOLAR_BASE[source])
                 out = base / grams if source == MASS else base * grams
-                return out * self.factor(MOLAR_BASE[target], unit), {"molarMass": _text(grams)}
+                return self.convert(out, MOLAR_BASE[target], unit), {"molarMass": _text(grams)}
             if formula in AFFINE:
                 params = conversion.get("parameters") or {}
                 if params.get("slope") is None or params.get("intercept") is None:
@@ -282,9 +280,9 @@ data:
                 reads, writes = AFFINE[formula]
                 if not self.host.units.converts(frm, reads) or not self.host.units.converts(unit, writes):
                     return None
-                x = x * self.factor(frm, reads)
+                x = self.convert(x, frm, reads)
                 out = (x - intercept) * slope if formula == "ngsp-to-ifcc" else x / slope + intercept
-                return out * self.factor(writes, unit), {"slope": _text(slope), "intercept": _text(intercept)}
+                return self.convert(out, writes, unit), {"slope": _text(slope), "intercept": _text(intercept)}
             return None
 
         def ranges(self, formula, analyte, conversion, ranges, unit, converted):

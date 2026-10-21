@@ -8,6 +8,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"os/exec"
 	"testing"
 
@@ -121,28 +122,7 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	}
 	r := openObserved(t)
 	ctx := context.Background()
-	drain := func() {
-		t.Helper()
-		for range 20 {
-			n, err := r.ds.ProcessTriggers(ctx)
-			if err != nil {
-				t.Fatalf("process triggers: %v", err)
-			}
-			if n == 0 {
-				statuses, err := r.ds.TriggerStatuses(ctx)
-				if err != nil {
-					t.Fatalf("trigger statuses: %v", err)
-				}
-				for _, st := range statuses {
-					if st.Parked > 0 {
-						t.Fatalf("%s parked %d: %s", st.ID, st.Parked, st.LastParkedError)
-					}
-				}
-				return
-			}
-		}
-		t.Fatal("the trigger chain did not drain")
-	}
+	drain := func() { t.Helper(); drainTriggers(t, r.ds) }
 	derivedOf := func(input string) []*substrate.Record {
 		t.Helper()
 		page, err := r.ds.List(ctx, substrate.Query{Filter: substrate.Filter{
@@ -253,6 +233,108 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	if n := len(derivedOf("quest/2026-09-14/a1c")); n != 1 {
 		t.Errorf("the HbA1c has %d derived results, want its one", n)
 	}
+}
+
+// drainTriggers runs the trigger chain until it is idle, failing on a parked
+// delivery.
+func drainTriggers(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	ctx := context.Background()
+	for range 20 {
+		n, err := ds.ProcessTriggers(ctx)
+		if err != nil {
+			t.Fatalf("process triggers: %v", err)
+		}
+		if n == 0 {
+			statuses, err := ds.TriggerStatuses(ctx)
+			if err != nil {
+				t.Fatalf("trigger statuses: %v", err)
+			}
+			for _, st := range statuses {
+				if st.Parked > 0 {
+					t.Fatalf("%s parked %d: %s", st.ID, st.Parked, st.LastParkedError)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("the trigger chain did not drain")
+}
+
+// convertlab converts the values themselves through the repository's graph,
+// so a conversion with an offset moves a result by the offset once: 2.000
+// assay is 12 g/L (assay * 1 + 10), 6 mol/L over a molar mass of 2, and 6005
+// amtx (mol/L * 1000 + 5). Scaling by what one unit converts to would read
+// 2 assay as 22 g/L and write 11055 amtx. The reference range moves the same
+// way, each bound on its own.
+func TestConvertLabConvertsThroughAffineConversions(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is not on PATH; the health sample's function cannot run")
+	}
+	r := openObserved(t)
+	ds := r.ds
+	putUnitRecord(t, ds, "assay", map[string]any{"name": "assay unit"})
+	putUnitRecord(t, ds, "amtx", map[string]any{"name": "amount unit"})
+	putConversionRecord(t, ds, "assay-gl", "assay", "g/L", map[string]any{"factor": "1", "offset": "10"})
+	putConversionRecord(t, ds, "moll-amtx", "mol/L", "amtx", map[string]any{"factor": "1000", "offset": "5"})
+	metric := func(id, name, unit string) {
+		t.Helper()
+		if _, err := r.put(t, r.metric, id, map[string]any{
+			"name": name, "unit": map[string]any{"ref": vocabulary.KindUnit + "/" + unit},
+			"form": "gauge", "hold": "PT0S", "reducers": []any{"last"},
+		}); err != nil {
+			t.Fatalf("put the metric %s: %v", id, err)
+		}
+	}
+	metric("test/assay_mass", "assay (mass)", "assay")
+	metric("test/assay_amount", "assay (amount)", "amtx")
+	home := testdb.Repository(t)
+	if _, err := r.put(t, home+"/health/analyte", "test/assay", map[string]any{
+		"metric":    r.metricRef("test/assay_mass"),
+		"molarMass": "2",
+		"conversions": []any{map[string]any{
+			"target": r.metricRef("test/assay_amount"), "formula": "molar-mass", "version": "1",
+		}},
+	}); err != nil {
+		t.Fatalf("put the analyte: %v", err)
+	}
+	if _, err := r.put(t, r.labresult, "lab/assay", map[string]any{
+		"metric": r.metricRef("test/assay_mass"), "form": "gauge", "hold": "PT0S",
+		"value": quantity("2.000", "assay"), "at": "2026-09-14T08:05:00-04:00", "utcOffset": -240,
+		"status": "final", "revision": 1,
+		"referenceRanges": []any{map[string]any{"low": quantity("1.000", "assay"), "high": quantity("4.000", "assay")}},
+	}); err != nil {
+		t.Fatalf("put the result: %v", err)
+	}
+	drainTriggers(t, ds)
+	got := r.get(t, r.labresult, "lab/assay/as/test/assay_amount").Properties
+	equal := func(what string, q any, want string) {
+		t.Helper()
+		m, _ := q.(map[string]any)
+		v, _ := m["value"].(string)
+		have, ok := new(big.Rat).SetString(v)
+		if !ok || have.Cmp(mustRat(t, want)) != 0 || m["unit"] != "amtx" {
+			t.Errorf("%s = %v, want %s amtx", what, q, want)
+		}
+	}
+	equal("the derived value", got["value"], "6005")
+	rng, _ := got["referenceRanges"].([]any)
+	if len(rng) != 1 {
+		t.Fatalf("derived ranges = %v, want one", got["referenceRanges"])
+	}
+	bounds := rng[0].(map[string]any)
+	equal("the derived low bound", bounds["low"], "5505")
+	equal("the derived high bound", bounds["high"], "7005")
+}
+
+func mustRat(t *testing.T, s string) *big.Rat {
+	t.Helper()
+	r, ok := new(big.Rat).SetString(s)
+	if !ok {
+		t.Fatalf("not a number: %q", s)
+	}
+	return r
 }
 
 // storedPath is a stored reference's record path, in either spelling.
