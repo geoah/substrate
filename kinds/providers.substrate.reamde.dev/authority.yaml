@@ -1,7 +1,8 @@
 # The authority the shipped PROVIDER packages publish under: google, github,
-# linear, notion, whoop, beeper, slack and slacklive, one package each. A provider mirrors an
+# linear, notion, whoop, beeper, slack, slacklive and apple, one package each. A provider mirrors an
 # external service into the graph and its publisher ships the migration, so the
-# packages upgrade independently of one another under this one name.
+# packages upgrade independently of one another under this one name. Apple is
+# the one whose records a device pushes; its package declares kinds only.
 kind: substrate.reamde.dev/core/authority
 metadata:
   id: providers.substrate.reamde.dev

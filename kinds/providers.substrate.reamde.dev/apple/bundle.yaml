@@ -1,0 +1,512 @@
+# The Apple bundle: Apple data a DEVICE PUSHES, mirrored as first-class
+# objects in Apple's own shape.
+#
+# THE FIRST PUSHED PROVIDER. Every other package under this authority pulls:
+# an OAuth or token account, a sync function and its triggers. Apple's data
+# lives on the owner's devices behind on-device frameworks (Contacts today,
+# HealthKit later), with no server API to call, so the direction is reversed:
+# an app on the device reads the framework and writes rows here with the
+# owner's own token, one way, through the ordinary record routes:
+#
+#   PUT    /api/v1/providers.substrate.reamde.dev/apple/<kind>/<id>
+#   PATCH  the same path, a key set to null to clear what vanished upstream
+#   DELETE the same path, for a row gone from the device
+#
+# Nothing here reads back, and nothing runs server-side: the package declares
+# KINDS ONLY. No config, no account, no input, no `oauth2:` block, no
+# function and no `triggers.yaml`. The device is the sync; the `addressbook`
+# row is where it reports, the way an account row reports for a pulled
+# provider.
+#
+# WHY THE PACKAGE IS `apple` AND NOT `contacts`. A package is the unit one
+# publisher versions, so it is named for the source (as `google` holds four
+# products), and Apple Health adds its kinds here beside these. A product's
+# kinds carry its product's stem when there is more than one product:
+# `addressbook` and `contact` are the Contacts framework's; Health's will be
+# its own.
+#
+# THE RULES, the same ones the google preamble states:
+#   - the kind IS the object, complete: every `CNContact` key this version
+#     reads is a top-level property under Apple's own name, typed;
+#   - no `raw`: no `json` blob of the payload anywhere in the closure;
+#   - no derived property, except that `displayName` is Apple's OWN
+#     derivation (`CNContactFormatter`, `.fullName`), which the device runs
+#     and the server never recomputes;
+#   - no consumer slot: no `person`, no `task`. The link a `recordmapping`
+#     makes is the mapping's, and the engine synthesises its subject slot;
+#   - every relation is a reference: `contact.addressbook`.
+#
+# WHAT IS LEFT OUT, and why, so nobody reads the gaps as an oversight:
+#   - `note`: reading it needs Apple's `com.apple.developer.contacts.notes`
+#     entitlement, granted on request;
+#   - `imageData` / `thumbnailImageData`: bytes, which arrive later as a blob
+#     reference rather than inline;
+#   - `nonGregorianBirthday`: a birthday in another calendar, which needs the
+#     calendar identifier beside it to mean anything;
+#   - `CNLabeledValue.identifier`: the per-entry id is device-local like the
+#     contact's own, and nothing addresses an entry by it.
+#
+# IDS ARE COMPUTED ON THE DEVICE, with the same algorithm as
+# `host.ids.external` (internal/runner/ids.go, `ExternalID`), so a re-push
+# upserts rather than duplicates:
+#   addressbook: ExternalID("apple", "addressbook", <install UUID, lowercase>)
+#   contact:     ExternalID("apple", <addressbook id>, <CNContact.identifier>)
+# `CNContact.identifier` is unique per contact STORE, not globally, which is
+# why the address book's id is the account component. The README carries the
+# recipe and test vectors for the Swift port.
+#
+# WHO MAY WRITE. A token has full access to its repository, and a PUBLISHED
+# package refuses only DECLARATION writes (authorizeDeclarationWrite): the
+# data records of its kinds are the repository's. No property here declares
+# a `writer:` restriction, so the owner's token writes every one.
+#
+# This file is the whole closure; there is no delivery wiring to ship beside
+# it.
+# ---- the owned package --------------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/apple
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  # 1: `addressbook` and `contact`, the Contacts framework pushed by a device.
+  version: 1
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the package's schema members. No input and no
+# `oauth2:` block: nothing server-side calls Apple, so there is no client to
+# configure and no credential to hold.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/apple
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    Keeps a copy of the contacts on your iPhone, pushed by an app on the device
+    in Apple's own shape. One way: nothing is ever written back to the phone.
+  installs:
+    - providers.substrate.reamde.dev/apple/addressbook
+    - providers.substrate.reamde.dev/apple/contact
+---
+# ---- one device's contact store -------------------------------------------
+# One row per contact store on one install of the pushing app. It is the
+# scope `CNContact.identifier` is unique in, so it is the account component
+# of every contact id, and deleting it collects its contacts (the contact's
+# reference cascades).
+#
+# Its three properties are the device's report on itself: what to call it,
+# when it last pushed, and how many contacts that push held. The install
+# UUID the id hashes is not stored: the app keeps it, and the id is already
+# the row's identity.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/addressbook
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    The contacts on one of your Apple devices. One row per install of the
+    app that pushes them: the contact store a CNContact.identifier is unique
+    in, so every contact from that device points here.
+  purpose: supporting
+  names:
+    singular: addressbook
+  label:
+    singular: Address book
+    plural: Address books
+  displayTemplate: "{deviceName|id}"
+  properties:
+    deviceName:
+      type: string
+      displayName: Device name
+      description: >-
+        the device's name as the app reads it (`UIDevice.name`); absent when
+        the app sent none.
+    contactCount:
+      type: int
+      min: 0
+      displayName: Contact count
+      description: >-
+        how many contacts the device's last complete push held.
+    # --- instants ---------------------------------------------------------
+    lastSyncedAt:
+      type: datetime
+      displayName: Last synced
+      description: >-
+        when the device last finished pushing this address book.
+---
+# ---- one Apple contact: a `CNContact`, field for field ----------------------
+# Every property is the `CNContact` key of the same name (`CNContactGivenNameKey`
+# is `givenName`), with two additions that are not Apple's keys: `addressbook`
+# (the row this contact came from) and `displayName` (the formatter's output,
+# see the preamble).
+#
+# Contacts are sparse, so everything but the identity is optional. An EMPTY
+# string or list is written as absent by the device, never as "": a cleared
+# field is a PATCH to null.
+#
+# THE LABELS. Every labeled array entry carries `label` as a plain string,
+# because Apple's set is open (any custom word is legal). The device sends a
+# built-in label as a fixed English word whatever its language, so
+# `_$!<Mobile>!$_` always arrives as "mobile", and a custom label arrives as
+# the owner typed it. Absent when the entry has no label.
+#
+# `emailAddresses[].value` is the `email` datatype, as google's contact
+# declares it, so a person mapping's probe folds its case. That datatype is
+# validated (Go's `net/mail.ParseAddress`), and an invalid entry refuses the
+# whole write, so the device leaves an address that does not parse out of the
+# list. A phone number is a `string` and never `phone`: `phone` is E.164 only,
+# and `CNPhoneNumber.stringValue` is the number as the owner typed it. A URL
+# is a `string` too: Apple stores whatever text the owner entered.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/contact
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    A contact from your iPhone. One Apple CNContact as the device's Contacts
+    framework holds it, pushed by an app on the device and keyed on its identifier
+    within one address book. Built-in labels are English words. Omits the
+    note and the image.
+  names:
+    singular: contact
+  label:
+    singular: Contact
+    plural: Contacts
+  displayTemplate: "{displayName|organizationName|givenName|familyName|identifier}"
+  properties:
+    # --- identity -----------------------------------------------------------
+    addressbook:
+      type: reference
+      kind: providers.substrate.reamde.dev/apple/addressbook
+      required: true
+      onDelete: cascade
+      displayName: Address book
+      description: >-
+        the address book this contact was pushed from, the one property here
+        that is not Apple's. Always written.
+    identifier:
+      type: string
+      required: true
+      displayName: Identifier
+      description: >-
+        `identifier`, Apple's id for the contact. Unique within one device's
+        contact store, not globally, which is why the address book is part
+        of this row's id.
+    # --- the object's own fields, in CNContact's order -----------------------
+    contactType:
+      type: enum
+      values:
+        - value: person
+          label: Person
+        - value: organization
+          label: Organization
+      displayName: Contact type
+      description: >-
+        `contactType`, whether the card is a person or an organization.
+    namePrefix:
+      type: string
+      displayName: Name prefix
+      description: >-
+        `namePrefix`, such as Dr. or Ms.
+    givenName:
+      type: string
+      displayName: Given name
+      description: >-
+        `givenName`, the first name.
+    middleName:
+      type: string
+      displayName: Middle name
+      description: >-
+        `middleName`.
+    familyName:
+      type: string
+      displayName: Family name
+      description: >-
+        `familyName`, the last name.
+    previousFamilyName:
+      type: string
+      displayName: Previous family name
+      description: >-
+        `previousFamilyName`, a maiden name or other earlier family name.
+    nameSuffix:
+      type: string
+      displayName: Name suffix
+      description: >-
+        `nameSuffix`, such as Jr. or PhD.
+    nickname:
+      type: string
+      displayName: Nickname
+      description: >-
+        `nickname`.
+    phoneticGivenName:
+      type: string
+      displayName: Phonetic given name
+      description: >-
+        `phoneticGivenName`, how the given name is pronounced.
+    phoneticMiddleName:
+      type: string
+      displayName: Phonetic middle name
+      description: >-
+        `phoneticMiddleName`, how the middle name is pronounced.
+    phoneticFamilyName:
+      type: string
+      displayName: Phonetic family name
+      description: >-
+        `phoneticFamilyName`, how the family name is pronounced.
+    organizationName:
+      type: string
+      displayName: Organization
+      description: >-
+        `organizationName`, the company or organization; the card's name when
+        `contactType` is organization.
+    phoneticOrganizationName:
+      type: string
+      displayName: Phonetic organization name
+      description: >-
+        `phoneticOrganizationName`, how the organization's name is pronounced.
+    departmentName:
+      type: string
+      displayName: Department
+      description: >-
+        `departmentName`, the department within the organization.
+    jobTitle:
+      type: string
+      displayName: Job title
+      description: >-
+        `jobTitle`.
+    # Apple's own derivation, run on the device: `CNContactFormatter
+    # .string(from:style: .fullName)`. It honours the owner's name-order
+    # setting and falls back to the organization for an organization card, so
+    # it is the one name a reader should show. Absent when the formatter
+    # returned nil.
+    displayName:
+      type: string
+      displayName: Display name
+      description: >-
+        the full name as the device formats it (`CNContactFormatter`, style
+        `.fullName`), in the owner's name order.
+    # `DateComponents` with the year optional, because Apple allows a
+    # birthday without one. Gregorian only: `nonGregorianBirthday` is left
+    # out (see the preamble).
+    birthday:
+      type: object
+      displayName: Birthday
+      description: >-
+        `birthday`, the Gregorian birthday. The year is absent when the owner
+        saved none.
+      fields:
+        year:
+          type: int
+          min: 1
+          description: >-
+            the year; absent for a birthday saved without one.
+        month:
+          type: int
+          required: true
+          min: 1
+          max: 12
+          description: >-
+            the month, 1 to 12.
+        day:
+          type: int
+          required: true
+          min: 1
+          max: 31
+          description: >-
+            the day of the month, 1 to 31.
+    dates:
+      type: object
+      repeated: true
+      displayName: Dates
+      description: >-
+        `dates`, the other dates on the card (an anniversary, a custom one),
+        each with its label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in, such as anniversary.
+        year:
+          type: int
+          min: 1
+          description: >-
+            the year; absent for a date saved without one.
+        month:
+          type: int
+          required: true
+          min: 1
+          max: 12
+          description: >-
+            the month, 1 to 12.
+        day:
+          type: int
+          required: true
+          min: 1
+          max: 31
+          description: >-
+            the day of the month, 1 to 31.
+    phoneNumbers:
+      type: object
+      repeated: true
+      displayName: Phone numbers
+      description: >-
+        `phoneNumbers`, each number with its label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in, such as mobile or
+            home.
+        value:
+          type: string
+          description: >-
+            `CNPhoneNumber.stringValue`, the number as the owner typed it,
+            which is why it is a string and not an E.164 phone.
+    emailAddresses:
+      type: object
+      repeated: true
+      displayName: Email addresses
+      description: >-
+        `emailAddresses`, each address with its label. The value a person
+        mapping probes.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in, such as home or work.
+        value:
+          type: email
+          description: >-
+            the address as the owner saved it. An entry that does not parse
+            as an address is left out by the device.
+    postalAddresses:
+      type: object
+      repeated: true
+      displayName: Postal addresses
+      description: >-
+        `postalAddresses`, each `CNPostalAddress` with its label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in, such as home or work.
+        street:
+          type: string
+          description: >-
+            `street`, every street line, newline-separated as Apple stores
+            them.
+        subLocality:
+          type: string
+          description: >-
+            `subLocality`, a neighbourhood or district within the city.
+        city:
+          type: string
+          description: >-
+            `city`.
+        subAdministrativeArea:
+          type: string
+          description: >-
+            `subAdministrativeArea`, a county or similar area below the state.
+        state:
+          type: string
+          description: >-
+            `state`, the state, province or region.
+        postalCode:
+          type: string
+          description: >-
+            `postalCode`.
+        country:
+          type: string
+          description: >-
+            `country`, the country as text.
+        isoCountryCode:
+          type: string
+          description: >-
+            `isoCountryCode`, the ISO 3166-1 country code as Apple stores
+            it (lowercase on most devices).
+    urlAddresses:
+      type: object
+      repeated: true
+      displayName: URLs
+      description: >-
+        `urlAddresses`, each web address with its label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in, such as homepage.
+        value:
+          type: string
+          description: >-
+            the address as the owner typed it; Apple does not validate it,
+            so it is a string and not a url.
+    socialProfiles:
+      type: object
+      repeated: true
+      displayName: Social profiles
+      description: >-
+        `socialProfiles`, each `CNSocialProfile` with its label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in.
+        urlString:
+          type: string
+          description: >-
+            `urlString`, the profile's address.
+        username:
+          type: string
+          description: >-
+            `username`, the handle on the service.
+        userIdentifier:
+          type: string
+          description: >-
+            `userIdentifier`, the service's own id for the user.
+        service:
+          type: string
+          description: >-
+            `service`, the service's name, such as Twitter or LinkedIn. An
+            open set, so a string.
+    instantMessageAddresses:
+      type: object
+      repeated: true
+      displayName: Instant message addresses
+      description: >-
+        `instantMessageAddresses`, each `CNInstantMessageAddress` with its
+        label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in.
+        username:
+          type: string
+          description: >-
+            `username`, the handle on the service.
+        service:
+          type: string
+          description: >-
+            `service`, the service's name, such as Skype. An open set, so
+            a string.
+    # A relation is a NAME, not a pointer: Apple stores the text the owner
+    # typed, never a link to another card, so it is not a reference.
+    contactRelations:
+      type: object
+      repeated: true
+      displayName: Related names
+      description: >-
+        `contactRelations`, each related person's name with its label.
+      fields:
+        label:
+          type: string
+          description: >-
+            the entry's label, in English when built in, such as mother or
+            assistant.
+        name:
+          type: string
+          description: >-
+            `CNContactRelation.name`, the related person's name as typed.
