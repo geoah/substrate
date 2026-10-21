@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "138",
+   "x-whoop-signature": "3TtzjhG6lyYt+YPCOcTl2qO5yr3ODvIPifqx884MhhE=",
+   "x-whoop-signature-timestamp": "1791645669884"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"e3f89923-18c2-4f25-80e1-64e8e5c14a6f\",\"type\":\"workout.deleted\",\"trace_id\":\"dc1ff4d2-8df0-4cd1-8c3a-398cdfca29dc\"}"
+  }
+ },
+ "_fixture": "the auto-detected 'activity' the member replaced; GET on it now answers 404"
+}
