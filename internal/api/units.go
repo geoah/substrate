@@ -20,7 +20,7 @@ const (
 // convertParams are the conversion's query parameters: the value as exact
 // digits, the two unit spellings, and the measure to convert in where the
 // units' own reading is not meant.
-var convertParams = []string{"value", "from", "to", "measure"}
+var convertParams = []string{"value", "from", "to", "measure", "delta"}
 
 // getUnits answers the repository's units, conversions and graph revision,
 // the shipped records its seed skipped, and the engine's table: every
@@ -72,10 +72,47 @@ func (h *handler) getUnitsConvert(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Under the unit graph switch the repository's graph converts, a
+	// difference marked by delta; `measure` is the table's spelling of it.
+	if h.unitGraph {
+		if q.Get("measure") != "" {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "measure is the engine's table's: this deployment converts through the repository's unit graph, so pass delta=true for a difference")
+			return
+		}
+		delta, err := boolParam(q.Get("delta"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "delta: "+err.Error())
+			return
+		}
+		c, err := DatasetFrom(r.Context()).ConvertUnit(r.Context(), substrate.UnitConvert{
+			Value: q.Get("value"), From: q.Get("from"), To: q.Get("to"), Delta: delta,
+		})
+		if err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, c)
+		return
+	}
+	if q.Get("delta") != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "delta converts through the repository's unit graph, which this deployment does not read yet; name measure=temperature-difference")
+		return
+	}
 	c, err := vocabulary.ConvertDigits(q.Get("value"), q.Get("from"), q.Get("to"), q.Get("measure"))
 	if err != nil {
 		writeSubstrateError(w, r, fmt.Errorf("%w: %w", substrate.ErrValidation, err))
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.UnitConversion{Value: c.Value, Unit: c.Unit, Measure: c.Measure, Exact: c.Exact})
+}
+
+// boolParam reads a query flag: absent or false is false, true is true.
+func boolParam(v string) (bool, error) {
+	switch v {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	}
+	return false, fmt.Errorf("%q is true or false", v)
 }

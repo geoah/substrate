@@ -319,6 +319,26 @@ func (b *callBackend) failed(err error) {
 		"invocation", b.id, "delivery", b.key, "error", err)
 }
 
+// Units is the repository's unit graph under the unit graph switch, read at
+// its current revision in one snapshot, nil before the switch: the unit host
+// calls then read the engine's table.
+func (b *callBackend) Units(ctx context.Context) (*vocabulary.UnitGraph, error) {
+	ds := b.inv.ds
+	if !ds.svc.unitGraphOn {
+		return nil, nil
+	}
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	at, err := ds.unitGraph(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	return at.graph, nil
+}
+
 func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
 	e, err := b.inv.ds.Get(ctx, typ, id)
 	if errors.Is(err, substrate.ErrNotFound) {

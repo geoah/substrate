@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The protocol without an engine: registration, invocation, host calls under
@@ -44,6 +45,10 @@ type fakeBackend struct {
 	// aggregatesRefused counts the reads refused on their budget before any
 	// work.
 	aggregatesRefused int
+	// units is the graph Units answers, nil for the engine's table, and
+	// unitLoads how many times it was asked.
+	units     *vocabulary.UnitGraph
+	unitLoads int
 	// logs is every line Log received, in order, and logged the instant of
 	// each, so a test can tell a line that arrived while the body ran from
 	// one that came with its end.
@@ -117,6 +122,11 @@ func (f *fakeBackend) Call(_ context.Context, function string, args any) (any, e
 		return nil, errors.New("no call backend")
 	}
 	return f.call(function, args)
+}
+
+func (f *fakeBackend) Units(context.Context) (*vocabulary.UnitGraph, error) {
+	f.unitLoads++
+	return f.units, nil
 }
 
 func (f *fakeBackend) ResolveKind(name string) string {

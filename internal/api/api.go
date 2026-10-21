@@ -78,6 +78,11 @@ type Config struct {
 	// checks. It changes no verification: refusing is the service's job either
 	// way.
 	TOTPDisabled bool
+	// UnitGraph mirrors the service's unit graph switch (engine.WithUnitGraph,
+	// SUBSTRATE_UNIT_GRAPH): discovery reports it as `units.graph`, the
+	// console reads it to choose how it converts, and GET /units/convert
+	// converts through the repository's graph.
+	UnitGraph bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -105,6 +110,7 @@ type handler struct {
 	authRate     *rateLimiter
 	inviteCode   string
 	totpDisabled bool
+	unitGraph    bool
 	catalog      *catalog.Catalog
 	consoleURL   string
 	draining     <-chan struct{}
@@ -126,6 +132,7 @@ func New(cfg Config) http.Handler {
 		authRate:     newRateLimiter(interval, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
+		unitGraph:    cfg.UnitGraph,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		draining:     cfg.Draining,

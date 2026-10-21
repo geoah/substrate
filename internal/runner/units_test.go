@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -86,5 +87,121 @@ def main(input, host):
 		if out[key] != want {
 			t.Errorf("%s = %#v, want %#v", key, out[key], want)
 		}
+	}
+}
+
+// graphFixture is a small graph: kg, g and lb joined linearly, Cel and degF
+// joined through K, and mpg and L/100km joined by an expression.
+func graphFixture(t *testing.T) *vocabulary.UnitGraph {
+	t.Helper()
+	rat := func(s string) *big.Rat {
+		r, err := vocabulary.ParseRational(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	g, problems := vocabulary.BuildUnitGraph([]vocabulary.UnitRecord{
+		{ID: "kg", Code: "kg"},
+		{ID: "g", Code: "g"},
+		{ID: "lb", Code: "[lb_av]"},
+		{ID: "K"},
+		{ID: "Cel", Aliases: []string{"°C"}},
+		{ID: "degF", Code: "[degF]"},
+		{ID: "mpg"},
+		{ID: "L/100km"},
+	}, []vocabulary.ConversionRecord{
+		{ID: "lb-kg", From: "lb", To: "kg", Factor: rat("0.45359237")},
+		{ID: "g-kg", From: "g", To: "kg", Factor: rat("1/1000")},
+		{ID: "Cel-K", From: "Cel", To: "K", Factor: rat("1"), Offset: rat("273.15")},
+		{ID: "degF-K", From: "degF", To: "K", Factor: rat("5/9"), Offset: rat("2298.35/9")},
+		{ID: "mpg-L/100km", From: "mpg", To: "L/100km", Expr: "235.214583 / value", Inverse: "235.214583 / value"},
+	})
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	return g
+}
+
+// Under the unit graph switch the unit calls read the repository's graph,
+// loaded once per invocation at the first unit call, and each charges one
+// call: a difference converts without the offset, an expression converts one
+// value, `converts` answers a linear route, and `measure` is refused.
+func TestHostUnitsLoadsTheGraphOnce(t *testing.T) {
+	r := New()
+	backend := widgetBackend()
+	backend.units = graphFixture(t)
+	spec := Spec{
+		Repository: "t1", Function: "units.g.graph",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    out = {
+        "lb": host.units.convert("1", "[lb_av]", "kg"),
+        "delta": host.units.convert("0.3", "°C", "degF", delta=True),
+        "absolute": host.units.convert("37", "Cel", "degF"),
+        "economy": host.units.convert("30", "mpg", "L/100km"),
+        "economyExact": host.units.convert("30", "mpg", "L/100km").exact,
+        "canonical": host.units.canonical("[lb_av]"),
+        "mass": host.units.converts("g", "lb"),
+        "apart": host.units.converts("kg", "K"),
+        "expression": host.units.converts("mpg", "L/100km"),
+    }
+    try:
+        host.units.measure("kg")
+        out["measure"] = "answered"
+    except Exception as e:
+        out["measure"] = str(e)
+    return {"effects": [], "output": out}
+`,
+		TimeoutMs: 5000, ReadCalls: 9,
+	}
+	res, err := r.Invoke(context.Background(), spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	for key, want := range map[string]any{
+		"lb": "0.45359237", "delta": "0.54", "absolute": "98.6",
+		"economy": "7.840486100000001", "economyExact": false, "canonical": "lb",
+		"mass": true, "apart": false, "expression": false,
+	} {
+		if out[key] != want {
+			t.Errorf("%s = %#v, want %#v", key, out[key], want)
+		}
+	}
+	if m, _ := out["measure"].(string); !strings.Contains(m, "ask units.converts") {
+		t.Errorf("measure under the graph = %q, want a refusal", m)
+	}
+	if backend.unitLoads != 1 {
+		t.Errorf("the graph was loaded %d times, want once", backend.unitLoads)
+	}
+	// Nine distinct calls (the body asks one twice, which host.py answers
+	// from its memo) charge nine calls; a budget of eight trips.
+	spec.ReadCalls = 8
+	if _, err := r.Invoke(context.Background(), spec, testInput(), backend); err == nil || !strings.Contains(err.Error(), "read budget") {
+		t.Fatalf("nine unit calls under a budget of eight: %v", err)
+	}
+}
+
+// Before the switch the calls read the engine's table: `converts` reads two
+// codes in one measure, and nothing is charged.
+func TestHostUnitsConvertsReadsTheTable(t *testing.T) {
+	ctx := context.Background()
+	s := &readState{backend: widgetBackend()}
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{{"kg", "[lb_av]", true}, {"mg/dL", "mmol/L", false}, {"bpm", "/s", true}, {"kgs", "kg", false}} {
+		out, handled, err := s.serveUnitCall(ctx, unitsCall(t, hostUnitsConverts, map[string]any{"a": c.a, "b": c.b}))
+		if !handled || err != nil {
+			t.Fatalf("%s and %s: %v", c.a, c.b, err)
+		}
+		if got := out.(map[string]any)["converts"]; got != c.want {
+			t.Errorf("%s and %s: converts %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+	if s.calls != 0 {
+		t.Errorf("the table's calls charged %d", s.calls)
 	}
 }

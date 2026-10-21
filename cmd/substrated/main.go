@@ -191,6 +191,10 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
+	if cfg.UnitGraph {
+		slog.Warn("SUBSTRATE_UNIT_GRAPH is set: quantities are read and written through each repository's unit records, which an older binary does not read")
+		opts = append(opts, engine.WithUnitGraph(true))
+	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	close(booted)
 	if err != nil {
@@ -266,6 +270,7 @@ func run() error {
 		ConsoleURL:   cfg.ConsoleURL,
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
+		UnitGraph:    cfg.UnitGraph,
 		Metrics:      cfg.Metrics,
 		Draining:     draining,
 	})

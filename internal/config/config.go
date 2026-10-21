@@ -123,6 +123,13 @@ type Config struct {
 	// restores the factor the user enrolled.
 	InsecureDisableTOTP bool `envconfig:"SUBSTRATE_INSECURE_DISABLE_TOTP" default:"false"`
 
+	// UnitGraph reads and writes every quantity through the repository's unit
+	// and conversion records instead of the engine's unit table (decision
+	// 0186). Off by default while the switch is prepared; a repository written
+	// with it on holds unit ids the table does not read, so it is for a
+	// development substrate that gets wiped.
+	UnitGraph bool `envconfig:"SUBSTRATE_UNIT_GRAPH" default:"false"`
+
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every
 	// provider app registers. Both unset disables the facility.

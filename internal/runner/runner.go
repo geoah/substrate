@@ -1013,6 +1013,10 @@ type readState struct {
 	// deliveredKind and deliveredID name the record a record delivery's
 	// envelope carries, empty for any other input (deliveredRecord).
 	deliveredKind, deliveredID string
+	// units is the repository's unit graph, loaded at the invocation's first
+	// unit call (units.go); nil after loading means the engine's table.
+	units       *vocabulary.UnitGraph
+	unitsLoaded bool
 }
 
 // log takes one line of the body's log off the wire and hands it on at once.
@@ -1041,9 +1045,10 @@ func (s *readState) serve(ctx context.Context, call hostCall) map[string]any {
 }
 
 func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
-	// The unit table answers from the engine's own code and reads nothing
-	// from the repository, so it is neither gated nor charged (units.go).
-	if out, handled, err := serveUnits(ctx, call); handled {
+	// The unit calls answer from the engine's table, ungated and uncharged,
+	// or under the unit graph switch from the repository's graph, charged one
+	// call each (units.go).
+	if out, handled, err := s.serveUnitCall(ctx, call); handled {
 		return out, err
 	}
 	switch call.Host {
