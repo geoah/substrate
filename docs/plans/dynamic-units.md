@@ -5,7 +5,7 @@ This is the work plan for
 which makes units and conversions core records and replaces the engine's
 closed unit table of
 [0153](../decisions/0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md).
-Step 1 is implemented; the rest is not. Line numbers are against `main` at
+Steps 1 and 2 are implemented; the rest is not. Line numbers are against `main` at
 `7d0a0cdfc`.
 This revision takes in the owner's answers of 2026-10-21 and a design review
 of the first draft.
@@ -303,6 +303,73 @@ expression, inside one multi-record transaction too),
 in internal/api.
 
 Size: about 2,000 lines of Go, 1,800 of tests and 40 of SQL.
+
+### Details step 2 decided
+
+The step 2 code settles these as follows.
+
+- `unit_uses` holds one row per record and stored spelling (`kind`,
+  `record_id`, `unit`), not counts per kind. A tombstone keeps its rows and a
+  purge deletes them, so the guard needs no live and tombstoned split. The
+  fold derives the rows from the values alone: every object with a string
+  `value` and a non-empty string `unit`, at any depth, plus the top-level
+  `unit` of a kind that binds `metric` or packed `observed`. Only those two
+  cases read the declaration, so a declaration change moves no row.
+- A reference to a unit record is read from `refs` (any source kind but
+  `conversion`), not copied into `unit_uses`. A declaration's listed `units`,
+  `min`, `max` and quantity `default` are read from the transaction's
+  registry when the guard runs.
+- Before the switch a metric's `unit` is text, so it counts through
+  `unit_uses`. That is step 2's share of the metric rules: refusing to delete
+  a metric that values point at, and checking values against their metric,
+  stay in step 3's `checkMetricValues`.
+- A repository whose rows predate migration 0016 has its uses derived behind
+  the open. Migration 0016 also adds `unit_uses_index` (the rule version
+  `unitUsesVersion`) and `index_reprojections.units`. `checkUnitUses` in the
+  open ladder queues every kind for the pass, as `checkObservedIndex` does.
+  While a `units` request is pending, the guard refuses with a conflict any
+  transaction that affects a unit. A creation and a rebuild write the
+  version, because they derive every row as they fold.
+- Every changed fold of a unit or conversion row moves `unit_graph.revision`
+  by one: create, update, restore, tombstone and purge. A replay therefore
+  ends at the same revision. The service cache forgets the repository at a
+  rebuild and at a creation all the same. The cache lives on the service: two
+  revisions per repository, 256 graphs per process, least recently used out
+  first.
+- The end of the transaction (`checkUnitGraph`, from `inTx` before
+  `settleObserved`) refuses only problems that the graph the transaction
+  found did not name. A binary whose rules tighten therefore never locks a
+  repository out of its units. Graph problems are validation errors (422).
+  The use guard answers a conflict (409).
+- The guard first finds the affected units of the found graph: deleted, a
+  spelling that now names another unit or none, or a member of a linear
+  component that splits. It then probes their ids, codes and aliases in
+  `unit_uses` (one index probe each), `refs` and the declarations. It refuses
+  a used unit that is deleted or re-spelled, and two used units that end in
+  different components. A transaction that touches no component and deletes
+  nothing runs no query.
+- The seed plans outside any transaction first, so an open with nothing to
+  seed takes no changelog lock. The owner rule is one changelog query for
+  the human doors over both kinds, purges included. A row is current when
+  every shipped property is stored with an equal value. A put merges, so a
+  refresh never removes a property a later seed drops. A non-owner
+  tombstone is written again, which resurrects it. Conflicts are found with
+  one build of all candidates, and only if that names a new problem, one
+  build per candidate in seed order.
+- `unseeded` lists what the last open's seed skipped, kept in memory on the
+  dataset and filtered to records still absent. A record the owner holds is
+  never listed: that is the owner's choice, not a conflict.
+- `WithUnitSeed` controls the seed. It is on by default and off in
+  `OpenForTest`. The testenv, providertest and catalog harnesses open with the
+  production default, so they seed. The seed adds about 1.4 s to a
+  registration on this box (365 puts through the generic put path: manager
+  rows, hydration, row loads); the unit hooks are not a measurable part of it.
+- `Dataset.Units` answers the graph with `Measures` and `Aliases` empty;
+  `getUnits` fills those from the old table. `Dataset.ConvertUnit` converts
+  through the graph and leaves `UnitConversion.Measure` empty; nothing routes
+  to it until step 3.
+- Both kinds are `purpose: internal`; a unit titles itself
+  `{name|localName}`, a conversion `{localName}`.
 
 ## Step 3: readers, writers and clients prepared behind the switch
 
