@@ -2189,6 +2189,9 @@ func (t *txn) storeNormalizedDiff(sp *applySpec, ty *vocabulary.Kind, diff map[s
 	if err != nil {
 		return err
 	}
+	if err := t.holdDiffQuantities(ty, norm); err != nil {
+		return err
+	}
 	sp.props["diff"] = norm
 	return nil
 }

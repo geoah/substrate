@@ -385,14 +385,8 @@ func graphDefaultProblems(g *vocabulary.UnitGraph, where string, p *vocabulary.P
 	if p.Default == nil || !holdsQuantity(p) {
 		return nil
 	}
-	raw, err := json.Marshal(p.Default)
+	v, err := copyJSONValue(p.Default)
 	if err != nil {
-		return []string{fmt.Sprintf("%s.default: %v", where, err)}
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
 		return []string{fmt.Sprintf("%s.default: %v", where, err)}
 	}
 	coerced, err := coercer{graphUnits: true}.value(p, v)
@@ -416,4 +410,42 @@ func (t *txn) resolveDefault(p *vocabulary.Property, v any) error {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// copyJSONValue is a deep copy of a JSON value, numbers kept as written, for
+// a check that resolves units in place (resolveQuantityLeaf) on a value it
+// must not change.
+func copyJSONValue(v any) (any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var out any
+	if err := dec.Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// holdDiffQuantities holds a proposed change request's quantities, under
+// the switch, to what the accept's write holds them to, on a copy: the
+// stored proposal keeps its spelling, and a value every accept would refuse
+// is refused when it is proposed. A diff with no kind to check against is
+// admitted by shape, as normalizeDiffFor admits it.
+func (t *txn) holdDiffQuantities(ty *vocabulary.Kind, norm map[string]any) error {
+	if !t.ds.svc.unitGraphOn || ty == nil {
+		return nil
+	}
+	props, _ := norm["properties"].(map[string]any)
+	if len(props) == 0 {
+		return nil
+	}
+	cp, err := copyJSONValue(props)
+	if err != nil {
+		return err
+	}
+	m, _ := cp.(map[string]any)
+	return t.resolveQuantities(&applySpec{ty: ty, props: m})
 }
