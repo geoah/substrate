@@ -1,7 +1,7 @@
 package engine
 
-// QUANTITY WRITES THROUGH THE REPOSITORY'S UNIT GRAPH (decision 0186), the
-// write half of the unit graph switch (WithUnitGraph). Coercion holds a
+// QUANTITY WRITES THROUGH THE REPOSITORY'S UNIT GRAPH (decision 0186).
+// Coercion holds a
 // written quantity to its shape alone (coercer.quantity); here, inside the
 // write's transaction, every written quantity leaf (a top-level value, a
 // list item, a keyed map's value, an object field at any depth, a reference's
@@ -24,9 +24,8 @@ import (
 )
 
 // resolveQuantities resolves and checks every quantity the write carries.
-// It does nothing while the switch is off.
 func (t *txn) resolveQuantities(sp *applySpec) error {
-	if !t.ds.svc.unitGraphOn || len(sp.props) == 0 {
+	if len(sp.props) == 0 {
 		return nil
 	}
 	var g *vocabulary.UnitGraph
@@ -55,10 +54,9 @@ func (t *txn) resolveQuantities(sp *applySpec) error {
 }
 
 // resolveRestored resolves and checks one property's value a restoring put
-// keeps (restore.go admitRestored), false where the graph refuses it. It
-// admits everything while the switch is off.
+// keeps (restore.go admitRestored), false where the graph refuses it.
 func (t *txn) resolveRestored(sp *applySpec, name string, p *vocabulary.Property, v any) (bool, error) {
-	if !t.ds.svc.unitGraphOn || v == nil || !holdsQuantity(p) {
+	if v == nil || !holdsQuantity(p) {
 		return true, nil
 	}
 	at, err := t.unitGraph()
@@ -272,7 +270,7 @@ func graphQuantityText(g *vocabulary.UnitGraph, value, unit string) string {
 	return vocabulary.FormatQuantityIn(g, map[string]any{vocabulary.QuantityValue: value, vocabulary.QuantityUnit: unit})
 }
 
-// checkDeclaredUnits holds, under the switch, the quantity declarations a
+// checkDeclaredUnits holds the quantity declarations a
 // transaction publishes to the graph it leaves: every unit spelling a
 // changed or new kind names (`unit`, `units`, a bound, a default) names a
 // unit of the repository, and every unit a property admits by name (its
@@ -283,7 +281,7 @@ func graphQuantityText(g *vocabulary.UnitGraph, value, unit string) string {
 // is not judged again, so a graph edit is the use guard's (unitgraph.go) and
 // an unrelated apply is never refused for an older kind.
 func (t *txn) checkDeclaredUnits() error {
-	if !t.ds.svc.unitGraphOn || t.writeReg == nil || t.migrating || t.replaying {
+	if t.writeReg == nil || t.migrating || t.replaying {
 		return nil
 	}
 	live := t.ds.registry()
@@ -441,7 +439,7 @@ func graphDefaultProblems(g *vocabulary.UnitGraph, where string, p *vocabulary.P
 	if err != nil {
 		return []string{fmt.Sprintf("%s.default: %v", where, err)}
 	}
-	coerced, err := coercer{graphUnits: true}.value(p, v)
+	coerced, err := coercer{}.value(p, v)
 	if err != nil {
 		return []string{fmt.Sprintf("%s.default: %v", where, err)}
 	}
@@ -449,9 +447,9 @@ func graphDefaultProblems(g *vocabulary.UnitGraph, where string, p *vocabulary.P
 }
 
 // resolveDefault resolves the units of a coerced default a conversion or a
-// restore stores, under the switch, as a written value's are.
+// restore stores, as a written value's are.
 func (t *txn) resolveDefault(p *vocabulary.Property, v any) error {
-	if !t.ds.svc.unitGraphOn || !holdsQuantity(p) {
+	if !holdsQuantity(p) {
 		return nil
 	}
 	at, err := t.unitGraph()
@@ -481,13 +479,13 @@ func copyJSONValue(v any) (any, error) {
 	return out, nil
 }
 
-// holdDiffQuantities holds a proposed change request's quantities, under
-// the switch, to what the accept's write holds them to, on a copy: the
+// holdDiffQuantities holds a proposed change request's quantities to what
+// the accept's write holds them to, on a copy: the
 // stored proposal keeps its spelling, and a value every accept would refuse
 // is refused when it is proposed. A diff with no kind to check against is
 // admitted by shape, as normalizeDiffFor admits it.
 func (t *txn) holdDiffQuantities(ty *vocabulary.Kind, norm map[string]any) error {
-	if !t.ds.svc.unitGraphOn || ty == nil {
+	if ty == nil {
 		return nil
 	}
 	props, _ := norm["properties"].(map[string]any)

@@ -6,13 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The unit graph switch (decision 0186) end to end through the doors an
+// The unit graph (decision 0186) end to end through the doors an
 // internal test does not reach: a function's host.units calls answered by
 // the engine's real backend, and a change request proposed and accepted.
 
@@ -55,28 +54,23 @@ func switchedUnits(t *testing.T, ds substrate.Dataset) {
 // A function's host.units calls convert through the repository's graph by
 // the engine's real backend: a unit only this repository declares converts
 // by its own factor, a difference drops the offset, converts answers the
-// graph's components, the table's measures are refused, and an edited
+// graph's components, `measure` is no call any more, and an edited
 // conversion moves the next invocation's answer.
 func TestFunctionConvertsThroughTheRepositorysGraph(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t, engine.WithUnitGraph(true))
+	_, ds := newDataset(t)
 	if err := enginetest.Install(ctx, ds, owner, fnConnector(nil, pyFn("convert", map[string]any{}, []any{widgetType}, `
 def main(input, host):
     u = host.units
     stones = u.convert("2", "stone", "kg")
-    try:
-        u.measure("kg")
-        measure = "answered"
-    except Exception as e:
-        measure = str(e)
     return {"output": {
         "stones": str(stones), "exact": stones.exact,
         "difference": str(u.convert("10", "Cel", "K", delta=True)),
         "temperature": str(u.convert("10", "Cel", "K")),
         "converts": u.converts("stone", "pound"),
         "apart": u.converts("stone", "K"),
-        "measure": measure,
+        "measure": hasattr(u, "measure"),
     }}
 `))); err != nil {
 		t.Fatalf("install the function: %v", err)
@@ -93,14 +87,11 @@ def main(input, host):
 	got := call()
 	for key, want := range map[string]any{
 		"stones": "12.70058636", "exact": true, "difference": "10", "temperature": "283.15",
-		"converts": true, "apart": false,
+		"converts": true, "apart": false, "measure": false,
 	} {
 		if got[key] != want {
 			t.Errorf("%s = %v, want %v", key, got[key], want)
 		}
-	}
-	if m, _ := got["measure"].(string); !strings.Contains(m, "unit graph") {
-		t.Errorf("units.measure under the switch: %v", got["measure"])
 	}
 	putConversionRecord(t, ds, "stone-lb", "stone", "lb", map[string]any{"factor": "10"})
 	if got := call(); got["stones"] != "9.0718474" {
@@ -120,7 +111,7 @@ const (
 func TestChangeRequestQuantitiesResolveThroughTheGraph(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t, engine.WithUnitGraph(true))
+	_, ds := newDataset(t)
 	switchedUnits(t, ds)
 	if err := enginetest.Install(ctx, ds, owner, enginetest.Manifest{
 		Name: "cargo", Authority: cargoPackage,

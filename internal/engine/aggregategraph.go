@@ -1,7 +1,7 @@
 package engine
 
 // THE AGGREGATE READ'S UNITS THROUGH THE REPOSITORY'S UNIT GRAPH (decision
-// 0186), under the unit graph switch (WithUnitGraph). A read answers in the
+// 0186). A read answers in the
 // request's `unit`, else the metric's, else the first stream's, and every
 // stored value and rollup row converts into it at read through the exact
 // affine map between their units (aggUnits.factor), so a corrected
@@ -20,8 +20,13 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// aggregateUnitsGraph is aggregateUnits under the switch.
-func (ds *dataset) aggregateUnitsGraph(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream) (*aggUnits, error) {
+// aggregateUnits settles the read's units: the request's unit, else the
+// metric's, else the first stream's, and refuses a request unit outside that
+// unit's linear component, naming the units in it. A stored unit that does
+// not convert is refused where the read takes a value in it
+// (aggRun.conversion), not here: a stream's unit is its newest point's, and a
+// point outside the range refuses nothing.
+func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream) (*aggUnits, error) {
 	at, err := ds.unitGraph(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -114,9 +119,10 @@ func orCodes(unit string) string {
 	return unit
 }
 
-// levelRefusalIn is levelRefusal by the graph's scale of the read's unit: a
-// level's values do not add, and a power level's do not average either.
-func levelRefusalIn(scale vocabulary.UnitScale, unit, reducer string) string {
+// levelRefusal says why a reducer does not apply to values in a unit, by the
+// graph's scale of the unit, or "" where it does: a level's values do not
+// add, and a power level's do not average either.
+func levelRefusal(scale vocabulary.UnitScale, unit, reducer string) string {
 	switch {
 	case scale == "":
 		return ""
@@ -128,11 +134,18 @@ func levelRefusalIn(scale vocabulary.UnitScale, unit, reducer string) string {
 	return ""
 }
 
-// checkLevelsIn is checkLevels by the graph's scale of the read's unit.
-func (p *aggPlan) checkLevelsIn(g *vocabulary.UnitGraph, unit, what string) error {
+// checkLevels refuses, on every form and every read, a reducer or a rolling
+// reducer that adds or averages what a level's values do not (levelRefusal),
+// what naming the metric or the property read. count, min, max, first, last,
+// percentile and durationIn read a level as it is. A nil graph holds no
+// level.
+func (p *aggPlan) checkLevels(g *vocabulary.UnitGraph, unit, what string) error {
+	if g == nil {
+		return nil
+	}
 	scale := g.Scale(unit)
 	for i, r := range p.reducers {
-		if why := levelRefusalIn(scale, unit, r.Name); why != "" {
+		if why := levelRefusal(scale, unit, r.Name); why != "" {
 			return p.refuse(p.reducerPath(i), "%s does not apply to %s: %s; read count, min, max, first, last or percentile",
 				r.String(), what, why)
 		}
@@ -141,7 +154,7 @@ func (p *aggPlan) checkLevelsIn(g *vocabulary.UnitGraph, unit, what string) erro
 		return nil
 	}
 	for i, r := range p.rolling.Reducers {
-		if why := levelRefusalIn(scale, unit, r.Name); why != "" {
+		if why := levelRefusal(scale, unit, r.Name); why != "" {
 			return p.refuse(fmt.Sprintf("aggregate.rolling.reducers[%d]", i), "a rolling %s does not apply to %s: %s; roll min or max",
 				r.String(), what, why)
 		}

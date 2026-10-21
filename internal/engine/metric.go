@@ -6,7 +6,7 @@ package engine
 // engine reads those records through core's `metric` and `source` traits
 // alone: a record whose kind binds neither contributes nothing, whatever
 // properties it happens to carry. metricContract is the one reading of a
-// metric (its measure, default unit, bucket place and rollup tiers) every
+// metric (its default unit, bucket place and rollup tiers) every
 // caller takes; the write path holds both records to their traits' rules
 // (checkObserved).
 

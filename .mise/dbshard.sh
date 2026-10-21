@@ -44,7 +44,10 @@ label="test:db:$(basename "$pkg")"
 # This script runs ./$pkg/ while `test:db` runs ./$pkg/..., so a subpackage
 # that grew a test suite would run on main's coverage job and never on a PR.
 # Refuse it here, where the cut is, rather than let it happen.
-subpackages="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./${pkg}/..." | grep -v "/${pkg}\$" || true)"
+# internal/engine/unitseed is cut: its tests read the embedded seed files and
+# no database, so the short suite runs them on every PR.
+subpackages="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./${pkg}/..." |
+  grep -v -e "/${pkg}\$" -e "/internal/engine/unitseed\$" || true)"
 if [ -n "$subpackages" ]; then
   echo "${label}: a package under ${pkg}/ has tests of its own and the shards run only the root package:" >&2
   printf '  %s\n' "$subpackages" >&2

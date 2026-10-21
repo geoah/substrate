@@ -16,7 +16,6 @@ import (
 // The `metric` trait's property names.
 const (
 	MetricName             = "name"
-	MetricMeasures         = "measures"
 	MetricUnit             = "unit"
 	MetricUnits            = "units"
 	MetricForm             = "form"
@@ -68,12 +67,11 @@ var RollupTiers = []RollupTier{
 // DefaultRollups are the tiers a metric keeps when it names none.
 var DefaultRollups = []string{"15m", "1h", "1d"}
 
-// MetricContract is what the engine reads from a metric record: the measure a
-// read converts into, the unit it answers in by default, where a read by the
-// day places a span, and the rollup tiers the index keeps, finest first.
+// MetricContract is what the engine reads from a metric record: the unit a
+// read answers in by default, where a read by the day places a span, and the
+// rollup tiers the index keeps, finest first.
 type MetricContract struct {
-	Measures string
-	Unit     string
+	Unit string
 	// UnitValue is the stored `unit` as written, a spelling or a reference
 	// to a unit record, which the unit graph reads (MetricUnitOf).
 	UnitValue   any
@@ -85,11 +83,10 @@ type MetricContract struct {
 
 // MetricContractOf reads a metric record's contract from its stored
 // properties. It is lenient: the write path admitted the record under
-// CheckMetric, and a value it cannot read is left out (a rollup it cannot
+// CheckMetricIn, and a value it cannot read is left out (a rollup it cannot
 // read keeps no tier) rather than failing the read that asked.
 func MetricContractOf(props map[string]any) MetricContract {
 	c := MetricContract{}
-	c.Measures, _ = props[MetricMeasures].(string)
 	c.Unit = metricUnitText(props[MetricUnit])
 	c.UnitValue = props[MetricUnit]
 	c.BucketPlace, _ = props[MetricBucketPlace].(string)
@@ -130,21 +127,13 @@ func metricUnitText(raw any) string {
 	return ""
 }
 
-// CheckMetric holds one record of a kind that binds `metric` to the rules the
-// trait cannot state, each problem in the `props.<name>: ...` form a
-// validation error carries: the measure is one the unit table names, the unit
-// one of its units (a unit alone names its own measure), the form and the
-// bucket place are words the readers know, and the rollup tiers are known
-// widths, finest first, each once.
-func CheckMetric(props map[string]any) []string {
-	return append(checkMetricUnitInTable(props), checkMetricShape(props)...)
-}
-
-// CheckMetricIn is CheckMetric under the unit graph switch (decision 0186):
-// the measure is not read, the unit and every listed unit resolve through
-// the repository's graph, and each listed unit converts to the unit through
-// linear conversions. The unit and each listed unit is a unit id or a
-// reference to a unit record.
+// CheckMetricIn holds one record of a kind that binds `metric` to the rules
+// the trait cannot state, each problem in the `props.<name>: ...` form a
+// validation error carries: the unit and every listed unit resolve through
+// the repository's graph (decision 0186), each a unit id or a reference to a
+// unit record, and each listed unit converts to the unit through linear
+// conversions; the form and the bucket place are words the readers know, and
+// the rollup tiers are known widths, finest first, each once.
 func CheckMetricIn(g *UnitGraph, props map[string]any) []string {
 	problems := checkMetricShape(props)
 	unit, held, err := MetricUnitOf(g, props[MetricUnit])
@@ -210,35 +199,6 @@ func MetricUnitsOf(g *UnitGraph, raw any) ([]string, error) {
 		}
 	}
 	return out, nil
-}
-
-// checkMetricUnitInTable is CheckMetric's reading of `measures` and `unit`
-// through the engine's table.
-func checkMetricUnitInTable(props map[string]any) []string {
-	var problems []string
-	addf := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
-	measures, _ := props[MetricMeasures].(string)
-	unit, _ := props[MetricUnit].(string)
-	if measures != "" {
-		if _, ok := LookupMeasure(measures); !ok {
-			addf("props.measures: %q is not a measure of the unit table (docs/units.md)", measures)
-			measures = ""
-		}
-	}
-	if unit != "" {
-		code, err := CanonicalUnit(unit)
-		if err == nil {
-			_, err = ResolveMeasure(code, measures)
-		}
-		switch {
-		case err == nil:
-		case measures != "":
-			addf("props.unit: %s is not a unit of %s: %v", unit, measures, err)
-		default:
-			addf("props.unit: %v", err)
-		}
-	}
-	return problems
 }
 
 // checkMetricShape holds the metric rules that read no unit: the form, the

@@ -44,7 +44,7 @@ type dbReader struct {
 	ctx context.Context
 	db  dbx
 	// ds is the dataset the preview reads, whose unit graph a quantity
-	// narrowing judges stored values through under the switch.
+	// narrowing judges stored values through.
 	ds *dataset
 }
 

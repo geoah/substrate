@@ -38,7 +38,7 @@ type Dataset interface {
 	// --- units (decision 0186) ---
 	// Units answers the repository's unit and conversion records as one
 	// graph at one revision, read in one snapshot, with the shipped records
-	// the last seed skipped. Measures and Aliases are left empty.
+	// the last seed skipped.
 	Units(ctx context.Context) (UnitTable, error)
 	// ConvertUnit converts one value through the repository's graph. A unit
 	// the graph does not hold, or two units nothing joins, is ErrValidation.
@@ -79,7 +79,7 @@ type Dataset interface {
 	// Aggregate is the aggregate read (aggregate.go, decision 0161): the
 	// observed index or a declared number of the filtered kinds, reduced
 	// into buckets on one snapshot. Every refusal (two selectors, a reducer
-	// the form does not take, a unit outside the measure, a request over
+	// the form does not take, a unit no linear conversion reaches, a request over
 	// budget) is an ErrValidation naming what it refuses, before any index
 	// row is read.
 	Aggregate(ctx context.Context, q AggregateQuery) (*AggregateResult, error)

@@ -855,8 +855,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.prepareObserved(sp); err != nil {
 		return nil, err
 	}
-	// Under the unit graph switch every written quantity's unit resolves to
-	// its id and is held to its declaration here (quantitywrite.go).
+	// Every written quantity's unit resolves to its id through the unit graph
+	// and is held to its declaration here (quantitywrite.go).
 	if err := t.resolveQuantities(sp); err != nil {
 		return nil, err
 	}

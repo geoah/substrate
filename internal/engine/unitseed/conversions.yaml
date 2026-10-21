@@ -1,10 +1,12 @@
-# The conversions every repository is seeded with (decision 0186): the
-# engine's unit table as records. Written by TestUnitSeedMatchesTheTable
-# from internal/vocabulary/unitstable.go; rewrite with
+# The conversions every repository is seeded with (decision 0186), grouped
+# by the measure of the engine's old unit table they came from. This file
+# is the source: edit it by hand, then run
 #
-#   go test ./internal/vocabulary/ -run TestUnitSeedMatchesTheTable -update
+#   go test ./internal/engine/unitseed/
+#   go test ./internal/engine/unitseed/ -run TestUnitsPage -update
+#   go test ./internal/engine/ -run TestConsoleFixtureMatchesTheSeed -update-console-units
 #
-# and never by hand.
+# to check it and rewrite docs/units.md and the console's test fixture.
 # mass
 kind: substrate.reamde.dev/core/conversion
 metadata:

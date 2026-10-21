@@ -171,14 +171,11 @@ func (r *observedRows) fingerprint() []byte {
 	}
 	flag(r.delta)
 	flag(r.circular)
-	// A row derived under the unit graph hashes its turn, which its circular
-	// points' angles read, so a turn edit moves the fingerprint; a row of the
-	// table hashes nothing more, so its fingerprint is what it always was.
-	if r.graphUnits {
-		flag(r.turn != nil)
-		if r.turn != nil {
-			num(int64(math.Float64bits(*r.turn)))
-		}
+	// The turn, which a circular point's angle reads, so a turn edit moves
+	// the fingerprint.
+	flag(r.turn != nil)
+	if r.turn != nil {
+		num(int64(math.Float64bits(*r.turn)))
 	}
 	optNum(r.holdMs)
 	optStr(r.resetRule)
@@ -195,10 +192,9 @@ func (r *observedRows) fingerprint() []byte {
 		num(p.offset)
 		flag(p.offsetKnown)
 		optStr(p.exact)
-		flag(p.base != nil)
-		if p.base != nil {
-			num(int64(math.Float64bits(*p.base)))
-		}
+		// Where a point's base value stood before decision 0186, always
+		// absent since; hashing the flag keeps every stored fingerprint.
+		flag(false)
 		str(p.code)
 		str(p.comparator)
 	}
@@ -238,22 +234,11 @@ func (r *observedRows) observedPoint(i int) observed.Point {
 	if r.wrapAt != nil {
 		out.WrapAt = *r.wrapAt
 	}
-	// A circular point's angle in radians: rad is its own, any other angle
-	// unit reaches degrees, the measure's base.
-	if r.circular && p.value != nil {
-		switch {
-		case r.graphUnits:
-			// Under the unit graph a circular component holds only
-			// offset-free conversions whose turns agree, so value / turn is
-			// one direction in every unit of it (decision 0186).
-			if r.turn != nil {
-				out.Circular, out.Angle = true, *p.value*2*math.Pi / *r.turn
-			}
-		case r.unit == "rad":
-			out.Circular, out.Angle = true, *p.value
-		case p.base != nil:
-			out.Circular, out.Angle = true, *p.base*math.Pi/180
-		}
+	// A circular point's angle in radians. A circular component holds only
+	// offset-free conversions whose turns agree, so value / turn is one
+	// direction in every unit of it (decision 0186).
+	if r.circular && p.value != nil && r.turn != nil {
+		out.Circular, out.Angle = true, *p.value*2*math.Pi / *r.turn
 	}
 	return out
 }
@@ -275,8 +260,7 @@ type obsStore struct {
 	// atOrAfter is about to derive, before it derives them: an aggregate
 	// read counts them against maxSamples, and a refusal stops the walk.
 	charge func(n int64) error
-	// units is the unit graph points derive through under the switch, nil
-	// before it (deriveObserved).
+	// units is the unit graph points derive through (deriveObserved).
 	units *vocabulary.UnitGraph
 }
 

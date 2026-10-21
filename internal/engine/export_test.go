@@ -1023,7 +1023,7 @@ type ObservedPoint struct {
 	OffsetKnown                                     bool
 	Unit                                            string
 	Delta, Circular                                 bool
-	Value, Base                                     *float64
+	Value                                           *float64
 	Exact                                           *string
 	Code, Comparator                                string
 	HoldMs                                          *int64
@@ -1040,15 +1040,11 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var units *vocabulary.UnitGraph
-	if d.svc.unitGraphOn {
-		at, err := d.unitGraph(ctx, tx)
-		if err != nil {
-			return nil, err
-		}
-		units = at.graph
+	at, err := d.unitGraph(ctx, tx)
+	if err != nil {
+		return nil, err
 	}
-	st := newObsStore(ctx, tx, d.liveFoldView(), units)
+	st := newObsStore(ctx, tx, d.liveFoldView(), at.graph)
 	segs, err := st.scanSegments(`SELECT ` + segmentColumns + ` FROM observed_segments ORDER BY kind, record_id`)
 	if err != nil {
 		return nil, err
@@ -1067,7 +1063,7 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 				Kind: r.key.kind, RecordID: r.id, Ord: p.ord,
 				Metric: r.key.metric, Source: r.key.source, About: r.key.about, Channel: r.key.channel,
 				Statistic: r.key.statistic, Form: r.form, TS: p.ts, TSEnd: p.tsEnd, Offset: p.offset, OffsetKnown: p.offsetKnown,
-				Unit: r.unit, Delta: r.delta, Circular: r.circular, Value: p.value, Base: p.base, Exact: p.exact,
+				Unit: r.unit, Delta: r.delta, Circular: r.circular, Value: p.value, Exact: p.exact,
 				Code: p.code, Comparator: p.comparator, HoldMs: r.holdMs, ResetRule: r.resetRule, WrapAt: r.wrapAt, ResetAt: r.resetAt,
 			})
 		}

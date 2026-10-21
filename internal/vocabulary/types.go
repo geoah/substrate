@@ -44,11 +44,12 @@ const (
 	DatatypeMoney Datatype = "money"
 	// DatatypeQuantity is a measured amount in a unit, stored as the object
 	// `{value: "72.5", unit: "kg"}` (quantity.go): exact digits, as a decimal
-	// is, and a code from the unit table (units.go), with an optional
+	// is, and the id of a unit record (decision 0186), with an optional
 	// `comparator` ("<0.5") where the property declares `comparator: true`.
-	// The property may name its measure (`measures: mass`), narrow its units
-	// and bound it with quantities; a filter and an ordering convert exactly
-	// inside one measure, and never across two.
+	// The property may anchor its units (`unit: kg`), narrow them (`units`),
+	// mark its values differences (`delta: true`) and bound it with
+	// quantities; a filter and an ordering convert exactly through the
+	// repository's linear conversions, and never across two components.
 	DatatypeQuantity   Datatype = "quantity"
 	DatatypeBool       Datatype = "bool"
 	DatatypeDatetime   Datatype = "datetime"
@@ -199,7 +200,7 @@ type Property struct {
 	Min     *float64
 	Max     *float64
 	// Quantity is what a `type: quantity` property declares beyond its
-	// datatype: its measure, its listed units, whether a value may carry a
+	// datatype: its anchor `unit`, its listed units, `delta`, whether a value may carry a
 	// comparator, and its bounds, which are quantities rather than the
 	// numbers Min and Max hold. Nil for every other datatype.
 	Quantity *QuantitySpec

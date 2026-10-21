@@ -51,12 +51,11 @@ import (
 //
 //	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate", "params": {...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "call", "params": {"function": "<identity>", "input": ...}}
-//	child → parent   {"kind": "call", "reqId": N, "host": "units.convert"|"units.canonical"|"units.measure", "params": {...}}
+//	child → parent   {"kind": "call", "reqId": N, "host": "units.convert"|"units.canonical"|"units.converts", "params": {...}}
 //	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
 //
-// The three `units.*` calls answer from the engine's unit table (units.go):
-// they read nothing from the repository, so no grant gates them and no budget
-// is charged.
+// The three `units.*` calls answer from the repository's unit graph
+// (units.go): no grant gates them, and each charges one call.
 //
 // A `call` runs the target function to completion INSIDE the caller's
 // invocation: the parent gates it on `permissions.call` and
@@ -197,8 +196,7 @@ type Backend interface {
 	ResolveKind(name string) string
 	Log(line string)
 	// Units is the repository's unit graph the unit host calls convert
-	// through under the unit graph switch (decision 0186), nil before it,
-	// when they read the engine's table.
+	// through (decision 0186).
 	Units(ctx context.Context) (*vocabulary.UnitGraph, error)
 }
 

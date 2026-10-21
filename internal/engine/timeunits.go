@@ -42,17 +42,13 @@ func secondsIn(seconds *big.Rat, unit string) (*big.Rat, bool) {
 	return new(big.Rat).Quo(seconds, per), true
 }
 
-// durationIn writes milliseconds in a duration unit, exactly where it can:
-// through the fixed list, and through the engine's table for a unit only
-// the table reads.
+// durationIn writes milliseconds in a duration unit of the fixed list,
+// exactly where it can; a unit outside the list answers seconds.
 func durationIn(ms int64, unit string) (string, bool) {
 	s := big.NewRat(ms, 1000)
 	v, ok := secondsIn(s, unit)
 	if !ok {
-		var err error
-		if v, err = vocabulary.ConvertIn("duration", s, "s", unit); err != nil {
-			v = s
-		}
+		v = s
 	}
 	return vocabulary.RatDecimal(v, vocabulary.ConvertedDigits)
 }

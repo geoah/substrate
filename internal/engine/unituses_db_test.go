@@ -223,14 +223,18 @@ func wantSplitRefused(t *testing.T, ds substrate.Dataset, conversion, naming str
 // open writes nothing.
 func TestAnOldRepositoryOpensWithTheSeedAndTheBackfill(t *testing.T) {
 	t.Parallel()
-	// Written before the switch: the table path stores the table's codes.
-	svc, ds, dsn, root := unitSeededRepository(t, false, engine.WithUnitGraph(false))
+	// Written before the unit kinds: values hold the old table's codes. No
+	// write stores a spelling the graph does not resolve any more, so the
+	// rows are planted as the old binary stored them.
+	svc, ds, dsn, root := unitSeededRepository(t, false)
 	hold := installHolds(t, ds)
 	ctx := context.Background()
 	for _, h := range []struct{ id, value, unit string }{{"pounds", "150", "[lb_av]"}, {"kilos", "70", "kg"}, {"ounces", "3", "[oz_av]"}} {
-		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: hold, ID: h.id, Properties: map[string]any{
+		if err := planter(t, ds).PlantRecord(ctx, hold, h.id, map[string]any{
 			"weight": map[string]any{"value": h.value, "unit": h.unit},
-		}})
+		}); err != nil {
+			t.Fatalf("plant %s: %v", h.id, err)
+		}
 	}
 	if _, err := ds.Delete(ctx, substrate.ActorAPI, hold, "ounces", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone a hold: %v", err)

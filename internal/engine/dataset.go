@@ -666,7 +666,7 @@ type txn struct {
 	unitBefore  *unitGraphAt
 	unitLocal   *unitGraphAt
 	// metricValues and metricRecords are the observed values and the metrics
-	// the transaction folded under the unit graph switch, which its end holds
+	// the transaction folded, which its end holds
 	// to the metric rules (metricrules.go checkMetricValues).
 	metricValues  map[eref]metricValueNote
 	metricRecords map[eref]bool
@@ -755,8 +755,7 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 		return err
 	}
 	// The quantity declarations and the metric rules over the transaction's
-	// final state, under the unit graph switch (quantitywrite.go,
-	// metricrules.go).
+	// final state (quantitywrite.go, metricrules.go).
 	if err := t.checkDeclaredUnits(); err != nil {
 		return err
 	}

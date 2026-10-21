@@ -620,7 +620,7 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 func (t *txn) foldFTS(row *erow) [3]string {
 	if t.writeReg != nil {
 		if ty, ok := t.writeReg.ByIdentity(row.Kind); ok {
-			return ftsBands(ty, row, t.ds.svc.unitGraphOn)
+			return ftsBands(ty, row)
 		}
 	}
 	// The fall-through reads the LIVE registry, where reprojectFTS reads the
@@ -632,14 +632,14 @@ func (t *txn) foldFTS(row *erow) [3]string {
 	// and beforeGuards runs before any row moves. The branch exists for a
 	// transaction with no candidate at all, whose writeReg is nil. Keep it so.
 	// Past the live registry the parked kinds answer (foldView).
-	return ftsBandsUnder(t.liveFoldView(), row, t.ds.svc.unitGraphOn)
+	return ftsBandsUnder(t.liveFoldView(), row)
 }
 
 // ftsBandsUnder computes a row's bands under one registry alone: its kind's
 // declaration where the registry holds it, the unknown-kind bands otherwise.
-func ftsBandsUnder(reg kindLookup, row *erow, graphUnits bool) [3]string {
+func ftsBandsUnder(reg kindLookup, row *erow) [3]string {
 	if ty, ok := reg.ByIdentity(row.Kind); ok {
-		return ftsBands(ty, row, graphUnits)
+		return ftsBands(ty, row)
 	}
 	// No declaration to consult (a kind this binary no longer declares), so no
 	// `body` property `fts` flag to read. Index the stored body: it is the safe
@@ -925,7 +925,7 @@ func (t *txn) rederiveFTS(reg kindLookup, kind string, rows []*erow) error {
 	b := make([]string, 0, len(rows))
 	c := make([]string, 0, len(rows))
 	for _, row := range rows {
-		bands := ftsBandsUnder(reg, row, t.ds.svc.unitGraphOn)
+		bands := ftsBandsUnder(reg, row)
 		ids, a, b, c = append(ids, row.ID), append(a, bands[0]), append(b, bands[1]), append(c, bands[2])
 	}
 	if _, err := t.exec(`

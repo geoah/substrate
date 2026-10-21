@@ -37,7 +37,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/big"
 	"slices"
 	"strconv"
 	"time"
@@ -228,24 +227,16 @@ func bindsObserved(ty *vocabulary.Kind) bool {
 }
 
 // observedShape is the part of a kind's declaration the derivation reads:
-// the variant it binds and the measure its `value` declares. Two
-// declarations with the same shape derive the same points from the same
-// row, so a vocabulary change re-derives a kind's points only where it
-// moves (reprojection.go).
+// the variant it binds. Two declarations with the same shape derive the same
+// points from the same row, so a vocabulary change re-derives a kind's points
+// only where it moves (reprojection.go).
 func observedShape(reg kindLookup, ident string) string {
 	ty, ok := reg.ByIdentity(ident)
 	if !ok || !bindsObserved(ty) {
 		return ""
 	}
 	b, _ := observedBinding(ty)
-	return b.Variant + "|" + declaredMeasure(ty)
-}
-
-func declaredMeasure(ty *vocabulary.Kind) string {
-	if p, ok := ty.Prop("value"); ok && p.Quantity != nil {
-		return p.Quantity.Measure
-	}
-	return ""
+	return b.Variant
 }
 
 // observedRows is what one record derives: its stream, its form, the
@@ -262,12 +253,10 @@ type observedRows struct {
 	wrapAt    *string
 	circular  bool
 	points    []obsPoint
-	// graphUnits says the row was derived under the unit graph switch
-	// (decision 0186): no point carries a base value, and turn is one full
-	// circle in the row's unit as the graph reads it, nil for a unit with
-	// none, which a circular point's angle divides by.
-	graphUnits bool
-	turn       *float64
+	// turn is one full circle in the row's unit as the repository's unit
+	// graph reads it (decision 0186), nil for a unit with none, which a
+	// circular point's angle divides by.
+	turn *float64
 }
 
 // obsPoint is one point of a record. offsetKnown is false where the record
@@ -277,7 +266,7 @@ type obsPoint struct {
 	ts, tsEnd   time.Time
 	offset      int64
 	offsetKnown bool
-	value, base *float64
+	value       *float64
 	exact       *string
 	code        string
 	// comparator is the quantity's comparator (`<0.01`), "" for an exact
@@ -299,9 +288,8 @@ func (p obsPoint) available() bool {
 // when it holds a value or a code; one that says why it has none
 // (`absentReason`) or keeps a reading as received derives nothing.
 //
-// units is the repository's unit graph under the unit graph switch, nil
-// before it: a point then carries no base value, and a circular one reads
-// its unit's turn from the graph.
+// units is the repository's unit graph, which a circular point reads its
+// unit's turn from; a nil graph holds no turn.
 func deriveObserved(ty *vocabulary.Kind, row *erow, units *vocabulary.UnitGraph) *observedRows {
 	if !bindsObserved(ty) || row == nil || row.At == nil || row.DeletedAt != nil {
 		return nil
@@ -331,7 +319,6 @@ func deriveObserved(ty *vocabulary.Kind, row *erow, units *vocabulary.UnitGraph)
 	r.resetRule = optString(props, "resetRule")
 	r.resetAt = parseTimeValue(stringProp(props, "resetAt"))
 	r.wrapAt = optString(props, "wrapAt")
-	r.graphUnits = units != nil
 	switch b.Variant {
 	case vocabulary.ObservedSingle:
 		p, unit, ok := singlePoint(row)
@@ -340,10 +327,6 @@ func deriveObserved(ty *vocabulary.Kind, row *erow, units *vocabulary.UnitGraph)
 		}
 		r.unit = unit
 		r.points = []obsPoint{p}
-		if p.exact != nil && units == nil {
-			p.base = baseValue(measureFor(unit, storedMeasure(props, declaredMeasure(ty)), r.delta), unit, *p.exact)
-			r.points[0] = p
-		}
 		if form == vocabulary.FormGauge {
 			r.holdMs = gaugeHoldMs(p, r.holdMs)
 		}
@@ -431,11 +414,6 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 	if s := stringProp(props, "every"); s != "" {
 		every, _ = vocabulary.ParseISODuration(s)
 	}
-	measure := measureFor(r.unit, storedMeasure(props, ""), r.delta)
-	factor, offset, baseErr := vocabulary.ToBase(measure, r.unit)
-	if r.graphUnits {
-		baseErr = errors.New("no base value under the unit graph")
-	}
 	out := make([]obsPoint, 0, len(pts))
 	for i, tp := range pts {
 		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, offset: off, offsetKnown: known}
@@ -459,54 +437,10 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 			}
 			digits := tp.Value
 			p.value, p.exact = &f, &digits
-			if baseErr == nil {
-				p.base = toBase(factor, offset, digits)
-			}
 		}
 		out = append(out, p)
 	}
 	return out
-}
-
-// storedMeasure is the measure the write path stamped on the record
-// (observedMeasure), else the one its kind declares. The stamped one decides:
-// it is how the unit table read the unit when the value was written, so a
-// rebuild under a later table that reads the code another way derives the
-// same base value.
-func storedMeasure(props map[string]any, declared string) string {
-	if m := stringProp(props, vocabulary.ObservedMeasure); m != "" {
-		return m
-	}
-	return declared
-}
-
-// measureFor is the measure a value converts in; vocabulary holds the rule,
-// so a trace's size check counts the measure this stamps.
-func measureFor(unit, declared string, delta bool) string {
-	return vocabulary.ObservedMeasureFor(unit, declared, delta)
-}
-
-// baseValue is a value in its measure's base unit, nil where the unit has
-// none.
-func baseValue(measure, unit, digits string) *float64 {
-	if measure == "" {
-		return nil
-	}
-	factor, offset, err := vocabulary.ToBase(measure, unit)
-	if err != nil {
-		return nil
-	}
-	return toBase(factor, offset, digits)
-}
-
-func toBase(factor, offset *big.Rat, digits string) *float64 {
-	v, ok := new(big.Rat).SetString(digits)
-	if !ok {
-		return nil
-	}
-	v.Mul(v, factor).Add(v, offset)
-	f, _ := v.Float64()
-	return &f
 }
 
 func stringProp(props map[string]any, name string) string {
@@ -630,11 +564,8 @@ func rowTiers(row *erow) []time.Duration {
 }
 
 // observedUnits is the graph the transaction derives observed points
-// through under the unit graph switch, nil before it.
+// through.
 func (t *txn) observedUnits() (*vocabulary.UnitGraph, error) {
-	if !t.ds.svc.unitGraphOn {
-		return nil, nil
-	}
 	at, err := t.unitGraph()
 	if err != nil {
 		return nil, err

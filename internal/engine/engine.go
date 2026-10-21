@@ -132,10 +132,6 @@ type options struct {
 	// and as an open catch-up (unitseed.go).
 	seedUnits    bool
 	seedUnitsSet bool
-	// unitGraph reads and writes every quantity through the repository's
-	// unit graph instead of the engine's table (WithUnitGraph). Default true.
-	unitGraph    bool
-	unitGraphSet bool
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -408,16 +404,6 @@ func WithUnitSeed(on bool) Option {
 	return func(o *options) { o.seedUnits, o.seedUnitsSet = on, true }
 }
 
-// WithUnitGraph selects the code path of decision 0186: every quantity
-// write, filter, order, observed index row, aggregate read, unit conversion
-// and function host call reads the repository's unit graph instead of the
-// engine's table. On by default; off selects the table path, which reads
-// none of the declarations or unit ids a repository holds since the switch,
-// and is removed with the table (step 5 of docs/plans/dynamic-units.md).
-func WithUnitGraph(on bool) Option {
-	return func(o *options) { o.unitGraph, o.unitGraphSet = on, true }
-}
-
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
@@ -556,9 +542,6 @@ type service struct {
 	// seedUnits writes the shipped unit and conversion records at creation
 	// and as an open catch-up (unitseed.go).
 	seedUnits bool
-	// unitGraphOn reads and writes every quantity through the repository's
-	// unit graph (WithUnitGraph, decision 0186).
-	unitGraphOn bool
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs    unitGraphCache
@@ -749,9 +732,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if !o.seedUnitsSet {
 		o.seedUnits = true
 	}
-	if !o.unitGraphSet {
-		o.unitGraph = true
-	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -814,7 +794,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,
 		seedUnits:          o.seedUnits,
-		unitGraphOn:        o.unitGraph,
 		log:                o.log,
 		bg:                 newBackground(),
 		datasets:           map[string]*dataset{},

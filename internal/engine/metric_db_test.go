@@ -48,11 +48,6 @@ func TestObservedRecordsStoreTheUnitsIDAndNoMeasure(t *testing.T) {
 	}
 	_, err := r.patch(t, r.observation, "w", map[string]any{"measure": "mass"})
 	refused(t, "a written measure", err, "props.measure: not declared")
-	for _, p := range r.points(t, r.trace, "hr") {
-		if p.base.Valid {
-			t.Errorf("the trace's point carries a base value: %+v", p)
-		}
-	}
 	r.rebuildMatches(t)
 }
 

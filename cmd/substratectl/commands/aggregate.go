@@ -185,7 +185,7 @@ answer whole.`,
 	f.StringSliceVar(&o.groupBy, "group-by", nil, "group rows by source, about, code, metric, channel or statistic (repeatable or comma-separated)")
 	f.StringVar(&o.policy, "policy", "", "source policy: separate|priority")
 	f.StringSliceVar(&o.order, "order", nil, "with --policy priority: the sources in order, by id or record path (repeatable)")
-	f.StringVar(&o.unit, "unit", "", "convert the values to this unit of the metric's measure")
+	f.StringVar(&o.unit, "unit", "", "convert the values to this unit, one the metric's unit converts to")
 	f.StringVar(&o.durationUnit, "duration-unit", "", "the unit durationIn and timeInState answer their times in (s, min, h, d)")
 	f.BoolVar(&o.latest, "latest", false, "answer each group's newest point instead of buckets")
 	f.StringVar(&o.from, "from", "", "which points to read: raw|summaries|prefer-raw")

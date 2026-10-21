@@ -45,6 +45,47 @@ func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string
 	})
 }
 
+// PlantRecord creates a record no row holds yet with exactly the properties
+// given, through the fold and the changelog but past every write check, the
+// way a repository migration writes: a row an older binary stored that this
+// one's write path refuses, such as a value in a unit no unit record answers.
+// A trait-backed property (`at`, `endsAt`) lands in its column as a put's
+// would.
+func (ds *dataset) PlantRecord(ctx context.Context, kindIdent, id string, props map[string]any) error {
+	return ds.inTx(ctx, substrate.ActorAPI, true, func(t *txn) error {
+		t.migrating = true
+		row, err := t.loadRow(eref{Kind: kindIdent, ID: id}, true)
+		if err != nil {
+			return err
+		}
+		if row != nil {
+			return fmt.Errorf("substrate/engine: %s %s already has a row", kindIdent, id)
+		}
+		ty, err := t.resolveType(kindIdent)
+		if err != nil {
+			return err
+		}
+		authored, hot, _, err := splitProps(ty, props)
+		if err != nil {
+			return err
+		}
+		row = &erow{
+			ID: id, Kind: kindIdent, States: map[string]string{}, Props: authored, Labels: map[string]any{},
+			At: hot.at, EndsAt: hot.endsAt, DueAt: hot.dueAt,
+			CreatedAt: t.now, UpdatedAt: t.now, KindVersion: ty.Version,
+		}
+		if row.Props == nil {
+			row.Props = map[string]any{}
+		}
+		res, err := t.foldRow(nil, row, false, false)
+		if err != nil || !res.changed {
+			return err
+		}
+		return t.appendChange(substrate.ActorAPI, substrate.OpPut, id, kindIdent,
+			map[string]any{"created": true, "properties": sortedKeys(authored)})
+	})
+}
+
 // ApplyVocabularyWithRemoval admits upserts AND one removal as a single
 // admission unit. No door outside the engine does: /vocabulary/apply only
 // upserts, the generic delete only removes, and a bundle re-apply drops a

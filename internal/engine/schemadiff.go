@@ -73,28 +73,25 @@ type narrowing struct {
 	query   string
 	args    []any
 	strands func(root []byte) bool
-	// strandsIn is strands under the unit graph switch (decision 0186): a
-	// quantity narrowing judges each stored value through the repository's
-	// graph, which the count reads (narrowingUnits).
+	// strandsIn is strands for a quantity narrowing, which judges each stored
+	// value through the repository's unit graph (decision 0186), which the
+	// count reads (narrowingUnits).
 	strandsIn func(g *vocabulary.UnitGraph) func(root []byte) bool
 }
 
 // narrowingUnits is the unit graph a count judges quantities through: the
-// transaction's own, or the preview's dataset's at its current revision, nil
-// while the switch is off.
+// transaction's own, or the preview's dataset's at its current revision; nil
+// for a reader with no repository.
 func narrowingUnits(q sqlReader) (*vocabulary.UnitGraph, error) {
 	switch r := q.(type) {
 	case *txn:
-		if !r.ds.svc.unitGraphOn {
-			return nil, nil
-		}
 		at, err := r.unitGraph()
 		if err != nil {
 			return nil, err
 		}
 		return at.graph, nil
 	case dbReader:
-		if r.ds == nil || !r.ds.svc.unitGraphOn {
+		if r.ds == nil {
 			return nil, nil
 		}
 		at, err := r.ds.unitGraph(r.ctx, r.db)
@@ -114,6 +111,7 @@ func (n narrowing) count(q sqlReader) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
+		n.strands = func([]byte) bool { return false }
 		if g != nil {
 			n.strands = n.strandsIn(g)
 		}
@@ -1292,9 +1290,9 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 			query: q, args: args,
 		})
 	}
-	// A quantity's measure, units, comparator and bounds are judged by the
-	// write coercion itself, row by row in Go: a unit's measure is the unit
-	// grammar's to answer, which SQL cannot parse.
+	// A quantity's anchor, units, comparator, bounds and `delta` are judged by
+	// the write path itself, row by row in Go, through the repository's unit
+	// graph, which SQL cannot read.
 	if candP.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curP.Quantity, candP.Quantity) {
 		change := quantityChange(curP.Quantity, candP.Quantity)
 		out = append(out, narrowing{
@@ -1302,26 +1300,8 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 				ident, subject, change),
 			query:     propValuesQuery,
 			args:      []any{ident, path[0].key},
-			strands:   quantityRefuses(path, candP),
 			strandsIn: quantityRefusesIn(path, candP),
 		})
-		if quantityMeasureChanges(curP.Quantity, candP.Quantity) {
-			deletedQuery, deletedArgs := deletedValues(ident, path[0])
-			out = append(out, narrowing{
-				format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it reads in another measure; rewrite them first",
-					ident, subject, change),
-				query:   propValuesQuery,
-				args:    []any{ident, path[0].key},
-				strands: quantityRereads(path, curP, candP),
-			})
-			out = append(out, narrowing{
-				format: fmt.Sprintf("kind %s: %s declares %s while %%d deleted records hold a value written in another measure, which a restore under this or a later declaration would reread; restore and rewrite them, or wait for the collector to purge them",
-					ident, subject, change),
-				query:   deletedQuery,
-				args:    deletedArgs,
-				strands: quantityRereadsDeleted(path, curP, candP),
-			})
-		}
 		if quantityDeltaFlips(curP.Quantity, candP.Quantity) {
 			deletedQuery, deletedArgs := deletedValues(ident, path[0])
 			out = append(out, narrowing{
@@ -1329,14 +1309,12 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 					ident, subject, change),
 				query:     propValuesQuery,
 				args:      []any{ident, path[0].key},
-				strands:   strandsNothing,
 				strandsIn: quantityDeltaRereadsIn(path),
 			}, narrowing{
 				format: fmt.Sprintf("kind %s: %s declares %s while %%d deleted records hold a value it would reread on a restore; restore and rewrite them, or wait for the collector to purge them",
 					ident, subject, change),
 				query:     deletedQuery,
 				args:      deletedArgs,
-				strands:   strandsNothing,
 				strandsIn: quantityDeltaRereadsIn(path),
 			})
 		}
@@ -1386,37 +1364,19 @@ func linkConstraintNarrowings(ident, pname, lname string, refStep fieldStep, cur
 			format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it refuses; rewrite them first",
 				ident, pname, lname, change),
 			query: linkPropValuesQuery, args: []any{ident, pname, lname},
-			strands:   quantityRefuses(path, candL),
 			strandsIn: quantityRefusesIn(path, candL),
 		})
-		if quantityMeasureChanges(curL.Quantity, candL.Quantity) {
-			out = append(out, narrowing{
-				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it reads in another measure; rewrite them first",
-					ident, pname, lname, change),
-				query: linkPropValuesQuery, args: []any{ident, pname, lname},
-				strands: quantityRereads(path, curL, candL),
-			})
-			deletedQuery, deletedArgs := deletedValues(ident, refStep)
-			out = append(out, narrowing{
-				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d deleted records hold a value written in another measure, which a restore under this or a later declaration would reread; restore and rewrite them, or wait for the collector to purge them",
-					ident, pname, lname, change),
-				query: deletedQuery, args: deletedArgs,
-				strands: quantityRereadsDeleted([]fieldStep{refStep, {key: lname}}, curL, candL),
-			})
-		}
 		if quantityDeltaFlips(curL.Quantity, candL.Quantity) {
 			deletedQuery, deletedArgs := deletedValues(ident, refStep)
 			out = append(out, narrowing{
 				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it would reread; rewrite them first",
 					ident, pname, lname, change),
 				query: linkPropValuesQuery, args: []any{ident, pname, lname},
-				strands:   strandsNothing,
 				strandsIn: quantityDeltaRereadsIn(path),
 			}, narrowing{
 				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d deleted records hold a value it would reread on a restore; restore and rewrite them, or wait for the collector to purge them",
 					ident, pname, lname, change),
 				query: deletedQuery, args: deletedArgs,
-				strands:   strandsNothing,
 				strandsIn: quantityDeltaRereadsIn([]fieldStep{refStep, {key: lname}}),
 			})
 		}

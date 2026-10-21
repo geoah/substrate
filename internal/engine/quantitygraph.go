@@ -1,7 +1,7 @@
 package engine
 
 // QUANTITY FILTERS AND ORDERS THROUGH THE REPOSITORY'S UNIT GRAPH (decision
-// 0186), the read half of the unit graph switch (WithUnitGraph).
+// 0186).
 //
 // A filter resolves its operand through the graph and converts it exactly
 // into every spelling of a unit of the operand's linear component that a
@@ -109,7 +109,7 @@ func groupGraphDecls(decls []quantityDecl) []graphQuantityGroup {
 	return groups
 }
 
-// condQuantityGraph is condQuantity under the switch.
+// condQuantityGraph is condQuantity's comparison through the graph.
 func (ds *dataset) condQuantityGraph(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, key string, c substrate.Cond, decls []quantityDecl, bounded bool) error {
 	v := `(props->` + sqlLiteral(key) + `)`
 	compare := func(op string, raw any) (string, error) {
@@ -226,7 +226,7 @@ func graphOperand(g *vocabulary.UnitGraph, raw any) (string, *big.Rat, error) {
 			return "", nil, fmt.Errorf("an operand is one value; a comparator belongs to a stored value")
 		}
 	}
-	coerced, err := coercer{graphUnits: true}.quantity(&vocabulary.Property{Datatype: vocabulary.DatatypeQuantity}, raw)
+	coerced, err := coercer{}.quantity(&vocabulary.Property{Datatype: vocabulary.DatatypeQuantity}, raw)
 	if err != nil {
 		return "", nil, err
 	}
@@ -498,7 +498,7 @@ func graphOrderCase(g *vocabulary.UnitGraph, v, root string, reading quantityRea
 	return sb.String(), nil
 }
 
-// quantityIndexRefusal refuses, under the switch, a declared index on a
+// quantityIndexRefusal refuses a declared index on a
 // quantity property: the index serves every repository that holds the kind,
 // and its key would depend on one repository's graph.
 func quantityIndexRefusal(types []*vocabulary.Kind) error {

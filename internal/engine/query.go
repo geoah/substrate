@@ -448,12 +448,8 @@ type builder struct {
 	// whose values a quantity filter reads its stored units from, since there
 	// is no table of rows to read them from.
 	rowProps map[string]any
-	// tombstones says the read selects tombstones (filter.deleted) rather
-	// than live rows, so a quantity read that collects the rows' units
-	// (quantity.go storedQuantityUnits) reads the same side.
-	tombstones bool
 	// units is the unit graph a quantity filter or order converted through
-	// under the unit graph switch (quantitygraph.go), read once in the read's
+	// (quantitygraph.go), read once in the read's
 	// snapshot; non-nil, it is what a list's cursor carries the revision of.
 	units *unitGraphAt
 	// tx is the write transaction a mapping's where runs in, whose own graph
@@ -536,23 +532,13 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	order := renderOrder(terms)
 	// The cursor is stamped with the order AND the filter it was minted under:
 	// a token replayed against another filter would seek past rows the new
-	// predicate admits and answer a short page that looked complete. Under
-	// the unit graph switch a filter or an order that converted through the
-	// graph stamps its revision too, so a page after a conversion changed is
-	// refused (quantitygraph.go).
+	// predicate admits and answer a short page that looked complete. A filter
+	// or an order that converted through the unit graph stamps its revision
+	// too, so a page after a conversion changed is refused (quantitygraph.go).
 	signature := orderSignature(order, q.Filter)
 	if b.units != nil {
 		signature += "|units@" + strconv.FormatInt(b.units.revision, 10)
 	}
-	// A quantity order gains an arm per stored unit its declaration does not
-	// name, after the signature: each arm keys a row the same whichever arms
-	// stand beside it, so a unit first written mid-walk moves no cursor.
-	if !ds.svc.unitGraphOn {
-		if terms, err = ds.quantityOrderTerms(ctx, tx, b, types, q.OrderBy, terms); err != nil {
-			return nil, err
-		}
-	}
-	order = renderOrder(terms)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize
@@ -844,7 +830,6 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		b.add(`deleted_at IS NULL`)
 	default:
 		b.add(`deleted_at IS NOT NULL`)
-		b.tombstones = true
 	}
 	if f.Search != "" {
 		// The record's search index, the one column records_fts_idx covers:
@@ -918,9 +903,8 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			return nil, err
 		}
 	}
-	// The quantity comparisons come last: one reads the units its rows hold
-	// (storedQuantityUnits) under every condition built before it, so the
-	// rest of the filter narrows that read as it narrows the list.
+	// The quantity comparisons come last. Each reads the spellings the
+	// filtered kinds use from unit_uses (quantitygraph.go usedSpellings).
 	for _, name := range quantities {
 		if err := ds.condProp(ctx, x, b, types, name, f.Properties[name]); err != nil {
 			return nil, err
@@ -1934,17 +1918,14 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 		if ds.moneyProp(types, property) {
 			return moneyValueSQL(`(props->` + sqlLiteral(property) + `)`), nil
 		}
-		// A QUANTITY sorts by the value converted to its measure's base, the
-		// expression a declared index on it holds (indices.go).
+		// A QUANTITY sorts by the value converted to its linear component's
+		// root through the repository's unit graph (quantitygraph.go).
 		if decls, ok := ds.quantityProp(types, property); ok {
-			if ds.svc.unitGraphOn {
-				at, err := ds.builderUnits(ctx, x, b)
-				if err != nil {
-					return "", err
-				}
-				return quantityOrderGraph(at, property, decls)
+			at, err := ds.builderUnits(ctx, x, b)
+			if err != nil {
+				return "", err
 			}
-			return quantityOrderSQL(`(props->`+sqlLiteral(property)+`)`, groupQuantityDecls(decls)), nil
+			return quantityOrderGraph(at, property, decls)
 		}
 		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
 		// one UTC RFC 3339 layout, but RFC3339Nano trims trailing fractional

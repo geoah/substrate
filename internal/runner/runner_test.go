@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine/unitseed"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -124,9 +125,21 @@ func (f *fakeBackend) Call(_ context.Context, function string, args any) (any, e
 	return f.call(function, args)
 }
 
+// Units answers the fake's own graph, else the shipped seed's, the units a
+// fresh repository holds.
 func (f *fakeBackend) Units(context.Context) (*vocabulary.UnitGraph, error) {
 	f.unitLoads++
-	return f.units, nil
+	if f.units != nil {
+		return f.units, nil
+	}
+	g, problems, err := unitseed.Graph()
+	if err != nil {
+		return nil, err
+	}
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("the shipped seed: %v", problems)
+	}
+	return g, nil
 }
 
 func (f *fakeBackend) ResolveKind(name string) string {

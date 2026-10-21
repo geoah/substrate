@@ -29,15 +29,14 @@ var reDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // coerceProps validates a write's properties against the type and returns
 // them in their stored (JSON-safe, normalised) form. A nil value is a
 // delete marker and passes through.
-// coercer holds written values to their declarations. graphUnits is the unit
-// graph switch (decision 0186): a quantity is then held to its shape alone,
-// and the write transaction resolves its unit through the repository's graph
-// (quantitywrite.go resolveQuantities).
-type coercer struct{ graphUnits bool }
+// coercer holds written values to their declarations. It carries no state: a
+// quantity is held to its shape alone, and the write transaction resolves
+// its unit through the repository's graph (quantitywrite.go
+// resolveQuantities, decision 0186).
+type coercer struct{}
 
-// coercer is how the dataset's writes hold values: through the repository's
-// unit graph once the switch is on (WithUnitGraph).
-func (ds *dataset) coercer() coercer { return coercer{graphUnits: ds.svc.unitGraphOn} }
+// coercer is how the dataset's writes hold values.
+func (ds *dataset) coercer() coercer { return coercer{} }
 
 func (t *txn) coercer() coercer { return t.ds.coercer() }
 
@@ -94,8 +93,7 @@ func (c coercer) props(ty *vocabulary.Kind, in map[string]any) (map[string]any, 
 	return out, nil
 }
 
-// The coercions read through the engine's table, for every caller that is not
-// a write under the unit graph switch, which takes coercer{graphUnits: true}.
+// The coercions as functions, for callers with no dataset at hand.
 func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error) {
 	return coercer{}.props(ty, in)
 }
@@ -888,13 +886,13 @@ type titleResolver struct {
 	row *erow
 }
 
-// quantity is a quantity value as a title prints it: the symbol of the
-// engine's table, or under the unit graph switch the symbol the
-// transaction's graph holds for the stored unit (decision 0186). The title
-// is stored with the write, so a later symbol edit never reprints it.
+// quantity is a quantity value as a title prints it: the symbol the
+// transaction's unit graph holds for the stored unit (decision 0186), or the
+// unit as stored where there is no transaction. The title is stored with the
+// write, so a later symbol edit never reprints it.
 func (r *titleResolver) quantity(v any) string {
-	if r.t == nil || !r.t.ds.svc.unitGraphOn {
-		return vocabulary.FormatQuantity(v)
+	if r.t == nil {
+		return vocabulary.FormatQuantityIn(nil, v)
 	}
 	at, err := r.t.unitGraph()
 	if err != nil {
@@ -1254,9 +1252,9 @@ func (t *txn) deriveTitle(ty *vocabulary.Kind, row *erow) (string, error) {
 // declared short string properties (B), body and prose (C). Properties opt
 // out with fts:false; secrets never index.
 //
-// Under the unit graph switch (graphUnits) a quantity indexes its digits and
-// its stored unit id, never a symbol (vocabulary.QuantitySearchText).
-func ftsBands(ty *vocabulary.Kind, row *erow, graphUnits bool) [3]string {
+// A quantity indexes its digits and its stored unit id, never a symbol
+// (vocabulary.QuantitySearchText).
+func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 	var b, c []string
 	for _, name := range ty.PropOrder {
 		p := ty.Props[name]
@@ -1267,7 +1265,7 @@ func ftsBands(ty *vocabulary.Kind, row *erow, graphUnits bool) [3]string {
 		if p.Datatype == vocabulary.DatatypeQuantity && !p.Keyed {
 			// An object renders as nothing in scalarString; a quantity
 			// declared `fts: true` indexes its value text, "72.5 kg".
-			s = quantityText(row.Props[name], graphUnits)
+			s = quantityText(row.Props[name])
 		}
 		if s == "" {
 			continue

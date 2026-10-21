@@ -16,8 +16,9 @@ import (
 // A quantity value is `{value: "72.5", unit: "kg"}`, with `comparator: "<"`
 // beside them where the property declares `comparator: true`. The value is
 // exact digits, a string, as a decimal is (a JSON number rides float64 and may
-// arrive rounded); the unit is a code the unit table reads (units.go), stored
-// as the code whatever alias the writer sent; the comparator says the true
+// arrive rounded); the unit is the id of a unit record of the repository's
+// unit graph (decision 0186), stored as the id whatever code or alias the
+// writer sent; the comparator says the true
 // value lies in the half-line it names, so a lab's `<0.5 ng/mL` is
 // `{value: "0.5", unit: "ng/mL", comparator: "<"}`.
 const (
@@ -31,11 +32,6 @@ var QuantityComparators = []string{"<", "<=", ">=", ">"}
 
 // QuantitySpec is what a quantity property declares beyond its datatype.
 type QuantitySpec struct {
-	// Measure is the measure the engine's table reads a stored unit in. No
-	// declaration names one since the unit graph switch (decision 0186), so
-	// the loader leaves it empty; the table path reads it until the table is
-	// removed.
-	Measure string
 	// Units is the declared `units:`, a narrowing to listed unit spellings;
 	// nil admits every unit of the anchor's linear component.
 	Units []string
@@ -53,12 +49,6 @@ type QuantitySpec struct {
 	Delta bool
 }
 
-// GraphDialect reports whether the declaration names its units the way
-// decision 0186 reads them, as spellings of the repository's unit graph: it
-// declares `unit`. Its `units` and bounds are then checked against a
-// repository at write, never against the engine's table.
-func (s *QuantitySpec) GraphDialect() bool { return s != nil && s.Unit != "" }
-
 // QuantityBound is a declared `min:` or `max:` of a quantity property.
 type QuantityBound struct {
 	// Value is the bound's canonical digits.
@@ -73,81 +63,9 @@ func (b QuantityBound) Rat() *big.Rat {
 	return r
 }
 
-// String renders the bound as a title would: "40 kg".
+// String renders the bound as declared: "40 kg".
 func (b QuantityBound) String() string {
-	return FormatQuantity(map[string]any{QuantityValue: b.Value, QuantityUnit: b.Unit})
-}
-
-// CheckUnit holds a stored or written unit code to the declaration: its
-// measure, and the listed units.
-func (s *QuantitySpec) CheckUnit(code string) (Measure, error) {
-	measure := ""
-	if s != nil {
-		measure = s.Measure
-	}
-	m, err := ResolveMeasure(code, measure)
-	if err != nil {
-		return Measure{}, err
-	}
-	if s != nil && !s.GraphDialect() && len(s.Units) > 0 && !slices.Contains(s.Units, code) {
-		return Measure{}, fmt.Errorf("%s is not one of the declared units %s", code, strings.Join(s.Units, ", "))
-	}
-	return m, nil
-}
-
-// CheckBounds holds a value to the declared bounds, compared exactly after
-// converting the value into each bound's unit. A comparator does not move the
-// check: the stated number is what a bound reads.
-func (s *QuantitySpec) CheckBounds(v *big.Rat, unit string) error {
-	if s == nil || s.GraphDialect() {
-		return nil
-	}
-	if s.Min != nil {
-		in, err := ConvertIn(s.Measure, v, unit, s.Min.Unit)
-		if err != nil {
-			return fmt.Errorf("cannot compare with min %s: %w", s.Min, err)
-		}
-		if in.Cmp(s.Min.Rat()) < 0 {
-			return fmt.Errorf("must be >= %s", s.Min)
-		}
-	}
-	if s.Max != nil {
-		in, err := ConvertIn(s.Measure, v, unit, s.Max.Unit)
-		if err != nil {
-			return fmt.Errorf("cannot compare with max %s: %w", s.Max, err)
-		}
-		if in.Cmp(s.Max.Rat()) > 0 {
-			return fmt.Errorf("must be <= %s", s.Max)
-		}
-	}
-	return nil
-}
-
-// FormatQuantity renders a STORED quantity value the way a title shows it: the
-// comparator, the digits as stored and the unit's print symbol, "72.5 kg",
-// "37 °C", "<0.5 ng/mL", "8000 steps", "90°". A value that is not a quantity
-// shape renders "", which is how every other unrenderable value reads in a
-// title.
-func FormatQuantity(v any) string {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return ""
-	}
-	value, _ := m[QuantityValue].(string)
-	unit, _ := m[QuantityUnit].(string)
-	if value == "" || unit == "" {
-		return ""
-	}
-	cmp, _ := m[QuantityComparator].(string)
-	symbol := UnitSymbol(unit)
-	switch {
-	case symbol == "":
-		return cmp + value
-	case unit == "deg" || unit == "'" || unit == "''":
-		// An angle's symbol sits against the number: 90°, not 90 °.
-		return cmp + value + symbol
-	}
-	return cmp + value + " " + symbol
+	return FormatQuantityIn(nil, map[string]any{QuantityValue: b.Value, QuantityUnit: b.Unit})
 }
 
 // FormatQuantityIn renders a stored quantity value the way FormatQuantity
@@ -400,4 +318,145 @@ func boundDigits(raw any) (string, error) {
 		return "", fmt.Errorf("%s: %w", QuantityValue, err)
 	}
 	return c, nil
+}
+
+// orList joins names as a sentence reads them: "a, b or c".
+func orList(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+}
+
+// fitDecimal rounds a value half to even to the fraction digits a decimal of
+// MaxDecimalDigits keeps beside its integer part, so a converted value can be
+// written back. A value whose integer part, or whose first significant digit,
+// lies past those digits does not fit and is refused naming the bound.
+func fitDecimal(r *big.Rat) (string, error) {
+	abs := new(big.Rat).Abs(r)
+	intDigits := len(new(big.Int).Quo(abs.Num(), abs.Denom()).String())
+	places := MaxDecimalDigits - intDigits
+	if places < 0 {
+		return "", fmt.Errorf("the converted value has %d integer digits, and a decimal holds at most %d digits", intDigits, MaxDecimalDigits)
+	}
+	scaled := new(big.Rat).Mul(abs, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(places)), nil)))
+	q, rem := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
+	switch new(big.Int).Mul(rem, big.NewInt(2)).Cmp(scaled.Denom()) {
+	case 1:
+		q.Add(q, big.NewInt(1))
+	case 0:
+		if q.Bit(0) == 1 {
+			q.Add(q, big.NewInt(1))
+		}
+	}
+	if q.Sign() == 0 {
+		return "", fmt.Errorf("the converted value's first significant digit lies past the %d digits a decimal holds", MaxDecimalDigits)
+	}
+	out := placePoint(q.String(), places)
+	if strings.Contains(out, ".") {
+		out = strings.TrimRight(strings.TrimRight(out, "0"), ".")
+	}
+	if r.Sign() < 0 {
+		out = "-" + out
+	}
+	if _, err := CanonicalDecimal(out); err != nil {
+		return "", fmt.Errorf("the converted value: %w", err)
+	}
+	return out, nil
+}
+
+// ConvertedDigits is how many significant digits RatDecimal keeps of a
+// converted value that has no finite decimal expansion (1/3 of a kg in g is
+// 333.33...).
+const ConvertedDigits = 20
+
+// RatDecimal writes an exact value as decimal digits. A value with a finite
+// decimal expansion is written whole and exact is true (72.4, 98.6, 0.0001);
+// any other is rounded half to even to `significant` significant digits and
+// exact is false, so a caller can say it rounded.
+func RatDecimal(r *big.Rat, significant int) (digits string, exact bool) {
+	if r.Sign() == 0 {
+		return "0", true
+	}
+	neg := r.Sign() < 0
+	num := new(big.Int).Abs(r.Num())
+	den := new(big.Int).Set(r.Denom())
+	sign := ""
+	if neg {
+		sign = "-"
+	}
+	// A finite expansion: the denominator holds no prime but 2 and 5.
+	rest, twos, fives := new(big.Int).Set(den), 0, 0
+	two, five, ten := big.NewInt(2), big.NewInt(5), big.NewInt(10)
+	m := new(big.Int)
+	for new(big.Int).Mod(rest, two).Sign() == 0 {
+		rest.Quo(rest, two)
+		twos++
+	}
+	for m.Mod(rest, five).Sign() == 0 {
+		rest.Quo(rest, five)
+		fives++
+	}
+	if rest.Cmp(big.NewInt(1)) == 0 {
+		scale := max(twos, fives)
+		n := new(big.Int).Mul(num, new(big.Int).Exp(ten, big.NewInt(int64(scale)), nil))
+		n.Quo(n, den)
+		return sign + placePoint(n.String(), scale), true
+	}
+	if significant < 1 {
+		significant = 1
+	}
+	abs := new(big.Rat).SetFrac(num, den)
+	// k is the decimal exponent: 10^(k-1) <= |r| < 10^k.
+	k := len(num.String()) - len(den.String()) + 1
+	pow := func(e int) *big.Rat {
+		if e >= 0 {
+			return new(big.Rat).SetInt(new(big.Int).Exp(ten, big.NewInt(int64(e)), nil))
+		}
+		return new(big.Rat).SetFrac(big.NewInt(1), new(big.Int).Exp(ten, big.NewInt(int64(-e)), nil))
+	}
+	for abs.Cmp(pow(k-1)) < 0 {
+		k--
+	}
+	for abs.Cmp(pow(k)) >= 0 {
+		k++
+	}
+	scaled := new(big.Rat).Mul(abs, pow(significant-k))
+	q, rem := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
+	switch new(big.Int).Mul(rem, two).Cmp(scaled.Denom()) {
+	case 1:
+		q.Add(q, big.NewInt(1))
+	case 0:
+		if q.Bit(0) == 1 {
+			q.Add(q, big.NewInt(1))
+		}
+	}
+	if len(q.String()) > significant {
+		q.Quo(q, ten)
+		k++
+	}
+	shift := significant - k
+	s := q.String()
+	if shift <= 0 {
+		return sign + s + strings.Repeat("0", -shift), false
+	}
+	out := placePoint(s, shift)
+	if strings.Contains(out, ".") {
+		out = strings.TrimRight(strings.TrimRight(out, "0"), ".")
+	}
+	return sign + out, false
+}
+
+// placePoint writes digits with `scale` of them after a decimal point.
+func placePoint(digits string, scale int) string {
+	if scale == 0 {
+		return digits
+	}
+	if len(digits) <= scale {
+		digits = strings.Repeat("0", scale-len(digits)+1) + digits
+	}
+	return digits[:len(digits)-scale] + "." + digits[len(digits)-scale:]
 }
