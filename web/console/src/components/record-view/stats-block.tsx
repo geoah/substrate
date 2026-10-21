@@ -13,6 +13,7 @@ import {
   Loading,
   Part,
   Quiet,
+  TileGrid,
   UNBOUND,
   useMetricReads,
   useMetricsReads,
@@ -145,11 +146,7 @@ export function StatsBlockView({
           }}
         />
       ) : (
-        <div
-          className="flex flex-wrap gap-2"
-          role="list"
-          aria-label={block.label ?? "Figures"}
-        >
+        <TileGrid label={block.label ?? "Figures"}>
           {block.items.map((item, i) => (
             <div key={i} role="listitem" className="contents">
               {item.property ? (
@@ -171,7 +168,7 @@ export function StatsBlockView({
               )}
             </div>
           ))}
-        </div>
+        </TileGrid>
       )}
       {!pending && !error && baselineError && (
         <Failed error={baselineError} onRetry={baselines.refetch} />

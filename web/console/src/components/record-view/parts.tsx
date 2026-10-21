@@ -82,6 +82,29 @@ export function Part({
   )
 }
 
+/** The tiles of a stats block or a table's tiles, laid out one way
+ * whatever each tile holds: up to three to a row, each a third of the row
+ * and at most 320 px wide, fewer where the page is narrower than three
+ * 176 px tiles, and every tile as tall as the tallest. */
+export function TileGrid({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      data-slot="tile-grid"
+      role="list"
+      aria-label={label}
+      className="grid max-w-[976px] auto-rows-fr grid-cols-[repeat(auto-fill,minmax(min(100%,max(176px,calc((100%_-_1rem)/3))),1fr))] gap-2"
+    >
+      {children}
+    </div>
+  )
+}
+
 export function Loading() {
   return <Skeleton className="h-24 w-full max-w-[520px]" />
 }

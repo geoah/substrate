@@ -36,13 +36,12 @@ import {
   observedVariant,
   readingText,
   recordTimelineSearch,
-  resultReading,
+  resultBar,
   statisticWords,
   type ReadingShape,
 } from "@/lib/observations"
 import { coverageWords, durationMs, secondWords } from "@/lib/observations-time"
 import { numberOf } from "@/lib/observations-answer"
-import type { Band } from "@/lib/record-view"
 import { splitRecordPath } from "@/lib/record-path"
 import {
   breakAtGaps,
@@ -161,45 +160,6 @@ function Fact({
   )
 }
 
-/** The bar a result's value draws against its own first reference range
- * (`resultReading`): only where the value is a plain number, not a bound
- * such as `<0.5`, and every bound the range gives converts into the
- * value's unit (another measure is said in words, never drawn). The range
- * wears its own tone, a lab's normal range the good one, and a one-sided
- * range of values that are never negative starts at zero, so a value
- * under a high bound alone sits where it is, not at the padded end. */
-function rangeBarOf(p: Record<string, unknown>):
-  | {
-      value: number
-      unit?: string
-      band: Band
-      tone: "good" | "poor" | "none"
-      min?: number
-    }
-  | undefined {
-  const reading = resultReading(p)
-  if (!reading?.range || reading.comparator) return undefined
-  const { value, unit, range, tone } = reading
-  // Only a one-sided range ("under 3") starts at zero: a two-sided one
-  // keeps its band wide enough to read, its bounds clear of each other.
-  const oneSided = (range.low === undefined) !== (range.high === undefined)
-  const nonNegative = [value, range.low, range.high].every(
-    (v) => v === undefined || v >= 0
-  )
-  return {
-    value,
-    unit,
-    band: {
-      ...(range.low !== undefined ? { low: range.low } : {}),
-      ...(range.high !== undefined ? { high: range.high } : {}),
-      label: range.label,
-      tone: range.tone,
-    },
-    tone,
-    ...(oneSided && nonNegative ? { min: 0 } : {}),
-  }
-}
-
 function ValueSection({
   record,
   open,
@@ -218,7 +178,7 @@ function ValueSection({
       ? undefined
       : str(p.endsAt)
   const judged = judgementWords(p.interpretation, p.referenceRanges)
-  const bar = rangeBarOf(p)
+  const bar = resultBar(p)
   const places = useMetricPlaces(p)
   return (
     <>

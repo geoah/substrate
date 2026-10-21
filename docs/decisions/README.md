@@ -343,3 +343,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0182](0182-a-record-trigger-is-walked-by-one-caller-at-a-time.md) | A record trigger is walked by one caller at a time | proposed |
 | [0183](0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md) | An unreachable Beeper Desktop throttles the sync, and throttled reads as waiting | proposed |
 | [0184](0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md) | A record view grows by adding a field, never by retyping one | proposed |
+| [0185](0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md) | A table draws its results as tiles, and every tile takes one size | proposed |

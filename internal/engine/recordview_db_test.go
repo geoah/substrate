@@ -221,6 +221,11 @@ const console1 = "testdata/console1"
 // views, whose lab result view lists by `sameAs: metric`.
 const console2 = "testdata/console2"
 
+// console3 holds the console package as the binary at ac85863e shipped it
+// (version 3: a table names `sharing` and a chart `empty`, and a table has
+// no `show`) and that binary's health sample views.
+const console3 = "testdata/console3"
+
 // treeAtConsole is the shipped tree with the console package put back to the
 // version a fixture directory holds.
 func treeAtConsole(t *testing.T, fixture string) string {
@@ -522,8 +527,8 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 	}
 	_ = svc1.Close()
 
-	// --- binary N+1: the shipped tree, console package 3.
-	svc2 := openTree(t, dsn, shippedTree(t))
+	// --- binary N+1: console package 3.
+	svc2 := openTree(t, dsn, treeAtConsole(t, console3))
 	ds2, err := svc2.Dataset(ctx, name)
 	if err != nil {
 		t.Fatalf("open on binary N+1: %v", err)
@@ -552,6 +557,108 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 		}); err != nil {
 			t.Errorf("the version 3 view %s was refused after the upgrade: %v", id, err)
 		}
+	}
+}
+
+// A repository at console package 3, holding the health sample's views, an
+// owner's edit of the lab report view and an owner's own table, opened by the
+// binary that ships package 4: the boot upgrade lands version 4, every stored
+// view reads back as it was and still writes, and a table naming `show:
+// tiles`, which binary N refuses, lands (decision record 0185).
+func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	const name = "console3.example.com"
+	labresult := "substrate.reamde.dev/core/kind/" + name + "/health/labresult"
+	labreport := "substrate.reamde.dev/core/kind/" + name + "/health/labreport"
+
+	// --- binary N: console package 3, the health sample imported with its
+	// views, an owner's edit and an owner's own view.
+	svc1 := openTree(t, dsn, treeAtConsole(t, console3))
+	if _, err := svc1.CreateRepository(ctx, name); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ds1, err := svc1.Dataset(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := packageRowVersion(t, ds1, vocabulary.PackageConsole); v != 3 {
+		t.Fatalf("binary N seeded the console package at version %d, want 3", v)
+	}
+	c := samplesAtConsole(t, console3)
+	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
+		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds1); err != nil {
+			t.Fatalf("import %s on binary N: %v", id, err)
+		}
+	}
+	report := name + "/health/labreport"
+	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, report, substrate.PatchInput{
+		Properties: map[string]any{"name": "My report"},
+	}); err != nil {
+		t.Fatalf("edit the lab report view on binary N: %v", err)
+	}
+	own := map[string]any{
+		"appliesTo": labreport,
+		"name":      "Results",
+		"window":    map[string]any{"about": "about"},
+		"sections": []any{map[string]any{"table": map[string]any{
+			"kind": labresult, "via": "report", "nest": "derivedFrom", "limit": 100,
+		}}},
+	}
+	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: recordViewKind, ID: "mine", Properties: own,
+	}); err != nil {
+		t.Fatalf("write the owner's view on binary N: %v", err)
+	}
+	// A view only version 4 admits: a table naming show. Binary N refuses it.
+	tiles := maps.Clone(own)
+	tiles["sections"] = []any{map[string]any{"table": map[string]any{
+		"kind": labresult, "via": "report", "nest": "derivedFrom", "show": "tiles",
+	}}}
+	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: recordViewKind, ID: "mine-tiles", Properties: tiles,
+	}); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("binary N admitted the version 4 view: %v", err)
+	}
+	stored := map[string]map[string]any{}
+	for _, id := range []string{report, name + "/health/labresult", "mine"} {
+		rec, err := ds1.Get(ctx, recordViewKind, id)
+		if err != nil {
+			t.Fatalf("read %s on binary N: %v", id, err)
+		}
+		stored[id] = rec.Properties
+	}
+	_ = svc1.Close()
+
+	// --- binary N+1: the shipped tree, console package 4.
+	svc2 := openTree(t, dsn, shippedTree(t))
+	ds2, err := svc2.Dataset(ctx, name)
+	if err != nil {
+		t.Fatalf("open on binary N+1: %v", err)
+	}
+	if v := packageRowVersion(t, ds2, vocabulary.PackageConsole); v != 4 {
+		t.Fatalf("the boot upgrade left the console package at version %d, want 4", v)
+	}
+	engine.DrainIndexReprojection(t, ds2)
+	for id, before := range stored {
+		rec, err := ds2.Get(ctx, recordViewKind, id)
+		if err != nil {
+			t.Fatalf("read %s after the upgrade: %v", id, err)
+		}
+		if !reflect.DeepEqual(rec.Properties, before) {
+			t.Errorf("the upgrade changed %s:\n got %v\nwant %v", id, rec.Properties, before)
+		}
+		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: recordViewKind, ID: id, Properties: rec.Properties,
+		}); err != nil {
+			t.Errorf("re-put %s after the upgrade: %v", id, err)
+		}
+	}
+	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: recordViewKind, ID: "mine-tiles", Properties: tiles,
+	}); err != nil {
+		t.Errorf("the version 4 view was refused after the upgrade: %v", err)
 	}
 }
 
