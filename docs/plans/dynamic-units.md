@@ -5,7 +5,7 @@ This is the work plan for
 which makes units and conversions core records and replaces the engine's
 closed unit table of
 [0153](../decisions/0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md).
-Steps 1, 2 and 3 are implemented; the rest is not. Line numbers are against `main` at
+Steps 1 to 4 are implemented; step 5 is not. Line numbers are against `main` at
 `7d0a0cdfc`.
 This revision takes in the owner's answers of 2026-10-21 and a design review
 of the first draft.
@@ -748,6 +748,89 @@ migrated, and a rollback past this step restores a backup taken before it.
 
 Size: about 700 lines of Go, 250 of YAML and 2,000 lines of tests changed.
 
+### Details step 4 decided
+
+The step 4 code settles these as follows.
+
+- The switch stays an option and an environment variable until step 5:
+  `WithUnitGraph` and `SUBSTRATE_UNIT_GRAPH` default to on, and `false`
+  boots the table path with a warning. That path reads none of the new
+  declarations: the loader no longer admits `measures`, so a declaration
+  names no measure, and a metric's `unit` reference reaches the table as
+  its id (`MetricContractOf`). The parity tests run the table path beside
+  the graph, so it still has to answer.
+- The loader parses every quantity declaration as the graph reads it:
+  `unit`, `units`, `delta`, `comparator` and the bounds, each held to its
+  shape, and `measures` is an unknown key. `units` and bounds without `unit`
+  are admitted; with neither key a quantity admits every unit.
+  `propertytype` takes the same four keys (version 15) and core moves to
+  version 44.
+- The `metric` trait's `unit` and `units` are references, and the trait's
+  contract shape pins both to `substrate.reamde.dev/core/unit`
+  (`contractShape.pin`), so a binding kind that pins another kind is
+  refused at load.
+- The open seeds before the shipped vocabulary upgrade
+  (`ensureShippedUnits` runs before `upgradeShippedVocabulary`), whose
+  narrowing guards and default checks judge stored quantities through the
+  graph. A repository whose stored vocabulary predates the two unit kinds
+  is seeded right after the upgrade that declares them, in a transaction
+  of its own. `checkUnitUses` moves ahead of both. The shipped upgrade does
+  not run `checkDeclaredUnits` (it has no write registry), so a shipped
+  declaration naming a unit the seed lacks would land unchecked; none does.
+- Three rule versions move, so every repository re-derives at its next
+  open: `observedIndexVersion` 2 (no base value, turns read from the graph),
+  `searchIndexVersion` 3 (a quantity indexes its digits and unit id) and
+  `unitUsesVersion` 3 (a metric's top-level `unit` is no longer read, being
+  a reference counted through `refs`; only a packed `observed` row's
+  `unit` is).
+- The samples: observations 4, health 6 (requiring observations 4), and
+  healthwhoop 9 (requiring observations 4 and health 6). The WHOOP adapter
+  writes unit ids (`percent`, `1/min`, `score`), because a stored value
+  holds the id and the reconcile compares the stored value with what it
+  would write; a spelling would rewrite every output on every sync.
+  `convertlab` tells a mass from an amount concentration by which of `g/L`
+  and `mol/L` the unit converts to.
+- Test repositories still skip the seed. `enginetest.PutShippedUnits` puts
+  the shipped units of every linear component holding a named unit, with
+  the conversions inside them, and `enginetest.ImportVocabulary` puts the
+  units a sample names before importing it. A test that needs the whole
+  seed opens with `WithUnitSeed(true)`.
+- The console reads a metric's unit reference as the unit's id
+  (`metricUnitId`); every other console reader was moved in step 3.
+- The migration refold test exempts `unit_graph` for stores behind
+  migration 0016: such a store was written by a binary without the unit
+  kinds, so it held no unit row for the counter to count.
+- `checkMetricValues` reads one row per distinct metric per transaction,
+  and the benchmark below shows no cost on a provider sync, so it stays
+  unbatched.
+- The quantity tests that held the table's own rules (the grammar's bounds,
+  annotations, the stored-units read, a declared quantity index) are
+  rewritten for the graph or dropped where the graph has no such rule; a
+  value in another unit than its metric admits can no longer be stored, so
+  the aggregate test of reading one went.
+
+### Benchmarks
+
+Measured on 2026-10-21 on this 16-core box, a throwaway test run alone
+against one Postgres container: `main` at `7d0a0cdfc` against this branch,
+the seed on as in production. Each line is the median of seven, or one run
+of the whole workload, repeated twice with the same result.
+
+| Workload | `main` | Branch |
+| --- | --- | --- |
+| Registration (`CreateRepository`) | 330 ms | 1.70 s |
+| First open of a repository whose seed is current | 95 ms | 64 ms |
+| 3,000 heart-rate observations in 300-row transactions | 7.1 ms a row | 6.7 ms a row |
+| Quantity filter over them (`value > 1.5 /s`), cold / warm | 21 / 16 ms | 27 / 17 ms |
+| Aggregate, 72 hourly buckets in `/s`, cold / warm | 94 / 86 ms | 90 / 84 ms |
+
+The registration's extra 1.35 s is the seed: 365 records through the
+generic put path inside the creation transaction, which is also the cost of
+the first open of a repository created before step 2. Everything else is
+within the noise; the cold filter pays one graph build, about 6 ms. Not
+measured: reads in many repositories at once against the graph cache, and
+an owner's import of several hundred units, whose cost is the seed's.
+
 ## Step 5: removal
 
 No behavior change, except that `GET /api/v1/units` loses its old fields.
@@ -774,8 +857,9 @@ No behavior change, except that `GET /api/v1/units` loses its old fields.
   211-214, 360, 439 and 644; docs/traits.md:245-248; docs/vocabulary.md:403;
   docs/terms.md:65-68 (drop **measure**, add **unit** and **conversion**);
   CLAUDE.md's registration paragraph names the seeded units.
-- When 0186 is accepted: set its status, and set 0153 to `superseded` with
-  `superseded-by: 0186`, in the same commit.
+- 0186 was accepted, and 0153 superseded, in step 4.
+- A bulk seed path, if the 1.35 s a registration spends on the seed
+  (Benchmarks above) is to go.
 
 Size: minus about 6,000 lines of Go and 2,800 of JSON; about 500 lines of
 docs.
@@ -787,6 +871,7 @@ transaction); an open of a repository whose seed is current; a provider sync
 writing a few thousand observations; an import of several hundred units and
 conversions; and reads in many repositories at once against the graph
 cache. Each is measured on `main` and on the branch with the switch on.
+Step 4's numbers are under "Benchmarks" in its details.
 
 ## Risks
 
