@@ -132,6 +132,9 @@ type options struct {
 	// and as an open catch-up (unitseed.go).
 	seedUnits    bool
 	seedUnitsSet bool
+	// perRecordSeed seeds the units one put at a time instead of in one bulk
+	// run, the test seam that holds the two to one answer.
+	perRecordSeed bool
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -542,6 +545,9 @@ type service struct {
 	// seedUnits writes the shipped unit and conversion records at creation
 	// and as an open catch-up (unitseed.go).
 	seedUnits bool
+	// bulkSeed writes a seed the repository holds none of in one bulk run
+	// (bulkwrite.go); off only under the test seam WithTestPerRecordSeed.
+	bulkSeed bool
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs    unitGraphCache
@@ -794,6 +800,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,
 		seedUnits:          o.seedUnits,
+		bulkSeed:           !o.perRecordSeed,
 		log:                o.log,
 		bg:                 newBackground(),
 		datasets:           map[string]*dataset{},

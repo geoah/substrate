@@ -341,6 +341,22 @@ func (t *txn) seedUnits() (int, []unseededUnit, error) {
 	if err != nil {
 		return 0, nil, err
 	}
+	// A repository holding none of the records the plan writes, a fresh one
+	// above all, takes them in one bulk run (bulkwrite.go); any other takes
+	// them one put at a time.
+	ins := make([]substrate.PutInput, len(writes))
+	for i, w := range writes {
+		ins[i] = substrate.PutInput{Kind: w.kind, ID: w.id, Properties: w.props}
+	}
+	if t.ds.svc.bulkSeed {
+		bulk, err := t.putBulk(ins)
+		if err != nil {
+			return 0, nil, fmt.Errorf("substrate/engine: seed the shipped units: %w", err)
+		}
+		if bulk {
+			return len(writes), skipped, nil
+		}
+	}
 	for _, w := range writes {
 		if _, err := t.put(substrate.PutInput{Kind: w.kind, ID: w.id, Properties: w.props}); err != nil {
 			return 0, nil, fmt.Errorf("substrate/engine: seed %s %s: %w", w.kind, w.id, err)

@@ -345,7 +345,10 @@ type foldResult struct {
 // in the engine goes through here; `appendChange` drains what accumulated into
 // the entry it writes, so the entry and the tables can never disagree.
 func (t *txn) fold(op foldOp) (foldResult, error) {
-	res, err := t.foldOne(op)
+	res, bulk, err := t.foldBulk(op)
+	if !bulk {
+		res, err = t.foldOne(op)
+	}
 	if err != nil || !res.changed {
 		return res, err
 	}

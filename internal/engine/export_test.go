@@ -232,6 +232,13 @@ func WithTestSkipWriterLease() Option {
 	return func(o *options) { o.skipWriterLease = true }
 }
 
+// WithTestPerRecordSeed seeds the shipped units one put at a time, the path a
+// repository holding some of them takes, so a test can hold the bulk run to
+// it.
+func WithTestPerRecordSeed() Option {
+	return func(o *options) { o.perRecordSeed = true }
+}
+
 // WriterLeaseKeySQL is the lease's advisory-lock key expression, for a test
 // that takes or probes a lease from a session of its own. It is the expression
 // docs/operations.md publishes for reading `pg_locks`.

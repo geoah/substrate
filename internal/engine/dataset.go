@@ -542,6 +542,9 @@ type txn struct {
 	principal string
 	now       time.Time
 	maxSeq    int64
+	// bulk queues the effects and entries of a bulk run of creating puts
+	// (bulkwrite.go), nil outside one.
+	bulk *bulkWrite
 	// entries records every changelog row this transaction appended, in
 	// order: the (seq, op, kind, id) address, never the payload. Slices of it
 	// stamp llm/message rows with what a dispatch wrote (`changes`), so a

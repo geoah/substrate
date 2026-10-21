@@ -8,6 +8,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -361,4 +362,133 @@ func TestExportAndImportKeepTheSeededUnits(t *testing.T) {
 	if lb, _ := unitByID(unitsOf(t, ds2), "lb"); lb.Name != "Pfund" {
 		t.Errorf("lb's name after the import = %q", lb.Name)
 	}
+}
+
+// seedState is everything the seed wrote in one repository, as text a second
+// repository's seed can be compared with: the unit and conversion rows, their
+// managers, refs and unit uses, the graph revision, and their changelog
+// entries numbered from the seed's first. Every timestamp is held to the
+// transaction's one instant instead of compared.
+func seedState(t *testing.T, svc substrate.Service, repo string) string {
+	t.Helper()
+	db, err := engine.SharedScopedDB(svc, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := []string{vocabulary.KindUnit, vocabulary.KindConversion}
+	var out strings.Builder
+	dump := func(what, q string) {
+		t.Helper()
+		rows, err := db.QueryContext(context.Background(), q, kinds)
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		defer func() { _ = rows.Close() }()
+		cols, err := rows.Columns()
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for rows.Next() {
+			vals := make([]any, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				t.Fatal(err)
+			}
+			out.WriteString(what)
+			for _, v := range vals {
+				if b, ok := v.([]byte); ok {
+					v = string(b)
+				}
+				out.WriteString(fmt.Sprintf("|%v", v))
+			}
+			out.WriteByte('\n')
+			n++
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatalf("%s: the seed wrote none", what)
+		}
+	}
+	dump("record", `SELECT kind, id, title, body, states::text, props::text, labels::text, finalizers::text, fts::text,
+		version, kind_version, deleted_at IS NULL, created_at = updated_at,
+		created_at = (SELECT ts FROM changelog c WHERE c.kind = r.kind AND c.record_id = r.id)
+		FROM records r WHERE kind = ANY($1::text[]) ORDER BY kind, id`)
+	dump("manager", `SELECT m.record_kind, m.record_id, m.property, m.actor, m.tier, m.principal, m.updated_at = r.created_at
+		FROM property_managers m JOIN records r ON r.kind = m.record_kind AND r.id = m.record_id
+		WHERE m.record_kind = ANY($1::text[]) ORDER BY 1, 2, 3`)
+	dump("ref", `SELECT src_kind, src, property, path, ord, dst_kind, dst, props::text FROM refs
+		WHERE src_kind = ANY($1::text[]) ORDER BY 1, 2, 3, 4, 5`)
+	dump("revision", `SELECT revision, cardinality($1::text[]) FROM unit_graph`)
+	dump("entry", `SELECT seq - (SELECT min(seq) FROM changelog WHERE kind = ANY($1::text[])), actor, principal, op, kind, record_id,
+		payload::text, caused_by, hash IS NOT NULL, txn = (SELECT max(seq) FROM changelog)
+		FROM changelog WHERE kind = ANY($1::text[]) ORDER BY seq`)
+	var uses int
+	if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM unit_uses WHERE kind = ANY($1::text[])`, kinds).Scan(&uses); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(&out, "uses|%d\n", uses)
+	return out.String()
+}
+
+// A registration takes the seed in one bulk run (bulkwrite.go), and what it
+// writes is what the per-record path writes: the same rows, managers, refs,
+// unit uses, graph revision and changelog entries, payloads included. A
+// rebuild replays the bulk run's entries one effect at a time to the fold it
+// left.
+func TestBulkSeedMatchesThePerRecordPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root := engine.MigratedDSN(t), t.TempDir()
+	// One server at a time per database: the bulk repository's, then the
+	// per-record one's, over one data root.
+	register := func(repo string, opts ...engine.Option) substrate.Service {
+		t.Helper()
+		svc := reopenWith(t, dsn, root, append([]engine.Option{engine.WithUnitSeed(true)}, opts...)...)
+		if _, err := svc.CreateRepository(ctx, repo); err != nil {
+			t.Fatalf("create %s: %v", repo, err)
+		}
+		return svc
+	}
+	bulkRepo, singleRepo := testdb.Repository(t), testdb.RepositoryLabel(t)+"1.example.com"
+	bulkSvc := register(bulkRepo)
+	bulk := seedState(t, bulkSvc, bulkRepo)
+	ds, err := bulkSvc.Dataset(ctx, bulkRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, convs := shippedCounts()
+	if tab := unitsOf(t, ds); len(tab.Units) != units || len(tab.Conversions) != convs || tab.Revision != int64(units+convs) {
+		t.Fatalf("the bulk seed holds %d units and %d conversions at revision %d", len(tab.Units), len(tab.Conversions), tab.Revision)
+	}
+	rebuiltEqualsLive(t, bulkSvc, ds, "after the bulk seed")
+	_ = bulkSvc.Close()
+	singleSvc := register(singleRepo, engine.WithTestPerRecordSeed())
+	if single := seedState(t, singleSvc, singleRepo); bulk != single {
+		t.Fatalf("the bulk seed differs from the per-record one\n%s", firstDifference([]byte(single), []byte(bulk)))
+	}
+}
+
+// A repository holding some of the shipped records takes the rest one put
+// at a time, and one holding none takes them in bulk at its open: either
+// way the open ends with every shipped record and a fold a rebuild
+// reproduces.
+func TestTheOpenSeedsInBulkOrOneByOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn, root := unitSeededRepository(t, false)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "furlong", Properties: map[string]any{"name": "furlong"}}); err != nil {
+		t.Fatalf("put a unit of the owner's: %v", err)
+	}
+	svc, ds = reopenSeeded(t, svc, dsn, root)
+	units, convs := shippedCounts()
+	if tab := unitsOf(t, ds); len(tab.Units) != units+1 || len(tab.Conversions) != convs {
+		t.Fatalf("after the open: %d units and %d conversions, want %d and %d", len(tab.Units), len(tab.Conversions), units+1, convs)
+	}
+	rebuiltEqualsLive(t, svc, ds, "after the open's seed")
 }

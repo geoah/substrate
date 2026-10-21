@@ -141,6 +141,9 @@ func scanRecord(sc scanner) (*erow, error) {
 // loadRow reads a record by its full (type, id) identity, optionally taking
 // the row lock the write path serializes on.
 func (t *txn) loadRow(ref eref, forUpdate bool) (*erow, error) {
+	if t.bulkAbsent(ref) {
+		return nil, nil
+	}
 	q := `SELECT ` + recordCols + ` FROM records WHERE kind = $1 AND id = $2`
 	if forUpdate {
 		q += ` FOR UPDATE`
@@ -295,6 +298,9 @@ func changeProps(entries []changeEntry) []any {
 }
 
 func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ string, payload map[string]any) error {
+	if t.bulk != nil {
+		return t.appendBulk(actor, op, recordID, typ, payload)
+	}
 	// The entry takes the effects the transaction folded since the previous
 	// one: the payload IS the delta, and a rebuild replays it (fold.go). A
 	// transaction that appends more than one entry slices its effect stream at
