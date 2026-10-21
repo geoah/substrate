@@ -5,7 +5,7 @@ This is the work plan for
 which makes units and conversions core records and replaces the engine's
 closed unit table of
 [0153](../decisions/0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md).
-Steps 1 to 4 are implemented; step 5 is not. Line numbers are against `main` at
+All five steps are implemented. Line numbers are against `main` at
 `7d0a0cdfc`.
 This revision takes in the owner's answers of 2026-10-21 and a design review
 of the first draft.
@@ -928,6 +928,101 @@ No behavior change, except that `GET /api/v1/units` loses its old fields.
 
 Size: minus about 6,000 lines of Go and 2,800 of JSON; about 500 lines of
 docs.
+
+### Details step 5 decided
+
+The step 5 code settles these as follows. It removes 14,400 lines and adds
+3,200: Go minus 7,850 and plus 1,000, the console minus 4,480 and plus 850.
+
+- The seed files are the source. `internal/engine/unitseed/units.yaml` and
+  `conversions.yaml` are edited by hand, and `TestUnitSeedMatchesTheTable`,
+  which wrote them from the table, is deleted with it. A frozen copy of the
+  table kept only to regenerate records would be a second source.
+  `internal/engine/unitseed/seed_test.go` holds the files to what the table
+  promised: every id a record id, every spelling unique, every code and
+  alias the table read (a frozen list) resolving to the unit it named, no
+  currency, the separations (`J` from `N.m`, `Gy` from `Sv`, `count` from
+  `percent`), the turns, the scales, the temperatures, and 216 units and 149
+  conversions.
+- docs/units.md's shipped-units section is written by `TestUnitsPage` in
+  internal/engine/unitseed from the embedded seed, inside a delimited region,
+  under `-update`.
+- The console's tests read the units a fresh repository holds from
+  `web/console/src/lib/unit-graph.shipped.json`, the seed as
+  `GET /api/v1/units` answers it, written by
+  `TestConsoleFixtureMatchesTheSeed` in internal/engine under
+  `-update-console-units`. Production code never imports it. Outside
+  `UnitsProvider` (the sign-in pages) `useUnits` answers the pending reader.
+  The picker's groups are headed by the root unit's name (`UnitGroup.heading`).
+- The parity tests compared the graph with the table, so they go with it.
+  Their probes and reads stay: the table's answers were captured from the
+  commit before the removal into `internal/engine/testdata/unit_parity.json`,
+  and `TestShippedUnitsAnswerAsTheTableDid` holds the graph to them (filters
+  exactly, aggregates to 1e-9 relative). The file is frozen; nothing can
+  answer as the table did any more.
+- Retired from the API: `measures` and `aliases` of `GET /api/v1/units` (and
+  the `UnitMeasure` and `UnitCode` types), `measure` of the conversion's
+  answer and its `measure` parameter (now refused as an unsupported
+  parameter), and discovery's `units` object. `host.units.measure` and
+  `convert`'s `measure=` argument are gone from host.py. A runner backend
+  that answers no graph is an error.
+- The table dialect's leftovers go: `QuantitySpec.Measure`, `GraphDialect`,
+  `CheckUnit`, `CheckBounds`, `FormatQuantity`, the table's `CheckMetric`,
+  `MetricContract.Measures`, `ObservedMeasureFor`, the UCUM test data under
+  internal/vocabulary/testdata/ucum. `coercer` stays, a value with no fields:
+  its methods are every coercion door, and folding them back into functions
+  changes no behavior. `ObservedMeasure` stays: a write still drops a written
+  `measure`, and a rewrite clears a stored one.
+- The observed index keeps no base value. A fingerprint still hashes the
+  absent base's flag, so no stored fingerprint moves and no rule version
+  changes; `observedShape` is the variant alone.
+- `indexExpr` refuses a quantity, behind the apply's own refusal.
+- Repository migration 3 keeps its own fixed map from each old measure to
+  the unit its values now convert through, and reads nothing of the removed
+  table. Its test can no longer write binary N's rows through the table
+  path, so it plants them as binary N stored them (`PlantRecord`, a test
+  seam that writes through the fold and the changelog past the write
+  checks): the metrics and analytes the historical samples held as data, and
+  the observations in the old codes.
+- internal/engine/unitseed now has tests of its own. They read no database,
+  so the short suite runs them, and .mise/dbshard.sh cuts the package from
+  the engine shards' guard against an untested subpackage.
+- The old-repository backfill test plants its pre-0016 values in the
+  table's codes with `PlantRecord`, since no write stores a spelling the
+  graph does not resolve.
+- A registration seeds in one bulk run (internal/engine/bulkwrite.go), and so
+  does the open of a repository that holds none of the shipped records. Each
+  record still goes through the put path (`putSpec`, `apply`), so its
+  coercion, title, managers and changelog payload are the ones a single put
+  makes. Under the run, `fold` and `appendChange` queue what they would
+  write, `loadRow` answers nil for a record the run creates, and `checkID`
+  skips the per-record lock and former-id read, both taken once for the whole
+  run. `flushBulk` then writes the rows, unit uses, graph revision, refs,
+  managers and changelog entries one statement per table, the entries at the
+  seqs a per-record append would take. A kind the observed index derives
+  from, a metric, a mapping's kind, or one with embedded, sensitive or blob
+  properties never runs in bulk, and a repository holding any planned record
+  takes the per-record path. `TestBulkSeedMatchesThePerRecordPath` holds the
+  rows, managers, refs, revision and entries (payloads included) to the
+  per-record path's, and a rebuild to the live fold. `settleChecksums` stamps
+  a transaction's checksums in one statement instead of one per entry, for
+  every write.
+
+### Benchmarks of step 5
+
+Measured on 2026-10-21 on the same box as step 4's, a throwaway test run
+alone, median of nine. "Step 4" is the branch before this step; "per-record"
+is this step's code with the bulk run off (`WithTestPerRecordSeed`), which
+keeps the batched checksums; "bulk" is the default.
+
+| Workload | Step 4 | Per-record | Bulk | No seed |
+| --- | --- | --- | --- | --- |
+| Registration (`CreateRepository`) | 1.73 s | 1.60 to 1.65 s | 561 to 594 ms | 316 to 340 ms |
+| First open of a repository registered without the seed | 1.35 s | 1.36 to 1.44 s | 327 ms | |
+
+A seeded registration sends about 1,000 statements, against 6,280 before.
+The 230 ms the seed still adds is mostly the changelog files: 365 entries
+encoded, checksummed and written as lines, twice each.
 
 ## Benchmarks before step 4 merges
 
