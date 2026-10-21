@@ -310,7 +310,7 @@ func (r *aggRun) checkFinite(red substrate.AggregateReducer, v float64, ok bool)
 	if r.u.graph == nil || !ok || (!math.IsInf(v, 0) && !math.IsNaN(v)) {
 		return nil
 	}
-	return refuse(r.p.path("unit"), "%s of %s converts past the range of a float in %s; read it in a unit nearer the stored ones",
+	return refuse(r.p.path("unit"), "%s of %s is past the range of a float in %s; read it in a unit nearer the stored ones",
 		red.String(), aggMetricName(r.p), r.u.value)
 }
 

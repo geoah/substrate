@@ -791,6 +791,15 @@ func openParity(t *testing.T, on bool, repo string) *dataset {
 		t.Fatal(err)
 	}
 	ds := d.(*dataset)
+	installParityReadings(t, ds)
+	return ds
+}
+
+// installParityReadings declares the reading kind in the table's dialect, so both
+// paths read it.
+func installParityReadings(t *testing.T, ds *dataset) {
+	t.Helper()
+	ctx := context.Background()
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
@@ -807,7 +816,6 @@ func openParity(t *testing.T, on bool, repo string) *dataset {
 	}); err != nil {
 		t.Fatalf("install the reading kind: %v", err)
 	}
-	return ds
 }
 
 // parityReadings are the same values, written in the table's codes, into
@@ -820,20 +828,11 @@ var parityReadings = map[string]map[string]any{
 	"r5": {"mass": qty("1", "[stone_av]"), "temp": qty("-40", "Cel")},
 }
 
-// The graph's filters answer what the table's answer, over the shipped
-// units, for every operand below: the seed is the table as records, so a
-// filter through it may not move a row in or out.
-func TestGraphFiltersMatchTheTable(t *testing.T) {
-	t.Parallel()
-	off := openParity(t, false, testdb.Repository(t))
-	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
-	for _, ds := range []*dataset{off, on} {
-		for id, props := range parityReadings {
-			if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
-				t.Fatalf("put %s: %v", id, err)
-			}
-		}
-	}
+// parityFilterAnswers runs every parity probe over the reading kind and
+// answers, by probe, the ids it matched. The probes must split the readings,
+// or agreeing would prove nothing.
+func parityFilterAnswers(t *testing.T, ds *dataset) map[string]string {
+	t.Helper()
 	type probe struct {
 		prop string
 		cond substrate.Cond
@@ -850,30 +849,48 @@ func TestGraphFiltersMatchTheTable(t *testing.T) {
 	for _, o := range []map[string]any{qty("1", "/min"), qty("60", "/min"), qty("3600", "/h")} {
 		probes = append(probes, probe{"rate", substrate.Cond{Eq: o}}, probe{"rate", substrate.Cond{Gte: o}})
 	}
-	matched := 0
+	out := map[string]string{}
+	split := 0
 	for _, p := range probes {
 		q := substrate.Query{
 			Filter:  substrate.Filter{Kinds: []string{tableKind}, Properties: map[string]substrate.Cond{p.prop: p.cond}},
 			OrderBy: []substrate.Order{{Property: "id"}},
 		}
-		a, err := off.List(context.Background(), q)
+		label := fmt.Sprintf("%s %+v", p.prop, p.cond)
+		page, err := ds.List(context.Background(), q)
 		if err != nil {
-			t.Fatalf("%s %+v through the table: %v", p.prop, p.cond, err)
+			t.Fatalf("%s: %v", label, err)
 		}
-		b, err := on.List(context.Background(), q)
-		if err != nil {
-			t.Fatalf("%s %+v through the graph: %v", p.prop, p.cond, err)
-		}
-		if got, want := strings.Join(pageIDs(b), ","), strings.Join(pageIDs(a), ","); got != want {
-			t.Errorf("%s %+v: the graph answers [%s], the table [%s]", p.prop, p.cond, got, want)
-		}
-		if len(a.Records) > 0 && len(a.Records) < len(parityReadings) {
-			matched++
+		out[label] = strings.Join(pageIDs(page), ",")
+		if len(page.Records) > 0 && len(page.Records) < len(parityReadings) {
+			split++
 		}
 	}
-	// The probes must split the readings, or agreeing proves nothing.
-	if matched < len(probes)/2 {
-		t.Fatalf("only %d of %d probes split the readings", matched, len(probes))
+	if split < len(probes)/2 {
+		t.Fatalf("only %d of %d probes split the readings", split, len(probes))
+	}
+	return out
+}
+
+// The graph's filters answer what the table's answer, over the shipped
+// units, for every parity probe: the seed is the table as records, so a
+// filter through it may not move a row in or out.
+func TestGraphFiltersMatchTheTable(t *testing.T) {
+	t.Parallel()
+	off := openParity(t, false, testdb.Repository(t))
+	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
+	for _, ds := range []*dataset{off, on} {
+		for id, props := range parityReadings {
+			if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
+				t.Fatalf("put %s: %v", id, err)
+			}
+		}
+	}
+	want := parityFilterAnswers(t, off)
+	for probe, got := range parityFilterAnswers(t, on) {
+		if got != want[probe] {
+			t.Errorf("%s: the graph answers [%s], the table [%s]", probe, got, want[probe])
+		}
 	}
 }
 
@@ -1128,63 +1145,176 @@ func circularMeanDeg(turn float64, values ...float64) string {
 	return strconv.FormatFloat(m, 'f', -1, 64)
 }
 
+// parityObserve writes, in the table's codes, the parity metrics and their
+// values: amounts of mass, held temperatures, an energy counter, held
+// temperature differences, held power levels, and amounts near the largest
+// magnitude the observed index admits (1e280), whose sums in micrograms
+// near 1e290: no shipped conversion carries an admitted value past the
+// range of a float, so the graph's overflow refusal has no table answer to
+// match (TestOverflowingAnswerIsRefused holds it).
+func parityObserve(t *testing.T, ds *dataset) {
+	t.Helper()
+	if err := enginetest.ImportVocabulary(context.Background(), ds, "observations"); err != nil {
+		t.Fatalf("import observations: %v", err)
+	}
+	for id, props := range map[string]map[string]any{
+		"mass":   {"unit": "kg", "form": "amount"},
+		"temp":   {"unit": "Cel"},
+		"energy": {"unit": "kJ", "form": "counter"},
+		"drift":  {"unit": "K"},
+		"signal": {"unit": "dBm"},
+		"vast":   {"unit": "kg", "form": "amount"},
+	} {
+		if err := putMetricErr(ds, id, props); err != nil {
+			t.Fatalf("metric %s: %v", id, err)
+		}
+	}
+	held := map[string]any{"hold": "PT1H"}
+	differences := map[string]any{"hold": "PT1H", "delta": true}
+	for _, w := range []struct {
+		metric, form string
+		values       []map[string]any
+		extra        map[string]any
+	}{
+		{"mass", "amount", []map[string]any{qty("1", "[lb_av]"), qty("500", "g"), qty("0.75", "kg"), qty("16", "[oz_av]")}, nil},
+		{"temp", "gauge", []map[string]any{qty("98.6", "[degF]"), qty("36.6", "Cel"), qty("310.15", "K")}, held},
+		{"energy", "counter", []map[string]any{qty("1", "kJ"), qty("2500", "J"), qty("4", "kJ"), qty("7.5", "kJ")}, nil},
+		{"drift", "gauge", []map[string]any{qty("1", "Cel"), qty("1.8", "[degF]"), qty("0.5", "K")}, differences},
+		{"signal", "gauge", []map[string]any{qty("10", "dBm"), qty("-25", "dBm"), qty("3", "dBm")}, held},
+		{"vast", "amount", []map[string]any{qty("9"+strings.Repeat("0", 279), "kg"), qty("-4"+strings.Repeat("0", 279), "kg"), qty("1", "kg")}, nil},
+	} {
+		for i, v := range w.values {
+			if err := putAt(ds, fmt.Sprintf("%s%d", w.metric, i), w.metric, w.form, v, aggDay.Add(time.Duration(i+1)*time.Hour), w.extra); err != nil {
+				t.Fatalf("put %s %d: %v", w.metric, i, err)
+			}
+		}
+	}
+	DrainIndexReprojection(t, ds)
+}
+
+// parityReads are the reads both paths must answer alike: each metric in
+// several units of its component, raw and from rollups (aggregateDay proves
+// which ran), on sums, means, extremes, deviations, a counter's increase and
+// rate, differences, and the reducers a level admits.
+var parityReads = []struct {
+	metric   string
+	units    []string
+	reducers []string
+}{
+	{"mass", []string{"", "g", "[lb_av]", "[oz_av]"}, []string{"sum", "avg", "min", "max", "count", "stddev"}},
+	{"temp", []string{"", "K", "[degF]"}, []string{"avg", "min", "max", "last", "stddev"}},
+	{"energy", []string{"", "J", "kW.h"}, []string{"increase", "rate", "min", "max", "last"}},
+	{"drift", []string{"", "Cel", "[degF]"}, []string{"avg", "min", "max", "last", "stddev"}},
+	// A level converts to nothing but itself.
+	{"signal", []string{"", "dBm"}, []string{"min", "max", "first", "last", "count"}},
+	{"vast", []string{"", "ug", "[lb_av]"}, []string{"sum", "avg", "min", "max"}},
+}
+
+// parityAnswers reads every parity read and the refusals both paths share:
+// a level's sum and a power level's mean.
+func parityAnswers(t *testing.T, ds *dataset) map[string]map[string]string {
+	t.Helper()
+	out := map[string]map[string]string{}
+	for _, c := range parityReads {
+		for _, unit := range c.units {
+			for _, raw := range []bool{true, false} {
+				label := fmt.Sprintf("%s in %q (raw %v)", c.metric, unit, raw)
+				got, _, err := aggregateDay(ds, raw, c.metric, unit, c.reducers...)
+				if err != nil {
+					t.Fatalf("%s: %v", label, err)
+				}
+				if len(got) != len(c.reducers) {
+					t.Fatalf("%s answered %v, a value for each of %v", label, got, c.reducers)
+				}
+				out[label] = got
+			}
+		}
+	}
+	for _, red := range []string{"sum", "avg"} {
+		_, _, err := aggregateDay(ds, false, "signal", "", red)
+		wantValidation(t, "the "+red+" of a power level", err, "level")
+	}
+	return out
+}
+
+// compareParity holds the graph's answers to the table's.
+func compareParity(t *testing.T, table, graph map[string]map[string]string) {
+	t.Helper()
+	for label, want := range table {
+		for red, w := range want {
+			x, _ := strconv.ParseFloat(w, 64)
+			if !near(graph[label][red], w, 1e-9*max(1, math.Abs(x))) {
+				t.Errorf("%s %s: the graph answers %s, the table %s", label, red, graph[label][red], w)
+			}
+		}
+	}
+}
+
 // The graph's aggregate answers match the table's over the shipped units:
-// the same values written in the table's codes, read raw and from rollups in
-// several units of their measure.
+// the same values written in the table's codes, each repository writing
+// through its own path.
 func TestGraphAggregatesMatchTheTable(t *testing.T) {
 	t.Parallel()
 	off := openParity(t, false, testdb.Repository(t))
 	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
-	for _, ds := range []*dataset{off, on} {
-		if err := enginetest.ImportVocabulary(context.Background(), ds, "observations"); err != nil {
-			t.Fatalf("import observations: %v", err)
+	parityObserve(t, off)
+	parityObserve(t, on)
+	compareParity(t, parityAnswers(t, off), parityAnswers(t, on))
+}
+
+// Rows written before the switch hold the table's codes, and the graph reads
+// them as the table did: the same repository answers every filter and every
+// aggregate alike before and after it is opened with the switch on.
+func TestPreSwitchRowsReadThroughTheGraph(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
+	open := func(on bool) (substrate.Service, *dataset) {
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
+			WithKindsDir(SeedKindsDir), WithUnitGraph(on), WithUnitSeed(true))
+		if err != nil {
+			t.Fatalf("open engine (switch %v): %v", on, err)
 		}
-		for id, unit := range map[string]string{"mass": "kg", "temp": "Cel"} {
-			if err := putMetricErr(ds, id, map[string]any{"unit": unit}); err != nil {
-				t.Fatal(err)
-			}
+		d, err := svc.Dataset(ctx, repo)
+		if err != nil {
+			t.Fatal(err)
 		}
-		for i, v := range []map[string]any{qty("1", "[lb_av]"), qty("500", "g"), qty("0.75", "kg"), qty("16", "[oz_av]")} {
-			if err := putAt(ds, fmt.Sprintf("m%d", i), "mass", "amount", v, aggDay.Add(time.Duration(i+1)*time.Hour), nil); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for i, v := range []map[string]any{qty("98.6", "[degF]"), qty("36.6", "Cel"), qty("310.15", "K")} {
-			if err := putAt(ds, fmt.Sprintf("c%d", i), "temp", "gauge", v, aggDay.Add(time.Duration(i+1)*time.Hour), map[string]any{"hold": "PT1H"}); err != nil {
-				t.Fatal(err)
-			}
-		}
-		DrainIndexReprojection(t, ds)
+		return svc, d.(*dataset)
 	}
-	for _, c := range []struct {
-		metric   string
-		units    []string
-		reducers []string
-	}{
-		{"mass", []string{"", "g", "[lb_av]", "[oz_av]"}, []string{"sum", "avg", "min", "max", "count"}},
-		{"temp", []string{"", "K", "[degF]"}, []string{"avg", "min", "max", "last"}},
-	} {
-		for _, unit := range c.units {
-			for _, raw := range []bool{true, false} {
-				want, _, err := aggregateDay(off, raw, c.metric, unit, c.reducers...)
-				if err != nil {
-					t.Fatalf("%s in %q through the table: %v", c.metric, unit, err)
-				}
-				got, _, err := aggregateDay(on, raw, c.metric, unit, c.reducers...)
-				if err != nil {
-					t.Fatalf("%s in %q through the graph: %v", c.metric, unit, err)
-				}
-				if len(want) != len(c.reducers) {
-					t.Fatalf("%s in %q: the table answered %v", c.metric, unit, want)
-				}
-				for _, red := range c.reducers {
-					if !near(got[red], want[red], 1e-9) {
-						t.Errorf("%s %s in %q (raw %v): the graph answers %s, the table %s", c.metric, red, unit, raw, got[red], want[red])
-					}
-				}
-			}
+	svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(SeedKindsDir), WithUnitGraph(false), WithUnitSeed(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.Close()
+	svc, off := open(false)
+	installParityReadings(t, off)
+	for id, props := range parityReadings {
+		if _, err := off.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
+			t.Fatalf("put %s: %v", id, err)
 		}
 	}
+	parityObserve(t, off)
+	if r, err := off.Get(ctx, tableKind, "r1"); err != nil || storedUnit(t, r, "mass") != "[lb_av]" {
+		t.Fatalf("the table stored %v (%v), want its code", r, err)
+	}
+	filters := parityFilterAnswers(t, off)
+	aggregates := parityAnswers(t, off)
+	_ = svc.Close()
+
+	svc, on := open(true)
+	defer func() { _ = svc.Close() }()
+	DrainIndexReprojection(t, on)
+	got := parityFilterAnswers(t, on)
+	for probe, want := range filters {
+		if got[probe] != want {
+			t.Errorf("%s over rows the table wrote: the graph answers [%s], the table [%s]", probe, got[probe], want)
+		}
+	}
+	compareParity(t, aggregates, parityAnswers(t, on))
 }
 
 // A property read converts each record's quantity exactly into the request's
