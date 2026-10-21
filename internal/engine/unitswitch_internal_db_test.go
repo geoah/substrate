@@ -1373,3 +1373,49 @@ func TestFlippedDeltaThatRereadsAValueIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A property read over two kinds converts each record as its own kind reads
+// it: one declares the property a difference, the other a temperature, and
+// the sum in K adds 10 K and 283.15 K whichever kind the filter names first.
+func TestPropertyAggregateReadsEachKindsDelta(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	ctx := context.Background()
+	docs := append(thingDocs(thingDeclaration()), vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "other"}, map[string]any{
+		"properties": map[string]any{"change": map[string]any{"type": "quantity", "unit": "K"}},
+	}))
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		t.Fatalf("declare the other kind: %v", err)
+	}
+	putThing(t, ds, "d", map[string]any{"change": qty("10", "Cel")})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: "t", Properties: map[string]any{"change": qty("10", "Cel")}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, kinds := range [][]string{{thingKind, otherKind}, {otherKind, thingKind}} {
+		res, err := ds.Aggregate(ctx, substrate.AggregateQuery{
+			Filter: substrate.Filter{Kinds: kinds},
+			Aggregate: &substrate.Aggregate{
+				Property: &substrate.AggregateProperty{Name: "change", Anchor: "createdAt"},
+				Range:    &substrate.AggregateRange{Gte: now.Add(-time.Hour).Format(time.RFC3339), Lt: now.Add(time.Hour).Format(time.RFC3339)},
+				Bucket:   &substrate.AggregateBucket{Every: "PT2H", Origin: now.Add(-time.Hour).Format(time.RFC3339)},
+				Reducers: []substrate.AggregateReducer{{Name: "sum"}},
+				Unit:     "K",
+			},
+		})
+		if err != nil {
+			t.Fatalf("%v: %v", kinds, err)
+		}
+		var sum string
+		for _, row := range res.Rows {
+			for _, v := range row.Values {
+				if v.Value != nil {
+					sum = *v.Value
+				}
+			}
+		}
+		if !near(sum, "293.15", 1e-9) {
+			t.Errorf("filtered as %v: sum = %s K, want 293.15", kinds, sum)
+		}
+	}
+}

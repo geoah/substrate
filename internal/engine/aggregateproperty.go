@@ -88,6 +88,10 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	// spec is a quantity declaration naming `unit`, whose anchor the read
 	// answers in under the unit graph switch when the request names none.
 	var spec *vocabulary.QuantitySpec
+	// deltas is each kind's own `delta`: two kinds may declare one property
+	// name as a temperature and as a difference, and each record converts
+	// as its own kind reads it.
+	deltas := map[string]bool{}
 	for _, t := range types {
 		prop, ok := t.Prop(name)
 		if !ok {
@@ -109,6 +113,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			if prop.Quantity != nil && (spec == nil || spec.Unit == "") {
 				spec = prop.Quantity
 			}
+			deltas[t.Identity] = prop.Quantity != nil && prop.Quantity.Delta
 		case prop.Datatype == vocabulary.DatatypeDuration:
 			k = propDuration
 		default:
@@ -284,8 +289,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 					return err
 				}
 			}
-			delta := spec != nil && spec.Delta
-			cv, err := convertExact(g, v, id, target, delta)
+			cv, err := convertExact(g, v, id, target, deltas[r.kind])
 			if err != nil {
 				return refuse("aggregate.unit", "a %s of %s does not convert to %s: %v", name, id, target, err)
 			}
