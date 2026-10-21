@@ -125,6 +125,11 @@ export interface PropSpec {
   max?: number
   /** `quantity`: the declared measure every unit belongs to (`mass`). */
   measures?: string
+  /** `quantity`: the declared anchor unit, read through the repository's
+   * unit graph (decision 0186). */
+  unit?: string
+  /** `quantity`: every value is a difference, converted without an offset. */
+  delta?: boolean
   /** `quantity`: the unit codes the declaration narrows to. */
   units?: string[]
   /** `quantity`: a value may carry a comparator (`<0.5 ng/mL`). */
@@ -284,16 +289,24 @@ function transitionsOf(v: unknown): StateTransition[] | undefined {
   return out
 }
 
-/** A quantity property's own keys: `measures`, `units`, `comparator`, and
- * `min`/`max` as quantity values. */
+/** A quantity property's own keys: `measures`, `unit`, `delta`, `units`,
+ * `comparator`, and `min`/`max` as quantity values. */
 function quantitySpecOf(
   def: Record<string, unknown>
 ): Pick<
   PropSpec,
-  "measures" | "units" | "comparator" | "minQuantity" | "maxQuantity"
+  | "measures"
+  | "unit"
+  | "delta"
+  | "units"
+  | "comparator"
+  | "minQuantity"
+  | "maxQuantity"
 > {
   return {
     measures: typeof def.measures === "string" ? def.measures : undefined,
+    unit: typeof def.unit === "string" ? def.unit : undefined,
+    delta: def.delta === true ? true : undefined,
     units: stringList(def.units),
     comparator: def.comparator === true,
     minQuantity: readQuantity(def.min),

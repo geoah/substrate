@@ -1025,6 +1025,9 @@ const notOnTheWire: Record<string, string> = {
     "one field of server.json's `registration` object, read as a Partial; the discovery document is #361's to pin",
   // http.ts
   RequestOpts: "the fetch wrapper's own options, never serialized",
+  // units.ts
+  UnitReader:
+    "the unit operations a component calls, through the graph or the table, never serialized",
   // agents.ts
   ChatHandle: "a client handle over the stream, never serialized",
   // kinds.ts

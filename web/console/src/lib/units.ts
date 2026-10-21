@@ -55,6 +55,11 @@ export interface Quantity {
  * carries it. */
 export interface QuantityDeclaration {
   measures?: string
+  /** The declared `unit:` (decision 0186): the unit every value's unit
+   * converts to, read through the repository's unit graph. */
+  unit?: string
+  /** The declared `delta: true`: every value is a difference. */
+  delta?: boolean
   units?: string[]
   comparator?: boolean
   minQuantity?: Quantity
