@@ -99,6 +99,7 @@ const refoldLedgerTable = "0005_repository_migrations"
 var refoldLedgerFloors = map[string]string{
 	"qualify_bare_declaration_names": "0005_repository_migrations",
 	"qualify_bare_selector_kinds":    "0005_repository_migrations",
+	"name_units_by_unit_records":     "0016_unit_graph",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its

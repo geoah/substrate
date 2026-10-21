@@ -68,3 +68,35 @@ func (ds *dataset) ApplyVocabularyWithRemoval(ctx context.Context, actor substra
 	})
 	return err
 }
+
+// StampOriginDigest stamps a package row's origin digest over its stored
+// closure, as the import that landed the closure would have: a fixture that
+// plants the rows an older binary imported reads as that unedited copy.
+func (ds *dataset) StampOriginDigest(ctx context.Context, pkg string) error {
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		digest, err := ds.packageClosureDigest(ctx, t.tx, pkg)
+		if err != nil {
+			return err
+		}
+		row, err := t.loadRow(eref{Kind: kindPackage, ID: pkg}, true)
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return fmt.Errorf("substrate/engine: no package row %s", pkg)
+		}
+		before := row.clone()
+		props := map[string]any{}
+		for k, v := range row.Props {
+			props[k] = v
+		}
+		props[propPackageOriginDigest] = digest
+		row.Props = props
+		res, err := t.foldRow(before, row, false, false)
+		if err != nil || !res.changed {
+			return err
+		}
+		return t.appendChange(substrate.ActorSystem, substrate.OpPatch, pkg, kindPackage,
+			map[string]any{"properties": []string{propPackageOriginDigest}})
+	})
+}

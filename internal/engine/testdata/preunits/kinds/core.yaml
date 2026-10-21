@@ -1,0 +1,504 @@
+# The substrate's own machinery as kinds (§9.1, uniformity rule). Shapes are
+# declared here so system kinds list, read, and filter exactly like vocabulary
+# kinds; their BEHAVIOR (repository creation, token minting, bundle
+# installation, merge/split execution) is code, and writes outside that code
+# are rejected.
+#
+# The line between this package and the sample packages: CORE is what
+# exists because the substrate exists — the repository, tokens, the
+# vocabulary's own meta-model, connection plumbing, the envelope a proposed
+# change travels in, AND the runtime the substrate itself maintains: the
+# delivery plumbing (`trigger` + `triggerrun`) and a bundle's configuration as
+# records (`setting` + `secret`, decision record 0076). The agent loop's own
+# data is the second seeded package, `substrate.reamde.dev/llm` (decision
+# record 0077); the `agent` KIND stays here because a manifest document is a
+# record of a core kind whatever package it describes. The sample packages (people, messaging,
+# calendar, tasks) are what would exist if you kept your data in a
+# shoebox — they ship as importable bundles under their own
+# samples/<package>/ directories, not here. Nothing else decides the placement.
+#
+# Absorbed here 2026-08-12: the former `automation.substrate.reamde.dev` (subsystem 7 —
+# the bundle tier's delivery plumbing as DATA: a `trigger` binds one source
+# to one callable and owns the cursor, retries, parking and replay; a
+# `triggerrun` records one delivery attempt; the cursors and parked failures
+# underneath stay engine tables, never records) and the former
+# `ai.substrate.reamde.dev` (subsystem 8 — the agent runtime's DATA, which
+# left again in 2026-09 for `substrate.reamde.dev/llm`). Both were core parts
+# of the substrate maintained by it, so they live where the rest of the
+# machinery lives. The `agent` KIND was already core. Neither authority
+# declared an actor, a trait or a property type: `triggerrun` rows are
+# written as the system actor, threads and messages under the AGENT's actor
+# (`agent:<authority>:<package>:<name>`), a chat user message under the
+# caller's — every effect a delivery applies carries the CALLABLE's actor.
+#
+# ALPHA at v1: the agent kind, the `llm` package's vocabulary and the
+# agent call and chat routes are explicitly ALPHA and UNFROZEN (ruling A12). They
+# may change or be superseded without a v1 wire break the
+# Agents section. recordpatchpolicy's judge half carries the same marker, in
+# its own file.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/core
+data:
+  authority: substrate.reamde.dev
+  package: core
+  # a maturity statement, not a routing key: no envelope carries a version.
+  # version 31: the temporal trait's description says that `dueAt` is the
+  # point variant remapped, `temporal(point: dueAt)`. The trait's document
+  # declares only `at` and `endsAt`, and an agent that read it concluded the
+  # column did not exist. A trait pins no version of its own.
+  # version 34: the query tool card names filter.purposes, which the ranked
+  # read and the list both take.
+  # version 36: the query tool card names referencing.refs, the reverse read
+  # over several targets in one call.
+  # version 37: the descriptions say "the function's code" and "the
+  # substrate" where they said an undefined "body" and "host" (#49).
+  # version 38: the `alert` kind, one record per ongoing problem the engine
+  # raises and resolves (decision record 0148).
+  # version 39: the query tool's `q` says to search with one or two
+  # distinctive words, never a list of common ones.
+  # version 40: the query tool card says q requires filter.kinds or kind
+  # (decision record 0172).
+  # version 41: the `observed`, `revised`, `metric`, `source` and `result`
+  # traits, which the write path holds observed values, rewritten sessions,
+  # metrics, sources and lab results to (decision records 0154 and 0162).
+  # version 42: the query tool card takes `aggregate` and `downsample`, the
+  # aggregate read (decision record 0161): one metric, several, the property
+  # read or the latest read.
+  version: 42
+  # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
+  # the boot upgrade never prunes, so a header retiring a kind an existing
+  # repository still declares is refused whole and `triggerrun` never lands
+  # while the engine already writes it. A repository that predates the rename
+  # keeps a dormant `run` kind; a fresh one never has it.
+  #
+  # `llmprovider`, `llmthread`, `llmmessage` and `llminteraction` left for
+  # `substrate.reamde.dev/llm` (2026-09-12, decision record 0077), renamed to
+  # `provider`, `thread`, `message` and `interaction` as they went. Their
+  # names are not retired here either, so the four kinds stay declared
+  # forever. Their ROWS do not stay: each new declaration carries
+  # `movedFrom`, so the upgrade carries every live record to its new kind and
+  # repoints every reference at it (decision record 0078). What a repository
+  # that predates the move keeps is four dormant, EMPTY kinds.
+---
+# The substrate's own actors: the doors a human write comes through, and the
+# engine's own hand. Attribution, not authorization (§3). The machine hands
+# that carry a prefix — `bundle:<authority>:<package>`,
+# `function:<authority>:<package>:<name>` and
+# `agent:<authority>:<package>:<name>` — are minted by the substrate at
+# dispatch from the identity that runs, never declared, and never claimable by
+# a request.
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: api
+data:
+  authority: substrate.reamde.dev
+  package: core
+  tier: owner
+---
+# the console's writes: the browser app, holding a token like any other client
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: console
+data:
+  authority: substrate.reamde.dev
+  package: core
+  tier: owner
+---
+# the operator's CLI
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: substratectl
+data:
+  authority: substrate.reamde.dev
+  package: core
+  tier: owner
+---
+# the engine's own writes: mapping recompute, the declaration mirrors, merge
+# execution, the boot-time vocabulary upgrade, and the auth paths that write
+# the credential and token records. A bare word: the actor domain is closed,
+# so nothing has to be forward-qualified to stay out of the vocabulary's way.
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: substrate
+data:
+  authority: substrate.reamde.dev
+  package: core
+---
+# when a thing sits on the timeline — an instant, or a span
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/temporal
+data:
+  authority: substrate.reamde.dev
+  package: core
+  # The description names the remap because the document below cannot: a
+  # reader who inspects only this trait sees `at` and `endsAt`, and `dueAt`
+  # exists solely through the binding grammar.
+  description: "when a thing sits on the timeline. The point variant carries
+    at, the range variant at and endsAt, and temporal(point: dueAt) moves
+    the point onto dueAt"
+  # machinery, not vocabulary: the variants are backed by the physical
+  # `at`/`endsAt`/`dueAt` columns every record row carries, so this lives
+  # with the engine and every vocabulary package binds it cross-package.
+  # The variant LIST: a keyed map of keyed maps is not declarable, so the
+  # variants are a list and each one names itself.
+  oneOf:
+    - name: point
+      properties:
+        at: datetime
+    - name: range
+      properties:
+        at: datetime
+        endsAt: datetime
+---
+# a thing that REPEATS: a rule, the instants it adds, the instants it skips,
+# and the zone its wall clock resolves in. The bound temporal slot (`at`, or
+# `dueAt` on a `temporal(point: dueAt)` binding) is the rule's DTSTART, the
+# first occurrence; on a range, `endsAt - at` is every occurrence's duration.
+#
+# Contract-style, like accountconfig: the binding kind DECLARES the four
+# properties itself (so it keeps `repeated: true` on the two lists and its own
+# descriptions), and the trait holds their presence and datatypes. It expects
+# `temporal` beside it: a rule with no anchor names no instants, and a kind
+# that binds this without sitting on the timeline is left out of every window
+# read. The loader does not refuse the pair, because a repository that imported
+# the `scheduling` sample before this trait moved to core holds exactly that
+# shape and must keep booting until it takes the sample's upgrade.
+#
+# The substrate stores the rule and never expands it into rows (decision
+# 0039). What it does instead is compute: a records read that bounds `at` on
+# both ends answers with every implementor's occurrences inside the window,
+# beside the plain rows, minus `exdates` and minus every slot an `override`
+# claims (the record below). An exdate is how one occurrence is cancelled.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/recurring
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a repeat rule the substrate stores and never expands, with
+    the instants it adds, the instants it skips and the zone a time-of-day
+    rule resolves in"
+  properties:
+    recurrence: recurrence
+    rdates: datetime
+    exdates: datetime
+    timezone: timezone
+---
+# one occurrence of a recurring record that was MOVED, EDITED or given more
+# detail: an ordinary record of any temporal kind, pointing at the series it
+# replaces one slot of, and naming that slot. iCalendar's RECURRENCE-ID.
+#
+# Contract-style: the kind declares both properties, so it chooses the
+# reference's pin (`trait: recurring`, or one series kind) and its `onDelete`.
+# A provider mirror cascades, because the provider deletes a series'
+# exceptions with it; a user-owned kind should not, because shortening or
+# replacing a series must not take the user's hand-written overrides along.
+# Expects `temporal`, like `recurring`: an override sits on the timeline at
+# its own `at`, and the slot it replaces is what the window read subtracts
+# from the series' expansion; without the anchor it claims its slot and is
+# itself never on a page. A record with both `recurrence` and `recurrenceOf`
+# set is a series to the read, never both.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/override
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "one occurrence of a recurring record, moved or edited: points
+    at the series and names the slot it replaces"
+  properties:
+    recurrenceOf: reference
+    originalAt: datetime
+---
+# one connected account of a bundle — a host-recognized interface: the
+# console's "account configs" view is a trait query, and the runner's config
+# resolution enumerates a bundle's accounts as a trait-scoped read. The two
+# required properties are the OAuth facility's hands on the account: a
+# secret-typed credential-store REF (never a raw token) and the connection
+# status it last reported.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/accountconfig
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: one connected account of a bundle; only the substrate's OAuth
+    flow may write its credential ref
+  # The host-written hands on an account (review-google #2): the account kind
+  # redeclares these with `writer: oauth` so only the OAuth facility may set
+  # them — a stranger cannot assign a credential ref, a status, or a scope set.
+  properties:
+    tokenRef: secret
+    tokenStatus: string
+    grantedScopes: string
+---
+# the OAuth CLIENT credentials, on the kind a bundle's oauth2 clientInput
+# names — the host
+# runs the flow, bundles only declare the client (review-google #1). The
+# PROVIDER ENDPOINTS and the feature→scope mapping are NOT here: they are
+# trusted bundle-manifest metadata (schema.BundleOAuth2), compiled at install
+# and immutable at runtime, so a config-row edit can never redirect a token
+# exchange or a revocation. This config carries only the client id and its
+# secret-typed secret.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/oauth2
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: the OAuth client credentials; the endpoints come from the bundle's
+    manifest, and the substrate runs the flow
+  properties:
+    clientId: string
+    clientSecret: secret
+---
+# the synchronization a provider's function drives on one connected account:
+# the host-recognized interface behind the console's Connections view and the
+# `sync status` read. An `accountconfig` kind binds it beside the token
+# properties, and every binding kind redeclares the twelve properties with a
+# `writer:` role: `syncRequestedAt` and `syncPaused` are the OWNER's hands
+# (the two things a person does to a sync — ask for one, stop them), the rest
+# are the CONNECTOR's, which the sync function writes through its effects and
+# the trigger dispatcher stamps around a record-sourced delivery under the
+# callable's own actor (engine sync.go). `syncState` is a plain string, not a
+# `state` machine (decision 0085): the substrate and the body both write it
+# and no move between its five words is illegal, so a machine would only
+# refuse a sync. The set is `never`, `running`, `ok`, `erroring` and
+# `throttled`. `syncProgress` is `{phase, done, total, pending}` and
+# `syncStreams` maps a stream name to `{cursor, lastAt, pending, state,
+# message, requestedAck}`; both are `json` because a trait contracts a
+# datatype and their shape is the contract's prose.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/sync
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "the synchronization a function drives on one connected account:
+    its state, its last run, the request that asks for the next one, and its
+    progress per stream"
+  properties:
+    syncState: string
+    syncMessage: string
+    lastSyncedAt: datetime
+    lastSyncStartedAt: datetime
+    lastSyncDurationMs: int
+    syncRequestedAt: datetime
+    syncRequestedAck: datetime
+    syncPaused: bool
+    syncProgress: json
+    syncError: string
+    syncErrorAt: datetime
+    syncStreams: json
+---
+# observed values: a reading, a lab result, a vendor score, or an hour of
+# heart rate packed into one record. A kind that binds it is held on every
+# write to the rules a trait cannot state (engine observed.go): the form is
+# one of four words, a single value is a quantity or a code and never both,
+# a packed value list lines up with its offsets inside the period, a
+# revision never falls, and a trace's `stats` is computed by the engine from
+# its values. `at` and `endsAt` are the record's own time columns, as on
+# `temporal(range)`, which a binding kind binds beside this one so the window
+# read covers it.
+#
+# Contract-style, like `recurring`: the binding kind declares every
+# non-column property itself, with its own descriptions, `repeated: true` on
+# `offsets`, `values`, `codes` and `origins`, and the pins on the four
+# references. Its `metric` reference pins a kind that binds `metric` below,
+# or the `metric` trait itself, because the aggregate read takes a metric's
+# measure and unit through that trait. The list is complete from the first
+# version and never grows: a property added here would refuse every imported
+# kind that binds it at the next boot, so a later need is a second trait
+# bound beside this one (decision record 0154).
+#
+# `about` is the thing observed, absent meaning the owner (decision 0155);
+# `form` is gauge, amount, counter or summary (0156); `resetRule` with
+# `resetAt` and `wrapAt` describe a counter (0157); `hold` is how long a gauge
+# value stands (0158). `delta` marks a temperature difference and `circular`
+# an angle averaged on the circle; both live on the value so the index never
+# reads the metric record. `utcOffset` is minutes east of UTC, one for every
+# point of a trace. `measure` is the engine's, like `stats`: the measure the
+# value's unit resolved to when it was written, which the index converts in
+# from then on, so a later unit table that reads the code another way never
+# moves a stored value (decision 0153). A single record with neither a value
+# nor a code keeps the reading as received in `sourceValue` and `sourceUnit`,
+# or says why there is none in `absentReason`. `origin` (a trace's
+# `origins`) is the provider record an adapter built the row from, which
+# `host.observed.reconcile` keys on (decision 0162).
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/observed
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "observed values the substrate indexes: one value per record,
+    or many values packed into one record over a fixed period"
+  oneOf:
+    - name: single
+      properties:
+        at: datetime
+        endsAt: datetime
+        metric: reference
+        source: reference
+        about: reference
+        channel: string
+        form: string
+        value: quantity
+        code: string
+        statistic: string
+        period: string
+        hold: duration
+        resetRule: string
+        resetAt: datetime
+        delta: bool
+        circular: bool
+        wrapAt: decimal
+        utcOffset: int
+        measure: string
+        sourceValue: string
+        sourceUnit: string
+        absentReason: string
+        origin: reference
+        revision: int
+    - name: packed
+      properties:
+        at: datetime
+        endsAt: datetime
+        metric: reference
+        source: reference
+        about: reference
+        channel: string
+        form: string
+        unit: string
+        every: duration
+        offsets: int
+        values: decimal
+        codes: string
+        hold: duration
+        resetRule: string
+        resetAt: datetime
+        delta: bool
+        circular: bool
+        wrapAt: decimal
+        utcOffset: int
+        measure: string
+        origins: reference
+        revision: int
+        stats: json
+---
+# what an observed value is a value of: the catalogue entry every value's
+# `metric` reference points at. The aggregate read takes a metric's
+# `measures` as the measure it converts into, its `unit` as the unit it
+# answers in by default and its `bucketPlace` as where a read by the day
+# places a span; the observed index keeps the rollup tiers its `rollups`
+# names; the console reads the rest to label and draw it. The write rules and
+# the index read nothing else from it: what a stored number means is on the
+# value itself, so editing a metric never relabels one (decision 0156).
+#
+# Contract-style: the binding kind declares every property itself, with
+# `repeated: true` on `codeSet` and `rollups`. The engine holds on every
+# write what a trait cannot state (engine metric.go): `measures` names a
+# measure of the unit table and `unit` one of its units, `form` is one of the
+# four forms, `bucketPlace` is start or end, and `rollups` lists tier widths
+# from 5m, 15m, 1h and 1d, each dividing the next. Absent `rollups` keeps the
+# default tiers, 15m, 1h and 1d; an empty list keeps none, and a read of the
+# metric reads its raw values.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/metric
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "what an observed value is a value of: the measure and unit
+    a read converts into, how a read by the day places a span, the rollup
+    tiers the index keeps, and how a reader labels and draws it"
+  properties:
+    name: string
+    measures: string
+    unit: string
+    form: string
+    codeSet: string
+    displayPrecision: int
+    category: string
+    bucketPlace: string
+    rollups: string
+---
+# the device, app, service or lab an observed value came from, as the
+# aggregate read's source policy ranks it. `priorities` is keyed by a
+# metric's full record path (`<kind>/<id>`) and holds this source's rank for
+# that metric, 1 first: the priority policy's order when a request names
+# none (decision 0162). The engine holds on every write that each key is the
+# full record path of a record of a kind that binds `metric`, and that each
+# rank is 1 or more.
+#
+# Contract-style: the binding kind declares `priorities` itself, with
+# `keyed: true`.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/source
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a device, app, service or lab that produces observed values,
+    ranked per metric for the aggregate read's source policy"
+  properties:
+    priorities: int
+---
+# a result in the shapes a laboratory reports beside a plain number: a coded
+# finding, a ratio, free text. A kind that binds it beside `observed(single)`
+# holds exactly one shape per record (engine observed.go): `value`, the coded
+# result (`code`, `codedValue` or both), `ratio`, `text` or `absentReason`,
+# or none of them where `sourceValue` keeps a reading the substrate could not
+# normalize. Without this trait those names are ordinary properties.
+# `interpretation` (the lab's flags) and `referenceRanges` are what a reader
+# judges the value against.
+#
+# Contract-style: the binding kind declares every property itself. A trait
+# contracts a datatype and an object's fields are its own, so the four
+# object properties are `json` here, which a declared object meets, and the
+# loader holds their fields (vocabulary observed.go): `codedValue` an object
+# with string `system`, `code` and `display`; `ratio` one with decimal
+# `numerator` and `denominator`; `interpretation` a list of objects with
+# string `system`, `code` and `display`; `referenceRanges` a list of objects
+# with quantity `low` and `high` and string `text`.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/result
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a result in the shapes a laboratory reports beside a number:
+    a coded finding, a ratio or free text, with the lab's flags and reference
+    ranges"
+  properties:
+    codedValue: json
+    ratio: json
+    text: text
+    interpretation: json
+    referenceRanges: json
+---
+# a record an adapter rewrites from an upstream that numbers its versions: a
+# night's sleep, a workout, a lab report. The write path refuses a rewrite
+# whose `revision` is below the stored one, and one that removes it, the rule
+# `observed` holds for observed values, so a stale delivery never overwrites
+# a newer result; an equal one is admitted (decision record 0162). A second
+# trait rather than a property of `observed`, whose list never grows
+# (decision record 0154).
+#
+# Contract-style: the binding kind declares `revision` and `origin` itself,
+# with its own descriptions. `origin` is the provider record an adapter built
+# the row from, which `host.observed.reconcile` keys on, as it does on an
+# observed value's.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/revised
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a record rewritten from an upstream that numbers its versions;
+    a rewrite never lowers its revision"
+  properties:
+    revision: int
+    origin: reference
