@@ -54,9 +54,9 @@ func conversionByID(tab substrate.UnitTable, id string) (substrate.RepositoryCon
 
 // seededRepository registers a repository with the seed on or off and
 // answers the service, its dataset, the DSN and the data root.
-func unitSeededRepository(t *testing.T, seed bool) (substrate.Service, substrate.Dataset, string, string) {
+func unitSeededRepository(t *testing.T, seed bool, opts ...engine.Option) (substrate.Service, substrate.Dataset, string, string) {
 	t.Helper()
-	svc, dsn := newService(t, engine.WithUnitSeed(seed))
+	svc, dsn := newService(t, append([]engine.Option{engine.WithUnitSeed(seed)}, opts...)...)
 	ctx := context.Background()
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
@@ -314,7 +314,7 @@ func TestUnitUsesSurviveARebuild(t *testing.T) {
 		t.Fatalf("delete an unused conversion: %v", err)
 	}
 	before := foldOf(t, ds)
-	if !strings.Contains(string(before), `"unit": "[lb_av]"`) || !strings.Contains(string(before), `"unit_graph"`) {
+	if !strings.Contains(string(before), `"unit": "lb"`) || !strings.Contains(string(before), `"unit_graph"`) {
 		t.Fatalf("the fold snapshot lacks the unit tables:\n%.2000s", before)
 	}
 	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {

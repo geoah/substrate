@@ -191,10 +191,12 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
-	if cfg.UnitGraph {
-		slog.Warn("SUBSTRATE_UNIT_GRAPH is set: quantities are read and written through each repository's unit records, which an older binary does not read")
-		opts = append(opts, engine.WithUnitGraph(true))
+	if !cfg.UnitGraph {
+		// Loud, and at boot: the table path reads none of the unit ids and
+		// declarations a repository written since the switch holds.
+		slog.Warn("SUBSTRATE_UNIT_GRAPH=false: quantities are read and written through the engine's old unit table, which reads none of the unit ids a repository holds since decision 0186; this path is removed with the table")
 	}
+	opts = append(opts, engine.WithUnitGraph(cfg.UnitGraph))
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	close(booted)
 	if err != nil {

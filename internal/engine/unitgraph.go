@@ -351,15 +351,14 @@ func rowUnitUses(ty *vocabulary.Kind, props map[string]any) []string {
 }
 
 // readsTopLevelUnit reports whether rowUnitUses reads a row's top-level
-// `unit` under the kind: one that binds `metric`, or packed `observed`. It is
-// the one part of the declaration the derivation reads, so a declaration that
-// moves it re-derives the kind's rows (reprojection.go unitUsesShape).
+// `unit` under the kind: one that binds packed `observed`, whose `unit` is
+// every point's. A metric's `unit` is a reference to a unit record since the
+// switch (decision 0186), which the guard reads from `refs`. It is the one
+// part of the declaration the derivation reads, so a declaration that moves
+// it re-derives the kind's rows (reprojection.go unitUsesShape).
 func readsTopLevelUnit(ty *vocabulary.Kind) bool {
 	if ty == nil {
 		return false
-	}
-	if bindsMetric(ty) {
-		return true
 	}
 	b, observed := observedBinding(ty)
 	return observed && b.Variant == vocabulary.ObservedPacked
@@ -430,8 +429,9 @@ func (t *txn) replaceUnitUses(ref eref, uses []string, held bool) error {
 // unit_uses_index row is behind it, its rows written before the table
 // existed or under an older rule, has every row's uses derived again behind
 // the open (checkUnitUses); a change to rowUnitUses moves it. Version 2
-// keys each spelling by vocabulary.UnitSpellingKey.
-const unitUsesVersion = 2
+// keys each spelling by vocabulary.UnitSpellingKey; version 3 stops reading a
+// metric's top-level `unit`, a reference since the unit graph switch.
+const unitUsesVersion = 3
 
 // checkUnitUses is the open ladder's step: a repository whose unit uses are
 // behind this binary's rule asks the pass behind the open to derive every

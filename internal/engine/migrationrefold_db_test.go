@@ -81,6 +81,14 @@ var refoldLags = []struct{ migration, table, column string }{
 	{"0006_ambiguous_at", "records", "ambiguous_at"},
 }
 
+// refoldUnitGraph is the migration that creates the unit graph's revision
+// counter (decision 0186). A store behind it was written by a binary that
+// declared no unit kinds, so it held no unit or conversion row for the
+// counter to count; the source holds them because its observed history names
+// units. A stage behind it compares no unit_graph row: the counter it starts
+// at zero counts nothing a real store of that age held.
+const refoldUnitGraph = "0016_unit_graph"
+
 // refoldLedgerTable is the migration that creates the repository ledger.
 const refoldLedgerTable = "0005_repository_migrations"
 
@@ -118,6 +126,9 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 			t.Fatalf("the binary no longer embeds %s: delete its refoldLags entry, whose exemption is for that migration alone", lag.migration)
 		}
 	}
+	if versions[refoldUnitGraph] == 0 {
+		t.Fatalf("the binary no longer embeds %s, whose unit_graph exemption is for that migration alone", refoldUnitGraph)
+	}
 	for name, floor := range refoldLedgerFloors {
 		if versions[floor] == 0 {
 			t.Fatalf("refoldLedgerFloors names %s for repository migration %s, and the binary embeds no such migration", floor, name)
@@ -143,6 +154,10 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 		stage := func(t *testing.T, ledger bool) {
 			t.Helper()
 			live, rebuilt := refoldStage(t, src, prior.Version, omitBehind(prior.Version), ledger, upgrade)
+			if prior.Version < versions[refoldUnitGraph] {
+				delete(live, "unit_graph")
+				delete(rebuilt, "unit_graph")
+			}
 			if tables, diff := refoldDifferences(live, rebuilt); len(tables) > 0 {
 				t.Fatalf("a store at %s, upgraded from %s on, holds a fold that differs in %s from what a rebuild "+
 					"makes of its changelog; the last subtest that fails names the migration at fault. "+

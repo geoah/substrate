@@ -27,7 +27,7 @@ const (
 // openUnitsDataset provisions a repository with the hold kind, whose
 // quantities sit at the top level, in an object field, in a list and in a
 // reference's link properties, and with the owner's small graph: kg, g and lb,
-// joined lb to g to kg.
+// joined lb to g to kg, and km, which span lists.
 func openUnitsDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
@@ -51,6 +51,14 @@ func createUnitsDataset(t *testing.T, svc substrate.Service, repo string) *datas
 		t.Fatalf("open dataset: %v", err)
 	}
 	ds := d.(*dataset)
+	// The units before the kind: a declaration names units of the graph
+	// (checkDeclaredUnits), and span lists km.
+	putUnit(t, ds, "kg", map[string]any{"name": "kilogram", "code": "kg"})
+	putUnit(t, ds, "g", map[string]any{"name": "gram", "code": "g"})
+	putUnit(t, ds, "lb", map[string]any{"name": "pound", "code": "[lb_av]"})
+	putUnit(t, ds, "km", map[string]any{"name": "km", "code": "km"})
+	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "453.59237"})
+	putConversion(t, ds, "g-kg", "g", "kg", map[string]any{"factor": "0.001"})
 	quantity := map[string]any{"type": "quantity"}
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "holds", Authority: holdsPackage,
@@ -73,11 +81,6 @@ func createUnitsDataset(t *testing.T, svc substrate.Service, repo string) *datas
 	}); err != nil {
 		t.Fatalf("install the hold kind: %v", err)
 	}
-	putUnit(t, ds, "kg", map[string]any{"name": "kilogram", "code": "kg"})
-	putUnit(t, ds, "g", map[string]any{"name": "gram", "code": "g"})
-	putUnit(t, ds, "lb", map[string]any{"name": "pound", "code": "[lb_av]"})
-	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "453.59237"})
-	putConversion(t, ds, "g-kg", "g", "kg", map[string]any{"factor": "0.001"})
 	return ds
 }
 
@@ -367,7 +370,7 @@ func TestDeletingAUsedUnitIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openUnitsDataset(t)
 	for _, u := range []struct{ id, code string }{
-		{"oz", "[oz_av]"}, {"m", "m"}, {"mg", "mg"}, {"km", "km"}, {"L", "L"}, {"s", "s"},
+		{"oz", "[oz_av]"}, {"m", "m"}, {"mg", "mg"}, {"L", "L"}, {"s", "s"},
 	} {
 		putUnit(t, ds, u.id, map[string]any{"name": u.id, "code": u.code})
 	}
@@ -382,7 +385,7 @@ func TestDeletingAUsedUnitIsRefused(t *testing.T) {
 	// below; what refuses is the use alone.
 	for _, c := range []struct{ what, unit, naming string }{
 		{"an object field", "g", "a stored value of " + holdKind},
-		{"a list", "oz", "(as [oz_av])"},
+		{"a list", "oz", "a stored value of " + holdKind},
 		{"a link property", "m", holdKind},
 		{"a declaration's units", "km", "the declaration of " + holdKind + " span"},
 		{"a tombstone", "mg", holdKind},
@@ -429,29 +432,40 @@ func TestATraceAndAMetricUseTheirUnit(t *testing.T) {
 	if metric == "" || trace == "" {
 		t.Fatalf("the observations sample brought metric %q and trace %q", metric, trace)
 	}
-	putUnit(t, ds, "degF", map[string]any{"name": "degree Fahrenheit", "code": "[degF]"})
+	// K came with the sample's units; degX is the owner's own.
+	putUnit(t, ds, "degX", map[string]any{"name": "degree X", "code": "[degX]"})
+	putConversion(t, ds, "degX-K", "degX", "K", map[string]any{"factor": "2", "offset": "100"})
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: "test_mass", Properties: map[string]any{
-		"name": "Test mass", "measures": "mass", "unit": "[lb_av]", "form": "gauge",
-	}}); err != nil {
-		t.Fatalf("put the metric: %v", err)
+	for id, unit := range map[string]string{"test_mass": "lb", "test_temperature": "K"} {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: id, Properties: map[string]any{
+			"name": id, "unit": unitRef(unit), "form": "gauge",
+		}}); err != nil {
+			t.Fatalf("put the metric %s: %v", id, err)
+		}
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: trace, ID: "t1", Properties: map[string]any{
-		"metric": map[string]any{"ref": metric + "/test_mass"}, "form": "gauge", "unit": "[degF]",
+		"metric": map[string]any{"ref": metric + "/test_temperature"}, "form": "gauge", "unit": "[degX]",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "utcOffset": 0,
 		"offsets": []any{0, 60000}, "values": []any{"20", "21"}, "revision": 1,
 	}}); err != nil {
 		t.Fatalf("put the trace: %v", err)
 	}
-	wantConflict(t, "a trace's unit", deleteRecord(ds, vocabulary.KindUnit, "degF", false), "a stored value of "+trace)
 	err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if _, err := tx.softDelete(eref{vocabulary.KindConversion, "degX-K"}); err != nil {
+			return err
+		}
+		_, err := tx.softDelete(eref{vocabulary.KindUnit, "degX"})
+		return err
+	})
+	wantConflict(t, "a trace's unit", err, "a stored value of "+trace)
+	err = ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
 		if _, err := tx.softDelete(eref{vocabulary.KindConversion, "lb-g"}); err != nil {
 			return err
 		}
 		_, err := tx.softDelete(eref{vocabulary.KindUnit, "lb"})
 		return err
 	})
-	wantConflict(t, "a metric's unit", err, "a stored value of "+metric)
+	wantConflict(t, "a metric's unit", err, "a reference from "+metric)
 }
 
 // Two used units of one linear component stay joined: deleting the
@@ -517,7 +531,7 @@ func TestChangingAFactorIsAdmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := rec.Properties["weight"].(map[string]any); w["value"] != "150" || w["unit"] != "[lb_av]" {
+	if w := rec.Properties["weight"].(map[string]any); w["value"] != "150" || w["unit"] != "lb" {
 		t.Errorf("the stored value moved: %v", w)
 	}
 }
@@ -614,52 +628,35 @@ func TestUnitUsesAreDerivedBehindTheOpen(t *testing.T) {
 	wantConflict(t, "a split once the uses are derived", deleteRecord(ds, vocabulary.KindConversion, "lb-g", false), "leaves")
 }
 
-// sampleMetricKind imports the observations sample and answers its metric
-// kind, whose `unit` keeps the spelling its writer sent.
-func sampleMetricKind(t *testing.T, ds *dataset) string {
-	t.Helper()
-	importVocabulary(t, ds, "observations")
-	for _, k := range ds.registry().Kinds() {
-		if strings.HasSuffix(k.Identity, "/observations/metric") {
-			return k.Identity
-		}
-	}
-	t.Fatal("the observations sample brought no metric kind")
-	return ""
-}
-
-// A stored spelling counts as a use of the unit it normalizes to: a metric
-// that keeps `µg` (the micro sign) or `μg` (the Greek mu, on a tombstone)
-// uses ug, whose own spellings are `ug` and `mcg`, and one that keeps `m²`
-// uses m2. Deleting either unit is refused until those values are purged.
+// A written spelling is stored as the unit's id, whichever normalized form
+// it takes: `µg` (the micro sign) and `μg` (the Greek mu, on a tombstone) are
+// stored as ug, whose own spellings are `ug` and `mcg`, and `m²` as m2.
+// Deleting either unit is refused until those values are purged. A row
+// written before the switch keeps the spelling it was written with, and the
+// guard probes it by the same normalized key (vocabulary.UnitSpellingKey).
 func TestANormalizedSpellingIsAUse(t *testing.T) {
 	t.Parallel()
 	ds := openUnitsDataset(t)
-	metric := sampleMetricKind(t, ds)
 	ctx := context.Background()
 	putUnit(t, ds, "ug", map[string]any{"name": "microgram", "code": "ug", "aliases": []any{"mcg"}})
 	putConversion(t, ds, "ug-g", "ug", "g", map[string]any{"factor": "0.000001"})
 	putUnit(t, ds, "m2", map[string]any{"name": "square meter", "code": "m2"})
-	for _, m := range []struct{ id, measures, unit string }{
-		{"micro_sign", "mass", "µg"},
-		{"greek_mu", "mass", "μg"},
-		{"square", "area", "m²"},
+	for _, h := range []struct{ id, unit, stored string }{
+		{"micro_sign", "µg", "ug"},
+		{"greek_mu", "μg", "ug"},
+		{"square", "m²", "m2"},
 	} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: m.id, Properties: map[string]any{
-			"name": m.id, "measures": m.measures, "unit": m.unit, "form": "gauge",
-		}}); err != nil {
-			t.Fatalf("put the metric %s: %v", m.id, err)
-		}
-		rec, err := ds.Get(ctx, metric, m.id)
+		putHold(t, ds, h.id, map[string]any{"weight": qty("1", h.unit)})
+		rec, err := ds.Get(ctx, holdKind, h.id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := rec.Properties["unit"]; got != m.unit {
-			t.Fatalf("the metric %s stores unit %q, want the %q its writer sent", m.id, got, m.unit)
+		if got := rec.Properties["weight"].(map[string]any)["unit"]; got != h.stored {
+			t.Fatalf("the hold %s stores unit %q, want the id %q of the %q its writer sent", h.id, got, h.stored, h.unit)
 		}
 	}
-	if err := deleteRecord(ds, metric, "greek_mu", false); err != nil {
-		t.Fatalf("tombstone the metric: %v", err)
+	if err := deleteRecord(ds, holdKind, "greek_mu", false); err != nil {
+		t.Fatalf("tombstone the hold: %v", err)
 	}
 	deleteUG := func() error {
 		return ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
@@ -671,13 +668,13 @@ func TestANormalizedSpellingIsAUse(t *testing.T) {
 			return nil
 		})
 	}
-	wantConflict(t, "a micro sign", deleteUG(), "a stored value of "+metric)
-	wantConflict(t, "a superscript", deleteRecord(ds, vocabulary.KindUnit, "m2", false), "a stored value of "+metric)
-	if err := deleteRecord(ds, metric, "micro_sign", true); err != nil {
-		t.Fatalf("purge the micro sign metric: %v", err)
+	wantConflict(t, "a micro sign", deleteUG(), "a stored value of "+holdKind)
+	wantConflict(t, "a superscript", deleteRecord(ds, vocabulary.KindUnit, "m2", false), "a stored value of "+holdKind)
+	if err := deleteRecord(ds, holdKind, "micro_sign", true); err != nil {
+		t.Fatalf("purge the micro sign hold: %v", err)
 	}
-	wantConflict(t, "a Greek mu on a tombstone", deleteUG(), "a stored value of "+metric)
-	if err := deleteRecord(ds, metric, "greek_mu", true); err != nil {
+	wantConflict(t, "a Greek mu on a tombstone", deleteUG(), "a stored value of "+holdKind)
+	if err := deleteRecord(ds, holdKind, "greek_mu", true); err != nil {
 		t.Fatalf("purge the tombstone: %v", err)
 	}
 	if err := deleteUG(); err != nil {

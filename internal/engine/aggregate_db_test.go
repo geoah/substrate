@@ -637,7 +637,7 @@ func TestAggregateLatestRead(t *testing.T) {
 		Metric:  &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
 		GroupBy: []string{"source"}, Latest: true, Unit: "[lb_av]",
 	})
-	if len(lb.Rows) != 1 || lb.Rows[0].Values[0].Unit != "[lb_av]" {
+	if len(lb.Rows) != 1 || lb.Rows[0].Values[0].Unit != "lb" {
 		t.Fatalf("in pounds: %+v", lb.Rows)
 	}
 	if v, _ := val(lb.Rows[0], "last"); !close9(num(t, v), 72.40/0.45359237) {
@@ -849,7 +849,8 @@ func TestAggregateTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 func TestAggregateCircularMeanAcrossNorth(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	f.mustPut(t, f.metric, "wind_direction", map[string]any{"name": "Wind direction", "measures": "angle", "unit": "deg", "form": "gauge"})
+	putShippedUnits(t, f.ds, "deg")
+	f.mustPut(t, f.metric, "wind_direction", map[string]any{"name": "Wind direction", "unit": unitRef("deg"), "form": "gauge"})
 	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	for i, v := range []string{"350", "10", "355", "5"} {
 		f.mustPut(t, f.observation, fmt.Sprintf("wind/%d", i), map[string]any{
@@ -1193,7 +1194,7 @@ func TestAggregateRefusesOverBudgetBeforeRunning(t *testing.T) {
 			a.Metric = &substrate.AggregateMetric{Ref: f.metricPath("health/steps")}
 			a.Reducers = reducers("increase")
 		}), "does not apply to an amount"},
-		{"unit outside the measure", base(func(a *substrate.Aggregate) { a.Unit = "kg" }), "is not a unit of rate"},
+		{"unit outside the metric's component", base(func(a *substrate.Aggregate) { a.Unit = "kg" }), "kg does not convert to 1/min"},
 		{"a removed calendar", base(func(a *substrate.Aggregate) {
 			a.Bucket = &substrate.AggregateBucket{Calendar: "minute", Timezone: "UTC"}
 		}), "calendar minute was removed"},

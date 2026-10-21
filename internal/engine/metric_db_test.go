@@ -1,9 +1,9 @@
 package engine_test
 
-// The observed contracts on the write path: an observed record's measure is
-// the engine's, stamped from its unit when it is written; a metric's and a
-// source's records are held to core's `metric` and `source` traits; and the
-// aggregate read takes a source's priorities by the metric's record path.
+// The observed contracts on the write path: an observed record stores its
+// unit's id and no measure; a metric's and a source's records are held to
+// core's `metric` and `source` traits; and the aggregate read takes a
+// source's priorities by the metric's record path.
 
 import (
 	"context"
@@ -13,62 +13,59 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// The write path stamps an observed record's `measure` from its unit (a
-// difference of temperatures is a temperature-difference), drops one a
-// writer sends, leaves none on a code, and the observed index converts in the
-// stamped one.
-func TestObservedMeasureIsStampedFromTheUnit(t *testing.T) {
+// Since the unit graph switch (decision 0186) the write path stamps no
+// `measure`, which the sample kinds retire: a written one is refused, every
+// unit is stored as its unit record's id, and the observed index keeps no
+// base value.
+func TestObservedRecordsStoreTheUnitsIDAndNoMeasure(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
 	for _, c := range []struct {
 		kind, id string
 		props    map[string]any
-		want     any
+		unit     func(map[string]any) any
+		want     string
 	}{
 		{r.observation, "w", map[string]any{
-			"metric": r.metricRef("health/body_mass"), "form": "gauge", "value": quantity("72.4", "kg"),
-			"at": "2026-10-07T06:41:12Z", "measure": "length",
-		}, "mass"},
-		{r.observation, "dev", map[string]any{
-			"metric": r.metricRef("health/skin_temperature_deviation"), "form": "gauge", "value": quantity("0.3", "Cel"), "delta": true,
+			"metric": r.metricRef("health/body_mass"), "form": "gauge", "value": quantity("160", "[lb_av]"),
 			"at": "2026-10-07T06:41:12Z",
-		}, "temperature-difference"},
-		{r.observation, "door", map[string]any{
-			"metric": r.metricRef("air_temperature"), "form": "gauge", "code": "open", "at": "2026-10-07T06:41:12Z",
-		}, nil},
+		}, func(p map[string]any) any { return p["value"].(map[string]any)["unit"] }, "lb"},
 		{r.trace, "hr", map[string]any{
-			"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "bpm", "measure": "mass",
+			"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "bpm",
 			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT30M", "values": []any{"58", "61"},
-		}, "rate"},
+		}, func(p map[string]any) any { return p["unit"] }, "1/min"},
 	} {
 		rec, err := r.put(t, c.kind, c.id, c.props)
 		if err != nil {
 			t.Fatalf("put %s: %v", c.id, err)
 		}
-		if got := rec.Properties["measure"]; got != c.want {
-			t.Errorf("%s: measure = %v, want %v", c.id, got, c.want)
+		if got, held := rec.Properties["measure"]; held {
+			t.Errorf("%s: measure = %v, want none", c.id, got)
+		}
+		if got := c.unit(rec.Properties); got != c.want {
+			t.Errorf("%s: unit = %v, want the unit's id %s", c.id, got, c.want)
 		}
 	}
-	// A patch that names a measure changes nothing; one that changes the unit
-	// restamps it.
-	rec, err := r.patch(t, r.observation, "w", map[string]any{"measure": "length"})
-	if err != nil || rec.Properties["measure"] != "mass" {
-		t.Fatalf("a patch naming a measure: %v, measure %v", err, rec.Properties["measure"])
-	}
-	if got := r.points(t, r.trace, "hr"); len(got) != 2 || got[0].base.Float64 != 58.0/60 {
-		t.Errorf("the trace's points convert in its stamped measure: %+v", got)
+	_, err := r.patch(t, r.observation, "w", map[string]any{"measure": "mass"})
+	refused(t, "a written measure", err, "props.measure: not declared")
+	for _, p := range r.points(t, r.trace, "hr") {
+		if p.base.Valid {
+			t.Errorf("the trace's point carries a base value: %+v", p)
+		}
 	}
 	r.rebuildMatches(t)
 }
 
 // A metric's record is held to the `metric` trait's rules on every write: a
-// measure the unit table names, a unit of it, and rollup tiers from the four
-// widths, finest first.
+// unit and listed units that name unit records of the repository, each
+// listed unit converting to the unit, and rollup tiers from the four widths,
+// finest first.
 func TestMetricWritesAreHeldToTheMetricTrait(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
+	putShippedUnits(t, r.ds, "ppm")
 	if _, err := r.put(t, r.metric, "room/co2", map[string]any{
-		"name": "CO2", "measures": "fraction", "unit": "[ppm]", "form": "gauge", "rollups": []any{"5m", "1h"},
+		"name": "CO2", "unit": unitRef("ppm"), "form": "gauge", "rollups": []any{"5m", "1h"},
 	}); err != nil {
 		t.Fatalf("a metric with its tiers: %v", err)
 	}
@@ -76,10 +73,15 @@ func TestMetricWritesAreHeldToTheMetricTrait(t *testing.T) {
 	refused(t, "tiers out of order", err, "props.rollups[1]: 5m comes after the coarser 1h")
 	_, err = r.patch(t, r.metric, "room/co2", map[string]any{"rollups": []any{"10m"}})
 	refused(t, "an unknown tier", err, `props.rollups[0]: "10m" is not a rollup tier: 5m, 15m, 1h or 1d`)
-	_, err = r.patch(t, r.metric, "room/co2", map[string]any{"unit": "kg"})
-	refused(t, "a unit outside the measure", err, "props.unit: kg is not a unit of fraction")
-	_, err = r.patch(t, r.metric, "room/co2", map[string]any{"measures": "airiness"})
-	refused(t, "an unknown measure", err, `props.measures: "airiness" is not a measure of the unit table`)
+	_, err = r.patch(t, r.metric, "room/co2", map[string]any{"units": []any{unitRef("kg")}})
+	refused(t, "a listed unit outside the unit's component", err, "props.units[0]: kg does not convert to the metric's unit ppm")
+	_, err = r.patch(t, r.metric, "room/co2", map[string]any{"unit": unitRef("furlong")})
+	refused(t, "a unit the repository does not hold", err, "props.unit: furlong names no unit of this repository")
+	_, err = r.patch(t, r.metric, "room/co2", map[string]any{"measures": "fraction"})
+	refused(t, "the table's measures", err, "props.measures: not declared")
+	if _, err := r.patch(t, r.metric, "room/co2", map[string]any{"units": []any{unitRef("percent")}}); err != nil {
+		t.Errorf("a listed unit of the unit's component: %v", err)
+	}
 	if _, err := r.patch(t, r.metric, "room/co2", map[string]any{"rollups": []any{}}); err != nil {
 		t.Errorf("an empty tier list: %v", err)
 	}

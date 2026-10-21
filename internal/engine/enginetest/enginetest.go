@@ -17,8 +17,8 @@
 //     vocabulary (people, tasks, messaging, calendar) is a set of sample
 //     packages a repository installs.
 //
-// It imports only substrate and schema, so both engine and engine_test may
-// import it without a cycle.
+// It imports only substrate, vocabulary and the unit seed, so both engine
+// and engine_test may import it without a cycle.
 package enginetest
 
 import (
@@ -115,6 +115,11 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 			} else {
 				data = append(data, d)
 			}
+		}
+		// The shipped units the sample names, which a test repository
+		// holds only where a test puts them (PutShippedUnits).
+		if err := PutSampleUnits(ctx, ds, name); err != nil {
+			return fmt.Errorf("enginetest: import %s: %w", name, err)
 		}
 		actor := substrate.BundleActor(SampleAuthority, name)
 		if _, err := ds.ApplyVocabularyDocuments(ctx, actor, WithoutAbsentMappings(declarations, held)); err != nil {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -90,6 +91,9 @@ func aggregateToolFixture(t *testing.T) (*dataset, string) {
 	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the sample catalog: %v", err)
+	}
+	if err := enginetest.PutSampleUnits(ctx, ds, "observations", "health"); err != nil {
+		t.Fatalf("put the shipped units: %v", err)
 	}
 	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
 		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {

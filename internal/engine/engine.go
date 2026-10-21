@@ -133,8 +133,9 @@ type options struct {
 	seedUnits    bool
 	seedUnitsSet bool
 	// unitGraph reads and writes every quantity through the repository's
-	// unit graph instead of the engine's table (WithUnitGraph).
-	unitGraph bool
+	// unit graph instead of the engine's table (WithUnitGraph). Default true.
+	unitGraph    bool
+	unitGraphSet bool
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -407,13 +408,14 @@ func WithUnitSeed(on bool) Option {
 	return func(o *options) { o.seedUnits, o.seedUnitsSet = on, true }
 }
 
-// WithUnitGraph selects the second code path decision 0186 prepares: every
-// quantity write, filter, order, observed index row, aggregate read, unit
-// conversion and function host call reads the repository's unit graph
-// instead of the engine's table. Off by default until the switch (step 4 of
-// docs/plans/dynamic-units.md), and removed with the table (step 5).
+// WithUnitGraph selects the code path of decision 0186: every quantity
+// write, filter, order, observed index row, aggregate read, unit conversion
+// and function host call reads the repository's unit graph instead of the
+// engine's table. On by default; off selects the table path, which reads
+// none of the declarations or unit ids a repository holds since the switch,
+// and is removed with the table (step 5 of docs/plans/dynamic-units.md).
 func WithUnitGraph(on bool) Option {
-	return func(o *options) { o.unitGraph = on }
+	return func(o *options) { o.unitGraph, o.unitGraphSet = on, true }
 }
 
 type service struct {
@@ -746,6 +748,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	}
 	if !o.seedUnitsSet {
 		o.seedUnits = true
+	}
+	if !o.unitGraphSet {
+		o.unitGraph = true
 	}
 
 	admin, err := sql.Open("pgx", dsn)
@@ -1280,15 +1285,18 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	for _, step := range []func(context.Context) error{
 		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
-		ds.upgradeShippedVocabulary,
 		// The unit uses' rule before the seed: where the stored uses are
 		// behind it, the request it writes makes the use guard refuse a
 		// seed refresh that could take a unit from a value, rather than
 		// judge it by uses an older rule derived (unitgraph.go).
 		ds.checkUnitUses,
-		// The units before every step that re-derives or validates through
-		// the unit graph (unitseed.go).
+		// The units before the shipped upgrade, whose guards judge stored
+		// quantities through the unit graph, and every later step that
+		// re-derives or validates through it (unitseed.go). A repository
+		// whose stored vocabulary predates the unit kinds is seeded right
+		// after the upgrade that declares them.
 		ds.ensureShippedUnits,
+		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
 		ds.checkIndexReprojections,

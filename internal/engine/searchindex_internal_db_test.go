@@ -251,7 +251,7 @@ func TestTheSearchReindexServesRequestsUntilItFinishes(t *testing.T) {
 			t.Fatalf("the log has no per-kind line for %s:\n%s", kind, got)
 		}
 	}
-	if !logLine(got, `msg="substrate: re-derived the search index" `, "to=2 ") {
+	if !logLine(got, `msg="substrate: re-derived the search index" `, fmt.Sprintf("to=%d ", searchIndexVersion)) {
 		t.Fatalf("the log has no line for the finished reindex:\n%s", got)
 	}
 }

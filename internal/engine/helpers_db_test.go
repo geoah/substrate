@@ -123,6 +123,31 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	}
 }
 
+// putSampleUnits puts the shipped units the named samples name
+// (enginetest.PutSampleUnits): a test repository skips the unit seed, and a
+// catalog import of a sample naming units needs them first.
+func putSampleUnits(t *testing.T, ds substrate.Dataset, names ...string) {
+	t.Helper()
+	if err := enginetest.PutSampleUnits(context.Background(), ds, names...); err != nil {
+		t.Fatalf("put the shipped units: %v", err)
+	}
+}
+
+// putShippedUnits puts the shipped units of every linear component holding
+// one of ids (enginetest.PutShippedUnits).
+func putShippedUnits(t *testing.T, ds substrate.Dataset, ids ...string) {
+	t.Helper()
+	if err := enginetest.PutShippedUnits(context.Background(), ds, ids...); err != nil {
+		t.Fatalf("put the shipped units: %v", err)
+	}
+}
+
+// unitRef is a reference to a unit record, the way a metric names its unit
+// (decision 0186).
+func unitRef(id string) map[string]any {
+	return map[string]any{"ref": vocabulary.KindUnit + "/" + id}
+}
+
 // installShelf installs the shelf fixture vocabulary (enginetest.InstallShelf):
 // the shapes the suite exercises that no shipped vocabulary carries — a
 // mapping-target kind, the asin/isbn refinements, an embeddable property.

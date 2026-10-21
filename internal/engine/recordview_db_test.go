@@ -289,7 +289,8 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 
 	// --- binary N: console package 1, the health sample imported with its
 	// version 1 views, an owner's edit and an owner's own view.
-	svc1 := openTree(t, dsn, treeAtConsole(t, console1))
+	// The shipped units: the samples' metrics and quantities name them.
+	svc1 := openTree(t, dsn, treeAtConsole(t, console1), engine.WithUnitSeed(true))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -450,7 +451,8 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 
 	// --- binary N: console package 2, the health sample imported with its
 	// version 4 views, an owner's edit and an owner's own view.
-	svc1 := openTree(t, dsn, treeAtConsole(t, console2))
+	// The shipped units: the samples' metrics and quantities name them.
+	svc1 := openTree(t, dsn, treeAtConsole(t, console2), engine.WithUnitSeed(true))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -575,7 +577,8 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 
 	// --- binary N: console package 3, the health sample imported with its
 	// views, an owner's edit and an owner's own view.
-	svc1 := openTree(t, dsn, treeAtConsole(t, console3))
+	// The shipped units: the samples' metrics and quantities name them.
+	svc1 := openTree(t, dsn, treeAtConsole(t, console3), engine.WithUnitSeed(true))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
 	}

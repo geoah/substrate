@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -29,7 +30,10 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 			t.Fatalf("put %s %s: %v", kind, id, err)
 		}
 	}
-	put(home+"/observations/metric", "m1", map[string]any{"name": "M1", "form": "gauge", "measures": "rate", "unit": "/min"})
+	if err := enginetest.PutShippedUnits(ctx, ds, "1/min"); err != nil {
+		t.Fatal(err)
+	}
+	put(home+"/observations/metric", "m1", map[string]any{"name": "M1", "form": "gauge", "unit": unitRef("1/min")})
 	put(home+"/observations/source", "s1", map[string]any{"name": "S1"})
 	put(obs, "o1", map[string]any{
 		"metric": map[string]any{"ref": home + "/observations/metric/m1"}, "source": map[string]any{"ref": home + "/observations/source/s1"},

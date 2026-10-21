@@ -118,9 +118,10 @@ func addShippedKind(t *testing.T, tree, pkg, singular string) {
 	}
 }
 
-func openTree(t *testing.T, dsn, tree string) substrate.Service {
+func openTree(t *testing.T, dsn, tree string, opts ...engine.Option) substrate.Service {
 	t.Helper()
-	svc, err := engine.OpenForTest(t, context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
+	all := append([]engine.Option{engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree)}, opts...)
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, all...)
 	if err != nil {
 		t.Fatalf("open the substrate: %v", err)
 	}
