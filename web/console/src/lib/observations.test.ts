@@ -58,7 +58,7 @@ import {
   traceKind,
 } from "@/lib/observations.test-fixtures"
 import { UnitGraph } from "@/lib/unit-graph"
-import { editedTable } from "@/lib/unit-graph.test-fixtures"
+import { editedTable, fixtureTable } from "@/lib/unit-graph.test-fixtures"
 import { TABLE_UNITS, graphUnits, pendingUnits } from "@/lib/unit-reader"
 
 const OBSERVED = "substrate.reamde.dev/core/observed"
@@ -142,26 +142,28 @@ describe("forms and reducers", () => {
   it("offers the reducers each form allows, the default first", () => {
     // Every reducer docs/api.md's form table lists, as reducer keys.
     const heart = info("health/heart_rate")
-    expect(reducerOptions(shapeOf(heart), "gauge", heart)).toEqual([
-      "avg",
-      "min",
-      "max",
-      "first",
-      "last",
-      "count",
-      "stddev",
-      "percentile:0.5",
-      "percentile:0.9",
-    ])
+    expect(reducerOptions(TABLE_UNITS, shapeOf(heart), "gauge", heart)).toEqual(
+      [
+        "avg",
+        "min",
+        "max",
+        "first",
+        "last",
+        "count",
+        "stddev",
+        "percentile:0.5",
+        "percentile:0.9",
+      ]
+    )
     // No metric is offered bands: which bands a reader wants is a record
     // view's to say, not the console's. An angle's mean is circular.
     expect(
-      reducerOptions("gauge", "gauge", info("health/heart_rate"))
+      reducerOptions(TABLE_UNITS, "gauge", "gauge", info("health/heart_rate"))
     ).not.toContain("durationIn:95,114")
-    expect(reducerOptions("gauge", "gauge", { measures: "angle" })).toContain(
-      "circularMean"
-    )
-    expect(reducerOptions("amount")).toEqual([
+    expect(
+      reducerOptions(TABLE_UNITS, "gauge", "gauge", { measures: "angle" })
+    ).toContain("circularMean")
+    expect(reducerOptions(TABLE_UNITS, "amount")).toEqual([
       "sum",
       "count",
       "avg",
@@ -173,7 +175,7 @@ describe("forms and reducers", () => {
       "percentile:0.5",
       "percentile:0.9",
     ])
-    expect(reducerOptions("counter")).toEqual([
+    expect(reducerOptions(TABLE_UNITS, "counter")).toEqual([
       "increase",
       "rate",
       "last",
@@ -184,22 +186,20 @@ describe("forms and reducers", () => {
     ])
     // A summary reads its one statistic: a vendor's averages first, a
     // total's sum first.
-    expect(reducerOptions("summary", "summary", undefined, "vendor")).toEqual([
-      "avg",
-      "min",
-      "max",
-      "first",
-      "last",
-      "count",
-    ])
-    expect(reducerOptions("summary", "summary", undefined, "sum")[0]).toBe(
-      "sum"
-    )
+    expect(
+      reducerOptions(TABLE_UNITS, "summary", "summary", undefined, "vendor")
+    ).toEqual(["avg", "min", "max", "first", "last", "count"])
+    expect(
+      reducerOptions(TABLE_UNITS, "summary", "summary", undefined, "sum")[0]
+    ).toBe("sum")
     // A coded gauge answers time per code; a coded amount takes no
     // timeInState (docs/api.md, "Reducers, by form").
-    expect(reducerOptions("coded", "gauge")).toEqual(["timeInState", "count"])
+    expect(reducerOptions(TABLE_UNITS, "coded", "gauge")).toEqual([
+      "timeInState",
+      "count",
+    ])
     expect(shapeOf(info("health/sleep_stage"))).toBe("coded")
-    expect(reducerOptions("coded", "amount")).toEqual([
+    expect(reducerOptions(TABLE_UNITS, "coded", "amount")).toEqual([
       "sum",
       "count",
       "min",
@@ -207,16 +207,32 @@ describe("forms and reducers", () => {
     ])
   })
 
+  it("offers the circular mean under the graph by the unit's turn", () => {
+    // The server checks a turn on the read's unit, not a declared measure.
+    const graph = graphUnits(new UnitGraph(fixtureTable))
+    expect(reducerOptions(graph, "gauge", "gauge", { unit: "deg" })).toContain(
+      "circularMean"
+    )
+    expect(
+      reducerOptions(graph, "gauge", "gauge", { unit: "kg", measures: "angle" })
+    ).not.toContain("circularMean")
+    expect(
+      reducerOptions(pendingUnits("loading"), "gauge", "gauge", { unit: "deg" })
+    ).not.toContain("circularMean")
+  })
+
   it("offers every reducer the server admits for a form, and no other", () => {
     // FORM_REDUCERS is the server's own table (aggregate.rules.json, which a
     // Go test writes), so a reducer the server adds or drops fails here
     // until a menu takes it or MENU_LEAVES_OUT says why not.
     const menus = {
-      gauge: reducerOptions("gauge", "gauge", { measures: "angle" }),
-      amount: reducerOptions("amount", "amount"),
-      counter: reducerOptions("counter", "counter"),
-      "coded gauge": reducerOptions("coded", "gauge"),
-      "coded amount": reducerOptions("coded", "amount"),
+      gauge: reducerOptions(TABLE_UNITS, "gauge", "gauge", {
+        measures: "angle",
+      }),
+      amount: reducerOptions(TABLE_UNITS, "amount", "amount"),
+      counter: reducerOptions(TABLE_UNITS, "counter", "counter"),
+      "coded gauge": reducerOptions(TABLE_UNITS, "coded", "gauge"),
+      "coded amount": reducerOptions(TABLE_UNITS, "coded", "amount"),
       summary: summaryReducers(undefined, "prefer-raw"),
     }
     for (const [form, menu] of Object.entries(menus)) {

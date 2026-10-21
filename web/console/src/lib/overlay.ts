@@ -412,7 +412,7 @@ export function planPlot(
     scope.statistic && statistics.includes(scope.statistic)
       ? scope.statistic
       : statistics[0]
-  const reducerMenu = menuOf(shape, form, info, {
+  const reducerMenu = menuOf(obs.units, shape, form, info, {
     statistic,
     from: askedFrom,
     // Past a raw read, a bucket may be served by a summary, and the server
@@ -639,6 +639,7 @@ function bandKey(key: string): boolean {
  * stream holds raw points, and is disabled with the reason otherwise. A
  * metric whose streams all keep summaries reads in a summary's terms. */
 function menuOf(
+  units: UnitReader,
   shape: ReadingShape,
   form: Form | undefined,
   info: MetricInfo | undefined,
@@ -673,7 +674,7 @@ function menuOf(
         : note,
     }
   }
-  const own = reducerOptions(shape, form, info, read.statistic)
+  const own = reducerOptions(units, shape, form, info, read.statistic)
   if (
     shape === "gauge" &&
     read.asked &&

@@ -737,20 +737,28 @@ export const MENU_LEAVES_OUT: Readonly<Record<string, readonly string[]>> = {
 /** The reducers a shape may ask for, the default first: its menu
  * (`MENU_ORDER`) less any reducer the server does not admit for the form
  * (`FORM_REDUCERS`). A level's circular mean is offered where it is an
- * angle. A summary takes what `summaryReducers` lists. */
+ * angle: the metric's `angle` measure where the server reads the table,
+ * and under the unit graph a metric unit whose component declares a turn,
+ * which is what the server checks. A summary takes what `summaryReducers`
+ * lists. */
 export function reducerOptions(
+  units: UnitReader,
   shape: ReadingShape,
   form?: Form,
-  metric?: Pick<MetricInfo, "measures">,
+  metric?: Pick<MetricInfo, "measures" | "unit">,
   statistic?: string
 ): string[] {
   const table = tableOf(shape, form)
   if (table === "summary") return summaryReducers(statistic, "summaries")
   const admitted = FORM_REDUCERS[table]
+  const angle =
+    units.status === "table"
+      ? metric?.measures === "angle"
+      : metric?.unit !== undefined && units.circular(metric.unit)
   return MENU_ORDER[table].filter(
     (key) =>
       admitted.includes(reducerName(reducerOf(key))) &&
-      (key !== "circularMean" || metric?.measures === "angle")
+      (key !== "circularMean" || angle)
   )
 }
 

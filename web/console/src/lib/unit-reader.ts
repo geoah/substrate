@@ -107,6 +107,10 @@ export interface UnitReader {
   textExample(spec?: QuantityDeclaration): string
   /** Keep the unit a person picked, which the next blank input opens on. */
   remember(unit: string): void
+  /** Whether a value in the unit is an angle on a circle, which the server
+   * averages with a circular mean: the table's `angle` measure, or under
+   * the graph a unit of a component declaring a turn. */
+  circular(unit: string): boolean
 }
 
 /** The engine's table, for a server whose switch is off. */
@@ -139,6 +143,7 @@ export const TABLE_UNITS: UnitReader = {
   example: quantityExample,
   textExample: quantityTextExample,
   remember: rememberUnit,
+  circular: (unit) => measureOf(canonicalUnit(unit)) === "angle",
 }
 
 const ANGLE_SYMBOLS = new Set(["°", "′", "″", "'", "''"])
@@ -215,6 +220,13 @@ function overGraph(
     },
     remember: (unit) => {
       if (known(unit)) rememberUnit(graph.canonical(unit), known)
+    },
+    circular: (unit) => {
+      const id = graph.resolve(unit)
+      return (
+        id !== undefined &&
+        graph.component(id).some((u) => graph.unit(u)?.turn !== undefined)
+      )
     },
   }
 }
