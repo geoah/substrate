@@ -552,29 +552,26 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   a bare number carries no currency and is refused. A `quantity` property
   takes the same operators, and each operand is itself a quantity value
   without a comparator:
-  `{"weight": {"lt": {"value": "160", "unit": "[lb_av]"}}}` is every weight
-  below 160 pounds, a stored 72.4 kg among them. The engine converts the
-  operand exactly into each unit the rows hold, inside the operand's
-  [measure](units.md); a stored value of another measure never matches, and an
-  operand outside a declared `measures:` is refused. On a kind binding the
-  [observed](observations.md) trait, a `value` whose row says `delta: true`
-  holds a temperature difference, as the observed rules read it: the
-  filter compares it with the operand read as a difference, so
-  `{"value": {"gt": {"value": "0.3", "unit": "Cel"}}}` is a deviation above
-  0.3 K on such a row and a temperature above 0.3 °C on any other. Where the
-  property declares `units:`, those codes are every unit a row can hold and
-  no row is read to find them. Otherwise the grammar admits codes no list
-  names (`Mg`, `kg/h`), so each request first reads the distinct units of the
-  filtered kinds' rows (the live ones, or the tombstones under
-  `"deleted": true`): one pass over the rows the rest of the filter selects
-  (its time range and every other condition; the quantity comparisons are
-  built last, so each narrows by everything else), whatever `first` says,
-  and a refusal past 256 distinct spellings among them. An order by the
-  quantity reads the same way, under the whole filter. Declaring `units:`
-  removes that read. A filter without `filter.kinds` compares a quantity
-  over every kind that declares the name, where each declares it as one
-  quantity: a kind whose `measures:` does not hold the operand matches
-  nothing, and the operand is refused only where no kind's measure holds it.
+  `{"weight": {"lt": {"value": "160", "unit": "lb"}}}` is every weight
+  below 160 pounds, a stored 72.4 kg among them. The operand's unit is any
+  spelling of one of the repository's [unit records](units.md). The engine
+  converts the operand exactly into each unit of the operand's linear
+  component that the filtered kinds' stored values use, so a unit nobody
+  stores never reaches the query; a stored value outside that component
+  never matches. An operand whose unit does not convert to the property's
+  declared `unit` through linear conversions is refused. On a kind binding
+  the [observed](observations.md) trait, a `value` whose row says `delta:
+  true` holds a difference: the filter compares it with the operand read as
+  a difference, so `{"value": {"gt": {"value": "0.3", "unit": "Cel"}}}` is a
+  deviation above 0.3 K on such a row and a temperature above 0.3 °C on any
+  other. A property declaring `delta: true` compares every value that way.
+  The units each kind stores are found through the repository's index of
+  unit uses, one probe per spelling, and a filter whose operand reaches more
+  than 256 stored spellings is refused. A filter without `filter.kinds`
+  compares a quantity over every kind that declares the name, where each
+  declares it as one quantity: a kind whose declared `unit` the operand does
+  not reach matches nothing, and the operand is refused only where no kind
+  remains. A filter that names its kinds refuses such an operand.
   Where some kind declares the name as something else (a string, a state), a
   quantity operand is refused and the request names its kinds. A value stored with a
   comparator (`<0.5`) matches only where the comparison holds for its whole
@@ -638,19 +635,18 @@ Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
 a JSON list of `{property, desc}`). A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
-property sorts by its value converted to its measure's base unit (155 `[lb_av]`
-between 50 kg and 71000 g), kept to 40 decimal places of the base unit (two
-values that agree that far tie and sort by kind and id), in every unit a write
-admitted: the codes the property lists, else its measure's codes, else every
-code the table lists, and then any other code the read's rows hold (1 `Mg`
-sorts as 1000 kg, though the mass table lists no `Mg`), found by the same one
-read of the rows' units a filter makes. Each kind's rows sort in the measure that kind declares, so a
-10 `Cel` temperature (283.15 K) sorts after a 20 `K` difference, and a row
-marked `delta: true` sorts as a difference. `rad` sorts through pi at 40
-places; a level or an arbitrary unit sorts by its own number. A declared
-index on a quantity holds the same expression over the declared codes and
-needs `measures:` or `units:`; it serves the order while every stored unit is
-one of those codes, which `units:` guarantees. The engine resolves an order over the kinds the filter
+property sorts by its value converted to the root of its linear component
+([units](units.md#how-the-server-converts)), kept to 40 decimal places of the
+root unit (two values that agree that far tie and sort by kind and id): 155
+`lb` sorts between 50 kg and 71000 g. The order needs every candidate
+declaration to anchor the property with `unit` or `units`, all in one linear
+component, and is refused otherwise, so an order by an observed `value`,
+whose unit the metric decides per row, is refused. A row marked `delta:
+true`, or a property declaring it, sorts as a difference. `rad` sorts by its
+own number. A declared index on a quantity property is refused, because its
+key would depend on one repository's units. A list cursor whose filter or
+order converted a quantity carries the unit graph's revision, and a page
+asked after a unit or conversion changed is refused. The engine resolves an order over the kinds the filter
 selects (`kinds`, narrowed by `implements` and `purposes`), or over every kind
 when the filter names none, so another kind's declaration of the same name
 changes nothing. Where two selected kinds declare the name differently (a
@@ -1136,7 +1132,7 @@ JSON, so a misspelled key is a `400` naming it (a key removed before v1 is a
 refuses `q`,
 `watch`, `count`, `orderBy`, `first`, `after`, `offset`, `expand` and
 `withAnnotations` by name. Everything else a request can be refused for is a
-`422 validation` naming the limit, the form, the measure or the parameter, and
+`422 validation` naming the limit, the form, the unit or the parameter, and
 it is refused before any point or rollup row is reduced: the one statement
 that finds which forms and codes the range holds runs first, over the rollup
 rows' keys and the points at the range's cut ends. Two budget checks come
@@ -1208,8 +1204,8 @@ its series times buckets pass the rows left of their read budget.
 | `groupBy` | any of `source`, `about`, `code`, `metric`, `channel`, and `statistic` on a read from summaries or the latest read | |
 | `from` | `raw` (gauges, amounts, counters), `summaries` (summary points) or `prefer-raw` | `raw` |
 | `sources` | `{"policy", "order"?}`: `separate` or `priority` | `separate` |
-| `unit` | a unit of the metric's measure the values answer in; refused beside `metrics`, whose entries name their own | the metric record's `unit`, else the first stream's |
-| `durationUnit` | a unit of duration (`s`, `min`, `h`, `d`) `durationIn` and `timeInState` answer their times in | `s` |
+| `unit` | the unit the values answer in, which converts to the metric's `unit` through linear conversions; refused beside `metrics`, whose entries name their own | the metric record's `unit`, else the first stream's |
+| `durationUnit` | a unit of duration (`ms`, `s`, `min`, `h`, `d`, `wk`) `durationIn` and `timeInState` answer their times in | `s` |
 | `maxGap` | an ISO 8601 duration capping how long a gauge's value holds after its point | none |
 | `fill` | `zero`: a bucket a series holds no row in answers zero | none |
 | `rolling` | `{"buckets", "reducers"?, "through"?}`: `avg`, `sum`, `min`, `max` or `stddev` over a window of buckets ending at this bucket (`through: "current"`) or the one before it (`"previous"`) | `reducers` is `["avg"]`, `through` is `current` |
@@ -1389,9 +1385,9 @@ GET /api/v1/records?filter={"properties":{"source":{"eq":"whoop/e2e"}}}
    "reducers": ["last"]}
 
 → {"units": {"ada.example.com/observations/metric/health/hrv_rmssd": "ms",
-             "ada.example.com/observations/metric/health/resting_heart_rate": "/min",
+             "ada.example.com/observations/metric/health/resting_heart_rate": "1/min",
              "ada.example.com/observations/metric/health/sleep_stage": "h",
-             "ada.example.com/observations/metric/health/whoop_recovery": "%"},
+             "ada.example.com/observations/metric/health/whoop_recovery": "percent"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "exact": false,
    "rows": [{"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
@@ -1401,7 +1397,7 @@ GET /api/v1/records?filter={"properties":{"source":{"eq":"whoop/e2e"}}}
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
              "group": {"metric": "ada.example.com/observations/metric/health/resting_heart_rate"}, "from": "summaries",
              "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
-             "values": [{"reducer": "last", "value": "53", "unit": "/min"}], "count": 1},
+             "values": [{"reducer": "last", "value": "53", "unit": "1/min"}], "count": 1},
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
              "group": {"code": "deep", "metric": "ada.example.com/observations/metric/health/sleep_stage"}, "from": "raw",
              "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
@@ -1409,7 +1405,7 @@ GET /api/v1/records?filter={"properties":{"source":{"eq":"whoop/e2e"}}}
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
              "group": {"metric": "ada.example.com/observations/metric/health/whoop_recovery"}, "from": "summaries",
              "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
-             "values": [{"reducer": "last", "value": "63", "unit": "%"}], "count": 1}],
+             "values": [{"reducer": "last", "value": "63", "unit": "percent"}], "count": 1}],
    "sources": ["ada.example.com/observations/source/whoop/e2e"],
    "head": {"changelog": 72472, "generation": "pn2vgcqd6wfg"}}
 ```
@@ -1425,7 +1421,8 @@ from that one source; without it, every source's values are read under the
   default), and `statistic`, the one summary statistic
   its summaries are read at. `statistic` is refused on an entry read from
   `raw`, which reads no summaries. The read's own `unit` is refused beside
-  `metrics`, because a unit belongs to one measure.
+  `metrics`, because each metric's values convert within their own unit's
+  linear component.
 - The filter and every other option are the read's and apply to every
   metric. `filter.properties.statistic` narrows every metric's summaries
   beside an entry's `statistic`; `filter.properties.code` filters every
@@ -1549,38 +1546,40 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 A row never mixes forms: a group whose streams hold two forms is a `422`
 asking to group them apart.
 
-A logarithmic measure's values do not add: 61 dB and 62 dB are not 123 dB.
-Over a metric or a property of `level`, `sound-pressure-level`,
-`power-level` or `acidity`, `sum`, `increase` and `rate` are a `422` naming
-the reducer and the measure, on every form, a summary of any statistic
-included, and so is a rolling `sum`. Over `sound-pressure-level` and
-`power-level`, the levels of a power, `avg`, `stddev` and a rolling
-`avg` or `stddev` are a `422` too: their mean is the level of the mean power
-(60 and 80 dB[SPL], an hour each, hold 77.0 dB[SPL]), not the mean of the
-decibels. A `level` against no reference (a hearing threshold) and an
-`acidity` average arithmetically; the mean of pH values is the pH of the
-geometric mean activity. `count`, `min`, `max`, `first`, `last`,
-`percentile` and `durationIn` read any level as it is.
+A logarithmic unit's values do not add: 61 dB and 62 dB are not 123 dB.
+Over a unit whose [`scale`](units.md#unit-records) is `level` (`dB`, `pH`) or
+`powerlevel` (`dBSPL`, `dBW`, `dBm`), `sum`, `increase` and `rate` are a
+`422` naming the reducer and the unit, on every form, a summary of any
+statistic included, and so is a rolling `sum`. Over a `powerlevel` unit,
+`avg`, `stddev` and a rolling `avg` or `stddev` are a `422` too: their mean
+is the level of the mean power (60 and 80 dBSPL, an hour each, hold 77.0
+dBSPL), not the mean of the decibels. A `level` (a hearing threshold, a pH)
+averages arithmetically; the mean of pH values is the pH of the geometric
+mean activity. `count`, `min`, `max`, `first`, `last`, `percentile` and
+`durationIn` read any level as it is.
 
 ### Units
 
-Each value carries its own `unit`. The values' unit is `unit` where it is a
-unit of the metric's measure (the metric record's `measures`, else the
-measure of the first stream's stored unit), else the metric record's `unit`,
-else the first stream's. A `unit` outside the measure is a `422` naming the
-measure; a unit of duration there names `durationUnit`, the unit
-`durationIn` and `timeInState` answer their times in (`s` otherwise). `count` has no unit, `stddev` is a
-difference (a temperature's has no offset), and `circularMean` is in `deg`.
-Every stored value is converted from its own unit, exactly where the factor
-has a finite decimal expansion. A value the read takes whose unit does not
-convert (another measure, or another annotation: `{beats}/min` and `/min`
-count different things) is a `422` naming its unit and, where the read knows
-it, its source: a point in the range that the code filter and the source
-policy keep, a rollup row, or a gauge's value held into the range. A value
-the read drops refuses nothing: one outside the range, one whose `hold` or
-`maxGap` ends before the range, a code the filter leaves out, or a source the
-policy sets aside. One entry in the wrong measure therefore refuses only the
-reads that take it.
+Each value carries its own `unit`. The values' unit is the request's `unit`,
+else the metric record's `unit`, else the first stream's. A request `unit`
+that does not convert to the metric's `unit` through linear conversions is a
+`422` naming the units it may name instead; a unit of duration there names
+`durationUnit`, the unit `durationIn` and `timeInState` answer their times
+in (`ms`, `s`, `min`, `h`, `d` or `wk`; `s` otherwise). `count` has no unit,
+`stddev` is a difference (a temperature's has no offset), and `circularMean`
+answers in the read's unit, which needs a [`turn`](units.md#unit-records).
+Every stored value and rollup row converts from its own unit at read,
+through the repository's [conversions](units.md), so a corrected conversion
+corrects every answer with no re-derivation. The conversion is exact where
+the factor has a finite decimal expansion, and a converted value or factor
+past the range of a float64 is a `422`. A value the read takes whose unit
+does not convert is a `422` naming its unit and, where the read knows it,
+its source: a point in the range that the code filter and the source policy
+keep, a rollup row, or a gauge's value held into the range. A value the read
+drops refuses nothing: one outside the range, one whose `hold` or `maxGap`
+ends before the range, a code the filter leaves out, or a source the policy
+sets aside. One entry in a unit that does not convert therefore refuses only
+the reads that take it.
 
 ### Sources and `from`
 
@@ -1982,8 +1981,9 @@ what replaced it, and each value below is a `422`:
   `downsample`; an entry's `statistic` where the entry reads `raw`; an
   unknown reducer or a bad
   argument; a reducer the form does not take (naming the form); `circularMean`
-  off an angle; a reducer that adds or averages a logarithmic measure's
-  values (naming the measure); a `unit` outside the measure (naming the measure); a value the
+  in a unit with no turn; a reducer that adds or averages a level's values
+  (naming the unit); a `unit` that does not convert to the metric's (naming
+  the units that do); a value the
   read takes whose unit does not convert; a group of two forms; a
   recorded-local read of a stream holding a value written without a UTC offset
   and no `bucket.fallbackTimezone`, or a `fallbackTimezone` outside the
@@ -2008,39 +2008,48 @@ what replaced it, and each value below is a `422`:
   without `bucket.fallbackTimezone`, or a `property.groupBy` property that is
   not a declared single string, enum or reference.
 
-## The unit table
+## Units and conversions
 
-`GET /api/v1/units` answers the engine's [unit table](units.md), the one a
-write holds a quantity to: every measure (`name`, `base`, `scale`, `display`,
-`dimension`, `note`) with the codes it lists, each code's `print` symbol and
-its exact rational `factor` to the base, an absolute temperature's `offset`,
-and the `aliases` a write reads. A code no rational number converts (a level,
-an arbitrary unit, `rad`) has no `factor`. The route takes no parameter.
+`GET /api/v1/units` answers the repository's [unit and conversion
+records](units.md) as one graph. The route takes no parameter:
 
-`GET /api/v1/units/convert` converts one value exactly, as `host.units.convert`
-does in a function. `value` is exact digits, at most 1000 of them; `from` and
-`to` are codes or aliases, percent-encoded in the query (`%5Blb_av%5D` for
-`[lb_av]`); and `measure`, optional, names the measure to convert in where the
-units' own reading is not meant (`temperature-difference` for a deviation):
+- `units`: every unit record, with `id`, `name`, `symbol`, `code`,
+  `aliases`, `scale` and `turn` as the record holds them, and `root`,
+  `factor` and `offset`, the unit's exact map to the root of its linear
+  component (`root = value x factor + offset`). Two units with one `root`
+  convert exactly.
+- `conversions`: every conversion record, with `id`, `from`, `to` (unit ids)
+  and either `factor` and `offset` or `expr` and `inverse`.
+- `revision`: the graph revision, which every write of a unit or conversion
+  record moves. A client caches the answer by it.
+- `unseeded`: the shipped records the last open's seed skipped, each with
+  `kind`, `id` and `reason` ([seeding](units.md#seeding)).
+
+`GET /api/v1/units/convert` converts one value through the same graph, as
+`host.units.convert` does in a function. `value` is exact digits, at most
+1000 of them; `from` and `to` are any spelling of a unit (an id, a code or
+an alias), percent-encoded in the query; and `delta=true` converts a
+difference, dropping every offset:
 
 ```http
-GET /api/v1/units/convert?value=72.4&from=kg&to=%5Blb_av%5D
+GET /api/v1/units/convert?value=72.4&from=kg&to=lb
 ```
 
 ```json
-{"value": "159.61467782185136844", "unit": "[lb_av]", "measure": "mass", "exact": false}
+{"value": "159.61467782185136844", "unit": "lb", "exact": false}
 ```
 
-`value` is every digit where the result has a finite decimal expansion, else
-20 significant digits with `exact: false`. Either way it holds at most 1000
-digits, so a write takes it back: a longer answer is rounded to the fraction
-digits its integer part leaves, with `exact: false`, and one whose integer
-part (1000 ones from `10*24` to `1`) or whose first significant digit lies
-past 1000 digits is a `422`. A missing parameter or an unknown
-one is `400 bad_request`; a value, a unit or a pair of units the table refuses
-(`kg` to `J`, `mmol/mol` to `%`) is `422 validation` carrying the table's
-reason. Neither route reads the repository; the token gates them as it gates
-every route under `/api/v1`.
+`unit` is the target unit's id. `value` is every digit where the result has
+a finite decimal expansion, else 20 significant digits with `exact: false`.
+Either way it holds at most 1000 digits, so a write takes it back: a longer
+answer is rounded to the fraction digits its integer part leaves, with
+`exact: false`, and one whose integer part or first significant digit lies
+past 1000 digits is a `422`. A route across an [expression
+conversion](units.md#conversion-records) answers a float's shortest digits,
+never exact; a difference never crosses one. A missing parameter or an
+unknown one is `400 bad_request`; a value, a spelling no unit answers, or
+two units no route joins (`kg` to `J`) is `422 validation` naming why. Both
+routes read the repository's graph at one revision.
 
 ## Actors
 

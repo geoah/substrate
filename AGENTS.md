@@ -213,7 +213,7 @@ bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRA
 
 **Registration seeds `core`, `llm` and `console` (record views,
 [0166](docs/decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)),
-three keyless provider rows, and the LLM sample.** The agent runtime's
+three keyless provider rows, the LLM sample, and the shipped units.** The agent runtime's
 four data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `thread`, `message`, `interaction`), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
@@ -222,6 +222,12 @@ core kind whatever package it describes. Creation also writes three keyless
 `llm/provider` rows (`openai`, `anthropic`, `gemini`) and imports the LLM
 sample onto the repository's own authority, so the demo agents are there and
 name `openai`. They refuse at dispatch until that row's `apiKey` is written.
+Creation also writes the shipped unit and conversion records
+(`substrate.reamde.dev/core/unit` and `…/core/conversion`, 216 units and 149
+conversions from `internal/engine/unitseed`, edited by hand), and every open
+fills what a repository lacks without touching a record its owner wrote or
+deleted ([0186](docs/decisions/0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md),
+[docs/units.md](docs/units.md)).
 No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
 the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so
 a tool-using agent names the value itself. `tasks` is a SAMPLE

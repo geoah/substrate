@@ -172,7 +172,7 @@ pass the default `maxBuckets` of 1,440, so `--max-buckets` raises it:
 ```
 substratectl aggregate ada.example.com/observations/metric/health/steps \
   --gte 2025-10-05T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
-  --calendar day --from prefer-raw --reducer sum --unit '{steps}' \
+  --calendar day --from prefer-raw --reducer sum --unit steps \
   --max-buckets 2000
 ```
 
@@ -236,10 +236,10 @@ points cover (`COVERAGE`), the values placed by `--fallback-timezone`
 for a row `--fill` made, `overlaps` for a records-mode window whose sums do
 not add, and `bounded=N` for values written with a comparator; then each
 value as `reducer=value unit`, a value with a comparator printed with it
-(`min=<0.01 m[IU]/L`). A coded first or last prints its code as the value, a
+(`min=<0.01 mIU/L`). A coded first or last prints its code as the value, a
 `timeInState` value names its state (`timeInState:closed=3.5 h`), and a
 rolling value names its window and `n`, the buckets in it with a value
-(`rolling(7,n=6,avg of sum)=8123 {steps}`). `-o json` and `-o yaml` print the
+(`rolling(7,n=6,avg of sum)=8123 steps`). `-o json` and `-o yaml` print the
 answer whole.
 
 ## Writing

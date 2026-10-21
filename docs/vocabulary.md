@@ -400,20 +400,16 @@ once. The narrowing diffs that refuse:
   bound's float64, which is how every door carries a bound and how a read of
   the kind writes it back: the digits you wrote when they are at most 15
   significant ones
-- on a `quantity` property, naming, changing or dropping `measures:`, adding
-  a `units:` list or dropping a code from it, adding or moving a `min:` or
-  `max:`, or turning `comparator:` off, while records hold a value the new
-  declaration refuses or reads in another measure (a `Cel` stored under
-  `temperature-difference` would read as an absolute temperature without
-  it). The refusal counts the two cases apart and names each. A measure
-  change also counts deleted records, whose values a restore keeps: one whose
-  unit the new declaration reads in another measure, or does not read at all,
-  is counted whatever bound or unit list the new declaration adds, and the
-  count reads a renamed property's tombstones under the name it was renamed
-  from, as a restore does. The count runs
-  the write path's own quantity check over each stored
-  value in Go, because whether a unit belongs to a measure is the unit
-  grammar's question, which SQL cannot ask. Dropping `units:`, or turning
+- on a `quantity` property, naming or moving `unit:`, adding a `units:` list
+  or dropping a unit from it, adding or moving a `min:` or `max:`, or turning
+  `comparator:` off, while records hold a value the new declaration refuses.
+  The count runs the write path's own quantity check over each stored value
+  in Go, through the repository's [unit graph](units.md), which SQL cannot
+  read. Flipping `delta:` is refused while a live or deleted record holds a
+  value whose unit sits in a linear component with offsets, where a
+  difference and an absolute value read apart (10 `Cel` is 10 K as a
+  difference and 283.15 K as a temperature); a deleted record counts because
+  a restore keeps its value. Dropping `units:`, or turning
   `comparator:` on, only widens and admits
 - every one of those inside an object property's declared `fields:`, at each
   level the dialect nests: a dropped field, a field whose datatype or container

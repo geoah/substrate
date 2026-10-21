@@ -675,9 +675,9 @@ host.ids.external(provider, account, external_id)
 host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
-host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str; .exact
-host.units.canonical(code)                        # "bpm" -> "/min"
-host.units.measure(code)                          # "kg" -> "mass"
+host.units.convert(value, from_unit, to_unit, delta=False)  # a decimal str; .exact
+host.units.canonical(spelling)                    # "bpm" -> "1/min"
+host.units.converts(a, b)                         # "kg", "lb" -> True
 host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
                     hold=None, about=None, channel=None, reset_rule=None,
                     wrap_at=None, delta=None, circular=None, start=None, end=None)
@@ -685,7 +685,7 @@ host.observed.local_day(at, utc_offset_minutes)   # "2026-10-07"
 host.observed.period_id(at, period)               # "2026-10-07T06"
 host.observed.decimal(value)                      # 1e-05 -> "0.00001"
 host.observed.number(value)                       # 26.0 -> "26"; None if not a number
-host.observed.quantity(value, unit)               # {"value": "61.3", "unit": "/min"}
+host.observed.quantity(value, unit)               # {"value": "61.3", "unit": "1/min"}
 host.observed.duration(seconds)                   # 28489 -> "PT7H54M49S"
 host.observed.instant(at)                         # "2026-10-07T06:00:00Z"
 host.observed.parse_instant(text)                 # RFC 3339 -> aware datetime, or None
@@ -844,24 +844,30 @@ ships no settings, and one setting's own key is absent when nobody has written
 its value at all, so a body that needs one refuses in its own words
 ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
 
-**Units come from the engine's table.** `host.units.convert`,
-`canonical` and `measure` are host calls answered by the same unit table
-the write path holds a quantity to ([units](units.md)); there is no Python
-copy of it. They read nothing from the repository, so no grant gates them
-and no budget is charged; a value holds at most 1000 digits, and a call made
-after the invocation's deadline is refused. `convert` takes the value as
-digits (a `str`, an `int` or a `Decimal`; a `float` is written as its
-shortest repr), reads aliases on both units (`°C`, `kWh`, `mmHg`) and
-answers a decimal `str`: every digit when the result has a finite decimal
-expansion (37 Cel is exactly 98.6 [degF]), else 20 significant digits (72.4
-kg is 159.61467782185136844 lb, rounded), and at most 1000 digits, so the
-answer can be written back: a longer one is rounded to the fraction digits
-its integer part leaves, and one that cannot fit raises a `HostError`. The
-answer's `exact` attribute is `False` exactly when it was rounded. Without `measure` the units are read as
-`MeasureOf` reads them, so Cel to [degF] is an absolute temperature;
-`measure="temperature-difference"` converts a deviation without the offset.
-A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
-engine's refusal.
+**Units come from the repository's unit graph.** `host.units.convert`,
+`canonical` and `converts` are host calls answered by the repository's
+[unit and conversion records](units.md), loaded at the invocation's first
+unit call and kept for the rest of it; there is no Python copy of them. No
+grant gates them, and each call charges one call against the invocation's
+budget. A value holds at most 1000 digits, and a call made after the
+invocation's deadline is refused. `convert` takes the value as digits (a
+`str`, an `int` or a `Decimal`; a `float` is written as its shortest repr),
+reads any spelling of either unit (an id, a code or an alias: `°C`, `kWh`,
+`mmHg`) and answers a decimal `str` in the target unit's id: every digit
+when the result has a finite decimal expansion (37 `Cel` is exactly 98.6
+`degF`), else 20 significant digits (72.4 `kg` is 159.61467782185136844
+`lb`, rounded), and at most 1000 digits, so the answer can be written back.
+A longer one is rounded to the fraction digits its integer part leaves, and
+one that cannot fit raises a `HostError`. The answer's `exact` attribute is
+`False` exactly when it was rounded, or when the route crossed an
+expression conversion. `delta=True` converts a difference, dropping every
+offset: a deviation of 0.3 `Cel` is 0.54 `degF`. Two units no route joins
+(`kg` to `J`) raise a `HostError` carrying the engine's refusal.
+`canonical` answers the unit id a spelling resolves to, and raises for a
+spelling no unit answers. `converts(a, b)` is `True` where linear
+conversions join the two units, which is when a filter, a bound or an
+aggregate converts between them, and `False` otherwise, a spelling no unit
+answers included.
 
 **`host.observed` builds observed values in the body.** It is pure Python and
 writes nothing; [observations](observations.md) has the rules its output
@@ -953,7 +959,7 @@ docs = host.observed.trace(
     [(sample_time, sample["bpm"]) for sample in samples],
     metric={"ref": home + "/observations/metric/health/heart_rate"},
     source={"ref": home + "/observations/source/strap/%s/%s" % (account_id, device)},
-    unit="/min", form="gauge", hold="PT4M")
+    unit="1/min", form="gauge", hold="PT4M")
 for doc in docs:
     period = host.observed.period_id(datetime.fromisoformat(doc["at"]), "PT1H")
     host.effects.put(home + "/observations/trace",
