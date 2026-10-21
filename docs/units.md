@@ -90,11 +90,12 @@ What converts where:
   arithmetic: 155 `lb` is 70.30681735 `kg` to the last digit. An answer
   with no finite decimal expansion (1 `degF` is -155/9 `Cel`) is rounded to
   20 significant digits and marked inexact.
-- Across components, only `GET /api/v1/units/convert`,
-  `host.units.convert` and the console's display convert one value, along
-  the expression route. Filters, ordering, bounds, a metric's accepted units
-  and the aggregate read cross linear conversions only, because a sum, a
-  mean or a comparison survives an affine map and not an arbitrary function.
+- Across components, only REST (`GET /api/v1/units/convert`) and function
+  code (`host.units.convert`) convert one value, along the expression route.
+  The console's display converts inside a linear component only. Filters,
+  ordering, bounds, a metric's accepted units and the aggregate read cross
+  linear conversions only, because a sum, a mean or a comparison survives
+  an affine map and not an arbitrary function.
 - Two units no route joins do not convert, and a read that would need them
   to is refused, naming both.
 
