@@ -521,3 +521,351 @@ func TestMetricEditThatStrandsValuesIsRefused(t *testing.T) {
 	)
 	wantValidation(t, "a value the metric the transaction leaves refuses", err, "K does not convert to the metric's unit kg")
 }
+
+// --- filters, orders and cursors ----------------------------------------------
+
+func listThings(ds *dataset, q substrate.Query) (*substrate.Page, error) {
+	if len(q.Filter.Kinds) == 0 {
+		q.Filter.Kinds = []string{thingKind}
+	}
+	return ds.List(context.Background(), q)
+}
+
+func pageIDs(p *substrate.Page) []string {
+	out := make([]string, len(p.Records))
+	for i, r := range p.Records {
+		out[i] = r.ID
+	}
+	return out
+}
+
+func wantIDs(t *testing.T, what string, p *substrate.Page, err error, want ...string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+	got := pageIDs(p)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("%s: got %v, want %v", what, got, want)
+	}
+}
+
+func weightFilter(op string, value, unit string) substrate.Filter {
+	c := substrate.Cond{}
+	q := qty(value, unit)
+	switch op {
+	case "gt":
+		c.Gt = q
+	case "lt":
+		c.Lt = q
+	case "eq":
+		c.Eq = q
+	}
+	return substrate.Filter{Properties: map[string]substrate.Cond{"weight": c}}
+}
+
+// A filter converts its operand into every used unit of its linear
+// component, exactly: 1 lb is 453.59237 g, so a value of 453.59237 g equals
+// it and 453.5924 g is above it.
+func TestFilterConvertsThroughTheLinearComponent(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "a", map[string]any{"weight": qty("453.59237", "g")})
+	putThing(t, ds, "b", map[string]any{"weight": qty("453.5924", "g")})
+	putThing(t, ds, "c", map[string]any{"weight": qty("0.5", "kg")})
+	putThing(t, ds, "d", map[string]any{"weight": qty("1", "[lb_av]")})
+	order := []substrate.Order{{Property: "id"}}
+	p, err := listThings(ds, substrate.Query{Filter: weightFilter("eq", "1", "lb"), OrderBy: order})
+	wantIDs(t, "equal to 1 lb", p, err, "a", "d")
+	p, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "1", "pound"), OrderBy: order})
+	wantIDs(t, "above 1 lb", p, err, "b", "c")
+	p, err = listThings(ds, substrate.Query{Filter: weightFilter("lt", "0.4536", "kg"), OrderBy: order})
+	wantIDs(t, "below 0.4536 kg", p, err, "a", "b", "d")
+	_, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "1", "K")})
+	wantValidation(t, "an operand of another component under a kg anchor", err, "K and kg do not convert")
+	_, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "1", "stone")})
+	wantValidation(t, "an operand in no unit", err, `"stone" names no unit of this repository`)
+}
+
+// The arms a filter compiles are the spellings stored values use, never every
+// unit of the component.
+func TestUnusedUnitsNeverWidenAFilter(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "a", map[string]any{"weight": qty("1", "kg")})
+	ctx := context.Background()
+	tx, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	ty, _ := ds.registry().ByIdentity(thingKind)
+	b := &builder{overRecords: true}
+	if err := ds.condProp(ctx, tx, b, []*vocabulary.Kind{ty}, "weight", substrate.Cond{Gt: qty("1", "lb")}); err != nil {
+		t.Fatal(err)
+	}
+	var arms []string
+	for _, a := range b.args {
+		if s, ok := a.(string); ok {
+			arms = append(arms, s)
+		}
+	}
+	if strings.Join(arms, ",") != "kg" {
+		t.Fatalf("the filter compiled arms for %v, want kg alone", arms)
+	}
+	if b.units == nil {
+		t.Fatal("the filter converted and did not say so")
+	}
+}
+
+// A conversion through an expression converts one value, never a
+// comparison.
+func TestExpressionConversionIsRefusedInAFilter(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "a", map[string]any{"economy": qty("30", "mpg")})
+	_, err := listThings(ds, substrate.Query{Filter: substrate.Filter{Properties: map[string]substrate.Cond{
+		"economy": {Lt: qty("8", "L/100km")},
+	}}})
+	wantValidation(t, "an operand across an expression", err, "only through an expression conversion")
+}
+
+// An order needs every candidate declaration anchored in one linear
+// component; it then keys each value at the component's root.
+func TestOrderWithoutAnAnchorIsRefused(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb"), "loose": qty("1", "kg")})
+	putThing(t, ds, "b", map[string]any{"weight": qty("0.5", "kg"), "loose": qty("1", "K")})
+	putThing(t, ds, "c", map[string]any{"weight": qty("400", "g")})
+	p, err := listThings(ds, substrate.Query{OrderBy: []substrate.Order{{Property: "weight"}}})
+	wantIDs(t, "ordered by weight", p, err, "c", "a", "b")
+	_, err = listThings(ds, substrate.Query{OrderBy: []substrate.Order{{Property: "loose"}}})
+	wantValidation(t, "an order by an unanchored quantity", err, "declares no unit")
+	// A second kind anchoring the name in another component is refused
+	// beside the first.
+	installOther(t, ds, map[string]any{"type": "quantity", "unit": "K"})
+	_, err = ds.List(context.Background(), substrate.Query{
+		Filter:  substrate.Filter{Kinds: []string{thingKind, otherKind}},
+		OrderBy: []substrate.Order{{Property: "weight"}},
+	})
+	wantValidation(t, "an order across two components", err, "do not convert to one another")
+}
+
+const otherKind = thingsPackage + "/other"
+
+func installOther(t *testing.T, ds *dataset, weight map[string]any) {
+	t.Helper()
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+		Name: "things", Authority: thingsPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(thingsPackage, 0),
+			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
+			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, thingDeclaration()),
+			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "other"}, map[string]any{
+				"properties": map[string]any{"weight": weight},
+			}),
+		},
+	}); err != nil {
+		t.Fatalf("install the other kind: %v", err)
+	}
+}
+
+// A difference compares and orders by the factor alone, and a restore keeps
+// a difference its bound admits as one.
+func TestPropertyDeltaFiltersOrdersAndRestores(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "f", map[string]any{"change": qty("18", "degF")}) // 10 K
+	putThing(t, ds, "c", map[string]any{"change": qty("9.5", "Cel")}) // 9.5 K
+	putThing(t, ds, "k", map[string]any{"change": qty("2", "K")})
+	p, err := listThings(ds, substrate.Query{Filter: substrate.Filter{Properties: map[string]substrate.Cond{
+		"change": {Gt: qty("9", "K")},
+	}}, OrderBy: []substrate.Order{{Property: "change"}}})
+	wantIDs(t, "differences above 9 K, ascending", p, err, "c", "f")
+	if err := deleteRecord(ds, thingKind, "f", false); err != nil {
+		t.Fatal(err)
+	}
+	rec := putThing(t, ds, "f", map[string]any{"weight": qty("1", "kg")})
+	if q, _ := rec.Properties["change"].(map[string]any); q["value"] != "18" || q["unit"] != "degF" {
+		t.Fatalf("the restore dropped the difference: %v", rec.Properties)
+	}
+}
+
+// A list's cursor carries the graph revision whenever its filter converts,
+// even ordered by a column: a conversion edited between two pages refuses
+// the second rather than seeking under another predicate.
+func TestCursorAfterAConversionChangeIsRefused(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	for i, w := range []string{"1", "2", "3"} {
+		putThing(t, ds, string(rune('a'+i)), map[string]any{"weight": qty(w, "lb")})
+	}
+	q := substrate.Query{Filter: weightFilter("gt", "100", "g"), OrderBy: []substrate.Order{{Property: "createdAt"}}, First: 1}
+	first, err := listThings(ds, q)
+	if err != nil || len(first.Records) != 1 || first.Cursor == "" {
+		t.Fatalf("first page: %v %+v", err, first)
+	}
+	q.After = first.Cursor
+	if _, err := listThings(ds, q); err != nil {
+		t.Fatalf("a second page under the same graph: %v", err)
+	}
+	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "453.6"})
+	_, err = listThings(ds, q)
+	wantValidation(t, "a second page after a conversion changed", err, "another revision of the unit graph")
+	// An order by a column alone converts nothing and keeps its cursor.
+	plain := substrate.Query{OrderBy: []substrate.Order{{Property: "createdAt"}}, First: 1}
+	p1, err := listThings(ds, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "453.59237"})
+	plain.After = p1.Cursor
+	if _, err := listThings(ds, plain); err != nil {
+		t.Fatalf("a cursor that converts nothing across a graph change: %v", err)
+	}
+}
+
+// Under the switch an index on a quantity is refused: it would serve every
+// repository holding the kind through one repository's graph.
+func TestQuantityIndexIsRefused(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	decl := thingDeclaration()
+	decl["indices"] = []any{map[string]any{"properties": []any{"weight"}}}
+	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+		Name: "things", Authority: thingsPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(thingsPackage, 0),
+			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
+			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, decl),
+		},
+	})
+	wantValidation(t, "an index on a quantity", err, "an index on one is refused")
+}
+
+// No write of a unit or a conversion rewrites a stored value: a changed
+// factor moves every later answer and no digit.
+func TestChangedConversionMovesNoStoredValue(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb")})
+	before, _ := ds.Get(context.Background(), thingKind, "a")
+	p, err := listThings(ds, substrate.Query{Filter: weightFilter("gt", "453.6", "g")})
+	wantIDs(t, "above 453.6 g before", p, err)
+	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "454"})
+	after, _ := ds.Get(context.Background(), thingKind, "a")
+	if after.Version != before.Version || storedUnit(t, after, "weight") != "lb" {
+		t.Fatalf("a conversion edit rewrote a stored value: %v -> %v", before.Properties, after.Properties)
+	}
+	p, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "453.6", "g")})
+	wantIDs(t, "above 453.6 g after", p, err, "a")
+}
+
+// --- parity with the engine's table --------------------------------------------
+
+const tableKind = thingsPackage + "/reading"
+
+// openParity opens one repository with the shipped units seeded and the
+// switch as asked, holding the reading kind, declared in the table's dialect
+// so both paths read it.
+func openParity(t *testing.T, on bool, repo string) *dataset {
+	t.Helper()
+	ctx := context.Background()
+	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(SeedKindsDir), WithUnitGraph(on), WithUnitSeed(true))
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	d, err := svc.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := d.(*dataset)
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+		Name: "things", Authority: thingsPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(thingsPackage, 0),
+			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
+			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "reading"}, map[string]any{
+				"properties": map[string]any{
+					"mass": map[string]any{"type": "quantity", "measures": "mass"},
+					"temp": map[string]any{"type": "quantity", "measures": "temperature"},
+					"rate": map[string]any{"type": "quantity", "measures": "rate"},
+				},
+			}),
+		},
+	}); err != nil {
+		t.Fatalf("install the reading kind: %v", err)
+	}
+	return ds
+}
+
+// parityReadings are the same values, written in the table's codes, into
+// both repositories.
+var parityReadings = map[string]map[string]any{
+	"r1": {"mass": qty("1", "[lb_av]"), "temp": qty("98.6", "[degF]"), "rate": qty("60", "/min")},
+	"r2": {"mass": qty("453.59237", "g"), "temp": qty("37", "Cel"), "rate": qty("60", "/h")},
+	"r3": {"mass": qty("0.5", "kg"), "temp": qty("310", "K"), "rate": qty("72", "/min")},
+	"r4": {"mass": qty("16", "[oz_av]"), "temp": qty("-40", "[degF]"), "rate": qty("0.5", "/s")},
+	"r5": {"mass": qty("1", "[stone_av]"), "temp": qty("-40", "Cel")},
+}
+
+// The graph's filters answer what the table's answer, over the shipped
+// units, for every operand below: the seed is the table as records, so a
+// filter through it may not move a row in or out.
+func TestGraphFiltersMatchTheTable(t *testing.T) {
+	t.Parallel()
+	off := openParity(t, false, testdb.Repository(t))
+	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
+	for _, ds := range []*dataset{off, on} {
+		for id, props := range parityReadings {
+			if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
+				t.Fatalf("put %s: %v", id, err)
+			}
+		}
+	}
+	type probe struct {
+		prop string
+		cond substrate.Cond
+	}
+	var probes []probe
+	for _, o := range []map[string]any{
+		qty("1", "[lb_av]"), qty("453.59237", "g"), qty("0.45", "kg"), qty("15.9", "[oz_av]"), qty("6", "kg"),
+	} {
+		probes = append(probes, probe{"mass", substrate.Cond{Eq: o}}, probe{"mass", substrate.Cond{Gt: o}}, probe{"mass", substrate.Cond{Lte: o}})
+	}
+	for _, o := range []map[string]any{qty("37", "Cel"), qty("98.6", "[degF]"), qty("233.15", "K"), qty("0", "Cel")} {
+		probes = append(probes, probe{"temp", substrate.Cond{Eq: o}}, probe{"temp", substrate.Cond{Gt: o}}, probe{"temp", substrate.Cond{Lt: o}})
+	}
+	for _, o := range []map[string]any{qty("1", "/min"), qty("60", "/min"), qty("3600", "/h")} {
+		probes = append(probes, probe{"rate", substrate.Cond{Eq: o}}, probe{"rate", substrate.Cond{Gte: o}})
+	}
+	matched := 0
+	for _, p := range probes {
+		q := substrate.Query{Filter: substrate.Filter{Kinds: []string{tableKind}, Properties: map[string]substrate.Cond{p.prop: p.cond}},
+			OrderBy: []substrate.Order{{Property: "id"}}}
+		a, err := off.List(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s %+v through the table: %v", p.prop, p.cond, err)
+		}
+		b, err := on.List(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s %+v through the graph: %v", p.prop, p.cond, err)
+		}
+		if got, want := strings.Join(pageIDs(b), ","), strings.Join(pageIDs(a), ","); got != want {
+			t.Errorf("%s %+v: the graph answers [%s], the table [%s]", p.prop, p.cond, got, want)
+		}
+		if len(a.Records) > 0 && len(a.Records) < len(parityReadings) {
+			matched++
+		}
+	}
+	// The probes must split the readings, or agreeing proves nothing.
+	if matched < len(probes)/2 {
+		t.Fatalf("only %d of %d probes split the readings", matched, len(probes))
+	}
+}

@@ -190,6 +190,9 @@ func (ds *dataset) condQuantity(ctx context.Context, x dbx, b *builder, types []
 		return fmt.Errorf("%w: %s may hold a bounded value (<0.5), which no set of values certainly contains: compare it with eq or the comparison operators",
 			substrate.ErrValidation, key)
 	}
+	if ds.svc.unitGraphOn {
+		return ds.condQuantityGraph(ctx, x, b, types, key, c, decls, bounded)
+	}
 	groups := groupQuantityDecls(decls)
 	// The rows' units are read only for a comparison: an `exists` alone needs
 	// none. The name is a literal, never a placeholder: a comparison no stored
