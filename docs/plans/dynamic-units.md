@@ -618,9 +618,84 @@ the rest of the suite with it off.
   `measure`, without it it refuses `delta`.
 - The console's graph is `lib/unit-graph.ts`, cached in `lib/api/units.ts`
   by origin, repository and revision; `useUnitReader` chooses it from
-  discovery and drops it on a unit or conversion change. No component calls
-  the hook yet: moving each importer of `@/lib/units` to it is step 5's
-  list. `QuantityDeclaration` and `PropSpec` read `unit` and `delta`.
+  discovery and drops it on a unit or conversion change.
+  `QuantityDeclaration` and `PropSpec` read `unit` and `delta`. The review
+  moved every console consumer onto it in this step (below).
+
+The review of step 3 (2026-10-21) settled these further:
+
+- A declaration preview (the vocabulary apply's, the bundle upgrade's and
+  the shipped upgrade's) runs its counts and its graph load in one
+  REPEATABLE READ snapshot (`previewReader`), so the graph it judges with
+  and caches carries the revision it was read at.
+- Flipping `delta` is refused while a live record or a tombstone holds a
+  value whose unit sits in a linear component where two units map to the
+  root with different offsets (10 Cel is 10 K as a difference and 283.15 K
+  as a temperature), at the top, in an object field and in a link
+  property. A unit of a component without offsets admits the flip. The
+  guard reads the graph at the apply, and before the switch `delta` is
+  inert, so nothing counts.
+- A property read over several kinds converts each record with its own
+  kind's `delta`.
+- Every float an aggregate reducer answers passes one check
+  (`rowValues.float`) that refuses an infinite or NaN answer under the
+  switch, the time-weighted mean, the rate and a rolled-up circular mean
+  included. A rollup's `M2` scales by the factor twice, so a deviation of 0
+  stays 0 under a factor whose square overflows, and a circular mean takes
+  the fraction of the circle before the turn. No shipped conversion carries
+  a value the observed index admits (at most 1e280) past the range of a
+  float, so this refusal has no table answer to match; the table answers
+  null there.
+- A declared default is coerced on a copy and held through the graph to
+  its declaration (admitted units, bounds, `delta`) at the apply, at every
+  depth. A bound refusal names its member (`value: must be <= 10 kg`).
+- A filter naming no kind judges each declaring kind against the operand
+  before grouping by how kinds read a value: a kind whose anchor the
+  operand does not reach matches nothing, and the filter is refused only
+  when no kind remains. A filter naming its kinds still refuses.
+- A proposed change request's quantities are held, on a copy, to what the
+  accept's write holds them to, so a value every accept would refuse is
+  refused at the proposal; the stored diff keeps the spelling proposed.
+- The parity tests read through the read's trace: `aggregateDay` fails
+  unless a raw read reduced raw points and merged no rollup row and any
+  other read merged rollup rows. `TestPreSwitchRowsReadThroughTheGraph`
+  writes a repository with the switch off (table codes in every row),
+  reopens it with the switch on, and holds every filter probe and every
+  aggregate read (sums, means, extremes, deviations, a counter's increase
+  and rate, differences, a power level's reducers and refusals, magnitudes
+  near 1e280) to the answers before. A level converts to nothing but
+  itself, so a level is read in its own unit only.
+
+In the console, after the same review:
+
+- Every console consumer of units reads one `UnitReader`
+  (lib/unit-reader.ts), whose `status` is `table`, `loading`, `ready` or
+  `error`. Library functions take it as a required first parameter,
+  `FormField` and `PlotSource` carry it, and only lib/unit-reader.ts
+  imports the table's operations; lib/settings.ts passes the table
+  reader by name, because a setting is never a quantity.
+- On a graph-enabled server the reader never answers from the table.
+  While the graph loads, or after it failed, the pending reader converts
+  nothing, offers no unit, refuses every value with the reason and prints
+  a unit as stored; the quantity input is disabled with that reason, and
+  a quantity value shows its stored text with the reason on hover.
+- One `UnitsProvider` in `AppShell` calls `useUnitReader` once, so a page
+  holds one change-stream watch, and components read the reader with
+  `useUnits`, which answers the table only outside the provider (the
+  sign-in pages and component tests).
+- The graph query keeps `staleTime: Infinity` and refetches on every
+  mount, since nothing watched the repository while the hook was
+  unmounted. The hook refetches each time its watch reports live, which
+  covers a change committed between the fetch and the watch's start, and
+  after a compaction it refetches and opens a new watch at the head.
+- Under the graph a conversion's difference flag is the row's or the
+  property's `delta`. The table reads a pre-switch row's stamped measure,
+  and an unstamped temperature `delta` as `temperature-difference`, as the
+  engine's `ObservedMeasureFor` does.
+- The reducer menu offers `circularMean` under the graph where the
+  metric's unit sits in a component declaring a turn, which is what the
+  server checks, and by the `angle` measure where the server reads the
+  table.
 
 Step 4 must know: turning the switch on needs the seed in every
 repository before `upgradeShippedVocabulary` checks a declaration naming a
@@ -687,13 +762,10 @@ No behavior change, except that `GET /api/v1/units` loses its old fields.
   internal/vocabulary/quantity.go.
 - internal/substrate/units.go drops `Measures` and the `Aliases` map;
   regenerate the wire golden; web/console/src/lib/api/types.ts follows.
-- Delete web/console/src/lib/units.table.json and units.prints.json and the
-  table code in lib/units.ts and lib/unit-choices.ts; the remaining
-  importers of `@/lib/units` (components/record/quantity-input.tsx,
-  components/identity/quantity-value.tsx,
-  components/property-sheet/sheet-model.ts, the record-view and observations
-  charts, lib/format.ts, lib/filters.ts, lib/record-view.ts,
-  lib/observations.ts, lib/overlay.ts, lib/record-form.ts) read the graph.
+- Delete web/console/src/lib/units.table.json and units.prints.json, the
+  table code in lib/units.ts and lib/unit-choices.ts, and `TABLE_UNITS` in
+  lib/unit-reader.ts, the one module that imports the table operations;
+  every consumer already reads units through the reader (step 3).
 - Docs: docs/units.md becomes how units and conversions work plus the
   shipped seed as a table, written by a `TestUnitsPage` that reads
   internal/engine/unitseed; docs/data-model.md:322, 410-470 and 512;
