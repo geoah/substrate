@@ -8,10 +8,10 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The unit table's two routes. Both answer from the engine's own table
-// (internal/vocabulary), the one the write path holds a quantity to, and read
-// nothing from the repository: a client converting what a list read returns
-// gets the server's exact answer instead of copying factors from the docs.
+// The unit table's two routes. GET /units answers the repository's unit graph
+// (decision 0186) and, beside it, the engine's own table (internal/vocabulary),
+// which the write path still holds a quantity to; the conversion route
+// converts through that table and reads nothing from the repository.
 const (
 	unitsRoute        = "/units"
 	unitsConvertRoute = "/units/convert"
@@ -22,14 +22,21 @@ const (
 // units' own reading is not meant.
 var convertParams = []string{"value", "from", "to", "measure"}
 
-// getUnits answers the unit table: every measure, its listed codes with their
-// print symbols and exact factors to the base, and the input aliases.
+// getUnits answers the repository's units, conversions and graph revision,
+// the shipped records its seed skipped, and the engine's table: every
+// measure, its listed codes with their print symbols and exact factors to the
+// base, and the input aliases.
 func (h *handler) getUnits(w http.ResponseWriter, r *http.Request) {
 	if bad := unsupportedParam(r); bad != "" {
 		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
 		return
 	}
-	out := substrate.UnitTable{Measures: []substrate.UnitMeasure{}, Aliases: vocabulary.UnitAliases()}
+	out, err := DatasetFrom(r.Context()).Units(r.Context())
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	out.Measures, out.Aliases = []substrate.UnitMeasure{}, vocabulary.UnitAliases()
 	for _, m := range vocabulary.Measures() {
 		um := substrate.UnitMeasure{
 			Name: m.Name, Base: m.Base, Scale: string(m.Scale), Display: m.Display,

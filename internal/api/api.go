@@ -338,8 +338,8 @@ func (h *handler) mountResources(r chi.Router) {
 			// Cross-kind, so at the version root like /records: one row per
 			// record of any kind binding the core `sync` trait.
 			r.Get("/sync/status", h.getSyncStatus)
-			// The unit table and one exact conversion, answered from the
-			// engine's own table (units.go); neither reads the repository.
+			// The repository's unit graph beside the engine's table, and one
+			// exact conversion through the table (units.go).
 			r.Get(unitsRoute, h.getUnits)
 			r.Get(unitsConvertRoute, h.getUnitsConvert)
 			// Bundle status is computed; enable/disable, uninstall and purge are

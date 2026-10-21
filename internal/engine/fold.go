@@ -420,10 +420,17 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		if err != nil {
 			return foldResult{}, err
 		}
+		if err := t.beforeUnitFold(op.ref().Kind); err != nil {
+			return foldResult{}, err
+		}
 		changed, version, err := t.applyTombstone(op.ref(), op.Finalizer)
 		if err == nil && changed {
-			// A tombstone keeps its refs rows (decision 0027) and loses its
-			// observed segment: a deleted reading is in no aggregate.
+			err = t.afterUnitFold(op.ref().Kind)
+		}
+		if err == nil && changed {
+			// A tombstone keeps its refs rows (decision 0027) and its unit
+			// uses, and loses its observed segment: a deleted reading is in
+			// no aggregate.
 			err = t.dropObservedOf(op.ref())
 			if before != nil {
 				t.noteMetricTiers(op.ref(), before, nil)
@@ -435,7 +442,13 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		if err != nil {
 			return foldResult{}, err
 		}
+		if err := t.beforeUnitFold(op.ref().Kind); err != nil {
+			return foldResult{}, err
+		}
 		if err := t.applyPurge(op.ref()); err != nil {
+			return foldResult{}, err
+		}
+		if err := t.afterUnitFold(op.ref().Kind); err != nil {
 			return foldResult{}, err
 		}
 		if before != nil {
@@ -512,6 +525,12 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 	if isMetric {
 		tiersBefore = rowTiers(row)
 	}
+	// The unit spellings the row stored before the write (unitgraph.go),
+	// and the graph the transaction found, before its first unit fold.
+	usesBefore := rowUnitUses(metricTy, row.Props)
+	if err := t.beforeUnitFold(ref.Kind); err != nil {
+		return foldResult{}, err
+	}
 	op.Delta.applyTo(row)
 	changed, created, version, err := t.upsertRecord(row, t.foldFTS(row), op.Delta.Force, op.Delta.Restored)
 	if err != nil {
@@ -548,6 +567,15 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// derives from its stored declaration (foldView), live and in a
 		// replay alike.
 		ty, _ := t.derivationView().ByIdentity(row.Kind)
+		// The unit uses are a projection of the row's values (unitgraph.go),
+		// derived for every kind, and a unit or conversion row moves the
+		// graph's revision.
+		if err := t.syncUnitUses(ref, usesBefore, rowUnitUses(ty, row.Props), created); err != nil {
+			return foldResult{}, err
+		}
+		if err := t.afterUnitFold(row.Kind); err != nil {
+			return foldResult{}, err
+		}
 		// A repository migration folds before the stored vocabulary loads,
 		// so its registry need not hold the row's kind: the row's refs and
 		// observed points are left as they stand, not dropped as a kind's

@@ -199,6 +199,10 @@ var wireTypes = map[string]any{
 	"UnitMeasure":    UnitMeasure{},
 	"UnitCode":       UnitCode{},
 	"UnitConversion": UnitConversion{},
+	// The repository's unit graph on GET /units (decision 0186).
+	"RepositoryUnit":       RepositoryUnit{},
+	"RepositoryConversion": RepositoryConversion{},
+	"UnseededRecord":       UnseededRecord{},
 }
 
 // wireFields maps the wire names a struct serializes to whether each is

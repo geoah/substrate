@@ -1232,6 +1232,29 @@ func (d *fakeDataset) SyncStatuses(context.Context) ([]substrate.SyncStatus, err
 	return d.syncStatuses, nil
 }
 
+// fakeUnits is the fake's unit graph, written by hand: kg and lb, joined by
+// one conversion, at revision 2.
+var fakeUnits = substrate.UnitTable{
+	Units: []substrate.RepositoryUnit{
+		{ID: "kg", Name: "kilogram", Symbol: "kg", Code: "kg", Aliases: []string{}, Root: "kg", Factor: "1"},
+		{ID: "lb", Name: "pound", Symbol: "lb", Code: "[lb_av]", Aliases: []string{"lbs"}, Root: "kg", Factor: "0.45359237"},
+	},
+	Conversions: []substrate.RepositoryConversion{{ID: "lb-kg", From: "lb", To: "kg", Factor: "0.45359237"}},
+	Revision:    2,
+	Unseeded:    []substrate.UnseededRecord{{Kind: "substrate.reamde.dev/core/unit", ID: "st", Reason: "st answers a spelling lb answers"}},
+}
+
+func (d *fakeDataset) Units(context.Context) (substrate.UnitTable, error) {
+	return fakeUnits, nil
+}
+
+func (d *fakeDataset) ConvertUnit(_ context.Context, in substrate.UnitConvert) (substrate.UnitConversion, error) {
+	if in.From == "lb" && in.To == "kg" && in.Value == "1" {
+		return substrate.UnitConversion{Value: "0.45359237", Unit: "kg", Exact: true}, nil
+	}
+	return substrate.UnitConversion{}, fmt.Errorf("%w: the fake converts 1 lb to kg alone", substrate.ErrValidation)
+}
+
 func (d *fakeDataset) ReplayTrigger(_ context.Context, id string, _ int64) error {
 	return noSuch("trigger", id)
 }

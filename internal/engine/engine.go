@@ -522,9 +522,12 @@ type service struct {
 	// seedLLMProviders writes the three keyless vendor rows at creation
 	// and as an open catch-up.
 	seedLLMProviders bool
-	sampleCatOnce    sync.Once
-	sampleCat        *catalog.Catalog
-	sampleCatErr     error
+	// unitGraphs holds each repository's unit graphs by revision
+	// (unitgraph.go).
+	unitGraphs    unitGraphCache
+	sampleCatOnce sync.Once
+	sampleCat     *catalog.Catalog
+	sampleCatErr  error
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -1240,6 +1243,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
+		ds.checkUnitUses,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,
@@ -1384,6 +1388,10 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		return zero, err
 	}
 	repo := Repository{ID: authority, Authority: authority}
+	// A creation starts the graph revision at 0 again, so whatever this
+	// process cached under the name (a creation that failed) is not this
+	// repository's (unitgraph.go).
+	s.unitGraphs.forget(authority)
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -1433,8 +1441,12 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 			return err
 		}
 		// Every row a creation writes is indexed under this binary's rules,
-		// so the first open has nothing to re-derive (searchindex.go).
+		// so the first open has nothing to re-derive (searchindex.go,
+		// unitgraph.go).
 		if err := t.markSearchIndexed(); err != nil {
+			return err
+		}
+		if err := t.markUnitUsesDerived(); err != nil {
 			return err
 		}
 		// The repository's own read-only description of itself. `lifecycle` is
