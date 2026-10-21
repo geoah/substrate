@@ -72,8 +72,11 @@ var DefaultRollups = []string{"15m", "1h", "1d"}
 // read converts into, the unit it answers in by default, where a read by the
 // day places a span, and the rollup tiers the index keeps, finest first.
 type MetricContract struct {
-	Measures    string
-	Unit        string
+	Measures string
+	Unit     string
+	// UnitValue is the stored `unit` as written, a spelling or a reference
+	// to a unit record, which the unit graph reads (MetricUnitOf).
+	UnitValue   any
 	BucketPlace string
 	// Rollups is the tier widths, finest first: the default tiers where the
 	// metric names none, and empty where it names an empty list.
@@ -88,6 +91,7 @@ func MetricContractOf(props map[string]any) MetricContract {
 	c := MetricContract{}
 	c.Measures, _ = props[MetricMeasures].(string)
 	c.Unit, _ = props[MetricUnit].(string)
+	c.UnitValue = props[MetricUnit]
 	c.BucketPlace, _ = props[MetricBucketPlace].(string)
 	names := DefaultRollups
 	if raw, held := props[MetricRollups]; held && raw != nil {

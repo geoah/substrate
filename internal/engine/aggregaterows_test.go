@@ -82,7 +82,7 @@ func TestObservedReadsFailWhenAnIterationFails(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	r := &aggRun{
 		ctx: ctx, tx: tx, p: &aggPlan{}, u: &aggUnits{duration: "s"}, meta: aggMeta{sources: map[string]bool{}},
-		store: newObsStore(ctx, tx, nil), rowGroups: map[string]obsGroup{},
+		store: newObsStore(ctx, tx, nil, nil), rowGroups: map[string]obsGroup{},
 	}
 	if _, err := r.readSeries(&aggStream{form: "counter"}, [][2]time.Time{{start, start.Add(time.Hour)}}); err == nil ||
 		!strings.Contains(err.Error(), "statement timeout") {
@@ -91,7 +91,7 @@ func TestObservedReadsFailWhenAnIterationFails(t *testing.T) {
 	if _, err := r.readCarries(&aggStream{form: "gauge"}, [][2]time.Time{{start, start.Add(time.Hour)}}); err == nil {
 		t.Error("a gauge carry read that failed halfway answered no error")
 	}
-	if _, err := newObsStore(ctx, tx, nil).points(&obsStreamInfo{}, "gauge", start, start.Add(time.Hour)); err == nil ||
+	if _, err := newObsStore(ctx, tx, nil, nil).points(&obsStreamInfo{}, "gauge", start, start.Add(time.Hour)); err == nil ||
 		!strings.Contains(err.Error(), "statement timeout") {
 		t.Errorf("a recompute's segment read that failed halfway: err = %v, want the timeout", err)
 	}

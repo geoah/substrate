@@ -1036,7 +1036,15 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	st := newObsStore(ctx, tx, d.liveFoldView())
+	var units *vocabulary.UnitGraph
+	if d.svc.unitGraphOn {
+		at, err := d.unitGraph(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		units = at.graph
+	}
+	st := newObsStore(ctx, tx, d.liveFoldView(), units)
 	segs, err := st.scanSegments(`SELECT ` + segmentColumns + ` FROM observed_segments ORDER BY kind, record_id`)
 	if err != nil {
 		return nil, err

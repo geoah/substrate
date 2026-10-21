@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"math"
-	"math/big"
 	"sort"
 	"strconv"
 	"time"
@@ -145,6 +144,9 @@ func (v *rowValues) unitOf(red substrate.AggregateReducer) string {
 	case substrate.ReducerRate:
 		return v.r.u.value + "/s"
 	case substrate.ReducerCircularMean:
+		if v.r.u.graph != nil {
+			return v.r.u.value
+		}
 		return "deg"
 	}
 	return v.r.u.value
@@ -246,14 +248,22 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 		}
 	case substrate.ReducerCircularMean:
 		unit, f = "deg", observed.CircularMeanContext
+		if r.u.graph != nil {
+			// Under the unit graph the mean answers in the read's unit,
+			// whose turn the read checked (checkForms).
+			unit = r.u.value
+		}
 	}
 	// A percentile never merges from rollup rows (rollupable), so a row
 	// asking one is always raw.
 	if !ev.raw && red.Name != substrate.ReducerPercentile {
 		if red.Name == substrate.ReducerCircularMean {
 			m, ok := observed.CircularMeanOf(ev.stats)
-			v.float(red, m, ok, unit)
+			v.float(red, r.fromDegrees(m), ok, unit)
 			return nil
+		}
+		if err := r.checkFinite(red, merged, ev.stats.Values > 0); err != nil {
+			return err
 		}
 		v.float(red, merged, ev.stats.Values > 0, unit)
 		return nil
@@ -266,8 +276,40 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 	if err != nil {
 		return err
 	}
+	if red.Name == substrate.ReducerCircularMean {
+		n = r.fromDegrees(n)
+	}
+	if err := r.checkFinite(red, n, ok); err != nil {
+		return err
+	}
 	v.float(red, n, ok, unit)
 	return nil
+}
+
+// fromDegrees is a circular mean in degrees in the read's unit under the
+// unit graph, one full circle being the unit's turn; before it, degrees.
+func (r *aggRun) fromDegrees(deg float64) float64 {
+	if r.u.graph == nil {
+		return deg
+	}
+	turn := r.u.graph.Turn(r.u.value)
+	if turn == nil {
+		return deg
+	}
+	t, _ := turn.Float64()
+	return deg * t / 360
+}
+
+// checkFinite refuses, under the unit graph, an answer the conversion into
+// the read's unit carried past the range of a float, rather than answering
+// it as null: the repository's conversions decide the factor, and a factor
+// that large is one a reader needs named.
+func (r *aggRun) checkFinite(red substrate.AggregateReducer, v float64, ok bool) error {
+	if r.u.graph == nil || !ok || !math.IsInf(v, 0) {
+		return nil
+	}
+	return refuse(r.p.path("unit"), "%s of %s converts past the range of a float in %s; read it in a unit nearer the stored ones",
+		red.String(), aggMetricName(r.p), r.u.value)
 }
 
 // extreme answers a min or a max: compared exactly and answered in the
@@ -515,16 +557,6 @@ func (r *aggRun) duration(red substrate.AggregateReducer, ms int64, code string)
 		r.meta.inexact = true
 	}
 	return substrate.AggregateValue{Reducer: red, Value: &v, Unit: r.u.duration, Code: code}
-}
-
-// durationIn writes milliseconds in a duration unit, exactly where it can.
-func durationIn(ms int64, unit string) (string, bool) {
-	s := big.NewRat(ms, 1000)
-	v, err := vocabulary.ConvertIn("duration", s, "s", unit)
-	if err != nil {
-		v = s
-	}
-	return vocabulary.RatDecimal(v, vocabulary.ConvertedDigits)
 }
 
 // formatFloat writes a float64 answer to 15 significant digits, the digits it

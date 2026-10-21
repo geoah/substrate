@@ -10,9 +10,13 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
@@ -550,7 +554,7 @@ func wantIDs(t *testing.T, what string, p *substrate.Page, err error, want ...st
 	}
 }
 
-func weightFilter(op string, value, unit string) substrate.Filter {
+func weightFilter(op, value, unit string) substrate.Filter {
 	c := substrate.Cond{}
 	q := qty(value, unit)
 	switch op {
@@ -847,8 +851,10 @@ func TestGraphFiltersMatchTheTable(t *testing.T) {
 	}
 	matched := 0
 	for _, p := range probes {
-		q := substrate.Query{Filter: substrate.Filter{Kinds: []string{tableKind}, Properties: map[string]substrate.Cond{p.prop: p.cond}},
-			OrderBy: []substrate.Order{{Property: "id"}}}
+		q := substrate.Query{
+			Filter:  substrate.Filter{Kinds: []string{tableKind}, Properties: map[string]substrate.Cond{p.prop: p.cond}},
+			OrderBy: []substrate.Order{{Property: "id"}},
+		}
 		a, err := off.List(context.Background(), q)
 		if err != nil {
 			t.Fatalf("%s %+v through the table: %v", p.prop, p.cond, err)
@@ -867,5 +873,298 @@ func TestGraphFiltersMatchTheTable(t *testing.T) {
 	// The probes must split the readings, or agreeing proves nothing.
 	if matched < len(probes)/2 {
 		t.Fatalf("only %d of %d probes split the readings", matched, len(probes))
+	}
+}
+
+// --- the aggregate read -----------------------------------------------------------
+
+var aggDay = time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
+
+func putAt(ds *dataset, id, metric, form string, value map[string]any, at time.Time, extra map[string]any) error {
+	props := map[string]any{
+		"metric": map[string]any{"ref": metricPath(metric)}, "form": form, "value": value,
+		"at": at.Format(time.RFC3339), "revision": 1,
+	}
+	if form == "amount" {
+		props["endsAt"] = at.Add(time.Minute).Format(time.RFC3339)
+	}
+	for k, v := range extra {
+		props[k] = v
+	}
+	return putObservationErr(ds, id, props)
+}
+
+// aggregateDay reads one metric over aggDay in one day bucket, raw where
+// asked, and answers the row's values by reducer.
+func aggregateDay(ds *dataset, raw bool, metric, unit string, reducers ...string) (map[string]string, string, error) {
+	ctx := context.Background()
+	if raw {
+		ctx = AggregateRaw(ctx)
+	}
+	var reds []substrate.AggregateReducer
+	for _, r := range reducers {
+		reds = append(reds, substrate.AggregateReducer{Name: r})
+	}
+	res, err := ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: metricPath(metric)}, Unit: unit,
+		Range:    &substrate.AggregateRange{Gte: aggDay.Format(time.RFC3339), Lt: aggDay.Add(24 * time.Hour).Format(time.RFC3339)},
+		Bucket:   &substrate.AggregateBucket{Every: "P1D"},
+		Reducers: reds,
+	}})
+	if err != nil {
+		return nil, "", err
+	}
+	out := map[string]string{}
+	for _, row := range res.Rows {
+		for _, v := range row.Values {
+			if v.Value != nil {
+				out[v.Reducer.Name] = *v.Value
+			}
+		}
+	}
+	return out, res.Unit, nil
+}
+
+func near(a, b string, tol float64) bool {
+	x, err1 := strconv.ParseFloat(a, 64)
+	y, err2 := strconv.ParseFloat(b, 64)
+	return err1 == nil && err2 == nil && math.Abs(x-y) <= tol
+}
+
+// A read answers in the request's unit, else the metric's, converting each
+// stored value and each rollup row through the composed affine map: a sum
+// in Cel of values in degF crosses two edges (degF to K to Cel) and moves
+// by the count times the offset, and the raw answer and the rollup's agree.
+func TestAffineSumsAcrossTwoEdges(t *testing.T) {
+	t.Parallel()
+	ds := openSwitchedObserved(t)
+	if err := putMetricErr(ds, "temp", map[string]any{"unit": "K"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, v := range []map[string]any{qty("10", "Cel"), qty("50", "[degF]"), qty("0", "Cel"), qty("32", "degF")} {
+		if err := putAt(ds, fmt.Sprintf("t%d", i), "temp", "amount", v, aggDay.Add(time.Duration(i+1)*time.Hour), nil); err != nil {
+			t.Fatalf("put t%d: %v", i, err)
+		}
+	}
+	for _, c := range []struct{ unit, sum, avg, min, max string }{
+		{"", "1112.6", "278.15", "273.15", "283.15"},
+		{"Cel", "20", "5", "0", "10"},
+		{"degF", "164", "41", "32", "50"},
+	} {
+		for _, raw := range []bool{true, false} {
+			got, unit, err := aggregateDay(ds, raw, "temp", c.unit, "sum", "avg", "min", "max")
+			if err != nil {
+				t.Fatalf("in %q (raw %v): %v", c.unit, raw, err)
+			}
+			want := c.unit
+			if want == "" {
+				want = "K"
+			}
+			if unit != want {
+				t.Errorf("in %q: answered in %s", c.unit, unit)
+			}
+			for red, w := range map[string]string{"sum": c.sum, "avg": c.avg, "min": c.min, "max": c.max} {
+				if !near(got[red], w, 1e-9) {
+					t.Errorf("%s in %q (raw %v) = %s, want %s", red, c.unit, raw, got[red], w)
+				}
+			}
+		}
+	}
+	_, _, err := aggregateDay(ds, false, "temp", "kg", "avg")
+	wantValidation(t, "a unit outside the metric's component", err, "kg does not convert to K")
+}
+
+// An expression conversion converts one value, never an aggregate.
+func TestExpressionConversionIsRefusedInAnAggregate(t *testing.T) {
+	t.Parallel()
+	ds := openSwitchedObserved(t)
+	if err := putMetricErr(ds, "economy", map[string]any{"unit": "mpg"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := putAt(ds, "e1", "economy", "gauge", qty("30", "mpg"), aggDay.Add(time.Hour), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := aggregateDay(ds, false, "economy", "L/100km", "avg")
+	wantValidation(t, "an aggregate across an expression", err, "only through an expression conversion")
+}
+
+// A factor past the range of a float is refused by name, never answered as
+// null.
+func TestOverflowingFactorIsRefused(t *testing.T) {
+	t.Parallel()
+	ds := openSwitchedObserved(t)
+	huge := "1" + strings.Repeat("0", 60)
+	for i := range 7 {
+		putUnit(t, ds, fmt.Sprintf("u%d", i), map[string]any{"name": fmt.Sprintf("u%d", i)})
+	}
+	for i := range 6 {
+		putConversion(t, ds, fmt.Sprintf("u%d-u%d", i, i+1), fmt.Sprintf("u%d", i), fmt.Sprintf("u%d", i+1), map[string]any{"factor": huge})
+	}
+	if err := putMetricErr(ds, "vast", map[string]any{"unit": "u0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := putAt(ds, "v1", "vast", "gauge", qty("1", "u0"), aggDay.Add(time.Hour), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := aggregateDay(ds, true, "vast", "u6", "avg")
+	wantValidation(t, "a factor of 1e360", err, "past the range of a float")
+}
+
+// A circular value's angle is its value over its unit's turn, so the raw
+// read and the rollup rows agree in every unit of the component, and after a
+// turn edit the rollups are derived again before a read answers: the read
+// is refused while they are, and agrees with the raw answer after, and
+// after the service restarts.
+func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	open := func() (substrate.Service, *dataset) {
+		svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir), WithUnitGraph(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := svc.Dataset(ctx, testdb.Repository(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return svc, d.(*dataset)
+	}
+	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir), WithUnitGraph(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatal(err)
+	}
+	d, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := d.(*dataset)
+	switchedGraph(t, ds)
+	putUnit(t, ds, "arcmin", map[string]any{"name": "minute of arc", "code": "'", "symbol": "′", "turn": nil})
+	if err := enginetest.ImportVocabulary(ctx, ds, "observations"); err != nil {
+		t.Fatal(err)
+	}
+	if err := putMetricErr(ds, "wind", map[string]any{"unit": "deg"}); err != nil {
+		t.Fatal(err)
+	}
+	circular := map[string]any{"circular": true}
+	for i, v := range []map[string]any{qty("350", "deg"), qty("600", "arcmin"), qty("30", "deg")} {
+		if err := putAt(ds, fmt.Sprintf("w%d", i), "wind", "gauge", v, aggDay.Add(time.Duration(i+1)*time.Hour), circular); err != nil {
+			t.Fatalf("put w%d: %v", i, err)
+		}
+	}
+	agree := func(ds *dataset, unit, want string) {
+		t.Helper()
+		raw, _, err := aggregateDay(ds, true, "wind", unit, "circularMean")
+		if err != nil {
+			t.Fatalf("raw circular mean in %s: %v", unit, err)
+		}
+		rolled, _, err := aggregateDay(ds, false, "wind", unit, "circularMean")
+		if err != nil {
+			t.Fatalf("rolled-up circular mean in %s: %v", unit, err)
+		}
+		if !near(raw["circularMean"], want, 1e-6) || !near(rolled["circularMean"], want, 1e-6) {
+			t.Fatalf("circular mean in %s: raw %s, rollup %s, want %s", unit, raw["circularMean"], rolled["circularMean"], want)
+		}
+	}
+	DrainIndexReprojection(t, ds)
+	// 350, 10 and 30 degrees average to 10 degrees, 600 minutes of arc.
+	agree(ds, "", "10")
+	agree(ds, "arcmin", "600")
+	// A circle of 720 degrees: every stored value keeps its number and its
+	// unit and now names another direction, minutes of arc with it.
+	putUnit(t, ds, "deg", map[string]any{"name": "degree", "code": "deg", "symbol": "°", "turn": "720"})
+	if _, _, err := aggregateDay(ds, false, "wind", "", "circularMean"); !errors.Is(err, substrate.ErrObservedRederiving) {
+		t.Fatalf("a read while the rollups are derived again: %v", err)
+	}
+	DrainIndexReprojection(t, ds)
+	agree(ds, "", circularMeanDeg(720, 350, 10, 30))
+	if err := putAt(ds, "w3", "wind", "gauge", qty("200", "deg"), aggDay.Add(4*time.Hour), circular); err != nil {
+		t.Fatal(err)
+	}
+	want := circularMeanDeg(720, 350, 10, 30, 200)
+	agree(ds, "", want)
+	_ = svc.Close()
+	svc2, ds2 := open()
+	defer func() { _ = svc2.Close() }()
+	DrainIndexReprojection(t, ds2)
+	agree(ds2, "", want)
+}
+
+// circularMeanDeg is the circular mean of values on a circle of turn units,
+// in those units.
+func circularMeanDeg(turn float64, values ...float64) string {
+	var s, c float64
+	for _, v := range values {
+		a := v * 2 * math.Pi / turn
+		s += math.Sin(a)
+		c += math.Cos(a)
+	}
+	m := math.Atan2(s, c) * turn / (2 * math.Pi)
+	if m < 0 {
+		m += turn
+	}
+	return strconv.FormatFloat(m, 'f', -1, 64)
+}
+
+// The graph's aggregate answers match the table's over the shipped units:
+// the same values written in the table's codes, read raw and from rollups in
+// several units of their measure.
+func TestGraphAggregatesMatchTheTable(t *testing.T) {
+	t.Parallel()
+	off := openParity(t, false, testdb.Repository(t))
+	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
+	for _, ds := range []*dataset{off, on} {
+		if err := enginetest.ImportVocabulary(context.Background(), ds, "observations"); err != nil {
+			t.Fatalf("import observations: %v", err)
+		}
+		for id, unit := range map[string]string{"mass": "kg", "temp": "Cel"} {
+			if err := putMetricErr(ds, id, map[string]any{"unit": unit}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i, v := range []map[string]any{qty("1", "[lb_av]"), qty("500", "g"), qty("0.75", "kg"), qty("16", "[oz_av]")} {
+			if err := putAt(ds, fmt.Sprintf("m%d", i), "mass", "amount", v, aggDay.Add(time.Duration(i+1)*time.Hour), nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i, v := range []map[string]any{qty("98.6", "[degF]"), qty("36.6", "Cel"), qty("310.15", "K")} {
+			if err := putAt(ds, fmt.Sprintf("c%d", i), "temp", "gauge", v, aggDay.Add(time.Duration(i+1)*time.Hour), map[string]any{"hold": "PT1H"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		DrainIndexReprojection(t, ds)
+	}
+	for _, c := range []struct {
+		metric   string
+		units    []string
+		reducers []string
+	}{
+		{"mass", []string{"", "g", "[lb_av]", "[oz_av]"}, []string{"sum", "avg", "min", "max", "count"}},
+		{"temp", []string{"", "K", "[degF]"}, []string{"avg", "min", "max", "last"}},
+	} {
+		for _, unit := range c.units {
+			for _, raw := range []bool{true, false} {
+				want, _, err := aggregateDay(off, raw, c.metric, unit, c.reducers...)
+				if err != nil {
+					t.Fatalf("%s in %q through the table: %v", c.metric, unit, err)
+				}
+				got, _, err := aggregateDay(on, raw, c.metric, unit, c.reducers...)
+				if err != nil {
+					t.Fatalf("%s in %q through the graph: %v", c.metric, unit, err)
+				}
+				if len(want) != len(c.reducers) {
+					t.Fatalf("%s in %q: the table answered %v", c.metric, unit, want)
+				}
+				for _, red := range c.reducers {
+					if !near(got[red], want[red], 1e-9) {
+						t.Errorf("%s %s in %q (raw %v): the graph answers %s, the table %s", c.metric, red, unit, raw, got[red], want[red])
+					}
+				}
+			}
+		}
 	}
 }

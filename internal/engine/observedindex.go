@@ -260,6 +260,12 @@ type observedRows struct {
 	wrapAt    *string
 	circular  bool
 	points    []obsPoint
+	// graphUnits says the row was derived under the unit graph switch
+	// (decision 0186): no point carries a base value, and turn is one full
+	// circle in the row's unit as the graph reads it, nil for a unit with
+	// none, which a circular point's angle divides by.
+	graphUnits bool
+	turn       *float64
 }
 
 // obsPoint is one point of a record. offsetKnown is false where the record
@@ -290,7 +296,11 @@ func (p obsPoint) available() bool {
 // point rather than failing a replay. A single record derives a point only
 // when it holds a value or a code; one that says why it has none
 // (`absentReason`) or keeps a reading as received derives nothing.
-func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
+//
+// units is the repository's unit graph under the unit graph switch, nil
+// before it: a point then carries no base value, and a circular one reads
+// its unit's turn from the graph.
+func deriveObserved(ty *vocabulary.Kind, row *erow, units *vocabulary.UnitGraph) *observedRows {
 	if !bindsObserved(ty) || row == nil || row.At == nil || row.DeletedAt != nil {
 		return nil
 	}
@@ -319,6 +329,7 @@ func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
 	r.resetRule = optString(props, "resetRule")
 	r.resetAt = parseTimeValue(stringProp(props, "resetAt"))
 	r.wrapAt = optString(props, "wrapAt")
+	r.graphUnits = units != nil
 	switch b.Variant {
 	case vocabulary.ObservedSingle:
 		p, unit, ok := singlePoint(row)
@@ -327,7 +338,7 @@ func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
 		}
 		r.unit = unit
 		r.points = []obsPoint{p}
-		if p.exact != nil {
+		if p.exact != nil && units == nil {
 			p.base = baseValue(measureFor(unit, storedMeasure(props, declaredMeasure(ty)), r.delta), unit, *p.exact)
 			r.points[0] = p
 		}
@@ -342,6 +353,13 @@ func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
 	}
 	if len(r.points) == 0 {
 		return nil
+	}
+	if units != nil && r.circular {
+		if turn := units.Turn(r.unit); turn != nil {
+			if f, _ := turn.Float64(); f > 0 {
+				r.turn = &f
+			}
+		}
 	}
 	return r
 }
@@ -413,6 +431,9 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 	}
 	measure := measureFor(r.unit, storedMeasure(props, ""), r.delta)
 	factor, offset, baseErr := vocabulary.ToBase(measure, r.unit)
+	if r.graphUnits {
+		baseErr = errors.New("no base value under the unit graph")
+	}
 	out := make([]obsPoint, 0, len(pts))
 	for i, tp := range pts {
 		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, offset: off, offsetKnown: known}
@@ -511,7 +532,11 @@ func (t *txn) syncObserved(ref eref, ty *vocabulary.Kind, row *erow) error {
 	}
 	var rows *observedRows
 	if bindsObserved(ty) && row.DeletedAt == nil {
-		rows = deriveObserved(ty, row)
+		units, err := t.observedUnits()
+		if err != nil {
+			return err
+		}
+		rows = deriveObserved(ty, row, units)
 	}
 	touch.ops[ref] = rows
 	return nil
@@ -600,4 +625,17 @@ func rowTiers(row *erow) []time.Duration {
 		return vocabulary.MetricContractOf(map[string]any{}).Rollups
 	}
 	return vocabulary.MetricContractOf(row.Props).Rollups
+}
+
+// observedUnits is the graph the transaction derives observed points
+// through under the unit graph switch, nil before it.
+func (t *txn) observedUnits() (*vocabulary.UnitGraph, error) {
+	if !t.ds.svc.unitGraphOn {
+		return nil, nil
+	}
+	at, err := t.unitGraph()
+	if err != nil {
+		return nil, err
+	}
+	return at.graph, nil
 }

@@ -52,8 +52,12 @@ func (t *txn) settleObserved() error {
 	if err := t.lockKey(observedLockKey); err != nil {
 		return err
 	}
+	units, err := t.observedUnits()
+	if err != nil {
+		return err
+	}
 	s := &obsSettle{
-		t: t, touch: touch, store: newObsStore(t.ctx, t.tx, t.derivationView()),
+		t: t, touch: touch, store: newObsStore(t.ctx, t.tx, t.derivationView(), units),
 		ranges: map[obsSF][]obsSpan{}, latest: map[int64]int64{}, tiers: map[string][]time.Duration{},
 	}
 	if err := s.applySegments(); err != nil {
