@@ -5,7 +5,8 @@ This is the work plan for
 which makes units and conversions core records and replaces the engine's
 closed unit table of
 [0153](../decisions/0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md).
-Nothing here is implemented. Line numbers are against `main` at `7d0a0cdfc`.
+Step 1 is implemented; the rest is not. Line numbers are against `main` at
+`7d0a0cdfc`.
 This revision takes in the owner's answers of 2026-10-21 and a design review
 of the first draft.
 
@@ -92,7 +93,7 @@ Every id here that is also one of today's aliases (`lb`, `in`, `mi`, `oz`,
 same unit the alias names today, so no spelling changes meaning. `count`,
 which today's table refuses by name, becomes the id of `{count}`. A
 conversion's id is `<from>-<to>` (`lb-kg`), which also fits the alphabet. The
-generated seed holds 216 units and about 150 conversions: one per code with
+generated seed holds 216 units and 149 conversions: one per code with
 a factor, to its measure's first listed code with a factor (its map divided
 through the old base, never copied), plus two for the assay prefix rule (`mIU/L` and `IU/mL` to `IU/L`).
 
@@ -153,6 +154,49 @@ graph `TestLinearConversionsComposeExactly`,
 `TestARepeatingAnswerIsInexact`, and one test per limit.
 
 Size: about 1,300 lines of Go, 900 of tests, 3,000 of generated YAML.
+
+### Details step 1 decided
+
+The map left these open; the step 1 code settles them as follows.
+
+- `BuildUnitGraph` answers `[]UnitProblem` (`Kind`, `ID`, `Message`; an
+  empty `ID` is a problem of the whole repository) and a graph built from
+  what passes, so a caller decides whether a problem refuses its write. A
+  conversion that closes an inconsistent cycle, joins two scales or composes
+  past the bit bound is left out of the walk; the problem lands on the
+  conversion the walk reaches last, and its message names both routes.
+- Every unit of one linear component has one scale, so `Scale` is a
+  property of the component and a level never joins a ratio unit. Two levels
+  may join (`dBW` to `dBm`, offset 30); the seed ships no such edge.
+- A conversion whose `from` or `to` names no unit is a problem, so a
+  transaction that deletes a unit deletes its conversions too.
+  `CheckConversionRecord` refuses a conversion from a unit to itself.
+- `factor`, `offset` and `turn` are strings read by `ParseRational`; a number
+  is refused, because a float has already lost digits. Each part of a
+  fraction may carry decimals (`1/0.3048`).
+- An expression is standard CEL with no extensions over one double `value`,
+  its output type exactly `double`, run under the cost limit and interrupt
+  frequency a trigger's guard uses. The graph compiles an expression at the
+  first conversion that crosses it, never at build. Its answer is the
+  shortest decimal that round-trips the float64, and never exact.
+- The route bound (`MaxExpressionRoute`) is checked by `Convert`, not by the
+  build, which would need every pair of components.
+- `Turn` answers a unit's own turn, else the turn its circular component
+  converts to, so every unit of a circular component has one.
+- `Resolve` trims the spelling and tries ids, then codes, then aliases, as
+  written and then normalized. `Convert` takes spellings and resolves them;
+  `Linear`, `Root`, `ToRoot`, `Component`, `Symbol`, `Scale` and `Turn` take
+  ids.
+- An absent `symbol` prints the id; an empty one prints nothing (`1`).
+- `Memo` keeps at most 4,096 entries per graph and never stores an error.
+- The seed: every unit carries a `name` (a map in the generating test), its
+  old print as `symbol` (`{count}` keeps `{count}`), its UCUM spelling as
+  `code`, and today's aliases of that code except its own id. `deg`, `arcmin`,
+  `arcsec` and `rad` carry turns; `dB` and `pH` are `level`, `dBSPL`, `dBW`
+  and `dBm` `powerlevel`. Each code links to the first earlier code of its
+  home measure (`MeasureOf`) that `ConvertIn` converts it to, which gives
+  149 conversions, the two assay ones included. `internal/engine/unitseed`
+  embeds both files for step 2; nothing reads it yet.
 
 ## Step 2: lifecycle integration
 

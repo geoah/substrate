@@ -1,0 +1,2057 @@
+# The units every repository is seeded with (decision 0186): the
+# engine's unit table as records. Written by TestUnitSeedMatchesTheTable
+# from internal/vocabulary/unitstable.go; rewrite with
+#
+#   go test ./internal/vocabulary/ -run TestUnitSeedMatchesTheTable -update
+#
+# and never by hand.
+# mass
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kg
+data:
+  properties:
+    name: kilogram
+    symbol: kg
+    code: kg
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: g
+data:
+  properties:
+    name: gram
+    symbol: g
+    code: g
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mg
+data:
+  properties:
+    name: milligram
+    symbol: mg
+    code: mg
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ug
+data:
+  properties:
+    name: microgram
+    symbol: μg
+    code: ug
+    aliases:
+      - mcg
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ng
+data:
+  properties:
+    name: nanogram
+    symbol: ng
+    code: ng
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: t
+data:
+  properties:
+    name: tonne
+    symbol: t
+    code: t
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: lb
+data:
+  properties:
+    name: pound
+    symbol: lb
+    code: "[lb_av]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: oz
+data:
+  properties:
+    name: ounce
+    symbol: oz
+    code: "[oz_av]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: st
+data:
+  properties:
+    name: stone
+    symbol: st
+    code: "[stone_av]"
+---
+# length
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: m
+data:
+  properties:
+    name: meter
+    symbol: m
+    code: m
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: km
+data:
+  properties:
+    name: kilometer
+    symbol: km
+    code: km
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cm
+data:
+  properties:
+    name: centimeter
+    symbol: cm
+    code: cm
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mm
+data:
+  properties:
+    name: millimeter
+    symbol: mm
+    code: mm
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: nm
+data:
+  properties:
+    name: nanometer
+    symbol: nm
+    code: nm
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: in
+data:
+  properties:
+    name: inch
+    symbol: in
+    code: "[in_i]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ft
+data:
+  properties:
+    name: foot
+    symbol: ft
+    code: "[ft_i]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: yd
+data:
+  properties:
+    name: yard
+    symbol: yd
+    code: "[yd_i]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mi
+data:
+  properties:
+    name: mile
+    symbol: mi
+    code: "[mi_i]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: nmi
+data:
+  properties:
+    name: nautical mile
+    symbol: nmi
+    code: "[nmi_i]"
+---
+# area
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: m2
+data:
+  properties:
+    name: square meter
+    symbol: m²
+    code: m2
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cm2
+data:
+  properties:
+    name: square centimeter
+    symbol: cm²
+    code: cm2
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: har
+data:
+  properties:
+    name: hectare
+    symbol: ha
+    code: har
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ft2
+data:
+  properties:
+    name: square foot
+    symbol: ft²
+    code: "[sft_i]"
+---
+# volume
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: m3
+data:
+  properties:
+    name: cubic meter
+    symbol: m³
+    code: m3
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: L
+data:
+  properties:
+    name: liter
+    symbol: L
+    code: L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: dL
+data:
+  properties:
+    name: deciliter
+    symbol: dL
+    code: dL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mL
+data:
+  properties:
+    name: milliliter
+    symbol: mL
+    code: mL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: gal
+data:
+  properties:
+    name: US gallon
+    symbol: gal
+    code: "[gal_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: qt
+data:
+  properties:
+    name: US quart
+    symbol: qt
+    code: "[qt_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: pt
+data:
+  properties:
+    name: US pint
+    symbol: pt
+    code: "[pt_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cup
+data:
+  properties:
+    name: US cup
+    symbol: cup
+    code: "[cup_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: floz
+data:
+  properties:
+    name: US fluid ounce
+    symbol: fl oz
+    code: "[foz_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: tbsp
+data:
+  properties:
+    name: US tablespoon
+    symbol: tbsp
+    code: "[tbs_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: tsp
+data:
+  properties:
+    name: US teaspoon
+    symbol: tsp
+    code: "[tsp_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: gal_br
+data:
+  properties:
+    name: imperial gallon
+    symbol: gal (UK)
+    code: "[gal_br]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: floz_br
+data:
+  properties:
+    name: imperial fluid ounce
+    symbol: fl oz (UK)
+    code: "[foz_br]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cup_m
+data:
+  properties:
+    name: metric cup
+    symbol: cup (metric)
+    code: "[cup_m]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: tbsp_m
+data:
+  properties:
+    name: metric tablespoon
+    symbol: tbsp (metric)
+    code: "[tbs_m]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: tsp_m
+data:
+  properties:
+    name: metric teaspoon
+    symbol: tsp (metric)
+    code: "[tsp_m]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ft3
+data:
+  properties:
+    name: cubic foot
+    symbol: ft³
+    code: "[cft_i]"
+---
+# duration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: s
+data:
+  properties:
+    name: second
+    symbol: s
+    code: s
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ms
+data:
+  properties:
+    name: millisecond
+    symbol: ms
+    code: ms
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: us
+data:
+  properties:
+    name: microsecond
+    symbol: μs
+    code: us
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: min
+data:
+  properties:
+    name: minute
+    symbol: min
+    code: min
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: h
+data:
+  properties:
+    name: hour
+    symbol: h
+    code: h
+    aliases:
+      - hr
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: d
+data:
+  properties:
+    name: day
+    symbol: d
+    code: d
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: wk
+data:
+  properties:
+    name: week
+    symbol: wk
+    code: wk
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mo
+data:
+  properties:
+    name: mean Julian month
+    symbol: mo
+    code: mo
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: a
+data:
+  properties:
+    name: mean Julian year
+    symbol: a
+    code: a
+---
+# temperature
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: K
+data:
+  properties:
+    name: kelvin
+    symbol: K
+    code: K
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Cel
+data:
+  properties:
+    name: degree Celsius
+    symbol: °C
+    code: Cel
+    aliases:
+      - degC
+      - °C
+      - ℃
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: degF
+data:
+  properties:
+    name: degree Fahrenheit
+    symbol: °F
+    code: "[degF]"
+    aliases:
+      - °F
+      - ℉
+---
+# energy
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: J
+data:
+  properties:
+    name: joule
+    symbol: J
+    code: J
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kJ
+data:
+  properties:
+    name: kilojoule
+    symbol: kJ
+    code: kJ
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: MJ
+data:
+  properties:
+    name: megajoule
+    symbol: MJ
+    code: MJ
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cal
+data:
+  properties:
+    name: thermochemical calorie
+    symbol: cal
+    code: cal
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kcal
+data:
+  properties:
+    name: kilocalorie
+    symbol: kcal
+    code: kcal
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Cal
+data:
+  properties:
+    name: nutrition Calorie
+    symbol: Cal
+    code: "[Cal]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: W.h
+data:
+  properties:
+    name: watt-hour
+    symbol: Wh
+    code: W.h
+    aliases:
+      - Wh
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kW.h
+data:
+  properties:
+    name: kilowatt-hour
+    symbol: kWh
+    code: kW.h
+    aliases:
+      - kWh
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: eV
+data:
+  properties:
+    name: electronvolt
+    symbol: eV
+    code: eV
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Btu
+data:
+  properties:
+    name: British thermal unit
+    symbol: Btu
+    code: "[Btu_IT]"
+---
+# power
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: W
+data:
+  properties:
+    name: watt
+    symbol: W
+    code: W
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mW
+data:
+  properties:
+    name: milliwatt
+    symbol: mW
+    code: mW
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kW
+data:
+  properties:
+    name: kilowatt
+    symbol: kW
+    code: kW
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: MW
+data:
+  properties:
+    name: megawatt
+    symbol: MW
+    code: MW
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: hp
+data:
+  properties:
+    name: horsepower
+    symbol: hp
+    code: "[HP]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kcal/d
+data:
+  properties:
+    name: kilocalorie per day
+    symbol: kcal/d
+    code: kcal/d
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kcal/h
+data:
+  properties:
+    name: kilocalorie per hour
+    symbol: kcal/h
+    code: kcal/h
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Btu/h
+data:
+  properties:
+    name: British thermal unit per hour
+    symbol: Btu/h
+    code: "[Btu_IT]/h"
+---
+# apparent-power
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: V.A
+data:
+  properties:
+    name: volt-ampere
+    symbol: VA
+    code: V.A
+    aliases:
+      - VA
+---
+# reactive-power
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: var
+data:
+  properties:
+    name: volt-ampere reactive
+    symbol: var
+    code: V.A{reactive}
+---
+# pressure
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Pa
+data:
+  properties:
+    name: pascal
+    symbol: Pa
+    code: Pa
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: hPa
+data:
+  properties:
+    name: hectopascal
+    symbol: hPa
+    code: hPa
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kPa
+data:
+  properties:
+    name: kilopascal
+    symbol: kPa
+    code: kPa
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: bar
+data:
+  properties:
+    name: bar
+    symbol: bar
+    code: bar
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mbar
+data:
+  properties:
+    name: millibar
+    symbol: mbar
+    code: mbar
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: atm
+data:
+  properties:
+    name: standard atmosphere
+    symbol: atm
+    code: atm
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mmHg
+data:
+  properties:
+    name: millimeter of mercury
+    symbol: mmHg
+    code: mm[Hg]
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cmH2O
+data:
+  properties:
+    name: centimeter of water
+    symbol: cmH₂O
+    code: cm[H2O]
+    aliases:
+      - cmAq
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: psi
+data:
+  properties:
+    name: pound per square inch
+    symbol: psi
+    code: "[psi]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: inHg
+data:
+  properties:
+    name: inch of mercury
+    symbol: inHg
+    code: "[in_i'Hg]"
+---
+# speed
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: m/s
+data:
+  properties:
+    name: meter per second
+    symbol: m/s
+    code: m/s
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: km/h
+data:
+  properties:
+    name: kilometer per hour
+    symbol: km/h
+    code: km/h
+    aliases:
+      - km/hr
+      - kmph
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mph
+data:
+  properties:
+    name: mile per hour
+    symbol: mph
+    code: "[mi_i]/h"
+    aliases:
+      - mi/hr
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kn
+data:
+  properties:
+    name: knot
+    symbol: kn
+    code: "[kn_i]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ft/s
+data:
+  properties:
+    name: foot per second
+    symbol: ft/s
+    code: "[ft_i]/s"
+---
+# pace
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: s/m
+data:
+  properties:
+    name: second per meter
+    symbol: s/m
+    code: s/m
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: min/km
+data:
+  properties:
+    name: minute per kilometer
+    symbol: min/km
+    code: min/km
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: s/km
+data:
+  properties:
+    name: second per kilometer
+    symbol: s/km
+    code: s/km
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: min/mi
+data:
+  properties:
+    name: minute per mile
+    symbol: min/mi
+    code: min/[mi_i]
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: s/100m
+data:
+  properties:
+    name: second per 100 meters
+    symbol: s/100 m
+    code: s/(100.m)
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: s/100yd
+data:
+  properties:
+    name: second per 100 yards
+    symbol: s/100 yd
+    code: s/(100.[yd_i])
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: s/500m
+data:
+  properties:
+    name: second per 500 meters
+    symbol: s/500 m
+    code: s/(500.m)
+---
+# acceleration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: m/s2
+data:
+  properties:
+    name: meter per second squared
+    symbol: m/s²
+    code: m/s2
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: gn
+data:
+  properties:
+    name: standard gravity
+    symbol: gn
+    code: "[g]"
+---
+# frequency
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Hz
+data:
+  properties:
+    name: hertz
+    symbol: Hz
+    code: Hz
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kHz
+data:
+  properties:
+    name: kilohertz
+    symbol: kHz
+    code: kHz
+---
+# rate
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/s
+data:
+  properties:
+    name: per second
+    symbol: /s
+    code: /s
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/min
+data:
+  properties:
+    name: per minute
+    symbol: /min
+    code: /min
+    aliases:
+      - bpm
+      - count/min
+      - rpm
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/h
+data:
+  properties:
+    name: per hour
+    symbol: /h
+    code: /h
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/d
+data:
+  properties:
+    name: per day
+    symbol: /d
+    code: /d
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/wk
+data:
+  properties:
+    name: per week
+    symbol: /wk
+    code: /wk
+---
+# count
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: count
+data:
+  properties:
+    name: count
+    symbol: "{count}"
+    code: "{count}"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: "1"
+data:
+  properties:
+    name: one
+    symbol: ""
+    code: "1"
+---
+# fraction
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: percent
+data:
+  properties:
+    name: percent
+    symbol: "%"
+    code: "%"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ppth
+data:
+  properties:
+    name: part per thousand
+    symbol: ‰
+    code: "[ppth]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ppm
+data:
+  properties:
+    name: part per million
+    symbol: ppm
+    code: "[ppm]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ppb
+data:
+  properties:
+    name: part per billion
+    symbol: ppb
+    code: "[ppb]"
+---
+# amount-fraction
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mmol/mol
+data:
+  properties:
+    name: millimole per mole
+    symbol: mmol/mol
+    code: mmol/mol
+---
+# score
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: score
+data:
+  properties:
+    name: score
+    symbol: score
+    code: "{score}"
+---
+# amount-of-substance
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mol
+data:
+  properties:
+    name: mole
+    symbol: mol
+    code: mol
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mmol
+data:
+  properties:
+    name: millimole
+    symbol: mmol
+    code: mmol
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: umol
+data:
+  properties:
+    name: micromole
+    symbol: μmol
+    code: umol
+---
+# amount-concentration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mol/L
+data:
+  properties:
+    name: mole per liter
+    symbol: mol/L
+    code: mol/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mmol/L
+data:
+  properties:
+    name: millimole per liter
+    symbol: mmol/L
+    code: mmol/L
+    aliases:
+      - mmol<180.15588000005408>/L
+      - mmol<180.1558800000541>/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: umol/L
+data:
+  properties:
+    name: micromole per liter
+    symbol: μmol/L
+    code: umol/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: nmol/L
+data:
+  properties:
+    name: nanomole per liter
+    symbol: nmol/L
+    code: nmol/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: pmol/L
+data:
+  properties:
+    name: picomole per liter
+    symbol: pmol/L
+    code: pmol/L
+---
+# mass-concentration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: g/L
+data:
+  properties:
+    name: gram per liter
+    symbol: g/L
+    code: g/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: g/dL
+data:
+  properties:
+    name: gram per deciliter
+    symbol: g/dL
+    code: g/dL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mg/dL
+data:
+  properties:
+    name: milligram per deciliter
+    symbol: mg/dL
+    code: mg/dL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mg/L
+data:
+  properties:
+    name: milligram per liter
+    symbol: mg/L
+    code: mg/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ug/L
+data:
+  properties:
+    name: microgram per liter
+    symbol: μg/L
+    code: ug/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ng/mL
+data:
+  properties:
+    name: nanogram per milliliter
+    symbol: ng/mL
+    code: ng/mL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: pg/mL
+data:
+  properties:
+    name: picogram per milliliter
+    symbol: pg/mL
+    code: pg/mL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ug/dL
+data:
+  properties:
+    name: microgram per deciliter
+    symbol: μg/dL
+    code: ug/dL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: g/m3
+data:
+  properties:
+    name: gram per cubic meter
+    symbol: g/m³
+    code: g/m3
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mg/m3
+data:
+  properties:
+    name: milligram per cubic meter
+    symbol: mg/m³
+    code: mg/m3
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ug/m3
+data:
+  properties:
+    name: microgram per cubic meter
+    symbol: μg/m³
+    code: ug/m3
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kg/m3
+data:
+  properties:
+    name: kilogram per cubic meter
+    symbol: kg/m³
+    code: kg/m3
+---
+# number-concentration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/L
+data:
+  properties:
+    name: per liter
+    symbol: /L
+    code: /L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1/uL
+data:
+  properties:
+    name: per microliter
+    symbol: /μL
+    code: /uL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1e3/uL
+data:
+  properties:
+    name: thousand per microliter
+    symbol: 10³/μL
+    code: 10*3/uL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1e6/uL
+data:
+  properties:
+    name: million per microliter
+    symbol: 10⁶/μL
+    code: 10*6/uL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1e9/L
+data:
+  properties:
+    name: billion per liter
+    symbol: 10⁹/L
+    code: 10*9/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: 1e12/L
+data:
+  properties:
+    name: trillion per liter
+    symbol: 10¹²/L
+    code: 10*12/L
+---
+# catalytic-concentration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: U/L
+data:
+  properties:
+    name: enzyme unit per liter
+    symbol: U/L
+    code: U/L
+---
+# catalytic-activity
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kat
+data:
+  properties:
+    name: katal
+    symbol: kat
+    code: kat
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: U
+data:
+  properties:
+    name: enzyme unit
+    symbol: U
+    code: U
+---
+# arbitrary
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: IU
+data:
+  properties:
+    name: international unit
+    symbol: IU
+    code: "[IU]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: IU/L
+data:
+  properties:
+    name: international unit per liter
+    symbol: IU/L
+    code: "[IU]/L"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mIU/L
+data:
+  properties:
+    name: milli-international unit per liter
+    symbol: mIU/L
+    code: m[IU]/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: IU/mL
+data:
+  properties:
+    name: international unit per milliliter
+    symbol: IU/mL
+    code: "[IU]/mL"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: arbU
+data:
+  properties:
+    name: arbitrary unit
+    symbol: arb. U
+    code: "[arb'U]"
+---
+# illuminance
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: lx
+data:
+  properties:
+    name: lux
+    symbol: lx
+    code: lx
+---
+# luminous-flux
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: lm
+data:
+  properties:
+    name: lumen
+    symbol: lm
+    code: lm
+---
+# luminous-intensity
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cd
+data:
+  properties:
+    name: candela
+    symbol: cd
+    code: cd
+---
+# luminance
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cd/m2
+data:
+  properties:
+    name: candela per square meter
+    symbol: cd/m²
+    code: cd/m2
+---
+# irradiance
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: W/m2
+data:
+  properties:
+    name: watt per square meter
+    symbol: W/m²
+    code: W/m2
+---
+# level
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: dB
+data:
+  properties:
+    name: decibel
+    symbol: dB
+    code: dB
+    scale: level
+---
+# sound-pressure-level
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: dBSPL
+data:
+  properties:
+    name: decibel of sound pressure level
+    symbol: dB SPL
+    code: dB[SPL]
+    aliases:
+      - dBASPL
+    scale: powerlevel
+---
+# power-level
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: dBW
+data:
+  properties:
+    name: decibel-watt
+    symbol: dBW
+    code: dB[W]
+    scale: powerlevel
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: dBm
+data:
+  properties:
+    name: decibel-milliwatt
+    symbol: dBm
+    code: dBm
+    scale: powerlevel
+---
+# acidity
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: pH
+data:
+  properties:
+    name: pH
+    symbol: pH
+    code: "[pH]"
+    scale: level
+---
+# electric-potential
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: V
+data:
+  properties:
+    name: volt
+    symbol: V
+    code: V
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mV
+data:
+  properties:
+    name: millivolt
+    symbol: mV
+    code: mV
+---
+# electric-current
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: A
+data:
+  properties:
+    name: ampere
+    symbol: A
+    code: A
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mA
+data:
+  properties:
+    name: milliampere
+    symbol: mA
+    code: mA
+---
+# electric-resistance
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Ohm
+data:
+  properties:
+    name: ohm
+    symbol: Ω
+    code: Ohm
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kOhm
+data:
+  properties:
+    name: kiloohm
+    symbol: kΩ
+    code: kOhm
+---
+# electric-charge
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: C
+data:
+  properties:
+    name: coulomb
+    symbol: C
+    code: C
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: A.h
+data:
+  properties:
+    name: ampere-hour
+    symbol: Ah
+    code: A.h
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mA.h
+data:
+  properties:
+    name: milliampere-hour
+    symbol: mAh
+    code: mA.h
+---
+# electric-conductivity
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: uS/cm
+data:
+  properties:
+    name: microsiemens per centimeter
+    symbol: μS/cm
+    code: uS/cm
+---
+# information
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: bit
+data:
+  properties:
+    name: bit
+    symbol: bit
+    code: bit
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: By
+data:
+  properties:
+    name: byte
+    symbol: B
+    code: By
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kBy
+data:
+  properties:
+    name: kilobyte
+    symbol: kB
+    code: kBy
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: MBy
+data:
+  properties:
+    name: megabyte
+    symbol: MB
+    code: MBy
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: GBy
+data:
+  properties:
+    name: gigabyte
+    symbol: GB
+    code: GBy
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: KiBy
+data:
+  properties:
+    name: kibibyte
+    symbol: KiB
+    code: KiBy
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: MiBy
+data:
+  properties:
+    name: mebibyte
+    symbol: MiB
+    code: MiBy
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: GiBy
+data:
+  properties:
+    name: gibibyte
+    symbol: GiB
+    code: GiBy
+---
+# data-rate
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: bit/s
+data:
+  properties:
+    name: bit per second
+    symbol: bit/s
+    code: bit/s
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kbit/s
+data:
+  properties:
+    name: kilobit per second
+    symbol: kbit/s
+    code: kbit/s
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Mbit/s
+data:
+  properties:
+    name: megabit per second
+    symbol: Mbit/s
+    code: Mbit/s
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: By/s
+data:
+  properties:
+    name: byte per second
+    symbol: B/s
+    code: By/s
+---
+# angle
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: deg
+data:
+  properties:
+    name: degree
+    symbol: °
+    code: deg
+    turn: "360"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: arcmin
+data:
+  properties:
+    name: minute of arc
+    symbol: ′
+    code: "'"
+    turn: "21600"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: arcsec
+data:
+  properties:
+    name: second of arc
+    symbol: ″
+    code: "''"
+    turn: "1296000"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: rad
+data:
+  properties:
+    name: radian
+    symbol: rad
+    code: rad
+    turn: "6.2831853071795864769252867665590057683943"
+---
+# volume-flow
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: L/min
+data:
+  properties:
+    name: liter per minute
+    symbol: L/min
+    code: L/min
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: L/h
+data:
+  properties:
+    name: liter per hour
+    symbol: L/h
+    code: L/h
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mL/min
+data:
+  properties:
+    name: milliliter per minute
+    symbol: mL/min
+    code: mL/min
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: m3/h
+data:
+  properties:
+    name: cubic meter per hour
+    symbol: m³/h
+    code: m3/h
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: gal/min
+data:
+  properties:
+    name: US gallon per minute
+    symbol: gal/min
+    code: "[gal_us]/min"
+---
+# mass-flow
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: g/s
+data:
+  properties:
+    name: gram per second
+    symbol: g/s
+    code: g/s
+---
+# force
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: N
+data:
+  properties:
+    name: newton
+    symbol: N
+    code: N
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: lbf
+data:
+  properties:
+    name: pound-force
+    symbol: lbf
+    code: "[lbf_av]"
+---
+# torque
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: N.m
+data:
+  properties:
+    name: newton meter
+    symbol: N·m
+    code: N.m
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: lbf.ft
+data:
+  properties:
+    name: pound-force foot
+    symbol: lbf·ft
+    code: "[lbf_av].[ft_i]"
+---
+# activity-concentration
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Bq/m3
+data:
+  properties:
+    name: becquerel per cubic meter
+    symbol: Bq/m³
+    code: Bq/m3
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: pCi/L
+data:
+  properties:
+    name: picocurie per liter
+    symbol: pCi/L
+    code: pCi/L
+---
+# absorbed-dose
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Gy
+data:
+  properties:
+    name: gray
+    symbol: Gy
+    code: Gy
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mGy
+data:
+  properties:
+    name: milligray
+    symbol: mGy
+    code: mGy
+---
+# dose-equivalent
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Sv
+data:
+  properties:
+    name: sievert
+    symbol: Sv
+    code: Sv
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mSv
+data:
+  properties:
+    name: millisievert
+    symbol: mSv
+    code: mSv
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: uSv
+data:
+  properties:
+    name: microsievert
+    symbol: μSv
+    code: uSv
+---
+# dose-equivalent-rate
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: uSv/h
+data:
+  properties:
+    name: microsievert per hour
+    symbol: μSv/h
+    code: uSv/h
+---
+# radioactivity
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: Bq
+data:
+  properties:
+    name: becquerel
+    symbol: Bq
+    code: Bq
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kBq
+data:
+  properties:
+    name: kilobecquerel
+    symbol: kBq
+    code: kBq
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: MBq
+data:
+  properties:
+    name: megabecquerel
+    symbol: MBq
+    code: MBq
+---
+# body-mass-index
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kg/m2
+data:
+  properties:
+    name: kilogram per square meter
+    symbol: kg/m²
+    code: kg/m2
+---
+# oxygen-uptake-rate
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mL/kg/min
+data:
+  properties:
+    name: milliliter per kilogram per minute
+    symbol: mL/(kg·min)
+    code: mL/(kg.min)
+    aliases:
+      - mL/(kg*min)
+      - ml/(kg·min)
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: MET
+data:
+  properties:
+    name: metabolic equivalent
+    symbol: MET
+    code: "[MET]"
+---
+# specific-power
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: W/kg
+data:
+  properties:
+    name: watt per kilogram
+    symbol: W/kg
+    code: W/kg
+---
+# specific-energy
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kcal/kg
+data:
+  properties:
+    name: kilocalorie per kilogram
+    symbol: kcal/kg
+    code: kcal/kg
+---
+# energy-per-distance
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kW.h/100km
+data:
+  properties:
+    name: kilowatt-hour per 100 kilometers
+    symbol: kWh/100 km
+    code: kW.h/(100.km)
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: W.h/km
+data:
+  properties:
+    name: watt-hour per kilometer
+    symbol: Wh/km
+    code: W.h/km
+---
+# fuel-consumption
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: L/100km
+data:
+  properties:
+    name: liter per 100 kilometers
+    symbol: L/100 km
+    code: L/(100.km)
+---
+# fuel-economy
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mpg
+data:
+  properties:
+    name: mile per US gallon
+    symbol: mpg
+    code: "[mi_i]/[gal_us]"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: km/L
+data:
+  properties:
+    name: kilometer per liter
+    symbol: km/L
+    code: km/L
+---
+# precipitation-rate
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mm/h
+data:
+  properties:
+    name: millimeter per hour
+    symbol: mm/h
+    code: mm/h
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: in/h
+data:
+  properties:
+    name: inch per hour
+    symbol: in/h
+    code: "[in_i]/h"
+---
+# counts the shipped samples write
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: steps
+data:
+  properties:
+    name: steps
+    symbol: steps
+    code: "{steps}"
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: floors
+data:
+  properties:
+    name: floors
+    symbol: floors
+    code: "{floors}"
