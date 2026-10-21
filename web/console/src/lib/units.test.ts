@@ -1,36 +1,22 @@
 // @vitest-environment jsdom
-/** The quantity datatype, client-side: the engine's unit table read through
- * its accessors, the substrate's own checks on the stored shape, the exact
- * text an editor holds, and the title form a reader sees. */
+/** The quantity datatype, client-side: the stored shape, the decimal
+ * grammar, the exact text an editor holds, and the title form a reader sees
+ * through the shipped units (unit-graph.shipped.json). */
 
 import { beforeEach, describe, expect, it } from "vitest"
 
-import prints from "./units.prints.json"
-
+import { SHIPPED_UNITS as units } from "./unit-graph.test-fixtures"
 import {
-  MEASURES,
   canonicalDecimal,
-  canonicalUnit,
-  checkQuantity,
   compareDecimal,
-  formatQuantity,
+  floatDigits,
   formatQuantityText,
+  groupDigits,
   isQuantity,
   lastUnit,
-  measureLabel,
-  measureOf,
-  convertUnit,
-  floatDigits,
-  openingUnit,
   parseQuantityText,
-  quantityExample,
   readQuantity,
   rememberUnit,
-  unitLabel,
-  displayQuantity,
-  groupDigits,
-  unitSymbol,
-  unitsFor,
 } from "./units"
 
 const q = (value: unknown, unit: unknown, comparator?: unknown) =>
@@ -38,178 +24,90 @@ const q = (value: unknown, unit: unknown, comparator?: unknown) =>
 
 beforeEach(() => localStorage.clear())
 
-describe("the unit table", () => {
-  it("lists the engine's measures with their units", () => {
-    const mass = MEASURES.find((m) => m.name === "mass")
-    expect(mass?.display).toBe("kg")
-    expect(mass?.units).toContain("[lb_av]")
-    expect(measureLabel("temperature-difference")).toBe(
-      "Temperature difference"
-    )
-  })
-
-  it("prints a listed code by its symbol", () => {
-    expect(unitSymbol("Cel")).toBe("°C")
-    expect(unitSymbol("ug")).toBe("μg")
-    expect(unitSymbol("kW.h")).toBe("kWh")
-    expect(unitSymbol("[lb_av]")).toBe("lb")
-    expect(unitSymbol("1")).toBe("")
-    expect(unitSymbol("{count}")).toBe("{count}")
-  })
-
-  it("prints a code whose symbol spells another unit as the code", () => {
-    expect(unitSymbol("{count}/min")).toBe("{count}/min")
-    expect(unitSymbol("{bpm}")).toBe("{bpm}")
-    expect(unitSymbol("{count}/h")).toBe("count/h")
-    expect(unitSymbol("kW.h")).toBe("kWh")
-  })
-
-  it("prints a compound the way the engine does", () => {
-    expect(unitSymbol("{beats}/min")).toBe("beats/min")
-    expect(unitSymbol("{steps}")).toBe("steps")
-    expect(unitSymbol("ug/min")).toBe("μg/min")
-    expect(unitSymbol("mL{total}")).toBe("mL")
-    expect(unitSymbol("cm3")).toBe("cm³")
-    expect(unitSymbol("s-1")).toBe("s⁻¹")
-    expect(unitSymbol("GJ")).toBe("GJ")
-    expect(unitSymbol("uL")).toBe("μL")
-    expect(unitSymbol("kcal/(kg.h)")).toBe("kcal/(kg·h)")
-    expect(unitSymbol("10*3/mL")).toBe("10³/mL")
-    expect(unitSymbol("10*3/uL")).toBe("10³/μL")
-    expect(unitSymbol("kV.A{reactive}")).toBe("kvar")
-    // A code naming an atom the table does not carry prints as itself.
-    expect(unitSymbol("furlong/h")).toBe("furlong/h")
-  })
-
-  it("prints every code the engine's own print is pinned for", () => {
-    for (const [code, print] of Object.entries(prints)) {
-      expect([code, unitSymbol(code)]).toEqual([code, print])
-    }
-  })
-
-  it("places a listed code in its measure, the primary one where two list it", () => {
-    expect(measureOf("kg")).toBe("mass")
-    expect(measureOf("Cel")).toBe("temperature")
-    expect(measureOf("1")).toBe("fraction")
-    expect(measureOf("GJ")).toBeUndefined()
-    expect(measureOf("toString")).toBeUndefined()
+describe("the shipped units", () => {
+  it("prints a unit by its symbol", () => {
+    expect(units.symbol("Cel")).toBe("°C")
+    expect(units.symbol("ug")).toBe("μg")
+    expect(units.symbol("kW.h")).toBe("kWh")
+    expect(units.symbol("lb")).toBe("lb")
+    expect(units.symbol("[lb_av]")).toBe("lb")
+    expect(units.symbol("1")).toBe("")
+    expect(units.symbol("count")).toBe("{count}")
+    expect(units.symbol("steps")).toBe("steps")
+    expect(units.symbol("1e3/uL")).toBe("10³/μL")
+    // A unit the repository does not hold prints as written.
+    expect(units.symbol("furlong/h")).toBe("furlong/h")
   })
 
   it("shows a value to its places, in groups of three, with its symbol", () => {
     expect(groupDigits("18194.61")).toBe("18,194.61")
     expect(groupDigits("-1234")).toBe("-1,234")
     expect(groupDigits("999")).toBe("999")
-    expect(displayQuantity({ value: "18194.61", unit: "m" })).toBe(
-      "18,194.61 m"
+    expect(units.display({ value: "18194.61", unit: "m" })).toBe("18,194.61 m")
+    expect(units.display({ value: "97.1836248", unit: "percent" })).toBe(
+      "97.18 %"
     )
-    expect(displayQuantity({ value: "97.1836248", unit: "%" })).toBe("97.18 %")
-    expect(displayQuantity({ value: "12008", unit: "kJ" }, 0)).toBe("12,008 kJ")
+    expect(units.display({ value: "12008", unit: "kJ" }, 0)).toBe("12,008 kJ")
   })
 
   it("keeps a small value's significant digits, and a bound's every digit", () => {
     // Under one, the first two significant digits survive the cut.
-    expect(displayQuantity({ value: "0.004", unit: "m[IU]/L" })).toBe(
-      "0.004 mIU/L"
-    )
-    expect(displayQuantity({ value: "0.01449", unit: "ng/mL" })).toBe(
+    expect(units.display({ value: "0.004", unit: "mIU/L" })).toBe("0.004 mIU/L")
+    expect(units.display({ value: "0.01449", unit: "ng/mL" })).toBe(
       "0.014 ng/mL"
     )
-    expect(displayQuantity({ value: "0.4567", unit: "1" })).toBe("0.46")
-    expect(displayQuantity({ value: "-0.0042", unit: "Cel" })).toBe(
-      "-0.0042 °C"
-    )
+    expect(units.display({ value: "0.4567", unit: "1" })).toBe("0.46")
+    expect(units.display({ value: "-0.0042", unit: "Cel" })).toBe("-0.0042 °C")
     // A comparator makes the value a bound: rounding would move it.
-    expect(displayQuantity(q("0.005", "ng/mL", "<"))).toBe("<0.005 ng/mL")
-    expect(displayQuantity(q("1234.5678", "mg/dL", ">="))).toBe(
+    expect(units.display(q("0.005", "ng/mL", "<"))).toBe("<0.005 ng/mL")
+    expect(units.display(q("1234.5678", "mg/dL", ">="))).toBe(
       ">=1,234.5678 mg/dL"
     )
-    expect(displayQuantity(q("90", "s", "<"))).toBe("<90 s")
+    expect(units.display(q("90", "s", "<"))).toBe("<90 s")
   })
 
   it("says a time of a minute or more in hours and minutes", () => {
-    expect(displayQuantity({ value: "282.6", unit: "min" })).toBe("4h 42m 36s")
-    expect(displayQuantity({ value: "21.08", unit: "min" })).toBe("21m 5s")
+    expect(units.display({ value: "282.6", unit: "min" })).toBe("4h 42m 36s")
+    expect(units.display({ value: "21.08", unit: "min" })).toBe("21m 5s")
     // Under a minute, and a heart's variability in ms, read as digits.
-    expect(displayQuantity({ value: "0.35", unit: "s" })).toBe("0.35 s")
-    expect(displayQuantity({ value: "62", unit: "ms" })).toBe("62 ms")
+    expect(units.display({ value: "0.35", unit: "s" })).toBe("0.35 s")
+    expect(units.display({ value: "62", unit: "ms" })).toBe("62 ms")
   })
 
-  it("labels a unit by its symbol with the code beside it where they differ", () => {
-    expect(unitLabel("Cel")).toBe("°C (Cel)")
-    expect(unitLabel("kg")).toBe("kg")
-    expect(unitLabel("1")).toBe("no unit (1)")
-    expect(unitLabel("GJ")).toBe("GJ")
+  it("labels a unit by its symbol with the id beside it where they differ", () => {
+    expect(units.label("Cel")).toBe("°C (Cel)")
+    expect(units.label("kg")).toBe("kg")
+    expect(units.label("1")).toBe("no unit (1)")
     // A chart's menu names the symbol alone.
-    expect(unitLabel("[lb_av]", false)).toBe("lb")
-    expect(unitLabel("1", false)).toBe("no unit")
+    expect(units.label("percent", false)).toBe("%")
+    expect(units.label("1", false)).toBe("no unit")
   })
-})
 
-describe("unitsFor", () => {
-  it("offers the declared units, else the declared measure's", () => {
-    expect(unitsFor({ measures: "mass", units: ["kg", "[lb_av]"] })).toEqual([
-      { measure: "mass", units: ["kg", "[lb_av]"] },
+  it("offers the declared units, else the anchor's component", () => {
+    expect(units.unitsFor({ unit: "kg", units: ["lb"] })).toEqual([
+      { units: ["kg", "lb"] },
     ])
-    const [temperature] = unitsFor({ measures: "temperature" })
-    expect(temperature).toEqual({
-      measure: "temperature",
-      units: ["K", "Cel", "[degF]"],
-    })
+    const [temperature] = units.unitsFor({ unit: "Cel" })
+    expect(temperature.units).toEqual(["Cel", "K", "degF"])
+    // Nothing declared: every component once, no unit offered twice.
+    const groups = units.unitsFor({})
+    const ids = groups.flatMap((g) => g.units)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).toContain("count")
   })
 
-  it("groups every unit under one measure when nothing is declared", () => {
-    const groups = unitsFor({})
-    const codes = groups.flatMap((g) => g.units)
-    expect(new Set(codes).size).toBe(codes.length)
-    expect(groups.find((g) => g.measure === "temperature")?.units).toContain(
-      "Cel"
-    )
-    expect(groups.some((g) => g.measure === "temperature-difference")).toBe(
-      false
-    )
-    expect(groups.find((g) => g.measure === "count")?.units).toEqual([
-      "{count}",
-    ])
-  })
-})
-
-describe("canonicalUnit", () => {
-  it("maps the engine's aliases and spellings to codes", () => {
-    expect(canonicalUnit("°C")).toBe("Cel")
-    expect(canonicalUnit("bpm")).toBe("/min")
-    expect(canonicalUnit("µg")).toBe("ug")
-    expect(canonicalUnit("μg")).toBe("ug")
-    expect(canonicalUnit("m³")).toBe("m3")
-    expect(canonicalUnit("  kg ")).toBe("kg")
-  })
-
-  it("reads a superscript after a bare 10 as its power", () => {
-    expect(canonicalUnit("10³/mL")).toBe("10*3/mL")
-    expect(canonicalUnit("10³{copies}/mL")).toBe("10*3{copies}/mL")
-    expect(canonicalUnit("/(10².m)")).toBe("/(10*2.m)")
-    expect(canonicalUnit("m10²")).toBe("m102")
-  })
-
-  it("reads a listed unit's print symbol as its code", () => {
-    expect(canonicalUnit("lb")).toBe("[lb_av]")
-    expect(canonicalUnit("mph")).toBe("[mi_i]/h")
-    expect(canonicalUnit("ft³")).toBe("[cft_i]")
-  })
-
-  it("leaves what it cannot read for the server", () => {
-    expect(canonicalUnit("GJ")).toBe("GJ")
-    expect(canonicalUnit("furlong")).toBe("furlong")
-  })
-
-  it("never reads a code as another code's print symbol", () => {
-    // pt is the picotonne and ft the femtotonne: a stored value in either
-    // edits back to itself, never to a pint or a foot.
-    expect(canonicalUnit("pt")).toBe("pt")
-    expect(canonicalUnit("ft")).toBe("ft")
-    expect(parseQuantityText(formatQuantityText(q("2", "pt")))).toEqual({
-      value: q("2", "pt"),
-    })
-    expect(canonicalUnit("count")).toBe("count")
+  it("maps an alias, a code and a normalized spelling to the id", () => {
+    expect(units.canonical("°C")).toBe("Cel")
+    expect(units.canonical("bpm")).toBe("1/min")
+    expect(units.canonical("µg")).toBe("ug")
+    expect(units.canonical("μg")).toBe("ug")
+    expect(units.canonical("m³")).toBe("m3")
+    expect(units.canonical("  kg ")).toBe("kg")
+    expect(units.canonical("[lb_av]")).toBe("lb")
+    expect(units.canonical("[mi_i]/h")).toBe("mph")
+    expect(units.canonical("[cft_i]")).toBe("ft3")
+    // What the repository does not hold is left for the server to refuse.
+    expect(units.canonical("furlong")).toBe("furlong")
   })
 })
 
@@ -242,73 +140,72 @@ describe("decimals", () => {
   })
 })
 
-describe("checkQuantity", () => {
+describe("the stored shape and the check", () => {
   it("admits what the substrate admits", () => {
-    expect(checkQuantity(q("72.5", "kg"))).toBeUndefined()
-    expect(checkQuantity(q("5", "GJ"))).toBeUndefined()
+    expect(units.check(q("72.5", "kg"))).toBeUndefined()
     expect(
-      checkQuantity(q("0.5", "ng/mL", "<"), { comparator: true })
+      units.check(q("0.5", "ng/mL", "<"), { comparator: true })
     ).toBeUndefined()
     expect(isQuantity(q("37", "Cel"))).toBe(true)
+    expect(isQuantity(q("5", "furlong"))).toBe(true)
     expect(isQuantity(q(37, "Cel"))).toBe(false)
+    expect(isQuantity(q("37", ""))).toBe(false)
+    expect(isQuantity(q("37", "Cel", "~"))).toBe(false)
+    expect(isQuantity({ ...q("1", "kg"), scale: 2 })).toBe(false)
   })
 
   it("names the reason a value is wrong, in the substrate's words", () => {
-    expect(checkQuantity("72.5 kg")).toMatch(/is an object/)
-    expect(checkQuantity(q(72.5, "kg"))).toMatch(/written as a string/)
-    expect(checkQuantity(q("7e1", "kg"))).toMatch(/without an exponent/)
-    expect(checkQuantity(q("72.5", ""))).toMatch(/needs unit/)
-    expect(checkQuantity({ ...q("1", "kg"), scale: 2 })).toMatch(
+    expect(units.check("72.5 kg")).toMatch(/is an object/)
+    expect(units.check(q(72.5, "kg"))).toMatch(/written as a string/)
+    expect(units.check(q("7e1", "kg"))).toMatch(/without an exponent/)
+    expect(units.check(q("72.5", ""))).toMatch(/needs unit/)
+    expect(units.check(q("5", "GJ"))).toMatch(/names no unit/)
+    expect(units.check({ ...q("1", "kg"), scale: 2 })).toMatch(
       /"scale" is none of them/
     )
-    expect(checkQuantity(q("0.5", "ng/mL", "<"))).toMatch(
-      /states values exactly/
-    )
-    expect(checkQuantity(q("0.5", "ng/mL", "~"), { comparator: true })).toMatch(
+    expect(units.check(q("0.5", "ng/mL", "<"))).toMatch(/states values exactly/)
+    expect(units.check(q("0.5", "ng/mL", "~"), { comparator: true })).toMatch(
       /one of <, <=, >=, >/
     )
   })
 
-  it("holds a listed unit to the declared measure and units", () => {
-    expect(checkQuantity(q("72", "km"), { measures: "mass" })).toBe(
-      "unit: km measures length, not mass"
+  it("holds a unit to the declared anchor and units", () => {
+    expect(units.check(q("72", "km"), { unit: "kg" })).toBe(
+      "unit: km does not convert to kg, the declaration's unit"
     )
-    expect(checkQuantity(q("37", "Cel"), { measures: "temperature" })).toBe(
-      undefined
+    expect(units.check(q("37", "Cel"), { unit: "K" })).toBeUndefined()
+    expect(units.check(q("1", "g"), { unit: "kg", units: ["lb"] })).toMatch(
+      /not one of the declared units kg, lb/
     )
+    // An alias is checked as the id the server stores it as.
     expect(
-      checkQuantity(q("1", "g"), { measures: "mass", units: ["kg"] })
-    ).toMatch(/not one of the declared units kg/)
-    // An alias is checked as the code the server stores it as.
-    expect(
-      checkQuantity(q("37", "°C"), { measures: "temperature", units: ["Cel"] })
+      units.check(q("37", "°C"), { unit: "Cel", units: ["degF"] })
     ).toBeUndefined()
   })
 
-  it("bounds a value in the bound's own unit and leaves other units to the server", () => {
+  it("bounds a value exactly, converted into the bound's unit", () => {
     const spec = {
-      measures: "mass",
+      unit: "kg",
       minQuantity: { value: "40", unit: "kg" },
       maxQuantity: { value: "300", unit: "kg" },
     }
-    expect(checkQuantity(q("39.9", "kg"), spec)).toBe("must be >= 40 kg")
-    expect(checkQuantity(q("300.01", "kg"), spec)).toBe("must be <= 300 kg")
-    expect(checkQuantity(q("40", "kg"), spec)).toBeUndefined()
-    expect(checkQuantity(q("10", "[lb_av]"), spec)).toBeUndefined()
+    expect(units.check(q("39.9", "kg"), spec)).toBe("must be >= 40 kg")
+    expect(units.check(q("300.01", "kg"), spec)).toBe("must be <= 300 kg")
+    expect(units.check(q("40", "kg"), spec)).toBeUndefined()
+    expect(units.check(q("10", "lb"), spec)).toBe("must be >= 40 kg")
+    expect(units.check(q("100", "lb"), spec)).toBeUndefined()
   })
 })
 
 describe("the text", () => {
   it("renders the title form the server renders", () => {
-    expect(formatQuantity(q("72.5", "kg"))).toBe("72.5 kg")
-    expect(formatQuantity(q("37", "Cel"))).toBe("37 °C")
-    expect(formatQuantity(q("0.5", "ng/mL", "<"))).toBe("<0.5 ng/mL")
-    expect(formatQuantity(q("8000", "{steps}"))).toBe("8000 steps")
-    expect(formatQuantity(q("62", "{beats}/min"))).toBe("62 beats/min")
-    expect(formatQuantity(q("90", "deg"))).toBe("90°")
-    expect(formatQuantity(q("0.25", "1"))).toBe("0.25")
-    expect(formatQuantity(q("5", "GJ"))).toBe("5 GJ")
-    expect(formatQuantity({ value: "5" })).toBe("")
+    expect(units.format(q("72.5", "kg"))).toBe("72.5 kg")
+    expect(units.format(q("37", "Cel"))).toBe("37 °C")
+    expect(units.format(q("0.5", "ng/mL", "<"))).toBe("<0.5 ng/mL")
+    expect(units.format(q("8000", "steps"))).toBe("8000 steps")
+    expect(units.format(q("90", "deg"))).toBe("90°")
+    expect(units.format(q("0.25", "1"))).toBe("0.25")
+    expect(units.format({ value: "5" })).toBe("")
   })
 
   it("edits as the exact text and reads back to the same value", () => {
@@ -316,37 +213,39 @@ describe("the text", () => {
       q("72.5", "kg"),
       q("37", "Cel"),
       q("0.5", "ng/mL", "<"),
-      q("155", "[lb_av]"),
+      q("155", "lb"),
       q("0.25", "1"),
-      q("-3.20", "kW.h/(100.km)"),
+      q("-3.20", "kW.h/100km"),
     ]) {
-      expect(parseQuantityText(formatQuantityText(value))).toEqual({ value })
+      expect(units.parse(formatQuantityText(value))).toEqual({ value })
     }
     expect(formatQuantityText(q("37", "Cel"))).toBe("37 Cel")
     expect(formatQuantityText("37 Cel")).toBe("")
   })
 
   it("reads what a person types", () => {
-    expect(parseQuantityText("37 °C").value).toEqual(q("37", "Cel"))
-    expect(parseQuantityText("62 bpm").value).toEqual(q("62", "/min"))
-    expect(parseQuantityText("155 lb").value).toEqual(q("155", "[lb_av]"))
-    expect(parseQuantityText("72.5kg").value).toEqual(q("72.5", "kg"))
-    expect(parseQuantityText("1eV").value).toEqual(q("1", "eV"))
-    expect(parseQuantityText("≤ 5 mmol/L").value).toEqual(
-      q("5", "mmol/L", "<=")
-    )
-    expect(parseQuantityText("+007.50 kg").value).toEqual(q("7.50", "kg"))
+    expect(units.parse("37 °C").value).toEqual(q("37", "Cel"))
+    expect(units.parse("62 bpm").value).toEqual(q("62", "1/min"))
+    expect(units.parse("155 lb").value).toEqual(q("155", "lb"))
+    expect(units.parse("155 [lb_av]").value).toEqual(q("155", "lb"))
+    expect(units.parse("72.5kg").value).toEqual(q("72.5", "kg"))
+    expect(units.parse("1eV").value).toEqual(q("1", "eV"))
+    expect(units.parse("≤ 5 mmol/L").value).toEqual(q("5", "mmol/L", "<="))
+    expect(units.parse("+007.50 kg").value).toEqual(q("7.50", "kg"))
   })
 
   it("asks for what is missing", () => {
-    expect(parseQuantityText("").error).toMatch(/a number and a unit/)
-    expect(parseQuantityText("kg").error).toMatch(/number before the unit/)
-    expect(parseQuantityText("72.5").error).toBe("choose a unit")
-    expect(parseQuantityText("72,5 kg").error).toBe(
+    const id = (s: string) => s
+    expect(parseQuantityText("", id).error).toMatch(/a number and a unit/)
+    expect(parseQuantityText("kg", id).error).toMatch(/number before the unit/)
+    expect(parseQuantityText("72.5", id).error).toBe("choose a unit")
+    expect(parseQuantityText("72,5 kg", id).error).toBe(
       "expected a number like 72.5"
     )
-    expect(parseQuantityText("1e3 kg").error).toMatch(/without an exponent/)
-    expect(parseQuantityText("72 kilo grams").error).toMatch(/without spaces/)
+    expect(parseQuantityText("1e3 kg", id).error).toMatch(/without an exponent/)
+    expect(parseQuantityText("72 kilo grams", id).error).toMatch(
+      /without spaces/
+    )
   })
 })
 
@@ -359,52 +258,51 @@ describe("the declaration", () => {
     expect(readQuantity(40)).toBeUndefined()
   })
 
-  it("opens a blank value on the default, the display unit, then the last pick", () => {
-    expect(openingUnit({ measures: "mass", default: q("70", "[lb_av]") })).toBe(
-      "[lb_av]"
-    )
-    expect(openingUnit({ measures: "temperature" })).toBe("Cel")
-    expect(openingUnit({})).toBe("")
-    rememberUnit("[lb_av]")
-    expect(lastUnit()).toBe("[lb_av]")
-    expect(openingUnit({})).toBe("[lb_av]")
-    expect(openingUnit({ measures: "mass" })).toBe("kg")
-    expect(openingUnit({ units: ["g", "[lb_av]"] })).toBe("[lb_av]")
-    expect(openingUnit({ units: ["g", "mg"] })).toBe("g")
-    rememberUnit("furlong")
-    expect(lastUnit()).toBe("[lb_av]")
+  it("opens a blank value on the default, the anchor, then the last pick", () => {
+    expect(units.opening({ unit: "kg", default: q("70", "lb") })).toBe("lb")
+    expect(units.opening({ unit: "Cel" })).toBe("Cel")
+    expect(units.opening({})).toBe("")
+    units.remember("[lb_av]")
+    expect(lastUnit((u) => u === "lb")).toBe("lb")
+    expect(units.opening({})).toBe("lb")
+    expect(units.opening({ unit: "kg" })).toBe("kg")
+    expect(units.opening({ units: ["g", "lb"] })).toBe("lb")
+    expect(units.opening({ units: ["g", "mg"] })).toBe("g")
+    // A unit the repository does not hold is never remembered.
+    units.remember("furlong")
+    rememberUnit("furlong", () => false)
+    expect(lastUnit((u) => u === "lb")).toBe("lb")
   })
 
   it("writes its example in the declared unit, quoted where YAML needs it", () => {
-    expect(quantityExample({})).toBe('{value: "72.5", unit: kg}')
-    expect(quantityExample({ measures: "temperature" })).toBe(
-      '{value: "72.5", unit: Cel}'
+    expect(units.example({})).toBe('{value: "72.5", unit: kg}')
+    expect(units.example({ unit: "Cel" })).toBe('{value: "72.5", unit: Cel}')
+    expect(units.example({ units: ["kW.h/100km"] })).toBe(
+      '{value: "72.5", unit: kW.h/100km}'
     )
-    expect(quantityExample({ units: ["[lb_av]"] })).toBe(
-      '{value: "72.5", unit: "[lb_av]"}'
+    expect(units.example({ units: ["mL/kg/min"] })).toBe(
+      '{value: "72.5", unit: mL/kg/min}'
     )
   })
 })
 
-describe("convertUnit", () => {
-  it("converts within one class of one measure", () => {
-    expect(convertUnit(450, "g", "kg")).toBeCloseTo(0.45, 9)
-    expect(convertUnit(1.2, "ug/L", "ng/mL")).toBe(1.2)
-    expect(convertUnit(37, "Cel", "[degF]")).toBeCloseTo(98.6, 9)
+describe("convert", () => {
+  it("converts within one linear component", () => {
+    expect(units.convert(450, "g", "kg")).toBeCloseTo(0.45, 9)
+    expect(units.convert(1.2, "ug/L", "ng/mL")).toBe(1.2)
+    expect(units.convert(37, "Cel", "degF")).toBeCloseTo(98.6, 9)
     // A difference of temperatures takes no offset.
-    expect(
-      convertUnit(1, "Cel", "[degF]", "temperature-difference")
-    ).toBeCloseTo(1.8, 9)
+    expect(units.convert(1, "Cel", "degF", { delta: true })).toBeCloseTo(1.8, 9)
   })
 
   it("answers without a binary float's noise", () => {
-    expect(convertUnit(23.4, "kg", "g")).toBe(23400)
-    expect(convertUnit(7.1, "kg", "g")).toBe(7100)
+    expect(units.convert(23.4, "kg", "g")).toBe(23400)
+    expect(units.convert(7.1, "kg", "g")).toBe(7100)
     expect(floatDigits(0.1 + 0.2)).toBe("0.3")
   })
 
-  it("refuses units of two measures", () => {
-    expect(convertUnit(92, "mg/dL", "mmol/L")).toBeUndefined()
-    expect(convertUnit(1, "kg", "m")).toBeUndefined()
+  it("refuses units of two components", () => {
+    expect(units.convert(92, "mg/dL", "mmol/L")).toBeUndefined()
+    expect(units.convert(1, "kg", "m")).toBeUndefined()
   })
 })

@@ -394,7 +394,8 @@ export interface Aggregate {
   groupBy?: AggregateGroupKey[]
   reducers?: AggregateReducer[]
   sources?: AggregateSources
-  /** A unit of the metric's measure (or the property's). */
+  /** A unit of the linear component of the metric's unit (or the
+   * property's). */
   unit?: string
   /** The unit `durationIn` and `timeInState` answer their times in. */
   durationUnit?: string
@@ -1440,12 +1441,8 @@ export interface BundlePurged {
 }
 
 /** `GET /api/v1/units` (`substrate.UnitTable`): the repository's unit graph
- * at one revision, and beside it the engine's unit table, every measure with
- * its listed codes, and the input aliases a write reads. */
+ * at one revision. */
 export interface UnitTable {
-  measures: UnitMeasure[]
-  /** Each spelling a write reads (`°C`, `bpm`) and the code it stores. */
-  aliases: Record<string, string>
   /** The repository's unit records (decision 0186). */
   units: RepositoryUnit[]
   /** The repository's conversion records. */
@@ -1501,33 +1498,6 @@ export interface UnseededRecord {
   reason: string
 }
 
-/** One measure of the unit table (`substrate.UnitMeasure`). */
-export interface UnitMeasure {
-  name: string
-  /** The code every factor converts to; empty for `arbitrary`. */
-  base: string
-  /** `ratio`, `affine`, `difference`, `logarithmic`, `arbitrary` or `count`. */
-  scale: string
-  display: string
-  /** Over L M T I Θ N J A B, "1" for a dimensionless measure, empty for a
-   * level or an arbitrary unit. */
-  dimension: string
-  note?: string
-  units: UnitCode[]
-}
-
-/** One listed code (`substrate.UnitCode`): base = value x factor + offset. */
-export interface UnitCode {
-  code: string
-  /** The symbol a title shows, empty for `1`. */
-  print: string
-  /** The exact rational to the base (`45359237/100000000`); absent where no
-   * rational number states it (a level, an arbitrary unit, rad). */
-  factor?: string
-  /** An absolute temperature's zero in the base, absent where zero. */
-  offset?: string
-}
-
 /** `GET /api/v1/units/convert` (`substrate.UnitConversion`): one value
  * converted exactly. */
 export interface UnitConversion {
@@ -1535,8 +1505,6 @@ export interface UnitConversion {
    * significant digits. */
   value: string
   unit: string
-  /** The measure the value converted in. */
-  measure: string
   /** False where `value` was rounded. */
   exact: boolean
 }

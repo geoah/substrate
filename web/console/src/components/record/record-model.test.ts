@@ -19,7 +19,7 @@ import {
 } from "./record-model"
 import type { ReferencingGroup, ReferencingRow } from "@/lib/api/records"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 const PERSON = "ada.example.com/people/person"
 const TASK = "ada.example.com/tasks/task"
@@ -264,7 +264,7 @@ describe("duplicateProperties", () => {
       createdAt: "",
       updatedAt: "",
     } satisfies SubstrateRecord
-    expect(duplicateProperties(TABLE_UNITS, r, note)).toEqual({
+    expect(duplicateProperties(SHIPPED_UNITS, r, note)).toEqual({
       name: "Plan (copy)",
       body: "Words.",
       status: "done",

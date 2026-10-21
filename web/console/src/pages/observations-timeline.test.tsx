@@ -12,7 +12,7 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderUI,
   screen,
   waitFor,
   within,
@@ -68,6 +68,14 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 import { ObservationsTimelinePage } from "./observations-timeline"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+
+/** Every render gets the shipped units, as the signed-in console's
+ * `UnitsProvider` gives a page the repository's. */
+const render = (
+  ui: Parameters<typeof renderUI>[0],
+  options?: Parameters<typeof renderUI>[1]
+) => renderUI(ui, { wrapper: ShippedUnits, ...options })
 
 /** Sep 21 to Oct 11 2026 in Athens: three weeks, read in days. */
 const WINDOW =
@@ -774,7 +782,7 @@ describe("the timeline's requests", () => {
     await waitFor(() =>
       expect(
         charts(server.seen, "health/body_mass").at(-1)!.aggregate.unit
-      ).toBe("[lb_av]")
+      ).toBe("lb")
     )
   })
 
@@ -881,15 +889,15 @@ describe("the timeline's requests", () => {
     ])
   })
 
-  it("offers every unit, each with its code, with Technical details on", async () => {
+  it("offers every unit, each with its id where its symbol differs, with Technical details on", async () => {
     mount(`?metric=health/body_mass&${WINDOW}`, true)
     const weight = await lane("Weight")
     fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
-    await screen.findByRole("option", { name: /lb_av/ })
+    await screen.findByRole("option", { name: /μg/ })
     const names = screen.getAllByRole("option").map((o) => o.textContent)
-    // The symbol, then the code the picker adds.
-    expect(names).toContain("lb[lb_av]")
+    // The symbol, then the id the picker adds where the two differ.
     expect(names).toContain("μgug")
+    expect(names).toContain("lb")
   })
 
   it("holds no kilograms under an axis in pounds while the pounds are read", async () => {
@@ -1863,7 +1871,7 @@ describe("the charts", () => {
     await waitFor(() =>
       expect(
         charts(server.seen, "health/body_mass").at(-1)!.aggregate.unit
-      ).toBe("[lb_av]")
+      ).toBe("lb")
     )
     const redrawn = await waitFor(() => {
       const next = within(weight).getByRole("group", {

@@ -14,7 +14,7 @@ import { sheetRows } from "./sheet-rows"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { fieldOf } from "@/lib/record-form"
 import { propSpecsByName } from "@/lib/record-schema"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 const TASK = "ada.example.com/tasks/task"
 
@@ -65,7 +65,7 @@ const record: SubstrateRecord = {
 }
 
 describe("sheetRows", () => {
-  const rows = sheetRows(TABLE_UNITS, record, task)
+  const rows = sheetRows(SHIPPED_UNITS, record, task)
   it("reads states, then references, enums, dates, then the rest", () => {
     expect(rows.filled.map((r) => r.name)).toEqual([
       "status",
@@ -93,7 +93,7 @@ describe("sheetRows", () => {
   })
 
   it("locks every row of a provider's copy", () => {
-    const ro = sheetRows(TABLE_UNITS, record, task, true)
+    const ro = sheetRows(SHIPPED_UNITS, record, task, true)
     expect(ro.all.every((r) => r.lock === "provider" && !r.field)).toBe(true)
   })
 })
@@ -101,7 +101,7 @@ describe("sheetRows", () => {
 describe("propertyWrite", () => {
   const field = (name: string) =>
     fieldOf(
-      TABLE_UNITS,
+      SHIPPED_UNITS,
       propSpecsByName(task).find((s) => s.name === name)!
     )
 
@@ -156,7 +156,7 @@ describe("propertyWrite", () => {
 
   it("reads each list item alone: its lines and its untouched spaces stay", () => {
     const tags = field("tags")
-    const notes = fieldOf(TABLE_UNITS, {
+    const notes = fieldOf(SHIPPED_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "markdown",
     })
@@ -176,7 +176,7 @@ describe("propertyWrite", () => {
   })
 
   it("says which list item its datatype refuses", () => {
-    const emails = fieldOf(TABLE_UNITS, {
+    const emails = fieldOf(SHIPPED_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "email",
     })
@@ -186,7 +186,7 @@ describe("propertyWrite", () => {
   })
 
   it("holds money list items as their exact text and keeps untouched ones", () => {
-    const prices = fieldOf(TABLE_UNITS, {
+    const prices = fieldOf(SHIPPED_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "money",
     })
@@ -206,10 +206,10 @@ describe("propertyWrite", () => {
   })
 
   it("holds quantity list items as their exact text and keeps untouched ones", () => {
-    const readings = fieldOf(TABLE_UNITS, {
+    const readings = fieldOf(SHIPPED_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "quantity",
-      measures: "mass",
+      unit: "kg",
       comparator: true,
     })
     const stored = [
@@ -221,11 +221,11 @@ describe("propertyWrite", () => {
     expect(listWrite(readings, stored, ["72.50 kg", "<40 kg"])).toEqual({})
     expect(listWrite(readings, stored, ["72.50 kg", "160 lb"])).toEqual({
       properties: {
-        tags: [stored[0], { value: "160", unit: "[lb_av]" }],
+        tags: [stored[0], { value: "160", unit: "lb" }],
       },
     })
     expect(listWrite(readings, stored, ["72.50 kg", "3 km"]).error).toBe(
-      "Item 2: unit: km measures length, not mass"
+      "Item 2: unit: km does not convert to kg, the declaration's unit"
     )
   })
 

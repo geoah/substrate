@@ -118,9 +118,7 @@ import type {
   RepositoryConversion,
   RepositoryUnit,
   UnseededRecord,
-  UnitCode,
   UnitConversion,
-  UnitMeasure,
   UnitTable,
   VocabularyPlan,
   WebhookAccepted,
@@ -858,8 +856,6 @@ const functionCalled: Shape<FunctionCalled> = { output: true, effects: true }
 const webhookAccepted: Shape<WebhookAccepted> = { fire: true }
 
 const unitTable: Shape<UnitTable> = {
-  measures: true,
-  aliases: true,
   units: true,
   conversions: true,
   revision: true,
@@ -895,27 +891,9 @@ const unseededRecord: Shape<UnseededRecord> = {
   reason: true,
 }
 
-const unitMeasure: Shape<UnitMeasure> = {
-  name: true,
-  base: true,
-  scale: true,
-  display: true,
-  dimension: true,
-  note: false,
-  units: true,
-}
-
-const unitCode: Shape<UnitCode> = {
-  code: true,
-  print: true,
-  factor: false,
-  offset: false,
-}
-
 const unitConversion: Shape<UnitConversion> = {
   value: true,
   unit: true,
-  measure: true,
   exact: true,
 }
 
@@ -1005,8 +983,6 @@ const mirrors: Record<string, Record<string, boolean>> = {
   FunctionCalled: functionCalled,
   WebhookAccepted: webhookAccepted,
   UnitTable: unitTable,
-  UnitMeasure: unitMeasure,
-  UnitCode: unitCode,
   UnitConversion: unitConversion,
   RepositoryUnit: repositoryUnit,
   RepositoryConversion: repositoryConversion,

@@ -1,34 +1,27 @@
-/** The three readers: the engine's table, a repository's graph, and the
- * pending one a graph-enabled server's console reads while its graph loads
- * or after it failed, which answers nothing the table would. */
+/** The two readers: a repository's graph, and the pending one the console
+ * reads while the graph loads or after it failed, which answers nothing. */
 
 import { describe, expect, it } from "vitest"
 
 import { UnitGraph } from "./unit-graph"
-import { editedTable } from "./unit-graph.test-fixtures"
-import {
-  TABLE_UNITS,
-  graphUnits,
-  pendingUnits,
-  unitsUnavailable,
-} from "./unit-reader"
+import { editedTable, SHIPPED_UNITS } from "./unit-graph.test-fixtures"
+import { graphUnits, pendingUnits, unitsUnavailable } from "./unit-reader"
 
 const edited = graphUnits(new UnitGraph(editedTable))
 
-describe("the table reader", () => {
-  it("answers from the engine's table", () => {
-    expect(TABLE_UNITS.status).toBe("table")
-    expect(TABLE_UNITS.graph).toBeUndefined()
-    expect(TABLE_UNITS.canonical("lb")).toBe("[lb_av]")
-    expect(TABLE_UNITS.convert(1, "kg", "[lb_av]")).toBeCloseTo(2.20462, 5)
-    expect(TABLE_UNITS.convert(1, "Cel", "[degF]", { delta: true })).toBe(1.8)
-    expect(TABLE_UNITS.symbol("sack25")).toBe("sack25")
-    expect(unitsUnavailable(TABLE_UNITS)).toBeUndefined()
+describe("the shipped units", () => {
+  it("answer as a fresh repository's graph", () => {
+    expect(SHIPPED_UNITS.status).toBe("ready")
+    expect(SHIPPED_UNITS.canonical("[lb_av]")).toBe("lb")
+    expect(SHIPPED_UNITS.convert(1, "kg", "lb")).toBeCloseTo(2.20462, 5)
+    expect(SHIPPED_UNITS.convert(1, "Cel", "degF", { delta: true })).toBe(1.8)
+    expect(SHIPPED_UNITS.symbol("sack25")).toBe("sack25")
+    expect(unitsUnavailable(SHIPPED_UNITS)).toBeUndefined()
   })
 })
 
 describe("the graph reader", () => {
-  it("converts through the repository's factors, not the table's", () => {
+  it("converts through the repository's own factors", () => {
     expect(edited.status).toBe("ready")
     expect(edited.convert(1, "kg", "lb")).toBe(2)
     expect(edited.convert(1, "kg", "[lb_av]")).toBe(2)

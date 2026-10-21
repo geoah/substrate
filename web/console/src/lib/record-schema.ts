@@ -117,8 +117,6 @@ export interface PropSpec {
    * read into `minQuantity`/`maxQuantity`, and never land here. */
   min?: number
   max?: number
-  /** `quantity`: the declared measure every unit belongs to (`mass`). */
-  measures?: string
   /** `quantity`: the declared anchor unit, read through the repository's
    * unit graph (decision 0186). */
   unit?: string
@@ -283,22 +281,15 @@ function transitionsOf(v: unknown): StateTransition[] | undefined {
   return out
 }
 
-/** A quantity property's own keys: `measures`, `unit`, `delta`, `units`,
+/** A quantity property's own keys: `unit`, `delta`, `units`,
  * `comparator`, and `min`/`max` as quantity values. */
 function quantitySpecOf(
   def: Record<string, unknown>
 ): Pick<
   PropSpec,
-  | "measures"
-  | "unit"
-  | "delta"
-  | "units"
-  | "comparator"
-  | "minQuantity"
-  | "maxQuantity"
+  "unit" | "delta" | "units" | "comparator" | "minQuantity" | "maxQuantity"
 > {
   return {
-    measures: typeof def.measures === "string" ? def.measures : undefined,
     unit: typeof def.unit === "string" ? def.unit : undefined,
     delta: def.delta === true ? true : undefined,
     units: stringList(def.units),

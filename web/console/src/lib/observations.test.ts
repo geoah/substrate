@@ -58,8 +58,12 @@ import {
   traceKind,
 } from "@/lib/observations.test-fixtures"
 import { UnitGraph } from "@/lib/unit-graph"
-import { editedTable, fixtureTable } from "@/lib/unit-graph.test-fixtures"
-import { TABLE_UNITS, graphUnits, pendingUnits } from "@/lib/unit-reader"
+import {
+  editedTable,
+  fixtureTable,
+  SHIPPED_UNITS,
+} from "@/lib/unit-graph.test-fixtures"
+import { graphUnits, pendingUnits } from "@/lib/unit-reader"
 
 const OBSERVED = "substrate.reamde.dev/core/observed"
 const DAY = 86_400_000
@@ -153,28 +157,28 @@ describe("forms and reducers", () => {
   it("offers the reducers each form allows, the default first", () => {
     // Every reducer docs/api.md's form table lists, as reducer keys.
     const heart = info("health/heart_rate")
-    expect(reducerOptions(TABLE_UNITS, shapeOf(heart), "gauge", heart)).toEqual(
-      [
-        "avg",
-        "min",
-        "max",
-        "first",
-        "last",
-        "count",
-        "stddev",
-        "percentile:0.5",
-        "percentile:0.9",
-      ]
-    )
+    expect(
+      reducerOptions(SHIPPED_UNITS, shapeOf(heart), "gauge", heart)
+    ).toEqual([
+      "avg",
+      "min",
+      "max",
+      "first",
+      "last",
+      "count",
+      "stddev",
+      "percentile:0.5",
+      "percentile:0.9",
+    ])
     // No metric is offered bands: which bands a reader wants is a record
     // view's to say, not the console's. An angle's mean is circular.
     expect(
-      reducerOptions(TABLE_UNITS, "gauge", "gauge", info("health/heart_rate"))
+      reducerOptions(SHIPPED_UNITS, "gauge", "gauge", info("health/heart_rate"))
     ).not.toContain("durationIn:95,114")
     expect(
-      reducerOptions(TABLE_UNITS, "gauge", "gauge", { measures: "angle" })
+      reducerOptions(SHIPPED_UNITS, "gauge", "gauge", { unit: "deg" })
     ).toContain("circularMean")
-    expect(reducerOptions(TABLE_UNITS, "amount")).toEqual([
+    expect(reducerOptions(SHIPPED_UNITS, "amount")).toEqual([
       "sum",
       "count",
       "avg",
@@ -186,7 +190,7 @@ describe("forms and reducers", () => {
       "percentile:0.5",
       "percentile:0.9",
     ])
-    expect(reducerOptions(TABLE_UNITS, "counter")).toEqual([
+    expect(reducerOptions(SHIPPED_UNITS, "counter")).toEqual([
       "increase",
       "rate",
       "last",
@@ -198,19 +202,19 @@ describe("forms and reducers", () => {
     // A summary reads its one statistic: a vendor's averages first, a
     // total's sum first.
     expect(
-      reducerOptions(TABLE_UNITS, "summary", "summary", undefined, "vendor")
+      reducerOptions(SHIPPED_UNITS, "summary", "summary", undefined, "vendor")
     ).toEqual(["avg", "min", "max", "first", "last", "count"])
     expect(
-      reducerOptions(TABLE_UNITS, "summary", "summary", undefined, "sum")[0]
+      reducerOptions(SHIPPED_UNITS, "summary", "summary", undefined, "sum")[0]
     ).toBe("sum")
     // A coded gauge answers time per code; a coded amount takes no
     // timeInState (docs/api.md, "Reducers, by form").
-    expect(reducerOptions(TABLE_UNITS, "coded", "gauge")).toEqual([
+    expect(reducerOptions(SHIPPED_UNITS, "coded", "gauge")).toEqual([
       "timeInState",
       "count",
     ])
     expect(shapeOf(info("health/sleep_stage"))).toBe("coded")
-    expect(reducerOptions(TABLE_UNITS, "coded", "amount")).toEqual([
+    expect(reducerOptions(SHIPPED_UNITS, "coded", "amount")).toEqual([
       "sum",
       "count",
       "min",
@@ -219,13 +223,13 @@ describe("forms and reducers", () => {
   })
 
   it("offers the circular mean under the graph by the unit's turn", () => {
-    // The server checks a turn on the read's unit, not a declared measure.
+    // The server checks a turn on the read's unit.
     const graph = graphUnits(new UnitGraph(fixtureTable))
     expect(reducerOptions(graph, "gauge", "gauge", { unit: "deg" })).toContain(
       "circularMean"
     )
     expect(
-      reducerOptions(graph, "gauge", "gauge", { unit: "kg", measures: "angle" })
+      reducerOptions(graph, "gauge", "gauge", { unit: "kg" })
     ).not.toContain("circularMean")
     expect(
       reducerOptions(pendingUnits("loading"), "gauge", "gauge", { unit: "deg" })
@@ -237,13 +241,11 @@ describe("forms and reducers", () => {
     // Go test writes), so a reducer the server adds or drops fails here
     // until a menu takes it or MENU_LEAVES_OUT says why not.
     const menus = {
-      gauge: reducerOptions(TABLE_UNITS, "gauge", "gauge", {
-        measures: "angle",
-      }),
-      amount: reducerOptions(TABLE_UNITS, "amount", "amount"),
-      counter: reducerOptions(TABLE_UNITS, "counter", "counter"),
-      "coded gauge": reducerOptions(TABLE_UNITS, "coded", "gauge"),
-      "coded amount": reducerOptions(TABLE_UNITS, "coded", "amount"),
+      gauge: reducerOptions(SHIPPED_UNITS, "gauge", "gauge", { unit: "deg" }),
+      amount: reducerOptions(SHIPPED_UNITS, "amount", "amount"),
+      counter: reducerOptions(SHIPPED_UNITS, "counter", "counter"),
+      "coded gauge": reducerOptions(SHIPPED_UNITS, "coded", "gauge"),
+      "coded amount": reducerOptions(SHIPPED_UNITS, "coded", "amount"),
       summary: summaryReducers(undefined, "prefer-raw"),
     }
     for (const [form, menu] of Object.entries(menus)) {
@@ -289,10 +291,10 @@ describe("forms and reducers", () => {
   })
 
   it("keeps a bound's comparator and says why a bounded row has no number", () => {
-    expect(readingText(TABLE_UNITS, "0.01", "ng/mL", undefined, "<")).toBe(
+    expect(readingText(SHIPPED_UNITS, "0.01", "ng/mL", undefined, "<")).toBe(
       "<0.01 ng/mL"
     )
-    expect(readingText(TABLE_UNITS, "1200", "{steps}", 0, ">=")).toBe(
+    expect(readingText(SHIPPED_UNITS, "1200", "{steps}", 0, ">=")).toBe(
       ">=1,200 steps"
     )
     const row = { count: 3, bounded: 1 }
@@ -310,12 +312,14 @@ describe("forms and reducers", () => {
     expect(roundDigits("61.9372442", 2)).toBe("61.94")
     expect(roundDigits("72.40", 2)).toBe("72.40")
     expect(roundDigits("9812", 0)).toBe("9812")
-    expect(readingText(TABLE_UNITS, "160.011509893784", "[lb_av]", 1)).toBe(
+    expect(readingText(SHIPPED_UNITS, "160.011509893784", "[lb_av]", 1)).toBe(
       "160.0 lb"
     )
     // A tooltip's stage minutes read as a sleep's page reads them.
-    expect(readingText(TABLE_UNITS, "282.6", "min", 2)).toBe("4h 42m 36s")
-    expect(readingText(TABLE_UNITS, "61200", "{steps}", 0)).toBe("61,200 steps")
+    expect(readingText(SHIPPED_UNITS, "282.6", "min", 2)).toBe("4h 42m 36s")
+    expect(readingText(SHIPPED_UNITS, "61200", "{steps}", 0)).toBe(
+      "61,200 steps"
+    )
     // Half up on the digits themselves, which a binary float is not.
     expect(roundDigits("1.005", 2)).toBe("1.01")
     expect(roundDigits("2.675", 2)).toBe("2.68")
@@ -452,29 +456,29 @@ describe("a lab result's flag and range in words", () => {
   const mg = (value: string) => ({ value, unit: "mg/dL" })
   it("says the lab's flag and its range's bounds", () => {
     const normal = [{ code: "N", display: "Normal" }]
-    expect(judgementWords(TABLE_UNITS, normal, [{ high: mg("120") }])).toBe(
+    expect(judgementWords(SHIPPED_UNITS, normal, [{ high: mg("120") }])).toBe(
       "normal (under 120 mg/dL)"
     )
     expect(
       judgementWords(
-        TABLE_UNITS,
+        SHIPPED_UNITS,
         [{ code: "H" }],
         [{ low: mg("60"), high: mg("120") }]
       )
     ).toBe("high (60 to 120 mg/dL)")
-    expect(judgementWords(TABLE_UNITS, [], [{ low: mg("40") }])).toBe(
+    expect(judgementWords(SHIPPED_UNITS, [], [{ low: mg("40") }])).toBe(
       "range over 40 mg/dL"
     )
-    expect(judgementWords(TABLE_UNITS, normal, undefined)).toBe("normal")
-    expect(judgementWords(TABLE_UNITS, undefined, [{ text: "optimal" }])).toBe(
-      "range optimal"
-    )
-    expect(judgementWords(TABLE_UNITS, undefined, undefined)).toBeUndefined()
+    expect(judgementWords(SHIPPED_UNITS, normal, undefined)).toBe("normal")
+    expect(
+      judgementWords(SHIPPED_UNITS, undefined, [{ text: "optimal" }])
+    ).toBe("range optimal")
+    expect(judgementWords(SHIPPED_UNITS, undefined, undefined)).toBeUndefined()
   })
 
   it("says an HL7 flag's code in words, and keeps a lab's own spelling", () => {
     const words = (flag: Record<string, string>) =>
-      judgementWords(TABLE_UNITS, [flag], undefined)
+      judgementWords(SHIPPED_UNITS, [flag], undefined)
     expect(words({ code: "LL" })).toBe("critical low")
     expect(
       words({
@@ -497,11 +501,11 @@ describe("a lab result's flag and range in words", () => {
   it("reads a range's small bounds to their significant digits", () => {
     const ng = (value: string) => ({ value, unit: "ng/mL" })
     expect(
-      judgementWords(TABLE_UNITS, undefined, [{ high: ng("0.014") }])
+      judgementWords(SHIPPED_UNITS, undefined, [{ high: ng("0.014") }])
     ).toBe("range under 0.014 ng/mL")
     // Both bounds are cut the same way.
     expect(
-      judgementWords(TABLE_UNITS, undefined, [
+      judgementWords(SHIPPED_UNITS, undefined, [
         { low: mg("3.14159"), high: mg("5.6789") },
       ])
     ).toBe("range 3.14 to 5.68 mg/dL")
@@ -517,23 +521,23 @@ describe("a result read against its range", () => {
 
   it("keeps a bound's comparator and the flag's tone", () => {
     expect(
-      resultReading(TABLE_UNITS, {
+      resultReading(SHIPPED_UNITS, {
         value: q("0.5", "ng/mL", "<"),
         interpretation: [{ code: "L" }],
       })
     ).toEqual({ value: 0.5, unit: "ng/mL", comparator: "<", tone: "poor" })
-    expect(resultReading(TABLE_UNITS, { text: "trace" })).toBeUndefined()
+    expect(resultReading(SHIPPED_UNITS, { text: "trace" })).toBeUndefined()
   })
 
   it("reads a range as the lab's normal one unless it names a tone", () => {
     expect(
-      resultReading(TABLE_UNITS, {
+      resultReading(SHIPPED_UNITS, {
         value: q("2.8", "ng/mL"),
         referenceRanges: [{ high: q("3", "ng/mL") }, { low: q("9", "ng/mL") }],
       })?.range
     ).toEqual({ high: 3, label: "reference range", tone: "good" })
     expect(
-      resultReading(TABLE_UNITS, {
+      resultReading(SHIPPED_UNITS, {
         value: q("5", "ng/mL"),
         referenceRanges: [{ low: q("4", "ng/mL"), text: "high", tone: "poor" }],
       })?.range
@@ -542,7 +546,7 @@ describe("a result read against its range", () => {
 
   it("converts a bound within its measure and drops a range of another", () => {
     expect(
-      resultReading(TABLE_UNITS, {
+      resultReading(SHIPPED_UNITS, {
         value: q("3.6", "mmol/L"),
         referenceRanges: [
           { low: q("2600", "umol/L"), high: q("3.4", "mmol/L") },
@@ -550,7 +554,7 @@ describe("a result read against its range", () => {
       })?.range
     ).toMatchObject({ low: 2.6, high: 3.4 })
     expect(
-      resultReading(TABLE_UNITS, {
+      resultReading(SHIPPED_UNITS, {
         value: q("3.6", "mmol/L"),
         referenceRanges: [{ high: q("60", "mg/dL") }],
       })?.range
@@ -560,16 +564,16 @@ describe("a result read against its range", () => {
   it("reads a value into another unit of its measure, or not at all", () => {
     expect(
       resultReading(
-        TABLE_UNITS,
+        SHIPPED_UNITS,
         { value: q("450", "g"), measure: "mass" },
         "kg"
       )?.value
     ).toBeCloseTo(0.45, 6)
     expect(
-      resultReading(TABLE_UNITS, { value: q("1.2", "ug/L") }, "ng/mL")?.value
+      resultReading(SHIPPED_UNITS, { value: q("1.2", "ug/L") }, "ng/mL")?.value
     ).toBe(1.2)
     expect(
-      resultReading(TABLE_UNITS, { value: q("92", "mg/dL") }, "mmol/L")
+      resultReading(SHIPPED_UNITS, { value: q("92", "mg/dL") }, "mmol/L")
     ).toBeUndefined()
   })
 
@@ -585,7 +589,7 @@ describe("a result read against its range", () => {
       unit: "lb",
       range: { low: 50, high: 100 },
     })
-    expect(resultReading(TABLE_UNITS, p, "[lb_av]")?.value).toBeCloseTo(
+    expect(resultReading(SHIPPED_UNITS, p, "[lb_av]")?.value).toBeCloseTo(
       2.20462,
       5
     )

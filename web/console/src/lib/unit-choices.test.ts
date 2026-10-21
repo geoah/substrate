@@ -1,79 +1,60 @@
-/** The units a reading may be shown in: the codes of its measure the
- * server converts the stored unit to, and no other. */
+/** The units a reading may be shown in: the units of its linear component
+ * in the shipped seed, and no other. */
 
 import { describe, expect, it } from "vitest"
 
-import { MEASURES } from "@/lib/units"
-
-import { converts, everydayUnits, unitChoices } from "./unit-choices"
+import { SHIPPED_UNITS as units } from "./unit-graph.test-fixtures"
 
 describe("the units a reading may be shown in", () => {
-  it("narrows the output unit to the stored unit's measure", () => {
-    expect(unitChoices("kg")).toContain("[lb_av]")
-    expect(unitChoices("kg")).not.toContain("J")
-    expect(unitChoices("/min")).toEqual(
-      expect.arrayContaining(["/min", "/s", "/h"])
+  it("narrows the output unit to the stored unit's component", () => {
+    expect(units.choices("kg")).toContain("lb")
+    expect(units.choices("kg")).not.toContain("J")
+    expect(units.choices("kg")[0]).toBe("kg")
+    expect(units.choices("1/min")).toEqual(
+      expect.arrayContaining(["1/min", "1/s", "1/h"])
     )
-    // An annotation the table does not list converts to nothing.
-    expect(unitChoices("{steps}")).toEqual(["{steps}"])
-    expect(unitChoices(undefined)).toEqual([])
-    // A declared measure decides where the unit alone is ambiguous.
-    expect(unitChoices("Cel", "temperature")).toContain("[degF]")
+    // A stored code reads as its unit's id.
+    expect(units.choices("/min")[0]).toBe("1/min")
+    expect(units.choices(undefined)).toEqual([])
+    // A unit the repository does not hold converts to nothing.
+    expect(units.choices("furlong")).toEqual(["furlong"])
   })
 
   it("offers only the units the server converts the stored one to", () => {
-    // An annotation is part of a unit: `{count}/min` counts something else.
-    expect(unitChoices("/min")).toEqual(["/s", "/min", "/h", "/d", "/wk"])
-    expect(unitChoices("{count}/min")).toEqual(["{count}/min"])
-    expect(unitChoices("{count}")).toEqual(["{count}"])
-    // An assay unit converts only to itself under another prefix, per volume
-    // to per volume.
-    expect(unitChoices("m[IU]/L")).toEqual(["[IU]/L", "m[IU]/L", "[IU]/mL"])
-    expect(unitChoices("[IU]")).toEqual(["[IU]"])
-    expect(unitChoices("[arb'U]")).toEqual(["[arb'U]"])
-    // A level converts to nothing but itself; rad reaches deg only by pi.
-    expect(unitChoices("dBm")).toEqual(["dBm"])
-    expect(unitChoices("deg")).toEqual(["deg", "'", "''"])
-    expect(unitChoices("rad")).toEqual(["rad"])
-  })
-
-  it("offers every code of a plain measure, and itself always", () => {
-    // Measures whose codes carry no annotation, assay unit or pi convert
-    // throughout, the way the server's table admits them.
-    for (const m of MEASURES) {
-      for (const code of m.units) expect(converts(m, code, code)).toBe(true)
-    }
-    for (const name of ["mass", "length", "volume", "duration", "energy"]) {
-      const m = MEASURES.find((x) => x.name === name)!
-      for (const a of m.units) {
-        for (const b of m.units) expect(converts(m, a, b)).toBe(true)
-      }
-    }
-    expect(unitChoices("Cel", "temperature-difference")).toEqual([
-      "K",
-      "Cel",
-      "[degF]",
+    expect(units.choices("count")).toEqual(["count"])
+    expect(units.choices("steps")).toEqual(["steps"])
+    // An assay unit converts only to itself under another prefix.
+    expect([...units.choices("mIU/L")].sort()).toEqual([
+      "IU/L",
+      "IU/mL",
+      "mIU/L",
     ])
+    // A level converts to nothing but itself; rad keeps no edge to deg.
+    expect(units.choices("dBm")).toEqual(["dBm"])
+    expect([...units.choices("deg")].sort()).toEqual([
+      "arcmin",
+      "arcsec",
+      "deg",
+    ])
+    expect(units.choices("rad")).toEqual(["rad"])
+    expect(units.choices("Cel")).toEqual(["Cel", "K", "degF"])
   })
 })
 
 describe("the units a chart offers day to day", () => {
   it("offers body weight in kilograms, pounds and stones, and keeps a pick", () => {
-    const mass = unitChoices("kg", "mass")
+    const mass = units.choices("kg")
     expect(mass).toContain("ug")
-    expect(everydayUnits(mass, "kg")).toEqual(["kg", "[lb_av]", "[stone_av]"])
+    expect(units.everyday(mass, "kg")).toEqual(["kg", "lb", "st"])
     // A unit picked from the address stays offered.
-    expect(everydayUnits(mass, "kg", "t")).toEqual([
-      "kg",
-      "t",
-      "[lb_av]",
-      "[stone_av]",
-    ])
-    // A stored unit with no everyday list keeps the measure's.
-    expect(everydayUnits(["Cel", "K", "[degF]"], "Cel")).toEqual([
+    expect(units.everyday(mass, "kg", "t")).toEqual(["kg", "lb", "st", "t"])
+    // A stored unit read by its code finds the same list.
+    expect(units.everyday(mass, "[lb_av]")).toEqual(mass)
+    // A stored unit with no everyday list keeps the component's.
+    expect(units.everyday(["Cel", "K", "degF"], "Cel")).toEqual([
       "Cel",
       "K",
-      "[degF]",
+      "degF",
     ])
   })
 })

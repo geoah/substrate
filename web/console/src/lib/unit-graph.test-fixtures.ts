@@ -3,6 +3,9 @@
  * joins. */
 
 import type { UnitTable } from "./api/types"
+import { UnitGraph } from "./unit-graph"
+import { graphUnits, type UnitReader } from "./unit-reader"
+import shipped from "./unit-graph.shipped.json"
 
 export const fixtureTable: Pick<
   UnitTable,
@@ -113,7 +116,7 @@ export const fixtureTable: Pick<
   ],
 }
 
-/** The same graph as one repository edited it: a unit the engine's table
+/** The same graph as one repository edited it: a unit the shipped seed
  * does not hold (`sack25`, 25 kg, printed `sack`) and the pound's factor
  * changed to 500 g, so 1 kg is 2 lb here and 2.20462 lb in the table. */
 export const editedTable: Pick<
@@ -136,3 +139,17 @@ export const editedTable: Pick<
     },
   ],
 }
+
+/** The shipped seed as GET /api/v1/units answers it for a fresh repository:
+ * unit-graph.shipped.json, which
+ * internal/engine/unitseed_console_internal_test.go writes from
+ * internal/engine/unitseed. Tests only; the console reads a repository's own
+ * units. */
+export const shippedTable = shipped as Pick<
+  UnitTable,
+  "units" | "conversions" | "revision"
+>
+
+/** A reader over the shipped units, as a fresh repository's console reads
+ * them. */
+export const SHIPPED_UNITS: UnitReader = graphUnits(new UnitGraph(shippedTable))

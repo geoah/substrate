@@ -29,7 +29,6 @@ import {
 import { barPath, linePath, linearScale, niceDomain } from "@/lib/chart"
 import { tableDateTime } from "@/lib/format"
 import {
-  codeWords,
   isForm,
   judgementWords,
   metricInfoOf,
@@ -128,20 +127,6 @@ export function ObservedSection({
     />
   ) : (
     <ValueSection record={record} open={open} />
-  )
-}
-
-/** The measure the engine stamped from the value's unit (`measure`, core's
- * `observed` trait): what kind of quantity was measured, which the index
- * converts within. The engine writes it, so it is shown, never edited. */
-function MeasureFact({ measure }: { measure: unknown }) {
-  if (typeof measure !== "string" || !measure) return null
-  return (
-    <Fact label="Measure">
-      <span title="Stamped by the substrate from the value’s unit">
-        {codeWords(measure)}
-      </span>
-    </Fact>
   )
 }
 
@@ -286,7 +271,6 @@ function ValueSection({
         <Fact label="Delivered by">
           {p.origin ? <ReferenceValue value={p.origin} /> : <EmptyValue />}
         </Fact>
-        <MeasureFact measure={p.measure} />
       </dl>
     </>
   )
@@ -339,14 +323,7 @@ function TraceSection({
           bars={shape === "amount"}
         />
       )}
-      {stats && (
-        <StatsFacts
-          stats={stats}
-          unit={unit}
-          places={places}
-          measure={p.measure}
-        />
-      )}
+      {stats && <StatsFacts stats={stats} unit={unit} places={places} />}
       {points.length > 0 ? (
         <div className="mt-4">
           <table
@@ -413,11 +390,8 @@ function StatsFacts({
   stats,
   unit,
   places,
-  measure,
 }: {
   stats: TraceStats
-  /** The engine-stamped measure of the trace's unit. */
-  measure?: unknown
   unit?: string
   places?: number
 }) {
@@ -485,7 +459,6 @@ function StatsFacts({
           <span title={stats.coverage}>{coverageWords(stats.coverage)}</span>
         </Fact>
       )}
-      <MeasureFact measure={measure} />
     </dl>
   )
 }

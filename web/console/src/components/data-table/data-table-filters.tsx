@@ -235,7 +235,7 @@ function ValueEditor({
             {field.kind === "quantity" && !field.repeated && (
               <>
                 . A number and its unit, <span className="data">155 lb</span>,
-                matches that amount in any unit of the same measure, and{" "}
+                matches that amount in any unit it converts to, and{" "}
                 <span className="data">&lt;155 lb</span> means less than it
               </>
             )}

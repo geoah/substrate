@@ -16,7 +16,7 @@ import {
   shortDate,
   tableDateTime,
 } from "./format"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 const pad = (n: number) => String(n).padStart(2, "0")
 const MONTHS = [
@@ -130,7 +130,7 @@ describe("referenceID / referenceCell", () => {
   it("is the datatype's job, never cellValue's guess at a slash", () => {
     // cellValue is datatype-blind, so it must leave a URL (and any other
     // slashed string) whole rather than reading it as a path.
-    expect(cellValue(TABLE_UNITS, "https://example.com/x")).toBe(
+    expect(cellValue(SHIPPED_UNITS, "https://example.com/x")).toBe(
       "https://example.com/x"
     )
   })
@@ -138,18 +138,18 @@ describe("referenceID / referenceCell", () => {
 
 describe("cellValue", () => {
   it("reads money and a quantity by their shape, anything else as keys", () => {
-    expect(cellValue(TABLE_UNITS, { amount: 1999, currency: "EUR" })).toBe(
+    expect(cellValue(SHIPPED_UNITS, { amount: 1999, currency: "EUR" })).toBe(
       "19.99 EUR"
     )
-    expect(cellValue(TABLE_UNITS, { value: "37", unit: "Cel" })).toBe("37 °C")
+    expect(cellValue(SHIPPED_UNITS, { value: "37", unit: "Cel" })).toBe("37 °C")
     expect(
-      cellValue(TABLE_UNITS, [
+      cellValue(SHIPPED_UNITS, [
         { value: "0.5", unit: "ng/mL", comparator: "<" },
         { value: "8000", unit: "{steps}" },
       ])
     ).toBe("<0.5 ng/mL, 8000 steps")
     // A number where the digits belong is not the shape.
-    expect(cellValue(TABLE_UNITS, { value: 37, unit: "Cel" })).toBe(
+    expect(cellValue(SHIPPED_UNITS, { value: 37, unit: "Cel" })).toBe(
       "{value, unit}"
     )
   })

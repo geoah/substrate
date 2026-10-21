@@ -3,12 +3,20 @@
  * word beside the value, the delta in its tone, and the range bar's value
  * placement. Invented values only. */
 
-import { cleanup, render } from "@testing-library/react"
+import { cleanup, render as renderUI } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { bandOf, toneColor, type Band } from "@/lib/record-view"
 
 import { Dial, RangeBar, StatTile, arcPath } from "./stat-tile"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+
+/** Every render gets the shipped units, as the signed-in console's
+ * `UnitsProvider` gives a page the repository's. */
+const render = (
+  ui: Parameters<typeof renderUI>[0],
+  options?: Parameters<typeof renderUI>[1]
+) => renderUI(ui, { wrapper: ShippedUnits, ...options })
 
 afterEach(cleanup)
 

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
 import { completionsAt, pathAt, writtenProperties } from "./yaml-completion"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 const taskKind: KindInfo = {
   identity: "samples.substrate.reamde.dev/tasks/task",
@@ -69,7 +69,7 @@ data:
 function at(text: string) {
   const lines = text.split("\n")
   const line = lines.length - 1
-  return completionsAt(TABLE_UNITS, text, line, lines[line].length, taskKind)
+  return completionsAt(SHIPPED_UNITS, text, line, lines[line].length, taskKind)
 }
 
 function labels(text: string): string[] {

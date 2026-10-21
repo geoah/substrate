@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
 import { accountFormGroups } from "./account-form"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 function kind(traits: string[], props: Record<string, unknown>): KindInfo {
   return {
@@ -56,7 +56,7 @@ const GOOGLE_LIKE = {
 describe("accountFormGroups", () => {
   it("offers the owner's toggles and settings, and nothing any other hand writes", () => {
     const g = accountFormGroups(
-      TABLE_UNITS,
+      SHIPPED_UNITS,
       kind(["accountconfig", "sync"], GOOGLE_LIKE)
     )
     expect(g.toggles.map((f) => f.name)).toEqual([
@@ -74,7 +74,7 @@ describe("accountFormGroups", () => {
 
   it("leaves the sync trait's two owner hands to the Sync now and Pause buttons", () => {
     const g = accountFormGroups(
-      TABLE_UNITS,
+      SHIPPED_UNITS,
       kind(["accountconfig", "sync"], GOOGLE_LIKE)
     )
     const names = g.all.map((f) => f.name)
@@ -84,7 +84,7 @@ describe("accountFormGroups", () => {
 
   it("offers those two names on a kind that does not bind the trait", () => {
     const g = accountFormGroups(
-      TABLE_UNITS,
+      SHIPPED_UNITS,
       kind(["accountconfig"], GOOGLE_LIKE)
     )
     const names = g.all.map((f) => f.name)

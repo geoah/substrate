@@ -60,12 +60,12 @@ describe("UnitGraph", () => {
   it("groups the units a declaration admits", () => {
     const g = graph()
     expect(g.unitsFor({ unit: "kg" })).toEqual([
-      { measure: "gram", units: ["g", "kg", "lb", "ug"] },
+      { heading: "gram", units: ["g", "kg", "lb", "ug"] },
     ])
     expect(g.unitsFor({ unit: "kg", units: ["[lb_av]"] })).toEqual([
       { units: ["kg", "lb"] },
     ])
-    expect(g.unitsFor().map((grp) => grp.measure)).toContain("degree Celsius")
+    expect(g.unitsFor().map((grp) => grp.heading)).toContain("degree Celsius")
     expect(g.unitChoices("[lb_av]")).toEqual(["lb", "g", "kg", "ug"])
     expect(g.unitChoices("furlong")).toEqual(["furlong"])
   })

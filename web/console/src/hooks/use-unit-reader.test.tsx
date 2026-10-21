@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
-/** The unit reader a component takes: the engine's table where the server
- * says its switch is off, the repository's graph where it is on, and neither
- * while the graph loads or after it failed. The graph is fetched again when
+/** The unit reader a component takes: the repository's graph, and a
+ * pending reader while the graph loads or after it failed. The graph is fetched again when
  * the change stream names a unit or conversion record, when the watch opens,
  * after a compaction and when the reader mounts again. */
 
@@ -38,23 +37,11 @@ vi.mock("@/lib/api/changes", () => ({
 
 import { useUnitReader } from "./use-unit-reader"
 
-/** A server whose switch is `graphOn` and whose graph is at `revision`,
- * which a test moves; `units` answers the graph route in its place. */
-function serve(
-  graphOn: boolean,
-  revision = 1,
-  units?: () => Promise<Response>
-) {
+/** A server whose graph is at `revision`, which a test moves; `units`
+ * answers the graph route in its place. */
+function serve(revision = 1, units?: () => Promise<Response>) {
   const server = { revision, fetched: 0 }
-  const fetch = vi.fn((input: RequestInfo | URL) => {
-    const url = String(input)
-    if (url.includes("server.json")) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ units: { graph: graphOn } }), {
-          status: 200,
-        })
-      )
-    }
+  const fetch = vi.fn(() => {
     server.fetched++
     if (units) return units()
     return Promise.resolve(
@@ -62,8 +49,6 @@ function serve(
         JSON.stringify({
           ...fixtureTable,
           revision: server.revision,
-          measures: [],
-          aliases: {},
           unseeded: [],
         }),
         { status: 200 }
@@ -101,18 +86,8 @@ afterEach(() => {
 })
 
 describe("useUnitReader", () => {
-  it("reads the table while the switch is off, and never fetches the graph", async () => {
-    const server = serve(false)
-    const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
-    await waitFor(() => expect(result.current.status).toBe("table"))
-    expect(result.current.graph).toBeUndefined()
-    expect(result.current.canonical("lb")).toBe("[lb_av]")
-    expect(server.fetched).toBe(0)
-    expect(watch.calls).toHaveLength(0)
-  })
-
-  it("reads the graph once the switch is on, and drops it on a unit change", async () => {
-    const server = serve(true)
+  it("reads the repository's graph, and drops it on a unit change", async () => {
+    const server = serve()
     const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.graph?.revision).toBe(1))
     expect(result.current.status).toBe("ready")
@@ -126,25 +101,25 @@ describe("useUnitReader", () => {
     await waitFor(() => expect(result.current.graph?.revision).toBe(2))
   })
 
-  it("answers nothing from the table while the graph loads", async () => {
-    serve(true, 1, () => new Promise<Response>(() => undefined))
+  it("answers nothing while the graph loads", async () => {
+    serve(1, () => new Promise<Response>(() => undefined))
     const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
     expect(result.current.status).toBe("loading")
     await waitFor(() => expect(watch.calls).toHaveLength(1))
     const units = result.current
     expect(units.status).toBe("loading")
     expect(units.graph).toBeUndefined()
-    // The table converts these and prints Cel as °C; the pending reader
+    // The graph converts these and prints Cel as °C; the pending reader
     // does neither.
     expect(units.convert(1, "kg", "[lb_av]")).toBeUndefined()
     expect(units.symbol("Cel")).toBe("Cel")
-    expect(units.unitsFor({ measures: "mass" })).toEqual([])
+    expect(units.unitsFor({ unit: "kg" })).toEqual([])
     expect(units.check({ value: "1", unit: "kg" })).toMatch(/still loading/)
     expect(units.format({ value: "37", unit: "Cel" })).toBe("37 Cel")
   })
 
-  it("says why when the graph fails, and answers nothing from the table", async () => {
-    serve(true, 1, () =>
+  it("says why when the graph fails, and answers nothing", async () => {
+    serve(1, () =>
       Promise.resolve(
         new Response(
           JSON.stringify({ error: { code: "internal", message: "boom" } }),
@@ -162,7 +137,7 @@ describe("useUnitReader", () => {
   })
 
   it("fetches the graph again once the watch is live, for a change made before it opened", async () => {
-    const server = serve(true)
+    const server = serve()
     const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.graph?.revision).toBe(1))
     // Committed after the first fetch and before the watch's start: no row
@@ -173,7 +148,7 @@ describe("useUnitReader", () => {
   })
 
   it("fetches the graph again after a compaction, and watches from the head again", async () => {
-    const server = serve(true)
+    const server = serve()
     const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.graph?.revision).toBe(1))
     const first = watch.calls.at(-1)!
@@ -186,7 +161,7 @@ describe("useUnitReader", () => {
   })
 
   it("sees a change made while it was unmounted when it mounts again", async () => {
-    const server = serve(true)
+    const server = serve()
     const shared = client()
     const first = renderHook(() => useUnitReader(), {
       wrapper: wrapper(shared),
