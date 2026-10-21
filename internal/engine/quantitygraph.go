@@ -111,7 +111,6 @@ func groupGraphDecls(decls []quantityDecl) []graphQuantityGroup {
 // condQuantityGraph is condQuantity under the switch.
 func (ds *dataset) condQuantityGraph(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, key string, c substrate.Cond, decls []quantityDecl, bounded bool) error {
 	v := `(props->` + sqlLiteral(key) + `)`
-	groups := groupGraphDecls(decls)
 	compare := func(op string, raw any) (string, error) {
 		at, err := ds.builderUnits(ctx, x, b)
 		if err != nil {
@@ -122,12 +121,30 @@ func (ds *dataset) condQuantityGraph(ctx context.Context, x dbx, b *builder, typ
 		if err != nil {
 			return "", fmt.Errorf("%w: %s compares against a quantity value: %w", substrate.ErrValidation, key, err)
 		}
-		used, err := ds.usedSpellings(ctx, x, b, key, g, oid, decls)
+		// A kindless filter reads every kind declaring the property, and a
+		// kind whose anchor the operand does not reach matches nothing
+		// rather than refusing the kinds it does reach: each declaration is
+		// judged alone before the kinds are grouped by how they read.
+		var refused error
+		cands := decls
+		if len(types) == 0 {
+			cands = nil
+			for _, d := range decls {
+				if err := anchorReaches(g, d.spec, oid); err != nil {
+					if refused == nil {
+						refused = err
+					}
+					continue
+				}
+				cands = append(cands, d)
+			}
+		}
+		used, err := ds.usedSpellings(ctx, x, b, key, g, oid, cands)
 		if err != nil {
 			return "", err
 		}
 		var ors []string
-		var refused error
+		groups := groupGraphDecls(cands)
 		for _, grp := range groups {
 			clause, err := graphQuantityClause(b, g, v, grp, used, op, oid, ovalue, bounded)
 			if err != nil && len(types) == 0 {
@@ -184,6 +201,20 @@ func (ds *dataset) condQuantityGraph(ctx context.Context, x dbx, b *builder, typ
 		b.add(clause)
 	}
 	return nil
+}
+
+// anchorReaches refuses an operand unit a declaration's anchor `unit` is
+// not linearly connected to; a declaration with no anchor admits any.
+func anchorReaches(g *vocabulary.UnitGraph, spec *vocabulary.QuantitySpec, oid string) error {
+	if spec == nil || spec.Unit == "" {
+		return nil
+	}
+	anchor, ok := g.Resolve(spec.Unit)
+	if !ok {
+		return fmt.Errorf("the declaration's unit %q names no unit of this repository", spec.Unit)
+	}
+	_, _, err := g.Linear(oid, anchor, false)
+	return err
 }
 
 // graphOperand reads a filter's operand: a quantity value with no
@@ -286,14 +317,7 @@ func (ds *dataset) usedSpellings(ctx context.Context, x dbx, b *builder, key str
 // alone, and a bounded value's half-line read as quantityClause reads it.
 func graphQuantityClause(b *builder, g *vocabulary.UnitGraph, v string, grp graphQuantityGroup, used map[string]string, op, oid string, ovalue *big.Rat, bounded bool) (string, error) {
 	for _, spec := range grp.specs {
-		if spec == nil || spec.Unit == "" {
-			continue
-		}
-		anchor, ok := g.Resolve(spec.Unit)
-		if !ok {
-			return "", fmt.Errorf("the declaration's unit %q names no unit of this repository", spec.Unit)
-		}
-		if _, _, err := g.Linear(oid, anchor, false); err != nil {
+		if err := anchorReaches(g, spec, oid); err != nil {
 			return "", err
 		}
 	}

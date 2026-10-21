@@ -1553,3 +1553,24 @@ func TestDeclaredQuantityDefaultIsHeldToItsDeclaration(t *testing.T) {
 		t.Fatalf("the default stored %v", rec.Properties["capped"])
 	}
 }
+
+// A filter naming no kind reads every kind declaring the property: a kind
+// anchored in another component matches nothing and leaves the kinds the
+// operand reaches matching, whether the two read a value alike or not.
+func TestKindlessFilterSkipsAnUnrelatedAnchor(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	ctx := context.Background()
+	installOther(t, ds, map[string]any{"type": "quantity", "unit": "K"})
+	putThing(t, ds, "heavy", map[string]any{"weight": qty("2", "kg")})
+	putThing(t, ds, "light", map[string]any{"weight": qty("1", "lb")})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: "warm", Properties: map[string]any{"weight": qty("300", "K")}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "1", "kg"), OrderBy: []substrate.Order{{Property: "id"}}})
+	wantIDs(t, "weight above 1 kg over every kind", p, err, "heavy")
+	p, err = ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "0", "Cel"), OrderBy: []substrate.Order{{Property: "id"}}})
+	wantIDs(t, "weight above 0 Cel over every kind", p, err, "warm")
+	_, err = ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "1", "deg")})
+	wantValidation(t, "an operand no kind's anchor reaches", err, "compares against a quantity value")
+}
