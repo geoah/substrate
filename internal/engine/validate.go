@@ -29,7 +29,19 @@ var reDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // coerceProps validates a write's properties against the type and returns
 // them in their stored (JSON-safe, normalised) form. A nil value is a
 // delete marker and passes through.
-func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error) {
+// coercer holds written values to their declarations. graphUnits is the unit
+// graph switch (decision 0186): a quantity is then held to its shape alone,
+// and the write transaction resolves its unit through the repository's graph
+// (quantitywrite.go resolveQuantities).
+type coercer struct{ graphUnits bool }
+
+// coercer is how the dataset's writes hold values: through the repository's
+// unit graph once the switch is on (WithUnitGraph).
+func (ds *dataset) coercer() coercer { return coercer{graphUnits: ds.svc.unitGraphOn} }
+
+func (t *txn) coercer() coercer { return t.ds.coercer() }
+
+func (c coercer) props(ty *vocabulary.Kind, in map[string]any) (map[string]any, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
@@ -66,7 +78,7 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 		if p.Sensitive() && v == Redacted {
 			continue
 		}
-		cv, err := coerceProp(ty, name, p, v)
+		cv, err := c.prop(ty, name, p, v)
 		if err == nil {
 			err = storableText(cv)
 		}
@@ -81,6 +93,20 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 	}
 	return out, nil
 }
+
+// The coercions read through the engine's table, for every caller that is not
+// a write under the unit graph switch, which takes coercer{graphUnits: true}.
+func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error) {
+	return coercer{}.props(ty, in)
+}
+
+func coerceValue(p *vocabulary.Property, v any) (any, error) { return coercer{}.value(p, v) }
+
+func coerceReference(p *vocabulary.Property, v any) (any, error) { return coercer{}.reference(p, v) }
+
+func coerceScalar(p *vocabulary.Property, v any) (any, error) { return coercer{}.scalar(p, v) }
+
+func coerceQuantity(p *vocabulary.Property, v any) (any, error) { return coercer{}.quantity(p, v) }
 
 // storableText refuses, as a validation problem naming the property, the text
 // Postgres would refuse at the INSERT: a NUL (U+0000) anywhere in a string,
@@ -133,7 +159,7 @@ func storableText(v any) error {
 //
 // A nil value is dropped rather than stored, for the same reason: writing
 // `{since: null}` and omitting `since` have to leave the same value behind.
-func coerceLinkProps(p *vocabulary.Property, in map[string]any) (map[string]any, error) {
+func (c coercer) linkProps(p *vocabulary.Property, in map[string]any) (map[string]any, error) {
 	var problems []string
 	var out map[string]any
 	for _, name := range sortedKeys(in) {
@@ -146,7 +172,7 @@ func coerceLinkProps(p *vocabulary.Property, in map[string]any) (map[string]any,
 		if v == nil {
 			continue
 		}
-		cv, err := coerceValue(lp, v)
+		cv, err := c.value(lp, v)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("link property %q: %v", name, err))
 			continue
@@ -174,10 +200,10 @@ func coerceLinkProps(p *vocabulary.Property, in map[string]any) (map[string]any,
 // map, a list, or the value itself. The container is the declaration's, so the
 // same function coerces a kind's own property and a field at any admitted
 // depth — which is what keeps a nested list and a top-level list one rule.
-func coerceValue(p *vocabulary.Property, v any) (any, error) {
+func (c coercer) value(p *vocabulary.Property, v any) (any, error) {
 	switch {
 	case p.Keyed:
-		return coerceKeyed(p, v)
+		return c.keyed(p, v)
 	case p.Repeated:
 		items, ok := v.([]any)
 		if !ok {
@@ -185,7 +211,7 @@ func coerceValue(p *vocabulary.Property, v any) (any, error) {
 		}
 		out := make([]any, 0, len(items))
 		for i, item := range items {
-			cv, err := coerceScalar(p, item)
+			cv, err := c.scalar(p, item)
 			if err != nil {
 				return nil, fmt.Errorf("[%d]: %w", i, err)
 			}
@@ -193,7 +219,7 @@ func coerceValue(p *vocabulary.Property, v any) (any, error) {
 		}
 		return out, nil
 	}
-	return coerceScalar(p, v)
+	return c.scalar(p, v)
 }
 
 // coerceKeyed validates a keyed map: the KEYS are data, so nothing refuses one
@@ -201,7 +227,7 @@ func coerceValue(p *vocabulary.Property, v any) (any, error) {
 // every VALUE follows the rest of the declaration (the declared fields for an
 // object, the declared scalar otherwise). A null value drops its key, exactly as
 // a null field drops from an object. An empty map stores as {}.
-func coerceKeyed(p *vocabulary.Property, v any) (any, error) {
+func (c coercer) keyed(p *vocabulary.Property, v any) (any, error) {
 	in, ok := v.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("expected a keyed map of %s", p.Datatype)
@@ -215,7 +241,7 @@ func coerceKeyed(p *vocabulary.Property, v any) (any, error) {
 		if kv == nil {
 			continue
 		}
-		cv, err := coerceScalar(p, kv)
+		cv, err := c.scalar(p, kv)
 		if err != nil {
 			return nil, fmt.Errorf(".%s: %w", key, err)
 		}
@@ -245,7 +271,7 @@ func coerceKeyed(p *vocabulary.Property, v any) (any, error) {
 // holding, and checking it here is the same post-write rule a kind's own
 // properties get. Admission counts the rows a field turning required would
 // strand, at the field's own depth (schemadiff.go), so the two doors agree.
-func coerceObject(p *vocabulary.Property, v any) (any, error) {
+func (c coercer) object(p *vocabulary.Property, v any) (any, error) {
 	in, ok := v.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("expected an object with fields %s", strings.Join(p.FieldOrder, ", "))
@@ -260,7 +286,7 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 		if fv == nil {
 			continue
 		}
-		cv, err := coerceValue(f, fv)
+		cv, err := c.value(f, fv)
 		if err != nil {
 			return nil, fmt.Errorf(".%s: %w", fname, err)
 		}
@@ -274,7 +300,7 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 		if _, named := in[fname]; named {
 			continue
 		}
-		cv, err := coerceValue(f, f.Default)
+		cv, err := c.value(f, f.Default)
 		if err != nil {
 			return nil, fmt.Errorf(".%s: the default: %w", fname, err)
 		}
@@ -335,7 +361,7 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 // core's `kind`), and it cannot be read as a path because nothing is left for an
 // id. Only empty-segment shapes are refused there, since "target/" is an id of
 // nothing.
-func coerceReference(p *vocabulary.Property, v any) (any, error) {
+func (c coercer) reference(p *vocabulary.Property, v any) (any, error) {
 	pin := p.To
 	if pin == vocabulary.ToAny {
 		pin = ""
@@ -346,7 +372,7 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		props, err := coerceLinkProps(p, nil)
+		props, err := c.linkProps(p, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +409,7 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 				rest[k] = kv
 			}
 		}
-		props, err := coerceLinkProps(p, rest)
+		props, err := c.linkProps(p, rest)
 		if err != nil {
 			return nil, err
 		}
@@ -447,12 +473,12 @@ func hasEmptySegment(id string) bool {
 		strings.Contains(id, "//")
 }
 
-func coerceScalar(p *vocabulary.Property, v any) (any, error) {
+func (c coercer) scalar(p *vocabulary.Property, v any) (any, error) {
 	switch p.Datatype {
 	case vocabulary.DatatypeObject:
-		return coerceObject(p, v)
+		return c.object(p, v)
 	case vocabulary.DatatypeReference:
-		return coerceReference(p, v)
+		return c.reference(p, v)
 	case vocabulary.DatatypeJSON:
 		return jsonRoundTrip(v)
 	case vocabulary.DatatypeBool:
@@ -475,7 +501,7 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 	case vocabulary.DatatypeMoney:
 		return coerceMoney(p, v)
 	case vocabulary.DatatypeQuantity:
-		return coerceQuantity(p, v)
+		return c.quantity(p, v)
 	case vocabulary.DatatypeFloat:
 		f, err := asFloat(v)
 		if err != nil {
@@ -862,6 +888,21 @@ type titleResolver struct {
 	row *erow
 }
 
+// quantity is a quantity value as a title prints it: the symbol of the
+// engine's table, or under the unit graph switch the symbol the
+// transaction's graph holds for the stored unit (decision 0186). The title
+// is stored with the write, so a later symbol edit never reprints it.
+func (r *titleResolver) quantity(v any) string {
+	if r.t == nil || !r.t.ds.svc.unitGraphOn {
+		return vocabulary.FormatQuantity(v)
+	}
+	at, err := r.t.unitGraph()
+	if err != nil {
+		return vocabulary.FormatQuantityIn(nil, v)
+	}
+	return vocabulary.FormatQuantityIn(at.graph, v)
+}
+
 func (r *titleResolver) Prop(name string) string {
 	// The loader refuses a sensitive property in a template; this is the
 	// second gate, because copying a value every read surface redacts into
@@ -894,7 +935,7 @@ func (r *titleResolver) Prop(name string) string {
 		}
 		// So is a quantity: it titles itself "72.5 kg".
 		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeQuantity && !p.Repeated && !p.Keyed {
-			return vocabulary.FormatQuantity(v)
+			return r.quantity(v)
 		}
 		return scalarString(v)
 	}
@@ -1105,7 +1146,7 @@ func (r *titleResolver) First(name, field string) string {
 			continue
 		}
 		if field == "" && p.Datatype == vocabulary.DatatypeQuantity {
-			if s := vocabulary.FormatQuantity(item); strings.TrimSpace(s) != "" {
+			if s := r.quantity(item); strings.TrimSpace(s) != "" {
 				return s
 			}
 			continue
@@ -1212,7 +1253,10 @@ func (t *txn) deriveTitle(ty *vocabulary.Kind, row *erow) (string, error) {
 // ftsBands splits a row into the three weighted search bands: title (A),
 // declared short string properties (B), body and prose (C). Properties opt
 // out with fts:false; secrets never index.
-func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
+//
+// Under the unit graph switch (graphUnits) a quantity indexes its digits and
+// its stored unit id, never a symbol (vocabulary.QuantitySearchText).
+func ftsBands(ty *vocabulary.Kind, row *erow, graphUnits bool) [3]string {
 	var b, c []string
 	for _, name := range ty.PropOrder {
 		p := ty.Props[name]
@@ -1223,7 +1267,7 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 		if p.Datatype == vocabulary.DatatypeQuantity && !p.Keyed {
 			// An object renders as nothing in scalarString; a quantity
 			// declared `fts: true` indexes its value text, "72.5 kg".
-			s = quantityText(row.Props[name])
+			s = quantityText(row.Props[name], graphUnits)
 		}
 		if s == "" {
 			continue

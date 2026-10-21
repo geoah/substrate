@@ -31,7 +31,7 @@ import (
 // admits (an alias is stored as its code), and a comparator only where the
 // property declares `comparator: true`. A declared min/max bounds the value,
 // compared exactly after converting it into each bound's unit.
-func coerceQuantity(p *vocabulary.Property, v any) (any, error) {
+func (c coercer) quantity(p *vocabulary.Property, v any) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf(`a quantity value is an object {%s: "72.5", %s: "kg"}`,
@@ -60,14 +60,24 @@ func coerceQuantity(p *vocabulary.Property, v any) (any, error) {
 	}
 	written, _ := m[vocabulary.QuantityUnit].(string)
 	if written == "" {
+		if c.graphUnits {
+			return nil, fmt.Errorf("a quantity value needs %s, a unit of this repository (kg, Cel, mmol/L)", vocabulary.QuantityUnit)
+		}
 		return nil, fmt.Errorf("a quantity value needs %s, a UCUM code (kg, Cel, mmol/L)", vocabulary.QuantityUnit)
 	}
-	unit, err := vocabulary.CanonicalUnit(written)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", vocabulary.QuantityUnit, err)
-	}
-	if _, err := p.Quantity.CheckUnit(unit); err != nil {
-		return nil, fmt.Errorf("%s: %w", vocabulary.QuantityUnit, err)
+	// Under the unit graph switch the unit is the repository's to read: the
+	// write transaction resolves it and holds it to the declaration
+	// (quantitywrite.go resolveQuantities), and the shape is all that is
+	// checked here.
+	unit := written
+	if !c.graphUnits {
+		var err error
+		if unit, err = vocabulary.CanonicalUnit(written); err != nil {
+			return nil, fmt.Errorf("%s: %w", vocabulary.QuantityUnit, err)
+		}
+		if _, err := p.Quantity.CheckUnit(unit); err != nil {
+			return nil, fmt.Errorf("%s: %w", vocabulary.QuantityUnit, err)
+		}
 	}
 	out := map[string]any{vocabulary.QuantityValue: digits, vocabulary.QuantityUnit: unit}
 	if c, held := m[vocabulary.QuantityComparator]; held && c != nil {
@@ -81,7 +91,7 @@ func coerceQuantity(p *vocabulary.Property, v any) (any, error) {
 		}
 		out[vocabulary.QuantityComparator] = cs
 	}
-	if q := p.Quantity; q != nil && (q.Min != nil || q.Max != nil) {
+	if q := p.Quantity; !c.graphUnits && q != nil && (q.Min != nil || q.Max != nil) {
 		r, _ := new(big.Rat).SetString(digits)
 		if err := q.CheckBounds(r, unit); err != nil {
 			return nil, err
@@ -92,17 +102,21 @@ func coerceQuantity(p *vocabulary.Property, v any) (any, error) {
 
 // quantityText is a quantity property's value as a title and the search index
 // read it: "72.5 kg", or a list's values joined.
-func quantityText(v any) string {
+func quantityText(v any, graphUnits bool) string {
+	format := vocabulary.FormatQuantity
+	if graphUnits {
+		format = vocabulary.QuantitySearchText
+	}
 	if list, ok := v.([]any); ok {
 		var parts []string
 		for _, item := range list {
-			if s := vocabulary.FormatQuantity(item); s != "" {
+			if s := format(item); s != "" {
 				parts = append(parts, s)
 			}
 		}
 		return strings.Join(parts, ", ")
 	}
-	return vocabulary.FormatQuantity(v)
+	return format(v)
 }
 
 // --- filters ---
@@ -771,6 +785,10 @@ func quantityNarrows(cur, cand *vocabulary.QuantitySpec) bool {
 	switch {
 	case cand.Measure != cur.Measure:
 		return true
+	// A named or moved anchor may refuse a value, and a flipped `delta`
+	// rereads every one (decision 0186).
+	case cand.Unit != "" && cand.Unit != cur.Unit, cand.Delta != cur.Delta:
+		return true
 	case len(cand.Units) > 0 && (len(cur.Units) == 0 || slices.ContainsFunc(cur.Units, func(u string) bool { return !slices.Contains(cand.Units, u) })):
 		return true
 	case cur.Comparator && !cand.Comparator:
@@ -791,6 +809,21 @@ func quantityRefuses(path []fieldStep, cand *vocabulary.Property) func([]byte) b
 		_, err := coerceQuantity(cand, leaf)
 		return err != nil
 	})
+}
+
+// quantityRefusesIn is quantityRefuses under the unit graph switch: true
+// when a quantity under the declared path is one a write through the graph
+// refuses under the candidate declaration (quantitywrite.go).
+func quantityRefusesIn(path []fieldStep, cand *vocabulary.Property) func(*vocabulary.UnitGraph) func([]byte) bool {
+	return func(g *vocabulary.UnitGraph) func([]byte) bool {
+		return quantityLeaves(path, func(leaf map[string]any) bool {
+			coerced, err := coercer{graphUnits: true}.quantity(cand, leaf)
+			if err != nil {
+				return true
+			}
+			return resolveQuantityLeaf(g, cand.Quantity, coerced.(map[string]any), cand.Quantity != nil && cand.Quantity.Delta) != nil
+		})
+	}
 }
 
 // quantityRereads judges one stored root value for a measure change: true
@@ -894,6 +927,12 @@ func quantityChange(cur, cand *vocabulary.QuantitySpec) string {
 	}
 	if cand.Max != nil && (cur.Max == nil || *cand.Max != *cur.Max) {
 		parts = append(parts, "max "+cand.Max.String())
+	}
+	if cand.Unit != "" && cand.Unit != cur.Unit {
+		parts = append(parts, "unit "+cand.Unit)
+	}
+	if cand.Delta != cur.Delta {
+		parts = append(parts, "delta "+strconv.FormatBool(cand.Delta))
 	}
 	return strings.Join(parts, ", ")
 }

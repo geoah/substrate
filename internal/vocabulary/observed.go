@@ -90,6 +90,8 @@ const (
 	// value's unit resolved to when it was written, which the engine
 	// computes and the index converts in (decision 0153).
 	ObservedMeasure = "measure"
+	// ObservedMetric is the reference to the metric a value is a value of.
+	ObservedMetric = obsMetric
 	// ObservedOrigin and ObservedOrigins are the provider record, or a
 	// trace's records, an adapter built the row from (decision 0162).
 	ObservedOrigin  = "origin"
@@ -229,6 +231,11 @@ type ObservedRecord struct {
 	// Result is whether the kind binds core's `result` beside `observed`,
 	// which holds a laboratory's result shapes to one per record.
 	Result bool
+	// Units is the repository's unit graph under the engine's unit graph
+	// switch (decision 0186), nil before it: the record's units are then
+	// already resolved to unit ids, `delta` reads on any unit, `circular`
+	// needs a unit with a turn, and no measure is stamped.
+	Units *UnitGraph
 }
 
 // CheckObserved holds one record to the trait's rules and answers every
@@ -451,7 +458,7 @@ func (c *obsCheck) packed(form string) {
 	case n > MaxTracePoints:
 		c.addf("props.%s: %d points; a trace holds at most %d", list, n, MaxTracePoints)
 	}
-	if unit := c.str(obsUnit); unit != "" {
+	if unit := c.str(obsUnit); unit != "" && c.r.Units == nil {
 		code, err := CanonicalUnit(unit)
 		if err == nil {
 			_, err = MeasureOf(code)
@@ -515,7 +522,7 @@ func (c *obsCheck) traceSize() {
 		}
 	}
 	delta, _ := c.r.Props[obsDelta].(bool)
-	if m := ObservedMeasureFor(c.str(obsUnit), "", delta); m != "" {
+	if m := ObservedMeasureFor(c.str(obsUnit), "", delta); m != "" && c.r.Units == nil {
 		props[ObservedMeasure] = m
 	}
 	if raw, err := json.Marshal(props); err == nil && len(raw) > MaxTraceBytes {
@@ -636,8 +643,29 @@ func (c *obsCheck) readingRules(form string) {
 			unit = ""
 		}
 	}
+	if c.r.Units != nil {
+		c.graphFlags(unit)
+		return
+	}
 	c.measureFlag(obsDelta, unit, "temperature", "marks a temperature difference")
 	c.measureFlag(obsCircular, unit, "angle", "averages an angle on the circle")
+}
+
+// graphFlags holds the two reading flags under the unit graph: `delta`
+// marks a difference in any unit, and `circular` needs a unit whose circle
+// the graph knows, its own `turn` or its circular component's.
+func (c *obsCheck) graphFlags(unit string) {
+	if b, _ := c.r.Props[obsDelta].(bool); b && unit == "" {
+		c.addf("props.%s: marks a difference, and this record has no unit", obsDelta)
+	}
+	if b, _ := c.r.Props[obsCircular].(bool); b {
+		switch {
+		case unit == "":
+			c.addf("props.%s: averages an angle on the circle, and this record has no unit", obsCircular)
+		case c.r.Units.Turn(unit) == nil:
+			c.addf("props.%s: averages an angle on the circle, and %s declares no turn, one full circle in the unit", obsCircular, unit)
+		}
+	}
 }
 
 // measureFlag holds a true bool flag to the measure the value's unit belongs

@@ -132,6 +132,9 @@ type options struct {
 	// and as an open catch-up (unitseed.go).
 	seedUnits    bool
 	seedUnitsSet bool
+	// unitGraph reads and writes every quantity through the repository's
+	// unit graph instead of the engine's table (WithUnitGraph).
+	unitGraph bool
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -404,6 +407,15 @@ func WithUnitSeed(on bool) Option {
 	return func(o *options) { o.seedUnits, o.seedUnitsSet = on, true }
 }
 
+// WithUnitGraph selects the second code path decision 0186 prepares: every
+// quantity write, filter, order, observed index row, aggregate read, unit
+// conversion and function host call reads the repository's unit graph
+// instead of the engine's table. Off by default until the switch (step 4 of
+// docs/plans/dynamic-units.md), and removed with the table (step 5).
+func WithUnitGraph(on bool) Option {
+	return func(o *options) { o.unitGraph = on }
+}
+
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
@@ -538,6 +550,9 @@ type service struct {
 	// seedUnits writes the shipped unit and conversion records at creation
 	// and as an open catch-up (unitseed.go).
 	seedUnits bool
+	// unitGraphOn reads and writes every quantity through the repository's
+	// unit graph (WithUnitGraph, decision 0186).
+	unitGraphOn bool
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs    unitGraphCache
@@ -790,6 +805,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,
 		seedUnits:          o.seedUnits,
+		unitGraphOn:        o.unitGraph,
 		log:                o.log,
 		bg:                 newBackground(),
 		datasets:           map[string]*dataset{},

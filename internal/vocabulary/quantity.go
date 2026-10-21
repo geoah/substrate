@@ -150,6 +150,52 @@ func FormatQuantity(v any) string {
 	return cmp + value + " " + symbol
 }
 
+// FormatQuantityIn renders a stored quantity value the way FormatQuantity
+// does, printing the symbol the repository's unit graph holds for the
+// value's unit (decision 0186): "72.5 kg", "90°", "8000 steps". A unit the
+// graph does not hold prints as stored.
+func FormatQuantityIn(g *UnitGraph, v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := m[QuantityValue].(string)
+	unit, _ := m[QuantityUnit].(string)
+	if value == "" || unit == "" {
+		return ""
+	}
+	cmp, _ := m[QuantityComparator].(string)
+	symbol := unit
+	if g != nil {
+		symbol = g.Symbol(unit)
+	}
+	switch symbol {
+	case "":
+		return cmp + value
+	case "°", "′", "″", "'", "''":
+		// An angle's symbol sits against the number: 90°, not 90 °.
+		return cmp + value + symbol
+	}
+	return cmp + value + " " + symbol
+}
+
+// QuantitySearchText is a stored quantity value as the search index reads
+// it under the unit graph (decision 0186): the digits and the stored unit
+// id, never a symbol, so a symbol edit or a rebuild never moves a result.
+func QuantitySearchText(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := m[QuantityValue].(string)
+	unit, _ := m[QuantityUnit].(string)
+	if value == "" || unit == "" {
+		return ""
+	}
+	cmp, _ := m[QuantityComparator].(string)
+	return cmp + value + " " + unit
+}
+
 var (
 	reDecimal         = regexp.MustCompile(`^[+-]?[0-9]+(\.[0-9]+)?$`)
 	reDecimalExponent = regexp.MustCompile(`^[+-]?[0-9]*\.?[0-9]+[eE][+-]?[0-9]+$`)

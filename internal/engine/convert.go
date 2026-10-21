@@ -362,8 +362,11 @@ func (t *txn) backfillValues(kc *kindConversion) error {
 	values := make(map[string]any, len(kc.backfills))
 	for _, b := range kc.backfills {
 		p := kc.kind.Props[b.prop]
-		value, err := coerceValue(p, p.Default)
+		value, err := t.coercer().value(p, p.Default)
 		if err != nil {
+			return fmt.Errorf("backfill %q: %w", b.prop, err)
+		}
+		if err := t.resolveDefault(p, value); err != nil {
 			return fmt.Errorf("backfill %q: %w", b.prop, err)
 		}
 		values[b.prop] = value

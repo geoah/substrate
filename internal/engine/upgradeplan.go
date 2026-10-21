@@ -39,6 +39,9 @@ import (
 type dbReader struct {
 	ctx context.Context
 	db  *sql.DB
+	// ds is the dataset the preview reads, whose unit graph a quantity
+	// narrowing judges stored values through under the switch.
+	ds *dataset
 }
 
 func (r dbReader) row(sqlText string, args ...any) *sql.Row {
@@ -259,7 +262,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		}
 		return plan, err
 	}
-	q := dbReader{ctx: ctx, db: ds.db}
+	q := dbReader{ctx: ctx, db: ds.db, ds: ds}
 	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}

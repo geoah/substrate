@@ -755,9 +755,9 @@ func (t *txn) usedUnitSpellings(was *vocabulary.UnitGraph, affected map[string]b
 }
 
 // declaredUnitSpellings is every unit spelling a declaration names, by its
-// vocabulary.UnitSpellingKey: a quantity property's listed `units`, its
-// bounds and its default, at any depth, each with the property that names
-// it.
+// vocabulary.UnitSpellingKey: a quantity property's `unit`, its listed
+// `units`, its bounds and its default, at any depth, each with the property
+// that names it.
 func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 	out := map[string]string{}
 	if reg == nil {
@@ -776,6 +776,7 @@ func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 			}
 		}
 		if q := p.Quantity; q != nil {
+			add(q.Unit)
 			for _, u := range q.Units {
 				add(u)
 			}

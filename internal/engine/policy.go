@@ -667,7 +667,7 @@ func (t *txn) putGatedRequest(gw *gatedWrite) (string, error) {
 			op = opPatch
 			props[propTarget] = vocabulary.RecordPath(existing.Kind, existing.ID)
 		}
-		norm, err := normalizeDiff(gw.kind, map[string]any{"properties": gw.props}, op)
+		norm, err := normalizeDiff(t.coercer(), gw.kind, map[string]any{"properties": gw.props}, op)
 		if err != nil {
 			return "", err
 		}

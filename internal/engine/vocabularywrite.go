@@ -223,7 +223,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if err != nil {
 		return plan, err
 	}
-	q := dbReader{ctx: ctx, db: ds.db}
+	q := dbReader{ctx: ctx, db: ds.db, ds: ds}
 	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}
@@ -942,7 +942,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 	// A declared default is stored by the write path, so it is refused here on
 	// the terms the write path would refuse it on.
-	if defaults := checkDeclaredDefaults(candidate, touched); len(defaults) > 0 {
+	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
 		return nil, &substrate.ValidationError{Problems: defaults}
 	}
 

@@ -186,7 +186,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// land at boot and break every create of that kind afterwards, and the door
 	// that refuses it by hand would have caught it. It needs no live rows, so it
 	// is decided before any row is counted.
-	st.refused = checkDeclaredDefaults(reg, st.upgrade)
+	st.refused = checkDeclaredDefaults(ds.coercer(), reg, st.upgrade)
 	// The retired-name check the same door takes (decision 0055): a shipped
 	// declaration that reuses a name this repository's stored closure retired,
 	// or a tree that dropped a stored retirement, is refused before any row
@@ -234,7 +234,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 			candT, _ := candidate.ByIdentity(ident)
 			st.narrowings = append(st.narrowings, typeNarrowings(curT, candT, moved)...)
 			st.refused = append(st.refused, kindRetirementGuards(curT, candT)...)
-			for _, line := range kindDefaultProblems(candT) {
+			for _, line := range kindDefaultProblems(ds.coercer(), candT) {
 				if !slices.Contains(st.refused, line) {
 					st.refused = append(st.refused, line)
 				}
@@ -472,7 +472,7 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 	if len(st.upgrade) == 0 {
 		return st.plans, nil
 	}
-	blockers, plan, err := st.guards(dbReader{ctx: ctx, db: ds.db}, ds.svc.conversionCeiling)
+	blockers, plan, err := st.guards(dbReader{ctx: ctx, db: ds.db, ds: ds}, ds.svc.conversionCeiling)
 	if err != nil {
 		return nil, err
 	}

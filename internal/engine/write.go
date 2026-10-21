@@ -244,7 +244,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	if err != nil {
 		return nil, err
 	}
-	props, err := coerceProps(ty, authored)
+	props, err := t.coercer().props(ty, authored)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +684,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	if err := checkCAS(existing, in.IfVersion); err != nil {
 		return nil, err
 	}
-	props, err := coerceProps(ty, authored)
+	props, err := t.coercer().props(ty, authored)
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +852,14 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// A packed observed record's `stats` is the engine's and its `unit` is
 	// stored as a table code (observed.go): both settle before the managed
 	// check reads the write.
-	prepareObserved(sp)
+	if err := t.prepareObserved(sp); err != nil {
+		return nil, err
+	}
+	// Under the unit graph switch every written quantity's unit resolves to
+	// its id and is held to its declaration here (quantitywrite.go).
+	if err := t.resolveQuantities(sp); err != nil {
+		return nil, err
+	}
 	// A managed property is the engine's to write, on a data kind exactly as
 	// on a declaration row (checkDeclarationWrite).
 	if err := t.checkManagedProps(sp); err != nil {
@@ -1924,7 +1931,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 		}
 		ty = resolved
 	}
-	norm, err := normalizeDiffFor(ty, diff, op)
+	norm, err := normalizeDiffFor(t.coercer(), ty, diff, op)
 	if err != nil {
 		return nil
 	}
@@ -2022,7 +2029,7 @@ func (t *txn) admitAdjustedDiff(sp *applySpec) (bool, error) {
 		}
 		ty = resolved
 	}
-	norm, err := normalizeDiffFor(ty, diff, op)
+	norm, err := normalizeDiffFor(t.coercer(), ty, diff, op)
 	if err != nil {
 		return false, fmt.Errorf("adjustedDiff: %w", err)
 	}
@@ -2178,7 +2185,7 @@ func (t *txn) requestTargetKind(target string) (*vocabulary.Kind, error) {
 // form, so every door stores the shape the accept transition decodes — a bare
 // property map lands wrapped rather than failing at accept.
 func (t *txn) storeNormalizedDiff(sp *applySpec, ty *vocabulary.Kind, diff map[string]any, op string) error {
-	norm, err := normalizeDiffFor(ty, diff, op)
+	norm, err := normalizeDiffFor(t.coercer(), ty, diff, op)
 	if err != nil {
 		return err
 	}
@@ -2190,9 +2197,9 @@ func (t *txn) storeNormalizedDiff(sp *applySpec, ty *vocabulary.Kind, diff map[s
 // when it resolves, and by SHAPE alone when it does not (the targetless patch
 // request, whose property-level checks have no kind to run against and wait for
 // the accept to say "no target").
-func normalizeDiffFor(ty *vocabulary.Kind, diff map[string]any, op string) (map[string]any, error) {
+func normalizeDiffFor(c coercer, ty *vocabulary.Kind, diff map[string]any, op string) (map[string]any, error) {
 	if ty != nil {
-		return normalizeDiff(ty, diff, op)
+		return normalizeDiff(c, ty, diff, op)
 	}
 	out, propsRaw, err := splitDiff(diff, op)
 	if err != nil {
@@ -2202,7 +2209,7 @@ func normalizeDiffFor(ty *vocabulary.Kind, diff map[string]any, op string) (map[
 	// The kind-free half of the value validation still runs: a diff whose
 	// `ifVersion` is not a number or whose `labels` is not an object is not a
 	// diff, whatever it would have been checked against.
-	if err := validateDiffShape(nil, out, op); err != nil {
+	if err := validateDiffShape(c, nil, out, op); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -2283,7 +2290,7 @@ func splitDiff(diff map[string]any, op string) (map[string]any, map[string]any, 
 // WRITABLE on ty; the immutable identity keys `type`/`id` and any undeclared
 // property are rejected; and a diff that would change nothing is rejected — so
 // a malformed proposal never reaches the inbox.
-func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[string]any, error) {
+func normalizeDiff(c coercer, ty *vocabulary.Kind, diff map[string]any, op string) (map[string]any, error) {
 	out, propsRaw, err := splitDiff(diff, op)
 	if err != nil {
 		return nil, err
@@ -2318,7 +2325,7 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 	// decode the operation-specific shape, then run the ordinary property
 	// coercion, so a wrong-typed value or an undeclared nested field is refused
 	// at PROPOSE time instead of only at accept.
-	if err := validateDiffShape(ty, out, op); err != nil {
+	if err := validateDiffShape(c, ty, out, op); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -2329,7 +2336,7 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 // anything. A nil ty runs the DECODE alone — the half that needs no
 // schema, for the targetless request whose properties nothing can be checked
 // against.
-func validateDiffShape(ty *vocabulary.Kind, norm map[string]any, op string) error {
+func validateDiffShape(c coercer, ty *vocabulary.Kind, norm map[string]any, op string) error {
 	raw, err := json.Marshal(norm)
 	if err != nil {
 		return err
@@ -2344,7 +2351,7 @@ func validateDiffShape(ty *vocabulary.Kind, norm map[string]any, op string) erro
 		if ty == nil {
 			return nil
 		}
-		return validateCreateShape(ty, in)
+		return validateCreateShape(c, ty, in)
 	}
 	var in substrate.PatchInput
 	if err := dec.Decode(&in); err != nil {
@@ -2353,17 +2360,17 @@ func validateDiffShape(ty *vocabulary.Kind, norm map[string]any, op string) erro
 	if ty == nil {
 		return nil
 	}
-	return validatePatchShape(ty, in)
+	return validatePatchShape(c, ty, in)
 }
 
 // validatePatchShape coerces a proposed patch's properties and labels through
 // the target schema without writing.
-func validatePatchShape(ty *vocabulary.Kind, in substrate.PatchInput) error {
+func validatePatchShape(c coercer, ty *vocabulary.Kind, in substrate.PatchInput) error {
 	authored, _, _, err := splitProps(ty, in.Properties)
 	if err != nil {
 		return err
 	}
-	if _, err := coerceProps(ty, authored); err != nil {
+	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
 	if _, err := coerceLabels(substrate.ActorAPI, in.Labels); err != nil {
@@ -2376,12 +2383,12 @@ func validatePatchShape(ty *vocabulary.Kind, in substrate.PatchInput) error {
 // writing. Target EXISTENCE is an accept-time concern (the record a proposed
 // reference points at may be minted alongside it), so only shape is checked
 // here.
-func validateCreateShape(ty *vocabulary.Kind, in substrate.PutInput) error {
+func validateCreateShape(c coercer, ty *vocabulary.Kind, in substrate.PutInput) error {
 	authored, _, _, err := splitProps(ty, in.Properties)
 	if err != nil {
 		return err
 	}
-	if _, err := coerceProps(ty, authored); err != nil {
+	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
 	_, err = coerceLabels(substrate.ActorAPI, in.Labels)
@@ -2669,7 +2676,7 @@ func (t *txn) existingSatisfiesCreate(row *erow, ty *vocabulary.Kind, in substra
 	if err != nil {
 		return false, err
 	}
-	props, err := coerceProps(ty, authored)
+	props, err := t.coercer().props(ty, authored)
 	if err != nil {
 		return false, err
 	}
