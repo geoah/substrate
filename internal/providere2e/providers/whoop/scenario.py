@@ -103,6 +103,20 @@ def same(a, b):
     return instant(a) == instant(b)
 
 
+def woke_into(rec):
+    """The date the WHOOP app files a cycle under, worked out here apart from
+    the sync: `start` at the cycle's `timezone_offset`, 12 hours on."""
+    import datetime as _dt
+    start = instant(rec.get("start"))
+    tzd = str(rec.get("timezone_offset") or "Z")
+    delta = _dt.timedelta(0)
+    if tzd != "Z":
+        sign = -1 if tzd[0] == "-" else 1
+        hh, mm = tzd[1:].replace(":", "")[:2], tzd[1:].replace(":", "")[2:]
+        delta = sign * _dt.timedelta(hours=int(hh), minutes=int(mm))
+    return (start + delta + _dt.timedelta(hours=12)).date().isoformat()
+
+
 def ref(value):
     """A reference value is `{ref: "<kind>/<id>"}`; a list of them is a list."""
     if isinstance(value, dict):
@@ -576,6 +590,18 @@ def main():
                 off.append(("workout span", r["id"]))
         ok(not off, "`at` is `start` and `endsAt` is `end` on every cycle, "
                     "sleep and workout (%d off: %s)" % (len(off), off[:3]))
+        off = []
+        for r in rows["cycle"]:
+            rec = want["cycles"].get(props(r).get("cycleId"))
+            if rec and props(r).get("day") != woke_into(rec):
+                off.append((r["id"], props(r).get("day"), woke_into(rec)))
+        ok(not off, "a cycle's `day` is the date its member woke into, `start` "
+                    "at `timezone_offset` 12 hours on (%d off: %s)"
+           % (len(off), off[:3]))
+        off = [r["id"] for r in rows["cycle"]
+               if props(r).get("title") != "Cycle " + str(props(r).get("day"))]
+        ok(not off, "a cycle is titled by its `day` (%d off: %s)"
+           % (len(off), off[:3]))
         current = [r for r in rows["cycle"]
                    if not (want["cycles"].get(props(r).get("cycleId")) or {}).get("end")]
         ok(bool(current) and all(not props(r).get("endsAt") for r in current),

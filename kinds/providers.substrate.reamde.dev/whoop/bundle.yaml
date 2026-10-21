@@ -43,7 +43,9 @@
 #     out of `created_at`), `workout.calories` (kilojoules × 0.239006) and
 #     `sleep.durations.asleepMs` (light + REM + deep, a sum WHOOP does not
 #     publish) are all gone. WHOOP's own numbers in WHOOP's own units: a
-#     kilojoule is a kilojoule, and kcal is the reader's multiplication.
+#     kilojoule is a kilojoule, and kcal is the reader's multiplication. The
+#     one exception is `cycle.day` (version 24), the date the WHOOP app files
+#     a cycle under: the API does not send it, and a cycle's title needs it.
 #   * EVERY RELATION IS A REFERENCE AT THE KIND THAT HOLDS THE OTHER END, and
 #     only where WHOOP states it: `recovery.cycle`, `recovery.sleep`,
 #     `sleep.cycle`, and `<every mirror>.user`. A WORKOUT names no cycle in v2
@@ -158,7 +160,14 @@ data:
   # object back by id before writing it. The `whoop-webhook` trigger declares
   # `timestampUnit: milliseconds`, which the door requires beside a
   # `timestampHeader`. ADDITIVE.
-  version: 23
+  #
+  # 24: `cycle` declares `day`, the date the WHOOP app files a cycle under,
+  # which the sync derives from `start` and `timezoneOffset`, and the title
+  # reads it ("Cycle 2026-10-21", the WHOOP id until the row has a `day`).
+  # The sync re-walks the cycles written before it to fill it in. `cycle`
+  # no longer declares `purpose: supporting`, so the console lists cycles
+  # beside sleeps, recoveries and workouts. ADDITIVE.
+  version: 24
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -265,6 +274,7 @@ data:
       object either body reads is therefore written as one shape.
       """
       import datetime as _dt
+      import re as _re
       from urllib.parse import urlsplit as _urlsplit
 
       PKG = "providers.substrate.reamde.dev/whoop"
@@ -342,6 +352,31 @@ data:
               return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
           except ValueError:
               return None
+
+
+      _OFFSET = _re.compile(r"^([+-])(\d{2}):?(\d{2})$")
+
+
+      def offset(value):
+          """A Time Zone Designator (`+01:00`, `-0500`, `Z`) as a fixed zone; UTC
+          for `Z`, an absent one or one that does not parse."""
+          m = _OFFSET.match(str(value or ""))
+          if not m:
+              return _dt.timezone.utc
+          delta = _dt.timedelta(hours=int(m.group(2)), minutes=int(m.group(3)))
+          return _dt.timezone(-delta if m.group(1) == "-" else delta)
+
+
+      def cycle_day(rec):
+          """`day`: the date the WHOOP app files a cycle under, the day its member
+          woke into, as `YYYY-MM-DD`, or None when `start` does not parse. A cycle
+          starts at sleep onset, so `start` at the cycle's own offset, 12 hours
+          on, lands on that day for any onset from noon to the next noon."""
+          start = parse(rec.get("start"))
+          if start is None:
+              return None
+          local = start.astimezone(offset(rec.get("timezone_offset")))
+          return (local + _dt.timedelta(hours=12)).date().isoformat()
 
 
       def check_origin(url):
@@ -544,6 +579,11 @@ data:
               raise ValueError("cycle record carries no id")
           props = {"account": aid, "cycleId": int(cid), "user": user_rid}
           span(props, rec)
+          # Never nulled, like `at`: `start` is required, and a payload without
+          # one says nothing about the day.
+          day = cycle_day(rec)
+          if day is not None:
+              props["day"] = day
           take(props, rec, (("timezone_offset", "timezoneOffset"),
                             ("created_at", "createdAt"),
                             ("updated_at", "updatedAt")))
@@ -1107,6 +1147,10 @@ data:
 # property here. The CURRENT cycle has no `end` (WHOOP omits it until the
 # next sleep starts a cycle), so `endsAt` is simply absent on it, and a records read
 # bounding `at` still finds it.
+#
+# `day` is the one derived property in this closure (version 24): the date the
+# WHOOP app files a cycle under, which the API does not send. The title needs
+# it, because a WHOOP id names no day a person can recognize.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/whoop/cycle
@@ -1120,12 +1164,12 @@ data:
     not called. `at` is the cycle's `start` and `endsAt` its `end`; the CURRENT
     cycle has no `end` and so no `endsAt`. The paging envelope is the one
     omitted class.
-  purpose: supporting
   names:
     singular: cycle
   traits:
     - substrate.reamde.dev/core/temporal(range)
-  displayTemplate: "Cycle {cycleId}"
+  # `cycleId` until the sync has written the row's `day`.
+  displayTemplate: "Cycle {day|cycleId}"
   properties:
     # ---- identity ---------------------------------------------------------
     account:
@@ -1216,6 +1260,16 @@ data:
         `updated_at` — when WHOOP last touched it. A MUTATION MARK: it moves
         when a cycle is re-scored as data settles, which is what the overlap
         window exists for, and it binds no trait
+    # ---- derived (version 24) ----------------------------------------------
+    # WHOOP's API sends no date. A sleep onset from noon to midnight belongs
+    # to the next day and one after midnight to its own, which `start` at
+    # `timezoneOffset` moved 12 hours on gives for both.
+    day:
+      type: date
+      displayName: Day
+      description: >-
+        the date the WHOOP app shows this cycle under, the day its member
+        woke into: `start` at `timezoneOffset`, 12 hours on
 ---
 # ---- mirror: one recovery score ---------------------------------------------
 # THE ONE KIND WITH NO ID OF ITS OWN. A v2 recovery carries no `id`: WHOOP
@@ -1955,6 +2009,10 @@ data:
     LEGACY_MARGIN_DAYS before the oldest of them, so the walk rewrites each with
     its `cycleId`, and one the walk does not meet is no longer in WHOOP's
     collection and is deleted, under the version the scan read it at.
+
+    CYCLES FROM BEFORE VERSION 24 carry no `day`. While one is left, the cycle
+    stream's floor reaches back the same way, and the walk rewrites each cycle
+    with its `day`.
     """
     import datetime as _dt
     from urllib.parse import quote as _quote
@@ -2042,6 +2100,9 @@ data:
     # created, a day at most after its cycle began, so a week of margin puts
     # every such recovery's cycle inside the walk.
     LEGACY_MARGIN_DAYS = 7
+    # The property a row written before it was declared lacks, by stream: while
+    # one such row is left, the stream's walk reaches back past it.
+    LEGACY = {"recovery": "cycleId", "cycle": "day"}
     # The host reads one invocation may make: `permissions.reads.budgets.calls`.
     # A reconciliation step that could cross it waits for the next invocation,
     # whose budget is fresh; the costliest step is a scan, one list and up to a
@@ -2580,12 +2641,14 @@ data:
         return fresh
 
 
-    def _legacy_floor(host, aid):
-        """The floor that re-reads every recovery row this account holds with no
-        `cycleId` (written before version 21), or None when none is left."""
-        page = host.records.list(RECOVERY_KIND,
+    def _legacy_floor(host, aid, key):
+        """The floor that re-reads every row of stream `key` this account holds
+        without the property LEGACY names for it (a recovery's `cycleId`, from
+        version 21; a cycle's `day`, from version 24), or None when none is
+        left."""
+        page = host.records.list(KINDS[key],
                                  where={"account": {"eq": aid},
-                                        "cycleId": {"exists": False}},
+                                        LEGACY[key]: {"exists": False}},
                                  first=1, order="at")
         rows = page.get("records") or []
         at = _parse(((rows[0].get("properties") or {}) if rows else {}).get("at"))
@@ -2715,11 +2778,13 @@ data:
             reconcile = [k for k in streams
                          if (props.get("syncCursors") or {}).get(k)]
             legacy = []
-            if "recovery" in reconcile:
-                deep = _legacy_floor(host, aid)
-                if deep is not None and _parse(deep) < _parse(floors["recovery"]):
-                    floors["recovery"] = deep
-                    legacy = ["recovery"]
+            for key in LEGACY:
+                if key not in reconcile:
+                    continue
+                deep = _legacy_floor(host, aid, key)
+                if deep is not None and _parse(deep) < _parse(floors[key]):
+                    floors[key] = deep
+                    legacy.append(key)
             cur.update({"queue": queue, "streams": streams, "floors": floors,
                         # The instant the walk BEGAN, pinned here and carried
                         # through every invocation of the drain. A cursor stamped
