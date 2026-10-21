@@ -1184,6 +1184,59 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	}
 }
 
+// Editing only a quantity propertytype changes what every kind using it
+// resolves, so the edit is held in each of them as a change of the kind's
+// own declaration is: an unknown unit and a listed unit the anchor cannot reach
+// are refused though the kind holds no record and its own document is
+// unchanged, and a unit the repository declares is admitted.
+func TestAQuantityPropertyTypeEditIsHeldInEveryKindThatUsesIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openReadingsDataset(t)
+	authority, pkg := vocabulary.SplitPackageRef(quantityPackage)
+	refinement := func(extra map[string]any) map[string]any {
+		data := map[string]any{"authority": authority, "package": pkg, "base": "quantity", "description": "a load"}
+		for k, v := range extra {
+			data[k] = v
+		}
+		return map[string]any{
+			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
+			"metadata": map[string]any{"id": quantityPackage + "/load"},
+			"data":     data,
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(quantityPackage, 0),
+		refinement(map[string]any{"unit": "kg"}),
+		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "crate"}, map[string]any{
+			"properties": map[string]any{"load": map[string]any{"type": "load"}},
+		}),
+	}); err != nil {
+		t.Fatalf("apply the refinement and its kind: %v", err)
+	}
+	for _, c := range []struct {
+		what  string
+		extra map[string]any
+		want  string
+	}{
+		{"an unknown unit", map[string]any{"unit": "nonesuch"}, `crate data.properties.load.unit: "nonesuch" names no unit`},
+		{"a listed unit the anchor cannot reach", map[string]any{"unit": "kg", "units": []any{"K"}}, "crate data.properties.load.units: the listed unit K does not convert"},
+	} {
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{refinement(c.extra)})
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s through the propertytype alone: err = %v, want a refusal naming %q", c.what, err, c.want)
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{refinement(map[string]any{"unit": "g"})}); err != nil {
+		t.Fatalf("anchor the propertytype to g: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/crate", Properties: map[string]any{
+		"load": qv("2", "kg"),
+	}}); err != nil {
+		t.Fatalf("a crate in kg under the g anchor: %v", err)
+	}
+}
+
 // A quantity orders by its value at its component's root in every unit of
 // the component, the owner's own included: 1 Mg is 1000 kg, between 500 kg
 // and 2000 kg, though the shipped units hold no Mg, and no accepted number

@@ -276,10 +276,12 @@ func graphQuantityText(g *vocabulary.UnitGraph, value, unit string) string {
 // transaction publishes to the graph it leaves: every unit spelling a
 // changed or new kind names (`unit`, `units`, a bound, a default) names a
 // unit of the repository, and every unit a property admits by name (its
-// `unit` and listed `units`) converts to each of its bounds. A kind whose
-// declaration the transaction left alone is not judged again, so a graph
-// edit is the use guard's (unitgraph.go) and an unrelated apply is never
-// refused for an older kind.
+// `unit` and listed `units`) converts to each of its bounds. A property is
+// judged when its kind's declaration changed or when what it resolves to
+// changed (quantityConstraints), so an edit of a propertytype alone is
+// judged in every kind that uses it. A property the transaction left alone
+// is not judged again, so a graph edit is the use guard's (unitgraph.go) and
+// an unrelated apply is never refused for an older kind.
 func (t *txn) checkDeclaredUnits() error {
 	if !t.ds.svc.unitGraphOn || t.writeReg == nil || t.migrating || t.replaying {
 		return nil
@@ -288,11 +290,13 @@ func (t *txn) checkDeclaredUnits() error {
 	var g *vocabulary.UnitGraph
 	var problems []string
 	for _, k := range t.writeReg.Kinds() {
-		if was, ok := live.ByIdentity(k.Identity); ok && jsonEqual(was.Definition, k.Definition) {
-			continue
-		}
+		was, held := live.ByIdentity(k.Identity)
+		same := held && jsonEqual(withoutVersion(was.Definition), withoutVersion(k.Definition))
 		for _, name := range sortedKeys(k.Props) {
 			if !holdsQuantity(k.Props[name]) {
+				continue
+			}
+			if same && jsonEqual(quantityConstraints(was.Props[name]), quantityConstraints(k.Props[name])) {
 				continue
 			}
 			if g == nil {
@@ -309,6 +313,54 @@ func (t *txn) checkDeclaredUnits() error {
 		return &substrate.ValidationError{Problems: problems}
 	}
 	return nil
+}
+
+// withoutVersion is a declaration without its `version`, which a kind
+// rendered after an apply omits and one loaded from its row carries; neither
+// changes what a quantity admits.
+func withoutVersion(def map[string]any) map[string]any {
+	if _, ok := def["version"]; !ok {
+		return def
+	}
+	out := make(map[string]any, len(def))
+	for k, v := range def {
+		if k != "version" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// quantityConstraints is what declaredUnitProblems reads of a resolved
+// property, at any depth: each quantity's spec and the property's default.
+// A kind whose own declaration is unchanged still resolves a changed one
+// when a propertytype it uses was edited.
+func quantityConstraints(p *vocabulary.Property) any {
+	if p == nil {
+		return nil
+	}
+	out := map[string]any{"datatype": p.Datatype}
+	if p.Quantity != nil {
+		out["quantity"] = *p.Quantity
+	}
+	if p.Default != nil && holdsQuantity(p) {
+		out["default"] = p.Default
+	}
+	if len(p.Fields) > 0 {
+		fields := map[string]any{}
+		for name, f := range p.Fields {
+			fields[name] = quantityConstraints(f)
+		}
+		out["fields"] = fields
+	}
+	if len(p.Properties) > 0 {
+		props := map[string]any{}
+		for name, f := range p.Properties {
+			props[name] = quantityConstraints(f)
+		}
+		out["properties"] = props
+	}
+	return out
 }
 
 // declaredUnitProblems judges one property's quantity declarations at any
