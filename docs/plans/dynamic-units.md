@@ -994,19 +994,70 @@ The step 5 code settles these as follows. It removes 14,400 lines and adds
   does the open of a repository that holds none of the shipped records. Each
   record still goes through the put path (`putSpec`, `apply`), so its
   coercion, title, managers and changelog payload are the ones a single put
-  makes. Under the run, `fold` and `appendChange` queue what they would
-  write, `loadRow` answers nil for a record the run creates, and `checkID`
+  makes. `loadRow` answers nil for a record the run creates, and `checkID`
   skips the per-record lock and former-id read, both taken once for the whole
-  run. `flushBulk` then writes the rows, unit uses, graph revision, refs,
-  managers and changelog entries one statement per table, the entries at the
-  seqs a per-record append would take. A kind the observed index derives
-  from, a metric, a mapping's kind, or one with embedded, sensitive or blob
-  properties never runs in bulk, and a repository holding any planned record
-  takes the per-record path. `TestBulkSeedMatchesThePerRecordPath` holds the
-  rows, managers, refs, revision and entries (payloads included) to the
-  per-record path's, and a rebuild to the live fold. `settleChecksums` stamps
-  a transaction's checksums in one statement instead of one per entry, for
-  every write.
+  run. A kind the observed index derives from, a metric, a mapping's kind, or
+  one with embedded, sensitive or blob properties never runs in bulk, and a
+  repository holding any planned record takes the per-record path.
+  `settleChecksums` stamps a transaction's checksums in one statement instead
+  of one per entry, for every write.
+
+Codex reviewed step 5 (merge after the P1 fix), and the fixes settle these
+as follows.
+
+- `host.units.convert` takes `delta` by keyword only, as a bool. A fourth
+  positional argument or `measure=` raises `ValueError` naming
+  `delta=True`, and the engine's decoder refuses a `measure` key (and any
+  key it does not read) instead of ignoring it: a body still passing the
+  retired measure name had it read as `delta=True` and lost the offset. The
+  breaking change's footer says only `measure="temperature-difference"`
+  becomes `delta=True`, any other measure argument is dropped, and a
+  rollback returns to step 4's binary with the graph on.
+- The old table's numbers are frozen as data:
+  `internal/engine/unitseed/testdata/table_oracle.json` holds each of the
+  216 units' component (by its root, the smallest id) and exact map to the
+  root, absolute and as a difference, and all 316 spellings the table read
+  or the seed declared. It was captured from the table itself at 741ce8b0f
+  (the head of feat/dynamic-units-4) by the program kept beside it as
+  `table_oracle_capture.go.txt`, which says how to run it again and writes
+  the file byte for byte. `TestShippedSeedMatchesTheTableOracle` and
+  `TestShippedSpellingsMatchTheTableOracle` hold the seed to it both ways,
+  so a consistent but wrong factor, or an alias added without updating the
+  fixture, fails.
+- `internal/engine/testdata/unit_parity.json` came from the table path of
+  the same commit; `unit_parity_capture.go.txt` beside it is the program,
+  and rerun there it writes the file byte for byte.
+  `TestShippedUnitsAnswerAsTheTableDid` now requires the same filter
+  probes, aggregate reads and reducers in the file and in the code before
+  it compares values.
+- A bulk run batches statements, not persistence. `fold` calls `foldOne`
+  for every effect, a bulk run's included, so `foldRecordOp` and
+  `applyManager` decide every row for a live bulk write and a replay alike.
+  Under the run the fold's write leaves (`upsertRecord`,
+  `replaceUnitUses`, `afterUnitFold`, `syncRefs`, `applyManager`) and
+  `appendChange` queue the statement they would send for a record the run
+  creates, with the answer that statement gives for an absent row, and
+  `flushBulk` sends each table's queue as one statement, the entries at the
+  seqs a per-record append would take. A record folded twice in one run is
+  refused. This was the smaller change than teaching the rebuild to batch:
+  the replay keeps its one-effect-at-a-time path and its tests, and the
+  leaves gain one queue call each. `foldPrimitives` pins each queue to the
+  leaf that fills it and each flush to `flushBulk`.
+- Two test seams: `WithTestSeedPath` reports which path each seed took and
+  why the per-record one, and `WithTestBulkFault` fails the flush after a
+  named table. The bulk tests (internal/engine/bulkseed_db_test.go) cover
+  Register with its credential, recovery key and token beside the seed,
+  in bulk and per record, entry by entry; a planned refresh and a
+  tombstone forcing the per-record path at the open; a row, a tombstone
+  and a former id each declining a run (bulkwrite_internal_db_test.go); a
+  fault after the records, refs and entries of a registration's flush,
+  which leaves no repository and no directory; and a fault inside the
+  open's flush, after its lines are prepared and after its commit. Each
+  ends with verify clean, every checksum stamped, the seed one
+  transaction, an import of the directory folding to the same tables, and
+  a rebuild equal to the live fold.
+- docs/units.md says only REST and function code convert across an
+  expression route; the console converts inside a linear component.
 
 ### Benchmarks of step 5
 
@@ -1019,6 +1070,11 @@ keeps the batched checksums; "bulk" is the default.
 | --- | --- | --- | --- | --- |
 | Registration (`CreateRepository`) | 1.73 s | 1.60 to 1.65 s | 561 to 594 ms | 316 to 340 ms |
 | First open of a repository registered without the seed | 1.35 s | 1.36 to 1.44 s | 327 ms | |
+
+After the review's fix (statements batched at the fold's leaves, the same
+throwaway test, median of nine): bulk 530 ms, per-record 1.52 s, no seed
+324 ms, against 544 ms, 1.60 s and 337 ms for this step's first code on the
+same run of the box.
 
 A seeded registration sends about 1,000 statements, against 6,280 before.
 The 230 ms the seed still adds is mostly the changelog files: 365 entries
