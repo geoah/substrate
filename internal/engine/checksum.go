@@ -91,6 +91,8 @@ func (t *txn) settleChecksums() error {
 	// transaction's seqs are contiguous and its last one frames them all: the
 	// file's reader knows the transaction is whole when it has read this seq.
 	txnEnd := t.pending[len(t.pending)-1].Seq
+	seqs := make([]int64, len(t.pending))
+	sums := make([][]byte, len(t.pending))
 	for i := range t.pending {
 		e := &t.pending[i]
 		if e.Seq != t.pending[0].Seq+int64(i) {
@@ -105,16 +107,22 @@ func (t *txn) settleChecksums() error {
 			return fmt.Errorf("%w: %w: the entry for %s %s/%s is %d bytes as a changelog line and the cap is %d",
 				substrate.ErrValidation, changelogfile.ErrLineTooLong, e.Op, e.Kind, e.RecordID, len(line), changelogfile.MaxLineBytes)
 		}
-		res, err := t.exec(`UPDATE changelog SET hash = $2, txn = $3 WHERE seq = $1`, e.Seq, sum[:], txnEnd)
-		if err != nil {
-			return fmt.Errorf("substrate/engine: stamp the checksum of seq %d: %w", e.Seq, err)
-		}
-		if n, err := res.RowsAffected(); err != nil {
-			return err
-		} else if n != 1 {
-			return fmt.Errorf("substrate/engine: stamping the checksum of seq %d touched %d rows", e.Seq, n)
-		}
+		seqs[i], sums[i] = e.Seq, sum[:]
 		e.Line = line
+	}
+	// One statement stamps every entry: a transaction that appends hundreds
+	// (a registration's seed) paid a round trip for each.
+	res, err := t.exec(`
+		UPDATE changelog c SET hash = u.hash, txn = $1
+		FROM unnest($2::bigint[], $3::bytea[]) AS u(seq, hash)
+		WHERE c.seq = u.seq`, txnEnd, seqs, sums)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: stamp the checksums of seq %d to %d: %w", seqs[0], txnEnd, err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n != int64(len(seqs)) {
+		return fmt.Errorf("substrate/engine: stamping the checksums of seq %d to %d touched %d rows", seqs[0], txnEnd, n)
 	}
 	return nil
 }
