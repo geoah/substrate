@@ -29,7 +29,10 @@ package engine
 // side only names no property, and every row is re-derived. The observed
 // index is not per property: its shape is the kind's binding of the trait
 // and the measure its `value` declares (observedShape), so a request for it
-// re-derives every row of the kind or none.
+// re-derives every row of the kind or none. The unit uses (unitgraph.go) are
+// a fourth such projection, and read the declaration only for whether a
+// row's top-level `unit` counts (unitUsesShape), so a request for them is
+// every row or none too.
 //
 // The request rows are written in the transaction that moves the
 // declarations, the upgrade's or the apply's, and each
@@ -128,7 +131,8 @@ type indexReprojection struct {
 	kind                string
 	refs, fts, observed indexFilter
 	// units re-derives every row's unit uses (unitgraph.go), or none: owed
-	// once by a repository whose rows predate the table (checkUnitUses).
+	// by a repository whose rows predate the table or its rule
+	// (checkUnitUses), and by a declaration that moves unitUsesShape.
 	units indexFilter
 	// after is the id the last committed page recorded (resumeMark), empty
 	// before the first; the pass resumes after it.
@@ -161,8 +165,8 @@ func (r indexReprojection) properties() []string {
 // identity, merging what each comparison finds about the same kind.
 type reprojectionSet map[string]*indexReprojection
 
-// add records that a kind's indexes moved, as the three filters say.
-func (s reprojectionSet) add(kind string, refs, fts, observed indexFilter) {
+// add records that a kind's indexes moved, as the four filters say.
+func (s reprojectionSet) add(kind string, refs, fts, observed, units indexFilter) {
 	r := s[kind]
 	if r == nil {
 		r = &indexReprojection{kind: kind}
@@ -171,6 +175,7 @@ func (s reprojectionSet) add(kind string, refs, fts, observed indexFilter) {
 	r.refs = r.refs.merge(refs)
 	r.fts = r.fts.merge(fts)
 	r.observed = r.observed.merge(observed)
+	r.units = r.units.merge(units)
 }
 
 // addMoved compares each named kind between two registries and records
@@ -182,12 +187,19 @@ func (s reprojectionSet) addMoved(before, after kindLookup, kinds map[string]boo
 	for _, ident := range sortedKeys(kinds) {
 		refs := filterOf(movedProperties(before, after, ident, referenceShape, propertyReferenceShape, false))
 		fts := filterOf(movedProperties(before, after, ident, ftsShape, propertyFTSShape, true))
-		var observed indexFilter
+		var observed, units indexFilter
 		if observedShape(before, ident) != observedShape(after, ident) {
 			observed = indexFilter{moved: true, every: true}
 		}
-		if refs.moved || fts.moved || observed.moved {
-			s.add(ident, refs, fts, observed)
+		// The unit uses read the declaration in one place, whether a row's
+		// top-level `unit` counts (unitgraph.go readsTopLevelUnit), so a
+		// binding of `metric` or packed `observed` added or removed
+		// re-derives every row, tombstones included.
+		if unitUsesShape(before, ident) != unitUsesShape(after, ident) {
+			units = indexFilter{moved: true, every: true}
+		}
+		if refs.moved || fts.moved || observed.moved || units.moved {
+			s.add(ident, refs, fts, observed, units)
 		}
 	}
 }
@@ -210,16 +222,16 @@ func (s reprojectionSet) list() []indexReprojection {
 }
 
 // withEveryRow is a copy of the set in which each named kind re-derives
-// all three indexes for every row, for kinds no declaration describes on
-// either side, such as the rows of a package that does not parse.
+// every index for every row, for kinds no declaration describes on either
+// side, such as the rows of a package that does not parse.
 func (s reprojectionSet) withEveryRow(kinds []string) reprojectionSet {
 	out := make(reprojectionSet, len(s)+len(kinds))
 	for kind, r := range s {
-		out.add(kind, r.refs, r.fts, r.observed)
+		out.add(kind, r.refs, r.fts, r.observed, r.units)
 	}
 	every := indexFilter{moved: true, every: true}
 	for _, kind := range kinds {
-		out.add(kind, every, every, every)
+		out.add(kind, every, every, every, every)
 	}
 	return out
 }
@@ -415,7 +427,7 @@ func (t *txn) requestMovedBehindCommit(rs []indexReprojection) ([]string, error)
 	var owed []indexReprojection
 	var kinds []string
 	for _, r := range rs {
-		if !r.fts.moved && !r.observed.moved {
+		if !r.fts.moved && !r.observed.moved && !r.units.moved {
 			continue
 		}
 		var stored bool
@@ -425,7 +437,7 @@ func (t *txn) requestMovedBehindCommit(rs []indexReprojection) ([]string, error)
 		if !stored {
 			continue
 		}
-		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts, observed: r.observed})
+		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts, observed: r.observed, units: r.units})
 		kinds = append(kinds, r.kind)
 	}
 	return kinds, t.requestReprojections(owed)

@@ -319,6 +319,13 @@ The step 2 code settles these as follows.
   aliases by the same key: a metric keeps the `µg` its writer sent, and that
   is a use of the unit whose code is `ug`. The stored value is not
   rewritten. Rule version 2 (`unitUsesVersion`) is this keying.
+- The top-level `unit` case is the one place the derivation reads the
+  declaration (`readsTopLevelUnit`). A vocabulary apply or a boot upgrade
+  that adds or removes a kind's `metric` or packed `observed` binding
+  requests `index_reprojections.units` for every row of the kind,
+  tombstones included, and the pass behind the commit re-derives them. The
+  guard refuses a unit change while that request stands, so the live fold
+  ends where a rebuild does.
 - A reference to a unit record is read from `refs` (any source kind but
   `conversion`), not copied into `unit_uses`. A declaration's listed `units`,
   `min`, `max` and quantity `default` are read from the transaction's

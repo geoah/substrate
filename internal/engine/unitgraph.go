@@ -331,12 +331,9 @@ func rowUnitUses(ty *vocabulary.Kind, props map[string]any) []string {
 	for _, v := range props {
 		collectQuantityUnits(v, seen)
 	}
-	if ty != nil {
-		b, observed := observedBinding(ty)
-		if bindsMetric(ty) || (observed && b.Variant == vocabulary.ObservedPacked) {
-			if u, ok := props[vocabulary.QuantityUnit].(string); ok {
-				addUnitUse(seen, u)
-			}
+	if readsTopLevelUnit(ty) {
+		if u, ok := props[vocabulary.QuantityUnit].(string); ok {
+			addUnitUse(seen, u)
 		}
 	}
 	if len(seen) == 0 {
@@ -348,6 +345,28 @@ func rowUnitUses(ty *vocabulary.Kind, props map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// readsTopLevelUnit reports whether rowUnitUses reads a row's top-level
+// `unit` under the kind: one that binds `metric`, or packed `observed`. It is
+// the one part of the declaration the derivation reads, so a declaration that
+// moves it re-derives the kind's rows (reprojection.go unitUsesShape).
+func readsTopLevelUnit(ty *vocabulary.Kind) bool {
+	if ty == nil {
+		return false
+	}
+	if bindsMetric(ty) {
+		return true
+	}
+	b, observed := observedBinding(ty)
+	return observed && b.Variant == vocabulary.ObservedPacked
+}
+
+// unitUsesShape is readsTopLevelUnit for a kind of a registry; a kind it
+// does not declare reads none.
+func unitUsesShape(reg kindLookup, ident string) bool {
+	ty, ok := reg.ByIdentity(ident)
+	return ok && readsTopLevelUnit(ty)
 }
 
 func collectQuantityUnits(v any, seen map[string]bool) {

@@ -322,6 +322,12 @@ func (t *txn) reprojectShipped(st *shippedUpgradeStage) ([]indexReprojection, er
 			background = append(background, *r)
 			continue
 		}
+		// A declaration row's unit uses are left to the pass as well: the
+		// guard refuses a unit change while the request stands, so nothing
+		// is judged against the uses the old declaration derived.
+		if r.units.moved {
+			background = append(background, indexReprojection{kind: kind, units: r.units})
+		}
 		if r.refs.moved {
 			inlineRefs = append(inlineRefs, kind)
 		}
