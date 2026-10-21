@@ -554,3 +554,26 @@ func TestUnitGraphMemoBuildsOnce(t *testing.T) {
 		t.Error("an error is never stored")
 	}
 }
+
+// A built graph keeps its own copy of every rational it was built from, so a
+// caller mutating its records afterwards changes neither what Conversions
+// and Unit report nor what the graph converts by.
+func TestABuiltGraphOwnsItsCoefficients(t *testing.T) {
+	units := gUnits("a", "b", "deg")
+	units[2].Turn = gRat(t, "360")
+	conversions := []vocabulary.ConversionRecord{gLinear(t, "a", "b", "2", "1")}
+	g := gBuild(t, units, conversions...)
+	conversions[0].Factor.SetInt64(3)
+	conversions[0].Offset.SetInt64(5)
+	units[2].Turn.SetInt64(400)
+	got := g.Conversions()[0]
+	if got.Factor.RatString() != "2" || got.Offset.RatString() != "1" {
+		t.Errorf("Conversions reports %s + %s after the input changed, want 2 + 1", got.Factor.RatString(), got.Offset.RatString())
+	}
+	if m := gLinearMap(t, g, "a", "b", false); m != "2 1" {
+		t.Errorf("a to b is %s, want 2 1", m)
+	}
+	if u, _ := g.Unit("deg"); u.Turn.RatString() != "360" {
+		t.Errorf("deg's turn is %s, want 360", u.Turn.RatString())
+	}
+}

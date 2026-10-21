@@ -485,7 +485,13 @@ func BuildUnitGraph(units []UnitRecord, conversions []ConversionRecord) (*UnitGr
 	}
 	problems = append(problems, g.indexSpellings()...)
 
+	// The coefficients are copied, not shared: a caller mutating its records
+	// after the build would otherwise change what Conversions reports while
+	// the maps built from them stay put.
 	g.conversions = slices.Clone(conversions)
+	for i := range g.conversions {
+		g.conversions[i] = copyConversionRecord(g.conversions[i])
+	}
 	sort.SliceStable(g.conversions, func(i, j int) bool { return g.conversions[i].ID < g.conversions[j].ID })
 	var linear, expression []int
 	seen := map[string]bool{}
@@ -858,15 +864,19 @@ func (g *UnitGraph) Units() []UnitRecord {
 func (g *UnitGraph) Conversions() []ConversionRecord {
 	out := make([]ConversionRecord, len(g.conversions))
 	for i, c := range g.conversions {
-		out[i] = c
-		if c.Factor != nil {
-			out[i].Factor = new(big.Rat).Set(c.Factor)
-		}
-		if c.Offset != nil {
-			out[i].Offset = new(big.Rat).Set(c.Offset)
-		}
+		out[i] = copyConversionRecord(c)
 	}
 	return out
+}
+
+func copyConversionRecord(c ConversionRecord) ConversionRecord {
+	if c.Factor != nil {
+		c.Factor = new(big.Rat).Set(c.Factor)
+	}
+	if c.Offset != nil {
+		c.Offset = new(big.Rat).Set(c.Offset)
+	}
+	return c
 }
 
 func copyUnitRecord(u UnitRecord) UnitRecord {
