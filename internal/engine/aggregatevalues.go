@@ -109,7 +109,7 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code, stat string, zone *t
 		case substrate.ReducerDurationIn, substrate.ReducerTimeInState:
 			err = v.held(red)
 		case substrate.ReducerIncrease, substrate.ReducerRate:
-			v.counter(red)
+			err = v.counter(red)
 		}
 		if err != nil {
 			return nil, err
@@ -220,10 +220,17 @@ func (v *rowValues) pts() ([]observed.Point, error) {
 	return list, nil
 }
 
-// float answers a float64 reduction, which makes the read inexact.
-func (v *rowValues) float(red substrate.AggregateReducer, f float64, ok bool, unit string) {
+// float answers a float64 reduction, which makes the read inexact. Every
+// float a reducer answers passes here, so this is where a value the
+// conversion into the read's unit carried past the range of a float is
+// refused (checkFinite).
+func (v *rowValues) float(red substrate.AggregateReducer, f float64, ok bool, unit string) error {
+	if err := v.r.checkFinite(red, f, ok); err != nil {
+		return err
+	}
 	v.r.meta.inexact = true
 	v.out = append(v.out, v.r.value(red, f, ok, unit))
+	return nil
 }
 
 // number answers sum, avg (on every form but a gauge's), stddev, percentile
@@ -259,14 +266,9 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 	if !ev.raw && red.Name != substrate.ReducerPercentile {
 		if red.Name == substrate.ReducerCircularMean {
 			m, ok := observed.CircularMeanOf(ev.stats)
-			v.float(red, r.fromDegrees(m), ok, unit)
-			return nil
+			return v.float(red, r.fromDegrees(m), ok, unit)
 		}
-		if err := r.checkFinite(red, merged, ev.stats.Values > 0); err != nil {
-			return err
-		}
-		v.float(red, merged, ev.stats.Values > 0, unit)
-		return nil
+		return v.float(red, merged, ev.stats.Values > 0, unit)
 	}
 	list, err := v.pts()
 	if err != nil {
@@ -279,11 +281,7 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 	if red.Name == substrate.ReducerCircularMean {
 		n = r.fromDegrees(n)
 	}
-	if err := r.checkFinite(red, n, ok); err != nil {
-		return err
-	}
-	v.float(red, n, ok, unit)
-	return nil
+	return v.float(red, n, ok, unit)
 }
 
 // fromDegrees is a circular mean in degrees in the read's unit under the
@@ -297,15 +295,19 @@ func (r *aggRun) fromDegrees(deg float64) float64 {
 		return deg
 	}
 	t, _ := turn.Float64()
-	return deg * t / 360
+	// The fraction of the circle first: deg * t overflows for a turn the
+	// answer itself does not.
+	return deg / 360 * t
 }
 
 // checkFinite refuses, under the unit graph, an answer the conversion into
 // the read's unit carried past the range of a float, rather than answering
 // it as null: the repository's conversions decide the factor, and a factor
-// that large is one a reader needs named.
+// that large is one a reader needs named. NaN counts: it is what an
+// infinity becomes once a reducer subtracts or scales it (a variance's
+// squared deviations, an infinite sum over an infinite count).
 func (r *aggRun) checkFinite(red substrate.AggregateReducer, v float64, ok bool) error {
-	if r.u.graph == nil || !ok || !math.IsInf(v, 0) {
+	if r.u.graph == nil || !ok || (!math.IsInf(v, 0) && !math.IsNaN(v)) {
 		return nil
 	}
 	return refuse(r.p.path("unit"), "%s of %s converts past the range of a float in %s; read it in a unit nearer the stored ones",
@@ -413,8 +415,7 @@ func (v *rowValues) timeWeighted(red substrate.AggregateReducer) error {
 		f, ok = h.ValueMs/float64(max(h.Ms, 1)), h.Ms > 0
 	}
 	if ok {
-		v.float(red, f, true, r.u.value)
-		return nil
+		return v.float(red, f, true, r.u.value)
 	}
 	return v.number(red)
 }
@@ -464,26 +465,26 @@ func (v *rowValues) held(red substrate.AggregateReducer) error {
 
 // counter answers a counter's increase, exactly, and its rate over the time
 // its steps span; both null where the row holds no step.
-func (v *rowValues) counter(red substrate.AggregateReducer) {
+func (v *rowValues) counter(red substrate.AggregateReducer) error {
 	r, steps := v.r, v.ev.steps
 	if red.Name == substrate.ReducerRate {
 		if !steps.any || steps.covered <= 0 {
 			v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value + "/s"})
-			return
+			return nil
 		}
 		f, _ := steps.inc.Float64()
-		v.float(red, f/(float64(steps.covered)/1000), true, r.u.value+"/s")
-		return
+		return v.float(red, f/(float64(steps.covered)/1000), true, r.u.value+"/s")
 	}
 	if !steps.any {
 		v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value})
-		return
+		return nil
 	}
 	digits, exact := vocabulary.RatDecimal(steps.inc, vocabulary.ConvertedDigits)
 	if !exact {
 		r.meta.inexact = true
 	}
 	v.out = append(v.out, substrate.AggregateValue{Reducer: red, Value: &digits, Unit: r.u.value})
+	return nil
 }
 
 // extremaPoints are the members a raw min or max compares, in the read's
@@ -540,6 +541,9 @@ func (r *aggRun) pointValue(red substrate.AggregateReducer, p observed.Point, ok
 	}
 	digits := p.Exact
 	if digits == "" {
+		if err := r.checkFinite(red, p.Value, true); err != nil {
+			return out, err
+		}
 		digits = formatFloat(p.Value)
 		r.meta.inexact = true
 	}

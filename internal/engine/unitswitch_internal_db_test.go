@@ -896,12 +896,29 @@ func putAt(ds *dataset, id, metric, form string, value map[string]any, at time.T
 }
 
 // aggregateDay reads one metric over aggDay in one day bucket, raw where
-// asked, and answers the row's values by reducer.
+// asked, and answers the row's values by reducer. The read's trace must
+// show the path asked ran: a raw read reduced raw points and merged no
+// rollup row, and any other merged rollup rows, so a test comparing the two
+// compares two paths.
 func aggregateDay(ds *dataset, raw bool, metric, unit string, reducers ...string) (map[string]string, string, error) {
 	ctx := context.Background()
 	if raw {
 		ctx = AggregateRaw(ctx)
 	}
+	tr := &aggTrace{}
+	ctx = context.WithValue(ctx, aggregateTraceKey{}, tr)
+	out, u, err := aggregateDayIn(ctx, ds, metric, unit, reducers...)
+	switch {
+	case err != nil:
+	case raw && (tr.rawPoints == 0 || tr.mergedRows != 0):
+		err = fmt.Errorf("the raw read took %d raw points and merged %d rollup rows", tr.rawPoints, tr.mergedRows)
+	case !raw && tr.mergedRows == 0:
+		err = fmt.Errorf("the rollup read merged no rollup row (%d raw points)", tr.rawPoints)
+	}
+	return out, u, err
+}
+
+func aggregateDayIn(ctx context.Context, ds *dataset, metric, unit string, reducers ...string) (map[string]string, string, error) {
 	var reds []substrate.AggregateReducer
 	for _, r := range reducers {
 		reds = append(reds, substrate.AggregateReducer{Name: r})
@@ -1416,6 +1433,84 @@ func TestPropertyAggregateReadsEachKindsDelta(t *testing.T) {
 		}
 		if !near(sum, "293.15", 1e-9) {
 			t.Errorf("filtered as %v: sum = %s K, want 293.15", kinds, sum)
+		}
+	}
+}
+
+// A finite factor whose product with a stored value, a sum, a squared
+// deviation or a rate passes the range of a float is refused by name on
+// every float-producing reducer, raw and from rollups, never answered as
+// null; and a deviation of 0 stays 0 however large the factor.
+func TestOverflowingAnswerIsRefused(t *testing.T) {
+	t.Parallel()
+	ds := openSwitchedObserved(t)
+	// A factor holds at most 64 digits, so a large one is a chain of edges.
+	chain := func(from, to string, zeros ...int) {
+		prev := from
+		for i, z := range zeros {
+			next := to
+			if i < len(zeros)-1 {
+				next = fmt.Sprintf("%s%d", to, i)
+				putUnit(t, ds, next, map[string]any{"name": next})
+			}
+			putConversion(t, ds, prev+"-"+next, prev, next, map[string]any{"factor": "1" + strings.Repeat("0", z)})
+			prev = next
+		}
+	}
+	putUnit(t, ds, "small", map[string]any{"name": "small"})
+	putUnit(t, ds, "big", map[string]any{"name": "big"})
+	chain("small", "big", 60, 60, 60, 60, 60)
+	// One full circle is 3.6e309 wide: the mean of 90 degrees is 9e308.
+	putUnit(t, ds, "wide", map[string]any{"name": "wide"})
+	chain("deg", "wide", 60, 60, 60, 60, 60, 7)
+	for id, props := range map[string]map[string]any{
+		"held":   {"unit": "small"},
+		"heap":   {"unit": "small", "form": "amount"},
+		"one":    {"unit": "small", "form": "amount"},
+		"spread": {"unit": "small", "form": "amount"},
+		"meter":  {"unit": "small", "form": "counter"},
+		"wind":   {"unit": "deg"},
+	} {
+		if err := putMetricErr(ds, id, props); err != nil {
+			t.Fatalf("metric %s: %v", id, err)
+		}
+	}
+	at := func(h int) time.Time { return aggDay.Add(time.Duration(h) * time.Hour) }
+	for _, w := range []struct {
+		id, metric, form string
+		value            map[string]any
+		h                int
+		extra            map[string]any
+	}{
+		{"g1", "held", "gauge", qty("1"+strings.Repeat("0", 20), "small"), 1, map[string]any{"hold": "PT1H"}},
+		{"a1", "heap", "amount", qty("100000000", "small"), 1, nil},
+		{"a2", "heap", "amount", qty("100000000", "small"), 2, nil},
+		{"s1", "spread", "amount", qty("100000000", "small"), 1, nil},
+		{"s2", "spread", "amount", qty("-100000000", "small"), 2, nil},
+		{"o1", "one", "amount", qty("1", "small"), 1, nil},
+		{"c1", "meter", "counter", qty("0", "small"), 1, nil},
+		{"c2", "meter", "counter", qty("1"+strings.Repeat("0", 12), "small"), 2, nil},
+		{"w1", "wind", "gauge", qty("90", "deg"), 1, map[string]any{"circular": true}},
+	} {
+		if err := putAt(ds, w.id, w.metric, w.form, w.value, at(w.h), w.extra); err != nil {
+			t.Fatalf("put %s: %v", w.id, err)
+		}
+	}
+	DrainIndexReprojection(t, ds)
+	for _, raw := range []bool{true, false} {
+		for _, c := range []struct{ what, metric, unit, reducer string }{
+			{"a held 1e20 in a unit 1e300 larger", "held", "big", "avg"},
+			{"a sum of 2e308", "heap", "big", "sum"},
+			{"a deviation of 1e308 values", "spread", "big", "stddev"},
+			{"a rate of 1e312 an hour", "meter", "big", "rate"},
+			{"a mean angle of 9e308", "wind", "wide", "circularMean"},
+		} {
+			_, _, err := aggregateDay(ds, raw, c.metric, c.unit, c.reducer)
+			wantValidation(t, fmt.Sprintf("%s (raw %v)", c.what, raw), err, "past the range of a float")
+		}
+		got, _, err := aggregateDay(ds, raw, "one", "big", "stddev", "avg")
+		if err != nil || got["stddev"] != "0" || !near(got["avg"], "1e300", 1e286) {
+			t.Errorf("one value in a unit 1e300 larger (raw %v): %v %v, want a deviation of 0 and a mean of 1e300", raw, got, err)
 		}
 	}
 }
