@@ -730,6 +730,16 @@ data:
               description: draw the values over time as points, each with
                 its own reference range, above the rows; observed single-value
                 kinds only
+            show:
+              type: enum
+              default: rows
+              values:
+                - rows
+                - tiles
+              description: rows draws the records as a table; tiles draws
+                each result as a tile against its reference range, with its
+                change since the previous result; observed single-value kinds
+                only
             nest:
               type: string
               description: a reference property of the listed kind; a row

@@ -7,7 +7,8 @@
  * range: a lab's results of one analyte over the years. A row whose `nest`
  * reference names another listed row sits under it and its point draws
  * hollow; what the reference means is the listed kind's, said by the
- * property's own label in the point's tooltip. */
+ * property's own label in the point's tooltip. With `show: tiles` each
+ * result is a tile instead of a row (`Tiles`). */
 
 import { useEffect, useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -18,12 +19,19 @@ import {
   Notice,
   Part,
   Quiet,
+  TileGrid,
   type BlockContext,
 } from "./parts"
 import { PointsChart, type ChartPoint } from "./points-chart"
+import { StatTile } from "./stat-tile"
 import { RecordRef } from "@/components/identity/record-ref"
 import { DeclaredValue } from "@/components/property-sheet/property-value"
-import { recordsQueryOptions } from "@/lib/api/records"
+import { recordLink } from "@/components/record/record-model"
+import {
+  recordsQueryOptions,
+  referenceTitlesQueryOptions,
+  type ListParams,
+} from "@/lib/api/records"
 import {
   readReference,
   type KindInfo,
@@ -39,9 +47,12 @@ import {
   DEFAULT_PRECISION,
   firstRange,
   flagWords,
+  metricInfoOf,
   rangeWords,
   readingText,
+  resultBar,
   resultReading,
+  type MetricInfo,
 } from "@/lib/observations"
 import { clockWords, dayWords, type TimeRange } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
@@ -50,7 +61,13 @@ import {
   propSpecsByName,
   type PropSpec,
 } from "@/lib/record-schema"
-import { cellFraction, tableParams, type TableBlock } from "@/lib/record-view"
+import {
+  cellFraction,
+  changeSinceWords,
+  tableParams,
+  tileHistoryParams,
+  type TableBlock,
+} from "@/lib/record-view"
 import { kindHasTrait } from "@/lib/traits"
 
 /** Core's `result` trait: a lab's flags and reference ranges. */
@@ -366,6 +383,12 @@ export function TableBlockView({
           {block.kind} is not one.
         </Notice>
       ) : null}
+      {block.show === "tiles" && !observedSingle(listedKind) ? (
+        <Notice>
+          This table draws an observed single-value kind's results as tiles, and{" "}
+          {block.kind} is not one, so it lists them as rows.
+        </Notice>
+      ) : null}
       {page.isPending ? (
         <Loading />
       ) : page.error ? (
@@ -383,13 +406,24 @@ export function TableBlockView({
               label={`${name} over time`}
             />
           )}
-          <Rows
-            records={records}
-            block={block}
-            kind={listedKind}
-            ctx={ctx}
-            label={name}
-          />
+          {block.show === "tiles" &&
+          observedSingle(listedKind) &&
+          !("problem" in params) ? (
+            <Tiles
+              records={records}
+              block={block}
+              table={params}
+              label={name}
+            />
+          ) : (
+            <Rows
+              records={records}
+              block={block}
+              kind={listedKind}
+              ctx={ctx}
+              label={name}
+            />
+          )}
           {page.data.cursor && (
             <Quiet>
               {page.data.count !== undefined && page.data.count > records.length
@@ -570,4 +604,183 @@ function Points({
       )}
     </>
   )
+}
+
+/** The listed results as tiles, laid out as a stats block's: each headed by
+ * its metric's name (and its channel, a DXA scan's region), linked to the
+ * result's own page; its value with its flag in the flag's tone; a bar
+ * against its first reference range (`resultBar`); and its change since the
+ * previous result of the same metric and channel, all found in one list
+ * read (`tileHistoryParams`). A row whose `nest` reference names a listed
+ * result (a converted twin) is said on that result's tile, not drawn as one.
+ * A flagged result comes first, then the rest by name. */
+function Tiles({
+  records,
+  block,
+  table,
+  label,
+}: {
+  records: readonly SubstrateRecord[]
+  block: TableBlock
+  table: ListParams
+  label: string
+}) {
+  const nest = block.nest
+  const { tops, twins } = useMemo(() => {
+    const listed = new Set(records.map(pathOf))
+    const twins = new Map<string, SubstrateRecord[]>()
+    const tops: SubstrateRecord[] = []
+    for (const r of records) {
+      const to = nest ? referenceAt(r.properties ?? {}, nest) : undefined
+      if (to && listed.has(to) && to !== pathOf(r)) {
+        twins.set(to, [...(twins.get(to) ?? []), r])
+      } else {
+        tops.push(r)
+      }
+    }
+    return { tops, twins }
+  }, [records, nest])
+  const metrics = useMemo(() => {
+    const paths = new Set<string>()
+    for (const r of tops) {
+      const m = referenceAt(r.properties ?? {}, "metric")
+      if (m) paths.add(m)
+    }
+    return [...paths].sort()
+  }, [tops])
+  const targets = metrics.flatMap((m) => {
+    const parts = splitRecordPath(m)
+    return parts ? [parts] : []
+  })
+  const names = useQuery(
+    referenceTitlesQueryOptions({
+      kinds: [...new Set(targets.map((t) => t.kind))].sort(),
+      ids: [...new Set(targets.map((t) => t.id))].sort(),
+    })
+  )
+  const historyParams = tileHistoryParams(table, tops)
+  const history = useQuery({
+    ...recordsQueryOptions(historyParams ?? { kinds: table.kinds }),
+    enabled: Boolean(historyParams),
+  })
+  const infos = useMemo(() => {
+    const out = new Map<string, MetricInfo>()
+    for (const r of names.data?.records ?? []) {
+      const info = metricInfoOf(r)
+      out.set(info.path, info)
+    }
+    return out
+  }, [names.data])
+  const previous = useMemo(() => {
+    const out = new Map<string, SubstrateRecord>()
+    for (const r of history.data?.records ?? []) {
+      const p = r.properties ?? {}
+      // A converted twin repeats a result in another unit; the result
+      // itself is the one compared against.
+      if (nest && referenceAt(p, nest)) continue
+      const key = tileKey(p)
+      if (key && !out.has(key)) out.set(key, r)
+    }
+    return out
+  }, [history.data, nest])
+  if (names.isLoading) return <Loading />
+  const tiles = tops.map((r) => {
+    const p = r.properties ?? {}
+    const metric = referenceAt(p, "metric")
+    const info = metric ? infos.get(metric) : undefined
+    const named =
+      info?.name ??
+      (metric ? splitRecordPath(metric)?.id : undefined) ??
+      (recordTitle(p) || r.id)
+    const channel = text(p.channel)
+    const places = info?.displayPrecision ?? DEFAULT_PRECISION
+    const v = isBag(p.value) ? p.value : undefined
+    const numeric =
+      v && (typeof v.value === "string" || typeof v.value === "number")
+    const reading = resultReading(p)
+    const bar = resultBar(p)
+    const flag = flagWords(p.interpretation)
+    const before = previous.get(tileKey(p) ?? "")
+    const then = before ? instant(before.properties?.at) : undefined
+    const earlier =
+      reading && !reading.comparator && before
+        ? resultReading(before.properties ?? {}, reading.unit)
+        : undefined
+    const others = twins.get(pathOf(r)) ?? []
+    return {
+      key: pathOf(r),
+      label: channel ? `${named}, ${codeWords(channel)}` : named,
+      href: recordLink(r, ""),
+      flagged: reading?.tone === "poor",
+      value: numeric
+        ? readingText(String(v.value), undefined, places, text(v.comparator))
+        : valueText(p) || undefined,
+      unit: numeric ? text(v.unit) : undefined,
+      band: flag
+        ? {
+            label: flag.charAt(0).toUpperCase() + flag.slice(1),
+            tone: reading?.tone ?? ("none" as const),
+          }
+        : undefined,
+      bar,
+      places,
+      delta:
+        earlier && !earlier.comparator && then !== undefined
+          ? changeSinceWords(
+              reading!.value,
+              earlier.value,
+              then,
+              reading!.unit,
+              places
+            )
+          : undefined,
+      note: others.length
+        ? `Also ${others.map((t) => valueText(t.properties ?? {})).join(", ")}`
+        : undefined,
+    }
+  })
+  tiles.sort(
+    (a, b) =>
+      Number(b.flagged) - Number(a.flagged) || a.label.localeCompare(b.label)
+  )
+  return (
+    <>
+      <TileGrid label={label}>
+        {tiles.map((t) => (
+          <div
+            key={t.key}
+            role="listitem"
+            className="contents"
+            data-record={t.key}
+          >
+            <StatTile
+              label={t.label}
+              href={t.href}
+              value={t.value}
+              unit={t.unit}
+              band={t.band}
+              show={t.bar ? "bar" : "number"}
+              numeric={t.bar?.value}
+              bands={t.bar ? [t.bar.band] : []}
+              min={t.bar?.min}
+              marked={Boolean(t.bar)}
+              precision={t.places}
+              delta={t.delta ? { text: t.delta, tone: "none" } : undefined}
+              note={t.note}
+            />
+          </div>
+        ))}
+      </TileGrid>
+      {history.error && (
+        <Failed error={history.error} onRetry={() => void history.refetch()} />
+      )}
+    </>
+  )
+}
+
+/** The analyte a result is compared within: its metric and its channel (a
+ * DXA scan's trunk is never compared with its arms). */
+function tileKey(p: Props): string | undefined {
+  const metric = referenceAt(p, "metric")
+  return metric ? `${metric}|${text(p.channel) ?? ""}` : undefined
 }

@@ -573,3 +573,131 @@ it("draws a fractional property to two fraction digits at most, an integer as it
   ])
   expect(within(table).getByText("8.4").getAttribute("title")).toBe("8.3985")
 })
+
+it("draws a report's results as tiles, a flagged one first, each against its range and its previous result", async () => {
+  const CHOLESTEROL = `${METRIC}/lab/cholesterol`
+  const OCTOBER = result("october", "2025-10-15T08:00:00Z", mmol("5.6"), {
+    interpretation: [{ code: "N" }],
+    referenceRanges: [RANGE],
+    report: { ref: `${REPORT.identity}/october` },
+  })
+  const GLUCOSE_NOW = result("glucose", "2026-03-02T08:00:00Z", mmol("6.2"), {
+    interpretation: [{ code: "H" }],
+    referenceRanges: [RANGE],
+  })
+  const GLUCOSE_MG = result(
+    "glucose-mg",
+    "2026-03-02T08:00:00Z",
+    { value: "112", unit: "mg/dL" },
+    { twinOf: { ref: pathOf(GLUCOSE_NOW) } }
+  )
+  const CHOLESTEROL_NOW = result(
+    "cholesterol",
+    "2026-03-02T08:00:00Z",
+    mmol("4.1"),
+    {
+      metric: { ref: CHOLESTEROL },
+      interpretation: [{ code: "N" }],
+      referenceRanges: [{ high: mmol("5.0") }],
+    }
+  )
+  const metricRecord = (id: string, properties: Record<string, unknown>) =>
+    record(METRIC, id, properties)
+  const seen: RecordFilter[] = []
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://test")
+      const ok = (records: SubstrateRecord[]) =>
+        new Response(JSON.stringify({ records, head: 1, generation: "g" }), {
+          status: 200,
+        })
+      if (url.pathname !== "/api/v1/records") {
+        return new Response("{}", { status: 404 })
+      }
+      const filter = JSON.parse(
+        url.searchParams.get("filter") ?? "{}"
+      ) as RecordFilter
+      seen.push(filter)
+      if (filter.kinds?.includes(METRIC)) {
+        return ok([
+          metricRecord("lab/glucose", { name: "Glucose" }),
+          metricRecord("lab/cholesterol", { name: "Cholesterol" }),
+        ])
+      }
+      if (filter.kinds?.includes(RESULT.identity)) {
+        return ok(
+          filter.properties?.at
+            ? [OCTOBER]
+            : [GLUCOSE_MG, CHOLESTEROL_NOW, GLUCOSE_NOW]
+        )
+      }
+      return ok([])
+    })
+  )
+  const v = record(RECORD_VIEW_KIND, "lab/view", {
+    appliesTo: { ref: `substrate.reamde.dev/core/kind/${REPORT.identity}` },
+    name: "This report",
+    sections: [
+      {
+        table: {
+          label: "Results",
+          kind: { ref: `substrate.reamde.dev/core/kind/${RESULT.identity}` },
+          via: "report",
+          show: "tiles",
+          nest: "twinOf",
+        },
+      },
+    ],
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <RecordViews
+        views={viewsOf([v])}
+        record={THE_REPORT}
+        kind={REPORT}
+        kinds={ALL}
+      />
+    </QueryClientProvider>
+  )
+  const grid = await screen.findByRole("list", { name: "Results" })
+  expect(grid.getAttribute("data-slot")).toBe("tile-grid")
+  await waitFor(() =>
+    expect(
+      within(grid)
+        .getAllByRole("listitem")
+        .map((t) => t.getAttribute("data-record"))
+    ).toEqual([pathOf(GLUCOSE_NOW), pathOf(CHOLESTEROL_NOW)])
+  )
+  // The flagged glucose comes before the cholesterol its name sorts after;
+  // its twin is said on its tile, not drawn as one.
+  const [glucose, cholesterol] = within(grid).getAllByRole("listitem")
+  await waitFor(() =>
+    expect(glucose.textContent).toContain(
+      "+0.6 mmol/L (+11%) since Oct 15, 2025"
+    )
+  )
+  expect(glucose.textContent).toContain("Glucose")
+  expect(glucose.textContent).toContain("6.2")
+  expect(glucose.textContent).toContain("High")
+  expect(glucose.textContent).toContain("Also 112 mg/dL")
+  expect(glucose.querySelector("[data-slot=range-bar]")).not.toBeNull()
+  expect(glucose.querySelector("a")!.getAttribute("href")).toBe(
+    `/data/${RESULT.identity.split("/").map(encodeURIComponent).join("/")}/glucose`
+  )
+  expect(cholesterol.textContent).toContain("Cholesterol")
+  expect(cholesterol.textContent).toContain("Normal")
+  expect(cholesterol.textContent).not.toContain("since")
+  // One read of the earlier results of both metrics, before this report.
+  const history = seen.find(
+    (f) => f.kinds?.includes(RESULT.identity) && f.properties?.at
+  )!
+  expect(history.properties).toEqual({
+    metric: { in: [CHOLESTEROL, GLUCOSE].sort() },
+    at: { lt: "2026-03-02T08:00:00.000Z" },
+    about: { exists: false },
+  })
+})

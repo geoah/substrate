@@ -549,7 +549,12 @@ properties the sheet folds away because a section shows them. Then come its
   fed the most of them), and where several sources fed the totals the block
   says which one the rows show. The block reads the first 500 spans and
   says so where there are more.
-- **stats**: tiles, one per item. An item is one `reducer` (`last` where
+- **stats**: tiles, one per item. Every tile takes one size, whatever it
+  holds: up to three to a row, each a third of the row and at most 320 px
+  wide, fewer where the page is narrower than three 176 px tiles, and every
+  tile as tall as the tallest
+  ([0185](decisions/0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md)).
+  An item is one `reducer` (`last` where
   absent) of one `metric` over the window, the metric a reference property
   of the record holds (`metricProperty`, such as a lab result's `metric`), or
   one `property` of the record, where a dotted path reads into a keyed map
@@ -611,7 +616,18 @@ properties the sheet folds away because a section shows them. Then come its
   reference property of the listed kind: a row naming another listed row
   sits under it, as a lab's converted twin does, and its point is hollow.
   A float or decimal column shows two fraction digits at most (`8.3985` as
-  `8.4`), the stored digits on hover.
+  `8.4`), the stored digits on hover. With `show: tiles` an observed
+  single-value kind's results draw as tiles in the stats block's grid
+  instead of rows: each headed by its metric's name (and its channel)
+  linked to the result's page, its value with its flag in the flag's tone,
+  a bar against its first reference range, and its change since the
+  previous result of the same metric and channel ("+0.23 mmol/L (+6%) since
+  Oct 15, 2025"). One list read names the metrics and one more finds the
+  previous results: the listed kind's records of the listed metrics before
+  the earliest listed result, the 100 newest.
+  A `nest` row is said on its result's tile ("Also 159.7 mg/dL"), and a
+  flagged result comes first, the rest by name. A kind binding no observed
+  single value draws rows and says why.
   `orderBy` (default `at:desc`) and `limit` (default 25) shape the read; with
   `empty: hide` a table with no rows is left out, and a view whose every
   block is a chart, table, stats or trend block under `empty: hide` stays
@@ -638,7 +654,9 @@ serves two aggregate reads at a time per process, so a page queues the rest:
 the healthwhoop sample's cycle page costs eight (seven while the cycle is
 open, which reads no baseline for the values still growing), and
 `web/console/src/components/record-view/shipped-reads.test.tsx` holds every
-shipped view to its count. Tables issue one list read and breakdowns none.
+shipped view to its count. Tables issue one list read (three under `show:
+tiles`, adding the metrics' names and the previous results) and
+breakdowns none.
 A read the server turns away while its aggregate slots are busy (`503
 unavailable`) is asked again twice, each after the `Retry-After` the server
 names; one turned away while the server re-derives an index is not, nor

@@ -48,6 +48,7 @@ import {
   autoBucket,
   bucketEstimate,
   bucketOf,
+  dayWords,
   durationMs,
   durationWords,
   isoWithOffset,
@@ -315,6 +316,8 @@ export interface TableBlock {
   orderBy: string
   limit: number
   chart: boolean
+  /** `rows` draws a table; `tiles` draws each result as a tile. */
+  show: "rows" | "tiles"
   nest?: string
   empty: "say" | "hide"
 }
@@ -909,6 +912,8 @@ function tableOf(b: Bag): Section {
   }
   const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
   if (!empty) return { problem: `${what}'s empty is ${said(b.empty)}.` }
+  const show = oneOf(b.show, ["rows", "tiles"] as const, "rows")
+  if (!show) return { problem: `${what}'s show is ${said(b.show)}.` }
   return {
     block: {
       type: "table",
@@ -921,6 +926,7 @@ function tableOf(b: Bag): Section {
       orderBy: text(b.orderBy) ?? "at:desc",
       limit: clampInt(b.limit, 1, 100, 25),
       chart: b.chart === true,
+      show,
       ...(text(b.nest) ? { nest: text(b.nest) } : {}),
       empty,
     },
@@ -1928,6 +1934,44 @@ export function tableParams(
   }
 }
 
+/** The most earlier results a table's tiles read to find each result's
+ * previous one. */
+export const TILE_HISTORY = 100
+
+/** The read a table's tiles compare against: the listed kind's results of
+ * the same metrics, before the earliest listed result, newest first, about
+ * whom the table's own read is. Undefined where no listed result names a
+ * metric and a time. */
+export function tileHistoryParams(
+  table: ListParams,
+  listed: readonly SubstrateRecord[]
+): ListParams | undefined {
+  const metrics = new Set<string>()
+  let earliest: number | undefined
+  for (const r of listed) {
+    const p = r.properties ?? {}
+    const metric = readReference(p.metric)?.path
+    const at = instant(p.at)
+    if (!metric || at === undefined) continue
+    metrics.add(metric)
+    earliest = earliest === undefined ? at : Math.min(earliest, at)
+  }
+  if (!metrics.size || earliest === undefined) return undefined
+  const about = table.filter?.properties?.about
+  return {
+    kinds: table.kinds,
+    first: TILE_HISTORY,
+    orderBy: "at:desc",
+    filter: {
+      properties: {
+        metric: { in: [...metrics].sort() },
+        at: { lt: new Date(earliest).toISOString() },
+        ...(about ? { about } : {}),
+      },
+    },
+  }
+}
+
 /** A record's value as a list filter compares it: a reference's path, a
  * string, a number or a boolean. Undefined for anything else, which the
  * table reads as holding none. */
@@ -2135,6 +2179,34 @@ export function deltaWords(
         ? "good"
         : "poor"
   return { text, tone }
+}
+
+/** A result's change since the previous result of its analyte, in words:
+ * "+0.23 mmol/L (+6%) since Oct 15, 2025". A value in percent changes by
+ * points, with no relative part. It carries no tone: a view names no better
+ * direction for a lab's analyte. */
+export function changeSinceWords(
+  value: number,
+  previous: number,
+  previousAt: number,
+  unit?: string,
+  precision = DEFAULT_PRECISION
+): string {
+  const since = `since ${dayWords(previousAt, true)}`
+  const round = (n: number) => Number(n.toFixed(precision))
+  const change = value - previous
+  const shown = round(change)
+  if (shown === 0) return `No change ${since}`
+  const sign = shown > 0 ? "+" : "-"
+  const size = String(round(Math.abs(change)))
+  if (unit === "%") {
+    const points = Math.abs(shown) === 1 ? "point" : "points"
+    return `${sign}${readingText(size, undefined, precision)} ${points} ${since}`
+  }
+  const pct =
+    previous !== 0 ? Math.round((change / Math.abs(previous)) * 100) : 0
+  const pctText = pct ? ` (${pct > 0 ? "+" : "-"}${Math.abs(pct)}%)` : ""
+  return `${sign}${readingText(size, unit, precision)}${pctText} ${since}`
 }
 
 // ── spans ─────────────────────────────────────────────────────────────────

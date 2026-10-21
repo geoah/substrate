@@ -49,6 +49,11 @@ export interface StatTileProps {
   /** The value as the caller draws it (a declared property's own
    * rendering), in place of `value` in the number show. */
   figure?: ReactNode
+  /** The bar's bands are a reference range: its bounds are drawn and
+   * printed (`RangeBar`'s `marked`). */
+  marked?: boolean
+  /** The decimal places a bar prints its bounds with. */
+  precision?: number
 }
 
 export function StatTile(props: StatTileProps) {
@@ -108,7 +113,7 @@ export function StatTile(props: StatTileProps) {
   return (
     <div
       data-slot="stat-tile"
-      className="flex min-w-[160px] flex-col gap-1 rounded-md border border-border p-3"
+      className="flex h-full min-w-0 flex-col gap-1 rounded-md border border-border p-3"
     >
       <div className="text-[12.5px] text-muted-foreground">
         {href ? (
@@ -133,6 +138,8 @@ export function StatTile(props: StatTileProps) {
           baseline={baseline}
           unit={unit}
           tone={band?.tone}
+          marked={props.marked}
+          precision={props.precision}
         />
       )}
       {delta && (

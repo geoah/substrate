@@ -282,6 +282,11 @@ it("draws a tile per item from one read, with bands, a baseline and its delta", 
   await waitFor(() =>
     expect(tile(group, "Energy").textContent).toContain("2,100")
   )
+  // Every tile sits in the one grid, whatever it holds, at its full height.
+  const grid = within(group).getByRole("list", { name: "Figures" })
+  expect(grid.getAttribute("data-slot")).toBe("tile-grid")
+  expect(grid.querySelectorAll("[data-slot=stat-tile]")).toHaveLength(6)
+  expect(tile(group, "Energy").className).toContain("h-full")
   // The dial and its band word.
   const recovery = tile(group, "Recovery")
   expect(
