@@ -1261,12 +1261,16 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
+		// The unit uses' rule before the seed: where the stored uses are
+		// behind it, the request it writes makes the use guard refuse a
+		// seed refresh that could take a unit from a value, rather than
+		// judge it by uses an older rule derived (unitgraph.go).
+		ds.checkUnitUses,
 		// The units before every step that re-derives or validates through
 		// the unit graph (unitseed.go).
 		ds.ensureShippedUnits,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
-		ds.checkUnitUses,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,

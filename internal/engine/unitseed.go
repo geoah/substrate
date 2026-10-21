@@ -2,8 +2,8 @@ package engine
 
 // THE UNIT SEED (decision 0186): every repository holds the shipped unit and
 // conversion records (internal/engine/unitseed), written at registration in
-// the creation transaction and caught up at every open, right after the
-// shipped vocabulary upgrade.
+// the creation transaction and caught up at every open, after the shipped
+// vocabulary upgrade and the unit uses' rule check (checkUnitUses).
 //
 // The seed writes with apply semantics as the seed actor. A shipped record
 // the repository lacks is written, and one whose row differs from it is

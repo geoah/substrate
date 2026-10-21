@@ -338,6 +338,11 @@ The step 2 code settles these as follows.
   the open. Migration 0016 also adds `unit_uses_index` (the rule version
   `unitUsesVersion`) and `index_reprojections.units`. `checkUnitUses` in the
   open ladder queues every kind for the pass, as `checkObservedIndex` does.
+  It runs before the seed, so the seed's use guard sees the request and
+  holds back a refresh it cannot judge (listed in `unseeded`) instead of
+  judging it by uses an older rule derived; the next open seeds it, or
+  refuses it by the derived uses. Additions still land, because they take no
+  unit from a value.
   While a `units` request is pending, the guard refuses with a conflict any
   transaction that affects a unit. A creation and a rebuild write the
   version, because they derive every row as they fold.
