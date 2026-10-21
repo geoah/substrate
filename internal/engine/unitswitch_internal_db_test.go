@@ -1168,3 +1168,50 @@ func TestGraphAggregatesMatchTheTable(t *testing.T) {
 		}
 	}
 }
+
+// A property read converts each record's quantity exactly into the request's
+// unit, else the declaration's `unit`, and refuses a unit outside it.
+func TestPropertyAggregateConvertsThroughTheGraph(t *testing.T) {
+	t.Parallel()
+	ds := openSwitched(t)
+	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb")})
+	putThing(t, ds, "b", map[string]any{"weight": qty("500", "g")})
+	putThing(t, ds, "c", map[string]any{"weight": qty("0.25", "kg")})
+	now := time.Now().UTC()
+	read := func(unit string) (map[string]string, string, error) {
+		res, err := ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Kinds: []string{thingKind}},
+			Aggregate: &substrate.Aggregate{
+				Property: &substrate.AggregateProperty{Name: "weight", Anchor: "createdAt"},
+				Range:    &substrate.AggregateRange{Gte: now.Add(-time.Hour).Format(time.RFC3339), Lt: now.Add(time.Hour).Format(time.RFC3339)},
+				Bucket:   &substrate.AggregateBucket{Every: "PT2H", Origin: now.Add(-time.Hour).Format(time.RFC3339)},
+				Reducers: []substrate.AggregateReducer{{Name: "sum"}, {Name: "max"}},
+				Unit:     unit,
+			},
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		out := map[string]string{}
+		for _, row := range res.Rows {
+			for _, v := range row.Values {
+				if v.Value != nil {
+					out[v.Reducer.Name] = *v.Value
+				}
+			}
+		}
+		return out, res.Unit, nil
+	}
+	got, unit, err := read("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unit != "kg" || !near(got["sum"], "1.20359237", 1e-12) || !near(got["max"], "0.5", 1e-12) {
+		t.Fatalf("in the declaration's unit: %v in %s", got, unit)
+	}
+	if got, _, err = read("g"); err != nil || !near(got["sum"], "1203.59237", 1e-9) {
+		t.Fatalf("in g: %v %v", got, err)
+	}
+	_, _, err = read("K")
+	wantValidation(t, "a property read in another component", err, "K does not convert to kg")
+}
