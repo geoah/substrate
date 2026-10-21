@@ -742,9 +742,10 @@ Behavior changes: all of it, at once.
 
 The rollback boundary: a repository written after this step holds unit ids
 (`percent`, `1/min`) and closures without `measures`, which an older binary
-reads through the old table and loader. No release sits on either side, so
-a development repository is reset with `mise run dev:wipe` rather than
-migrated, and a rollback past this step restores a backup taken before it.
+reads through the old table and loader. The forward path is a repository
+migration (details below); a development repository may still be reset with
+`mise run dev:wipe`, and a rollback past this step restores a backup taken
+before it.
 
 Size: about 700 lines of Go, 250 of YAML and 2,000 lines of tests changed.
 
@@ -808,6 +809,70 @@ The step 4 code settles these as follows.
   rewritten for the graph or dropped where the graph has no such rule; a
   value in another unit than its metric admits can no longer be stored, so
   the aggregate test of reading one went.
+- A quantity filter refuses with `ErrUnavailable` (`503`) while the pass
+  behind the open still owes a filtered kind's rows their unit uses, or the
+  repository's uses follow an older rule, read in the read's own snapshot
+  (`unitUsesReady`). Its arms are chosen from `unit_uses`, so a value whose
+  use is not derived yet matched no arm and dropped out of a successful
+  page. A filter over kinds the pass does not owe answers as before.
+- `convertlab` converts each value through `host.units.convert` (the input
+  into the formula's unit, the result into the target metric's unit, and
+  each reference bound the same way), never by a factor read off one unit,
+  because a repository may add a conversion with an offset. Each value is
+  one host call; a lab result converts a handful.
+- `checkDeclaredUnits` judges a property when its kind's declaration changed
+  or what it resolves to changed (`quantityConstraints`: each quantity's
+  spec and the default, at any depth), so editing only a quantity
+  propertytype is judged in every kind that uses it. The declarations are
+  compared without `version`, which a kind rendered after an apply omits
+  and one loaded from its row carries, so the comparison no longer depends
+  on whether the registry was rebuilt since.
+- The forward path for a repository holding observations or health copies
+  imported before the switch is repository migration 3,
+  `name_units_by_unit_records` (decision 0099). `main` has shipped those
+  samples since PRs #971 to #980, so a repository on the `latest` image may
+  hold them. The migration rewrites every package the repository publishes
+  or imported (never core, llm or console), as ordinary record writes
+  before the stored vocabulary loads: a quantity's `measures` becomes the
+  `unit` the measure converted through (a fixed map in the migration, every
+  entry a shipped unit; `temperature-difference` also sets `delta`,
+  `arbitrary` maps to nothing), a metric kind's `unit` and `units` become
+  references to core's unit kind and `measures` goes, an observed kind's
+  managed `measure` is retired, each live metric record's unit string
+  becomes a reference to the unit that answers it, and each live observed
+  record drops `measure`. Stored quantity values keep their table codes,
+  which the graph resolves.
+- A metric unit is resolved against the repository's own units, then the
+  shipped seed, whose record the migration writes as the seed actor where
+  the repository lacks it (the seed then finds it current), then as a unit
+  of its own (`name` and `code` the spelling) where the spelling is a valid
+  record id, which covers a compound the old grammar admitted (`kg/h`). A
+  spelling that is none of these stays as written and the log names the
+  record: the metric refuses its next write until the owner points it at a
+  unit. The migration never fails the open for it.
+- Stored declaration versions stay, and an imported copy whose closure
+  matched its origin stamp before the rewrite is stamped again over the
+  rewritten rows, so the catalog reads it as unedited and offers the
+  shipped sample upgrade; importing again lands it (the test does).
+- Until this open's shipped upgrade declares core's unit kind, the
+  rewritten packages do not load and are quarantined, with an `ERROR` line;
+  the reload after the upgrade admits them and clears the marker in the same
+  open. The migration's ledger line says so. Until health is imported again,
+  the old `convertlab` body calls `host.units.measure`, which the graph
+  refuses, so its deliveries park.
+- The historical fixture is `internal/engine/testdata/preunits`: core's
+  `core.yaml` and `propertytype.yaml` (version 42) and the observations and
+  health samples as `main` shipped them at `7d0a0cdfc`. Binary N in the test
+  is today's engine over that tree on the table path; the loader refuses a
+  kind's `measures`, so the samples are imported without those lines and the
+  stored rows are planted back as `main` stored them, with the origin
+  stamp an import would leave. Metric records keep their string units and
+  observations get the stamped `measure`.
+- The breaking-change footers name the forward path (the migration and the
+  boot upgrade, automatic), `mise run dev:wipe` for development data, and
+  the rollback: stop the server, restore the repository directories and
+  the database dump taken before the upgrade under the credential key they
+  were taken with, and start the binary that was running then.
 
 ### Benchmarks
 
@@ -888,6 +953,7 @@ Step 4's numbers are under "Benchmarks" in its details.
   place that says so.
 - **Two code paths in step 3.** Until step 5 every reader has an old and a
   new path; a test that runs only one of them can let the other rot.
-- **Development repositories.** After step 4 a repository written before it
-  parks its `observations` and `health` copies; `mise run dev:wipe` is the
-  answer, and the step's notes say so.
+- **Repositories written before step 4.** Repository migration 3 rewrites
+  their `observations` and `health` copies at the first open; a metric unit
+  it cannot map stays as written and is logged, and a development
+  repository may still be reset with `mise run dev:wipe`.
