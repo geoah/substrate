@@ -1070,11 +1070,12 @@ func (g *UnitGraph) Convert(ctx context.Context, value, from, to string, delta b
 	if err != nil {
 		return UnitConversion{}, fmt.Errorf("%s and %s do not convert: %w", fromID, toID, err)
 	}
-	x, _ := v.Float64()
-	if math.IsInf(x, 0) {
-		return UnitConversion{}, fmt.Errorf("value: %s is past the range a float converts in", digits)
-	}
-	cur := fu
+	// The value stays exact between expressions: each linear stretch maps it
+	// as a rational and only then reads it as a float, because a composed
+	// factor such as 10^-360 is past float64 where its product with the
+	// value is not.
+	r, cur := v, fu
+	var x float64
 	for _, step := range route {
 		if err := ctx.Err(); err != nil {
 			return UnitConversion{}, err
@@ -1084,15 +1085,15 @@ func (g *UnitGraph) Convert(ctx context.Context, value, from, to string, delta b
 		if !step.forward {
 			src, dst = dst, src
 		}
-		if x, err = floatLinear(cur, g.units[src], x); err != nil {
+		if x, err = floatLinear(cur, g.units[src], r, digits); err != nil {
 			return UnitConversion{}, err
 		}
 		if x, err = edge.eval(ctx, x, step.forward); err != nil {
 			return UnitConversion{}, err
 		}
-		cur = g.units[dst]
+		r, cur = new(big.Rat).SetFloat64(x), g.units[dst]
 	}
-	if x, err = floatLinear(cur, tu, x); err != nil {
+	if x, err = floatLinear(cur, tu, r, digits); err != nil {
 		return UnitConversion{}, err
 	}
 	out, err := CanonicalDecimal(strconv.FormatFloat(x, 'f', -1, 64))
@@ -1106,19 +1107,24 @@ func (g *UnitGraph) Convert(ctx context.Context, value, from, to string, delta b
 	return UnitConversion{Value: out, Unit: toID, Exact: false}, nil
 }
 
-// floatLinear converts a float inside one component.
-func floatLinear(fu, tu *graphUnit, x float64) (float64, error) {
-	if fu == tu {
-		return x, nil
+// floatLinear converts an exact value inside one component exactly, and
+// answers the result as the float an expression reads. A result past
+// float64, or a nonzero one that would read as zero, is refused; input is
+// the value's digits, named where no conversion moved it.
+func floatLinear(fu, tu *graphUnit, r *big.Rat, input string) (float64, error) {
+	if fu != tu {
+		factor, offset := composeLinear(fu, tu, false)
+		r = new(big.Rat).Mul(r, factor)
+		r.Add(r, offset)
 	}
-	factor, offset := composeLinear(fu, tu, false)
-	f, _ := factor.Float64()
-	o, _ := offset.Float64()
-	y := x*f + o
-	if math.IsInf(y, 0) || math.IsNaN(y) {
+	x, _ := r.Float64()
+	if math.IsInf(x, 0) || (x == 0 && r.Sign() != 0) {
+		if fu == tu {
+			return 0, fmt.Errorf("value: %s is past the range a float converts in", input)
+		}
 		return 0, fmt.Errorf("%s to %s: the value converts past the range of a float", fu.rec.ID, tu.rec.ID)
 	}
-	return y, nil
+	return x, nil
 }
 
 func (e *expressionEdge) eval(ctx context.Context, x float64, forward bool) (float64, error) {

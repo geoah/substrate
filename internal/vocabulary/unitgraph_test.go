@@ -577,3 +577,30 @@ func TestABuiltGraphOwnsItsCoefficients(t *testing.T) {
 		t.Errorf("deg's turn is %s, want 360", u.Turn.RatString())
 	}
 }
+
+// A linear stretch before an expression maps the value exactly: six factors
+// of 10^-60 compose to 10^-360, past float64, while 10^300 of the first unit
+// is 10^-60 of the last, well inside it.
+func TestAnExpressionRouteKeepsTheLinearStretchExact(t *testing.T) {
+	small := "0." + strings.Repeat("0", 59) + "1"
+	units := gUnits("a0", "a1", "a2", "a3", "a4", "a5", "a6", "c")
+	var conversions []vocabulary.ConversionRecord
+	for i := range 6 {
+		conversions = append(conversions, gLinear(t, fmt.Sprintf("a%d", i), fmt.Sprintf("a%d", i+1), small))
+	}
+	conversions = append(conversions, gExpr("a6", "c", "value", "value"))
+	g := gBuild(t, units, conversions...)
+	got := gConvert(t, g, "1"+strings.Repeat("0", 300), "a0", "c", false)
+	if v, err := strconv.ParseFloat(got.Value, 64); err != nil || math.Abs(v/1e-60-1) > 1e-12 || got.Exact {
+		t.Errorf("10^300 a0 is %+v c, want 1e-60", got)
+	}
+	back := gConvert(t, g, small, "c", "a0", false)
+	if v, err := strconv.ParseFloat(back.Value, 64); err != nil || math.Abs(v/1e300-1) > 1e-12 {
+		t.Errorf("1e-60 c is %+v a0, want 1e300", back)
+	}
+	// A value whose exact conversion is past float64 is refused, never read
+	// as zero.
+	if _, err := g.Convert(context.Background(), "1", "a0", "c", false); err == nil || !strings.Contains(err.Error(), "a0 to a6: the value converts past the range of a float") {
+		t.Errorf("1 a0 to c: %v", err)
+	}
+}
