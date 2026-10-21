@@ -58,7 +58,10 @@ export function forgetUnitGraphs(): void {
 }
 
 /** The repository's graph as a query, keyed by server and repository; the
- * revision keys the built graph inside it. */
+ * revision keys the built graph inside it. Between refetches the change
+ * stream is what keeps it current (hooks/use-unit-reader.ts), so it is never
+ * stale by age; a new observer refetches it anyway, because no stream
+ * watched the repository while none was mounted. */
 export function unitGraphQueryOptions(
   repository: string | null = getRepository()
 ) {
@@ -72,6 +75,7 @@ export function unitGraphQueryOptions(
         server
       ),
     staleTime: Infinity,
+    refetchOnMount: "always",
   })
 }
 

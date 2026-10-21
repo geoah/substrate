@@ -2,7 +2,8 @@
 /** The unit reader a component takes: the engine's table where the server
  * says its switch is off, the repository's graph where it is on, and neither
  * while the graph loads or after it failed. The graph is fetched again when
- * the change stream names a unit or conversion record. */
+ * the change stream names a unit or conversion record, when the watch opens,
+ * after a compaction and when the reader mounts again. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, renderHook, waitFor } from "@testing-library/react"
@@ -158,5 +159,46 @@ describe("useUnitReader", () => {
     expect(result.current.check({ value: "1", unit: "kg" })).toMatch(
       /did not load/
     )
+  })
+
+  it("fetches the graph again once the watch is live, for a change made before it opened", async () => {
+    const server = serve(true)
+    const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
+    await waitFor(() => expect(result.current.graph?.revision).toBe(1))
+    // Committed after the first fetch and before the watch's start: no row
+    // will ever name it.
+    server.revision = 2
+    watch.calls.at(-1)!.onStatus?.("live")
+    await waitFor(() => expect(result.current.graph?.revision).toBe(2))
+  })
+
+  it("fetches the graph again after a compaction, and watches from the head again", async () => {
+    const server = serve(true)
+    const { result } = renderHook(() => useUnitReader(), { wrapper: wrapper() })
+    await waitFor(() => expect(result.current.graph?.revision).toBe(1))
+    const first = watch.calls.at(-1)!
+    server.revision = 2
+    first.onCompacted?.()
+    await waitFor(() => expect(result.current.graph?.revision).toBe(2))
+    await waitFor(() => expect(watch.calls).toHaveLength(2))
+    expect(first.stopped).toBe(true)
+    expect(watch.calls[1].stopped).toBe(false)
+  })
+
+  it("sees a change made while it was unmounted when it mounts again", async () => {
+    const server = serve(true)
+    const shared = client()
+    const first = renderHook(() => useUnitReader(), {
+      wrapper: wrapper(shared),
+    })
+    await waitFor(() => expect(first.result.current.graph?.revision).toBe(1))
+    first.unmount()
+    expect(watch.calls.at(-1)?.stopped).toBe(true)
+    // Another client edits a conversion while nothing watches.
+    server.revision = 2
+    const again = renderHook(() => useUnitReader(), {
+      wrapper: wrapper(shared),
+    })
+    await waitFor(() => expect(again.result.current.graph?.revision).toBe(2))
   })
 })

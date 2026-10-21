@@ -4,11 +4,13 @@
  * graph-enabled server never gets a table answer.
  *
  * Mount it once, through `UnitsProvider` (components/units-provider.tsx):
- * each mount opens a watch on the change stream, and a change to any unit or
- * conversion record drops the cached graph, so the next read fetches the new
- * revision. */
+ * each mount opens a watch on the change stream. The graph is refetched when
+ * a unit or conversion record changes, each time the watch opens (a change
+ * committed between the fetch and the watch's start reaches no stream), and
+ * after a compaction, which ends the watch and starts a new one at the
+ * head. */
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { watchChanges } from "@/lib/api/changes"
@@ -39,6 +41,8 @@ export function useUnitReader(): UnitReader {
     error,
     isError,
   } = useQuery({ ...graphQuery, enabled: on === true })
+  // A compaction ends the watch; the next epoch opens a new one at the head.
+  const [epoch, setEpoch] = useState(0)
   const key = JSON.stringify(graphQuery.queryKey)
   useEffect(() => {
     if (on !== true) return
@@ -49,9 +53,16 @@ export function useUnitReader(): UnitReader {
       onRow: (row) => {
         if (unitRecordChanged(row.kind)) refetch()
       },
+      onStatus: (status) => {
+        if (status === "live") refetch()
+      },
+      onCompacted: () => {
+        refetch()
+        setEpoch((n) => n + 1)
+      },
     })
     return () => handle.stop()
-  }, [on, queryClient, key])
+  }, [on, queryClient, key, epoch])
   return useMemo(() => {
     if (switchPending) return pendingUnits("loading")
     if (on !== true) return TABLE_UNITS
