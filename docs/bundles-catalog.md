@@ -817,8 +817,11 @@ and one outcome.
 (`score.kilojoule` on `cycle` and `workout`), distance and height are metres
 (`user.heightMeter`, `score.distanceMeter`, `score.altitudeGainMeter`), and
 every duration is milliseconds (`score.stageSummary`, `score.sleepNeeded`,
-`score.zoneDurations`): kcal, a total-asleep sum and a calendar day are the
-reader's arithmetic. `scoreState` is an enum of `scored`, `pendingscore` and
+`score.zoneDurations`): kcal and a total-asleep sum are the reader's
+arithmetic. The one derived value is `cycle.day`, the date the WHOOP app files
+a cycle under, which the API does not send: the day its member woke into,
+taken as `start` at `timezoneOffset` moved 12 hours on. A cycle's title reads
+it ("Cycle 2026-10-21"). `scoreState` is an enum of `scored`, `pendingscore` and
 `unscorable`, each labelled with WHOOP's own spelling, and `score` is present
 only where `scoreState` is `scored`. `cycle`, `sleep` and `workout` bind
 `temporal(range)`, so `at` is the record's `start` and `endsAt` its `end`; the

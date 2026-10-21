@@ -1318,28 +1318,87 @@ func TestWhoopSyncRewalksRecoveriesWrittenWithoutACycleID(t *testing.T) {
 	// The fake serves every page whatever the window, so the floor is read off
 	// the request: the re-walk starts a week before the oldest recovery
 	// (2026-09-11), not 48 hours before the cursor.
-	if got := whoopRecoveryStarts(fake); len(got) == 0 || got[0] > "2026-09-05" {
+	if got := whoopStarts(fake, "/v2/recovery"); len(got) == 0 || got[0] > "2026-09-05" {
 		t.Fatalf("the recovery walk started at %v, want a week before the oldest recovery", got)
 	}
 
 	// Nothing is left without a cycleId, so the run after reads the usual
 	// window and deletes nothing.
-	walked := len(whoopRecoveryStarts(fake))
+	walked := len(whoopStarts(fake, "/v2/recovery"))
 	effects = whoopSync(t, ds, fake, noCycles(whoopSteady(nil)))
 	if dels := whoopDeletes(effects); len(dels) != 0 {
 		t.Fatalf("the run after the re-walk deleted %v", dels)
 	}
-	if got := whoopRecoveryStarts(fake)[walked:]; len(got) == 0 || got[0] != "2026-10-08T15:00:00Z" {
+	if got := whoopStarts(fake, "/v2/recovery")[walked:]; len(got) == 0 || got[0] != "2026-10-08T15:00:00Z" {
 		t.Fatalf("the run after the re-walk started at %v, want 48 hours before the cursor", got)
 	}
 }
 
-// whoopRecoveryStarts is the `start` of every recovery page the fake served.
-func whoopRecoveryStarts(f *fakeWhoop) []string {
+// TestWhoopSyncTitlesACycleByTheDayItsMemberWokeInto: a cycle's `day` is
+// `start` at the cycle's own offset, 12 hours on, and its title reads it.
+// Cycle 1047561 starts at 22:55 on 9 October at +03:00, so its member woke
+// into 10 October.
+func TestWhoopSyncTitlesACycleByTheDayItsMemberWokeInto(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	row := mustGet(t, ds, whoopCycleKind, whoopRow("cycle", whoopCurrentCycle))
+	if got := row.Properties["day"]; got != "2026-10-10" {
+		t.Fatalf("cycle %s has day %v, want 2026-10-10", whoopCurrentCycle, got)
+	}
+	if row.Title != "Cycle 2026-10-10" {
+		t.Fatalf("cycle %s is titled %q, want %q", whoopCurrentCycle, row.Title, "Cycle 2026-10-10")
+	}
+}
+
+// TestWhoopSyncRewalksCyclesWrittenWithoutADay: cycles synced before version
+// 24 have no `day` and are titled by their WHOOP id. The next run reaches back
+// a week past the oldest of them and writes each one's `day`, and the run
+// after reads the usual window.
+func TestWhoopSyncRewalksCyclesWrittenWithoutADay(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	for _, row := range listLive(t, ds, whoopCycleKind) {
+		whoopPatch(t, ds, whoopCycleKind, row.ID, map[string]any{"day": nil})
+	}
+	old := mustGet(t, ds, whoopCycleKind, whoopRow("cycle", whoopCurrentCycle))
+	if want := "Cycle " + whoopCurrentCycle; old.Title != want {
+		t.Fatalf("a cycle with no day is titled %q, want %q", old.Title, want)
+	}
+
+	effects := whoopSync(t, ds, fake, whoopSteady(nil))
+	if dels := whoopDeletes(effects); len(dels) != 0 {
+		t.Fatalf("the re-walk deleted %v", dels)
+	}
+	rows := listLive(t, ds, whoopCycleKind)
+	if len(rows) != 30 {
+		t.Fatalf("%d cycles are mirrored, want 30", len(rows))
+	}
+	for _, row := range rows {
+		day, _ := row.Properties["day"].(string)
+		if day == "" || row.Title != "Cycle "+day {
+			t.Errorf("cycle %v has day %q and title %q after the re-walk",
+				row.Properties["cycleId"], day, row.Title)
+		}
+	}
+	// The oldest cycle starts on 2026-09-10, so the re-walk starts a week
+	// before it, not 48 hours before the cursor.
+	if got := whoopStarts(fake, "/v2/cycle"); len(got) == 0 || got[0] > "2026-09-04" {
+		t.Fatalf("the cycle walk started at %v, want a week before the oldest cycle", got)
+	}
+
+	walked := len(whoopStarts(fake, "/v2/cycle"))
+	whoopSync(t, ds, fake, whoopSteady(nil))
+	if got := whoopStarts(fake, "/v2/cycle")[walked:]; len(got) == 0 || got[0] != "2026-10-08T15:00:00Z" {
+		t.Fatalf("the run after the re-walk started at %v, want 48 hours before the cursor", got)
+	}
+}
+
+// whoopStarts is the `start` of every page of one collection the fake served.
+func whoopStarts(f *fakeWhoop, path string) []string {
 	var out []string
 	queries := f.seen()
 	for i, p := range f.seenPaths() {
-		if p != "/v2/recovery" {
+		if p != path {
 			continue
 		}
 		q, err := url.ParseQuery(queries[i])

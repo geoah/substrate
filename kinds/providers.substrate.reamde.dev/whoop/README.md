@@ -19,7 +19,7 @@ fires `whoopwebhook`). They are the contract; this file is not.
 | `config` | the WHOOP OAuth app: client id, sealed secret, data API origin |
 | `account` | one connected WHOOP account, its toggles and every cursor |
 | `user` | one WHOOP member, from the profile and body measurement calls |
-| `cycle` | one physiological cycle, from one sleep onset to the next: the day WHOOP scores strain over |
+| `cycle` | one physiological cycle, from one sleep onset to the next: the day WHOOP scores strain over, titled by the date the WHOOP app shows it under |
 | `recovery` | the verdict on one cycle, keyed on the cycle it scores |
 | `sleep` | one sleep, a night or a nap |
 | `workout` | one recorded activity: sport, strain, zones and distance |
@@ -51,10 +51,11 @@ revocation is manual:
 
 ## Upgrading from version 18
 
-The upgrade to version 23 adds the `whoopwebhook` function, the
-`whoop-webhook` trigger and the `refreshRequestedAt` property on `recovery`,
-`sleep` and `workout`, beside the `recovery.cycleId` property version 21
-added, and changes no property an installed repository holds. Taking the
+The upgrade to version 24 adds the `whoopwebhook` function, the
+`whoop-webhook` trigger, the `refreshRequestedAt` property on `recovery`,
+`sleep` and `workout` and the `day` property on `cycle`, beside the
+`recovery.cycleId` property version 21 added, and changes no property an
+installed repository holds. Taking the
 upgrade (the console's Registry page, or
 `substratectl install providers.substrate.reamde.dev/whoop`) writes the
 trigger; then register the webhook URL above.
@@ -71,6 +72,11 @@ row the walk does not return. Where the
 [WHOOP to health](../../../docs/bundles-catalog.md#whoop-to-health-sample)
 sample is installed, the health records built from a deleted row are deleted
 with it.
+
+Cycle rows synced before version 24 have no `day` and keep the title
+`Cycle <WHOOP id>`. The first sync after the upgrade reads the cycle
+collection again from a week before the oldest of them, which writes each
+cycle's `day` and retitles it `Cycle <date>`.
 
 An account that has recoveries on and sleeps off reconnects once:
 `enabledRecovery` now asks for `read:sleep`, and until the grant carries it,
