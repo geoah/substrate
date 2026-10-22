@@ -1,0 +1,1686 @@
+# The conversions every repository is seeded with (decision 0186): the
+# engine's unit table as records. Written by TestUnitSeedMatchesTheTable
+# from internal/vocabulary/unitstable.go; rewrite with
+#
+#   go test ./internal/vocabulary/ -run TestUnitSeedMatchesTheTable -update
+#
+# and never by hand.
+# mass
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: g-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/g
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mg-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mg
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ug-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ug
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "0.000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ng-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ng
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "0.000000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: t-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/t
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: lb-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/lb
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "0.45359237"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: oz-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/oz
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "0.028349523125"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: st-kg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/st
+    to:
+      ref: substrate.reamde.dev/core/unit/kg
+    factor: "6.35029318"
+---
+# length
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: km-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/km
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cm-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cm
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "0.01"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mm-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mm
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: nm-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/nm
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "0.000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: in-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/in
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "0.0254"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ft-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ft
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "0.3048"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: yd-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/yd
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "0.9144"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mi-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mi
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "1609.344"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: nmi-m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/nmi
+    to:
+      ref: substrate.reamde.dev/core/unit/m
+    factor: "1852"
+---
+# area
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cm2-m2
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cm2
+    to:
+      ref: substrate.reamde.dev/core/unit/m2
+    factor: "0.0001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: har-m2
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/har
+    to:
+      ref: substrate.reamde.dev/core/unit/m2
+    factor: "10000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ft2-m2
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ft2
+    to:
+      ref: substrate.reamde.dev/core/unit/m2
+    factor: "0.09290304"
+---
+# volume
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: L-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/L
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: dL-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/dL
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.0001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mL-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mL
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: gal-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/gal
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.003785411784"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: qt-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/qt
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.000946352946"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: pt-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/pt
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.000473176473"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cup-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cup
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.0002365882365"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: floz-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/floz
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.0000295735295625"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: tbsp-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/tbsp
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.00001478676478125"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: tsp-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/tsp
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.00000492892159375"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: gal_br-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/gal_br
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.00454609"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: floz_br-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/floz_br
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.0000284130625"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cup_m-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cup_m
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.00024"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: tbsp_m-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/tbsp_m
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.000015"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: tsp_m-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/tsp_m
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.000005"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ft3-m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ft3
+    to:
+      ref: substrate.reamde.dev/core/unit/m3
+    factor: "0.028316846592"
+---
+# duration
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ms-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ms
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: us-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/us
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: min-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/min
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "60"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: h-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/h
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "3600"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: d-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/d
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "86400"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: wk-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/wk
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "604800"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mo-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mo
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "2629800"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: a-s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/a
+    to:
+      ref: substrate.reamde.dev/core/unit/s
+    factor: "31557600"
+---
+# temperature
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: Cel-K
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/Cel
+    to:
+      ref: substrate.reamde.dev/core/unit/K
+    factor: "1"
+    offset: "273.15"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: degF-K
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/degF
+    to:
+      ref: substrate.reamde.dev/core/unit/K
+    factor: "5/9"
+    offset: "45967/180"
+---
+# energy
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kJ-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kJ
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: MJ-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/MJ
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "1000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cal-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cal
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "4.184"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kcal-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kcal
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "4184"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: Cal-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/Cal
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "4184"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: W.h-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/W.h
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "3600"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kW.h-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kW.h
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "3600000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: eV-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/eV
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "0.0000000000000000001602176634"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: Btu-J
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/Btu
+    to:
+      ref: substrate.reamde.dev/core/unit/J
+    factor: "1055.05585262"
+---
+# power
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mW-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mW
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kW-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kW
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: MW-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/MW
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "1000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: hp-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/hp
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "745.69987158227022"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kcal/d-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kcal/d
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "523/10800"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kcal/h-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kcal/h
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "523/450"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: Btu/h-W
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/Btu/h
+    to:
+      ref: substrate.reamde.dev/core/unit/W
+    factor: "52752792631/180000000000"
+---
+# pressure
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: hPa-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/hPa
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "100"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kPa-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kPa
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: bar-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/bar
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "100000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mbar-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mbar
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "100"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: atm-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/atm
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "101325"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mmHg-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mmHg
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "133.322"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cmH2O-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cmH2O
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "98.0665"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: psi-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/psi
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "8896443230521/1290320000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: inHg-Pa
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/inHg
+    to:
+      ref: substrate.reamde.dev/core/unit/Pa
+    factor: "3386.3788"
+---
+# speed
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: km/h-m/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/km/h
+    to:
+      ref: substrate.reamde.dev/core/unit/m/s
+    factor: "5/18"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mph-m/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mph
+    to:
+      ref: substrate.reamde.dev/core/unit/m/s
+    factor: "0.44704"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kn-m/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kn
+    to:
+      ref: substrate.reamde.dev/core/unit/m/s
+    factor: "463/900"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ft/s-m/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ft/s
+    to:
+      ref: substrate.reamde.dev/core/unit/m/s
+    factor: "0.3048"
+---
+# pace
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: min/km-s/m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/min/km
+    to:
+      ref: substrate.reamde.dev/core/unit/s/m
+    factor: "0.06"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: s/km-s/m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/s/km
+    to:
+      ref: substrate.reamde.dev/core/unit/s/m
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: min/mi-s/m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/min/mi
+    to:
+      ref: substrate.reamde.dev/core/unit/s/m
+    factor: "625/16764"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: s/100m-s/m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/s/100m
+    to:
+      ref: substrate.reamde.dev/core/unit/s/m
+    factor: "0.01"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: s/100yd-s/m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/s/100yd
+    to:
+      ref: substrate.reamde.dev/core/unit/s/m
+    factor: "25/2286"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: s/500m-s/m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/s/500m
+    to:
+      ref: substrate.reamde.dev/core/unit/s/m
+    factor: "0.002"
+---
+# acceleration
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: gn-m/s2
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/gn
+    to:
+      ref: substrate.reamde.dev/core/unit/m/s2
+    factor: "9.80665"
+---
+# frequency
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kHz-Hz
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kHz
+    to:
+      ref: substrate.reamde.dev/core/unit/Hz
+    factor: "1000"
+---
+# rate
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1/min-1/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1/min
+    to:
+      ref: substrate.reamde.dev/core/unit/1/s
+    factor: "1/60"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1/h-1/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1/h
+    to:
+      ref: substrate.reamde.dev/core/unit/1/s
+    factor: "1/3600"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1/d-1/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1/d
+    to:
+      ref: substrate.reamde.dev/core/unit/1/s
+    factor: "1/86400"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1/wk-1/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1/wk
+    to:
+      ref: substrate.reamde.dev/core/unit/1/s
+    factor: "1/604800"
+---
+# fraction
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: percent-1
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/percent
+    to:
+      ref: substrate.reamde.dev/core/unit/1
+    factor: "0.01"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ppth-1
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ppth
+    to:
+      ref: substrate.reamde.dev/core/unit/1
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ppm-1
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ppm
+    to:
+      ref: substrate.reamde.dev/core/unit/1
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ppb-1
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ppb
+    to:
+      ref: substrate.reamde.dev/core/unit/1
+    factor: "0.000000001"
+---
+# amount-of-substance
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mmol-mol
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mmol
+    to:
+      ref: substrate.reamde.dev/core/unit/mol
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: umol-mol
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/umol
+    to:
+      ref: substrate.reamde.dev/core/unit/mol
+    factor: "0.000001"
+---
+# amount-concentration
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mmol/L-mol/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    to:
+      ref: substrate.reamde.dev/core/unit/mol/L
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: umol/L-mol/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/umol/L
+    to:
+      ref: substrate.reamde.dev/core/unit/mol/L
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: nmol/L-mol/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    to:
+      ref: substrate.reamde.dev/core/unit/mol/L
+    factor: "0.000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: pmol/L-mol/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    to:
+      ref: substrate.reamde.dev/core/unit/mol/L
+    factor: "0.000000000001"
+---
+# mass-concentration
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: g/dL-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/g/dL
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "10"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mg/dL-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.01"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mg/L-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mg/L
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ug/L-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ug/L
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ng/mL-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: pg/mL-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/pg/mL
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ug/dL-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ug/dL
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.00001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: g/m3-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/g/m3
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mg/m3-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mg/m3
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ug/m3-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ug/m3
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "0.000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kg/m3-g/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kg/m3
+    to:
+      ref: substrate.reamde.dev/core/unit/g/L
+    factor: "1"
+---
+# number-concentration
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1/uL-1/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1/uL
+    to:
+      ref: substrate.reamde.dev/core/unit/1/L
+    factor: "1000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1e3/uL-1/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1e3/uL
+    to:
+      ref: substrate.reamde.dev/core/unit/1/L
+    factor: "1000000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1e6/uL-1/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1e6/uL
+    to:
+      ref: substrate.reamde.dev/core/unit/1/L
+    factor: "1000000000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1e9/L-1/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    to:
+      ref: substrate.reamde.dev/core/unit/1/L
+    factor: "1000000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: 1e12/L-1/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/1e12/L
+    to:
+      ref: substrate.reamde.dev/core/unit/1/L
+    factor: "1000000000000"
+---
+# catalytic-activity
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: U-kat
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/U
+    to:
+      ref: substrate.reamde.dev/core/unit/kat
+    factor: "1/60000000"
+---
+# arbitrary
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mIU/L-IU/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mIU/L
+    to:
+      ref: substrate.reamde.dev/core/unit/IU/L
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: IU/mL-IU/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/IU/mL
+    to:
+      ref: substrate.reamde.dev/core/unit/IU/L
+    factor: "1000"
+---
+# electric-potential
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mV-V
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mV
+    to:
+      ref: substrate.reamde.dev/core/unit/V
+    factor: "0.001"
+---
+# electric-current
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mA-A
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mA
+    to:
+      ref: substrate.reamde.dev/core/unit/A
+    factor: "0.001"
+---
+# electric-resistance
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kOhm-Ohm
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kOhm
+    to:
+      ref: substrate.reamde.dev/core/unit/Ohm
+    factor: "1000"
+---
+# electric-charge
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: A.h-C
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/A.h
+    to:
+      ref: substrate.reamde.dev/core/unit/C
+    factor: "3600"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mA.h-C
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mA.h
+    to:
+      ref: substrate.reamde.dev/core/unit/C
+    factor: "3.6"
+---
+# information
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: By-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/By
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kBy-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kBy
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: MBy-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/MBy
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: GBy-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/GBy
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8000000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: KiBy-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/KiBy
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8192"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: MiBy-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/MiBy
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8388608"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: GiBy-bit
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/GiBy
+    to:
+      ref: substrate.reamde.dev/core/unit/bit
+    factor: "8589934592"
+---
+# data-rate
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kbit/s-bit/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kbit/s
+    to:
+      ref: substrate.reamde.dev/core/unit/bit/s
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: Mbit/s-bit/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/Mbit/s
+    to:
+      ref: substrate.reamde.dev/core/unit/bit/s
+    factor: "1000000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: By/s-bit/s
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/By/s
+    to:
+      ref: substrate.reamde.dev/core/unit/bit/s
+    factor: "8"
+---
+# angle
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: arcmin-deg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/arcmin
+    to:
+      ref: substrate.reamde.dev/core/unit/deg
+    factor: "1/60"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: arcsec-deg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/arcsec
+    to:
+      ref: substrate.reamde.dev/core/unit/deg
+    factor: "1/3600"
+---
+# volume-flow
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: L/h-L/min
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/L/h
+    to:
+      ref: substrate.reamde.dev/core/unit/L/min
+    factor: "1/60"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mL/min-L/min
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mL/min
+    to:
+      ref: substrate.reamde.dev/core/unit/L/min
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: m3/h-L/min
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/m3/h
+    to:
+      ref: substrate.reamde.dev/core/unit/L/min
+    factor: "50/3"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: gal/min-L/min
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/gal/min
+    to:
+      ref: substrate.reamde.dev/core/unit/L/min
+    factor: "3.785411784"
+---
+# force
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: lbf-N
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/lbf
+    to:
+      ref: substrate.reamde.dev/core/unit/N
+    factor: "4.4482216152605"
+---
+# torque
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: lbf.ft-N.m
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/lbf.ft
+    to:
+      ref: substrate.reamde.dev/core/unit/N.m
+    factor: "1.3558179483314004"
+---
+# activity-concentration
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: pCi/L-Bq/m3
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/pCi/L
+    to:
+      ref: substrate.reamde.dev/core/unit/Bq/m3
+    factor: "37"
+---
+# absorbed-dose
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mGy-Gy
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mGy
+    to:
+      ref: substrate.reamde.dev/core/unit/Gy
+    factor: "0.001"
+---
+# dose-equivalent
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: mSv-Sv
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/mSv
+    to:
+      ref: substrate.reamde.dev/core/unit/Sv
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: uSv-Sv
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/uSv
+    to:
+      ref: substrate.reamde.dev/core/unit/Sv
+    factor: "0.000001"
+---
+# radioactivity
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kBq-Bq
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kBq
+    to:
+      ref: substrate.reamde.dev/core/unit/Bq
+    factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: MBq-Bq
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/MBq
+    to:
+      ref: substrate.reamde.dev/core/unit/Bq
+    factor: "1000000"
+---
+# oxygen-uptake-rate
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: MET-mL/kg/min
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/MET
+    to:
+      ref: substrate.reamde.dev/core/unit/mL/kg/min
+    factor: "3.5"
+---
+# energy-per-distance
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: W.h/km-kW.h/100km
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/W.h/km
+    to:
+      ref: substrate.reamde.dev/core/unit/kW.h/100km
+    factor: "0.1"
+---
+# fuel-economy
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: km/L-mpg
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/km/L
+    to:
+      ref: substrate.reamde.dev/core/unit/mpg
+    factor: "112903/48000"
+---
+# precipitation-rate
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: in/h-mm/h
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/in/h
+    to:
+      ref: substrate.reamde.dev/core/unit/mm/h
+    factor: "25.4"
