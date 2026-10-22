@@ -28,7 +28,7 @@ package engine
 // open-time search reindex does (searchindex.go). A kind declared on one
 // side only names no property, and every row is re-derived. The observed
 // index is not per property: its shape is the kind's binding of the trait
-// and the measure its `value` declares (observedShape), so a request for it
+// (observedShape), so a request for it
 // re-derives every row of the kind or none. The unit uses (unitgraph.go) are
 // a fourth such projection, and read the declaration only for whether a
 // row's top-level `unit` counts (unitUsesShape), so a request for them is

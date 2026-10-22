@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { RowTreeProvider } from "@/components/data-table/data-table-tree"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { buildColumns } from "@/pages/kind-browse-columns"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -71,7 +71,7 @@ function renderTitle(
   childRecords?: SubstrateRecord[]
 ) {
   const titles = new Map([[`${TASK}/p`, "Plan the budget"]])
-  const [title] = buildColumns(TABLE_UNITS, task, [task], titles, {
+  const [title] = buildColumns(SHIPPED_UNITS, task, [task], titles, {
     childNoun: "subtasks",
   })
   const cell = title.cell as (ctx: unknown) => ReactNode

@@ -1124,7 +1124,7 @@ func TestQuantityDefaultFillsACreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put: %v", err)
 	}
-	if s := vocabulary.FormatQuantity(rec.Properties["weight"]); s != "0 kg" {
+	if s := vocabulary.FormatQuantityIn(nil, rec.Properties["weight"]); s != "0 kg" {
 		t.Fatalf("weight = %#v, want the default 0 kg", rec.Properties["weight"])
 	}
 	_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{

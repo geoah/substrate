@@ -436,6 +436,7 @@ const kindDecl = "substrate.reamde.dev/core/kind"
 // shape these tests plant is one the write path refuses.
 type declarationPlanter interface {
 	PlantDeclarationRow(ctx context.Context, kindIdent, id string, props map[string]any) error
+	PlantRecord(ctx context.Context, kindIdent, id string, props map[string]any) error
 }
 
 func planter(t *testing.T, ds substrate.Dataset) declarationPlanter {

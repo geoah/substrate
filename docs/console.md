@@ -418,7 +418,7 @@ Under the properties, in order:
   and period of a vendor summary, when (one time where `endsAt` equals
   `at`), the revision and the record that delivered it. Where the value and
   the bounds of its first reference range are plain numbers, the bounds in
-  the value's unit or another unit of its measure (converted), a bar
+  the value's unit or a unit that converts to it exactly (converted), a bar
   labelled **Against its range** draws the value against that range: a
   one-sided range ("under 3") from zero where no number is negative, the
   range in the good tone unless the range's own `tone` names another
@@ -426,7 +426,7 @@ Under the properties, in order:
   each bound and each bound printed where it falls, in the digits it was
   written with. Two bounds too close to print apart print once, together
   ("3.9 to 5.6 mmol/L"), and the zero is left out where it would run into a
-  bound. A range in another measure (mg/dL against mmol/L), or a value or
+  bound. A range in a unit that does not convert (mg/dL against mmol/L), or a value or
   bound with a comparator (`<5`), is said in words alone. A trace (the `packed` variant, told apart by declaring
   `values`) draws its values over `[at, endsAt)` as a line broken wherever
   two values sit further apart than its `hold`, its managed `stats` as
@@ -606,7 +606,7 @@ properties the sheet folds away because a section shows them. Then come its
   range and source where `columns` is absent, and `chart` draws the values
   over time as points, each against its own reference range in that range's
   tone. The chart draws in the first result's unit and converts a result in
-  another unit of the same measure (g beside kg); one in another measure,
+  a unit that converts to it exactly (g beside kg); one in a unit that does not,
   or one with a unit under a first result with none, is listed and not
   drawn. A result written as a bound (`<0.5`) draws as a
   triangle toward its open side, joined to no other. Results of several
@@ -1113,16 +1113,16 @@ command.
 its name, how it reads (**Reading**: Level, Amount and so on), which axis
 it reads on, its reducer (**Show**), its output unit and its legend. A
 metric drawn as one series has no separate legend: its name is the entry
-that hides and shows it. The output unit is one of the units of the stored
-unit's measure the server converts it to: never another annotation, another
-assay unit, a level or a factor of pi; minutes, seconds or hours for a time
-in a range. **Unit** names each unit by its symbol (`lb`, not `[lb_av]`).
+that hides and shows it. The output unit is one of the units the stored
+unit converts to through the repository's linear conversions
+([units](units.md)); minutes, seconds or hours for a time in a range.
+**Unit** names each unit by its symbol (`°C`, not `Cel`).
 Where the stored unit has a list of units it is read in day to day,
 **Unit** offers that list (kilograms, pounds and stones for a weight in
 kilograms). With Technical details on, it offers every unit the server
-converts to, each with its code. A quantity's hover gives its symbol and
-stored digits (`19 score`), and the text a write takes (`19 {score}`) only
-with Technical details on.
+converts to, each with its id where the two differ. A quantity's hover
+gives its symbol and stored digits (`37 °C`), and the text a write takes
+(`37 Cel`) only with Technical details on.
 **Show** offers every reducer the metric's form takes
 ([the table](api.md#reducers-by-form)). For a level or an amount these
 include the median and the 90th percentile, and for an angle the circular

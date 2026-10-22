@@ -1014,7 +1014,7 @@ type readState struct {
 	// envelope carries, empty for any other input (deliveredRecord).
 	deliveredKind, deliveredID string
 	// units is the repository's unit graph, loaded at the invocation's first
-	// unit call (units.go); nil after loading means the engine's table.
+	// unit call (units.go).
 	units       *vocabulary.UnitGraph
 	unitsLoaded bool
 }
@@ -1045,9 +1045,8 @@ func (s *readState) serve(ctx context.Context, call hostCall) map[string]any {
 }
 
 func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
-	// The unit calls answer from the engine's table, ungated and uncharged,
-	// or under the unit graph switch from the repository's graph, charged one
-	// call each (units.go).
+	// The unit calls answer from the repository's unit graph, ungated and
+	// charged one call each (units.go).
 	if out, handled, err := s.serveUnitCall(ctx, call); handled {
 		return out, err
 	}
@@ -1339,7 +1338,7 @@ func (s *readState) requireTypes(types []string, what string) error {
 // requireNamed holds the kind of each record a read names beyond its kinds
 // (a referencing target, a metric) to the allowlist: a reverse read reveals
 // which records point at the target, and a metric read takes the metric
-// record's measure and unit. A path that is not a record path is the
+// record's unit. A path that is not a record path is the
 // backend's to refuse by name.
 //
 // The record the delivery's envelope carries is exempt: the body was handed

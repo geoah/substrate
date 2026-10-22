@@ -23,7 +23,7 @@ func TestQuantityGraphDeclarations(t *testing.T) {
         offset: {type: quantity, unit: K, delta: true}
 `)
 		q := ty.Props["weight"].Quantity
-		if !q.GraphDialect() || q.Unit != "kg" || len(q.Units) != 3 || q.Measure != "" {
+		if q.Unit != "kg" || len(q.Units) != 3 {
 			t.Fatalf("weight spec = %+v", q)
 		}
 		if q.Min == nil || q.Min.Unit != "kg" || q.Max == nil || q.Max.Unit != "lb" || q.Max.Value != "700" {
@@ -58,7 +58,7 @@ func TestQuantityGraphDeclarations(t *testing.T) {
 	}
 	t.Run("delta alone", func(t *testing.T) {
 		q := loadThing(t, "  properties:\n    w: {type: quantity, delta: true}\n").Props["w"].Quantity
-		if !q.Delta || q.Unit != "" || q.Measure != "" {
+		if !q.Delta || q.Unit != "" {
 			t.Fatalf("spec = %+v", q)
 		}
 	})

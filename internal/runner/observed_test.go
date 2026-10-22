@@ -1,7 +1,7 @@
 package runner
 
-// host.units and host.observed: the first answers from the engine's unit
-// table over the host call, the second is pure Python whose output the
+// host.units and host.observed: the first answers from the repository's unit
+// graph over the host call, the second is pure Python whose output the
 // engine's own rules must admit. Each is held to the Go side here, so the
 // SDK and the write path cannot drift apart.
 
@@ -14,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine/unitseed"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// TestPythonUnitsAskTheEnginesTable: a body converts, canonicalizes and
-// classifies through the host call, and an error is the engine's.
-func TestPythonUnitsAskTheEnginesTable(t *testing.T) {
+// TestPythonUnitsAskTheGraph: a body converts, resolves and compares units
+// through the host call, over the shipped units, and an error is the
+// engine's.
+func TestPythonUnitsAskTheGraph(t *testing.T) {
 	r := New()
 	spec := Spec{
 		Repository: "t1", Function: "units.g.test",
@@ -31,10 +33,10 @@ def main(input, host):
     out = {
         "lb": host.units.convert("72.4", "kg", "[lb_av]"),
         "fahrenheit": host.units.convert(37, "°C", "°F"),
-        "deviation": host.units.convert(Decimal("0.3"), "Cel", "[degF]", measure="temperature-difference"),
+        "deviation": host.units.convert(Decimal("0.3"), "Cel", "[degF]", delta=True),
         "kcal": host.units.convert(1, "kcal/d", "W"),
         "bpm": host.units.canonical("bpm"),
-        "measure": host.units.measure("mmol/L"),
+        "converts": host.units.converts("mmol/L", "mg/dL"),
     }
     try:
         host.units.convert("1", "kg", "J")
@@ -58,14 +60,16 @@ def main(input, host):
 		"fahrenheit": "98.6",
 		"deviation":  "0.54",
 		"kcal":       "0.048425925925925925926",
-		"bpm":        "/min",
-		"measure":    "amount-concentration",
+		"bpm":        "1/min",
 	} {
 		if out[key] != want {
 			t.Errorf("%s = %v, want %s", key, out[key], want)
 		}
 	}
-	if refused, _ := out["refused"].(string); !strings.Contains(refused, "a value converts only inside one measure") {
+	if out["converts"] != false {
+		t.Errorf("mmol/L and mg/dL convert: %v", out["converts"])
+	}
+	if refused, _ := out["refused"].(string); !strings.Contains(refused, "units.convert") {
 		t.Errorf("kg to J was answered %q, want the engine's refusal", refused)
 	}
 	if inf, _ := out["inf"].(string); !strings.Contains(inf, "not a finite number") {
@@ -209,6 +213,12 @@ print(json.dumps(out))
 // spacing, the split and the labels the SDK promises.
 func TestObservedTraceBuilderOutputPassesTheEngine(t *testing.T) {
 	built := builtTraces(t)
+	// The units a fresh repository holds, which a circular trace in deg
+	// needs for its turn.
+	shipped, problems, err := unitseed.Graph()
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("the shipped units: %v %v", err, problems)
+	}
 	for name, c := range built {
 		seen := map[string]bool{}
 		for i, doc := range c.Docs {
@@ -227,7 +237,7 @@ func TestObservedTraceBuilderOutputPassesTheEngine(t *testing.T) {
 				}
 			}
 			if problems := vocabulary.CheckObserved(vocabulary.ObservedRecord{
-				Variant: vocabulary.ObservedPacked, At: &at, EndsAt: &endsAt, Props: props,
+				Variant: vocabulary.ObservedPacked, At: &at, EndsAt: &endsAt, Props: props, Units: shipped,
 			}); len(problems) > 0 {
 				t.Errorf("%s[%d] is refused by the engine: %v\n%v", name, i, problems, doc)
 			}

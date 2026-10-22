@@ -29,9 +29,9 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
 - **One small write API.** Five mutations (`put`, `patch`, `delete`,
   `merge`, `split`) over REST, and one records route that lists, ranks
   (full-text and vector search), tails and aggregates them.
-- **Measured values.** A `quantity` is exact digits and a UCUM unit, and
-  converts only within its measure. Every kind that binds core's `observed`
-  trait is indexed, and the records route's aggregate read reduces it into
+- **Measured values.** A `quantity` is exact digits and a unit, and units
+  and their conversions are records each repository holds and extends.
+  Every kind that binds core's `observed` trait is indexed, and the records route's aggregate read reduces it into
   time buckets: average heart rate per week, steps per local day across
   travel, one source preferred over another. The catalog's `observations`
   and `health` samples and its WHOOP health adapter bring a wearable's data

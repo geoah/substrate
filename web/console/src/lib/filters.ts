@@ -85,7 +85,7 @@ function coerceValue(
   // sent as typed for the server to refuse by name.
   if (kind === "money") return parseMoneyText(raw).value ?? raw
   // A quantity compares as a quantity, converted within the operand's
-  // measure: `155 lb` is the value {value: "155", unit: "[lb_av]"}. An
+  // linear component: `155 lb` is the value {value: "155", unit: "lb"}. An
   // operand carries no comparator, so text that is not one plain quantity is
   // sent as typed for the server to refuse by name.
   if (kind === "quantity") {

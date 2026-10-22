@@ -34,11 +34,7 @@ func installUnitsFunction(t *testing.T, ds *dataset) string {
     out["mass"] = host.units.converts("lb", "g")
     out["apart"] = host.units.converts("kg", "K")
     out["expression"] = host.units.converts("mpg", "L/100km")
-    try:
-        host.units.measure("kg")
-        out["measure"] = "answered"
-    except Exception as e:
-        out["measure"] = str(e)
+    out["measure"] = hasattr(host.units, "measure")
     try:
         host.units.convert("1", "kg", "K")
         out["across"] = "answered"
@@ -67,8 +63,8 @@ func installUnitsFunction(t *testing.T, ds *dataset) string {
 // A function body converts through the repository's graph, loaded through
 // the engine's own backend: an alias, an expression route (inexact), a
 // difference, the id a spelling stores as, and whether two units convert.
-// The table's measure is refused, and so is a conversion across
-// components. An owner's edit of a conversion reaches the next call.
+// `measure` is no call any more, and a conversion across components is
+// refused. An owner's edit of a conversion reaches the next call.
 func TestAFunctionConvertsThroughTheRepositorysGraph(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("python3"); err != nil {
@@ -106,8 +102,8 @@ func TestAFunctionConvertsThroughTheRepositorysGraph(t *testing.T) {
 		t.Errorf("converts: lb-g %v, kg-K %v, mpg-L/100km %v; want true, false, false (an expression route is not exact)",
 			got["mass"], got["apart"], got["expression"])
 	}
-	if s, _ := got["measure"].(string); !strings.Contains(s, "ask units.converts") {
-		t.Errorf("units.measure answered %v, want the refusal naming units.converts", got["measure"])
+	if got["measure"] != false {
+		t.Errorf("host.units still has measure: %v", got["measure"])
 	}
 	if s, _ := got["across"].(string); !strings.Contains(s, "do not convert") {
 		t.Errorf("kg to K answered %v, want a refusal", got["across"])

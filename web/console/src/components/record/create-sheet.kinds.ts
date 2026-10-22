@@ -23,9 +23,9 @@ import type { KindInfo } from "@/lib/api/types"
 import { KIND_KIND } from "@/lib/core-kinds"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { templateYAML } from "@/lib/record-yaml"
-import { TABLE_UNITS } from "@/lib/unit-reader"
 
 import { CreateSheet } from "./create-sheet"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 /** How many files the sweep is cut into: create-sheet.kinds-1.test.tsx to
  * create-sheet.kinds-4.test.tsx. */
@@ -85,7 +85,7 @@ export function renderSheet(
   kind: KindInfo,
   kinds: KindInfo[] = KINDS,
   technical = true,
-  text = templateYAML(TABLE_UNITS, kind)
+  text = templateYAML(SHIPPED_UNITS, kind)
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, enabled: false } },

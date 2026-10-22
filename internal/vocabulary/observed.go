@@ -86,9 +86,10 @@ const (
 	// ObservedRevision rises with each rewrite of an observed record and is
 	// never lowered (decision 0162).
 	ObservedRevision = "revision"
-	// ObservedMeasure is both variants' managed property: the measure the
-	// value's unit resolved to when it was written, which the engine
-	// computes and the index converts in (decision 0153).
+	// ObservedMeasure is the property the engine stamped on an observed
+	// record before decision 0186: the measure its unit resolved to. Nothing
+	// stamps it now; a write drops a written one and a rewrite clears a
+	// stored one.
 	ObservedMeasure = "measure"
 	// ObservedMetric is the reference to the metric a value is a value of.
 	ObservedMetric = obsMetric
@@ -240,10 +241,10 @@ type ObservedRecord struct {
 	// Result is whether the kind binds core's `result` beside `observed`,
 	// which holds a laboratory's result shapes to one per record.
 	Result bool
-	// Units is the repository's unit graph under the engine's unit graph
-	// switch (decision 0186), nil before it: the record's units are then
-	// already resolved to unit ids, `delta` reads on any unit, `circular`
-	// needs a unit with a turn, and no measure is stamped.
+	// Units is the repository's unit graph (decision 0186): the record's
+	// units are already resolved to unit ids, `delta` reads on any unit, and
+	// `circular` needs a unit with a turn. A nil graph holds no unit, so a
+	// `circular` record is refused.
 	Units *UnitGraph
 }
 
@@ -467,15 +468,6 @@ func (c *obsCheck) packed(form string) {
 	case n > MaxTracePoints:
 		c.addf("props.%s: %d points; a trace holds at most %d", list, n, MaxTracePoints)
 	}
-	if unit := c.str(obsUnit); unit != "" && c.r.Units == nil {
-		code, err := CanonicalUnit(unit)
-		if err == nil {
-			_, err = MeasureOf(code)
-		}
-		if err != nil {
-			c.addf("props.unit: %v", err)
-		}
-	}
 	if hasValues {
 		for i, v := range listOf(c.r.Props[obsValues]) {
 			digits, _ := v.(string)
@@ -514,7 +506,7 @@ func (c *obsCheck) packed(form string) {
 }
 
 // traceSize holds a trace to MaxTraceBytes as the write path stores it: with
-// the `stats` and the `measure` the engine computes in place of any the
+// the `stats` the engine computes in place of any the
 // properties carry. The merged row of a rewrite still holds the stored ones,
 // and a create holds neither, so measuring the properties as given would
 // admit a trace whose stamped properties pass the limit and then refuse its
@@ -530,31 +522,9 @@ func (c *obsCheck) traceSize() {
 			props[ObservedStats] = stats
 		}
 	}
-	delta, _ := c.r.Props[obsDelta].(bool)
-	if m := ObservedMeasureFor(c.str(obsUnit), "", delta); m != "" && c.r.Units == nil {
-		props[ObservedMeasure] = m
-	}
 	if raw, err := json.Marshal(props); err == nil && len(raw) > MaxTraceBytes {
-		c.addf("props: the trace's properties are %d bytes with its stats and measure; a trace holds at most %d (1 MiB): split the period", len(raw), MaxTraceBytes)
+		c.addf("props: the trace's properties are %d bytes with its stats; a trace holds at most %d (1 MiB): split the period", len(raw), MaxTraceBytes)
 	}
-}
-
-// ObservedMeasureFor is the measure an observed value in unit converts in
-// (decision 0153): the declared one where the kind's property names it, else
-// the unit's own, and `temperature-difference` for a temperature written as a
-// difference. "" where there is no unit, or the table cannot place it.
-func ObservedMeasureFor(unit, declared string, delta bool) string {
-	if unit == "" {
-		return ""
-	}
-	m, err := ResolveMeasure(unit, declared)
-	if err != nil {
-		return ""
-	}
-	if delta && m.Name == "temperature" {
-		return "temperature-difference"
-	}
-	return m.Name
 }
 
 // pastDigits reports whether a trace value has more than MaxDecimalDigits
@@ -612,8 +582,8 @@ func (c *obsCheck) offsets(n int, list string, period time.Duration) {
 }
 
 // readingRules are the rules about how a value is read, the same on both
-// variants: which form holds, resets, wraps, and which measure a delta or a
-// circular value belongs to.
+// variants: which form holds, resets, wraps, and which unit a delta or a
+// circular value needs.
 func (c *obsCheck) readingRules(form string) {
 	if c.has(obsHold) {
 		if form != "" && form != FormGauge {
@@ -652,12 +622,7 @@ func (c *obsCheck) readingRules(form string) {
 			unit = ""
 		}
 	}
-	if c.r.Units != nil {
-		c.graphFlags(unit)
-		return
-	}
-	c.measureFlag(obsDelta, unit, "temperature", "marks a temperature difference")
-	c.measureFlag(obsCircular, unit, "angle", "averages an angle on the circle")
+	c.graphFlags(unit)
 }
 
 // graphFlags holds the two reading flags under the unit graph: `delta`
@@ -671,28 +636,9 @@ func (c *obsCheck) graphFlags(unit string) {
 		switch {
 		case unit == "":
 			c.addf("props.%s: averages an angle on the circle, and this record has no unit", obsCircular)
-		case c.r.Units.Turn(unit) == nil:
+		case c.r.Units == nil || c.r.Units.Turn(unit) == nil:
 			c.addf("props.%s: averages an angle on the circle, and %s declares no turn, one full circle in the unit", obsCircular, unit)
 		}
-	}
-}
-
-// measureFlag holds a true bool flag to the measure the value's unit belongs
-// to.
-func (c *obsCheck) measureFlag(name, unit, measure, does string) {
-	if b, _ := c.r.Props[name].(bool); !b {
-		return
-	}
-	if unit == "" {
-		c.addf("props.%s: %s, and this record has no unit", name, does)
-		return
-	}
-	m, err := MeasureOf(unit)
-	if err != nil {
-		return
-	}
-	if m.Name != measure {
-		c.addf("props.%s: %s, and %s measures %s", name, does, unit, m.Name)
 	}
 }
 

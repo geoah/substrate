@@ -6,7 +6,7 @@ package engine
 // A read enumerates streams from observed_latest, finds the forms their
 // points hold inside the read's windows (discoverForms, from the segments),
 // groups them, checks every reducer against each group's form and the unit
-// against the measure, and decides per group where its buckets are served
+// against the unit graph, and decides per group where its buckets are served
 // from:
 //
 //   - observed_rollups, when every reducer merges exactly from rollup rows
@@ -1297,16 +1297,15 @@ func (p *aggPlan) seriesOf(groups []*aggGroup) (int, error) {
 
 // --- units ---
 
-// aggUnits is the read's units: the measure and unit of the values, and the
-// unit of the durations durationIn and timeInState answer.
+// aggUnits is the read's units: the unit of the values, and the unit of the
+// durations durationIn and timeInState answer.
 type aggUnits struct {
-	measure  string
 	value    string
 	duration string
 	conv     map[convKey]*convFactor
-	// graph is the repository's unit graph under the unit graph switch
-	// (decision 0186), nil before it: value is then a unit id, and every
-	// stored unit converts into it through graph's linear conversions.
+	// graph is the repository's unit graph (decision 0186): value is a unit
+	// id, and every stored unit converts into it through graph's linear
+	// conversions.
 	graph *vocabulary.UnitGraph
 }
 
@@ -1331,7 +1330,10 @@ func (u *aggUnits) factor(unit string, delta bool) (*convFactor, error) {
 		return c, nil
 	}
 	c := &convFactor{f: big.NewRat(1, 1), o: new(big.Rat), ff: 1, identity: true}
-	if u.graph != nil && unit != "" && u.value != "" && unit != u.value {
+	if unit != "" && u.value != "" && unit != u.value {
+		if u.graph == nil {
+			return nil, fmt.Errorf("no unit graph converts %s to %s", unit, u.value)
+		}
 		id, ok := u.graph.Resolve(unit)
 		if !ok {
 			return nil, fmt.Errorf("%q names no unit of this repository", unit)
@@ -1349,23 +1351,6 @@ func (u *aggUnits) factor(unit string, delta bool) (*convFactor, error) {
 			}
 			c.identity = false
 		}
-	} else if u.graph == nil && unit != "" && u.value != "" && unit != u.value {
-		measure := u.measure
-		if delta {
-			measure = "temperature-difference"
-		}
-		zero, err := vocabulary.ConvertIn(measure, new(big.Rat), unit, u.value)
-		if err != nil {
-			return nil, err
-		}
-		one, err := vocabulary.ConvertIn(measure, big.NewRat(1, 1), unit, u.value)
-		if err != nil {
-			return nil, err
-		}
-		c.o, c.f = zero, new(big.Rat).Sub(one, zero)
-		c.ff, _ = c.f.Float64()
-		c.fo, _ = c.o.Float64()
-		c.identity = false
 	}
 	if u.conv == nil {
 		u.conv = map[convKey]*convFactor{}
@@ -1386,87 +1371,6 @@ func (c *convFactor) digits(s string) (string, bool) {
 	}
 	r.Mul(r, c.f).Add(r, c.o)
 	return vocabulary.RatDecimal(r, vocabulary.ConvertedDigits)
-}
-
-// aggregateUnits settles the read's units and refuses a unit outside the
-// metric's measure, naming the measure. A stored unit that does not convert
-// is refused where the read takes a value in it (aggRun.conversion), not here:
-// a stream's unit is its newest point's, and a point outside the range
-// refuses nothing.
-func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream) (*aggUnits, error) {
-	if p.graphUnits {
-		return ds.aggregateUnitsGraph(ctx, tx, p, streams)
-	}
-	u := &aggUnits{duration: "s"}
-	var metricUnit string
-	if p.metric != "" {
-		c, _, err := metricContract(ctx, tx, ds.registry(), p.metric)
-		if err != nil {
-			return nil, err
-		}
-		u.measure, metricUnit = c.Measures, c.Unit
-	}
-	// The first stream holding numbers names the measure where the metric
-	// declares none; a raw stream before a summary.
-	var first *aggStream
-	for _, s := range streams {
-		if s.unit == "" {
-			continue
-		}
-		if first == nil || (first.form == vocabulary.FormSummary && s.form != vocabulary.FormSummary) {
-			first = s
-		}
-	}
-	if u.measure == "" && first != nil {
-		m, err := vocabulary.MeasureOf(first.unit)
-		if err == nil {
-			u.measure = m.Name
-			if first.delta && m.Name == "temperature" {
-				u.measure = "temperature-difference"
-			}
-		}
-	}
-	durations := false
-	for _, r := range p.reducers {
-		if r.Name == substrate.ReducerDurationIn || r.Name == substrate.ReducerTimeInState {
-			durations = true
-		}
-	}
-	if p.durationUnit != "" {
-		if !durations && p.kind != aggLatest && !p.isEntry() {
-			return nil, refuse("aggregate.durationUnit", "durationUnit is the unit durationIn and timeInState answer their times in, and this read asks neither")
-		}
-		u.duration = p.durationUnit
-	}
-	if p.unit != "" {
-		inDuration := resolves(p.unit, "duration")
-		switch {
-		case u.measure != "" && resolves(p.unit, u.measure):
-			u.value = p.unit
-		case inDuration && durations:
-			return nil, refuse(p.path("unit"), "%s is a unit of duration, and unit converts the values of %s; name it in durationUnit, the unit durationIn and timeInState answer their times in",
-				p.unit, aggMetricName(p))
-		case u.measure == "":
-			return nil, refuse(p.path("unit"), "%s converts nothing here: the selected streams hold codes; a timeInState answers its times in durationUnit", p.unit)
-		default:
-			return nil, refuse(p.path("unit"), "%s is not a unit of %s, the measure of %s; name one of its units",
-				p.unit, u.measure, aggMetricName(p))
-		}
-	}
-	if u.value == "" {
-		switch {
-		case metricUnit != "" && u.measure != "" && resolves(metricUnit, u.measure):
-			u.value = metricUnit
-		case first != nil:
-			u.value = first.unit
-		}
-	}
-	return u, nil
-}
-
-func resolves(unit, measure string) bool {
-	_, err := vocabulary.ResolveMeasure(unit, measure)
-	return err == nil
 }
 
 func aggMetricName(p *aggPlan) string {
@@ -1673,90 +1577,26 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 					return p.refuse(p.reducerPath(i), "%s does not apply to %s %s: %s; %s %s takes %s",
 						r.String(), article(form), form, formWhy[form], article(form), form, strings.Join(formReducers[form], ", "))
 				}
-				if r.Name == substrate.ReducerCircularMean && u.graph != nil {
-					if u.graph.Turn(u.value) == nil {
-						return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s holds values in %s, which declares no turn",
-							aggMetricName(p), orCodes(u.value))
-					}
-					continue
-				}
-				if r.Name == substrate.ReducerCircularMean && u.measure != "angle" {
-					return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s holds %s",
-						aggMetricName(p), orNothing(u.measure))
+				if r.Name == substrate.ReducerCircularMean && (u.graph == nil || u.graph.Turn(u.value) == nil) {
+					return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s holds values in %s, which declares no turn",
+						aggMetricName(p), orCodes(u.value))
 				}
 			}
 		}
 	}
-	if u.graph != nil {
-		return p.checkLevelsIn(u.graph, u.value, aggMetricName(p))
-	}
-	return p.checkLevels(u.measure, aggMetricName(p))
+	return p.checkLevels(u.graph, u.value, aggMetricName(p))
 }
 
 // levelAdds are the reducers that add values or their changes, which a
-// logarithmic measure's values never do: 61 dB and 62 dB are not 123 dB.
+// level's values never do: 61 dB and 62 dB are not 123 dB.
 var levelAdds = []string{substrate.ReducerSum, substrate.ReducerIncrease, substrate.ReducerRate}
-
-// energyLevels are the levels of a power against a stated reference. Their
-// mean is the level of the mean power (60 and 80 dB[SPL], an hour each, hold
-// 77.0 dB[SPL] over the two hours), so an arithmetic mean of the decibels,
-// and the deviation around it, misstates them. A level against no reference
-// (dB, such as a hearing threshold) and an acidity do average: the mean of
-// pH values is the pH of the geometric mean activity.
-var energyLevels = []string{"sound-pressure-level", "power-level"}
 
 // levelMeans are the reducers that take an arithmetic mean of the values.
 var levelMeans = []string{substrate.ReducerAvg, substrate.ReducerStdDev}
-
-// levelRefusal says why a reducer does not apply to a measure's values, or
-// "" where it does.
-func levelRefusal(measure, reducer string) string {
-	m, ok := vocabulary.LookupMeasure(measure)
-	if !ok || m.Scale != vocabulary.ScaleLogarithmic {
-		return ""
-	}
-	switch {
-	case slices.Contains(levelAdds, reducer):
-		return fmt.Sprintf("%s is logarithmic, and its values do not add (61 and 62 %s are not 123 %s)", measure, m.Base, m.Base)
-	case slices.Contains(energyLevels, measure) && slices.Contains(levelMeans, reducer):
-		return fmt.Sprintf("%s is the level of a power, whose mean is not the mean of its decibels (60 and 80 %s an hour each hold 77.0, not 70)", measure, m.Base)
-	}
-	return ""
-}
-
-// checkLevels refuses, on every form and every read, a reducer or a rolling
-// reducer that adds or averages what a logarithmic measure's values do not
-// (levelRefusal), what naming the metric or the property read. count, min,
-// max, first, last, percentile and durationIn read a level as it is.
-func (p *aggPlan) checkLevels(measure, what string) error {
-	for i, r := range p.reducers {
-		if why := levelRefusal(measure, r.Name); why != "" {
-			return p.refuse(p.reducerPath(i), "%s does not apply to %s: %s; read count, min, max, first, last or percentile",
-				r.String(), what, why)
-		}
-	}
-	if p.rolling == nil {
-		return nil
-	}
-	for i, r := range p.rolling.Reducers {
-		if why := levelRefusal(measure, r.Name); why != "" {
-			return p.refuse(fmt.Sprintf("aggregate.rolling.reducers[%d]", i), "a rolling %s does not apply to %s: %s; roll min or max",
-				r.String(), what, why)
-		}
-	}
-	return nil
-}
 
 func article(word string) string {
 	if strings.IndexAny(word[:1], "aeiou") == 0 {
 		return "an"
 	}
 	return "a"
-}
-
-func orNothing(measure string) string {
-	if measure == "" {
-		return "codes"
-	}
-	return "values of " + measure
 }

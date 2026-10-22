@@ -1395,6 +1395,14 @@ func (s *service) commitFault(stage string) error {
 	return s.testCommitFault(stage)
 }
 
+// bulkFault runs the bulk seed's test seam at one stage of a flush.
+func (s *service) bulkFault(stage string) error {
+	if s.testBulkFault == nil {
+		return nil
+	}
+	return s.testBulkFault(stage)
+}
+
 // commitSealed commits a transaction that touched the sealed table and no
 // changelog row, outside inTx (a refreshed token, a teardown's deletes, a
 // TOTP step consume), in commitAndMirror's order: the files are durable

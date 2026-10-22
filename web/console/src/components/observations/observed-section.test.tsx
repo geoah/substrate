@@ -9,7 +9,7 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderUI,
   screen,
   waitFor,
   within,
@@ -43,6 +43,14 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 import { ObservedSection } from "./observed-section"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+
+/** Every render gets the shipped units, as the signed-in console's
+ * `UnitsProvider` gives a page the repository's. */
+const render = (
+  ui: Parameters<typeof renderUI>[0],
+  options?: Parameters<typeof renderUI>[1]
+) => renderUI(ui, { wrapper: ShippedUnits, ...options })
 
 afterEach(() => {
   cleanup()
@@ -257,28 +265,6 @@ describe("a single value", () => {
     await waitFor(() =>
       expect(fact("Source")?.textContent).toContain("Withings Body+")
     )
-  })
-
-  it("shows the measure the engine stamped, and none where it stamped none", () => {
-    const stamped = {
-      ...WEIGHING,
-      properties: { ...WEIGHING.properties, measure: "mass" },
-    }
-    const view = mount(stamped, observationKind)
-    const facts = view.container.querySelector("[data-slot=observed-value]")!
-    expect(
-      within(facts as HTMLElement).getByText("Measure").nextElementSibling
-        ?.textContent
-    ).toBe("Mass")
-    cleanup()
-    const bare = mount(WEIGHING, observationKind)
-    expect(
-      within(
-        bare.container.querySelector(
-          "[data-slot=observed-value]"
-        ) as HTMLElement
-      ).queryByText("Measure")
-    ).toBe(null)
   })
 
   it("says a summary's statistic in words, as a chart's reducer reads", () => {

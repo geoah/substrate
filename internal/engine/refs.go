@@ -310,6 +310,10 @@ func referencePathOf(v any) string {
 // here is a function of (folded properties, declaration) alone, which is what
 // lets a rebuild reproduce the table exactly.
 func (t *txn) syncRefs(ref eref, ty *vocabulary.Kind, props map[string]any) error {
+	// A bulk run derives its records' refs with syncRefsOfRows (bulkwrite.go).
+	if t.queueRefs(ref, ty, props) {
+		return nil
+	}
 	want := deriveRefs(ty, props)
 	if _, err := t.exec(`DELETE FROM refs WHERE src_kind = $1 AND src = $2`, ref.Kind, ref.ID); err != nil {
 		return fmt.Errorf("substrate/engine: refs of %s %s: %w", ref.Kind, ref.ID, err)

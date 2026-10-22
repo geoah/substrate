@@ -155,8 +155,8 @@ type Aggregate struct {
 	GroupBy  []string           `json:"groupBy,omitempty"`
 	Reducers []AggregateReducer `json:"reducers,omitempty"`
 	Sources  *AggregateSources  `json:"sources,omitempty"`
-	// Unit is the unit the values answer in: a unit of the metric's measure,
-	// or on a property read of the property's.
+	// Unit is the unit the values answer in: a unit of the metric's unit's
+	// linear component, or on a property read of the property's.
 	Unit string `json:"unit,omitempty"`
 	// DurationUnit is the unit durationIn and timeInState answer their
 	// times in (s by default).
@@ -427,8 +427,7 @@ type NamedRecord struct {
 
 // RecordsNamed are the record paths an aggregate read names beyond its
 // filters' kinds: the targets of either filter's referencing, and every
-// metric it names, whose record the read looks up for its measure and
-// unit. A caller holding a reads allowlist holds each path's kind to it, as
+// metric it names, whose record the read looks up for its unit. A caller holding a reads allowlist holds each path's kind to it, as
 // it holds the kinds; a referencing that names no target is an error.
 func (q AggregateQuery) RecordsNamed() ([]NamedRecord, error) {
 	out, err := q.Filter.Referencing.Named("filter.referencing")

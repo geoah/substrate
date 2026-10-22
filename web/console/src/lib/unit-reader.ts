@@ -1,62 +1,41 @@
 /** The unit operations the console's components and calculations call, and
- * the three readers that answer them (decision 0186):
+ * the two readers that answer them (decision 0186):
  *
- * - `TABLE_UNITS`, lib/units.ts's copy of the engine's table, on a server
- *   whose `units.graph` switch is off;
- * - `graphUnits(graph)`, the repository's own graph, on a server whose
- *   switch is on;
- * - `pendingUnits(status)`, on a server whose switch is on while its graph
- *   loads or after it failed. It answers no conversion and admits no value,
- *   and prints a unit as it is stored: on a graph-enabled server the table's
- *   answers are wrong answers (another factor, a missing unit), so none of
- *   them stands in for the graph.
+ * - `graphUnits(graph)`, the repository's own graph;
+ * - `pendingUnits(status)`, while the graph loads or after it failed. It
+ *   answers no conversion and admits no value, and prints a unit as it is
+ *   stored.
  *
  * A lib function that converts, prints a symbol, lists choices or checks a
  * quantity takes a reader; the component above it takes one from `useUnits`
  * (hooks/use-units.ts). */
 
-import { everydayUnits, everydayUnitsBy, unitChoices } from "@/lib/unit-choices"
+import { everydayUnitsBy } from "@/lib/unit-choices"
 import { UnitGraph } from "@/lib/unit-graph"
 import {
   QUANTITY_TEXT_EXAMPLE,
-  canonicalUnit,
-  checkQuantity,
-  convertUnit,
   displayDigits,
-  displayQuantity,
-  formatQuantity,
   formatQuantityText,
   groupDigits,
   isQuantity,
   lastUnit,
-  measureOf,
-  openingUnit,
   parseQuantityText,
-  quantityExample,
-  quantityTextExample,
   readQuantity,
   rememberUnit,
   timeWords,
-  unitLabel,
-  unitSymbol,
-  unitsFor,
-  withSymbol,
   DISPLAY_PLACES,
   type Quantity,
   type QuantityDeclaration,
   type UnitGroup,
 } from "@/lib/units"
 
-/** Which reader answers: the engine's table (`table`), the repository's
- * graph (`ready`), or neither yet (`loading`) or at all (`error`). */
-export type UnitStatus = "table" | "loading" | "ready" | "error"
+/** Which reader answers: the repository's graph (`ready`), or none yet
+ * (`loading`) or at all (`error`). */
+export type UnitStatus = "loading" | "ready" | "error"
 
-/** What a converted value is, beyond its unit: `delta` for a difference,
- * and the measure an observed row was stamped with before the switch,
- * which the table reads (`temperature-difference`). */
+/** What a converted value is, beyond its unit: `delta` for a difference. */
 export interface UnitReading {
   delta?: boolean
-  measure?: string
 }
 
 export interface UnitReader {
@@ -84,7 +63,7 @@ export interface UnitReader {
   /** The server's refusal of a quantity value, or undefined. */
   check(value: unknown, spec?: QuantityDeclaration): string | undefined
   /** The units a reading stored in `stored` may be shown in. */
-  choices(stored: string | undefined, measures?: string): string[]
+  choices(stored: string | undefined): string[]
   /** The everyday ones of `units` for a reading stored in `stored`. */
   everyday(
     units: readonly string[],
@@ -108,42 +87,9 @@ export interface UnitReader {
   /** Keep the unit a person picked, which the next blank input opens on. */
   remember(unit: string): void
   /** Whether a value in the unit is an angle on a circle, which the server
-   * averages with a circular mean: the table's `angle` measure, or under
-   * the graph a unit of a component declaring a turn. */
+   * averages with a circular mean: a unit of a component declaring a
+   * turn. */
   circular(unit: string): boolean
-}
-
-/** The engine's table, for a server whose switch is off. */
-export const TABLE_UNITS: UnitReader = {
-  status: "table",
-  symbol: unitSymbol,
-  label: unitLabel,
-  canonical: canonicalUnit,
-  // A row stamped before the switch names its measure; an unstamped
-  // difference converts as the engine's ObservedMeasureFor reads it.
-  convert: (value, from, to, reading) =>
-    convertUnit(
-      value,
-      from,
-      to,
-      reading?.measure ??
-        (reading?.delta && measureOf(from) === "temperature"
-          ? "temperature-difference"
-          : undefined)
-    ),
-  unitsFor,
-  check: checkQuantity,
-  choices: unitChoices,
-  everyday: everydayUnits,
-  format: formatQuantity,
-  display: displayQuantity,
-  withSymbol,
-  parse: (text) => parseQuantityText(text),
-  opening: (spec) => openingUnit(spec),
-  example: quantityExample,
-  textExample: quantityTextExample,
-  remember: rememberUnit,
-  circular: (unit) => measureOf(canonicalUnit(unit)) === "angle",
 }
 
 const ANGLE_SYMBOLS = new Set(["°", "′", "″", "'", "''"])
@@ -231,16 +177,14 @@ function overGraph(
   }
 }
 
-/** The reader over the repository's graph, for a server whose switch is
- * on. */
+/** The reader over the repository's graph. */
 export function graphUnits(graph: UnitGraph): UnitReader {
   return overGraph(graph, "ready")
 }
 
 const NO_UNITS = new UnitGraph({ units: [], conversions: [], revision: 0 })
 
-/** The reader while a graph-enabled server's graph loads, or after it
- * failed: an empty graph, so a unit prints as stored, nothing converts but
+/** The reader while the repository's graph loads, or after it failed: an empty graph, so a unit prints as stored, nothing converts but
  * a unit to itself, nothing is offered, and every value is refused with
  * the reason. */
 export function pendingUnits(

@@ -12,6 +12,7 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -56,14 +57,28 @@ func preunitsTree(t *testing.T) string {
 
 var reMeasuresLine = regexp.MustCompile(`(?m)^ +measures: [a-z-]+\n`)
 
+// preunitsData are the historical samples' data files, the metrics and the
+// analytes: their records name units as the old table spelled them, which no
+// write of this binary admits without unit records, so the test plants them
+// as the old binary stored them instead of importing them.
+var preunitsData = map[string]bool{"metrics.yaml": true, "metrics_analytes.yaml": true}
+
+// preunitDoc is one data document of the historical samples.
+type preunitDoc struct {
+	kind, id string
+	props    map[string]any
+}
+
 // preunitsSamples copies the historical samples into a catalog root this
 // binary's loader admits: the `measures:` of a kind's quantity property is a
-// key it refuses, so those lines go, and preunitsMeasures says where they
-// were so the stored rows can be put back as they were imported.
-func preunitsSamples(t *testing.T) (string, map[string]map[string]string) {
+// key it refuses, so those lines go, and the measures map says where they
+// were so the stored rows can be put back as they were imported. The data
+// files (preunitsData) are held out and answered as documents, in file order.
+func preunitsSamples(t *testing.T) (string, map[string]map[string]string, []preunitDoc) {
 	t.Helper()
 	root := t.TempDir()
 	measures := map[string]map[string]string{}
+	var data []preunitDoc
 	for _, pkg := range []string{"observations", "health"} {
 		dir := filepath.Join(preunitsDir, "samples", pkg)
 		entries, err := os.ReadDir(dir)
@@ -78,6 +93,10 @@ func preunitsSamples(t *testing.T) (string, map[string]map[string]string) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if preunitsData[e.Name()] {
+				data = append(data, dataDocs(t, raw)...)
+				continue
+			}
 			for id, props := range kindMeasures(t, raw) {
 				measures[id] = props
 				raw = reMeasuresLine.ReplaceAll(raw, nil)
@@ -87,7 +106,58 @@ func preunitsSamples(t *testing.T) (string, map[string]map[string]string) {
 			}
 		}
 	}
-	return root, measures
+	return root, measures, data
+}
+
+// dataDocs reads one file's data documents.
+func dataDocs(t *testing.T, raw []byte) []preunitDoc {
+	t.Helper()
+	var out []preunitDoc
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	for {
+		var doc struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				ID string `yaml:"id"`
+			} `yaml:"metadata"`
+			Data struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"data"`
+		}
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return out
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, preunitDoc{kind: doc.Kind, id: doc.Metadata.ID, props: doc.Data.Properties})
+	}
+}
+
+// rehomeValue is a historical data value with every shipped kind reference
+// rehomed onto the repository's authority, as the import rehomes it.
+func rehomeValue(repo string, v any) any {
+	switch x := v.(type) {
+	case string:
+		if strings.HasPrefix(x, "samples.substrate.reamde.dev/") {
+			return rehome(repo, x)
+		}
+		return x
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, item := range x {
+			out[k] = rehomeValue(repo, item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = rehomeValue(repo, item)
+		}
+		return out
+	}
+	return v
 }
 
 // kindMeasures reads, from one file's kind documents, each quantity
@@ -145,9 +215,10 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	observation := repo + "/observations/observation"
 	metric := repo + "/observations/metric"
 
-	// Binary N: core before the unit graph, the table path, the samples as
-	// main imported them.
-	svc := openTree(t, dsn, preunitsTree(t), engine.WithDataRoot(root), engine.WithUnitGraph(false))
+	// Binary N: core before the unit graph, the samples as main imported
+	// them. This binary writes no value in a unit no unit record answers, so
+	// every row that names one is planted as binary N stored it.
+	svc := openTree(t, dsn, preunitsTree(t), engine.WithDataRoot(root))
 	if _, err := svc.CreateRepository(ctx, repo); err != nil {
 		t.Fatalf("create on binary N: %v", err)
 	}
@@ -158,7 +229,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	if _, err := ds.KindByRef(ctx, vocabulary.KindUnit); err == nil {
 		t.Fatal("binary N declares the unit kind; the migration would prove nothing")
 	}
-	samplesRoot, measures := preunitsSamples(t)
+	samplesRoot, measures, data := preunitsSamples(t)
 	c, err := catalog.Load(catalog.SampleRoot(os.DirFS(samplesRoot)))
 	if err != nil {
 		t.Fatalf("load the historical samples: %v", err)
@@ -166,6 +237,11 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	for _, id := range []string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"} {
 		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
 			t.Fatalf("import %s on binary N: %v", id, err)
+		}
+	}
+	for _, d := range data {
+		if err := planter(t, ds).PlantRecord(ctx, rehome(repo, d.kind), d.id, rehomeValue(repo, d.props).(map[string]any)); err != nil {
+			t.Fatalf("plant %s %s: %v", d.kind, d.id, err)
 		}
 	}
 	// The kinds back as main stored them, `measures` and all, and each copy
@@ -205,14 +281,11 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		{"h1", "health/resting_heart_rate", "52", "/min", "rate"},
 	}
 	for _, r := range readings {
-		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: r.id, Properties: map[string]any{
+		if err := planter(t, ds).PlantRecord(ctx, observation, r.id, map[string]any{
 			"metric": map[string]any{"ref": metric + "/" + r.metric}, "form": "gauge", "hold": "PT0S",
-			"value": map[string]any{"value": r.value, "unit": r.unit},
-			"at":    "2026-10-07T06:41:12+03:00", "utcOffset": 180, "revision": 1,
-		}})
-		row := mustGet(t, ds, observation, r.id).Properties
-		row["measure"] = r.measure
-		if err := planter(t, ds).PlantDeclarationRow(ctx, observation, r.id, row); err != nil {
+			"value": map[string]any{"value": r.value, "unit": r.unit}, "measure": r.measure,
+			"at": "2026-10-07T03:41:12Z", "utcOffset": json.Number("180"), "revision": json.Number("1"),
+		}); err != nil {
 			t.Fatalf("plant %s: %v", r.id, err)
 		}
 	}

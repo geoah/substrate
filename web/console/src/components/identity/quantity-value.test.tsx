@@ -9,19 +9,14 @@ import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import { UnitsContext } from "@/hooks/use-units"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { UnitGraph } from "@/lib/unit-graph"
-import { editedTable } from "@/lib/unit-graph.test-fixtures"
-import {
-  TABLE_UNITS,
-  graphUnits,
-  pendingUnits,
-  type UnitReader,
-} from "@/lib/unit-reader"
+import { editedTable, SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
+import { graphUnits, pendingUnits, type UnitReader } from "@/lib/unit-reader"
 
 import { QuantityValue } from "./quantity-value"
 
 afterEach(cleanup)
 
-function show(value: unknown, technical: boolean, units = TABLE_UNITS) {
+function show(value: unknown, technical: boolean, units = SHIPPED_UNITS) {
   render(
     <UnitsContext.Provider value={units}>
       {shown(value, technical)}

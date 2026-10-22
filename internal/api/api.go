@@ -78,11 +78,6 @@ type Config struct {
 	// checks. It changes no verification: refusing is the service's job either
 	// way.
 	TOTPDisabled bool
-	// UnitGraph mirrors the service's unit graph switch (engine.WithUnitGraph,
-	// SUBSTRATE_UNIT_GRAPH): discovery reports it as `units.graph`, the
-	// console reads it to choose how it converts, and GET /units/convert
-	// converts through the repository's graph.
-	UnitGraph bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -110,7 +105,6 @@ type handler struct {
 	authRate     *rateLimiter
 	inviteCode   string
 	totpDisabled bool
-	unitGraph    bool
 	catalog      *catalog.Catalog
 	consoleURL   string
 	draining     <-chan struct{}
@@ -132,7 +126,6 @@ func New(cfg Config) http.Handler {
 		authRate:     newRateLimiter(interval, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
-		unitGraph:    cfg.UnitGraph,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		draining:     cfg.Draining,
@@ -345,8 +338,8 @@ func (h *handler) mountResources(r chi.Router) {
 			// Cross-kind, so at the version root like /records: one row per
 			// record of any kind binding the core `sync` trait.
 			r.Get("/sync/status", h.getSyncStatus)
-			// The repository's unit graph beside the engine's table, and one
-			// exact conversion through the table (units.go).
+			// The repository's unit graph, and one conversion through it
+			// (units.go).
 			r.Get(unitsRoute, h.getUnits)
 			r.Get(unitsConvertRoute, h.getUnitsConvert)
 			// Bundle status is computed; enable/disable, uninstall and purge are

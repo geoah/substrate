@@ -132,10 +132,14 @@ type options struct {
 	// and as an open catch-up (unitseed.go).
 	seedUnits    bool
 	seedUnitsSet bool
-	// unitGraph reads and writes every quantity through the repository's
-	// unit graph instead of the engine's table (WithUnitGraph). Default true.
-	unitGraph    bool
-	unitGraphSet bool
+	// perRecordSeed seeds the units one put at a time instead of in one bulk
+	// run, the test seam that holds the two to one answer.
+	perRecordSeed bool
+	// bulkFault and seedPath are the bulk seed's test seams (export_test.go
+	// WithTestBulkFault, WithTestSeedPath): a hook run after each table a
+	// bulk run's flush writes, and one told which path a seed took.
+	bulkFault func(stage string) error
+	seedPath  func(repository, refusal string)
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -408,16 +412,6 @@ func WithUnitSeed(on bool) Option {
 	return func(o *options) { o.seedUnits, o.seedUnitsSet = on, true }
 }
 
-// WithUnitGraph selects the code path of decision 0186: every quantity
-// write, filter, order, observed index row, aggregate read, unit conversion
-// and function host call reads the repository's unit graph instead of the
-// engine's table. On by default; off selects the table path, which reads
-// none of the declarations or unit ids a repository holds since the switch,
-// and is removed with the table (step 5 of docs/plans/dynamic-units.md).
-func WithUnitGraph(on bool) Option {
-	return func(o *options) { o.unitGraph, o.unitGraphSet = on, true }
-}
-
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
@@ -556,9 +550,9 @@ type service struct {
 	// seedUnits writes the shipped unit and conversion records at creation
 	// and as an open catch-up (unitseed.go).
 	seedUnits bool
-	// unitGraphOn reads and writes every quantity through the repository's
-	// unit graph (WithUnitGraph, decision 0186).
-	unitGraphOn bool
+	// bulkSeed writes a seed the repository holds none of in one bulk run
+	// (bulkwrite.go); off only under the test seam WithTestPerRecordSeed.
+	bulkSeed bool
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs    unitGraphCache
@@ -589,6 +583,10 @@ type service struct {
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
+	// testBulkFault and testSeedPath are the options' bulk seed seams
+	// (bulkwrite.go flushBulk, unitseed.go seedUnits). Tests only.
+	testBulkFault func(stage string) error
+	testSeedPath  func(repository, refusal string)
 	// testSnapshotFault is the options' snapshot seam (snapshot.go).
 	testSnapshotFault func(stage, dir string) error
 	// testInvokeHook is the options' runner seam (runner.go). Tests only.
@@ -749,9 +747,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if !o.seedUnitsSet {
 		o.seedUnits = true
 	}
-	if !o.unitGraphSet {
-		o.unitGraph = true
-	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -814,7 +809,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,
 		seedUnits:          o.seedUnits,
-		unitGraphOn:        o.unitGraph,
+		bulkSeed:           !o.perRecordSeed,
 		log:                o.log,
 		bg:                 newBackground(),
 		datasets:           map[string]*dataset{},
@@ -823,6 +818,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,
 		testCommitFault:   o.commitFault,
+		testBulkFault:     o.bulkFault,
+		testSeedPath:      o.seedPath,
 		testSnapshotFault: o.snapshotFault,
 		progressEvery:     o.progressEvery,
 		testInvokeHook:    o.invokeHook,

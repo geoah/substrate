@@ -1,7 +1,7 @@
 package engine
 
-// THE METRIC RULES (decision 0186), held at the end of a transaction under the
-// unit graph switch (WithUnitGraph), against the transaction's final state:
+// THE METRIC RULES (decision 0186), held at the end of a transaction, against
+// the transaction's final state:
 //
 //   - an observed value the transaction wrote names a live record of a kind
 //     binding `metric`, and that metric admits the value's unit;
@@ -35,11 +35,11 @@ type metricValueNote struct {
 	unit   string
 }
 
-// noteMetricRules records, during a live write's fold under the switch, a
+// noteMetricRules records, during a live write's fold, a
 // folded observed row (live, or nil to forget it) and a folded metric row.
 // A replay and a repository migration note nothing.
 func (t *txn) noteMetricRules(ty *vocabulary.Kind, ref eref, row *erow) {
-	if !t.ds.svc.unitGraphOn || t.replaying || t.migrating || ty == nil {
+	if t.replaying || t.migrating || ty == nil {
 		return
 	}
 	if bindsMetric(ty) {

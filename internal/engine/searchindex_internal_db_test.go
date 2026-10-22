@@ -86,7 +86,7 @@ func underivedRows(t *testing.T, ds *dataset) []string {
 	reg := ds.registry()
 	var out []string
 	for _, row := range rows {
-		bands := ftsBandsUnder(reg, row, false)
+		bands := ftsBandsUnder(reg, row)
 		var same bool
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT coalesce(fts = setweight(to_tsvector('english', $3), 'A') ||

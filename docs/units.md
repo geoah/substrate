@@ -1,750 +1,1149 @@
-# Units
+# Units and conversions
 
-<!-- Written by TestUnitsPage from internal/vocabulary/unitstable.go; rewrite with
-     go test ./internal/vocabulary/ -run TestUnitsPage -update, never by hand. -->
+A `quantity` value stores exact digits and a unit id: `{value: "72.4", unit:
+kg}`. The units, and the conversions between them, are records of two core
+kinds, `substrate.reamde.dev/core/unit` and
+`substrate.reamde.dev/core/conversion`. Every repository holds its own: it is
+seeded with [the shipped units](#the-shipped-units) at registration, and it
+adds, edits and deletes units and conversions like any other records. The
+server converts a value between two units by chaining the conversions that
+join them, so a repository that needs a unit nobody shipped (a lab's assay
+unit, a cup of rice) writes one record and stores values in it the same day
+([decision 0186](decisions/0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md)).
 
-Every unit a `quantity` value may carry, grouped by **measure**: the named kind of
-quantity (mass, temperature, rate) inside which a value converts and compares.
-[The data model](data-model.md#property-types) says what a quantity value is and how a
-property declares one. This page is the table itself: 62 measures and 214 codes
-(218 rows, because a few codes sit in two measures).
+[The data model](data-model.md#property-types) says how a property declares a
+quantity, and [observations](observations.md) how a metric names its units.
 
-A code is a case-sensitive UCUM code. The codes listed here are the ones the table
-names; the grammar also reads any compound or prefixed code over the same atoms
-(`kg/h`, `GJ`, `fL`), whose measure is found from its prefixes and its
-dimension. The table only grows: a code, a measure or a factor is never removed
-or changed, because a stored value is read through it.
+## How a value names its unit
 
-Each factor is exact, a rational number: a value converts to the measure's base as
-`value x factor + offset`. "none" marks a code no rational factor reaches: a
-level, an arbitrary unit, and `rad`, which is 180/pi degrees. Such a code converts
-to nothing but itself.
+A stored quantity holds the unit record's id. A write may send the id, the
+unit's `code` or one of its `aliases`; the server stores the id. It tries
+them in that order, first as written and then normalized: both micro signs
+(U+00B5 and U+03BC) read as `u`, and `²` and `³` as `2` and `3`, so `μg/m³`
+is stored as `ug/m3`. After a bare `10`, a superscript is a power: `10³/μL`
+is stored as `1e3/uL`. A spelling no unit answers is refused, naming the
+spelling.
 
-`GET /api/v1/units` serves this table with each code's exact factor, and
-`GET /api/v1/units/convert` converts one value ([the API](api.md#the-unit-table)).
+The ids, codes, aliases and their normalized forms are unique across the
+repository's live units. A transaction that leaves two units answering one
+spelling is refused.
 
-Unit codes are from UCUM 2.2, copyright Regenstrief Institute, Inc., used under the
-UCUM license. `dBm` is the substrate's own code; UCUM has no spelling for it.
+## Unit records
 
-## Measures
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `name` | string, required | what the unit is called, such as `kilogram` |
+| `symbol` | string | what a title prints after a value (`°C` for `Cel`); the id where absent, nothing where empty (the unit `1`) |
+| `code` | string | the [UCUM](https://ucum.org) spelling, for interchange (`[lb_av]` for `lb`); a writer may send it |
+| `aliases` | strings | other spellings a writer may send (`°C`, `celsius`) |
+| `scale` | `level` or `powerlevel` | absent for a unit whose values add and average; `level` for a logarithmic unit whose values do not add (`dB`, `pH`); `powerlevel` for the level of a power, whose values neither add nor average (`dBm`) |
+| `turn` | string | one full circle in the unit (`360` for `deg`), exact digits or a fraction; a `circular` value needs a unit with one |
 
-The dimension is over the nine base quantities: length (L), mass (M), time (T),
-electric current (I), temperature (Θ), amount of substance (N), luminous
-intensity (J), plane angle (A) and information (B). Two measures may share a
-dimension (energy and torque); that is why a measure has a name.
+The record id is what a value stores, so it fits the record id alphabet
+(`kg`, `1/min`, `mg/dL`, `percent`). A title keeps the symbol it was written
+with: editing a symbol changes the titles of later writes, never stored ones.
+Search indexes a value's digits and its unit id, never the symbol.
 
-| Measure | Scale | Base | Dimension | Shown in | Codes |
-| --- | --- | --- | --- | --- | --- |
-| [mass](#mass) | ratio | `kg` | M | `kg` | `kg`, `g`, `mg`, `ug`, `ng`, `t`, `[lb_av]`, `[oz_av]`, `[stone_av]` |
-| [length](#length) | ratio | `m` | L | `m` | `m`, `km`, `cm`, `mm`, `nm`, `[in_i]`, `[ft_i]`, `[yd_i]`, `[mi_i]`, `[nmi_i]` |
-| [area](#area) | ratio | `m2` | L2 | `m2` | `m2`, `cm2`, `har`, `[sft_i]` |
-| [volume](#volume) | ratio | `m3` | L3 | `L` | `m3`, `L`, `dL`, `mL`, `[gal_us]`, `[qt_us]`, `[pt_us]`, `[cup_us]`, `[foz_us]`, `[tbs_us]`, `[tsp_us]`, `[gal_br]`, `[foz_br]`, `[cup_m]`, `[tbs_m]`, `[tsp_m]`, `[cft_i]` |
-| [duration](#duration) | ratio | `s` | T | `min` | `s`, `ms`, `us`, `min`, `h`, `d`, `wk`, `mo`, `a` |
-| [temperature](#temperature) | affine | `K` | Θ | `Cel` | `K`, `Cel`, `[degF]` |
-| [temperature-difference](#temperature-difference) | difference | `K` | Θ | `K` | `K`, `Cel`, `[degF]` |
-| [energy](#energy) | ratio | `J` | L2 M T-2 | `kJ` | `J`, `kJ`, `MJ`, `cal`, `kcal`, `[Cal]`, `W.h`, `kW.h`, `eV`, `[Btu_IT]` |
-| [power](#power) | ratio | `W` | L2 M T-3 | `W` | `W`, `mW`, `kW`, `MW`, `[HP]`, `kcal/d`, `kcal/h`, `[Btu_IT]/h` |
-| [apparent-power](#apparent-power) | ratio | `V.A` | L2 M T-3 | `V.A` | `V.A` |
-| [reactive-power](#reactive-power) | ratio | `V.A{reactive}` | L2 M T-3 | `V.A{reactive}` | `V.A{reactive}` |
-| [pressure](#pressure) | ratio | `Pa` | L-1 M T-2 | `hPa` | `Pa`, `hPa`, `kPa`, `bar`, `mbar`, `atm`, `mm[Hg]`, `cm[H2O]`, `[psi]`, `[in_i'Hg]` |
-| [speed](#speed) | ratio | `m/s` | L T-1 | `km/h` | `m/s`, `km/h`, `[mi_i]/h`, `[kn_i]`, `[ft_i]/s` |
-| [pace](#pace) | ratio | `s/m` | L-1 T | `min/km` | `s/m`, `min/km`, `s/km`, `min/[mi_i]`, `s/(100.m)`, `s/(100.[yd_i])`, `s/(500.m)` |
-| [acceleration](#acceleration) | ratio | `m/s2` | L T-2 | `m/s2` | `m/s2`, `[g]` |
-| [frequency](#frequency) | ratio | `Hz` | T-1 | `Hz` | `Hz`, `kHz` |
-| [rate](#rate) | ratio | `/s` | T-1 | `/min` | `/s`, `/min`, `/h`, `/d`, `/wk` |
-| [count](#count) | count | `1` | 1 | `{count}` | `{count}`, `1` |
-| [fraction](#fraction) | ratio | `1` | 1 | `%` | `1`, `%`, `[ppth]`, `[ppm]`, `[ppb]` |
-| [amount-fraction](#amount-fraction) | ratio | `mol/mol` | 1 | `mmol/mol` | `mmol/mol` |
-| [score](#score) | ratio | `{score}` | 1 | `{score}` | `{score}` |
-| [amount-of-substance](#amount-of-substance) | ratio | `mol` | N | `mmol` | `mol`, `mmol`, `umol` |
-| [amount-concentration](#amount-concentration) | ratio | `mol/m3` | L-3 N | `mmol/L` | `mol/L`, `mmol/L`, `umol/L`, `nmol/L`, `pmol/L` |
-| [mass-concentration](#mass-concentration) | ratio | `kg/m3` | L-3 M | `mg/dL` | `g/L`, `g/dL`, `mg/dL`, `mg/L`, `ug/L`, `ng/mL`, `pg/mL`, `ug/dL`, `g/m3`, `mg/m3`, `ug/m3`, `kg/m3` |
-| [number-concentration](#number-concentration) | ratio | `/m3` | L-3 | `10*9/L` | `/L`, `/uL`, `10*3/uL`, `10*6/uL`, `10*9/L`, `10*12/L` |
-| [catalytic-concentration](#catalytic-concentration) | ratio | `mol/(s.m3)` | L-3 T-1 N | `U/L` | `U/L` |
-| [catalytic-activity](#catalytic-activity) | ratio | `mol/s` | T-1 N | `U` | `kat`, `U` |
-| [arbitrary](#arbitrary) | arbitrary | none | none | `[IU]` | `[IU]`, `[IU]/L`, `m[IU]/L`, `[IU]/mL`, `[arb'U]` |
-| [illuminance](#illuminance) | ratio | `lx` | L-2 J A2 | `lx` | `lx` |
-| [luminous-flux](#luminous-flux) | ratio | `lm` | J A2 | `lm` | `lm` |
-| [luminous-intensity](#luminous-intensity) | ratio | `cd` | J | `cd` | `cd` |
-| [luminance](#luminance) | ratio | `cd/m2` | L-2 J | `cd/m2` | `cd/m2` |
-| [irradiance](#irradiance) | ratio | `W/m2` | M T-3 | `W/m2` | `W/m2` |
-| [level](#level) | logarithmic | `dB` | none | `dB` | `dB` |
-| [sound-pressure-level](#sound-pressure-level) | logarithmic | `dB[SPL]` | none | `dB[SPL]` | `dB[SPL]` |
-| [power-level](#power-level) | logarithmic | `dB[W]` | none | `dBm` | `dB[W]`, `dBm` |
-| [acidity](#acidity) | logarithmic | `[pH]` | none | `[pH]` | `[pH]` |
-| [electric-potential](#electric-potential) | ratio | `V` | L2 M T-3 I-1 | `V` | `V`, `mV` |
-| [electric-current](#electric-current) | ratio | `A` | I | `A` | `A`, `mA` |
-| [electric-resistance](#electric-resistance) | ratio | `Ohm` | L2 M T-3 I-2 | `Ohm` | `Ohm`, `kOhm` |
-| [electric-charge](#electric-charge) | ratio | `C` | T I | `mA.h` | `C`, `A.h`, `mA.h` |
-| [electric-conductivity](#electric-conductivity) | ratio | `S/m` | L-3 M-1 T3 I2 | `uS/cm` | `uS/cm` |
-| [information](#information) | ratio | `bit` | B | `By` | `bit`, `By`, `kBy`, `MBy`, `GBy`, `KiBy`, `MiBy`, `GiBy` |
-| [data-rate](#data-rate) | ratio | `bit/s` | T-1 B | `Mbit/s` | `bit/s`, `kbit/s`, `Mbit/s`, `By/s` |
-| [angle](#angle) | ratio | `deg` | A | `deg` | `deg`, `'`, `''`, `rad` |
-| [volume-flow](#volume-flow) | ratio | `m3/s` | L3 T-1 | `L/min` | `L/min`, `L/h`, `mL/min`, `m3/h`, `[gal_us]/min` |
-| [mass-flow](#mass-flow) | ratio | `kg/s` | M T-1 | `g/s` | `g/s` |
-| [force](#force) | ratio | `N` | L M T-2 | `N` | `N`, `[lbf_av]` |
-| [torque](#torque) | ratio | `N.m` | L2 M T-2 | `N.m` | `N.m`, `[lbf_av].[ft_i]` |
-| [activity-concentration](#activity-concentration) | ratio | `Bq/m3` | L-3 T-1 | `Bq/m3` | `Bq/m3`, `pCi/L` |
-| [absorbed-dose](#absorbed-dose) | ratio | `Gy` | L2 T-2 | `mGy` | `Gy`, `mGy` |
-| [dose-equivalent](#dose-equivalent) | ratio | `Sv` | L2 T-2 | `mSv` | `Sv`, `mSv`, `uSv` |
-| [dose-equivalent-rate](#dose-equivalent-rate) | ratio | `Sv/s` | L2 T-3 | `uSv/h` | `uSv/h` |
-| [radioactivity](#radioactivity) | ratio | `Bq` | T-1 | `Bq` | `Bq`, `kBq`, `MBq` |
-| [body-mass-index](#body-mass-index) | ratio | `kg/m2` | L-2 M | `kg/m2` | `kg/m2` |
-| [oxygen-uptake-rate](#oxygen-uptake-rate) | ratio | `m3/(kg.s)` | L3 M-1 T-1 | `mL/(kg.min)` | `mL/(kg.min)`, `[MET]` |
-| [specific-power](#specific-power) | ratio | `W/kg` | L2 T-3 | `W/kg` | `W/kg` |
-| [specific-energy](#specific-energy) | ratio | `J/kg` | L2 T-2 | `kcal/kg` | `kcal/kg` |
-| [energy-per-distance](#energy-per-distance) | ratio | `J/m` | L M T-2 | `kW.h/(100.km)` | `kW.h/(100.km)`, `W.h/km` |
-| [fuel-consumption](#fuel-consumption) | ratio | `m3/m` | L2 | `L/(100.km)` | `L/(100.km)` |
-| [fuel-economy](#fuel-economy) | ratio | `m/m3` | L-2 | `km/L` | `[mi_i]/[gal_us]`, `km/L` |
-| [precipitation-rate](#precipitation-rate) | ratio | `m/s` | L T-1 | `mm/h` | `mm/h`, `[in_i]/h` |
+## Conversion records
 
-The scales: `ratio` converts by a factor; `affine` by a factor and an offset (an
-absolute temperature); `difference` by the factor alone (a temperature
-difference: 0.3 `Cel` is 0.54 `[degF]`); `logarithmic` converts to nothing but
-itself; `arbitrary` converts only to the same assay unit under another metric
-prefix (`m[IU]/L` to `[IU]/L`, a substrate rule UCUM does not have);
-`count` converts only between units counting the same annotation.
+A conversion joins two units, `from` and `to`, each a reference to a unit
+record, in one of two forms.
 
-## Codes by measure
+**Linear**: `factor` and an optional `offset`, each an exact rational
+written as a string, as digits (`"0.45359237"`) or a fraction (`"5/9"`,
+`"1/0.3048"`). It means `to = from x factor + offset`. The factor is above
+zero. A number in place of the string is refused, because a float has
+already lost digits. A linear conversion converts both ways, exactly.
 
-The symbol is what a title prints. A code whose symbol would be an alias of
-another code, or a spelling the table refuses, prints as the code itself:
-`{count}` prints `{count}`, because `count` is refused, and `{count}/min` would
-print `count/min`, the alias of `/min`.
+**Expression**: `expr` and `inverse`, each a [CEL](https://cel.dev)
+expression over the double `value` that returns a double: standard CEL, with
+no extensions. `expr` converts from `from` to `to`, and `inverse` back.
+Nothing checks that the inverse undoes the expression; its author owns that.
+An expression's answer is never exact.
+
+A conversion from a unit to itself is refused, and so is one whose `from` or
+`to` names no unit: a transaction that deletes a unit deletes its
+conversions with it.
+
+## How the server converts
+
+The linear conversions divide the units into **linear components**: two
+units are in one component when a chain of linear conversions joins them.
+Each component has a **root**, its smallest unit id in byte order, and every
+unit holds an exact map to its root, `root = value x factor + offset`. Two
+units of one component convert by composing two maps, so `lb` converts to
+`st` though no shipped conversion names both.
+
+A cycle of linear conversions has to compose to the identity. A conversion
+that closes a cycle with another answer (a direct `st` to `kg` of `6.35`
+beside `st` to `lb` to `kg`) is refused, naming both routes, so every route
+gives one answer. All units of one component share one `scale`, so a level
+never joins a unit whose values add.
+
+Expression conversions join components and must form a forest over them: at
+most one route of expressions between any two components. A value crosses at
+most four expressions on its way.
+
+What converts where:
+
+- Inside one linear component, a value converts exactly, in rational
+  arithmetic: 155 `lb` is 70.30681735 `kg` to the last digit. An answer
+  with no finite decimal expansion (1 `degF` is -155/9 `Cel`) is rounded to
+  20 significant digits and marked inexact.
+- Across components, only REST (`GET /api/v1/units/convert`) and function
+  code (`host.units.convert`) convert one value, along the expression route.
+  The console's display converts inside a linear component only. Filters,
+  ordering, bounds, a metric's accepted units and the aggregate read cross
+  linear conversions only, because a sum, a mean or a comparison survives
+  an affine map and not an arbitrary function.
+- Two units no route joins do not convert, and a read that would need them
+  to is refused, naming both.
+
+**Differences.** A difference converts by the factor alone, with every
+offset dropped: a deviation of 0.3 `Cel` is 0.54 `degF`, where a temperature
+of 0.3 `Cel` is 32.54 `degF`. An observed value marks a difference with
+`delta: true` on its row, and a quantity property with `delta: true` on its
+declaration. A difference never crosses an expression conversion.
+
+**Circular units.** A component holding a unit with a `turn` holds only
+offset-free conversions, and its turns agree: the `turn` of `to` is the
+`factor` times the `turn` of `from`. Every unit of such a component reads its
+turn from it, so `arcmin` turns at 21600. `rad` keeps no conversion to
+`deg`, because no rational number states pi; it declares its own turn, 2 pi
+to 40 places.
+
+## Add a unit
+
+A unit is a record like any other, applied with `bin/substratectl apply -f`
+or the console. Its kind is core's, whatever the repository's authority:
+
+```yaml
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: cup_rice
+data:
+  properties:
+    name: cup of rice
+    symbol: cup
+```
+
+Values may be written in `cup_rice` at once. Until a conversion joins it to
+another unit, it converts to nothing but itself. A unit with a UCUM spelling
+names it as `code`, and the spellings writers send as `aliases`:
+
+```yaml
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: lb
+data:
+  properties:
+    name: pound
+    symbol: lb
+    code: "[lb_av]"
+    aliases:
+      - lbs
+      - pound
+      - pounds
+```
+
+`lb` ships in the seed, without those three aliases. Writing the record as
+above adds them, and the seed leaves the edited record alone from then on
+([seeding](#seeding)).
+
+## Add a conversion
+
+A linear conversion, with and without an offset:
+
+```yaml
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: st-lb
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/st
+    to:
+      ref: substrate.reamde.dev/core/unit/lb
+    factor: "14"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: degF-Cel
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/degF
+    to:
+      ref: substrate.reamde.dev/core/unit/Cel
+    factor: "5/9"
+    offset: "-160/9"
+```
+
+The shipped conversions take the id `<from>-<to>`; any record id will do.
+An expression conversion:
+
+```yaml
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: cup_rice-g
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/cup_rice
+    to:
+      ref: substrate.reamde.dev/core/unit/g
+    expr: "value * 185.0"
+    inverse: "value / 185.0"
+```
+
+This one could be a factor of `"185"`. As an expression it lets a person
+see a cup of rice in grams, while filters, sums and a metric's accepted
+units keep cups and grams apart, since a cup of rice weighs what its rice
+weighs.
+
+## Add a metric
+
+A metric, a record of a kind binding core's `metric` trait (the
+`observations` sample's `metric`, under the repository's own authority after
+the import), names its default `unit` and the `units` a value may be written
+in, each a reference to a unit record:
+
+```yaml
+kind: ada.example.com/observations/metric
+metadata:
+  id: health/body_mass
+data:
+  properties:
+    name: Body weight
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    units:
+      - ref: substrate.reamde.dev/core/unit/kg
+      - ref: substrate.reamde.dev/core/unit/lb
+      - ref: substrate.reamde.dev/core/unit/st
+    form: gauge
+    hold: PT0S
+    rollups:
+      - 15m
+      - 1h
+      - 1d
+```
+
+Without `units`, the metric admits every unit in `unit`'s linear component.
+With them, it admits `unit` and the listed units. Each listed unit converts to
+`unit` through linear conversions. A value whose unit the metric does not
+admit is refused, and so is a metric edit, restore or deletion that leaves a
+stored value of it, tombstones included, with a unit the metric no longer
+admits.
+
+Each weigh-in is stored as written, `72.4 kg`, `159.2 lb` or `11.4 st`.
+A filter converts its operand into each unit the rows use, so this one
+matches every weigh-in under 159.61 `lb`, whatever unit it was written in:
+
+```json
+{"kinds": ["ada.example.com/observations/observation"],
+ "properties": {
+   "metric": {"eq": "ada.example.com/observations/metric/health/body_mass"},
+   "value": {"lt": {"value": "159.61", "unit": "lb"}}}}
+```
+
+An aggregate read answers in the metric's `unit` unless it names another
+`unit` of the same component, here `"unit": "lb"`
+([the API](api.md#the-aggregate-read)).
+
+A quantity property on any other kind declares the same two keys, as unit
+ids or any spelling of them: `unit`, whose linear component every value's
+unit belongs to, and `units`, the list that narrows it
+([the data model](data-model.md#property-types)).
+
+## Edits and deletions
+
+A stored quantity keeps its digits and its unit id. No write of a unit or a
+conversion rewrites a stored value, and nothing stores a converted number,
+so a corrected factor corrects every later answer at once.
+
+A unit is **used** when a stored value names it: a quantity anywhere in a
+record (nested fields, lists and link properties included), a trace's `unit`,
+a metric's `unit` or `units`, or a declaration's `unit`, `units`, bounds or
+default. Tombstoned records count, because a restore brings their values
+back. At the end of each transaction the server refuses, with `409
+conflict`:
+
+- deleting a used unit;
+- leaving two units that were in one linear component apart while both are
+  used, or one is used and the other is the `unit` a declaration or a metric
+  anchors to. That covers deleting a conversion, deleting an unused unit
+  that joined two used ones, retargeting a conversion and replacing a linear
+  form with an expression.
+
+A graph problem (two units answering one spelling, an inconsistent cycle, a
+broken circular rule, a limit) is `422 validation`, naming the record.
+Changing a factor passes.
+
+## Seeding
+
+Registration writes [the shipped units](#the-shipped-units) in the creation
+transaction, through the changelog like every other write. Every open of the
+repository runs the same seed again, before anything that reads a quantity:
+
+- a shipped record the repository lacks is written;
+- a shipped record only the seed has written is refreshed to the shipped
+  version;
+- a record a person has written or deleted (through the API, the console or
+  `substratectl`) is left as they left it, so an edited unit stops receiving
+  shipped corrections;
+- a shipped record that would contradict the repository's own graph (a
+  spelling another unit answers, a cycle with another answer, a split of used
+  units) is skipped and logged. The open never fails for one.
+
+`GET /api/v1/units` lists the skipped records as `unseeded`, each with its
+reason, until a later open seeds them.
+
+## Limits
+
+Each limit is refused by name:
+
+| Limit | Value |
+| --- | --- |
+| units per repository | 2,000 |
+| conversions per repository | 4,000 |
+| aliases per unit | 32 |
+| bytes in a unit id, code or alias | 128 |
+| bytes in an expression or its inverse | 1,024 |
+| digits in each part of a factor, offset or turn | 64 |
+| expression conversions on one route | 4 |
+| bits in the numerator or denominator of a unit's map to its root | 4,096 |
+| digits in a converted value | 1,000 |
+
+## Reading the graph
+
+- `GET /api/v1/units` answers the repository's units, each with its root and
+  exact map to it, its conversions, the graph `revision` and `unseeded`.
+  `GET /api/v1/units/convert` converts one value ([the API](api.md#units-and-conversions)).
+- Function code converts with `host.units.convert`, resolves a spelling with
+  `host.units.canonical` and asks `host.units.converts(a, b)` whether two
+  units convert exactly ([functions](functions.md#the-sdk)).
+- The console reads `GET /api/v1/units` and caches it by revision, and
+  fetches it again when a unit or conversion record changes.
+
+Every write of a unit or conversion record moves the revision. A read uses
+the graph of the revision its snapshot holds, and a list cursor whose filter
+or order converted a quantity is refused after the revision moves.
+
+## The shipped units
+
+The seed is `internal/engine/unitseed/units.yaml` and `conversions.yaml`,
+edited by hand. Most ids are UCUM codes; a code that does not fit the record
+id alphabet takes a short id and stays the unit's `code`, so every UCUM
+spelling still resolves (`[lb_av]` is `lb`, `%` is `percent`, `/min` is
+`1/min`, `{count}` is `count`). Unit codes are from UCUM 2.2, copyright
+Regenstrief Institute, Inc., used under the UCUM license. `dBm` is the
+substrate's own code; UCUM has no spelling for it.
+
+The seed keeps apart what a person needs apart: energy (`J`) and torque
+(`N.m`), absorbed dose (`Gy`) and dose equivalent (`Sv`), a count and a
+percent, NGSP HbA1c (`percent`) and IFCC HbA1c (`mmol/mol`), `mg/dL` and
+`mmol/L` (which takes a molar mass), and a vendor's `score` and anything
+else. An assay unit converts only to the same assay under another prefix
+(`mIU/L` to `IU/L`). A level converts to nothing but itself.
+
+<!-- BEGIN shipped units: written by TestUnitsPage in internal/engine/unitseed from units.yaml and conversions.yaml; rewrite with go test ./internal/engine/unitseed/ -run TestUnitsPage -update, never by hand. -->
+
+216 units and 149 conversions, in 62 groups. A group is a heading in the seed
+files and nothing more: two units convert when conversions join them, whatever
+group they sit in. In each unit's row, `root = value x factor + offset` is its
+exact map to the root of its linear component.
 
 ### mass
 
-| Code | Symbol | Factor to `kg` | Offset |
-| --- | --- | --- | --- |
-| `kg` | kg | 1 |  |
-| `g` | g | 1/1000 |  |
-| `mg` | mg | 1/1000000 |  |
-| `ug` | μg | 1/1000000000 |  |
-| `ng` | ng | 1/1000000000000 |  |
-| `t` | t | 1000 |  |
-| `[lb_av]` | lb | 45359237/100000000 |  |
-| `[oz_av]` | oz | 45359237/1600000000 |  |
-| `[stone_av]` | st | 317514659/50000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `kg` | kilogram | kg | `kg` |  | `g` | 1000 |  |  |
+| `g` | gram | g | `g` |  | `g` | 1 |  |  |
+| `mg` | milligram | mg | `mg` |  | `g` | 0.001 |  |  |
+| `ug` | microgram | μg | `ug` | `mcg` | `g` | 0.000001 |  |  |
+| `ng` | nanogram | ng | `ng` |  | `g` | 0.000000001 |  |  |
+| `t` | tonne | t | `t` |  | `g` | 1000000 |  |  |
+| `lb` | pound | lb | `[lb_av]` |  | `g` | 453.59237 |  |  |
+| `oz` | ounce | oz | `[oz_av]` |  | `g` | 28.349523125 |  |  |
+| `st` | stone | st | `[stone_av]` |  | `g` | 6350.29318 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `g-kg` | `g` | `kg` | 0.001 |  |
+| `mg-kg` | `mg` | `kg` | 0.000001 |  |
+| `ug-kg` | `ug` | `kg` | 0.000000001 |  |
+| `ng-kg` | `ng` | `kg` | 0.000000000001 |  |
+| `t-kg` | `t` | `kg` | 1000 |  |
+| `lb-kg` | `lb` | `kg` | 0.45359237 |  |
+| `oz-kg` | `oz` | `kg` | 0.028349523125 |  |
+| `st-kg` | `st` | `kg` | 6.35029318 |  |
 
 ### length
 
-| Code | Symbol | Factor to `m` | Offset |
-| --- | --- | --- | --- |
-| `m` | m | 1 |  |
-| `km` | km | 1000 |  |
-| `cm` | cm | 1/100 |  |
-| `mm` | mm | 1/1000 |  |
-| `nm` | nm | 1/1000000000 |  |
-| `[in_i]` | in | 127/5000 |  |
-| `[ft_i]` | ft | 381/1250 |  |
-| `[yd_i]` | yd | 1143/1250 |  |
-| `[mi_i]` | mi | 201168/125 |  |
-| `[nmi_i]` | nmi | 1852 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `m` | meter | m | `m` |  | `cm` | 100 |  |  |
+| `km` | kilometer | km | `km` |  | `cm` | 100000 |  |  |
+| `cm` | centimeter | cm | `cm` |  | `cm` | 1 |  |  |
+| `mm` | millimeter | mm | `mm` |  | `cm` | 0.1 |  |  |
+| `nm` | nanometer | nm | `nm` |  | `cm` | 0.0000001 |  |  |
+| `in` | inch | in | `[in_i]` |  | `cm` | 2.54 |  |  |
+| `ft` | foot | ft | `[ft_i]` |  | `cm` | 30.48 |  |  |
+| `yd` | yard | yd | `[yd_i]` |  | `cm` | 91.44 |  |  |
+| `mi` | mile | mi | `[mi_i]` |  | `cm` | 160934.4 |  |  |
+| `nmi` | nautical mile | nmi | `[nmi_i]` |  | `cm` | 185200 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `km-m` | `km` | `m` | 1000 |  |
+| `cm-m` | `cm` | `m` | 0.01 |  |
+| `mm-m` | `mm` | `m` | 0.001 |  |
+| `nm-m` | `nm` | `m` | 0.000000001 |  |
+| `in-m` | `in` | `m` | 0.0254 |  |
+| `ft-m` | `ft` | `m` | 0.3048 |  |
+| `yd-m` | `yd` | `m` | 0.9144 |  |
+| `mi-m` | `mi` | `m` | 1609.344 |  |
+| `nmi-m` | `nmi` | `m` | 1852 |  |
 
 ### area
 
-| Code | Symbol | Factor to `m2` | Offset |
-| --- | --- | --- | --- |
-| `m2` | m² | 1 |  |
-| `cm2` | cm² | 1/10000 |  |
-| `har` | ha | 10000 |  |
-| `[sft_i]` | ft² | 145161/1562500 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `m2` | square meter | m² | `m2` |  | `cm2` | 10000 |  |  |
+| `cm2` | square centimeter | cm² | `cm2` |  | `cm2` | 1 |  |  |
+| `har` | hectare | ha | `har` |  | `cm2` | 100000000 |  |  |
+| `ft2` | square foot | ft² | `[sft_i]` |  | `cm2` | 929.0304 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `cm2-m2` | `cm2` | `m2` | 0.0001 |  |
+| `har-m2` | `har` | `m2` | 10000 |  |
+| `ft2-m2` | `ft2` | `m2` | 0.09290304 |  |
 
 ### volume
 
-| Code | Symbol | Factor to `m3` | Offset |
-| --- | --- | --- | --- |
-| `m3` | m³ | 1 |  |
-| `L` | L | 1/1000 |  |
-| `dL` | dL | 1/10000 |  |
-| `mL` | mL | 1/1000000 |  |
-| `[gal_us]` | gal | 473176473/125000000000 |  |
-| `[qt_us]` | qt | 473176473/500000000000 |  |
-| `[pt_us]` | pt | 473176473/1000000000000 |  |
-| `[cup_us]` | cup | 473176473/2000000000000 |  |
-| `[foz_us]` | fl oz | 473176473/16000000000000 |  |
-| `[tbs_us]` | tbsp | 473176473/32000000000000 |  |
-| `[tsp_us]` | tsp | 157725491/32000000000000 |  |
-| `[gal_br]` | gal (UK) | 454609/100000000 |  |
-| `[foz_br]` | fl oz (UK) | 454609/16000000000 |  |
-| `[cup_m]` | cup (metric) | 3/12500 |  |
-| `[tbs_m]` | tbsp (metric) | 3/200000 |  |
-| `[tsp_m]` | tsp (metric) | 1/200000 |  |
-| `[cft_i]` | ft³ | 55306341/1953125000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `m3` | cubic meter | m³ | `m3` |  | `L` | 1000 |  |  |
+| `L` | liter | L | `L` |  | `L` | 1 |  |  |
+| `dL` | deciliter | dL | `dL` |  | `L` | 0.1 |  |  |
+| `mL` | milliliter | mL | `mL` |  | `L` | 0.001 |  |  |
+| `gal` | US gallon | gal | `[gal_us]` |  | `L` | 3.785411784 |  |  |
+| `qt` | US quart | qt | `[qt_us]` |  | `L` | 0.946352946 |  |  |
+| `pt` | US pint | pt | `[pt_us]` |  | `L` | 0.473176473 |  |  |
+| `cup` | US cup | cup | `[cup_us]` |  | `L` | 0.2365882365 |  |  |
+| `floz` | US fluid ounce | fl oz | `[foz_us]` |  | `L` | 0.0295735295625 |  |  |
+| `tbsp` | US tablespoon | tbsp | `[tbs_us]` |  | `L` | 0.01478676478125 |  |  |
+| `tsp` | US teaspoon | tsp | `[tsp_us]` |  | `L` | 0.00492892159375 |  |  |
+| `gal_br` | imperial gallon | gal (UK) | `[gal_br]` |  | `L` | 4.54609 |  |  |
+| `floz_br` | imperial fluid ounce | fl oz (UK) | `[foz_br]` |  | `L` | 0.0284130625 |  |  |
+| `cup_m` | metric cup | cup (metric) | `[cup_m]` |  | `L` | 0.24 |  |  |
+| `tbsp_m` | metric tablespoon | tbsp (metric) | `[tbs_m]` |  | `L` | 0.015 |  |  |
+| `tsp_m` | metric teaspoon | tsp (metric) | `[tsp_m]` |  | `L` | 0.005 |  |  |
+| `ft3` | cubic foot | ft³ | `[cft_i]` |  | `L` | 28.316846592 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `L-m3` | `L` | `m3` | 0.001 |  |
+| `dL-m3` | `dL` | `m3` | 0.0001 |  |
+| `mL-m3` | `mL` | `m3` | 0.000001 |  |
+| `gal-m3` | `gal` | `m3` | 0.003785411784 |  |
+| `qt-m3` | `qt` | `m3` | 0.000946352946 |  |
+| `pt-m3` | `pt` | `m3` | 0.000473176473 |  |
+| `cup-m3` | `cup` | `m3` | 0.0002365882365 |  |
+| `floz-m3` | `floz` | `m3` | 0.0000295735295625 |  |
+| `tbsp-m3` | `tbsp` | `m3` | 0.00001478676478125 |  |
+| `tsp-m3` | `tsp` | `m3` | 0.00000492892159375 |  |
+| `gal_br-m3` | `gal_br` | `m3` | 0.00454609 |  |
+| `floz_br-m3` | `floz_br` | `m3` | 0.0000284130625 |  |
+| `cup_m-m3` | `cup_m` | `m3` | 0.00024 |  |
+| `tbsp_m-m3` | `tbsp_m` | `m3` | 0.000015 |  |
+| `tsp_m-m3` | `tsp_m` | `m3` | 0.000005 |  |
+| `ft3-m3` | `ft3` | `m3` | 0.028316846592 |  |
 
 ### duration
 
-The month mo and the year a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `s` | second | s | `s` |  | `a` | 1/31557600 |  |  |
+| `ms` | millisecond | ms | `ms` |  | `a` | 1/31557600000 |  |  |
+| `us` | microsecond | μs | `us` |  | `a` | 1/31557600000000 |  |  |
+| `min` | minute | min | `min` |  | `a` | 1/525960 |  |  |
+| `h` | hour | h | `h` | `hr` | `a` | 1/8766 |  |  |
+| `d` | day | d | `d` |  | `a` | 4/1461 |  |  |
+| `wk` | week | wk | `wk` |  | `a` | 28/1461 |  |  |
+| `mo` | mean Julian month | mo | `mo` |  | `a` | 1/12 |  |  |
+| `a` | mean Julian year | a | `a` |  | `a` | 1 |  |  |
 
-| Code | Symbol | Factor to `s` | Offset |
-| --- | --- | --- | --- |
-| `s` | s | 1 |  |
-| `ms` | ms | 1/1000 |  |
-| `us` | μs | 1/1000000 |  |
-| `min` | min | 60 |  |
-| `h` | h | 3600 |  |
-| `d` | d | 86400 |  |
-| `wk` | wk | 604800 |  |
-| `mo` | mo | 2629800 |  |
-| `a` | a | 31557600 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `ms-s` | `ms` | `s` | 0.001 |  |
+| `us-s` | `us` | `s` | 0.000001 |  |
+| `min-s` | `min` | `s` | 60 |  |
+| `h-s` | `h` | `s` | 3600 |  |
+| `d-s` | `d` | `s` | 86400 |  |
+| `wk-s` | `wk` | `s` | 604800 |  |
+| `mo-s` | `mo` | `s` | 2629800 |  |
+| `a-s` | `a` | `s` | 31557600 |  |
 
 ### temperature
 
-An absolute temperature: Cel and [degF] convert with their offsets.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `K` | kelvin | K | `K` |  | `Cel` | 1 | -273.15 |  |
+| `Cel` | degree Celsius | °C | `Cel` | `degC`, `°C`, `℃` | `Cel` | 1 |  |  |
+| `degF` | degree Fahrenheit | °F | `[degF]` | `°F`, `℉` | `Cel` | 5/9 | -160/9 |  |
 
-| Code | Symbol | Factor to `K` | Offset |
-| --- | --- | --- | --- |
-| `K` | K | 1 |  |
-| `Cel` | °C | 1 | 5463/20 |
-| `[degF]` | °F | 5/9 | 45967/180 |
-
-### temperature-difference
-
-A difference or deviation: the same codes, the offsets suppressed.
-
-| Code | Symbol | Factor to `K` | Offset |
-| --- | --- | --- | --- |
-| `K` | K | 1 |  |
-| `Cel` | °C | 1 |  |
-| `[degF]` | °F | 5/9 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `Cel-K` | `Cel` | `K` | 1 | 273.15 |
+| `degF-K` | `degF` | `K` | 5/9 | 45967/180 |
 
 ### energy
 
-The calorie cal is the thermochemical one (4.184 J); [Cal] is the nutrition Calorie, a kcal.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `J` | joule | J | `J` |  | `Btu` | 50000000/52752792631 |  |  |
+| `kJ` | kilojoule | kJ | `kJ` |  | `Btu` | 50000000000/52752792631 |  |  |
+| `MJ` | megajoule | MJ | `MJ` |  | `Btu` | 50000000000000/52752792631 |  |  |
+| `cal` | thermochemical calorie | cal | `cal` |  | `Btu` | 209200000/52752792631 |  |  |
+| `kcal` | kilocalorie | kcal | `kcal` |  | `Btu` | 209200000000/52752792631 |  |  |
+| `Cal` | nutrition Calorie | Cal | `[Cal]` |  | `Btu` | 209200000000/52752792631 |  |  |
+| `W.h` | watt-hour | Wh | `W.h` | `Wh` | `Btu` | 180000000000/52752792631 |  |  |
+| `kW.h` | kilowatt-hour | kWh | `kW.h` | `kWh` | `Btu` | 180000000000000/52752792631 |  |  |
+| `eV` | electronvolt | eV | `eV` |  | `Btu` | 801088317/5275279263100000000000000000000 |  |  |
+| `Btu` | British thermal unit | Btu | `[Btu_IT]` |  | `Btu` | 1 |  |  |
 
-| Code | Symbol | Factor to `J` | Offset |
-| --- | --- | --- | --- |
-| `J` | J | 1 |  |
-| `kJ` | kJ | 1000 |  |
-| `MJ` | MJ | 1000000 |  |
-| `cal` | cal | 523/125 |  |
-| `kcal` | kcal | 4184 |  |
-| `[Cal]` | Cal | 4184 |  |
-| `W.h` | Wh | 3600 |  |
-| `kW.h` | kWh | 3600000 |  |
-| `eV` | eV | 801088317/5000000000000000000000000000 |  |
-| `[Btu_IT]` | Btu | 52752792631/50000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `kJ-J` | `kJ` | `J` | 1000 |  |
+| `MJ-J` | `MJ` | `J` | 1000000 |  |
+| `cal-J` | `cal` | `J` | 4.184 |  |
+| `kcal-J` | `kcal` | `J` | 4184 |  |
+| `Cal-J` | `Cal` | `J` | 4184 |  |
+| `W.h-J` | `W.h` | `J` | 3600 |  |
+| `kW.h-J` | `kW.h` | `J` | 3600000 |  |
+| `eV-J` | `eV` | `J` | 0.0000000000000000001602176634 |  |
+| `Btu-J` | `Btu` | `J` | 1055.05585262 |  |
 
 ### power
 
-| Code | Symbol | Factor to `W` | Offset |
-| --- | --- | --- | --- |
-| `W` | W | 1 |  |
-| `mW` | mW | 1/1000 |  |
-| `kW` | kW | 1000 |  |
-| `MW` | MW | 1000000 |  |
-| `[HP]` | hp | 37284993579113511/50000000000000 |  |
-| `kcal/d` | kcal/d | 523/10800 |  |
-| `kcal/h` | kcal/h | 523/450 |  |
-| `[Btu_IT]/h` | Btu/h | 52752792631/180000000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `W` | watt | W | `W` |  | `Btu/h` | 180000000000/52752792631 |  |  |
+| `mW` | milliwatt | mW | `mW` |  | `Btu/h` | 180000000/52752792631 |  |  |
+| `kW` | kilowatt | kW | `kW` |  | `Btu/h` | 180000000000000/52752792631 |  |  |
+| `MW` | megawatt | MW | `MW` |  | `Btu/h` | 180000000000000000/52752792631 |  |  |
+| `hp` | horsepower | hp | `[HP]` |  | `Btu/h` | 7397940627/2907500 |  |  |
+| `kcal/d` | kilocalorie per day | kcal/d | `kcal/d` |  | `Btu/h` | 26150000000/158258377893 |  |  |
+| `kcal/h` | kilocalorie per hour | kcal/h | `kcal/h` |  | `Btu/h` | 209200000000/52752792631 |  |  |
+| `Btu/h` | British thermal unit per hour | Btu/h | `[Btu_IT]/h` |  | `Btu/h` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mW-W` | `mW` | `W` | 0.001 |  |
+| `kW-W` | `kW` | `W` | 1000 |  |
+| `MW-W` | `MW` | `W` | 1000000 |  |
+| `hp-W` | `hp` | `W` | 745.69987158227022 |  |
+| `kcal/d-W` | `kcal/d` | `W` | 523/10800 |  |
+| `kcal/h-W` | `kcal/h` | `W` | 523/450 |  |
+| `Btu/h-W` | `Btu/h` | `W` | 52752792631/180000000000 |  |
 
 ### apparent-power
 
-Volt-amperes: the same factor as the watt and never converted into it.
-
-| Code | Symbol | Factor to `V.A` | Offset |
-| --- | --- | --- | --- |
-| `V.A` | VA | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `V.A` | volt-ampere | VA | `V.A` | `VA` | `V.A` | 1 |  |  |
 
 ### reactive-power
 
-UCUM has no code for var, so it is the annotated volt-ampere.
-
-| Code | Symbol | Factor to `V.A{reactive}` | Offset |
-| --- | --- | --- | --- |
-| `V.A{reactive}` | var | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `var` | volt-ampere reactive | var | `V.A{reactive}` |  | `var` | 1 |  |  |
 
 ### pressure
 
-| Code | Symbol | Factor to `Pa` | Offset |
-| --- | --- | --- | --- |
-| `Pa` | Pa | 1 |  |
-| `hPa` | hPa | 100 |  |
-| `kPa` | kPa | 1000 |  |
-| `bar` | bar | 100000 |  |
-| `mbar` | mbar | 100 |  |
-| `atm` | atm | 101325 |  |
-| `mm[Hg]` | mmHg | 66661/500 |  |
-| `cm[H2O]` | cmH₂O | 196133/2000 |  |
-| `[psi]` | psi | 8896443230521/1290320000 |  |
-| `[in_i'Hg]` | inHg | 8465947/2500 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Pa` | pascal | Pa | `Pa` |  | `Pa` | 1 |  |  |
+| `hPa` | hectopascal | hPa | `hPa` |  | `Pa` | 100 |  |  |
+| `kPa` | kilopascal | kPa | `kPa` |  | `Pa` | 1000 |  |  |
+| `bar` | bar | bar | `bar` |  | `Pa` | 100000 |  |  |
+| `mbar` | millibar | mbar | `mbar` |  | `Pa` | 100 |  |  |
+| `atm` | standard atmosphere | atm | `atm` |  | `Pa` | 101325 |  |  |
+| `mmHg` | millimeter of mercury | mmHg | `mm[Hg]` |  | `Pa` | 133.322 |  |  |
+| `cmH2O` | centimeter of water | cmH₂O | `cm[H2O]` | `cmAq` | `Pa` | 98.0665 |  |  |
+| `psi` | pound per square inch | psi | `[psi]` |  | `Pa` | 8896443230521/1290320000 |  |  |
+| `inHg` | inch of mercury | inHg | `[in_i'Hg]` |  | `Pa` | 3386.3788 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `hPa-Pa` | `hPa` | `Pa` | 100 |  |
+| `kPa-Pa` | `kPa` | `Pa` | 1000 |  |
+| `bar-Pa` | `bar` | `Pa` | 100000 |  |
+| `mbar-Pa` | `mbar` | `Pa` | 100 |  |
+| `atm-Pa` | `atm` | `Pa` | 101325 |  |
+| `mmHg-Pa` | `mmHg` | `Pa` | 133.322 |  |
+| `cmH2O-Pa` | `cmH2O` | `Pa` | 98.0665 |  |
+| `psi-Pa` | `psi` | `Pa` | 8896443230521/1290320000 |  |
+| `inHg-Pa` | `inHg` | `Pa` | 3386.3788 |  |
 
 ### speed
 
-| Code | Symbol | Factor to `m/s` | Offset |
-| --- | --- | --- | --- |
-| `m/s` | m/s | 1 |  |
-| `km/h` | km/h | 5/18 |  |
-| `[mi_i]/h` | mph | 1397/3125 |  |
-| `[kn_i]` | kn | 463/900 |  |
-| `[ft_i]/s` | ft/s | 381/1250 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `m/s` | meter per second | m/s | `m/s` |  | `ft/s` | 1250/381 |  |  |
+| `km/h` | kilometer per hour | km/h | `km/h` | `km/hr`, `kmph` | `ft/s` | 3125/3429 |  |  |
+| `mph` | mile per hour | mph | `[mi_i]/h` | `mi/hr` | `ft/s` | 22/15 |  |  |
+| `kn` | knot | kn | `[kn_i]` |  | `ft/s` | 11575/6858 |  |  |
+| `ft/s` | foot per second | ft/s | `[ft_i]/s` |  | `ft/s` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `km/h-m/s` | `km/h` | `m/s` | 5/18 |  |
+| `mph-m/s` | `mph` | `m/s` | 0.44704 |  |
+| `kn-m/s` | `kn` | `m/s` | 463/900 |  |
+| `ft/s-m/s` | `ft/s` | `m/s` | 0.3048 |  |
 
 ### pace
 
-The reciprocal of a speed: a mean pace is total time over total distance.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `s/m` | second per meter | s/m | `s/m` |  | `min/km` | 50/3 |  |  |
+| `min/km` | minute per kilometer | min/km | `min/km` |  | `min/km` | 1 |  |  |
+| `s/km` | second per kilometer | s/km | `s/km` |  | `min/km` | 1/60 |  |  |
+| `min/mi` | minute per mile | min/mi | `min/[mi_i]` |  | `min/km` | 15625/25146 |  |  |
+| `s/100m` | second per 100 meters | s/100 m | `s/(100.m)` |  | `min/km` | 1/6 |  |  |
+| `s/100yd` | second per 100 yards | s/100 yd | `s/(100.[yd_i])` |  | `min/km` | 625/3429 |  |  |
+| `s/500m` | second per 500 meters | s/500 m | `s/(500.m)` |  | `min/km` | 1/30 |  |  |
 
-| Code | Symbol | Factor to `s/m` | Offset |
-| --- | --- | --- | --- |
-| `s/m` | s/m | 1 |  |
-| `min/km` | min/km | 3/50 |  |
-| `s/km` | s/km | 1/1000 |  |
-| `min/[mi_i]` | min/mi | 625/16764 |  |
-| `s/(100.m)` | s/100 m | 1/100 |  |
-| `s/(100.[yd_i])` | s/100 yd | 25/2286 |  |
-| `s/(500.m)` | s/500 m | 1/500 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `min/km-s/m` | `min/km` | `s/m` | 0.06 |  |
+| `s/km-s/m` | `s/km` | `s/m` | 0.001 |  |
+| `min/mi-s/m` | `min/mi` | `s/m` | 625/16764 |  |
+| `s/100m-s/m` | `s/100m` | `s/m` | 0.01 |  |
+| `s/100yd-s/m` | `s/100yd` | `s/m` | 25/2286 |  |
+| `s/500m-s/m` | `s/500m` | `s/m` | 0.002 |  |
 
 ### acceleration
 
-| Code | Symbol | Factor to `m/s2` | Offset |
-| --- | --- | --- | --- |
-| `m/s2` | m/s² | 1 |  |
-| `[g]` | gn | 196133/20000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `m/s2` | meter per second squared | m/s² | `m/s2` |  | `gn` | 20000/196133 |  |  |
+| `gn` | standard gravity | gn | `[g]` |  | `gn` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `gn-m/s2` | `gn` | `m/s2` | 9.80665 |  |
 
 ### frequency
 
-| Code | Symbol | Factor to `Hz` | Offset |
-| --- | --- | --- | --- |
-| `Hz` | Hz | 1 |  |
-| `kHz` | kHz | 1000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Hz` | hertz | Hz | `Hz` |  | `Hz` | 1 |  |  |
+| `kHz` | kilohertz | kHz | `kHz` |  | `Hz` | 1000 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `kHz-Hz` | `kHz` | `Hz` | 1000 |  |
 
 ### rate
 
-Events per time; an annotated rate ({beats}/min) converts only to the same annotation.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `1/s` | per second | /s | `/s` |  | `1/d` | 86400 |  |  |
+| `1/min` | per minute | /min | `/min` | `bpm`, `count/min`, `rpm` | `1/d` | 1440 |  |  |
+| `1/h` | per hour | /h | `/h` |  | `1/d` | 24 |  |  |
+| `1/d` | per day | /d | `/d` |  | `1/d` | 1 |  |  |
+| `1/wk` | per week | /wk | `/wk` |  | `1/d` | 1/7 |  |  |
 
-| Code | Symbol | Factor to `/s` | Offset |
-| --- | --- | --- | --- |
-| `/s` | /s | 1 |  |
-| `/min` | /min | 1/60 |  |
-| `/h` | /h | 1/3600 |  |
-| `/d` | /d | 1/86400 |  |
-| `/wk` | /wk | 1/604800 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `1/min-1/s` | `1/min` | `1/s` | 1/60 |  |
+| `1/h-1/s` | `1/h` | `1/s` | 1/3600 |  |
+| `1/d-1/s` | `1/d` | `1/s` | 1/86400 |  |
+| `1/wk-1/s` | `1/wk` | `1/s` | 1/604800 |  |
 
 ### count
 
-A count of things, named by an annotation alone ({steps}); two annotations never convert.
-
-| Code | Symbol | Factor to `1` | Offset |
-| --- | --- | --- | --- |
-| `{count}` | {count} | 1 |  |
-| `1` |  | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `count` | count | {count} | `{count}` |  | `count` | 1 |  |  |
+| `1` | one |  | `1` |  | `1` | 1 |  |  |
 
 ### fraction
 
-A part of a whole.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `percent` | percent | % | `%` |  | `1` | 0.01 |  |  |
+| `ppth` | part per thousand | ‰ | `[ppth]` |  | `1` | 0.001 |  |  |
+| `ppm` | part per million | ppm | `[ppm]` |  | `1` | 0.000001 |  |  |
+| `ppb` | part per billion | ppb | `[ppb]` |  | `1` | 0.000000001 |  |  |
 
-| Code | Symbol | Factor to `1` | Offset |
-| --- | --- | --- | --- |
-| `1` |  | 1 |  |
-| `%` | % | 1/100 |  |
-| `[ppth]` | ‰ | 1/1000 |  |
-| `[ppm]` | ppm | 1/1000000 |  |
-| `[ppb]` | ppb | 1/1000000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `percent-1` | `percent` | `1` | 0.01 |  |
+| `ppth-1` | `ppth` | `1` | 0.001 |  |
+| `ppm-1` | `ppm` | `1` | 0.000001 |  |
+| `ppb-1` | `ppb` | `1` | 0.000000001 |  |
 
 ### amount-fraction
 
-An amount of substance per amount of substance (HbA1c IFCC); a mol over a mol under any prefixes belongs here and never converts to a fraction such as an NGSP %.
-
-| Code | Symbol | Factor to `mol/mol` | Offset |
-| --- | --- | --- | --- |
-| `mmol/mol` | mmol/mol | 1/1000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mmol/mol` | millimole per mole | mmol/mol | `mmol/mol` |  | `mmol/mol` | 1 |  |  |
 
 ### score
 
-A vendor's number on its own scale (WHOOP strain, WHOOP recovery): it converts to nothing but itself, never to a percent.
-
-| Code | Symbol | Factor to `{score}` | Offset |
-| --- | --- | --- | --- |
-| `{score}` | score | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `score` | score | score | `{score}` |  | `score` | 1 |  |  |
 
 ### amount-of-substance
 
-| Code | Symbol | Factor to `mol` | Offset |
-| --- | --- | --- | --- |
-| `mol` | mol | 1 |  |
-| `mmol` | mmol | 1/1000 |  |
-| `umol` | μmol | 1/1000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mol` | mole | mol | `mol` |  | `mmol` | 1000 |  |  |
+| `mmol` | millimole | mmol | `mmol` |  | `mmol` | 1 |  |  |
+| `umol` | micromole | μmol | `umol` |  | `mmol` | 0.001 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mmol-mol` | `mmol` | `mol` | 0.001 |  |
+| `umol-mol` | `umol` | `mol` | 0.000001 |  |
 
 ### amount-concentration
 
-| Code | Symbol | Factor to `mol/m3` | Offset |
-| --- | --- | --- | --- |
-| `mol/L` | mol/L | 1000 |  |
-| `mmol/L` | mmol/L | 1 |  |
-| `umol/L` | μmol/L | 1/1000 |  |
-| `nmol/L` | nmol/L | 1/1000000 |  |
-| `pmol/L` | pmol/L | 1/1000000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mol/L` | mole per liter | mol/L | `mol/L` |  | `mmol/L` | 1000 |  |  |
+| `mmol/L` | millimole per liter | mmol/L | `mmol/L` | `mmol<180.15588000005408>/L`, `mmol<180.1558800000541>/L` | `mmol/L` | 1 |  |  |
+| `umol/L` | micromole per liter | μmol/L | `umol/L` |  | `mmol/L` | 0.001 |  |  |
+| `nmol/L` | nanomole per liter | nmol/L | `nmol/L` |  | `mmol/L` | 0.000001 |  |  |
+| `pmol/L` | picomole per liter | pmol/L | `pmol/L` |  | `mmol/L` | 0.000000001 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mmol/L-mol/L` | `mmol/L` | `mol/L` | 0.001 |  |
+| `umol/L-mol/L` | `umol/L` | `mol/L` | 0.000001 |  |
+| `nmol/L-mol/L` | `nmol/L` | `mol/L` | 0.000000001 |  |
+| `pmol/L-mol/L` | `pmol/L` | `mol/L` | 0.000000000001 |  |
 
 ### mass-concentration
 
-| Code | Symbol | Factor to `kg/m3` | Offset |
-| --- | --- | --- | --- |
-| `g/L` | g/L | 1 |  |
-| `g/dL` | g/dL | 10 |  |
-| `mg/dL` | mg/dL | 1/100 |  |
-| `mg/L` | mg/L | 1/1000 |  |
-| `ug/L` | μg/L | 1/1000000 |  |
-| `ng/mL` | ng/mL | 1/1000000 |  |
-| `pg/mL` | pg/mL | 1/1000000000 |  |
-| `ug/dL` | μg/dL | 1/100000 |  |
-| `g/m3` | g/m³ | 1/1000 |  |
-| `mg/m3` | mg/m³ | 1/1000000 |  |
-| `ug/m3` | μg/m³ | 1/1000000000 |  |
-| `kg/m3` | kg/m³ | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `g/L` | gram per liter | g/L | `g/L` |  | `g/L` | 1 |  |  |
+| `g/dL` | gram per deciliter | g/dL | `g/dL` |  | `g/L` | 10 |  |  |
+| `mg/dL` | milligram per deciliter | mg/dL | `mg/dL` |  | `g/L` | 0.01 |  |  |
+| `mg/L` | milligram per liter | mg/L | `mg/L` |  | `g/L` | 0.001 |  |  |
+| `ug/L` | microgram per liter | μg/L | `ug/L` |  | `g/L` | 0.000001 |  |  |
+| `ng/mL` | nanogram per milliliter | ng/mL | `ng/mL` |  | `g/L` | 0.000001 |  |  |
+| `pg/mL` | picogram per milliliter | pg/mL | `pg/mL` |  | `g/L` | 0.000000001 |  |  |
+| `ug/dL` | microgram per deciliter | μg/dL | `ug/dL` |  | `g/L` | 0.00001 |  |  |
+| `g/m3` | gram per cubic meter | g/m³ | `g/m3` |  | `g/L` | 0.001 |  |  |
+| `mg/m3` | milligram per cubic meter | mg/m³ | `mg/m3` |  | `g/L` | 0.000001 |  |  |
+| `ug/m3` | microgram per cubic meter | μg/m³ | `ug/m3` |  | `g/L` | 0.000000001 |  |  |
+| `kg/m3` | kilogram per cubic meter | kg/m³ | `kg/m3` |  | `g/L` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `g/dL-g/L` | `g/dL` | `g/L` | 10 |  |
+| `mg/dL-g/L` | `mg/dL` | `g/L` | 0.01 |  |
+| `mg/L-g/L` | `mg/L` | `g/L` | 0.001 |  |
+| `ug/L-g/L` | `ug/L` | `g/L` | 0.000001 |  |
+| `ng/mL-g/L` | `ng/mL` | `g/L` | 0.000001 |  |
+| `pg/mL-g/L` | `pg/mL` | `g/L` | 0.000000001 |  |
+| `ug/dL-g/L` | `ug/dL` | `g/L` | 0.00001 |  |
+| `g/m3-g/L` | `g/m3` | `g/L` | 0.001 |  |
+| `mg/m3-g/L` | `mg/m3` | `g/L` | 0.000001 |  |
+| `ug/m3-g/L` | `ug/m3` | `g/L` | 0.000000001 |  |
+| `kg/m3-g/L` | `kg/m3` | `g/L` | 1 |  |
 
 ### number-concentration
 
-Things counted per volume, such as blood cells: 10*9/L and 10*3/uL are one value.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `1/L` | per liter | /L | `/L` |  | `1/L` | 1 |  |  |
+| `1/uL` | per microliter | /μL | `/uL` |  | `1/L` | 1000000 |  |  |
+| `1e3/uL` | thousand per microliter | 10³/μL | `10*3/uL` |  | `1/L` | 1000000000 |  |  |
+| `1e6/uL` | million per microliter | 10⁶/μL | `10*6/uL` |  | `1/L` | 1000000000000 |  |  |
+| `1e9/L` | billion per liter | 10⁹/L | `10*9/L` |  | `1/L` | 1000000000 |  |  |
+| `1e12/L` | trillion per liter | 10¹²/L | `10*12/L` |  | `1/L` | 1000000000000 |  |  |
 
-| Code | Symbol | Factor to `/m3` | Offset |
-| --- | --- | --- | --- |
-| `/L` | /L | 1000 |  |
-| `/uL` | /μL | 1000000000 |  |
-| `10*3/uL` | 10³/μL | 1000000000000 |  |
-| `10*6/uL` | 10⁶/μL | 1000000000000000 |  |
-| `10*9/L` | 10⁹/L | 1000000000000 |  |
-| `10*12/L` | 10¹²/L | 1000000000000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `1/uL-1/L` | `1/uL` | `1/L` | 1000000 |  |
+| `1e3/uL-1/L` | `1e3/uL` | `1/L` | 1000000000 |  |
+| `1e6/uL-1/L` | `1e6/uL` | `1/L` | 1000000000000 |  |
+| `1e9/L-1/L` | `1e9/L` | `1/L` | 1000000000 |  |
+| `1e12/L-1/L` | `1e12/L` | `1/L` | 1000000000000 |  |
 
 ### catalytic-concentration
 
-Enzyme activity per volume: U is 1 umol/min, a proper unit.
-
-| Code | Symbol | Factor to `mol/(s.m3)` | Offset |
-| --- | --- | --- | --- |
-| `U/L` | U/L | 1/60000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `U/L` | enzyme unit per liter | U/L | `U/L` |  | `U/L` | 1 |  |  |
 
 ### catalytic-activity
 
-| Code | Symbol | Factor to `mol/s` | Offset |
-| --- | --- | --- | --- |
-| `kat` | kat | 1 |  |
-| `U` | U | 1/60000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `kat` | katal | kat | `kat` |  | `U` | 60000000 |  |  |
+| `U` | enzyme unit | U | `U` |  | `U` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `U-kat` | `U` | `kat` | 1/60000000 |  |
 
 ### arbitrary
 
-Defined by an assay: converts only to the same atom and annotation under another metric prefix.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `IU` | international unit | IU | `[IU]` |  | `IU` | 1 |  |  |
+| `IU/L` | international unit per liter | IU/L | `[IU]/L` |  | `IU/L` | 1 |  |  |
+| `mIU/L` | milli-international unit per liter | mIU/L | `m[IU]/L` |  | `IU/L` | 0.001 |  |  |
+| `IU/mL` | international unit per milliliter | IU/mL | `[IU]/mL` |  | `IU/L` | 1000 |  |  |
+| `arbU` | arbitrary unit | arb. U | `[arb'U]` |  | `arbU` | 1 |  |  |
 
-| Code | Symbol | Factor to `base` | Offset |
-| --- | --- | --- | --- |
-| `[IU]` | IU | none |  |
-| `[IU]/L` | IU/L | none |  |
-| `m[IU]/L` | mIU/L | none |  |
-| `[IU]/mL` | IU/mL | none |  |
-| `[arb'U]` | arb. U | none |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mIU/L-IU/L` | `mIU/L` | `IU/L` | 0.001 |  |
+| `IU/mL-IU/L` | `IU/mL` | `IU/L` | 1000 |  |
 
 ### illuminance
 
-| Code | Symbol | Factor to `lx` | Offset |
-| --- | --- | --- | --- |
-| `lx` | lx | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `lx` | lux | lx | `lx` |  | `lx` | 1 |  |  |
 
 ### luminous-flux
 
-| Code | Symbol | Factor to `lm` | Offset |
-| --- | --- | --- | --- |
-| `lm` | lm | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `lm` | lumen | lm | `lm` |  | `lm` | 1 |  |  |
 
 ### luminous-intensity
 
-| Code | Symbol | Factor to `cd` | Offset |
-| --- | --- | --- | --- |
-| `cd` | cd | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cd` | candela | cd | `cd` |  | `cd` | 1 |  |  |
 
 ### luminance
 
-| Code | Symbol | Factor to `cd/m2` | Offset |
-| --- | --- | --- | --- |
-| `cd/m2` | cd/m² | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cd/m2` | candela per square meter | cd/m² | `cd/m2` |  | `cd/m2` | 1 |  |  |
 
 ### irradiance
 
-| Code | Symbol | Factor to `W/m2` | Offset |
-| --- | --- | --- | --- |
-| `W/m2` | W/m² | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `W/m2` | watt per square meter | W/m² | `W/m2` |  | `W/m2` | 1 |  |  |
 
 ### level
 
-A ratio in decibels against no stated reference: never converted; a sum of levels is not a level, so the aggregate read refuses sum over any logarithmic measure.
-
-| Code | Symbol | Factor to `dB` | Offset |
-| --- | --- | --- | --- |
-| `dB` | dB | none |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `dB` | decibel | dB | `dB` |  | `dB` | 1 |  | scale `level` |
 
 ### sound-pressure-level
 
-20 lg(p/20 uPa) dB.
-
-| Code | Symbol | Factor to `dB[SPL]` | Offset |
-| --- | --- | --- | --- |
-| `dB[SPL]` | dB SPL | none |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `dBSPL` | decibel of sound pressure level | dB SPL | `dB[SPL]` | `dBASPL` | `dBSPL` | 1 |  | scale `powerlevel` |
 
 ### power-level
 
-The level dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none.
-
-| Code | Symbol | Factor to `dB[W]` | Offset |
-| --- | --- | --- | --- |
-| `dB[W]` | dBW | none |  |
-| `dBm` | dBm | none |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `dBW` | decibel-watt | dBW | `dB[W]` |  | `dBW` | 1 |  | scale `powerlevel` |
+| `dBm` | decibel-milliwatt | dBm | `dBm` |  | `dBm` | 1 |  | scale `powerlevel` |
 
 ### acidity
 
-| Code | Symbol | Factor to `[pH]` | Offset |
-| --- | --- | --- | --- |
-| `[pH]` | pH | none |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `pH` | pH | pH | `[pH]` |  | `pH` | 1 |  | scale `level` |
 
 ### electric-potential
 
-| Code | Symbol | Factor to `V` | Offset |
-| --- | --- | --- | --- |
-| `V` | V | 1 |  |
-| `mV` | mV | 1/1000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `V` | volt | V | `V` |  | `V` | 1 |  |  |
+| `mV` | millivolt | mV | `mV` |  | `V` | 0.001 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mV-V` | `mV` | `V` | 0.001 |  |
 
 ### electric-current
 
-| Code | Symbol | Factor to `A` | Offset |
-| --- | --- | --- | --- |
-| `A` | A | 1 |  |
-| `mA` | mA | 1/1000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `A` | ampere | A | `A` |  | `A` | 1 |  |  |
+| `mA` | milliampere | mA | `mA` |  | `A` | 0.001 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mA-A` | `mA` | `A` | 0.001 |  |
 
 ### electric-resistance
 
-| Code | Symbol | Factor to `Ohm` | Offset |
-| --- | --- | --- | --- |
-| `Ohm` | Ω | 1 |  |
-| `kOhm` | kΩ | 1000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Ohm` | ohm | Ω | `Ohm` |  | `Ohm` | 1 |  |  |
+| `kOhm` | kiloohm | kΩ | `kOhm` |  | `Ohm` | 1000 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `kOhm-Ohm` | `kOhm` | `Ohm` | 1000 |  |
 
 ### electric-charge
 
-| Code | Symbol | Factor to `C` | Offset |
-| --- | --- | --- | --- |
-| `C` | C | 1 |  |
-| `A.h` | Ah | 3600 |  |
-| `mA.h` | mAh | 18/5 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `C` | coulomb | C | `C` |  | `A.h` | 1/3600 |  |  |
+| `A.h` | ampere-hour | Ah | `A.h` |  | `A.h` | 1 |  |  |
+| `mA.h` | milliampere-hour | mAh | `mA.h` |  | `A.h` | 0.001 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `A.h-C` | `A.h` | `C` | 3600 |  |
+| `mA.h-C` | `mA.h` | `C` | 3.6 |  |
 
 ### electric-conductivity
 
-| Code | Symbol | Factor to `S/m` | Offset |
-| --- | --- | --- | --- |
-| `uS/cm` | μS/cm | 1/10000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `uS/cm` | microsiemens per centimeter | μS/cm | `uS/cm` |  | `uS/cm` | 1 |  |  |
 
 ### information
 
-| Code | Symbol | Factor to `bit` | Offset |
-| --- | --- | --- | --- |
-| `bit` | bit | 1 |  |
-| `By` | B | 8 |  |
-| `kBy` | kB | 8000 |  |
-| `MBy` | MB | 8000000 |  |
-| `GBy` | GB | 8000000000 |  |
-| `KiBy` | KiB | 8192 |  |
-| `MiBy` | MiB | 8388608 |  |
-| `GiBy` | GiB | 8589934592 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `bit` | bit | bit | `bit` |  | `By` | 0.125 |  |  |
+| `By` | byte | B | `By` |  | `By` | 1 |  |  |
+| `kBy` | kilobyte | kB | `kBy` |  | `By` | 1000 |  |  |
+| `MBy` | megabyte | MB | `MBy` |  | `By` | 1000000 |  |  |
+| `GBy` | gigabyte | GB | `GBy` |  | `By` | 1000000000 |  |  |
+| `KiBy` | kibibyte | KiB | `KiBy` |  | `By` | 1024 |  |  |
+| `MiBy` | mebibyte | MiB | `MiBy` |  | `By` | 1048576 |  |  |
+| `GiBy` | gibibyte | GiB | `GiBy` |  | `By` | 1073741824 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `By-bit` | `By` | `bit` | 8 |  |
+| `kBy-bit` | `kBy` | `bit` | 8000 |  |
+| `MBy-bit` | `MBy` | `bit` | 8000000 |  |
+| `GBy-bit` | `GBy` | `bit` | 8000000000 |  |
+| `KiBy-bit` | `KiBy` | `bit` | 8192 |  |
+| `MiBy-bit` | `MiBy` | `bit` | 8388608 |  |
+| `GiBy-bit` | `GiBy` | `bit` | 8589934592 |  |
 
 ### data-rate
 
-| Code | Symbol | Factor to `bit/s` | Offset |
-| --- | --- | --- | --- |
-| `bit/s` | bit/s | 1 |  |
-| `kbit/s` | kbit/s | 1000 |  |
-| `Mbit/s` | Mbit/s | 1000000 |  |
-| `By/s` | B/s | 8 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `bit/s` | bit per second | bit/s | `bit/s` |  | `By/s` | 0.125 |  |  |
+| `kbit/s` | kilobit per second | kbit/s | `kbit/s` |  | `By/s` | 125 |  |  |
+| `Mbit/s` | megabit per second | Mbit/s | `Mbit/s` |  | `By/s` | 125000 |  |  |
+| `By/s` | byte per second | B/s | `By/s` |  | `By/s` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `kbit/s-bit/s` | `kbit/s` | `bit/s` | 1000 |  |
+| `Mbit/s-bit/s` | `Mbit/s` | `bit/s` | 1000000 |  |
+| `By/s-bit/s` | `By/s` | `bit/s` | 8 |  |
 
 ### angle
 
-The radian rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `deg` | degree | ° | `deg` |  | `arcmin` | 60 |  | turn `360` |
+| `arcmin` | minute of arc | ′ | `'` |  | `arcmin` | 1 |  | turn `21600` |
+| `arcsec` | second of arc | ″ | `''` |  | `arcmin` | 1/60 |  | turn `1296000` |
+| `rad` | radian | rad | `rad` |  | `rad` | 1 |  | turn `6.2831853071795864769252867665590057683943` |
 
-| Code | Symbol | Factor to `deg` | Offset |
-| --- | --- | --- | --- |
-| `deg` | ° | 1 |  |
-| `'` | ′ | 1/60 |  |
-| `''` | ″ | 1/3600 |  |
-| `rad` | rad | none |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `arcmin-deg` | `arcmin` | `deg` | 1/60 |  |
+| `arcsec-deg` | `arcsec` | `deg` | 1/3600 |  |
 
 ### volume-flow
 
-| Code | Symbol | Factor to `m3/s` | Offset |
-| --- | --- | --- | --- |
-| `L/min` | L/min | 1/60000 |  |
-| `L/h` | L/h | 1/3600000 |  |
-| `mL/min` | mL/min | 1/60000000 |  |
-| `m3/h` | m³/h | 1/3600 |  |
-| `[gal_us]/min` | gal/min | 157725491/2500000000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `L/min` | liter per minute | L/min | `L/min` |  | `L/h` | 60 |  |  |
+| `L/h` | liter per hour | L/h | `L/h` |  | `L/h` | 1 |  |  |
+| `mL/min` | milliliter per minute | mL/min | `mL/min` |  | `L/h` | 0.06 |  |  |
+| `m3/h` | cubic meter per hour | m³/h | `m3/h` |  | `L/h` | 1000 |  |  |
+| `gal/min` | US gallon per minute | gal/min | `[gal_us]/min` |  | `L/h` | 227.12470704 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `L/h-L/min` | `L/h` | `L/min` | 1/60 |  |
+| `mL/min-L/min` | `mL/min` | `L/min` | 0.001 |  |
+| `m3/h-L/min` | `m3/h` | `L/min` | 50/3 |  |
+| `gal/min-L/min` | `gal/min` | `L/min` | 3.785411784 |  |
 
 ### mass-flow
 
-| Code | Symbol | Factor to `kg/s` | Offset |
-| --- | --- | --- | --- |
-| `g/s` | g/s | 1/1000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `g/s` | gram per second | g/s | `g/s` |  | `g/s` | 1 |  |  |
 
 ### force
 
-| Code | Symbol | Factor to `N` | Offset |
-| --- | --- | --- | --- |
-| `N` | N | 1 |  |
-| `[lbf_av]` | lbf | 8896443230521/2000000000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `N` | newton | N | `N` |  | `N` | 1 |  |  |
+| `lbf` | pound-force | lbf | `[lbf_av]` |  | `N` | 4.4482216152605 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `lbf-N` | `lbf` | `N` | 4.4482216152605 |  |
 
 ### torque
 
-The same dimension as energy, and never converted into it.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `N.m` | newton meter | N·m | `N.m` |  | `N.m` | 1 |  |  |
+| `lbf.ft` | pound-force foot | lbf·ft | `[lbf_av].[ft_i]` |  | `N.m` | 1.3558179483314004 |  |  |
 
-| Code | Symbol | Factor to `N.m` | Offset |
-| --- | --- | --- | --- |
-| `N.m` | N·m | 1 |  |
-| `[lbf_av].[ft_i]` | lbf·ft | 3389544870828501/2500000000000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `lbf.ft-N.m` | `lbf.ft` | `N.m` | 1.3558179483314004 |  |
 
 ### activity-concentration
 
-| Code | Symbol | Factor to `Bq/m3` | Offset |
-| --- | --- | --- | --- |
-| `Bq/m3` | Bq/m³ | 1 |  |
-| `pCi/L` | pCi/L | 37 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Bq/m3` | becquerel per cubic meter | Bq/m³ | `Bq/m3` |  | `Bq/m3` | 1 |  |  |
+| `pCi/L` | picocurie per liter | pCi/L | `pCi/L` |  | `Bq/m3` | 37 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `pCi/L-Bq/m3` | `pCi/L` | `Bq/m3` | 37 |  |
 
 ### absorbed-dose
 
-Energy absorbed per mass of tissue: never a dose equivalent and never a specific energy, though all three are J/kg.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Gy` | gray | Gy | `Gy` |  | `Gy` | 1 |  |  |
+| `mGy` | milligray | mGy | `mGy` |  | `Gy` | 0.001 |  |  |
 
-| Code | Symbol | Factor to `Gy` | Offset |
-| --- | --- | --- | --- |
-| `Gy` | Gy | 1 |  |
-| `mGy` | mGy | 1/1000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mGy-Gy` | `mGy` | `Gy` | 0.001 |  |
 
 ### dose-equivalent
 
-An absorbed dose weighted by its radiation's effect: never converted to a Gy.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Sv` | sievert | Sv | `Sv` |  | `Sv` | 1 |  |  |
+| `mSv` | millisievert | mSv | `mSv` |  | `Sv` | 0.001 |  |  |
+| `uSv` | microsievert | μSv | `uSv` |  | `Sv` | 0.000001 |  |  |
 
-| Code | Symbol | Factor to `Sv` | Offset |
-| --- | --- | --- | --- |
-| `Sv` | Sv | 1 |  |
-| `mSv` | mSv | 1/1000 |  |
-| `uSv` | μSv | 1/1000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `mSv-Sv` | `mSv` | `Sv` | 0.001 |  |
+| `uSv-Sv` | `uSv` | `Sv` | 0.000001 |  |
 
 ### dose-equivalent-rate
 
-| Code | Symbol | Factor to `Sv/s` | Offset |
-| --- | --- | --- | --- |
-| `uSv/h` | μSv/h | 1/3600000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `uSv/h` | microsievert per hour | μSv/h | `uSv/h` |  | `uSv/h` | 1 |  |  |
 
 ### radioactivity
 
-Decays per second: never a frequency or a rate of events, though all three are s-1.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Bq` | becquerel | Bq | `Bq` |  | `Bq` | 1 |  |  |
+| `kBq` | kilobecquerel | kBq | `kBq` |  | `Bq` | 1000 |  |  |
+| `MBq` | megabecquerel | MBq | `MBq` |  | `Bq` | 1000000 |  |  |
 
-| Code | Symbol | Factor to `Bq` | Offset |
-| --- | --- | --- | --- |
-| `Bq` | Bq | 1 |  |
-| `kBq` | kBq | 1000 |  |
-| `MBq` | MBq | 1000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `kBq-Bq` | `kBq` | `Bq` | 1000 |  |
+| `MBq-Bq` | `MBq` | `Bq` | 1000000 |  |
 
 ### body-mass-index
 
-| Code | Symbol | Factor to `kg/m2` | Offset |
-| --- | --- | --- | --- |
-| `kg/m2` | kg/m² | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `kg/m2` | kilogram per square meter | kg/m² | `kg/m2` |  | `kg/m2` | 1 |  |  |
 
 ### oxygen-uptake-rate
 
-One MET is 3.5 mL/(kg.min).
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mL/kg/min` | milliliter per kilogram per minute | mL/(kg·min) | `mL/(kg.min)` | `mL/(kg*min)`, `ml/(kg·min)` | `MET` | 2/7 |  |  |
+| `MET` | metabolic equivalent | MET | `[MET]` |  | `MET` | 1 |  |  |
 
-| Code | Symbol | Factor to `m3/(kg.s)` | Offset |
-| --- | --- | --- | --- |
-| `mL/(kg.min)` | mL/(kg·min) | 1/60000000 |  |
-| `[MET]` | MET | 7/120000000 |  |
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `MET-mL/kg/min` | `MET` | `mL/kg/min` | 3.5 |  |
 
 ### specific-power
 
-| Code | Symbol | Factor to `W/kg` | Offset |
-| --- | --- | --- | --- |
-| `W/kg` | W/kg | 1 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `W/kg` | watt per kilogram | W/kg | `W/kg` |  | `W/kg` | 1 |  |  |
 
 ### specific-energy
 
-| Code | Symbol | Factor to `J/kg` | Offset |
-| --- | --- | --- | --- |
-| `kcal/kg` | kcal/kg | 4184 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `kcal/kg` | kilocalorie per kilogram | kcal/kg | `kcal/kg` |  | `kcal/kg` | 1 |  |  |
 
 ### energy-per-distance
 
-| Code | Symbol | Factor to `J/m` | Offset |
-| --- | --- | --- | --- |
-| `kW.h/(100.km)` | kWh/100 km | 36 |  |
-| `W.h/km` | Wh/km | 18/5 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `kW.h/100km` | kilowatt-hour per 100 kilometers | kWh/100 km | `kW.h/(100.km)` |  | `W.h/km` | 10 |  |  |
+| `W.h/km` | watt-hour per kilometer | Wh/km | `W.h/km` |  | `W.h/km` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `W.h/km-kW.h/100km` | `W.h/km` | `kW.h/100km` | 0.1 |  |
 
 ### fuel-consumption
 
-The reciprocal of a fuel economy, never converted into one.
-
-| Code | Symbol | Factor to `m3/m` | Offset |
-| --- | --- | --- | --- |
-| `L/(100.km)` | L/100 km | 1/100000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `L/100km` | liter per 100 kilometers | L/100 km | `L/(100.km)` |  | `L/100km` | 1 |  |  |
 
 ### fuel-economy
 
-| Code | Symbol | Factor to `m/m3` | Offset |
-| --- | --- | --- | --- |
-| `[mi_i]/[gal_us]` | mpg | 48000000000/112903 |  |
-| `km/L` | km/L | 1000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mpg` | mile per US gallon | mpg | `[mi_i]/[gal_us]` |  | `km/L` | 48000/112903 |  |  |
+| `km/L` | kilometer per liter | km/L | `km/L` |  | `km/L` | 1 |  |  |
+
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `km/L-mpg` | `km/L` | `mpg` | 112903/48000 |  |
 
 ### precipitation-rate
 
-| Code | Symbol | Factor to `m/s` | Offset |
-| --- | --- | --- | --- |
-| `mm/h` | mm/h | 1/3600000 |  |
-| `[in_i]/h` | in/h | 127/18000000 |  |
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mm/h` | millimeter per hour | mm/h | `mm/h` |  | `in/h` | 5/127 |  |  |
+| `in/h` | inch per hour | in/h | `[in_i]/h` |  | `in/h` | 1 |  |  |
 
-## Aliases
+| Conversion | From | To | Factor | Offset |
+| --- | --- | --- | --- | --- |
+| `in/h-mm/h` | `in/h` | `mm/h` | 25.4 |  |
 
-A writer may send these spellings; the stored value always holds the code. Both
-micro signs (U+00B5 and U+03BC) read as `u` and the superscript digits ² and ³
-as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`. After a bare
-`10` a superscript is its power: `10³/μL` is stored as `10*3/uL`, never `103/uL`.
+### counts the shipped samples write
 
-An alias adds no annotation to a count or a rate. `bpm`, `rpm` and `count/min`
-are `/min`, the bare rate a heart rate, a cadence or a breathing rate is stored
-in, so a writer's common spelling converts to it. An annotation is part of a
-unit: a writer that knows what was counted writes it (`{beats}/min`), and that
-code converts only to the same annotation, never to `/min` or `{steps}/min`.
-`var` is the one alias that carries an annotation, because `{reactive}` is the
-reactive-power measure's identity rather than a thing counted.
+| Id | Name | Symbol | Code | Aliases | Root | Factor | Offset | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `steps` | steps | steps | `{steps}` |  | `steps` | 1 |  |  |
+| `floors` | floors | floors | `{floors}` |  | `floors` | 1 |  |  |
 
-| Alias | Code |
-| --- | --- |
-| `Cal` | `[Cal]` |
-| `IU` | `[IU]` |
-| `VA` | `V.A` |
-| `Wh` | `W.h` |
-| `bpm` | `/min` |
-| `cmAq` | `cm[H2O]` |
-| `count/min` | `/min` |
-| `dBASPL` | `dB[SPL]` |
-| `degC` | `Cel` |
-| `degF` | `[degF]` |
-| `hr` | `h` |
-| `in` | `[in_i]` |
-| `inHg` | `[in_i'Hg]` |
-| `kWh` | `kW.h` |
-| `km/hr` | `km/h` |
-| `kmph` | `km/h` |
-| `lb` | `[lb_av]` |
-| `mL/(kg*min)` | `mL/(kg.min)` |
-| `mcg` | `ug` |
-| `mi` | `[mi_i]` |
-| `mi/hr` | `[mi_i]/h` |
-| `ml/(kg·min)` | `mL/(kg.min)` |
-| `mmHg` | `mm[Hg]` |
-| `mmol<180.15588000005408>/L` | `mmol/L` |
-| `mmol<180.1558800000541>/L` | `mmol/L` |
-| `oz` | `[oz_av]` |
-| `ppb` | `[ppb]` |
-| `ppm` | `[ppm]` |
-| `rpm` | `/min` |
-| `var` | `V.A{reactive}` |
-| `yd` | `[yd_i]` |
-| `°C` | `Cel` |
-| `°F` | `[degF]` |
-| `℃` | `Cel` |
-| `℉` | `[degF]` |
-
-These spellings are refused by name, because no code states what they mean:
-
-| Spelling | Why |
-| --- | --- |
-| `count` | A bare count names nothing counted: write the annotation for what was counted, such as `{steps}` or `{floors}` |
+<!-- END shipped units -->

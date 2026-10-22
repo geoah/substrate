@@ -307,9 +307,17 @@ func (t *txn) afterUnitFold(kind string) error {
 	}
 	t.unitTouched = true
 	t.unitLocal = nil
+	if t.queueRevision() {
+		return nil
+	}
+	return t.moveUnitRevision(1)
+}
+
+// moveUnitRevision moves the unit graph's revision by n.
+func (t *txn) moveUnitRevision(n int) error {
 	if _, err := t.exec(`
-		INSERT INTO unit_graph (revision) VALUES (1)
-		ON CONFLICT (repository) DO UPDATE SET revision = unit_graph.revision + 1`); err != nil {
+		INSERT INTO unit_graph (revision) VALUES ($1)
+		ON CONFLICT (repository) DO UPDATE SET revision = unit_graph.revision + $1`, n); err != nil {
 		return fmt.Errorf("substrate/engine: move the unit graph revision: %w", err)
 	}
 	return nil
@@ -409,6 +417,9 @@ func (t *txn) syncUnitUses(ref eref, before, after []string, created bool) error
 // replaceUnitUses writes a row's unit_uses rows as uses, deleting what it
 // held first unless the row is new.
 func (t *txn) replaceUnitUses(ref eref, uses []string, held bool) error {
+	if !held && t.queueUses(ref, uses) {
+		return nil
+	}
 	if held {
 		if _, err := t.exec(`DELETE FROM unit_uses WHERE kind = $1 AND record_id = $2`, ref.Kind, ref.ID); err != nil {
 			return fmt.Errorf("substrate/engine: unit uses of %s %s: %w", ref.Kind, ref.ID, err)
@@ -430,7 +441,7 @@ func (t *txn) replaceUnitUses(ref eref, uses []string, held bool) error {
 // existed or under an older rule, has every row's uses derived again behind
 // the open (checkUnitUses); a change to rowUnitUses moves it. Version 2
 // keys each spelling by vocabulary.UnitSpellingKey; version 3 stops reading a
-// metric's top-level `unit`, a reference since the unit graph switch.
+// metric's top-level `unit`, a reference since step 4 of decision 0186.
 const unitUsesVersion = 3
 
 // checkUnitUses is the open ladder's step: a repository whose unit uses are
@@ -820,8 +831,7 @@ func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 // Units answers the repository's units and conversions at one revision, read
 // in one snapshot: each unit with its linear component's root and its exact
 // map to it, each conversion as written, and the shipped records the last
-// seed skipped (unitseed.go). The engine's old table rides beside them at the
-// API until the switch removes it.
+// seed skipped (unitseed.go).
 func (ds *dataset) Units(ctx context.Context) (substrate.UnitTable, error) {
 	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
@@ -836,11 +846,30 @@ func (ds *dataset) Units(ctx context.Context) (substrate.UnitTable, error) {
 }
 
 func (ds *dataset) unitTable(at *unitGraphAt) substrate.UnitTable {
-	g := at.graph
+	out := graphTable(at.graph, at.revision)
+	held := map[string]bool{}
+	for _, u := range out.Units {
+		held[vocabulary.KindUnit+"/"+u.ID] = true
+	}
+	for _, c := range out.Conversions {
+		held[vocabulary.KindConversion+"/"+c.ID] = true
+	}
+	for _, s := range ds.unseededUnits() {
+		if !s.absent || !held[s.rec.Kind+"/"+s.rec.ID] {
+			out.Unseeded = append(out.Unseeded, s.rec)
+		}
+	}
+	return out
+}
+
+// graphTable is one graph as GET /api/v1/units answers it, with no unseeded
+// record: every unit with its root and exact map to it, and every
+// conversion.
+func graphTable(g *vocabulary.UnitGraph, revision int64) substrate.UnitTable {
 	out := substrate.UnitTable{
 		Units:       []substrate.RepositoryUnit{},
 		Conversions: []substrate.RepositoryConversion{},
-		Revision:    at.revision,
+		Revision:    revision,
 		Unseeded:    []substrate.UnseededRecord{},
 	}
 	for _, u := range g.Units() {
@@ -870,18 +899,6 @@ func (ds *dataset) unitTable(at *unitGraphAt) substrate.UnitTable {
 		}
 		out.Conversions = append(out.Conversions, rc)
 	}
-	held := map[string]bool{}
-	for _, u := range out.Units {
-		held[vocabulary.KindUnit+"/"+u.ID] = true
-	}
-	for _, c := range out.Conversions {
-		held[vocabulary.KindConversion+"/"+c.ID] = true
-	}
-	for _, s := range ds.unseededUnits() {
-		if !s.absent || !held[s.rec.Kind+"/"+s.rec.ID] {
-			out.Unseeded = append(out.Unseeded, s.rec)
-		}
-	}
 	return out
 }
 
@@ -906,14 +923,13 @@ func (ds *dataset) ConvertUnit(ctx context.Context, in substrate.UnitConvert) (s
 	return substrate.UnitConversion{Value: c.Value, Unit: c.Unit, Exact: c.Exact}, nil
 }
 
-// queueCircularRederivation asks, under the unit graph switch, the pass
-// behind the open to re-derive the observed kinds that hold circular rows
+// queueCircularRederivation asks the pass behind the open to re-derive the observed kinds that hold circular rows
 // when the transaction moved a turn: a circular point's angle is its value
 // over its unit's turn, and the rollups keep sums of the angles' sines and
 // cosines, so a changed turn changes stored sums. An aggregate read over such
 // a kind is refused until the pass finishes (checkObservedReady).
 func (t *txn) queueCircularRederivation(was, now *vocabulary.UnitGraph) error {
-	if !t.ds.svc.unitGraphOn || !turnsMoved(was, now) {
+	if !turnsMoved(was, now) {
 		return nil
 	}
 	kinds := observedKindsOf(t.declarations())

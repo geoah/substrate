@@ -26,26 +26,28 @@ func unitsCall(t *testing.T, host string, params map[string]any) hostCall {
 // invocation past its timeout.
 func TestUnitsConvertIsBounded(t *testing.T) {
 	ctx := context.Background()
+	g := graphFixture(t)
 	long := strings.Repeat("7", vocabulary.MaxDecimalDigits+1)
-	_, handled, err := serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long, "from": "kg", "to": "g"}))
-	if !handled || err == nil || !strings.Contains(err.Error(), "at most") {
-		t.Fatalf("a value of %d digits: handled %v, err %v; want a refusal naming the bound", len(long), handled, err)
+	_, err := serveGraphUnits(ctx, g, unitsCall(t, hostUnitsConvert, map[string]any{"value": long, "from": "kg", "to": "g"}))
+	if err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("a value of %d digits: %v; want a refusal naming the bound", len(long), err)
 	}
-	out, _, err := serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "g", "to": "kg"}))
+	out, err := serveGraphUnits(ctx, g, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "g", "to": "kg"}))
 	if err != nil {
 		t.Fatalf("a value at the bound: %v", err)
 	}
 	if got, want := out.(map[string]any)["value"].(string), long[4:]+"."+long[1:4]; got != want {
 		t.Fatalf("a value at the bound converted to %.20s..., want %.20s...", got, want)
 	}
-	_, _, err = serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "kg", "to": "g"}))
+	_, err = serveGraphUnits(ctx, g, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "kg", "to": "g"}))
 	if err == nil || !strings.Contains(err.Error(), "at most 1000 digits") {
 		t.Fatalf("an answer of 1003 integer digits: %v, want a refusal naming the bound", err)
 	}
 	done, cancel := context.WithCancel(ctx)
 	cancel()
-	for _, host := range []string{hostUnitsConvert, hostUnitsCanonical, hostUnitsMeasure} {
-		_, handled, err := serveUnits(done, unitsCall(t, host, map[string]any{"value": "1", "from": "kg", "to": "g", "code": "kg"}))
+	s := &readState{backend: &fakeBackend{units: g}}
+	for _, host := range []string{hostUnitsConvert, hostUnitsCanonical, hostUnitsConverts} {
+		_, handled, err := s.serveUnitCall(done, unitsCall(t, host, map[string]any{"value": "1", "from": "kg", "to": "g", "code": "kg", "a": "kg", "b": "g"}))
 		if !handled || err == nil {
 			t.Fatalf("%s after the context ended: handled %v, err %v; want a refusal", host, handled, err)
 		}
@@ -123,10 +125,10 @@ func graphFixture(t *testing.T) *vocabulary.UnitGraph {
 	return g
 }
 
-// Under the unit graph switch the unit calls read the repository's graph,
-// loaded once per invocation at the first unit call, and each charges one
-// call: a difference converts without the offset, an expression converts one
-// value, `converts` answers a linear route, and `measure` is refused.
+// The unit calls read the repository's graph, loaded once per invocation at
+// the first unit call, and each charges one call: a difference converts
+// without the offset, an expression converts one value, `converts` answers a
+// linear route, and `measure` is no call.
 func TestHostUnitsLoadsTheGraphOnce(t *testing.T) {
 	r := New()
 	backend := widgetBackend()
@@ -147,14 +149,10 @@ def main(input, host):
         "apart": host.units.converts("kg", "K"),
         "expression": host.units.converts("mpg", "L/100km"),
     }
-    try:
-        host.units.measure("kg")
-        out["measure"] = "answered"
-    except Exception as e:
-        out["measure"] = str(e)
+    out["measure"] = hasattr(host.units, "measure")
     return {"effects": [], "output": out}
 `,
-		TimeoutMs: 5000, ReadCalls: 9,
+		TimeoutMs: 5000, ReadCalls: 8,
 	}
 	res, err := r.Invoke(context.Background(), spec, testInput(), backend)
 	if err != nil {
@@ -164,44 +162,87 @@ def main(input, host):
 	for key, want := range map[string]any{
 		"lb": "0.45359237", "delta": "0.54", "absolute": "98.6",
 		"economy": "7.840486100000001", "economyExact": false, "canonical": "lb",
-		"mass": true, "apart": false, "expression": false,
+		"mass": true, "apart": false, "expression": false, "measure": false,
 	} {
 		if out[key] != want {
 			t.Errorf("%s = %#v, want %#v", key, out[key], want)
 		}
 	}
-	if m, _ := out["measure"].(string); !strings.Contains(m, "ask units.converts") {
-		t.Errorf("measure under the graph = %q, want a refusal", m)
-	}
 	if backend.unitLoads != 1 {
 		t.Errorf("the graph was loaded %d times, want once", backend.unitLoads)
 	}
-	// Nine distinct calls (the body asks one twice, which host.py answers
-	// from its memo) charge nine calls; a budget of eight trips.
-	spec.ReadCalls = 8
+	// Eight distinct calls (the body asks one twice, which host.py answers
+	// from its memo) charge eight calls; a budget of seven trips.
+	spec.ReadCalls = 7
 	if _, err := r.Invoke(context.Background(), spec, testInput(), backend); err == nil || !strings.Contains(err.Error(), "read budget") {
-		t.Fatalf("nine unit calls under a budget of eight: %v", err)
+		t.Fatalf("eight unit calls under a budget of seven: %v", err)
 	}
 }
 
-// Before the switch the calls read the engine's table: `converts` reads two
-// codes in one measure, and nothing is charged.
-func TestHostUnitsConvertsReadsTheTable(t *testing.T) {
+// The retired measure argument is refused on both sides of the host call,
+// never read as something else: host.py's fourth positional argument was a
+// measure name, and a truthy string read as delta=True dropped the offset
+// (0 Cel answered 0 degF, not 32). The engine refuses a measure key the
+// payload still carries, and delta is a bool by keyword only.
+func TestUnitsConvertRefusesTheRetiredMeasure(t *testing.T) {
 	ctx := context.Background()
-	s := &readState{backend: widgetBackend()}
-	for _, c := range []struct {
-		a, b string
-		want bool
-	}{{"kg", "[lb_av]", true}, {"mg/dL", "mmol/L", false}, {"bpm", "/s", true}, {"kgs", "kg", false}} {
-		out, handled, err := s.serveUnitCall(ctx, unitsCall(t, hostUnitsConverts, map[string]any{"a": c.a, "b": c.b}))
-		if !handled || err != nil {
-			t.Fatalf("%s and %s: %v", c.a, c.b, err)
-		}
-		if got := out.(map[string]any)["converts"]; got != c.want {
-			t.Errorf("%s and %s: converts %v, want %v", c.a, c.b, got, c.want)
+	g := graphFixture(t)
+	for name, params := range map[string]map[string]any{
+		"measure":      {"value": "0", "from": "Cel", "to": "degF", "measure": "temperature"},
+		"null measure": {"value": "0", "from": "Cel", "to": "degF", "measure": nil},
+		"unknown key":  {"value": "0", "from": "Cel", "to": "degF", "deltas": true},
+		"string delta": {"value": "0", "from": "Cel", "to": "degF", "delta": "temperature"},
+	} {
+		if out, err := serveGraphUnits(ctx, g, unitsCall(t, hostUnitsConvert, params)); err == nil {
+			t.Errorf("%s: answered %v, want a refusal", name, out)
 		}
 	}
-	if s.calls != 0 {
-		t.Errorf("the table's calls charged %d", s.calls)
+
+	r := New()
+	backend := widgetBackend()
+	backend.units = graphFixture(t)
+	spec := Spec{
+		Repository: "t1", Function: "units.g.retired",
+		Runtime: "python",
+		Source: `
+def refused(f):
+    try:
+        f()
+    except Exception as e:
+        return type(e).__name__ + ": " + str(e)
+    return "answered"
+
+def main(input, host):
+    c = host.units.convert
+    return {"effects": [], "output": {
+        "positional": refused(lambda: c("0", "Cel", "degF", "temperature")),
+        "positionalDifference": refused(lambda: c("0", "Cel", "degF", "temperature-difference")),
+        "keyword": refused(lambda: c("0", "Cel", "degF", measure="temperature")),
+        "stringDelta": refused(lambda: c("0", "Cel", "degF", delta="yes")),
+        "unknown": refused(lambda: c("0", "Cel", "degF", deltas=True)),
+        "absolute": c("0", "Cel", "degF"),
+        "difference": c("0.3", "Cel", "degF", delta=True),
+    }}
+`,
+		TimeoutMs: 5000, ReadCalls: 8,
+	}
+	res, err := r.Invoke(ctx, spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	for _, key := range []string{"positional", "positionalDifference", "keyword"} {
+		if got, _ := out[key].(string); !strings.Contains(got, "measure argument is retired") || !strings.Contains(got, "delta=True") {
+			t.Errorf("%s = %q, want a refusal naming the retired measure and delta=True", key, got)
+		}
+	}
+	if got, _ := out["stringDelta"].(string); !strings.Contains(got, "delta is True or False") {
+		t.Errorf("stringDelta = %q, want a refusal of a non-bool delta", got)
+	}
+	if got, _ := out["unknown"].(string); !strings.HasPrefix(got, "TypeError") {
+		t.Errorf("unknown = %q, want a TypeError", got)
+	}
+	if out["absolute"] != "32" || out["difference"] != "0.54" {
+		t.Errorf("absolute = %v, difference = %v; want 32 and 0.54", out["absolute"], out["difference"])
 	}
 }

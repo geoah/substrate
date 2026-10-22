@@ -10,25 +10,25 @@ import (
 )
 
 func TestCheckMetricHoldsTheContract(t *testing.T) {
+	g, _ := vocabulary.BuildUnitGraph([]vocabulary.UnitRecord{{ID: "kg"}, {ID: "m"}, {ID: "1/min"}}, nil)
 	ok := map[string]any{
-		"name": "Body mass", "measures": "mass", "unit": "kg", "form": "gauge",
+		"name": "Body mass", "unit": "kg", "form": "gauge",
 		"bucketPlace": "end", "rollups": []any{"5m", "1h", "1d"},
 	}
-	if problems := vocabulary.CheckMetric(ok); len(problems) != 0 {
+	if problems := vocabulary.CheckMetricIn(g, ok); len(problems) != 0 {
 		t.Fatalf("a metric is refused: %v", problems)
 	}
 	for name, c := range map[string]struct {
 		set  map[string]any
 		want string
 	}{
-		"an unknown measure":        {map[string]any{"measures": "massiveness"}, `props.measures: "massiveness" is not a measure`},
-		"a unit of another measure": {map[string]any{"unit": "m"}, "props.unit: m is not a unit of mass"},
-		"an unreadable unit":        {map[string]any{"measures": nil, "unit": "furlongs"}, "props.unit:"},
-		"an unknown form":           {map[string]any{"form": "level"}, `props.form: "level" is not a form`},
-		"an unknown place":          {map[string]any{"bucketPlace": "middle"}, `props.bucketPlace: "middle" is not a place`},
-		"an unknown tier":           {map[string]any{"rollups": []any{"15m", "2h"}}, `props.rollups[1]: "2h" is not a rollup tier`},
-		"a tier twice":              {map[string]any{"rollups": []any{"15m", "15m"}}, "props.rollups[1]: 15m is listed twice"},
-		"tiers out of order":        {map[string]any{"rollups": []any{"1h", "15m"}}, "props.rollups[1]: 15m comes after the coarser 1h"},
+		"a listed unit of another component": {map[string]any{"units": []any{"m"}}, "props.units[0]: m does not convert to the metric's unit kg"},
+		"an unknown unit":                    {map[string]any{"unit": "furlongs"}, `props.unit: "furlongs" names no unit`},
+		"an unknown form":                    {map[string]any{"form": "level"}, `props.form: "level" is not a form`},
+		"an unknown place":                   {map[string]any{"bucketPlace": "middle"}, `props.bucketPlace: "middle" is not a place`},
+		"an unknown tier":                    {map[string]any{"rollups": []any{"15m", "2h"}}, `props.rollups[1]: "2h" is not a rollup tier`},
+		"a tier twice":                       {map[string]any{"rollups": []any{"15m", "15m"}}, "props.rollups[1]: 15m is listed twice"},
+		"tiers out of order":                 {map[string]any{"rollups": []any{"1h", "15m"}}, "props.rollups[1]: 15m comes after the coarser 1h"},
 	} {
 		props := map[string]any{}
 		for k, v := range ok {
@@ -41,13 +41,13 @@ func TestCheckMetricHoldsTheContract(t *testing.T) {
 				props[k] = v
 			}
 		}
-		problems := vocabulary.CheckMetric(props)
+		problems := vocabulary.CheckMetricIn(g, props)
 		if len(problems) != 1 || !strings.HasPrefix(problems[0], c.want) {
 			t.Errorf("%s: %v, want one problem starting %q", name, problems, c.want)
 		}
 	}
-	// A unit alone names its own measure; an empty rollup list keeps no tier.
-	if problems := vocabulary.CheckMetric(map[string]any{"unit": "/min", "rollups": []any{}}); len(problems) != 0 {
+	// An empty rollup list keeps no tier.
+	if problems := vocabulary.CheckMetricIn(g, map[string]any{"unit": "1/min", "rollups": []any{}}); len(problems) != 0 {
 		t.Errorf("a metric with a unit and no rollups is refused: %v", problems)
 	}
 }
@@ -67,8 +67,8 @@ func TestMetricContractOfReadsTheRollupTiers(t *testing.T) {
 			t.Errorf("%s: rollups %v, want %v", name, got.Rollups, c.want)
 		}
 	}
-	c := vocabulary.MetricContractOf(map[string]any{"measures": "duration", "unit": "min", "bucketPlace": "end"})
-	if c.Measures != "duration" || c.Unit != "min" || c.BucketPlace != "end" {
+	c := vocabulary.MetricContractOf(map[string]any{"unit": map[string]any{"ref": vocabulary.KindUnit + "/min"}, "bucketPlace": "end"})
+	if c.Unit != "min" || c.BucketPlace != "end" {
 		t.Errorf("contract = %+v", c)
 	}
 }

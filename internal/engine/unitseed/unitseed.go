@@ -1,7 +1,8 @@
 // Package unitseed holds the unit and conversion records a repository is
-// seeded with (decision 0186). Both files are written by
-// TestUnitSeedMatchesTheTable in internal/vocabulary from the engine's unit
-// table, and never edited by hand.
+// seeded with (decision 0186). Both files are the source and are edited by
+// hand: seed_test.go holds them to the old table's spellings, separations
+// and exact maps (testdata/table_oracle.json), and a change to either rewrites docs/units.md and the
+// console's test fixture (see their tests).
 package unitseed
 
 import _ "embed"

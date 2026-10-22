@@ -972,10 +972,8 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// An index the engine cannot build is refused here, where the upgrade
 	// preview looks too, so the preview never admits a closure the install
 	// then refuses (indices.go).
-	if ds.svc.unitGraphOn {
-		if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
-			return nil, err
-		}
+	if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
+		return nil, err
 	}
 	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)

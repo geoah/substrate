@@ -232,6 +232,43 @@ func WithTestSkipWriterLease() Option {
 	return func(o *options) { o.skipWriterLease = true }
 }
 
+// WithTestPerRecordSeed seeds the shipped units one put at a time, the path a
+// repository holding some of them takes, so a test can hold the bulk run to
+// it.
+func WithTestPerRecordSeed() Option {
+	return func(o *options) { o.perRecordSeed = true }
+}
+
+// WithTestBulkFault runs fn after each table a bulk run's flush writes
+// (bulkwrite.go flushBulk), with one of the BulkAfter stages; an error from
+// fn ends the flush there, and the transaction rolls back.
+func WithTestBulkFault(fn func(stage string) error) Option {
+	return func(o *options) { o.bulkFault = fn }
+}
+
+// WithTestSeedPath tells fn, for every seed that writes something, which
+// path it took: refusal is "" for one bulk run, else why the seed went one
+// put at a time.
+func WithTestSeedPath(fn func(repository, refusal string)) Option {
+	return func(o *options) { o.seedPath = fn }
+}
+
+// The stages WithTestBulkFault reports, in the order the flush runs them.
+const (
+	BulkAfterRecords  = bulkAfterRecords
+	BulkAfterUses     = bulkAfterUses
+	BulkAfterRevision = bulkAfterRevision
+	BulkAfterRefs     = bulkAfterRefs
+	BulkAfterManagers = bulkAfterManagers
+	BulkAfterEntries  = bulkAfterEntries
+)
+
+// The reasons WithTestSeedPath reports a seed went one put at a time.
+const (
+	BulkRefusedHeld = string(bulkHeld)
+	BulkRefusedOff  = string(bulkOff)
+)
+
 // WriterLeaseKeySQL is the lease's advisory-lock key expression, for a test
 // that takes or probes a lease from a session of its own. It is the expression
 // docs/operations.md publishes for reading `pg_locks`.
@@ -1023,7 +1060,7 @@ type ObservedPoint struct {
 	OffsetKnown                                     bool
 	Unit                                            string
 	Delta, Circular                                 bool
-	Value, Base                                     *float64
+	Value                                           *float64
 	Exact                                           *string
 	Code, Comparator                                string
 	HoldMs                                          *int64
@@ -1040,15 +1077,11 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var units *vocabulary.UnitGraph
-	if d.svc.unitGraphOn {
-		at, err := d.unitGraph(ctx, tx)
-		if err != nil {
-			return nil, err
-		}
-		units = at.graph
+	at, err := d.unitGraph(ctx, tx)
+	if err != nil {
+		return nil, err
 	}
-	st := newObsStore(ctx, tx, d.liveFoldView(), units)
+	st := newObsStore(ctx, tx, d.liveFoldView(), at.graph)
 	segs, err := st.scanSegments(`SELECT ` + segmentColumns + ` FROM observed_segments ORDER BY kind, record_id`)
 	if err != nil {
 		return nil, err
@@ -1067,7 +1100,7 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 				Kind: r.key.kind, RecordID: r.id, Ord: p.ord,
 				Metric: r.key.metric, Source: r.key.source, About: r.key.about, Channel: r.key.channel,
 				Statistic: r.key.statistic, Form: r.form, TS: p.ts, TSEnd: p.tsEnd, Offset: p.offset, OffsetKnown: p.offsetKnown,
-				Unit: r.unit, Delta: r.delta, Circular: r.circular, Value: p.value, Base: p.base, Exact: p.exact,
+				Unit: r.unit, Delta: r.delta, Circular: r.circular, Value: p.value, Exact: p.exact,
 				Code: p.code, Comparator: p.comparator, HoldMs: r.holdMs, ResetRule: r.resetRule, WrapAt: r.wrapAt, ResetAt: r.resetAt,
 			})
 		}

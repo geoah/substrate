@@ -449,9 +449,7 @@ export function planPlot(
       selected.find((s) => s.unit)
     )?.unit
   const timed = reducer.startsWith("durationIn")
-  const units = timed
-    ? DURATION_UNITS
-    : obs.units.choices(stored, info?.measures)
+  const units = timed ? DURATION_UNITS : obs.units.choices(stored)
   const picked =
     scope.unit && units.includes(scope.unit)
       ? scope.unit

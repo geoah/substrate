@@ -52,7 +52,7 @@ type propCellKey struct {
 
 // aggregateProperty reduces one declared number of the filtered kinds,
 // bucketed by a datetime property, in exact rational arithmetic: money by
-// currency, a quantity converted into one unit of its measure, a duration
+// currency, a quantity converted into one unit of its linear component, a duration
 // into a duration unit.
 func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan) (*substrate.AggregateResult, error) {
 	prop := p.a.Property
@@ -84,9 +84,8 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		return nil, err
 	}
 	family := propKind(-1)
-	var measure string
 	// spec is a quantity declaration naming `unit`, whose anchor the read
-	// answers in under the unit graph switch when the request names none.
+	// answers in when the request names none.
 	var spec *vocabulary.QuantitySpec
 	// deltas is each kind's own `delta`: two kinds may declare one property
 	// name as a temperature and as a difference, and each record converts
@@ -107,9 +106,6 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			k = propMoney
 		case prop.Datatype == vocabulary.DatatypeQuantity:
 			k = propQuantity
-			if prop.Quantity != nil && prop.Quantity.Measure != "" {
-				measure = prop.Quantity.Measure
-			}
 			if prop.Quantity != nil && (spec == nil || spec.Unit == "") {
 				spec = prop.Quantity
 			}
@@ -126,7 +122,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	}
 	target := p.unit
 	var g *vocabulary.UnitGraph
-	if p.graphUnits && family == propQuantity {
+	if family == propQuantity {
 		at, err := ds.unitGraph(ctx, tx)
 		if err != nil {
 			return nil, err
@@ -135,27 +131,19 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		if target, err = propertyTargetIn(g, p, spec, name); err != nil {
 			return nil, err
 		}
-		measure = ""
 	}
 	switch {
 	case family == propDuration && target == "":
 		target = "s"
-	case family == propDuration && p.graphUnits && !isTimeUnit(target):
+	case family == propDuration && !isTimeUnit(target):
 		return nil, refuse("aggregate.unit", "%s is a duration, and %s is not a duration unit (%s)", name, target, timeUnitNames)
-	case family == propDuration && !p.graphUnits && !resolves(target, "duration"):
-		return nil, refuse("aggregate.unit", "%s is a duration, and %s is not a duration unit (s, min, h, d)", name, target)
 	case p.unit != "" && family != propQuantity && family != propDuration:
 		return nil, refuse("aggregate.unit", "%s is not a quantity or a duration, so no unit converts it", name)
 	}
-	// A declared measure is held before the scan; otherwise the first
-	// value's unit names it, and take holds it there.
-	levelsChecked := measure != "" || (g != nil && target != "")
+	// A known target's levels are held before the scan; otherwise the first
+	// value's unit names the target, and take holds it there.
 	if g != nil && target != "" {
-		if err := p.checkLevelsIn(g, target, name); err != nil {
-			return nil, err
-		}
-	} else if levelsChecked {
-		if err := p.checkLevels(measure, name); err != nil {
+		if err := p.checkLevels(g, target, name); err != nil {
 			return nil, err
 		}
 	}
@@ -278,14 +266,14 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			return nil
 		}
 		switch {
-		case family == propQuantity && g != nil:
+		case family == propQuantity:
 			id, ok := g.Resolve(unit)
 			if !ok {
 				return refuse("aggregate.unit", "a %s stored in %q names no unit of this repository", name, unit)
 			}
 			if target == "" {
 				target = id
-				if err := p.checkLevelsIn(g, target, name); err != nil {
+				if err := p.checkLevels(g, target, name); err != nil {
 					return err
 				}
 			}
@@ -294,39 +282,10 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 				return refuse("aggregate.unit", "a %s of %s does not convert to %s: %v", name, id, target, err)
 			}
 			v, unit = cv, target
-		case family == propQuantity:
-			if target == "" {
-				target = unit
-			}
-			m := measure
-			if m == "" {
-				mm, err := vocabulary.MeasureOf(target)
-				if err != nil {
-					return refuse("aggregate.unit", "%v", err)
-				}
-				m = mm.Name
-			}
-			if !resolves(target, m) {
-				return refuse("aggregate.unit", "%s is not a unit of %s, the measure of %s", target, m, name)
-			}
-			if !levelsChecked {
-				if err := p.checkLevels(m, name); err != nil {
-					return err
-				}
-				levelsChecked = true
-			}
-			cv, err := vocabulary.ConvertIn(m, v, unit, target)
-			if err != nil {
-				return refuse("aggregate.unit", "a %s of %s does not convert to %s: %v", name, unit, target, err)
-			}
-			v, unit = cv, target
 		case family == propDuration:
 			cv, ok := secondsIn(v, target)
 			if !ok {
-				var err error
-				if cv, err = vocabulary.ConvertIn("duration", v, "s", target); err != nil {
-					return refuse("aggregate.unit", "%s does not convert to %s: %v", name, target, err)
-				}
+				return refuse("aggregate.unit", "%s does not convert to %s, which is no duration unit (%s)", name, target, timeUnitNames)
 			}
 			v, unit = cv, target
 		}
@@ -682,8 +641,8 @@ func propValue(family propKind, raw string) (v *big.Rat, unit, currency string, 
 	return nil, "", "", false
 }
 
-// propertyTargetIn is the unit a property read answers a quantity in under
-// the unit graph switch: the request's, resolved and held to the
+// propertyTargetIn is the unit a property read answers a quantity in: the
+// request's, resolved and held to the
 // declaration's anchor, else the anchor, else "" for the first value's.
 func propertyTargetIn(g *vocabulary.UnitGraph, p *aggPlan, spec *vocabulary.QuantitySpec, name string) (string, error) {
 	anchor := ""

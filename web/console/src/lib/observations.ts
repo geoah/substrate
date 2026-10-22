@@ -91,7 +91,6 @@ export const OBSERVED_SHOWN: Record<
       "origin",
       "interpretation",
       "referenceRanges",
-      "measure",
     ],
   },
   packed: {
@@ -106,7 +105,6 @@ export const OBSERVED_SHOWN: Record<
       "at",
       "endsAt",
       "utcOffset",
-      "measure",
     ],
   },
 }
@@ -274,8 +272,6 @@ export interface MetricInfo {
   name?: string
   form?: Form
   unit?: string
-  /** The measure every value's unit belongs to (`mass`, `rate`). */
-  measures?: string
   codeSet?: string[]
   /** The decimal places a reader is shown. */
   displayPrecision?: number
@@ -318,8 +314,6 @@ export function metricInfoOf(record: SubstrateRecord): MetricInfo {
     name,
     form: isForm(p.form) ? p.form : undefined,
     unit: metricUnitId(p.unit),
-    measures:
-      typeof p.measures === "string" && p.measures ? p.measures : undefined,
     codeSet: codeSet?.length ? codeSet : undefined,
     ...(p.bucketPlace === "start" || p.bucketPlace === "end"
       ? { bucketPlace: p.bucketPlace }
@@ -483,7 +477,7 @@ export interface ResultReading {
 
 /** A result's numeric value and its first reference range, read against
  * one value-against-range rule wherever a reading is drawn. With `unit`,
- * the value and its bounds are converted into it within their measure;
+ * the value and its bounds are converted into it through the unit graph;
  * undefined where the result holds no number, or one that does not convert
  * into `unit`. A range's `tone` is absent on a lab's normal range, which
  * reads as `good`. */
@@ -499,7 +493,7 @@ export function resultReading(
   const raw = Number(v.value)
   if (!Number.isFinite(raw)) return undefined
   const own = text(v.unit)
-  const reading = { measure: text(p.measure), delta: p.delta === true }
+  const reading = { delta: p.delta === true }
   const into = unit ?? own
   const value =
     own === into
@@ -521,7 +515,7 @@ export function resultReading(
 /** The bar a result's value draws against its own first reference range
  * (`resultReading`): only where the value is a plain number, not a bound
  * such as `<0.5`, and every bound the range gives converts into the
- * value's unit (another measure is said in words, never drawn). The range
+ * value's unit (a unit that does not convert is said in words, never drawn). The range
  * wears its own tone, a lab's normal range the good one, and a one-sided
  * range of values that are never negative starts at zero, so a value
  * under a high bound alone sits where it is, not at the padded end. */
@@ -750,24 +744,19 @@ export const MENU_LEAVES_OUT: Readonly<Record<string, readonly string[]>> = {
 /** The reducers a shape may ask for, the default first: its menu
  * (`MENU_ORDER`) less any reducer the server does not admit for the form
  * (`FORM_REDUCERS`). A level's circular mean is offered where it is an
- * angle: the metric's `angle` measure where the server reads the table,
- * and under the unit graph a metric unit whose component declares a turn,
- * which is what the server checks. A summary takes what `summaryReducers`
- * lists. */
+ * angle: a metric unit whose component declares a turn, which is what the
+ * server checks. A summary takes what `summaryReducers` lists. */
 export function reducerOptions(
   units: UnitReader,
   shape: ReadingShape,
   form?: Form,
-  metric?: Pick<MetricInfo, "measures" | "unit">,
+  metric?: Pick<MetricInfo, "unit">,
   statistic?: string
 ): string[] {
   const table = tableOf(shape, form)
   if (table === "summary") return summaryReducers(statistic, "summaries")
   const admitted = FORM_REDUCERS[table]
-  const angle =
-    units.status === "table"
-      ? metric?.measures === "angle"
-      : metric?.unit !== undefined && units.circular(metric.unit)
+  const angle = metric?.unit !== undefined && units.circular(metric.unit)
   return MENU_ORDER[table].filter(
     (key) =>
       admitted.includes(reducerName(reducerOf(key))) &&

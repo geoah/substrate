@@ -194,12 +194,10 @@ var wireTypes = map[string]any{
 	"TriggerRan":      TriggerRan{},
 	"FunctionCalled":  FunctionCalled{},
 	"WebhookAccepted": WebhookAccepted{},
-	// The unit table route and one conversion (GET /units, /units/convert).
-	"UnitTable":      UnitTable{},
-	"UnitMeasure":    UnitMeasure{},
-	"UnitCode":       UnitCode{},
-	"UnitConversion": UnitConversion{},
-	// The repository's unit graph on GET /units (decision 0186).
+	// The repository's unit graph and one conversion through it (GET /units,
+	// /units/convert, decision 0186).
+	"UnitTable":            UnitTable{},
+	"UnitConversion":       UnitConversion{},
 	"RepositoryUnit":       RepositoryUnit{},
 	"RepositoryConversion": RepositoryConversion{},
 	"UnseededRecord":       UnseededRecord{},

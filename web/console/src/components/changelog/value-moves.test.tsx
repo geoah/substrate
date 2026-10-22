@@ -4,7 +4,7 @@
  * secret sealed on both sides, long text on one line with the whole in the
  * hover; technical mode says the keys and the raw values. */
 
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render as renderUI, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { ValueMoves } from "./value-moves"
@@ -15,6 +15,14 @@ import {
 import type { ValueMove } from "@/lib/change-values"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import type { PropSpec } from "@/lib/record-schema"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+
+/** Every render gets the shipped units, as the signed-in console's
+ * `UnitsProvider` gives a page the repository's. */
+const render = (
+  ui: Parameters<typeof renderUI>[0],
+  options?: Parameters<typeof renderUI>[1]
+) => renderUI(ui, { wrapper: ShippedUnits, ...options })
 
 afterEach(cleanup)
 
@@ -175,17 +183,15 @@ describe("ValueMoves", () => {
       move({
         name: "readings",
         before: [],
-        after: [{ value: "62", unit: "{beats}/min" }],
-        added: [{ value: "62", unit: "{beats}/min" }],
+        after: [{ value: "62", unit: "1/min" }],
+        added: [{ value: "62", unit: "1/min" }],
       }),
     ])
     const row = screen
       .getByText("Temperature:")
       .closest("[data-slot=value-move]")
     expect(row?.textContent).toMatch(/37 °C.*→.*38\.5 °C/)
-    expect(screen.getByText("added").nextSibling?.textContent).toBe(
-      "62 beats/min"
-    )
+    expect(screen.getByText("added").nextSibling?.textContent).toBe("62 /min")
     expect(document.body.textContent).not.toContain("unit")
   })
 

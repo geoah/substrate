@@ -66,7 +66,7 @@ import {
   MIA,
 } from "@/lib/observations.test-fixtures"
 import { NONE_TOKEN } from "@/lib/observations"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 const WORKOUT: KindInfo = {
   identity: `${AUTHORITY}/fitness/session`,
@@ -1649,7 +1649,7 @@ describe("the reads of version 2", () => {
         total: "duration",
       },
     }) as BreakdownBlock
-    expect(breakdownItems(TABLE_UNITS, block, workout)).toEqual({
+    expect(breakdownItems(SHIPPED_UNITS, block, workout)).toEqual({
       items: [
         {
           key: "zone2",
@@ -1672,16 +1672,16 @@ describe("the reads of version 2", () => {
 
   // A decimal property travels as a string.
   it("reads a decimal string as a number", () => {
-    expect(amountOf(TABLE_UNITS, "11.9")).toEqual({
+    expect(amountOf(SHIPPED_UNITS, "11.9")).toEqual({
       amount: 11.9,
       text: "11.9",
     })
-    expect(amountOf(TABLE_UNITS, "-2")).toMatchObject({ amount: -2 })
-    expect(amountOf(TABLE_UNITS, "PT20M")).toEqual({
+    expect(amountOf(SHIPPED_UNITS, "-2")).toMatchObject({ amount: -2 })
+    expect(amountOf(SHIPPED_UNITS, "PT20M")).toEqual({
       amount: 1_200_000,
       text: "20m",
     })
-    expect(amountOf(TABLE_UNITS, "high")).toBeUndefined()
+    expect(amountOf(SHIPPED_UNITS, "high")).toBeUndefined()
   })
 
   it("breaks quantity properties into bars, each a share of their sum", () => {
@@ -1694,7 +1694,7 @@ describe("the reads of version 2", () => {
         items: [{ property: "fat", label: "Fat" }, { property: "lean" }],
       },
     }) as BreakdownBlock
-    const { items, skipped } = breakdownItems(TABLE_UNITS, block, body)
+    const { items, skipped } = breakdownItems(SHIPPED_UNITS, block, body)
     expect(skipped).toEqual([])
     expect(items.map((i) => [i.name, i.amount, i.share])).toEqual([
       ["Fat", 20, 0.25],
@@ -1728,29 +1728,29 @@ describe("the reads of version 2", () => {
   })
 
   it("says a change against the average, toned by which direction is better", () => {
-    expect(deltaWords(TABLE_UNITS, 65, 61, "higher", "ms", 0, 30)).toEqual({
+    expect(deltaWords(SHIPPED_UNITS, 65, 61, "higher", "ms", 0, 30)).toEqual({
       text: "+4 ms (+7%) vs the 30-day average of 61 ms",
       tone: "good",
     })
-    expect(deltaWords(TABLE_UNITS, 65, 61, "lower", "ms").tone).toBe("poor")
-    expect(deltaWords(TABLE_UNITS, 57, 61, "lower", "ms").text).toBe(
+    expect(deltaWords(SHIPPED_UNITS, 65, 61, "lower", "ms").tone).toBe("poor")
+    expect(deltaWords(SHIPPED_UNITS, 57, 61, "lower", "ms").text).toBe(
       "-4 ms (-7%) vs the average of 61 ms"
     )
-    expect(deltaWords(TABLE_UNITS, 57, 61, "lower").tone).toBe("good")
-    expect(deltaWords(TABLE_UNITS, 65, 61, "none").tone).toBe("none")
-    expect(deltaWords(TABLE_UNITS, 61, 61, "higher").tone).toBe("none")
+    expect(deltaWords(SHIPPED_UNITS, 57, 61, "lower").tone).toBe("good")
+    expect(deltaWords(SHIPPED_UNITS, 65, 61, "none").tone).toBe("none")
+    expect(deltaWords(SHIPPED_UNITS, 61, 61, "higher").tone).toBe("none")
   })
 
   // A relative change of a percentage reads as a second percentage.
   it("says a change of a value in percent in points, with no relative part", () => {
-    expect(deltaWords(TABLE_UNITS, 54, 45, "higher", "%", 0, 10)).toEqual({
+    expect(deltaWords(SHIPPED_UNITS, 54, 45, "higher", "%", 0, 10)).toEqual({
       text: "+9 points vs the 10-day average of 45 %",
       tone: "good",
     })
-    expect(deltaWords(TABLE_UNITS, 41, 42, "none", "%").text).toBe(
+    expect(deltaWords(SHIPPED_UNITS, 41, 42, "none", "%").text).toBe(
       "-1 point vs the average of 42 %"
     )
-    expect(deltaWords(TABLE_UNITS, 42.25, 42, "none", "%", 1).text).toBe(
+    expect(deltaWords(SHIPPED_UNITS, 42.25, 42, "none", "%", 1).text).toBe(
       "+0.3 points vs the average of 42 %"
     )
   })
@@ -1919,16 +1919,16 @@ describe("a table's tiles", () => {
 
   it("says a change since the previous result with its relative part, and a percent's in points", () => {
     const then = new Date(2025, 9, 15, 9, 0).getTime()
-    expect(changeSinceWords(TABLE_UNITS, 4.13, 3.9, then, "mmol/L")).toBe(
+    expect(changeSinceWords(SHIPPED_UNITS, 4.13, 3.9, then, "mmol/L")).toBe(
       "+0.23 mmol/L (+6%) since Oct 15, 2025"
     )
-    expect(changeSinceWords(TABLE_UNITS, 3.5, 3.9, then, "mmol/L")).toBe(
+    expect(changeSinceWords(SHIPPED_UNITS, 3.5, 3.9, then, "mmol/L")).toBe(
       "-0.4 mmol/L (-10%) since Oct 15, 2025"
     )
-    expect(changeSinceWords(TABLE_UNITS, 4.26, 5.26, then, "%")).toBe(
+    expect(changeSinceWords(SHIPPED_UNITS, 4.26, 5.26, then, "%")).toBe(
       "-1 point since Oct 15, 2025"
     )
-    expect(changeSinceWords(TABLE_UNITS, 3.9, 3.9, then, "mmol/L")).toBe(
+    expect(changeSinceWords(SHIPPED_UNITS, 3.9, 3.9, then, "mmol/L")).toBe(
       "No change since Oct 15, 2025"
     )
   })

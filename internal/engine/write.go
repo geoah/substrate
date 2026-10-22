@@ -289,6 +289,11 @@ func (t *txn) checkID(typ, id string) error {
 		return fmt.Errorf("%w: %q is not a record id (URL-path-safe, at most %d characters)",
 			substrate.ErrValidation, id, vocabulary.MaxIDLen)
 	}
+	// A bulk run read every record it creates, its former ids included,
+	// before it began (bulkwrite.go putBulk).
+	if t.bulkAbsent(eref{Kind: typ, ID: id}) {
+		return nil
+	}
 	// The advisory lock precedes the former-id read: a concurrent merge of
 	// this id either committed already (the trail below sees it) or queues
 	// behind this writer — the check can no longer pass on a pre-merge
@@ -855,8 +860,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.prepareObserved(sp); err != nil {
 		return nil, err
 	}
-	// Under the unit graph switch every written quantity's unit resolves to
-	// its id and is held to its declaration here (quantitywrite.go).
+	// Every written quantity's unit resolves to its id through the unit graph
+	// and is held to its declaration here (quantitywrite.go).
 	if err := t.resolveQuantities(sp); err != nil {
 		return nil, err
 	}
@@ -1430,6 +1435,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.recordResolution(sp.ty, row, notify, t.entries[entriesMark:]); err != nil {
 			return nil, err
 		}
+	}
+	// A bulk run's records are not in the table until it flushes, and its
+	// one caller reads none back.
+	if t.bulk != nil {
+		return nil, nil
 	}
 	return t.record(row, sp.ty)
 }

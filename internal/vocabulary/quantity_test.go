@@ -34,7 +34,7 @@ func TestQuantityDeclarations(t *testing.T) {
 			t.Fatalf("weight = %+v, want a quantity", w)
 		}
 		q := w.Quantity
-		if q.Unit != "kg" || q.Measure != "" || len(q.Units) != 2 || q.Comparator {
+		if q.Unit != "kg" || len(q.Units) != 2 || q.Comparator {
 			t.Fatalf("weight spec = %+v", q)
 		}
 		if q.Min == nil || q.Min.Value != "0" || q.Min.Unit != "kg" || q.Max == nil || q.Max.Unit != "lb" {
@@ -120,19 +120,4 @@ metadata: {id: g.example.com/g/weight}
 data: {authority: g.example.com, package: g, base: quantity, measures: mass}
 `, `unknown key "measures"`)
 	})
-}
-
-// Decision 0163: money is never a unit. A currency code is no UCUM code, so
-// a quantity in one is refused on write and in a declaration, and money stays
-// the `money` datatype's.
-func TestQuantityRefusesACurrencyAsAUnit(t *testing.T) {
-	for _, code := range []string{"EUR", "USD", "GBP", "JPY", "CHF", "XAU", "EUR/kg", "[EUR]"} {
-		if canon, err := vocabulary.CanonicalUnit(code); err == nil {
-			t.Errorf("CanonicalUnit(%q) = %q, want a refusal", code, canon)
-		}
-		var spec *vocabulary.QuantitySpec
-		if m, err := spec.CheckUnit(code); err == nil {
-			t.Errorf("CheckUnit(%q) = %s, want a refusal", code, m.Name)
-		}
-	}
 }

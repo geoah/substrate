@@ -1,0 +1,1622 @@
+{
+  "source": {
+    "commit": "741ce8b0f5d46d981e8dd426b1a378ac64576e4b",
+    "procedure": "internal/engine/unitseed/testdata/table_oracle_capture.go.txt, run at the commit"
+  },
+  "spellings": {
+    "%": "percent",
+    "'": "arcmin",
+    "''": "arcsec",
+    "/L": "1/L",
+    "/d": "1/d",
+    "/h": "1/h",
+    "/min": "1/min",
+    "/s": "1/s",
+    "/uL": "1/uL",
+    "/wk": "1/wk",
+    "1": "1",
+    "1/L": "1/L",
+    "1/d": "1/d",
+    "1/h": "1/h",
+    "1/min": "1/min",
+    "1/s": "1/s",
+    "1/uL": "1/uL",
+    "1/wk": "1/wk",
+    "10*12/L": "1e12/L",
+    "10*3/uL": "1e3/uL",
+    "10*6/uL": "1e6/uL",
+    "10*9/L": "1e9/L",
+    "1e12/L": "1e12/L",
+    "1e3/uL": "1e3/uL",
+    "1e6/uL": "1e6/uL",
+    "1e9/L": "1e9/L",
+    "A": "A",
+    "A.h": "A.h",
+    "Bq": "Bq",
+    "Bq/m3": "Bq/m3",
+    "Btu": "Btu",
+    "Btu/h": "Btu/h",
+    "By": "By",
+    "By/s": "By/s",
+    "C": "C",
+    "Cal": "Cal",
+    "Cel": "Cel",
+    "GBy": "GBy",
+    "GiBy": "GiBy",
+    "Gy": "Gy",
+    "Hz": "Hz",
+    "IU": "IU",
+    "IU/L": "IU/L",
+    "IU/mL": "IU/mL",
+    "J": "J",
+    "K": "K",
+    "KiBy": "KiBy",
+    "L": "L",
+    "L/(100.km)": "L/100km",
+    "L/100km": "L/100km",
+    "L/h": "L/h",
+    "L/min": "L/min",
+    "MBq": "MBq",
+    "MBy": "MBy",
+    "MET": "MET",
+    "MJ": "MJ",
+    "MW": "MW",
+    "Mbit/s": "Mbit/s",
+    "MiBy": "MiBy",
+    "N": "N",
+    "N.m": "N.m",
+    "Ohm": "Ohm",
+    "Pa": "Pa",
+    "Sv": "Sv",
+    "U": "U",
+    "U/L": "U/L",
+    "V": "V",
+    "V.A": "V.A",
+    "V.A{reactive}": "var",
+    "VA": "V.A",
+    "W": "W",
+    "W.h": "W.h",
+    "W.h/km": "W.h/km",
+    "W/kg": "W/kg",
+    "W/m2": "W/m2",
+    "Wh": "W.h",
+    "[Btu_IT]": "Btu",
+    "[Btu_IT]/h": "Btu/h",
+    "[Cal]": "Cal",
+    "[HP]": "hp",
+    "[IU]": "IU",
+    "[IU]/L": "IU/L",
+    "[IU]/mL": "IU/mL",
+    "[MET]": "MET",
+    "[arb'U]": "arbU",
+    "[cft_i]": "ft3",
+    "[cup_m]": "cup_m",
+    "[cup_us]": "cup",
+    "[degF]": "degF",
+    "[foz_br]": "floz_br",
+    "[foz_us]": "floz",
+    "[ft_i]": "ft",
+    "[ft_i]/s": "ft/s",
+    "[g]": "gn",
+    "[gal_br]": "gal_br",
+    "[gal_us]": "gal",
+    "[gal_us]/min": "gal/min",
+    "[in_i'Hg]": "inHg",
+    "[in_i]": "in",
+    "[in_i]/h": "in/h",
+    "[kn_i]": "kn",
+    "[lb_av]": "lb",
+    "[lbf_av]": "lbf",
+    "[lbf_av].[ft_i]": "lbf.ft",
+    "[mi_i]": "mi",
+    "[mi_i]/[gal_us]": "mpg",
+    "[mi_i]/h": "mph",
+    "[nmi_i]": "nmi",
+    "[oz_av]": "oz",
+    "[pH]": "pH",
+    "[ppb]": "ppb",
+    "[ppm]": "ppm",
+    "[ppth]": "ppth",
+    "[psi]": "psi",
+    "[pt_us]": "pt",
+    "[qt_us]": "qt",
+    "[sft_i]": "ft2",
+    "[stone_av]": "st",
+    "[tbs_m]": "tbsp_m",
+    "[tbs_us]": "tbsp",
+    "[tsp_m]": "tsp_m",
+    "[tsp_us]": "tsp",
+    "[yd_i]": "yd",
+    "a": "a",
+    "arbU": "arbU",
+    "arcmin": "arcmin",
+    "arcsec": "arcsec",
+    "atm": "atm",
+    "bar": "bar",
+    "bit": "bit",
+    "bit/s": "bit/s",
+    "bpm": "1/min",
+    "cal": "cal",
+    "cd": "cd",
+    "cd/m2": "cd/m2",
+    "cm": "cm",
+    "cm2": "cm2",
+    "cmAq": "cmH2O",
+    "cmH2O": "cmH2O",
+    "cm[H2O]": "cmH2O",
+    "count": "count",
+    "count/min": "1/min",
+    "cup": "cup",
+    "cup_m": "cup_m",
+    "d": "d",
+    "dB": "dB",
+    "dBASPL": "dBSPL",
+    "dBSPL": "dBSPL",
+    "dBW": "dBW",
+    "dB[SPL]": "dBSPL",
+    "dB[W]": "dBW",
+    "dBm": "dBm",
+    "dL": "dL",
+    "deg": "deg",
+    "degC": "Cel",
+    "degF": "degF",
+    "eV": "eV",
+    "floors": "floors",
+    "floz": "floz",
+    "floz_br": "floz_br",
+    "ft": "ft",
+    "ft/s": "ft/s",
+    "ft2": "ft2",
+    "ft3": "ft3",
+    "g": "g",
+    "g/L": "g/L",
+    "g/dL": "g/dL",
+    "g/m3": "g/m3",
+    "g/s": "g/s",
+    "gal": "gal",
+    "gal/min": "gal/min",
+    "gal_br": "gal_br",
+    "gn": "gn",
+    "h": "h",
+    "hPa": "hPa",
+    "har": "har",
+    "hp": "hp",
+    "hr": "h",
+    "in": "in",
+    "in/h": "in/h",
+    "inHg": "inHg",
+    "kBq": "kBq",
+    "kBy": "kBy",
+    "kHz": "kHz",
+    "kJ": "kJ",
+    "kOhm": "kOhm",
+    "kPa": "kPa",
+    "kW": "kW",
+    "kW.h": "kW.h",
+    "kW.h/(100.km)": "kW.h/100km",
+    "kW.h/100km": "kW.h/100km",
+    "kWh": "kW.h",
+    "kat": "kat",
+    "kbit/s": "kbit/s",
+    "kcal": "kcal",
+    "kcal/d": "kcal/d",
+    "kcal/h": "kcal/h",
+    "kcal/kg": "kcal/kg",
+    "kg": "kg",
+    "kg/m2": "kg/m2",
+    "kg/m3": "kg/m3",
+    "km": "km",
+    "km/L": "km/L",
+    "km/h": "km/h",
+    "km/hr": "km/h",
+    "kmph": "km/h",
+    "kn": "kn",
+    "lb": "lb",
+    "lbf": "lbf",
+    "lbf.ft": "lbf.ft",
+    "lm": "lm",
+    "lx": "lx",
+    "m": "m",
+    "m/s": "m/s",
+    "m/s2": "m/s2",
+    "m2": "m2",
+    "m3": "m3",
+    "m3/h": "m3/h",
+    "mA": "mA",
+    "mA.h": "mA.h",
+    "mGy": "mGy",
+    "mIU/L": "mIU/L",
+    "mL": "mL",
+    "mL/(kg*min)": "mL/kg/min",
+    "mL/(kg.min)": "mL/kg/min",
+    "mL/kg/min": "mL/kg/min",
+    "mL/min": "mL/min",
+    "mSv": "mSv",
+    "mV": "mV",
+    "mW": "mW",
+    "m[IU]/L": "mIU/L",
+    "mbar": "mbar",
+    "mcg": "ug",
+    "mg": "mg",
+    "mg/L": "mg/L",
+    "mg/dL": "mg/dL",
+    "mg/m3": "mg/m3",
+    "mi": "mi",
+    "mi/hr": "mph",
+    "min": "min",
+    "min/[mi_i]": "min/mi",
+    "min/km": "min/km",
+    "min/mi": "min/mi",
+    "ml/(kg·min)": "mL/kg/min",
+    "mm": "mm",
+    "mm/h": "mm/h",
+    "mmHg": "mmHg",
+    "mm[Hg]": "mmHg",
+    "mmol": "mmol",
+    "mmol/L": "mmol/L",
+    "mmol/mol": "mmol/mol",
+    "mmol\u003c180.15588000005408\u003e/L": "mmol/L",
+    "mmol\u003c180.1558800000541\u003e/L": "mmol/L",
+    "mo": "mo",
+    "mol": "mol",
+    "mol/L": "mol/L",
+    "mpg": "mpg",
+    "mph": "mph",
+    "ms": "ms",
+    "ng": "ng",
+    "ng/mL": "ng/mL",
+    "nm": "nm",
+    "nmi": "nmi",
+    "nmol/L": "nmol/L",
+    "oz": "oz",
+    "pCi/L": "pCi/L",
+    "pH": "pH",
+    "percent": "percent",
+    "pg/mL": "pg/mL",
+    "pmol/L": "pmol/L",
+    "ppb": "ppb",
+    "ppm": "ppm",
+    "ppth": "ppth",
+    "psi": "psi",
+    "pt": "pt",
+    "qt": "qt",
+    "rad": "rad",
+    "rpm": "1/min",
+    "s": "s",
+    "s/(100.[yd_i])": "s/100yd",
+    "s/(100.m)": "s/100m",
+    "s/(500.m)": "s/500m",
+    "s/100m": "s/100m",
+    "s/100yd": "s/100yd",
+    "s/500m": "s/500m",
+    "s/km": "s/km",
+    "s/m": "s/m",
+    "score": "score",
+    "st": "st",
+    "steps": "steps",
+    "t": "t",
+    "tbsp": "tbsp",
+    "tbsp_m": "tbsp_m",
+    "tsp": "tsp",
+    "tsp_m": "tsp_m",
+    "uS/cm": "uS/cm",
+    "uSv": "uSv",
+    "uSv/h": "uSv/h",
+    "ug": "ug",
+    "ug/L": "ug/L",
+    "ug/dL": "ug/dL",
+    "ug/m3": "ug/m3",
+    "umol": "umol",
+    "umol/L": "umol/L",
+    "us": "us",
+    "var": "var",
+    "wk": "wk",
+    "yd": "yd",
+    "{count}": "count",
+    "{floors}": "floors",
+    "{score}": "score",
+    "{steps}": "steps",
+    "°C": "Cel",
+    "°F": "degF",
+    "℃": "Cel",
+    "℉": "degF"
+  },
+  "units": {
+    "1": {
+      "root": "1",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "1/L": {
+      "root": "1/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "1/d": {
+      "root": "1/d",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "1/h": {
+      "root": "1/d",
+      "factor": "24",
+      "offset": "0",
+      "delta": "24"
+    },
+    "1/min": {
+      "root": "1/d",
+      "factor": "1440",
+      "offset": "0",
+      "delta": "1440"
+    },
+    "1/s": {
+      "root": "1/d",
+      "factor": "86400",
+      "offset": "0",
+      "delta": "86400"
+    },
+    "1/uL": {
+      "root": "1/L",
+      "factor": "1000000",
+      "offset": "0",
+      "delta": "1000000"
+    },
+    "1/wk": {
+      "root": "1/d",
+      "factor": "1/7",
+      "offset": "0",
+      "delta": "1/7"
+    },
+    "1e12/L": {
+      "root": "1/L",
+      "factor": "1000000000000",
+      "offset": "0",
+      "delta": "1000000000000"
+    },
+    "1e3/uL": {
+      "root": "1/L",
+      "factor": "1000000000",
+      "offset": "0",
+      "delta": "1000000000"
+    },
+    "1e6/uL": {
+      "root": "1/L",
+      "factor": "1000000000000",
+      "offset": "0",
+      "delta": "1000000000000"
+    },
+    "1e9/L": {
+      "root": "1/L",
+      "factor": "1000000000",
+      "offset": "0",
+      "delta": "1000000000"
+    },
+    "A": {
+      "root": "A",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "A.h": {
+      "root": "A.h",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Bq": {
+      "root": "Bq",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Bq/m3": {
+      "root": "Bq/m3",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Btu": {
+      "root": "Btu",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Btu/h": {
+      "root": "Btu/h",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "By": {
+      "root": "By",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "By/s": {
+      "root": "By/s",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "C": {
+      "root": "A.h",
+      "factor": "1/3600",
+      "offset": "0",
+      "delta": "1/3600"
+    },
+    "Cal": {
+      "root": "Btu",
+      "factor": "209200000000/52752792631",
+      "offset": "0",
+      "delta": "209200000000/52752792631"
+    },
+    "Cel": {
+      "root": "Cel",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "GBy": {
+      "root": "By",
+      "factor": "1000000000",
+      "offset": "0",
+      "delta": "1000000000"
+    },
+    "GiBy": {
+      "root": "By",
+      "factor": "1073741824",
+      "offset": "0",
+      "delta": "1073741824"
+    },
+    "Gy": {
+      "root": "Gy",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Hz": {
+      "root": "Hz",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "IU": {
+      "root": "IU",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "IU/L": {
+      "root": "IU/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "IU/mL": {
+      "root": "IU/L",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "J": {
+      "root": "Btu",
+      "factor": "50000000/52752792631",
+      "offset": "0",
+      "delta": "50000000/52752792631"
+    },
+    "K": {
+      "root": "Cel",
+      "factor": "1",
+      "offset": "-5463/20",
+      "delta": "1"
+    },
+    "KiBy": {
+      "root": "By",
+      "factor": "1024",
+      "offset": "0",
+      "delta": "1024"
+    },
+    "L": {
+      "root": "L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "L/100km": {
+      "root": "L/100km",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "L/h": {
+      "root": "L/h",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "L/min": {
+      "root": "L/h",
+      "factor": "60",
+      "offset": "0",
+      "delta": "60"
+    },
+    "MBq": {
+      "root": "Bq",
+      "factor": "1000000",
+      "offset": "0",
+      "delta": "1000000"
+    },
+    "MBy": {
+      "root": "By",
+      "factor": "1000000",
+      "offset": "0",
+      "delta": "1000000"
+    },
+    "MET": {
+      "root": "MET",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "MJ": {
+      "root": "Btu",
+      "factor": "50000000000000/52752792631",
+      "offset": "0",
+      "delta": "50000000000000/52752792631"
+    },
+    "MW": {
+      "root": "Btu/h",
+      "factor": "180000000000000000/52752792631",
+      "offset": "0",
+      "delta": "180000000000000000/52752792631"
+    },
+    "Mbit/s": {
+      "root": "By/s",
+      "factor": "125000",
+      "offset": "0",
+      "delta": "125000"
+    },
+    "MiBy": {
+      "root": "By",
+      "factor": "1048576",
+      "offset": "0",
+      "delta": "1048576"
+    },
+    "N": {
+      "root": "N",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "N.m": {
+      "root": "N.m",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Ohm": {
+      "root": "Ohm",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Pa": {
+      "root": "Pa",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "Sv": {
+      "root": "Sv",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "U": {
+      "root": "U",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "U/L": {
+      "root": "U/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "V": {
+      "root": "V",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "V.A": {
+      "root": "V.A",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "W": {
+      "root": "Btu/h",
+      "factor": "180000000000/52752792631",
+      "offset": "0",
+      "delta": "180000000000/52752792631"
+    },
+    "W.h": {
+      "root": "Btu",
+      "factor": "180000000000/52752792631",
+      "offset": "0",
+      "delta": "180000000000/52752792631"
+    },
+    "W.h/km": {
+      "root": "W.h/km",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "W/kg": {
+      "root": "W/kg",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "W/m2": {
+      "root": "W/m2",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "a": {
+      "root": "a",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "arbU": {
+      "root": "arbU",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "arcmin": {
+      "root": "arcmin",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "arcsec": {
+      "root": "arcmin",
+      "factor": "1/60",
+      "offset": "0",
+      "delta": "1/60"
+    },
+    "atm": {
+      "root": "Pa",
+      "factor": "101325",
+      "offset": "0",
+      "delta": "101325"
+    },
+    "bar": {
+      "root": "Pa",
+      "factor": "100000",
+      "offset": "0",
+      "delta": "100000"
+    },
+    "bit": {
+      "root": "By",
+      "factor": "1/8",
+      "offset": "0",
+      "delta": "1/8"
+    },
+    "bit/s": {
+      "root": "By/s",
+      "factor": "1/8",
+      "offset": "0",
+      "delta": "1/8"
+    },
+    "cal": {
+      "root": "Btu",
+      "factor": "209200000/52752792631",
+      "offset": "0",
+      "delta": "209200000/52752792631"
+    },
+    "cd": {
+      "root": "cd",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "cd/m2": {
+      "root": "cd/m2",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "cm": {
+      "root": "cm",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "cm2": {
+      "root": "cm2",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "cmH2O": {
+      "root": "Pa",
+      "factor": "196133/2000",
+      "offset": "0",
+      "delta": "196133/2000"
+    },
+    "count": {
+      "root": "count",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "cup": {
+      "root": "L",
+      "factor": "473176473/2000000000",
+      "offset": "0",
+      "delta": "473176473/2000000000"
+    },
+    "cup_m": {
+      "root": "L",
+      "factor": "6/25",
+      "offset": "0",
+      "delta": "6/25"
+    },
+    "d": {
+      "root": "a",
+      "factor": "4/1461",
+      "offset": "0",
+      "delta": "4/1461"
+    },
+    "dB": {
+      "root": "dB",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "dBSPL": {
+      "root": "dBSPL",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "dBW": {
+      "root": "dBW",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "dBm": {
+      "root": "dBm",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "dL": {
+      "root": "L",
+      "factor": "1/10",
+      "offset": "0",
+      "delta": "1/10"
+    },
+    "deg": {
+      "root": "arcmin",
+      "factor": "60",
+      "offset": "0",
+      "delta": "60"
+    },
+    "degF": {
+      "root": "Cel",
+      "factor": "5/9",
+      "offset": "-160/9",
+      "delta": "5/9"
+    },
+    "eV": {
+      "root": "Btu",
+      "factor": "801088317/5275279263100000000000000000000",
+      "offset": "0",
+      "delta": "801088317/5275279263100000000000000000000"
+    },
+    "floors": {
+      "root": "floors",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "floz": {
+      "root": "L",
+      "factor": "473176473/16000000000",
+      "offset": "0",
+      "delta": "473176473/16000000000"
+    },
+    "floz_br": {
+      "root": "L",
+      "factor": "454609/16000000",
+      "offset": "0",
+      "delta": "454609/16000000"
+    },
+    "ft": {
+      "root": "cm",
+      "factor": "762/25",
+      "offset": "0",
+      "delta": "762/25"
+    },
+    "ft/s": {
+      "root": "ft/s",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "ft2": {
+      "root": "cm2",
+      "factor": "580644/625",
+      "offset": "0",
+      "delta": "580644/625"
+    },
+    "ft3": {
+      "root": "L",
+      "factor": "55306341/1953125",
+      "offset": "0",
+      "delta": "55306341/1953125"
+    },
+    "g": {
+      "root": "g",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "g/L": {
+      "root": "g/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "g/dL": {
+      "root": "g/L",
+      "factor": "10",
+      "offset": "0",
+      "delta": "10"
+    },
+    "g/m3": {
+      "root": "g/L",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "g/s": {
+      "root": "g/s",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "gal": {
+      "root": "L",
+      "factor": "473176473/125000000",
+      "offset": "0",
+      "delta": "473176473/125000000"
+    },
+    "gal/min": {
+      "root": "L/h",
+      "factor": "1419529419/6250000",
+      "offset": "0",
+      "delta": "1419529419/6250000"
+    },
+    "gal_br": {
+      "root": "L",
+      "factor": "454609/100000",
+      "offset": "0",
+      "delta": "454609/100000"
+    },
+    "gn": {
+      "root": "gn",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "h": {
+      "root": "a",
+      "factor": "1/8766",
+      "offset": "0",
+      "delta": "1/8766"
+    },
+    "hPa": {
+      "root": "Pa",
+      "factor": "100",
+      "offset": "0",
+      "delta": "100"
+    },
+    "har": {
+      "root": "cm2",
+      "factor": "100000000",
+      "offset": "0",
+      "delta": "100000000"
+    },
+    "hp": {
+      "root": "Btu/h",
+      "factor": "7397940627/2907500",
+      "offset": "0",
+      "delta": "7397940627/2907500"
+    },
+    "in": {
+      "root": "cm",
+      "factor": "127/50",
+      "offset": "0",
+      "delta": "127/50"
+    },
+    "in/h": {
+      "root": "in/h",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "inHg": {
+      "root": "Pa",
+      "factor": "8465947/2500",
+      "offset": "0",
+      "delta": "8465947/2500"
+    },
+    "kBq": {
+      "root": "Bq",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "kBy": {
+      "root": "By",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "kHz": {
+      "root": "Hz",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "kJ": {
+      "root": "Btu",
+      "factor": "50000000000/52752792631",
+      "offset": "0",
+      "delta": "50000000000/52752792631"
+    },
+    "kOhm": {
+      "root": "Ohm",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "kPa": {
+      "root": "Pa",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "kW": {
+      "root": "Btu/h",
+      "factor": "180000000000000/52752792631",
+      "offset": "0",
+      "delta": "180000000000000/52752792631"
+    },
+    "kW.h": {
+      "root": "Btu",
+      "factor": "180000000000000/52752792631",
+      "offset": "0",
+      "delta": "180000000000000/52752792631"
+    },
+    "kW.h/100km": {
+      "root": "W.h/km",
+      "factor": "10",
+      "offset": "0",
+      "delta": "10"
+    },
+    "kat": {
+      "root": "U",
+      "factor": "60000000",
+      "offset": "0",
+      "delta": "60000000"
+    },
+    "kbit/s": {
+      "root": "By/s",
+      "factor": "125",
+      "offset": "0",
+      "delta": "125"
+    },
+    "kcal": {
+      "root": "Btu",
+      "factor": "209200000000/52752792631",
+      "offset": "0",
+      "delta": "209200000000/52752792631"
+    },
+    "kcal/d": {
+      "root": "Btu/h",
+      "factor": "26150000000/158258377893",
+      "offset": "0",
+      "delta": "26150000000/158258377893"
+    },
+    "kcal/h": {
+      "root": "Btu/h",
+      "factor": "209200000000/52752792631",
+      "offset": "0",
+      "delta": "209200000000/52752792631"
+    },
+    "kcal/kg": {
+      "root": "kcal/kg",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "kg": {
+      "root": "g",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "kg/m2": {
+      "root": "kg/m2",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "kg/m3": {
+      "root": "g/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "km": {
+      "root": "cm",
+      "factor": "100000",
+      "offset": "0",
+      "delta": "100000"
+    },
+    "km/L": {
+      "root": "km/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "km/h": {
+      "root": "ft/s",
+      "factor": "3125/3429",
+      "offset": "0",
+      "delta": "3125/3429"
+    },
+    "kn": {
+      "root": "ft/s",
+      "factor": "11575/6858",
+      "offset": "0",
+      "delta": "11575/6858"
+    },
+    "lb": {
+      "root": "g",
+      "factor": "45359237/100000",
+      "offset": "0",
+      "delta": "45359237/100000"
+    },
+    "lbf": {
+      "root": "N",
+      "factor": "8896443230521/2000000000000",
+      "offset": "0",
+      "delta": "8896443230521/2000000000000"
+    },
+    "lbf.ft": {
+      "root": "N.m",
+      "factor": "3389544870828501/2500000000000000",
+      "offset": "0",
+      "delta": "3389544870828501/2500000000000000"
+    },
+    "lm": {
+      "root": "lm",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "lx": {
+      "root": "lx",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "m": {
+      "root": "cm",
+      "factor": "100",
+      "offset": "0",
+      "delta": "100"
+    },
+    "m/s": {
+      "root": "ft/s",
+      "factor": "1250/381",
+      "offset": "0",
+      "delta": "1250/381"
+    },
+    "m/s2": {
+      "root": "gn",
+      "factor": "20000/196133",
+      "offset": "0",
+      "delta": "20000/196133"
+    },
+    "m2": {
+      "root": "cm2",
+      "factor": "10000",
+      "offset": "0",
+      "delta": "10000"
+    },
+    "m3": {
+      "root": "L",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "m3/h": {
+      "root": "L/h",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "mA": {
+      "root": "A",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mA.h": {
+      "root": "A.h",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mGy": {
+      "root": "Gy",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mIU/L": {
+      "root": "IU/L",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mL": {
+      "root": "L",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mL/kg/min": {
+      "root": "MET",
+      "factor": "2/7",
+      "offset": "0",
+      "delta": "2/7"
+    },
+    "mL/min": {
+      "root": "L/h",
+      "factor": "3/50",
+      "offset": "0",
+      "delta": "3/50"
+    },
+    "mSv": {
+      "root": "Sv",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mV": {
+      "root": "V",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mW": {
+      "root": "Btu/h",
+      "factor": "180000000/52752792631",
+      "offset": "0",
+      "delta": "180000000/52752792631"
+    },
+    "mbar": {
+      "root": "Pa",
+      "factor": "100",
+      "offset": "0",
+      "delta": "100"
+    },
+    "mg": {
+      "root": "g",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mg/L": {
+      "root": "g/L",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "mg/dL": {
+      "root": "g/L",
+      "factor": "1/100",
+      "offset": "0",
+      "delta": "1/100"
+    },
+    "mg/m3": {
+      "root": "g/L",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "mi": {
+      "root": "cm",
+      "factor": "804672/5",
+      "offset": "0",
+      "delta": "804672/5"
+    },
+    "min": {
+      "root": "a",
+      "factor": "1/525960",
+      "offset": "0",
+      "delta": "1/525960"
+    },
+    "min/km": {
+      "root": "min/km",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "min/mi": {
+      "root": "min/km",
+      "factor": "15625/25146",
+      "offset": "0",
+      "delta": "15625/25146"
+    },
+    "mm": {
+      "root": "cm",
+      "factor": "1/10",
+      "offset": "0",
+      "delta": "1/10"
+    },
+    "mm/h": {
+      "root": "in/h",
+      "factor": "5/127",
+      "offset": "0",
+      "delta": "5/127"
+    },
+    "mmHg": {
+      "root": "Pa",
+      "factor": "66661/500",
+      "offset": "0",
+      "delta": "66661/500"
+    },
+    "mmol": {
+      "root": "mmol",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "mmol/L": {
+      "root": "mmol/L",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "mmol/mol": {
+      "root": "mmol/mol",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "mo": {
+      "root": "a",
+      "factor": "1/12",
+      "offset": "0",
+      "delta": "1/12"
+    },
+    "mol": {
+      "root": "mmol",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "mol/L": {
+      "root": "mmol/L",
+      "factor": "1000",
+      "offset": "0",
+      "delta": "1000"
+    },
+    "mpg": {
+      "root": "km/L",
+      "factor": "48000/112903",
+      "offset": "0",
+      "delta": "48000/112903"
+    },
+    "mph": {
+      "root": "ft/s",
+      "factor": "22/15",
+      "offset": "0",
+      "delta": "22/15"
+    },
+    "ms": {
+      "root": "a",
+      "factor": "1/31557600000",
+      "offset": "0",
+      "delta": "1/31557600000"
+    },
+    "ng": {
+      "root": "g",
+      "factor": "1/1000000000",
+      "offset": "0",
+      "delta": "1/1000000000"
+    },
+    "ng/mL": {
+      "root": "g/L",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "nm": {
+      "root": "cm",
+      "factor": "1/10000000",
+      "offset": "0",
+      "delta": "1/10000000"
+    },
+    "nmi": {
+      "root": "cm",
+      "factor": "185200",
+      "offset": "0",
+      "delta": "185200"
+    },
+    "nmol/L": {
+      "root": "mmol/L",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "oz": {
+      "root": "g",
+      "factor": "45359237/1600000",
+      "offset": "0",
+      "delta": "45359237/1600000"
+    },
+    "pCi/L": {
+      "root": "Bq/m3",
+      "factor": "37",
+      "offset": "0",
+      "delta": "37"
+    },
+    "pH": {
+      "root": "pH",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "percent": {
+      "root": "1",
+      "factor": "1/100",
+      "offset": "0",
+      "delta": "1/100"
+    },
+    "pg/mL": {
+      "root": "g/L",
+      "factor": "1/1000000000",
+      "offset": "0",
+      "delta": "1/1000000000"
+    },
+    "pmol/L": {
+      "root": "mmol/L",
+      "factor": "1/1000000000",
+      "offset": "0",
+      "delta": "1/1000000000"
+    },
+    "ppb": {
+      "root": "1",
+      "factor": "1/1000000000",
+      "offset": "0",
+      "delta": "1/1000000000"
+    },
+    "ppm": {
+      "root": "1",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "ppth": {
+      "root": "1",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "psi": {
+      "root": "Pa",
+      "factor": "8896443230521/1290320000",
+      "offset": "0",
+      "delta": "8896443230521/1290320000"
+    },
+    "pt": {
+      "root": "L",
+      "factor": "473176473/1000000000",
+      "offset": "0",
+      "delta": "473176473/1000000000"
+    },
+    "qt": {
+      "root": "L",
+      "factor": "473176473/500000000",
+      "offset": "0",
+      "delta": "473176473/500000000"
+    },
+    "rad": {
+      "root": "rad",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "s": {
+      "root": "a",
+      "factor": "1/31557600",
+      "offset": "0",
+      "delta": "1/31557600"
+    },
+    "s/100m": {
+      "root": "min/km",
+      "factor": "1/6",
+      "offset": "0",
+      "delta": "1/6"
+    },
+    "s/100yd": {
+      "root": "min/km",
+      "factor": "625/3429",
+      "offset": "0",
+      "delta": "625/3429"
+    },
+    "s/500m": {
+      "root": "min/km",
+      "factor": "1/30",
+      "offset": "0",
+      "delta": "1/30"
+    },
+    "s/km": {
+      "root": "min/km",
+      "factor": "1/60",
+      "offset": "0",
+      "delta": "1/60"
+    },
+    "s/m": {
+      "root": "min/km",
+      "factor": "50/3",
+      "offset": "0",
+      "delta": "50/3"
+    },
+    "score": {
+      "root": "score",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "st": {
+      "root": "g",
+      "factor": "317514659/50000",
+      "offset": "0",
+      "delta": "317514659/50000"
+    },
+    "steps": {
+      "root": "steps",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "t": {
+      "root": "g",
+      "factor": "1000000",
+      "offset": "0",
+      "delta": "1000000"
+    },
+    "tbsp": {
+      "root": "L",
+      "factor": "473176473/32000000000",
+      "offset": "0",
+      "delta": "473176473/32000000000"
+    },
+    "tbsp_m": {
+      "root": "L",
+      "factor": "3/200",
+      "offset": "0",
+      "delta": "3/200"
+    },
+    "tsp": {
+      "root": "L",
+      "factor": "157725491/32000000000",
+      "offset": "0",
+      "delta": "157725491/32000000000"
+    },
+    "tsp_m": {
+      "root": "L",
+      "factor": "1/200",
+      "offset": "0",
+      "delta": "1/200"
+    },
+    "uS/cm": {
+      "root": "uS/cm",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "uSv": {
+      "root": "Sv",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "uSv/h": {
+      "root": "uSv/h",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "ug": {
+      "root": "g",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "ug/L": {
+      "root": "g/L",
+      "factor": "1/1000000",
+      "offset": "0",
+      "delta": "1/1000000"
+    },
+    "ug/dL": {
+      "root": "g/L",
+      "factor": "1/100000",
+      "offset": "0",
+      "delta": "1/100000"
+    },
+    "ug/m3": {
+      "root": "g/L",
+      "factor": "1/1000000000",
+      "offset": "0",
+      "delta": "1/1000000000"
+    },
+    "umol": {
+      "root": "mmol",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "umol/L": {
+      "root": "mmol/L",
+      "factor": "1/1000",
+      "offset": "0",
+      "delta": "1/1000"
+    },
+    "us": {
+      "root": "a",
+      "factor": "1/31557600000000",
+      "offset": "0",
+      "delta": "1/31557600000000"
+    },
+    "var": {
+      "root": "var",
+      "factor": "1",
+      "offset": "0",
+      "delta": "1"
+    },
+    "wk": {
+      "root": "a",
+      "factor": "28/1461",
+      "offset": "0",
+      "delta": "28/1461"
+    },
+    "yd": {
+      "root": "cm",
+      "factor": "2286/25",
+      "offset": "0",
+      "delta": "2286/25"
+    }
+  }
+}

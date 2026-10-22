@@ -3,7 +3,7 @@
  * front. HTML has no quantity input. The value is a text box that asks for a
  * decimal keypad, because a number input rides a float and changes its value
  * on a scroll; the unit is a native select of the units the declaration
- * admits, grouped by measure when it names none. The value in and out is the
+ * admits, grouped by linear component when it names none. The value in and out is the
  * editor text `72.5 kg` (lib/units.ts), so a quantity property rides every
  * form path a text property does. */
 
@@ -11,7 +11,7 @@ import { useState, type KeyboardEvent, type Ref } from "react"
 
 import { useUnits } from "@/hooks/use-units"
 import { unitsUnavailable } from "@/lib/unit-reader"
-import { measureLabel, type QuantityDeclaration } from "@/lib/units"
+import type { QuantityDeclaration } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
 interface Parts {
@@ -80,7 +80,7 @@ export function QuantityInput({
   /** The editor text, `72.5 kg`, or "" for none. */
   value: string
   onChange: (text: string) => void
-  /** The declaration: its measure, its units, its comparator, its default. */
+  /** The declaration: its unit, its units, its comparator, its default. */
   spec: QuantityDeclaration
   disabled?: boolean
   invalid?: boolean
@@ -93,8 +93,8 @@ export function QuantityInput({
   className?: string
 }) {
   const units = useUnits()
-  // A graph-enabled server's units are the repository's: until they load the
-  // control offers none and takes no value, rather than the table's.
+  // The units are the repository's: until they load the control offers none
+  // and takes no value.
   const unavailable = unitsUnavailable(units)
   const off = disabled || unavailable !== undefined
   // Controlled by the text, with the parts this control wrote kept beside it:
@@ -181,16 +181,13 @@ export function QuantityInput({
         {!parts.unit && (
           <option value="">{unavailable ? "Units loading…" : "Unit…"}</option>
         )}
-        {/* A unit no list offers (a stored compound, `GJ`) stays chosen, so
+        {/* A unit no list offers (a unit the graph no longer holds) stays chosen, so
             the value it holds is written back as it was. */}
         {parts.unit && !offered && option(parts.unit)}
         {groups.length === 1
           ? groups[0].units.map(option)
           : groups.map((g) => (
-              <optgroup
-                key={g.measure ?? ""}
-                label={g.measure ? measureLabel(g.measure) : "Units"}
-              >
+              <optgroup key={g.heading ?? ""} label={g.heading ?? "Units"}>
                 {g.units.map(option)}
               </optgroup>
             ))}

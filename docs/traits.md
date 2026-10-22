@@ -242,10 +242,11 @@ opt into twice:
   [Observations](observations.md) has every rule and the sample kinds that
   bind it.
 - **`metric`** marks the catalogue entry an observed value names. The
-  aggregate read takes its `measures`, `unit` and `bucketPlace`, the
-  observed index keeps the rollup tiers its `rollups` lists, and a reader
+  write rules admit a value in its `unit` and `units`, references to [unit
+  records](units.md), the aggregate read takes its `unit` and `bucketPlace`,
+  the observed index keeps the rollup tiers its `rollups` lists, and a reader
   shows its `name`, `form`, `codeSet`, `displayPrecision` and `category`.
-  Every write is held to the unit table and to the tier list
+  Every write is held to the repository's units and to the tier list
   ([observations](observations.md#the-metric-and-source-contracts)).
 - **`source`** marks the device, app, service or lab a value came from. Its
   `priorities`, keyed by a metric's full record path, are the order the

@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { UnitsProvider } from "@/components/units-provider"
 import { forgetUnitGraphs } from "@/lib/api/units"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
 import { editedTable } from "@/lib/unit-graph.test-fixtures"
 
 import { QuantityInput } from "./quantity-input"
@@ -33,16 +34,10 @@ afterEach(() => {
 })
 beforeEach(() => localStorage.clear())
 
-/** A server with the graph switch on, whose units route answers `units`. */
+/** A server whose units route answers `units`. */
 function graphServer(units: () => Promise<Response>) {
-  const fetch = vi.fn((input: RequestInfo | URL) =>
-    String(input).includes("server.json")
-      ? Promise.resolve(
-          new Response(JSON.stringify({ units: { graph: true } }), {
-            status: 200,
-          })
-        )
-      : units()
+  const fetch = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(() =>
+    units()
   )
   vi.stubGlobal("fetch", fetch)
   return () => fetch.mock.calls.some((c) => String(c[0]).endsWith("/units"))
@@ -53,8 +48,6 @@ const editedGraph = () =>
     new Response(
       JSON.stringify({
         ...editedTable,
-        measures: [],
-        aliases: {},
         unseeded: [],
       }),
       { status: 200 }
@@ -104,33 +97,35 @@ const comparator = () =>
   screen.queryByLabelText<HTMLSelectElement>("Weight, comparator")
 const offered = () => [...unit().options].map((o) => o.value)
 
+/** The input under the shipped units. */
+const shipped = (ui: Parameters<typeof render>[0]) =>
+  render(ui, { wrapper: ShippedUnits })
+
 describe("QuantityInput", () => {
   it("splits a stored text into its value and its unit", () => {
-    render(
-      <Harness initial="37 Cel" spec={{ measures: "temperature" }} seen={[]} />
-    )
+    shipped(<Harness initial="37 Cel" spec={{ unit: "Cel" }} seen={[]} />)
     expect(value().value).toBe("37")
     expect(value().inputMode).toBe("decimal")
     expect(value().type).toBe("text")
     expect(unit().value).toBe("Cel")
     expect(unit().selectedOptions[0].textContent).toBe("°C (Cel)")
-    expect(offered()).toEqual(["K", "Cel", "[degF]"])
+    expect(offered()).toEqual(["Cel", "K", "degF"])
     expect(comparator()).toBeNull()
   })
 
   it("writes the value and the chosen unit as one text", () => {
     const seen: string[] = []
-    render(<Harness spec={{ measures: "mass" }} seen={seen} />)
+    shipped(<Harness spec={{ unit: "kg" }} seen={seen} />)
     expect(unit().value).toBe("kg")
     fireEvent.change(value(), { target: { value: "72.5" } })
     expect(seen.at(-1)).toBe("72.5 kg")
-    fireEvent.change(unit(), { target: { value: "[lb_av]" } })
-    expect(seen.at(-1)).toBe("72.5 [lb_av]")
+    fireEvent.change(unit(), { target: { value: "lb" } })
+    expect(seen.at(-1)).toBe("72.5 lb")
   })
 
   it("keeps a chosen unit while the value is blank, writing no value", () => {
     const seen: string[] = []
-    render(<Harness spec={{ measures: "mass" }} seen={seen} />)
+    shipped(<Harness spec={{ unit: "kg" }} seen={seen} />)
     fireEvent.change(unit(), { target: { value: "g" } })
     expect(seen.at(-1)).toBe("")
     expect(unit().value).toBe("g")
@@ -140,10 +135,10 @@ describe("QuantityInput", () => {
   })
 
   it("narrows to the declared units and keeps a stored unit no list offers", () => {
-    render(
+    shipped(
       <Harness
         initial="5 GJ"
-        spec={{ measures: "energy", units: ["kJ", "kcal"] }}
+        spec={{ unit: "kJ", units: ["kcal"] }}
         seen={[]}
       />
     )
@@ -151,21 +146,21 @@ describe("QuantityInput", () => {
     expect(offered()).toEqual(["GJ", "kJ", "kcal"])
   })
 
-  it("groups every unit by measure when the declaration names none", () => {
-    render(<Harness seen={[]} />)
+  it("groups every unit by its component's root when the declaration names none", () => {
+    shipped(<Harness seen={[]} />)
     expect(unit().value).toBe("")
     const groups = [...unit().querySelectorAll("optgroup")].map((g) => g.label)
-    expect(groups).toContain("Mass")
-    expect(groups).toContain("Temperature")
-    expect(groups).not.toContain("Temperature difference")
+    expect(groups).toContain("gram")
+    expect(groups).toContain("degree Celsius")
+    expect(new Set(groups).size).toBe(groups.length)
   })
 
   it("offers a comparator only where the property declares one", () => {
     const seen: string[] = []
-    render(
+    shipped(
       <Harness
         initial="0.5 ng/mL"
-        spec={{ measures: "mass-concentration", comparator: true }}
+        spec={{ unit: "ng/mL", comparator: true }}
         seen={seen}
       />
     )
@@ -173,35 +168,35 @@ describe("QuantityInput", () => {
     fireEvent.change(comparator()!, { target: { value: "<" } })
     expect(seen.at(-1)).toBe("<0.5 ng/mL")
     cleanup()
-    render(<Harness initial="<0.5 ng/mL" spec={{}} seen={[]} />)
+    shipped(<Harness initial="<0.5 ng/mL" spec={{}} seen={[]} />)
     // A stored comparator stays visible, for the server to refuse by name.
     expect(comparator()?.value).toBe("<")
   })
 
-  it("opens a blank value on the default's unit, the display unit, then the one picked last", () => {
-    render(
+  it("opens a blank value on the default's unit, the anchor, then the one picked last", () => {
+    shipped(
       <Harness
         spec={{
-          measures: "mass",
+          unit: "kg",
           default: { value: "150", unit: "[lb_av]" },
         }}
         seen={[]}
       />
     )
-    expect(unit().value).toBe("[lb_av]")
+    expect(unit().value).toBe("lb")
     cleanup()
-    render(<Harness spec={{ measures: "length" }} seen={[]} />)
+    shipped(<Harness spec={{ unit: "m" }} seen={[]} />)
     expect(unit().value).toBe("m")
     cleanup()
-    render(<Harness seen={[]} />)
+    shipped(<Harness seen={[]} />)
     fireEvent.change(unit(), { target: { value: "mmol/L" } })
     cleanup()
-    render(<Harness seen={[]} />)
+    shipped(<Harness seen={[]} />)
     expect(unit().value).toBe("mmol/L")
   })
 })
 
-describe("QuantityInput on a server whose units are the repository's graph", () => {
+describe("QuantityInput under the signed-in console's reader", () => {
   it("offers a unit only the repository holds, under its symbol", async () => {
     graphServer(editedGraph)
     renderUnderProvider({ unit: "kg" })
@@ -218,14 +213,14 @@ describe("QuantityInput on a server whose units are the repository's graph", () 
   it("takes no value and offers no unit while the graph loads", async () => {
     const asked = graphServer(() => new Promise<Response>(() => undefined))
     renderUnderProvider({ unit: "kg" }, "72.5 kg")
-    // Past discovery: the switch is on and the graph is on its way.
+    // The graph is on its way.
     await waitFor(() => expect(asked()).toBe(true))
     expect((await screen.findByRole("status")).textContent).toBe(
       "The repository's units are loading"
     )
     expect(value().disabled).toBe(true)
     expect(unit().disabled).toBe(true)
-    // The stored unit stays chosen as stored; the table's list is not offered.
+    // The stored unit stays chosen as stored; no list is offered.
     expect(offered()).toEqual(["kg"])
   })
 })

@@ -17,7 +17,11 @@ import type { SubstrateRecord } from "@/lib/api/types"
 import type { FormField } from "@/lib/record-form"
 import type { PropSpec } from "@/lib/record-schema"
 import { controlFor, humanizeName, inputTypeFor } from "@/lib/record-schema"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { pendingUnits } from "@/lib/unit-reader"
+
+/** The reader a setting's field carries: a setting is never a quantity, so
+ * none of its answers is read. */
+const SETTINGS_UNITS = pendingUnits("loading")
 
 /** The `type` hints a `setting` record may carry, and the datatype each one
  * borrows for its control. An unknown hint reads as a string, because the
@@ -154,7 +158,7 @@ export function settingField(record: SubstrateRecord): SettingField {
       spec,
       // A setting is a string, a url, an int or a bool, never a quantity,
       // so no unit answer is ever read off this reader.
-      units: TABLE_UNITS,
+      units: SETTINGS_UNITS,
     },
   }
 }

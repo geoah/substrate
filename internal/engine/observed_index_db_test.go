@@ -124,7 +124,7 @@ type pointRow struct {
 	offsetKnown                 bool
 	comparator                  string
 	delta, circular             bool
-	value, base                 sql.NullFloat64
+	value                       sql.NullFloat64
 	exact, statistic, quality   sql.NullString
 	resetRule, wrapAt           sql.NullString
 	hold                        sql.NullInt64
@@ -145,9 +145,6 @@ func (r obsIndex) points(t *testing.T, kind, id string) []pointRow {
 		}
 		if p.Value != nil {
 			row.value = sql.NullFloat64{Float64: *p.Value, Valid: true}
-		}
-		if p.Base != nil {
-			row.base = sql.NullFloat64{Float64: *p.Base, Valid: true}
 		}
 		if p.Exact != nil {
 			row.exact = sql.NullString{String: *p.Exact, Valid: true}
@@ -213,8 +210,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	if got := r.points(t, r.observation, "withings/w1"); len(got) != 1 ||
 		got[0].metric != metric("health/body_mass") || got[0].source != r.source+"/withings-body" ||
 		got[0].form != "gauge" || !got[0].ts.Equal(mustTime(t, "2026-10-07T03:41:12Z")) || !got[0].tsEnd.Equal(got[0].ts) ||
-		got[0].offset != 180 || got[0].unit != "kg" || got[0].value.Float64 != 72.4 || got[0].exact.String != "72.40" ||
-		got[0].base.Valid || got[0].code != "" || got[0].comparator != "" || got[0].quality.Valid {
+		got[0].offset != 180 || got[0].unit != "kg" || got[0].value.Float64 != 72.4 || got[0].exact.String != "72.40" || got[0].code != "" || got[0].comparator != "" || got[0].quality.Valid {
 		t.Errorf("a weighing derived %+v", got)
 	}
 
@@ -233,8 +229,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 		"value": quantity("67", "%"), "at": "2026-10-06T22:31:00Z", "endsAt": "2026-10-07T06:02:00Z", "revision": 1,
 	})
 	if got := r.points(t, r.observation, "whoop/george/1047392/recovery"); len(got) != 1 || got[0].form != "summary" ||
-		got[0].statistic.String != "vendor" || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T06:02:00Z")) ||
-		got[0].base.Valid {
+		got[0].statistic.String != "vendor" || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T06:02:00Z")) {
 		t.Errorf("a summary derived %+v", got)
 	}
 	if n := r.count(t, `SELECT count(*) FROM test_rollups WHERE form = 'summary'`); n != 0 {
@@ -245,8 +240,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 		"metric": r.metricRef("health/sleep_stage"), "form": "amount", "value": quantity("94", "min"), "code": "rem",
 		"at": "2026-10-07T01:00:00Z", "endsAt": "2026-10-07T02:34:00Z",
 	})
-	if got := r.points(t, r.observation, "sleep/rem"); len(got) != 1 || got[0].code != "rem" || got[0].exact.String != "94" ||
-		got[0].base.Valid || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T02:34:00Z")) {
+	if got := r.points(t, r.observation, "sleep/rem"); len(got) != 1 || got[0].code != "rem" || got[0].exact.String != "94" || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T02:34:00Z")) {
 		t.Errorf("an amount with its category derived %+v", got)
 	}
 
@@ -257,7 +251,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	})
 	meter := r.points(t, r.trace, "meter/2026-10-07T06")
 	if len(meter) != 4 || meter[1].exact.String != "18342.700" || meter[2].value.Float64 != 0.01 ||
-		meter[0].base.Valid || meter[0].resetRule.String != "monotonic" ||
+		meter[0].resetRule.String != "monotonic" ||
 		!meter[3].ts.Equal(mustTime(t, "2026-10-07T06:45:00Z")) || !meter[3].tsEnd.Equal(meter[3].ts) {
 		t.Errorf("a counter trace derived %+v", meter)
 	}
@@ -289,7 +283,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 		"at":    "2026-09-14T08:05:00+01:00", "utcOffset": 60, "status": "final", "revision": 1,
 	})
 	if got := r.points(t, r.labresult, "medichecks/george/MC-1/tsh"); len(got) != 1 || got[0].comparator != "<" ||
-		got[0].exact.String != "0.01" || got[0].base.Valid || got[0].offset != 60 {
+		got[0].exact.String != "0.01" || got[0].offset != 60 {
 		t.Errorf("a bounded lab value derived %+v", got)
 	}
 	// A lab result with no value and no code derives nothing.
@@ -362,13 +356,8 @@ func storedPoints(t *testing.T, ds substrate.Dataset) []specPoint {
 		if d.ResetAt != nil {
 			p.ResetAt = *d.ResetAt
 		}
-		if d.Circular && d.Value != nil {
-			switch {
-			case sp.unit == "rad":
-				p.Circular, p.Angle = true, *d.Value
-			case d.Base != nil:
-				p.Circular, p.Angle = true, *d.Base*math.Pi/180
-			}
+		if d.Circular && d.Value != nil && sp.unit == "rad" {
+			p.Circular, p.Angle = true, *d.Value
 		}
 		sp.group = fmt.Sprintf("%s|%s|%v|%d|%v", sp.code, sp.unit, sp.delta, sp.offset, sp.offsetKnown)
 		p.Group = sp.group

@@ -15,12 +15,15 @@ package vocabulary_test
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"os"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
+
+var updateGenerated = flag.Bool("update", false, "rewrite the console's copy of the aggregate rules")
 
 const consoleAggregateRules = "../../web/console/src/lib/aggregate.rules.json"
 

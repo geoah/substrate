@@ -21,8 +21,6 @@ import {
 const table = (revision: number): UnitTable => ({
   ...fixtureTable,
   revision,
-  measures: [],
-  aliases: {},
   unseeded: [],
 })
 

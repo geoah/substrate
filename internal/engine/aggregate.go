@@ -104,13 +104,9 @@ func acquireAggregateSlot(ctx context.Context) (func(), error) {
 // aggPlan is a request as the read runs it: every field parsed, every
 // default applied.
 type aggPlan struct {
-	// graphUnits is the unit graph switch (decision 0186): the read's units
-	// are spellings the repository's graph resolves (aggregateUnits), and its
-	// duration units are the fixed list (timeunits.go).
-	graphUnits bool
-	q          substrate.AggregateQuery
-	a          substrate.Aggregate
-	kind       aggKind
+	q    substrate.AggregateQuery
+	a    substrate.Aggregate
+	kind aggKind
 	// metric is the metric's record path; empty on a latest read that
 	// selects by filter alone.
 	metric   string
@@ -277,7 +273,7 @@ func (ds *dataset) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*
 // aggregateInstants is the read over a range of instants, the days outside
 // dates, where set, reduced and never answered.
 func (ds *dataset) aggregateInstants(ctx context.Context, q substrate.AggregateQuery, dates *localDates) (*substrate.AggregateResult, error) {
-	p, err := planAggregate(q, ds.svc.unitGraphOn)
+	p, err := planAggregate(q)
 	if err != nil {
 		return nil, err
 	}
@@ -417,12 +413,12 @@ func aggregateTimeout(ctx context.Context, tx *sql.Tx) error {
 // planAggregate checks the body's shape and parses it. Nothing here reads the
 // repository: what the selected streams admit is checked once they are
 // selected.
-func planAggregate(q substrate.AggregateQuery, graphUnits bool) (*aggPlan, error) {
+func planAggregate(q substrate.AggregateQuery) (*aggPlan, error) {
 	if q.Aggregate == nil {
 		return nil, refuse("aggregate", "the read needs an aggregate body: a metric or a property, a range and reducers")
 	}
 	a := *q.Aggregate
-	p := &aggPlan{q: q, a: a, grouped: map[string]bool{}, at: "aggregate", refAt: "aggregate.metric.ref", reducersAt: "aggregate.reducers", graphUnits: graphUnits}
+	p := &aggPlan{q: q, a: a, grouped: map[string]bool{}, at: "aggregate", refAt: "aggregate.metric.ref", reducersAt: "aggregate.reducers"}
 	selectors := 0
 	for _, set := range []bool{a.Metric != nil, a.Metrics != nil, a.Property != nil} {
 		if set {
@@ -572,15 +568,11 @@ func (p *aggPlan) forMetric(at string, m substrate.AggregateMetricRead) (*aggPla
 	if len(mp.reducers) == 0 {
 		return nil, refuse(at+".reducers", "name at least one reducer, such as avg, here or in aggregate.reducers for every metric")
 	}
-	if m.Unit != "" {
-		code, err := p.readUnit(at+".unit", m.Unit)
-		if err != nil {
-			return nil, err
-		}
-		mp.unit = code
-	}
+	// A read's unit is a spelling the repository's graph resolves once the
+	// read has its transaction (aggregateUnits).
+	mp.unit = strings.TrimSpace(m.Unit)
 	if m.DurationUnit != "" {
-		code, err := durationUnit(p.graphUnits, at+".durationUnit", m.DurationUnit)
+		code, err := durationUnit(at+".durationUnit", m.DurationUnit)
 		if err != nil {
 			return nil, err
 		}
@@ -751,15 +743,9 @@ func (p *aggPlan) parseCommon() error {
 		}
 		p.rolling = &rolled
 	}
-	if a.Unit != "" {
-		code, err := p.readUnit(p.path("unit"), a.Unit)
-		if err != nil {
-			return err
-		}
-		p.unit = code
-	}
+	p.unit = strings.TrimSpace(a.Unit)
 	if a.DurationUnit != "" {
-		code, err := durationUnit(p.graphUnits, "aggregate.durationUnit", a.DurationUnit)
+		code, err := durationUnit("aggregate.durationUnit", a.DurationUnit)
 		if err != nil {
 			return err
 		}
@@ -805,38 +791,14 @@ func (p *aggPlan) parseFrom(from string) error {
 	return nil
 }
 
-// readUnit reads a read's unit: a table code before the unit graph switch,
-// and under it a spelling the repository's graph resolves once the read has
-// its transaction (aggregateUnits).
-func (p *aggPlan) readUnit(path, unit string) (string, error) {
-	if p.graphUnits {
-		return strings.TrimSpace(unit), nil
+// durationUnit reads a durations' unit: one of the fixed list
+// (timeunits.go).
+func durationUnit(path, unit string) (string, error) {
+	u := strings.TrimSpace(unit)
+	if !isTimeUnit(u) {
+		return "", refuse(path, "%s is not a unit of duration; durationIn and timeInState answer in %s", unit, timeUnitNames)
 	}
-	code, err := vocabulary.CanonicalUnit(unit)
-	if err != nil {
-		return "", refuse(path, "%v", err)
-	}
-	return code, nil
-}
-
-// durationUnit reads a durations' unit: a unit of duration (s, min, h, d),
-// under the unit graph switch one of the fixed list (timeunits.go).
-func durationUnit(graphUnits bool, path, unit string) (string, error) {
-	if graphUnits {
-		u := strings.TrimSpace(unit)
-		if !isTimeUnit(u) {
-			return "", refuse(path, "%s is not a unit of duration; durationIn and timeInState answer in %s", unit, timeUnitNames)
-		}
-		return u, nil
-	}
-	code, err := vocabulary.CanonicalUnit(unit)
-	if err != nil {
-		return "", refuse(path, "%v", err)
-	}
-	if !resolves(code, "duration") {
-		return "", refuse(path, "%s is not a unit of duration; durationIn and timeInState answer in s, min, h or d", unit)
-	}
-	return code, nil
+	return u, nil
 }
 
 // checkBudget refuses a budget below zero or over its cap; zero is the

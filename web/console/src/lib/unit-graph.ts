@@ -9,12 +9,7 @@
  * a component: the server's answer is the graph. An expression conversion
  * joins two components for one value only, and only the server evaluates
  * it, so `convert` answers undefined there and a caller that needs it asks
- * `GET /api/v1/units/convert` (lib/api/units.ts).
- *
- * This is the console's second unit path: until the server's switch is on
- * (`units.graph` in discovery) lib/units.ts reads the engine's table, and
- * hooks/use-unit-reader.ts picks between the two readers of
- * lib/unit-reader.ts. */
+ * `GET /api/v1/units/convert` (lib/api/units.ts). */
 
 import type {
   Quantity,
@@ -76,7 +71,7 @@ const ZERO: Rational = { n: 0n, d: 1n }
 const ONE: Rational = { n: 1n, d: 1n }
 
 /** A rational as a float, at twelve significant places, which clears a
- * binary float's noise as lib/units.ts convertUnit does. */
+ * binary float's noise (lib/units.ts floatDigits). */
 export function rationalNumber(r: Rational): number {
   return Number((Number(r.n) / Number(r.d)).toPrecision(12))
 }
@@ -262,10 +257,10 @@ export class UnitGraph {
       return [{ units: all }]
     }
     if (anchor)
-      return [{ measure: this.label(anchor), units: this.component(anchor) }]
+      return [{ heading: this.label(anchor), units: this.component(anchor) }]
     const roots = [...this.byRoot.keys()].sort()
     return roots.map((root) => ({
-      measure: this.label(root),
+      heading: this.label(root),
       units: [...(this.byRoot.get(root) ?? [])],
     }))
   }

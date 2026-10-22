@@ -11,7 +11,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
   cleanup,
-  render,
+  render as renderUI,
   screen,
   waitFor,
   within,
@@ -35,6 +35,14 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 import { RecordViews } from "./record-views"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+
+/** Every render gets the shipped units, as the signed-in console's
+ * `UnitsProvider` gives a page the repository's. */
+const render = (
+  ui: Parameters<typeof renderUI>[0],
+  options?: Parameters<typeof renderUI>[1]
+) => renderUI(ui, { wrapper: ShippedUnits, ...options })
 
 afterEach(() => {
   cleanup()

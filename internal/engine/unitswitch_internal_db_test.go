@@ -1,18 +1,19 @@
 package engine
 
-// The unit graph switch (decision 0186, step 3 of docs/plans/dynamic-units.md):
-// with WithUnitGraph on, every quantity write resolves its unit through the
-// repository's graph and stores the unit's id, a declaration's `unit`,
-// `units`, `delta` and bounds are held against the graph, an observed value is
-// held to its metric, and a metric to the values that point at it. The switch
-// is on by default since step 4; the parity tests open the table path beside
-// it, with WithUnitGraph(false).
+// The unit graph (decision 0186): every quantity write resolves its unit
+// through the repository's graph and stores the unit's id, a declaration's
+// `unit`, `units`, `delta` and bounds are held against the graph, an observed
+// value is held to its metric, and a metric to the values that point at it.
+// The parity tests hold the graph over the shipped units to the answers the
+// engine's old unit table gave (testdata/unit_parity.json).
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -35,13 +36,13 @@ const (
 	metricKind    = obsAuthority + "/observations/metric"
 )
 
-// openSwitched opens a service with the unit graph switch on, a repository
+// openSwitched opens a service, a repository
 // with the fixture graph (switchedGraph) and the thing kind, whose quantities
 // declare the graph dialect.
 func openSwitched(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	all := append([]Option{WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir), WithUnitGraph(true)}, opts...)
+	all := append([]Option{WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir)}, opts...)
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), all...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
@@ -217,7 +218,7 @@ func TestOldCodesAndAliasesResolveToTheID(t *testing.T) {
 }
 
 // A spelling no unit of the repository answers is refused by name, even one
-// the engine's table reads.
+// the engine's old table read.
 func TestUnknownUnitIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
@@ -751,7 +752,7 @@ func TestCursorAfterAConversionChangeIsRefused(t *testing.T) {
 	}
 }
 
-// Under the switch an index on a quantity is refused: it would serve every
+// An index on a quantity is refused: it would serve every
 // repository holding the kind through one repository's graph.
 func TestQuantityIndexIsRefused(t *testing.T) {
 	t.Parallel()
@@ -787,18 +788,17 @@ func TestChangedConversionMovesNoStoredValue(t *testing.T) {
 	wantIDs(t, "above 453.6 g after", p, err, "a")
 }
 
-// --- parity with the engine's table --------------------------------------------
+// --- parity with the engine's old table --------------------------------------------
 
 const tableKind = thingsPackage + "/reading"
 
-// openParity opens one repository with the shipped units seeded and the
-// switch as asked, holding the reading kind. The table path ignores each
-// property's `unit` and reads every value in the measure its code names.
-func openParity(t *testing.T, on bool, repo string) *dataset {
+// openParity opens one repository with the shipped units seeded, holding the
+// reading kind.
+func openParity(t *testing.T, repo string) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir), WithUnitGraph(on), WithUnitSeed(true))
+		WithKindsDir(SeedKindsDir), WithUnitSeed(true))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -815,8 +815,7 @@ func openParity(t *testing.T, on bool, repo string) *dataset {
 	return ds
 }
 
-// installParityReadings declares the reading kind in the table's dialect, so both
-// paths read it.
+// installParityReadings declares the reading kind.
 func installParityReadings(t *testing.T, ds *dataset) {
 	t.Helper()
 	ctx := context.Background()
@@ -838,8 +837,7 @@ func installParityReadings(t *testing.T, ds *dataset) {
 	}
 }
 
-// parityReadings are the same values, written in the table's codes, into
-// both repositories.
+// parityReadings are the readings, written in the old table's codes.
 var parityReadings = map[string]map[string]any{
 	"r1": {"mass": qty("1", "[lb_av]"), "temp": qty("98.6", "[degF]"), "rate": qty("60", "/min")},
 	"r2": {"mass": qty("453.59237", "g"), "temp": qty("37", "Cel"), "rate": qty("60", "/h")},
@@ -890,28 +888,6 @@ func parityFilterAnswers(t *testing.T, ds *dataset) map[string]string {
 		t.Fatalf("only %d of %d probes split the readings", split, len(probes))
 	}
 	return out
-}
-
-// The graph's filters answer what the table's answer, over the shipped
-// units, for every parity probe: the seed is the table as records, so a
-// filter through it may not move a row in or out.
-func TestGraphFiltersMatchTheTable(t *testing.T) {
-	t.Parallel()
-	off := openParity(t, false, testdb.Repository(t))
-	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
-	for _, ds := range []*dataset{off, on} {
-		for id, props := range parityReadings {
-			if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
-				t.Fatalf("put %s: %v", id, err)
-			}
-		}
-	}
-	want := parityFilterAnswers(t, off)
-	for probe, got := range parityFilterAnswers(t, on) {
-		if got != want[probe] {
-			t.Errorf("%s: the graph answers [%s], the table [%s]", probe, got, want[probe])
-		}
-	}
 }
 
 // --- the aggregate read -----------------------------------------------------------
@@ -1075,7 +1051,7 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	open := func() (substrate.Service, *dataset) {
-		svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir), WithUnitGraph(true))
+		svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1085,7 +1061,7 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 		}
 		return svc, d.(*dataset)
 	}
-	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir), WithUnitGraph(true))
+	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1257,84 +1233,82 @@ func parityAnswers(t *testing.T, ds *dataset) map[string]map[string]string {
 	return out
 }
 
-// compareParity holds the graph's answers to the table's.
-func compareParity(t *testing.T, table, graph map[string]map[string]string) {
-	t.Helper()
-	for label, want := range table {
-		for red, w := range want {
+// unitParityFile holds the answers the engine's old unit table gave to every
+// parity probe and read, captured from the table path (WithUnitGraph(false))
+// of commit 741ce8b0f, the last that held the table (decision 0186, step 5 of
+// docs/plans/dynamic-units.md), by testdata/unit_parity_capture.go.txt, which
+// says how to run it again. The graph over the shipped units must keep
+// answering them. It is frozen: no code here can answer as the table did, so
+// the probes and reads may not change while it stands, and the test refuses
+// a probe, read or reducer the file and the code do not both hold.
+const unitParityFile = "testdata/unit_parity.json"
+
+type unitParity struct {
+	Filters    map[string]string            `json:"filters"`
+	Aggregates map[string]map[string]string `json:"aggregates"`
+}
+
+// The graph's filters and aggregate answers over the shipped units are the
+// table's: the seed is the table as records, so a filter through it may not
+// move a row in or out, and a read may not move an answer past rounding.
+func TestShippedUnitsAnswerAsTheTableDid(t *testing.T) {
+	t.Parallel()
+	ds := openParity(t, testdb.Repository(t))
+	for id, props := range parityReadings {
+		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	parityObserve(t, ds)
+	got := unitParity{Filters: parityFilterAnswers(t, ds), Aggregates: parityAnswers(t, ds)}
+	raw, err := os.ReadFile(unitParityFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want unitParity
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if len(want.Filters) == 0 || len(want.Aggregates) == 0 {
+		t.Fatalf("%s holds no answers", unitParityFile)
+	}
+	sameKeys(t, "the filter probes", got.Filters, want.Filters)
+	sameKeys(t, "the aggregate reads", got.Aggregates, want.Aggregates)
+	for label, reds := range want.Aggregates {
+		if g, ok := got.Aggregates[label]; ok {
+			sameKeys(t, label+"'s reducers", g, reds)
+		}
+	}
+	for probe, w := range want.Filters {
+		if g, ok := got.Filters[probe]; !ok || g != w {
+			t.Errorf("%s: the graph answers [%s], the table [%s]", probe, g, w)
+		}
+	}
+	for label, reds := range want.Aggregates {
+		for red, w := range reds {
 			x, _ := strconv.ParseFloat(w, 64)
-			if !near(graph[label][red], w, 1e-9*max(1, math.Abs(x))) {
-				t.Errorf("%s %s: the graph answers %s, the table %s", label, red, graph[label][red], w)
+			if !near(got.Aggregates[label][red], w, 1e-9*max(1, math.Abs(x))) {
+				t.Errorf("%s %s: the graph answers %s, the table %s", label, red, got.Aggregates[label][red], w)
 			}
 		}
 	}
 }
 
-// The graph's aggregate answers match the table's over the shipped units:
-// the same values written in the table's codes, each repository writing
-// through its own path.
-func TestGraphAggregatesMatchTheTable(t *testing.T) {
-	t.Parallel()
-	off := openParity(t, false, testdb.Repository(t))
-	on := openParity(t, true, testdb.RepositoryLabel(t)+"2.example.com")
-	parityObserve(t, off)
-	parityObserve(t, on)
-	compareParity(t, parityAnswers(t, off), parityAnswers(t, on))
-}
-
-// Rows written before the switch hold the table's codes, and the graph reads
-// them as the table did: the same repository answers every filter and every
-// aggregate alike before and after it is opened with the switch on.
-func TestPreSwitchRowsReadThroughTheGraph(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
-	open := func(on bool) (substrate.Service, *dataset) {
-		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-			WithKindsDir(SeedKindsDir), WithUnitGraph(on), WithUnitSeed(true))
-		if err != nil {
-			t.Fatalf("open engine (switch %v): %v", on, err)
-		}
-		d, err := svc.Dataset(ctx, repo)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return svc, d.(*dataset)
-	}
-	svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir), WithUnitGraph(false), WithUnitSeed(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.CreateRepository(ctx, repo); err != nil {
-		t.Fatal(err)
-	}
-	_ = svc.Close()
-	svc, off := open(false)
-	installParityReadings(t, off)
-	for id, props := range parityReadings {
-		if _, err := off.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
-			t.Fatalf("put %s: %v", id, err)
+// sameKeys refuses a key one map holds and the other does not: a probe the
+// code runs with no captured answer is unchecked, and so is an answer no
+// probe asks for any more.
+func sameKeys[V any](t *testing.T, what string, got, want map[string]V) {
+	t.Helper()
+	for k := range got {
+		if _, ok := want[k]; !ok {
+			t.Errorf("%s: %q is asked and %s holds no answer for it", what, k, unitParityFile)
 		}
 	}
-	parityObserve(t, off)
-	if r, err := off.Get(ctx, tableKind, "r1"); err != nil || storedUnit(t, r, "mass") != "[lb_av]" {
-		t.Fatalf("the table stored %v (%v), want its code", r, err)
-	}
-	filters := parityFilterAnswers(t, off)
-	aggregates := parityAnswers(t, off)
-	_ = svc.Close()
-
-	svc, on := open(true)
-	defer func() { _ = svc.Close() }()
-	DrainIndexReprojection(t, on)
-	got := parityFilterAnswers(t, on)
-	for probe, want := range filters {
-		if got[probe] != want {
-			t.Errorf("%s over rows the table wrote: the graph answers [%s], the table [%s]", probe, got[probe], want)
+	for k := range want {
+		if _, ok := got[k]; !ok {
+			t.Errorf("%s: %s answers %q and nothing asks it", what, unitParityFile, k)
 		}
 	}
-	compareParity(t, aggregates, parityAnswers(t, on))
 }
 
 // A property read converts each record's quantity exactly into the request's

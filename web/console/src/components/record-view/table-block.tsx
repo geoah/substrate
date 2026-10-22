@@ -505,8 +505,8 @@ function Rows({
  * (`resultReading`); the page's own record ringed, a row holding the
  * `nest` reference hollow, its tooltip naming what it refers to by the
  * property's label. The chart draws in one unit, the first result's: a
- * result in another unit of the same measure (g beside kg) is converted,
- * and one of another measure is listed and not drawn. A result written as
+ * result in a unit that converts to it (g beside kg) is converted, and one
+ * in a unit that does not is listed and not drawn. A result written as
  * a bound (`<0.5`) draws as a marker toward its open side. Results of
  * several channels (a DXA scan's trunk and arms) draw one line each. */
 function Points({
@@ -549,7 +549,7 @@ function Points({
     return at === undefined || !resultReading(units, p) ? [] : [{ r, p, at }]
   })
   const unit = timed.length ? resultReading(units, timed[0].p)?.unit : undefined
-  // Each result in the newest's unit, converted within one measure; under
+  // Each result in the newest's unit, converted where it converts; under
   // a unitless newest result only the unitless ones draw, never every
   // result in its own unit on one axis.
   const drawn = timed.flatMap((x) => {

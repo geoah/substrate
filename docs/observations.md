@@ -41,18 +41,17 @@ Properties of both variants:
 | `hold` | duration | on a gauge, how long a value stands without a newer one |
 | `resetRule` | string | on a counter, its contract: `monotonic`, `signed` or `wrap` |
 | `resetAt` | datetime | on a counter, when the current accumulation began |
-| `delta` | bool | true when the value is a temperature difference, such as a deviation |
+| `delta` | bool | true when the value is a difference, such as a temperature deviation, which converts by the factor alone ([units](units.md#how-the-server-converts)) |
 | `circular` | bool | true when the value is an angle averaged on the circle, such as a wind direction |
 | `wrapAt` | decimal | on a `wrap` counter, the value it wraps to zero at |
 | `utcOffset` | int | minutes east of UTC where the value was observed; on a trace, every point's ([below](#points-nulls-and-offsets)) |
-| `measure` | string | the engine's: the measure the unit was read as when the record was written ([below](#the-measure-a-value-was-written-in)) |
 | `revision` | int | rises with each rewrite from the upstream; a lower one is refused |
 
 `observed(single)` adds:
 
 | Property | Datatype | Means |
 | --- | --- | --- |
-| `value` | quantity | the number and its unit, `{value: "72.4", unit: kg}` ([units](units.md)) |
+| `value` | quantity | the number and its unit's id, `{value: "72.4", unit: kg}` ([units](units.md)) |
 | `code` | string | a categorical value instead of a number: `open`, `rem`, `not-detected` |
 | `statistic` | string | on a summary, which statistic it is: `avg`, `max`, `vendor` for a vendor's own method |
 | `period` | string | on a summary, the period it covers: `day`, `night`, `cycle` |
@@ -65,7 +64,7 @@ Properties of both variants:
 
 | Property | Datatype | Means |
 | --- | --- | --- |
-| `unit` | string | the UCUM code every value is in; a trace of codes has none |
+| `unit` | string | the id of the unit every value is in; a trace of codes has none |
 | `every` | duration | the spacing of regular points from `at` |
 | `offsets` | int, repeated | each point's milliseconds from `at`, for irregular points |
 | `values` | decimal, repeated | the numbers, exact decimal strings; `null` means unavailable from that point |
@@ -83,18 +82,6 @@ or whose other properties are lists or keyed maps, is refused, because the
 rules and the index read one value from each of those. The `metric`
 reference pins a kind that binds core's `metric`, or the trait itself
 (`trait: substrate.reamde.dev/core/metric`); any other pin is refused.
-
-### The measure a value was written in
-
-`measure` is the engine's, like a trace's `stats`: every write of an
-observed record stamps the measure its unit resolves to, from the `value`
-property's `measures:` where the kind declares one and from the
-[unit table](units.md) otherwise, and drops any a writer sends. A
-temperature written with `delta: true` is a `temperature-difference`, and a
-record holding a code has none. The observed index converts each value in
-its stamped measure, so a later unit table that reads a code another way
-(a measure added beside it, say) never moves a stored value or a rebuild
-([decision 0153](decisions/0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md)).
 
 ## Forms
 
@@ -137,22 +124,22 @@ Their names are frozen: a sample's kind cannot be moved by an upgrade, and
 
 **`metric`** is a catalogue entry and a guide for writers, and it binds
 core's `metric` trait ([below](#the-metric-and-source-contracts)). The write
-rules and the observed index read nothing from it but its rollup tiers: each
-value carries its own form, unit and hold. The
-[aggregate read](api.md#the-aggregate-read) takes two of its properties:
-`measures`, the measure every value of the read converts into (a stream
-whose unit is outside it is a `422`), and `unit`, the unit the read answers
-in when the request names none. Editing either changes every aggregate
-answer for the metric and no stored value. `name` is its heading
+observed index reads nothing from it but its rollup tiers: each value
+carries its own form, unit and hold. The write rules read its `unit` and
+`units`, the [unit records](units.md) a value may be written in
+([below](#the-metric-and-source-contracts)), and the
+[aggregate read](api.md#the-aggregate-read) answers in its `unit` when the
+request names none. Editing `unit` changes every aggregate answer for the
+metric and no stored value. `name` is its heading
 and `description` its prose; `codes`
 lists it in other code systems (`{system, code, version, display}`, `system`
 being `http://loinc.org`, `healthkit`, `healthconnect`, `googlefit`, `whoop`,
-`garmin`, `withings`, `homeassistant` or `cf`); `measures` is the measure
-from the [unit table](units.md) its values belong to, and `unit` the code
-writers store; `codeSet` lists a categorical metric's codes; `form` and
+`garmin`, `withings`, `homeassistant` or `cf`); `unit` is a reference to
+the unit record writers store values in, and `units` the references to the
+units a value may be written in besides it; `codeSet` lists a categorical metric's codes; `form` and
 `hold` are the defaults a writer copies onto each value; `reducers` names the
 reducers that answer something useful; `compatibility` names the class values
-pool within where the measure alone is not enough, such as serum against
+pool within where the unit alone is not enough, such as serum against
 whole-blood glucose, and nothing in the engine reads it; `displayPrecision`
 is the decimal places a reader shows; `category` groups it for navigation;
 `bucketPlace` (`start` or `end`) says where a read places a value's span,
@@ -208,18 +195,30 @@ The engine and the console read a metric record and a source record through
 two core traits, never by the sample's property names, so a kind of your own
 can be a metric or a source by binding them.
 
-`substrate.reamde.dev/core/metric` contracts `name`, `measures`, `unit`,
+`substrate.reamde.dev/core/metric` contracts `name`, `unit`, `units`,
 `form`, `codeSet`, `displayPrecision`, `category`, `bucketPlace` and
-`rollups`. A write of a record of a kind that binds it is refused where
-`measures` names no measure of the [unit table](units.md), where `unit` is
-not one of its units (or not a unit the table reads), where `form` is not
-one of the four forms, where `bucketPlace` is not `start` or `end`, or where
+`rollups`; `unit` and `units` are references pinned to
+`substrate.reamde.dev/core/unit`. A write of a record of a kind that binds it
+is refused where `unit` or a listed unit names no unit of the repository,
+where a listed unit does not convert to `unit` through linear conversions,
+where `form` is not one of the four forms, where `bucketPlace` is not `start` or `end`, or where
 `rollups` lists a tier outside `5m`, `15m`, `1h` and `1d`, lists one twice
 or lists them out of order (finest first, so each divides the next). An
 absent `rollups` keeps the tiers `15m`, `1h` and `1d`; an empty list keeps
 none, and every read of the metric reads its raw values. A record of a kind
 that does not bind the trait is no metric to the aggregate read: it takes
-neither measure nor unit from it.
+no unit from it.
+
+The metric governs every value that points at it, checked at the end of
+each transaction against its final state. An observed value whose `metric`
+names no live record of a kind binding the trait is refused, and so is one
+whose unit the metric does not admit: its `unit`, its listed `units`, or,
+where it lists none, every unit that converts to `unit` through linear
+conversions. A metric with no `unit` admits every unit. A transaction that
+creates, edits or restores a metric so that a stored value pointing at it,
+tombstones included, is no longer admitted is refused, and so is one that
+deletes a metric any stored value points at; deleting a metric means purging
+its values first.
 
 `substrate.reamde.dev/core/source` contracts `priorities`, a keyed map of
 ranks. A write is refused where a key is not the full record path of a
@@ -290,7 +289,7 @@ data:
     source:
       ref: ada.example.com/observations/source/strap/ada/chest
     form: gauge
-    unit: /min
+    unit: 1/min
     hold: PT4M
     at: 2026-10-07T06:00:00Z
     endsAt: 2026-10-07T07:00:00Z
@@ -329,8 +328,9 @@ whose problems name the property and the rule, such as
   a counter. `resetAt` needs a `resetRule`. `wrapAt` goes with `resetRule:
   wrap` and `wrap` needs it, above zero.
 - A counter is a number, never a code.
-- `delta: true` needs a unit whose measure is `temperature`, and
-  `circular: true` one whose measure is `angle`.
+- `delta: true` is admitted on any unit. `circular: true` needs a unit with
+  a `turn` ([units](units.md#unit-records)), so that one direction has one
+  reading in every unit of its component.
 - `utcOffset` is minutes within 1080 either way.
 - `revision` never falls: a rewrite with a lower one than the stored one is
   refused as a stale delivery, an equal one is admitted, and a stored one is
@@ -350,17 +350,17 @@ A packed record is also held to these:
 
 - It holds `values` or `codes`, never both, except an amount trace, which
   may carry one code per value; at least one point and at most
-  20,000, and its properties, with the `stats` and `measure` the engine
+  20,000, and its properties, with the `stats` the engine
   computes for it, are at most 1 MiB as JSON. A longer recording is split into shorter
   periods.
 - It places points by `every` or by `offsets`, never both. `offsets` are
   integer milliseconds, one per point, never decreasing, inside
   `[0, endsAt - at)`. With `every`, the count of points times `every` fits
   the period.
-- A trace of values names its `unit`, a code the unit table reads; an alias
-  such as `°C` is stored as its code, `Cel`, and a refused spelling (`count`)
-  is refused with the same guidance a quantity's unit gets. A trace of codes
-  has no unit.
+- A trace of values names its `unit`, any spelling of one of the
+  repository's [unit records](units.md); an alias such as `°C` is stored as
+  the unit's id, `Cel`, and a spelling no unit answers is refused. A trace of
+  codes has no unit.
 - A `summary` is refused: it is one value per record.
 - `null` is admitted inside `values` and `codes` and nowhere else.
 - A code is never empty: `""` inside `codes` is refused naming its index
@@ -435,11 +435,11 @@ and fitness metrics wearables report, the WHOOP scores (`whoop_recovery`,
 `whoop_strain`, `whoop_sleep_performance`), and the
 common labs. A lab analyte reported in both unit systems is two metrics, the
 amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
-concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because the
-two are different measures and a read of one in the other's unit is refused.
-HbA1c is `hba1c` (NGSP %, measure `fraction`) and `hba1c_ifcc` (IFCC
-mmol/mol, measure `amount-fraction`), which never convert into each other:
-they relate by a formula, not a unit.
+concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because no
+conversion joins the two units (it takes a molar mass) and a read of one in
+the other's unit is refused. HbA1c is `hba1c` (NGSP, `percent`) and
+`hba1c_ifcc` (IFCC, `mmol/mol`), which never convert into each other: they
+relate by a formula, not a unit.
 The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
@@ -640,8 +640,9 @@ provider sent it, which keeps a later re-read of the provider honest.
 
 ## Building observed values in a function
 
-`host.units.convert`, `host.units.canonical` and `host.units.measure` ask the
-engine's unit table over the host call. `host.observed.trace` packs a body's
+`host.units.convert`, `host.units.canonical` and `host.units.converts` ask
+the repository's [unit graph](units.md) over the host call
+([functions](functions.md#the-sdk)). `host.observed.trace` packs a body's
 own timestamped points into trace documents that pass the rules above, one
 per fixed UTC period, split where the UTC offset changes and before a
 document passes the size limits, narrowed to the span a delivery covers when
@@ -709,8 +710,7 @@ received (`sourceValue`) derives nothing, and neither does a lab result
 holding only `ratio` or `text`. A summary derives a segment and no rollup
 row: summaries are never pooled with the other forms.
 
-A kind that starts or stops binding `observed`, or changes the measure its
-`value` declares, has every row derived again by the background pass behind
+A kind that starts or stops binding `observed` has every row derived again by the background pass behind
 the commit that changed it, the one that re-derives the search index
 ([operations](operations.md#upgrading-the-binary)). A metric record whose
 `rollups` change has the rows of its streams derived again by the same
@@ -767,9 +767,14 @@ or places it by the request's `bucket.fallbackTimezone`
 ([api](api.md#the-four-time-modes)); a calendar in a named zone places it by
 that zone like any other.
 
-A value converts in its measure's base unit (`temperature-difference` where
-`delta` is true: 0.3 `Cel` is 0.3 `K`), and an arbitrary unit, a level and
-`rad` convert to nothing. A point keeps its value's comparator (`<`, `<=`,
+A point and a rollup row keep their values in their own unit; the aggregate
+read converts them into the read's unit at read, through the repository's
+linear conversions, so a changed conversion needs no re-derivation. A
+`delta` value converts by the factor alone (0.3 `Cel` is 0.3 `K`). A
+circular point's angle reads its unit's `turn`, so a write that changes a
+turn, or a conversion inside a circular component, queues the observed kinds
+holding circular values for the background pass, and an aggregate read
+over them is a `503` until it finishes. A point keeps its value's comparator (`<`, `<=`,
 `>=`, `>`, a lab's `<0.01`); a rollup row counts the points that carry one
 in `bounded`, and a reader answers such a value with its comparator
 ([censored values](api.md#censored-values)).
@@ -918,7 +923,7 @@ One record is a list read, as for any kind: today's WHOOP recovery is
 `filter.properties.periodId` equal to last night's sleep id beside `metric`
 equal to the `health/whoop_recovery` metric, and every body weight under 155 lb is
 `metric` equal to the `health/body_mass` metric and `value` less than
-`{"value": "155", "unit": "[lb_av]"}` (without the metric, muscle and bone
+`{"value": "155", "unit": "lb"}` (without the metric, muscle and bone
 mass rows match too). Everything bucketed is the records route's
 [aggregate read](api.md#the-aggregate-read): a metric, a range, a time mode,
 reducers checked against the form, and a source policy, answered from the
@@ -955,7 +960,7 @@ series times buckets, over the default
    "range": {"gte": "2025-10-05T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "day"},
    "reducers": ["sum"],
-   "unit": "{steps}",
+   "unit": "steps",
    "budget": {"maxBuckets": 2000}}}
 ```
 
@@ -1031,7 +1036,7 @@ carries the night's `record` beside its recovery:
      "filter": {"kinds": ["ada.example.com/health/sleep"],
                 "properties": {"source": {"eq": "whoop/e2e"}, "isNap": {"eq": false}}}}},
    "reducers": ["last"],
-   "unit": "%"}}
+   "unit": "percent"}}
 ```
 
 A window is `[at, endsAt)`, so a source that stamps a nightly value at the

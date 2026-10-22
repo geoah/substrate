@@ -43,17 +43,6 @@ type discoveryDoc struct {
 	// Registration is what the register door ASKS FOR, which a client cannot
 	// infer from the paths alone.
 	Registration registrationInfo `json:"registration"`
-	// Units says how this deployment converts a quantity (decision 0186).
-	Units unitsInfo `json:"units"`
-}
-
-// unitsInfo is how the deployment reads a quantity's unit.
-type unitsInfo struct {
-	// Graph is true where every quantity is read and written through the
-	// repository's unit and conversion records (GET /api/v1/units), false
-	// where the engine's built-in unit table decides. A client reads it to
-	// choose which of the two it converts with.
-	Graph bool `json:"graph"`
 }
 
 // registrationInfo is the register door's shape. It states a requirement,
@@ -197,8 +186,8 @@ var features = []featureInfo{
 	// The aggregate read is `GET /records?aggregate=` (decision 0161): alpha
 	// while the observations it reduces are a first release.
 	{Name: "aggregate", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
-	// The unit table and one exact conversion, `GET /units` and
-	// `GET /units/convert`: alpha while the table has not shipped.
+	// The repository's unit graph and one conversion through it, `GET /units`
+	// and `GET /units/convert`: alpha while the graph has not shipped.
 	{Name: "units", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 	// Embeddings are alpha: they reach a caller as the semantic arm of that
 	// same ranked read, and the vector width is a constant in the engine
@@ -241,7 +230,6 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			InviteRequired: h.inviteCode != "",
 			TOTPRequired:   !h.totpDisabled,
 		},
-		Units: unitsInfo{Graph: h.unitGraph},
 	}
 	writeJSON(w, http.StatusOK, doc)
 }

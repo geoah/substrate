@@ -24,7 +24,7 @@ import {
   renderSheet,
   shownRows,
 } from "./create-sheet.kinds"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 const TASK = "samples.substrate.reamde.dev/tasks/task"
 const PERSON = "samples.substrate.reamde.dev/people/person"
@@ -106,7 +106,7 @@ describe("the create sheet", () => {
   it("leaves the title field empty while the draft's title is not text", () => {
     const task = kindOf(TASK)
     const text = setIn(
-      templateYAML(TABLE_UNITS, task),
+      templateYAML(SHIPPED_UNITS, task),
       ["data", "properties", "name"],
       {
         first: "a",

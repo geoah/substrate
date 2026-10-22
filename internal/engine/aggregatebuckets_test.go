@@ -21,7 +21,7 @@ func planBuckets(t *testing.T, gte, lt string, bucket substrate.AggregateBucket)
 		Range:    &substrate.AggregateRange{Gte: gte, Lt: lt},
 		Bucket:   &bucket,
 		Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerCount}},
-	}}, false)
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestAggregateRefusesANegativeBudget(t *testing.T) {
 		a.Metric = &substrate.AggregateMetric{Ref: "a.example.com/observations/metric/m"}
 		a.Range = &substrate.AggregateRange{Gte: "2026-09-01T00:00:00Z", Lt: "2026-09-02T00:00:00Z"}
 		a.Reducers = []substrate.AggregateReducer{{Name: substrate.ReducerCount}}
-		_, err := planAggregate(substrate.AggregateQuery{Aggregate: &a}, false)
+		_, err := planAggregate(substrate.AggregateQuery{Aggregate: &a})
 		if err == nil || !strings.Contains(err.Error(), x.name+": -5 is negative") {
 			t.Errorf("%s -5: %v, want it refused as negative", x.name, err)
 		}

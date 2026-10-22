@@ -473,7 +473,7 @@ func referencePathsOf(v any) []string {
 
 // orderSignature is what a cursor carries of the resolved order and the
 // filter it was minted under, compared only for equality: a digest, because
-// a quantity order is a CASE over every unit of its measure, tens of
+// a quantity order is a CASE over every spelling of a linear component, tens of
 // kilobytes a cursor in a URL would otherwise repeat on every page.
 func orderSignature(order string, f substrate.Filter) string {
 	sum := sha256.Sum256([]byte(order + "|" + filterDigest(f)))

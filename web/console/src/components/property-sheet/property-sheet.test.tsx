@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
   cleanup,
   fireEvent,
-  render,
+  render as renderUI,
   screen,
   waitFor,
   within,
@@ -85,6 +85,14 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
 
 import { PropertySheet } from "./property-sheet"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+
+/** Every render gets the shipped units, as the signed-in console's
+ * `UnitsProvider` gives a page the repository's. */
+const render = (
+  ui: Parameters<typeof renderUI>[0],
+  options?: Parameters<typeof renderUI>[1]
+) => renderUI(ui, { wrapper: ShippedUnits, ...options })
 
 const TASK = "ada.example.com/tasks/task"
 const PERSON = "ada.example.com/people/person"

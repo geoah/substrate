@@ -3,10 +3,8 @@
  * server, repository and graph revision, so a refetch that finds the same
  * revision keeps the graph already built. A change to any unit or conversion
  * record in the change stream drops it (`unitRecordChanged`), and so does a
- * repository switch, whose query key differs.
- *
- * hooks/use-unit-reader.ts chooses between this graph and the engine's
- * table (lib/unit-reader.ts) from discovery's `units.graph`. */
+ * repository switch, whose query key differs. hooks/use-unit-reader.ts
+ * reads it into a reader (lib/unit-reader.ts). */
 
 import { queryOptions } from "@tanstack/react-query"
 

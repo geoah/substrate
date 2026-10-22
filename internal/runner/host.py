@@ -10,7 +10,7 @@
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
 #   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate"|"call"|
-#                     "units.convert"|"units.canonical"|"units.measure"|"units.converts", "params": {...}}
+#                     "units.convert"|"units.canonical"|"units.converts", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
 #   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)
@@ -186,8 +186,8 @@ class HostError(Exception):
 #     link/unlink/merge/split       a staged effect and returns a handle
 #   host.ids.external/url           deterministic, hash-backed, URL-safe ids
 #   host.page.resume / .more()      the paged-checkpoint wrapper
-#   host.units.convert/canonical/   the engine's unit table, or the repository's
-#     measure/converts              unit graph, over the host call
+#   host.units.convert/canonical/   the repository's unit graph, over the host
+#     converts                      call
 #   host.observed.trace/local_day/  pure-Python builders for observed values
 #     period_id
 #
@@ -640,9 +640,9 @@ class Agents:
 
 # --- units and observed values ------------------------------------------------
 #
-# host.units asks the ENGINE's unit table over the host call, so a body and the
-# write path that holds its effects read one table; there is no Python copy of
-# it. host.observed builds in pure Python the trace documents core's
+# host.units asks the repository's unit graph over the host call, so a body
+# and the write path that holds its effects read one graph; there is no Python
+# copy of it. host.observed builds in pure Python the trace documents core's
 # `observed(packed)` admits from a body's own points, the labels a trace id
 # and a daily summary are composed from, and the stored spellings of numbers,
 # durations and instants; its `reconcile` is the one call that reads and
@@ -763,13 +763,13 @@ class Converted(str):
 
 
 class Units:
-    """The engine's unit table, asked over the host call: every code, alias and
-    factor is the one the write path holds an effect to. Errors are the
-    engine's, raised as HostError."""
+    """The repository's unit graph, asked over the host call: every unit,
+    spelling and conversion is the one the write path holds an effect to.
+    Errors are the engine's, raised as HostError."""
 
     def __init__(self, host):
         self._host = host
-        # The table does not change inside one invocation, so each answer
+        # The graph does not change inside one invocation, so each answer
         # is asked once: an adapter converts the same few units thousands
         # of times a delivery.
         self._memo = {}
@@ -780,20 +780,28 @@ class Units:
             self._memo[key] = self._host._call(method, params)
         return self._memo[key]
 
-    def convert(self, value, from_unit, to_unit, measure=None, delta=False):
+    def convert(self, value, from_unit, to_unit, *retired, delta=False, **unknown):
         """Convert exact digits between two units -> a decimal str whose
-        `exact` says whether it is every digit. Aliases are read (`°C`, `kWh`,
-        `mmHg`). Every digit comes back when the result has a finite decimal
-        expansion; one without is rounded to 20 significant digits and `exact`
-        is False. The value holds at most 1000 digits. `delta=True` converts a
-        difference, without the offset: a deviation of 0.3 Cel is 0.54
-        [degF]. `measure` is the engine's table's older spelling of the same
-        (`temperature-difference`), refused once the repository converts
-        through its unit graph."""
+        `exact` says whether it is every digit. Codes and aliases are read
+        (`°C`, `kWh`, `mmHg`). Every digit comes back when the result has a
+        finite decimal expansion; one without is rounded to 20 significant
+        digits and `exact` is False, as is every answer an expression
+        conversion computes. The value holds at most 1000 digits.
+        `delta=True`, keyword only, converts a difference, without the
+        offset: a deviation of 0.3 Cel is 0.54 degF."""
+        # The retired fourth argument was a measure name; read as a truthy
+        # delta it would silently drop the offset, so it is refused instead.
+        if retired or "measure" in unknown:
+            raise ValueError("units.convert: the measure argument is retired: pass "
+                             "delta=True to convert a difference (what measure="
+                             "\"temperature-difference\" meant), and nothing otherwise")
+        if unknown:
+            raise TypeError("units.convert: unexpected keyword argument %r"
+                            % sorted(unknown)[0])
+        if not isinstance(delta, bool):
+            raise ValueError("units.convert: delta is True or False, got %r" % (delta,))
         params = {"value": _decimal_text("units.convert", value),
                   "from": from_unit, "to": to_unit}
-        if measure is not None:
-            params["measure"] = measure
         if delta:
             params["delta"] = True
         out = self._ask("units.convert", params)
@@ -802,20 +810,14 @@ class Units:
         return converted
 
     def canonical(self, code):
-        """The code the engine stores for a unit spelling: `bpm` is `/min`,
-        `°C` is `Cel`, `kWh` is `kW.h`."""
+        """The unit id the engine stores for a spelling: `bpm` is `1/min`,
+        `°C` is `Cel`, `[lb_av]` is `lb`. A spelling no unit answers
+        raises."""
         return self._ask("units.canonical", {"code": code}).get("code")
-
-    def measure(self, code):
-        """The name of the measure a unit belongs to: `mass` for `kg`, `rate`
-        for `/min`. An ambiguous or unknown code raises, and so does every
-        code once the repository converts through its unit graph: ask
-        converts instead."""
-        return self._ask("units.measure", {"code": code}).get("measure")
 
     def converts(self, a, b):
         """Whether two unit spellings convert to one another exactly, through
-        linear conversions: True for `kg` and `[lb_av]`, False for `mg/dL`
+        linear conversions: True for `kg` and `lb`, False for `mg/dL`
         and `mmol/L`, and False for a spelling no unit answers."""
         return self._ask("units.converts", {"a": a, "b": b}).get("converts") is True
 
@@ -873,7 +875,7 @@ class Observed:
     `local_day`, `period_id`, `decimal`, `number`, `duration`, `instant`,
     `parse_instant`, `utc_offset`, `percent`, `record_id`, `ref_id`,
     `sleep_name` and `workout_name` are pure Python: they compute and never
-    write. `quantity` asks the unit table for the unit's spelling.
+    write. `quantity` asks the unit graph for the unit's id.
     `reconcile` reads an origin's stored outputs and stages the writes and
     deletes that bring them to what the origin implies now."""
 

@@ -155,8 +155,7 @@ func TestCheckObservedRefusals(t *testing.T) {
 		"a wrap with no modulus":  {edit(single(t), map[string]any{"form": "counter", "resetRule": "wrap"}), "props.wrapAt: a wrapping counter names the value it wraps at"},
 		"a modulus with no wrap":  {edit(single(t), map[string]any{"form": "counter", "resetRule": "monotonic", "wrapAt": "256"}), "props.wrapAt: is the value a wrapping counter returns to zero at"},
 		"a coded counter":         {edit(single(t), map[string]any{"form": "counter", "value": nil, "code": "on"}), "props.code: a counter is a running total"},
-		"a delta in kilograms":    {edit(single(t), map[string]any{"delta": true}), "props.delta: marks a temperature difference, and kg measures mass"},
-		"a circular mass":         {edit(single(t), map[string]any{"circular": true}), "props.circular: averages an angle on the circle, and kg measures mass"},
+		"a circular mass":         {edit(single(t), map[string]any{"circular": true}), "props.circular: averages an angle on the circle, and kg declares no turn"},
 		"an offset past 18 hours": {edit(single(t), map[string]any{"utcOffset": int64(1200)}), "props.utcOffset: minutes east of UTC, between -1080 and 1080"},
 		"a result in two shapes": {
 			labresult(map[string]any{"ratio": map[string]any{"numerator": "1", "denominator": "80"}}),
@@ -209,12 +208,6 @@ func TestCheckObservedRefusals(t *testing.T) {
 		"a value past the weighing bound": {
 			edit(single(t), map[string]any{"value": q("1"+strings.Repeat("0", 300), "kg")}),
 			"props.value: the magnitude is past 1e280",
-		},
-		// A trace's unit is read as a quantity's is, so a refused spelling
-		// gets its own guidance, not the grammar's parse error.
-		"a trace in a bare count": {
-			edit(packed(t), map[string]any{"unit": "count"}),
-			`props.unit: "count": a bare count names nothing counted`,
 		},
 	} {
 		problems := vocabulary.CheckObserved(c.r)
@@ -278,45 +271,6 @@ func TestCheckObservedSizesATraceWithItsComputedStats(t *testing.T) {
 	for name, r := range map[string]vocabulary.ObservedRecord{"create": fits, "rewrite": withStats(fits)} {
 		if problems := vocabulary.CheckObserved(r); len(problems) != 0 {
 			t.Errorf("%s of a trace that fits with its stats: %v", name, problems)
-		}
-	}
-}
-
-// The byte limit counts the `measure` the write path stamps beside the stats.
-// A create carries neither and an identical rewrite carries both, so a check
-// that leaves the measure out admits a create its own rewrite then refuses.
-func TestCheckObservedSizesATraceWithItsMeasure(t *testing.T) {
-	base := edit(packed(t), map[string]any{"unit": "kg"})
-	stored := func(r vocabulary.ObservedRecord) vocabulary.ObservedRecord {
-		stats, err := vocabulary.TraceStats(*r.At, r.Props)
-		if err != nil {
-			t.Fatalf("stats: %v", err)
-		}
-		return edit(r, map[string]any{"stats": stats, vocabulary.ObservedMeasure: "mass"})
-	}
-	size := func(r vocabulary.ObservedRecord) int {
-		raw, err := json.Marshal(r.Props)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return len(raw)
-	}
-	padded := func(n int) vocabulary.ObservedRecord {
-		return edit(base, map[string]any{"adapter": strings.Repeat("x", n)})
-	}
-	// The padding that puts the stored trace at exactly the limit.
-	exact := vocabulary.MaxTraceBytes - (size(stored(padded(0))) - size(padded(0))) - size(padded(0))
-	if got := size(stored(padded(exact))); got != vocabulary.MaxTraceBytes {
-		t.Fatalf("the stored trace is %d bytes, want %d", got, vocabulary.MaxTraceBytes)
-	}
-	for name, r := range map[string]vocabulary.ObservedRecord{"create": padded(exact), "rewrite": stored(padded(exact))} {
-		if problems := vocabulary.CheckObserved(r); len(problems) != 0 {
-			t.Errorf("%s of a trace stored at exactly the limit: %v", name, problems)
-		}
-	}
-	for name, r := range map[string]vocabulary.ObservedRecord{"create": padded(exact + 1), "rewrite": stored(padded(exact + 1))} {
-		if problems := strings.Join(vocabulary.CheckObserved(r), "\n"); !strings.Contains(problems, "a trace holds at most 1048576 (1 MiB)") {
-			t.Errorf("%s of a trace stored one byte past the limit: problems %q", name, problems)
 		}
 	}
 }

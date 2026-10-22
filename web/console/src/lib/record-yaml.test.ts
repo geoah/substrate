@@ -13,7 +13,7 @@ import {
   toPutInput,
   validateApplyDoc,
 } from "./record-yaml"
-import { TABLE_UNITS } from "@/lib/unit-reader"
+import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 /** An agent-like kind: the schema-driven template must cover it with no
  * kind-special-casing. Published by somebody else's authority on purpose, so
@@ -58,7 +58,7 @@ const agentKind: KindInfo = {
 }
 
 describe("templateYAML", () => {
-  const yaml = templateYAML(TABLE_UNITS, agentKind)
+  const yaml = templateYAML(SHIPPED_UNITS, agentKind)
 
   it("builds the full apply-able envelope fixed to the kind reference", () => {
     const doc = parse(yaml)
@@ -87,7 +87,7 @@ describe("templateYAML", () => {
   })
 
   it("round-trips: its own template validates clean but for required blanks", () => {
-    const problems = validateApplyDoc(TABLE_UNITS, yaml, agentKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, yaml, agentKind)
     const errorPaths = problems
       .filter((p) => p.severity === "error")
       .map((p) => p.path)
@@ -123,14 +123,14 @@ data:
     authority: tasks.example.com
     names: {}
 `
-    const messages = validateApplyDoc(TABLE_UNITS, doc, kindKind)
+    const messages = validateApplyDoc(SHIPPED_UNITS, doc, kindKind)
       .filter((p) => p.severity === "error")
       .map((p) => p.message)
     // `{}` used to sail through: only the fields a value CARRIES were checked.
     expect(messages).toContain("`names.singular` is required.")
     expect(
       validateApplyDoc(
-        TABLE_UNITS,
+        SHIPPED_UNITS,
         doc.replace("names: {}", "names:\n      singular: task"),
         kindKind
       ).filter((p) => p.severity === "error")
@@ -138,7 +138,7 @@ data:
   })
 
   it("never seeds a MANAGED property: the engine stamps it, and refuses a disagreement", () => {
-    const stamped = templateYAML(TABLE_UNITS, {
+    const stamped = templateYAML(SHIPPED_UNITS, {
       ...agentKind,
       definition: {
         properties: {
@@ -157,7 +157,7 @@ describe("validateApplyDoc", () => {
   it("reports a YAML syntax error with its line", () => {
     const bad =
       "kind: crew.test.dev/crew/agent\ndata:\n  properties:\n    a: [1, 2"
-    const problems = validateApplyDoc(TABLE_UNITS, bad, agentKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, bad, agentKind)
     expect(problems).toHaveLength(1)
     expect(problems[0].severity).toBe("error")
     expect(problems[0].line).toBeTypeOf("number")
@@ -165,7 +165,7 @@ describe("validateApplyDoc", () => {
 
   it("flags missing required properties", () => {
     const yaml = "data:\n  properties:\n    model: opus\n"
-    const errs = validateApplyDoc(TABLE_UNITS, yaml, agentKind).filter(
+    const errs = validateApplyDoc(SHIPPED_UNITS, yaml, agentKind).filter(
       (p) => p.severity === "error"
     )
     expect(errs.map((p) => p.path).sort()).toEqual(["enabled", "prompt"])
@@ -174,7 +174,7 @@ describe("validateApplyDoc", () => {
   it("flags an inadmissible enum value", () => {
     const yaml =
       "data:\n  properties:\n    prompt: hi\n    enabled: true\n    model: gpt\n"
-    const problems = validateApplyDoc(TABLE_UNITS, yaml, agentKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, yaml, agentKind)
     const model = problems.find((p) => p.path === "model")
     expect(model?.severity).toBe("error")
     expect(model?.message).toContain("opus")
@@ -183,7 +183,7 @@ describe("validateApplyDoc", () => {
   it("admits a valid enum value", () => {
     const yaml =
       "data:\n  properties:\n    prompt: hi\n    enabled: true\n    model: sonnet\n"
-    const errs = validateApplyDoc(TABLE_UNITS, yaml, agentKind).filter(
+    const errs = validateApplyDoc(SHIPPED_UNITS, yaml, agentKind).filter(
       (p) => p.severity === "error"
     )
     expect(errs).toHaveLength(0)
@@ -192,7 +192,7 @@ describe("validateApplyDoc", () => {
   it("flags obvious kind mismatches (number where bool is declared, scalar where list is)", () => {
     const yaml =
       "data:\n  properties:\n    prompt: hi\n    enabled: 3\n    functions: nope\n"
-    const problems = validateApplyDoc(TABLE_UNITS, yaml, agentKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, yaml, agentKind)
     expect(problems.find((p) => p.path === "enabled")?.severity).toBe("error")
     expect(problems.find((p) => p.path === "functions")?.severity).toBe("error")
   })
@@ -200,14 +200,14 @@ describe("validateApplyDoc", () => {
   it("warns (does not bar) on an undeclared property", () => {
     const yaml =
       "data:\n  properties:\n    prompt: hi\n    enabled: true\n    bogus: 1\n"
-    const problems = validateApplyDoc(TABLE_UNITS, yaml, agentKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, yaml, agentKind)
     const bogus = problems.find((p) => p.path === "bogus")
     expect(bogus?.severity).toBe("warning")
     expect(problems.filter((p) => p.severity === "error")).toHaveLength(0)
   })
 
   it("rejects a non-mapping document", () => {
-    const problems = validateApplyDoc(TABLE_UNITS, "- a\n- b\n", agentKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, "- a\n- b\n", agentKind)
     expect(problems[0].severity).toBe("error")
   })
 })
@@ -236,7 +236,7 @@ data:
   const blank = withId.replace("id: crew.test.dev/scout", 'id: ""')
 
   function errors(text: string, ctx = {}) {
-    return validateApplyDoc(TABLE_UNITS, text, declaration, ctx)
+    return validateApplyDoc(SHIPPED_UNITS, text, declaration, ctx)
       .filter((p) => p.severity === "error")
       .map((p) => p.path)
   }
@@ -263,7 +263,7 @@ data:
     const ordinary = { ...declaration, identity: "crew.test.dev/crew/agent" }
     expect(
       validateApplyDoc(
-        TABLE_UNITS,
+        SHIPPED_UNITS,
         blank.replace(
           "kind: substrate.reamde.dev/core/agent",
           "kind: crew.test.dev/crew/agent"
@@ -327,7 +327,7 @@ describe("applyManifestYAML (edit seed)", () => {
 
   it("its own seed validates clean against the schema", () => {
     const errs = validateApplyDoc(
-      TABLE_UNITS,
+      SHIPPED_UNITS,
       applyManifestYAML(record),
       agentKind
     ).filter((p) => p.severity === "error")
@@ -464,14 +464,16 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    dueAt: 2026-09-01T00:00:00Z\n"
     expect(
-      validateApplyDoc(TABLE_UNITS, yaml, bound).find((p) => p.path === "dueAt")
+      validateApplyDoc(SHIPPED_UNITS, yaml, bound).find(
+        (p) => p.path === "dueAt"
+      )
     ).toBeUndefined()
   })
 
   it("names a value its datatype refuses, on the line it sits on", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    dueAt: yesterday\n    endpoint: example.com\n"
-    const problems = validateApplyDoc(TABLE_UNITS, yaml, taskKind)
+    const problems = validateApplyDoc(SHIPPED_UNITS, yaml, taskKind)
     const due = problems.find((p) => p.path === "dueAt")
     expect(due?.severity).toBe("error")
     expect(due?.message).toMatch(/timestamp/)
@@ -484,7 +486,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
   it("passes the redaction sentinel a read handed back", () => {
     const yaml = "data:\n  properties:\n    title: hi\n    apiKey: <redacted>\n"
     expect(
-      validateApplyDoc(TABLE_UNITS, yaml, taskKind).filter(
+      validateApplyDoc(SHIPPED_UNITS, yaml, taskKind).filter(
         (p) => p.severity === "error"
       )
     ).toHaveLength(0)
@@ -511,7 +513,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     const yaml = applyManifestYAML(attached, taskKind)
     expect(yaml).toContain("size: 2048")
     expect(
-      validateApplyDoc(TABLE_UNITS, yaml, taskKind, {
+      validateApplyDoc(SHIPPED_UNITS, yaml, taskKind, {
         record: attached,
       }).filter((p) => p.severity === "error")
     ).toHaveLength(0)
@@ -524,7 +526,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
   it("refuses a kind that is not this collection's", () => {
     const yaml =
       "kind: crew.test.dev/crew/agent\ndata:\n  properties:\n    title: hi\n"
-    const problem = validateApplyDoc(TABLE_UNITS, yaml, taskKind).find(
+    const problem = validateApplyDoc(SHIPPED_UNITS, yaml, taskKind).find(
       (p) => p.path === "kind"
     )
     expect(problem?.severity).toBe("error")
@@ -533,21 +535,21 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
 
   it("bars a state MOVE on an edit, because a put may not move one", () => {
     const yaml = "data:\n  properties:\n    title: hi\n    status: done\n"
-    const moved = validateApplyDoc(TABLE_UNITS, yaml, taskKind, {
+    const moved = validateApplyDoc(SHIPPED_UNITS, yaml, taskKind, {
       record: openTask,
     }).find((p) => p.path === "status")
     expect(moved?.severity).toBe("error")
     expect(moved?.message).toMatch(/transition/)
     // The same document on a CREATE is fine: a record may be born in any state.
     expect(
-      validateApplyDoc(TABLE_UNITS, yaml, taskKind).filter(
+      validateApplyDoc(SHIPPED_UNITS, yaml, taskKind).filter(
         (p) => p.severity === "error"
       )
     ).toHaveLength(0)
     // And leaving the state where it stands is fine on an edit too.
     const held = "data:\n  properties:\n    title: hi\n    status: open\n"
     expect(
-      validateApplyDoc(TABLE_UNITS, held, taskKind, {
+      validateApplyDoc(SHIPPED_UNITS, held, taskKind, {
         record: openTask,
       }).filter((p) => p.severity === "error")
     ).toHaveLength(0)
@@ -555,7 +557,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
 
   it("warns that metadata.id does not rename the record being edited", () => {
     const yaml = "metadata:\n  id: t2\ndata:\n  properties:\n    title: hi\n"
-    const problem = validateApplyDoc(TABLE_UNITS, yaml, taskKind, {
+    const problem = validateApplyDoc(SHIPPED_UNITS, yaml, taskKind, {
       record: openTask,
     }).find((p) => p.path === "metadata.id")
     expect(problem?.severity).toBe("warning")
@@ -570,7 +572,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
       `data:\n  properties:\n    title: hi\n    assignee:\n      ref: ${path}\n` +
       `    reviewer:\n      ref: ${path}\n      round: 2\n`
     expect(
-      validateApplyDoc(TABLE_UNITS, clean, taskKind).filter(
+      validateApplyDoc(SHIPPED_UNITS, clean, taskKind).filter(
         (p) => p.severity === "error"
       )
     ).toHaveLength(0)
@@ -578,7 +580,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     // The bare path is write-time shorthand and validates on input.
     const flat = `data:\n  properties:\n    title: hi\n    assignee: ${path}\n`
     expect(
-      validateApplyDoc(TABLE_UNITS, flat, taskKind).filter(
+      validateApplyDoc(SHIPPED_UNITS, flat, taskKind).filter(
         (p) => p.severity === "error"
       )
     ).toHaveLength(0)
@@ -586,7 +588,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     // A bare id under a pin is the authored short form and completes.
     const short = "data:\n  properties:\n    title: hi\n    assignee: p1\n"
     expect(
-      validateApplyDoc(TABLE_UNITS, short, taskKind).filter(
+      validateApplyDoc(SHIPPED_UNITS, short, taskKind).filter(
         (p) => p.severity === "error"
       )
     ).toHaveLength(0)
@@ -595,7 +597,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     // rather than guessed.
     const wrong =
       "data:\n  properties:\n    title: hi\n    assignee: crm.example.com/crm/lead/p1\n"
-    const ambiguous = validateApplyDoc(TABLE_UNITS, wrong, taskKind).find(
+    const ambiguous = validateApplyDoc(SHIPPED_UNITS, wrong, taskKind).find(
       (p) => p.path === "assignee"
     )
     expect(ambiguous?.severity).toBe("error")
@@ -606,7 +608,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    reviewer:\n" +
       "      ref: samples.substrate.reamde.dev/people/person/p1\n      bogus: 1\n"
-    const problem = validateApplyDoc(TABLE_UNITS, yaml, taskKind).find(
+    const problem = validateApplyDoc(SHIPPED_UNITS, yaml, taskKind).find(
       (p) => p.path === "reviewer"
     )
     expect(problem?.severity).toBe("error")
@@ -616,7 +618,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
   it("refuses an object with no `ref` under a reference", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    assignee:\n      round: 2\n"
-    const problem = validateApplyDoc(TABLE_UNITS, yaml, taskKind).find(
+    const problem = validateApplyDoc(SHIPPED_UNITS, yaml, taskKind).find(
       (p) => p.path === "assignee"
     )
     expect(problem?.severity).toBe("error")
@@ -625,7 +627,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
 })
 
 describe("the document as both lenses' truth", () => {
-  const template = templateYAML(TABLE_UNITS, taskKind)
+  const template = templateYAML(SHIPPED_UNITS, taskKind)
 
   it("setIn changes one key and leaves every other line as authored", () => {
     const next = setIn(template, ["data", "properties", "title"], "write it")
@@ -668,7 +670,7 @@ describe("the document as both lenses' truth", () => {
 
 describe("toPutInput: blank template lines", () => {
   it("leaves out the blanks a create never filled in", () => {
-    const parsed = parseApplyDoc(templateYAML(TABLE_UNITS, taskKind))
+    const parsed = parseApplyDoc(templateYAML(SHIPPED_UNITS, taskKind))
     const props = toPutInput(parsed.value!, taskKind).properties ?? {}
     // `url`, `secret` and `datetime` have no empty form the substrate accepts,
     // so an untouched line is not written at all.

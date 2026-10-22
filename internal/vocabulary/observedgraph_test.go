@@ -9,10 +9,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// Under the unit graph switch (decision 0186) the observed rules read units
-// through the repository's graph: `delta` marks a difference in any unit,
-// `circular` needs a unit whose circle the graph knows, and a trace's unit
-// is never read through the engine's table.
+// The observed rules read units through the repository's graph (decision
+// 0186): `delta` marks a difference in any unit, and `circular` needs a unit
+// whose circle the graph knows.
 func TestObservedRulesReadTheGraph(t *testing.T) {
 	g, problems := vocabulary.BuildUnitGraph([]vocabulary.UnitRecord{
 		{ID: "deg", Turn: big.NewRat(360, 1)},
@@ -48,7 +47,7 @@ func TestObservedRulesReadTheGraph(t *testing.T) {
 		"unit": "steps", "values": []any{"10"}, "every": "PT1M",
 	}})
 	if len(trace) > 0 {
-		t.Errorf("a trace in a unit the table does not read: %v", trace)
+		t.Errorf("a trace in steps: %v", trace)
 	}
 }
 
@@ -69,8 +68,5 @@ func TestCheckMetricInReadsTheGraph(t *testing.T) {
 	}
 	if p := vocabulary.CheckMetricIn(g, map[string]any{"unit": ref("stone")}); len(p) != 1 || !strings.Contains(p[0], "stone names no unit") {
 		t.Errorf("a reference to no unit: %v", p)
-	}
-	if p := vocabulary.CheckMetricIn(g, map[string]any{"measures": "nonsense", "unit": "kg"}); len(p) > 0 {
-		t.Errorf("the measure is not read under the graph: %v", p)
 	}
 }

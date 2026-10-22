@@ -20,9 +20,10 @@ src/lib/api/wire.golden.json
 # so a re-copy is a clean diff.
 src/shadcn.css
 
-# Written by internal/vocabulary/units_generated_test.go from the engine's unit
-# table, in Go's encoder shape, for the same reason as the wire golden above.
-src/lib/units.table.json
+# Written by internal/engine/unitseed_console_internal_test.go from the
+# shipped unit seed, for the tests alone, in Go's encoder shape, for the same
+# reason as the wire golden above.
+src/lib/unit-graph.shipped.json
 
 # Written by internal/vocabulary/aggregaterules_generated_test.go from the
 # server's aggregate rules, in Go's encoder shape, for the same reason.
