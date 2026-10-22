@@ -716,6 +716,7 @@ func (t *txn) applyPurge(ref eref) error {
 		// pointer at a purged record dangles; that is what an absent
 		// `onDelete:` means.
 		`DELETE FROM refs WHERE src_kind = $1 AND src = $2`,
+		`DELETE FROM unit_uses WHERE kind = $1 AND record_id = $2`,
 		`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
 		`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,

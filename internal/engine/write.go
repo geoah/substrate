@@ -1119,6 +1119,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.checkObserved(sp, before, row, &accepted); err != nil {
 		return nil, err
 	}
+	// A unit or conversion record is held to its shape here, and the graph
+	// the whole transaction leaves at its end (unitgraph.go).
+	if err := checkUnitRow(sp.ty.Identity, row); err != nil {
+		return nil, err
+	}
 
 	// Annotations.
 	for _, k := range sortedKeys(sp.annotations) {

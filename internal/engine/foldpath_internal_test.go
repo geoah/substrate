@@ -45,6 +45,8 @@ var foldWriteSites = map[string]string{
 	"fold.go:rederiveFTS":            "`fts`, the search index over the folded row",
 	"refs.go:syncRefs":               "the refs projection of one row, derived again by foldRecordOp on replay",
 	"refs.go:syncRefsOfRows":         "the refs projection of a page of rows, for a declaration change",
+	"unitgraph.go:replaceUnitUses":   "the unit spellings one row's values store, derived again by foldRecordOp on replay",
+	"unitgraph.go:afterUnitFold":     "the unit graph's revision, moved once per changed unit or conversion row, which a replay moves the same",
 	"orphans.go:syncOrphaned":        "the `orphaned_at` mark, derived again by rederiveOffers",
 	"orphans.go:clearOrphanMarks":    "the `orphaned_at` marks of a kind no mapping targets any more",
 	"mapping.go:afterTombstone":      "the `orphaned_at` mark of a tombstoned target",

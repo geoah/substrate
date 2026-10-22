@@ -128,6 +128,10 @@ type options struct {
 	// fixtures that count live llm/provider rows stay the rows they wrote.
 	seedLLMProviders    bool
 	seedLLMProvidersSet bool
+	// seedUnits writes the shipped unit and conversion records at creation
+	// and as an open catch-up (unitseed.go).
+	seedUnits    bool
+	seedUnitsSet bool
 	// importFault and importBatch are the boot import's test seams
 	// (seams.go WithTestImportFault): a hook run at each durable step of an
 	// import, so a test can stop the process there, and a batch size below
@@ -391,6 +395,15 @@ func WithLLMProviderSeed(on bool) Option {
 	return func(o *options) { o.seedLLMProviders, o.seedLLMProvidersSet = on, true }
 }
 
+// WithUnitSeed controls whether CreateRepository and repository open write
+// the shipped unit and conversion records (decision 0186, unitseed.go).
+// Production Open defaults on. OpenForTest turns it off so the suite does not
+// write several hundred records into every repository; a test that needs the
+// units asks for them.
+func WithUnitSeed(on bool) Option {
+	return func(o *options) { o.seedUnits, o.seedUnitsSet = on, true }
+}
+
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
@@ -522,9 +535,15 @@ type service struct {
 	// seedLLMProviders writes the three keyless vendor rows at creation
 	// and as an open catch-up.
 	seedLLMProviders bool
-	sampleCatOnce    sync.Once
-	sampleCat        *catalog.Catalog
-	sampleCatErr     error
+	// seedUnits writes the shipped unit and conversion records at creation
+	// and as an open catch-up (unitseed.go).
+	seedUnits bool
+	// unitGraphs holds each repository's unit graphs by revision
+	// (unitgraph.go).
+	unitGraphs    unitGraphCache
+	sampleCatOnce sync.Once
+	sampleCat     *catalog.Catalog
+	sampleCatErr  error
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -706,6 +725,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if !o.seedLLMProvidersSet {
 		o.seedLLMProviders = true
 	}
+	if !o.seedUnitsSet {
+		o.seedUnits = true
+	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -767,6 +789,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		readOnly:           o.dirReadOnly,
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,
+		seedUnits:          o.seedUnits,
 		log:                o.log,
 		bg:                 newBackground(),
 		datasets:           map[string]*dataset{},
@@ -1238,6 +1261,14 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
+		// The unit uses' rule before the seed: where the stored uses are
+		// behind it, the request it writes makes the use guard refuse a
+		// seed refresh that could take a unit from a value, rather than
+		// judge it by uses an older rule derived (unitgraph.go).
+		ds.checkUnitUses,
+		// The units before every step that re-derives or validates through
+		// the unit graph (unitseed.go).
+		ds.ensureShippedUnits,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
 		ds.checkIndexReprojections,
@@ -1384,6 +1415,10 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		return zero, err
 	}
 	repo := Repository{ID: authority, Authority: authority}
+	// A creation starts the graph revision at 0 again, so whatever this
+	// process cached under the name (a creation that failed) is not this
+	// repository's (unitgraph.go).
+	s.unitGraphs.forget(authority)
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -1432,9 +1467,18 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		if err := t.seedShippedSchema(s.base); err != nil {
 			return err
 		}
+		// The shipped units, onto the kinds the seed just declared. A fresh
+		// repository holds nothing they could contradict.
+		if _, _, err := t.seedUnits(); err != nil {
+			return err
+		}
 		// Every row a creation writes is indexed under this binary's rules,
-		// so the first open has nothing to re-derive (searchindex.go).
+		// so the first open has nothing to re-derive (searchindex.go,
+		// unitgraph.go).
 		if err := t.markSearchIndexed(); err != nil {
+			return err
+		}
+		if err := t.markUnitUsesDerived(); err != nil {
 			return err
 		}
 		// The repository's own read-only description of itself. `lifecycle` is

@@ -559,6 +559,16 @@ func (g *UnitGraph) indexSpellings() []UnitProblem {
 	return problems
 }
 
+// UnitSpellingKey is the one key a stored spelling is matched by: trimmed,
+// with both micro signs as `u` and the superscript digits as ASCII, which is
+// the form Resolve tries last. In a graph that names no spelling problem, two
+// spellings with one key resolve to the same unit, so a reader that keys
+// stored spellings by it and probes a unit's spellings by it finds every
+// value that names the unit, whichever form the writer sent.
+func UnitSpellingKey(s string) string {
+	return normalizeUnitCharacters(strings.TrimSpace(s))
+}
+
 // unitSpellingKeys are the keys one spelling is found under: as written, and
 // normalized where that differs.
 func unitSpellingKeys(s string) []string {

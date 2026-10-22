@@ -35,6 +35,15 @@ type Dataset interface {
 	// nothing to look up in between (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
 
+	// --- units (decision 0186) ---
+	// Units answers the repository's unit and conversion records as one
+	// graph at one revision, read in one snapshot, with the shipped records
+	// the last seed skipped. Measures and Aliases are left empty.
+	Units(ctx context.Context) (UnitTable, error)
+	// ConvertUnit converts one value through the repository's graph. A unit
+	// the graph does not hold, or two units nothing joins, is ErrValidation.
+	ConvertUnit(ctx context.Context, in UnitConvert) (UnitConversion, error)
+
 	// --- the five mutations ---
 	// Record identity is the FULL (type, id) pair: every
 	// addressed mutation names the type beside the id — a bare id names

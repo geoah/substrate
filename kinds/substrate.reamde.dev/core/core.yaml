@@ -65,7 +65,9 @@ data:
   # version 42: the query tool card takes `aggregate` and `downsample`, the
   # aggregate read (decision record 0161): one metric, several, the property
   # read or the latest read.
-  version: 42
+  # version 43: the `unit` and `conversion` kinds, the records a quantity's
+  # unit converts through (decision record 0186).
+  version: 43
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

@@ -115,6 +115,9 @@ import type {
   TriggerRan,
   TriggerReplayed,
   TriggerStatus,
+  RepositoryConversion,
+  RepositoryUnit,
+  UnseededRecord,
   UnitCode,
   UnitConversion,
   UnitMeasure,
@@ -854,7 +857,43 @@ const triggerRan: Shape<TriggerRan> = { ran: true }
 const functionCalled: Shape<FunctionCalled> = { output: true, effects: true }
 const webhookAccepted: Shape<WebhookAccepted> = { fire: true }
 
-const unitTable: Shape<UnitTable> = { measures: true, aliases: true }
+const unitTable: Shape<UnitTable> = {
+  measures: true,
+  aliases: true,
+  units: true,
+  conversions: true,
+  revision: true,
+  unseeded: true,
+}
+
+const repositoryUnit: Shape<RepositoryUnit> = {
+  id: true,
+  name: true,
+  symbol: true,
+  code: false,
+  aliases: true,
+  scale: false,
+  turn: false,
+  root: true,
+  factor: true,
+  offset: false,
+}
+
+const repositoryConversion: Shape<RepositoryConversion> = {
+  id: true,
+  from: true,
+  to: true,
+  factor: false,
+  offset: false,
+  expr: false,
+  inverse: false,
+}
+
+const unseededRecord: Shape<UnseededRecord> = {
+  kind: true,
+  id: true,
+  reason: true,
+}
 
 const unitMeasure: Shape<UnitMeasure> = {
   name: true,
@@ -969,6 +1008,9 @@ const mirrors: Record<string, Record<string, boolean>> = {
   UnitMeasure: unitMeasure,
   UnitCode: unitCode,
   UnitConversion: unitConversion,
+  RepositoryUnit: repositoryUnit,
+  RepositoryConversion: repositoryConversion,
+  UnseededRecord: unseededRecord,
 }
 
 /** The interfaces the modules in this directory export that mirror no Go

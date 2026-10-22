@@ -224,6 +224,10 @@ type dataset struct {
 	// the window's settled spend and the repository cap, what running agent
 	// chains have charged, and which triggers are held.
 	spend spendLedger
+	// unseeded, under unseededMu, is what the last unit seed skipped or
+	// failed to write (unitseed.go), which GET /api/v1/units lists.
+	unseededMu sync.Mutex
+	unseeded   []unseededUnit
 
 	mu  sync.RWMutex
 	reg *vocabulary.Registry
@@ -654,6 +658,16 @@ type txn struct {
 	// observed is what this transaction's observed point writes touched,
 	// recomputed once at its end (observedsettle.go settleObserved).
 	observed *observedTouch
+	// unitTouched marks a transaction that folded a unit or conversion row
+	// (unitgraph.go): unitBefore is the graph it found, taken at the first
+	// such fold, and unitLocal the graph built from its own writes, nil
+	// until its next read after each fold.
+	unitTouched bool
+	unitBefore  *unitGraphAt
+	unitLocal   *unitGraphAt
+	// replaying marks a rebuild's or an import's replay of the changelog
+	// (rebuild.go), which re-derives the fold and judges nothing.
+	replaying bool
 	// heldRegistryDep records that this transaction already took the SHARED
 	// registry-dependency lock, so the several doors that need it (the write's
 	// entry, preRecordLocks, trigger and policy admission) can each ask without
@@ -728,6 +742,11 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	pass()
 	t.seqLocked = true
 	if err := fn(t); err != nil {
+		return err
+	}
+	// The unit graph the transaction leaves, against the one it found
+	// (unitgraph.go), before anything reads the graph to settle.
+	if err := t.checkUnitGraph(); err != nil {
 		return err
 	}
 	// The observed index's rollups and latest rows, from the points the

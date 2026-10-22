@@ -51,6 +51,12 @@ import (
 //	                   every observed kind (queueObservedRederivation), so a
 //	                   replay of years of readings holds the changelog lock
 //	                   for the records alone
+//	unit_graph, unit_uses
+//	                   the unit graph's revision and what each row's values
+//	                   name (unitgraph.go): each fold of a unit or conversion
+//	                   row moves the revision by one, so the replay comes back
+//	                   at the revision it left, and the process's cached
+//	                   graphs of the repository are dropped all the same
 //
 // property_offers is neither replayed nor kept: it is recompute's projection
 // of what each live source offers each target (mapping.go syncOffers), the
@@ -83,6 +89,8 @@ import (
 //     not cleared but rewritten: the replay indexes every row under this
 //     binary's rules, so the rebuild records this binary's version, whatever
 //     the open's reindex had reached.
+//   - unit_uses_index, which rule derived the unit uses (unitgraph.go): the
+//     replay derives every row's under this binary's rule and records it.
 //   - repository_migrations, the ledger of the code migrations this
 //     repository has run (repomigrate.go). What a migration wrote is in the
 //     changelog and replays; the ledger says it need not run again.
@@ -113,6 +121,7 @@ type RebuildReport struct {
 var foldTables = append([]string{
 	"refs", "former_ids", "annotations", "property_managers", "records",
 	"observed_streams", "observed_segments", "observed_rollups", "observed_latest",
+	"unit_graph", "unit_uses",
 }, deliveryTables...)
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
@@ -262,6 +271,13 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	// caller queues every observed kind for the background re-derivation
 	// (queueObservedRederivation).
 	t.observed = &observedTouch{all: true}
+	t.replaying = true
+	defer func() { t.replaying = false }()
+	// A replay may bring a revision back holding other records than the
+	// graph this process cached under it (an import into a database that
+	// held another history), so the cache forgets the repository.
+	t.ds.svc.unitGraphs.forget(t.ds.scope.Repository)
+	defer t.ds.svc.unitGraphs.forget(t.ds.scope.Repository)
 	// One cursor across every page, so each segment is read once (issue 745).
 	cur := log.Cursor(0)
 	defer func() { _ = cur.Close() }()
@@ -293,6 +309,10 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 		prog.tick(cur.Position())
 	}
 	if err := t.dropKeptCursors(); err != nil {
+		return err
+	}
+	// The replay derived every row's unit uses under this binary's rule.
+	if err := t.markUnitUsesDerived(); err != nil {
 		return err
 	}
 	t.observed = nil
@@ -625,6 +645,10 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		// A resume row whose last page named its cursor by hash comes back
 		// from the cursor the table held (decision 0141); an import into an
 		// empty database brings it back null.
+		// The unit graph's revision and the unit uses (unitgraph.go).
+		"unit_graph": `SELECT to_jsonb(g) - 'repository' FROM unit_graph g`,
+		"unit_uses": `SELECT to_jsonb(u) - 'repository' FROM (
+				SELECT kind, record_id, unit FROM unit_uses ORDER BY kind, record_id, unit) u`,
 		"paged_cursors": `SELECT to_jsonb(p) - 'repository' FROM (
 				SELECT chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at
 				FROM paged_cursors ORDER BY chain) p`,

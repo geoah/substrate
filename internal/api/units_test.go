@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -46,6 +47,38 @@ func TestUnitTableRoute(t *testing.T) {
 	}
 	if table.Aliases["bpm"] != "/min" || table.Aliases["°C"] != "Cel" {
 		t.Errorf("aliases = %v", table.Aliases)
+	}
+}
+
+// The units route lists the repository's graph from the dataset: its units
+// with their roots and exact maps, its conversions, the revision a client
+// caches by and what the seed skipped, beside the engine's table.
+func TestUnitsRouteListsTheGraph(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	rec := env.do(t, http.MethodGet, "/api/v1/units", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	table := decodeJSON[substrate.UnitTable](t, rec)
+	if table.Revision != fakeUnits.Revision {
+		t.Errorf("revision = %d, want %d", table.Revision, fakeUnits.Revision)
+	}
+	if len(table.Units) != 2 || table.Units[1].ID != "lb" || table.Units[1].Root != "kg" || table.Units[1].Factor != "0.45359237" || table.Units[1].Code != "[lb_av]" {
+		t.Errorf("units = %+v", table.Units)
+	}
+	if len(table.Conversions) != 1 || table.Conversions[0] != fakeUnits.Conversions[0] {
+		t.Errorf("conversions = %+v", table.Conversions)
+	}
+	if len(table.Unseeded) != 1 || table.Unseeded[0].ID != "st" || table.Unseeded[0].Reason == "" {
+		t.Errorf("unseeded = %+v", table.Unseeded)
+	}
+	if len(table.Measures) == 0 || table.Aliases["bpm"] != "/min" {
+		t.Errorf("the engine's table is gone: %d measures, aliases %v", len(table.Measures), table.Aliases)
+	}
+	// The fields are always on the wire, an empty list included.
+	for _, key := range []string{`"units":`, `"conversions":`, `"revision":`, `"unseeded":`} {
+		if !strings.Contains(rec.Body.String(), key) {
+			t.Errorf("the answer lacks %s", key)
+		}
 	}
 }
 

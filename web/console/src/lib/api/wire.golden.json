@@ -528,6 +528,27 @@
     "secret": true,
     "token": true
   },
+  "RepositoryConversion": {
+    "expr": false,
+    "factor": false,
+    "from": true,
+    "id": true,
+    "inverse": false,
+    "offset": false,
+    "to": true
+  },
+  "RepositoryUnit": {
+    "aliases": true,
+    "code": false,
+    "factor": true,
+    "id": true,
+    "name": true,
+    "offset": false,
+    "root": true,
+    "scale": false,
+    "symbol": true,
+    "turn": false
+  },
   "Scores": {
     "lexical": false,
     "semantic": false
@@ -691,7 +712,16 @@
   },
   "UnitTable": {
     "aliases": true,
-    "measures": true
+    "conversions": true,
+    "measures": true,
+    "revision": true,
+    "units": true,
+    "unseeded": true
+  },
+  "UnseededRecord": {
+    "id": true,
+    "kind": true,
+    "reason": true
   },
   "VocabularyPlan": {
     "blockers": false,

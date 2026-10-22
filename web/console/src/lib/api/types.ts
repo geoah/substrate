@@ -1439,12 +1439,66 @@ export interface BundlePurged {
   purged: number
 }
 
-/** `GET /api/v1/units` (`substrate.UnitTable`): the engine's unit table, every
- * measure with its listed codes, and the input aliases a write reads. */
+/** `GET /api/v1/units` (`substrate.UnitTable`): the repository's unit graph
+ * at one revision, and beside it the engine's unit table, every measure with
+ * its listed codes, and the input aliases a write reads. */
 export interface UnitTable {
   measures: UnitMeasure[]
   /** Each spelling a write reads (`°C`, `bpm`) and the code it stores. */
   aliases: Record<string, string>
+  /** The repository's unit records (decision 0186). */
+  units: RepositoryUnit[]
+  /** The repository's conversion records. */
+  conversions: RepositoryConversion[]
+  /** The counter every write of a unit or conversion record moves; a client
+   * caches the graph by it. */
+  revision: number
+  /** The shipped records the repository's last seed skipped, each with why. */
+  unseeded: UnseededRecord[]
+}
+
+/** One unit record of the repository's graph (`substrate.RepositoryUnit`):
+ * root = value x factor + offset. Two units sharing a root convert exactly. */
+export interface RepositoryUnit {
+  /** What a stored quantity carries. */
+  id: string
+  name: string
+  /** What a title prints after a value, empty for `1`. */
+  symbol: string
+  /** The UCUM spelling, for interchange. */
+  code?: string
+  aliases: string[]
+  /** `level` or `powerlevel`, absent for a ratio unit. */
+  scale?: string
+  /** One full circle in the unit, absent where it is not circular. */
+  turn?: string
+  /** The smallest id of the unit's linear component. */
+  root: string
+  /** The exact factor to the root. */
+  factor: string
+  /** The exact offset to the root, absent where zero. */
+  offset?: string
+}
+
+/** One conversion record (`substrate.RepositoryConversion`): linear (`factor`,
+ * `offset`) or an expression (`expr`, `inverse`). */
+export interface RepositoryConversion {
+  id: string
+  from: string
+  to: string
+  factor?: string
+  offset?: string
+  expr?: string
+  inverse?: string
+}
+
+/** A shipped unit or conversion record the seed did not write
+ * (`substrate.UnseededRecord`), because it contradicts the repository's own
+ * graph. */
+export interface UnseededRecord {
+  kind: string
+  id: string
+  reason: string
 }
 
 /** One measure of the unit table (`substrate.UnitMeasure`). */

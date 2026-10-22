@@ -29,7 +29,10 @@ package engine
 // side only names no property, and every row is re-derived. The observed
 // index is not per property: its shape is the kind's binding of the trait
 // and the measure its `value` declares (observedShape), so a request for it
-// re-derives every row of the kind or none.
+// re-derives every row of the kind or none. The unit uses (unitgraph.go) are
+// a fourth such projection, and read the declaration only for whether a
+// row's top-level `unit` counts (unitUsesShape), so a request for them is
+// every row or none too.
 //
 // The request rows are written in the transaction that moves the
 // declarations, the upgrade's or the apply's, and each
@@ -127,6 +130,10 @@ func (f indexFilter) stored() any {
 type indexReprojection struct {
 	kind                string
 	refs, fts, observed indexFilter
+	// units re-derives every row's unit uses (unitgraph.go), or none: owed
+	// by a repository whose rows predate the table or its rule
+	// (checkUnitUses), and by a declaration that moves unitUsesShape.
+	units indexFilter
 	// after is the id the last committed page recorded (resumeMark), empty
 	// before the first; the pass resumes after it.
 	after string
@@ -137,7 +144,7 @@ type indexReprojection struct {
 
 // every reports whether any index re-derives every row of the kind.
 func (r indexReprojection) every() bool {
-	return (r.refs.moved && r.refs.every) || (r.fts.moved && r.fts.every) || (r.observed.moved && r.observed.metrics == nil)
+	return (r.refs.moved && r.refs.every) || (r.fts.moved && r.fts.every) || (r.observed.moved && r.observed.metrics == nil) || r.units.moved
 }
 
 // metrics are the metric paths whose rows the observed index re-derives,
@@ -158,8 +165,8 @@ func (r indexReprojection) properties() []string {
 // identity, merging what each comparison finds about the same kind.
 type reprojectionSet map[string]*indexReprojection
 
-// add records that a kind's indexes moved, as the three filters say.
-func (s reprojectionSet) add(kind string, refs, fts, observed indexFilter) {
+// add records that a kind's indexes moved, as the four filters say.
+func (s reprojectionSet) add(kind string, refs, fts, observed, units indexFilter) {
 	r := s[kind]
 	if r == nil {
 		r = &indexReprojection{kind: kind}
@@ -168,6 +175,7 @@ func (s reprojectionSet) add(kind string, refs, fts, observed indexFilter) {
 	r.refs = r.refs.merge(refs)
 	r.fts = r.fts.merge(fts)
 	r.observed = r.observed.merge(observed)
+	r.units = r.units.merge(units)
 }
 
 // addMoved compares each named kind between two registries and records
@@ -179,12 +187,19 @@ func (s reprojectionSet) addMoved(before, after kindLookup, kinds map[string]boo
 	for _, ident := range sortedKeys(kinds) {
 		refs := filterOf(movedProperties(before, after, ident, referenceShape, propertyReferenceShape, false))
 		fts := filterOf(movedProperties(before, after, ident, ftsShape, propertyFTSShape, true))
-		var observed indexFilter
+		var observed, units indexFilter
 		if observedShape(before, ident) != observedShape(after, ident) {
 			observed = indexFilter{moved: true, every: true}
 		}
-		if refs.moved || fts.moved || observed.moved {
-			s.add(ident, refs, fts, observed)
+		// The unit uses read the declaration in one place, whether a row's
+		// top-level `unit` counts (unitgraph.go readsTopLevelUnit), so a
+		// binding of `metric` or packed `observed` added or removed
+		// re-derives every row, tombstones included.
+		if unitUsesShape(before, ident) != unitUsesShape(after, ident) {
+			units = indexFilter{moved: true, every: true}
+		}
+		if refs.moved || fts.moved || observed.moved || units.moved {
+			s.add(ident, refs, fts, observed, units)
 		}
 	}
 }
@@ -207,16 +222,16 @@ func (s reprojectionSet) list() []indexReprojection {
 }
 
 // withEveryRow is a copy of the set in which each named kind re-derives
-// all three indexes for every row, for kinds no declaration describes on
-// either side, such as the rows of a package that does not parse.
+// every index for every row, for kinds no declaration describes on either
+// side, such as the rows of a package that does not parse.
 func (s reprojectionSet) withEveryRow(kinds []string) reprojectionSet {
 	out := make(reprojectionSet, len(s)+len(kinds))
 	for kind, r := range s {
-		out.add(kind, r.refs, r.fts, r.observed)
+		out.add(kind, r.refs, r.fts, r.observed, r.units)
 	}
 	every := indexFilter{moved: true, every: true}
 	for _, kind := range kinds {
-		out.add(kind, every, every, every)
+		out.add(kind, every, every, every, every)
 	}
 	return out
 }
@@ -336,9 +351,10 @@ func kindsOfPackages(a, b *vocabulary.Registry, packages map[string]bool) map[st
 func (t *txn) requestReprojections(rs []indexReprojection) error {
 	for _, r := range rs {
 		if _, err := t.exec(`
-			INSERT INTO index_reprojections (kind, refs, refs_properties, fts, fts_properties, observed, observed_metrics)
-			VALUES ($1, $2, $3::text[], $4, $5::text[], $6, $7::text[])
+			INSERT INTO index_reprojections (kind, refs, refs_properties, fts, fts_properties, observed, observed_metrics, units)
+			VALUES ($1, $2, $3::text[], $4, $5::text[], $6, $7::text[], $8)
 			ON CONFLICT (repository, kind) DO UPDATE SET
+				units = index_reprojections.units OR EXCLUDED.units,
 				refs = index_reprojections.refs OR EXCLUDED.refs,
 				refs_properties = `+mergedProperties("refs", "refs_properties")+`,
 				fts = index_reprojections.fts OR EXCLUDED.fts,
@@ -347,7 +363,7 @@ func (t *txn) requestReprojections(rs []indexReprojection) error {
 				observed_metrics = `+mergedProperties("observed", "observed_metrics")+`,
 				after_id = '',
 				requested_at = now()`,
-			r.kind, r.refs.moved, r.refs.stored(), r.fts.moved, r.fts.stored(), r.observed.moved, observedStored(r.observed)); err != nil {
+			r.kind, r.refs.moved, r.refs.stored(), r.fts.moved, r.fts.stored(), r.observed.moved, observedStored(r.observed), r.units.moved); err != nil {
 			return fmt.Errorf("substrate/engine: request the index re-derivation of %s: %w", r.kind, err)
 		}
 	}
@@ -411,7 +427,7 @@ func (t *txn) requestMovedBehindCommit(rs []indexReprojection) ([]string, error)
 	var owed []indexReprojection
 	var kinds []string
 	for _, r := range rs {
-		if !r.fts.moved && !r.observed.moved {
+		if !r.fts.moved && !r.observed.moved && !r.units.moved {
 			continue
 		}
 		var stored bool
@@ -421,7 +437,7 @@ func (t *txn) requestMovedBehindCommit(rs []indexReprojection) ([]string, error)
 		if !stored {
 			continue
 		}
-		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts, observed: r.observed})
+		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts, observed: r.observed, units: r.units})
 		kinds = append(kinds, r.kind)
 	}
 	return kinds, t.requestReprojections(owed)
@@ -457,7 +473,7 @@ func (ds *dataset) pendingReprojections(ctx context.Context) ([]indexReprojectio
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT kind, refs, refs_properties IS NULL, COALESCE(to_jsonb(refs_properties), '[]'::jsonb),
 		       fts, fts_properties IS NULL, COALESCE(to_jsonb(fts_properties), '[]'::jsonb),
-		       observed, observed_metrics IS NULL, COALESCE(to_jsonb(observed_metrics), '[]'::jsonb), after_id, requested_at
+		       observed, observed_metrics IS NULL, COALESCE(to_jsonb(observed_metrics), '[]'::jsonb), units, after_id, requested_at
 		FROM index_reprojections ORDER BY kind`)
 	if err != nil {
 		return nil, err
@@ -469,7 +485,7 @@ func (ds *dataset) pendingReprojections(ctx context.Context) ([]indexReprojectio
 		var refsProps, ftsProps, metrics []byte
 		var everyMetric bool
 		if err := rows.Scan(&r.kind, &r.refs.moved, &r.refs.every, &refsProps,
-			&r.fts.moved, &r.fts.every, &ftsProps, &r.observed.moved, &everyMetric, &metrics, &r.after, &r.requestedAt); err != nil {
+			&r.fts.moved, &r.fts.every, &ftsProps, &r.observed.moved, &everyMetric, &metrics, &r.units.moved, &r.after, &r.requestedAt); err != nil {
 			return nil, err
 		}
 		r.observed.every = r.observed.moved && everyMetric
@@ -477,6 +493,7 @@ func (ds *dataset) pendingReprojections(ctx context.Context) ([]indexReprojectio
 			r.observed.metrics = jsonStrings(metrics)
 		}
 		r.refs.properties, r.fts.properties = jsonStrings(refsProps), jsonStrings(ftsProps)
+		r.units.every = r.units.moved
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -608,7 +625,7 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 			}
 			kinds++
 			ds.svc.log.Info("substrate: re-derived the indexes of one kind",
-				"repository", repo, "kind", p.kind, "refs", p.refs.moved, "fts", p.fts.moved, "observed", p.observed.moved,
+				"repository", repo, "kind", p.kind, "refs", p.refs.moved, "fts", p.fts.moved, "observed", p.observed.moved, "units", p.units.moved,
 				"properties", p.properties(), "everyRow", p.every(), "rows", n,
 				"elapsed", time.Since(started).Round(time.Millisecond))
 		}
@@ -800,6 +817,15 @@ func (t *txn) reprojectRows(p indexReprojection, ids []string, skipLocked bool) 
 				continue
 			}
 			if err := t.syncObserved(row.ref(), ty, row); err != nil {
+				return 0, nil, err
+			}
+		}
+	}
+	// Every locked row's unit uses, live and tombstoned alike: a tombstone
+	// keeps its uses, because a restore brings the value back.
+	if p.units.moved {
+		for _, row := range rows {
+			if err := t.replaceUnitUses(row.ref(), rowUnitUses(ty, row.Props), true); err != nil {
 				return 0, nil, err
 			}
 		}
