@@ -1249,7 +1249,10 @@ func (d *fakeDataset) Units(context.Context) (substrate.UnitTable, error) {
 }
 
 func (d *fakeDataset) ConvertUnit(_ context.Context, in substrate.UnitConvert) (substrate.UnitConversion, error) {
-	if in.From == "lb" && in.To == "kg" && in.Value == "1" {
+	if in.From == "Cel" && in.To == "degF" && in.Value == "1" && in.Delta {
+		return substrate.UnitConversion{Value: "1.8", Unit: "degF", Exact: true}, nil
+	}
+	if in.From == "lb" && in.To == "kg" && in.Value == "1" && !in.Delta {
 		return substrate.UnitConversion{Value: "0.45359237", Unit: "kg", Exact: true}, nil
 	}
 	return substrate.UnitConversion{}, fmt.Errorf("%w: the fake converts 1 lb to kg alone", substrate.ErrValidation)

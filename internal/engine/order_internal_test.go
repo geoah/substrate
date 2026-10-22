@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -28,14 +29,14 @@ func TestOrderExpr(t *testing.T) {
 		`A`,                          // an uppercase lead is not camelCase
 	}
 	for _, name := range refused {
-		if _, err := ds.orderExpr(nil, name); !errors.Is(err, substrate.ErrValidation) {
+		if _, err := ds.orderExpr(context.Background(), nil, &builder{}, nil, name); !errors.Is(err, substrate.ErrValidation) {
 			t.Errorf("orderExpr(%q) = %v, want substrate.ErrValidation", name, err)
 		}
 	}
 
 	// A plain camelCase name is the accepted grammar and orders the jsonb
 	// property, quoted by sqlLiteral.
-	if got, err := ds.orderExpr(nil, "priority"); err != nil || got != `props->>'priority'` {
+	if got, err := ds.orderExpr(context.Background(), nil, &builder{}, nil, "priority"); err != nil || got != `props->>'priority'` {
 		t.Errorf("orderExpr(%q) = %q, %v; want %q, nil", "priority", got, err, `props->>'priority'`)
 	}
 }

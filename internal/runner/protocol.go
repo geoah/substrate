@@ -196,6 +196,10 @@ type Backend interface {
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
 	Log(line string)
+	// Units is the repository's unit graph the unit host calls convert
+	// through under the unit graph switch (decision 0186), nil before it,
+	// when they read the engine's table.
+	Units(ctx context.Context) (*vocabulary.UnitGraph, error)
 }
 
 // The deterministic trip reasons: retrying reproduces them, so the

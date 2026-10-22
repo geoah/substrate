@@ -5,14 +5,75 @@
  * own. */
 
 import { useState } from "react"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+import { UnitsProvider } from "@/components/units-provider"
+import { forgetUnitGraphs } from "@/lib/api/units"
+import { editedTable } from "@/lib/unit-graph.test-fixtures"
 
 import { QuantityInput } from "./quantity-input"
 import type { QuantityDeclaration } from "@/lib/units"
 
-afterEach(cleanup)
+vi.mock("@/lib/api/changes", () => ({
+  watchChanges: () => ({ stop: () => undefined }),
+}))
+
+afterEach(() => {
+  cleanup()
+  forgetUnitGraphs()
+  vi.unstubAllGlobals()
+})
 beforeEach(() => localStorage.clear())
+
+/** A server with the graph switch on, whose units route answers `units`. */
+function graphServer(units: () => Promise<Response>) {
+  const fetch = vi.fn((input: RequestInfo | URL) =>
+    String(input).includes("server.json")
+      ? Promise.resolve(
+          new Response(JSON.stringify({ units: { graph: true } }), {
+            status: 200,
+          })
+        )
+      : units()
+  )
+  vi.stubGlobal("fetch", fetch)
+  return () => fetch.mock.calls.some((c) => String(c[0]).endsWith("/units"))
+}
+
+const editedGraph = () =>
+  Promise.resolve(
+    new Response(
+      JSON.stringify({
+        ...editedTable,
+        measures: [],
+        aliases: {},
+        unseeded: [],
+      }),
+      { status: 200 }
+    )
+  )
+
+/** The input under the signed-in console's unit reader. */
+function renderUnderProvider(spec: QuantityDeclaration, initial = "") {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <UnitsProvider>
+        <Harness initial={initial} spec={spec} seen={[]} />
+      </UnitsProvider>
+    </QueryClientProvider>
+  )
+}
 
 function Harness({
   initial = "",
@@ -137,5 +198,34 @@ describe("QuantityInput", () => {
     cleanup()
     render(<Harness seen={[]} />)
     expect(unit().value).toBe("mmol/L")
+  })
+})
+
+describe("QuantityInput on a server whose units are the repository's graph", () => {
+  it("offers a unit only the repository holds, under its symbol", async () => {
+    graphServer(editedGraph)
+    renderUnderProvider({ unit: "kg" })
+    await waitFor(() => expect(offered()).toContain("sack25"))
+    expect(offered()).toEqual(["g", "kg", "lb", "sack25", "ug"])
+    expect(unit().value).toBe("kg")
+    const sack = [...unit().options].find((o) => o.value === "sack25")
+    expect(sack?.textContent).toBe("sack (sack25)")
+    fireEvent.change(value(), { target: { value: "2" } })
+    fireEvent.change(unit(), { target: { value: "sack25" } })
+    expect(unit().value).toBe("sack25")
+  })
+
+  it("takes no value and offers no unit while the graph loads", async () => {
+    const asked = graphServer(() => new Promise<Response>(() => undefined))
+    renderUnderProvider({ unit: "kg" }, "72.5 kg")
+    // Past discovery: the switch is on and the graph is on its way.
+    await waitFor(() => expect(asked()).toBe(true))
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "The repository's units are loading"
+    )
+    expect(value().disabled).toBe(true)
+    expect(unit().disabled).toBe(true)
+    // The stored unit stays chosen as stored; the table's list is not offered.
+    expect(offered()).toEqual(["kg"])
   })
 })

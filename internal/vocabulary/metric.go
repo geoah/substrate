@@ -18,6 +18,7 @@ const (
 	MetricName             = "name"
 	MetricMeasures         = "measures"
 	MetricUnit             = "unit"
+	MetricUnits            = "units"
 	MetricForm             = "form"
 	MetricCodeSet          = "codeSet"
 	MetricDisplayPrecision = "displayPrecision"
@@ -71,8 +72,11 @@ var DefaultRollups = []string{"15m", "1h", "1d"}
 // read converts into, the unit it answers in by default, where a read by the
 // day places a span, and the rollup tiers the index keeps, finest first.
 type MetricContract struct {
-	Measures    string
-	Unit        string
+	Measures string
+	Unit     string
+	// UnitValue is the stored `unit` as written, a spelling or a reference
+	// to a unit record, which the unit graph reads (MetricUnitOf).
+	UnitValue   any
 	BucketPlace string
 	// Rollups is the tier widths, finest first: the default tiers where the
 	// metric names none, and empty where it names an empty list.
@@ -87,6 +91,7 @@ func MetricContractOf(props map[string]any) MetricContract {
 	c := MetricContract{}
 	c.Measures, _ = props[MetricMeasures].(string)
 	c.Unit, _ = props[MetricUnit].(string)
+	c.UnitValue = props[MetricUnit]
 	c.BucketPlace, _ = props[MetricBucketPlace].(string)
 	names := DefaultRollups
 	if raw, held := props[MetricRollups]; held && raw != nil {
@@ -117,6 +122,84 @@ func MetricContractOf(props map[string]any) MetricContract {
 // bucket place are words the readers know, and the rollup tiers are known
 // widths, finest first, each once.
 func CheckMetric(props map[string]any) []string {
+	return append(checkMetricUnitInTable(props), checkMetricShape(props)...)
+}
+
+// CheckMetricIn is CheckMetric under the unit graph switch (decision 0186):
+// the measure is not read, the unit and every listed unit resolve through
+// the repository's graph, and each listed unit converts to the unit through
+// linear conversions. The unit and each listed unit is a unit id or a
+// reference to a unit record.
+func CheckMetricIn(g *UnitGraph, props map[string]any) []string {
+	problems := checkMetricShape(props)
+	unit, held, err := MetricUnitOf(g, props[MetricUnit])
+	if err != nil {
+		problems = append(problems, fmt.Sprintf("props.%s: %v", MetricUnit, err))
+	}
+	listed, err := MetricUnitsOf(g, props[MetricUnits])
+	if err != nil {
+		return append(problems, fmt.Sprintf("props.%s: %v", MetricUnits, err))
+	}
+	if !held || unit == "" {
+		return problems
+	}
+	for i, id := range listed {
+		if _, _, err := g.Linear(id, unit, false); err != nil {
+			problems = append(problems, fmt.Sprintf("props.%s[%d]: %s does not convert to the metric's unit %s: %v", MetricUnits, i, id, unit, err))
+		}
+	}
+	return problems
+}
+
+// MetricUnitOf reads a metric's `unit` through the graph: a unit spelling or
+// a reference to a unit record, answered as the unit's id; held is false
+// where the metric names none.
+func MetricUnitOf(g *UnitGraph, raw any) (id string, held bool, err error) {
+	switch v := raw.(type) {
+	case nil:
+		return "", false, nil
+	case string:
+		if v == "" {
+			return "", false, nil
+		}
+		u, ok := g.Resolve(v)
+		if !ok {
+			return "", true, fmt.Errorf("%q names no unit of this repository", v)
+		}
+		return u, true, nil
+	case map[string]any:
+		path, _ := v[ReferenceValueKey].(string)
+		kind, id, ok := SplitRecordPath(path)
+		if !ok || kind != KindUnit {
+			return "", true, fmt.Errorf("%q is no reference to a %s record", path, KindUnit)
+		}
+		if _, ok := g.Unit(id); !ok {
+			return "", true, fmt.Errorf("%s names no unit of this repository", id)
+		}
+		return id, true, nil
+	}
+	return "", true, fmt.Errorf("a unit is a unit id or a reference to a %s record", KindUnit)
+}
+
+// MetricUnitsOf reads a metric's `units` through the graph, each a unit
+// spelling or a reference to a unit record, answered as unit ids.
+func MetricUnitsOf(g *UnitGraph, raw any) ([]string, error) {
+	var out []string
+	for i, v := range listOf(raw) {
+		id, held, err := MetricUnitOf(g, v)
+		if err != nil {
+			return nil, fmt.Errorf("[%d]: %w", i, err)
+		}
+		if held {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// checkMetricUnitInTable is CheckMetric's reading of `measures` and `unit`
+// through the engine's table.
+func checkMetricUnitInTable(props map[string]any) []string {
 	var problems []string
 	addf := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 	measures, _ := props[MetricMeasures].(string)
@@ -140,6 +223,14 @@ func CheckMetric(props map[string]any) []string {
 			addf("props.unit: %v", err)
 		}
 	}
+	return problems
+}
+
+// checkMetricShape holds the metric rules that read no unit: the form, the
+// bucket place and the rollup tiers.
+func checkMetricShape(props map[string]any) []string {
+	var problems []string
+	addf := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 	if form, _ := props[MetricForm].(string); form != "" && !slices.Contains(ObservedForms, form) {
 		addf("props.form: %q is not a form: %s", form, orList(ObservedForms))
 	}

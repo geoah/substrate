@@ -73,11 +73,51 @@ type narrowing struct {
 	query   string
 	args    []any
 	strands func(root []byte) bool
+	// strandsIn is strands under the unit graph switch (decision 0186): a
+	// quantity narrowing judges each stored value through the repository's
+	// graph, which the count reads (narrowingUnits).
+	strandsIn func(g *vocabulary.UnitGraph) func(root []byte) bool
+}
+
+// narrowingUnits is the unit graph a count judges quantities through: the
+// transaction's own, or the preview's dataset's at its current revision, nil
+// while the switch is off.
+func narrowingUnits(q sqlReader) (*vocabulary.UnitGraph, error) {
+	switch r := q.(type) {
+	case *txn:
+		if !r.ds.svc.unitGraphOn {
+			return nil, nil
+		}
+		at, err := r.unitGraph()
+		if err != nil {
+			return nil, err
+		}
+		return at.graph, nil
+	case dbReader:
+		if r.ds == nil || !r.ds.svc.unitGraphOn {
+			return nil, nil
+		}
+		at, err := r.ds.unitGraph(r.ctx, r.db)
+		if err != nil {
+			return nil, err
+		}
+		return at.graph, nil
+	}
+	return nil, nil
 }
 
 // count runs the narrowing's query: the scalar count, or the value stream
 // strands judges row by row.
 func (n narrowing) count(q sqlReader) (int64, error) {
+	if n.strandsIn != nil {
+		g, err := narrowingUnits(q)
+		if err != nil {
+			return 0, err
+		}
+		if g != nil {
+			n.strands = n.strandsIn(g)
+		}
+	}
 	if n.strands == nil {
 		var count int64
 		err := q.row(n.query, n.args...).Scan(&count)
@@ -233,7 +273,7 @@ const countStateValuesQuery = `SELECT count(*) FROM records
 // this: the apply (stageVocabularyBatch) and the boot (stageShippedUpgrade).
 // A field's default is held to the same two rules at its own depth, since
 // coerceObject fills it into every object a write sends.
-func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
+func checkDeclaredDefaults(c coercer, candidate *vocabulary.Registry, touched map[string]bool) []string {
 	var problems []string
 	for aname := range touched {
 		a, ok := candidate.PackageByName(aname)
@@ -241,7 +281,7 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 			continue
 		}
 		for _, tn := range a.KindOrder {
-			problems = append(problems, kindDefaultProblems(a.Kinds[tn])...)
+			problems = append(problems, kindDefaultProblems(c, a.Kinds[tn])...)
 		}
 	}
 	sort.Strings(problems)
@@ -249,10 +289,10 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 }
 
 // kindDefaultProblems is checkDeclaredDefaults for one kind.
-func kindDefaultProblems(ty *vocabulary.Kind) []string {
+func kindDefaultProblems(c coercer, ty *vocabulary.Kind) []string {
 	var problems []string
 	for _, pname := range ty.PropOrder {
-		problems = append(problems, declaredDefaultProblems(ty.Identity, "property "+strconv.Quote(pname), "property", ty.Props[pname])...)
+		problems = append(problems, declaredDefaultProblems(c, ty.Identity, "property "+strconv.Quote(pname), "property", ty.Props[pname])...)
 	}
 	return problems
 }
@@ -260,11 +300,11 @@ func kindDefaultProblems(ty *vocabulary.Kind) []string {
 // declaredDefaultProblems holds one declaration's default, and every default
 // its object fields declare, to what a write would store. subject names the
 // position the way a problem line reads it, and noun is what it is.
-func declaredDefaultProblems(ident, subject, noun string, p *vocabulary.Property) []string {
+func declaredDefaultProblems(c coercer, ident, subject, noun string, p *vocabulary.Property) []string {
 	var problems []string
 	if p.Datatype == vocabulary.DatatypeObject {
 		for _, fname := range p.FieldOrder {
-			problems = append(problems, declaredDefaultProblems(ident, subject+" field "+strconv.Quote(fname), "field", p.Fields[fname])...)
+			problems = append(problems, declaredDefaultProblems(c, ident, subject+" field "+strconv.Quote(fname), "field", p.Fields[fname])...)
 		}
 	}
 	switch {
@@ -273,7 +313,7 @@ func declaredDefaultProblems(ident, subject, noun string, p *vocabulary.Property
 		problems = append(problems, fmt.Sprintf("kind %s: %s: default %v: a required %s's default holds a value, and an empty one is what having none means",
 			ident, subject, jsonLiteral(p.Default), noun))
 	default:
-		if _, err := coerceValue(p, p.Default); err != nil {
+		if _, err := c.value(p, p.Default); err != nil {
 			problems = append(problems, fmt.Sprintf("kind %s: %s: default %v: %v",
 				ident, subject, p.Default, err))
 		}
@@ -1260,9 +1300,10 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 		out = append(out, narrowing{
 			format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it refuses; rewrite them first",
 				ident, subject, change),
-			query:   propValuesQuery,
-			args:    []any{ident, path[0].key},
-			strands: quantityRefuses(path, candP),
+			query:     propValuesQuery,
+			args:      []any{ident, path[0].key},
+			strands:   quantityRefuses(path, candP),
+			strandsIn: quantityRefusesIn(path, candP),
 		})
 		if quantityMeasureChanges(curP.Quantity, candP.Quantity) {
 			deletedQuery, deletedArgs := deletedValues(ident, path[0])
@@ -1279,6 +1320,24 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 				query:   deletedQuery,
 				args:    deletedArgs,
 				strands: quantityRereadsDeleted(path, curP, candP),
+			})
+		}
+		if quantityDeltaFlips(curP.Quantity, candP.Quantity) {
+			deletedQuery, deletedArgs := deletedValues(ident, path[0])
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it would reread; rewrite them first",
+					ident, subject, change),
+				query:     propValuesQuery,
+				args:      []any{ident, path[0].key},
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn(path),
+			}, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d deleted records hold a value it would reread on a restore; restore and rewrite them, or wait for the collector to purge them",
+					ident, subject, change),
+				query:     deletedQuery,
+				args:      deletedArgs,
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn(path),
 			})
 		}
 	}
@@ -1327,7 +1386,8 @@ func linkConstraintNarrowings(ident, pname, lname string, refStep fieldStep, cur
 			format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it refuses; rewrite them first",
 				ident, pname, lname, change),
 			query: linkPropValuesQuery, args: []any{ident, pname, lname},
-			strands: quantityRefuses(path, candL),
+			strands:   quantityRefuses(path, candL),
+			strandsIn: quantityRefusesIn(path, candL),
 		})
 		if quantityMeasureChanges(curL.Quantity, candL.Quantity) {
 			out = append(out, narrowing{
@@ -1342,6 +1402,22 @@ func linkConstraintNarrowings(ident, pname, lname string, refStep fieldStep, cur
 					ident, pname, lname, change),
 				query: deletedQuery, args: deletedArgs,
 				strands: quantityRereadsDeleted([]fieldStep{refStep, {key: lname}}, curL, candL),
+			})
+		}
+		if quantityDeltaFlips(curL.Quantity, candL.Quantity) {
+			deletedQuery, deletedArgs := deletedValues(ident, refStep)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it would reread; rewrite them first",
+					ident, pname, lname, change),
+				query: linkPropValuesQuery, args: []any{ident, pname, lname},
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn(path),
+			}, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d deleted records hold a value it would reread on a restore; restore and rewrite them, or wait for the collector to purge them",
+					ident, pname, lname, change),
+				query: deletedQuery, args: deletedArgs,
+				strands:   strandsNothing,
+				strandsIn: quantityDeltaRereadsIn([]fieldStep{refStep, {key: lname}}),
 			})
 		}
 	}

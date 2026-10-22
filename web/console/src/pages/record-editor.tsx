@@ -92,6 +92,7 @@ import { adapterOutput, readOnlyReason } from "@/lib/provenance"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
+import { useUnits } from "@/hooks/use-units"
 
 type Mode = "create" | "edit"
 type Lens = "form" | "yaml"
@@ -131,6 +132,7 @@ function RecordEditor({
   mode: Mode
   id?: string
 }) {
+  const units = useUnits()
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
@@ -180,7 +182,7 @@ function RecordEditor({
   const seed =
     mode === "edit" && record.data
       ? applyManifestYAML(record.data, kindInfo)
-      : templateYAML(kindInfo)
+      : templateYAML(units, kindInfo)
 
   return (
     <RecordEditorForm
@@ -216,6 +218,7 @@ export function RecordEditorForm({
   record?: SubstrateRecord
   seed: string
 }) {
+  const units = useUnits()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -254,7 +257,7 @@ export function RecordEditorForm({
   // the loader refuses an unpaid tool, so the panel says which property pays
   // for it rather than letting the apply be the first place it is mentioned.
   const problems = useMemo(() => {
-    const found = validateApplyDoc(debounced, kind, ctx)
+    const found = validateApplyDoc(units, debounced, kind, ctx)
     if (kind.identity !== AGENT_KIND) return found
     const hints: Problem[] = grantHints(propertiesOf(debounced)).map(
       (hint) => ({
@@ -264,13 +267,15 @@ export function RecordEditorForm({
       })
     )
     return [...found, ...hints]
-  }, [debounced, kind, ctx])
+  }, [units, debounced, kind, ctx])
   // Save is gated on the LIVE text, not the debounced copy — a fast Save right
   // after a fix must see the fix.
   const liveErrors = useMemo(
     () =>
-      validateApplyDoc(text, kind, ctx).filter((p) => p.severity === "error"),
-    [text, kind, ctx]
+      validateApplyDoc(units, text, kind, ctx).filter(
+        (p) => p.severity === "error"
+      ),
+    [units, text, kind, ctx]
   )
   const errorCount = liveErrors.length
   const warnCount = problems.filter((p) => p.severity === "warning").length

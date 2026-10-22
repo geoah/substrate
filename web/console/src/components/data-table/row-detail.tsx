@@ -17,6 +17,7 @@ import type { ChangeRow } from "@/lib/api/types"
 import { cellValue, shortDate, shortTime } from "@/lib/format"
 import { affectedLines, changedProperties } from "@/lib/changelog"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 /** ONE shape for everything inside the band: a muted label in a fixed column,
  * its value beside it. Every section of an expanded row is a `DetailRow`, so
@@ -95,6 +96,7 @@ function RawPayload({ payload }: { payload: Record<string, unknown> }) {
 }
 
 export function ChangeDetail({ row }: { row: ChangeRow }) {
+  const units = useUnits()
   const payload = row.payload ?? {}
   const properties = changedProperties(row)
   const states = valuedEntries(row.payload, "states")
@@ -141,7 +143,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
                   {stateOf.has(name) && (
                     <span className="text-muted-foreground">
                       {" → "}
-                      {cellValue(stateOf.get(name))}
+                      {cellValue(units, stateOf.get(name))}
                     </span>
                   )}
                 </span>

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -144,4 +145,39 @@ func TestUnitConversionRoute(t *testing.T) {
 		wantErrorCode(t, rec, tc.status, tc.code)
 		wantMessage(t, rec, tc.says)
 	}
+}
+
+// Under the unit graph switch discovery says so, and the conversion route
+// converts through the dataset's graph (ConvertUnit), a difference by
+// delta=true; the table's `measure` is refused there, and `delta` is refused
+// on a deployment that reads the table.
+func TestUnitConversionRouteThroughTheGraph(t *testing.T) {
+	svc := newFakeService()
+	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
+	env := &testEnv{svc: svc, clock: clock, h: New(Config{Service: svc, Now: clock.now, UnitGraph: true})}
+	doc := decodeJSON[map[string]any](t, env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil))
+	if units, _ := doc["units"].(map[string]any); units == nil || units["graph"] != true {
+		t.Fatalf("discovery's units = %v, want graph true", doc["units"])
+	}
+	tok := env.svc.token(fakeRepository)
+	rec := env.do(t, http.MethodGet, "/api/v1/units/convert?value=1&from=lb&to=kg", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if c := decodeJSON[substrate.UnitConversion](t, rec); c.Value != "0.45359237" || c.Unit != "kg" || !c.Exact {
+		t.Errorf("1 lb = %+v", c)
+	}
+	rec = env.do(t, http.MethodGet, "/api/v1/units/convert?value=1&from=Cel&to=degF&delta=true", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if c := decodeJSON[substrate.UnitConversion](t, rec); c.Value != "1.8" {
+		t.Errorf("a difference of 1 Cel = %+v", c)
+	}
+	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/units/convert?value=1&from=Cel&to=degF&measure=temperature-difference", tok, nil), http.StatusBadRequest, codeBadRequest)
+	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/units/convert?value=1&from=Cel&to=degF&delta=yes", tok, nil), http.StatusBadRequest, codeBadRequest)
+	wantStatus(t, env.do(t, http.MethodGet, "/api/v1/units/convert?value=1&from=kg&to=K", tok, nil), http.StatusUnprocessableEntity)
+
+	table := newTestEnv(t)
+	doc = decodeJSON[map[string]any](t, table.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil))
+	if units, _ := doc["units"].(map[string]any); units == nil || units["graph"] != false {
+		t.Fatalf("discovery's units on the table = %v, want graph false", doc["units"])
+	}
+	wantErrorCode(t, table.do(t, http.MethodGet, "/api/v1/units/convert?value=1&from=Cel&to=[degF]&delta=true", table.svc.token(fakeRepository), nil), http.StatusBadRequest, codeBadRequest)
 }

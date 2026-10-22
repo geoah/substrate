@@ -251,6 +251,9 @@ func (ds *dataset) unitGraph(ctx context.Context, q dbx) (*unitGraphAt, error) {
 	if at := ds.svc.unitGraphs.get(ds.scope.Repository, rev); at != nil {
 		return at, nil
 	}
+	if hook := ds.svc.unitGraphLoadHook; hook != nil {
+		hook()
+	}
 	at, err := loadUnitGraph(ctx, q, rev)
 	if err != nil {
 		return nil, err
@@ -554,6 +557,9 @@ func (t *txn) checkUnitGraph() error {
 	if err := t.guardUnitUses(before.graph, after.graph); err != nil {
 		return err
 	}
+	if err := t.queueCircularRederivation(before.graph, after.graph); err != nil {
+		return err
+	}
 	repo := t.ds.scope.Repository
 	cache := &t.ds.svc.unitGraphs
 	t.afterCommit = append(t.afterCommit, func() { cache.put(repo, after) })
@@ -755,9 +761,9 @@ func (t *txn) usedUnitSpellings(was *vocabulary.UnitGraph, affected map[string]b
 }
 
 // declaredUnitSpellings is every unit spelling a declaration names, by its
-// vocabulary.UnitSpellingKey: a quantity property's listed `units`, its
-// bounds and its default, at any depth, each with the property that names
-// it.
+// vocabulary.UnitSpellingKey: a quantity property's `unit`, its listed
+// `units`, its bounds and its default, at any depth, each with the property
+// that names it.
 func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 	out := map[string]string{}
 	if reg == nil {
@@ -776,6 +782,7 @@ func declaredUnitSpellings(reg *vocabulary.Registry) map[string]string {
 			}
 		}
 		if q := p.Quantity; q != nil {
+			add(q.Unit)
 			for _, u := range q.Units {
 				add(u)
 			}
@@ -897,4 +904,69 @@ func (ds *dataset) ConvertUnit(ctx context.Context, in substrate.UnitConvert) (s
 		return substrate.UnitConversion{}, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	return substrate.UnitConversion{Value: c.Value, Unit: c.Unit, Exact: c.Exact}, nil
+}
+
+// queueCircularRederivation asks, under the unit graph switch, the pass
+// behind the open to re-derive the observed kinds that hold circular rows
+// when the transaction moved a turn: a circular point's angle is its value
+// over its unit's turn, and the rollups keep sums of the angles' sines and
+// cosines, so a changed turn changes stored sums. An aggregate read over such
+// a kind is refused until the pass finishes (checkObservedReady).
+func (t *txn) queueCircularRederivation(was, now *vocabulary.UnitGraph) error {
+	if !t.ds.svc.unitGraphOn || !turnsMoved(was, now) {
+		return nil
+	}
+	kinds := observedKindsOf(t.declarations())
+	if len(kinds) == 0 {
+		return nil
+	}
+	rows, err := t.query(`SELECT k FROM unnest($1::text[]) k
+		WHERE EXISTS (SELECT 1 FROM records WHERE kind = k AND (props->>'circular') = 'true')
+		ORDER BY k`, kinds)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: find the circular observed kinds: %w", err)
+	}
+	var owed []indexReprojection
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		owed = append(owed, indexReprojection{kind: kind, observed: indexFilter{moved: true, every: true}})
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	if len(owed) == 0 {
+		return nil
+	}
+	if err := t.requestReprojections(owed); err != nil {
+		return err
+	}
+	ds := t.ds
+	t.afterCommit = append(t.afterCommit, ds.kickIndexReprojection)
+	return nil
+}
+
+// turnsMoved reports whether any unit's turn, its own or its circular
+// component's, differs between two graphs.
+func turnsMoved(was, now *vocabulary.UnitGraph) bool {
+	ids := map[string]bool{}
+	for _, u := range was.Units() {
+		ids[u.ID] = true
+	}
+	for _, u := range now.Units() {
+		ids[u.ID] = true
+	}
+	for id := range ids {
+		a, b := was.Turn(id), now.Turn(id)
+		switch {
+		case (a == nil) != (b == nil):
+			return true
+		case a != nil && a.Cmp(b) != 0:
+			return true
+		}
+	}
+	return false
 }

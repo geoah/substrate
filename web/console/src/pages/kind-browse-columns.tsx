@@ -57,6 +57,7 @@ import { coverageWords } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import type { ReferenceTitles } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** Wire names the engine reserves as hot/system columns (recordColumns in
  * engine/query.go). A DECLARED property sharing one of these names cannot be
@@ -325,7 +326,7 @@ function propertyCell(
     )
   }
   if (NUMERIC.has(prop.kind)) {
-    return <span className="tabular-nums">{cellValue(value)}</span>
+    return <span className="tabular-nums">{cellValue(ctx.units, value)}</span>
   }
   // As the record page reads it (`property-value.tsx`), never the ISO text.
   if (prop.kind === "duration" && typeof first === "string") {
@@ -352,16 +353,19 @@ function propertyCell(
     )
   }
   if (prop.keyed) {
-    const text = cellValue(value)
+    const text = cellValue(ctx.units, value)
     return (
       <span className="block truncate" title={text}>
         {text}
       </span>
     )
   }
-  const text = cellValue(first)
+  const text = cellValue(ctx.units, first)
   return (
-    <FirstOf count={values.length} title={values.map(cellValue).join(", ")}>
+    <FirstOf
+      count={values.length}
+      title={values.map((v) => cellValue(ctx.units, v)).join(", ")}
+    >
       {text}
     </FirstOf>
   )
@@ -369,6 +373,7 @@ function propertyCell(
 
 interface CellContext {
   kinds: KindInfo[]
+  units: UnitReader
   titles?: ReferenceTitles
   doneState?: DeclaredProperty
 }
@@ -510,6 +515,7 @@ export interface BuildColumnsOptions {
 }
 
 export function buildColumns(
+  units: UnitReader,
   kind: KindInfo,
   /** The registry, so a reference cell can tell a kind it can route to from
    * one nobody installed. */
@@ -530,7 +536,7 @@ export function buildColumns(
       : "Name"
   const declared = columnProperties(kind).filter((p) => p.name !== backing)
   const doneState = doneStateProperty(declared)
-  const ctx: CellContext = { kinds, titles, doneState }
+  const ctx: CellContext = { kinds, titles, doneState, units }
   const labelOf = (name: string) => (technical ? name : propertyLabel(name))
   const columns: DataTableColumn<SubstrateRecord>[] = []
 

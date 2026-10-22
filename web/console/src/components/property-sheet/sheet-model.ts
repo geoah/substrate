@@ -130,7 +130,7 @@ export function listWrite(
       continue
     }
     if (!item.trim()) continue
-    const parsed = parseValue(element, item)
+    const parsed = parseValue(field.units, element, item)
     // Numbered as the editor labels its boxes.
     if (parsed.error) return { error: `Item ${i + 1}: ${parsed.error}` }
     if (parsed.value !== undefined) values.push(parsed.value)

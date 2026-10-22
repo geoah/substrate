@@ -21,6 +21,7 @@ import {
   type ActiveFilter,
 } from "./filters"
 import type { DeclaredProperty } from "./definition"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 const prop = (over: Partial<DeclaredProperty>): DeclaredProperty => ({
   name: "x",
@@ -55,13 +56,18 @@ describe("the URL codec", () => {
 describe("toRecordFilter", () => {
   it("writes eq for a single value", () => {
     expect(
-      toRecordFilter([{ field: "prominence", op: "eq", value: "known" }], [])
+      toRecordFilter(
+        TABLE_UNITS,
+        [{ field: "prominence", op: "eq", value: "known" }],
+        []
+      )
     ).toEqual({ properties: { prominence: { eq: "known" } } })
   })
 
   it("folds a comma list into membership", () => {
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "prominence", op: "eq", value: "known,utility" }],
         []
       )
@@ -71,6 +77,7 @@ describe("toRecordFilter", () => {
   it("writes contains for repeated properties", () => {
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "emails", op: "contains", value: "a@x.dev" }],
         [prop({ name: "emails", kind: "email", repeated: true })]
       )
@@ -80,6 +87,7 @@ describe("toRecordFilter", () => {
   it("writes match verbatim: the server parses the grammar", () => {
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "notes", op: "match", value: `rack lay* -"weekly sync"` }],
         [prop({ name: "notes", kind: "markdown" })]
       )
@@ -89,6 +97,7 @@ describe("toRecordFilter", () => {
   it("coerces by declared kind so jsonb compares like for like", () => {
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [
           { field: "number", op: "eq", value: "42" },
           { field: "draft", op: "eq", value: "false" },
@@ -105,6 +114,7 @@ describe("toRecordFilter", () => {
     const price = prop({ name: "price", kind: "money" })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "price", op: "eq", value: "19.99 EUR, 5 USD" }],
         [price]
       )
@@ -119,7 +129,11 @@ describe("toRecordFilter", () => {
       },
     })
     expect(
-      toRecordFilter([{ field: "price", op: "eq", value: "19.99" }], [price])
+      toRecordFilter(
+        TABLE_UNITS,
+        [{ field: "price", op: "eq", value: "19.99" }],
+        [price]
+      )
     ).toEqual({ properties: { price: { eq: "19.99" } } })
   })
 
@@ -127,6 +141,7 @@ describe("toRecordFilter", () => {
     const weight = prop({ name: "weight", kind: "quantity" })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "weight", op: "eq", value: "155 lb, 70 kg" }],
         [weight]
       )
@@ -142,6 +157,7 @@ describe("toRecordFilter", () => {
     })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "weight", op: "eq", value: "155 [lb_av]" }],
         [weight]
       )
@@ -150,7 +166,11 @@ describe("toRecordFilter", () => {
     })
     // Text that is not a quantity goes as typed, for the server to refuse.
     expect(
-      toRecordFilter([{ field: "weight", op: "eq", value: "155" }], [weight])
+      toRecordFilter(
+        TABLE_UNITS,
+        [{ field: "weight", op: "eq", value: "155" }],
+        [weight]
+      )
     ).toEqual({ properties: { weight: { eq: "155" } } })
   })
 
@@ -158,6 +178,7 @@ describe("toRecordFilter", () => {
     const weight = prop({ name: "weight", kind: "quantity" })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [
           { field: "weight", op: "eq", value: ">=60 kg" },
           { field: "weight", op: "eq", value: "<155 lb" },
@@ -180,6 +201,7 @@ describe("toRecordFilter", () => {
     })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "readings", op: "contains", value: "<5 kg" }],
         [readings]
       )
@@ -199,6 +221,7 @@ describe("toRecordFilter", () => {
   it("leaves unparseable numbers as text rather than NaN", () => {
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "number", op: "eq", value: "abc" }],
         [prop({ name: "number", kind: "int" })]
       )
@@ -206,7 +229,7 @@ describe("toRecordFilter", () => {
   })
 
   it("is absent when no filter is active", () => {
-    expect(toRecordFilter([], [])).toBeUndefined()
+    expect(toRecordFilter(TABLE_UNITS, [], [])).toBeUndefined()
   })
 })
 
@@ -313,10 +336,15 @@ describe("the trailing-* wildcard on identifier fields", () => {
 
   it("writes prefix onto the wire, merged with any eq on the field", () => {
     expect(
-      toRecordFilter([{ field: "email", op: "prefix", value: "geo" }], [])
+      toRecordFilter(
+        TABLE_UNITS,
+        [{ field: "email", op: "prefix", value: "geo" }],
+        []
+      )
     ).toEqual({ properties: { email: { prefix: "geo" } } })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [
           { field: "email", op: "prefix", value: "geo" },
           { field: "email", op: "eq", value: "george@x.dev" },
@@ -457,12 +485,14 @@ describe("a reference filter", () => {
     expect(opFor(owners)).toBe("eq")
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "owners", op: "eq", value: "ada,grace" }],
         [owners]
       )
     ).toEqual({ properties: { owners: { in: ["ada", "grace"] } } })
     expect(
       toRecordFilter(
+        TABLE_UNITS,
         [{ field: "assignee", op: "eq", value: "ada" }],
         [assignee]
       )

@@ -2502,7 +2502,7 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		if row == nil || row.DeletedAt != nil {
 			return toolError("target " + target + " does not exist"), false
 		}
-		norm, err := normalizeDiff(ty, diff, opPatch)
+		norm, err := normalizeDiff(l.ds.coercer(), ty, diff, opPatch)
 		if err != nil {
 			return toolError(err.Error()), false
 		}
@@ -2520,7 +2520,7 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		if err != nil {
 			return toolError(err.Error()), false
 		}
-		norm, err := normalizeDiff(ty, diff, opCreate)
+		norm, err := normalizeDiff(l.ds.coercer(), ty, diff, opCreate)
 		if err != nil {
 			return toolError(err.Error()), false
 		}

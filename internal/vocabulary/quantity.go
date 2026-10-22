@@ -42,7 +42,22 @@ type QuantitySpec struct {
 	// Min and Max are the declared bounds, each a quantity compared exactly
 	// after converting the value into the bound's unit.
 	Min, Max *QuantityBound
+	// Unit is the declared `unit:` (decision 0186): a unit spelling every
+	// value's unit must share a linear component with, resolved against the
+	// repository's unit graph. A declaration that names it reads `units` and
+	// its bounds as graph spellings too, and never names `measures`. Inert
+	// until the unit graph switch (engine WithUnitGraph).
+	Unit string
+	// Delta is the declared `delta: true`: every value is a difference,
+	// which converts by the factor alone. Inert until the switch.
+	Delta bool
 }
+
+// GraphDialect reports whether the declaration names its units the way
+// decision 0186 reads them, as spellings of the repository's unit graph: it
+// declares `unit`. Its `units` and bounds are then checked against a
+// repository at write, never against the engine's table.
+func (s *QuantitySpec) GraphDialect() bool { return s != nil && s.Unit != "" }
 
 // QuantityBound is a declared `min:` or `max:` of a quantity property.
 type QuantityBound struct {
@@ -74,7 +89,7 @@ func (s *QuantitySpec) CheckUnit(code string) (Measure, error) {
 	if err != nil {
 		return Measure{}, err
 	}
-	if s != nil && len(s.Units) > 0 && !slices.Contains(s.Units, code) {
+	if s != nil && !s.GraphDialect() && len(s.Units) > 0 && !slices.Contains(s.Units, code) {
 		return Measure{}, fmt.Errorf("%s is not one of the declared units %s", code, strings.Join(s.Units, ", "))
 	}
 	return m, nil
@@ -84,7 +99,7 @@ func (s *QuantitySpec) CheckUnit(code string) (Measure, error) {
 // converting the value into each bound's unit. A comparator does not move the
 // check: the stated number is what a bound reads.
 func (s *QuantitySpec) CheckBounds(v *big.Rat, unit string) error {
-	if s == nil {
+	if s == nil || s.GraphDialect() {
 		return nil
 	}
 	if s.Min != nil {
@@ -133,6 +148,52 @@ func FormatQuantity(v any) string {
 		return cmp + value + symbol
 	}
 	return cmp + value + " " + symbol
+}
+
+// FormatQuantityIn renders a stored quantity value the way FormatQuantity
+// does, printing the symbol the repository's unit graph holds for the
+// value's unit (decision 0186): "72.5 kg", "90°", "8000 steps". A unit the
+// graph does not hold prints as stored.
+func FormatQuantityIn(g *UnitGraph, v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := m[QuantityValue].(string)
+	unit, _ := m[QuantityUnit].(string)
+	if value == "" || unit == "" {
+		return ""
+	}
+	cmp, _ := m[QuantityComparator].(string)
+	symbol := unit
+	if g != nil {
+		symbol = g.Symbol(unit)
+	}
+	switch symbol {
+	case "":
+		return cmp + value
+	case "°", "′", "″", "'", "''":
+		// An angle's symbol sits against the number: 90°, not 90 °.
+		return cmp + value + symbol
+	}
+	return cmp + value + " " + symbol
+}
+
+// QuantitySearchText is a stored quantity value as the search index reads
+// it under the unit graph (decision 0186): the digits and the stored unit
+// id, never a symbol, so a symbol edit or a rebuild never moves a result.
+func QuantitySearchText(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := m[QuantityValue].(string)
+	unit, _ := m[QuantityUnit].(string)
+	if value == "" || unit == "" {
+		return ""
+	}
+	cmp, _ := m[QuantityComparator].(string)
+	return cmp + value + " " + unit
 }
 
 var (
@@ -215,6 +276,33 @@ func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *Qu
 		}
 		s.Measure = name
 	}
+	if raw, declared := d["unit"]; declared && raw != nil {
+		unit, ok := raw.(string)
+		if !ok {
+			l.errf("%s.unit: %v is not a unit spelling", where, raw)
+			return nil
+		}
+		if err := checkUnitSpelling(unit); err != nil {
+			l.errf("%s.unit: %v", where, err)
+			return nil
+		}
+		s.Unit = unit
+	}
+	if raw, declared := d["delta"]; declared && raw != nil {
+		b, ok := raw.(bool)
+		if !ok {
+			l.errf("%s.delta: true or false", where)
+			return nil
+		}
+		s.Delta = b
+	}
+	if s.GraphDialect() && s.Measure != "" {
+		l.errf("%s: a quantity names its units by `unit` (the repository's unit graph) or by `measures` (the engine's table), not both", where)
+		return nil
+	}
+	if s.GraphDialect() {
+		return l.parseGraphQuantitySpec(where, d, s)
+	}
 	if raw, declared := d["units"]; declared && raw != nil {
 		list, ok := raw.([]any)
 		if !ok || len(list) == 0 {
@@ -293,6 +381,115 @@ func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *Qu
 	return s
 }
 
+// parseGraphQuantitySpec reads the rest of a declaration that names `unit`:
+// its `units`, `comparator` and bounds, each unit a spelling held to its
+// shape alone. Whether a spelling names a unit, and whether a bound compares
+// with every admitted unit, is a repository's to say, so the write checks
+// both against the repository's graph.
+func (l *loader) parseGraphQuantitySpec(where string, d map[string]any, s *QuantitySpec) *QuantitySpec {
+	if raw, declared := d["units"]; declared && raw != nil {
+		list, ok := raw.([]any)
+		if !ok || len(list) == 0 {
+			l.errf("%s.units: a list of unit spellings, at least one", where)
+			return nil
+		}
+		s.Units = nil
+		for _, item := range list {
+			unit, ok := item.(string)
+			if !ok {
+				l.errf("%s.units: %v is not a unit spelling", where, item)
+				return nil
+			}
+			if err := checkUnitSpelling(unit); err != nil {
+				l.errf("%s.units: %v", where, err)
+				return nil
+			}
+			if slices.Contains(s.Units, unit) {
+				l.errf("%s.units: %s is listed twice", where, unit)
+				return nil
+			}
+			s.Units = append(s.Units, unit)
+		}
+	}
+	if raw, declared := d["comparator"]; declared && raw != nil {
+		b, ok := raw.(bool)
+		if !ok {
+			l.errf("%s.comparator: true or false", where)
+			return nil
+		}
+		s.Comparator = b
+	}
+	for _, key := range []string{"min", "max"} {
+		raw, declared := d[key]
+		if !declared || raw == nil {
+			continue
+		}
+		b, err := parseGraphQuantityBound(raw)
+		if err != nil {
+			l.errf("%s.%s: %v", where, key, err)
+			return nil
+		}
+		if key == "min" {
+			s.Min = b
+		} else {
+			s.Max = b
+		}
+	}
+	if s.Min != nil && s.Max != nil && s.Min.Unit == s.Max.Unit && s.Max.Rat().Cmp(s.Min.Rat()) < 0 {
+		l.errf("%s: max %s is below min %s", where, s.Max, s.Min)
+		return nil
+	}
+	return s
+}
+
+// parseGraphQuantityBound reads one bound of a declaration that names
+// `unit`: its digits and a unit spelling.
+func parseGraphQuantityBound(raw any) (*QuantityBound, error) {
+	m := asMapOrNil(raw)
+	if m == nil {
+		return nil, fmt.Errorf(`a quantity bound is a quantity value {value: "40", unit: kg}`)
+	}
+	for k := range m {
+		if k != QuantityValue && k != QuantityUnit {
+			return nil, fmt.Errorf("a bound holds %s and %s, and %q is neither", QuantityValue, QuantityUnit, k)
+		}
+	}
+	digits, err := boundDigits(m[QuantityValue])
+	if err != nil {
+		return nil, err
+	}
+	unit, _ := m[QuantityUnit].(string)
+	if unit == "" {
+		return nil, fmt.Errorf("a bound names its %s", QuantityUnit)
+	}
+	if err := checkUnitSpelling(unit); err != nil {
+		return nil, fmt.Errorf("%s: %w", QuantityUnit, err)
+	}
+	return &QuantityBound{Value: digits, Unit: unit}, nil
+}
+
+// boundDigits reads a bound's value, written as a string or a YAML number.
+func boundDigits(raw any) (string, error) {
+	var digits string
+	switch v := raw.(type) {
+	case string:
+		digits = v
+	case int:
+		digits = strconv.Itoa(v)
+	case int64:
+		digits = strconv.FormatInt(v, 10)
+	case float64:
+		digits = strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		return "", fmt.Errorf("%s is the bound's digits (\"40\")", QuantityValue)
+	}
+	c, err := CanonicalDecimal(digits)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", QuantityValue, err)
+	}
+	return c, nil
+}
+
 // parseQuantityBound reads one declared bound: a quantity value whose unit the
 // declaration admits. A bound needs `measures:`, because without one a stored
 // value of another measure has nothing to be compared with, and every code
@@ -314,22 +511,9 @@ func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
 			return nil, fmt.Errorf("a bound holds %s and %s, and %q is neither", QuantityValue, QuantityUnit, k)
 		}
 	}
-	var digits string
-	switch v := m[QuantityValue].(type) {
-	case string:
-		digits = v
-	case int:
-		digits = strconv.Itoa(v)
-	case int64:
-		digits = strconv.FormatInt(v, 10)
-	case float64:
-		digits = strconv.FormatFloat(v, 'f', -1, 64)
-	default:
-		return nil, fmt.Errorf("%s is the bound's digits (\"40\")", QuantityValue)
-	}
-	c, err := CanonicalDecimal(digits)
+	c, err := boundDigits(m[QuantityValue])
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", QuantityValue, err)
+		return nil, err
 	}
 	unit, _ := m[QuantityUnit].(string)
 	if unit == "" {

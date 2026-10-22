@@ -184,7 +184,10 @@ func (t *txn) reshapeRestored(sp *applySpec, row *erow) (restoreShape, error) {
 		}
 		// Coerced and validated as backfillValues does for a live record, so
 		// the restored row holds what a create falling back to it would.
-		value, err := coerceValue(p, p.Default)
+		value, err := t.coercer().value(p, p.Default)
+		if err == nil {
+			err = t.resolveDefault(p, value)
+		}
 		if err != nil {
 			return s, fmt.Errorf("%w: restore %s: the default of %q: %w", substrate.ErrValidation, sp.id, name, err)
 		}
@@ -227,9 +230,12 @@ func (t *txn) admitRestored(sp *applySpec, name string, p *vocabulary.Property, 
 		s, isText := v.(string)
 		return v, isText && s == "", nil
 	}
-	kept, err := coerceProp(sp.ty, name, p, v)
+	kept, err := t.coercer().prop(sp.ty, name, p, v)
 	if err != nil {
 		return nil, false, nil
+	}
+	if ok, err := t.resolveRestored(sp, name, p, kept); err != nil || !ok {
+		return nil, false, err
 	}
 	gate := map[string]any{name: kept}
 	switch {

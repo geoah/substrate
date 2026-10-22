@@ -3,7 +3,7 @@
  * too, so both lenses agree on what a property is and what a value may be.
  *
  * Everything here is data-in/data-out so it can be unit-tested without a DOM:
- * - `templateYAML(kind)` builds the apply-able envelope a NEW record starts
+ * - `templateYAML(units, kind)` builds the apply-able envelope a NEW record starts
  *   from, entirely from the declared schema: every property seeded with its
  *   `default` (else a typed zero), required properties first, and a trailing
  *   comment carrying required/optional, the datatype, the one-liner and a
@@ -43,6 +43,7 @@ import {
   underField,
   type PropSpec,
 } from "@/lib/record-schema"
+import type { UnitReader } from "@/lib/unit-reader"
 
 export type { PropSpec }
 
@@ -70,7 +71,7 @@ function shorten(text: string): string {
  * its datatype (an enum lists what it admits), the declaration's one-liner, and
  * a worked example of the datatype. Everything a person needs to fill the line
  * in, read off the declaration alone. */
-function specComment(spec: PropSpec): string {
+function specComment(units: UnitReader, spec: PropSpec): string {
   const parts = [spec.required ? "required" : "optional"]
   if (spec.values?.length) {
     parts.push(
@@ -85,7 +86,7 @@ function specComment(spec: PropSpec): string {
   }
   let out = parts.join(", ")
   if (spec.description) out += `: ${shorten(spec.description)}`
-  const example = exampleFor(spec)
+  const example = exampleFor(units, spec)
   if (example && !spec.values?.length && !spec.states?.length) {
     out += `; e.g. ${example}`
   }
@@ -96,7 +97,7 @@ function specComment(spec: PropSpec): string {
  * Document with comments. `kind` is fixed to the kind reference; `metadata.id`
  * is blank (omit to let the substrate mint one); `data.properties` carries
  * every declared property, required first, each seeded and commented. */
-function templateDoc(kind: KindInfo): Document {
+function templateDoc(units: UnitReader, kind: KindInfo): Document {
   // A MANAGED property is the engine's stamp, and it refuses a write that
   // disagrees with what it stamped, so a template that seeded one with a
   // typed zero would hand every create a value the substrate then refuses.
@@ -130,7 +131,7 @@ function templateDoc(kind: KindInfo): Document {
         if (isCollection(item.value) && item.value.items.length === 0) {
           item.value.flow = true
         }
-        value.comment = specComment(spec)
+        value.comment = specComment(units, spec)
       }
     }
   }
@@ -138,8 +139,8 @@ function templateDoc(kind: KindInfo): Document {
   return doc
 }
 
-export function templateYAML(kind: KindInfo): string {
-  return templateDoc(kind).toString(STRINGIFY)
+export function templateYAML(units: UnitReader, kind: KindInfo): string {
+  return templateDoc(units, kind).toString(STRINGIFY)
 }
 
 /** Drop the properties the kind declares `managed:`, the engine's stamps
@@ -295,6 +296,7 @@ export interface ApplyContext {
  * problem; an empty list (or warnings only) means the client is willing to
  * apply. A single fatal syntax/shape error short-circuits the rest. */
 export function validateApplyDoc(
+  units: UnitReader,
   text: string,
   kind: KindInfo,
   ctx: ApplyContext = {}
@@ -388,7 +390,7 @@ export function validateApplyDoc(
     }
     if (!present || isEmptyValue(value)) continue
 
-    const problem = checkValue(spec, value)
+    const problem = checkValue(units, spec, value)
     if (problem) {
       problems.push({
         severity: "error",

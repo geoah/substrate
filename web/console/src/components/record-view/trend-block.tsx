@@ -59,7 +59,7 @@ import {
   type TrendBlock,
   type TrendItem,
 } from "@/lib/record-view"
-import { unitSymbol } from "@/lib/units"
+import { useUnits } from "@/hooks/use-units"
 
 const STRIP_HEIGHT = 120
 
@@ -222,6 +222,7 @@ function Strip({
   bound: Bound
   ctx: BlockContext
 }) {
+  const units = useUnits()
   const name =
     item.label ?? info?.name ?? (path ? metricWords(refIdOf(path)) : "Metric")
   const buckets = useMemo(
@@ -304,7 +305,7 @@ function Strip({
   const average = at ? rolling[highlight].value : null
   const delta =
     at && at.value !== null && average !== null
-      ? deltaWords(at.value, average, item.better, unit, precision)
+      ? deltaWords(units, at.value, average, item.better, unit, precision)
       : undefined
   return (
     <div className="flex flex-col gap-1" role="group" aria-label={name}>
@@ -315,7 +316,7 @@ function Strip({
         domain={range}
         size={block.bucket}
         label={`${name}, by the ${BUCKET_NOUN[block.bucket]}`}
-        units={{ left: unitSymbol(unit) || unit }}
+        units={{ left: units.symbol(unit) || unit }}
         bands={bands}
         highlight={highlight >= 0 ? highlight : undefined}
         height={STRIP_HEIGHT}
@@ -333,7 +334,13 @@ function Strip({
                 <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
                   <dt className="text-faint">{name}</dt>
                   <dd className="text-right whitespace-nowrap tabular-nums">
-                    {readingText(v.value, v.unit, precision, v.comparator)}
+                    {readingText(
+                      units,
+                      v.value,
+                      v.unit,
+                      precision,
+                      v.comparator
+                    )}
                   </dd>
                   {r && r.value !== null && (
                     <>
@@ -341,7 +348,7 @@ function Strip({
                         Average of the {block.rolling} before
                       </dt>
                       <dd className="text-right whitespace-nowrap tabular-nums">
-                        {readingText(r.value, r.unit, precision)}
+                        {readingText(units, r.value, r.unit, precision)}
                       </dd>
                     </>
                   )}
@@ -359,8 +366,14 @@ function Strip({
       >
         {at && held && held.value !== null ? (
           <>
-            {readingText(held.value, held.unit, precision, held.comparator)} on{" "}
-            {dayWords(buckets[highlight].start)}
+            {readingText(
+              units,
+              held.value,
+              held.unit,
+              precision,
+              held.comparator
+            )}{" "}
+            on {dayWords(buckets[highlight].start)}
             {delta && (
               <>
                 ,{" "}

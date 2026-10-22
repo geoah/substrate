@@ -171,6 +171,15 @@ func (r *observedRows) fingerprint() []byte {
 	}
 	flag(r.delta)
 	flag(r.circular)
+	// A row derived under the unit graph hashes its turn, which its circular
+	// points' angles read, so a turn edit moves the fingerprint; a row of the
+	// table hashes nothing more, so its fingerprint is what it always was.
+	if r.graphUnits {
+		flag(r.turn != nil)
+		if r.turn != nil {
+			num(int64(math.Float64bits(*r.turn)))
+		}
+	}
 	optNum(r.holdMs)
 	optStr(r.resetRule)
 	flag(r.resetAt != nil)
@@ -233,6 +242,13 @@ func (r *observedRows) observedPoint(i int) observed.Point {
 	// unit reaches degrees, the measure's base.
 	if r.circular && p.value != nil {
 		switch {
+		case r.graphUnits:
+			// Under the unit graph a circular component holds only
+			// offset-free conversions whose turns agree, so value / turn is
+			// one direction in every unit of it (decision 0186).
+			if r.turn != nil {
+				out.Circular, out.Angle = true, *p.value*2*math.Pi / *r.turn
+			}
 		case r.unit == "rad":
 			out.Circular, out.Angle = true, *p.value
 		case p.base != nil:
@@ -259,10 +275,13 @@ type obsStore struct {
 	// atOrAfter is about to derive, before it derives them: an aggregate
 	// read counts them against maxSamples, and a refusal stops the walk.
 	charge func(n int64) error
+	// units is the unit graph points derive through under the switch, nil
+	// before it (deriveObserved).
+	units *vocabulary.UnitGraph
 }
 
-func newObsStore(ctx context.Context, q dbx, view kindLookup) *obsStore {
-	return &obsStore{ctx: ctx, q: q, view: view, rows: map[eref]*observedRows{}, groups: map[string]obsGroup{}}
+func newObsStore(ctx context.Context, q dbx, view kindLookup, units *vocabulary.UnitGraph) *obsStore {
+	return &obsStore{ctx: ctx, q: q, view: view, rows: map[eref]*observedRows{}, groups: map[string]obsGroup{}, units: units}
 }
 
 // segmentColumns are the columns of observed_segments scanSegment reads.
@@ -333,7 +352,7 @@ func (st *obsStore) derive(segs []obsSegment) error {
 				_ = rows.Close()
 				return err
 			}
-			st.put(row.ref(), deriveObserved(ty, row))
+			st.put(row.ref(), deriveObserved(ty, row, st.units))
 		}
 		if err := finishRows(rows); err != nil {
 			return err

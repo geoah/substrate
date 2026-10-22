@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"math"
-	"math/big"
 	"sort"
 	"strconv"
 	"time"
@@ -110,7 +109,7 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code, stat string, zone *t
 		case substrate.ReducerDurationIn, substrate.ReducerTimeInState:
 			err = v.held(red)
 		case substrate.ReducerIncrease, substrate.ReducerRate:
-			v.counter(red)
+			err = v.counter(red)
 		}
 		if err != nil {
 			return nil, err
@@ -145,6 +144,9 @@ func (v *rowValues) unitOf(red substrate.AggregateReducer) string {
 	case substrate.ReducerRate:
 		return v.r.u.value + "/s"
 	case substrate.ReducerCircularMean:
+		if v.r.u.graph != nil {
+			return v.r.u.value
+		}
 		return "deg"
 	}
 	return v.r.u.value
@@ -218,10 +220,17 @@ func (v *rowValues) pts() ([]observed.Point, error) {
 	return list, nil
 }
 
-// float answers a float64 reduction, which makes the read inexact.
-func (v *rowValues) float(red substrate.AggregateReducer, f float64, ok bool, unit string) {
+// float answers a float64 reduction, which makes the read inexact. Every
+// float a reducer answers passes here, so this is where a value the
+// conversion into the read's unit carried past the range of a float is
+// refused (checkFinite).
+func (v *rowValues) float(red substrate.AggregateReducer, f float64, ok bool, unit string) error {
+	if err := v.r.checkFinite(red, f, ok); err != nil {
+		return err
+	}
 	v.r.meta.inexact = true
 	v.out = append(v.out, v.r.value(red, f, ok, unit))
+	return nil
 }
 
 // number answers sum, avg (on every form but a gauge's), stddev, percentile
@@ -246,17 +255,20 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 		}
 	case substrate.ReducerCircularMean:
 		unit, f = "deg", observed.CircularMeanContext
+		if r.u.graph != nil {
+			// Under the unit graph the mean answers in the read's unit,
+			// whose turn the read checked (checkForms).
+			unit = r.u.value
+		}
 	}
 	// A percentile never merges from rollup rows (rollupable), so a row
 	// asking one is always raw.
 	if !ev.raw && red.Name != substrate.ReducerPercentile {
 		if red.Name == substrate.ReducerCircularMean {
 			m, ok := observed.CircularMeanOf(ev.stats)
-			v.float(red, m, ok, unit)
-			return nil
+			return v.float(red, r.fromDegrees(m), ok, unit)
 		}
-		v.float(red, merged, ev.stats.Values > 0, unit)
-		return nil
+		return v.float(red, merged, ev.stats.Values > 0, unit)
 	}
 	list, err := v.pts()
 	if err != nil {
@@ -266,8 +278,40 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 	if err != nil {
 		return err
 	}
-	v.float(red, n, ok, unit)
-	return nil
+	if red.Name == substrate.ReducerCircularMean {
+		n = r.fromDegrees(n)
+	}
+	return v.float(red, n, ok, unit)
+}
+
+// fromDegrees is a circular mean in degrees in the read's unit under the
+// unit graph, one full circle being the unit's turn; before it, degrees.
+func (r *aggRun) fromDegrees(deg float64) float64 {
+	if r.u.graph == nil {
+		return deg
+	}
+	turn := r.u.graph.Turn(r.u.value)
+	if turn == nil {
+		return deg
+	}
+	t, _ := turn.Float64()
+	// The fraction of the circle first: deg * t overflows for a turn the
+	// answer itself does not.
+	return deg / 360 * t
+}
+
+// checkFinite refuses, under the unit graph, an answer the conversion into
+// the read's unit carried past the range of a float, rather than answering
+// it as null: the repository's conversions decide the factor, and a factor
+// that large is one a reader needs named. NaN counts: it is what an
+// infinity becomes once a reducer subtracts or scales it (a variance's
+// squared deviations, an infinite sum over an infinite count).
+func (r *aggRun) checkFinite(red substrate.AggregateReducer, v float64, ok bool) error {
+	if r.u.graph == nil || !ok || (!math.IsInf(v, 0) && !math.IsNaN(v)) {
+		return nil
+	}
+	return refuse(r.p.path("unit"), "%s of %s is past the range of a float in %s; read it in a unit nearer the stored ones",
+		red.String(), aggMetricName(r.p), r.u.value)
 }
 
 // extreme answers a min or a max: compared exactly and answered in the
@@ -371,8 +415,7 @@ func (v *rowValues) timeWeighted(red substrate.AggregateReducer) error {
 		f, ok = h.ValueMs/float64(max(h.Ms, 1)), h.Ms > 0
 	}
 	if ok {
-		v.float(red, f, true, r.u.value)
-		return nil
+		return v.float(red, f, true, r.u.value)
 	}
 	return v.number(red)
 }
@@ -422,26 +465,26 @@ func (v *rowValues) held(red substrate.AggregateReducer) error {
 
 // counter answers a counter's increase, exactly, and its rate over the time
 // its steps span; both null where the row holds no step.
-func (v *rowValues) counter(red substrate.AggregateReducer) {
+func (v *rowValues) counter(red substrate.AggregateReducer) error {
 	r, steps := v.r, v.ev.steps
 	if red.Name == substrate.ReducerRate {
 		if !steps.any || steps.covered <= 0 {
 			v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value + "/s"})
-			return
+			return nil
 		}
 		f, _ := steps.inc.Float64()
-		v.float(red, f/(float64(steps.covered)/1000), true, r.u.value+"/s")
-		return
+		return v.float(red, f/(float64(steps.covered)/1000), true, r.u.value+"/s")
 	}
 	if !steps.any {
 		v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value})
-		return
+		return nil
 	}
 	digits, exact := vocabulary.RatDecimal(steps.inc, vocabulary.ConvertedDigits)
 	if !exact {
 		r.meta.inexact = true
 	}
 	v.out = append(v.out, substrate.AggregateValue{Reducer: red, Value: &digits, Unit: r.u.value})
+	return nil
 }
 
 // extremaPoints are the members a raw min or max compares, in the read's
@@ -498,6 +541,9 @@ func (r *aggRun) pointValue(red substrate.AggregateReducer, p observed.Point, ok
 	}
 	digits := p.Exact
 	if digits == "" {
+		if err := r.checkFinite(red, p.Value, true); err != nil {
+			return out, err
+		}
 		digits = formatFloat(p.Value)
 		r.meta.inexact = true
 	}
@@ -515,16 +561,6 @@ func (r *aggRun) duration(red substrate.AggregateReducer, ms int64, code string)
 		r.meta.inexact = true
 	}
 	return substrate.AggregateValue{Reducer: red, Value: &v, Unit: r.u.duration, Code: code}
-}
-
-// durationIn writes milliseconds in a duration unit, exactly where it can.
-func durationIn(ms int64, unit string) (string, bool) {
-	s := big.NewRat(ms, 1000)
-	v, err := vocabulary.ConvertIn("duration", s, "s", unit)
-	if err != nil {
-		v = s
-	}
-	return vocabulary.RatDecimal(v, vocabulary.ConvertedDigits)
 }
 
 // formatFloat writes a float64 answer to 15 significant digits, the digits it

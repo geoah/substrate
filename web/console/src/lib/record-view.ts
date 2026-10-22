@@ -55,6 +55,7 @@ import {
   type BucketSize,
   type TimeRange,
 } from "@/lib/observations-time"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** The kind a record view is a record of. */
 export const RECORD_VIEW_KIND = `${CORE_AUTHORITY}/console/recordview`
@@ -2042,16 +2043,23 @@ export function cellFraction(
  * milliseconds) or a quantity, with its text. Undefined for anything
  * else. */
 export function amountOf(
+  units: UnitReader,
   v: unknown,
   precision = DEFAULT_PRECISION
 ): { amount: number; text: string } | undefined {
   if (typeof v === "number" && Number.isFinite(v)) {
-    return { amount: v, text: readingText(String(v), undefined, precision) }
+    return {
+      amount: v,
+      text: readingText(units, String(v), undefined, precision),
+    }
   }
   if (typeof v === "string") {
     // A decimal travels as a string.
     if (DECIMAL.test(v)) {
-      return { amount: Number(v), text: readingText(v, undefined, precision) }
+      return {
+        amount: Number(v),
+        text: readingText(units, v, undefined, precision),
+      }
     }
     const ms = durationMs(v)
     if (ms !== undefined) return { amount: ms, text: durationWords(ms) }
@@ -2060,7 +2068,10 @@ export function amountOf(
   if (isBag(v) && given(v.value) && typeof v.unit === "string") {
     const n = Number(v.value)
     if (!Number.isFinite(n)) return undefined
-    return { amount: n, text: readingText(String(v.value), v.unit, precision) }
+    return {
+      amount: n,
+      text: readingText(units, String(v.value), v.unit, precision),
+    }
   }
   return undefined
 }
@@ -2080,6 +2091,7 @@ export interface BreakdownItem {
  * that is no number, duration or quantity is left out and named in
  * `skipped`. */
 export function breakdownItems(
+  units: UnitReader,
   block: BreakdownBlock,
   record: SubstrateRecord
 ): { items: BreakdownItem[]; skipped: string[] } {
@@ -2107,7 +2119,7 @@ export function breakdownItems(
   const skipped: string[] = []
   const items: BreakdownItem[] = []
   for (const n of named) {
-    const a = amountOf(n.value)
+    const a = amountOf(units, n.value)
     if (!a) {
       skipped.push(n.key)
       continue
@@ -2115,7 +2127,7 @@ export function breakdownItems(
     items.push({ key: n.key, name: n.name, amount: a.amount, text: a.text })
   }
   const total = block.total
-    ? amountOf(valueAt(record, block.total))?.amount
+    ? amountOf(units, valueAt(record, block.total))?.amount
     : items.reduce((s, i) => s + (i.amount ?? 0), 0)
   if (total && total > 0) {
     for (const i of items) {
@@ -2146,6 +2158,7 @@ export function bandOf(
  * 30-day average of 42 %". No tone where `better` is none or nothing
  * changed. */
 export function deltaWords(
+  units: UnitReader,
   value: number,
   avg: number,
   better: Better,
@@ -2157,7 +2170,8 @@ export function deltaWords(
   const round = (n: number) => Number(n.toFixed(precision))
   const shown = round(change)
   const sign = shown > 0 ? "+" : shown < 0 ? "-" : ""
-  const fmt = (n: number) => readingText(String(round(n)), unit, precision)
+  const fmt = (n: number) =>
+    readingText(units, String(round(n)), unit, precision)
   const average = days ? `the ${days}-day average` : "the average"
   const percent = unit === "%"
   const pct =
@@ -2169,7 +2183,7 @@ export function deltaWords(
       ? ""
       : ` (${pct > 0 ? "+" : pct < 0 ? "-" : ""}${Math.abs(pct)}%)`
   const changed = percent
-    ? `${readingText(String(round(Math.abs(change))), undefined, precision)} ${Math.abs(shown) === 1 ? "point" : "points"}`
+    ? `${readingText(units, String(round(Math.abs(change))), undefined, precision)} ${Math.abs(shown) === 1 ? "point" : "points"}`
     : fmt(Math.abs(change))
   const text = `${sign}${changed}${pctText} vs ${average} of ${fmt(avg)}`
   const tone: Tone =
@@ -2186,6 +2200,7 @@ export function deltaWords(
  * points, with no relative part. It carries no tone: a view names no better
  * direction for a lab's analyte. */
 export function changeSinceWords(
+  units: UnitReader,
   value: number,
   previous: number,
   previousAt: number,
@@ -2201,12 +2216,12 @@ export function changeSinceWords(
   const size = String(round(Math.abs(change)))
   if (unit === "%") {
     const points = Math.abs(shown) === 1 ? "point" : "points"
-    return `${sign}${readingText(size, undefined, precision)} ${points} ${since}`
+    return `${sign}${readingText(units, size, undefined, precision)} ${points} ${since}`
   }
   const pct =
     previous !== 0 ? Math.round((change / Math.abs(previous)) * 100) : 0
   const pctText = pct ? ` (${pct > 0 ? "+" : "-"}${Math.abs(pct)}%)` : ""
-  return `${sign}${readingText(size, unit, precision)}${pctText} ${since}`
+  return `${sign}${readingText(units, size, unit, precision)}${pctText} ${since}`
 }
 
 // ── spans ─────────────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ import { type ReviewRow } from "@/lib/changerequests"
 import { fieldOf } from "@/lib/record-form"
 import { ownerWritable, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 const GRID3 =
   "grid grid-cols-[minmax(96px,150px)_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)_minmax(0,1fr)]"
@@ -60,6 +61,7 @@ export function ReviewComparison({
    * machine starts it. */
   create?: boolean
 }) {
+  const units = useUnits()
   const [technical] = useTechnicalDetails()
   const [editing, setEditing] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -103,7 +105,7 @@ export function ReviewComparison({
     return {
       name: row.key,
       spec,
-      field: fieldOf(spec),
+      field: fieldOf(units, spec),
       value,
       filled: value !== undefined && value !== null && value !== "",
     }

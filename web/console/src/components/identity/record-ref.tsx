@@ -28,6 +28,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecs } from "@/lib/record-schema"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 export interface RecordRefProps {
   /** The record's kind reference, `<authority>/<package>/<name>`. */
@@ -191,6 +192,7 @@ function LiveRecordCard({
   id: string
   title?: string
 }) {
+  const units = useUnits()
   const [technical] = useTechnicalDetails()
   const { authority, pkg, name } = splitKind(kind)
   const kinds = useQuery(kindsQueryOptions)
@@ -212,7 +214,7 @@ function LiveRecordCard({
         if (!referenceCell(value)) continue
         facts.push({ label, detail, value: <ReferenceTitles value={value} /> })
       } else {
-        const text = cellValue(value)
+        const text = cellValue(units, value)
         if (!text) continue
         facts.push({ label, detail, value: text })
       }

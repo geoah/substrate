@@ -11,7 +11,7 @@
  *   whether the engine `managed:` it, a state machine's
  *   states, `min`/`max`/`pattern`, a declared `default`, the `writer:` role,
  *   an object's declared `fields` (which nest), and the one-liner.
- * - `checkValue(spec, value)` — the client's copy of the substrate's own
+ * - `checkValue(units, spec, value)` — the client's copy of the substrate's own
  *   coercion rules (`internal/engine/validate.go`), so a bad datetime, a
  *   string where an int is declared or an unadmitted enum value is named ON
  *   THE LINE instead of arriving as a 422 after the round trip. It is
@@ -36,14 +36,8 @@ import {
 import { withFormWords } from "@/lib/observed-form"
 import { scalarText } from "@/lib/format"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
-import {
-  checkQuantity,
-  formatQuantityText,
-  parseQuantityText,
-  quantityExample,
-  readQuantity,
-  type Quantity,
-} from "@/lib/units"
+import type { UnitReader } from "@/lib/unit-reader"
+import { formatQuantityText, readQuantity, type Quantity } from "@/lib/units"
 
 /** The `kind:` pin a reference wears when it is pinned to no kind at all. */
 export const TO_ANY = "any"
@@ -125,6 +119,11 @@ export interface PropSpec {
   max?: number
   /** `quantity`: the declared measure every unit belongs to (`mass`). */
   measures?: string
+  /** `quantity`: the declared anchor unit, read through the repository's
+   * unit graph (decision 0186). */
+  unit?: string
+  /** `quantity`: every value is a difference, converted without an offset. */
+  delta?: boolean
   /** `quantity`: the unit codes the declaration narrows to. */
   units?: string[]
   /** `quantity`: a value may carry a comparator (`<0.5 ng/mL`). */
@@ -284,16 +283,24 @@ function transitionsOf(v: unknown): StateTransition[] | undefined {
   return out
 }
 
-/** A quantity property's own keys: `measures`, `units`, `comparator`, and
- * `min`/`max` as quantity values. */
+/** A quantity property's own keys: `measures`, `unit`, `delta`, `units`,
+ * `comparator`, and `min`/`max` as quantity values. */
 function quantitySpecOf(
   def: Record<string, unknown>
 ): Pick<
   PropSpec,
-  "measures" | "units" | "comparator" | "minQuantity" | "maxQuantity"
+  | "measures"
+  | "unit"
+  | "delta"
+  | "units"
+  | "comparator"
+  | "minQuantity"
+  | "maxQuantity"
 > {
   return {
     measures: typeof def.measures === "string" ? def.measures : undefined,
+    unit: typeof def.unit === "string" ? def.unit : undefined,
+    delta: def.delta === true ? true : undefined,
     units: stringList(def.units),
     comparator: def.comparator === true,
     minQuantity: readQuantity(def.min),
@@ -538,7 +545,10 @@ export function typeLabel(spec: PropSpec): string {
  * blank create is not a blank page. Shown as a placeholder in the form lens and
  * as an `e.g.` in the template's trailing comment. Derived from the
  * declaration alone, never from a kind's name. */
-export function exampleFor(spec: PropSpec): string | undefined {
+export function exampleFor(
+  units: UnitReader,
+  spec: PropSpec
+): string | undefined {
   if (spec.keyed) return "{}"
   if (spec.values?.length) return spec.values[0].value
   if (spec.states?.length) return spec.initial ?? spec.states[0]
@@ -554,7 +564,7 @@ export function exampleFor(spec: PropSpec): string | undefined {
     case "money":
       return MONEY_EXAMPLE
     case "quantity":
-      return quantityExample(spec)
+      return units.example(spec)
     case "email":
       return "someone@example.com"
     case "url":
@@ -665,7 +675,11 @@ function validTimezone(name: string): boolean {
 /** Check ONE value against the declaration's element rules, ignoring whether
  * the property is repeated: a list's item and a scalar property answer to the
  * same datatype. */
-function checkItem(spec: PropSpec, value: unknown): string | undefined {
+function checkItem(
+  units: UnitReader,
+  spec: PropSpec,
+  value: unknown
+): string | undefined {
   if (isObjectKind(spec.kind)) {
     if (spec.kind === "json") {
       return value === undefined ? "expected a value" : undefined
@@ -678,7 +692,7 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
       for (const [name, field] of Object.entries(held)) {
         const declared = spec.fields.find((f) => f.name === name)
         if (!declared) return `\`${name}\` is not a declared property`
-        const problem = checkValue(declared, field)
+        const problem = checkValue(units, declared, field)
         if (problem) return underField(name, problem)
       }
       // A field the declaration marks REQUIRED has to be there. Checking only
@@ -716,7 +730,7 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
     for (const [name, held_] of Object.entries(held.properties)) {
       const declared = spec.linkFields?.find((f) => f.name === name)
       if (!declared) return `\`${name}\` is not a declared link property`
-      const problem = checkValue(declared, held_)
+      const problem = checkValue(units, declared, held_)
       if (problem) return underField(name, problem)
     }
     for (const declared of spec.linkFields ?? []) {
@@ -734,7 +748,7 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
 
   if (spec.kind === "money") return checkMoney(value, spec.min, spec.max)
 
-  if (spec.kind === "quantity") return checkQuantity(value, spec)
+  if (spec.kind === "quantity") return units.check(value, spec)
 
   if (isNumericKind(spec.kind)) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -774,7 +788,7 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
     if (typeof digest !== "string") {
       return "expected a blob digest (blob-sha256-<64 hex>) under `digest`"
     }
-    return checkItem(spec, digest)
+    return checkItem(units, spec, digest)
   }
 
   if (typeof value !== "string") return "expected a string"
@@ -877,7 +891,11 @@ export function checkKey(spec: PropSpec, key: string): string | undefined {
   return undefined
 }
 
-export function checkValue(spec: PropSpec, value: unknown): string | undefined {
+export function checkValue(
+  units: UnitReader,
+  spec: PropSpec,
+  value: unknown
+): string | undefined {
   if (value === null || value === undefined) return undefined
   if (spec.keyed) {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -889,7 +907,7 @@ export function checkValue(spec: PropSpec, value: unknown): string | undefined {
     )) {
       const badKey = checkKey(spec, key)
       if (badKey) return badKey
-      const problem = checkItem(item, entry)
+      const problem = checkItem(units, item, entry)
       if (problem) return underField(key, problem)
     }
     return undefined
@@ -897,13 +915,13 @@ export function checkValue(spec: PropSpec, value: unknown): string | undefined {
   if (spec.repeated) {
     if (!Array.isArray(value)) return `expected a list of ${spec.kind}`
     for (let i = 0; i < value.length; i++) {
-      const problem = checkItem(spec, value[i])
+      const problem = checkItem(units, spec, value[i])
       if (problem) return `[${i}]: ${problem}`
     }
     return undefined
   }
   if (Array.isArray(value)) return `expected a single ${spec.kind}`
-  return checkItem(spec, value)
+  return checkItem(units, spec, value)
 }
 
 // ── text ↔ value ────────────────────────────────────────────────────────────
@@ -962,14 +980,18 @@ export interface ParsedValue {
 
 /** Read a control's text back into the typed value the write carries. Blank is
  * "no value" (`{}` with neither key), which a caller reads as absent. */
-export function parseValue(spec: PropSpec, text: string): ParsedValue {
+export function parseValue(
+  units: UnitReader,
+  spec: PropSpec,
+  text: string
+): ParsedValue {
   const control = controlFor(spec)
   if (control === "list") {
     const items = text
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean)
-      .map((s) => parseScalarText(spec, s))
+      .map((s) => parseScalarText(units, spec, s))
       // A line that holds no value yet (a money row with only its currency).
       .filter((p) => p.error || p.value !== undefined)
     const bad = items.find((p) => p.error)
@@ -978,22 +1000,26 @@ export function parseValue(spec: PropSpec, text: string): ParsedValue {
   }
   const trimmed = control === "prose" || control === "json" ? text : text.trim()
   if (!trimmed) return {}
-  return parseScalarText(spec, trimmed)
+  return parseScalarText(units, spec, trimmed)
 }
 
-function parseScalarText(spec: PropSpec, text: string): ParsedValue {
+function parseScalarText(
+  units: UnitReader,
+  spec: PropSpec,
+  text: string
+): ParsedValue {
   if (spec.kind === "money") {
     // A currency chosen with no amount typed is no value yet.
     if (!splitMoneyText(text).amount) return {}
     const parsed = parseMoneyText(text)
     if (parsed.error) return { error: parsed.error }
-    const problem = checkItem(spec, parsed.value)
+    const problem = checkItem(units, spec, parsed.value)
     return problem ? { error: problem } : { value: parsed.value }
   }
   if (spec.kind === "quantity") {
-    const parsed = parseQuantityText(text)
+    const parsed = units.parse(text)
     if (parsed.error) return { error: parsed.error }
-    const problem = checkItem(spec, parsed.value)
+    const problem = checkItem(units, spec, parsed.value)
     return problem ? { error: problem } : { value: parsed.value }
   }
   if (isObjectKind(spec.kind)) {
@@ -1006,10 +1032,10 @@ function parseScalarText(spec: PropSpec, text: string): ParsedValue {
   if (isNumericKind(spec.kind)) {
     const n = Number(text)
     if (!Number.isFinite(n)) return { error: "expected a number" }
-    const problem = checkItem(spec, n)
+    const problem = checkItem(units, spec, n)
     return problem ? { error: problem } : { value: n }
   }
   if (isBooleanKind(spec.kind)) return { value: text === "true" }
-  const problem = checkItem(spec, text)
+  const problem = checkItem(units, spec, text)
   return problem ? { error: problem } : { value: text }
 }

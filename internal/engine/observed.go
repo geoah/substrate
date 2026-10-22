@@ -31,21 +31,40 @@ func observedBinding(ty *vocabulary.Kind) (vocabulary.TraitBinding, bool) {
 // ones; and a packed record's written `unit` is rewritten to its table code
 // (`bpm` is stored as `/min`), the way a quantity's unit is. A unit the table
 // cannot read is left for CheckObserved to refuse by name.
-func prepareObserved(sp *applySpec) {
+//
+// Under the unit graph switch a packed record's `unit` is resolved through
+// the transaction's graph and stored as the unit's id, and a spelling the
+// graph does not hold is refused here.
+func (t *txn) prepareObserved(sp *applySpec) error {
 	b, ok := observedBinding(sp.ty)
 	if !ok {
-		return
+		return nil
 	}
 	delete(sp.props, vocabulary.ObservedMeasure)
 	if b.Variant != vocabulary.ObservedPacked {
-		return
+		return nil
 	}
 	delete(sp.props, vocabulary.ObservedStats)
-	if u, ok := sp.props["unit"].(string); ok && u != "" {
+	u, ok := sp.props["unit"].(string)
+	if !ok || u == "" {
+		return nil
+	}
+	if !t.ds.svc.unitGraphOn {
 		if code, err := vocabulary.CanonicalUnit(u); err == nil {
 			sp.props["unit"] = code
 		}
+		return nil
 	}
+	at, err := t.unitGraph()
+	if err != nil {
+		return err
+	}
+	id, ok := at.graph.Resolve(u)
+	if !ok {
+		return &substrate.ValidationError{Problems: []string{fmt.Sprintf("props.unit: %q names no unit of this repository", u)}}
+	}
+	sp.props["unit"] = id
+	return nil
 }
 
 // checkObserved holds the merged row of an observed kind to the trait's
@@ -63,13 +82,26 @@ func (t *txn) checkObserved(sp *applySpec, before, row *erow, accepted *[]string
 		return nil
 	}
 	var problems []string
+	// Under the unit graph switch the units are read through the
+	// transaction's graph (decision 0186) and no measure is stamped.
+	var units *vocabulary.UnitGraph
+	if t.ds.svc.unitGraphOn && (observed || metric) {
+		at, err := t.unitGraph()
+		if err != nil {
+			return err
+		}
+		units = at.graph
+	}
 	if observed {
 		_, result := sp.ty.Binding(vocabulary.TraitResultCore)
 		problems = vocabulary.CheckObserved(vocabulary.ObservedRecord{
-			Variant: b.Variant, At: row.At, EndsAt: row.EndsAt, Props: row.Props, Result: result,
+			Variant: b.Variant, At: row.At, EndsAt: row.EndsAt, Props: row.Props, Result: result, Units: units,
 		})
 	}
-	if metric {
+	switch {
+	case metric && units != nil:
+		problems = append(problems, vocabulary.CheckMetricIn(units, row.Props)...)
+	case metric:
 		problems = append(problems, vocabulary.CheckMetric(row.Props)...)
 	}
 	if source {
@@ -91,7 +123,11 @@ func (t *txn) checkObserved(sp *applySpec, before, row *erow, accepted *[]string
 	if !observed {
 		return nil
 	}
-	stampManaged(row, vocabulary.ObservedMeasure, observedMeasure(sp.ty, b.Variant, row.Props), accepted)
+	measure := ""
+	if units == nil {
+		measure = observedMeasure(sp.ty, b.Variant, row.Props)
+	}
+	stampManaged(row, vocabulary.ObservedMeasure, measure, accepted)
 	if b.Variant != vocabulary.ObservedPacked || row.At == nil {
 		return nil
 	}
@@ -144,20 +180,20 @@ func observedMeasure(ty *vocabulary.Kind, variant string, props map[string]any) 
 // does, except that a packed observed record's `values` and `codes` keep a
 // null item: unavailable from that point on (decision 0158). Every other list
 // refuses a null, as it always has.
-func coerceProp(ty *vocabulary.Kind, name string, p *vocabulary.Property, v any) (any, error) {
+func (c coercer) prop(ty *vocabulary.Kind, name string, p *vocabulary.Property, v any) (any, error) {
 	if !p.Repeated || !vocabulary.ObservedNullable(ty, name) {
-		return coerceValue(p, v)
+		return c.value(p, v)
 	}
 	items, ok := v.([]any)
 	if !ok {
-		return coerceValue(p, v)
+		return c.value(p, v)
 	}
 	out := make([]any, len(items))
 	for i, item := range items {
 		if item == nil {
 			continue
 		}
-		cv, err := coerceScalar(p, item)
+		cv, err := c.scalar(p, item)
 		if err != nil {
 			return nil, fmt.Errorf("[%d]: %w", i, err)
 		}

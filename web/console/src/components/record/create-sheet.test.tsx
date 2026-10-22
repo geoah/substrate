@@ -24,6 +24,7 @@ import {
   renderSheet,
   shownRows,
 } from "./create-sheet.kinds"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 const TASK = "samples.substrate.reamde.dev/tasks/task"
 const PERSON = "samples.substrate.reamde.dev/people/person"
@@ -104,9 +105,13 @@ describe("the create sheet", () => {
   // mapping; the heading field is text and must not print "[object Object]".
   it("leaves the title field empty while the draft's title is not text", () => {
     const task = kindOf(TASK)
-    const text = setIn(templateYAML(task), ["data", "properties", "name"], {
-      first: "a",
-    })
+    const text = setIn(
+      templateYAML(TABLE_UNITS, task),
+      ["data", "properties", "name"],
+      {
+        first: "a",
+      }
+    )
     renderSheet(task, KINDS, false, text)
     expect(
       screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value

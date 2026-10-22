@@ -12,7 +12,7 @@ package engine
 // the version diff per declaration, the narrowings whose live rows must be
 // counted, and the guard lines settled without a count. The boot path stages,
 // counts inside its transaction and projects; PlanShippedUpgrade stages, counts
-// over the bare pool and answers `GET /api/v1/vocabulary/upgrade`. One diff and
+// in one read snapshot and answers `GET /api/v1/vocabulary/upgrade`. One diff and
 // one guard set, so what the read reports blocked is exactly what the boot
 // refused, and a guard added to one door is added to both.
 
@@ -186,7 +186,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// land at boot and break every create of that kind afterwards, and the door
 	// that refuses it by hand would have caught it. It needs no live rows, so it
 	// is decided before any row is counted.
-	st.refused = checkDeclaredDefaults(reg, st.upgrade)
+	st.refused = checkDeclaredDefaults(ds.coercer(), reg, st.upgrade)
 	// The retired-name check the same door takes (decision 0055): a shipped
 	// declaration that reuses a name this repository's stored closure retired,
 	// or a tree that dropped a stored retirement, is refused before any row
@@ -234,7 +234,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 			candT, _ := candidate.ByIdentity(ident)
 			st.narrowings = append(st.narrowings, typeNarrowings(curT, candT, moved)...)
 			st.refused = append(st.refused, kindRetirementGuards(curT, candT)...)
-			for _, line := range kindDefaultProblems(candT) {
+			for _, line := range kindDefaultProblems(ds.coercer(), candT) {
 				if !slices.Contains(st.refused, line) {
 					st.refused = append(st.refused, line)
 				}
@@ -459,7 +459,7 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 
 // PlanShippedUpgrade reports what this binary's boot upgrade would do to each
 // shipped package here, and the guard lines it refuses on: the same staging
-// and the same counts the boot runs (st.guards), over the bare pool, writing
+// and the same counts the boot runs (st.guards), in one read snapshot, writing
 // nothing. The boot refuses the shipped set as a whole, so every package with
 // something to write carries the whole blocker list, which is exactly the list
 // the refusal logged; the conversion steps are each package's own
@@ -472,7 +472,12 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 	if len(st.upgrade) == 0 {
 		return st.plans, nil
 	}
-	blockers, plan, err := st.guards(dbReader{ctx: ctx, db: ds.db}, ds.svc.conversionCeiling)
+	q, done, err := ds.previewReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	blockers, plan, err := st.guards(q, ds.svc.conversionCeiling)
 	if err != nil {
 		return nil, err
 	}

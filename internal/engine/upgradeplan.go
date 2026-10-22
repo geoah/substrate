@@ -16,7 +16,7 @@ package engine
 //     built alone, enumerated by packageDeclarations (the one enumeration)
 //     against the stored versions, same keys, same comparator;
 //   - the BLOCKERS are the apply door's own staging and guard counts
-//     (stageVocabularyBatch, schemadiff.go), run over the bare pool instead
+//     (stageVocabularyBatch, schemadiff.go), run in one read snapshot instead
 //     of the batch transaction. What the preview reports blocked, the install
 //     refuses; what it reports clean, the install admits, modulo writes that
 //     land between the preview and the click, which the install re-checks.
@@ -33,12 +33,28 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// dbReader runs the refuse-breakage counts over the bare pool for the
-// read-only preview; the apply door runs the same counts inside its
-// transaction (txn implements sqlReader too).
+// dbReader runs the refuse-breakage counts for the read-only preview inside
+// one REPEATABLE READ snapshot (previewReader); the apply door runs the same
+// counts inside its transaction (txn implements sqlReader too). One snapshot
+// is what lets the unit graph a quantity narrowing loads carry the revision
+// it was read at: over the bare pool a conversion committing between the
+// revision read and the row read labels, and caches, one revision's graph
+// with another's number.
 type dbReader struct {
 	ctx context.Context
-	db  *sql.DB
+	db  dbx
+	// ds is the dataset the preview reads, whose unit graph a quantity
+	// narrowing judges stored values through under the switch.
+	ds *dataset
+}
+
+// previewReader opens the snapshot a preview's counts read; done ends it.
+func (ds *dataset) previewReader(ctx context.Context) (dbReader, func(), error) {
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return dbReader{}, nil, err
+	}
+	return dbReader{ctx: ctx, db: tx, ds: ds}, func() { _ = tx.Rollback() }, nil
 }
 
 func (r dbReader) row(sqlText string, args ...any) *sql.Row {
@@ -259,7 +275,11 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		}
 		return plan, err
 	}
-	q := dbReader{ctx: ctx, db: ds.db}
+	q, done, err := ds.previewReader(ctx)
+	if err != nil {
+		return plan, err
+	}
+	defer done()
 	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}

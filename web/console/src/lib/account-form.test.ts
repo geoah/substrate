@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
 import { accountFormGroups } from "./account-form"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 function kind(traits: string[], props: Record<string, unknown>): KindInfo {
   return {
@@ -54,7 +55,10 @@ const GOOGLE_LIKE = {
 
 describe("accountFormGroups", () => {
   it("offers the owner's toggles and settings, and nothing any other hand writes", () => {
-    const g = accountFormGroups(kind(["accountconfig", "sync"], GOOGLE_LIKE))
+    const g = accountFormGroups(
+      TABLE_UNITS,
+      kind(["accountconfig", "sync"], GOOGLE_LIKE)
+    )
     expect(g.toggles.map((f) => f.name)).toEqual([
       "enabledContacts",
       "enabledGmail",
@@ -69,14 +73,20 @@ describe("accountFormGroups", () => {
   })
 
   it("leaves the sync trait's two owner hands to the Sync now and Pause buttons", () => {
-    const g = accountFormGroups(kind(["accountconfig", "sync"], GOOGLE_LIKE))
+    const g = accountFormGroups(
+      TABLE_UNITS,
+      kind(["accountconfig", "sync"], GOOGLE_LIKE)
+    )
     const names = g.all.map((f) => f.name)
     expect(names).not.toContain("syncRequestedAt")
     expect(names).not.toContain("syncPaused")
   })
 
   it("offers those two names on a kind that does not bind the trait", () => {
-    const g = accountFormGroups(kind(["accountconfig"], GOOGLE_LIKE))
+    const g = accountFormGroups(
+      TABLE_UNITS,
+      kind(["accountconfig"], GOOGLE_LIKE)
+    )
     const names = g.all.map((f) => f.name)
     expect(names).toContain("syncRequestedAt")
     expect(names).toContain("syncPaused")

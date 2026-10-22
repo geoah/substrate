@@ -10,7 +10,7 @@
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
 #   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate"|"call"|
-#                     "units.convert"|"units.canonical"|"units.measure", "params": {...}}
+#                     "units.convert"|"units.canonical"|"units.measure"|"units.converts", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
 #   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)
@@ -186,8 +186,8 @@ class HostError(Exception):
 #     link/unlink/merge/split       a staged effect and returns a handle
 #   host.ids.external/url           deterministic, hash-backed, URL-safe ids
 #   host.page.resume / .more()      the paged-checkpoint wrapper
-#   host.units.convert/canonical/   the engine's unit table, over the host call
-#     measure
+#   host.units.convert/canonical/   the engine's unit table, or the repository's
+#     measure/converts              unit graph, over the host call
 #   host.observed.trace/local_day/  pure-Python builders for observed values
 #     period_id
 #
@@ -780,19 +780,22 @@ class Units:
             self._memo[key] = self._host._call(method, params)
         return self._memo[key]
 
-    def convert(self, value, from_unit, to_unit, measure=None):
-        """Convert exact digits between two units of one measure -> a decimal
-        str whose `exact` says whether it is every digit. Aliases are read
-        (`°C`, `kWh`, `mmHg`). Every digit comes back when the result has a
-        finite decimal expansion; one without is rounded to 20 significant
-        digits and `exact` is False. The value holds at most 1000 digits.
-        `measure` names the measure to convert in where the units' own reading
-        is not meant: a deviation in Cel converts to [degF] in
-        `temperature-difference`, without the offset."""
+    def convert(self, value, from_unit, to_unit, measure=None, delta=False):
+        """Convert exact digits between two units -> a decimal str whose
+        `exact` says whether it is every digit. Aliases are read (`°C`, `kWh`,
+        `mmHg`). Every digit comes back when the result has a finite decimal
+        expansion; one without is rounded to 20 significant digits and `exact`
+        is False. The value holds at most 1000 digits. `delta=True` converts a
+        difference, without the offset: a deviation of 0.3 Cel is 0.54
+        [degF]. `measure` is the engine's table's older spelling of the same
+        (`temperature-difference`), refused once the repository converts
+        through its unit graph."""
         params = {"value": _decimal_text("units.convert", value),
                   "from": from_unit, "to": to_unit}
         if measure is not None:
             params["measure"] = measure
+        if delta:
+            params["delta"] = True
         out = self._ask("units.convert", params)
         converted = Converted(out.get("value"))
         converted.exact = out.get("exact") is not False
@@ -805,8 +808,16 @@ class Units:
 
     def measure(self, code):
         """The name of the measure a unit belongs to: `mass` for `kg`, `rate`
-        for `/min`. An ambiguous or unknown code raises."""
+        for `/min`. An ambiguous or unknown code raises, and so does every
+        code once the repository converts through its unit graph: ask
+        converts instead."""
         return self._ask("units.measure", {"code": code}).get("measure")
+
+    def converts(self, a, b):
+        """Whether two unit spellings convert to one another exactly, through
+        linear conversions: True for `kg` and `[lb_av]`, False for `mg/dL`
+        and `mmol/L`, and False for a spelling no unit answers."""
+        return self._ask("units.converts", {"a": a, "b": b}).get("converts") is True
 
 
 def _ref_path(value):

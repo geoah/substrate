@@ -14,6 +14,7 @@ import { sheetRows } from "./sheet-rows"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { fieldOf } from "@/lib/record-form"
 import { propSpecsByName } from "@/lib/record-schema"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 const TASK = "ada.example.com/tasks/task"
 
@@ -64,7 +65,7 @@ const record: SubstrateRecord = {
 }
 
 describe("sheetRows", () => {
-  const rows = sheetRows(record, task)
+  const rows = sheetRows(TABLE_UNITS, record, task)
   it("reads states, then references, enums, dates, then the rest", () => {
     expect(rows.filled.map((r) => r.name)).toEqual([
       "status",
@@ -92,14 +93,17 @@ describe("sheetRows", () => {
   })
 
   it("locks every row of a provider's copy", () => {
-    const ro = sheetRows(record, task, true)
+    const ro = sheetRows(TABLE_UNITS, record, task, true)
     expect(ro.all.every((r) => r.lock === "provider" && !r.field)).toBe(true)
   })
 })
 
 describe("propertyWrite", () => {
   const field = (name: string) =>
-    fieldOf(propSpecsByName(task).find((s) => s.name === name)!)
+    fieldOf(
+      TABLE_UNITS,
+      propSpecsByName(task).find((s) => s.name === name)!
+    )
 
   it("writes the one property that moved", () => {
     expect(propertyWrite(field("zeta"), "z", "y")).toEqual({
@@ -152,7 +156,7 @@ describe("propertyWrite", () => {
 
   it("reads each list item alone: its lines and its untouched spaces stay", () => {
     const tags = field("tags")
-    const notes = fieldOf({
+    const notes = fieldOf(TABLE_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "markdown",
     })
@@ -172,7 +176,7 @@ describe("propertyWrite", () => {
   })
 
   it("says which list item its datatype refuses", () => {
-    const emails = fieldOf({
+    const emails = fieldOf(TABLE_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "email",
     })
@@ -182,7 +186,7 @@ describe("propertyWrite", () => {
   })
 
   it("holds money list items as their exact text and keeps untouched ones", () => {
-    const prices = fieldOf({
+    const prices = fieldOf(TABLE_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "money",
     })
@@ -202,7 +206,7 @@ describe("propertyWrite", () => {
   })
 
   it("holds quantity list items as their exact text and keeps untouched ones", () => {
-    const readings = fieldOf({
+    const readings = fieldOf(TABLE_UNITS, {
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
       kind: "quantity",
       measures: "mass",

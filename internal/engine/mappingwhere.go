@@ -39,7 +39,7 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 	if err != nil {
 		return false, err
 	}
-	b := &builder{rowProps: whereProps(m, row.Props)}
+	b := &builder{rowProps: whereProps(m, row.Props), tx: t}
 	relation := `SELECT ` + b.arg(string(props)) + `::jsonb AS props, ` +
 		b.arg(string(rawStates)) + `::jsonb AS states, ` +
 		b.arg(row.Title) + `::text AS title, ` +

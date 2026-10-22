@@ -54,6 +54,7 @@ import {
 import type { TimeRange } from "@/lib/observations-time"
 import { humanizeName } from "@/lib/record-schema"
 import { isTimeUnit } from "@/lib/units"
+import { useUnits } from "@/hooks/use-units"
 
 export function StatsBlockView({
   block,
@@ -238,6 +239,7 @@ function MetricTile({
   bound?: Bound
   ctx: BlockContext
 }) {
+  const units = useUnits()
   const label =
     item.label ?? info?.name ?? (path ? metricWords(refIdOf(path)) : "Metric")
   const common = {
@@ -277,6 +279,7 @@ function MetricTile({
   // value is digits beside its unit.
   const timed = Boolean(unit && isTimeUnit(unit))
   const text = readingText(
+    units,
     v.value,
     timed ? unit : undefined,
     precision,
@@ -300,6 +303,7 @@ function MetricTile({
   const delta =
     base && numeric !== null
       ? deltaWords(
+          units,
           numeric,
           base.avg,
           item.better,
@@ -340,13 +344,14 @@ function PropertyTile({
   block: StatsBlock
   ctx: BlockContext
 }) {
+  const units = useUnits()
   const path = item.property!
   const segments = path.split(".")
   const head = segments[0]
   const nested = segments.length > 1
   const rows = useMemo(
-    () => sheetRows(ctx.record, ctx.kind, true).all,
-    [ctx.record, ctx.kind]
+    () => sheetRows(units, ctx.record, ctx.kind, true).all,
+    [units, ctx.record, ctx.kind]
   )
   const row = rows.find((r) => r.name === head)
   const label =
@@ -355,7 +360,7 @@ function PropertyTile({
     humanizeName(segments[segments.length - 1])
   const value = valueAt(ctx.record, path)
   const precision = item.precision ?? DEFAULT_PRECISION
-  const amount = amountOf(value, precision)
+  const amount = amountOf(units, value, precision)
   const numeric = amount?.amount ?? null
   const band = numeric === null ? undefined : bandOf(numeric, block.bands)
   const common = {

@@ -17,7 +17,9 @@ import {
   type Band,
   type Tone,
 } from "@/lib/record-view"
-import { floatDigits, unitSymbol } from "@/lib/units"
+import { floatDigits } from "@/lib/units"
+import { useUnits } from "@/hooks/use-units"
+import type { UnitReader } from "@/lib/unit-reader"
 
 export interface StatTileProps {
   label: string
@@ -57,6 +59,7 @@ export interface StatTileProps {
 }
 
 export function StatTile(props: StatTileProps) {
+  const units = useUnits()
   const {
     label,
     value,
@@ -73,7 +76,7 @@ export function StatTile(props: StatTileProps) {
     qualifier,
   } = props
   const said = value !== undefined || props.figure !== undefined
-  const symbol = unit ? unitSymbol(unit) : ""
+  const symbol = unit ? units.symbol(unit) : ""
   let figure: ReactNode
   if (show === "dial") {
     const min = props.min ?? 0
@@ -344,6 +347,7 @@ const BOUND_GAP = 25
  * one-sided range) only where it keeps clear of them. A bound prints in
  * full, the digits it was written with, never cut to two places. */
 function boundLabels(
+  units: UnitReader,
   edges: readonly { v: number }[],
   min: number | undefined,
   at: (v: number) => number,
@@ -351,7 +355,7 @@ function boundLabels(
   precision?: number
 ): { at: number; text: string }[] {
   const full = (v: number, u?: string) =>
-    readingText(floatDigits(v), u, Math.max(precision ?? 0, placesOf(v)))
+    readingText(units, floatDigits(v), u, Math.max(precision ?? 0, placesOf(v)))
   const values = [...new Set(edges.map((e) => e.v))].sort((a, b) => a - b)
   const groups: number[][] = []
   for (const v of values) {
@@ -410,6 +414,7 @@ export function RangeBar({
    * edge and is printed under the bar where the ends are not. */
   marked?: boolean
 }) {
+  const units = useUnits()
   const known = [
     // A reference range's scale holds its named start; a stats bar's
     // padding is the values' own.
@@ -429,7 +434,8 @@ export function RangeBar({
   // end is no bound of anything, and read as one it misleads.
   const labelled = min !== undefined && max !== undefined
   const at = (v: number) => percentOf(v, lo, hi)
-  const text = (v: number) => readingText(String(round(v)), unit, precision)
+  const text = (v: number) =>
+    readingText(units, String(round(v)), unit, precision)
   // A reference range's bounds, each once, where they fall on the scale.
   const edges = marked
     ? bands.flatMap((b) =>
@@ -439,7 +445,9 @@ export function RangeBar({
       )
     : []
   const printed =
-    labelled || !marked ? [] : boundLabels(edges, min, at, unit, precision)
+    labelled || !marked
+      ? []
+      : boundLabels(units, edges, min, at, unit, precision)
   const valueAt = value === null ? undefined : at(value)
   const mark = toneColor(
     tone ??

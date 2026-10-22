@@ -44,6 +44,7 @@ import {
   type FormValues,
 } from "@/lib/record-form"
 import { splitKind } from "@/lib/definition"
+import { useUnits } from "@/hooks/use-units"
 
 /** The named fields first, in the order named; the rest keep theirs. */
 function firstThenRest(
@@ -98,14 +99,15 @@ export function RecordConfigForm({
   onOpenChange,
   onSaved,
 }: RecordConfigFormProps) {
+  const units = useUnits()
   const queryClient = useQueryClient()
   const registry = useQuery(kindsQueryOptions)
   const fields = useMemo(
     () =>
-      firstThenRest(buildFormFields(type), first ?? []).map((f) =>
+      firstThenRest(buildFormFields(units, type), first ?? []).map((f) =>
         help?.[f.name] ? { ...f, description: help[f.name] } : f
       ),
-    [type, first, help]
+    [units, type, first, help]
   )
   // The fold: with a `first` set, everything not in it is an extra.
   const extras = useMemo(

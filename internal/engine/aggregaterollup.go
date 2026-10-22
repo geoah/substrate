@@ -136,7 +136,9 @@ func (r *aggRun) convertStats(s observed.Stats, g obsGroup, source string) (obse
 	f, o := c.ff, c.fo
 	s.Sum = f*s.Sum + o*float64(s.Values)
 	s.Min, s.Max, s.Mean = f*s.Min+o, f*s.Max+o, f*s.Mean+o
-	s.M2 *= f * f
+	// Two products, not f*f: a factor whose square overflows makes an M2 of
+	// 0 (one value) NaN, where the deviation is 0.
+	s.M2 = s.M2 * f * f
 	s.TWASum = f*s.TWASum + o*float64(s.HeldMs)
 	if s.Increase != nil {
 		s.Increase = new(big.Rat).Mul(s.Increase, c.f)

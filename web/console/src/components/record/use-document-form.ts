@@ -42,6 +42,7 @@ import {
   propertiesOf,
   setIn,
 } from "@/lib/record-yaml"
+import { useUnits } from "@/hooks/use-units"
 
 /** Datatypes whose blank is an authored empty string rather than "unset": the
  * key stays in the document (with its template comment) instead of vanishing
@@ -59,7 +60,11 @@ export function useDocumentForm({
   record?: SubstrateRecord
   onChange: (text: string) => void
 }) {
-  const fields = useMemo(() => requiredFirst(buildFormFields(kind)), [kind])
+  const units = useUnits()
+  const fields = useMemo(
+    () => requiredFirst(buildFormFields(units, kind)),
+    [units, kind]
+  )
   const properties = propertiesOf(text)
   // A DECLARATION is named by its id, not given one: the id's first segment IS
   // its authority and the second IS its package.
@@ -89,7 +94,11 @@ export function useDocumentForm({
     const held = properties?.[field.name]
     const problem =
       toFieldValue(field, values[field.name]).error ??
-      checkValue(field.spec, blankIsUnset(field.spec, held) ? undefined : held)
+      checkValue(
+        units,
+        field.spec,
+        blankIsUnset(field.spec, held) ? undefined : held
+      )
     if (problem) errors[field.name] = problem
   }
 

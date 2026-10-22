@@ -51,6 +51,8 @@ import {
   type AccountView,
   type ProviderView,
 } from "@/lib/sync"
+import { useUnits } from "@/hooks/use-units"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** One provider as both pages show it. */
 export interface ProviderEntry {
@@ -67,10 +69,11 @@ export interface ProviderEntry {
 
 /** The account kind's owner-written bool properties, by name and label. */
 export function accountToggles(
+  units: UnitReader,
   kind: KindInfo | undefined
 ): { name: string; label: string }[] {
   if (!kind) return []
-  return accountFormGroups(kind).toggles.map((f) => ({
+  return accountFormGroups(units, kind).toggles.map((f) => ({
     name: f.name,
     label: f.label,
   }))
@@ -86,6 +89,7 @@ export function bundleTriggers(
 }
 
 function entryOf(
+  units: UnitReader,
   row: BundleRow,
   view: ProviderView | undefined,
   kinds: KindInfo[],
@@ -93,7 +97,7 @@ function entryOf(
   now: number
 ): ProviderEntry {
   const accountKind = view?.accountKind ?? accountKindOf(kinds, row.id)
-  const toggles = accountToggles(accountKind)
+  const toggles = accountToggles(units, accountKind)
   const installed = Boolean(row.status?.installed)
   const steps = setupSteps(
     stepFactsOf(
@@ -142,6 +146,7 @@ function configInputName(view: ProviderView | undefined): string | undefined {
 }
 
 export function useProviders() {
+  const units = useUnits()
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
   // The boot upgrade's preview, for the one package no catalog entry carries:
@@ -201,14 +206,21 @@ export function useProviders() {
           r.tier === "provider" || (!r.tier && r.status && viewOf.has(r.id))
       )
       .map((r) =>
-        entryOf(r, viewOf.get(r.id), kinds, triggerStatuses.data ?? [], now)
+        entryOf(
+          units,
+          r,
+          viewOf.get(r.id),
+          kinds,
+          triggerStatuses.data ?? [],
+          now
+        )
       )
       .sort(
         (a, b) =>
           Number(!a.row.status) - Number(!b.row.status) ||
           a.info.name.localeCompare(b.info.name)
       )
-  }, [rows, views, kinds, triggerStatuses.data, now])
+  }, [units, rows, views, kinds, triggerStatuses.data, now])
 
   // Everything else this repository holds: imported samples, the seeded
   // llm package, anything applied directly.

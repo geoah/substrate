@@ -452,6 +452,13 @@ type builder struct {
 	// than live rows, so a quantity read that collects the rows' units
 	// (quantity.go storedQuantityUnits) reads the same side.
 	tombstones bool
+	// units is the unit graph a quantity filter or order converted through
+	// under the unit graph switch (quantitygraph.go), read once in the read's
+	// snapshot; non-nil, it is what a list's cursor carries the revision of.
+	units *unitGraphAt
+	// tx is the write transaction a mapping's where runs in, whose own graph
+	// a quantity filter reads.
+	tx *txn
 }
 
 // planWithValues makes the rest of a read's transaction plan each statement
@@ -522,20 +529,28 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if err != nil {
 		return nil, err
 	}
-	terms, err := ds.orderTerms(types, q.OrderBy)
+	terms, err := ds.orderTerms(ctx, tx, b, types, q.OrderBy)
 	if err != nil {
 		return nil, err
 	}
 	order := renderOrder(terms)
 	// The cursor is stamped with the order AND the filter it was minted under:
 	// a token replayed against another filter would seek past rows the new
-	// predicate admits and answer a short page that looked complete.
+	// predicate admits and answer a short page that looked complete. Under
+	// the unit graph switch a filter or an order that converted through the
+	// graph stamps its revision too, so a page after a conversion changed is
+	// refused (quantitygraph.go).
 	signature := orderSignature(order, q.Filter)
+	if b.units != nil {
+		signature += "|units@" + strconv.FormatInt(b.units.revision, 10)
+	}
 	// A quantity order gains an arm per stored unit its declaration does not
 	// name, after the signature: each arm keys a row the same whichever arms
 	// stand beside it, so a unit first written mid-walk moves no cursor.
-	if terms, err = ds.quantityOrderTerms(ctx, tx, b, types, q.OrderBy, terms); err != nil {
-		return nil, err
+	if !ds.svc.unitGraphOn {
+		if terms, err = ds.quantityOrderTerms(ctx, tx, b, types, q.OrderBy, terms); err != nil {
+			return nil, err
+		}
 	}
 	order = renderOrder(terms)
 	first := q.First
@@ -586,6 +601,11 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 			return nil, err
 		}
 		if tok.O != signature {
+			was, _, _ := strings.Cut(tok.O, "|units@")
+			now, _, _ := strings.Cut(signature, "|units@")
+			if was == now {
+				return nil, fmt.Errorf("%w: the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so start the walk again", substrate.ErrValidation)
+			}
 			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
 		}
 		if len(tok.K) != len(terms) {
@@ -1883,7 +1903,7 @@ func (t orderTerm) nonNull() bool { return nonNullColumns[t.expr] }
 // orderExpr resolves one order property to its SQL expression over the kinds
 // the read selects (readKinds): a declaration on a kind the filter leaves out
 // decides nothing, and every candidate kind still has to agree.
-func (ds *dataset) orderExpr(types []*vocabulary.Kind, property string) (string, error) {
+func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, property string) (string, error) {
 	col, err := columnFor(property)
 	if err != nil {
 		return "", err
@@ -1917,6 +1937,13 @@ func (ds *dataset) orderExpr(types []*vocabulary.Kind, property string) (string,
 		// A QUANTITY sorts by the value converted to its measure's base, the
 		// expression a declared index on it holds (indices.go).
 		if decls, ok := ds.quantityProp(types, property); ok {
+			if ds.svc.unitGraphOn {
+				at, err := ds.builderUnits(ctx, x, b)
+				if err != nil {
+					return "", err
+				}
+				return quantityOrderGraph(at, property, decls)
+			}
 			return quantityOrderSQL(`(props->`+sqlLiteral(property)+`)`, groupQuantityDecls(decls)), nil
 		}
 		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
@@ -1950,14 +1977,14 @@ func (ds *dataset) orderExpr(types []*vocabulary.Kind, property string) (string,
 // default order is newest-first (created_at DESC); the tiebreak takes the
 // leading key's direction, as it always has. types are the kinds the filter
 // selects, which orderExpr resolves each property over.
-func (ds *dataset) orderTerms(types []*vocabulary.Kind, orders []substrate.Order) ([]orderTerm, error) {
+func (ds *dataset) orderTerms(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, orders []substrate.Order) ([]orderTerm, error) {
 	var terms []orderTerm
 	tieDesc := true
 	if len(orders) == 0 {
 		terms = append(terms, orderTerm{expr: "created_at", desc: true})
 	} else {
 		for _, o := range orders {
-			expr, err := ds.orderExpr(types, o.Property)
+			expr, err := ds.orderExpr(ctx, x, b, types, o.Property)
 			if err != nil {
 				return nil, err
 			}

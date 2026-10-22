@@ -28,6 +28,9 @@ export interface AuthPolicy {
  * and out of the wire golden. */
 interface DiscoveryDoc {
   registration?: Partial<AuthPolicy>
+  /** How the deployment converts a quantity: through the repository's unit
+   * graph where `graph` is true (decision 0186), else the engine's table. */
+  units?: { graph?: boolean }
   server?: { version?: string }
   features?: { name: string; stability: string }[]
   surfaces?: Record<string, { endpoint?: string }>
@@ -104,3 +107,23 @@ export function useAuthPolicy(): AuthPolicy {
   }, [])
   return policy
 }
+
+/** Whether this deployment reads and writes quantities through the
+ * repository's unit graph (`units.graph`): the console then converts with
+ * lib/unit-graph.ts, and with lib/units.ts's table otherwise. An unanswered
+ * discovery reads as the table, which every server before the switch is. */
+export async function fetchUnitGraphSwitch(): Promise<boolean> {
+  try {
+    const doc = await fetchDiscovery()
+    return doc?.units?.graph === true
+  } catch {
+    return false
+  }
+}
+
+/** The switch as a query, shared by every reader of the page. */
+export const unitGraphSwitchQueryOptions = queryOptions({
+  queryKey: ["discovery", "unit-graph"],
+  queryFn: fetchUnitGraphSwitch,
+  staleTime: 5 * 60_000,
+})

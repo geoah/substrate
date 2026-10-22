@@ -43,6 +43,17 @@ type discoveryDoc struct {
 	// Registration is what the register door ASKS FOR, which a client cannot
 	// infer from the paths alone.
 	Registration registrationInfo `json:"registration"`
+	// Units says how this deployment converts a quantity (decision 0186).
+	Units unitsInfo `json:"units"`
+}
+
+// unitsInfo is how the deployment reads a quantity's unit.
+type unitsInfo struct {
+	// Graph is true where every quantity is read and written through the
+	// repository's unit and conversion records (GET /api/v1/units), false
+	// where the engine's built-in unit table decides. A client reads it to
+	// choose which of the two it converts with.
+	Graph bool `json:"graph"`
 }
 
 // registrationInfo is the register door's shape. It states a requirement,
@@ -230,6 +241,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			InviteRequired: h.inviteCode != "",
 			TOTPRequired:   !h.totpDisabled,
 		},
+		Units: unitsInfo{Graph: h.unitGraph},
 	}
 	writeJSON(w, http.StatusOK, doc)
 }

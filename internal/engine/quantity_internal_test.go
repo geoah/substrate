@@ -84,11 +84,16 @@ func TestCoerceQuantity(t *testing.T) {
 }
 
 func TestQuantityTitlesAndSearchText(t *testing.T) {
-	if got := quantityText(quantityValue("72.5", "kg")); got != "72.5 kg" {
+	if got := quantityText(quantityValue("72.5", "kg"), false); got != "72.5 kg" {
 		t.Fatalf("quantityText = %q", got)
 	}
-	if got := quantityText([]any{quantityValue("1", "kg"), "junk", quantityValue("37", "Cel")}); got != "1 kg, 37 °C" {
+	if got := quantityText([]any{quantityValue("1", "kg"), "junk", quantityValue("37", "Cel")}, false); got != "1 kg, 37 °C" {
 		t.Fatalf("quantityText of a list = %q", got)
+	}
+	// Under the unit graph switch the index reads the stored id, never a
+	// symbol, so a symbol edit moves no search result (decision 0186).
+	if got := quantityText([]any{quantityValue("1", "kg"), quantityValue("37", "Cel")}, true); got != "1 kg, 37 Cel" {
+		t.Fatalf("quantityText under the graph = %q", got)
 	}
 }
 

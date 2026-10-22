@@ -95,9 +95,8 @@ import {
 } from "@/lib/overlay"
 import { indexPending } from "@/lib/observations-reads"
 import { listWords } from "@/lib/tools"
-import { everydayUnits } from "@/lib/unit-choices"
-import { unitLabel } from "@/lib/units"
 import { cn } from "@/lib/utils"
+import { useUnits } from "@/hooks/use-units"
 
 /** One drawn series, with the metric it belongs to. */
 interface Drawn {
@@ -169,6 +168,7 @@ export function OverlayChart({
   onZoom: (range: TimeRange) => void
   className?: string
 }) {
+  const units = useUnits()
   const [technical] = useTechnicalDetails()
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
   // The window a keyboard zoom asked for: its chart takes the focus once
@@ -182,7 +182,7 @@ export function OverlayChart({
   const sideOf = (plot: Plot): AxisSide =>
     plan.axes.find((a) => a.plots.includes(plot))?.side ?? "left"
   const twoAxes = plan.axes.length > 1
-  const refusal = leftOutWords(plan)
+  const refusal = leftOutWords(units, plan)
 
   const client = useQueryClient()
   // Each metric that reads, once its streams are known, in a request of its
@@ -312,6 +312,7 @@ export function OverlayChart({
     if (v?.value == null && v?.code) return codeWords(v.code)
     if (boundWords(row, v)) return "no number (bounded values)"
     return readingText(
+      units,
       v?.value,
       v?.unit,
       reducerName(key) === "count" ? undefined : plot.precision,
@@ -436,7 +437,7 @@ export function OverlayChart({
             named={!title || drawn.length > 1}
             axis={
               twoAxes && !empty(state)
-                ? `${sideOf(state.plot) === "left" ? "Left" : "Right"} axis, ${unitWords(state.plot.unit)}`
+                ? `${sideOf(state.plot) === "left" ? "Left" : "Right"} axis, ${unitWords(units, state.plot.unit)}`
                 : undefined
             }
             legend={legend}
@@ -483,8 +484,8 @@ export function OverlayChart({
               onZoom(next)
             }}
             units={{
-              left: left ? unitWords(left.unit) : undefined,
-              right: right ? unitWords(right.unit) : undefined,
+              left: left ? unitWords(units, left.unit) : undefined,
+              right: right ? unitWords(units, right.unit) : undefined,
             }}
           />
         </div>
@@ -618,6 +619,7 @@ function PlotHead({
   onUnit: (metric: string, value: string) => void
   onStatistic: (metric: string, value: string) => void
 }) {
+  const units = useUnits()
   const { plot, rows, pending, failed, error, retry, stale, held } = state
   // A metric drawn as one series that carries its name: the name is its
   // legend entry, never a second line repeating it.
@@ -690,10 +692,10 @@ function PlotHead({
             // every unit the server converts to, the picker adding each code.
             options={(technical
               ? plot.units
-              : everydayUnits(plot.units, plot.stored, plot.outputUnit)
+              : units.everyday(plot.units, plot.stored, plot.outputUnit)
             ).map((value) => ({
               value,
-              label: unitLabel(value, false),
+              label: units.label(value, false),
             }))}
             selected={[plot.outputUnit ?? plot.stored ?? ""]}
             onChange={([next]) =>

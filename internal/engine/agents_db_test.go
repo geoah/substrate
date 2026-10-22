@@ -1679,7 +1679,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	}
 	refused := func(what string, diff map[string]any, op string) {
 		t.Helper()
-		_, err := normalizeDiff(gauge, diff, op)
+		_, err := normalizeDiff(coercer{}, gauge, diff, op)
 		if err == nil {
 			t.Fatalf("%s: not refused", what)
 		}
@@ -1692,7 +1692,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	// because the request diff is a non-secret json column.
 	for _, op := range []string{opCreate, opPatch} {
 		diff := map[string]any{"properties": map[string]any{"apiKey": "sk-super-secret"}}
-		if _, err := normalizeDiff(gauge, diff, op); err == nil {
+		if _, err := normalizeDiff(coercer{}, gauge, diff, op); err == nil {
 			t.Fatalf("op %s: proposing a secret apiKey was not refused", op)
 		} else if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "sensitive") {
 			t.Fatalf("op %s: secret refusal unclear: %v", op, err)
@@ -1718,7 +1718,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	refused("undeclared null property", map[string]any{"properties": map[string]any{"bogus": nil}}, opPatch)
 
 	// A well-formed diff still normalises.
-	if _, err := normalizeDiff(gauge, map[string]any{
+	if _, err := normalizeDiff(coercer{}, gauge, map[string]any{
 		"properties": map[string]any{"model": "claude-opus-5"},
 	}, opPatch); err != nil {
 		t.Fatalf("a well-formed diff was refused: %v", err)

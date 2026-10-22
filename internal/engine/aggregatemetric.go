@@ -299,7 +299,7 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 	if err := ds.streamTiers(ctx, tx, selected); err != nil {
 		return nil, err
 	}
-	store := newObsStore(ctx, tx, ds.liveFoldView())
+	store := newObsStore(ctx, tx, ds.liveFoldView(), units.graph)
 	streams, samples, err := ds.discoverForms(ctx, store, p, selected, windows, spent)
 	if err != nil {
 		return nil, err
@@ -1304,6 +1304,10 @@ type aggUnits struct {
 	value    string
 	duration string
 	conv     map[convKey]*convFactor
+	// graph is the repository's unit graph under the unit graph switch
+	// (decision 0186), nil before it: value is then a unit id, and every
+	// stored unit converts into it through graph's linear conversions.
+	graph *vocabulary.UnitGraph
 }
 
 type convKey struct {
@@ -1327,7 +1331,25 @@ func (u *aggUnits) factor(unit string, delta bool) (*convFactor, error) {
 		return c, nil
 	}
 	c := &convFactor{f: big.NewRat(1, 1), o: new(big.Rat), ff: 1, identity: true}
-	if unit != "" && u.value != "" && unit != u.value {
+	if u.graph != nil && unit != "" && u.value != "" && unit != u.value {
+		id, ok := u.graph.Resolve(unit)
+		if !ok {
+			return nil, fmt.Errorf("%q names no unit of this repository", unit)
+		}
+		if id != u.value {
+			f, o, err := u.graph.Linear(id, u.value, delta)
+			if err != nil {
+				return nil, err
+			}
+			c.f, c.o = f, o
+			c.ff, _ = f.Float64()
+			c.fo, _ = o.Float64()
+			if math.IsInf(c.ff, 0) || math.IsInf(c.fo, 0) || (c.ff == 0 && f.Sign() != 0) {
+				return nil, fmt.Errorf("the factor from %s to %s is past the range of a float, which the read reduces in", id, u.value)
+			}
+			c.identity = false
+		}
+	} else if u.graph == nil && unit != "" && u.value != "" && unit != u.value {
 		measure := u.measure
 		if delta {
 			measure = "temperature-difference"
@@ -1372,6 +1394,9 @@ func (c *convFactor) digits(s string) (string, bool) {
 // a stream's unit is its newest point's, and a point outside the range
 // refuses nothing.
 func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream) (*aggUnits, error) {
+	if p.graphUnits {
+		return ds.aggregateUnitsGraph(ctx, tx, p, streams)
+	}
 	u := &aggUnits{duration: "s"}
 	var metricUnit string
 	if p.metric != "" {
@@ -1648,12 +1673,22 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 					return p.refuse(p.reducerPath(i), "%s does not apply to %s %s: %s; %s %s takes %s",
 						r.String(), article(form), form, formWhy[form], article(form), form, strings.Join(formReducers[form], ", "))
 				}
+				if r.Name == substrate.ReducerCircularMean && u.graph != nil {
+					if u.graph.Turn(u.value) == nil {
+						return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s holds values in %s, which declares no turn",
+							aggMetricName(p), orCodes(u.value))
+					}
+					continue
+				}
 				if r.Name == substrate.ReducerCircularMean && u.measure != "angle" {
 					return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s holds %s",
 						aggMetricName(p), orNothing(u.measure))
 				}
 			}
 		}
+	}
+	if u.graph != nil {
+		return p.checkLevelsIn(u.graph, u.value, aggMetricName(p))
 	}
 	return p.checkLevels(u.measure, aggMetricName(p))
 }

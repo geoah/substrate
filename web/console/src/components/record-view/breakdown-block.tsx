@@ -5,6 +5,7 @@
 import { Bars, Part, Quiet, type BlockContext } from "./parts"
 import { listWords } from "@/lib/tools"
 import { breakdownItems, type BreakdownBlock } from "@/lib/record-view"
+import { useUnits } from "@/hooks/use-units"
 
 /** The colours a breakdown has before the quiet grey. */
 const SERIES_COLORS = 8
@@ -16,7 +17,8 @@ export function BreakdownBlockView({
   block: BreakdownBlock
   ctx: BlockContext
 }) {
-  const { items, skipped } = breakdownItems(block, ctx.record)
+  const units = useUnits()
+  const { items, skipped } = breakdownItems(units, block, ctx.record)
   const label = block.label ?? "Breakdown"
   return (
     <Part title={block.label}>

@@ -14,6 +14,7 @@ import {
   propertyColumnId,
   sortPropertyOf,
 } from "./kind-browse-columns"
+import { TABLE_UNITS } from "@/lib/unit-reader"
 
 describe("column id ↔ wire property mapping", () => {
   it("namespaces declared properties apart from system columns", () => {
@@ -125,7 +126,9 @@ describe("the temporal columns", () => {
         properties: {},
       },
     }
-    expect(buildColumns(task, [task]).map((c) => c.id)).toContain("dueAt")
+    expect(buildColumns(TABLE_UNITS, task, [task]).map((c) => c.id)).toContain(
+      "dueAt"
+    )
   })
 })
 
@@ -185,7 +188,7 @@ function renderCell(
   value: unknown,
   titles?: ReferenceTitles
 ) {
-  const column = buildColumns(TASK, REGISTRY, titles).find(
+  const column = buildColumns(TABLE_UNITS, TASK, REGISTRY, titles).find(
     (c) => c.id === columnId
   )
   const cell = column?.cell as (ctx: { getValue: () => unknown }) => ReactNode
@@ -283,7 +286,7 @@ describe("the opening columns", () => {
   }
 
   it("leads with the title, then state, time, references and enums", () => {
-    expect(buildColumns(RICH, [RICH]).map((c) => c.id)).toEqual([
+    expect(buildColumns(TABLE_UNITS, RICH, [RICH]).map((c) => c.id)).toEqual([
       "title",
       "prop:status",
       "dueAt",
@@ -294,21 +297,23 @@ describe("the opening columns", () => {
   })
 
   it("folds the property the title is into the title column", () => {
-    const columns = buildColumns(RICH, [RICH])
+    const columns = buildColumns(TABLE_UNITS, RICH, [RICH])
     expect(columns.map((c) => c.id)).not.toContain("prop:name")
     expect(columns[0].meta?.label).toBe("Name")
     const summary = {
       ...RICH,
       definition: { ...RICH.definition, displayTemplate: "{summary}" },
     }
-    expect(buildColumns(summary, [summary])[0].meta?.label).toBe("Summary")
+    expect(buildColumns(TABLE_UNITS, summary, [summary])[0].meta?.label).toBe(
+      "Summary"
+    )
   })
 
   it("adds the record id in technical mode", () => {
     expect(
-      buildColumns(RICH, [RICH], undefined, { technical: true }).map(
-        (c) => c.id
-      )
+      buildColumns(TABLE_UNITS, RICH, [RICH], undefined, {
+        technical: true,
+      }).map((c) => c.id)
     ).toContain("id")
   })
 

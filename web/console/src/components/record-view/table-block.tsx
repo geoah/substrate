@@ -69,6 +69,8 @@ import {
   type TableBlock,
 } from "@/lib/record-view"
 import { kindHasTrait } from "@/lib/traits"
+import { useUnits } from "@/hooks/use-units"
+import type { UnitReader } from "@/lib/unit-reader"
 
 /** Core's `result` trait: a lab's flags and reference ranges. */
 const RESULT_TRAIT = `${CORE_PACKAGE}/result`
@@ -124,7 +126,7 @@ function whenWords(v: unknown): string {
 
 /** A single observed value in words: its code, its quantity, its text, or
  * why it has none. */
-function valueText(p: Props): string {
+function valueText(units: UnitReader, p: Props): string {
   const code = text(p.code)
   if (code) return codeWords(code)
   const value = isBag(p.value) ? p.value : undefined
@@ -133,6 +135,7 @@ function valueText(p: Props): string {
     (typeof value.value === "string" || typeof value.value === "number")
   ) {
     return readingText(
+      units,
       String(value.value),
       text(value.unit),
       DEFAULT_PRECISION,
@@ -146,9 +149,9 @@ function valueText(p: Props): string {
 }
 
 /** The first reference range in words, and how many more there are. */
-function rangesText(v: unknown): string {
+function rangesText(units: UnitReader, v: unknown): string {
   const range = firstRange(v)
-  const first = range ? rangeWords(range) : undefined
+  const first = range ? rangeWords(units, range) : undefined
   if (!first) return ""
   const more = Array.isArray(v) ? v.length - 1 : 0
   return more > 0 ? `${first} +${more} more` : first
@@ -169,21 +172,21 @@ const NAMED: Record<
   string,
   {
     binds: (kind: KindInfo | undefined) => boolean
-    cell: (p: Props) => ReactNode
+    cell: (p: Props, units: UnitReader) => ReactNode
   }
 > = {
   metric: {
     binds: (k) => kindHasTrait(k, OBSERVED_TRAIT),
     cell: (p) => <Ref path={referenceAt(p, "metric")} />,
   },
-  value: { binds: observedSingle, cell: (p) => valueText(p) },
+  value: { binds: observedSingle, cell: (p, units) => valueText(units, p) },
   interpretation: {
     binds: (k) => kindHasTrait(k, RESULT_TRAIT),
     cell: (p) => flagWords(p.interpretation) ?? "",
   },
   referenceRanges: {
     binds: (k) => kindHasTrait(k, RESULT_TRAIT),
-    cell: (p) => rangesText(p.referenceRanges),
+    cell: (p, units) => rangesText(units, p.referenceRanges),
   },
   at: {
     binds: (k) => kindHasTrait(k, OBSERVED_TRAIT),
@@ -195,7 +198,11 @@ const NAMED: Record<
   },
 }
 
-function columnsOf(block: TableBlock, kind: KindInfo | undefined): Column[] {
+function columnsOf(
+  units: UnitReader,
+  block: TableBlock,
+  kind: KindInfo | undefined
+): Column[] {
   const specs = kind ? propSpecsByName(kind) : []
   const spec = (name: string): PropSpec | undefined =>
     specs.find((s) => s.name === name)
@@ -212,7 +219,7 @@ function columnsOf(block: TableBlock, kind: KindInfo | undefined): Column[] {
         {
           key: "value",
           label: "Value",
-          cell: (r) => valueText(r.properties ?? {}),
+          cell: (r) => valueText(units, r.properties ?? {}),
         },
         ...(result
           ? [
@@ -226,7 +233,7 @@ function columnsOf(block: TableBlock, kind: KindInfo | undefined): Column[] {
                 key: "range",
                 label: "Range",
                 cell: (r: SubstrateRecord) =>
-                  rangesText(r.properties?.referenceRanges),
+                  rangesText(units, r.properties?.referenceRanges),
               },
             ]
           : []),
@@ -263,7 +270,7 @@ function columnsOf(block: TableBlock, kind: KindInfo | undefined): Column[] {
       label: labelOf(name),
       cell: (r: SubstrateRecord) => {
         const p = r.properties ?? {}
-        if (named) return named(p)
+        if (named) return named(p, units)
         if (s?.kind === "reference") return <Ref path={referenceAt(p, name)} />
         if (s && !s.repeated && !s.keyed) {
           const short = cellFraction(s.kind, p[name])
@@ -450,7 +457,8 @@ function Rows({
   ctx: BlockContext
   label: string
 }) {
-  const columns = columnsOf(block, kind)
+  const units = useUnits()
+  const columns = columnsOf(units, block, kind)
   const own = pathOf(ctx.record)
   const rows = nestedOrder(records, block.nest)
   return (
@@ -514,6 +522,7 @@ function Points({
   ctx: BlockContext
   label: string
 }) {
+  const units = useUnits()
   const own = pathOf(ctx.record)
   const nest = block.nest
   const nestLabel = nest
@@ -537,14 +546,14 @@ function Points({
   const timed = records.flatMap((r) => {
     const p = r.properties ?? {}
     const at = instant(p.at)
-    return at === undefined || !resultReading(p) ? [] : [{ r, p, at }]
+    return at === undefined || !resultReading(units, p) ? [] : [{ r, p, at }]
   })
-  const unit = timed.length ? resultReading(timed[0].p)?.unit : undefined
+  const unit = timed.length ? resultReading(units, timed[0].p)?.unit : undefined
   // Each result in the newest's unit, converted within one measure; under
   // a unitless newest result only the unitless ones draw, never every
   // result in its own unit on one axis.
   const drawn = timed.flatMap((x) => {
-    const reading = resultReading(x.p, unit)
+    const reading = resultReading(units, x.p, unit)
     return reading && reading.unit === unit ? [{ ...x, reading }] : []
   })
   const other = timed.length - drawn.length
@@ -562,7 +571,7 @@ function Points({
       ...(range ? { rangeTone: range.tone } : {}),
       tone: reading.tone,
       // The lab's own digits and unit, whatever unit the chart draws in.
-      title: `${readingText(String(value.value), text(value.unit), DEFAULT_PRECISION, text(value.comparator))} on ${dayWords(at, true)}`,
+      title: `${readingText(units, String(value.value), text(value.unit), DEFAULT_PRECISION, text(value.comparator))} on ${dayWords(at, true)}`,
       hollow: Boolean(block.nest && referenceAt(p, block.nest)),
       notes: [
         ...(channels.size > 1
@@ -625,6 +634,7 @@ function Tiles({
   table: ListParams
   label: string
 }) {
+  const units = useUnits()
   const nest = block.nest
   const { tops, twins } = useMemo(() => {
     const listed = new Set(records.map(pathOf))
@@ -697,14 +707,14 @@ function Tiles({
     const v = isBag(p.value) ? p.value : undefined
     const numeric =
       v && (typeof v.value === "string" || typeof v.value === "number")
-    const reading = resultReading(p)
-    const bar = resultBar(p)
+    const reading = resultReading(units, p)
+    const bar = resultBar(units, p)
     const flag = flagWords(p.interpretation)
     const before = previous.get(tileKey(p) ?? "")
     const then = before ? instant(before.properties?.at) : undefined
     const earlier =
       reading && !reading.comparator && before
-        ? resultReading(before.properties ?? {}, reading.unit)
+        ? resultReading(units, before.properties ?? {}, reading.unit)
         : undefined
     const others = twins.get(pathOf(r)) ?? []
     return {
@@ -713,8 +723,14 @@ function Tiles({
       href: recordLink(r, ""),
       flagged: reading?.tone === "poor",
       value: numeric
-        ? readingText(String(v.value), undefined, places, text(v.comparator))
-        : valueText(p) || undefined,
+        ? readingText(
+            units,
+            String(v.value),
+            undefined,
+            places,
+            text(v.comparator)
+          )
+        : valueText(units, p) || undefined,
       unit: numeric ? text(v.unit) : undefined,
       band: flag
         ? {
@@ -727,6 +743,7 @@ function Tiles({
       delta:
         earlier && !earlier.comparator && then !== undefined
           ? changeSinceWords(
+              units,
               reading!.value,
               earlier.value,
               then,
@@ -735,7 +752,7 @@ function Tiles({
             )
           : undefined,
       note: others.length
-        ? `Also ${others.map((t) => valueText(t.properties ?? {})).join(", ")}`
+        ? `Also ${others.map((t) => valueText(units, t.properties ?? {})).join(", ")}`
         : undefined,
     }
   })

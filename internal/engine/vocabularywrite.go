@@ -187,7 +187,7 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 }
 
 // PlanVocabularyApply is the batch apply verb's preview: the same staging and
-// the same guard counts ApplyVocabularyDocuments runs, over the bare pool, and
+// the same guard counts ApplyVocabularyDocuments runs, in one read snapshot, and
 // the conversion plan it would run, with the hash and the changelog head a
 // confirmation names. It writes nothing. What the apply would refuse before
 // any count (a document the loader refuses, a package this actor may not
@@ -223,7 +223,11 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if err != nil {
 		return plan, err
 	}
-	q := dbReader{ctx: ctx, db: ds.db}
+	q, done, err := ds.previewReader(ctx)
+	if err != nil {
+		return plan, err
+	}
+	defer done()
 	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}
@@ -763,7 +767,7 @@ type vocabularyStage struct {
 
 // guards is every refuse-breakage guard line the staged batch refuses on, read
 // through q: the apply door runs it inside its transaction, the two previews
-// (PlanBundleUpgrade, PlanVocabularyApply) over the bare pool. One list, so
+// (PlanBundleUpgrade, PlanVocabularyApply) in one read snapshot (previewReader). One list, so
 // what a preview reports blocked is what the door refuses.
 func (st *vocabularyStage) guards(q sqlReader) ([]string, error) {
 	guards, err := droppedTypeGuards(q, st.droppedTypes)
@@ -942,7 +946,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 	// A declared default is stored by the write path, so it is refused here on
 	// the terms the write path would refuse it on.
-	if defaults := checkDeclaredDefaults(candidate, touched); len(defaults) > 0 {
+	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
 		return nil, &substrate.ValidationError{Problems: defaults}
 	}
 
@@ -968,6 +972,11 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// An index the engine cannot build is refused here, where the upgrade
 	// preview looks too, so the preview never admits a closure the install
 	// then refuses (indices.go).
+	if ds.svc.unitGraphOn {
+		if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
