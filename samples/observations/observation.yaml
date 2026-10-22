@@ -33,6 +33,11 @@ data:
     - properties:
         - metric
         - at
+  # `measure` was the measure the engine's unit table read the unit as,
+  # which the unit graph does not have (decision record 0186)
+  retired:
+    properties:
+      - measure
   properties:
     # ---- the observed(single) contract ----
     metric:
@@ -120,11 +125,6 @@ data:
       min: -1080
       max: 1080
       description: minutes east of UTC where the value was observed
-    measure:
-      type: string
-      managed: true
-      description: the measure the value's unit was read as when it was written,
-        set by the substrate
     sourceValue:
       type: string
       description: the reading as received, kept when it could not be normalized

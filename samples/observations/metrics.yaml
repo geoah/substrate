@@ -19,8 +19,8 @@ data:
         code: temperature
       - system: cf
         code: air_temperature
-    measures: temperature
-    unit: Cel
+    unit:
+      ref: substrate.reamde.dev/core/unit/Cel
     form: gauge
     reducers:
       - avg
@@ -43,8 +43,8 @@ data:
         code: humidity
       - system: cf
         code: relative_humidity
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: gauge
     reducers:
       - avg
@@ -66,8 +66,8 @@ data:
     codes:
       - system: homeassistant
         code: energy
-    measures: energy
-    unit: kW.h
+    unit:
+      ref: substrate.reamde.dev/core/unit/kW.h
     form: counter
     reducers:
       - increase
@@ -86,8 +86,8 @@ data:
     codes:
       - system: homeassistant
         code: power
-    measures: power
-    unit: W
+    unit:
+      ref: substrate.reamde.dev/core/unit/W
     form: gauge
     reducers:
       - avg
@@ -107,8 +107,8 @@ data:
     codes:
       - system: homeassistant
         code: illuminance
-    measures: illuminance
-    unit: lx
+    unit:
+      ref: substrate.reamde.dev/core/unit/lx
     form: gauge
     reducers:
       - avg
@@ -130,8 +130,8 @@ data:
         code: atmospheric_pressure
       - system: cf
         code: air_pressure
-    measures: pressure
-    unit: hPa
+    unit:
+      ref: substrate.reamde.dev/core/unit/hPa
     form: gauge
     reducers:
       - avg

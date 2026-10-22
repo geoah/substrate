@@ -66,8 +66,13 @@ func (ds *dataset) aggregateUnitsGraph(ctx context.Context, tx *sql.Tx, p *aggPl
 	}
 	if p.unit != "" {
 		id, ok := g.Resolve(p.unit)
+		apart := false
+		if ok && anchor != "" {
+			_, _, err := g.Linear(id, anchor, false)
+			apart = err != nil
+		}
 		switch {
-		case !ok && isTimeUnit(p.unit) && durations:
+		case (!ok || apart) && isTimeUnit(p.unit) && durations:
 			return nil, refuse(p.path("unit"), "%s is a unit of duration, and unit converts the values of %s; name it in durationUnit, the unit durationIn and timeInState answer their times in",
 				p.unit, aggMetricName(p))
 		case !ok:

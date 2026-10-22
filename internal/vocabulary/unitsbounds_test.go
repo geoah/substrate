@@ -1,8 +1,10 @@
 package vocabulary_test
 
 // The unit grammar on hostile input: every code below is refused with an
-// error, never a panic, through each door a unit enters by (ParseUnit, a
-// declaration's `units:`, and the conversion the host call serves).
+// error, never a panic, through each door the table reads a unit by
+// (ParseUnit and the conversion the host call serves). A declaration names
+// unit records of the repository's graph since decision 0186, and never
+// reaches the grammar.
 
 import (
 	"math/big"
@@ -44,8 +46,6 @@ func unitRefusalProblems(code, want string) []string {
 	check("Convert from", err)
 	_, err = vocabulary.ConvertIn("length", big.NewRat(1, 1), "m", code)
 	check("ConvertIn to", err)
-	_, err = vocabulary.LoadFS(mkThing("  properties:\n    w: {type: quantity, measures: length, units: [\"" + code + "\"]}\n"))
-	check("a declaration's units", err)
 	return problems
 }
 

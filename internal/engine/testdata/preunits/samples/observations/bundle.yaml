@@ -1,0 +1,60 @@
+# The base of every observing domain: what a measured value is, where it came
+# from and what it is about, for health first and home, weather and vehicles
+# later (decision record 0159). A SAMPLE a repository imports and owns; each
+# domain sample (`health`) requires it with a `requiresAtLeast` floor and adds
+# its own kinds and its own metric catalogue under package-prefixed ids
+# (`health/heart_rate`), so two domains never write one metric row.
+#
+# Four kinds, and their names are frozen: a sample's kind cannot be moved by
+# the catalog's upgrade, so renaming one after the first import is a
+# repository migration in every repository that took it
+# (TestObservationsSampleKindNamesAreFrozen).
+#
+#   metric       the catalogue entry: what is observed and how to read it
+#   observation  one value per record, binding core's observed(single)
+#   trace        many values over a fixed period, binding observed(packed)
+#   source       the device, app, service or lab a value came from
+#
+# The write rules and the observed index read nothing from a metric or a
+# source: what an indexed number means (its form, unit, hold, counter
+# contract, delta and circular flags) is on the observation or trace itself,
+# so editing a metric never relabels a stored value (decision record 0156).
+# The aggregate read takes a metric's `measures` and `unit` as the measure it
+# converts into and the unit it answers in by default, and a source's
+# `priorities` as the priority policy's default order.
+#
+# A domain never edits a base kind: health-only context is a `qualifiers`
+# code on an observation, and health-only definition data is a health kind
+# pointing at the metric (`health/analyte`).
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/observations
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  # version 2: a trace carries one `utcOffset`, every point's; an
+  # observation and a trace declare core's managed `measure` and the
+  # adapter's `origin` (a trace's `origins`) in the observed contract; the
+  # metric binds core's `metric` trait and declares its `rollups`, and the
+  # source binds core's `source` trait, its `priorities` keyed by a metric's
+  # full record path.
+  version: 2
+---
+# ---- the bundle document: the import unit -------------------------------------
+# Kinds and six data records (metrics.yaml): the physical metrics several
+# domains share. No inputs, no functions, no triggers.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/observations
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  description: >-
+    Measured values and where they came from: metrics, single observations,
+    packed traces and their sources. The base every observing sample, such
+    as health, requires.
+  installs:
+    - samples.substrate.reamde.dev/observations/metric
+    - samples.substrate.reamde.dev/observations/observation
+    - samples.substrate.reamde.dev/observations/trace
+    - samples.substrate.reamde.dev/observations/source

@@ -4,8 +4,9 @@ package engine
 // with WithUnitGraph on, every quantity write resolves its unit through the
 // repository's graph and stores the unit's id, a declaration's `unit`,
 // `units`, `delta` and bounds are held against the graph, an observed value is
-// held to its metric, and a metric to the values that point at it. Each test
-// here runs with the switch on; the suite's other tests run with it off.
+// held to its metric, and a metric to the values that point at it. The switch
+// is on by default since step 4; the parity tests open the table path beside
+// it, with WithUnitGraph(false).
 
 import (
 	"context"
@@ -397,9 +398,28 @@ func putInOneTx(ds *dataset, ins ...substrate.PutInput) error {
 
 func metricPath(id string) string { return metricKind + "/" + id }
 
+// putMetricErr puts a metric of the observations sample, a unit id written
+// as `unit` or in `units` turned into the reference the metric declares.
 func putMetricErr(ds *dataset, id string, props map[string]any) error {
 	base := map[string]any{"name": id, "form": "gauge"}
 	for k, v := range props {
+		switch u := v.(type) {
+		case string:
+			if k == "unit" {
+				v = unitRef(u)
+			}
+		case []any:
+			if k == "units" {
+				refs := make([]any, len(u))
+				for i, item := range u {
+					refs[i] = item
+					if id, ok := item.(string); ok {
+						refs[i] = unitRef(id)
+					}
+				}
+				v = refs
+			}
+		}
 		base[k] = v
 	}
 	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: metricKind, ID: id, Properties: base})
@@ -448,7 +468,7 @@ func TestObservedValueWithoutItsMetricIsRefused(t *testing.T) {
 	// transaction moves the metric to K.
 	if err := putInOneTx(ds,
 		substrate.PutInput{Kind: obsKind, ID: "o3", Properties: observation("brief", qty("1", "K"))},
-		substrate.PutInput{Kind: metricKind, ID: "brief", Properties: map[string]any{"name": "brief", "form": "gauge", "unit": "K"}},
+		substrate.PutInput{Kind: metricKind, ID: "brief", Properties: map[string]any{"name": "brief", "form": "gauge", "unit": unitRef("K")}},
 	); err != nil {
 		t.Fatalf("a value its metric admits once the transaction ends: %v", err)
 	}
@@ -522,7 +542,7 @@ func TestMetricEditThatStrandsValuesIsRefused(t *testing.T) {
 	// against the value it writes too.
 	err := putInOneTx(ds,
 		substrate.PutInput{Kind: obsKind, ID: "k1", Properties: observation("m", qty("1", "K"))},
-		substrate.PutInput{Kind: metricKind, ID: "m", Properties: map[string]any{"name": "m", "form": "gauge", "unit": "kg"}},
+		substrate.PutInput{Kind: metricKind, ID: "m", Properties: map[string]any{"name": "m", "form": "gauge", "unit": unitRef("kg")}},
 	)
 	wantValidation(t, "a value the metric the transaction leaves refuses", err, "K does not convert to the metric's unit kg")
 }
@@ -772,8 +792,8 @@ func TestChangedConversionMovesNoStoredValue(t *testing.T) {
 const tableKind = thingsPackage + "/reading"
 
 // openParity opens one repository with the shipped units seeded and the
-// switch as asked, holding the reading kind, declared in the table's dialect
-// so both paths read it.
+// switch as asked, holding the reading kind. The table path ignores each
+// property's `unit` and reads every value in the measure its code names.
 func openParity(t *testing.T, on bool, repo string) *dataset {
 	t.Helper()
 	ctx := context.Background()
@@ -807,9 +827,9 @@ func installParityReadings(t *testing.T, ds *dataset) {
 			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "reading"}, map[string]any{
 				"properties": map[string]any{
-					"mass": map[string]any{"type": "quantity", "measures": "mass"},
-					"temp": map[string]any{"type": "quantity", "measures": "temperature"},
-					"rate": map[string]any{"type": "quantity", "measures": "rate"},
+					"mass": map[string]any{"type": "quantity", "unit": "kg"},
+					"temp": map[string]any{"type": "quantity", "unit": "K"},
+					"rate": map[string]any{"type": "quantity", "unit": "1/min"},
 				},
 			}),
 		},

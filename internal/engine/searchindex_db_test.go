@@ -52,8 +52,8 @@ func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	}
 	// A creation indexes under this binary's rules and says so, so its first
 	// open has nothing to do.
-	if v := version(); v != 2 {
-		t.Fatalf("a fresh repository records search index version %d, want 2", v)
+	if v := version(); v != engine.SearchIndexVersion {
+		t.Fatalf("a fresh repository records search index version %d, want %d", v, engine.SearchIndexVersion)
 	}
 	// Stand for a repository from before the variants: the row indexed as the
 	// bands alone, and the version the rules had then.
@@ -86,8 +86,8 @@ func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	if hits := searchIDs(t, ds2, "inbox"); len(hits) != 1 || hits[0] != "ada" {
 		t.Fatalf("after the reopen, search inbox = %v, want [ada]", hits)
 	}
-	if v := version(); v != 2 {
-		t.Fatalf("the reopen recorded search index version %d, want 2", v)
+	if v := version(); v != engine.SearchIndexVersion {
+		t.Fatalf("the reopen recorded search index version %d, want %d", v, engine.SearchIndexVersion)
 	}
 	after, err := ds2.Get(ctx, person, "ada")
 	if err != nil {

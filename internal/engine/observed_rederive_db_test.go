@@ -52,9 +52,10 @@ func sameInts(a, b []int) bool {
 // A metric whose `rollups` change has the rows of its streams derived again
 // behind the write, in the background, and reads of that metric are refused
 // until that is done: then its rows are in the new tiers alone
-// and answer what the raw points do. Deleting the metric record puts its
-// streams back on the default tiers the same way. Another metric's rows are
-// left as they were.
+// and answer what the raw points do. Removing the metric's `rollups` puts its
+// streams back on the default tiers the same way; deleting the metric is
+// refused while values point at it (decision 0186). Another metric's rows
+// are left as they were.
 func TestObservedMetricRollupsChangeRederivesItsRows(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -84,18 +85,13 @@ func TestObservedMetricRollupsChangeRederivesItsRows(t *testing.T) {
 	}
 	read("5m and 1d")
 	checkRollupsMatchSpecTiers(t, f, map[string][]time.Duration{f.metricPath("air_temperature"): {5 * time.Minute, 24 * time.Hour}})
-	if _, err := f.ds.Delete(context.Background(), owner, f.metric, "air_temperature", substrate.DeleteInput{}); err != nil {
+	_, err := f.ds.Delete(context.Background(), owner, f.metric, "air_temperature", substrate.DeleteInput{})
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Errorf("deleting a metric values point at: err = %v, want a conflict", err)
+	}
+	if _, err := f.patch(t, f.metric, "air_temperature", map[string]any{"rollups": nil}); err != nil {
 		t.Fatal(err)
 	}
-	engine.DrainIndexReprojection(t, f.ds)
-	if got := tiersHeld(t, f.obsIndex, "air_temperature"); !sameInts(got, defaults) {
-		t.Errorf("after the metric record went its rows are in %v, want the default %v", got, defaults)
-	}
-	// A put onto the tombstone merges into the properties it kept, so the
-	// default tiers are named to stay on them.
-	f.mustPut(t, f.metric, "air_temperature", map[string]any{
-		"name": "Air temperature", "measures": "temperature", "unit": "Cel", "form": "gauge", "rollups": []any{"15m", "1h", "1d"},
-	})
 	engine.DrainIndexReprojection(t, f.ds)
 	if got := observedTables(t, f.db); got != steps {
 		t.Errorf("back on the default tiers the index is not the one first written\n%s", firstDifference([]byte(steps), []byte(got)))

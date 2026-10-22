@@ -15,7 +15,8 @@ import (
 // property added here refuses every imported observation and trace at the next
 // boot, and a removed or retyped one changes what the observed index reads. So
 // the contract is pinned exactly: a later need is a second trait bound beside
-// this one, never an edit of this list.
+// this one, never an edit of this list. The one removal, `measure`, went with
+// the engine's unit table (decision 0186), before any release stored it.
 func TestObservedTraitContractIsPinned(t *testing.T) {
 	reg, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
 	if err != nil {
@@ -29,7 +30,7 @@ func TestObservedTraitContractIsPinned(t *testing.T) {
 		"at": "datetime", "endsAt": "datetime", "metric": "reference", "source": "reference",
 		"about": "reference", "channel": "string", "form": "string", "hold": "duration",
 		"resetRule": "string", "resetAt": "datetime", "delta": "bool", "circular": "bool",
-		"wrapAt": "decimal", "utcOffset": "int", "measure": "string", "revision": "int",
+		"wrapAt": "decimal", "utcOffset": "int", "revision": "int",
 	}
 	want := map[string]map[string]vocabulary.Datatype{
 		vocabulary.ObservedSingle: with(shared, map[string]vocabulary.Datatype{
@@ -68,7 +69,9 @@ func TestObservedTraitContractIsPinned(t *testing.T) {
 
 // The traits beside `observed` are pinned the same way, for the same reason:
 // every kind that binds one lives in a sample a repository imports, so a
-// property added to one refuses those kinds at the next boot.
+// property added to one refuses those kinds at the next boot. The metric's
+// `units` and its `unit` as a reference came with the unit graph (decision
+// 0186), before any release stored a metric.
 func TestObservedCompanionTraitContractsArePinned(t *testing.T) {
 	reg, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
 	if err != nil {
@@ -76,7 +79,7 @@ func TestObservedCompanionTraitContractsArePinned(t *testing.T) {
 	}
 	for trait, want := range map[string]map[string]vocabulary.Datatype{
 		vocabulary.TraitMetricCore: {
-			"name": "string", "measures": "string", "unit": "string", "form": "string", "codeSet": "string",
+			"name": "string", "unit": "reference", "units": "reference", "form": "string", "codeSet": "string",
 			"displayPrecision": "int", "category": "string", "bucketPlace": "string", "rollups": "string",
 		},
 		vocabulary.TraitSourceCore: {"priorities": "int"},

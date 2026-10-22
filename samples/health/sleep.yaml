@@ -87,11 +87,11 @@ data:
       description: how long it took to fall asleep
     efficiency:
       type: quantity
-      measures: fraction
+      unit: percent
       description: time asleep as a part of time in bed
     respiratoryRate:
       type: quantity
-      measures: rate
+      unit: 1/min
       description: the average breaths per minute while asleep
     disturbances:
       type: int

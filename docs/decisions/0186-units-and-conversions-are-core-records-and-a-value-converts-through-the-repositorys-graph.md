@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-21
 decision-makers: George Antoniadis
 ---
@@ -270,10 +270,9 @@ measure through both and must agree until the table is deleted.
 
 ## More Information
 
-This record supersedes 0153 once accepted. While it is `proposed`, 0153 stays
-`accepted` with no `superseded-by:`, because the docs linter refuses a link
-to a successor that is not accepted; the commit that accepts this record sets
-0153 to `superseded` with `superseded-by: 0186`. It also changes
+This record supersedes 0153, which is marked `superseded` with
+`superseded-by: 0186` in the commit that accepted this one, when step 4 of
+the map switched every repository to the graph. It also changes
 [0154](0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md),
 whose trait loses `measure`, and 0156, whose write rules now read the
 metric. The first draft's sample package, string metric units and permitted

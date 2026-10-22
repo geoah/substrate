@@ -139,6 +139,10 @@ type contractShape struct {
 	list   bool
 	keyed  bool
 	fields map[string]Datatype
+	// pin is the kind a reference contract property must pin: a metric's
+	// `unit` and `units` name unit records (decision 0186), which the write
+	// rules read by id.
+	pin string
 }
 
 // contractShapes are the shapes held per core trait, keyed by the trait's
@@ -150,6 +154,7 @@ var contractShapes = map[string]map[string]contractShape{
 	},
 	TraitRevisedCore: {},
 	TraitMetricCore: {
+		MetricUnit: {pin: KindUnit}, MetricUnits: {list: true, pin: KindUnit},
 		MetricCodeSet: {list: true}, MetricRollups: {list: true},
 	},
 	TraitSourceCore: {
@@ -198,6 +203,10 @@ func contractShapeProblems(where, name, trait string, p *Property) []string {
 	case !want.list && p.Repeated:
 		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to hold one value, not a list: drop repeated",
 			where, name, trait, name))
+	}
+	if want.pin != "" && p.Datatype == DatatypeReference && (p.ToTrait != "" || !strings.EqualFold(p.To, want.pin)) {
+		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to pin kind %s",
+			where, name, trait, name, want.pin))
 	}
 	if want.fields == nil {
 		return out
@@ -952,9 +961,9 @@ func article(form string) string {
 
 // observedMetricPins holds every kind of the registry that binds `observed`
 // to a `metric` reference whose target carries the `metric` contract: pinned
-// to a kind that binds core's `metric`, or to the trait itself. The aggregate
-// read takes a metric's measure and unit through that trait, so a value
-// pointing at a record without it would convert into nothing. It runs after
+// to a kind that binds core's `metric`, or to the trait itself. The write
+// rules and the aggregate read take a metric's units through that trait, so
+// a value pointing at a record without it would convert into nothing. It runs after
 // every package of an install is resolved, because the pinned kind's binding
 // may arrive in the same batch, and it reads every package, not the installed
 // ones alone: a package that drops the binding from its metric kind strands

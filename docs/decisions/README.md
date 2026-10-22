@@ -311,7 +311,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0150](0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md) | A schedule lane fires its due triggers in parallel, one fire per trigger | proposed |
 | [0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md) | An agent delivery a restart interrupted is rerun once, at the first pass after the restart | proposed |
 | [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | proposed |
-| [0153](0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md) | A quantity is exact digits and a UCUM code, converted only within its measure | accepted |
+| [0153](0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md) | A quantity is exact digits and a UCUM code, converted only within its measure | superseded |
 | [0154](0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md) | An observed value binds the core `observed` trait, which never gains a property | accepted |
 | [0155](0155-an-observed-value-names-what-it-is-about-with-an-about-reference.md) | An observed value names what it is about with an `about` reference | accepted |
 | [0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md) | The forms are `gauge`, `amount`, `counter` and `summary`, and they live on the value | accepted |
@@ -344,4 +344,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0183](0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md) | An unreachable Beeper Desktop throttles the sync, and throttled reads as waiting | proposed |
 | [0184](0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md) | A record view grows by adding a field, never by retyping one | proposed |
 | [0185](0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md) | A table draws its results as tiles, and every tile takes one size | proposed |
-| [0186](0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md) | Units and conversions are core records, and a value converts through the repository's graph | proposed |
+| [0186](0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md) | Units and conversions are core records, and a value converts through the repository's graph | accepted |

@@ -79,14 +79,14 @@ func TestAggregateSeveralMetricsShareOneRead(t *testing.T) {
 	if res.Metric != "" || res.Unit != "" || res.From != "" {
 		t.Errorf("metric %q unit %q from %q, want none of them on a several-metric read", res.Metric, res.Unit, res.From)
 	}
-	if got := fmt.Sprint(res.Units); got != fmt.Sprint(map[string]string{hr: "/min", steps: "{steps}", mass: "g", rhr: "/min"}) {
+	if got := fmt.Sprint(res.Units); got != fmt.Sprint(map[string]string{hr: "1/min", steps: "steps", mass: "g", rhr: "1/min"}) {
 		t.Errorf("units = %s", got)
 	}
 	type shown struct{ start, end, values string }
 	show := func(row substrate.AggregateRow) shown {
 		var vals []string
 		for _, v := range row.Values {
-			vals = append(vals, v.Reducer.String()+"="+*v.Value+v.Unit)
+			vals = append(vals, v.Reducer.String()+"="+*v.Value+" "+v.Unit)
 		}
 		return shown{row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339), fmt.Sprint(vals)}
 	}
@@ -96,10 +96,10 @@ func TestAggregateSeveralMetricsShareOneRead(t *testing.T) {
 		alone  shown
 		values string
 	}{
-		{mass, shown{"2026-09-24T00:00:00Z", "2026-09-25T00:00:00Z", ""}, "[last=70500g]"},
-		{hr, shown{"2026-09-24T00:00:00+01:00", "2026-09-25T00:00:00+01:00", ""}, "[avg=65/min max=70/min]"},
-		{rhr, shown{"2026-09-24T00:00:00+03:00", "2026-09-25T00:00:00+03:00", ""}, "[last=58/min]"},
-		{steps, shown{"2026-09-24T00:00:00+03:00", "2026-09-25T00:00:00+03:00", ""}, "[sum=100{steps}]"},
+		{mass, shown{"2026-09-24T00:00:00Z", "2026-09-25T00:00:00Z", ""}, "[last=70500 g]"},
+		{hr, shown{"2026-09-24T00:00:00+01:00", "2026-09-25T00:00:00+01:00", ""}, "[avg=65 1/min max=70 1/min]"},
+		{rhr, shown{"2026-09-24T00:00:00+03:00", "2026-09-25T00:00:00+03:00", ""}, "[last=58 1/min]"},
+		{steps, shown{"2026-09-24T00:00:00+03:00", "2026-09-25T00:00:00+03:00", ""}, "[sum=100 steps]"},
 	}
 	if len(res.Rows) != len(want) {
 		t.Fatalf("%d rows, want one per metric on 2026-09-24: %+v", len(res.Rows), res.Rows)
@@ -168,7 +168,7 @@ func TestAggregateSeveralMetricsAreCheckedBeforeTheyRun(t *testing.T) {
 		}, Reducers: reducers("sum")}), "aggregate.reducers[0]: in aggregate.metrics[1] (" + hr + "), sum does not apply to a gauge"},
 		{"a unit outside the metric's measure", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: mass}, {Ref: hr, Unit: "kg"},
-		}, Reducers: reducers("last")}), "aggregate.metrics[1].unit: kg is not a unit of rate"},
+		}, Reducers: reducers("last")}), "aggregate.metrics[1].unit: kg does not convert to 1/min"},
 		{"summaries holding two statistics", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: rhr, From: substrate.AggregateFromSummaries},
 		}, Reducers: reducers("last")}), "aggregate.metrics[1]: the summaries from " + f.sourcePath("watch") +
@@ -265,7 +265,7 @@ func TestAggregateSeveralMetricsWriteADayAtTheValuesTaken(t *testing.T) {
 		Metrics: []substrate.AggregateMetricRead{{Ref: hr, From: substrate.AggregateFromPreferRaw, Statistic: "avg"}},
 		Range:   todayRange(), Bucket: bucket, Reducers: reducers("avg"),
 	})
-	want := "2026-09-24T00:00:00+03:00 2026-09-25T00:00:00+03:00 summaries [avg=52/min]"
+	want := "2026-09-24T00:00:00+03:00 2026-09-25T00:00:00+03:00 summaries [avg=52 1/min]"
 	for label, res := range map[string]*substrate.AggregateResult{"alone": alone, "in metrics": shared} {
 		if len(res.Rows) != 1 {
 			t.Fatalf("%s: %d rows, want 2026-09-24's: %+v", label, len(res.Rows), res.Rows)
@@ -273,7 +273,7 @@ func TestAggregateSeveralMetricsWriteADayAtTheValuesTaken(t *testing.T) {
 		row := res.Rows[0]
 		var vals []string
 		for _, v := range row.Values {
-			vals = append(vals, v.Reducer.String()+"="+*v.Value+v.Unit)
+			vals = append(vals, v.Reducer.String()+"="+*v.Value+" "+v.Unit)
 		}
 		if got := fmt.Sprint(row.Start.Format(time.RFC3339), " ", row.End.Format(time.RFC3339), " ", row.From, " ", vals); got != want {
 			t.Errorf("%s: %s, want %s", label, got, want)

@@ -1,0 +1,389 @@
+# The lab facts behind the catalogue's paired lab metrics, as DATA: one
+# `analyte` record per metric of a pair, its id the metric's, naming the
+# LOINC parts of the metric's code (as LOINC publishes them) and the
+# conversion the `convertlab` function writes onto the other metric of the
+# pair. A mass and an amount concentration of one analyte convert by its
+# molar mass; HbA1c's two units by a formula.
+#
+# The file sorts after metrics.yaml on purpose: the import puts a sample's
+# data records in file order, and each analyte's `metric` must exist.
+
+# ldl_cholesterol and ldl_cholesterol_mass: 386.65 g/mol, cholesterol,
+# C27H46O.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/ldl_cholesterol
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/ldl_cholesterol
+    loincParts:
+      component: "Cholesterol.in LDL"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "386.65"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/ldl_cholesterol_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/ldl_cholesterol_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/ldl_cholesterol_mass
+    loincParts:
+      component: "Cholesterol.in LDL"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "386.65"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/ldl_cholesterol
+        formula: molar-mass
+        version: "1"
+---
+# hdl_cholesterol and hdl_cholesterol_mass: 386.65 g/mol, cholesterol,
+# C27H46O.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/hdl_cholesterol
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/hdl_cholesterol
+    loincParts:
+      component: "Cholesterol.in HDL"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "386.65"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/hdl_cholesterol_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/hdl_cholesterol_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/hdl_cholesterol_mass
+    loincParts:
+      component: "Cholesterol.in HDL"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "386.65"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/hdl_cholesterol
+        formula: molar-mass
+        version: "1"
+---
+# total_cholesterol and total_cholesterol_mass: 386.65 g/mol, cholesterol,
+# C27H46O.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/total_cholesterol
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/total_cholesterol
+    loincParts:
+      component: "Cholesterol"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "386.65"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/total_cholesterol_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/total_cholesterol_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/total_cholesterol_mass
+    loincParts:
+      component: "Cholesterol"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "386.65"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/total_cholesterol
+        formula: molar-mass
+        version: "1"
+---
+# triglycerides and triglycerides_mass: 885.7 g/mol, the clinical convention
+# of 88.57 mg/dL per mmol/L, which takes triglyceride as triolein.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/triglycerides
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/triglycerides
+    loincParts:
+      component: "Triglyceride"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "885.7"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/triglycerides_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/triglycerides_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/triglycerides_mass
+    loincParts:
+      component: "Triglyceride"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "885.7"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/triglycerides
+        formula: molar-mass
+        version: "1"
+---
+# fasting_glucose and fasting_glucose_mass: 180.156 g/mol, glucose, C6H12O6.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/fasting_glucose
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/fasting_glucose
+    loincParts:
+      component: "Glucose^post CFst"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "180.156"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/fasting_glucose_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/fasting_glucose_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/fasting_glucose_mass
+    loincParts:
+      component: "Glucose^post CFst"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "180.156"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/fasting_glucose
+        formula: molar-mass
+        version: "1"
+---
+# blood_glucose and blood_glucose_mass: 180.156 g/mol, glucose, C6H12O6.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/blood_glucose
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose
+    loincParts:
+      component: "Glucose"
+      property: SCnc
+      timing: Pt
+      system: Bld
+      scale: Qn
+    molarMass: "180.156"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/blood_glucose_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose_mass
+    loincParts:
+      component: "Glucose"
+      property: MCnc
+      timing: Pt
+      system: Bld
+      scale: Qn
+    molarMass: "180.156"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose
+        formula: molar-mass
+        version: "1"
+---
+# vitamin_d and vitamin_d_mass: 400.64 g/mol, 25-hydroxyvitamin D3, C27H44O2,
+# which the usual 2.496 nmol/L per ng/mL takes for D2 and D3 together.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/vitamin_d
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/vitamin_d
+    loincParts:
+      component: "Calcidiol+ercalcidiol"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "400.64"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/vitamin_d_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/vitamin_d_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/vitamin_d_mass
+    loincParts:
+      component: "Calcidiol+ercalcidiol"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "400.64"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/vitamin_d
+        formula: molar-mass
+        version: "1"
+---
+# creatinine and creatinine_mass: 113.12 g/mol, creatinine, C4H7N3O.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/creatinine
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/creatinine
+    loincParts:
+      component: "Creatinine"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "113.12"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/creatinine_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/creatinine_mass
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/creatinine_mass
+    loincParts:
+      component: "Creatinine"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "113.12"
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/creatinine
+        formula: molar-mass
+        version: "1"
+---
+# hba1c and hba1c_ifcc relate by the IFCC and NGSP master equation, not a
+# molar mass: IFCC mmol/mol = (NGSP % - 2.15) x 10.929.
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/hba1c
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/hba1c
+    loincParts:
+      component: "Hemoglobin A1c/Hemoglobin.total"
+      property: MFr
+      timing: Pt
+      system: Bld
+      scale: Qn
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/hba1c_ifcc
+        formula: ngsp-to-ifcc
+        parameters:
+          slope: "10.929"
+          intercept: "2.15"
+        version: "1"
+---
+kind: samples.substrate.reamde.dev/health/analyte
+metadata:
+  id: health/hba1c_ifcc
+data:
+  properties:
+    metric:
+      ref: samples.substrate.reamde.dev/observations/metric/health/hba1c_ifcc
+    loincParts:
+      component: "Hemoglobin A1c/Hemoglobin.total^^standardized per IFCC-RMP
+        for CDT"
+      property: SFr
+      timing: Pt
+      system: Bld
+      scale: Qn
+    conversions:
+      - target:
+          ref: samples.substrate.reamde.dev/observations/metric/health/hba1c
+        formula: ifcc-to-ngsp
+        parameters:
+          slope: "10.929"
+          intercept: "2.15"
+        version: "1"

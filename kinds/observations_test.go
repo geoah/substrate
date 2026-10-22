@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/engine/unitseed"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
@@ -157,6 +158,31 @@ var loincAxes = map[string]struct{ component, property, system string }{
 // loincConcentration is the measure a concentration's LOINC property names.
 var loincConcentration = map[string]string{"SCnc": "amount-concentration", "MCnc": "mass-concentration"}
 
+// concentrationOf answers which concentration a metric's unit is, by which
+// base its shipped unit converts to through linear conversions:
+// "mass-concentration" for g/L, "amount-concentration" for mol/L, else "".
+func concentrationOf(t *testing.T) func(props map[string]any) string {
+	t.Helper()
+	g, problems, err := unitseed.Graph()
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("the shipped unit graph: %v %v", err, problems)
+	}
+	return func(props map[string]any) string {
+		ref, _ := props["unit"].(map[string]any)
+		path, _ := ref["ref"].(string)
+		kind, id, ok := vocabulary.SplitRecordPath(path)
+		if !ok || kind != vocabulary.KindUnit {
+			return ""
+		}
+		for base, name := range map[string]string{"g/L": "mass-concentration", "mol/L": "amount-concentration"} {
+			if _, _, err := g.Linear(id, base, false); err == nil {
+				return name
+			}
+		}
+		return ""
+	}
+}
+
 // A LAB METRIC'S LOINC CODES MEASURE WHAT THE METRIC DOES. A writer maps a
 // result by its LOINC code, so a mass concentration code on an amount
 // concentration metric files mg/dL results under a mmol/L stream, and a code
@@ -168,8 +194,9 @@ func TestHealthLabMetricCodesMatchTheirMeasure(t *testing.T) {
 	metrics := healthRecords(t, "observations/metric")
 	type axes struct{ component, system string }
 	byMetric := map[string]axes{}
+	concentration := concentrationOf(t)
 	for id, props := range metrics {
-		measure, _ := props["measures"].(string)
+		measure := concentration(props)
 		if measure != "amount-concentration" && measure != "mass-concentration" {
 			continue
 		}
@@ -365,9 +392,10 @@ func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
 		return ""
 	}
 	pairs := 0
+	concentration := concentrationOf(t)
 	for id, props := range metrics {
 		twin := id + "_mass"
-		if props["measures"] != "amount-concentration" || metrics[twin] == nil {
+		if concentration(props) != "amount-concentration" || metrics[twin] == nil {
 			continue
 		}
 		pairs++

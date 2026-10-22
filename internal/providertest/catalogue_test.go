@@ -22,17 +22,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine/unitseed"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // catalogueMetric is what the tests read of one health catalogue metric.
 type catalogueMetric struct {
-	Measures string
-	Unit     string
-	Form     string
-	Hold     string
-	CodeSet  []string
+	// Unit is the id of the unit record the metric's `unit` references.
+	Unit    string
+	Form    string
+	Hold    string
+	CodeSet []string
 	// Codes is every code the metric lists, by system.
 	Codes map[string][]string
 }
@@ -58,7 +59,13 @@ func healthCatalogue(t *testing.T) map[string]catalogueMetric {
 
 func catalogueMetricOf(props map[string]any) catalogueMetric {
 	str := func(k string) string { s, _ := props[k].(string); return s }
-	m := catalogueMetric{Measures: str("measures"), Unit: str("unit"), Form: str("form"), Hold: str("hold"), Codes: map[string][]string{}}
+	m := catalogueMetric{Form: str("form"), Hold: str("hold"), Codes: map[string][]string{}}
+	if ref, ok := props["unit"].(map[string]any); ok {
+		path, _ := ref["ref"].(string)
+		if kind, id, ok := vocabulary.SplitRecordPath(path); ok && kind == vocabulary.KindUnit {
+			m.Unit = id
+		}
+	}
 	for _, c := range asList(props["codeSet"]) {
 		m.CodeSet = append(m.CodeSet, fmt.Sprint(c))
 	}
@@ -176,11 +183,28 @@ func mapping(t *testing.T, tables map[string]any, name string) map[string]any {
 	return m
 }
 
-// sameMeasure reports whether a unit belongs to the metric's measure, which
-// is what a value in that unit needs for the aggregate read to convert it.
-func sameMeasure(unit string, m catalogueMetric) bool {
-	got, err := vocabulary.ResolveMeasure(unit, m.Measures)
-	return err == nil && got.Name == m.Measures
+// sameComponent reports whether a unit spelling is the id of a shipped unit
+// a linear conversion joins to the metric's unit, which is what the metric
+// rules admit and the aggregate read converts (decision 0186). A spelling
+// other than the id would be stored as the id, so an adapter's reconcile
+// would find every value it compares changed. A metric naming no unit
+// admits any.
+func sameComponent(t *testing.T, unit string, m catalogueMetric) bool {
+	t.Helper()
+	g, problems, err := unitseed.Graph()
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("the shipped unit graph: %v %v", err, problems)
+	}
+	id, ok := g.Resolve(unit)
+	if !ok || id != unit {
+		return false
+	}
+	if m.Unit == "" {
+		// A metric naming no unit (a categorical one) admits every unit.
+		return true
+	}
+	_, _, err = g.Linear(id, m.Unit, false)
+	return err == nil
 }
 
 // snakeCase is a WHOOP mirror field in the API's own spelling, the code the
@@ -202,7 +226,8 @@ func snakeCase(field string) string {
 var healthMetricLiteral = regexp.MustCompile(`^health/[a-z0-9_]+$`)
 
 // TestAdapterTablesMatchTheCatalogue: every metric an adapter's tables or
-// literals name is in the catalogue, in a unit of the metric's measure;
+// literals name is in the catalogue, in the id of a unit that converts to
+// the metric's unit;
 // WHOOP's mapped fields are the `whoop` codes the metric lists; every sleep
 // stage code is in `health/sleep_stage`'s code set and every sport code in
 // the workout kind's.
@@ -228,13 +253,13 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 			}
 		}
 		// (score field, metric, unit, ...): the field is the metric's
-		// `whoop` code, and the unit is of the metric's measure.
+		// `whoop` code, and the unit converts to the metric's.
 		check := func(table string, unitAt int) {
 			for _, row := range rows(t, got.Tables, table) {
 				field, id, unit := row[0], row[1], row[unitAt]
 				m := metric(t, id)
-				if !sameMeasure(unit, m) {
-					t.Errorf("%s: %s is written in %s, not a unit of %s's measure %s", table, field, unit, id, m.Measures)
+				if !sameComponent(t, unit, m) {
+					t.Errorf("%s: %s is written in %s, not the id of a unit that converts to %s's unit %s", table, field, unit, id, m.Unit)
 				}
 				if !slices.Contains(m.Codes["whoop"], snakeCase(field)) {
 					t.Errorf("%s: %s maps WHOOP's %s, which the metric does not list as a whoop code (it lists %v)", table, id, snakeCase(field), m.Codes["whoop"])
@@ -300,8 +325,8 @@ func assertCatalogued(t *testing.T, ds substrate.Dataset) {
 			if q, ok := p["value"].(map[string]any); ok {
 				unit, _ = q["unit"].(string)
 			}
-			if unit != "" && m.Measures != "" && !sameMeasure(unit, m) {
-				t.Errorf("%s/%s: %s in %s, not a unit of the metric's measure %s", kind, row.ID, path, unit, m.Measures)
+			if unit != "" && !sameComponent(t, unit, m) {
+				t.Errorf("%s/%s: %s in %s, not the id of a unit that converts to the metric's unit %s", kind, row.ID, path, unit, m.Unit)
 			}
 			codes := []any{p["code"]}
 			codes = append(codes, asList(p["codes"])...)

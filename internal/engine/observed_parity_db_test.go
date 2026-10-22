@@ -34,14 +34,11 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 	start := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	hours := 72
 	tierSets := [][]any{{"15m", "1h", "1d"}, {"5m", "1h"}, {"15m", "1d"}, {"1h"}, {"5m", "15m", "1h", "1d"}}
-	metric := func(name, measures, unit, form string) string {
+	metric := func(name, unit, form string) string {
 		id := fmt.Sprintf("parity%d/%s", seed, name)
 		props := map[string]any{"name": name, "form": form, "rollups": tierSets[rng.Intn(len(tierSets))]}
-		if measures != "" {
-			props["measures"] = measures
-		}
 		if unit != "" {
-			props["unit"] = unit
+			props["unit"] = unitRef(unit)
 		}
 		f.mustPut(t, f.metric, id, props)
 		return id
@@ -53,11 +50,11 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 		return 60
 	}
 	var out []parityStream
-	temp := metric("temperature", "temperature", "Cel", "gauge")
-	doors := metric("door", "", "", "gauge")
-	steps := metric("steps", "", "{steps}", "amount")
-	meter := metric("meter", "energy", "kW.h", "counter")
-	cellar := metric("cellar", "temperature", "Cel", "gauge")
+	temp := metric("temperature", "Cel", "gauge")
+	doors := metric("door", "", "gauge")
+	steps := metric("steps", "steps", "amount")
+	meter := metric("meter", "kW.h", "counter")
+	cellar := metric("cellar", "Cel", "gauge")
 	out = append(out, parityStream{temp, "gauge", false}, parityStream{doors, "gauge", false},
 		parityStream{steps, "amount", false}, parityStream{meter, "counter", false}, parityStream{cellar, "gauge", true})
 	total := 1000

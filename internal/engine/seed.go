@@ -217,6 +217,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	var refused []string
 	var converted int64
 	var background []indexReprojection
+	unitKindsDeclared := ds.declaresUnitKinds()
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
@@ -287,7 +288,15 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	ds.mu.Lock()
 	ds.reg = vocabulary.NewRegistry()
 	ds.mu.Unlock()
-	return ds.loadStoredVocabulary(ctx)
+	if err := ds.loadStoredVocabulary(ctx); err != nil {
+		return err
+	}
+	// The shipped units, where this upgrade is what declared their kinds:
+	// the open's seed ran before it and found no kind to write.
+	if !unitKindsDeclared && ds.declaresUnitKinds() {
+		return ds.ensureShippedUnits(ctx)
+	}
+	return nil
 }
 
 // reprojectShipped re-derives the refs index and the search index for the

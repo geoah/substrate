@@ -18,6 +18,7 @@ import type {
   SubstrateRecord,
 } from "@/lib/api/types"
 import { readReference } from "@/lib/api/types"
+import { UNIT_KIND } from "@/lib/api/units"
 import { declaredProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { daysEnding, type TimeRange } from "@/lib/observations-time"
@@ -283,6 +284,18 @@ export interface MetricInfo {
   bucketPlace?: "start" | "end"
 }
 
+/** A metric's `unit` as the unit's id: a reference to a unit record
+ * (`{ref: "substrate.reamde.dev/core/unit/kg"}`, or its bare path,
+ * decision 0186), or a spelling a metric written before the unit graph
+ * stored. */
+export function metricUnitId(value: unknown): string | undefined {
+  const ref = readReference(value)
+  if (!ref) return undefined
+  const parts = splitRecordPath(ref.path)
+  if (!parts) return ref.path
+  return parts.kind === UNIT_KIND ? parts.id : undefined
+}
+
 /** A metric record read as `MetricInfo`. A `codeSet` entry may be a bare
  * code or an object naming one under `code`. */
 export function metricInfoOf(record: SubstrateRecord): MetricInfo {
@@ -304,7 +317,7 @@ export function metricInfoOf(record: SubstrateRecord): MetricInfo {
     path: `${record.kind}/${record.id}`,
     name,
     form: isForm(p.form) ? p.form : undefined,
-    unit: typeof p.unit === "string" && p.unit ? p.unit : undefined,
+    unit: metricUnitId(p.unit),
     measures:
       typeof p.measures === "string" && p.measures ? p.measures : undefined,
     codeSet: codeSet?.length ? codeSet : undefined,

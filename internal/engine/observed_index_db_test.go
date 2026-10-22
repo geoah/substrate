@@ -54,6 +54,7 @@ func openObservedIndex(t *testing.T, opts ...engine.Option) obsIndex {
 	if err != nil {
 		t.Fatalf("load the sample catalog: %v", err)
 	}
+	putSampleUnits(t, ds, "observations", "health")
 	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
 		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
@@ -195,7 +196,8 @@ func mustTime(t *testing.T, s string) time.Time {
 
 // Every shape of observed record derives its points: a single gauge, a coded
 // gauge, a summary, an amount with its category, a counter trace, a trace
-// with nulls at irregular offsets, and a bounded lab value.
+// with nulls at irregular offsets, and a bounded lab value. No point carries
+// a base value: a read converts through the unit graph (decision 0186).
 func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
@@ -212,7 +214,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 		got[0].metric != metric("health/body_mass") || got[0].source != r.source+"/withings-body" ||
 		got[0].form != "gauge" || !got[0].ts.Equal(mustTime(t, "2026-10-07T03:41:12Z")) || !got[0].tsEnd.Equal(got[0].ts) ||
 		got[0].offset != 180 || got[0].unit != "kg" || got[0].value.Float64 != 72.4 || got[0].exact.String != "72.40" ||
-		got[0].base.Float64 != 72.4 || got[0].code != "" || got[0].comparator != "" || got[0].quality.Valid {
+		got[0].base.Valid || got[0].code != "" || got[0].comparator != "" || got[0].quality.Valid {
 		t.Errorf("a weighing derived %+v", got)
 	}
 
@@ -232,7 +234,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	})
 	if got := r.points(t, r.observation, "whoop/george/1047392/recovery"); len(got) != 1 || got[0].form != "summary" ||
 		got[0].statistic.String != "vendor" || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T06:02:00Z")) ||
-		got[0].base.Float64 != 0.67 {
+		got[0].base.Valid {
 		t.Errorf("a summary derived %+v", got)
 	}
 	if n := r.count(t, `SELECT count(*) FROM test_rollups WHERE form = 'summary'`); n != 0 {
@@ -244,7 +246,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 		"at": "2026-10-07T01:00:00Z", "endsAt": "2026-10-07T02:34:00Z",
 	})
 	if got := r.points(t, r.observation, "sleep/rem"); len(got) != 1 || got[0].code != "rem" || got[0].exact.String != "94" ||
-		got[0].base.Float64 != 94*60 || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T02:34:00Z")) {
+		got[0].base.Valid || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T02:34:00Z")) {
 		t.Errorf("an amount with its category derived %+v", got)
 	}
 
@@ -255,7 +257,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	})
 	meter := r.points(t, r.trace, "meter/2026-10-07T06")
 	if len(meter) != 4 || meter[1].exact.String != "18342.700" || meter[2].value.Float64 != 0.01 ||
-		meter[0].base.Float64 != 18342.655*3600000 || meter[0].resetRule.String != "monotonic" ||
+		meter[0].base.Valid || meter[0].resetRule.String != "monotonic" ||
 		!meter[3].ts.Equal(mustTime(t, "2026-10-07T06:45:00Z")) || !meter[3].tsEnd.Equal(meter[3].ts) {
 		t.Errorf("a counter trace derived %+v", meter)
 	}
@@ -276,7 +278,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	}
 	// Every point takes the record's one offset.
 	for i := range hr {
-		if hr[i].offset != 180 || !hr[i].offsetKnown || hr[i].unit != "/min" || hr[i].hold.Int64 != 240000 {
+		if hr[i].offset != 180 || !hr[i].offsetKnown || hr[i].unit != "1/min" || hr[i].hold.Int64 != 240000 {
 			t.Errorf("point %d: offset %d unit %s hold %v", i, hr[i].offset, hr[i].unit, hr[i].hold)
 		}
 	}
@@ -850,7 +852,7 @@ func TestEditingAMetricChangesNoIndexedRow(t *testing.T) {
 	before := observedTables(t, r.db)
 	for id, props := range map[string]map[string]any{
 		"health/body_mass":  {"form": "amount", "unit": "g", "hold": "PT1M"},
-		"health/heart_rate": {"form": "counter", "measures": "frequency", "unit": "Hz"},
+		"health/heart_rate": {"form": "counter", "unit": unitRef("1/s")},
 	} {
 		if _, err := r.patch(t, r.metric, id, props); err != nil {
 			t.Fatalf("rewrite the metric %s: %v", id, err)
@@ -2044,7 +2046,7 @@ func TestObservedCounterCorrectionReachesTheNextReadingAtAnotherOffset(t *testin
 	t.Parallel()
 	r := openObservedIndex(t)
 	r.mustPut(t, r.metric, "meter/hourly", map[string]any{
-		"name": "Hourly energy", "measures": "energy", "unit": "kW.h", "form": "counter", "rollups": []any{"1h"},
+		"name": "Hourly energy", "unit": unitRef("kW.h"), "form": "counter", "rollups": []any{"1h"},
 	})
 	hourly := r.metric + "/meter/hourly"
 	reading := func(id, at, value string, offset int) {
@@ -2166,7 +2168,7 @@ func TestObservedMetricWriteDuringItsReprojectionPage(t *testing.T) {
 	r := openObservedIndex(t, hook)
 	ctx := context.Background()
 	r.mustPut(t, r.metric, "porch/temperature", map[string]any{
-		"name": "Porch temperature", "measures": "temperature", "unit": "Cel", "form": "gauge",
+		"name": "Porch temperature", "unit": unitRef("Cel"), "form": "gauge",
 	})
 	for i := range 3 {
 		r.mustPut(t, r.observation, fmt.Sprintf("porch/%d", i), map[string]any{

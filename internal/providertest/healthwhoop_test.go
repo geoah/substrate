@@ -124,10 +124,10 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 		nightStart, nightEnd := "2026-10-06T19:41:00.271Z", "2026-10-07T03:55:49.771Z"
 		recoveryRevision := asInstant(t, "2026-10-07T06:27:02.319Z").Unix()
 		for _, c := range []struct{ role, metric, value, unit string }{
-			{"recovery", "health/whoop_recovery", "67", "%"},
+			{"recovery", "health/whoop_recovery", "67", "percent"},
 			{"hrv", "health/hrv_rmssd", "61.3", "ms"},
-			{"resting_heart_rate", "health/resting_heart_rate", "52", "/min"},
-			{"spo2", "health/spo2", "96.5", "%"},
+			{"resting_heart_rate", "health/resting_heart_rate", "52", "1/min"},
+			{"spo2", "health/spo2", "96.5", "percent"},
 			{"skin_temperature", "health/skin_temperature", "33.8", "Cel"},
 		} {
 			p := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, c.role))
@@ -173,7 +173,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 			t.Errorf("%d recoveries checked against their nights, want 29", recoveries)
 		}
 		strain := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, "strain"))
-		if v, u := quantityOf(t, strain, "value"); v != "14.2" || u != "{score}" || strain["form"] != "summary" ||
+		if v, u := quantityOf(t, strain, "value"); v != "14.2" || u != "score" || strain["form"] != "summary" ||
 			storedRefPath(strain["origin"]) != whoopCycleKind+"/"+whoopRow("cycle", whoopExampleCycle) {
 			t.Errorf("strain = %s %s %v from %v", v, u, strain["form"], strain["origin"])
 		}
@@ -201,7 +201,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 			{hw(whoopExampleWorkout, "heart_rate_max"), "180", "max", "workout", whoopExampleWorkout, "workout", runStart, runEnd, workoutOrigin, runRevision},
 		} {
 			p := healthProps(t, ds, obsObservation, c.id)
-			if v, u := quantityOf(t, p, "value"); v != c.value || u != "/min" {
+			if v, u := quantityOf(t, p, "value"); v != c.value || u != "1/min" {
 				t.Errorf("%s = %s %s, want %s /min", c.id, v, u, c.value)
 			}
 			if metricOf(p) != "health/heart_rate" || p["form"] != "summary" || p["statistic"] != c.statistic ||
@@ -266,7 +266,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 				t.Errorf("sleep %s = %v, want %s", name, night[name], want)
 			}
 		}
-		if v, u := quantityOf(t, night, "efficiency"); v != "95.9580078" || u != "%" {
+		if v, u := quantityOf(t, night, "efficiency"); v != "95.9580078" || u != "percent" {
 			t.Errorf("sleep efficiency = %s %s", v, u)
 		}
 		if scores, _ := night["scores"].(map[string]any); fmt.Sprint(scores["sleepPerformance"]) != "100" ||

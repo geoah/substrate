@@ -125,10 +125,10 @@ type Config struct {
 
 	// UnitGraph reads and writes every quantity through the repository's unit
 	// and conversion records instead of the engine's unit table (decision
-	// 0186). Off by default while the switch is prepared; a repository written
-	// with it on holds unit ids the table does not read, so it is for a
-	// development substrate that gets wiped.
-	UnitGraph bool `envconfig:"SUBSTRATE_UNIT_GRAPH" default:"false"`
+	// 0186). On by default. Off selects the table path, which reads none of
+	// the unit ids a repository holds since the switch; it is removed with
+	// the table.
+	UnitGraph bool `envconfig:"SUBSTRATE_UNIT_GRAPH" default:"true"`
 
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every

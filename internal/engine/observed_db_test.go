@@ -24,8 +24,8 @@ import (
 	"github.com/geoah/substrate/samples"
 )
 
-// observedRepo is a repository holding the observations and health samples,
-// imported through the catalog's door.
+// observedRepo is a repository holding the shipped units and the
+// observations and health samples, imported through the catalog's door.
 type observedRepo struct {
 	ds          substrate.Dataset
 	observation string
@@ -44,6 +44,7 @@ func openObserved(t *testing.T) observedRepo {
 	if err != nil {
 		t.Fatalf("load the sample catalog: %v", err)
 	}
+	putSampleUnits(t, ds, "observations", "health")
 	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
 		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
@@ -188,7 +189,7 @@ func TestObservedValueAndCodeAreExclusive(t *testing.T) {
 }
 
 // The other rules reach the write path: a hold on a counter, a summary with
-// no statistic, a delta outside a temperature.
+// no statistic, a circular value in a unit with no turn.
 func TestObservedRulesHoldOnEveryWrite(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
@@ -199,8 +200,8 @@ func TestObservedRulesHoldOnEveryWrite(t *testing.T) {
 	refused(t, "a held counter", err, "props.hold: only a gauge holds its value; a counter does not")
 	_, err = r.patch(t, r.observation, "w", map[string]any{"form": "summary", "endsAt": "2026-10-08T00:00:00+03:00", "period": "day"})
 	refused(t, "a summary without a statistic", err, "props.statistic: a summary names the statistic")
-	_, err = r.patch(t, r.observation, "w", map[string]any{"delta": true})
-	refused(t, "a delta in kilograms", err, "props.delta: marks a temperature difference, and kg measures mass")
+	_, err = r.patch(t, r.observation, "w", map[string]any{"circular": true})
+	refused(t, "a circular value in kilograms", err, "props.circular: averages an angle on the circle, and kg declares no turn")
 	_, err = r.patch(t, r.observation, "w", map[string]any{"value": map[string]any{"value": "0.5", "unit": "kg", "comparator": "<"}})
 	refused(t, "a comparator where none is declared", err, "admits a comparator only where it declares `comparator: true`")
 }
@@ -234,14 +235,14 @@ func TestObservedWriteRefusesAFallingRevision(t *testing.T) {
 	refused(t, "removing the revision", err, "props.revision: the stored revision 3 is never removed")
 }
 
-// A trace keeps its nulls, stores its unit as a table code, and carries the
+// A trace keeps its nulls, stores its unit as the unit's id, and carries the
 // stats the engine computes from its values, whatever the writer sent.
 func TestObservedTraceStatsAreComputedAndNullsKept(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
 	id := "applehealth/iphone/garmin-forerunner-265/heart_rate/2026-10-07T06"
 	if _, err := r.put(t, r.trace, id, map[string]any{
-		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "°C", "hold": "PT4M",
+		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "bpm", "hold": "PT4M",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
 		"utcOffset": 180,
 		"offsets":   []any{0, 118000, 241000, 362000},
@@ -252,8 +253,8 @@ func TestObservedTraceStatsAreComputedAndNullsKept(t *testing.T) {
 		t.Fatalf("put a trace: %v", err)
 	}
 	got := r.get(t, r.trace, id).Properties
-	if got["unit"] != "Cel" {
-		t.Errorf("unit = %v, want the table code Cel", got["unit"])
+	if got["unit"] != "1/min" {
+		t.Errorf("unit = %v, want the unit id 1/min", got["unit"])
 	}
 	if values := got["values"].([]any); len(values) != 4 || values[1] != nil {
 		t.Errorf("values = %v, want the null kept at index 1", values)
@@ -283,16 +284,16 @@ func TestObservedTraceStatsAreComputedAndNullsKept(t *testing.T) {
 	refused(t, "short offsets", err, "props.offsets: 3 offsets for 4 values")
 }
 
-// A trace stored at exactly the byte limit, its stamped stats and measure
-// counted, is admitted on its create and on its identical rewrite, and one
-// byte more is refused on its create. A check that left the measure out
-// admitted that create, and then refused its identical rewrite.
-func TestObservedTraceSizeCountsItsMeasure(t *testing.T) {
+// A trace stored at exactly the byte limit, its stamped stats counted, is
+// admitted on its create and on its identical rewrite, and one byte more is
+// refused on its create. A check that left a stamped property out admitted
+// that create, and then refused its identical rewrite.
+func TestObservedTraceSizeCountsItsStats(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
 	trace := func(pad int) map[string]any {
 		return map[string]any{
-			"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "/min", "hold": "PT4M",
+			"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "1/min", "hold": "PT4M",
 			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
 			"offsets": []any{0, 118000}, "values": []any{"58", "61"},
 			"adapter": strings.Repeat("x", pad),
@@ -305,8 +306,8 @@ func TestObservedTraceSizeCountsItsMeasure(t *testing.T) {
 	// beside them and the title is derived, so neither counts.
 	size := func(id string) int {
 		props := maps.Clone(r.get(t, r.trace, id).Properties)
-		if props["measure"] == nil || props["stats"] == nil {
-			t.Fatalf("%s carries no measure or stats: %v", id, props)
+		if props["stats"] == nil {
+			t.Fatalf("%s carries no stats: %v", id, props)
 		}
 		for _, name := range []string{"at", "endsAt", "title"} {
 			delete(props, name)

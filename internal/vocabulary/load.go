@@ -272,9 +272,10 @@ var actorDataKeys = map[string]bool{"authority": true, "package": true, "tier": 
 var datatypeDataKeys = map[string]bool{
 	"authority": true, "package": true, "base": true, "pattern": true, "min": true, "max": true,
 	"values": true, "description": true,
-	// A quantity refinement names its measure, narrows its units and admits
-	// a comparator; parseQuantitySpec refuses the three on any other base.
-	"measures": true, "units": true, "comparator": true,
+	// A quantity refinement names its anchor unit, narrows its units, reads
+	// every value as a difference and admits a comparator (decision 0186);
+	// parseQuantitySpec refuses the four on any other base.
+	"unit": true, "units": true, "delta": true, "comparator": true,
 }
 
 var capabilityDataKeys = map[string]bool{
@@ -435,8 +436,9 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 			"min":        d.Data["min"],
 			"max":        d.Data["max"],
 			"values":     d.Data["values"],
-			"measures":   d.Data["measures"],
+			"unit":       d.Data["unit"],
 			"units":      d.Data["units"],
+			"delta":      d.Data["delta"],
 			"comparator": d.Data["comparator"],
 		}, false, 1)
 		if p == nil {
@@ -1201,7 +1203,7 @@ var linkPropKeys = map[string]bool{
 	"values": true, "pattern": true, "min": true, "max": true,
 	// A quantity's own keys are value constraints like the four above: a link
 	// quantity (a sensor's calibration offset) is still one flat value.
-	"measures": true, "units": true, "comparator": true, "unit": true, "delta": true,
+	"units": true, "comparator": true, "unit": true, "delta": true,
 }
 
 // linkPropForbiddenKinds are the datatypes a link property may never be, each
@@ -1799,12 +1801,11 @@ var propKeys = map[string]bool{
 	"pattern": true, "min": true, "max": true,
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
-	// A quantity's own three: the measure every unit belongs to, a narrowing
-	// to listed codes, and whether a value may carry a comparator. Refused on
-	// every other datatype (parseProperty). `unit` and `delta` are decision
-	// 0186's: the anchor unit of the repository's unit graph, and whether
-	// every value is a difference.
-	"measures": true, "units": true, "comparator": true, "unit": true, "delta": true,
+	// A quantity's own four (decision 0186): the anchor unit of the
+	// repository's unit graph, a narrowing to listed units, whether every
+	// value is a difference, and whether a value may carry a comparator.
+	// Refused on every other datatype (parseProperty).
+	"units": true, "comparator": true, "unit": true, "delta": true,
 	// `keyed` is `repeated`'s twin (a map instead of a list) and `keyPattern` is
 	// the contract its keys hold to; `managed` says the engine stamps the
 	// property. Both are declared shape, so they ride into the Definition map
@@ -2140,7 +2141,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			}
 		}
 		if !allowRefinement && (d["min"] != nil || d["max"] != nil) {
-			l.errf("%s: a quantity property type takes measures, units and comparator; declare min and max on the property", where)
+			l.errf("%s: a quantity property type takes unit, units, delta and comparator; declare min and max on the property", where)
 			return nil
 		}
 		p.Quantity = l.parseQuantitySpec(where, d, p.Quantity)
@@ -2148,7 +2149,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			return nil
 		}
 	} else {
-		for _, key := range []string{"measures", "units", "comparator", "unit", "delta"} {
+		for _, key := range []string{"units", "comparator", "unit", "delta"} {
 			if v, declared := d[key]; declared && v != nil {
 				l.errf("%s.%s: only a quantity property declares %s", where, key, key)
 				return nil
@@ -2189,7 +2190,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// A quantity is an object too, and its bounds are quantities (parsed
 	// above, into Quantity).
 	if p.Datatype == DatatypeQuantity && (p.Pattern != nil || len(p.Values) > 0) {
-		l.errf("%s: a quantity property takes measures, units, comparator, min and max, never a pattern or values", where)
+		l.errf("%s: a quantity property takes unit, units, delta, comparator, min and max, never a pattern or values", where)
 	}
 	// NOTHING IS WRITTEN BACK. A property's `values` stay exactly as the author
 	// spelled them — bare scalars or {value, label} mappings — because the map this

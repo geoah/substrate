@@ -237,6 +237,10 @@ func WithTestSkipWriterLease() Option {
 // docs/operations.md publishes for reading `pg_locks`.
 const WriterLeaseKeySQL = writerLeaseKeySQL
 
+// SearchIndexVersion is the search index rule version this binary writes
+// (searchtext.go).
+const SearchIndexVersion = searchIndexVersion
+
 // The commit stages WithTestCommitFault reports, in the order they run.
 const (
 	CommitBeforeManifest = commitBeforeManifest

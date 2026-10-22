@@ -436,16 +436,17 @@ describe("where a metric reads from", () => {
 describe("one metric's plot", () => {
   it("reads in its unit, with its mark and band, through one aggregate read", () => {
     const heart = planPlot(source(), HEART, SCOPE)
+    // The shipped catalogue names its unit by a unit record's id.
     expect(heart).toMatchObject({
       name: "Heart rate",
-      unit: "/min",
+      unit: "1/min",
       mark: "line",
       band: true,
       reducer: "avg",
     })
     expect(heart.read?.aggregate.metric).toEqual({ ref: HEART })
     const steps = planPlot(source(), STEPS_METRIC, SCOPE)
-    expect(steps).toMatchObject({ unit: "{steps}", mark: "bars", band: false })
+    expect(steps).toMatchObject({ unit: "steps", mark: "bars", band: false })
   })
 
   it("reads days where each value was recorded unless the reader picks a zone", () => {

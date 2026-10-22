@@ -2,8 +2,8 @@ package vocabulary_test
 
 import "testing"
 
-// Decision 0186, step 3: a quantity property may name its units the way the
-// repository's unit graph reads them, by `unit`, and say its values are
+// Decision 0186: a quantity property names its units the way the
+// repository's unit graph reads them, by `unit`, and says its values are
 // differences by `delta`. The loader holds both to their shape alone; a
 // repository's graph judges the spellings at write.
 func TestQuantityGraphDeclarations(t *testing.T) {
@@ -40,14 +40,8 @@ func TestQuantityGraphDeclarations(t *testing.T) {
 			t.Fatalf("unit did not ride into the definition: %v", w)
 		}
 	})
-	t.Run("the table's checks stay off a graph declaration", func(t *testing.T) {
-		q := loadThing(t, "  properties:\n    w: {type: quantity, unit: kg, units: [lb]}\n").Props["w"].Quantity
-		if _, err := q.CheckUnit("[lb_av]"); err != nil {
-			t.Fatalf("the table path held a graph declaration's units list: %v", err)
-		}
-	})
 	for _, c := range []struct{ name, body, want string }{
-		{"unit beside measures", `    w: {type: quantity, unit: kg, measures: mass}`, "not both"},
+		{"unit beside measures", `    w: {type: quantity, unit: kg, measures: mass}`, `unknown key "measures"`},
 		{"a unit that is no string", `    w: {type: quantity, unit: 3}`, "is not a unit spelling"},
 		{"a padded unit", `    w: {type: quantity, unit: " kg"}`, "starts or ends with a space"},
 		{"delta that is no bool", `    w: {type: quantity, delta: "yes"}`, "true or false"},
@@ -62,9 +56,9 @@ func TestQuantityGraphDeclarations(t *testing.T) {
 			loadThingErr(t, "  properties:\n"+c.body+"\n", c.want)
 		})
 	}
-	t.Run("delta alone keeps the table dialect", func(t *testing.T) {
-		q := loadThing(t, "  properties:\n    w: {type: quantity, measures: temperature, delta: true}\n").Props["w"].Quantity
-		if q.GraphDialect() || !q.Delta || q.Measure != "temperature" {
+	t.Run("delta alone", func(t *testing.T) {
+		q := loadThing(t, "  properties:\n    w: {type: quantity, delta: true}\n").Props["w"].Quantity
+		if !q.Delta || q.Unit != "" || q.Measure != "" {
 			t.Fatalf("spec = %+v", q)
 		}
 	})

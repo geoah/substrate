@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -27,20 +28,26 @@ const (
 )
 
 // installGauges declares the gauge kind with every property of core's
-// `metric` contract, binding the trait or not.
-func installGauges(t *testing.T, ds substrate.Dataset, metric bool) {
+// packed `observed` contract, binding the trait or not.
+func installGauges(t *testing.T, ds substrate.Dataset, packed bool) {
 	t.Helper()
-	text := map[string]any{"type": "string"}
+	typed := func(dt string) map[string]any { return map[string]any{"type": dt} }
+	listed := func(dt string) map[string]any { return map[string]any{"type": dt, "repeated": true} }
+	ref := map[string]any{"type": "reference", "kind": "any"}
 	data := map[string]any{
 		"properties": map[string]any{
-			"name": text, "measures": text, "unit": text, "form": text, "category": text, "bucketPlace": text,
-			"codeSet":          map[string]any{"type": "string", "repeated": true},
-			"rollups":          map[string]any{"type": "string", "repeated": true},
-			"displayPrecision": map[string]any{"type": "int"},
+			"metric": map[string]any{"type": "reference", "trait": vocabulary.TraitMetricCore},
+			"source": ref, "about": ref, "origins": map[string]any{"type": "reference", "kind": "any", "repeated": true},
+			"channel": typed("string"), "form": typed("string"), "unit": typed("string"), "every": typed("duration"),
+			"offsets": listed("int"), "values": listed("decimal"), "codes": listed("string"),
+			"hold": typed("duration"), "resetRule": typed("string"), "resetAt": typed("datetime"),
+			"delta": typed("bool"), "circular": typed("bool"), "wrapAt": typed("decimal"), "utcOffset": typed("int"),
+			"revision": typed("int"), "stats": map[string]any{"type": "json", "managed": true},
 		},
 	}
-	if metric {
-		data["traits"] = []any{vocabulary.TraitMetricCore}
+	data["traits"] = []any{"substrate.reamde.dev/core/temporal(range)"}
+	if packed {
+		data["traits"] = append(data["traits"].([]any), vocabulary.TraitObservedCore+"(packed)")
 	}
 	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "gauges", Authority: gaugesPackage,
@@ -50,7 +57,7 @@ func installGauges(t *testing.T, ds substrate.Dataset, metric bool) {
 			vocabulary.KindManifest(gaugesPackage, map[string]any{"singular": "gauge"}, data),
 		},
 	}); err != nil {
-		t.Fatalf("install the gauge kind (metric %v): %v", metric, err)
+		t.Fatalf("install the gauge kind (observed %v): %v", packed, err)
 	}
 }
 
@@ -92,8 +99,8 @@ func rebuiltEqualsLive(t *testing.T, svc substrate.Service, ds substrate.Dataset
 	return before
 }
 
-// Binding `metric` to a kind whose rows already hold a `unit` makes those
-// rows uses, a tombstone's too; unbinding it again makes them none. Each
+// Binding packed `observed` to a kind whose rows already hold a `unit` makes
+// those rows uses, a tombstone's too; unbinding it again makes them none. Each
 // change re-derives the rows behind the commit, the guard refuses splitting
 // lb from kg until then, and the live fold equals a rebuild after each.
 func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
@@ -122,7 +129,7 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	installGauges(t, ds, false)
 	for _, g := range []struct{ id, unit string }{{"live", "kg"}, {"gone", "lb"}} {
 		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: gaugeKind, ID: g.id, Properties: map[string]any{
-			"name": g.id, "measures": "mass", "unit": g.unit, "form": "gauge",
+			"unit": g.unit, "form": "gauge",
 		}})
 	}
 	if _, err := ds.Delete(ctx, substrate.ActorAPI, gaugeKind, "gone", substrate.DeleteInput{}); err != nil {
@@ -140,7 +147,7 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	}
 	blocking.Store(false)
 	close(gate)
-	fold := rebuiltEqualsLive(t, svc, ds, "after binding metric")
+	fold := rebuiltEqualsLive(t, svc, ds, "after binding observed")
 	if got, want := unitUsesOf(t, fold, gaugeKind), []string{"gone lb", "live kg"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("the bound gauges' uses = %v, want %v", got, want)
 	}
@@ -150,7 +157,7 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	}
 
 	installGauges(t, ds, false)
-	fold = rebuiltEqualsLive(t, svc, ds, "after unbinding metric")
+	fold = rebuiltEqualsLive(t, svc, ds, "after unbinding observed")
 	if got := unitUsesOf(t, fold, gaugeKind); len(got) != 0 {
 		t.Errorf("the unbound gauges' uses = %v, want none", got)
 	}
@@ -216,7 +223,8 @@ func wantSplitRefused(t *testing.T, ds substrate.Dataset, conversion, naming str
 // open writes nothing.
 func TestAnOldRepositoryOpensWithTheSeedAndTheBackfill(t *testing.T) {
 	t.Parallel()
-	svc, ds, dsn, root := unitSeededRepository(t, false)
+	// Written before the switch: the table path stores the table's codes.
+	svc, ds, dsn, root := unitSeededRepository(t, false, engine.WithUnitGraph(false))
 	hold := installHolds(t, ds)
 	ctx := context.Background()
 	for _, h := range []struct{ id, value, unit string }{{"pounds", "150", "[lb_av]"}, {"kilos", "70", "kg"}, {"ounces", "3", "[oz_av]"}} {
@@ -246,7 +254,28 @@ func TestAnOldRepositoryOpensWithTheSeedAndTheBackfill(t *testing.T) {
 		t.Fatalf("the open seeded %d units and %d conversions, skipped %v; want %d and %d", len(tab.Units), len(tab.Conversions), tab.Unseeded, units, convs)
 	}
 	wantSplitRefused(t, ds, "lb-kg", "still being derived")
+	// A filter whose arms unit_uses would choose answers no partial page
+	// while the uses are owed: 150 [lb_av] has no use yet, so it would match
+	// no arm and drop out of an answer that looked complete.
+	heavier := substrate.Query{Filter: substrate.Filter{Kinds: []string{hold}, Properties: map[string]substrate.Cond{
+		"weight": {Gt: map[string]any{"value": "1", "unit": "kg"}},
+	}}, OrderBy: []substrate.Order{{Property: "createdAt"}}}
+	if p, err := ds.List(ctx, heavier); !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(fmt.Sprint(err), "still being derived") {
+		t.Errorf("a quantity filter while the uses are owed: page %v, err = %v, want ErrUnavailable", p, err)
+	}
 	release()
+	engine.DrainIndexReprojection(t, ds)
+	p, err := ds.List(ctx, heavier)
+	if err != nil {
+		t.Fatalf("a quantity filter once the uses are derived: %v", err)
+	}
+	var ids []string
+	for _, r := range p.Records {
+		ids = append(ids, r.ID)
+	}
+	if got := strings.Join(ids, ","); got != "pounds,kilos" {
+		t.Errorf("a quantity filter once the uses are derived = %s, want pounds,kilos", got)
+	}
 	fold := rebuiltEqualsLive(t, svc, ds, "after the backfill")
 	if got, want := unitUsesOf(t, fold, hold), []string{"kilos kg", "ounces [oz_av]", "pounds [lb_av]"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("the holds' uses = %v, want %v", got, want)

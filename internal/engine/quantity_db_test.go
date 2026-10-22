@@ -1,21 +1,21 @@
 package engine
 
-// The quantity datatype against Postgres: what a write stores and a read
-// returns, the title a template renders from it, the filter that converts its
-// operand exactly into every stored unit of the operand's measure, the
-// comparator's half-line, the order by the value at its measure's base and the
-// index that holds that order, and the narrowings a declaration change may not
-// make over live rows.
+// The quantity datatype against Postgres, through the repository's unit
+// graph (decision 0186): what a write stores and a read returns, the title a
+// template renders from it, the filter that converts its operand exactly into
+// every used unit of the operand's linear component, the comparator's
+// half-line, the order by the value at its component's root, and the
+// narrowings a declaration change may not make over live or deleted rows.
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -37,11 +37,11 @@ func qv(value, unit string, cmp ...string) map[string]any {
 func readingManifest(overrides map[string]any) map[string]any {
 	props := map[string]any{
 		"name":   map[string]any{"type": "string"},
-		"weight": map[string]any{"type": "quantity", "measures": "mass"},
-		"temp":   map[string]any{"type": "quantity", "measures": "temperature"},
-		"result": map[string]any{"type": "quantity", "measures": "mass-concentration", "comparator": true},
+		"weight": map[string]any{"type": "quantity", "unit": "kg"},
+		"temp":   map[string]any{"type": "quantity", "unit": "K"},
+		"result": map[string]any{"type": "quantity", "unit": "g/L", "comparator": true},
 		"pulse":  map[string]any{"type": "quantity"},
-		"height": map[string]any{"type": "quantity", "measures": "length", "fts": true},
+		"height": map[string]any{"type": "quantity", "unit": "m", "fts": true},
 	}
 	for k, v := range overrides {
 		props[k] = v
@@ -51,17 +51,49 @@ func readingManifest(overrides map[string]any) map[string]any {
 		map[string]any{
 			"displayTemplate": "{name}: {weight}",
 			"properties":      props,
-			"indices":         []any{map[string]any{"properties": []any{"weight"}}},
 		})
+}
+
+// readingUnits are the units whose linear components the reading kind's
+// tests write in: mass, temperature, mass concentration, rate, length,
+// acidity and the levels of a power.
+var readingUnits = []string{"kg", "K", "g/L", "1/min", "m", "pH", "dBm"}
+
+// openReadingsDataset opens a dataset holding the shipped units of
+// readingUnits' components.
+func openReadingsDataset(t *testing.T) *dataset {
+	t.Helper()
+	ds := openInternalDataset(t)
+	if err := enginetest.PutShippedUnits(context.Background(), ds, readingUnits...); err != nil {
+		t.Fatalf("put the shipped units: %v", err)
+	}
+	return ds
 }
 
 func installReadings(t *testing.T, rows map[string]map[string]any) *dataset {
 	t.Helper()
+	return installReadingsWith(t, nil, rows)
+}
+
+// installReadingsWith is installReadings with more units of the owner's,
+// written by units before the kind lands.
+func installReadingsWith(t *testing.T, units func(*dataset), rows map[string]map[string]any) *dataset {
+	t.Helper()
+	return installReadingsDeclared(t, nil, units, rows)
+}
+
+// installReadingsDeclared is installReadingsWith over a reading kind whose
+// named properties overrides replaces.
+func installReadingsDeclared(t *testing.T, overrides map[string]any, units func(*dataset), rows map[string]map[string]any) *dataset {
+	t.Helper()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
+	if units != nil {
+		units(ds)
+	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
-		readingManifest(nil),
+		readingManifest(overrides),
 	}); err != nil {
 		t.Fatalf("install the reading kind: %v", err)
 	}
@@ -113,7 +145,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 		t.Fatalf("get: %v", err)
 	}
 	for name, want := range map[string]map[string]any{
-		"weight": qv("72.50", "kg"), "temp": qv("98.6", "[degF]"), "pulse": qv("62", "/min"),
+		"weight": qv("72.50", "kg"), "temp": qv("98.6", "degF"), "pulse": qv("62", "1/min"),
 		"result": qv("0.5", "ng/mL", "<"),
 	} {
 		v, _ := got.Properties[name].(map[string]any)
@@ -202,7 +234,7 @@ func TestFilterByQuantityConvertsExactly(t *testing.T) {
 		cond substrate.Cond
 		want string
 	}{
-		{"another measure", substrate.Cond{Lt: qv("1", "m")}, "not mass"},
+		{"another component", substrate.Cond{Lt: qv("1", "m")}, "m and kg do not convert"},
 		{"a bare number", substrate.Cond{Lt: "72"}, "is an object"},
 		{"a number value", substrate.Cond{Lt: map[string]any{"value": 72, "unit": "kg"}}, "written as a string"},
 		{"a comparator on the operand", substrate.Cond{Lt: qv("72", "kg", "<")}, "an operand is one value"},
@@ -254,16 +286,16 @@ func TestQuantityFilterNoStoredUnitConvertsIsEmpty(t *testing.T) {
 	}
 }
 
-// A level's measure closes its unit set without a `units:` list: its listed
-// codes are the set, and a filter compares in them. `[pH]` under `measures:
-// acidity` matches itself and a range around it.
+// A level anchored by `unit` needs no `units:` list: its component is the
+// set, and a filter compares in it. `[pH]` under `unit: pH` matches itself
+// and a range around it.
 func TestFilterByALevelWithoutUnits(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
-		readingManifest(map[string]any{"ph": map[string]any{"type": "quantity", "measures": "acidity"}}),
+		readingManifest(map[string]any{"ph": map[string]any{"type": "quantity", "unit": "pH"}}),
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -333,16 +365,16 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 			t.Fatalf("%s: filtered to %v, want %v", name, got, tc.want)
 		}
 	}
-	// A second kind declaring the name as a quantity of another measure
-	// takes no part in a comparison its measure does not hold: it neither
-	// refuses the operand nor matches. An operand no kind's measure holds is
-	// refused.
+	// A second kind declaring the name as a quantity anchored in another
+	// component takes no part in a comparison its component does not hold:
+	// it neither refuses the operand nor matches. An operand no kind's
+	// component holds is refused.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "span"}, map[string]any{
 			"displayTemplate": "{name}",
 			"properties": map[string]any{
 				"name":   map[string]any{"type": "string"},
-				"weight": map[string]any{"type": "quantity", "measures": "length"},
+				"weight": map[string]any{"type": "quantity", "unit": "m"},
 			},
 		}),
 	}); err != nil {
@@ -371,7 +403,7 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 		}
 	}
 	if _, err := list(substrate.Cond{Eq: qv("1", "s")}); !errors.Is(err, substrate.ErrValidation) {
-		t.Fatalf("an operand no declared measure holds: err = %v, want a validation refusal", err)
+		t.Fatalf("an operand no declared component holds: err = %v, want a validation refusal", err)
 	}
 	// A kind declaring the name as a state machine disagrees as a string does:
 	// the state branch would compare the operand as text and match nothing.
@@ -439,11 +471,17 @@ func TestFilterByTemperatureAppliesTheOffset(t *testing.T) {
 	}
 }
 
-// An annotation is part of a unit: an operand in {beats}/min reaches stored
-// {beats}/s and never /min or {steps}/min, which UCUM would call equal.
+// Units no conversion joins stay apart: the owner's beats per minute reach
+// their beats per second through the owner's conversion, and never 1/min or
+// steps per minute, which UCUM would call equal.
 func TestFilterByAnnotatedRateKeepsTheAnnotation(t *testing.T) {
 	t.Parallel()
-	ds := installReadings(t, map[string]map[string]any{
+	ds := installReadingsWith(t, func(ds *dataset) {
+		putUnit(t, ds, "beats/min", map[string]any{"name": "beats per minute", "code": "{beats}/min"})
+		putUnit(t, ds, "beats/s", map[string]any{"name": "beats per second", "code": "{beats}/s"})
+		putUnit(t, ds, "steps/min", map[string]any{"name": "steps per minute", "code": "{steps}/min"})
+		putConversion(t, ds, "beats/s-beats/min", "beats/s", "beats/min", map[string]any{"factor": "60"})
+	}, map[string]map[string]any{
 		"beats62":   {"pulse": qv("62", "{beats}/min")},
 		"beats1hz":  {"pulse": qv("1", "{beats}/s")},
 		"bare70":    {"pulse": qv("70", "/min")},
@@ -528,12 +566,12 @@ func TestFilterByComparatorReadsTheHalfLine(t *testing.T) {
 func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
 	labelKind := quantityPackage + "/label"
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(map[string]any{
-			"value": map[string]any{"type": "quantity", "measures": "mass"},
+			"value": map[string]any{"type": "quantity", "unit": "kg"},
 			"score": map[string]any{"type": "int"},
 		}),
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "label"}, map[string]any{
@@ -645,12 +683,13 @@ func TestOrderByQuantityMintsAShortCursor(t *testing.T) {
 	}
 }
 
-// An order key keeps the base value to forty decimal places, so two rates
-// that differ at the twenty-second significant digit sort apart rather than
-// tie and fall to the id.
+// An order key keeps the value at its component's root to forty decimal
+// places, so two rates that differ at the twenty-second significant digit
+// sort apart rather than tie and fall to the id.
 func TestOrderByQuantityKeepsFortyPlaces(t *testing.T) {
 	t.Parallel()
-	ds := installReadings(t, map[string]map[string]any{
+	anchored := map[string]any{"pulse": map[string]any{"type": "quantity", "unit": "1/min"}}
+	ds := installReadingsDeclared(t, anchored, nil, map[string]map[string]any{
 		"aa": {"pulse": qv("7200.000000000000001", "/h")},
 		"bb": {"pulse": qv("2", "/s")},
 	})
@@ -666,21 +705,24 @@ func TestOrderByQuantityKeepsFortyPlaces(t *testing.T) {
 	}
 }
 
-// An order across two kinds that read one code in two measures keys each
-// kind's rows in its own: a 10 Cel temperature is 283.15 K, a 10 Cel
-// difference is 10 K, whichever kind the read names first.
+// An order across two kinds that read one unit two ways keys each kind's
+// rows its own way, at the component's root (Cel, the smallest id): a 10 Cel
+// temperature keys at 10, and a 20 K difference (`delta: true`) at 20, not at
+// the -253.15 an absolute 20 K would key at, whichever kind the read names
+// first. The 10 Cel difference ties the 10 Cel temperature and falls to the
+// id.
 func TestOrderByQuantityKeysEachKindInItsOwnMeasure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
 	shiftKind := quantityPackage + "/shift"
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
-		readingManifest(map[string]any{"change": map[string]any{"type": "quantity", "measures": "temperature"}}),
+		readingManifest(map[string]any{"change": map[string]any{"type": "quantity", "unit": "K"}}),
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "shift"}, map[string]any{
 			"properties": map[string]any{
 				"name":   map[string]any{"type": "string"},
-				"change": map[string]any{"type": "quantity", "measures": "temperature-difference"},
+				"change": map[string]any{"type": "quantity", "unit": "K", "delta": true},
 			},
 		}),
 	}); err != nil {
@@ -709,16 +751,14 @@ func TestOrderByQuantityKeysEachKindInItsOwnMeasure(t *testing.T) {
 		for _, r := range page.Records {
 			got = append(got, r.Properties["name"].(string))
 		}
-		if strings.Join(got, ",") != "small,large,absolute" {
-			t.Fatalf("kinds %v ordered %v, want small,large,absolute", kinds, got)
+		if strings.Join(got, ",") != "absolute,small,large" {
+			t.Fatalf("kinds %v ordered %v, want absolute,small,large", kinds, got)
 		}
 	}
 }
 
-// An order sorts by the value at its measure's base, so 155 pounds sits
+// An order sorts by the value at its component's root, so 155 pounds sits
 // between 50 kg and 71000 g; one-row pages put a cursor at every boundary.
-// The declared index on the property holds the same expression, and Postgres
-// built it, which an expression that was not immutable would have failed.
 func TestOrderByQuantityReadsTheBase(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -757,14 +797,6 @@ func TestOrderByQuantityReadsTheBase(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ordered %v, want %v", got, want)
 	}
-	var def string
-	if err := ds.db.QueryRowContext(ctx, `SELECT indexdef FROM pg_indexes WHERE indexname = $1`,
-		"idx_"+derivedID(readingKind, "0")).Scan(&def); err != nil {
-		t.Fatalf("the declared weight index: %v", err)
-	}
-	if !strings.Contains(def, "regexp_replace") || !strings.Contains(def, "CASE") {
-		t.Fatalf("the weight index is not the base-value expression: %s", def)
-	}
 	no, yes := false, true
 	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{
 		Properties: map[string]substrate.Cond{"weight": {Exists: &no}},
@@ -779,8 +811,9 @@ func TestOrderByQuantityReadsTheBase(t *testing.T) {
 }
 
 // A declaration may not narrow a quantity over the rows that hold it: a unit
-// dropped from the list, a measure changed, a bound raised, a comparator
-// turned off. Each count is the write coercion's own verdict over each row.
+// dropped from the list, the anchor moved to another component, a bound
+// raised, a comparator turned off. Each count is the write's own verdict
+// over each row, through the unit graph.
 func TestQuantityNarrowingsAreRefusedOverLiveRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -799,25 +832,25 @@ func TestQuantityNarrowingsAreRefusedOverLiveRows(t *testing.T) {
 	}{
 		{
 			"a unit dropped",
-			map[string]any{"weight": map[string]any{"type": "quantity", "measures": "mass", "units": []any{"kg"}}},
-			"declares units kg while 1 live records hold a value it refuses",
+			map[string]any{"weight": map[string]any{"type": "quantity", "unit": "kg", "units": []any{"g"}}},
+			"while 1 live records hold a value it refuses",
 		},
 		{
-			"a measure changed",
-			map[string]any{"weight": map[string]any{"type": "quantity", "measures": "length"}},
-			"declares measures length while 2 live records hold a value it refuses",
+			"the anchor moved to another component",
+			map[string]any{"weight": map[string]any{"type": "quantity", "unit": "m"}},
+			"while 2 live records hold a value it refuses",
 		},
 		{
 			"a min raised",
 			map[string]any{"weight": map[string]any{
-				"type": "quantity", "measures": "mass",
+				"type": "quantity", "unit": "kg",
 				"min": map[string]any{"value": "60", "unit": "kg"},
 			}},
-			"declares min 60 kg while 1 live records hold a value it refuses",
+			"while 1 live records hold a value it refuses",
 		},
 		{
 			"the comparator off",
-			map[string]any{"result": map[string]any{"type": "quantity", "measures": "mass-concentration"}},
+			map[string]any{"result": map[string]any{"type": "quantity", "unit": "g/L"}},
 			"declares no comparator while 1 live records hold a value it refuses",
 		},
 	} {
@@ -829,44 +862,40 @@ func TestQuantityNarrowingsAreRefusedOverLiveRows(t *testing.T) {
 		name     string
 		override map[string]any
 	}{
-		{"both units listed", map[string]any{"weight": map[string]any{"type": "quantity", "measures": "mass", "units": []any{"kg", "[lb_av]"}}}},
+		{"the anchor's component with a unit listed", map[string]any{"weight": map[string]any{"type": "quantity", "unit": "kg", "units": []any{"lb"}}}},
 		{"a min every row meets, in grams", map[string]any{"weight": map[string]any{
-			"type": "quantity", "measures": "mass",
+			"type": "quantity", "unit": "kg",
 			"min": map[string]any{"value": "50000", "unit": "g"},
 		}}},
-		{"the measure dropped for a unit list", map[string]any{"weight": map[string]any{"type": "quantity", "units": []any{"kg", "[lb_av]"}}}},
+		{"the anchor dropped", map[string]any{"weight": map[string]any{"type": "quantity"}}},
 	} {
 		if err := apply(tc.override); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 	}
-	// The index on weight orders by the base, which a property naming neither
-	// a measure nor its units leaves unknown.
-	err := apply(map[string]any{"weight": map[string]any{"type": "quantity"}})
-	if err == nil || !strings.Contains(err.Error(), "declares neither measures nor units") {
-		t.Fatalf("an indexed quantity of no measure: err = %v, want it refused", err)
-	}
 }
 
-// Dropping `measures:` narrows too: a code the declared measure admitted may
-// be ambiguous undeclared (J/s is a power or an apparent power), and a
-// temperature stored as a difference would be read as an absolute one. The
-// guard counts those rows and only those.
-func TestDroppingAQuantityMeasureIsANarrowing(t *testing.T) {
+// Dropping `delta: true` narrows: a 0.3 Cel difference would be read as the
+// absolute 0.3 Cel. Dropping an anchor narrows nothing, since a quantity
+// with neither `unit` nor `units` admits every unit. The guard counts the
+// rows that hold a difference, live and deleted, and only those.
+func TestDroppingAQuantityDeltaIsANarrowing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	declared := map[string]any{
-		"output": map[string]any{"type": "quantity", "measures": "power"},
-		"drift":  map[string]any{"type": "quantity", "measures": "temperature-difference"},
+		"output": map[string]any{"type": "quantity", "unit": "W"},
+		"drift":  map[string]any{"type": "quantity", "unit": "K", "delta": true},
 	}
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
+	if err := enginetest.PutShippedUnits(ctx, ds, "W"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0), readingManifest(declared),
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	for name, props := range map[string]map[string]any{
-		"joules": {"output": qv("5", "J/s")},
 		"watts":  {"output": qv("5", "W")},
 		"warmer": {"drift": qv("0.3", "Cel")},
 	} {
@@ -875,60 +904,46 @@ func TestDroppingAQuantityMeasureIsANarrowing(t *testing.T) {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
-	for name, tc := range map[string]struct {
-		override map[string]any
-		want     string
-	}{
-		"an ambiguous code": {
-			map[string]any{"output": map[string]any{"type": "quantity"}, "drift": declared["drift"]},
-			"declares no measures while 1 live records hold a value it refuses",
-		},
-		"a difference read as a temperature": {
-			map[string]any{"drift": map[string]any{"type": "quantity"}, "output": declared["output"]},
-			"declares no measures while 1 live records hold a value it reads in another measure",
-		},
-	} {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(tc.override)})
-		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Fatalf("%s: err = %v, want %q", name, err, tc.want)
-		}
+	undelta := readingManifest(map[string]any{"drift": map[string]any{"type": "quantity", "unit": "K"}, "output": declared["output"]})
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err == nil ||
+		!strings.Contains(err.Error(), `property "drift"`) || !strings.Contains(err.Error(), "1 live records") {
+		t.Fatalf("dropping delta over a live difference: err = %v", err)
 	}
-	// Deleting the J/s record does not clear the way: a restore under the
-	// measureless declaration drops the ambiguous code, but a later
-	// declaration naming another measure would read it again. Clearing the
-	// value does.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "joules", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		readingManifest(map[string]any{"output": map[string]any{"type": "quantity"}, "drift": declared["drift"]}),
+	}); err != nil {
+		t.Fatalf("dropping the output's anchor: %v", err)
+	}
+	// Deleting the difference does not clear the way: a restore would read
+	// it again. Clearing the value does.
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "warmer", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	dropped := readingManifest(map[string]any{"output": map[string]any{"type": "quantity"}, "drift": declared["drift"]})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{dropped}); err == nil ||
-		!strings.Contains(err.Error(), "declares no measures while 1 deleted records hold a value written in another measure") {
-		t.Fatalf("dropping the measure over a deleted J/s value: err = %v", err)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err == nil ||
+		!strings.Contains(err.Error(), `property "drift"`) || !strings.Contains(err.Error(), "1 deleted records") {
+		t.Fatalf("dropping delta over a deleted difference: err = %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "joules", Properties: map[string]any{"name": "joules", "output": nil}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "warmer", Properties: map[string]any{"name": "warmer", "drift": nil}}); err != nil {
 		t.Fatalf("restore and clear: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "joules", substrate.DeleteInput{}); err != nil {
-		t.Fatalf("delete again: %v", err)
-	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{dropped}); err != nil {
-		t.Fatalf("dropping the measure with only W rows left: %v", err)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err != nil {
+		t.Fatalf("dropping delta once no record holds a difference: %v", err)
 	}
 }
 
-// The tombstone guard reads what a restore would keep, through two changes
-// that each looked harmless before. A property renamed with `renamedFrom`
-// leaves its tombstones under the old name, which a restore moves to the new
-// one, so dropping the measure a step later is counted against the old
-// name's values. A candidate that refuses a deleted value for a removable
-// constraint (a `min`, a `units:` list) or for another measure does not
-// shelter it, because a later declaration that drops the constraint
-// rereads it with no measure change left to guard.
-func TestQuantityMeasureGuardFollowsTheRestore(t *testing.T) {
+// The tombstone guard reads what a restore would keep, through changes that
+// each look harmless alone. A property renamed with `renamedFrom` leaves its
+// tombstones under the old name, which a restore moves to the new one, so
+// dropping `delta` a step later is counted against the old name's values,
+// for a property and for a reference's link property alike. A candidate that
+// refuses a deleted value for a removable constraint (a `min`, a `units:`
+// list, an anchor in another component) does not shelter it, because a
+// later declaration that drops the constraint rereads it.
+func TestQuantityDeltaGuardFollowsTheRestore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	drift := map[string]any{"type": "quantity", "measures": "temperature-difference"}
-	bare := map[string]any{"type": "quantity"}
+	drift := map[string]any{"type": "quantity", "unit": "K", "delta": true}
+	bare := map[string]any{"type": "quantity", "unit": "K"}
 	renamed := func(spec map[string]any) map[string]any {
 		out := map[string]any{"renamedFrom": "drift"}
 		for k, v := range spec {
@@ -952,7 +967,7 @@ func TestQuantityMeasureGuardFollowsTheRestore(t *testing.T) {
 	}
 	seed := func(t *testing.T) *dataset {
 		t.Helper()
-		ds := openInternalDataset(t)
+		ds := openReadingsDataset(t)
 		props := reference("peer", "", drift)
 		props["drift"] = drift
 		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
@@ -977,7 +992,7 @@ func TestQuantityMeasureGuardFollowsTheRestore(t *testing.T) {
 		}
 		return ds
 	}
-	const refused = "deleted records hold a value written in another measure"
+	const refused = "1 deleted records"
 
 	t.Run("a renamed property", func(t *testing.T) {
 		ds := seed(t)
@@ -987,8 +1002,8 @@ func TestQuantityMeasureGuardFollowsTheRestore(t *testing.T) {
 			t.Fatalf("the rename: %v", err)
 		}
 		props["delta"] = renamed(bare)
-		if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `property "delta" declares no measures while 1 `+refused) {
-			t.Fatalf("dropping the measure after the rename: err = %v", err)
+		if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `property "delta"`) || !strings.Contains(err.Error(), refused) {
+			t.Fatalf("dropping delta after the rename: err = %v", err)
 		}
 	})
 	t.Run("a renamed reference", func(t *testing.T) {
@@ -1000,40 +1015,40 @@ func TestQuantityMeasureGuardFollowsTheRestore(t *testing.T) {
 		}
 		props = reference("peers", "peer", bare)
 		props["drift"] = drift
-		if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `link property "drift" declares no measures while 1 `+refused) {
-			t.Fatalf("dropping the link measure after the rename: err = %v", err)
+		if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `link property "drift"`) || !strings.Contains(err.Error(), refused) {
+			t.Fatalf("dropping the link's delta after the rename: err = %v", err)
 		}
 	})
 	for name, spec := range map[string]map[string]any{
-		"a min":                         {"type": "quantity", "measures": "temperature", "min": map[string]any{"value": "1", "unit": "Cel"}},
-		"a units list":                  {"type": "quantity", "measures": "temperature", "units": []any{"K"}},
-		"a measure the value is not in": {"type": "quantity", "measures": "mass"},
+		"a min":                           {"type": "quantity", "unit": "K", "min": map[string]any{"value": "1", "unit": "Cel"}},
+		"a units list":                    {"type": "quantity", "unit": "K", "units": []any{"Cel"}},
+		"an anchor the value is apart of": {"type": "quantity", "unit": "kg"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ds := seed(t)
 			props := reference("peer", "", drift)
 			props["drift"] = spec
-			if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `property "drift" declares measures `) || !strings.Contains(err.Error(), refused) {
-				t.Fatalf("a measure change with %s: err = %v", name, err)
+			if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `property "drift"`) || !strings.Contains(err.Error(), refused) {
+				t.Fatalf("dropping delta with %s: err = %v", name, err)
 			}
 			props = reference("peer", "", spec)
 			props["drift"] = drift
-			if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `link property "drift" declares measures `) || !strings.Contains(err.Error(), refused) {
-				t.Fatalf("a link measure change with %s: err = %v", name, err)
+			if err := apply(ds, props); err == nil || !strings.Contains(err.Error(), `link property "drift"`) || !strings.Contains(err.Error(), refused) {
+				t.Fatalf("dropping the link's delta with %s: err = %v", name, err)
 			}
 		})
 	}
 }
 
 // A restoring put keeps every value the declaration in force admits, so a
-// measure change that rereads a deleted record's value is refused as it is
-// over a live one: 0.3 Cel stored as a temperature difference (0.3 K) would
-// otherwise come back as an absolute temperature (273.45 K). The same holds
-// for a link property, read out of the tombstone's stored reference.
-func TestQuantityMeasureChangeCountsDeletedRecords(t *testing.T) {
+// `delta` flip that rereads a deleted record's value is refused as it is over
+// a live one: 0.3 Cel stored as a difference (0.3 K) would otherwise come
+// back as an absolute temperature (273.45 K). The same holds for a link
+// property, read out of the tombstone's stored reference.
+func TestQuantityDeltaChangeCountsDeletedRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	drift := map[string]any{"type": "quantity", "measures": "temperature-difference"}
+	drift := map[string]any{"type": "quantity", "unit": "K", "delta": true}
 	declare := func(field, link map[string]any) map[string]any {
 		return readingManifest(map[string]any{
 			"drift": field,
@@ -1043,7 +1058,7 @@ func TestQuantityMeasureChangeCountsDeletedRecords(t *testing.T) {
 			},
 		})
 	}
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0), declare(drift, drift),
 	}); err != nil {
@@ -1067,23 +1082,17 @@ func TestQuantityMeasureChangeCountsDeletedRecords(t *testing.T) {
 	put("linked", map[string]any{"peer": []any{map[string]any{vocabulary.ReferenceValueKey: "target", "drift": qv("0.3", "Cel")}}})
 	del("warmer")
 	del("linked")
-	bare := map[string]any{"type": "quantity"}
+	bare := map[string]any{"type": "quantity", "unit": "K"}
 	for name, tc := range map[string]struct {
 		doc  map[string]any
 		want string
 	}{
-		"a property": {
-			declare(bare, drift),
-			`property "drift" declares no measures while 1 deleted records hold a value written in another measure`,
-		},
-		"a link property": {
-			declare(drift, bare),
-			`link property "drift" declares no measures while 1 deleted records hold a value written in another measure`,
-		},
+		"a property":      {declare(bare, drift), `property "drift"`},
+		"a link property": {declare(drift, bare), `link property "drift"`},
 	} {
 		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{tc.doc})
-		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Fatalf("%s: err = %v, want %q", name, err, tc.want)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "1 deleted records") {
+			t.Fatalf("%s: err = %v, want a refusal naming %s and the deleted record", name, err, tc.want)
 		}
 	}
 	// The remedy the refusal names: restore, clear the value, delete again.
@@ -1092,7 +1101,7 @@ func TestQuantityMeasureChangeCountsDeletedRecords(t *testing.T) {
 	del("warmer")
 	del("linked")
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{declare(bare, bare)}); err != nil {
-		t.Fatalf("dropping the measure once no record holds a difference: %v", err)
+		t.Fatalf("dropping delta once no record holds a difference: %v", err)
 	}
 }
 
@@ -1101,11 +1110,11 @@ func TestQuantityMeasureChangeCountsDeletedRecords(t *testing.T) {
 func TestQuantityDefaultFillsACreate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(map[string]any{"weight": map[string]any{
-			"type": "quantity", "measures": "mass",
+			"type": "quantity", "unit": "kg",
 			"default": map[string]any{"value": "0", "unit": "kg"},
 		}}),
 	}); err != nil {
@@ -1120,22 +1129,22 @@ func TestQuantityDefaultFillsACreate(t *testing.T) {
 	}
 	_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		readingManifest(map[string]any{"weight": map[string]any{
-			"type": "quantity", "measures": "mass",
+			"type": "quantity", "unit": "kg",
 			"default": map[string]any{"value": "1", "unit": "m"},
 		}}),
 	})
-	if err == nil || !strings.Contains(err.Error(), "not mass") {
+	if err == nil || !strings.Contains(err.Error(), "m does not convert to kg") {
 		t.Fatalf("err = %v, want a default no write could store refused", err)
 	}
 }
 
 // A property type refines a quantity through the apply door: core's
-// propertytype declaration admits `quantity` as a base and its three keys,
-// and a property using the refinement holds values to its measure.
+// propertytype declaration admits `quantity` as a base and its four keys,
+// and a property using the refinement holds values to its units.
 func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openReadingsDataset(t)
 	authority, pkg := vocabulary.SplitPackageRef(quantityPackage)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
@@ -1144,7 +1153,7 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 			"metadata": map[string]any{"id": quantityPackage + "/airtemperature"},
 			"data": map[string]any{
 				"authority": authority, "package": pkg, "base": "quantity",
-				"measures": "temperature", "units": []any{"Cel", "[degF]"}, "comparator": true,
+				"unit": "Cel", "units": []any{"degF"}, "comparator": true,
 				"description": "an air temperature",
 			},
 		},
@@ -1175,15 +1184,73 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	}
 }
 
-// A quantity orders by its value at the measure's base in whatever unit the
-// grammar admitted it: 1 Mg is 1000 kg, between 500 kg and 2000 kg, though
-// the mass table lists no Mg, and no accepted number keys NULL. A unit first
-// written between two pages leaves the walk's cursor valid and lands where
-// its value puts it.
+// Editing only a quantity propertytype changes what every kind using it
+// resolves, so the edit is held in each of them as a change of the kind's
+// own declaration is: an unknown unit and a listed unit the anchor cannot reach
+// are refused though the kind holds no record and its own document is
+// unchanged, and a unit the repository declares is admitted.
+func TestAQuantityPropertyTypeEditIsHeldInEveryKindThatUsesIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openReadingsDataset(t)
+	authority, pkg := vocabulary.SplitPackageRef(quantityPackage)
+	refinement := func(extra map[string]any) map[string]any {
+		data := map[string]any{"authority": authority, "package": pkg, "base": "quantity", "description": "a load"}
+		for k, v := range extra {
+			data[k] = v
+		}
+		return map[string]any{
+			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
+			"metadata": map[string]any{"id": quantityPackage + "/load"},
+			"data":     data,
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(quantityPackage, 0),
+		refinement(map[string]any{"unit": "kg"}),
+		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "crate"}, map[string]any{
+			"properties": map[string]any{"load": map[string]any{"type": "load"}},
+		}),
+	}); err != nil {
+		t.Fatalf("apply the refinement and its kind: %v", err)
+	}
+	for _, c := range []struct {
+		what  string
+		extra map[string]any
+		want  string
+	}{
+		{"an unknown unit", map[string]any{"unit": "nonesuch"}, `crate data.properties.load.unit: "nonesuch" names no unit`},
+		{"a listed unit the anchor cannot reach", map[string]any{"unit": "kg", "units": []any{"K"}}, "crate data.properties.load.units: the listed unit K does not convert"},
+	} {
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{refinement(c.extra)})
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s through the propertytype alone: err = %v, want a refusal naming %q", c.what, err, c.want)
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{refinement(map[string]any{"unit": "g"})}); err != nil {
+		t.Fatalf("anchor the propertytype to g: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/crate", Properties: map[string]any{
+		"load": qv("2", "kg"),
+	}}); err != nil {
+		t.Fatalf("a crate in kg under the g anchor: %v", err)
+	}
+}
+
+// A quantity orders by its value at its component's root in every unit of
+// the component, the owner's own included: 1 Mg is 1000 kg, between 500 kg
+// and 2000 kg, though the shipped units hold no Mg, and no accepted number
+// keys NULL. A row in a unit no row used before, written between two pages,
+// leaves the walk's cursor valid and lands where its value puts it.
 func TestOrderByQuantityKeysEveryAdmittedUnit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := installReadings(t, map[string]map[string]any{
+	ds := installReadingsWith(t, func(ds *dataset) {
+		putUnit(t, ds, "Mg", map[string]any{"name": "megagram", "code": "Mg"})
+		putUnit(t, ds, "hg", map[string]any{"name": "hectogram", "code": "hg"})
+		putConversion(t, ds, "Mg-kg", "Mg", "kg", map[string]any{"factor": "1000"})
+		putConversion(t, ds, "hg-kg", "hg", "kg", map[string]any{"factor": "0.1"})
+	}, map[string]map[string]any{
 		"light":    {"weight": qv("500", "kg")},
 		"megagram": {"weight": qv("1", "Mg")},
 		"heavy":    {"weight": qv("2000", "kg")},
@@ -1231,171 +1298,62 @@ func TestOrderByQuantityKeysEveryAdmittedUnit(t *testing.T) {
 	}
 }
 
-// countingDB counts the statements a read sends through it.
-type countingDB struct {
-	dbx
-	queries []string
-}
-
-func (c *countingDB) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
-	c.queries = append(c.queries, q)
-	return c.dbx.QueryContext(ctx, q, args...)
-}
-
-// A quantity filter converts its operand into every unit the rows it reads
-// may hold. Where the declaration lists `units:` that set is closed and no
-// row is read for it; otherwise one read collects the units of the filtered
-// kinds' rows on the side the read selects, live or tombstoned, and never
-// another kind's rows that happen to share the property's name.
-func TestQuantityFilterReadsOnlyTheUnitsItNeeds(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	ds := installReadings(t, map[string]map[string]any{
-		"decagram": {"weight": qv("5", "dag")},
-		"megagram": {"weight": qv("1", "Mg")},
-	})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "megagram", substrate.DeleteInput{}); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	scale := quantityPackage + "/scale"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "scale"}, map[string]any{
-			"properties": map[string]any{
-				"weight": map[string]any{"type": "quantity", "measures": "mass"},
-				"grams":  map[string]any{"type": "quantity", "measures": "mass", "units": []any{"g", "kg"}},
-			},
-		}),
-	}); err != nil {
-		t.Fatalf("declare the scale: %v", err)
-	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: scale, ID: "s1", Properties: map[string]any{
-		"weight": qv("7", "cg"), "grams": qv("3", "g"),
-	}}); err != nil {
-		t.Fatalf("put the scale: %v", err)
-	}
-	kind := func(ident string) *vocabulary.Kind {
-		k, err := ds.registry().Resolve(ident)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return k
-	}
-	tx, err := ds.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	read := func(tombstones bool, decls []quantityDecl, key string) ([]string, int) {
-		t.Helper()
-		db := &countingDB{dbx: tx}
-		units, err := ds.storedQuantityUnits(ctx, db, &builder{overRecords: true, tombstones: tombstones}, decls, key)
-		if err != nil {
-			t.Fatalf("read the units: %v", err)
-		}
-		for _, q := range db.queries {
-			if !strings.Contains(q, "kind = ANY(") || !strings.Contains(q, "deleted_at IS") {
-				t.Errorf("the units read %q does not carry the kind filter and the tombstone side", q)
-			}
-		}
-		return units, len(db.queries)
-	}
-	readings := quantityDecls([]*vocabulary.Kind{kind(readingKind)}, "weight")
-	live, n := read(false, readings, "weight")
-	if n != 1 || !slices.Contains(live, "dag") || slices.Contains(live, "Mg") || slices.Contains(live, "cg") {
-		t.Fatalf("a live read collected %v in %d reads, want dag and neither the tombstone's Mg nor the scale's cg", live, n)
-	}
-	if dead, _ := read(true, readings, "weight"); !slices.Contains(dead, "Mg") || slices.Contains(dead, "dag") {
-		t.Fatalf("a read of tombstones collected %v, want the tombstone's Mg and not the live dag", dead)
-	}
-	closed, n := read(false, quantityDecls([]*vocabulary.Kind{kind(scale)}, "grams"), "grams")
-	if n != 0 || strings.Join(closed, ",") != "g,kg" {
-		t.Fatalf("a declaration listing its units read the rows %d times and collected %v, want none and g,kg", n, closed)
-	}
-	// The filter itself still finds the decagram by an operand in kilograms.
-	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{
-		Properties: map[string]substrate.Cond{"weight": {Lt: qv("1", "kg")}},
-	}}); strings.Join(got, ",") != "decagram" {
-		t.Fatalf("weight below 1 kg = %v, want the decagram", got)
-	}
-}
-
-// The units one read collects are bounded: past maxQuantityUnits spellings in
-// the rows a filter covers, the read is refused and names the declaration
-// that would close the set, rather than growing its SQL by one arm a spelling.
+// The spellings one filter compares in are bounded: past maxQuantityUnits
+// used spellings of the operand's linear component the read is refused,
+// rather than growing its SQL by one arm a spelling.
 func TestQuantityFilterRefusesUnboundedUnitSpellings(t *testing.T) {
 	t.Parallel()
-	rows := map[string]map[string]any{}
-	for i := range maxQuantityUnits + 1 {
-		rows[fmt.Sprintf("r%03d", i)] = map[string]any{"weight": qv("1", fmt.Sprintf("%d.g", i+2))}
+	ds := installReadings(t, nil)
+	if err := ds.inTx(context.Background(), substrate.ActorAPI, false, func(tx *txn) error {
+		for i := range maxQuantityUnits + 1 {
+			id := fmt.Sprintf("g%d", i+2)
+			if _, err := tx.put(substrate.PutInput{Kind: vocabulary.KindUnit, ID: id, Properties: map[string]any{"name": id}}); err != nil {
+				return err
+			}
+			if _, err := tx.put(substrate.PutInput{Kind: vocabulary.KindConversion, ID: id + "-g", Properties: conversionProps(id, "g", map[string]any{"factor": fmt.Sprint(i + 2)})}); err != nil {
+				return err
+			}
+			if _, err := tx.put(substrate.PutInput{Kind: readingKind, ID: fmt.Sprintf("r%03d", i), Properties: map[string]any{
+				"name": fmt.Sprintf("r%03d", i), "weight": qv("1", id),
+			}}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("write the spellings: %v", err)
 	}
-	ds := installReadings(t, rows)
 	_, err := ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{
 		Kinds:      []string{readingKind},
 		Properties: map[string]substrate.Cond{"weight": {Lt: qv("1", "kg")}},
 	}})
-	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "more than 256 distinct units") ||
-		!strings.Contains(err.Error(), "declare `units:`") {
-		t.Fatalf("err = %v, want a refusal naming the bound and `units:`", err)
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "more than 256 spellings of one linear component") {
+		t.Fatalf("err = %v, want a refusal naming the bound", err)
 	}
 }
 
-// The read of the rows' units carries the rest of the request's filter: 257
-// spellings on rows the filter leaves out do not count against the bound, for
-// a filter on the quantity (whose condition sorts before the one that
-// narrows) and for an order by it alike.
-func TestQuantityUnitsReadUnderTheWholeFilter(t *testing.T) {
-	t.Parallel()
-	rows := map[string]map[string]any{
-		"a": {"height": qv("1", "m")},
-		"b": {"height": qv("2000", "mm")},
-	}
-	for i := range maxQuantityUnits + 1 {
-		rows[fmt.Sprintf("noise%03d", i)] = map[string]any{"height": qv("1", fmt.Sprintf("%d.m", i+2))}
-	}
-	ds := installReadings(t, rows)
-	narrow := map[string]substrate.Cond{"name": {In: []any{"a", "b"}}}
-	filtered := map[string]substrate.Cond{"name": narrow["name"], "height": {Lt: qv("3", "m")}}
-	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{Properties: filtered}}); strings.Join(got, ",") != "a,b" {
-		t.Errorf("height below 3 m among a and b = %v, want a,b", got)
-	}
-	if got := readingNames(t, ds, substrate.Query{
-		Filter:  substrate.Filter{Properties: narrow},
-		OrderBy: []substrate.Order{{Property: "height", Desc: true}},
-	}); strings.Join(got, ",") != "b,a" {
-		t.Errorf("a and b by height, tallest first = %v, want b,a", got)
-	}
-}
-
-// A unit the grammar refuses is a validation error on every engine door, the
+// A spelling no unit answers is a validation error on every engine door, the
 // write and the vocabulary apply, and never a panic: each case is a code the
-// parser once crashed or misread on.
+// table's grammar once crashed or misread on.
 func TestQuantityRefusesHostileUnits(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installReadings(t, nil)
-	for _, c := range []struct{ code, want string }{
-		{"m/0", "a factor is a positive integer"},
-		{"/0", "a factor is a positive integer"},
-		{"(m/0)", "a factor is a positive integer"},
-		{"m/(2.0)", "a factor is a positive integer"},
-		{"m9", "beyond the bound of ±8"},
-		{"m5.m5", "beyond the bound of ±8"},
-		{"10*1000000000", "beyond the bound of ±24"},
-		{"1234567890123.m", "beyond the bound of 12 digits"},
-		{strings.Repeat("(", 9) + "m" + strings.Repeat(")", 9), "beyond the bound of 8"},
-		{strings.Repeat("2.", 32) + "m", "beyond the bound of 32"},
+	for _, code := range []string{
+		"m/0", "/0", "(m/0)", "m/(2.0)", "m9", "m5.m5", "10*1000000000", "1234567890123.m",
+		strings.Repeat("(", 9) + "m" + strings.Repeat(")", 9), strings.Repeat("2.", 32) + "m",
 	} {
 		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
-			"name": "hostile", "pulse": qv("1", c.code),
+			"name": "hostile", "pulse": qv("1", code),
 		}})
-		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), c.want) {
-			t.Fatalf("a write in %s: err = %v, want a validation error naming %q", c.code, err, c.want)
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "names no unit of this repository") {
+			t.Fatalf("a write in %s: err = %v, want a validation error naming no unit", code, err)
 		}
 		_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(map[string]any{
-			"pulse": map[string]any{"type": "quantity", "units": []any{c.code}},
+			"pulse": map[string]any{"type": "quantity", "units": []any{code}},
 		})})
-		if err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Fatalf("a declaration listing %s: err = %v, want a refusal naming %q", c.code, err, c.want)
+		if err == nil || !strings.Contains(err.Error(), "names no unit of this repository") {
+			t.Fatalf("a declaration listing %s: err = %v, want a refusal naming no unit", code, err)
 		}
 	}
 }

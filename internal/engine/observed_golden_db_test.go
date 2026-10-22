@@ -71,11 +71,12 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 		t.Helper()
 		r.mustPut(t, r.observation, id, props)
 	}
+	putShippedUnits(t, r.ds, "deg")
 	r.mustPut(t, r.metric, "golden/wind", map[string]any{
-		"name": "Wind direction", "measures": "angle", "unit": "deg", "form": "gauge",
+		"name": "Wind direction", "unit": unitRef("deg"), "form": "gauge",
 	})
 	r.mustPut(t, r.metric, "golden/fine", map[string]any{
-		"name": "Fine power", "measures": "power", "unit": "W", "form": "gauge", "rollups": []any{"5m", "1h"},
+		"name": "Fine power", "unit": unitRef("W"), "form": "gauge", "rollups": []any{"5m", "1h"},
 	})
 	// A gauge trace each hour across the clock change of 2026-10-25, a null
 	// in the middle of one, the second hour's hold shorter than its gaps.

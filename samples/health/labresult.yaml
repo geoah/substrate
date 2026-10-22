@@ -6,9 +6,9 @@
 # them is set on every write, a patch that switches shapes included: `value`
 # (a quantity, with a comparator for `<0.01`), the coded result (`codedValue`
 # as received, with `code` as the index's categorical key), `ratio` (a
-# titre), `text`, or `absentReason` (a cancelled test). A unit the table
-# lacks keeps the reading in `sourceValue` and `sourceUnit` with none of the
-# five set. The engine holds the rule for any kind that binds core's `result`
+# titre), `text`, or `absentReason` (a cancelled test). A unit the
+# repository has no unit record for keeps the reading in `sourceValue` and
+# `sourceUnit` with none of the five set. The engine holds the rule for any kind that binds core's `result`
 # beside `observed(single)` (docs/observations.md).
 #
 # `code` is the trait's: the categorical value the index keys on, such as
@@ -36,6 +36,11 @@ data:
     - properties:
         - metric
         - at
+  # `measure` was the measure the engine's unit table read the unit as,
+  # which the unit graph does not have (decision record 0186)
+  retired:
+    properties:
+      - measure
   properties:
     # ---- the observed(single) contract ----
     metric:
@@ -105,11 +110,6 @@ data:
       min: -1080
       max: 1080
       description: minutes east of UTC where the specimen was collected
-    measure:
-      type: string
-      managed: true
-      description: the measure the value's unit was read as when it was written,
-        set by the substrate
     # FHIR's data-absent-reason list is the guide; the lab's own word, such
     # as cancelled, is kept as sent.
     absentReason:
@@ -156,8 +156,8 @@ data:
     text:
       type: text
       description: a result that is free text
-    # each bound a quantity, its unit held to the unit table, so a reader
-    # converts a range to the result's unit before it compares them
+    # each bound a quantity, its unit a unit record of the repository, so a
+    # reader converts a range to the result's unit before it compares them
     referenceRanges:
       type: object
       repeated: true

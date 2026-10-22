@@ -2,8 +2,9 @@ package engine
 
 // THE UNIT SEED (decision 0186): every repository holds the shipped unit and
 // conversion records (internal/engine/unitseed), written at registration in
-// the creation transaction and caught up at every open, after the shipped
-// vocabulary upgrade and the unit uses' rule check (checkUnitUses).
+// the creation transaction and caught up at every open, after the unit uses'
+// rule check (checkUnitUses) and before the shipped vocabulary upgrade, or
+// right after the upgrade where it is what declares the two kinds.
 //
 // The seed writes with apply semantics as the seed actor. A shipped record
 // the repository lacks is written, and one whose row differs from it is
@@ -365,14 +366,8 @@ func (t *txn) seedUseProblem(was, now *vocabulary.UnitGraph) (string, error) {
 // opens on the units it holds, and every record the seed meant to write is
 // listed as unseeded with the failure.
 func (ds *dataset) ensureShippedUnits(ctx context.Context) error {
-	if ds.svc.readOnly || !ds.svc.seedUnits {
+	if ds.svc.readOnly || !ds.svc.seedUnits || !ds.declaresUnitKinds() {
 		return nil
-	}
-	reg := ds.registry()
-	for _, kind := range []string{vocabulary.KindUnit, vocabulary.KindConversion} {
-		if _, ok := reg.ByIdentity(kind); !ok {
-			return nil
-		}
 	}
 	shipped, err := shippedUnitRecords()
 	if err != nil {
@@ -406,12 +401,30 @@ func (ds *dataset) ensureShippedUnits(ctx context.Context) error {
 			ds.svc.log.Info("substrate: seeded the shipped units", "repository", ds.scope.Repository, "records", n)
 		}
 	}
+	ds.reportUnseeded(skipped)
+	return nil
+}
+
+// declaresUnitKinds reports whether the repository's published registry
+// declares both unit graph kinds, which the seed writes.
+func (ds *dataset) declaresUnitKinds() bool {
+	reg := ds.registry()
+	for _, kind := range []string{vocabulary.KindUnit, vocabulary.KindConversion} {
+		if _, ok := reg.ByIdentity(kind); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// reportUnseeded logs each shipped record a seed left unwritten and keeps
+// the list for GET /api/v1/units.
+func (ds *dataset) reportUnseeded(skipped []unseededUnit) {
 	for _, s := range skipped {
 		ds.svc.log.Warn("substrate: a shipped unit record was not seeded",
 			"repository", ds.scope.Repository, "kind", s.rec.Kind, "id", s.rec.ID, "reason", s.rec.Reason)
 	}
 	ds.setUnseededUnits(skipped)
-	return nil
 }
 
 // failedSeed lists each planned write a failed seed transaction left

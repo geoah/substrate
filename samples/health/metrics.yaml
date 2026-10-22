@@ -5,16 +5,17 @@
 # `health/`, and the import puts them after the kinds land: editable,
 # deletable, and left in place if this sample is removed.
 #
-# The write rules and the observed index read nothing from them (decision
-# record 0156): `form`, `unit`, `hold` and the reducers are advice an adapter
-# copies onto each value. The aggregate read takes a metric's `measures` and
-# `unit` as the measure it converts into and the unit it answers in by
+# The observed index reads nothing from them (decision record 0156): `form`,
+# `hold` and the reducers are advice an adapter copies onto each value. Each
+# `unit` is a reference to a unit record (decision record 0186): every value
+# pointing at the metric is written in that unit or one that converts to it
+# through linear conversions, and the aggregate read answers in it by
 # default.
 #
 # Two rules the ids follow. A lab analyte reported in both unit systems is
 # two metrics, the amount concentration unsuffixed (`ldl_cholesterol`, mmol/L)
-# and the mass concentration suffixed `_mass` (mg/dL): the two are different
-# measures, and the sample's `convertlab` function writes a lab result of one
+# and the mass concentration suffixed `_mass` (mg/dL): no linear conversion
+# joins the two units, and the sample's `convertlab` function writes a lab result of one
 # in the other as a derived result, from the analyte's molar mass
 # (metrics_analytes.yaml). A vendor's score is named for the vendor
 # (`whoop_recovery`) and never mapped onto another vendor's.
@@ -48,8 +49,8 @@ data:
       - system: garmin
         code: timeOffsetHeartRateSamples
         display: Daily summary heart rate samples
-    measures: rate
-    unit: "/min"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/min
     form: gauge
     hold: PT4M
     reducers:
@@ -83,8 +84,8 @@ data:
       - system: garmin
         code: restingHeartRateInBeatsPerMinute
         display: Daily summary resting heart rate
-    measures: rate
-    unit: "/min"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/min
     form: summary
     reducers:
       - last
@@ -124,8 +125,8 @@ data:
       - system: garmin
         code: hrvValues
         display: HRV summary values
-    measures: duration
-    unit: ms
+    unit:
+      ref: substrate.reamde.dev/core/unit/ms
     form: gauge
     hold: PT10M
     reducers:
@@ -157,8 +158,8 @@ data:
         display: R-R interval.standard deviation (Heart rate variability)
       - system: healthkit
         code: HKQuantityTypeIdentifierHeartRateVariabilitySDNN
-    measures: duration
-    unit: ms
+    unit:
+      ref: substrate.reamde.dev/core/unit/ms
     form: gauge
     hold: PT0S
     reducers:
@@ -198,8 +199,8 @@ data:
       - system: garmin
         code: timeOffsetSpo2Values
         display: Pulse Ox summary values
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: gauge
     hold: PT20M
     reducers:
@@ -233,8 +234,8 @@ data:
       - system: whoop
         code: skin_temp_celsius
         display: Recovery score skin temperature
-    measures: temperature
-    unit: Cel
+    unit:
+      ref: substrate.reamde.dev/core/unit/Cel
     form: gauge
     hold: PT0S
     reducers:
@@ -263,8 +264,8 @@ data:
       - system: healthconnect
         code: SkinTemperatureRecord
         display: Skin temperature deltas
-    measures: temperature-difference
-    unit: K
+    unit:
+      ref: substrate.reamde.dev/core/unit/K
     form: gauge
     hold: PT0S
     reducers:
@@ -301,8 +302,8 @@ data:
       - system: garmin
         code: timeOffsetEpochToBreaths
         display: Respiration summary values
-    measures: rate
-    unit: "/min"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/min
     form: gauge
     hold: PT30M
     reducers:
@@ -338,8 +339,8 @@ data:
       - system: garmin
         code: steps
         display: Daily summary steps
-    measures: count
-    unit: "{steps}"
+    unit:
+      ref: substrate.reamde.dev/core/unit/steps
     form: amount
     reducers:
       - sum
@@ -364,8 +365,8 @@ data:
       - system: garmin
         code: distanceInMeters
         display: Daily summary distance
-    measures: length
-    unit: m
+    unit:
+      ref: substrate.reamde.dev/core/unit/m
     form: amount
     reducers:
       - sum
@@ -388,8 +389,8 @@ data:
       - system: garmin
         code: floorsClimbed
         display: Daily summary floors climbed
-    measures: count
-    unit: "{floors}"
+    unit:
+      ref: substrate.reamde.dev/core/unit/floors
     form: amount
     reducers:
       - sum
@@ -412,8 +413,8 @@ data:
       - system: garmin
         code: activeKilocalories
         display: Daily summary active calories
-    measures: energy
-    unit: kcal
+    unit:
+      ref: substrate.reamde.dev/core/unit/kcal
     form: amount
     reducers:
       - sum
@@ -434,8 +435,8 @@ data:
       - system: garmin
         code: bmrKilocalories
         display: Daily summary resting calories
-    measures: energy
-    unit: kcal
+    unit:
+      ref: substrate.reamde.dev/core/unit/kcal
     form: amount
     reducers:
       - sum
@@ -460,8 +461,8 @@ data:
       - system: whoop
         code: kilojoule
         display: Cycle score energy
-    measures: energy
-    unit: kcal
+    unit:
+      ref: substrate.reamde.dev/core/unit/kcal
     form: amount
     reducers:
       - sum
@@ -484,8 +485,8 @@ data:
       - system: garmin
         code: totalElevationGainInMeters
         display: Activity summary elevation gain
-    measures: length
-    unit: m
+    unit:
+      ref: substrate.reamde.dev/core/unit/m
     form: amount
     reducers:
       - sum
@@ -509,8 +510,8 @@ data:
         code: StepsCadenceRecord
       - system: googlefit
         code: com.google.step_count.cadence
-    measures: rate
-    unit: "/min"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/min
     form: gauge
     hold: PT10S
     reducers:
@@ -538,8 +539,8 @@ data:
         code: CyclingPedalingCadenceRecord
       - system: googlefit
         code: com.google.cycling.pedaling.cadence
-    measures: rate
-    unit: "/min"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/min
     form: gauge
     hold: PT10S
     reducers:
@@ -565,8 +566,8 @@ data:
         code: PowerRecord
       - system: googlefit
         code: com.google.power.sample
-    measures: power
-    unit: W
+    unit:
+      ref: substrate.reamde.dev/core/unit/W
     form: gauge
     hold: PT10S
     reducers:
@@ -593,8 +594,8 @@ data:
         code: SpeedRecord
       - system: googlefit
         code: com.google.speed
-    measures: speed
-    unit: m/s
+    unit:
+      ref: substrate.reamde.dev/core/unit/m/s
     form: gauge
     hold: PT10S
     reducers:
@@ -613,8 +614,8 @@ data:
       Time per distance, the reciprocal of a speed. A mean pace is total time
       over total distance, never a mean of paces. A writer copies the hold,
       PT10S, onto each value of a workout's stream.
-    measures: pace
-    unit: min/km
+    unit:
+      ref: substrate.reamde.dev/core/unit/min/km
     form: gauge
     hold: PT10S
     reducers:
@@ -642,8 +643,8 @@ data:
       - system: garmin
         code: vo2Max
         display: User metrics VO2 max
-    measures: oxygen-uptake-rate
-    unit: mL/(kg.min)
+    unit:
+      ref: substrate.reamde.dev/core/unit/mL/kg/min
     form: gauge
     hold: PT0S
     reducers:
@@ -680,8 +681,8 @@ data:
       - system: garmin
         code: weightInGrams
         display: Body composition weight
-    measures: mass
-    unit: kg
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
     form: gauge
     hold: PT0S
     reducers:
@@ -717,8 +718,8 @@ data:
       - system: garmin
         code: bodyFatInPercent
         display: Body composition body fat
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: gauge
     hold: PT0S
     reducers:
@@ -744,8 +745,8 @@ data:
       - system: withings
         code: "8"
         display: Fat mass weight
-    measures: mass
-    unit: kg
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
     form: gauge
     hold: PT0S
     reducers:
@@ -774,8 +775,8 @@ data:
       - system: garmin
         code: muscleMassInGrams
         display: Body composition muscle mass
-    measures: mass
-    unit: kg
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
     form: gauge
     hold: PT0S
     reducers:
@@ -801,8 +802,8 @@ data:
       - system: garmin
         code: bodyWaterInPercent
         display: Body composition body water
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: gauge
     hold: PT0S
     reducers:
@@ -833,8 +834,8 @@ data:
       - system: garmin
         code: boneMassInGrams
         display: Body composition bone mass
-    measures: mass
-    unit: kg
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
     form: gauge
     hold: PT0S
     reducers:
@@ -867,8 +868,8 @@ data:
       - system: whoop
         code: height_meter
         display: Body measurement height
-    measures: length
-    unit: m
+    unit:
+      ref: substrate.reamde.dev/core/unit/m
     form: gauge
     hold: PT0S
     reducers:
@@ -895,8 +896,8 @@ data:
       - system: garmin
         code: bodyMassIndex
         display: Body composition BMI
-    measures: body-mass-index
-    unit: kg/m2
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg/m2
     form: gauge
     hold: PT0S
     reducers:
@@ -928,8 +929,8 @@ data:
       - system: googlefit
         code: com.google.blood_pressure
         display: blood_pressure_systolic
-    measures: pressure
-    unit: "mm[Hg]"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmHg
     form: gauge
     hold: PT0S
     reducers:
@@ -962,8 +963,8 @@ data:
       - system: googlefit
         code: com.google.blood_pressure
         display: blood_pressure_diastolic
-    measures: pressure
-    unit: "mm[Hg]"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmHg
     form: gauge
     hold: PT0S
     reducers:
@@ -995,8 +996,8 @@ data:
         code: BloodGlucoseRecord
       - system: googlefit
         code: com.google.blood_glucose
-    measures: amount-concentration
-    unit: mmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
     form: gauge
     hold: PT15M
     reducers:
@@ -1026,8 +1027,8 @@ data:
         display: "Glucose [Mass/volume] in Blood"
       - system: healthkit
         code: HKQuantityTypeIdentifierBloodGlucose
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT15M
     reducers:
@@ -1094,8 +1095,8 @@ data:
       - system: whoop
         code: recovery_score
         display: Recovery score
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: summary
     reducers:
       - last
@@ -1122,8 +1123,8 @@ data:
       - system: whoop
         code: strain
         display: Cycle strain
-    measures: score
-    unit: "{score}"
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
     form: summary
     reducers:
       - last
@@ -1148,8 +1149,8 @@ data:
       - system: whoop
         code: sleep_performance_percentage
         display: Sleep performance
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: summary
     reducers:
       - last
@@ -1176,8 +1177,8 @@ data:
       - system: "http://loinc.org"
         code: "22748-8"
         display: "Cholesterol in LDL [Moles/volume] in Serum or Plasma"
-    measures: amount-concentration
-    unit: mmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1205,8 +1206,8 @@ data:
       - system: "http://loinc.org"
         code: "13457-7"
         display: "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation"
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1231,8 +1232,8 @@ data:
       - system: "http://loinc.org"
         code: "14646-4"
         display: "Cholesterol in HDL [Moles/volume] in Serum or Plasma"
-    measures: amount-concentration
-    unit: mmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1257,8 +1258,8 @@ data:
       - system: "http://loinc.org"
         code: "2085-9"
         display: "Cholesterol in HDL [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1282,8 +1283,8 @@ data:
       - system: "http://loinc.org"
         code: "14647-2"
         display: "Cholesterol [Moles/volume] in Serum or Plasma"
-    measures: amount-concentration
-    unit: mmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1306,8 +1307,8 @@ data:
       - system: "http://loinc.org"
         code: "2093-3"
         display: "Cholesterol [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1331,8 +1332,8 @@ data:
       - system: "http://loinc.org"
         code: "14927-8"
         display: "Triglyceride [Moles/volume] in Serum or Plasma"
-    measures: amount-concentration
-    unit: mmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1355,8 +1356,8 @@ data:
       - system: "http://loinc.org"
         code: "2571-8"
         display: "Triglyceride [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1380,8 +1381,8 @@ data:
       - system: "http://loinc.org"
         code: "14771-0"
         display: "Fasting glucose [Moles/volume] in Serum or Plasma"
-    measures: amount-concentration
-    unit: mmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1406,8 +1407,8 @@ data:
       - system: "http://loinc.org"
         code: "1558-6"
         display: "Fasting glucose [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1434,8 +1435,8 @@ data:
       - system: "http://loinc.org"
         code: "4548-4"
         display: Hemoglobin A1c/Hemoglobin.total in Blood
-    measures: fraction
-    unit: "%"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
     form: gauge
     hold: PT0S
     reducers:
@@ -1461,8 +1462,8 @@ data:
       - system: "http://loinc.org"
         code: "59261-8"
         display: Hemoglobin A1c/Hemoglobin.total in Blood by IFCC protocol
-    measures: amount-fraction
-    unit: mmol/mol
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/mol
     form: gauge
     hold: PT0S
     reducers:
@@ -1487,8 +1488,8 @@ data:
       - system: "http://loinc.org"
         code: "3016-3"
         display: "Thyrotropin [Units/volume] in Serum or Plasma"
-    measures: arbitrary
-    unit: "m[IU]/L"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mIU/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1514,8 +1515,8 @@ data:
         code: "68438-1"
         display: "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Moles/volume]
           in Serum or Plasma"
-    measures: amount-concentration
-    unit: nmol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1541,8 +1542,8 @@ data:
         code: "62292-8"
         display: "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Mass/volume]
           in Serum or Plasma"
-    measures: mass-concentration
-    unit: ng/mL
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
     form: gauge
     hold: PT0S
     reducers:
@@ -1565,8 +1566,8 @@ data:
       - system: "http://loinc.org"
         code: "2276-4"
         display: "Ferritin [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: ug/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/ug/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1590,8 +1591,8 @@ data:
       - system: "http://loinc.org"
         code: "1988-5"
         display: "C reactive protein [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: mg/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1614,8 +1615,8 @@ data:
       - system: "http://loinc.org"
         code: "718-7"
         display: "Hemoglobin [Mass/volume] in Blood"
-    measures: mass-concentration
-    unit: g/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1640,8 +1641,8 @@ data:
       - system: "http://loinc.org"
         code: "14682-9"
         display: "Creatinine [Moles/volume] in Serum or Plasma"
-    measures: amount-concentration
-    unit: umol/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/umol/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1664,8 +1665,8 @@ data:
       - system: "http://loinc.org"
         code: "2160-0"
         display: "Creatinine [Mass/volume] in Serum or Plasma"
-    measures: mass-concentration
-    unit: mg/dL
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
     form: gauge
     hold: PT0S
     reducers:
@@ -1691,8 +1692,8 @@ data:
         code: "1742-6"
         display: "Alanine aminotransferase [Enzymatic activity/volume] in
           Serum or Plasma"
-    measures: catalytic-concentration
-    unit: U/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
     form: gauge
     hold: PT0S
     reducers:
@@ -1718,8 +1719,8 @@ data:
         code: "1920-8"
         display: "Aspartate aminotransferase [Enzymatic activity/volume] in
           Serum or Plasma"
-    measures: catalytic-concentration
-    unit: U/L
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
     form: gauge
     hold: PT0S
     reducers:

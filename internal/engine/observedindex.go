@@ -52,8 +52,10 @@ import (
 // change to any of them that changes what a stored row derives bumps it, and
 // every repository's next open re-derives every row of every observed kind
 // (checkObservedIndex). A change that only adds a column bumps it too, since
-// the stored rows hold the column's default.
-const observedIndexVersion = 1
+// the stored rows hold the column's default. Version 2 is the unit graph
+// switch (decision 0186): no point carries a base value, and a circular
+// point's angle reads its unit's turn.
+const observedIndexVersion = 2
 
 // checkObservedIndex is the open ladder's step: where observed_index records
 // older rules than this binary's, or none (a repository written before

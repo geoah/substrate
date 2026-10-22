@@ -2,12 +2,12 @@
 # code they know (a LOINC code, a HealthKit identifier, a Home Assistant
 # device class) and point every value at it; readers find it by name. Binds
 # core's `metric` trait, which contracts what the engine and the console read
-# from it: `measures`, `unit`, `bucketPlace` and `rollups` for the aggregate
-# read and the observed index, and `name`, `form`, `codeSet`,
-# `displayPrecision` and `category` for a reader. The write rules and the
-# index read nothing else from it: hold and the counter contract are advice a
-# writer copies onto each value, and the value is what the index reads
-# (decision record 0156). A domain ships its own metrics with a
+# from it: `unit` and `units` for the write rules and the aggregate read,
+# `bucketPlace` and `rollups` for the aggregate read and the observed index,
+# and `name`, `form`, `codeSet`, `displayPrecision` and `category` for a
+# reader. The index reads nothing else from it: hold and the counter contract
+# are advice a writer copies onto each value, and the value is what the index
+# reads (decision record 0156). A domain ships its own metrics with a
 # package-prefixed id (`health/heart_rate`); this package ships the physical
 # ones several domains share (metrics.yaml).
 kind: substrate.reamde.dev/core/kind
@@ -58,21 +58,15 @@ data:
           type: string
           description: the code system's own name for it
     # ---- the metric contract, with `name` above ----
-    # a measure from the unit table (docs/units.md): `mass`, `rate`,
-    # `amount-concentration`. A string, not an enum, because the table grows
-    # by release and a declaration must not lag it; the write path refuses a
-    # name the table does not hold, and a unit outside the measure.
-    measures:
-      type: string
-      description: the measure every value's unit belongs to, from the unit
-        table, such as mass; the aggregate read converts into it
+    # the unit records of the repository's unit graph (decision record
+    # 0186): every value pointing at this metric is written in `unit` or a
+    # unit that converts to it through linear conversions, and a listed
+    # `units` narrows that, `unit` always admitted
     unit:
-      type: string
+      type: reference
+      kind: substrate.reamde.dev/core/unit
       description: the unit writers store values in and the aggregate read
-        answers in by default, a UCUM code such as kg or /min
-    # read once the engine converts through the repository's unit graph
-    # (decision record 0186): absent admits every unit that converts exactly
-    # to `unit`, and a list narrows that, `unit` always admitted
+        answers in by default, such as kg or 1/min
     units:
       type: reference
       kind: substrate.reamde.dev/core/unit
@@ -134,13 +128,13 @@ data:
       repeated: true
       description: the reducers that answer something useful for this metric,
         such as avg or durationIn
-    # serum and whole-blood glucose share a measure and are not
+    # serum and whole-blood glucose share a unit and are not
     # interchangeable. The class says so to a reader that combines metrics;
     # nothing in the engine reads it.
     compatibility:
       type: string
       description: the class within which values may be pooled, where the
-        measure alone is not enough
+        unit alone is not enough
     algorithm:
       type: object
       description: the vendor method behind a computed score

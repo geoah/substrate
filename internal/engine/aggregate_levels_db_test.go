@@ -47,11 +47,12 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 	f := openAgg(t)
 	ctx := context.Background()
 	at := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
-	for id, measure := range map[string]string{
-		"noise": "sound-pressure-level", "dose": "sound-pressure-level", "signal": "power-level",
-		"threshold": "level", "gain": "level", "acidity": "acidity",
+	putShippedUnits(t, f.ds, "dBSPL", "dBm", "dB", "pH")
+	for id, unit := range map[string]string{
+		"noise": "dBSPL", "dose": "dBSPL", "signal": "dBm",
+		"threshold": "dB", "gain": "dB", "acidity": "pH",
 	} {
-		f.mustPut(t, f.metric, id, map[string]any{"name": id, "measures": measure})
+		f.mustPut(t, f.metric, id, map[string]any{"name": id, "unit": unitRef(unit)})
 	}
 	f.level("noise/1", "noise", "gauge", "60", "dB[SPL]", at, nil)
 	f.level("noise/2", "noise", "gauge", "80", "dB[SPL]", at.Add(time.Hour), nil)
@@ -78,15 +79,15 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 		q     substrate.AggregateQuery
 		want  string
 	}{
-		{"gauge avg", read("noise", substrate.Aggregate{Reducers: reducers("max", "avg")}), "aggregate.reducers[1]: avg does not apply to " + f.metricPath("noise") + ": sound-pressure-level is the level of a power"},
+		{"gauge avg", read("noise", substrate.Aggregate{Reducers: reducers("max", "avg")}), "aggregate.reducers[1]: avg does not apply to " + f.metricPath("noise") + ": dBSPL is the level of a power"},
 		{"gauge stddev", read("noise", substrate.Aggregate{Reducers: reducers("stddev")}), "aggregate.reducers[0]: stddev does not apply"},
-		{"amount sum", read("dose", substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath("dose") + ": sound-pressure-level is logarithmic"},
+		{"amount sum", read("dose", substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath("dose") + ": dBSPL is logarithmic"},
 		{"amount avg", read("dose", substrate.Aggregate{Reducers: reducers("avg")}), "aggregate.reducers[0]: avg does not apply"},
 		{"summary sum", read("noise", substrate.Aggregate{From: "summaries", Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply"},
 		{"prefer-raw sum", read("dose", substrate.Aggregate{From: "prefer-raw", Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply"},
-		{"counter increase", read("signal", substrate.Aggregate{Reducers: reducers("increase")}), "aggregate.reducers[0]: increase does not apply to " + f.metricPath("signal") + ": power-level is logarithmic"},
+		{"counter increase", read("signal", substrate.Aggregate{Reducers: reducers("increase")}), "aggregate.reducers[0]: increase does not apply to " + f.metricPath("signal") + ": dBm is logarithmic"},
 		{"counter rate", read("signal", substrate.Aggregate{Reducers: reducers("rate")}), "aggregate.reducers[0]: rate does not apply"},
-		{"level sum", read("gain", substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath("gain") + ": level is logarithmic"},
+		{"level sum", read("gain", substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath("gain") + ": dB is logarithmic"},
 		{"rolling sum", read("noise", substrate.Aggregate{Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 3, Reducers: reducers("max", "sum")}}), "aggregate.rolling.reducers[1]: a rolling sum does not apply"},
 		{"rolling avg", read("noise", substrate.Aggregate{Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 3}}), "aggregate.rolling.reducers[0]: a rolling avg does not apply"},
 		{"rolling level sum", read("threshold", substrate.Aggregate{Bucket: hours, Reducers: reducers("avg"), Rolling: &substrate.AggregateRolling{Buckets: 3, Reducers: reducers("sum")}}), "aggregate.rolling.reducers[0]: a rolling sum does not apply"},
@@ -129,17 +130,18 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 	}
 }
 
-// A property read holds a declared measure before its scan, and a quantity
-// with no declared measure at the measure its first value names.
+// A property read holds a declared unit's scale before its scan, and a
+// quantity with no declared unit at the scale its first value's unit has.
 func TestAggregatePropertyRefusesWhatAddsALevel(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
+	putShippedUnits(t, ds, "dBSPL")
 	const pkg = "levels.example.substrate.reamde.dev/levels"
 	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabularyPackage(pkg),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "reading"}, map[string]any{
 			"properties": map[string]any{
-				"loudness": map[string]any{"type": "quantity", "measures": "sound-pressure-level"},
+				"loudness": map[string]any{"type": "quantity", "unit": "dBSPL"},
 				"level":    map[string]any{"type": "quantity"},
 				"takenAt":  map[string]any{"type": "datetime"},
 			},
@@ -166,8 +168,8 @@ func TestAggregatePropertyRefusesWhatAddsALevel(t *testing.T) {
 	}
 	for _, x := range []struct{ prop, reducer string }{{"loudness", "sum"}, {"loudness", "avg"}, {"level", "sum"}, {"level", "stddev"}} {
 		_, err := read(x.prop, "count", x.reducer)
-		if err == nil || !strings.Contains(err.Error(), "aggregate.reducers[1]: "+x.reducer+" does not apply to "+x.prop+": sound-pressure-level") {
-			t.Errorf("%s of %s: %v, want a 422 naming the reducer and the measure", x.reducer, x.prop, err)
+		if err == nil || !strings.Contains(err.Error(), "aggregate.reducers[1]: "+x.reducer+" does not apply to "+x.prop+": dBSPL") {
+			t.Errorf("%s of %s: %v, want a 422 naming the reducer and the unit", x.reducer, x.prop, err)
 		}
 	}
 	res, err := read("loudness", "count", "max")
