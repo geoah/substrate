@@ -372,7 +372,9 @@ A packed record is also held to these:
 - A code is at most 255 characters, Home Assistant's bound on a state:
   `props.code: a code is at most 255 characters, got 300`, or
   `props.codes[i]` naming the first longer one in a trace. The observed index
-  keys its rollup rows on the code.
+  keys its rollup rows on the code. The bound holds a new or changed code: a
+  longer code the stored record already holds is admitted, so a row written
+  before the bound stays editable.
 
 A kind that binds core's `result` trait beside `observed(single)`, as the
 health sample's `labresult` does, holds exactly one of `value`, the coded
@@ -943,8 +945,11 @@ such as the title a media player shows or a thermostat's mode string, is
 written as an observed code under a metric that lists no `codeSet`. No write
 is held to a metric's `codeSet`, so any non-empty string of at most 255
 characters is a code, and a bridge writes it as it writes a door's `open`: a
-coded gauge, `code` on an observation or `codes` in a trace, `null` where the
-sensor is unavailable.
+coded gauge, `code` on an observation or `codes` in a trace. Where the
+sensor is unavailable, a trace holds `null` at that point, and a single
+observation leaves out `code` and says why in `absentReason` (such as
+`unavailable`), because a single record with neither a value nor a reason
+is refused.
 
 ```yaml
 kind: ada.example.com/observations/metric
@@ -960,9 +965,14 @@ data:
 
 A read takes a coded gauge's reducers: `count`, `first`, `last` and
 `timeInState`, which answers the time each title held, one value per code.
-`durationIn` takes a range of numbers and is refused on codes. The
-[latest read](api.md#the-latest-read) answers the current state, and
-`groupBy: ["code"]` one row per distinct state, which `maxGroups` counts.
+`durationIn` takes a range of numbers and is refused on codes.
+`groupBy: ["code"]` answers one row per distinct state, which `maxGroups`
+counts. The [latest read](api.md#the-latest-read) answers the last
+available state, not necessarily the current one: an unavailable point
+after it does not replace it ([the latest row](#the-latest-row)). A reader
+that must say whether the sensor is unavailable now reads the stream's
+records after the latest row's time and looks for a `null` point or an
+`absentReason`.
 
 Two kinds of text are not states and go in ordinary records of a kind of
 your own: text longer than 255 characters, and text that is content rather
