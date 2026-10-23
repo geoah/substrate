@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   changeServer,
+  checkForUpdates,
   nativeShell,
   substrateHostname,
   substrateOrigin,
@@ -40,5 +41,14 @@ describe("shell", () => {
     })
     expect(postMessage).toHaveBeenCalledWith({ type: "changeServer" })
     expect(() => changeServer({})).not.toThrow()
+  })
+
+  it("asks the shell to check for updates, and is quiet without one", () => {
+    const postMessage = vi.fn()
+    checkForUpdates({
+      webkit: { messageHandlers: { substrateShell: { postMessage } } },
+    })
+    expect(postMessage).toHaveBeenCalledWith({ type: "checkForUpdates" })
+    expect(() => checkForUpdates({})).not.toThrow()
   })
 })

@@ -79,14 +79,17 @@ it is what one release is compared to another by. The folder holds:
 | `releases/<build>/` | The macOS zip, the IPA, its install manifest and icons, `release.json`  |
 
 A released build carries the folder's address; a local build carries none
-and never looks. On macOS, Sparkle checks every four hours and on Substrate →
-Check for Updates, verifies the archive against the EdDSA key made on the
-first release (kept in the login keychain under `substrate`; losing it means
-every installed Mac app is replaced by hand once) and installs it. On iOS
-only the system may install an app: the app reads `index.json` when it comes
-to the foreground, at most hourly, and offers the newer release's install
-link. Both include pre-releases when the running build is one; the Mac's app
-menu turns that off.
+and never looks. On macOS, Sparkle checks at every launch, every four hours
+after and on Substrate → Check for Updates, verifies the archive against the
+EdDSA key made on the first release (kept in the login keychain under
+`substrate`; losing it means every installed Mac app is replaced by hand once)
+and installs it. On iOS only the system may install an app: the app reads
+`index.json` at launch and when it comes to the foreground, at most hourly,
+and offers the newer release's install link. Both include pre-releases when
+the running build is one; the Mac's app menu turns that off. On both, the
+console's Settings → Signed in shows the app's version with a Check for
+updates button, which asks the shell (`checkForUpdates` in
+`web/console/src/lib/shell.ts`) to check now.
 
 Both are signed with the team's Apple Development identity, so the IPA
 installs on the devices in the team's development profile (with Developer

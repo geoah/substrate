@@ -20,6 +20,9 @@ final class ConsoleController: NSObject, ObservableObject {
     @Published private(set) var canGoForward = false
     /// The server picker is up over this window's console.
     @Published var picking = false
+    /// What the page's Check for updates asks for; the window wires it to the
+    /// app's one updater.
+    var checkForUpdates: (() -> Void)?
 
     private let schemeHandler: ConsoleSchemeHandler
     private var observations: [NSKeyValueObservation] = []
@@ -97,7 +100,13 @@ final class ConsoleController: NSObject, ObservableObject {
         #else
         let platform = "ios"
         #endif
-        let info = ["platform": platform, "server": server.absoluteString.trimmingCharacters(in: ["/"])]
+        let build = BuildInfo.current
+        let info: [String: Any] = [
+            "platform": platform,
+            "server": server.absoluteString.trimmingCharacters(in: ["/"]),
+            "version": build.version,
+            "updates": build.updates != nil,
+        ]
         let json = String(data: try! JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]), encoding: .utf8)!
         return "window.substrateShell = Object.freeze(\(json));"
     }
@@ -127,6 +136,7 @@ final class ConsoleController: NSObject, ObservableObject {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
         case "changeServer": picking = true
+        case "checkForUpdates": checkForUpdates?()
         default: break
         }
     }
