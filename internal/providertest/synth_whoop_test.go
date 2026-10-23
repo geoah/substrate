@@ -180,10 +180,10 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		byMetric[metricOf(row.Properties)]++
 	}
 	for metric, want := range map[string]int{
-		"health/whoop_strain": len(days), "health/energy_expended": len(days),
-		"health/whoop_recovery": len(days), "health/hrv_rmssd": len(days), "health/resting_heart_rate": len(days),
+		"healthwhoop/strain": len(days), "health/energy_expended": len(days),
+		"healthwhoop/recovery": len(days), "health/hrv_rmssd": len(days), "health/resting_heart_rate": len(days),
 		"health/spo2": len(days), "health/skin_temperature": len(days),
-		"health/sleep_stage": 4 * scored, "health/whoop_sleep_performance": scored, "health/respiratory_rate": scored,
+		"health/sleep_stage": 4 * scored, "healthwhoop/sleep_performance": scored, "health/respiratory_rate": scored,
 		"health/heart_rate": 2*len(days) + 2*workouts,
 	} {
 		if byMetric[metric] != want {
@@ -197,7 +197,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	// first three recoveries and the adapter marks those scores estimated.
 	var estimated []string
 	for _, row := range listLive(t, ds, obsObservation) {
-		if metricOf(row.Properties) == "health/whoop_recovery" && row.Properties["quality"] == "estimated" {
+		if metricOf(row.Properties) == "healthwhoop/recovery" && row.Properties["quality"] == "estimated" {
 			estimated = append(estimated, row.ID)
 		}
 	}

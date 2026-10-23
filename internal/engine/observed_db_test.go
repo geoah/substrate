@@ -108,7 +108,8 @@ func weighing(r observedRepo) map[string]any {
 }
 
 // The import lands the four base kinds, the health kinds and both catalogues,
-// and an observation titles itself from its metric and its value.
+// none of the catalogue a vendor's adapter ships, and an observation titles
+// itself from its metric and its value.
 func TestObservedSamplesImportWithTheirCatalogues(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
@@ -123,10 +124,17 @@ func TestObservedSamplesImportWithTheirCatalogues(t *testing.T) {
 	}
 	for _, id := range []string{
 		"air_temperature", "atmospheric_pressure", "health/heart_rate", "health/sleep_stage",
-		"health/ldl_cholesterol", "health/hba1c_ifcc", "health/whoop_recovery",
+		"health/ldl_cholesterol", "health/hba1c_ifcc",
 	} {
 		if !ids[id] {
 			t.Errorf("metric %s did not land; landed %d", id, len(ids))
+		}
+	}
+	// A vendor's own score ships with its adapter sample (healthwhoop), so a
+	// repository that imports health without WHOOP holds no WHOOP metric.
+	for id := range ids {
+		if strings.Contains(id, "whoop") {
+			t.Errorf("the health import landed the WHOOP metric %s", id)
 		}
 	}
 	rec, err := r.put(t, r.observation, "withings/george/5f3a91/weight", weighing(r))

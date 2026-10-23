@@ -86,13 +86,19 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
 	ctx := context.Background()
+	putShippedUnits(t, r.ds, "score")
+	if _, err := r.put(t, r.metric, "vendor/strain", map[string]any{
+		"name": "A vendor's strain", "unit": unitRef("score"), "form": "summary",
+	}); err != nil {
+		t.Fatalf("put the strain metric: %v", err)
+	}
 	for id, props := range map[string]map[string]any{
 		"lab/hba1c": {
 			"metric": r.metricRef("health/hba1c"), "form": "gauge", "value": quantity("5.2", "%"),
 			"at": "2026-10-07T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 		},
-		"whoop/strain": {
-			"metric": r.metricRef("health/whoop_strain"), "form": "summary", "statistic": "vendor", "period": "cycle",
+		"vendor/strain": {
+			"metric": r.metricRef("vendor/strain"), "form": "summary", "statistic": "vendor", "period": "cycle",
 			"value": quantity("17", "{score}"), "at": "2026-10-07T00:00:00+03:00", "endsAt": "2026-10-08T00:00:00+03:00",
 			"utcOffset": 180, "revision": 1,
 		},
@@ -116,7 +122,7 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 	}
 	for _, c := range []struct{ metric, unit, from string }{
 		{"health/hba1c", "mmol/mol", ""},
-		{"health/whoop_strain", "percent", "summaries"},
+		{"vendor/strain", "percent", "summaries"},
 	} {
 		refused(t, c.metric+" in "+c.unit, read(c.metric, c.unit, c.from), c.unit)
 	}

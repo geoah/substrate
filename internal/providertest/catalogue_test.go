@@ -39,20 +39,25 @@ type catalogueMetric struct {
 }
 
 // healthCatalogue reads the shipped catalogue, keyed by metric id
-// (`health/heart_rate`).
+// (`health/heart_rate`), with the metrics a vendor's adapter sample ships
+// beside it (`healthwhoop/recovery`).
 func healthCatalogue(t *testing.T) map[string]catalogueMetric {
 	t.Helper()
 	out := map[string]catalogueMetric{}
-	for _, m := range loadDocs(t, samplesDir+"/health/metrics.yaml") {
-		if kind, _ := m["kind"].(string); !strings.HasSuffix(kind, "/observations/metric") {
-			continue
+	for _, file := range []string{"/health/metrics.yaml", "/healthwhoop/metrics.yaml"} {
+		n := 0
+		for _, m := range loadDocs(t, samplesDir+file) {
+			if kind, _ := m["kind"].(string); !strings.HasSuffix(kind, "/observations/metric") {
+				continue
+			}
+			id, _ := m["metadata"].(map[string]any)["id"].(string)
+			props, _ := m["data"].(map[string]any)["properties"].(map[string]any)
+			out[id] = catalogueMetricOf(props)
+			n++
 		}
-		id, _ := m["metadata"].(map[string]any)["id"].(string)
-		props, _ := m["data"].(map[string]any)["properties"].(map[string]any)
-		out[id] = catalogueMetricOf(props)
-	}
-	if len(out) == 0 {
-		t.Fatal("the health catalogue read empty")
+		if n == 0 {
+			t.Fatalf("%s read empty", file)
+		}
 	}
 	return out
 }
@@ -223,7 +228,7 @@ func snakeCase(field string) string {
 	return b.String()
 }
 
-var healthMetricLiteral = regexp.MustCompile(`^health/[a-z0-9_]+$`)
+var healthMetricLiteral = regexp.MustCompile(`^health(whoop)?/[a-z0-9_]+$`)
 
 // TestAdapterTablesMatchTheCatalogue: every metric an adapter's tables or
 // literals name is in the catalogue, in the id of a unit that converts to

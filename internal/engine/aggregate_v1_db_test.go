@@ -305,12 +305,11 @@ func TestAggregatePlaceEndLandsNightsOnTheirWakeDays(t *testing.T) {
 	early := time.Date(2026, 9, 3, 0, 20, 0, 0, plus3)
 	next := time.Date(2026, 9, 3, 23, 50, 0, 0, plus3)
 	for _, metric := range []string{
-		"health/whoop_recovery", "health/whoop_sleep_performance", "health/hrv_rmssd",
-		"health/resting_heart_rate", "health/respiratory_rate", "health/spo2", "health/skin_temperature",
+		"health/hrv_rmssd", "health/resting_heart_rate", "health/respiratory_rate", "health/spo2",
+		"health/skin_temperature",
 	} {
 		unit := map[string]string{
-			"health/whoop_recovery": "%", "health/whoop_sleep_performance": "%", "health/hrv_rmssd": "ms",
-			"health/resting_heart_rate": "/min", "health/respiratory_rate": "/min", "health/spo2": "%",
+			"health/hrv_rmssd": "ms", "health/resting_heart_rate": "/min", "health/respiratory_rate": "/min", "health/spo2": "%",
 			"health/skin_temperature": "Cel",
 		}[metric]
 		f.summary(metric+"/late", metric, "whoop", "vendor", "71", unit, late, 7*time.Hour+40*time.Minute)

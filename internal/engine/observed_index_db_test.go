@@ -244,11 +244,11 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 		t.Errorf("a door derived %+v", got)
 	}
 
-	r.mustPut(t, r.observation, "whoop/george/1047392/recovery", map[string]any{
-		"metric": r.metricRef("health/whoop_recovery"), "form": "summary", "statistic": "vendor", "period": "cycle",
-		"value": quantity("67", "%"), "at": "2026-10-06T22:31:00Z", "endsAt": "2026-10-07T06:02:00Z", "revision": 1,
+	r.mustPut(t, r.observation, "whoop/george/1047392/spo2", map[string]any{
+		"metric": r.metricRef("health/spo2"), "form": "summary", "statistic": "vendor", "period": "cycle",
+		"value": quantity("96", "%"), "at": "2026-10-06T22:31:00Z", "endsAt": "2026-10-07T06:02:00Z", "revision": 1,
 	})
-	if got := r.points(t, r.observation, "whoop/george/1047392/recovery"); len(got) != 1 || got[0].form != "summary" ||
+	if got := r.points(t, r.observation, "whoop/george/1047392/spo2"); len(got) != 1 || got[0].form != "summary" ||
 		got[0].statistic.String != "vendor" || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T06:02:00Z")) {
 		t.Errorf("a summary derived %+v", got)
 	}
