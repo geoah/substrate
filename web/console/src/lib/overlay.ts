@@ -59,7 +59,10 @@ import { listWords } from "@/lib/tools"
 import type { UnitReader } from "@/lib/unit-reader"
 
 /** How a series is drawn: a line, bars, or bars stacked per category. */
-export type ChartMark = "line" | "bars" | "stack"
+/** How a series draws: `level` holds each value level across its bucket's
+ * whole width, a value over a span (a night's summary) rather than at an
+ * instant, and joins no two buckets whose values differ. */
+export type ChartMark = "line" | "level" | "bars" | "stack"
 
 export type AxisSide = "left" | "right"
 

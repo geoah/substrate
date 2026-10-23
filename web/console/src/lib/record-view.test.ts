@@ -20,6 +20,13 @@ import {
   cellFraction,
   chartMeasured,
   chartReads,
+  CHART_SUMMARIES_PAGES,
+  MAX_SUMMARY_LINES,
+  chartSummaries,
+  fetchChartSummaries,
+  summaryBuckets,
+  summarySeries,
+  summaryValueIn,
   changeSinceWords,
   deltaWords,
   foldedBy,
@@ -1931,5 +1938,404 @@ describe("a table's tiles", () => {
     expect(changeSinceWords(SHIPPED_UNITS, 3.9, 3.9, then, "mmol/L")).toBe(
       "No change since Oct 15, 2025"
     )
+  })
+})
+
+describe("summaries a chart draws where its line has no value", () => {
+  const RING = "a.example.com/observations/source/ring"
+  const WATCH = "a.example.com/observations/source/watch"
+  const HRV = "a.example.com/observations/metric/health/hrv_rmssd"
+  function obs(props: Record<string, unknown>): SubstrateRecord {
+    return {
+      id: String(Math.random()),
+      kind: "a.example.com/observations/observation",
+      properties: props,
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-11T07:00:00Z",
+      updatedAt: "2026-10-11T07:00:00Z",
+    }
+  }
+  function sourceRecord(path: string, rank?: number): SubstrateRecord {
+    return {
+      ...obs(rank ? { priorities: { [HRV]: rank } } : {}),
+      id: path.slice(path.lastIndexOf("/") + 1),
+      kind: path.slice(0, path.lastIndexOf("/")),
+    }
+  }
+  const night = {
+    at: "2026-10-10T23:00:00Z",
+    endsAt: "2026-10-11T07:00:00Z",
+    value: { value: "62", unit: "ms" },
+    statistic: "vendor",
+  }
+
+  it("keeps the record's own source under prefer, and the sources' priorities otherwise", () => {
+    const records = [
+      obs({ ...night, source: { ref: WATCH } }),
+      obs({ ...night, source: { ref: RING } }),
+      // No span, no summary.
+      obs({ at: night.at, value: night.value, source: { ref: RING } }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const sources = (policy: "prefer" | "priority" | "only") =>
+      chartSummaries({ records, included }, { source: RING }, policy, HRV).map(
+        (s) => s.source
+      )
+    expect(sources("prefer")).toEqual([RING])
+    // The watch ranks first for HRV, whatever source the record names.
+    expect(sources("priority")).toEqual([WATCH])
+    // The read under `only` holds the record's own source's alone.
+    expect(sources("only")).toEqual([RING])
+  })
+
+  it("draws a lower-ranked source's summary over a span no better one covers", () => {
+    const records = [
+      obs({ ...night, source: { ref: WATCH } }),
+      obs({
+        ...night,
+        at: "2026-10-11T07:00:00Z",
+        endsAt: "2026-10-11T08:00:00Z",
+        source: { ref: RING },
+      }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING),
+    }
+    expect(
+      chartSummaries({ records, included }, {}, "priority", HRV).map(
+        (s) => s.source
+      )
+    ).toEqual([WATCH, RING])
+  })
+
+  const at = (h: string) => `2026-10-11T${h}:00Z`
+  const spans = (out: ReturnType<typeof chartSummaries>) =>
+    out.map((s) => [
+      s.source?.slice(s.source.lastIndexOf("/") + 1),
+      new Date(s.start).toISOString().slice(11, 16),
+      new Date(s.end).toISOString().slice(11, 16),
+    ])
+
+  it("draws a later source's summary around a better one inside it", () => {
+    const records = [
+      obs({
+        ...night,
+        at: at("01:00"),
+        endsAt: at("07:00"),
+        source: { ref: RING },
+      }),
+      obs({
+        ...night,
+        at: at("02:00"),
+        endsAt: at("03:00"),
+        source: { ref: WATCH },
+      }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const out = chartSummaries({ records, included }, {}, "priority", HRV)
+    expect(spans(out)).toEqual([
+      ["ring", "01:00", "02:00"],
+      ["watch", "02:00", "03:00"],
+      ["ring", "03:00", "07:00"],
+    ])
+    // Each piece still names the summary's own span.
+    expect(out[2].span).toEqual({
+      start: Date.parse(at("01:00")),
+      end: Date.parse(at("07:00")),
+    })
+  })
+
+  it("breaks a tie between sources as the server does, by their paths", () => {
+    const A = "a.example.com/observations/source/a-band"
+    const Z = "a.example.com/observations/source/z-band"
+    const records = [
+      obs({ ...night, source: { ref: Z } }),
+      obs({ ...night, source: { ref: A } }),
+    ]
+    // Neither ranked, then both ranked first: one line either way.
+    const unranked: Record<string, SubstrateRecord> = {}
+    for (const included of [
+      unranked,
+      { [A]: sourceRecord(A, 1), [Z]: sourceRecord(Z, 1) },
+    ]) {
+      expect(
+        chartSummaries({ records, included }, {}, "priority", HRV).map(
+          (s) => s.source
+        )
+      ).toEqual([A])
+    }
+    // Under prefer every source but the record's own ties, whatever its
+    // priorities: the server ranks by the order alone there.
+    expect(
+      chartSummaries(
+        {
+          records,
+          included: { [A]: sourceRecord(A, 2), [Z]: sourceRecord(Z, 1) },
+        },
+        { source: RING },
+        "prefer",
+        HRV
+      ).map((s) => s.source)
+    ).toEqual([A])
+  })
+
+  it("converts a temperature difference without the offset", () => {
+    // `delta` is the observation's own property, beside its value.
+    const [kept] = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            value: { value: "1", unit: "Cel" },
+            delta: true,
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    expect(kept.delta).toBe(true)
+    expect(summaryValueIn(kept, "degF", SHIPPED_UNITS)).toBeCloseTo(1.8)
+  })
+
+  it("keeps a bound a bound, never a value a stroke draws", () => {
+    const [kept] = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            value: { value: "0.5", unit: "ms", comparator: "<" },
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    expect(kept.comparator).toBe("<")
+    expect(summaryValueIn(kept, "ms", SHIPPED_UNITS)).toBeUndefined()
+  })
+
+  it("ranks by priorities under prefer and only where the record names no source", () => {
+    const A = "a.example.com/observations/source/a-band"
+    const Z = "a.example.com/observations/source/z-band"
+    const records = [
+      obs({ ...night, source: { ref: A } }),
+      obs({ ...night, source: { ref: Z } }),
+    ]
+    const included = { [A]: sourceRecord(A, 2), [Z]: sourceRecord(Z, 1) }
+    for (const policy of ["prefer", "only"] as const) {
+      expect(
+        chartSummaries({ records, included }, {}, policy, HRV).map(
+          (s) => s.source
+        )
+      ).toEqual([Z])
+    }
+  })
+
+  it("resumes, after a better source, the summary of the same source that started last", () => {
+    const records = [
+      obs({
+        ...night,
+        at: at("00:00"),
+        endsAt: at("10:00"),
+        value: { value: "50", unit: "ms" },
+        source: { ref: RING },
+      }),
+      obs({
+        ...night,
+        at: at("02:00"),
+        endsAt: at("08:00"),
+        value: { value: "70", unit: "ms" },
+        source: { ref: RING },
+      }),
+      obs({
+        ...night,
+        at: at("04:00"),
+        endsAt: at("06:00"),
+        value: { value: "60", unit: "ms" },
+        source: { ref: WATCH },
+      }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const out = chartSummaries({ records, included }, {}, "priority", HRV)
+    expect(
+      out.map((s) => [new Date(s.start).toISOString().slice(11, 16), s.value])
+    ).toEqual([
+      ["00:00", "50"],
+      ["02:00", "70"],
+      ["04:00", "60"],
+      ["06:00", "70"],
+      ["08:00", "50"],
+    ])
+  })
+
+  it("cuts a thousand overlapping summaries into a bounded number of pieces", () => {
+    // 500 long summaries from the ring, each interrupted by an hour of the
+    // watch's, ranked first.
+    const base = Date.parse("2026-01-01T00:00:00Z")
+    const h = 3_600_000
+    const records = [
+      ...Array.from({ length: 500 }, (_, i) =>
+        obs({
+          ...night,
+          at: new Date(base + i * h).toISOString(),
+          endsAt: new Date(base + (i + 500) * h).toISOString(),
+          source: { ref: RING },
+        })
+      ),
+      ...Array.from({ length: 500 }, (_, i) =>
+        obs({
+          ...night,
+          at: new Date(base + (2 * i + 1) * h).toISOString(),
+          endsAt: new Date(base + (2 * i + 1.5) * h).toISOString(),
+          source: { ref: WATCH },
+        })
+      ),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const out = chartSummaries({ records, included }, {}, "priority", HRV)
+    // One piece per cut at most, for one statistic.
+    expect(out.length).toBeLessThanOrEqual(4 * 1000)
+    const window: TimeRange = { start: base, end: base + 1000 * h }
+    const buckets = summaryBuckets(window, out)
+    const { lines } = summarySeries(out, buckets, (s) => Number(s.value))
+    expect(lines).toHaveLength(2)
+  })
+
+  it("draws a summary that began before a zoomed window from the window's start", () => {
+    const [summary] = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            at: at("00:00"),
+            endsAt: at("07:00"),
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    // Zoomed into 02:00 to 03:00 of the night.
+    const zoomed: TimeRange = {
+      start: Date.parse(at("02:00")),
+      end: Date.parse(at("03:00")),
+    }
+    const buckets = summaryBuckets(zoomed, [summary])
+    const {
+      lines: [line],
+    } = summarySeries([summary], buckets, (s) => Number(s.value))
+    expect(line.points.map((p) => p.value)).toEqual([62])
+    // Its words keep the summary's own span.
+    expect(line.held[0]?.span.start).toBe(Date.parse(at("00:00")))
+  })
+
+  it("draws at most a few lines from a thousand sources, and counts the rest", () => {
+    const base = Date.parse("2026-01-01T00:00:00Z")
+    const h = 3_600_000
+    const records = Array.from({ length: 1000 }, (_, i) =>
+      obs({
+        ...night,
+        at: new Date(base + i * h).toISOString(),
+        endsAt: new Date(base + (i + 1) * h).toISOString(),
+        source: { ref: `a.example.com/observations/source/s${i}` },
+      })
+    )
+    const out = chartSummaries({ records }, {}, "priority", HRV)
+    const window: TimeRange = { start: base, end: base + 1000 * h }
+    const buckets = summaryBuckets(window, out)
+    const { lines, omitted } = summarySeries(out, buckets, (s) =>
+      Number(s.value)
+    )
+    expect(lines).toHaveLength(MAX_SUMMARY_LINES)
+    expect(omitted).toBe(1000 - MAX_SUMMARY_LINES)
+    expect(lines.reduce((n, l) => n + l.points.length, 0)).toBeLessThanOrEqual(
+      MAX_SUMMARY_LINES * buckets.length
+    )
+  })
+
+  it("holds each summary level across exactly its span, with nothing across a gap", () => {
+    const window: TimeRange = {
+      start: Date.parse("2026-10-10T21:30:00Z"),
+      end: Date.parse("2026-10-11T00:30:00Z"),
+    }
+    const summaries = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            at: "2026-10-10T22:00:00Z",
+            endsAt: "2026-10-10T22:45:00Z",
+            value: { value: "50", unit: "ms" },
+            source: { ref: RING },
+          }),
+          obs({
+            ...night,
+            at: "2026-10-10T23:15:00Z",
+            endsAt: "2026-10-11T00:00:00Z",
+            value: { value: "70", unit: "ms" },
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    const buckets = summaryBuckets(window, summaries)
+    expect(buckets.map((b) => new Date(b.start).toISOString())).toEqual([
+      "2026-10-10T21:30:00.000Z",
+      "2026-10-10T22:00:00.000Z",
+      "2026-10-10T22:45:00.000Z",
+      "2026-10-10T23:15:00.000Z",
+      "2026-10-11T00:00:00.000Z",
+    ])
+    const {
+      lines: [line],
+    } = summarySeries(summaries, buckets, (s) => Number(s.value))
+    expect(line.points.map((p) => p.value)).toEqual([null, 50, null, 70, null])
+    expect(line.statistic).toBe("vendor")
+  })
+
+  it("follows the read's pages to its budget, and says where more follow", async () => {
+    const page = (n: number, cursor?: string) => ({
+      records: [obs({ ...night, n })],
+      head: 1,
+      generation: "g",
+      ...(cursor ? { cursor } : {}),
+    })
+    const asked: (string | undefined)[] = []
+    const two = await fetchChartSummaries({}, (p) => {
+      asked.push(p.after)
+      return Promise.resolve(p.after ? page(2) : page(1, "c1"))
+    })
+    expect(asked).toEqual([undefined, "c1"])
+    expect(two.records).toHaveLength(2)
+    expect(two.truncated).toBe(false)
+    const endless = await fetchChartSummaries({}, () =>
+      Promise.resolve(page(0, "more"))
+    )
+    expect(endless.records).toHaveLength(CHART_SUMMARIES_PAGES)
+    expect(endless.truncated).toBe(true)
   })
 })

@@ -128,7 +128,7 @@ function yAxisOf(
       values.push(sum)
     })
   }
-  const zero = series.some((s) => (s.mark ?? "line") !== "line")
+  const zero = series.some((s) => !["line", "level"].includes(s.mark ?? "line"))
   const { domain, ticks } = niceDomain(values, { zero })
   const y = linearScale(domain, [top + plot, top])
   return {
@@ -494,7 +494,9 @@ function layoutOf(
     const key = s.stack ?? ""
     stacks.set(key, [...(stacks.get(key) ?? []), s])
   }
-  const lines = series.filter((s) => (s.mark ?? "line") === "line")
+  const lines = series.filter((s) =>
+    ["line", "level"].includes(s.mark ?? "line")
+  )
 
   const xLabels = axis.labels
   const bandAxis = leftAxis ?? grid
@@ -720,16 +722,25 @@ const Figures = memo(function Figures({
           )
         })
       })}
-      {lines.map((s) => (
-        <LineSeries
-          key={s.key}
-          series={s}
-          band={s.band === true}
-          mids={mids}
-          y={scaleOf(s).y}
-          connect={connect}
-        />
-      ))}
+      {lines.map((s) =>
+        s.mark === "level" ? (
+          <LevelSeries
+            key={s.key}
+            series={s}
+            windows={layout.windows}
+            y={scaleOf(s).y}
+          />
+        ) : (
+          <LineSeries
+            key={s.key}
+            series={s}
+            band={s.band === true}
+            mids={mids}
+            y={scaleOf(s).y}
+            connect={connect}
+          />
+        )
+      )}
       {xLabels.map((l) => (
         <text
           key={l.i}
@@ -744,6 +755,51 @@ const Figures = memo(function Figures({
     </>
   )
 })
+
+/** A level series: each value a horizontal stroke across its bucket's
+ * whole width, a run of one value in one stroke, nothing where a bucket
+ * holds none and no stroke joining two values. */
+function LevelSeries({
+  series,
+  windows,
+  y,
+}: {
+  series: ChartSeries
+  windows: readonly { x0: number; x1: number }[]
+  y: (v: number) => number
+}) {
+  let d = ""
+  let run: { x0: number; x1: number; value: number } | null = null
+  const flush = () => {
+    if (run) d += `M${run.x0} ${y(run.value)}H${run.x1}`
+    run = null
+  }
+  for (const p of series.points) {
+    const w = windows[p.bucket]
+    if (p.value === null || !w) {
+      flush()
+      continue
+    }
+    if (run && run.value === p.value && run.x1 === w.x0) run.x1 = w.x1
+    else {
+      flush()
+      run = { x0: w.x0, x1: w.x1, value: p.value }
+    }
+  }
+  flush()
+  return (
+    <path
+      data-series={series.key}
+      data-slot="chart-level"
+      d={d}
+      fill="none"
+      stroke={series.color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      opacity={series.stale ? 0.45 : undefined}
+    />
+  )
+}
 
 function LineSeries({
   series,

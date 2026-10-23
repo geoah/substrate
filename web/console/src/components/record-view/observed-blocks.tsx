@@ -7,7 +7,7 @@
  * recorded them in sequence, and its time in each code. */
 
 import { useEffect, useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 
 import {
   Bars,
@@ -28,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import { useWidth } from "@/hooks/use-width"
 import { aggregateQueryOptions } from "@/lib/api/observations"
-import { recordsQueryOptions } from "@/lib/api/records"
+import { fetchRecordsPage, recordsQueryOptions } from "@/lib/api/records"
 import {
   ApiError,
   type AggregateResult,
@@ -43,6 +43,7 @@ import {
   refIdOf,
   sameRef,
   shapeOf,
+  statisticLabel,
   type MetricInfo,
 } from "@/lib/observations"
 import {
@@ -65,6 +66,11 @@ import {
   chartMeasured,
   chartMetricRows,
   chartReads,
+  CHART_SUMMARIES_PAGE,
+  CHART_SUMMARIES_PAGES,
+  chartSummaries,
+  chartSummariesParams,
+  fetchChartSummaries,
   sequenceOf,
   spanRows,
   spansListParams,
@@ -73,9 +79,14 @@ import {
   spansSourceCount,
   spansOf,
   spansTotalsRead,
+  summaryBuckets,
+  summarySeries,
+  summaryValueIn,
   toneSoft,
   type Bound,
   type ChartBlock,
+  type ChartSummary,
+  type SummarySeries,
   type ChartReducer,
   type Span,
   type SpansBlock,
@@ -171,15 +182,68 @@ function BoundChart({
   // stays drawn (the reset lives on the one holding the zoom), and one
   // left out stays out, whatever the zoomed part holds.
   const hide = block.empty === "hide"
-  const settled = !answer.pending && !ctx.zoomed
+  const rawSettled = !answer.pending && !ctx.zoomed
+  // A metric whose line has no value over the record's window (a source
+  // that keeps heart rate variability only as one nightly summary) draws
+  // its summaries inside the window instead. Which metrics do is decided
+  // over the whole window and kept through a zoom.
+  const linelessNow = whole
+    ? []
+    : block.metrics.filter(
+        (metric, i) =>
+          !answer.errors[readOf[i]] &&
+          !answer.dropped[readOf[i]]?.includes(metric) &&
+          !chartMeasured(block, metric, answer.answers[readOf[i]])
+      )
+  const [lineless, setLineless] = useState<readonly string[]>([])
+  if (rawSettled && lineless.join("\n") !== linelessNow.join("\n")) {
+    setLineless(linelessNow)
+  }
+  const summaryReads = useQueries({
+    queries: block.metrics.map((metric) => {
+      const params = chartSummariesParams(bound, block, metric)
+      return {
+        // Under the records prefix with the observed kinds, so a write to
+        // one of them reads the summaries again.
+        queryKey: [
+          "records",
+          [...bound.observed],
+          "chart-summaries",
+          params,
+        ] as const,
+        queryFn: ({ signal }: { signal: AbortSignal }) =>
+          fetchChartSummaries(params, (p) => fetchRecordsPage(p, signal)),
+        enabled: lineless.includes(metric),
+      }
+    }),
+  })
+  const summariesOf = (i: number): ChartSummary[] | undefined => {
+    const metric = block.metrics[i]
+    if (!lineless.includes(metric)) return undefined
+    const read = summaryReads[i]?.data
+    return read && chartSummaries(read, bound, block.sources, metric)
+  }
+  const summaryError = (i: number): Error | null =>
+    lineless.includes(block.metrics[i])
+      ? (summaryReads[i]?.error ?? null)
+      : null
+  const summariesPending = block.metrics.some(
+    (metric, i) => lineless.includes(metric) && summaryReads[i]?.isPending
+  )
+  const settled =
+    rawSettled &&
+    !summariesPending &&
+    lineless.join("\n") === linelessNow.join("\n")
   const emptyNow =
     hide &&
     settled &&
     !answer.errors.some(Boolean) &&
+    !block.metrics.some((_, i) => summaryError(i)) &&
     !block.metrics.some(
       (metric, i) =>
         !answer.dropped[readOf[i]]?.includes(metric) &&
-        chartMeasured(block, metric, answer.answers[readOf[i]])
+        (chartMeasured(block, metric, answer.answers[readOf[i]]) ||
+          Boolean(summariesOf(i)?.length))
     )
   // What the chart decided over the whole window, kept through a zoom.
   const [unzoomed, setUnzoomed] = useState(false)
@@ -202,6 +266,13 @@ function BoundChart({
           pending={answer.pending}
           error={answer.errors[readOf[i]]}
           dropped={answer.dropped[readOf[i]].includes(metric)}
+          summaries={summariesOf(i)}
+          summariesPending={
+            lineless.includes(metric) && summaryReads[i]?.isPending
+          }
+          summariesError={summaryError(i)}
+          summariesTruncated={Boolean(summaryReads[i]?.data?.truncated)}
+          onRetrySummaries={() => void summaryReads[i]?.refetch()}
           onRetry={answer.refetch}
           bound={bound}
           window={window}
@@ -240,6 +311,11 @@ function MetricChart({
   pending,
   error,
   dropped,
+  summaries,
+  summariesPending,
+  summariesError,
+  summariesTruncated,
+  onRetrySummaries,
   onRetry,
   bound,
   window,
@@ -254,6 +330,13 @@ function MetricChart({
   error: Error | null
   /** The server refused this metric's entry: no record holds it. */
   dropped: boolean
+  /** The summaries inside the record's window, read where the line has no
+   * value over it; undefined where it has one. */
+  summaries?: readonly ChartSummary[]
+  summariesPending: boolean
+  summariesError: Error | null
+  summariesTruncated: boolean
+  onRetrySummaries: () => void
   onRetry: () => void
   bound: Bound
   window: TimeRange
@@ -304,6 +387,11 @@ function MetricChart({
           name={name}
           metric={metric}
           info={info}
+          summaries={summaries}
+          summariesPending={summariesPending}
+          summariesError={summariesError}
+          summariesTruncated={summariesTruncated}
+          onRetrySummaries={onRetrySummaries}
           ctx={ctx}
         />
       )}
@@ -322,6 +410,11 @@ function Line({
   name,
   metric,
   info,
+  summaries,
+  summariesPending,
+  summariesError,
+  summariesTruncated,
+  onRetrySummaries,
   ctx,
 }: {
   answer?: AggregateResult
@@ -331,6 +424,11 @@ function Line({
   name: string
   metric: string
   info?: MetricInfo
+  summaries?: readonly ChartSummary[]
+  summariesPending: boolean
+  summariesError: Error | null
+  summariesTruncated: boolean
+  onRetrySummaries: () => void
   ctx: BlockContext
 }) {
   const units = useUnits()
@@ -353,6 +451,26 @@ function Line({
     [rows]
   )
   const titles = useReferenceTitles(sources, [...ctx.kinds])
+  if (!measured && summariesError) {
+    return <Failed error={summariesError} onRetry={onRetrySummaries} />
+  }
+  if (!measured && summaries?.length) {
+    return (
+      <SummaryLine
+        summaries={summaries}
+        truncated={summariesTruncated}
+        block={block}
+        window={window}
+        name={name}
+        metric={metric}
+        info={info}
+        ctx={ctx}
+      />
+    )
+  }
+  if (!measured && summariesPending) {
+    return <Skeleton className="h-[250px] w-full" />
+  }
   if (!measured) {
     return (
       <Quiet>
@@ -451,6 +569,195 @@ function Line({
       )}
     </>
   )
+}
+
+/** A metric the window holds no point of, drawn from its summaries inside
+ * the window: each one value held level across the span it covers, one
+ * line per source and statistic, in the chart's unit where it names one,
+ * else the metric's. */
+function SummaryLine({
+  summaries,
+  truncated,
+  block,
+  window,
+  name,
+  metric,
+  info,
+  ctx,
+}: {
+  summaries: readonly ChartSummary[]
+  /** The window holds more summaries than were read. */
+  truncated: boolean
+  block: ChartBlock
+  window: TimeRange
+  name: string
+  metric: string
+  info?: MetricInfo
+  ctx: BlockContext
+}) {
+  const units = useUnits()
+  const unit = block.unit ?? info?.unit ?? summaries[0].unit
+  const size = chartBucketSize(block.bucket, window)
+  const buckets = useMemo(
+    () => summaryBuckets(window, summaries),
+    [window, summaries]
+  )
+  const { lines, omitted } = useMemo(
+    () =>
+      summarySeries(summaries, buckets, (s) => summaryValueIn(s, unit, units)),
+    [summaries, buckets, unit, units]
+  )
+  const sources = useMemo(
+    () => distinct(summaries.flatMap((s) => (s.source ? [s.source] : []))),
+    [summaries]
+  )
+  const titles = useReferenceTitles(sources, [...ctx.kinds])
+  const sourceName = (source: string | undefined) =>
+    source ? titles.get(source) || refIdOf(source) : "no source"
+  const lineName = (line: SummarySeries) => {
+    const stat = line.statistic ? statisticLabel(line.statistic) : undefined
+    const who = sourceName(line.source)
+    return stat ? `${who}, ${lowerName(stat)}` : who
+  }
+  const during = spanWords(ctx.bound, ctx.noun).during
+  // A bound (`<0.5`) is no value a stroke may draw: it is said instead,
+  // once per summary however many pieces it was cut into.
+  const bounds = summaries.filter(
+    (s, i) =>
+      s.comparator &&
+      summaries.findIndex(
+        (o) =>
+          o.span.start === s.span.start &&
+          o.span.end === s.span.end &&
+          o.source === s.source &&
+          o.value === s.value
+      ) === i
+  )
+  const boundWords = bounds.map(
+    (s) =>
+      `${sourceName(s.source)}: ${readingText(units, s.value, s.unit, info?.displayPrecision, s.comparator)} over ${windowWords(s.span.start, s.span.end)}`
+  )
+  // Said whatever the chart draws: a zoomed part with no summary in it
+  // still offers the way back, and a capped read says it is capped.
+  const zoomBar = ctx.zoomed && (
+    <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+      <span>{windowWords(window.start, window.end)}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 text-[12.5px] font-normal"
+        onClick={ctx.onReset}
+      >
+        Show {spanWords(ctx.bound, ctx.noun).whole}
+      </Button>
+    </div>
+  )
+  const truncatedNote = truncated && (
+    <Quiet>
+      Shows the first{" "}
+      {(CHART_SUMMARIES_PAGE * CHART_SUMMARIES_PAGES).toLocaleString("en")}{" "}
+      summaries read inside this window; more follow.
+    </Quiet>
+  )
+  if (!lines.some((l) => l.points.some((p) => p.value !== null))) {
+    return (
+      <>
+        {zoomBar}
+        <Quiet>
+          {boundWords.length
+            ? `No samples of ${lowerName(name)} were kept ${during}, and its summaries are bounds, not values: ${listWords(boundWords)}.`
+            : `No summary of ${lowerName(name)} covers ${windowWords(window.start, window.end)}.`}
+        </Quiet>
+        {truncatedNote}
+      </>
+    )
+  }
+  return (
+    <>
+      {zoomBar}
+      <TimelineChart
+        key={`${window.start}-${window.end}`}
+        buckets={buckets}
+        series={lines.map((line, i) => ({
+          key: line.key,
+          color: `var(--series-${(i % 8) + 1})`,
+          points: line.points,
+          mark: "level",
+        }))}
+        bands={block.bands
+          .filter((b) => !b.metric || sameRef(b.metric, metric))
+          .map((b) => ({
+            low: b.low,
+            high: b.high,
+            color: toneSoft(b.tone),
+            label: b.label,
+          }))}
+        domain={window}
+        size={size}
+        label={`${name} ${during}, from summaries`}
+        units={{ left: units.symbol(unit) || unit }}
+        onZoom={(next) => ctx.onZoom(next)}
+        tooltip={(b) => {
+          const held = lines.flatMap((line) => {
+            const s = line.held[b]
+            return s ? [{ line, s }] : []
+          })
+          return (
+            <>
+              <p className="font-medium">
+                {windowWords(buckets[b].start, buckets[b].end)}
+              </p>
+              {held.length ? (
+                <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
+                  {held.map(({ line, s }) => (
+                    <div key={line.key} className="contents">
+                      <dt className="text-faint">
+                        {lineName(line)},{" "}
+                        {windowWords(s.span.start, s.span.end)}
+                      </dt>
+                      <dd className="text-right whitespace-nowrap tabular-nums">
+                        {readingText(
+                          units,
+                          s.value,
+                          s.unit,
+                          info?.displayPrecision
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="mt-1 text-muted-foreground">Nothing measured.</p>
+              )}
+            </>
+          )
+        }}
+      />
+      <Quiet>{summaryWords(name, lines.map(lineName), during)}</Quiet>
+      {omitted > 0 && (
+        <Quiet>
+          Draws the {lines.length} lines covering the most time; {omitted} more
+          are not drawn.
+        </Quiet>
+      )}
+      {boundWords.length > 0 && (
+        <Quiet>
+          Bounds, not values, so not drawn: {listWords(boundWords)}.
+        </Quiet>
+      )}
+      {truncatedNote}
+    </>
+  )
+}
+
+/** What a summary line is: no samples over the window, and whose values
+ * over which spans it draws instead. */
+function summaryWords(
+  name: string,
+  lines: readonly string[],
+  during: string
+): string {
+  return `No samples of ${lowerName(name)} were kept ${during}. The line holds each summary's one value across the span it covers: ${listWords([...lines])}.`
 }
 
 /** The unit the values of one reducer answer in: the first value's, `""`
