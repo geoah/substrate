@@ -70,8 +70,9 @@ type obsSegment struct {
 	form              string
 	first, last, end  time.Time
 	points, available int
-	// lastAvailable is the newest available point's instant, zero where the
-	// record holds none.
+	// lastAvailable is the newest available point's instant, meaningful only
+	// where available is above zero: the zero time is an instant a point may
+	// hold (0001-01-01T00:00:00Z), so it cannot stand for none.
 	lastAvailable time.Time
 	offset        int64
 	known         bool
@@ -97,7 +98,7 @@ func (r *observedRows) segment() obsSegment {
 		if p.available() {
 			s.available++
 			codes[p.code] = true
-			if s.lastAvailable.IsZero() || p.ts.After(s.lastAvailable) {
+			if s.available == 1 || p.ts.After(s.lastAvailable) {
 				s.lastAvailable = p.ts
 			}
 		}
