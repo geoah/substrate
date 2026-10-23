@@ -1,6 +1,7 @@
-/** An agent's reply, rendered: paragraphs, lists, headings and code from the
- * markdown subset `chatBlocks` reads, and every record path the reply names
- * as the record itself. Model-authored text becomes elements, never HTML. */
+/** An agent's reply, rendered: paragraphs, lists, headings, code and links
+ * from the markdown subset `chatBlocks` reads, and every record the reply
+ * names, by path or by record link, as the record itself. Model-authored text
+ * becomes elements, never HTML. */
 
 import { Fragment } from "react"
 
@@ -15,7 +16,7 @@ function Runs({ runs }: { runs: Inline[] }) {
           case "strong":
             return (
               <strong key={i} className="font-semibold">
-                {run.text}
+                <Runs runs={run.runs} />
               </strong>
             )
           case "code":
@@ -29,6 +30,22 @@ function Runs({ runs }: { runs: Inline[] }) {
             )
           case "record":
             return <RecordRef key={i} kind={run.kind} id={run.id} />
+          case "link":
+            // A page outside the console: a new tab in a browser, the system
+            // browser in the Apple shell. No referrer and no opener, because
+            // the address is the model's choice.
+            return (
+              <a
+                key={i}
+                href={run.href}
+                title={run.href}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="text-primary-text underline underline-offset-2"
+              >
+                {run.text}
+              </a>
+            )
           default:
             return <Fragment key={i}>{run.text}</Fragment>
         }
