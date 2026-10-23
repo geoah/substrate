@@ -246,10 +246,15 @@ function mount(
     /** The summaries a list read of `form: summary` finds, by its metric
      * and its window. */
     summaries?: SubstrateRecord[]
+    /** The summaries read's pages, one per cursor, where it has several. */
+    summaryPageSize?: number
+    /** Summary reads that fail before one answers. */
+    summaryFailures?: number
   } = {}
 ) {
   const metrics = opts.metrics ?? METRICS
   const seen: Seen[] = []
+  const failures = { summaries: opts.summaryFailures ?? 0 }
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -324,7 +329,27 @@ function mount(
             Date.parse(q.endsAt as string) <= Date.parse(p.endsAt.lte)
           )
         })
-        return ok({ records, head: 1, generation: "g" })
+        if (failures.summaries > 0) {
+          failures.summaries--
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: "unavailable",
+                message: "the database is restarting",
+              },
+            }),
+            { status: 503 }
+          )
+        }
+        const size = opts.summaryPageSize ?? records.length
+        const from = Number(url.searchParams.get("after") ?? 0)
+        const next = from + size
+        return ok({
+          records: records.slice(from, next),
+          head: 1,
+          generation: "g",
+          ...(next < records.length ? { cursor: String(next) } : {}),
+        })
       }
       if (filter.properties?.metric) {
         // The server's window read (`at` bounded on both ends) refuses
@@ -1188,8 +1213,9 @@ describe("a chart whose line has no value over the window", () => {
     })
     expect(night.hidden).toBe(false)
     // One line, held level across the night it covers.
-    const line = chart.querySelector("g[data-series] path")
-    expect(line?.getAttribute("d")).toMatch(/^M.+L/)
+    // One level stroke across the night, never a slope.
+    const line = chart.querySelector("[data-slot=chart-level]")
+    expect(line?.getAttribute("d")).toMatch(/^M[\d.]+ [\d.]+H[\d.]+$/)
     expect(hrv.textContent).toContain(
       "No samples of heart rate variability (RMSSD) were kept during this session."
     )
@@ -1226,5 +1252,123 @@ describe("a chart whose line has no value over the window", () => {
       )
     await waitFor(() => expect(night()?.hidden).toBe(true))
     expect(night()!.textContent).not.toContain("was measured")
+  })
+})
+
+describe("a chart's summaries read", () => {
+  const HRV = `${METRIC}/health/hrv_rmssd`
+  const HRV_METRIC = record(METRIC, "health/hrv_rmssd", {
+    title: "Heart rate variability (RMSSD)",
+    name: "Heart rate variability (RMSSD)",
+    form: "gauge",
+    unit: "ms",
+  })
+  const NIGHT = record(SESSION.identity, "night-2", {
+    begins: "2026-10-10T22:40:00Z",
+    ends: "2026-10-11T06:50:00Z",
+    by: { ref: WHOOP },
+  })
+  const VIEW = view("fitness/session-night", {
+    name: "Night",
+    window: WINDOW,
+    sections: [
+      {
+        chart: {
+          label: "HRV",
+          metrics: [{ ref: HRV }],
+          reducers: [{ reducer: "avg" }],
+          empty: "hide",
+        },
+      },
+    ],
+  })
+  function summary(
+    id: string,
+    source: string,
+    value: string,
+    at: string,
+    endsAt: string
+  ) {
+    return record(OBSERVATION, id, {
+      metric: { ref: HRV },
+      form: "summary",
+      value: { value, unit: "ms" },
+      statistic: "vendor",
+      at,
+      endsAt,
+      source: { ref: source },
+    })
+  }
+
+  it("says a failed summaries read with a retry, never hiding the chart", async () => {
+    mount([VIEW], NIGHT, SESSION, {
+      metrics: [...METRICS, HRV_METRIC],
+      unmeasured: [HRV],
+      curve: answer([]),
+      summaryFailures: 1,
+      summaries: [
+        summary(
+          "w",
+          WHOOP,
+          "62",
+          "2026-10-10T22:40:00Z",
+          "2026-10-11T06:50:00Z"
+        ),
+      ],
+    })
+    const night = await screen.findByRole("region", { name: "Night" })
+    const retry = await within(night).findByRole("button", {
+      name: "Read again",
+    })
+    expect(night.hidden).toBe(false)
+    expect(night.querySelector("[data-slot=read-failed]")).toBeTruthy()
+    fireEvent.click(retry)
+    await waitFor(() =>
+      expect(night.querySelector("[data-slot=chart-level]")).toBeTruthy()
+    )
+  })
+
+  it("reads past the first page, where the record's own source's summary is", async () => {
+    // The Garmin's readings inside the night fill the first page; WHOOP's
+    // night, which the record names, is on the second and wins.
+    const naps = Array.from({ length: 3 }, (_, i) =>
+      summary(
+        `g${i}`,
+        GARMIN,
+        "40",
+        `2026-10-11T01:0${i}:00Z`,
+        `2026-10-11T01:0${i + 1}:00Z`
+      )
+    )
+    const { seen } = mount([VIEW], NIGHT, SESSION, {
+      metrics: [...METRICS, HRV_METRIC],
+      unmeasured: [HRV],
+      curve: answer([]),
+      summaryPageSize: 3,
+      summaries: [
+        ...naps,
+        summary(
+          "w",
+          WHOOP,
+          "62",
+          "2026-10-11T00:00:00Z",
+          "2026-10-11T06:50:00Z"
+        ),
+      ],
+    })
+    const night = await screen.findByRole("region", { name: "Night" })
+    await waitFor(() =>
+      expect(night.querySelector("[data-slot=chart-level]")).toBeTruthy()
+    )
+    expect(
+      seen.filter(
+        (r) =>
+          (r.filter.properties?.form as { eq?: string } | undefined)?.eq ===
+          "summary"
+      )
+    ).toHaveLength(2)
+    // The night's own source's summary alone is drawn.
+    expect(night.textContent).toContain("whoop-4-0")
+    expect(night.textContent).not.toContain("garmin")
   })
 })

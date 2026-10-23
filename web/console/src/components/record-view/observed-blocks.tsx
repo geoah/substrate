@@ -28,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import { useWidth } from "@/hooks/use-width"
 import { aggregateQueryOptions } from "@/lib/api/observations"
-import { recordsQueryOptions } from "@/lib/api/records"
+import { fetchRecordsPage, recordsQueryOptions } from "@/lib/api/records"
 import {
   ApiError,
   type AggregateResult,
@@ -68,7 +68,7 @@ import {
   chartReads,
   chartSummaries,
   chartSummariesParams,
-  evenBuckets,
+  fetchChartSummaries,
   sequenceOf,
   spanRows,
   spansListParams,
@@ -77,6 +77,7 @@ import {
   spansSourceCount,
   spansOf,
   spansTotalsRead,
+  summaryBuckets,
   summarySeries,
   toneSoft,
   type Bound,
@@ -196,16 +197,33 @@ function BoundChart({
     setLineless(linelessNow)
   }
   const summaryReads = useQueries({
-    queries: block.metrics.map((metric) => ({
-      ...recordsQueryOptions(chartSummariesParams(bound, block, metric)),
-      enabled: lineless.includes(metric),
-    })),
+    queries: block.metrics.map((metric) => {
+      const params = chartSummariesParams(bound, block, metric)
+      return {
+        // Under the records prefix with the observed kinds, so a write to
+        // one of them reads the summaries again.
+        queryKey: [
+          "records",
+          [...bound.observed],
+          "chart-summaries",
+          params,
+        ] as const,
+        queryFn: ({ signal }: { signal: AbortSignal }) =>
+          fetchChartSummaries(params, (p) => fetchRecordsPage(p, signal)),
+        enabled: lineless.includes(metric),
+      }
+    }),
   })
   const summariesOf = (i: number): ChartSummary[] | undefined => {
-    if (!lineless.includes(block.metrics[i])) return undefined
-    const records = summaryReads[i]?.data?.records
-    return records && chartSummaries(records, bound, block.sources)
+    const metric = block.metrics[i]
+    if (!lineless.includes(metric)) return undefined
+    const read = summaryReads[i]?.data
+    return read && chartSummaries(read, bound, block.sources, metric)
   }
+  const summaryError = (i: number): Error | null =>
+    lineless.includes(block.metrics[i])
+      ? (summaryReads[i]?.error ?? null)
+      : null
   const summariesPending = block.metrics.some(
     (metric, i) => lineless.includes(metric) && summaryReads[i]?.isPending
   )
@@ -217,6 +235,7 @@ function BoundChart({
     hide &&
     settled &&
     !answer.errors.some(Boolean) &&
+    !block.metrics.some((_, i) => summaryError(i)) &&
     !block.metrics.some(
       (metric, i) =>
         !answer.dropped[readOf[i]]?.includes(metric) &&
@@ -248,6 +267,9 @@ function BoundChart({
           summariesPending={
             lineless.includes(metric) && summaryReads[i]?.isPending
           }
+          summariesError={summaryError(i)}
+          summariesTruncated={Boolean(summaryReads[i]?.data?.truncated)}
+          onRetrySummaries={() => void summaryReads[i]?.refetch()}
           onRetry={answer.refetch}
           bound={bound}
           window={window}
@@ -288,6 +310,9 @@ function MetricChart({
   dropped,
   summaries,
   summariesPending,
+  summariesError,
+  summariesTruncated,
+  onRetrySummaries,
   onRetry,
   bound,
   window,
@@ -306,6 +331,9 @@ function MetricChart({
    * value over it; undefined where it has one. */
   summaries?: readonly ChartSummary[]
   summariesPending: boolean
+  summariesError: Error | null
+  summariesTruncated: boolean
+  onRetrySummaries: () => void
   onRetry: () => void
   bound: Bound
   window: TimeRange
@@ -358,6 +386,9 @@ function MetricChart({
           info={info}
           summaries={summaries}
           summariesPending={summariesPending}
+          summariesError={summariesError}
+          summariesTruncated={summariesTruncated}
+          onRetrySummaries={onRetrySummaries}
           ctx={ctx}
         />
       )}
@@ -378,6 +409,9 @@ function Line({
   info,
   summaries,
   summariesPending,
+  summariesError,
+  summariesTruncated,
+  onRetrySummaries,
   ctx,
 }: {
   answer?: AggregateResult
@@ -389,6 +423,9 @@ function Line({
   info?: MetricInfo
   summaries?: readonly ChartSummary[]
   summariesPending: boolean
+  summariesError: Error | null
+  summariesTruncated: boolean
+  onRetrySummaries: () => void
   ctx: BlockContext
 }) {
   const units = useUnits()
@@ -411,10 +448,14 @@ function Line({
     [rows]
   )
   const titles = useReferenceTitles(sources, [...ctx.kinds])
+  if (!measured && summariesError) {
+    return <Failed error={summariesError} onRetry={onRetrySummaries} />
+  }
   if (!measured && summaries?.length) {
     return (
       <SummaryLine
         summaries={summaries}
+        truncated={summariesTruncated}
         block={block}
         window={window}
         name={name}
@@ -533,6 +574,7 @@ function Line({
  * else the metric's. */
 function SummaryLine({
   summaries,
+  truncated,
   block,
   window,
   name,
@@ -541,6 +583,8 @@ function SummaryLine({
   ctx,
 }: {
   summaries: readonly ChartSummary[]
+  /** The window holds more summaries than were read. */
+  truncated: boolean
   block: ChartBlock
   window: TimeRange
   name: string
@@ -551,7 +595,10 @@ function SummaryLine({
   const units = useUnits()
   const unit = block.unit ?? info?.unit ?? summaries[0].unit
   const size = chartBucketSize(block.bucket, window)
-  const buckets = useMemo(() => evenBuckets(window, size), [window, size])
+  const buckets = useMemo(
+    () => summaryBuckets(window, summaries),
+    [window, summaries]
+  )
   const lines = useMemo(
     () =>
       summarySeries(summaries, buckets, (s) => {
@@ -596,7 +643,7 @@ function SummaryLine({
           key: line.key,
           color: `var(--series-${(i % 8) + 1})`,
           points: line.points,
-          mark: "line",
+          mark: "level",
         }))}
         bands={block.bands
           .filter((b) => !b.metric || sameRef(b.metric, metric))
@@ -647,6 +694,12 @@ function SummaryLine({
         }}
       />
       <Quiet>{summaryWords(name, lines.map(lineName), during)}</Quiet>
+      {truncated && (
+        <Quiet>
+          Shows the first {summaries.length.toLocaleString("en")} summaries read
+          inside this window; more follow.
+        </Quiet>
+      )}
     </>
   )
 }

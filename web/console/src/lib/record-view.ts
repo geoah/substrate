@@ -20,6 +20,7 @@ import {
   type AggregateSources,
   type Cond,
   type KindInfo,
+  type Page,
   type RecordFilter,
   type SubstrateRecord,
 } from "@/lib/api/types"
@@ -51,7 +52,6 @@ import {
 } from "@/lib/observations-answer"
 import {
   autoBucket,
-  BUCKET_MS,
   bucketEstimate,
   bucketOf,
   dayWords,
@@ -1379,8 +1379,10 @@ export function chartMeasured(
   )
 }
 
-/** The most summaries one chart metric's fallback reads. */
+/** The summaries one page of a chart metric's fallback reads, and the most
+ * pages it follows: a window holding more says it shows the first. */
 export const CHART_SUMMARIES_PAGE = 200
+export const CHART_SUMMARIES_PAGES = 5
 
 /** One summary a chart draws where its line has no value over the window:
  * a single value a source computed over a span inside it, such as WHOOP's
@@ -1397,12 +1399,13 @@ export interface ChartSummary {
 }
 
 /** The list read of one metric's summaries that lie wholly inside the
- * record's window, under the chart's narrowing, channel and statistic. A
- * chart whose line has no value over the window draws these: a source that
- * keeps a metric only as a summary over the night writes no point a raw
- * read takes. Wholly inside, because a summary over a longer span (a
- * cycle's average heart rate, from the same sleep onset to the next) is no
- * value of the window. */
+ * record's window, under the chart's narrowing, channel and statistic, with
+ * each summary's source record, whose `priorities` rank it. A chart whose
+ * line has no value over the window draws these: a source that keeps a
+ * metric only as a summary over the night writes no point a raw read takes.
+ * Wholly inside, because a summary over a longer span (a cycle's average
+ * heart rate, from the same sleep onset to the next) is no value of the
+ * window. */
 export function chartSummariesParams(
   b: Bound,
   chart: Pick<ChartBlock, "sources" | "channel" | "statistic">,
@@ -1413,6 +1416,7 @@ export function chartSummariesParams(
     kinds: b.observed,
     first: CHART_SUMMARIES_PAGE,
     orderBy: "at:asc",
+    expand: ["source"],
     filter: {
       properties: {
         metric: { eq: metric },
@@ -1427,16 +1431,71 @@ export function chartSummariesParams(
   }
 }
 
-/** The summaries a chart draws from a list read's records: those holding
- * a value over a span, the record's own source's alone where it kept any
- * and the policy is not `only` (which the read already narrowed). */
+/** What a chart metric's summaries read holds: its records, their source
+ * records, and whether the window holds more than it read. */
+export interface SummaryPages {
+  records: SubstrateRecord[]
+  included: Record<string, SubstrateRecord>
+  truncated: boolean
+}
+
+/** Reads a chart metric's summaries page by page, up to
+ * `CHART_SUMMARIES_PAGES` pages. */
+export async function fetchChartSummaries(
+  params: ListParams,
+  fetchPage: (p: ListParams) => Promise<Page>
+): Promise<SummaryPages> {
+  const out: SummaryPages = { records: [], included: {}, truncated: false }
+  let after: string | undefined
+  for (let n = 0; n < CHART_SUMMARIES_PAGES; n++) {
+    const page = await fetchPage(after ? { ...params, after } : params)
+    out.records.push(...page.records)
+    Object.assign(out.included, page.included ?? {})
+    after = page.cursor
+    if (!after) return out
+  }
+  out.truncated = true
+  return out
+}
+
+/** A source's rank for a metric: its record's `priorities` for the metric
+ * (1 first), an unranked source after every ranked one, and a value naming
+ * no source after every named one, as the aggregate read ranks them. */
+function sourceRank(
+  source: string | undefined,
+  metric: string,
+  included: Record<string, SubstrateRecord>
+): number {
+  if (!source) return Number.MAX_SAFE_INTEGER
+  const held =
+    included[source] ??
+    Object.entries(included).find(([path]) => sameRef(path, source))?.[1]
+  const priorities = held?.properties?.priorities as
+    Record<string, unknown> | undefined
+  const rank = priorities
+    ? (priorities[metric] ??
+      Object.entries(priorities).find(([k]) => sameRef(k, metric))?.[1])
+    : undefined
+  return typeof rank === "number" && rank >= 1
+    ? rank
+    : Number.MAX_SAFE_INTEGER - 1
+}
+
+/** The summaries a chart draws from its read: each holding a value over a
+ * span, and where sources overlap, the one the policy puts first. Under
+ * `prefer` that is the record's own source, then the sources' priorities
+ * for the metric; under `priority` the priorities alone; under `only` the
+ * read already kept the record's own source. A summary is kept unless it
+ * overlaps one of a source ranked before its own, so a span only a later
+ * source covers is still drawn. */
 export function chartSummaries(
-  records: readonly SubstrateRecord[],
+  read: Pick<SummaryPages, "records"> & Partial<Pick<SummaryPages, "included">>,
   b: Pick<Bound, "source">,
-  policy: SourcePolicy
+  policy: SourcePolicy,
+  metric: string
 ): ChartSummary[] {
-  const out: ChartSummary[] = []
-  for (const r of records) {
+  const all: ChartSummary[] = []
+  for (const r of read.records) {
     const p = r.properties ?? {}
     const start = typeof p.at === "string" ? Date.parse(p.at) : NaN
     const end = typeof p.endsAt === "string" ? Date.parse(p.endsAt) : NaN
@@ -1445,7 +1504,8 @@ export function chartSummaries(
     if (!q || typeof q.value !== "string" || typeof q.unit !== "string") {
       continue
     }
-    out.push({
+    const source = readReference(p.source)?.path
+    all.push({
       start,
       end,
       value: q.value,
@@ -1453,40 +1513,61 @@ export function chartSummaries(
       ...(typeof p.statistic === "string" && p.statistic
         ? { statistic: p.statistic }
         : {}),
-      ...(readReference(p.source)
-        ? { source: readReference(p.source)!.path }
-        : {}),
+      ...(source ? { source } : {}),
     })
   }
+  if (policy === "only") return all
+  const included = read.included ?? {}
   const self = b.source
-  if (policy !== "only" && self) {
-    const own = out.filter((s) => s.source && sameRef(s.source, self))
-    if (own.length) return own
+  const rank = (s: ChartSummary) =>
+    policy === "prefer" && self && s.source && sameRef(s.source, self)
+      ? 0
+      : sourceRank(s.source, metric, included)
+  const ranked = all
+    .map((s) => ({ s, rank: rank(s) }))
+    .sort(
+      (x, y) =>
+        x.rank - y.rank ||
+        (x.s.source ?? "").localeCompare(y.s.source ?? "") ||
+        x.s.start - y.s.start
+    )
+  const kept: { s: ChartSummary; rank: number }[] = []
+  for (const c of ranked) {
+    const beaten = kept.some(
+      (k) =>
+        k.s.source !== c.s.source &&
+        k.rank < c.rank &&
+        k.s.start < c.s.end &&
+        c.s.start < k.s.end
+    )
+    if (!beaten) kept.push(c)
   }
-  return out
+  return kept.map((k) => k.s).sort((x, y) => x.start - y.start)
 }
 
-/** Even buckets of `size` across `window`, holding no rows: the axis a
- * chart draws summaries on, which are values over spans and no read's
- * buckets. */
-export function evenBuckets(window: TimeRange, size: BucketSize): Bucket[] {
-  const step = BUCKET_MS[size]
-  const out: Bucket[] = []
-  for (let start = window.start; start < window.end; start += step) {
-    const end = Math.min(start + step, window.end)
-    out.push({
-      start,
-      end,
-      startIso: new Date(start).toISOString(),
-      endIso: new Date(end).toISOString(),
-      rows: [],
-    })
+/** The buckets a chart draws summaries on: the window cut at every
+ * summary's start and end, each piece one bucket, so each summary covers
+ * whole buckets and draws level across exactly its span. */
+export function summaryBuckets(
+  window: TimeRange,
+  summaries: readonly ChartSummary[]
+): Bucket[] {
+  const cuts = new Set([window.start, window.end])
+  for (const s of summaries) {
+    if (s.start > window.start && s.start < window.end) cuts.add(s.start)
+    if (s.end > window.start && s.end < window.end) cuts.add(s.end)
   }
-  return out
+  const at = [...cuts].sort((x, y) => x - y)
+  return at.slice(1).map((end, i) => ({
+    start: at[i],
+    end,
+    startIso: new Date(at[i]).toISOString(),
+    endIso: new Date(end).toISOString(),
+    rows: [],
+  }))
 }
 
-/** One line of summaries: one source's values of one statistic, each held
- * level across the buckets its span overlaps. */
+/** One level line of summaries: one source's values of one statistic. */
 export interface SummarySeries {
   key: string
   source?: string
@@ -1496,9 +1577,10 @@ export interface SummarySeries {
   held: (ChartSummary | undefined)[]
 }
 
-/** The summaries as lines on `buckets`: one per source and statistic, in
- * first-seen order. A bucket takes the summary overlapping it most, its
- * value in the chart's unit (`valueOf`); one that does not convert is left
+/** The summaries as level lines on `buckets` (`summaryBuckets`): one per
+ * source and statistic, in first-seen order. A bucket holds the summary
+ * covering it, the latest to start where two of one line do; its value is
+ * in the chart's unit (`valueOf`), and one that does not convert is left
  * out. */
 export function summarySeries(
   summaries: readonly ChartSummary[],
@@ -1513,13 +1595,10 @@ export function summarySeries(
   return [...groups].map(([key, members]) => {
     const held = buckets.map((b) => {
       let best: ChartSummary | undefined
-      let most = 0
       for (const s of members) {
-        const overlap = Math.min(s.end, b.end) - Math.max(s.start, b.start)
-        if (overlap > most && valueOf(s) !== undefined) {
-          best = s
-          most = overlap
-        }
+        if (s.start > b.start || s.end < b.end) continue
+        if (valueOf(s) === undefined) continue
+        if (!best || s.start > best.start) best = s
       }
       return best
     })

@@ -535,13 +535,19 @@ properties the sheet folds away because a section shows them. Then come its
   line chart whose metric holds no value over the window draws the
   metric's summaries that lie wholly inside the window instead, under the
   block's narrowing, `channel` and `statistic`: each summary's one value
-  held level across the span it covers, one line per source and
-  statistic, the record's own source alone where it kept any. WHOOP's
-  nightly heart rate variability on a sleep is one; a cycle's average
-  heart rate, which reaches past the night, is not. With `empty: hide` a
-  chart none of whose metrics was measured over the window, by a point or
-  by such a summary, is left out, as a night's heart rate is on a sleep a
-  source scored without samples; a zoom never hides it.
+  as a level stroke across exactly the span it covers, nothing across a
+  gap, one line per source and statistic. Where sources' summaries
+  overlap, the first the block's `sources` puts first is drawn: the
+  record's own under `prefer`, then the sources' `priorities` for the
+  metric, which alone decide under `priority`; a span only a later source
+  covers is still drawn. The chart reads up to 1,000 summaries, 200 a
+  page, and says so where the window holds more; a failed read says so
+  with a retry. WHOOP's nightly heart rate variability on a sleep is one
+  such summary; a cycle's average heart rate, which reaches past the
+  night, is not. With `empty: hide` a chart none of whose metrics was
+  measured over the window, by a point or by such a summary, is left
+  out, as a night's heart rate is on a sleep a source scored without
+  samples; a zoom never hides it, nor a failed read.
 - **spans**: a coded amount metric's values over the window as spans, one
   row per code in the order `codes` lists them (a code it does not list goes
   last), each under its `label`. A metric of any other form, or one listing

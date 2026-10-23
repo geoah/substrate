@@ -20,8 +20,10 @@ import {
   cellFraction,
   chartMeasured,
   chartReads,
+  CHART_SUMMARIES_PAGES,
   chartSummaries,
-  evenBuckets,
+  fetchChartSummaries,
+  summaryBuckets,
   summarySeries,
   changeSinceWords,
   deltaWords,
@@ -1938,8 +1940,9 @@ describe("a table's tiles", () => {
 })
 
 describe("summaries a chart draws where its line has no value", () => {
-  const OWN = "a.example.com/observations/source/ring"
-  const OTHER = "a.example.com/observations/source/watch"
+  const RING = "a.example.com/observations/source/ring"
+  const WATCH = "a.example.com/observations/source/watch"
+  const HRV = "a.example.com/observations/metric/health/hrv_rmssd"
   function obs(props: Record<string, unknown>): SubstrateRecord {
     return {
       id: String(Math.random()),
@@ -1951,6 +1954,13 @@ describe("summaries a chart draws where its line has no value", () => {
       updatedAt: "2026-10-11T07:00:00Z",
     }
   }
+  function sourceRecord(path: string, rank?: number): SubstrateRecord {
+    return {
+      ...obs(rank ? { priorities: { [HRV]: rank } } : {}),
+      id: path.slice(path.lastIndexOf("/") + 1),
+      kind: path.slice(0, path.lastIndexOf("/")),
+    }
+  }
   const night = {
     at: "2026-10-10T23:00:00Z",
     endsAt: "2026-10-11T07:00:00Z",
@@ -1958,49 +1968,108 @@ describe("summaries a chart draws where its line has no value", () => {
     statistic: "vendor",
   }
 
-  it("keeps the record's own source where it kept any, and every source otherwise", () => {
+  it("keeps the record's own source under prefer, and the sources' priorities otherwise", () => {
     const records = [
-      obs({ ...night, source: { ref: OTHER } }),
-      obs({ ...night, source: { ref: OWN } }),
+      obs({ ...night, source: { ref: WATCH } }),
+      obs({ ...night, source: { ref: RING } }),
       // No span, no summary.
-      obs({ at: night.at, value: night.value, source: { ref: OWN } }),
+      obs({ at: night.at, value: night.value, source: { ref: RING } }),
     ]
-    expect(
-      chartSummaries(records, { source: OWN }, "prefer").map((s) => s.source)
-    ).toEqual([OWN])
-    expect(
-      chartSummaries(records.slice(0, 1), { source: OWN }, "prefer").map(
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const sources = (policy: "prefer" | "priority" | "only") =>
+      chartSummaries({ records, included }, { source: RING }, policy, HRV).map(
         (s) => s.source
       )
-    ).toEqual([OTHER])
+    expect(sources("prefer")).toEqual([RING])
+    // The watch ranks first for HRV, whatever source the record names.
+    expect(sources("priority")).toEqual([WATCH])
+    expect(sources("only")).toEqual([WATCH, RING])
   })
 
-  it("holds each summary's value across the buckets its span overlaps", () => {
-    const window: TimeRange = {
-      start: Date.parse("2026-10-10T22:00:00Z"),
-      end: Date.parse("2026-10-11T08:00:00Z"),
+  it("draws a lower-ranked source's summary over a span no better one covers", () => {
+    const records = [
+      obs({ ...night, source: { ref: WATCH } }),
+      obs({
+        ...night,
+        at: "2026-10-11T07:00:00Z",
+        endsAt: "2026-10-11T08:00:00Z",
+        source: { ref: RING },
+      }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING),
     }
-    const buckets = evenBuckets(window, "hour")
-    expect(buckets).toHaveLength(10)
-    const [line] = summarySeries(
-      chartSummaries([obs({ ...night, source: { ref: OWN } })], {}, "prefer"),
-      buckets,
-      (s) => Number(s.value)
+    expect(
+      chartSummaries({ records, included }, {}, "priority", HRV).map(
+        (s) => s.source
+      )
+    ).toEqual([WATCH, RING])
+  })
+
+  it("holds each summary level across exactly its span, with nothing across a gap", () => {
+    const window: TimeRange = {
+      start: Date.parse("2026-10-10T21:30:00Z"),
+      end: Date.parse("2026-10-11T00:30:00Z"),
+    }
+    const summaries = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            at: "2026-10-10T22:00:00Z",
+            endsAt: "2026-10-10T22:45:00Z",
+            value: { value: "50", unit: "ms" },
+            source: { ref: RING },
+          }),
+          obs({
+            ...night,
+            at: "2026-10-10T23:15:00Z",
+            endsAt: "2026-10-11T00:00:00Z",
+            value: { value: "70", unit: "ms" },
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
     )
-    // 22:00 is before the night, 07:00 after it; the eight hours between
-    // hold its one value.
-    expect(line.points.map((p) => p.value)).toEqual([
-      null,
-      62,
-      62,
-      62,
-      62,
-      62,
-      62,
-      62,
-      62,
-      null,
+    const buckets = summaryBuckets(window, summaries)
+    expect(buckets.map((b) => new Date(b.start).toISOString())).toEqual([
+      "2026-10-10T21:30:00.000Z",
+      "2026-10-10T22:00:00.000Z",
+      "2026-10-10T22:45:00.000Z",
+      "2026-10-10T23:15:00.000Z",
+      "2026-10-11T00:00:00.000Z",
     ])
+    const [line] = summarySeries(summaries, buckets, (s) => Number(s.value))
+    expect(line.points.map((p) => p.value)).toEqual([null, 50, null, 70, null])
     expect(line.statistic).toBe("vendor")
+  })
+
+  it("follows the read's pages to its budget, and says where more follow", async () => {
+    const page = (n: number, cursor?: string) => ({
+      records: [obs({ ...night, n })],
+      head: 1,
+      generation: "g",
+      ...(cursor ? { cursor } : {}),
+    })
+    const asked: (string | undefined)[] = []
+    const two = await fetchChartSummaries({}, (p) => {
+      asked.push(p.after)
+      return Promise.resolve(p.after ? page(2) : page(1, "c1"))
+    })
+    expect(asked).toEqual([undefined, "c1"])
+    expect(two.records).toHaveLength(2)
+    expect(two.truncated).toBe(false)
+    const endless = await fetchChartSummaries({}, () =>
+      Promise.resolve(page(0, "more"))
+    )
+    expect(endless.records).toHaveLength(CHART_SUMMARIES_PAGES)
+    expect(endless.truncated).toBe(true)
   })
 })
