@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -87,6 +89,52 @@ func (l latencies) pct(p float64) time.Duration {
 	return s[min(len(s)-1, int(float64(len(s))*p))]
 }
 
+// statementTally is a pgx tracer that counts a phase's statements and the
+// time they took, all of them and those that read or write an observed_
+// table, which are the settle's.
+type statementTally struct {
+	all, observed     atomic.Int64
+	allNs, observedNs atomic.Int64
+}
+
+type statementStart struct{}
+
+type statementOpen struct {
+	at       time.Time
+	observed bool
+}
+
+func (s *statementTally) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	return context.WithValue(ctx, statementStart{}, statementOpen{at: time.Now(), observed: strings.Contains(d.SQL, "observed_")})
+}
+
+func (s *statementTally) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryEndData) {
+	open, ok := ctx.Value(statementStart{}).(statementOpen)
+	if !ok {
+		return
+	}
+	took := time.Since(open.at).Nanoseconds()
+	s.all.Add(1)
+	s.allNs.Add(took)
+	if open.observed {
+		s.observed.Add(1)
+		s.observedNs.Add(took)
+	}
+}
+
+// line is the tally per put since the last call, and resets it.
+func (s *statementTally) line(puts int) string {
+	all, observed := s.all.Swap(0), s.observed.Swap(0)
+	allNs, observedNs := s.allNs.Swap(0), s.observedNs.Swap(0)
+	if puts == 0 {
+		return "no puts"
+	}
+	per := func(n int64) float64 { return float64(n) / float64(puts) }
+	return fmt.Sprintf("%.1f statements a put taking %s, of them %.1f on observed_ tables taking %s",
+		per(all), time.Duration(per(allNs)).Round(10*time.Microsecond),
+		per(observed), time.Duration(per(observedNs)).Round(10*time.Microsecond))
+}
+
 func TestObservedIndexBenchmark(t *testing.T) {
 	if os.Getenv("SUBSTRATE_BENCH_OBSERVED") != "1" {
 		t.Skip("set SUBSTRATE_BENCH_OBSERVED=1, SUBSTRATE_BENCH_DSN and SUBSTRATE_BENCH_ROOT to run the observed index benchmark")
@@ -134,7 +182,8 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root))
+	tally := &statementTally{}
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root), engine.WithTestQueryTracer(tally))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -150,6 +199,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	putSampleUnits(t, ds, "observations", "health")
 	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
 		if _, _, err := cat.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
@@ -294,6 +344,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	// --- write ---
 	heap.reset()
 	wal := walLSN()
+	tally.line(0)
 	var sensorPuts, wearPuts latencies
 	writeStarted := time.Now()
 	for at := start; at.Before(end); at = at.Add(time.Hour) {
@@ -317,6 +368,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	logf("write: %d sensor puts p50 %s p95 %s; %d wearable puts p50 %s p95 %s; took %s; WAL %d bytes; peak heap growth %d KiB",
 		len(sensorPuts), sensorPuts.pct(0.5), sensorPuts.pct(0.95), len(wearPuts), wearPuts.pct(0.5), wearPuts.pct(0.95),
 		writeTook.Round(time.Second), writeWAL, writePeak/1024)
+	logf("write statements: %s", tally.line(len(sensorPuts)+len(wearPuts)))
 
 	// --- sizes ---
 	var readings, available, records int64
@@ -446,6 +498,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 
 	// --- correction burst: every sensor's day rewritten at revision 2 ---
 	wal = walLSN()
+	tally.line(0)
 	var corrections latencies
 	day := end.AddDate(0, 0, -3)
 	for at := day; at.Before(day.Add(24 * time.Hour)); at = at.Add(time.Hour) {
@@ -455,6 +508,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	}
 	logf("correction burst: %d puts p50 %s p95 %s; WAL %d bytes; peak heap growth %d KiB",
 		len(corrections), corrections.pct(0.5), corrections.pct(0.95), walSince(wal), heap.reset()/1024)
+	logf("correction statements: %s", tally.line(len(corrections)))
 	// A patch the index does not read: the fingerprint holds.
 	var notes latencies
 	for i := range 50 {
@@ -467,6 +521,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 		notes = append(notes, time.Since(started))
 	}
 	logf("patches the index does not read: %d, p50 %s p95 %s", len(notes), notes.pct(0.5), notes.pct(0.95))
+	logf("patch statements: %s", tally.line(len(notes)))
 
 	// --- rebuild and its background re-derivation ---
 	wal = walLSN()

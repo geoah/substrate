@@ -66,14 +66,11 @@ var foldWriteSites = map[string]string{
 	// the rollups and latest rows of what it touched. A rebuild clears the
 	// tables (foldTables) and the background pass derives them again from
 	// every row (queueObservedRederivation).
-	"observedsettle.go:deleteSegments":     "the observed segments of rows a transaction wrote again or removed",
-	"observedsettle.go:insertSegmentBatch": "the observed segments of rows a transaction wrote",
-	"observedsettle.go:streamIDs":          "a stream's private id, which a rebuild may allocate again differently",
-	"observedsettle.go:widenExtents":       "a stream's longest record extent, a bound that only grows and that a rebuild derives again",
-	"observedsettle.go:dropUnnamedTiers":   "the rollup rows of tiers a metric no longer names, around the instants a transaction touched",
-	"observedsettle.go:replaceRows":        "the rollup rows of the buckets a transaction's segments touched, before they are computed again",
-	"observedsettle.go:insertRollupBatch":  "the rollup rows of the buckets a transaction's segments touched",
-	"observedsettle.go:recomputeLatest":    "the observed latest rows of the streams a transaction's segments touched",
+	"observedsettle.go:writeSegmentBatch": "the observed segments of rows a transaction wrote or removed, and a stream's longest record extent, a bound that only grows and that a rebuild derives again",
+	"observedsettle.go:allocateStreams":   "a stream's private id, which a rebuild may allocate again differently",
+	"observedsettle.go:dropUnnamedTiers":  "the rollup rows of tiers a metric no longer names, around the instants a transaction touched",
+	"observedsettle.go:writeRollupBatch":  "the rollup rows of the buckets a transaction's segments touched",
+	"observedsettle.go:recomputeLatest":   "the observed latest rows of the streams a transaction's segments touched",
 
 	// Merge and split rewrite the side stores with set-shaped statements and
 	// record a resync effect that restates the result (fold.go recordResync).
