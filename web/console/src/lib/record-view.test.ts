@@ -20,6 +20,9 @@ import {
   cellFraction,
   chartMeasured,
   chartReads,
+  chartSummaries,
+  evenBuckets,
+  summarySeries,
   changeSinceWords,
   deltaWords,
   foldedBy,
@@ -1931,5 +1934,73 @@ describe("a table's tiles", () => {
     expect(changeSinceWords(SHIPPED_UNITS, 3.9, 3.9, then, "mmol/L")).toBe(
       "No change since Oct 15, 2025"
     )
+  })
+})
+
+describe("summaries a chart draws where its line has no value", () => {
+  const OWN = "a.example.com/observations/source/ring"
+  const OTHER = "a.example.com/observations/source/watch"
+  function obs(props: Record<string, unknown>): SubstrateRecord {
+    return {
+      id: String(Math.random()),
+      kind: "a.example.com/observations/observation",
+      properties: props,
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-11T07:00:00Z",
+      updatedAt: "2026-10-11T07:00:00Z",
+    }
+  }
+  const night = {
+    at: "2026-10-10T23:00:00Z",
+    endsAt: "2026-10-11T07:00:00Z",
+    value: { value: "62", unit: "ms" },
+    statistic: "vendor",
+  }
+
+  it("keeps the record's own source where it kept any, and every source otherwise", () => {
+    const records = [
+      obs({ ...night, source: { ref: OTHER } }),
+      obs({ ...night, source: { ref: OWN } }),
+      // No span, no summary.
+      obs({ at: night.at, value: night.value, source: { ref: OWN } }),
+    ]
+    expect(
+      chartSummaries(records, { source: OWN }, "prefer").map((s) => s.source)
+    ).toEqual([OWN])
+    expect(
+      chartSummaries(records.slice(0, 1), { source: OWN }, "prefer").map(
+        (s) => s.source
+      )
+    ).toEqual([OTHER])
+  })
+
+  it("holds each summary's value across the buckets its span overlaps", () => {
+    const window: TimeRange = {
+      start: Date.parse("2026-10-10T22:00:00Z"),
+      end: Date.parse("2026-10-11T08:00:00Z"),
+    }
+    const buckets = evenBuckets(window, "hour")
+    expect(buckets).toHaveLength(10)
+    const [line] = summarySeries(
+      chartSummaries([obs({ ...night, source: { ref: OWN } })], {}, "prefer"),
+      buckets,
+      (s) => Number(s.value)
+    )
+    // 22:00 is before the night, 07:00 after it; the eight hours between
+    // hold its one value.
+    expect(line.points.map((p) => p.value)).toEqual([
+      null,
+      62,
+      62,
+      62,
+      62,
+      62,
+      62,
+      62,
+      62,
+      null,
+    ])
+    expect(line.statistic).toBe("vendor")
   })
 })

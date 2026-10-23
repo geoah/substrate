@@ -59,8 +59,10 @@ data:
               label: Highest
           bucket: auto
           sources: prefer
-          # A source that writes no samples inside the night, as WHOOP does
-          # not, leaves this chart empty: it is left out rather than said.
+          # A metric with no samples inside the night draws its summaries
+          # that lie inside it instead: WHOOP's HRV and respiratory rate are
+          # one value over the sleep. A chart with neither, as heart rate is
+          # for WHOOP, is left out rather than said.
           empty: hide
       - spans:
           label: Sleep stages
