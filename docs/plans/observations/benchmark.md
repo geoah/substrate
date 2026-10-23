@@ -29,6 +29,8 @@ It then reads, rewrites one day of every sensor at revision 2 (a
 correction burst), patches 50 records with a property the index does not
 read, rebuilds the repository, waits for the background re-derivation, and
 reads again. Every metric keeps the default tiers, `15m`, `1h` and `1d`.
+Since issue 991 the sample's sensor metrics keep `1h` and `1d` alone; the
+section on it below has the numbers, and the results here are from before.
 
 **Caveats.** One run, scaled down: 30 days, not a year, because a durable
 write on this machine takes about 150 ms and a year of these writes is about
@@ -144,6 +146,40 @@ observed statements 13 ms, the 15 `property_managers` inserts a put 7 ms,
 and about 85 ms is outside any statement. That last part holds validating
 and deriving the readings and writing and syncing the changelog segment
 file; the tracer does not split it further.
+
+## Sensor metrics without the 15-minute tier (issue 991, 2026-10-23)
+
+The observations sample's six shared metrics (the home sensors' metrics)
+now declare `rollups: [1h, 1d]`; the wearables' health metrics keep the
+default. One 7-day run, same box, after the settle change above, against
+that run with every metric at the default. The load average was between 6
+and 8.
+
+| | Default tiers | Sensors at `1h` and `1d` |
+| --- | ---: | ---: |
+| rollup rows | 22,806 | 9,366 |
+| of them `15m` | 17,919 | 4,479 (the wearables') |
+| `observed_rollups`, total bytes | 11,288,576 | 4,497,408 |
+| index bytes per reading | 55.4 | 27.2 |
+| sensor put, p50 | 141.8 ms | 115.1 ms |
+| observed statements a put | 11.4 | 9.8 |
+| write WAL | 110,654,184 bytes | 98,784,704 bytes |
+| 15-minute means per sensor, last 7 days, p50 | 45.0 ms | 146.3 ms |
+
+The sensors' index is now about 16 bytes a reading (3,500 rollup rows and
+3,360 segments for 201,600 readings), from about 50. The cost is the
+15-minute read, which takes the raw points: 146 ms for 672 buckets a sensor,
+where the `15m` rows took 45 ms. Hourly and daily reads are unchanged. Part
+of the faster put is the lower load during this run.
+
+**Shrinking the rows.** The record id columns (`first_record_id`,
+`last_record_id`) are about 47 bytes of a row's 318 bytes of tuple data
+(`pg_column_size`): 848,690 of 5,708,760 bytes in the default run's `15m`
+tier, 441,230 of 2,855,620 bytes over every tier in this run. A compact form
+(a segment's numeric id and an ordinal) would save about 35 bytes a row:
+about 330 KB here, 1.4 bytes a reading, about 17 MB a year at this
+workload. It needs a migration and a surrogate key on `observed_segments`,
+and is not done.
 
 ## Before: one row per point (2026-10-11)
 

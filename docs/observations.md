@@ -152,7 +152,9 @@ either way);
 `rollups` lists the rollup tiers the observed index keeps for it;
 `algorithm` (`{vendor, name, version}`) names a vendor's scoring method. The sample ships
 six metrics several domains share: `air_temperature`, `relative_humidity`,
-`energy`, `power`, `illuminance` and `atmospheric_pressure`.
+`energy`, `power`, `illuminance` and `atmospheric_pressure`. Each keeps the
+`1h` and `1d` rollup tiers and no `15m`, because a home sensor reports about
+once a minute ([rollup tiers](#rollup-tiers)).
 
 **`observation`** declares the trait's single properties and adds:
 `periodId`, the source's own identity for a summary's period (a WHOOP cycle
@@ -789,7 +791,15 @@ read and the latest row pick the same point of a tie.
 A metric names the widths its streams are rolled up in, in its `rollups`:
 any of `5m`, `15m`, `1h` and `1d`, finest first. A metric that names none
 takes `15m`, `1h` and `1d`; one that names an empty list keeps no rollup
-row, and every read of it takes raw points. A tier's bucket starts at a
+row, and every read of it takes raw points.
+
+A metric whose sources report about once a minute or more often (a home
+sensor, a meter) names `["1h", "1d"]`. At a reading a minute the `15m` tier
+is four rows an hour per stream: in [the benchmark](plans/observations/benchmark.md)
+it was 79% of the rollup rows, and dropping it took a sensor's index from
+about 50 bytes a reading to about 16. A read in 15-minute buckets then takes
+the raw points: 146 ms for a week of one sensor, against 45 ms from `15m`
+rows. A tier's bucket starts at a
 multiple of its width **in the group's own offset**, and in UTC where the
 offset is unknown, so a `1d` row of a `+02:00` group is a local day and a
 `1h` row of a `+05:30` group starts at half past the UTC hour.
@@ -903,13 +913,15 @@ appended to. Its id is composed from the sensor and the chunk's start
 the same chunk lands on the same record, and a resend with the same values
 moves nothing in the index: the segment's fingerprint holds. A chunk carries
 one `utcOffset`; the hour a clock changes splits where the offset changes.
+The metric a sensor writes to keeps the `1h` and `1d` tiers, as the six
+shared metrics do ([rollup tiers](#rollup-tiers)).
 
 What each choice costs, measured on a durable Postgres
 ([the benchmark](plans/observations/benchmark.md)):
 
 | Choice | Cost |
 | --- | --- |
-| One trace per sensor and hour | about 200 bytes a reading: 144 in the records and the changelog, 57 in the index; 8,760 writes a sensor a year, each about 160 ms on a disk that takes 40 ms to sync |
+| One trace per sensor and hour | about 160 bytes a reading: 144 in the records and the changelog, about 16 in the index with the `1h` and `1d` tiers; 8,760 writes a sensor a year, each about 120 to 160 ms on a disk that takes 40 ms to sync |
 | One trace per sensor and quarter hour | four times the writes, 35,040 a sensor a year, and four times the segments; each write costs about what an hour's does, so the write time is four times as much |
 | One record per reading | a records row, a changelog line and a segment for every reading, each carrying the fixed part of the 8.7 KB an hour's trace of 60 readings costs, and a write for each |
 | Appending to an open chunk | every append rewrites the whole record: its changelog line grows with the chunk, so an hour appended a minute at a time writes about 30 times its readings, and each append recomputes the chunk's buckets |
