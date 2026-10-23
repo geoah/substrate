@@ -130,6 +130,11 @@ export interface PropSpec {
   minQuantity?: Quantity
   maxQuantity?: Quantity
   pattern?: string
+  /** `blobref` and `json`: the media types the value is declared to hold
+   * (`application/pdf`, `application/vnd.inkidian+json`). They choose how
+   * the value is shown and what an upload offers; the server checks their
+   * spelling and nothing else. */
+  mediaTypes?: string[]
   /** The declared `writer:` role. Anything but the owner is host-managed and
    * never offered for editing. */
   writer?: string
@@ -328,6 +333,7 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     max: numberOr(def.max),
     ...(def.type === "quantity" ? quantitySpecOf(def) : {}),
     pattern: typeof def.pattern === "string" ? def.pattern : undefined,
+    mediaTypes: stringList(def.mediaTypes),
     writer: typeof def.writer === "string" ? def.writer : undefined,
     description:
       typeof def.description === "string" ? def.description : undefined,

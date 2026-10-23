@@ -807,9 +807,9 @@ agents have no reservation today.
 A declaration's key set is closed, so a key one binary does not know
 [quarantines](#quarantine) the package that ships it. That makes adding a
 key an upgrade of every binary that might read the closure, which is why a key
-enters the dialect before anything acts on it. Two are reserved today: each is
-admitted, validated at load and stored on the declaration, and neither changes
-a write. `renamedFrom:`, above, was reserved the same way and is acted on now,
+enters the dialect before anything acts on it. Three are reserved today: each is
+admitted, validated at load and stored on the declaration, and none changes a
+write. `renamedFrom:`, above, was reserved the same way and is acted on now,
 on a property and on a value entry alike. A kind's `purpose:` sits between the
 two: it changes no write either, but it is not waiting on anything, because
 the reader it exists for is a client.
@@ -857,6 +857,25 @@ card suggests writing. This repository prefers add-and-deprecate to narrowing,
 and the marker is what makes the deprecated half tellable from the live one. A
 `deprecated:` declaration may not also be `required:`, because a form cannot
 both stop offering a value and refuse to submit without it.
+
+**`mediaTypes:` names the format a blob-ref's bytes are**
+([record 0190](decisions/0190-a-blobref-declares-the-media-types-of-its-bytes.md)):
+
+```yaml
+properties:
+  scan:
+    type: blobref
+    mediaTypes: [application/pdf, image/*]
+  ink:
+    type: blobref
+    mediaTypes: [application/vnd.inkidian+json]
+```
+
+Each entry is a lowercase `type/subtype` without parameters, or `type/*`.
+`*/*`, a duplicate and an empty list are refused, and so is the key on any
+other datatype. A client reads it to pick a renderer and to filter an upload.
+**Nothing enforces it yet**: a write that points a `blobref` at bytes of
+another media type is stored like any other.
 
 **`purpose:` says why a kind exists**
 ([record 0133](decisions/0133-a-kind-declares-its-purpose.md)). It sits on the

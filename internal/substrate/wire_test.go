@@ -64,6 +64,9 @@ var wireTypes = map[string]any{
 	"RecordFilter": Filter{},
 	"KindInfo":     KindInfo{},
 	"KindLabel":    KindLabel{},
+	// A blob's manifest: what PUT /blobs answers and what a blobref property
+	// resolves to on a read. The console uploads blobs and reads them back.
+	"BlobInfo": BlobInfo{},
 
 	// The change feed: the entry, the trigger stance decorating a row, the
 	// row, and the history page. The row and the page are what /changes and

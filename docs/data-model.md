@@ -332,7 +332,7 @@ are written and filtered the same way.
 | `state`            | a state machine: `states`, `initial`, `transitions`, stamps |
 | `secret`           | a credential: written like a string, read back redacted, stored in the sealed store |
 | `digest`           | a server-minted SHA-256 comparator, redacted like a secret  |
-| `blobref`          | names stored bytes by digest                                |
+| `blobref`          | names stored bytes by digest; optional `mediaTypes` says what the bytes are ([vocabulary](vocabulary.md#the-reserved-keys)) |
 | `object`           | inline `fields:` of scalar types, one level                 |
 | `reference`        | a typed pointer at another record: `<kind>/<id>`            |
 | `json`             | escape hatch: a schemaless blob                             |

@@ -15,6 +15,8 @@ import { MoneyValue } from "@/components/identity/money-value"
 import { QuantityValue } from "@/components/identity/quantity-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
+import { BlobChip } from "@/components/ink/blob-chip"
+import { readBlobInfo } from "@/lib/api/blobs"
 import { readReference } from "@/lib/api/types"
 import { coverageWords } from "@/lib/observations-time"
 import { scalarText } from "@/lib/format"
@@ -112,6 +114,8 @@ function ScalarValue({
   }
   if (spec.kind === "money") return <MoneyValue value={value} />
   if (spec.kind === "quantity") return <QuantityValue value={value} />
+  const blob = spec.kind === "blobref" ? readBlobInfo(value) : undefined
+  if (blob) return <BlobChip blob={blob} />
   if (typeof value === "object" && value !== null) {
     return <JsonBlock value={value} />
   }
