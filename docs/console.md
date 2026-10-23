@@ -1138,7 +1138,13 @@ row of controls scopes every chart:
   chosen sources, things and channels first, each takes the statistic the
   single read would where it keeps it, else its own default, a stream
   naming no source included, and each plot reads one thing's streams and
-  draws those alone, never more sources than were chosen. A category's
+  draws those alone, never more sources than were chosen. Each plot is named
+  for its statistic and, where the metric is about several things, for the
+  thing ("Heart rate (average, Ada)"); a metric splits into six plots at
+  most, and the chart says how many more it leaves unread. A chart has at
+  most four reads in flight, the next starting as one settles. Where sources
+  overlap, the chart says which comes first only where its read resolves
+  them by priority. A category's
   time over its bucket is checked per source and channel, each its own
   stack;
 - where to read from: automatic, raw points, vendor summaries, or raw where

@@ -192,7 +192,15 @@ export interface PlotSource {
   metricPath: (value: string) => string | undefined
   /** The unit reader the plot's unit choices come from. */
   units: UnitReader
+  /** A record's title, read under a pin: a plot split by thing is named
+   * for it. */
+  nameOf?: (value: string, pin?: string) => string
 }
+
+/** The most plots one metric is split into by statistic and thing: each is
+ * a read of its own, so a metric about two hundred people never asks two
+ * hundred at once. The rest are said, never read. */
+export const MAX_SPLIT_PLOTS = 6
 
 /** The choices one chart's metrics are read under. */
 export interface PlotScope {
@@ -279,6 +287,9 @@ export interface Plot {
   /** Its series are told apart by source: grouped by source, a category's
    * stacks too (`plotRows` keeps a selection's by the same key). */
   bySource?: boolean
+  /** On the first of a metric's plots split by statistic and thing, how
+   * many more the split would make past `MAX_SPLIT_PLOTS`, never read. */
+  splitOmitted?: number
   /** The column the chart draws, a reducer key. */
   pickedKey: string
   /** Why the plot asks nothing, in words; absent where it reads. */
@@ -399,8 +410,25 @@ export function planPlots(
   if (new Set([...parts.values()].map((p) => p.statistic)).size < 2) {
     return [plan]
   }
-  const ids = new Set<string>()
-  return [...parts.values()].map(({ statistic, streams: members }) => {
+  // In a stable order, whatever order the streams came in: the statistic
+  // the single read takes first, then by statistic, then the owner's
+  // before each thing's by path.
+  const ordered = [...parts.values()].sort(
+    (a, b) =>
+      Number(b.statistic === plan.statistic) -
+        Number(a.statistic === plan.statistic) ||
+      a.statistic.localeCompare(b.statistic) ||
+      (a.streams[0].about ?? "").localeCompare(b.streams[0].about ?? "")
+  )
+  const abouts = new Set(streams.map((s) => s.about ?? ""))
+  const thingWords = (about: string | undefined) =>
+    !about
+      ? "you"
+      : (obs.nameOf?.(about, obs.pins.about) ??
+        about.slice(about.lastIndexOf("/") + 1))
+  const kept = ordered.slice(0, MAX_SPLIT_PLOTS)
+  const omitted = ordered.length - kept.length
+  return kept.map(({ statistic, streams: members }, i) => {
     // The read narrows sources, things and channels each on its own; the
     // plot's streams are its selection, so a stream another plot reads
     // (its source on another channel) is dropped from this one's rows.
@@ -412,14 +440,17 @@ export function planPlots(
       statistic,
       streams: members,
     })
-    const planned = p.statistic ?? statistic
-    let id = `${metric}\u0000${planned}`
-    while (ids.has(id)) id += "\u0000"
-    ids.add(id)
+    const about = members[0].about
+    const words = [
+      statisticWords(statistic).toLowerCase(),
+      ...(abouts.size > 1 ? [thingWords(about)] : []),
+    ]
     return {
       ...p,
-      id,
-      name: `${p.name} (${statisticWords(planned).toLowerCase()})`,
+      // The statistic and the thing it was split by, never an order.
+      id: `${metric}\u0000${statistic}\u0000${about ?? ""}`,
+      name: `${p.name} (${words.join(", ")})`,
+      ...(i === 0 && omitted > 0 ? { splitOmitted: omitted } : {}),
     }
   })
 }

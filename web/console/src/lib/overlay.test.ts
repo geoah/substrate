@@ -45,6 +45,7 @@ import {
   mixedFrom,
   overfull,
   planPlot,
+  MAX_SPLIT_PLOTS,
   planPlots,
   plotRows,
   seriesColors,
@@ -1238,6 +1239,46 @@ describe("one metric's plots grouped by source, against their answers", () => {
       ["Heart rate (average)", [WHOOP]],
       ["Heart rate (highest)", [NONE]],
     ])
+  })
+})
+
+describe("a metric split about many things", () => {
+  const people = Array.from(
+    { length: 200 },
+    (_, i) => `ada.example.com/people/person/p${String(i).padStart(3, "0")}`
+  )
+  const streams: Stream[] = people.map((about, i) => ({
+    key: `${HEART}\n${WHOOP}\n${about}\n`,
+    metric: HEART,
+    source: WHOOP,
+    about,
+    value: "60",
+    unit: "/min",
+    form: "summary",
+    at: "2026-10-07T05:00:00Z",
+    end: "2026-10-07T19:00:00Z",
+    statistics: [i % 2 ? "max" : "avg"],
+    statistic: i % 2 ? "max" : "avg",
+  }))
+  const scope: PlotScope = { ...SCOPE, group: "source" }
+
+  it("plans a bounded number of plots, and counts the rest", () => {
+    const plots = planPlots(source(streams), HEART, scope)
+    expect(plots).toHaveLength(MAX_SPLIT_PLOTS)
+    expect(plots[0].splitOmitted).toBe(200 - MAX_SPLIT_PLOTS)
+    // Each names its statistic and the thing it reads.
+    expect(plots[0].name).toBe("Heart rate (average, p000)")
+  })
+
+  it("keys each plot by its statistic and thing, whatever order the streams came in", () => {
+    const named = (list: Stream[]) =>
+      Object.fromEntries(
+        planPlots(source(list), HEART, scope).map((p) => [p.id, p.name])
+      )
+    // A thing's plot keeps its id when another thing's stream moves ahead,
+    // and no two plots read as one.
+    expect(named([...streams].reverse())).toEqual(named(streams))
+    expect(new Set(Object.values(named(streams))).size).toBe(MAX_SPLIT_PLOTS)
   })
 })
 

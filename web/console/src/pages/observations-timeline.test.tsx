@@ -636,7 +636,21 @@ describe("the timeline's requests", () => {
                 ...GARMIN_SLEEP,
               ],
             }
-          : answer(read)
+          : read.aggregate.metric
+            ? answer(read)
+            : // The Garmin keeps a sleep stream beside WHOOP's.
+              latestAnswer(read, {
+                ...LATEST,
+                rows: [
+                  ...LATEST.rows,
+                  ...LATEST.rows
+                    .filter((r) => r.group?.metric === SLEEP_STAGE)
+                    .map((r) => ({
+                      ...r,
+                      group: { ...r.group, source: GARMIN },
+                    })),
+                ],
+              })
     )
     const sleep = await lane("Sleep stage")
     const read = charts(server.seen, "health/sleep_stage").at(-1)!
@@ -648,6 +662,8 @@ describe("the timeline's requests", () => {
         "Stacked by category, one stack per source."
       )
     ).toBeTruthy()
+    // Every source is drawn, so no source is said to come first.
+    expect(document.body.textContent).not.toContain("Where sources overlap")
     // A legend entry per code and source.
     await waitFor(() =>
       expect(sleep.textContent?.match(/Deep \(/g)).toHaveLength(2)
@@ -749,12 +765,72 @@ describe("the timeline's requests", () => {
               rows: [summary("avg"), summary("max", MIA)],
             })
     )
-    const chart = await lane("Heart rate (average) and Heart rate (highest)")
+    // Each plot names the thing it reads, as the split is by thing too.
+    const chart = await screen.findByRole("region", {
+      name: /^Heart rate \(average, you\) and Heart rate \(highest, .*mia.*\)$/i,
+    })
     const lines = () => chart.querySelectorAll("svg g[data-series]").length
     await waitFor(() => expect(lines()).toBe(2))
     const [first] = within(chart).getAllByRole("button", { pressed: true })
     fireEvent.click(first)
     expect(lines()).toBe(1)
+  })
+
+  it("reads a metric split about many people a few plots at a time, and says what it leaves out", async () => {
+    const people = Array.from(
+      { length: 12 },
+      (_, i) => `ada.example.com/people/person/p${String(i).padStart(2, "0")}`
+    )
+    const summary = (statistic: string, about: string) => ({
+      start: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      form: "summary",
+      group: { metric: HEART, source: WHOOP, statistic, about },
+      values: [{ reducer: "last", value: "60", unit: "/min" }],
+      count: 30,
+      bounded: 0,
+      synthetic: false,
+    })
+    const server = mount(
+      `?metric=health/heart_rate&source=whoop-4-0&group=source&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric
+          ? { ...ZONES, rows: [] }
+          : latestAnswer(read, {
+              ...LATEST,
+              rows: people.map((p, i) => summary(i % 2 ? "max" : "avg", p)),
+            })
+    )
+    let inFlight = 0
+    let most = 0
+    const gates: (() => void)[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const raw = new URL(String(input), "http://test").searchParams.get(
+          "aggregate"
+        )
+        const chart = raw && (JSON.parse(raw) as { metric?: unknown }).metric
+        if (chart) {
+          inFlight++
+          most = Math.max(most, inFlight)
+          await new Promise<void>((r) => gates.push(r))
+          inFlight--
+        }
+        return server.fetch(input)
+      })
+    )
+    await waitFor(() => {
+      for (const go of gates.splice(0)) go()
+      expect(charts(server.seen, "health/heart_rate").length).toBe(6)
+    })
+    expect(most).toBeLessThanOrEqual(4)
+    expect(
+      await screen.findByText(
+        /6 more plots of this metric, by statistic and thing, are not read/
+      )
+    ).toBeTruthy()
   })
 
   it("says Group by about does not apply to a category metric", async () => {

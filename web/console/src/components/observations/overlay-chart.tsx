@@ -142,6 +142,9 @@ function choiceWords(plot: Plot): string {
   )
 }
 
+/** The most of one chart's reads in flight at once. */
+const MAX_CHART_READS = 4
+
 export function OverlayChart({
   obs,
   plots,
@@ -192,13 +195,31 @@ export function OverlayChart({
   // own. A changed bucket, filter or reducer the cached answers carry holds
   // the frame while a request loads (`heldAnswer`).
   const reading = drawn.filter((p) => p.read && obs.knows(p.metric))
+  // At most MAX_CHART_READS requests are in flight: the next starts as one
+  // settles, so a metric split into many plots queues rather than crowd
+  // the server's few aggregate slots. A new set of reads starts the queue
+  // over.
+  const readsKey = reading.map((p) => JSON.stringify(p.read)).join("\n")
+  const [window_, setWindow] = useState({
+    key: readsKey,
+    open: MAX_CHART_READS,
+  })
+  const open = window_.key === readsKey ? window_.open : MAX_CHART_READS
+  if (window_.key !== readsKey) setWindow({ key: readsKey, open })
   const queries: UseQueryResult<AggregateResult>[] = useQueries({
-    queries: reading.map((plot) => ({
+    queries: reading.map((plot, i) => ({
       ...aggregateQueryOptions(plot.read!, obs.observedIds),
+      enabled: i < open,
       placeholderData: (prev?: AggregateResult) =>
         prev ?? heldAnswer(client, plot.read!, obs.observedIds),
     })),
   })
+  const settled = queries
+    .slice(0, open)
+    .filter((q) => !q.isFetching && (q.isSuccess || q.isError)).length
+  if (open < reading.length && settled + MAX_CHART_READS > open) {
+    setWindow({ key: readsKey, open: settled + MAX_CHART_READS })
+  }
 
   const states = drawn.map((plot): PlotState => {
     const blank = {
@@ -810,7 +831,17 @@ function chartNotes(
       ),
       ...(plot.sourceless ? ["values naming no source"] : []),
     ]
-    if (plot.groupKey !== "source" && plot.spec && overlapping.length > 1) {
+    if (plot.splitOmitted) {
+      own.push(
+        `${plot.splitOmitted} more plots of this metric, by statistic and thing, are not read. Narrow About or Source to see them.`
+      )
+    }
+    // Said only where the read resolves sources by priority: grouped by
+    // source, a category draws every source.
+    if (
+      plot.read?.aggregate.sources?.policy === "priority" &&
+      overlapping.length > 1
+    ) {
       const [first, ...rest] = overlapping
       own.push(
         `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
