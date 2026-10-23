@@ -35,6 +35,7 @@ import {
   CONSOLE_PREFERENCE_KIND,
   type ThemePreference,
 } from "@/lib/console-preferences"
+import { changeServer, nativeShell } from "@/lib/shell"
 import { AccountRows } from "@/pages/account"
 import { ApiTokens, SignedInRows } from "@/pages/tokens"
 
@@ -199,6 +200,28 @@ function ServerRows() {
   )
 }
 
+/** In a native app the substrate is the one the app was pointed at, and this
+ * is the way to point it elsewhere; a browser's address bar already is. */
+function ShellServerRow() {
+  const shell = nativeShell()
+  if (!shell) return null
+  return (
+    <SettingRow
+      title="Server"
+      description={
+        <span className="font-mono [overflow-wrap:anywhere]">
+          {shell.server}
+        </span>
+      }
+      control={
+        <Button variant="outline" size="sm" onClick={() => changeServer()}>
+          Change server
+        </Button>
+      }
+    />
+  )
+}
+
 function DeveloperRows() {
   const kinds = useQuery(kindsQueryOptions)
   const system = (kinds.data ?? []).filter(
@@ -280,6 +303,7 @@ export function ConsoleSettingsPage() {
         <AccountRows />
       </SettingsSection>
       <SettingsSection title="Signed in">
+        <ShellServerRow />
         <SignedInRows />
       </SettingsSection>
       <SettingsSection title="Your data">

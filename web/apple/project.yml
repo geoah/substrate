@@ -1,0 +1,84 @@
+# The Apple apps: the console, bundled, in a native window on macOS, iPadOS
+# and iOS. xcodegen writes Substrate.xcodeproj from this file and the project
+# is never committed; `mise run apple:project` regenerates it.
+name: Substrate
+options:
+  bundleIdPrefix: dev.reamde.substrate
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+packages:
+  # The macOS updater. iOS has none: an iPhone installs a release from its
+  # manifest, and the app only offers the link (Updater.swift).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+settings:
+  base:
+    DEVELOPMENT_TEAM: KFA5J8GDWJ
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Stamped by `apple.sh release` and empty everywhere else: a build with
+    # no SUBSTRATE_UPDATES_URL never looks for an update, so a local build
+    # is not offered whatever was published last.
+    SUBSTRATE_VERSION: ""
+    SUBSTRATE_CHANNEL: ""
+    SUBSTRATE_COMMIT: ""
+    SUBSTRATE_UPDATES_URL: ""
+    SUBSTRATE_SPARKLE_KEY: ""
+targets:
+  Substrate:
+    # One native target for iPhone, iPad and Mac: not Mac Catalyst and not
+    # "Designed for iPad". UIKit and AppKit code sit behind `#if os(...)`.
+    type: application
+    platform: auto
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - Substrate
+    dependencies:
+      - package: Sparkle
+        destinationFilters: [macOS]
+    settings:
+      base:
+        PRODUCT_NAME: Substrate
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.console
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Support/Info-iOS.plist
+        "INFOPLIST_FILE[sdk=macosx*]": Support/Info-macOS.plist
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Support/Substrate-macOS.entitlements
+        # The shared target takes iOS's runpath, and a Mac bundle keeps its
+        # frameworks beside MacOS/, not in it: without this Sparkle is not
+        # found and the app dies at launch.
+        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
+        ENABLE_HARDENED_RUNTIME: "YES"
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # The console copy below reads ../console/dist, outside the target.
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+      configs:
+        # A debug build runs outside the sandbox, so DebugDriver's folder is
+        # one a terminal can reach: a container is closed to other apps.
+        Debug:
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": ""
+    postBuildScripts:
+      # The console is not compiled here: `mise run console:build` writes
+      # web/console/dist, and every build copies that whole into the bundle,
+      # so the app serves exactly the build the server image would.
+      - name: Bundle the console
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        script: |
+          set -euo pipefail
+          src="${PROJECT_DIR}/../console/dist"
+          if [ ! -f "${src}/index.html" ]; then
+            echo "error: ${src} has no build; run mise run console:build" >&2
+            exit 1
+          fi
+          dst="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/console"
+          mkdir -p "${dst}"
+          rsync -a --delete "${src}/" "${dst}/"

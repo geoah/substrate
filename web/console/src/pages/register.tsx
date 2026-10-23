@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { BoxesIcon, CheckIcon, CopyIcon } from "lucide-react"
 import { QRCodeCanvas } from "qrcode.react"
 
+import { ShellServer } from "@/components/shell-server"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -31,6 +32,7 @@ import {
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
+import { substrateHostname } from "@/lib/shell"
 
 /** Long enough that argon2id is not the only thing between a guess and the
  * repository; the server has no opinion beyond non-empty. */
@@ -119,7 +121,7 @@ function KeepKeyField({
 /** The authority a repository name resolves to, mirroring the server's rule
  * (`vocabulary.RepositoryAuthority`) so the form shows the name the
  * repository will actually get: a name carrying a dot IS the authority, and a
- * bare label sits under the host serving this console, the way a handle sits
+ * bare label sits under the substrate's host, the way a handle sits
  * under its server. */
 function repositoryAuthority(name: string, host: string): string {
   const n = name.trim().replace(/\.$/, "").toLowerCase()
@@ -152,7 +154,7 @@ export function RegisterPage() {
   // The name the repository will actually get. Sending the resolved value
   // rather than leaving the completion to the server keeps what the form
   // shows and what the repository gets one string.
-  const authority = repositoryAuthority(repository, window.location.hostname)
+  const authority = repositoryAuthority(repository, substrateHostname())
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
@@ -522,6 +524,7 @@ export function RegisterPage() {
           </Link>
           .
         </p>
+        <ShellServer />
       </div>
     </div>
   )
