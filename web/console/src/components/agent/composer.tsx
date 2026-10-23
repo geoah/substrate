@@ -27,6 +27,7 @@ export function Composer({
   agents,
   onPickAgent,
   busy,
+  blockedReason,
   disabled,
   onStop,
   stopping = false,
@@ -40,6 +41,9 @@ export function Composer({
   onPickAgent?: (agent: string) => void
   /** A run is in flight. */
   busy: boolean
+  /** Why a send cannot go right now, shown beside the button while the
+   * text stays in the box. Nothing is sent later on its own. */
+  blockedReason?: string
   /** Sending cannot work at all (no agent, no key). */
   disabled?: boolean
   /** Stops the running turn; set while one streams. */
@@ -58,7 +62,8 @@ export function Composer({
   }, [value])
 
   const name = agentId ? agentName(agentId) : "an agent"
-  const canSend = !busy && !disabled && value.trim().length > 0
+  const canSend =
+    !busy && !blockedReason && !disabled && value.trim().length > 0
 
   return (
     <div className="px-4 pt-3 pb-4 md:px-6">
@@ -111,9 +116,15 @@ export function Composer({
             </span>
           ) : null}
           <span className="flex-1" />
-          <span className="hidden sm:inline">
-            Enter to send · Shift+Enter for a new line
-          </span>
+          {blockedReason ? (
+            <span role="status" className="text-muted-foreground">
+              {blockedReason}
+            </span>
+          ) : (
+            <span className="hidden sm:inline">
+              Enter to send · Shift+Enter for a new line
+            </span>
+          )}
           {onStop ? (
             <Button
               size="icon-sm"
@@ -130,7 +141,11 @@ export function Composer({
               disabled={!canSend}
               onClick={onSend}
             >
-              {busy ? <Spinner className="size-3.5" /> : <ArrowUpIcon />}
+              {busy || blockedReason ? (
+                <Spinner className="size-3.5" />
+              ) : (
+                <ArrowUpIcon />
+              )}
             </Button>
           )}
         </div>
