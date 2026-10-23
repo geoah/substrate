@@ -11,3 +11,10 @@ ALTER TABLE observed_segments ADD COLUMN IF NOT EXISTS first_available timestamp
 CREATE INDEX IF NOT EXISTS observed_segments_first_available_idx
     ON observed_segments (repository, stream, first_available)
     WHERE first_available IS NOT NULL;
+
+-- Every segment stored before this column holds it null, so none of them is
+-- derived under observedIndexVersion 3, whatever version observed_index
+-- records: a store whose rows reached this schema by copy or restore from one
+-- that already ran a version-3 binary would otherwise skip the re-derivation
+-- and keep the nulls. Recording version 2 makes the next open re-derive.
+UPDATE observed_index SET version = 2 WHERE version > 2;
