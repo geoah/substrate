@@ -136,7 +136,8 @@ lists it in other code systems (`{system, code, version, display}`, `system`
 being `http://loinc.org`, `healthkit`, `healthconnect`, `googlefit`, `whoop`,
 `garmin`, `withings`, `homeassistant` or `cf`); `unit` is a reference to
 the unit record writers store values in, and `units` the references to the
-units a value may be written in besides it; `codeSet` lists a categorical metric's codes; `form` and
+units a value may be written in besides it; `codeSet` lists a categorical metric's codes for a reader, and
+no write is held to it ([free-text states](#free-text-states)); `form` and
 `hold` are the defaults a writer copies onto each value; `reducers` names the
 reducers that answer something useful; `compatibility` names the class values
 pool within where the unit alone is not enough, such as serum against
@@ -368,6 +369,12 @@ A packed record is also held to these:
 - A code is never empty: `""` inside `codes` is refused naming its index
   (`props.codes[1]: a code is not empty`), and so is `code: ""` on a single
   record. `null` is the one way to say a point has nothing.
+- A code is at most 255 characters, Home Assistant's bound on a state:
+  `props.code: a code is at most 255 characters, got 300`, or
+  `props.codes[i]` naming the first longer one in a trace. The observed index
+  keys its rollup rows on the code. The bound holds a new or changed code: a
+  longer code the stored record already holds is admitted, so a row written
+  before the bound stays editable.
 
 A kind that binds core's `result` trait beside `observed(single)`, as the
 health sample's `labresult` does, holds exactly one of `value`, the coded
@@ -915,6 +922,8 @@ moves nothing in the index: the segment's fingerprint holds. A chunk carries
 one `utcOffset`; the hour a clock changes splits where the offset changes.
 The metric a sensor writes to keeps the `1h` and `1d` tiers, as the six
 shared metrics do ([rollup tiers](#rollup-tiers)).
+A sensor that reports numbers writes `values`; one whose state is a word or
+free text writes `codes` ([free-text states](#free-text-states)).
 
 What each choice costs, measured on a durable Postgres
 ([the benchmark](plans/observations/benchmark.md)):
@@ -928,6 +937,52 @@ What each choice costs, measured on a durable Postgres
 
 A dashboard that shows the current value reads it from the bridge, or from
 the latest row once the chunk is written; the substrate keeps the history.
+
+### Free-text states
+
+A sensor whose state is neither a number nor one of a fixed list of codes,
+such as the title a media player shows or a thermostat's mode string, is
+written as an observed code under a metric that lists no `codeSet`. No write
+is held to a metric's `codeSet`, so any non-empty string of at most 255
+characters is a code, and a bridge writes it as it writes a door's `open`: a
+coded gauge, `code` on an observation or `codes` in a trace. Where the
+sensor is unavailable, a trace holds `null` at that point, and a single
+observation leaves out `code` and says why in `absentReason` (such as
+`unavailable`), because a single record with neither a value nor a reason
+is refused.
+
+```yaml
+kind: ada.example.com/observations/metric
+metadata:
+  id: homeassistant/media_title
+data:
+  properties:
+    name: Media title
+    form: gauge
+    codes:
+      - {system: homeassistant, code: media_title}
+```
+
+A read takes a coded gauge's reducers: `count`, `first`, `last` and
+`timeInState`, which answers the time each title held, one value per code.
+`durationIn` takes a range of numbers and is refused on codes.
+`groupBy: ["code"]` answers one row per distinct state, which `maxGroups`
+counts. The [latest read](api.md#the-latest-read) answers the last
+available state, not necessarily the current one: an unavailable point
+after it does not replace it ([the latest row](#the-latest-row)). A reader
+that must say whether the sensor is unavailable now lists the stream's
+records that end after the latest row's start (`endsAt` greater than it),
+which takes a trace that began before that instant, and those that start at
+or after it, then reads each point's own instant, one at the same instant
+included, for a `null` or an `absentReason`. Listing only the records that
+start after it misses an outage inside the trace that holds the latest
+state.
+
+Two kinds of text are not states and go in ordinary records of a kind of
+your own: text longer than 255 characters, and text that is content rather
+than a reading, such as a notification's body or a transcript. A state's
+attributes (a track's artist and album) are each a metric of their own when
+they are read over time, and otherwise belong on such a record.
 
 ## Reading
 

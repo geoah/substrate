@@ -666,6 +666,8 @@ _RESET_RULES = ("monotonic", "signed", "wrap")
 _MAX_TRACE_POINTS = 20000
 _TRACE_BYTES_BUDGET = (1 << 20) - (64 << 10)
 _STATS_BYTES = 512
+# The write's bound on one code, in characters (vocabulary.MaxObservedCode).
+_MAX_CODE = 255
 
 
 def _decimal_text(fn, value):
@@ -976,6 +978,9 @@ class Observed:
                 if is_code:
                     if v == "":
                         raise ValueError("%s: point %d's code is empty" % (fn, i))
+                    if len(v) > _MAX_CODE:
+                        raise ValueError("%s: point %d's code is %d characters; a code is at most %d: "
+                                         "keep longer text in an ordinary record" % (fn, i, len(v), _MAX_CODE))
                 else:
                     v = _decimal_text(fn, v)
             t = _epoch_us(at)

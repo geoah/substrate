@@ -7,6 +7,8 @@ package engine_test
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -842,6 +844,163 @@ func TestAggregateTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 	})
 	if len(all.Rows) != 1 || len(all.Rows[0].Values) != 2 || all.Rows[0].Values[0].Code != "closed" || *all.Rows[0].Values[1].Value != "196" {
 		t.Errorf("every state: %+v", all.Rows)
+	}
+}
+
+// A free-text state, such as the title a media player shows, is an observed
+// code under a metric with no codeSet: nothing holds a code to its metric's
+// codeSet, so any non-empty string is admitted, spaces, punctuation and
+// non-ASCII included, as a single observation and inside a trace. A read
+// takes the coded gauge's reducers (count, first, last, timeInState, each
+// code its own state) and its latest code; durationIn, a range of numbers,
+// is refused. A code is at most 255 characters, Home Assistant's bound on a
+// state: a longer one is a 422 at the write, where it was an internal error
+// from the index's rollup key.
+func TestAggregateReadsFreeTextStatesAsCodes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := openAgg(t)
+	f.mustPut(t, f.metric, "homeassistant/media_title", map[string]any{"name": "Media title", "form": "gauge"})
+	at := time.Date(2026, 10, 1, 20, 0, 0, 0, time.UTC)
+	titles := []string{"Bohemian Rhapsody", "The Wire: S01E01 \u00b7 The Target", "Bohemian Rhapsody"}
+	for i, title := range titles {
+		f.mustPut(t, f.observation, fmt.Sprintf("tv/%d", i), map[string]any{
+			"metric": f.metricRef("homeassistant/media_title"), "source": f.sourceRef("living-room-tv"),
+			"form": "gauge", "code": title, "at": at.Add(time.Duration(i) * 10 * time.Minute).Format(time.RFC3339), "utcOffset": 0,
+		})
+	}
+	f.series("kitchen/2026-10-01T21", map[string]any{
+		"metric": f.metricRef("homeassistant/media_title"), "source": f.sourceRef("kitchen-speaker"), "form": "gauge", "utcOffset": 0,
+	}, at.Add(time.Hour), at.Add(2*time.Hour), []int64{0, 20 * 60_000}, []any{"Morning Edition, NPR", "Ελληνικά νέα"})
+	read := func(r []substrate.AggregateReducer, groupBy ...string) *substrate.AggregateResult {
+		return f.agg(ctx, substrate.Filter{}, substrate.Aggregate{
+			Metric:  &substrate.AggregateMetric{Ref: f.metricPath("homeassistant/media_title")},
+			Range:   rng(at, at.Add(2*time.Hour)),
+			GroupBy: groupBy, Reducers: r, MaxGap: "PT1H", DurationUnit: "min",
+		})
+	}
+	res := read(reducers("count", "first", "last", "timeInState"), "source")
+	if len(res.Rows) != 2 {
+		t.Fatalf("%d rows, want one per source: %+v", len(res.Rows), res.Rows)
+	}
+	codeOf := func(row substrate.AggregateRow, reducer string) string {
+		for _, v := range row.Values {
+			if v.Reducer.String() == reducer {
+				return v.Code
+			}
+		}
+		return ""
+	}
+	states := func(row substrate.AggregateRow) map[string]string {
+		out := map[string]string{}
+		for _, v := range row.Values {
+			if v.Reducer.Name == "timeInState" && v.Value != nil {
+				out[v.Code] = *v.Value
+			}
+		}
+		return out
+	}
+	tv, kitchen := res.Rows[0], res.Rows[1]
+	if tv.Group == nil || tv.Group.Source != f.sourcePath("living-room-tv") {
+		tv, kitchen = kitchen, tv
+	}
+	if n, _ := val(tv, "count"); n != "3" || codeOf(tv, "first") != titles[0] || codeOf(tv, "last") != titles[2] {
+		t.Errorf("the tv: count %s, first %q, last %q; want 3, %q, %q", n, codeOf(tv, "first"), codeOf(tv, "last"), titles[0], titles[2])
+	}
+	if got := states(tv); got[titles[0]] != "70" || got[titles[1]] != "10" || len(got) != 2 {
+		t.Errorf("the tv's time in each state: %v min; want %q 70 (10 then 60 held to the gap) and %q 10", got, titles[0], titles[1])
+	}
+	if got := states(kitchen); got["Morning Edition, NPR"] != "20" || got["Ελληνικά νέα"] != "40" {
+		t.Errorf("the kitchen trace's time in each state: %v min; want 20 and 40, to the trace's end", got)
+	}
+	if res := read(reducers("count", "timeInState"), "code"); len(res.Rows) != 4 {
+		t.Errorf("grouped by code: %d rows, want one per distinct title, 4", len(res.Rows))
+	}
+	// The bedroom tv's hour, written after the reads above: a title at
+	// 20:10 and the tv unavailable from 20:20, in one trace that began at
+	// 20:00.
+	f.series("bedroom/2026-10-01T20", map[string]any{
+		"metric": f.metricRef("homeassistant/media_title"), "source": f.sourceRef("bedroom-tv"), "form": "gauge", "utcOffset": 0,
+	}, at, at.Add(time.Hour), []int64{10 * 60_000, 20 * 60_000}, []any{"Paused: Dune", nil})
+	latest := f.agg(ctx, substrate.Filter{}, substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("homeassistant/media_title")}, GroupBy: []string{"source"}, Latest: true,
+	})
+	wantLatest := map[string]string{
+		f.sourcePath("living-room-tv"): titles[2], f.sourcePath("kitchen-speaker"): "Ελληνικά νέα",
+		f.sourcePath("bedroom-tv"): "Paused: Dune",
+	}
+	var bedroomSince time.Time
+	for _, row := range latest.Rows {
+		if row.Group != nil && row.Group.Source == f.sourcePath("bedroom-tv") {
+			bedroomSince = row.Start
+		}
+	}
+	if len(latest.Rows) != 3 {
+		t.Fatalf("the latest read: %d rows, want one per source: %+v", len(latest.Rows), latest.Rows)
+	}
+	for _, row := range latest.Rows {
+		want, ok := wantLatest[row.Group.Source]
+		if !ok {
+			t.Errorf("the latest read answered %s twice or a source it does not hold", row.Group.Source)
+			continue
+		}
+		delete(wantLatest, row.Group.Source)
+		if row.Values[0].Code != want {
+			t.Errorf("latest of %s: %q, want %q", row.Group.Source, row.Values[0].Code, want)
+		}
+	}
+	// The latest read answers the last available state, 20:10's title. The
+	// outage is in a trace that began before it, so a reader lists the
+	// records ending after the latest row's start, which takes that trace,
+	// and reads each point's instant, a tie included.
+	if !bedroomSince.Equal(at.Add(10 * time.Minute)) {
+		t.Fatalf("the bedroom tv's latest row starts %v, want 20:10, the last available title", bedroomSince)
+	}
+	page, err := f.ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+		Kinds: []string{f.trace},
+		Properties: map[string]substrate.Cond{
+			"source": {Eq: f.sourcePath("bedroom-tv")}, "endsAt": {Gt: bedroomSince.Format(time.RFC3339)},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("the records ending after the latest row: %v", err)
+	}
+	naive, err := f.ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+		Kinds: []string{f.trace},
+		Properties: map[string]substrate.Cond{
+			"source": {Eq: f.sourcePath("bedroom-tv")}, "at": {Gte: bedroomSince.Format(time.RFC3339)},
+		},
+	}})
+	if err != nil || len(naive.Records) != 0 {
+		t.Errorf("the records starting at or after the latest row: %v, %d records; want none, which is why a reader takes the overlapping ones", err, len(naive.Records))
+	}
+	unavailable := false
+	for _, rec := range page.Records {
+		start := *rec.At
+		offsets, codes := rec.Properties["offsets"].([]any), rec.Properties["codes"].([]any)
+		for i, c := range codes {
+			ms, _ := offsets[i].(float64)
+			if c == nil && !start.Add(time.Duration(ms)*time.Millisecond).Before(bedroomSince) {
+				unavailable = true
+			}
+		}
+	}
+	if !unavailable {
+		t.Errorf("the records ending after %v hold no null point at or after it in %+v; the trace that began at 20:00 holds one at 20:20", bedroomSince, page.Records)
+	}
+	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("homeassistant/media_title")},
+		Range:    rng(at, at.Add(2*time.Hour)),
+		Reducers: []substrate.AggregateReducer{{Name: "durationIn", Between: []float64{0, 1}}},
+	}}, "its values are codes, not numbers")
+	long := make([]byte, 6000)
+	_, _ = rand.Read(long)
+	_, err = f.put(t, f.observation, "tv/long", map[string]any{
+		"metric": f.metricRef("homeassistant/media_title"), "source": f.sourceRef("living-room-tv"),
+		"form": "gauge", "code": hex.EncodeToString(long), "at": at.Add(3 * time.Hour).Format(time.RFC3339), "utcOffset": 0,
+	})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "props.code: a code is at most 255 characters, got 12000") {
+		t.Errorf("a 12,000-character code: %v, want a 422 naming the bound", err)
 	}
 }
 

@@ -177,9 +177,9 @@ cases = {
                                       source=source, unit=None, form="gauge"), "PT1H"),
     "all unavailable values": (o.trace([(dt.datetime(2026, 10, 7, 6, tzinfo=utc), None)], metric=metric,
                                        source=source, unit="W", form="gauge"), "PT1H"),
-    # four codes of 200 KiB fit the budget alone, but the stats repeat two
-    "long codes": (o.trace([(dt.datetime(2026, 10, 7, 6, m, tzinfo=utc), c * (200 << 10))
-                            for m, c in ((0, "a"), (15, "b"), (30, "c"), (45, "d"))],
+    # 4500 codes at the 255-character bound are more than 1 MiB
+    "long codes": (o.trace([(dt.datetime(2026, 10, 7, 6, tzinfo=utc) + dt.timedelta(milliseconds=500 * i), "abcd"[i % 4] * 255)
+                            for i in range(4500)],
                            metric=metric, source=source, unit=None, form="gauge"), "PT1H"),
 }
 out = {}
@@ -336,7 +336,7 @@ func TestObservedTraceBuilderOutputPassesTheEngine(t *testing.T) {
 		t.Errorf("all unavailable values: %v, want one document with values [null] in W", d)
 	}
 	if d := built["long codes"].Docs; len(d) < 2 {
-		t.Errorf("long codes: %d documents; four codes of 200 KiB with their stats are more than 1 MiB", len(d))
+		t.Errorf("long codes: %d documents; 4500 codes of 255 characters are more than 1 MiB", len(d))
 	}
 	if b := built["bounded later"]; len(b.Docs) != 1 || b.Docs[0]["at"] != "2026-10-11T05:20:00Z" ||
 		b.Docs[0]["endsAt"] != "2026-10-11T05:40:00Z" || b.Docs[0]["every"] != "PT5M" || b.IDs[0] != "2026-10-11T05:20" {
@@ -427,6 +427,7 @@ cases = {
     "outside the bounds": lambda: o.trace([(at, 1)], metric="m", source=None, unit="W", form="gauge",
                                           start=at + dt.timedelta(minutes=1)),
     "coded delta": lambda: o.trace([(at, "open")], metric="m", source=None, unit=None, form="gauge", delta=True),
+    "long code": lambda: o.trace([(at, "x" * 256)], metric="m", source=None, unit=None, form="gauge"),
 }
 out = {}
 for name, call in cases.items():
@@ -459,6 +460,7 @@ print(json.dumps(out))
 		"wrap_at without wrap": "pass reset_rule=\"wrap\"",
 		"outside the bounds":   "is outside [start, end)",
 		"coded delta":          "a trace of codes has none",
+		"long code":            "point 0's code is 256 characters; a code is at most 255",
 	} {
 		if !strings.Contains(out[name], want) {
 			t.Errorf("%s: %q, want it to say %q", name, out[name], want)
