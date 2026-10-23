@@ -390,22 +390,26 @@ func TestObservedIndexBenchmark(t *testing.T) {
 		logf("| %s | %d | %d | %d | %.1f |", table, rows, total, heapBytes, float64(total)/float64(readings))
 	}
 	var tiers []string
-	rows, err := db.Query(`SELECT tier, count(*) FROM observed_rollups GROUP BY tier ORDER BY tier`)
+	// pg_column_size of a row is its tuple's data, header excluded; the
+	// record id columns are what a compact first and last point would save.
+	rows, err := db.Query(`SELECT tier, count(*), sum(pg_column_size(r.*)),
+		sum(coalesce(pg_column_size(first_record_id), 0) + coalesce(pg_column_size(last_record_id), 0))
+		FROM observed_rollups r GROUP BY tier ORDER BY tier`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for rows.Next() {
-		var tier, n int64
-		if err := rows.Scan(&tier, &n); err != nil {
+		var tier, n, data, ids int64
+		if err := rows.Scan(&tier, &n, &data, &ids); err != nil {
 			t.Fatal(err)
 		}
-		tiers = append(tiers, fmt.Sprintf("%ds: %d", tier, n))
+		tiers = append(tiers, fmt.Sprintf("%ds: %d rows, %d bytes of row data, %d of them record ids", tier, n, data, ids))
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
 	_ = rows.Close()
-	logf("rollup rows by tier: %s", strings.Join(tiers, ", "))
+	logf("rollup rows by tier: %s", strings.Join(tiers, "; "))
 	var segmentFiles int64
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.Contains(path, "changelog") {

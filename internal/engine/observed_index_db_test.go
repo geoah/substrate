@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -40,7 +41,25 @@ type obsIndex struct {
 	db  *sql.DB
 }
 
+// sharedMetrics are the observations sample's six metrics, which keep the
+// 1h and 1d tiers as shipped (samples/observations/metrics.yaml).
+var sharedMetrics = []string{"air_temperature", "relative_humidity", "energy", "power", "illuminance", "atmospheric_pressure"}
+
+// openObservedIndex is openObservedIndexAsShipped with the shared metrics
+// set back to the default tiers, 15m, 1h and 1d: the tests read the 15m tier
+// of the readings they write to them.
 func openObservedIndex(t *testing.T, opts ...engine.Option) obsIndex {
+	t.Helper()
+	r := openObservedIndexAsShipped(t, opts...)
+	for _, id := range sharedMetrics {
+		if _, err := r.patch(t, r.metric, id, map[string]any{"rollups": []any{"15m", "1h", "1d"}}); err != nil {
+			t.Fatalf("give %s the default tiers: %v", id, err)
+		}
+	}
+	return r
+}
+
+func openObservedIndexAsShipped(t *testing.T, opts ...engine.Option) obsIndex {
 	t.Helper()
 	ctx := context.Background()
 	svc, dsn := newService(t, opts...)
@@ -1514,7 +1533,18 @@ func TestRebuildReproducesTheObservedTables(t *testing.T) {
 	if after := observedTables(t, db); after != before {
 		t.Fatalf("the rebuilt observed tables are not the live ones\n%s", firstDifference([]byte(before), []byte(after)))
 	}
-	checkRollupsMatchSpec(t, ds, db)
+	checkRollupsMatchSpecWith(t, ds, db, shippedTiers)
+}
+
+// shippedTiers are a metric's tiers as the samples ship it: the shared
+// metrics keep 1h and 1d, every other the default.
+func shippedTiers(metric string) []time.Duration {
+	for _, id := range sharedMetrics {
+		if strings.HasSuffix(metric, "/observations/metric/"+id) {
+			return []time.Duration{time.Hour, 24 * time.Hour}
+		}
+	}
+	return specTiers
 }
 
 // TestObservedRollupRowsAlwaysCarryTheirDetail: every rollup row the fold
@@ -2315,4 +2345,69 @@ func TestObservedSettleSendsOneStatementPerStep(t *testing.T) {
 		}
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
+}
+
+// The shared metrics ship with the 1h and 1d tiers alone: a minute-rate
+// sensor written to one keeps no 15m row, its hour and day rows match the
+// points, and a read in 15-minute buckets answers from the points what a
+// 15m tier would have.
+func TestObservedSharedMetricsKeepTheHourAndDayTiers(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndexAsShipped(t)
+	for _, id := range sharedMetrics {
+		got := r.get(t, r.metric, id).Properties["rollups"]
+		if fmt.Sprint(got) != "[1h 1d]" {
+			t.Errorf("the shipped %s keeps the tiers %v, want [1h 1d]", id, got)
+		}
+	}
+	values := make([]any, 120)
+	for i := range values {
+		values[i] = strconv.Itoa(18 + i%7)
+	}
+	r.mustPut(t, r.trace, "kitchen/2026-10-07T10", map[string]any{
+		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("kitchen"), "form": "gauge", "unit": "Cel",
+		"at": "2026-10-07T10:00:00Z", "endsAt": "2026-10-07T12:00:00Z", "every": "PT1M", "values": values, "utcOffset": 0,
+	})
+	tiers := map[int64]int{}
+	rows, err := r.db.Query(`SELECT tier, count(*) FROM test_rollup_tiers WHERE source = $1 GROUP BY tier`, r.source+"/kitchen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var tier int64
+		var n int
+		if err := rows.Scan(&tier, &n); err != nil {
+			t.Fatal(err)
+		}
+		tiers[tier] = n
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(tiers) != "map[3600:2 86400:1]" {
+		t.Errorf("the sensor's rollup rows by tier are %v, want two 1h rows and one 1d row", tiers)
+	}
+	checkRollupsMatchSpecWith(t, r.ds, r.db, func(string) []time.Duration { return []time.Duration{time.Hour, 24 * time.Hour} })
+	q := substrate.AggregateQuery{
+		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: r.source + "/kitchen"}}},
+		Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: r.metric + "/air_temperature"},
+			Range:    &substrate.AggregateRange{Gte: "2026-10-07T10:00:00Z", Lt: "2026-10-07T12:00:00Z"},
+			Bucket:   &substrate.AggregateBucket{Every: "PT15M"},
+			Reducers: []substrate.AggregateReducer{{Name: "avg"}, {Name: "min"}, {Name: "max"}},
+		},
+	}
+	res, err := r.ds.Aggregate(context.Background(), q)
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	raw, err := r.ds.Aggregate(engine.AggregateRaw(context.Background()), q)
+	if err != nil {
+		t.Fatalf("aggregate, raw: %v", err)
+	}
+	got, _ := json.Marshal(res.Rows)
+	want, _ := json.Marshal(raw.Rows)
+	if len(res.Rows) != 8 || !bytes.Equal(got, want) {
+		t.Errorf("15-minute buckets answered %d rows %s, want the raw read's 8 %s", len(res.Rows), got, want)
+	}
 }

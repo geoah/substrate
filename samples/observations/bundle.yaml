@@ -45,7 +45,9 @@ data:
   # `measures` is gone; an observation and a trace retire the managed
   # `measure`. Every quantity converts through the repository's unit graph
   # (decision record 0186).
-  version: 4
+  # version 5: the six shared metrics keep the `1h` and `1d` rollup tiers,
+  # not `15m`.
+  version: 5
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds and six data records (metrics.yaml): the physical metrics several

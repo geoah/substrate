@@ -6,6 +6,11 @@
 #
 # Code systems: `homeassistant` is a Home Assistant sensor device class, `cf`
 # a CF standard name.
+#
+# Each keeps the `1h` and `1d` rollup tiers and no `15m`: a home sensor
+# reports about once a minute, and at that rate a `15m` tier is four rows an
+# hour per stream, most of the index (docs/plans/observations/benchmark.md).
+# A read in 15-minute buckets takes the raw points.
 kind: samples.substrate.reamde.dev/observations/metric
 metadata:
   id: air_temperature
@@ -27,6 +32,9 @@ data:
       - min
       - max
       - last
+    rollups:
+      - 1h
+      - 1d
     displayPrecision: 1
     category: climate
 ---
@@ -51,6 +59,9 @@ data:
       - min
       - max
       - last
+    rollups:
+      - 1h
+      - 1d
     displayPrecision: 0
     category: climate
 ---
@@ -73,6 +84,9 @@ data:
       - increase
       - rate
       - last
+    rollups:
+      - 1h
+      - 1d
     displayPrecision: 3
     category: energy
 ---
@@ -94,6 +108,9 @@ data:
       - min
       - max
       - last
+    rollups:
+      - 1h
+      - 1d
     displayPrecision: 0
     category: energy
 ---
@@ -115,6 +132,9 @@ data:
       - min
       - max
       - last
+    rollups:
+      - 1h
+      - 1d
     displayPrecision: 0
     category: climate
 ---
@@ -138,5 +158,8 @@ data:
       - min
       - max
       - last
+    rollups:
+      - 1h
+      - 1d
     displayPrecision: 1
     category: climate
