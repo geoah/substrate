@@ -1832,7 +1832,20 @@ var propKeys = map[string]bool{
 	// that wants it. Both are validated here and stored in the Definition map;
 	// neither changes a write. See Property.Unique and Property.Deprecated.
 	"unique": true, "deprecated": true,
+	// `mediaTypes` is reserved on the same terms: validated and stored, read
+	// by clients alone (a renderer, an upload filter), and refused on every
+	// datatype but a blob-ref. See Property.MediaTypes.
+	"mediaTypes": true,
 }
+
+// mediaTypeName is one RFC 6838 restricted-name, lowercase: what a media
+// type's type and its subtype each hold to.
+const mediaTypeName = `[a-z0-9][a-z0-9!#$&^_.+-]{0,126}`
+
+// mediaTypePattern is a declared media type: `type/subtype` without
+// parameters, or `type/*`. A `*/*` would admit everything, which is what
+// leaving the key out already says.
+var mediaTypePattern = regexp.MustCompile(`^` + mediaTypeName + `/(` + mediaTypeName + `|\*)$`)
 
 // uniqueForbiddenKinds are the datatypes `unique:` never applies to, each
 // saying why. The line is whether a stored value has an equality an index
@@ -1995,6 +2008,13 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		}
 	}
 
+	// The three branches below own their key sets, and none of them names
+	// bytes, so `mediaTypes` is refused here by name rather than as an unknown
+	// key.
+	if _, declared := d["mediaTypes"]; declared && (kind == DatatypeState || kind == DatatypeObject || kind == DatatypeReference) {
+		l.errf("%s.mediaTypes: only a blobref property declares mediaTypes", where)
+		return nil
+	}
 	// A state property IS the machine: its own key set, its own
 	// parser, and nothing else on this branch applies to it.
 	if kind == DatatypeState {
@@ -2155,6 +2175,13 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 				return nil
 			}
 		}
+	}
+	if raw, declared := d["mediaTypes"]; declared {
+		if p.Datatype != DatatypeBlobRef {
+			l.errf("%s.mediaTypes: only a blobref property declares mediaTypes", where)
+			return nil
+		}
+		p.MediaTypes = l.parseMediaTypes(where, raw)
 	}
 	if pat := mstr(d, "pattern"); pat != "" {
 		re, err := regexp.Compile(pat)
@@ -2321,6 +2348,41 @@ func (l *loader) parseReservedMarkers(where, name string, d map[string]any, p *P
 	if p.Deprecated && p.Required {
 		l.errf("%s: a property is deprecated or required, never both: required means a form refuses to submit without it", where)
 	}
+}
+
+// parseMediaTypes reads a blob-ref's `mediaTypes:`, the formats its bytes are
+// declared to be. An empty list is refused because it
+// would read as "admits nothing", which no property means.
+func (l *loader) parseMediaTypes(where string, raw any) []string {
+	list, ok := stringList(raw)
+	switch {
+	case !ok:
+		l.errf("%s.mediaTypes: a list of media types such as [application/pdf], not %v", where, raw)
+		return nil
+	case len(list) == 0:
+		l.errf("%s.mediaTypes: an empty list names no format; drop the key to leave the value undescribed", where)
+		return nil
+	}
+	seen := make(map[string]bool, len(list))
+	out := make([]string, 0, len(list))
+	for i, mt := range list {
+		switch {
+		case strings.Contains(mt, ";"):
+			l.errf("%s.mediaTypes[%d]: %q carries parameters; name the format alone, such as %q", where, i, mt, strings.TrimSpace(mt[:strings.Index(mt, ";")]))
+		case mt == "*/*":
+			l.errf("%s.mediaTypes[%d]: */* admits every format, which leaving the key out already says", where, i)
+		case mt != strings.ToLower(mt) && mediaTypePattern.MatchString(strings.ToLower(mt)):
+			l.errf("%s.mediaTypes[%d]: %q is written in lowercase, %q", where, i, mt, strings.ToLower(mt))
+		case !mediaTypePattern.MatchString(mt):
+			l.errf("%s.mediaTypes[%d]: %q is not a media type: type/subtype such as application/pdf, or type/* such as image/*", where, i, mt)
+		case seen[mt]:
+			l.errf("%s.mediaTypes[%d]: %q is listed twice", where, i, mt)
+		default:
+			seen[mt] = true
+			out = append(out, mt)
+		}
+	}
+	return out
 }
 
 // parseDefault holds a declared `default:` to a value this property could
