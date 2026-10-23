@@ -637,30 +637,44 @@ function SummaryLine({
     (s) =>
       `${sourceName(s.source)}: ${readingText(units, s.value, s.unit, info?.displayPrecision, s.comparator)} over ${windowWords(s.span.start, s.span.end)}`
   )
+  // Said whatever the chart draws: a zoomed part with no summary in it
+  // still offers the way back, and a capped read says it is capped.
+  const zoomBar = ctx.zoomed && (
+    <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+      <span>{windowWords(window.start, window.end)}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 text-[12.5px] font-normal"
+        onClick={ctx.onReset}
+      >
+        Show {spanWords(ctx.bound, ctx.noun).whole}
+      </Button>
+    </div>
+  )
+  const truncatedNote = truncated && (
+    <Quiet>
+      Shows the first{" "}
+      {(CHART_SUMMARIES_PAGE * CHART_SUMMARIES_PAGES).toLocaleString("en")}{" "}
+      summaries read inside this window; more follow.
+    </Quiet>
+  )
   if (!lines.some((l) => l.points.some((p) => p.value !== null))) {
     return (
-      <Quiet>
-        {boundWords.length
-          ? `No samples of ${lowerName(name)} were kept ${during}, and its summaries are bounds, not values: ${listWords(boundWords)}.`
-          : `No summary of ${lowerName(name)} covers ${windowWords(window.start, window.end)}.`}
-      </Quiet>
+      <>
+        {zoomBar}
+        <Quiet>
+          {boundWords.length
+            ? `No samples of ${lowerName(name)} were kept ${during}, and its summaries are bounds, not values: ${listWords(boundWords)}.`
+            : `No summary of ${lowerName(name)} covers ${windowWords(window.start, window.end)}.`}
+        </Quiet>
+        {truncatedNote}
+      </>
     )
   }
   return (
     <>
-      {ctx.zoomed && (
-        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-          <span>{windowWords(window.start, window.end)}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-[12.5px] font-normal"
-            onClick={ctx.onReset}
-          >
-            Show {spanWords(ctx.bound, ctx.noun).whole}
-          </Button>
-        </div>
-      )}
+      {zoomBar}
       <TimelineChart
         key={`${window.start}-${window.end}`}
         buckets={buckets}
@@ -731,13 +745,7 @@ function SummaryLine({
           Bounds, not values, so not drawn: {listWords(boundWords)}.
         </Quiet>
       )}
-      {truncated && (
-        <Quiet>
-          Shows the first{" "}
-          {(CHART_SUMMARIES_PAGE * CHART_SUMMARIES_PAGES).toLocaleString("en")}{" "}
-          summaries read inside this window; more follow.
-        </Quiet>
-      )}
+      {truncatedNote}
     </>
   )
 }

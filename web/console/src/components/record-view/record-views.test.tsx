@@ -1363,6 +1363,87 @@ describe("a chart's summaries read", () => {
     })
   }
 
+  it("offers the way back from a zoom into a gap between summaries", async () => {
+    mount([VIEW], NIGHT, SESSION, {
+      metrics: [...METRICS, HRV_METRIC],
+      unmeasured: [HRV],
+      curve: answer([]),
+      summaries: [
+        summary(
+          "w1",
+          WHOOP,
+          "62",
+          "2026-10-10T22:40:00Z",
+          "2026-10-10T23:40:00Z"
+        ),
+        summary(
+          "w2",
+          WHOOP,
+          "58",
+          "2026-10-11T05:00:00Z",
+          "2026-10-11T06:50:00Z"
+        ),
+      ],
+    })
+    const night = await screen.findByRole("region", { name: "Night" })
+    const chart = await within(night).findByRole("group", {
+      name: "Heart rate variability (RMSSD) during this session, from summaries",
+    })
+    // The second bucket is the gap between the two summaries.
+    act(() => chart.focus())
+    fireEvent.keyDown(chart, { key: "ArrowRight" })
+    fireEvent.keyDown(chart, { key: "ArrowRight" })
+    fireEvent.keyDown(chart, { key: "Enter" })
+    await waitFor(() =>
+      expect(night.textContent).toContain(
+        "No summary of heart rate variability (RMSSD) covers"
+      )
+    )
+    fireEvent.click(
+      within(night).getByRole("button", { name: "Show the whole session" })
+    )
+    await waitFor(() =>
+      expect(night.querySelector("[data-slot=chart-level]")).toBeTruthy()
+    )
+  })
+
+  it("says a capped read is capped where every summary it read is a bound", async () => {
+    const bound = (i: number) =>
+      record(OBSERVATION, `bound-${i}`, {
+        metric: { ref: HRV },
+        form: "summary",
+        value: { value: "20", unit: "ms", comparator: "<" },
+        statistic: "vendor",
+        at: `2026-10-11T0${i}:00:00Z`,
+        endsAt: `2026-10-11T0${i}:30:00Z`,
+        source: { ref: WHOOP },
+      })
+    // One a page: five pages of bounds fill the cap, and a value follows.
+    mount([VIEW], NIGHT, SESSION, {
+      metrics: [...METRICS, HRV_METRIC],
+      unmeasured: [HRV],
+      curve: answer([]),
+      summaryPageSize: 1,
+      summaries: [
+        ...[0, 1, 2, 3, 4].map(bound),
+        summary(
+          "w",
+          WHOOP,
+          "62",
+          "2026-10-11T05:00:00Z",
+          "2026-10-11T06:00:00Z"
+        ),
+      ],
+    })
+    const night = await screen.findByRole("region", { name: "Night" })
+    await waitFor(() =>
+      expect(night.textContent).toContain("are bounds, not values")
+    )
+    expect(night.textContent).toContain(
+      "summaries read inside this window; more follow."
+    )
+  })
+
   it("says a failed summaries read with a retry, never hiding the chart", async () => {
     mount([VIEW], NIGHT, SESSION, {
       metrics: [...METRICS, HRV_METRIC],
