@@ -102,6 +102,16 @@ const (
 	TraitResultCore = PackageCore + "/" + TraitResult
 )
 
+// The sourcelink trait (decision 0187): a record naming the sources that are
+// one device reaching the repository by several routes, which the aggregate
+// read's priority policy reads from its highest-ranked source alone. A
+// second trait beside `source`, because a property added to a trait refuses
+// every imported kind that binds it.
+const (
+	TraitSourceLink     = "sourcelink"
+	TraitSourceLinkCore = PackageCore + "/" + TraitSourceLink
+)
+
 // ComputedSlotLen is the width of the slot a computed occurrence's id carries
 // after its series' id and a `_`: `YYYYMMDDTHHMMSSZ`. MaxSeriesIDLen keeps the
 // whole `<seriesId>_<slot>` inside MaxIDLen, and the write path holds a kind

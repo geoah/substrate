@@ -143,6 +143,10 @@ type aggPlan struct {
 	// propBySource says property.sources' priority policy chooses among the
 	// property read's records.
 	propBySource bool
+	// links is the read's graph of linked sources under the priority policy
+	// (sourceLinks), shared by every metric of a several-metric read; nil
+	// where the policy is not priority or no kind binds `sourcelink`.
+	links *sourceLinks
 	// metrics are a several-metric read's metrics, each a plan of its own
 	// over the read's range, bucket, groupBy and sources (forMetric); nil on
 	// any other read.
@@ -227,6 +231,8 @@ type aggTrace struct {
 	// discoverBatch, where set, replaces discoverBatch for the read, and
 	// discoverPairs is the most pairs one discovery statement read.
 	discoverBatch, discoverPairs int
+	// linkRows is the refs rows the priority policy's link lookups read.
+	linkRows int64
 }
 
 // everyThousand counts a Go-side loop's steps and answers the context's

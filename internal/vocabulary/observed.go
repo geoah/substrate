@@ -168,6 +168,9 @@ var contractShapes = map[string]map[string]contractShape{
 	TraitSourceCore: {
 		SourcePriorities: {keyed: true},
 	},
+	TraitSourceLinkCore: {
+		SourceLinkSources: {list: true},
+	},
 	TraitResultCore: {
 		ResultCodedValue: {fields: map[string]Datatype{"system": DatatypeString, "code": DatatypeString, "display": DatatypeString}},
 		ResultRatio:      {fields: map[string]Datatype{"numerator": DatatypeDecimal, "denominator": DatatypeDecimal}},

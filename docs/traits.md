@@ -33,11 +33,12 @@ A trait contracts **presence and datatype only**. It carries no cardinality
 (a binding kind adds its own `repeated: true`) and no state values (each
 binding kind declares its own machine). That is deliberate: the trait
 is the shared question, and each kind keeps its own answer's shape.
-Core's `observed`, `revised`, `metric`, `source` and `result` are the
-exceptions, because the engine reads each property's shape. The loader
-refuses a binding kind whose `observed` `offsets`, `values`, `codes` or
+Core's `observed`, `revised`, `metric`, `source`, `sourcelink` and `result`
+are the exceptions, because the engine reads each property's shape. The
+loader refuses a binding kind whose `observed` `offsets`, `values`, `codes` or
 `origins` is not `repeated: true`, whose `metric` `codeSet` or `rollups` is
-not a list, or whose `source` `priorities` is not `keyed: true`, and one
+not a list, whose `source` `priorities` is not `keyed: true`, or whose
+`sourcelink` `sources` is not a list, and one
 whose other properties of those traits are lists or keyed maps. `result`
 contracts four object properties as `json`, which a declared `object` meets,
 and the loader holds their fields.
@@ -251,6 +252,11 @@ opt into twice:
 - **`source`** marks the device, app, service or lab a value came from. Its
   `priorities`, keyed by a metric's full record path, are the order the
   aggregate read's priority policy takes when a request names none.
+- **`sourcelink`** marks a record naming, in `sources`, the sources that are
+  one device reaching the repository by several routes. Under the aggregate
+  read's priority policy a linked device answers each metric and `about`
+  from its highest-ranked source alone
+  ([observations](observations.md#one-device-by-several-routes)).
 - **`result`** marks a single observed kind that holds a laboratory's result
   shapes: `codedValue`, `ratio` and `text` beside `value`, of which a record
   holds exactly one, with the lab's `interpretation` and `referenceRanges`.

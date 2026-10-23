@@ -930,6 +930,9 @@ func (a AggregateTrace) DiscoverBatch(n int) { a.t.discoverBatch = n }
 // DiscoverPairs is the most pairs one form discovery statement read.
 func (a AggregateTrace) DiscoverPairs() int { return a.t.discoverPairs }
 
+// LinkRows is the refs rows the priority policy's link lookups read.
+func (a AggregateTrace) LinkRows() int64 { return a.t.linkRows }
+
 // AggregateTraced counts what each aggregate read under the context takes.
 func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
 	t := &aggTrace{}

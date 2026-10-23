@@ -1,0 +1,36 @@
+# the sources that are one device: a scale that syncs to its maker's app and
+# to Apple Health is two `source` records, because each delivery names the
+# device its own way, and a sourcelink says they are one. Binds core's
+# `sourcelink` trait, which the aggregate read's priority policy reads: a
+# linked device answers from its highest-ranked source alone, per metric and
+# `about`, so one weigh-in delivered twice counts once (decision record
+# 0187). The link is the owner's statement; nothing writes one by matching
+# values or times.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/observations/sourcelink
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  description: >-
+    The sources that are one device, such as a scale synced to its maker's
+    app and to Apple Health. A read under the priority policy takes the device's
+    values from its highest-ranked source alone.
+  purpose: supporting
+  names:
+    singular: sourcelink
+  traits:
+    - substrate.reamde.dev/core/sourcelink
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the device the sources are, such as Withings Body+
+    sources:
+      type: reference
+      trait: substrate.reamde.dev/core/source
+      repeated: true
+      required: true
+      description: the sources that are this one device; a priority read takes
+        its values from the highest-ranked of them

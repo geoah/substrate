@@ -197,6 +197,13 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	}
 	runs := make([]*metricRun, len(plans))
 	samples := p.recordsRead
+	// One link graph serves every metric of the read, each extending it from
+	// its own sources.
+	if links := ds.newSourceLinks(p); links != nil {
+		for _, mp := range plans {
+			mp.links = links
+		}
+	}
 	groups, series := 0, 0
 	for i, mp := range plans {
 		m, err := ds.settleMetric(ctx, tx, mp, buckets, windows, samples)
@@ -303,6 +310,18 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 	streams, samples, err := ds.discoverForms(ctx, store, p, selected, windows, spent)
 	if err != nil {
 		return nil, err
+	}
+	// A linked device's winner is chosen among the streams the range and
+	// `from` hold, so a source with nothing in them hides nothing.
+	if p.links != nil {
+		if samples, err = p.links.expand(ctx, tx, selected, samples, p.maxSamples); err != nil {
+			return nil, err
+		}
+		candidates, err := ds.linkCandidates(ctx, tx, p, streams, windows)
+		if err != nil {
+			return nil, err
+		}
+		streams, selected = p.links.keep(streams, candidates, selected)
 	}
 	if err := p.checkOffsets(streams); err != nil {
 		return nil, err
@@ -677,6 +696,26 @@ func (ds *dataset) rankingSourceKinds(q substrate.AggregateQuery) []string {
 	}
 	slices.Sort(pins)
 	return pins
+}
+
+// sourceLinkKinds are the kinds whose records a priority read takes its
+// linked devices from (sourceLinks): every kind binding core's
+// `sourcelink`, whether or not the request names an order. A caller holding a
+// reads allowlist holds each to it, since what a read drops reveals what
+// those records hold.
+func (ds *dataset) sourceLinkKinds(q substrate.AggregateQuery) []string {
+	a := q.Aggregate
+	if a == nil || a.Sources == nil || a.Sources.Policy != substrate.SourcesPriority {
+		return nil
+	}
+	var out []string
+	for _, t := range ds.registry().Kinds() {
+		if t.Implements(vocabulary.TraitSourceLinkCore) {
+			out = append(out, t.Identity)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // streamRef is the record path a filter value or an order entry names for a

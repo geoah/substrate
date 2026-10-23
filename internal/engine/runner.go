@@ -366,8 +366,9 @@ func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.
 // Aggregate is a function body's aggregate read, the records route's. The
 // runner held the kinds and the records the request names to the reads
 // allowlist; a read that ranks its sources by their records' priorities
-// reads those records too, so their kind is held here, where the
-// declarations are, and a kind outside the allowlist trips.
+// reads those records too, and a priority read reads the source links, so
+// their kinds are held here, where the declarations are, and a kind outside
+// the allowlist trips.
 func (b *callBackend) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
 	for _, pin := range b.inv.ds.rankingSourceKinds(q) {
 		if pin == "" {
@@ -377,6 +378,12 @@ func (b *callBackend) Aggregate(ctx context.Context, q substrate.AggregateQuery)
 		if !b.grants(pin) {
 			return nil, fmt.Errorf("%w: aggregate ranks its sources by the priorities of %s records; name aggregate.sources.order, or grant %s",
 				runner.ErrReadForbidden, pin, pin)
+		}
+	}
+	for _, kind := range b.inv.ds.sourceLinkKinds(q) {
+		if !b.grants(kind) {
+			return nil, fmt.Errorf("%w: under the priority policy aggregate reads the %s records that say which sources are one device; grant %s, or read under the separate policy",
+				runner.ErrReadForbidden, kind, kind)
 		}
 	}
 	return b.inv.ds.Aggregate(ctx, q)

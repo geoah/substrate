@@ -5,7 +5,7 @@
 # its own kinds and its own metric catalogue under package-prefixed ids
 # (`health/heart_rate`), so two domains never write one metric row.
 #
-# Four kinds, and their names are frozen: a sample's kind cannot be moved by
+# Five kinds, and their names are frozen: a sample's kind cannot be moved by
 # the catalog's upgrade, so renaming one after the first import is a
 # repository migration in every repository that took it
 # (TestObservationsSampleKindNamesAreFrozen).
@@ -14,6 +14,7 @@
 #   observation  one value per record, binding core's observed(single)
 #   trace        many values over a fixed period, binding observed(packed)
 #   source       the device, app, service or lab a value came from
+#   sourcelink   the sources that are one device reached by several routes
 #
 # The observed index reads nothing from a metric or a source: what an
 # indexed number means (its form, unit, hold, counter contract, delta and
@@ -47,7 +48,10 @@ data:
   # (decision record 0186).
   # version 5: the six shared metrics keep the `1h` and `1d` rollup tiers,
   # not `15m`.
-  version: 5
+  # version 6: the `sourcelink` kind, binding core's `sourcelink` trait: the
+  # sources that are one device, which a priority read takes from the
+  # highest-ranked of alone (decision record 0187).
+  version: 6
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds and six data records (metrics.yaml): the physical metrics several
@@ -67,3 +71,4 @@ data:
     - samples.substrate.reamde.dev/observations/observation
     - samples.substrate.reamde.dev/observations/trace
     - samples.substrate.reamde.dev/observations/source
+    - samples.substrate.reamde.dev/observations/sourcelink

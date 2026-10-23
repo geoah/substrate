@@ -6,12 +6,14 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -472,5 +474,225 @@ func TestAggregatePriorityReachesAnOlderLongerSpan(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// One scale reaching the repository through its maker's app (withings,
+// ranked 1) and through Apple Health (apple, ranked 2) is two sources, and
+// Apple Health stamps the 07:00 weigh-in two seconds early, outside the
+// higher source's hold, so the priority policy alone counts it twice. A
+// record of the observations sample's `sourcelink` kind, binding core's
+// `sourcelink`, says the two are one device (decision 0187): under priority
+// the device answers from its highest-ranked source alone, so the weigh-in
+// counts once, and an order naming apple first makes apple that source. A
+// gym scale no link names keeps its own reading, a weighing about someone
+// else is a stream of its own (read beside the owner's, grouped by about),
+// `separate` ignores the link, two links sharing a source join, their four
+// references are charged to maxSamples, and deleting the links counts the
+// weigh-in twice again.
+func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := openAgg(t)
+	link := f.source + "link"
+	at := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
+	for id, rank := range map[string]any{"withings": 1, "apple": 2, "gym": nil, "healthconnect": nil} {
+		props := map[string]any{"name": id}
+		if rank != nil {
+			props["priorities"] = map[string]any{f.metricPath("health/body_mass"): rank}
+		}
+		f.mustPut(t, f.source, id, props)
+	}
+	f.weighing("w/withings", "withings", "72.4", at, nil)
+	f.weighing("w/apple", "apple", "72.4", at.Add(-2*time.Second), nil)
+	f.weighing("w/gym", "gym", "73.1", at.Add(11*time.Hour), nil)
+	bob := map[string]any{"about": map[string]any{"ref": f.sourcePath("bob")}}
+	f.weighing("w/bob", "apple", "81", at.Add(time.Hour), bob)
+	read := func(about bool, sources substrate.AggregateSources) *substrate.AggregateResult {
+		cond := substrate.Cond{Exists: &about}
+		return f.agg(ctx, substrate.Filter{Properties: map[string]substrate.Cond{"about": cond}}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(at.Add(-time.Hour), at.Add(23*time.Hour)),
+			Reducers: reducers("count"),
+			Sources:  &sources,
+		})
+	}
+	priority := func(order ...string) substrate.AggregateSources {
+		return substrate.AggregateSources{Policy: "priority", Order: order}
+	}
+	check := func(label string, res *substrate.AggregateResult, count string, sources ...string) {
+		t.Helper()
+		var want []string
+		for _, s := range sources {
+			want = append(want, f.sourcePath(s))
+		}
+		slices.Sort(want)
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s: %d rows, want one: %+v", label, len(res.Rows), res.Rows)
+		}
+		got, _ := val(res.Rows[0], "count")
+		if got != count || !slices.Equal(res.Sources, want) {
+			t.Errorf("%s: count %s from %v, want %s from %v", label, got, res.Sources, count, want)
+		}
+	}
+	check("unlinked", read(false, priority()), "3", "apple", "gym", "withings")
+
+	f.mustPut(t, link, "scale", map[string]any{
+		"name": "Withings Body+", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	})
+	check("linked", read(false, priority()), "2", "gym", "withings")
+	check("linked, apple ordered first", read(false, priority("apple")), "2", "apple", "gym")
+	bySubject := f.agg(ctx, substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    rng(at.Add(-time.Hour), at.Add(23*time.Hour)),
+		GroupBy:  []string{"about"},
+		Reducers: reducers("count"),
+		Sources:  &substrate.AggregateSources{Policy: "priority"},
+	})
+	counts := map[string]string{}
+	for _, row := range bySubject.Rows {
+		counts[row.Group.About], _ = val(row, "count")
+	}
+	if len(counts) != 2 || counts[""] != "2" || counts[f.sourcePath("bob")] != "1" {
+		t.Errorf("grouped by about: %v, want the owner's 2 (gym, withings) and bob's 1 from apple, which withings does not weigh for", counts)
+	}
+	if res := read(false, substrate.AggregateSources{Policy: "separate"}); len(res.Rows) != 3 {
+		t.Errorf("separate: %d rows, want one per source, the link ignored", len(res.Rows))
+	}
+
+	if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, "scale", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the link: %v", err)
+	}
+	f.mustPut(t, link, "a", map[string]any{"name": "a", "sources": []any{f.sourceRef("withings"), f.sourceRef("healthconnect")}})
+	f.mustPut(t, link, "b", map[string]any{"name": "b", "sources": []any{f.sourceRef("healthconnect"), f.sourceRef("apple")}})
+	check("linked through healthconnect", read(false, priority()), "2", "gym", "withings")
+	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    rng(at.Add(-time.Hour), at.Add(23*time.Hour)),
+		Reducers: reducers("count"),
+		Sources:  &substrate.AggregateSources{Policy: "priority"},
+		Budget:   &substrate.AggregateBudget{MaxSamples: 3},
+	}}, "the source links the priority policy reads")
+
+	for _, id := range []string{"a", "b"} {
+		if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, id, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("delete link %s: %v", id, err)
+		}
+	}
+	check("links deleted", read(false, priority()), "3", "apple", "gym", "withings")
+}
+
+// The winner of a linked device is chosen among the streams that hold a value
+// in the read's range and `from`, so a higher-ranked source with nothing
+// there hides nothing: withings (ranked 1) weighs on 2 September and apple
+// (ranked 2) on 1 September, so a read of 1 September answers apple's 70; and
+// withings writes only raw weighings on 1 September while apple writes a
+// daily average, so a read from summaries answers apple's 71.
+func TestAggregatePriorityChoosesALinkedWinnerInTheRead(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for id, rank := range map[string]int{"withings": 1, "apple": 2} {
+		f.mustPut(t, f.source, id, map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
+	}
+	f.mustPut(t, f.source+"link", "scale", map[string]any{
+		"name": "scale", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	})
+	f.weighing("w/withings/02", "withings", "72", day.Add(31*time.Hour), nil)
+	f.weighing("w/withings/01", "withings", "73", day.Add(20*time.Hour), nil)
+	f.weighing("w/apple/01", "apple", "70", day.Add(7*time.Hour), nil)
+	f.mustPut(t, f.observation, "day/apple/01", map[string]any{
+		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("apple"), "form": "summary",
+		"statistic": "avg", "period": "day", "value": quantity("71", "kg"),
+		"at": day.Format(time.RFC3339), "endsAt": day.Add(24 * time.Hour).Format(time.RFC3339), "utcOffset": 0,
+	})
+	read := func(from string, lt time.Time) []string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(day, lt),
+			Reducers: reducers("min"),
+			Sources:  &substrate.AggregateSources{Policy: "priority"},
+			From:     from,
+		})
+		var out []string
+		for _, row := range res.Rows {
+			v, _ := val(row, "min")
+			out = append(out, v)
+		}
+		return out
+	}
+	if got := read("", day.Add(12*time.Hour)); !slices.Equal(got, []string{"70"}) {
+		t.Errorf("1 September's morning, raw: %v, want apple's 70; withings has no value in the range", got)
+	}
+	if got := read("summaries", day.Add(24*time.Hour)); !slices.Equal(got, []string{"71"}) {
+		t.Errorf("1 September from summaries: %v, want apple's 71; withings has no summary", got)
+	}
+	if got := read("", day.Add(24*time.Hour)); !slices.Equal(got, []string{"73"}) {
+		t.Errorf("1 September, raw: %v, want withings' 73 alone, the device's winner in the range", got)
+	}
+}
+
+// A range of recorded-local dates reads the instants around them, and a day
+// those instants reach outside the dates is reduced and never answered: the
+// winner of a linked device is chosen on the dates themselves. withings
+// (ranked 1) weighs only on 2 September and apple (ranked 2) on 1 September,
+// both at offset zero, so 1 September read as a recorded-local date answers
+// apple's 70, though the scan reaches 2 September's morning.
+func TestAggregatePriorityChoosesALinkedWinnerOnTheRecordedLocalDates(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for id, rank := range map[string]int{"withings": 1, "apple": 2} {
+		f.mustPut(t, f.source, id, map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
+	}
+	f.mustPut(t, f.source+"link", "scale", map[string]any{
+		"name": "scale", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	})
+	f.weighing("w/withings", "withings", "72", day.Add(31*time.Hour), nil)
+	f.weighing("w/apple", "apple", "70", day.Add(7*time.Hour), nil)
+	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    &substrate.AggregateRange{Gte: "2026-09-01", Lt: "2026-09-02", RecordedLocal: true},
+		Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+		Reducers: reducers("min"),
+		Sources:  &substrate.AggregateSources{Policy: "priority"},
+	})
+	if len(res.Rows) != 1 {
+		t.Fatalf("1 September as a recorded-local date: %d rows, want one: %+v", len(res.Rows), res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "min"); v != "70" {
+		t.Errorf("1 September as a recorded-local date: %+v, want one row, apple's 70", res.Rows)
+	}
+}
+
+// A source named by many links is read a bounded lookup at a time: with 300
+// links naming withings and maxSamples 40, the read is refused after
+// reading at most the 41 references one lookup may take, never the 600 the
+// links hold.
+func TestAggregatePriorityBoundsTheLinkLookups(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.source, "withings", map[string]any{"name": "withings"})
+	for i := range 300 {
+		f.mustPut(t, f.source+"link", fmt.Sprintf("l%03d", i), map[string]any{
+			"name": "fan", "sources": []any{f.sourceRef("withings"), f.sourceRef(fmt.Sprintf("other%03d", i))},
+		})
+	}
+	f.weighing("w/withings", "withings", "72", at, nil)
+	f.weighing("w/apple", "apple", "70", at.Add(time.Hour), nil)
+	ctx, trace := engine.AggregateTraced(context.Background())
+	_, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    rng(at.Add(-time.Hour), at.Add(2*time.Hour)),
+		Reducers: reducers("count"),
+		Sources:  &substrate.AggregateSources{Policy: "priority"},
+		Budget:   &substrate.AggregateBudget{MaxSamples: 40},
+	}})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "the source links the priority policy reads") {
+		t.Errorf("300 links under maxSamples 40: %v, want the links' budget refusal", err)
+	}
+	if n := trace.LinkRows(); n > 41 {
+		t.Errorf("the link lookups read %d refs rows, want at most the 41 one bounded lookup takes", n)
 	}
 }

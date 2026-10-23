@@ -2400,6 +2400,11 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 				return toolError(msg + ": with no aggregate.sources.order the read ranks the sources by their records' priorities; name the order, or read with that kind granted"), false, 0
 			}
 		}
+		for _, kind := range ds.sourceLinkKinds(q) {
+			if msg := ds.allowKind(scope, kind); msg != "" {
+				return toolError(msg + ": under the priority policy the read takes which sources are one device from these records; read with that kind granted, or under the separate policy"), false, 0
+			}
+		}
 	}
 	lowered := q.LimitRows(scope.rows)
 	res, err := ds.Aggregate(ctx, q)

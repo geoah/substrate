@@ -753,7 +753,9 @@ trips the allowlist. So are the kind of every metric `metric` and `metrics`
 name, whose record the read looks up, the targets of either filter's
 `referencing` (as a list's are), and, where a `priority` or `summaries`
 policy names no `order`, the kind of the source records whose priorities
-rank the sources. It answers the result dict, and pays one call and its
+rank the sources, and under any `priority` policy every kind binding core's
+`sourcelink`, whose records say which sources are one device
+([observations](observations.md#one-device-by-several-routes)). It answers the result dict, and pays one call and its
 rows against the read budget. Before the read runs, its `budget.maxBuckets`
 (and on the latest read `budget.maxGroups`) is lowered to the rows left. The
 read checks its series times the buckets it answers, the rows it could

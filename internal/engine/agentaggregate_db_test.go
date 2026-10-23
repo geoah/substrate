@@ -274,10 +274,13 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 // A priority or summaries read that names no order ranks the sources by
 // their records' priorities, so it reads those records: the agent query
 // tool and a function's host call hold their kind to the reads allowlist as
-// they hold the read's other kinds. A scale ranked first and a watch ranked
-// second weigh at one instant; a scope of observations and metrics alone is
-// refused naming the source kind, the same read naming its order answers,
-// and a scope granting the sources answers the scale's weight.
+// they hold the read's other kinds. Every priority read also reads the
+// source links (decision 0187), so their kind is held the same way, order or
+// none. A scale ranked first and a watch ranked second weigh at one instant;
+// a scope of observations and metrics alone is refused naming the source
+// kind, and naming its order instead names the sourcelink kind; with the
+// links granted the order answers, and a scope granting the sources answers
+// the scale's weight.
 func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -314,7 +317,11 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	if ok || !strings.Contains(out, "observations/source is not in the reads allowlist") || !strings.Contains(out, "order") {
 		t.Errorf("a priority read with no order, sources not granted: ok %v, %s; want a refusal naming the source kind and the order", ok, out)
 	}
-	if out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read([]any{"watch", "scale"})}); !ok || !strings.Contains(out, `"80.5"`) {
+	if out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read([]any{"watch", "scale"})}); ok || !strings.Contains(out, "observations/sourcelink is not in the reads allowlist") {
+		t.Errorf("a priority read naming its order, links not granted: ok %v, %s; want a refusal naming the sourcelink kind", ok, out)
+	}
+	linked := queryScope{kinds: []string{observation, home + "/observations/metric", home + "/observations/sourcelink"}, rows: 50}
+	if out, ok, _ := ds.runQueryTool(ctx, linked, map[string]any{"aggregate": read([]any{"watch", "scale"})}); !ok || !strings.Contains(out, `"80.5"`) {
 		t.Errorf("a priority read naming its order: ok %v, %s; want the watch's 80.5", ok, out)
 	}
 	wide := queryScope{kinds: []string{home + "/observations/*"}, rows: 50}
@@ -336,7 +343,10 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q(nil)); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), source) {
 		t.Errorf("a function's priority read with no order, sources not granted: %v, want a read trip naming %s", err, source)
 	}
-	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q([]any{"scale"})); err != nil {
+	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q([]any{"scale"})); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), home+"/observations/sourcelink") {
+		t.Errorf("a function's priority read naming its order, links not granted: %v, want a read trip naming the sourcelink kind", err)
+	}
+	if _, err := backend(observation, home+"/observations/metric", home+"/observations/sourcelink").Aggregate(ctx, q([]any{"scale"})); err != nil {
 		t.Errorf("a function's priority read naming its order: %v", err)
 	}
 	if _, err := backend(home+"/observations/*").Aggregate(ctx, q(nil)); err != nil {

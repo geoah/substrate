@@ -1609,6 +1609,11 @@ the reads that take it.
   their newest, and counts each against `maxSamples`. Two counters are
   refused under `priority`. Over summaries (`"from": "summaries"`) the
   highest-ranked source's summary of a night or a day drops the others'.
+  Before any of this, sources that a `sourcelink` record names as one
+  device answer each metric and `about` from the highest-ranked of them
+  holding a value in the range and `from`, and the others' streams leave the
+  read; each link reference read counts against `maxSamples`
+  ([one device by several routes](observations.md#one-device-by-several-routes)).
 
 Where `priority` names no `order`, the read ranks the
 selected sources by each source record's `priorities` for the metric's id

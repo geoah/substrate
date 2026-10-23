@@ -109,7 +109,7 @@ counts in nothing
 ## The base kinds
 
 The `observations` sample (`samples.substrate.reamde.dev/observations`) holds
-the four kinds every observing domain shares, and a repository imports it
+the five kinds every observing domain shares, and a repository imports it
 under its own authority
 ([decision 0159](decisions/0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md)).
 Their names are frozen: a sample's kind cannot be moved by an upgrade, and
@@ -121,6 +121,7 @@ Their names are frozen: a sample's kind cannot be moved by an upgrade, and
 | `observation` | `temporal(range)`, `observed(single)` | one measured value |
 | `trace` | `temporal(range)`, `observed(packed)` | the values of one metric from one source over one fixed period |
 | `source` | `source` | the device, app, service or lab a value came from |
+| `sourcelink` | `sourcelink` | the sources that are one device reached by several routes ([below](#one-device-by-several-routes)) |
 
 **`metric`** is a catalogue entry and a guide for writers, and it binds
 core's `metric` trait ([below](#the-metric-and-source-contracts)). The write
@@ -234,6 +235,49 @@ by the priorities of a source whose kind binds the trait and of no other.
 422 props.priorities.health/heart_rate: a priority is keyed by the metric's full record path, <kind>/<id>, such as <authority>/observations/metric/health/heart_rate
 422 props.rollups[1]: 15m comes after the coarser 1h; list the tiers finest first, each dividing the next
 ```
+
+### One device by several routes
+
+A scale that syncs to its maker's app and to Apple Health reaches the
+repository as two sources, one per adapter, because nothing upstream says
+they are one. The priority policy keeps the higher-ranked source's reading
+only where it overlaps the other's, so a weigh-in Apple Health stamps two
+seconds early counts twice. A `sourcelink` record says the sources are one
+device ([decision 0187](decisions/0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md)):
+
+```yaml
+kind: ada.example.com/observations/sourcelink
+metadata:
+  id: withings-body
+data:
+  properties:
+    name: Withings Body+
+    sources:
+      - {ref: ada.example.com/observations/source/withings/ada/scale}
+      - {ref: ada.example.com/observations/source/apple/ada/scale}
+```
+
+Under `priority`, a linked device answers each metric and `about` from one
+source: the highest-ranked (the request's `order`, else the sources'
+`priorities`, the stream order breaking a tie) among the linked sources
+holding a value in the read's range and `from`; a range of recorded-local
+dates counts only values on those dates, never on the days the scan reaches
+around them. The other linked sources'
+values of that metric and `about` leave the read, whole, so a reading only a
+lower-ranked route delivered is not counted while the winner has any value
+in the read. Links join: two links sharing a source make one device of every
+source either names. The read follows links outward from its own sources
+through the refs index, each lookup reading at most the `maxSamples` the
+read has left plus one, and charges each reference it reads.
+The `separate` policy ignores links. The read takes links from records of any kind
+binding core's `substrate.reamde.dev/core/sourcelink` trait, which contracts
+`sources`, a list of references; an entry naming a record whose kind does not
+bind `source` links nothing. Nothing pairs sources by close values or times,
+and nothing writes a link but the owner.
+
+A function or an agent that reads under a reads allowlist needs the link
+kind granted for every priority read, whether or not it names an `order`,
+because what the read drops reveals what the links hold.
 
 ## Writing an observation by hand
 

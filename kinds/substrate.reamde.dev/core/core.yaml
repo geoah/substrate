@@ -71,7 +71,10 @@ data:
   # (decision record 0186): the `metric` trait drops `measures`, its `unit`
   # becomes a reference to a unit record and it gains `units`; both
   # `observed` variants drop the managed `measure`.
-  version: 44
+  # version 45: the `sourcelink` trait, a record naming the sources that are
+  # one device, which the aggregate read's priority policy reads (decision
+  # record 0187).
+  version: 45
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -455,6 +458,29 @@ data:
     ranked per metric for the aggregate read's source policy"
   properties:
     priorities: int
+---
+# the sources that are one device: a scale that syncs to its maker's app and
+# to Apple Health reaches the repository as two `source` records, and a
+# record binding this trait says they are one. Under the aggregate read's
+# priority policy a linked device answers from its highest-ranked source
+# alone, per metric and `about`, so one weigh-in delivered twice counts once
+# (decision 0187). Links join transitively: two records sharing a source
+# make one device of every source either names. Only a listed record whose
+# kind binds `source` is read; nothing matches sources by value or time.
+#
+# Contract-style: the binding kind declares `sources` itself, with
+# `repeated: true`.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/sourcelink
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "the sources that are one device reaching the repository by
+    several routes, which the aggregate read's priority policy reads from
+    its highest-ranked source alone"
+  properties:
+    sources: reference
 ---
 # a result in the shapes a laboratory reports beside a plain number: a coded
 # finding, a ratio, free text. A kind that binds it beside `observed(single)`
