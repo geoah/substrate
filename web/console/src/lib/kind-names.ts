@@ -89,6 +89,7 @@ const WORDS = new Set([
   "lab",
   "label",
   "license",
+  "link",
   "list",
   "llm",
   "log",

@@ -13,10 +13,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: observations
   description: >-
-    The sources that are one device reaching the repository by several routes,
-    such as a scale synced to its maker's app and to Apple Health. A read
-    under the priority policy takes the device's values from its highest-ranked
-    source alone.
+    The sources that are one device, such as a scale synced to its maker's
+    app and to Apple Health. A read under the priority policy takes the device's
+    values from its highest-ranked source alone.
   purpose: supporting
   names:
     singular: sourcelink
