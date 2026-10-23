@@ -1663,31 +1663,65 @@ export interface SummarySeries {
   held: (ChartSummary | undefined)[]
 }
 
-/** The summaries as level lines on `buckets` (`summaryBuckets`): one per
- * source and statistic, in first-seen order. A bucket holds the summary
- * covering it, the latest to start where two of one line do; its value is
- * in the chart's unit (`valueOf`), and one that does not convert is left
- * out. */
+/** The most level lines a summaries chart draws: past it the lines that
+ * cover the least time are left out and said, so a thousand sources never
+ * make a thousand lines of points. */
+export const MAX_SUMMARY_LINES = 8
+
+/** The summaries as level lines on `buckets` (`summaryBuckets`, over the
+ * window shown, which a zoom narrows): one per source and statistic, those
+ * covering the most time first, at most `MAX_SUMMARY_LINES` of them, and
+ * how many more there are. A bucket holds the summary covering it, the
+ * latest to start where two of one line do; a summary that began before
+ * the window is drawn from its first bucket. Its value is in the chart's
+ * unit (`valueOf`), and one that does not convert is left out. */
 export function summarySeries(
   summaries: readonly ChartSummary[],
   buckets: readonly Bucket[],
   valueOf: (s: ChartSummary) => number | undefined
-): SummarySeries[] {
+): { lines: SummarySeries[]; omitted: number } {
   const groups = new Map<string, ChartSummary[]>()
   for (const s of summaries) {
+    if (valueOf(s) === undefined) continue
     const key = `${s.source ?? ""}\n${s.statistic ?? ""}`
     const members = groups.get(key)
     if (members) members.push(s)
     else groups.set(key, [s])
   }
-  // Each piece covers whole buckets from the one that starts where it does.
-  const first = new Map(buckets.map((b, i) => [b.start, i]))
-  return [...groups].map(([key, members]) => {
+  const shown = buckets.length
+    ? { start: buckets[0].start, end: buckets[buckets.length - 1].end }
+    : { start: 0, end: 0 }
+  const covered = (members: readonly ChartSummary[]) =>
+    members.reduce(
+      (sum, s) =>
+        sum +
+        Math.max(
+          0,
+          Math.min(s.end, shown.end) - Math.max(s.start, shown.start)
+        ),
+      0
+    )
+  const ranked = [...groups]
+    .map(([key, members]) => ({ key, members, time: covered(members) }))
+    .filter((g) => g.time > 0)
+    .sort((x, y) => y.time - x.time || byteCompare(x.key, y.key))
+  // The first bucket a piece reaches: the one holding its start, or the
+  // window's first where it began before the window.
+  const firstAt = (t: number) => {
+    let lo = 0
+    let hi = buckets.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (buckets[mid].end <= t) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+  const lines = ranked.slice(0, MAX_SUMMARY_LINES).map(({ key, members }) => {
     const held: (ChartSummary | undefined)[] = buckets.map(() => undefined)
     for (const s of members) {
-      if (valueOf(s) === undefined) continue
       for (
-        let i = first.get(s.start) ?? buckets.length;
+        let i = firstAt(s.start);
         i < buckets.length && buckets[i].end <= s.end;
         i++
       ) {
@@ -1707,6 +1741,7 @@ export function summarySeries(
       })),
     }
   })
+  return { lines, omitted: Math.max(0, ranked.length - lines.length) }
 }
 
 /** Whether an item naming a code reads grouped by code: every coded

@@ -21,6 +21,7 @@ import {
   chartMeasured,
   chartReads,
   CHART_SUMMARIES_PAGES,
+  MAX_SUMMARY_LINES,
   chartSummaries,
   fetchChartSummaries,
   summaryBuckets,
@@ -2215,8 +2216,62 @@ describe("summaries a chart draws where its line has no value", () => {
     expect(out.length).toBeLessThanOrEqual(4 * 1000)
     const window: TimeRange = { start: base, end: base + 1000 * h }
     const buckets = summaryBuckets(window, out)
-    const lines = summarySeries(out, buckets, (s) => Number(s.value))
+    const { lines } = summarySeries(out, buckets, (s) => Number(s.value))
     expect(lines).toHaveLength(2)
+  })
+
+  it("draws a summary that began before a zoomed window from the window's start", () => {
+    const [summary] = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            at: at("00:00"),
+            endsAt: at("07:00"),
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    // Zoomed into 02:00 to 03:00 of the night.
+    const zoomed: TimeRange = {
+      start: Date.parse(at("02:00")),
+      end: Date.parse(at("03:00")),
+    }
+    const buckets = summaryBuckets(zoomed, [summary])
+    const {
+      lines: [line],
+    } = summarySeries([summary], buckets, (s) => Number(s.value))
+    expect(line.points.map((p) => p.value)).toEqual([62])
+    // Its words keep the summary's own span.
+    expect(line.held[0]?.span.start).toBe(Date.parse(at("00:00")))
+  })
+
+  it("draws at most a few lines from a thousand sources, and counts the rest", () => {
+    const base = Date.parse("2026-01-01T00:00:00Z")
+    const h = 3_600_000
+    const records = Array.from({ length: 1000 }, (_, i) =>
+      obs({
+        ...night,
+        at: new Date(base + i * h).toISOString(),
+        endsAt: new Date(base + (i + 1) * h).toISOString(),
+        source: { ref: `a.example.com/observations/source/s${i}` },
+      })
+    )
+    const out = chartSummaries({ records }, {}, "priority", HRV)
+    const window: TimeRange = { start: base, end: base + 1000 * h }
+    const buckets = summaryBuckets(window, out)
+    const { lines, omitted } = summarySeries(out, buckets, (s) =>
+      Number(s.value)
+    )
+    expect(lines).toHaveLength(MAX_SUMMARY_LINES)
+    expect(omitted).toBe(1000 - MAX_SUMMARY_LINES)
+    expect(lines.reduce((n, l) => n + l.points.length, 0)).toBeLessThanOrEqual(
+      MAX_SUMMARY_LINES * buckets.length
+    )
   })
 
   it("holds each summary level across exactly its span, with nothing across a gap", () => {
@@ -2255,7 +2310,9 @@ describe("summaries a chart draws where its line has no value", () => {
       "2026-10-10T23:15:00.000Z",
       "2026-10-11T00:00:00.000Z",
     ])
-    const [line] = summarySeries(summaries, buckets, (s) => Number(s.value))
+    const {
+      lines: [line],
+    } = summarySeries(summaries, buckets, (s) => Number(s.value))
     expect(line.points.map((p) => p.value)).toEqual([null, 50, null, 70, null])
     expect(line.statistic).toBe("vendor")
   })

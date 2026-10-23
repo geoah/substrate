@@ -547,7 +547,9 @@ properties the sheet folds away because a section shows them. Then come its
   earlier one covers is still drawn, and its tooltip names the summary's
   whole span. A temperature difference (`delta`) converts without the
   offset. A summary that is a bound (`<0.5 mg/L`) is said under the chart,
-  never drawn as a value. The chart reads up to 1,000 summaries, 200 a
+  never drawn as a value. A zoom keeps drawing a summary that began before
+  the zoomed part, from its first bucket. The chart draws the eight lines
+  covering the most time and says how many more there are. The chart reads up to 1,000 summaries, 200 a
   page, and says so where the window holds more; a failed read says so
   with a retry. WHOOP's nightly heart rate variability on a sleep is one
   such summary; a cycle's average heart rate, which reaches past the

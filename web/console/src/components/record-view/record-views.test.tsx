@@ -1239,6 +1239,69 @@ describe("a chart whose line has no value over the window", () => {
     })
   })
 
+  it("keeps drawing the nightly summary when another metric's chart zooms into the night", async () => {
+    // The session's heart rate has samples; its HRV is one summary over the
+    // whole window.
+    mount(
+      [
+        view("fitness/session", {
+          name: "During this session",
+          window: WINDOW,
+          sections: [
+            {
+              chart: {
+                label: "Pulse and HRV",
+                metrics: [{ ref: PULSE }, { ref: HRV }],
+                reducers: [{ reducer: "avg" }],
+              },
+            },
+          ],
+        }),
+      ],
+      RUN,
+      SESSION,
+      {
+        metrics: [...METRICS, HRV_METRIC],
+        summaries: [
+          summary(
+            "garmin/hrv",
+            HRV,
+            "48",
+            "ms",
+            "2026-10-11T05:25:00Z",
+            "2026-10-11T06:59:00Z",
+            "vendor"
+          ),
+        ],
+      }
+    )
+    const section = await screen.findByRole("region", {
+      name: "During this session",
+    })
+    const hrv = await within(section).findByRole("group", {
+      name: "Heart rate variability (RMSSD) during this session, from summaries",
+    })
+    expect(hrv.querySelector("[data-slot=chart-level]")).toBeTruthy()
+    const pulse = within(section).getByRole("group", {
+      name: "Heart rate during this session",
+    })
+    // Zoom into the second minute: the summary began before it.
+    act(() => pulse.focus())
+    fireEvent.keyDown(pulse, { key: "ArrowRight" })
+    fireEvent.keyDown(pulse, { key: "ArrowRight" })
+    fireEvent.keyDown(pulse, { key: "Enter" })
+    // Every chart of the view zooms together.
+    await screen.findAllByRole("button", { name: "Show the whole session" })
+    await waitFor(() =>
+      expect(
+        section.querySelector(
+          "[aria-label^='Heart rate variability (RMSSD)'] [data-slot=chart-level]"
+        )
+      ).toBeTruthy()
+    )
+    expect(section.textContent).not.toContain("bounds, not values")
+  })
+
   it("still leaves the chart out under empty: hide where no summary lies inside the window", async () => {
     const { container } = mount([NIGHT_VIEW], NIGHT, SESSION, {
       metrics: [...METRICS, HRV_METRIC],

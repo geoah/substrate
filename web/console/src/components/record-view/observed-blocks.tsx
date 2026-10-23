@@ -602,7 +602,7 @@ function SummaryLine({
     () => summaryBuckets(window, summaries),
     [window, summaries]
   )
-  const lines = useMemo(
+  const { lines, omitted } = useMemo(
     () =>
       summarySeries(summaries, buckets, (s) => summaryValueIn(s, unit, units)),
     [summaries, buckets, unit, units]
@@ -640,8 +640,9 @@ function SummaryLine({
   if (!lines.some((l) => l.points.some((p) => p.value !== null))) {
     return (
       <Quiet>
-        No samples of {lowerName(name)} were kept {during}, and its summaries
-        are bounds, not values: {listWords(boundWords)}.
+        {boundWords.length
+          ? `No samples of ${lowerName(name)} were kept ${during}, and its summaries are bounds, not values: ${listWords(boundWords)}.`
+          : `No summary of ${lowerName(name)} covers ${windowWords(window.start, window.end)}.`}
       </Quiet>
     )
   }
@@ -719,6 +720,12 @@ function SummaryLine({
         }}
       />
       <Quiet>{summaryWords(name, lines.map(lineName), during)}</Quiet>
+      {omitted > 0 && (
+        <Quiet>
+          Draws the {lines.length} lines covering the most time; {omitted} more
+          are not drawn.
+        </Quiet>
+      )}
       {boundWords.length > 0 && (
         <Quiet>
           Bounds, not values, so not drawn: {listWords(boundWords)}.
