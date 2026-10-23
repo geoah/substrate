@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // The four forms (decision 0156): what an observed number means, which
@@ -57,6 +58,12 @@ const (
 	// weighs 3.2e294, so a time-weighted sum stays finite across 1e13
 	// streams, where a value near the largest float64 overflows in a minute.
 	MaxObservedMagnitude = 1e280
+	// MaxObservedCode bounds a code, a free-text state included, in
+	// characters. The observed index keys its rollup rows on the code, and
+	// Postgres refuses a key past one index page with an internal error, so
+	// the write path refuses a longer code first. 255 is Home Assistant's
+	// bound on an entity's state.
+	MaxObservedCode = 255
 )
 
 // The property names the rules read, every one of them the trait's: the
@@ -347,6 +354,8 @@ func (c *obsCheck) single(form string) {
 	}
 	if code, isString := c.r.Props[obsCode].(string); isString && code == "" {
 		c.addf("props.code: a code is not empty: drop code")
+	} else if n := utf8.RuneCountInString(code); n > MaxObservedCode {
+		c.addf("props.code: a code is at most %d characters, got %d; keep longer text in an ordinary record", MaxObservedCode, n)
 	}
 	if form == FormAmount || form == FormSummary {
 		if c.r.At != nil && (c.r.EndsAt == nil || !c.r.EndsAt.After(*c.r.At)) {
@@ -456,9 +465,15 @@ func (c *obsCheck) packed(form string) {
 		// An empty code would be a third spelling of "no value" beside null
 		// and an absent list, read one way by one table and another by the
 		// next; null is the one that says a point is unavailable.
+		long := false
 		for i, code := range listOf(c.r.Props[obsCodes]) {
-			if s, isString := code.(string); isString && s == "" {
+			s, isString := code.(string)
+			switch n := utf8.RuneCountInString(s); {
+			case isString && s == "":
 				c.addf("props.codes[%d]: a code is not empty; null marks a point with nothing from it on", i)
+			case n > MaxObservedCode && !long:
+				long = true
+				c.addf("props.codes[%d]: a code is at most %d characters, got %d; keep longer text in an ordinary record", i, MaxObservedCode, n)
 			}
 		}
 	}

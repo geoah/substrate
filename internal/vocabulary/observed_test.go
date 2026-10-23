@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -194,6 +195,16 @@ func TestCheckObservedRefusals(t *testing.T) {
 			"props.codes[2]: a code is not empty",
 		},
 		"an empty code": {edit(single(t), map[string]any{"value": nil, "code": ""}), "props.code: a code is not empty"},
+		// The observed index keys its rollup rows on the code, so a code past
+		// an index page failed inside Postgres; it is refused at the write.
+		"a code past 255 characters": {
+			edit(single(t), map[string]any{"value": nil, "code": strings.Repeat("é", 256)}),
+			"props.code: a code is at most 255 characters, got 256",
+		},
+		"a trace code past 255 characters": {
+			edit(packed(t), map[string]any{"values": nil, "unit": nil, "codes": []any{"open", strings.Repeat("x", 300), strings.Repeat("y", 300)}}),
+			"props.codes[1]: a code is at most 255 characters, got 300",
+		},
 		// The observed index reduces in float64 and weighs a value by the
 		// milliseconds it holds: a value past 1e280 could overflow that sum,
 		// so it is refused, not stored and left out of every aggregate.
@@ -244,31 +255,52 @@ func TestCheckObservedRefusesAnOversizedTrace(t *testing.T) {
 }
 
 // The byte limit counts a trace as it is stored: with the stats its points
-// compute, never the stale stats a rewrite's merged row still carries. A
-// code the stats repeat as `first` and `last` takes three times its length.
+// compute, never the stale stats a rewrite's merged row still carries. The
+// stats repeat the first and last codes, so a trace of codes at the length
+// bound can fit the limit as written and pass it as stored: the smallest
+// such trace is refused on its create, before any stats are stamped, and one
+// code fewer is admitted on its create and on its identical rewrite.
 func TestCheckObservedSizesATraceWithItsComputedStats(t *testing.T) {
-	coded := func(code string) vocabulary.ObservedRecord {
+	code := strings.Repeat("x", vocabulary.MaxObservedCode)
+	coded := func(n int) vocabulary.ObservedRecord {
+		codes := make([]any, n)
+		for i := range codes {
+			codes[i] = code
+		}
 		return edit(packed(t), map[string]any{
-			"unit": nil, "hold": nil, "values": nil, "offsets": []any{int64(0)}, "codes": []any{code},
+			"unit": nil, "hold": nil, "values": nil, "offsets": nil, "every": "PT0.1S", "codes": codes,
 		})
 	}
-	withStats := func(r vocabulary.ObservedRecord) vocabulary.ObservedRecord {
+	stats := func(r vocabulary.ObservedRecord) map[string]any {
 		stats, err := vocabulary.TraceStats(*r.At, r.Props)
 		if err != nil {
 			t.Fatalf("stats: %v", err)
 		}
-		return edit(r, map[string]any{"stats": stats})
+		return stats
 	}
-	// 400 KiB stored three times is past the limit: refused on its create,
-	// before any stats are stamped.
-	big := coded(strings.Repeat("x", 400<<10))
-	if problems := strings.Join(vocabulary.CheckObserved(big), "\n"); !strings.Contains(problems, "a trace holds at most 1048576 (1 MiB)") {
+	size := func(r vocabulary.ObservedRecord, withStats bool) int {
+		props := map[string]any{}
+		for k, v := range r.Props {
+			props[k] = v
+		}
+		if withStats {
+			props["stats"] = stats(r)
+		}
+		raw, err := json.Marshal(props)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(raw)
+	}
+	n := sort.Search(vocabulary.MaxTracePoints, func(n int) bool { return size(coded(n), true) > vocabulary.MaxTraceBytes })
+	if n == vocabulary.MaxTracePoints || size(coded(n), false) > vocabulary.MaxTraceBytes {
+		t.Fatalf("no trace of %d-character codes fits the limit as written and passes it with its stats (n = %d)", vocabulary.MaxObservedCode, n)
+	}
+	if problems := strings.Join(vocabulary.CheckObserved(coded(n)), "\n"); !strings.Contains(problems, "a trace holds at most 1048576 (1 MiB)") {
 		t.Errorf("a create whose stamped stats pass the limit: problems %q", problems)
 	}
-	// 300 KiB three times fits: admitted on its create and on its identical
-	// rewrite, which carries the stored stats.
-	fits := coded(strings.Repeat("x", 300<<10))
-	for name, r := range map[string]vocabulary.ObservedRecord{"create": fits, "rewrite": withStats(fits)} {
+	fits := coded(n - 1)
+	for name, r := range map[string]vocabulary.ObservedRecord{"create": fits, "rewrite": edit(fits, map[string]any{"stats": stats(fits)})} {
 		if problems := vocabulary.CheckObserved(r); len(problems) != 0 {
 			t.Errorf("%s of a trace that fits with its stats: %v", name, problems)
 		}
