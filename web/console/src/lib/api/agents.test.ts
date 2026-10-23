@@ -14,6 +14,7 @@ import {
   providerHasKey,
   stopThread,
   streamChat,
+  TransportError,
 } from "./agents"
 import type { AgentEvent } from "./agents"
 import type { SubstrateRecord } from "./types"
@@ -212,6 +213,34 @@ describe("streamChat post-200 failures", () => {
     expect(error).toBe(
       "the connection failed before the server answered (Load failed)"
     )
+  })
+
+  it("reads a gateway's answer without the server's envelope as unknown delivery", async () => {
+    for (const status of [502, 503, 504, 413]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response("<html>Gateway Timeout</html>", {
+              status,
+              headers: { "Content-Type": "text/html" },
+            })
+        )
+      )
+      const error = await new Promise<Error>((resolve) => {
+        streamChat({
+          agent: "a",
+          message: "hi",
+          onEvent: () => {},
+          onError: resolve,
+          onDone: () => resolve(new Error("settled")),
+        })
+      })
+      expect(error).toBeInstanceOf(TransportError)
+      expect(error.message).toBe(
+        `the request ended with HTTP ${status} and no answer from the server`
+      )
+    }
   })
 
   it("settles onDone on a clean run carrying a result", async () => {

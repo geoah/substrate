@@ -25,13 +25,13 @@
  * their `turn`, and the rest feed the same overlay a send does. Stop ends
  * the turn on the server, and the stream's own `done` settles the overlay.
  *
- * A send is never dropped without a word (#1038). One made while a turn runs
- * or hands over is held, shown above the composer, and sent once the
- * conversation can take it; a handover whose re-read does not land within
- * RELOAD_WAIT_MS is given up on like one that failed; a send the server
- * refuses comes back to the composer with the server's words; and a send
- * whose connection failed before the server answered is checked against the
- * thread before it is offered again, since the turn may be running. */
+ * A send is never dropped without a word (#1038), and nothing is ever sent
+ * later on its own. While a send cannot go, the text stays in the composer
+ * and the composer says why. A handover whose re-read does not land within
+ * RELOAD_WAIT_MS is given up on like one that failed. A send the server
+ * refuses comes back with the server's words. A send whose connection
+ * failed, or that a gateway answered instead of the server, may have started
+ * a turn, so the thread is read before the message is offered again. */
 
 import {
   useEffect,
@@ -85,7 +85,7 @@ import {
   type LiveOverlay,
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
-import { heldMessage, holdMessage } from "@/lib/held-messages"
+import { CopyButton } from "@/components/identity/copy-button"
 
 /** How long the transcript re-read after a turn may take before the composer
  * is released anyway. The read is one page of rows; past this it is stuck
@@ -98,10 +98,28 @@ export const RELOAD_WAIT_MS = 15_000
  * may be a moment after the connection that carried it dropped. */
 export const RECONCILE_DELAY_MS = 1_000
 
-/** Why a send's outcome is uncertain, and what the check found. */
-type Unsure = {
+/** What became of a send that started no turn, shown until the next one. */
+type Outcome = {
+  /** `refused`: the server's own refusal. The rest are a send whose delivery
+   * was unknown: being checked, found missing, not checkable, or a new chat,
+   * which has no thread to check. */
+  kind: "refused" | "checking" | "missing" | "unchecked" | "new"
+  /** The server's words, or what failed. */
   reason: string
-  state: "checking" | "missing" | "unchecked" | "new"
+  message: string
+  /** The message went back into the composer; otherwise the notice shows it
+   * with a copy action, because the composer holds something typed since. */
+  restored: boolean
+}
+
+/** The newest turn a transcript page holds, or -1 for none. */
+function newestTurn(records: SubstrateRecord[]): number {
+  let newest = -1
+  for (const r of records) {
+    const turn = Number(r.properties.turn)
+    if (Number.isFinite(turn) && turn > newest) newest = turn
+  }
+  return newest
 }
 
 /** The callout for an agent whose provider row has no key: the run would be
@@ -123,6 +141,48 @@ function KeylessCallout({ provider }: { provider: string }) {
         </span>
       </div>
       <AddKeyButton providerId={provider} />
+    </div>
+  )
+}
+
+/** What became of a send that started no turn. */
+function OutcomeNote({ outcome }: { outcome: Outcome }) {
+  const { kind, reason, message, restored } = outcome
+  const back = restored
+    ? "It is back in the box below."
+    : "It is below, to copy."
+  const lead =
+    kind === "refused"
+      ? `Your message wasn’t sent. ${back}`
+      : kind === "checking"
+        ? "The connection dropped before the server confirmed your message. Checking whether it arrived…"
+        : kind === "missing"
+          ? `Your message didn’t arrive. ${back}`
+          : kind === "new"
+            ? "The connection dropped before the server confirmed your message. It may have started a new chat: look for it in the chat list before sending it again. It is below, to copy."
+            : "The connection dropped before the server confirmed your message, and the chat couldn’t be checked. Look for it in the chat before sending it again. It is below, to copy."
+  return (
+    <div
+      role="alert"
+      className={
+        kind === "refused"
+          ? "flex flex-col gap-1.5 rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
+          : "flex flex-col gap-1.5 rounded-lg border border-warning/30 bg-warn-soft px-3.5 py-2.5 text-[13px]"
+      }
+    >
+      <p>{lead}</p>
+      <p className="text-muted-foreground">
+        {kind === "refused" ? "The server said: " : "What failed: "}
+        {reason}
+      </p>
+      {!restored && kind !== "checking" && (
+        <div className="flex items-start gap-2">
+          <p className="min-w-0 flex-1 rounded-md border bg-background px-2.5 py-1.5 whitespace-pre-wrap text-foreground">
+            {message}
+          </p>
+          <CopyButton value={message} label="Copy your message" />
+        </div>
+      )}
     </div>
   )
 }
@@ -175,12 +235,13 @@ export function Conversation({
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // A send the server refused before any turn ran: nothing was sent, which
-  // reads differently from an agent that could not answer.
-  const [refusal, setRefusal] = useState<string | null>(null)
-  // A send whose connection failed before the server confirmed it: the turn
-  // may be running, so the page checks the thread before offering a resend.
-  const [unsure, setUnsure] = useState<Unsure | null>(null)
+  // A send that started no turn: refused by the server, or of unknown
+  // delivery, which reads differently from an agent that could not answer.
+  const [outcome, setOutcome] = useState<Outcome | null>(null)
+  const checking = outcome?.kind === "checking"
+  // Every delivery check gets a number; one carrying a stale number (a
+  // newer check, or a conversation that unmounted) does nothing.
+  const checkRef = useRef(0)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
   const [slowFor, setSlowFor] = useState(0)
   // A turn no client can stream holds the thread (a triggered run): the page
@@ -191,24 +252,6 @@ export function Conversation({
   // moment later; reading it from here keeps the run's next turn on it.
   const [minted, setMinted] = useState("")
   const current = thread || minted
-
-  // A message sent while the previous turn was still running or handing
-  // over: it goes once the conversation can take it, and is shown until
-  // then. It is kept per conversation outside this component, which the page
-  // remounts on every switch, so leaving the chat does not lose it.
-  const heldKey = current || (agentId ? `new:${agentId}` : "")
-  const [queued, setQueued] = useState<string | null>(() =>
-    heldMessage(heldKey)
-  )
-  const heldKeyRef = useRef(heldKey)
-  useEffect(() => {
-    // A new chat's message moves to its thread once the thread is named.
-    if (heldKeyRef.current !== heldKey) {
-      holdMessage(heldKeyRef.current, null)
-      heldKeyRef.current = heldKey
-    }
-    holdMessage(heldKey, queued)
-  }, [heldKey, queued])
 
   const handleRef = useRef<ChatHandle | null>(null)
   const liveRef = useRef<LiveOverlay>(EMPTY_OVERLAY)
@@ -258,6 +301,8 @@ export function Conversation({
     () => () => {
       handleRef.current?.stop()
       clearTimeout(retryRef.current)
+      // A check outliving its chat would write into another chat's composer.
+      checkRef.current++
     },
     []
   )
@@ -297,6 +342,11 @@ export function Conversation({
   // send in that window would push onto an overlay the refetch is about to
   // duplicate.
   const busy = streaming || (settledAt > 0 && !handedOver && !reloadFailed)
+  const blockedReason = checking
+    ? "Checking whether your last message arrived"
+    : busy
+      ? "Waiting for the previous turn to finish"
+      : undefined
   const liveKey = streaming
     ? [...live.turns].reverse().find((t) => t.role === "assistant")?.key
     : undefined
@@ -440,7 +490,6 @@ export function Conversation({
     setAttachedFor(current)
     setPending({ thread: current, attempt: 0 })
     setError(null)
-    setUnsure(null)
     setResult(null)
     setSettledAt(0)
     setStreaming(true)
@@ -544,48 +593,38 @@ export function Conversation({
     })
   }
 
-  // A queued message goes the moment the conversation can take it, and
-  // leaves whatever was typed since in the composer.
-  const sendQueued = useEffectEvent((message: string) => {
-    setQueued(null)
-    send(message, false)
-  })
-  useEffect(() => {
-    if (queued === null || busy) return
-    // On the next task, not inside the effect: the send sets state, and a
-    // cleanup before it fires (a remount) must not send twice.
-    const timer = setTimeout(() => sendQueued(queued), 0)
-    return () => clearTimeout(timer)
-  }, [queued, busy])
-
-  // Puts a message that was not sent back in the composer, ahead of
-  // anything typed since, so neither is lost.
-  function restore(message: string) {
-    const typed = draftRef.current.trim()
-    onDraft(typed && typed !== message ? `${message}\n\n${typed}` : message)
+  // Puts a message that started no turn back in the composer, unless
+  // something was typed there since: then the notice shows it instead, so
+  // neither is lost. Answers whether it went back.
+  function giveBack(message: string): boolean {
+    if (draftRef.current.trim()) return false
+    onDraft(message)
+    return true
   }
 
-  // Finds out whether a send whose connection failed reached the thread: a
-  // turn running on it is attached to (the thread is re-read and the attach
-  // above fires), a message row that is there needs nothing, and only a
-  // message the thread does not have comes back to the composer.
+  // Finds out whether a send of unknown delivery reached the thread, by
+  // whether the thread gained a user message past `baseline`, the newest
+  // turn the transcript held when it was sent. A turn running on the thread
+  // is attached to (the thread is re-read and the attach above fires). Only
+  // a message the thread does not have is offered again.
   async function reconcile(
-    run: number,
     thread: string,
     message: string,
-    reason: string
+    reason: string,
+    baseline: number | undefined
   ) {
+    const check = ++checkRef.current
     console.error("chat: the send's delivery is unknown", { thread, reason })
     setAttachedFor("")
     void client.invalidateQueries({ queryKey: ["records"] })
-    if (!thread) {
-      setUnsure({ reason, state: "new" })
-      return restore(message)
-    }
-    setUnsure({ reason, state: "checking" })
+    const unknown = { reason, message, restored: false }
+    if (!thread) return setOutcome({ kind: "new", ...unknown })
+    if (baseline === undefined)
+      return setOutcome({ kind: "unchecked", ...unknown })
+    setOutcome({ kind: "checking", ...unknown })
     await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS))
-    if (run !== runRef.current) return
-    let found: boolean | undefined
+    if (check !== checkRef.current) return
+    let arrived: boolean | undefined
     try {
       const page = await Promise.race([
         client.fetchQuery({
@@ -595,50 +634,42 @@ export function Conversation({
         new Promise<undefined>((r) => setTimeout(r, RELOAD_WAIT_MS)),
       ])
       if (page) {
-        const users = transcriptOrder(page.records).filter(
-          (r) => r.properties.role === "user"
+        arrived = page.records.some(
+          (r) =>
+            r.properties.role === "user" && Number(r.properties.turn) > baseline
         )
-        found = users.at(-1)?.properties.content === message
       }
     } catch {
-      found = undefined
+      arrived = undefined
     }
-    if (run !== runRef.current) return
-    if (found) return setUnsure(null)
-    setUnsure({ reason, state: found === false ? "missing" : "unchecked" })
-    restore(message)
+    if (check !== checkRef.current) return
+    if (arrived) return setOutcome(null)
+    if (arrived === undefined) {
+      return setOutcome({ kind: "unchecked", ...unknown })
+    }
+    setOutcome({ kind: "missing", ...unknown, restored: giveBack(message) })
   }
 
-  function cancelQueued() {
-    if (queued === null) return
-    setQueued(null)
-    restore(queued)
-  }
-
-  // `fromComposer` is false for a held message: the composer then holds
-  // whatever was typed after it, which is not this send's to clear.
-  function send(text = draft, fromComposer = true) {
+  function send(text = draft) {
     const message = text.trim()
-    if (!message || !agentId || keylessProvider) return
-    if (busy) {
-      // The previous turn has not handed over yet (or is still running):
-      // the message waits, visibly, instead of being dropped. A second one
-      // joins it rather than replacing it.
-      if (fromComposer) onDraft("")
-      setQueued((held) => (held ? `${held}\n\n${message}` : message))
-      return
-    }
-    if (fromComposer) onDraft("")
+    // `blockedReason` says why on the composer, and the text stays there.
+    if (!message || blockedReason || !agentId || keylessProvider) return
+    onDraft("")
     void dropReads()
     setError(null)
-    setRefusal(null)
-    setUnsure(null)
+    setOutcome(null)
     setResult(null)
     seqRef.current++
     // The previous run's overlay is the persisted transcript's job now —
     // unless its read failed, when the overlay is still the only view of it.
     const kept = reloadFailed ? liveRef.current.turns : []
     const settledBefore = settledAt
+    // Where the transcript stood, for a delivery check: unknown while its
+    // rows are not read, or stale because their re-read failed.
+    const baseline =
+      current && messages.data && !reloadFailed
+        ? newestTurn(messages.data.records)
+        : undefined
     setSettledAt(0)
     update({
       turns: [
@@ -682,8 +713,9 @@ export function Conversation({
       setSettledAt(settledBefore)
       setStreaming(false)
       setStopping(false)
-      if (unknown === undefined) return restore(message)
-      void reconcile(run, sentTo, message, unknown)
+      if (unknown !== undefined) {
+        void reconcile(sentTo, message, unknown, baseline)
+      }
     }
 
     handleRef.current = streamChat({
@@ -705,16 +737,21 @@ export function Conversation({
           return end()
         }
         if (err instanceof TransportError) return end(err.message)
-        // The server answered and refused: nothing ran. What the owner needs
-        // to tell a refusal from a relay failure: the status, the code and
-        // the server's own words.
+        // The server's own refusal: nothing ran. What the owner needs to
+        // tell a refusal from a relay failure: the status, the code and the
+        // server's words.
         console.error("chat: send refused before the turn started", {
           status: err instanceof ApiError ? err.status : undefined,
           code: err instanceof ApiError ? err.code : undefined,
           message: err.message,
         })
-        setRefusal(err.message)
         end()
+        setOutcome({
+          kind: "refused",
+          reason: err.message,
+          message,
+          restored: giveBack(message),
+        })
       },
       onDone: () => {
         // A stream that closed before a single event: the turn may have
@@ -834,32 +871,7 @@ export function Conversation({
               {name} couldn’t answer: {error}
             </div>
           )}
-          {refusal && (
-            <div
-              role="alert"
-              className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
-            >
-              Your message wasn’t sent, and it is back in the box below:{" "}
-              {refusal}
-            </div>
-          )}
-          {unsure && (
-            <div
-              role="alert"
-              className="rounded-lg border border-warning/30 bg-warn-soft px-3.5 py-2.5 text-[13px]"
-            >
-              The connection dropped before the server confirmed your message (
-              {unsure.reason}).{" "}
-              {unsure.state === "checking" &&
-                "Checking whether it reached the chat…"}
-              {unsure.state === "missing" &&
-                "It isn’t in this chat, so it is back in the box below."}
-              {unsure.state === "unchecked" &&
-                "The chat couldn’t be checked. The message is back in the box below: look for it in the chat before sending it again."}
-              {unsure.state === "new" &&
-                "It may have started a new chat: look for it in the chat list before sending it again. The message is back in the box below."}
-            </div>
-          )}
+          {outcome && <OutcomeNote outcome={outcome} />}
           {reloadFailed && (
             <div
               role="alert"
@@ -900,20 +912,6 @@ export function Conversation({
             <KeylessCallout provider={keylessProvider} />
           </div>
         )}
-        {queued !== null && (
-          <div
-            role="status"
-            className="mx-4 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-panel px-3.5 py-2 text-[13px] md:mx-6"
-          >
-            <span className="min-w-0 flex-1 text-muted-foreground">
-              Sends when {name} is ready:{" "}
-              <span className="text-foreground">{queued}</span>
-            </span>
-            <Button size="sm" variant="outline" onClick={cancelQueued}>
-              Don’t send
-            </Button>
-          </div>
-        )}
         <Composer
           value={draft}
           onChange={onDraft}
@@ -924,6 +922,7 @@ export function Conversation({
           agents={current ? undefined : pickable}
           onPickAgent={current ? undefined : onPickAgent}
           busy={busy}
+          blockedReason={blockedReason}
           disabled={!agentId || Boolean(keylessProvider)}
         />
       </footer>

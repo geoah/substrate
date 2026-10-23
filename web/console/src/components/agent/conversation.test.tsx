@@ -73,7 +73,6 @@ afterEach(() => {
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
   vi.useRealTimers()
-  sessionStorage.clear()
 })
 
 function Harness({
@@ -458,41 +457,39 @@ describe("a send after a turn", () => {
     })
   }
 
-  function type(text: string) {
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: text } })
-  }
-
-  it("holds a send made before the re-read lands, shows it, and sends it after", async () => {
+  it("blocks a send before the re-read lands, says why, and sends nothing later", async () => {
     let land: (r: Response) => void = () => {}
     await settleOneTurn(() => new Promise<Response>((r) => (land = r)))
     type("second")
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    // Not dropped: held, shown, and out of the composer.
-    expect(calls).toHaveLength(1)
-    expect(screen.getByText(/Sends when/).textContent).toContain("second")
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
-
-    await act(async () => {
-      land(new Response(JSON.stringify({ records: [] }), { status: 200 }))
-      await new Promise((r) => setTimeout(r, 10))
-    })
-    await waitFor(() => expect(calls).toHaveLength(2))
-    expect(calls[1].message).toBe("second")
-    expect(calls[1].thread).toBe("t-1")
-    expect(screen.queryByText(/Sends when/)).toBeNull()
-  })
-
-  it("holds a send made by Enter too, and gives a held message back on request", async () => {
-    await settleOneTurn(() => new Promise<Response>(() => {}))
-    type("second")
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
+    ).toBe(true)
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
-    expect(screen.getByText(/Sends when/).textContent).toContain("second")
-    fireEvent.click(screen.getByRole("button", { name: "Don’t send" }))
-    expect(screen.queryByText(/Sends when/)).toBeNull()
+    expect(calls).toHaveLength(1)
+    expect(
+      screen.getByText("Waiting for the previous turn to finish")
+    ).toBeTruthy()
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "second"
     )
+
+    await act(async () => {
+      land(new Response(JSON.stringify({ records: [] }), { status: 200 }))
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
+      ).toBe(false)
+    )
+    // Released, not sent on its own.
     expect(calls).toHaveLength(1)
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "second"
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(calls).toHaveLength(2)
+    expect(calls[1].message).toBe("second")
   })
 
   it("releases the composer when the re-read never comes back", async () => {
@@ -516,22 +513,7 @@ describe("a send after a turn", () => {
     expect(screen.getByText("the reply")).toBeTruthy()
   })
 
-  it("sends a held message once the re-read is given up on", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    await settleOneTurn(() => new Promise<Response>(() => {}))
-    type("second")
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    expect(calls).toHaveLength(1)
-    await act(async () => {
-      vi.advanceTimersByTime(RELOAD_WAIT_MS + 10)
-      await Promise.resolve()
-    })
-    await waitFor(() => expect(calls).toHaveLength(2))
-    expect(calls[1].message).toBe("second")
-    expect(screen.getByText("the reply")).toBeTruthy()
-  })
-
-  it("sends what was held once the re-read fails", async () => {
+  it("releases the composer once the re-read fails, and sends nothing on its own", async () => {
     await settleOneTurn(
       async () =>
         new Response(JSON.stringify({ error: { message: "db down" } }), {
@@ -539,12 +521,15 @@ describe("a send after a turn", () => {
         })
     )
     type("second")
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    await waitFor(() => expect(calls).toHaveLength(2))
-    expect(calls[1].message).toBe("second")
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
+      ).toBe(false)
+    )
+    expect(calls).toHaveLength(1)
   })
 
-  it("puts a refused message back ahead of what was typed since", async () => {
+  it("shows a refused message with a copy action when something was typed since", async () => {
     const rows = [
       message("m1", 1, "assistant", "the stored reply"),
       message("m0", 0, "user", "first"),
@@ -553,81 +538,48 @@ describe("a send after a turn", () => {
       async () =>
         new Response(JSON.stringify({ records: rows }), { status: 200 })
     )
+    type("second")
     await waitFor(() =>
       expect(
-        screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
-      ).toBeTruthy()
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
+      ).toBe(false)
     )
-    type("second")
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls).toHaveLength(2)
     type("third")
     act(() =>
       calls[1].onError?.(
         new ApiError("conflict", "a chat turn is already running", 409)
       )
     )
-    expect(screen.getByRole("alert").textContent).toContain(
-      "a chat turn is already running"
-    )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
-      "second\n\nthird"
-    )
+    const note = screen.getByRole("alert")
+    expect(note.textContent).toContain("Your message wasn’t sent")
+    expect(note.textContent).toContain("a chat turn is already running")
+    expect(note.textContent).toContain("second")
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("third")
     // The settled turn is still on screen, not wiped by the refusal.
     expect(screen.getByText("the stored reply")).toBeTruthy()
   })
 
-  it("keeps what was typed after a held message when the held message goes", async () => {
-    let land: (r: Response) => void = () => {}
-    await settleOneTurn(() => new Promise<Response>((r) => (land = r)))
-    type("second")
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    type("third")
-    await act(async () => {
-      land(new Response(JSON.stringify({ records: [] }), { status: 200 }))
-      await new Promise((r) => setTimeout(r, 10))
-    })
-    await waitFor(() => expect(calls).toHaveLength(2))
-    expect(calls[1].message).toBe("second")
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("third")
-  })
-
-  it("keeps a held message across leaving the chat and coming back", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ records: [] })))
-    )
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    })
-    const view = render(
-      <QueryClientProvider client={client}>
-        <Keyed thread="t-1" />
-      </QueryClientProvider>
-    )
-    await act(() => new Promise((r) => setTimeout(r, 0)))
-    type("first")
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    act(() => calls[0].onEvent({ kind: "thread", thread: "t-1" }))
-    // The turn is still running: this one is held.
-    type("second")
+  it("sends nothing after a reload during a busy turn", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const view = mount("t-1", { threadRecord: runningThread("t-1") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => attaches[0].onEvent({ kind: "thread", thread: "t-1" }))
+    type("next")
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
-    expect(screen.getByText(/Sends when/).textContent).toContain("second")
-
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <Keyed thread="t-2" />
-      </QueryClientProvider>
-    )
-    expect(screen.queryByText(/Sends when/)).toBeNull()
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <Keyed thread="t-1" />
-      </QueryClientProvider>
-    )
-    await waitFor(() => expect(calls).toHaveLength(2))
-    expect(calls[1].message).toBe("second")
-    expect(calls[1].thread).toBe("t-1")
+    expect(
+      screen.getByText("Waiting for the previous turn to finish")
+    ).toBeTruthy()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("next")
+    view.unmount()
+    mount("t-1", { threadRecord: runningThread("t-1") })
+    await waitFor(() => expect(attaches).toHaveLength(2))
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(calls).toHaveLength(0)
   })
 
   it("starts a fresh read when Try again meets a new chat's stuck first read", async () => {
@@ -779,78 +731,152 @@ describe("a send whose delivery is unknown", () => {
       )
     )
   }
+  const lost = (reason = "the connection failed before the server answered") =>
+    calls[0].onError?.(new TransportError(reason))
 
-  async function sendThenLoseTheConnection(fail: () => void) {
-    rows = [message("m0", 0, "user", "question")]
+  async function sendThenLose(
+    text: string,
+    fail: () => void,
+    initial = [
+      message("m1", 1, "assistant", "an answer"),
+      message("m0", 0, "user", "question"),
+    ]
+  ) {
+    rows = initial
     stubLiveRows()
     mount("t-8")
-    await act(() => new Promise((r) => setTimeout(r, 0)))
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "one more thing" },
-    })
+    await waitFor(() => expect(screen.getByText("an answer")).toBeTruthy())
+    type(text)
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     act(fail)
-    // Not "wasn't sent", and nothing offered for a resend yet.
-    expect(screen.getByRole("alert").textContent).toContain(
-      "Checking whether it reached the chat"
-    )
-    expect(screen.getByRole("alert").textContent).not.toContain("wasn’t sent")
+    const note = screen.getByRole("alert")
+    expect(note.textContent).toContain("Checking whether it arrived")
+    expect(note.textContent).not.toContain("wasn’t sent")
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   }
 
-  const dropped = () =>
-    calls[0].onError?.(
-      new TransportError(
-        "the connection failed before the server answered (Load failed)"
-      )
-    )
+  const settledCheck = { timeout: RECONCILE_DELAY_MS + 2000 }
 
   it("gives the message back once the thread shows it never arrived", async () => {
-    await sendThenLoseTheConnection(dropped)
+    await sendThenLose("one more thing", () => lost())
     await waitFor(
       () =>
         expect(screen.getByRole("alert").textContent).toContain(
-          "It isn’t in this chat"
+          "didn’t arrive"
         ),
-      { timeout: RECONCILE_DELAY_MS + 2000 }
+      settledCheck
     )
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "one more thing"
     )
   })
 
-  it("offers no resend when the thread shows the message arrived", async () => {
-    await sendThenLoseTheConnection(dropped)
-    rows = [message("m1", 1, "user", "one more thing"), ...rows]
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull(), {
-      timeout: RECONCILE_DELAY_MS + 2000,
-    })
+  it("blocks a second send during the check and says why", async () => {
+    await sendThenLose("one more thing", () => lost())
+    type("another")
+    expect(
+      screen.getByText("Checking whether your last message arrived")
+    ).toBeTruthy()
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
+    ).toBe(true)
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
+    expect(calls).toHaveLength(1)
+    // Typed since: the lost message is shown to copy, not written over it.
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "one more thing"
+        ),
+      settledCheck
+    )
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "another"
+    )
+  })
+
+  it("does not take an identical earlier prompt for the lost one", async () => {
+    await sendThenLose("continue", () => lost(), [
+      message("m1", 1, "assistant", "an answer"),
+      message("m0", 0, "user", "continue"),
+    ])
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "didn’t arrive"
+        ),
+      settledCheck
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "continue"
+    )
+  })
+
+  it("offers no resend after a 504 when the thread holds the message", async () => {
+    await sendThenLose("one more thing", () =>
+      lost("the request ended with HTTP 504 and no answer from the server")
+    )
+    rows = [message("m2", 2, "user", "one more thing"), ...rows]
+    await waitFor(
+      () => expect(screen.queryByRole("alert")).toBeNull(),
+      settledCheck
+    )
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    expect(screen.getByText("one more thing")).toBeTruthy()
     expect(calls).toHaveLength(1)
   })
 
   it("checks the thread when the stream closes before any event", async () => {
-    await sendThenLoseTheConnection(() => calls[0].onDone?.())
+    await sendThenLose("one more thing", () => calls[0].onDone?.())
     await waitFor(
       () =>
         expect(screen.getByRole("alert").textContent).toContain(
-          "It isn’t in this chat"
+          "didn’t arrive"
         ),
-      { timeout: RECONCILE_DELAY_MS + 2000 }
+      settledCheck
     )
   })
 
-  it("points a new chat at the chat list before a resend", () => {
-    mount()
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "hello" },
+  it("drops the check when the chat is left, leaving the next chat's draft alone", async () => {
+    rows = [message("m0", 0, "user", "question")]
+    stubLiveRows()
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    act(dropped)
-    expect(screen.getByRole("alert").textContent).toContain(
-      "look for it in the chat list"
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Keyed thread="t-8" />
+      </QueryClientProvider>
     )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("hello")
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    type("lost one")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => lost())
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Keyed thread="t-9" />
+      </QueryClientProvider>
+    )
+    type("for the other chat")
+    await act(() => new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 300)))
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "for the other chat"
+    )
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+
+  it("points a new chat at the chat list and shows the message to copy", () => {
+    mount()
+    type("hello")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => lost())
+    const note = screen.getByRole("alert")
+    expect(note.textContent).toContain("look for it in the chat list")
+    expect(note.textContent).toContain("hello")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   })
 })
 
@@ -868,6 +894,10 @@ function Keyed({ thread }: { thread: string }) {
       onDraft={setDraft}
     />
   )
+}
+
+function type(text: string) {
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: text } })
 }
 
 function message(id: string, turn: number, role: string, content: string) {

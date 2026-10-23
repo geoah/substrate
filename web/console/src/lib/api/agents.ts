@@ -376,9 +376,21 @@ function openAgentStream(
         } catch {
           body = undefined
         }
+        // Without the server's envelope the answer is not the server's: a
+        // gateway's 502, 503 or 504 can come after the server admitted the
+        // turn, so it says nothing about whether the request took effect.
+        const envelope = (body as { error?: { message?: unknown } } | undefined)
+          ?.error
+        if (typeof envelope?.message !== "string") {
+          throw new TransportError(
+            `the request ended with HTTP ${res.status} and no answer from the server`
+          )
+        }
         throw envelopeError(res.status, body)
       }
-      if (!res.body) throw envelopeError(res.status, undefined)
+      if (!res.body) {
+        throw new TransportError("the server answered without a stream")
+      }
       await readAgentStream(res.body, handlers)
     } catch (cause) {
       if (ctrl.signal.aborted) return
@@ -386,7 +398,7 @@ function openAgentStream(
       // will not change (a deleted thread) from a failure worth retrying.
       const message = (cause as Error).message || "chat stream failed"
       handlers.onError?.(
-        cause instanceof ApiError
+        cause instanceof ApiError || cause instanceof TransportError
           ? cause
           : new TransportError(
               answered
