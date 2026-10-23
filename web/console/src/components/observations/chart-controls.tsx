@@ -62,28 +62,24 @@ export function DayControl({
   )
 }
 
-/** What to group the series by. Where every metric drawn is a category,
- * whose stacks are always its codes, the choice does nothing: `fixed` says
- * why, and the control shows Metric, disabled, beside the reason. */
+/** What to group the series by. A category's stacks are always its codes:
+ * grouped by source each source's codes stack apart, and grouped by about
+ * its chart says the choice does not apply to it. */
 export function GroupControl({
   value,
   onChange,
-  fixed,
 }: {
   value: GroupChoice
   onChange: (next: GroupChoice) => void
-  fixed?: string
 }) {
   return (
     <Labelled label="Group by">
       <Segmented
         label="Group by"
-        value={fixed ? "metric" : value}
+        value={value}
         options={GROUP_CHOICES}
         onChange={onChange}
-        disabled={Boolean(fixed)}
       />
-      {fixed && <span className="text-[12.5px] text-faint">{fixed}</span>}
     </Labelled>
   )
 }

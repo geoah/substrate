@@ -614,36 +614,233 @@ describe("the timeline's requests", () => {
     ).toEqual(["Metric", "Source", "About"])
   })
 
-  it("says Group by does nothing where every metric is a category", async () => {
-    mount(`?metric=health/sleep_stage&group=source&${WINDOW}`)
-    const sleep = await lane("Sleep stage")
-    const group = screen.getByRole("radiogroup", { name: "Group by" })
-    await waitFor(() =>
-      expect(group.getAttribute("aria-disabled")).toBe("true")
+  it("stacks a category per source grouped by source, so two devices' nights both draw", async () => {
+    const GARMIN_SLEEP = SLEEP.rows.map((r) => ({
+      ...r,
+      group: { ...r.group, source: GARMIN },
+      sources: [GARMIN],
+    }))
+    const server = mount(
+      `?metric=health/sleep_stage&group=source&source=whoop-4-0,garmin-forerunner-265&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric?.ref === SLEEP_STAGE
+          ? {
+              ...SLEEP,
+              sources: [WHOOP, GARMIN],
+              rows: [
+                ...SLEEP.rows.map((r) => ({
+                  ...r,
+                  group: { ...r.group, source: WHOOP },
+                })),
+                ...GARMIN_SLEEP,
+              ],
+            }
+          : read.aggregate.metric
+            ? answer(read)
+            : // The Garmin keeps a sleep stream beside WHOOP's.
+              latestAnswer(read, {
+                ...LATEST,
+                rows: [
+                  ...LATEST.rows,
+                  ...LATEST.rows
+                    .filter((r) => r.group?.metric === SLEEP_STAGE)
+                    .map((r) => ({
+                      ...r,
+                      group: { ...r.group, source: GARMIN },
+                    })),
+                ],
+              })
     )
+    const sleep = await lane("Sleep stage")
+    const read = charts(server.seen, "health/sleep_stage").at(-1)!
+    // Each source's codes, never one source picked by priority.
+    expect(read.aggregate.groupBy).toEqual(["code", "source", "channel"])
+    expect(read.aggregate.sources).toBeUndefined()
+    expect(
+      await within(sleep).findByText(
+        "Stacked by category, one stack per source."
+      )
+    ).toBeTruthy()
+    // Every source is drawn, so no source is said to come first.
+    expect(document.body.textContent).not.toContain("Where sources overlap")
+    // A legend entry per code and source.
+    await waitFor(() =>
+      expect(sleep.textContent?.match(/Deep \(/g)).toHaveLength(2)
+    )
+    expect(sleep.textContent).toContain("Deep (WHOOP 4.0)")
+    expect(sleep.textContent).toMatch(
+      /Deep \(garmin-forerunner-265|Deep \(Garmin/
+    )
+    const group = screen.getByRole("radiogroup", { name: "Group by" })
+    expect(group.getAttribute("aria-disabled")).toBe(null)
     expect(
       within(group)
-        .getByRole("radio", { name: "Metric" })
+        .getByRole("radio", { name: "Source" })
         .getAttribute("aria-checked")
     ).toBe("true")
+  })
+
+  it("reads each source apart where their summaries keep no shared statistic, grouped by source", async () => {
+    const summary = (source: string, statistic: string) => ({
+      start: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      form: "summary",
+      group: { metric: HEART, source, statistic },
+      values: [{ reducer: "last", value: "60", unit: "/min" }],
+      count: 30,
+      bounded: 0,
+      synthetic: false,
+    })
+    const latest: AggregateResult = {
+      ...LATEST,
+      rows: [summary(WHOOP, "avg"), summary(GARMIN, "max")],
+    }
+    const server = mount(
+      `?metric=health/heart_rate&source=whoop-4-0,garmin-forerunner-265&group=source&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric
+          ? { ...LATEST, rows: [] }
+          : latestAnswer(read, latest)
+    )
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate").length).toBeGreaterThan(1)
+    )
+    // WHOOP's averages and the Garmin's highest values, each its own read.
+    const narrowed = charts(server.seen, "health/heart_rate").map(
+      (r) => (r.filter.properties?.source as { in?: string[] }).in
+    )
+    expect(narrowed).toContainEqual([WHOOP])
+    expect(narrowed).toContainEqual([GARMIN])
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Heart rate \(average\)/).length
+      ).toBeGreaterThan(0)
+    )
     expect(
-      screen.getByText("A category metric is always grouped by its categories.")
+      screen.getAllByText(/Heart rate \(highest\)/).length
+    ).toBeGreaterThan(0)
+    expect(screen.queryByText(/is left out/)).toBe(null)
+  })
+
+  it("hides one statistic's line from its own legend, never the other's", async () => {
+    // WHOOP keeps your heart rate's average and Mia's highest: one source,
+    // two plots.
+    const summary = (statistic: string, about?: string) => ({
+      start: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      form: "summary",
+      group: {
+        metric: HEART,
+        source: WHOOP,
+        statistic,
+        ...(about ? { about } : {}),
+      },
+      values: [{ reducer: "last", value: "60", unit: "/min" }],
+      count: 30,
+      bounded: 0,
+      synthetic: false,
+    })
+    const day = (d: string, value: string) => ({
+      start: `2026-10-0${d}T00:00:00+03:00`,
+      end: `2026-10-0${Number(d) + 1}T00:00:00+03:00`,
+      form: "summary",
+      from: "summaries",
+      group: { source: WHOOP },
+      sources: [WHOOP],
+      values: [{ reducer: "avg", value, unit: "/min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+    })
+    mount(
+      `?metric=health/heart_rate&source=whoop-4-0&group=source&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric
+          ? { ...ZONES, rows: [day("5", "60"), day("6", "62"), day("7", "61")] }
+          : latestAnswer(read, {
+              ...LATEST,
+              rows: [summary("avg"), summary("max", MIA)],
+            })
+    )
+    // Each plot names the thing it reads, as the split is by thing too.
+    const chart = await screen.findByRole("region", {
+      name: /^Heart rate \(average, you\) and Heart rate \(highest, .*mia.*\)$/i,
+    })
+    const lines = () => chart.querySelectorAll("svg g[data-series]").length
+    await waitFor(() => expect(lines()).toBe(2))
+    const [first] = within(chart).getAllByRole("button", { pressed: true })
+    fireEvent.click(first)
+    expect(lines()).toBe(1)
+  })
+
+  it("reads a metric split about many people a few plots at a time, and says what it leaves out", async () => {
+    const people = Array.from(
+      { length: 12 },
+      (_, i) => `ada.example.com/people/person/p${String(i).padStart(2, "0")}`
+    )
+    const summary = (statistic: string, about: string) => ({
+      start: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      form: "summary",
+      group: { metric: HEART, source: WHOOP, statistic, about },
+      values: [{ reducer: "last", value: "60", unit: "/min" }],
+      count: 30,
+      bounded: 0,
+      synthetic: false,
+    })
+    const server = mount(
+      `?metric=health/heart_rate&source=whoop-4-0&group=source&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric
+          ? { ...ZONES, rows: [] }
+          : latestAnswer(read, {
+              ...LATEST,
+              rows: people.map((p, i) => summary(i % 2 ? "max" : "avg", p)),
+            })
+    )
+    let inFlight = 0
+    let most = 0
+    const gates: (() => void)[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const raw = new URL(String(input), "http://test").searchParams.get(
+          "aggregate"
+        )
+        const chart = raw && (JSON.parse(raw) as { metric?: unknown }).metric
+        if (chart) {
+          inFlight++
+          most = Math.max(most, inFlight)
+          await new Promise<void>((r) => gates.push(r))
+          inFlight--
+        }
+        return server.fetch(input)
+      })
+    )
+    await waitFor(() => {
+      for (const go of gates.splice(0)) go()
+      expect(charts(server.seen, "health/heart_rate").length).toBe(6)
+    })
+    expect(most).toBeLessThanOrEqual(4)
+    expect(
+      await screen.findByText(
+        /6 more plots of this metric, by statistic and thing, are not read/
+      )
     ).toBeTruthy()
-    // Beside a metric it does cut, the category's chart says it stays.
-    cleanup()
-    mount(`?metric=health/sleep_stage,health/body_mass&group=source&${WINDOW}`)
+  })
+
+  it("says Group by about does not apply to a category metric", async () => {
+    mount(`?metric=health/sleep_stage,health/body_mass&group=about&${WINDOW}`)
     const both = await lane("Sleep stage and Weight")
     expect(
       await within(both).findByText(
-        "Sleep stage: stacked by category: Group by does not apply to a category metric."
+        "Sleep stage: stacked by category: Group by about does not apply to a category metric."
       )
     ).toBeTruthy()
-    expect(
-      screen
-        .getByRole("radiogroup", { name: "Group by" })
-        .getAttribute("aria-disabled")
-    ).toBe(null)
-    expect(sleep).toBeTruthy()
   })
 
   it("keeps a metric's reducer when another metric is picked", async () => {

@@ -33,7 +33,11 @@ import {
   OWNER,
   STREAM_VIEWS,
   choiceFilter,
+  foldSources,
   groupStreams,
+  openFolds,
+  rowStreams,
+  rowTimelineSearch,
   parseStreamSort,
   selectRange,
   selectedStreams,
@@ -374,5 +378,41 @@ describe("a saved view of the table", () => {
         DEFAULT_STREAM_SORT
       )
     ).toBe(true)
+  })
+})
+
+describe("folding sources", () => {
+  it("folds one metric's sources into one row and leaves the rest as they are", () => {
+    const rows = rowsOf()
+    const folded = foldSources(rows)
+    expect(folded).toHaveLength(rows.length - 1)
+    const heart = folded[0]
+    expect(heart.members?.map((m) => m.source)).toEqual([GARMIN, APPLE])
+    // The newest value is the Garmin's; the points are both sources'.
+    expect(heart.value).toBe("96")
+    expect(heart.count).toBe(1812 + 310)
+    expect(heart.source).toBeUndefined()
+    expect(rowStreams(folded)).toHaveLength(rows.length)
+    expect(rowTimelineSearch(heart)).toMatchObject({
+      source: `${GARMIN},${APPLE}`,
+      group: "source",
+    })
+    // Opened, its members follow it, each knowing its row.
+    const open = openFolds(folded, new Set([heart.key]))
+    expect(open.slice(1, 3).map((r) => r.parent?.key)).toEqual([
+      heart.key,
+      heart.key,
+    ])
+    expect(rowStreams(open)).toHaveLength(rows.length)
+  })
+
+  it("keeps a channel and a thing apart", () => {
+    const [garmin, apple] = rowsOf()
+    const rows = [
+      garmin,
+      { ...apple, key: "workout", channel: "workout" },
+      { ...apple, key: "mia", about: MIA },
+    ]
+    expect(foldSources(rows)).toHaveLength(3)
   })
 })

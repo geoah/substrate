@@ -981,9 +981,13 @@ that account, and `/settings/{bundle id}` that page's Settings.
 ## Observations
 
 **Observations** (`/observations`) lists what your devices, apps and providers
-measured, one row per stream: a metric written by one source about one
-thing, on one of the source's channels where a source measures a metric
-twice (a WHOOP cycle's heart rate beside a workout's). It is a place in the
+measured, one row per metric, thing and channel. A stream is a metric
+written by one source about one thing, on one of the source's channels
+where a source measures a metric twice (a WHOOP cycle's heart rate beside a
+workout's). Where several sources wrote one metric about one thing on one
+channel, their streams fold into one row; a channel stays a row of its own
+([0188](decisions/0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md)).
+It is a place in the
 sidebar and ⌘K only where some kind binds core's
 `observed` trait, which the console finds in the registry by the trait and
 never by a fixed authority, so an imported `observations` or `health` sample
@@ -1001,8 +1005,11 @@ than 2,000 groups, the page lists the metrics with a point first and reads
 their streams a few metrics at a time, and does not ask the refused read
 again under the same filters. Each row shows:
 
-- **Metric**: the metric, by its record's name.
-- **Source**: the source, as a record mention.
+- **Metric**: the metric, by its record's name. A folded row has a toggle
+  beside it that opens the row to its streams, one row per source, newest
+  first.
+- **Source**: the source, as a record mention. A folded row names every
+  source, newest first.
 - **About**: what it is about, **You** where it names nothing, which means
   the owner.
 - **Channel**: its channel.
@@ -1013,11 +1020,17 @@ again under the same filters. Each row shows:
 - **Latest**: that value in its unit, to the metric's places. Hover shows
   the stored digits, and with Technical details on the value is shown as
   stored. A category shows the code a coded `last` answers. A summary's
-  value follows the statistic it is: "Average 74 /min".
+  value follows the statistic it is: "Average 74 /min". A folded row shows
+  the newest value across its sources and says whose it is ("from Garmin
+  Forerunner 265"); its **Reading** and **When** are that value's.
 - **When**: when it was taken. An amount's or a vendor summary's newest
   point covers a window, and **When** says which (`Oct 7, 09:45 to 10:00`),
   so a quarter hour's steps never reads as the day's.
-- **Points**: how many points the stream holds.
+- **Points**: how many points the stream holds; a folded row's are every
+  source's together.
+- **Covered**: how long the stream's points cover. A folded row leaves it
+  empty, because its sources' times overlap; each opened stream says its
+  own.
 
 A long metric name and a window wrap to a second line rather than lose
 their ends.
@@ -1035,7 +1048,9 @@ answers, a note names the metric, gives the reason and retries that read
 alone, and the other metrics' rows stay. The search box matches the rows' words
 (`?search=`). **Columns** shows, hides and reorders the columns, and
 **Group** cuts the rows by metric, source, about, reading or channel
-(`?group=`). **Saved views** keep a filter, sort, column set and grouping on
+(`?group=`); grouped by source, the rows are the streams, unfolded, since a
+folded row belongs to no one source. The page header and each group head
+count streams, not rows. **Saved views** keep a filter, sort, column set and grouping on
 the console preference record under the collection key
 `observations/streams`; a view is lit while the address matches it and never
 holds the search or the selection. A bare address restores the filters, sort
@@ -1044,12 +1059,18 @@ narrowed to its stream; an amount's opens on today, bucketed by day, so it
 reads the day's total. The link names every key of the stream, a key the
 stream names nothing for as `~none` (`?about=~none` for the owner's), so the
 timeline reads that stream and not every source's or everyone's values of
-the metric. A value of its own that starts with `~` gets one more in front,
+the metric. A folded row's metric opens the timeline on every source it
+folds, one line each (`?source=<a>,<b>&group=source`), a category one
+stack per source. The search matches a folded row by every source it
+names. A value of its own
+that starts with `~` gets one more in front,
 so a channel named `~none` is `?channel=~~none` and is never read as no
 channel.
 
-A box on each row selects its stream: shift-click selects the run from the
-row clicked before, and the header box selects or clears every row shown.
+A box on each row selects its stream, and a folded row's box every stream it
+folds (half checked where only some are): shift-click selects the run from
+the row clicked before, and the header box selects or clears every row
+shown.
 The selection is in the address (`?select=`, one `metric|source|about|channel`
 token per stream: the metric by its record path, the source and the thing by
 id where the reference's pin allows), so a link carries
@@ -1107,9 +1128,25 @@ row of controls scopes every chart:
   time in each stage as one span over the whole night;
 - where a day, week or month starts: where you were, or your time zone;
 - what to group by: metric, source or about. A category metric is always
-  grouped by code. Where every metric drawn is one, **Group by** is
-  disabled and says so, and beside other metrics its chart says Group by
-  does not apply to it;
+  grouped by code: grouped by source, each source's codes stack apart
+  (two devices' overlapping nights both draw, never one picked by
+  priority), and grouped by about its chart says Group by does not apply
+  to it. Grouped by source, a metric whose streams' vendor summaries keep
+  no statistic one read can share (one source's average beside another's
+  highest) is read once per statistic, each plot named for it ("Heart rate
+  (average)"), so every stream is drawn: the streams are taken under the
+  chosen sources, things and channels first, each takes the statistic the
+  single read would where it keeps it, else its own default, a stream
+  naming no source included, and each plot reads one thing's streams and
+  draws those alone, never more sources than were chosen. Each plot is named
+  for its statistic and, where the metric is about several things, for the
+  thing ("Heart rate (average, Ada)"); a metric splits into six plots at
+  most, and the chart says how many more it leaves unread. A chart has at
+  most four reads in flight, the next starting as one settles. Where sources
+  overlap, the chart says which comes first only where its read resolves
+  them by priority. A category's
+  time over its bucket is checked per source and channel, each its own
+  stack;
 - where to read from: automatic, raw points, vendor summaries, or raw where
   a bucket is covered;
 - the sources, things and channels to keep;

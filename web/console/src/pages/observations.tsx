@@ -1,5 +1,7 @@
-/** Observations (`/observations`): one row per stream, a metric written by
- * one source about one thing (on one of the source's channels), with its
+/** Observations (`/observations`): one row per metric, thing and channel,
+ * every source that measured it folded into the row (decision record
+ * 0188), which opens to one row per stream, a metric written by one source
+ * about one thing (on one of the source's channels). Each row has its
  * newest value, from the latest read (`aggregate` grouped by metric,
  * source, about and channel, the one reducer `last`, no bucket and no
  * range). Shown only where a kind binds core's `observed` trait.
@@ -95,9 +97,12 @@ import {
   STREAM_GROUPS,
   STREAM_VIEWS,
   choiceFilter,
+  foldSources,
   groupStreams,
   isStreamGroup,
+  openFolds,
   parseStreamSort,
+  rowStreams,
   selectRange,
   selectionState,
   shortRef,
@@ -274,63 +279,87 @@ export function ObservationsPage() {
     return key
   }
 
+  // The folded rows open to their sources' streams.
+  const [open, setOpen] = useState<ReadonlySet<string>>(NO_KEYS)
+  const toggleFold = useCallback((key: string) => {
+    setOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const shown = useMemo(() => {
     const matched = rows.filter((r) =>
-      streamMatches(r, choices, search, obs.pins.metric)
+      streamMatches(r, choices, "", obs.pins.metric)
     )
-    const sorted = sortStreams(matched, sort)
-    return group
-      ? groupStreams(sorted, group, (key) => groupWords(group, key))
-      : sorted
+    // Grouped by source, each source's streams are its group's rows: a row
+    // folding several sources would belong to none of them. The search
+    // reads the rows as shown, so a folded row is found by all it names.
+    const folded = (group === "source" ? matched : foldSources(matched)).filter(
+      (r) => streamMatches(r, NO_CHOICES, search, obs.pins.metric)
+    )
+    const sorted = sortStreams(folded, sort)
+    return openFolds(
+      group
+        ? groupStreams(sorted, group, (key) => groupWords(group, key))
+        : sorted,
+      open
+    )
     // groupWords reads obs, which `rows` already follows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, choices, search, sort, group])
+  }, [rows, choices, search, sort, group, open])
+  // The streams the rows shown stand for: what the selection and the counts
+  // are of.
+  const shownStreams = useMemo(() => rowStreams(shown), [shown])
 
   // ── selection ────────────────────────────────────────────────────────────
   const pins = obs.pins
-  const selected = useMemo(
-    () =>
-      new Set(
-        shown
-          .filter((r) => selection.some((t) => tokenNames(t, r)))
-          .map((r) => r.key)
-      ),
-    [shown, selection]
-  )
+  // A folded row is selected where every member is, and mixed where some
+  // are.
+  const [selected, mixed] = useMemo(() => {
+    const picked = (r: StreamRow) => selection.some((t) => tokenNames(t, r))
+    const all = new Set<string>()
+    const some = new Set<string>()
+    for (const r of shown) {
+      const n = (r.members ?? [r]).filter(picked).length
+      if (n && n === (r.members ?? [r]).length) all.add(r.key)
+      else if (n) some.add(r.key)
+    }
+    return [all, some]
+  }, [shown, selection])
   const [anchor, setAnchor] = useState<string | null>(null)
   const pick = useCallback(
     (row: StreamRow, checked: boolean, shift: boolean) => {
       const at = shown.findIndex((r) => r.key === row.key)
       const from =
         shift && anchor ? shown.findIndex((r) => r.key === anchor) : at
-      const next = selectRange(
-        selection,
-        shown,
-        from < 0 ? at : from,
-        at,
-        checked,
-        pins
-      )
+      const lo = Math.min(from < 0 ? at : from, at)
+      const run = rowStreams(shown.slice(lo, Math.max(from, at) + 1))
+      const next = selectRange(selection, run, 0, run.length - 1, checked, pins)
       setAnchor(row.key)
       void setSelection(next.length ? next : null)
     },
     [shown, anchor, selection, pins, setSelection]
   )
-  const headState = selectionState(selection, shown)
+  const headState = selectionState(selection, shownStreams)
   const pickAll = useCallback(() => {
     const next = selectRange(
       selection,
-      shown,
+      shownStreams,
       0,
-      shown.length - 1,
+      shownStreams.length - 1,
       headState !== "all",
       pins
     )
     void setSelection(next.length ? next : null)
-  }, [selection, shown, headState, pins, setSelection])
+  }, [selection, shownStreams, headState, pins, setSelection])
 
   // ── columns, sort, views ─────────────────────────────────────────────────
-  const columns = useMemo(() => streamColumns(obs, technical), [obs, technical])
+  const columns = useMemo(
+    () => streamColumns(obs, technical, { open, onToggle: toggleFold }),
+    [obs, technical, open, toggleFold]
+  )
   const autoHidden = useMemo(
     () => [
       ...(rows.some((r) => r.count !== undefined) ? [] : ["count"]),
@@ -361,12 +390,13 @@ export function ObservationsPage() {
       selectColumn({
         state: headState,
         selected,
+        mixed,
         onAll: pickAll,
         onPick: pick,
       }),
       ...columns,
     ],
-    [headState, selected, pickAll, pick, columns]
+    [headState, selected, mixed, pickAll, pick, columns]
   )
   const table = useDataTable({
     columns: gridColumns,
@@ -452,14 +482,19 @@ export function ObservationsPage() {
   const gridGroups: GridGroups<StreamRow> | undefined = group
     ? {
         keyOf: (row) => streamGroupKey(row, group),
-        head: (key, at) => (
-          <>
-            <GroupValue obs={obs} field={group} value={key} />
-            <span className="text-[12.5px] font-normal text-faint tabular-nums">
-              {at.rows === 1 ? "1 stream" : `${at.rows} streams`}
-            </span>
-          </>
-        ),
+        head: (key) => {
+          const n = rowStreams(
+            shown.filter((r) => streamGroupKey(r, group) === key)
+          ).length
+          return (
+            <>
+              <GroupValue obs={obs} field={group} value={key} />
+              <span className="text-[12.5px] font-normal text-faint tabular-nums">
+                {n === 1 ? "1 stream" : `${n} streams`}
+              </span>
+            </>
+          )
+        },
         label: (key) => `${FIELD_LABELS[group]}: ${groupWords(group, key)}`,
         collapsed: folded.group === group ? folded.keys : NO_KEYS,
         onToggle: (key) =>
@@ -482,14 +517,16 @@ export function ObservationsPage() {
           // The rows shown, which a filter or the search narrows: a count of
           // what the server read would change with some filters and not
           // others.
-          shown.length > 0 && (
+          shownStreams.length > 0 && (
             <span>
-              {shown.length === 1 ? "1 stream" : `${shown.length} streams`}
-              {filtered && (shown.length === 1 ? " matches" : " match")}
+              {shownStreams.length === 1
+                ? "1 stream"
+                : `${shownStreams.length} streams`}
+              {filtered && (shownStreams.length === 1 ? " matches" : " match")}
             </span>
           )
         }
-        description="What your devices, apps and providers measured: one row for each metric from each source, with its newest value. Select streams to draw them together, or open one to see it over time."
+        description="What your devices, apps and providers measured: one row for each metric, with its newest value from any source. Open a row to see each source's stream. Select streams to draw them together, or open one to see it over time."
         actions={
           obs.observed.length > 0 && (
             <Button
@@ -705,6 +742,7 @@ export function ObservationsPage() {
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set()
+const NO_CHOICES = streamChoices([])
 
 /** A group head's value, drawn the way the grid's cells draw it. */
 function GroupValue({

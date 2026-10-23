@@ -142,6 +142,9 @@ function choiceWords(plot: Plot): string {
   )
 }
 
+/** The most of one chart's reads in flight at once. */
+const MAX_CHART_READS = 4
+
 export function OverlayChart({
   obs,
   plots,
@@ -192,13 +195,31 @@ export function OverlayChart({
   // own. A changed bucket, filter or reducer the cached answers carry holds
   // the frame while a request loads (`heldAnswer`).
   const reading = drawn.filter((p) => p.read && obs.knows(p.metric))
+  // At most MAX_CHART_READS requests are in flight: the next starts as one
+  // settles, so a metric split into many plots queues rather than crowd
+  // the server's few aggregate slots. A new set of reads starts the queue
+  // over.
+  const readsKey = reading.map((p) => JSON.stringify(p.read)).join("\n")
+  const [window_, setWindow] = useState({
+    key: readsKey,
+    open: MAX_CHART_READS,
+  })
+  const open = window_.key === readsKey ? window_.open : MAX_CHART_READS
+  if (window_.key !== readsKey) setWindow({ key: readsKey, open })
   const queries: UseQueryResult<AggregateResult>[] = useQueries({
-    queries: reading.map((plot) => ({
+    queries: reading.map((plot, i) => ({
       ...aggregateQueryOptions(plot.read!, obs.observedIds),
+      enabled: i < open,
       placeholderData: (prev?: AggregateResult) =>
         prev ?? heldAnswer(client, plot.read!, obs.observedIds),
     })),
   })
+  const settled = queries
+    .slice(0, open)
+    .filter((q) => !q.isFetching && (q.isSuccess || q.isError)).length
+  if (open < reading.length && settled + MAX_CHART_READS > open) {
+    setWindow({ key: readsKey, open: settled + MAX_CHART_READS })
+  }
 
   const states = drawn.map((plot): PlotState => {
     const blank = {
@@ -246,7 +267,12 @@ export function OverlayChart({
           : plot.groupKey === "code" && s.value
             ? codeWords(s.value)
             : plot.name
-    return s.channel ? `${name} (${s.channel})` : name
+    // A category's stack per source names its source.
+    const within = [
+      ...(s.source ? [sourceText(s.source)] : []),
+      ...(s.channel ? [s.channel] : []),
+    ]
+    return within.length ? `${name} (${within.join(", ")})` : name
   }
 
   // A read that landed with no rows beside a metric that has some: the
@@ -272,10 +298,13 @@ export function OverlayChart({
     mark: d.plot.mark,
     band: d.plot.band && lonely(d.plot),
     axis: d.side,
-    // A channel's categories stack apart from another channel's.
+    // A channel's or a source's categories stack apart from another's.
     stack:
       d.plot.mark === "stack"
-        ? seriesKey(d.plot.metric, d.series.channel ?? "")
+        ? seriesKey(
+            d.plot.id,
+            `${d.series.source ?? ""}\u0001${d.series.channel ?? ""}`
+          )
         : undefined,
     stale: d.stale,
   }))
@@ -374,7 +403,7 @@ export function OverlayChart({
           <p className="mt-1 text-muted-foreground">Nothing measured.</p>
         )}
         {byPlot.map(({ plot, rows }) => (
-          <div key={plot.metric} className="mt-2 border-t border-border pt-2">
+          <div key={plot.id} className="mt-2 border-t border-border pt-2">
             <p className="mb-1 text-faint">
               {plot.name}, {lowerFirst(choiceWords(plot))}
             </p>
@@ -433,7 +462,7 @@ export function OverlayChart({
       <div className="flex flex-col gap-1.5">
         {states.map((state) => (
           <PlotHead
-            key={state.plot.metric}
+            key={state.plot.id}
             state={state}
             empty={empty(state)}
             series={all.filter((d) => d.plot === state.plot)}
@@ -497,7 +526,7 @@ export function OverlayChart({
       {states.map(({ plot, rows }) =>
         rows.length > 0 ? (
           <RollupTable
-            key={plot.metric}
+            key={plot.id}
             rows={rows}
             reducers={answerReducers(rows)}
             groupKey={plot.groupKey}
@@ -514,7 +543,7 @@ export function OverlayChart({
       {technical &&
         reading.map((plot) => (
           <RequestDetails
-            key={plot.metric}
+            key={plot.id}
             read={plot.read!}
             caption={drawn.length > 1 ? plot.name : undefined}
           />
@@ -558,8 +587,8 @@ function drawnSeries(
     for (const v of own) {
       // Where the first category's codes are fixed, those it holds wear
       // their own colours and those it does not hold draw nothing.
-      if (plot === coded && plot.codes?.includes(v)) continue
-      const key = seriesKey(plot.metric, v)
+      if (plot === coded && plot.codes?.includes(codeOfKey(v))) continue
+      const key = seriesKey(plot.id, v)
       if (!universe.includes(key)) universe.push(key)
     }
     // Categories stack and list in the metric's own order.
@@ -568,10 +597,11 @@ function drawnSeries(
         ? [...answered].sort((a, b) => own.indexOf(a.key) - own.indexOf(b.key))
         : answered
     for (const s of ordered) {
-      const at = plot === coded ? (plot.codes ?? []).indexOf(s.key) : -1
-      if (at >= 0) fixed.set(seriesKey(plot.metric, s.key), at)
+      const at =
+        plot === coded ? (plot.codes ?? []).indexOf(s.value ?? s.key) : -1
+      if (at >= 0) fixed.set(seriesKey(plot.id, s.key), at)
       all.push({
-        key: seriesKey(plot.metric, s.key),
+        key: seriesKey(plot.id, s.key),
         plot,
         series: s,
         label: labelOf(plot, s),
@@ -587,6 +617,14 @@ function drawnSeries(
       colors.get(d.key) ?? (d.series.key ? "var(--faint)" : "var(--series-1)")
   }
   return all
+}
+
+/** A category series key's code: the part before its channel or source. */
+function codeOfKey(key: string): string {
+  const cut = [key.indexOf("\u0001"), key.indexOf("\u0002")].filter(
+    (i) => i >= 0
+  )
+  return cut.length ? key.slice(0, Math.min(...cut)) : key
 }
 
 /** One metric's row above the chart: its name and form, its axis, its
@@ -633,7 +671,7 @@ function PlotHead({
       : undefined
   return (
     <div
-      key={plot.metric}
+      key={plot.id}
       role="group"
       aria-label={plot.name}
       data-slot="chart-plot"
@@ -793,7 +831,17 @@ function chartNotes(
       ),
       ...(plot.sourceless ? ["values naming no source"] : []),
     ]
-    if (plot.groupKey !== "source" && plot.spec && overlapping.length > 1) {
+    if (plot.splitOmitted) {
+      own.push(
+        `${plot.splitOmitted} more plots of this metric, by statistic and thing, are not read. Narrow About or Source to see them.`
+      )
+    }
+    // Said only where the read resolves sources by priority: grouped by
+    // source, a category draws every source.
+    if (
+      plot.read?.aggregate.sources?.policy === "priority" &&
+      overlapping.length > 1
+    ) {
       const [first, ...rest] = overlapping
       own.push(
         `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
@@ -825,11 +873,14 @@ function chartNotes(
       )
     }
     if (plot.shape === "coded") {
-      // Grouped by source or about, it says it leaves this one be.
+      // Grouped by source, each source's codes stack apart; grouped by
+      // about, it says it leaves this one be.
       own.push(
-        plot.spec && plot.spec.group !== "metric"
-          ? "Stacked by category: Group by does not apply to a category metric."
-          : "Stacked by category."
+        plot.spec?.group === "source"
+          ? "Stacked by category, one stack per source."
+          : plot.spec?.group === "about"
+            ? "Stacked by category: Group by about does not apply to a category metric."
+            : "Stacked by category."
       )
     }
     if (!held && overfull(plot, rows)) {

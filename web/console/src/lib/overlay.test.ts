@@ -45,6 +45,8 @@ import {
   mixedFrom,
   overfull,
   planPlot,
+  MAX_SPLIT_PLOTS,
+  planPlots,
   plotRows,
   seriesColors,
   seriesKey,
@@ -1087,5 +1089,259 @@ describe("one metric's plot", () => {
     const colors = seriesColors(Array.from({ length: 9 }, (_, i) => `s${i}`))
     expect(colors.get("s7")).toBe("var(--series-8)")
     expect(colors.get("s8")).toBe("var(--faint)")
+  })
+})
+
+describe("one metric's plots grouped by source", () => {
+  const C = `${SOURCE}/oura-ring`
+  /** One stream of heart rate summaries. */
+  function hr(source: string, statistics: string[], channel?: string): Stream {
+    return {
+      key: `${HEART}\n${source}\n\n${channel ?? ""}`,
+      metric: HEART,
+      source,
+      ...(channel ? { channel } : {}),
+      value: "60",
+      unit: "/min",
+      form: "summary",
+      at: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      statistics,
+      statistic: statistics[0],
+    }
+  }
+  const scope = (over: Partial<PlotScope>): PlotScope => ({
+    ...SCOPE,
+    group: "source",
+    ...over,
+  })
+
+  it("reads each statistic's streams apart, never widening the chosen sources", () => {
+    // WHOOP and the Garmin each keep cycle averages and workout maxima; the
+    // ring is not chosen.
+    const streams = [
+      hr(WHOOP, ["avg"]),
+      hr(WHOOP, ["max"], "workout"),
+      hr(GARMIN, ["avg"]),
+      hr(GARMIN, ["max"], "workout"),
+      hr(C, ["avg"]),
+    ]
+    const plots = planPlots(
+      source(streams),
+      HEART,
+      scope({ sources: [WHOOP, GARMIN] })
+    )
+    expect(plots.map((p) => p.name)).toEqual([
+      "Heart rate (average)",
+      "Heart rate (highest)",
+    ])
+    for (const p of plots) {
+      expect(p.spec?.sources.length).toBeGreaterThan(0)
+      expect(p.spec?.sources).not.toContain(C)
+    }
+    expect(plots[1].spec?.channels).toEqual(["workout"])
+    expect(new Set(plots.map((p) => p.id)).size).toBe(2)
+  })
+
+  it("chooses each stream's statistic under the chosen channels, and names the plot for it", () => {
+    // WHOOP keeps cycle maxima and workout averages, the Garmin cycle
+    // averages; the folded row is the cycles'.
+    const streams = [
+      hr(WHOOP, ["max"]),
+      hr(WHOOP, ["avg"], "workout"),
+      hr(GARMIN, ["avg"]),
+    ]
+    const plots = planPlots(
+      source(streams),
+      HEART,
+      scope({ sources: [WHOOP, GARMIN], channels: [NONE] })
+    )
+    const named = Object.fromEntries(
+      plots.map((p) => [p.name, p.spec?.sources])
+    )
+    expect(named).toEqual({
+      "Heart rate (average)": [GARMIN],
+      "Heart rate (highest)": [WHOOP],
+    })
+  })
+})
+
+describe("one metric's plots grouped by source, against their answers", () => {
+  function hr(
+    source: string | undefined,
+    statistics: string[],
+    channel?: string,
+    about?: string
+  ): Stream {
+    return {
+      key: `${HEART}\n${source ?? ""}\n${about ?? ""}\n${channel ?? ""}`,
+      metric: HEART,
+      ...(source ? { source } : {}),
+      ...(about ? { about } : {}),
+      ...(channel ? { channel } : {}),
+      value: "60",
+      unit: "/min",
+      form: "summary",
+      at: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      statistics,
+      statistic: statistics[0],
+    }
+  }
+  const row = (source: string, channel?: string) => ({
+    start: "2026-10-07T00:00:00Z",
+    end: "2026-10-08T00:00:00Z",
+    form: "summary",
+    group: { source, ...(channel ? { channel } : {}) },
+    values: [{ reducer: "avg", value: "60", unit: "/min" }],
+    count: 1,
+    bounded: 0,
+    synthetic: false,
+  })
+
+  it("draws in each statistic's plot only the streams it was given", () => {
+    // WHOOP's cycles keep both statistics and go with the average; its
+    // workouts and the Garmin's cycles keep the highest alone.
+    const streams = [
+      hr(WHOOP, ["avg", "max"]),
+      hr(WHOOP, ["max"], "workout"),
+      hr(GARMIN, ["max"]),
+    ]
+    const [avg, max] = planPlots(source(streams), HEART, {
+      ...SCOPE,
+      group: "source",
+      sources: [WHOOP, GARMIN],
+    })
+    expect([avg.name, max.name]).toEqual([
+      "Heart rate (average)",
+      "Heart rate (highest)",
+    ])
+    // The highest's read takes WHOOP's cycles too (sources and channels
+    // narrow apart); its rows keep the streams it was given.
+    const drawn = plotRows(max, [
+      row(WHOOP),
+      row(WHOOP, "workout"),
+      row(GARMIN),
+    ])
+    expect(drawn.map((r) => [r.group?.source, r.group?.channel])).toEqual([
+      [WHOOP, "workout"],
+      [GARMIN, undefined],
+    ])
+  })
+
+  it("keeps a stream naming no source in a plot of its own statistic", () => {
+    const plots = planPlots(
+      source([hr(WHOOP, ["avg"]), hr(undefined, ["max"])]),
+      HEART,
+      { ...SCOPE, group: "source" }
+    )
+    expect(plots.map((p) => [p.name, p.spec?.sources])).toEqual([
+      ["Heart rate (average)", [WHOOP]],
+      ["Heart rate (highest)", [NONE]],
+    ])
+  })
+})
+
+describe("a metric split about many things", () => {
+  const people = Array.from(
+    { length: 200 },
+    (_, i) => `ada.example.com/people/person/p${String(i).padStart(3, "0")}`
+  )
+  const streams: Stream[] = people.map((about, i) => ({
+    key: `${HEART}\n${WHOOP}\n${about}\n`,
+    metric: HEART,
+    source: WHOOP,
+    about,
+    value: "60",
+    unit: "/min",
+    form: "summary",
+    at: "2026-10-07T05:00:00Z",
+    end: "2026-10-07T19:00:00Z",
+    statistics: [i % 2 ? "max" : "avg"],
+    statistic: i % 2 ? "max" : "avg",
+  }))
+  const scope: PlotScope = { ...SCOPE, group: "source" }
+
+  it("plans a bounded number of plots, and counts the rest", () => {
+    const plots = planPlots(source(streams), HEART, scope)
+    expect(plots).toHaveLength(MAX_SPLIT_PLOTS)
+    expect(plots[0].splitOmitted).toBe(200 - MAX_SPLIT_PLOTS)
+    // Each names its statistic and the thing it reads.
+    expect(plots[0].name).toBe("Heart rate (average, p000)")
+  })
+
+  it("keys each plot by its statistic and thing, whatever order the streams came in", () => {
+    const named = (list: Stream[]) =>
+      Object.fromEntries(
+        planPlots(source(list), HEART, scope).map((p) => [p.id, p.name])
+      )
+    // A thing's plot keeps its id when another thing's stream moves ahead,
+    // and no two plots read as one.
+    expect(named([...streams].reverse())).toEqual(named(streams))
+    expect(new Set(Object.values(named(streams))).size).toBe(MAX_SPLIT_PLOTS)
+  })
+})
+
+describe("a category's time in a bucket", () => {
+  it("is held to the bucket per source and channel, each its own stack", () => {
+    const hour = (src: string) => ({
+      start: "2026-10-07T01:00:00Z",
+      end: "2026-10-07T02:00:00Z",
+      form: "amount",
+      group: { code: "deep", source: src },
+      values: [{ reducer: "sum", value: "60", unit: "min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+    })
+    const plot = { shape: "coded" as const, unit: "min", pickedKey: "sum" }
+    expect(overfull(plot, [hour(WHOOP), hour(GARMIN)])).toBe(false)
+    expect(overfull(plot, [hour(WHOOP), hour(WHOOP)])).toBe(true)
+  })
+})
+
+describe("a category's rows grouped by source", () => {
+  it("keeps a selection's stacks by source and channel", () => {
+    const night = (source: string, channel?: string): Stream => ({
+      key: `${SLEEP_STAGE}\n${source}\n\n${channel ?? ""}`,
+      metric: SLEEP_STAGE,
+      source,
+      ...(channel ? { channel } : {}),
+      value: null,
+      code: "deep",
+      form: "amount",
+      at: "2026-10-06T23:10:00+03:00",
+      end: "2026-10-07T06:20:00+03:00",
+    })
+    // WHOOP's night and the Garmin's nap are selected; WHOOP's nap is not,
+    // and the read's source and channel filters take it too.
+    const selected = [night(WHOOP), night(GARMIN, "nap")]
+    const p = planPlot(
+      source([...selected, night(WHOOP, "nap")]),
+      SLEEP_STAGE,
+      {
+        ...SCOPE,
+        group: "source",
+        streams: selected,
+      }
+    )
+    const row = (src: string, channel?: string) => ({
+      start: "2026-10-06T00:00:00+03:00",
+      end: "2026-10-07T00:00:00+03:00",
+      group: { code: "deep", source: src, ...(channel ? { channel } : {}) },
+      values: [],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+    })
+    const kept = plotRows(p, [
+      row(WHOOP),
+      row(GARMIN, "nap"),
+      row(WHOOP, "nap"),
+    ])
+    expect(kept.map((r) => [r.group?.source, r.group?.channel])).toEqual([
+      [WHOOP, undefined],
+      [GARMIN, "nap"],
+    ])
   })
 })

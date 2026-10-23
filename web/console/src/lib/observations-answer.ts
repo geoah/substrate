@@ -76,6 +76,8 @@ export interface Series {
   value?: string
   /** The source's channel, where the answer is grouped by one. */
   channel?: string
+  /** On a category grouped by source too, the source whose stack it is. */
+  source?: string
   points: SeriesPoint[]
   /** Rows of this series that met a bucket already holding one, which the
    * series does not draw. A read the console plans answers none. */
@@ -199,16 +201,24 @@ export function seriesOn(
   buckets.forEach((b, i) => at.set(keyOfBucket(b), i))
   const keys: string[] = []
   const channels = new Map<string, string | undefined>()
+  const values = new Map<string, string>()
+  const sources = new Map<string, string | undefined>()
   const byKey = new Map<string, Map<number, AggregateRow>>()
   const dropped = new Map<string, number>()
   for (const row of rows) {
     const value = groupValue(row.group, groupKey) ?? ""
     // A row carries a channel only where its read grouped by one.
     const channel = row.group?.channel || undefined
-    const key = channelKey(value, channel)
+    // A category read grouped by source too names each row's source: each
+    // source's codes are a stack of their own.
+    const source =
+      groupKey === "code" ? row.group?.source || undefined : undefined
+    const key = channelKey(value, channel) + (source ? `\u0002${source}` : "")
     if (!byKey.has(key)) {
       keys.push(key)
       channels.set(key, channel)
+      values.set(key, value)
+      sources.set(key, source)
       byKey.set(key, new Map())
     }
     const i = at.get(bucketKeyOf(row, local))
@@ -220,11 +230,13 @@ export function seriesOn(
   return keys.map((key) => {
     const held = byKey.get(key)!
     const channel = channels.get(key)
-    const value = channel ? key.slice(0, key.indexOf("\u0001")) : key
+    const value = values.get(key) ?? ""
+    const source = sources.get(key)
     return {
       key,
       value: groupKey ? value || undefined : undefined,
       ...(channel ? { channel } : {}),
+      ...(source ? { source } : {}),
       dropped: dropped.get(key) ?? 0,
       points: buckets.map((_, i) => {
         const row = held.get(i)
