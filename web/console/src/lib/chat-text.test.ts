@@ -195,6 +195,39 @@ describe("links", () => {
     ])
   })
 
+  it("leaves an unknown reference as written, even one named like a built-in", () => {
+    for (const name of [
+      "constructor",
+      "toString",
+      "__proto__",
+      "hasOwnProperty",
+      "bogus",
+    ]) {
+      expect(inlineRuns(`[x](https://example.com/?a=1&${name};)`)).toEqual([
+        {
+          type: "link",
+          href: `https://example.com/?a=1&${name};`,
+          text: "x",
+        },
+      ])
+    }
+  })
+
+  it("reads a title with escaped quotes", () => {
+    expect(
+      inlineRuns('[BBC](https://example.com "The \\"forecast\\"") today')
+    ).toEqual([
+      { type: "link", href: "https://example.com/", text: "BBC" },
+      { type: "text", text: " today" },
+    ])
+    expect(inlineRuns("[BBC](https://example.com 'it\\'s')")).toEqual([
+      { type: "link", href: "https://example.com/", text: "BBC" },
+    ])
+    expect(inlineRuns('[BBC](https://example.com "open \\")')).toEqual([
+      { type: "text", text: '[BBC](https://example.com "open \\")' },
+    ])
+  })
+
   it("reads a tab as the space before a title", () => {
     expect(
       inlineRuns('[weather](https://example.com/weather\t"Weather")')
@@ -213,6 +246,7 @@ describe("links", () => {
       "[a](".repeat(n / 4),
       "[a](<".repeat(n / 5),
       '[a](x "'.repeat(n / 7),
+      '[a](x "\\"'.repeat(n / 9),
       "[](x".repeat(n / 4),
     ]) {
       const started = performance.now()

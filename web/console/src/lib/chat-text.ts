@@ -71,21 +71,21 @@ const UNESCAPE =
   /\\([!-/:-@[-`{-~])|&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g
 
 /** The named references models write; any other name stays as written. */
-const NAMED: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: "\u00a0",
-}
+const NAMED = new Map([
+  ["amp", "&"],
+  ["lt", "<"],
+  ["gt", ">"],
+  ["quot", '"'],
+  ["apos", "'"],
+  ["nbsp", "\u00a0"],
+])
 
 function unescape(source: string): string {
   return source.replace(
     UNESCAPE,
     (whole, escaped?: string, dec?: string, hex?: string, name?: string) => {
       if (escaped !== undefined) return escaped
-      if (name !== undefined) return NAMED[name] ?? whole
+      if (name !== undefined) return NAMED.get(name) ?? whole
       const point = dec !== undefined ? Number(dec) : parseInt(hex ?? "", 16)
       const valid =
         point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff)
@@ -196,8 +196,12 @@ function linkAt(
   while (isSpace(line[i])) i++
   const quote = line[i]
   if (quote === '"' || quote === "'") {
-    const end = line.indexOf(quote, i + 1)
-    if (!done(end < 0 ? line.length : end) || end < 0) return undefined
+    // The closing quote is the first one no backslash escapes.
+    let end = i + 1
+    while (end < line.length && line[end] !== quote) {
+      end += line[end] === "\\" ? 2 : 1
+    }
+    if (!done(end) || end >= line.length) return undefined
     i = end + 1
     while (isSpace(line[i])) i++
   }
