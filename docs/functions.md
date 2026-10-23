@@ -956,7 +956,14 @@ It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
 on every output where given, and takes `stored=` where the body has
 already read the records.
 
+The example is an adapter in a sample, so `home` is the sample's placeholder
+authority. The import rewrites every mention of it to the repository's own
+authority, inside the function's code as everywhere else, so the body names
+the kinds of the copy the repository holds
+([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)).
+
 ```python
+home = "samples.substrate.reamde.dev"  # the import rewrites it
 device = "chest"
 docs = host.observed.trace(
     [(sample_time, sample["bpm"]) for sample in samples],
