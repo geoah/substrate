@@ -59,6 +59,7 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
 import type { AgentEvent } from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { TransportError } from "@/lib/api/agents"
+import { resetUnsent } from "@/lib/unsent-messages"
 import {
   Conversation,
   RECONCILE_DELAY_MS,
@@ -73,6 +74,7 @@ afterEach(() => {
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  resetUnsent()
 })
 
 function Harness({
@@ -795,19 +797,38 @@ describe("a send whose delivery is unknown", () => {
   }
 
   const settledCheck = { timeout: RECONCILE_DELAY_MS + 2000 }
+  const MAYBE = "may not have arrived"
 
-  it("gives the message back once the thread shows it never arrived", async () => {
-    await sendThenLose("one more thing", () => lost())
+  /** Waits for the check to end with the message still unaccounted for:
+   * kept to copy, never put back, never called missing. */
+  async function expectStillUnknown(text: string) {
     await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "didn’t arrive"
-        ),
+      () => expect(screen.getByRole("alert").textContent).toContain(MAYBE),
       settledCheck
     )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
-      "one more thing"
-    )
+    const note = screen.getByRole("alert")
+    expect(note.textContent).toContain(text)
+    expect(note.textContent).not.toContain("didn’t arrive")
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+  }
+
+  it("keeps the message to copy when the thread does not hold it", async () => {
+    await sendThenLose("one more thing", () => lost())
+    await expectStillUnknown("one more thing")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+  })
+
+  it("says nothing failed when admission comes after the check began", async () => {
+    await sendThenLose("one more thing", () => lost())
+    await expectStillUnknown("one more thing")
+    // The request was still waiting for admission when the thread was read.
+    rows = [message("m2", 2, "user", "one more thing"), ...rows]
+    threadStatus = "running"
+    await act(() => new Promise((r) => setTimeout(r, 100)))
+    expect(screen.queryByText(/didn’t arrive/)).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   })
 
   it("blocks a second send during the check and says why", async () => {
@@ -821,17 +842,7 @@ describe("a send whose delivery is unknown", () => {
     ).toBe(true)
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
     expect(calls).toHaveLength(1)
-    // Typed since: the lost message is shown to copy, not written over it.
-    await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "one more thing"
-        ),
-      settledCheck
-    )
-    expect(
-      screen.getByRole("button", { name: "Copy your message" })
-    ).toBeTruthy()
+    await expectStillUnknown("one more thing")
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "another"
     )
@@ -842,19 +853,16 @@ describe("a send whose delivery is unknown", () => {
       message("m1", 1, "assistant", "an answer"),
       message("m0", 0, "user", "continue"),
     ])
-    await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "didn’t arrive"
-        ),
-      settledCheck
-    )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
-      "continue"
-    )
+    await expectStillUnknown("continue")
   })
 
-  it("offers no resend after a 504 when the thread holds the message", async () => {
+  it("does not take another tab's newer message for the lost one", async () => {
+    await sendThenLose("one more thing", () => lost())
+    rows = [message("m2", 2, "user", "from another tab"), ...rows]
+    await expectStillUnknown("one more thing")
+  })
+
+  it("clears the notice after a 504 when the thread holds the message", async () => {
     await sendThenLose("one more thing", () =>
       lost("the request ended with HTTP 504 and no answer from the server")
     )
@@ -864,50 +872,22 @@ describe("a send whose delivery is unknown", () => {
       settledCheck
     )
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
-    expect(screen.getByText("one more thing")).toBeTruthy()
     expect(calls).toHaveLength(1)
   })
 
-  it("does not take another tab's newer message for the lost one", async () => {
+  it("attaches to the turn the check finds running, with no running record given", async () => {
     await sendThenLose("one more thing", () => lost())
-    rows = [message("m2", 2, "user", "from another tab"), ...rows]
-    await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "didn’t arrive"
-        ),
-      settledCheck
-    )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
-      "one more thing"
-    )
-  })
-
-  it("keeps the message to copy while a turn runs that does not hold it yet", async () => {
-    await sendThenLose("one more thing", () => lost())
+    rows = [message("m2", 2, "user", "one more thing"), ...rows]
     threadStatus = "running"
-    await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "may still arrive"
-        ),
-      settledCheck
-    )
-    expect(screen.getByRole("alert").textContent).toContain("one more thing")
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    await waitFor(() => expect(attaches).toHaveLength(1), settledCheck)
+    expect(attaches[0].thread).toBe("t-8")
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 
-  it("says the chat could not be checked when the read fails", async () => {
+  it("keeps the message to copy when the check's read fails", async () => {
     await sendThenLose("one more thing", () => lost())
     threadStatus = "fail"
-    await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "couldn’t be checked"
-        ),
-      settledCheck
-    )
-    expect(screen.getByRole("alert").textContent).not.toContain("didn’t arrive")
+    await expectStillUnknown("one more thing")
   })
 
   it("does not trust a transcript read that started before the message landed", async () => {
@@ -917,8 +897,6 @@ describe("a send whose delivery is unknown", () => {
     })
     // The message lands after the slow read took its snapshot.
     rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    await act(() => new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 900)))
-    expect(screen.queryByText(/didn’t arrive/)).toBeNull()
     await waitFor(
       () => expect(screen.queryByRole("alert")).toBeNull(),
       settledCheck
@@ -963,16 +941,10 @@ describe("a send whose delivery is unknown", () => {
 
   it("checks the thread when the stream closes before any event", async () => {
     await sendThenLose("one more thing", () => calls[0].onDone?.())
-    await waitFor(
-      () =>
-        expect(screen.getByRole("alert").textContent).toContain(
-          "didn’t arrive"
-        ),
-      settledCheck
-    )
+    await expectStillUnknown("one more thing")
   })
 
-  it("drops the check when the chat is left, leaving the next chat's draft alone", async () => {
+  it("leaves the next chat's draft alone when the chat is left during a check", async () => {
     rows = [message("m0", 0, "user", "question")]
     stubLiveRows()
     const client = new QueryClient({
@@ -1000,13 +972,41 @@ describe("a send whose delivery is unknown", () => {
     expect(screen.queryByRole("alert")).toBeNull()
   })
 
+  it("keeps an unsent message across leaving a chat and coming back", async () => {
+    rows = []
+    stubLiveRows()
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const at = (thread: string) => (
+      <QueryClientProvider client={client}>
+        <Keyed thread={thread} />
+      </QueryClientProvider>
+    )
+    // A new chat: no thread to check, so only the notice holds the text.
+    const view = render(at(""))
+    type("hello")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => lost())
+    expect(screen.getByRole("alert").textContent).toContain("hello")
+    view.rerender(at("t-9"))
+    expect(screen.queryByRole("alert")).toBeNull()
+    view.rerender(at(""))
+    const note = screen.getByRole("alert")
+    expect(note.textContent).toContain(MAYBE)
+    expect(note.textContent).toContain("hello")
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+  })
+
   it("points a new chat at the chat list and shows the message to copy", () => {
     mount()
     type("hello")
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     act(() => lost())
     const note = screen.getByRole("alert")
-    expect(note.textContent).toContain("look for it in the chat list")
+    expect(note.textContent).toContain("chat list")
     expect(note.textContent).toContain("hello")
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   })

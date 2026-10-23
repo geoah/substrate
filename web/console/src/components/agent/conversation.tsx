@@ -87,6 +87,15 @@ import {
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { CopyButton } from "@/components/identity/copy-button"
+import {
+  addUnsent,
+  keepUnsent,
+  moveUnsent,
+  setUnsent,
+  unsentKey,
+  useUnsent,
+  type Unsent,
+} from "@/lib/unsent-messages"
 
 /** How long the transcript re-read after a turn may take before the composer
  * is released anyway. The read is one page of rows; past this it is stuck
@@ -98,24 +107,6 @@ export const RELOAD_WAIT_MS = 15_000
  * find out: the server writes the message row as it admits the turn, which
  * may be a moment after the connection that carried it dropped. */
 export const RECONCILE_DELAY_MS = 1_000
-
-/** What became of a send that started no turn. Each one is shown until the
- * message is sent again or discarded, so a second failure never hides the
- * first. */
-type Outcome = {
-  id: number
-  /** `refused`: the server's own refusal. The rest are a send whose delivery
-   * was unknown: being checked, found missing, not checkable, still possible
-   * (a turn is running and the message is not in it yet), or a new chat,
-   * which has no thread to check. */
-  kind: "refused" | "checking" | "missing" | "unchecked" | "pending" | "new"
-  /** The server's words, or what failed. */
-  reason: string
-  message: string
-  /** The message went back into the composer; otherwise the notice shows it
-   * with a copy action, because the composer holds something typed since. */
-  restored: boolean
-}
 
 /** The newest turn a transcript page holds, or -1 for none. */
 function newestTurn(records: SubstrateRecord[]): number {
@@ -155,25 +146,16 @@ function OutcomeNote({
   outcome,
   onDiscard,
 }: {
-  outcome: Outcome
+  outcome: Unsent
   onDiscard: () => void
 }) {
   const { kind, reason, message, restored } = outcome
-  const back = restored
-    ? "It is back in the box below."
-    : "It is below, to copy."
   const lead =
     kind === "refused"
-      ? `Your message wasn’t sent. ${back}`
+      ? `Your message wasn’t sent. ${restored ? "It is back in the box below." : "It is below, to copy."}`
       : kind === "checking"
         ? "The connection dropped before the server confirmed your message. Checking whether it arrived…"
-        : kind === "missing"
-          ? `Your message didn’t arrive. ${back}`
-          : kind === "new"
-            ? "The connection dropped before the server confirmed your message. It may have started a new chat: look for it in the chat list before sending it again. It is below, to copy."
-            : kind === "pending"
-              ? "The connection dropped before the server confirmed your message. A turn is running on this chat and your message isn’t in it yet, so it may still arrive: look for it before sending it again. It is below, to copy."
-              : "The connection dropped before the server confirmed your message, and the chat couldn’t be checked. Look for it in the chat before sending it again. It is below, to copy."
+        : "The connection dropped before the server confirmed your message, so it may not have arrived. Look for it in the chat, or for a new chat in the chat list, before sending it again. It is below, to copy."
   return (
     <div
       role="alert"
@@ -255,24 +237,6 @@ export function Conversation({
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // A send that started no turn: refused by the server, or of unknown
-  // delivery, which reads differently from an agent that could not answer.
-  const [outcomes, setOutcomes] = useState<Outcome[]>([])
-  const checking = outcomes.some((o) => o.kind === "checking")
-  const outcomeSeq = useRef(0)
-  function addOutcome(o: Omit<Outcome, "id">): number {
-    const id = ++outcomeSeq.current
-    setOutcomes((list) => [...list, { ...o, id }])
-    return id
-  }
-  // Replaces one outcome, or drops it with null.
-  function setOutcome(id: number, o: Omit<Outcome, "id"> | null) {
-    setOutcomes((list) =>
-      o
-        ? list.map((x) => (x.id === id ? { ...o, id } : x))
-        : list.filter((x) => x.id !== id)
-    )
-  }
   // Every delivery check gets a number; one carrying a stale number (a
   // newer check, or a conversation that unmounted) does nothing.
   const checkRef = useRef(0)
@@ -286,6 +250,25 @@ export function Conversation({
   // moment later; reading it from here keeps the run's next turn on it.
   const [minted, setMinted] = useState("")
   const current = thread || minted
+
+  // Sends that started no turn: refused by the server, or of unknown
+  // delivery, which reads differently from an agent that could not answer.
+  // Held outside this component (lib/unsent-messages.ts), which the page
+  // remounts on every switch, so coming back still shows them.
+  const unsentAt = unsentKey(current, agentId)
+  const outcomes = useUnsent(unsentAt)
+  const checking = outcomes.some((o) => o.kind === "checking")
+  const unsentAtRef = useRef(unsentAt)
+  useEffect(() => {
+    // A new chat's entries move to its thread once the thread is named.
+    if (unsentAtRef.current !== unsentAt) {
+      moveUnsent(unsentAtRef.current, unsentAt)
+      unsentAtRef.current = unsentAt
+    }
+  }, [unsentAt])
+  // A delivery check found the message and a turn running on it before the
+  // thread's record said so: attached to as if the record had.
+  const [runningHint, setRunningHint] = useState("")
 
   const handleRef = useRef<ChatHandle | null>(null)
   const liveRef = useRef<LiveOverlay>(EMPTY_OVERLAY)
@@ -510,7 +493,9 @@ export function Conversation({
   // The turn running on the thread, attached once per running stretch.
   // Each attach reads the stored rows afresh and freezes them, so the
   // replay's events those rows already hold are dropped by their `turn`.
-  const threadRunning = threadRecord?.properties.status === "running"
+  const threadRunning =
+    threadRecord?.properties.status === "running" ||
+    (runningHint !== "" && runningHint === current)
   const [attachedFor, setAttachedFor] = useState("")
   // The attach to open, decided while rendering or by a stream that ended
   // without its `done`; the effect below opens it.
@@ -522,6 +507,7 @@ export function Conversation({
   if (!threadRunning && background) setBackground(false)
   if (current && threadRunning && !busy && attachedFor !== current) {
     setAttachedFor(current)
+    setRunningHint("")
     setPending({ thread: current, attempt: 0 })
     setError(null)
     setResult(null)
@@ -636,15 +622,16 @@ export function Conversation({
     return true
   }
 
-  // Finds out whether a send of unknown delivery reached the thread. Only a
-  // user message past `baseline` (the newest turn the transcript held when
-  // it was sent) with the sent text counts: another tab's message does not.
-  // The read is fresh and outside the transcript cache (`readThreadNow`).
-  // Absence is conclusive only when no turn is running; otherwise the
-  // message may still arrive, and is kept to copy rather than put back. A
-  // running turn is attached to (the thread is re-read and the attach above
-  // fires).
+  // Looks for a send of unknown delivery on the thread: a user message past
+  // `baseline` (the newest turn the transcript held when it was sent) with
+  // the sent text, read fresh and outside the transcript cache
+  // (`readThreadNow`). Finding it clears the notice, and a turn running on
+  // it is attached to. Not finding it proves nothing (the request may still
+  // be waiting for admission), so the notice stays, with the message to
+  // copy; nothing is put back in the composer. A check whose conversation
+  // left ends as unknown.
   async function reconcile(
+    key: string,
     thread: string,
     message: string,
     reason: string,
@@ -654,56 +641,46 @@ export function Conversation({
     console.error("chat: the send's delivery is unknown", { thread, reason })
     setAttachedFor("")
     void client.invalidateQueries({ queryKey: ["records"] })
-    const unknown = { reason, message, restored: false }
-    if (!thread) return void addOutcome({ kind: "new", ...unknown })
-    if (baseline === undefined) {
-      return void addOutcome({ kind: "unchecked", ...unknown })
+    const unknown = {
+      kind: "unknown" as const,
+      reason,
+      message,
+      restored: false,
     }
-    const id = addOutcome({ kind: "checking", ...unknown })
+    if (!thread || baseline === undefined) return void addUnsent(key, unknown)
+    const id = addUnsent(key, { ...unknown, kind: "checking" })
     await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS))
-    if (check !== checkRef.current) return
+    if (check !== checkRef.current) return setUnsent(key, id, unknown)
     const ctrl = new AbortController()
-    let found: "arrived" | "absent" | "pending" | undefined
+    let running = false
+    let arrived = false
     try {
       const now = await Promise.race([
         readThreadNow(thread, ctrl.signal),
         new Promise<undefined>((r) => setTimeout(r, RELOAD_WAIT_MS)),
       ])
-      if (now) {
-        const ours = now.messages.some(
+      arrived = Boolean(
+        now?.messages.some(
           (r) =>
             r.properties.role === "user" &&
             Number(r.properties.turn) > baseline &&
             r.properties.content === message
         )
-        found = ours
-          ? "arrived"
-          : now.status === "running"
-            ? "pending"
-            : "absent"
-      }
+      )
+      running = now?.status === "running"
     } catch {
-      found = undefined
+      // A read that failed proves nothing either way.
     } finally {
       ctrl.abort()
     }
-    if (check !== checkRef.current) return
-    if (found === "arrived") {
-      // The transcript shows it once it is read again; a live turn's own
-      // settle reads it.
-      void client.invalidateQueries({
-        queryKey: threadMessagesQueryOptions(thread).queryKey,
-      })
-      return setOutcome(id, null)
-    }
-    if (found === "absent") {
-      return setOutcome(id, {
-        kind: "missing",
-        ...unknown,
-        restored: giveBack(message),
-      })
-    }
-    setOutcome(id, { kind: found ?? "unchecked", ...unknown })
+    if (!arrived) return setUnsent(key, id, unknown)
+    // Found, even by a check whose conversation has since left: the entry
+    // has nothing left to recover.
+    setUnsent(key, id, null)
+    // The transcript shows it once it is read again, and the thread's record
+    // says whether a turn runs; a live turn's own settle reads both.
+    void client.invalidateQueries({ queryKey: ["records"] })
+    if (running && check === checkRef.current) setRunningHint(thread)
   }
 
   function send(text = draft) {
@@ -715,9 +692,7 @@ export function Conversation({
     setError(null)
     // An outcome stays until its message is sent again or dismissed. One
     // whose message went back into the composer is that composer's now.
-    setOutcomes((list) =>
-      list.filter((o) => !o.restored && o.message !== message)
-    )
+    keepUnsent(unsentAt, (o) => !o.restored && o.message !== message)
     setResult(null)
     seqRef.current++
     // The previous run's overlay is the persisted transcript's job now —
@@ -750,6 +725,7 @@ export function Conversation({
     const run = ++runRef.current
     const settle = () => settleRun(run)
     const sentTo = current
+    const sentKey = unsentAt
 
     // A run that never named a thread wrote nothing, so no read will ever
     // hand over and settling would leave the composer busy for good. The
@@ -774,7 +750,7 @@ export function Conversation({
       setStreaming(false)
       setStopping(false)
       if (unknown !== undefined) {
-        void reconcile(sentTo, message, unknown, baseline)
+        void reconcile(sentKey, sentTo, message, unknown, baseline)
       }
     }
 
@@ -806,7 +782,7 @@ export function Conversation({
           message: err.message,
         })
         end()
-        addOutcome({
+        addUnsent(sentKey, {
           kind: "refused",
           reason: err.message,
           message,
@@ -935,7 +911,7 @@ export function Conversation({
             <OutcomeNote
               key={o.id}
               outcome={o}
-              onDiscard={() => setOutcome(o.id, null)}
+              onDiscard={() => setUnsent(unsentAt, o.id, null)}
             />
           ))}
           {reloadFailed && (
