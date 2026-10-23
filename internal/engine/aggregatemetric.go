@@ -27,7 +27,6 @@ package engine
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -198,6 +197,13 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	}
 	runs := make([]*metricRun, len(plans))
 	samples := p.recordsRead
+	// One link graph serves every metric of the read, each extending it from
+	// its own sources.
+	if links := ds.newSourceLinks(p); links != nil {
+		for _, mp := range plans {
+			mp.links = links
+		}
+	}
 	groups, series := 0, 0
 	for i, mp := range plans {
 		m, err := ds.settleMetric(ctx, tx, mp, buckets, windows, samples)
@@ -304,6 +310,14 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 	streams, samples, err := ds.discoverForms(ctx, store, p, selected, windows, spent)
 	if err != nil {
 		return nil, err
+	}
+	// A linked device's winner is chosen among the streams the range and
+	// `from` hold, so a source with nothing in them hides nothing.
+	if p.links != nil {
+		if samples, err = p.links.expand(ctx, tx, selected, samples, p.maxSamples); err != nil {
+			return nil, err
+		}
+		streams, selected = p.links.keep(streams, selected)
 	}
 	if err := p.checkOffsets(streams); err != nil {
 		return nil, err
@@ -595,102 +609,6 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 			return nil, err
 		}
 	}
-	if p.policy == substrate.SourcesPriority {
-		return ds.dropLinkedSources(ctx, tx, out)
-	}
-	return out, nil
-}
-
-// dropLinkedSources keeps one source of each linked device (decision 0187):
-// where records of a kind binding core's `sourcelink` say two selected sources
-// are one device, the device's streams of one metric and `about` are taken
-// from its highest-ranked source alone, the stream order breaking a tie, and
-// the other sources' streams of that metric and `about` leave the read. Links
-// join transitively. Only the priority policy reads links, and nothing pairs
-// sources by their values.
-func (ds *dataset) dropLinkedSources(ctx context.Context, tx *sql.Tx, streams []*aggStream) ([]*aggStream, error) {
-	reg := ds.registry()
-	var linkKinds []string
-	for _, k := range reg.Kinds() {
-		if k.Implements(vocabulary.TraitSourceLinkCore) {
-			linkKinds = append(linkKinds, k.Identity)
-		}
-	}
-	selected := map[string]bool{}
-	for _, s := range streams {
-		if kind, _, ok := vocabulary.SplitRecordPath(s.source); ok && bindsSource(reg, kind) {
-			selected[s.source] = true
-		}
-	}
-	if len(linkKinds) == 0 || len(selected) < 2 {
-		return streams, nil
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT props->'`+vocabulary.SourceLinkSources+`'
-		FROM records WHERE kind = ANY($1) AND deleted_at IS NULL AND jsonb_typeof(props->'`+vocabulary.SourceLinkSources+`') = 'array'`, linkKinds)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: aggregate source links: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	device := map[string]string{}
-	var find func(string) string
-	find = func(x string) string {
-		p, ok := device[x]
-		if !ok || p == x {
-			return x
-		}
-		root := find(p)
-		device[x] = root
-		return root
-	}
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		var list []any
-		if err := json.Unmarshal(raw, &list); err != nil {
-			return nil, fmt.Errorf("substrate/engine: aggregate source links: %w", err)
-		}
-		first := ""
-		for _, v := range list {
-			path := referencePathOf(v)
-			kind, _, ok := vocabulary.SplitRecordPath(path)
-			if !ok || !bindsSource(reg, kind) {
-				continue
-			}
-			if first == "" {
-				first = find(path)
-				continue
-			}
-			if root := find(path); root != first {
-				device[root] = first
-			}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// A device's streams of one metric and about are one stream delivered
-	// several ways; the winner is the source with the lowest rank, then the
-	// first in stream order.
-	type key struct{ device, metric, about string }
-	winner := map[key]*aggStream{}
-	for _, s := range streams {
-		if !selected[s.source] {
-			continue
-		}
-		k := key{find(s.source), s.metric, s.about}
-		if w := winner[k]; w == nil || s.rank < w.rank || (s.rank == w.rank && aggStreamLess(s, w)) {
-			winner[k] = s
-		}
-	}
-	out := streams[:0:0]
-	for _, s := range streams {
-		if w := winner[key{find(s.source), s.metric, s.about}]; selected[s.source] && w != nil && w.source != s.source {
-			continue
-		}
-		out = append(out, s)
-	}
 	return out, nil
 }
 
@@ -777,7 +695,7 @@ func (ds *dataset) rankingSourceKinds(q substrate.AggregateQuery) []string {
 }
 
 // sourceLinkKinds are the kinds whose records a priority read takes its
-// linked devices from (dropLinkedSources): every kind binding core's
+// linked devices from (sourceLinks): every kind binding core's
 // `sourcelink`, whether or not the request names an order. A caller holding a
 // reads allowlist holds each to it, since what a read drops reveals what
 // those records hold.

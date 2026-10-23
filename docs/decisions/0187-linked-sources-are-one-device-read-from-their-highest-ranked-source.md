@@ -39,11 +39,15 @@ kind without changing one a repository already imported.
 - `samples.substrate.reamde.dev/observations/sourcelink` binds it, with a
   `name` and `sources` pinned to the `source` trait.
 - Links join transitively: two links sharing a source make one device.
-- Under `priority`, before any interval is resolved, the read groups the
-  selected streams of one device by metric and `about`, keeps the
-  highest-ranked source's streams (the request's `order`, else the sources'
-  `priorities`, the stream order breaking a tie) and drops the other linked
-  sources' streams whole. `separate` ignores links.
+- Under `priority`, before any interval is resolved, the read groups one
+  device's streams by metric and `about` and keeps the streams of the
+  highest-ranked source (the request's `order`, else the sources'
+  `priorities`, the stream order breaking a tie) among those holding a value
+  in the read's range and `from`. It drops the other linked sources' streams
+  whole. `separate` ignores links.
+- The read follows links outward from its own sources through the refs
+  index, once per request for every metric of it, and charges each reference
+  it reads to `maxSamples`.
 - A caller holding a reads allowlist needs every kind binding the trait
   granted for a priority read, `order` or none, as it needs the source kind
   for a ranking by `priorities`.
@@ -62,17 +66,20 @@ Near-equal matching is what 0162 rejected.
   answer, and no stored value changes.
 - Bad, because the losing route's values leave the read whole, so a reading
   only that route delivered is not counted under `priority` while the
-  winning route has any value of the metric and `about` in the read.
+  winning route has any value of the metric and `about` in the read's range
+  and `from`.
 - Bad, because a function or an agent with a reads allowlist that already
   read under `priority` with an `order` is refused until it grants the link
-  kind.
+  kind, a breaking change released with upgrade steps.
 - Bad, because the records-mode and property-read source policies, which
   match records by a property, do not read links.
 
 ### Confirmation
 
 `TestAggregatePriorityTakesALinkedDeviceFromOneSource` holds the read rule,
-transitivity and deletion;
+`about`, transitivity, the budget and deletion;
+`TestAggregatePriorityChoosesALinkedWinnerInTheRead` holds the choice within
+the range and `from`;
 `TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind` holds the
 allowlist; `TestObservationsSampleKindNamesAreFrozen` holds the kind name.
 

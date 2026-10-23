@@ -267,7 +267,9 @@ entry could name only a function.
   records bucket's kinds, the targets of either filter's `referencing`, the
   kind of each metric `metric` and `metrics` name, whose record the read
   looks up, and, where a `priority` policy names no `order`,
-  the kind of the source records whose priorities rank the sources. A metric read naming no kinds reads the allowlist's observed
+  the kind of the source records whose priorities rank the sources, and under
+  any `priority` policy every kind binding core's `sourcelink`
+  ([observations](observations.md#one-device-by-several-routes)). A metric read naming no kinds reads the allowlist's observed
   kinds; a property read names its own. Before it runs, its
   `budget.maxBuckets` (and on the latest read `budget.maxGroups`) is lowered
   to the rows left, so a read whose series times the buckets it answers
