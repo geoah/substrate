@@ -8,9 +8,11 @@
 import type { DeclaredProperty } from "@/lib/definition"
 import { decodeFilters, type ActiveFilter } from "@/lib/filters"
 import {
+  addressValue,
   distinct,
   NONE,
   refIdOf,
+  rowSearch,
   samePinned,
   sameRef,
   SHAPE_WORDS,
@@ -33,12 +35,17 @@ export const DEFAULT_STREAM_SORT = "when:desc"
  * id never starts with `~`, so this can never be one. */
 export const OWNER = "~you"
 
-/** One table row: the stream and the words its marks read as. */
+/** One table row: the stream and the words its marks read as. A row that
+ * folds several sources' streams of one metric, about and channel
+ * (`foldSources`) holds them in `members` and names no source of its own;
+ * a member drawn under its open folded row names that row in `parent`. */
 export interface StreamRow extends Stream {
   metricName: string
   sourceTitle?: string
   aboutTitle?: string
   shape: ReadingShape
+  members?: StreamRow[]
+  parent?: StreamRow
 }
 
 /** The stream columns a reader filters and groups by. `shape` is how a
@@ -223,6 +230,7 @@ function sortValue(
     case "metric":
       return row.metricName.toLowerCase()
     case "source":
+      if (row.members) return sourcesWords(row.members).toLowerCase()
       return (
         row.sourceTitle ??
         (row.source && refIdOf(row.source))
@@ -273,6 +281,106 @@ export function sortStreams(
   return keyed.map((k) => k.row)
 }
 
+// ── fold ───────────────────────────────────────────────────────────────────
+
+/** A stream's source in words: its title, else its id, else "No source". */
+export function sourceWords(row: Pick<StreamRow, "source" | "sourceTitle">) {
+  return row.sourceTitle ?? (row.source ? refIdOf(row.source) : "No source")
+}
+
+/** The sources of a folded row's members in words, newest first. */
+export function sourcesWords(members: readonly StreamRow[]): string {
+  return distinct(members.map(sourceWords)).join(", ")
+}
+
+/** The rows with every metric, about and channel that several sources
+ * measured folded into one row (decision record 0188): its newest value
+ * and that value's time, form and statistic are the newest member's, its
+ * points are every member's, and its members are those streams, newest
+ * first. A channel stays a row of its own: a WHOOP workout's heart rate is
+ * another context than its cycle's. A stream no other source shares stays
+ * as it is. The folded row stands where its first member stood. */
+export function foldSources(rows: readonly StreamRow[]): StreamRow[] {
+  const keyOf = (r: StreamRow) =>
+    [r.metric, r.about ?? "", r.channel ?? ""].join("\n")
+  const runs = new Map<string, StreamRow[]>()
+  for (const r of rows) {
+    const key = keyOf(r)
+    runs.set(key, [...(runs.get(key) ?? []), r])
+  }
+  const out: StreamRow[] = []
+  for (const r of rows) {
+    const run = runs.get(keyOf(r))!
+    if (run.length < 2) {
+      out.push(r)
+      continue
+    }
+    if (run[0] !== r) continue
+    const members = [...run].sort(
+      (a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0)
+    )
+    const newest = members[0]
+    const counts = members.flatMap((m) =>
+      m.count === undefined ? [] : [m.count]
+    )
+    const statistics = distinct(members.flatMap((m) => m.statistics ?? []))
+    out.push({
+      ...newest,
+      key: `sources\n${keyOf(r)}`,
+      source: undefined,
+      sourceTitle: undefined,
+      count: counts.length ? counts.reduce((a, b) => a + b, 0) : undefined,
+      // How long each source covered does not add up across sources that
+      // overlap; each member says its own.
+      coverage: undefined,
+      statistics: statistics.length ? statistics : undefined,
+      members,
+    })
+  }
+  return out
+}
+
+/** The timeline's address for a row: a stream's own (`rowSearch`), and
+ * for a folded row every member's source, one line each. */
+export function rowTimelineSearch(row: StreamRow): Record<string, string> {
+  const out = rowSearch(row)
+  if (!row.members) return out
+  return {
+    ...out,
+    source: distinct(
+      row.members.map((m) => addressValue(m.source || NONE))
+    ).join(","),
+    group: "source",
+  }
+}
+
+/** The rows with the members of each open folded row right under it. */
+export function openFolds(
+  rows: readonly StreamRow[],
+  open: ReadonlySet<string>
+): StreamRow[] {
+  return rows.flatMap((r) =>
+    r.members && open.has(r.key)
+      ? [r, ...r.members.map((m) => ({ ...m, parent: r }))]
+      : [r]
+  )
+}
+
+/** The streams the rows stand for, each once: a folded row's members, a
+ * member under an open row, every other row itself. */
+export function rowStreams(rows: readonly StreamRow[]): StreamRow[] {
+  const seen = new Set<string>()
+  const out: StreamRow[] = []
+  for (const r of rows) {
+    for (const s of r.members ?? [r]) {
+      if (seen.has(s.key)) continue
+      seen.add(s.key)
+      out.push(s)
+    }
+  }
+  return out
+}
+
 // ── group ──────────────────────────────────────────────────────────────────
 
 /** The fields a reader groups the rows by. */
@@ -288,8 +396,10 @@ export function isStreamGroup(value: unknown): value is StreamField {
   return (STREAM_GROUPS as readonly unknown[]).includes(value)
 }
 
-/** The group a row is in: its value of the field, empty for none. */
+/** The group a row is in: its value of the field, empty for none. A member
+ * under an open folded row is in its row's group. */
 export function streamGroupKey(row: StreamRow, group: StreamField): string {
+  if (row.parent) return streamGroupKey(row.parent, group)
   switch (group) {
     case "metric":
       return row.metric

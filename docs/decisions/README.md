@@ -346,4 +346,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0185](0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md) | A table draws its results as tiles, and every tile takes one size | proposed |
 | [0186](0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md) | Units and conversions are core records, and a value converts through the repository's graph | accepted |
 | [0187](0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md) | Linked sources are one device, read from their highest-ranked source | proposed |
+| [0188](0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md) | The Observations page folds a metric's sources into one row, and keeps channels apart | proposed |
 | [0189](0189-the-observation-source-kind-stays-in-the-observations-sample.md) | The observation source kind stays in the observations sample | accepted |

@@ -226,7 +226,7 @@ describe("the streams table", () => {
         ? refusal(CAP_PROBLEM)
         : latestAnswer(read)
     )
-    expect(await rows()).toHaveLength(6)
+    expect(await rows()).toHaveLength(5)
     expect(screen.queryByText(/didn’t load/)).toBe(null)
     expect(
       server.seen.some((r) => r.aggregate.groupBy?.join() === "metric")
@@ -244,7 +244,7 @@ describe("the streams table", () => {
         ? refusal(CAP_PROBLEM)
         : latestAnswer(read)
     )
-    expect(await rows()).toHaveLength(6)
+    expect(await rows()).toHaveLength(5)
     const refused = () =>
       server.seen.filter(
         (r) => r.aggregate.groupBy?.length === 5 && !r.filter.properties?.metric
@@ -263,7 +263,7 @@ describe("the streams table", () => {
       void server.client.invalidateQueries()
       await new Promise((r) => setTimeout(r, 20))
     })
-    expect(bodyRows()).toHaveLength(6)
+    expect(bodyRows()).toHaveLength(5)
     // The read the server refused is not asked again under the same choices.
     expect(refused()).toBe(before)
   })
@@ -279,7 +279,7 @@ describe("the streams table", () => {
     })
     expect(await screen.findByText("The streams didn’t load")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
-    expect(await rows()).toHaveLength(6)
+    expect(await rows()).toHaveLength(5)
     expect(
       server.seen.filter(
         (r) => r.aggregate.groupBy?.length === 5 && !r.filter.properties?.metric
@@ -343,17 +343,32 @@ describe("the streams table", () => {
     expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
   })
 
-  it("lists one row per stream with its metric, source, form and latest value", async () => {
+  it("lists one row per metric with its sources, form, newest value and its source, and every point", async () => {
     mount()
     const body = await rows()
-    expect(body).toHaveLength(6)
+    // Six streams, five rows: heart rate from the Garmin and the Apple
+    // Watch is one row.
+    expect(body).toHaveLength(5)
+    expect(
+      body.filter((r) => r.textContent?.includes("Heart rate"))
+    ).toHaveLength(1)
     const first = body[0].textContent ?? ""
     expect(first).toContain("Heart rate")
     expect(first).toContain("Level")
     expect(first).toContain("96 /min")
-    expect(first).toContain("1,812")
+    // 1,812 points from the Garmin and 310 from the Apple Watch.
+    expect(first).toContain("2,122")
     await waitFor(() =>
-      expect(body[0].textContent).toContain("Garmin Forerunner 265")
+      expect(
+        within(body[0])
+          .getAllByRole("cell")
+          .map((c) => c.textContent)
+      ).toEqual(
+        expect.arrayContaining([
+          "Garmin Forerunner 265, Apple Watch S10",
+          "96 /minfrom Garmin Forerunner 265",
+        ])
+      )
     )
     const weight = body.find((r) => r.textContent?.includes("Weight"))!
     expect(weight.textContent).toContain("72.40 kg")
@@ -381,7 +396,8 @@ describe("the streams table", () => {
       ...LATEST,
       rows: [...LATEST.rows, summary("avg", "74"), summary("max", "158")],
     }
-    mount("", KINDS, (read) => latestAnswer(read, withSummaries))
+    // Grouped by source, each source's stream is a row of its own.
+    mount("?group=source", KINDS, (read) => latestAnswer(read, withSummaries))
     const body = await rows()
     await waitFor(() =>
       expect(body.some((r) => r.textContent?.includes("WHOOP"))).toBe(true)
@@ -430,7 +446,8 @@ describe("the streams table", () => {
           : r
       ),
     }
-    mount("", KINDS, (read) => latestAnswer(read, precise))
+    // Grouped by source, so the Apple Watch's stream is a row.
+    mount("?group=source", KINDS, (read) => latestAnswer(read, precise))
     await rows()
     const apple = await waitFor(() => {
       const row = bodyRows().find((r) => r.textContent?.includes("61.41"))
@@ -441,7 +458,13 @@ describe("the streams table", () => {
     expect(apple.textContent).toContain("61.41 /min")
     expect(within(apple).getByTitle("61.405858")).toBeTruthy()
     cleanup()
-    mount("", KINDS, (read) => latestAnswer(read, precise), [], true)
+    mount(
+      "?group=source",
+      KINDS,
+      (read) => latestAnswer(read, precise),
+      [],
+      true
+    )
     await rows()
     await waitFor(() =>
       expect(
@@ -500,7 +523,13 @@ describe("the streams table", () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(2))
     fireEvent.click(filterControl("Source"))
     fireEvent.click(await screen.findByRole("option", { name: /Apple Watch/ }))
-    await waitFor(() => expect(bodyRows()).toHaveLength(3))
+    // The Apple Watch's heart rate folds into the Garmin's row.
+    await waitFor(() =>
+      expect(screen.getByRole("table").textContent).toContain(
+        "Garmin Forerunner 265, Apple Watch S10"
+      )
+    )
+    expect(bodyRows()).toHaveLength(2)
     await waitFor(() =>
       expect(screen.getByRole("table").textContent).toContain("Apple Watch S10")
     )
@@ -603,6 +632,70 @@ describe("the streams table", () => {
     })
   })
 
+  it("opens a metric's row on every source's line, and to each source's stream", async () => {
+    const server = mount()
+    const body = await rows()
+    const heart = body[0]
+    const link = within(heart).getByRole("link", { name: "Heart rate" })
+    expect(JSON.parse(link.getAttribute("data-search")!)).toEqual({
+      metric: HEART,
+      source: `${GARMIN},${APPLE}`,
+      about: NONE_TOKEN,
+      channel: NONE_TOKEN,
+      group: "source",
+    })
+    fireEvent.click(
+      within(heart).getByRole("button", {
+        name: "Show Heart rate from each source",
+      })
+    )
+    // The two streams, newest first, right under the row.
+    await waitFor(() => expect(bodyRows()).toHaveLength(7))
+    expect(bodyRows()[1].textContent).toContain("Garmin Forerunner 265")
+    expect(bodyRows()[1].textContent).toContain("1,812")
+    expect(bodyRows()[2].textContent).toContain("61 /min")
+    expect(bodyRows()[2].textContent).toContain("310")
+    const apple = within(bodyRows()[2]).getByRole("link", {
+      name: "Heart rate",
+    })
+    expect(JSON.parse(apple.getAttribute("data-search")!)).toMatchObject({
+      source: APPLE,
+    })
+    // One stream selected leaves the metric's row mixed.
+    fireEvent.click(within(bodyRows()[2]).getByRole("checkbox"))
+    await waitFor(() =>
+      expect(server.param("select")).toBe(
+        token("health/heart_rate", "apple-watch-s10")
+      )
+    )
+    const rowBox = within(bodyRows()[0]).getByRole<HTMLInputElement>("checkbox")
+    expect(rowBox.checked).toBe(false)
+    expect(rowBox.indeterminate).toBe(true)
+    fireEvent.click(
+      within(bodyRows()[0]).getByRole("button", {
+        name: "Hide Heart rate from each source",
+      })
+    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(5))
+  })
+
+  it("keeps a source's channel a row of its own beside the metric's folded row", async () => {
+    mount("", KINDS, (read) => latestAnswer(read, LATEST_CHANNELS))
+    const body = await rows()
+    const hearts = body.filter((r) => r.textContent?.includes("Heart rate"))
+    // The Garmin's, the Apple Watch's and WHOOP's cycle heart rate fold;
+    // WHOOP's workouts stay apart.
+    expect(hearts).toHaveLength(2)
+    await waitFor(() =>
+      expect(hearts[0].textContent).toContain(
+        "Garmin Forerunner 265, Apple Watch S10, WHOOP 4.0"
+      )
+    )
+    expect(hearts[1].textContent).toContain("workout")
+    expect(hearts[1].textContent).toContain("WHOOP 4.0")
+    expect(hearts[1].textContent).toContain("141 /min")
+  })
+
   it("says the kinds did not load, never that nothing records measurements", async () => {
     mount("", KINDS, (read) => latestAnswer(read), [], false, true)
     expect(await screen.findByText("The kinds didn’t load")).toBeTruthy()
@@ -691,10 +784,11 @@ describe("the streams table's machinery", () => {
     fireEvent.click(screen.getByRole("button", { name: "Points" }))
     await waitFor(() => expect(server.param("sort")).toBe("count:asc"))
     expect(bodyRows()[0].textContent).toContain("Recovery")
-    expect(bodyRows().at(-1)!.textContent).toContain("1,812")
+    // Heart rate's row holds both its sources' points.
+    expect(bodyRows().at(-1)!.textContent).toContain("2,122")
     fireEvent.click(screen.getByRole("button", { name: "Points" }))
     await waitFor(() => expect(server.param("sort")).toBe("count:desc"))
-    expect(bodyRows()[0].textContent).toContain("1,812")
+    expect(bodyRows()[0].textContent).toContain("2,122")
   })
 
   it("keeps the last view in this browser and restores it on a bare address", async () => {
@@ -780,7 +874,7 @@ describe("the streams table's machinery", () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(2))
     expect(pressed()).toEqual(["Garmin"])
     fireEvent.click(screen.getByRole("button", { name: "All" }))
-    await waitFor(() => expect(bodyRows()).toHaveLength(6))
+    await waitFor(() => expect(bodyRows()).toHaveLength(5))
     expect(pressed()).toEqual(["All"])
   })
 })
@@ -791,17 +885,21 @@ describe("selecting streams", () => {
     await rows()
     const box = (i: number) =>
       within(bodyRows()[i]).getByRole<HTMLInputElement>("checkbox")
+    // Heart rate's row selects both its sources' streams.
     fireEvent.click(box(0))
     await waitFor(() =>
       expect(server.param("select")).toBe(
-        token("health/heart_rate", "garmin-forerunner-265")
+        [
+          token("health/heart_rate", "garmin-forerunner-265"),
+          token("health/heart_rate", "apple-watch-s10"),
+        ].join(",")
       )
     )
     expect(box(0).checked).toBe(true)
     expect(bodyRows()[0].getAttribute("aria-selected")).toBe("true")
     fireEvent.click(box(2), { shiftKey: true })
     await waitFor(() =>
-      expect(server.param("select")?.split(",")).toHaveLength(3)
+      expect(server.param("select")?.split(",")).toHaveLength(4)
     )
     expect([box(0), box(1), box(2), box(3)].map((b) => b.checked)).toEqual([
       true,
