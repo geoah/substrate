@@ -173,6 +173,63 @@ describe("links", () => {
     ])
   })
 
+  it("decodes character references in the target before the scheme check", () => {
+    expect(
+      inlineRuns(
+        "[download](https://example.com/file?token=a&amp;expires=b&#38;x=&#x31;)"
+      )
+    ).toEqual([
+      {
+        type: "link",
+        href: "https://example.com/file?token=a&expires=b&x=1",
+        text: "download",
+      },
+    ])
+    // A reference cannot smuggle a scheme past the allowlist.
+    expect(inlineRuns("[x](&#106;avascript:alert(1))")).toEqual([
+      { type: "text", text: "x (javascript:alert(1))" },
+    ])
+    // An escaped ampersand is the text it was.
+    expect(inlineRuns("[x](https://example.com/?a=1\\&amp;b=2)")).toEqual([
+      { type: "link", href: "https://example.com/?a=1&amp;b=2", text: "x" },
+    ])
+  })
+
+  it("reads a tab as the space before a title", () => {
+    expect(
+      inlineRuns('[weather](https://example.com/weather\t"Weather")')
+    ).toEqual([
+      { type: "link", href: "https://example.com/weather", text: "weather" },
+    ])
+    expect(inlineRuns("[w](\thttps://example.com/w\t)")).toEqual([
+      { type: "link", href: "https://example.com/w", text: "w" },
+    ])
+  })
+
+  it("reads a line of unmatched brackets or openings in linear time", () => {
+    const n = 64_000
+    for (const line of [
+      "[".repeat(n),
+      "[a](".repeat(n / 4),
+      "[a](<".repeat(n / 5),
+      '[a](x "'.repeat(n / 7),
+      "[](x".repeat(n / 4),
+    ]) {
+      const started = performance.now()
+      const runs = inlineRuns(line)
+      const took = performance.now() - started
+      expect(runs.map((r) => r.type)).toEqual(["text"])
+      expect(took).toBeLessThan(250)
+    }
+    // A link after a long malformed run is still read.
+    const tail = inlineRuns(`${"[".repeat(n)} [ok](https://example.com)`)
+    expect(tail.at(-1)).toEqual({
+      type: "link",
+      href: "https://example.com/",
+      text: "ok",
+    })
+  })
+
   it("reads a link inside bold, and leaves one inside code alone", () => {
     expect(inlineRuns(`**[Skittle Lane](ref:${BEAN})**`)).toEqual([
       {

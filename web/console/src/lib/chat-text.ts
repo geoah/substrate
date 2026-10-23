@@ -64,16 +64,43 @@ function withRecords(text: string): Inline[] {
  * editor writes (decision record 0137), and `ref:`, which agents write too. */
 const RECORD_SCHEMES = ["substrate://", "ref:"]
 
-/** A markdown backslash escape: `\` before ASCII punctuation. */
-const ESCAPE = /\\([!-/:-@[-`{-~])/g
+/** What markdown reads literally inside a link: a backslash escape before
+ * ASCII punctuation, and a character reference (`&amp;`, `&#38;`, `&#x26;`).
+ * One pass, so `\&amp;` stays the text `&amp;`. */
+const UNESCAPE =
+  /\\([!-/:-@[-`{-~])|&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g
+
+/** The named references models write; any other name stays as written. */
+const NAMED: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+}
+
+function unescape(source: string): string {
+  return source.replace(
+    UNESCAPE,
+    (whole, escaped?: string, dec?: string, hex?: string, name?: string) => {
+      if (escaped !== undefined) return escaped
+      if (name !== undefined) return NAMED[name] ?? whole
+      const point = dec !== undefined ? Number(dec) : parseInt(hex ?? "", 16)
+      const valid =
+        point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff)
+      return valid ? String.fromCodePoint(point) : "\ufffd"
+    }
+  )
+}
 
 /** One link's run: a record, a web page, or, for any other target, the link
- * text with the target beside it, as text. A target is never an `href`
- * unless it is `http:` or `https:`, so `javascript:` and the rest stay
- * inert. */
+ * text with the target beside it, as text. The target is decoded first and
+ * the scheme checked after, so a target is never an `href` unless it is
+ * `http:` or `https:`, and `javascript:` in any spelling stays inert. */
 function linkRun(label: string, written: string): Inline {
-  const text = label.replace(ESCAPE, "$1")
-  const target = written.replace(ESCAPE, "$1")
+  const text = unescape(label)
+  const target = unescape(written)
   const lower = target.toLowerCase()
   for (const scheme of RECORD_SCHEMES) {
     if (!lower.startsWith(scheme)) continue
@@ -96,54 +123,83 @@ function linkRun(label: string, written: string): Inline {
   }
 }
 
-/** The link starting at `start`, which holds `[`: `[text](target)` with an
- * optional `"title"`, brackets in the text balanced or escaped, parentheses
- * in the target balanced. Undefined when the source there is not one. */
-function linkAt(
-  line: string,
-  start: number
-): { run: Inline; end: number } | undefined {
-  let depth = 0
-  let close = -1
-  for (let i = start; i < line.length; i++) {
+/** Markdown's whitespace inside a link: a space or a tab. */
+function isSpace(c: string | undefined): boolean {
+  return c === " " || c === "\t"
+}
+
+/** For each `[` of a line, the `]` that closes it: brackets balanced,
+ * backslash escapes skipped. One pass over the line, so a reply full of
+ * unmatched brackets costs what one without them does. */
+function bracketPairs(line: string): Map<number, number> {
+  const pairs = new Map<number, number>()
+  const open: number[] = []
+  for (let i = 0; i < line.length; i++) {
     const c = line[i]
     if (c === "\\") {
       i++
     } else if (c === "[") {
-      depth++
-    } else if (c === "]" && --depth === 0) {
-      close = i
-      break
+      open.push(i)
+    } else if (c === "]") {
+      const at = open.pop()
+      if (at !== undefined) pairs.set(at, i)
     }
   }
-  if (close < 0 || line[close + 1] !== "(") return undefined
+  return pairs
+}
+
+/** How many characters one line's link targets may scan in total, past the
+ * line itself. A target scan that fails can cover the rest of the line, and
+ * a line of failed `](` openings would otherwise scan it once each: past
+ * this, the rest of the line is read without links. */
+function scanBudget(line: string): { left: number } {
+  return { left: 4 * line.length + 4096 }
+}
+
+/** The link whose `[` is at `start` and whose `]` is at `close`:
+ * `[text](target)` with an optional `"title"`, parentheses in the target
+ * balanced. Undefined when the source there is not one. Every character the
+ * target scan reads is charged to `work`. */
+function linkAt(
+  line: string,
+  start: number,
+  close: number,
+  work: { left: number }
+): { run: Inline; end: number } | undefined {
+  if (line[close + 1] !== "(" || work.left <= 0) return undefined
   let i = close + 2
-  while (line[i] === " ") i++
+  const from = i
+  const done = (to: number) => {
+    work.left -= to - from
+    return work.left > 0
+  }
+  while (isSpace(line[i])) i++
   let target: string
   if (line[i] === "<") {
     const end = line.indexOf(">", i + 1)
-    if (end < 0) return undefined
+    if (!done(end < 0 ? line.length : end) || end < 0) return undefined
     target = line.slice(i + 1, end)
     i = end + 1
   } else {
     let parens = 0
-    const from = i
+    const begin = i
     for (; i < line.length; i++) {
       const c = line[i]
       if (c === "\\") i++
-      else if (c === " ") break
+      else if (isSpace(c)) break
       else if (c === "(") parens++
       else if (c === ")" && parens-- === 0) break
     }
-    target = line.slice(from, Math.min(i, line.length))
+    if (!done(i)) return undefined
+    target = line.slice(begin, Math.min(i, line.length))
   }
-  while (line[i] === " ") i++
+  while (isSpace(line[i])) i++
   const quote = line[i]
   if (quote === '"' || quote === "'") {
     const end = line.indexOf(quote, i + 1)
-    if (end < 0) return undefined
+    if (!done(end < 0 ? line.length : end) || end < 0) return undefined
     i = end + 1
-    while (line[i] === " ") i++
+    while (isSpace(line[i])) i++
   }
   if (line[i] !== ")" || !target) return undefined
   return { run: linkRun(line.slice(start + 1, close), target), end: i + 1 }
@@ -157,6 +213,8 @@ export function inlineRuns(line: string): Inline[] {
 /** Inside bold, links, code and record paths are read; bold does not nest. */
 function runsOf(line: string, inBold: boolean): Inline[] {
   const out: Inline[] = []
+  const pairs = bracketPairs(line)
+  const work = scanBudget(line)
   let plain = 0
   const take = (run: Inline, from: number) => {
     if (from > plain) out.push(...withRecords(line.slice(plain, from)))
@@ -184,8 +242,8 @@ function runsOf(line: string, inBold: boolean): Inline[] {
         i = plain = end + 2
         continue
       }
-    } else if (c === "[") {
-      const link = linkAt(line, i)
+    } else if (c === "[" && pairs.has(i)) {
+      const link = linkAt(line, i, pairs.get(i) ?? i, work)
       if (link) {
         take(link.run, i)
         i = plain = link.end
