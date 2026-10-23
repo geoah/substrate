@@ -970,9 +970,13 @@ A read takes a coded gauge's reducers: `count`, `first`, `last` and
 counts. The [latest read](api.md#the-latest-read) answers the last
 available state, not necessarily the current one: an unavailable point
 after it does not replace it ([the latest row](#the-latest-row)). A reader
-that must say whether the sensor is unavailable now reads the stream's
-records after the latest row's time and looks for a `null` point or an
-`absentReason`.
+that must say whether the sensor is unavailable now lists the stream's
+records that end after the latest row's start (`endsAt` greater than it),
+which takes a trace that began before that instant, and those that start at
+or after it, then reads each point's own instant, one at the same instant
+included, for a `null` or an `absentReason`. Listing only the records that
+start after it misses an outage inside the trace that holds the latest
+state.
 
 Two kinds of text are not states and go in ordinary records of a kind of
 your own: text longer than 255 characters, and text that is content rather
