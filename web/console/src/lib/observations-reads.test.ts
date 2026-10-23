@@ -7,8 +7,6 @@ import { MAX_GROUPS_CAP } from "@/lib/aggregate-rules"
 import { ApiError } from "@/lib/api/types"
 import {
   discoveryChunks,
-  earliestOf,
-  earliestRead,
   facetRead,
   indexPending,
   laneRead,
@@ -203,35 +201,5 @@ describe("indexPending", () => {
         new ApiError("unavailable", "every read slot is taken", 503, [], [], 1)
       )
     ).toBe(false)
-  })
-})
-
-describe("the earliest-point read", () => {
-  it("is a one-column downsample from 1900 to now, answering the earliest first instant of any row", () => {
-    const now = Date.parse("2026-10-23T08:00:00Z")
-    const read = earliestRead(`${METRIC}/health/heart_rate`, now)
-    expect(read.downsample).toEqual({ points: 1 })
-    expect(read.aggregate).toEqual({
-      metric: { ref: `${METRIC}/health/heart_rate` },
-      range: { gte: "1900-01-01T00:00:00Z", lt: "2026-10-23T08:00:00.000Z" },
-    })
-    const row = (at?: string) => ({
-      start: "1900-01-01T00:00:00Z",
-      end: "2026-10-23T08:00:00Z",
-      values: [
-        { reducer: "first", value: "60", ...(at ? { at } : {}) },
-        { reducer: "min", value: "40", at: "2001-01-01T00:00:00Z" },
-      ],
-      count: 1,
-      bounded: 0,
-      synthetic: false,
-    })
-    const answer = {
-      exact: true,
-      head: { changelog: 1, generation: "g" },
-      rows: [row("2024-05-01T00:00:00Z"), row("2023-02-01T00:00:00Z"), row()],
-    }
-    expect(earliestOf(answer)).toBe(Date.parse("2023-02-01T00:00:00Z"))
-    expect(earliestOf({ ...answer, rows: [] })).toBe(null)
   })
 })

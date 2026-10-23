@@ -9,7 +9,6 @@ import type { AggregateRead } from "@/lib/api/observations"
 import {
   ApiError,
   type Aggregate,
-  type AggregateResult,
   type AggregateBucket,
   type AggregateFrom,
   type AggregateGroupKey,
@@ -21,7 +20,6 @@ import { OBSERVED_TRAIT } from "@/lib/core-kinds"
 import {
   bandedReducer,
   NONE,
-  reducerName,
   reducerOf,
   type ReadingShape,
 } from "@/lib/observations"
@@ -81,39 +79,6 @@ function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
     implements: OBSERVED_TRAIT,
     ...(Object.keys(properties).length ? { properties } : {}),
   }
-}
-
-/** Where the earliest-point read starts: before any value a repository
- * holds. */
-const EARLIEST_FLOOR = "1900-01-01T00:00:00Z"
-
-/** The read of a metric's earliest point, for the timeline's `all` range:
- * a one-column downsample from long before any value to `now`, whose
- * `first` value carries the instant of the first point of each stream
- * (a row per source). */
-export function earliestRead(metric: string, now: number): AggregateRead {
-  return {
-    filter: narrowedFilter({}),
-    aggregate: {
-      metric: { ref: metric },
-      range: { gte: EARLIEST_FLOOR, lt: new Date(now).toISOString() },
-    },
-    downsample: { points: 1 },
-  }
-}
-
-/** The earliest instant an earliest-point read answers, null where it
- * holds no point. */
-export function earliestOf(answer: AggregateResult): number | null {
-  let out: number | null = null
-  for (const row of answer.rows) {
-    for (const v of row.values ?? []) {
-      if (reducerName(v.reducer) !== "first" || !v.at) continue
-      const t = Date.parse(v.at)
-      if (!Number.isNaN(t) && (out === null || t < out)) out = t
-    }
-  }
-  return out
 }
 
 /** What one chart of the timeline asks for. */

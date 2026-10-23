@@ -568,6 +568,8 @@ export interface AggregateRow {
    * null (a coded state that held no time). */
   values: AggregateValue[] | null
   count: number
+  /** On the latest read, the instant of the group's earliest point. */
+  first?: string
   /** In the recorded-local calendar, the points among `count` written
    * without a UTC offset and placed by `bucket.fallbackTimezone`. */
   offsetless?: number

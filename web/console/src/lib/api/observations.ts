@@ -12,21 +12,13 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { request } from "./http"
 import { RECORDS_PATH } from "./records"
-import type {
-  Aggregate,
-  AggregateResult,
-  Downsample,
-  RecordFilter,
-} from "./types"
+import type { Aggregate, AggregateResult, RecordFilter } from "./types"
 
 /** One aggregate read: the records filter and the `aggregate` parameter,
  * which this module encodes onto the records route. */
 export interface AggregateRead {
   filter?: RecordFilter
   aggregate: Aggregate
-  /** Cut the range into columns of first, last, min and max instead of
-   * reducing it (the aggregate names no reducers then). */
-  downsample?: Downsample
 }
 
 /** The query string of one aggregate read, `filter` first. */
@@ -36,7 +28,6 @@ export function aggregateSearch(read: AggregateRead): URLSearchParams {
     q.set("filter", JSON.stringify(read.filter))
   }
   q.set("aggregate", JSON.stringify(read.aggregate))
-  if (read.downsample) q.set("downsample", JSON.stringify(read.downsample))
   return q
 }
 

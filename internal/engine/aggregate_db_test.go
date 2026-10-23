@@ -1203,38 +1203,52 @@ func TestAggregateDownsample(t *testing.T) {
 	}
 }
 
-// A one-point downsample over a century is how the console's timeline finds
-// a metric's earliest point for its "All" range: one column, whose first
-// value carries the instant of the stream's first point.
-func TestAggregateDownsampleFindsTheEarliestPoint(t *testing.T) {
+// The latest read answers each group's earliest point beside its newest:
+// what the console's timeline reads "All" from. A dense gauge still being
+// written, a summary stream and a coded amount each answer the instant of
+// their first point, from the segments alone.
+func TestAggregateLatestReadAnswersTheEarliestPoint(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	f.heartRate("garmin", day, 7*time.Minute, 0, time.Time{}, time.Time{})
-	res, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{
-		Aggregate: &substrate.Aggregate{
-			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
-			Range:  rng(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), day.AddDate(0, 1, 0)),
-		},
-		Downsample: &substrate.Downsample{Points: 1},
-	})
-	if err != nil {
-		t.Fatalf("downsample: %v", err)
+	// A day of heart rate every ten seconds, ending inside the current
+	// rollup bucket.
+	day := time.Now().UTC().Truncate(time.Minute).Add(-24*time.Hour + 3*time.Minute)
+	f.heartRate("garmin", day, 10*time.Second, 0, time.Time{}, time.Time{})
+	night := time.Date(2025, 10, 1, 23, 10, 0, 0, time.FixedZone("", 3*3600))
+	for d := range 3 {
+		at := night.AddDate(0, 0, d)
+		f.mustPut(t, f.observation, "whoop/hrv/"+at.Format("2006-01-02"), map[string]any{
+			"metric": f.metricRef("health/hrv_rmssd"), "source": f.sourceRef("whoop"), "form": "summary",
+			"statistic": "vendor", "period": "night", "value": quantity("62", "ms"), "at": at.Format(time.RFC3339),
+			"endsAt": at.Add(7 * time.Hour).Format(time.RFC3339), "utcOffset": 180,
+		})
+		f.mustPut(t, f.observation, "whoop/deep/"+at.Format("2006-01-02"), map[string]any{
+			"metric": f.metricRef("health/sleep_stage"), "source": f.sourceRef("whoop"), "form": "amount",
+			"code": "deep", "value": quantity("80", "min"), "at": at.Add(time.Hour).Format(time.RFC3339),
+			"endsAt": at.Add(7 * time.Hour).Format(time.RFC3339), "utcOffset": 180,
+		})
 	}
-	if len(res.Rows) != 1 {
-		t.Fatalf("%d columns, want 1", len(res.Rows))
-	}
-	first, _ := observed.First(f.stream("health/heart_rate", "garmin"), observed.Window{From: day.AddDate(-1, 0, 0), To: day.AddDate(0, 1, 0)})
-	for _, v := range res.Rows[0].Values {
-		if v.Reducer.Name != substrate.ReducerFirst {
-			continue
+	res := f.agg(context.Background(), substrate.Filter{Implements: "substrate.reamde.dev/core/observed"},
+		substrate.Aggregate{GroupBy: []string{"metric", "source", "statistic"}, Latest: true})
+	firsts := map[string]time.Time{}
+	for _, row := range res.Rows {
+		if row.First == nil {
+			t.Fatalf("the %s row names no earliest point", row.Group.Metric)
 		}
-		if v.At == nil || !v.At.Equal(first.At) {
-			t.Fatalf("first at %v, want %s", v.At, first.At)
-		}
-		return
+		firsts[strings.TrimPrefix(row.Group.Metric, f.metric+"/")] = *row.First
 	}
-	t.Fatal("no first value")
+	for metric, want := range map[string]time.Time{
+		"health/heart_rate":  day,
+		"health/hrv_rmssd":   night,
+		"health/sleep_stage": night.Add(time.Hour),
+	} {
+		if got, ok := firsts[metric]; !ok || !got.Equal(want) {
+			t.Errorf("%s earliest = %v, want %s", metric, got, want)
+		}
+	}
+	if _, off := firsts["health/hrv_rmssd"].Zone(); off != 3*3600 {
+		t.Errorf("the summary's earliest is at offset %d, want its own +03:00", off)
+	}
 }
 
 // A money property per month: summed exactly per currency, the anchor a

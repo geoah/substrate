@@ -1350,7 +1350,8 @@ named `timezone` places every value by that zone and takes no
 `"latest": true` is the newest point of each group, straight from the index's
 latest table: the dashboard's "current value of everything". It answers one
 `last` value per row, with the value's `comparator` where it was written with
-one. `metric` is optional (the filter's `properties.metric` may select
+one, and the instant of the group's earliest point in `first`, one index
+probe per stream whatever its length. `metric` is optional (the filter's `properties.metric` may select
 several), `groupBy` takes the stream keys and `statistic` (a night's latest
 average and maximum, a row each), and each row's `start` and `end` are the
 newest point's `ts` and `ts_end` at its own offset, its `count` the group's
@@ -1659,6 +1660,7 @@ where summaries did.
 | `coverage` | an ISO 8601 duration: held time for a gauge, the union of spans for an amount or a summary, the time a counter's steps span |
 | `values` | one per reducer in request order (`timeInState` without states, one per code), then the rolling values |
 | `count` | the points that fed the row; on the latest read the group's point count |
+| `first` | on the latest read, the instant of the group's earliest available point, at its record's offset |
 | `bounded` | the values among `count` written with a comparator (a lab's `<0.01`), whose true number is unknown; absent when none ([censored values](#censored-values)) |
 | `offsetless` | in the recorded-local calendar, the points among `count` written without a UTC offset, placed by `bucket.fallbackTimezone`; absent when none |
 | `prorated` | in the records mode, the amounts among `count` the window cut, each counted by the part of its span inside; absent when none |

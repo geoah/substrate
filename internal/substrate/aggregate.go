@@ -697,6 +697,10 @@ type AggregateRow struct {
 	// Count is the points that fed the row (a stream's point count on the
 	// latest read, the records on a property read).
 	Count int64 `json:"count"`
+	// First is, on the latest read, the instant of the group's earliest
+	// available point, at that point's own record's offset: where a
+	// timeline reading "all" of a metric starts.
+	First *time.Time `json:"first,omitempty"`
 	// Offsetless counts the points among Count written without a UTC offset,
 	// which the recorded-local calendar placed by bucket.fallbackTimezone.
 	Offsetless int64 `json:"offsetless,omitempty"`

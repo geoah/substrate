@@ -12,16 +12,10 @@
  * one request, across charts, and each chart carries its metrics' numbers
  * under it, with the requests themselves in technical mode. */
 
-import { useEffect, useMemo, useState } from "react"
-import { useQueries } from "@tanstack/react-query"
+import { useEffect, useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { ListIcon } from "lucide-react"
-import {
-  parseAsBoolean,
-  parseAsString,
-  parseAsStringLiteral,
-  useQueryState,
-} from "nuqs"
+import { parseAsBoolean, parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
@@ -54,14 +48,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useConnectGaps } from "@/hooks/use-console-preferences"
 import { useFacetValues, useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
-import { aggregateQueryOptions } from "@/lib/api/observations"
 import type { AggregateFrom } from "@/lib/api/types"
 import { chosenValue, distinct, NONE, sameRef } from "@/lib/observations"
-import {
-  earliestOf,
-  earliestRead,
-  FROM_CHOICES,
-} from "@/lib/observations-reads"
+import { FROM_CHOICES } from "@/lib/observations-reads"
 import {
   endPlacedBucket,
   presetReaching,
@@ -135,29 +124,6 @@ export function ObservationsTimelinePage() {
     : fallback
       ? [fallback]
       : []
-  // `All` reads every chosen metric's earliest point first: the range runs
-  // from the earliest of them to today.
-  const [rangeKey] = useQueryState("range", parseAsString)
-  const [opened] = useState(() => Date.now())
-  const earliestReads = useQueries({
-    // A metric is probed once its record is known: an address may name
-    // it by a bare id the metric pin resolves.
-    queries: (rangeKey === "all"
-      ? metrics.filter((m) => obs.knows(m))
-      : []
-    ).map((m) => ({
-      ...aggregateQueryOptions(earliestRead(m, opened), obs.observedIds),
-      retry: false,
-    })),
-  })
-  const earliest = earliestReads.some((r) => r.isPending)
-    ? undefined
-    : earliestReads.reduce<number | null>((min, r) => {
-        const t = r.data ? earliestOf(r.data) : null
-        return t !== null && (min === null || t < min) ? t : min
-      }, null)
-  const controls = useTimelineControls("7d", { earliest })
-  const { range } = controls
   useEffect(() => {
     if (metricParam.length || !fallback) return
     void setMetricParam([fallback], { history: "replace" })
@@ -183,6 +149,31 @@ export function ObservationsTimelinePage() {
         )
     )
     .reduce((max, s) => Math.max(max, Date.parse(s.end ?? s.at) || 0), 0)
+  // `All` runs from the earliest point the chosen streams hold, which the
+  // latest read answers for each (`first`). It waits until every chosen
+  // metric's streams are read; one whose read failed holds it, its error
+  // and retry shown above the charts.
+  const allKnown =
+    metrics.length > 0 &&
+    metrics.every((m) => obs.knows(m)) &&
+    !metrics.some((m) => obs.failed(m))
+  const earliest = !allKnown
+    ? undefined
+    : shown
+        .filter(
+          (s) =>
+            (!sources.length ||
+              sources.some((v) => chosenValue(s.source, v))) &&
+            (!abouts.length || abouts.some((v) => chosenValue(s.about, v))) &&
+            (!channels.length ||
+              channels.some((v) => chosenValue(s.channel, v)))
+        )
+        .reduce<number | null>((min, s) => {
+          const t = s.first ? Date.parse(s.first) : NaN
+          return Number.isNaN(t) || (min !== null && min <= t) ? min : t
+        }, null)
+  const controls = useTimelineControls("7d", { earliest })
+  const { range } = controls
   const before = newest > 0 && newest < range.start ? newest : undefined
   const reaching = before === undefined ? undefined : presetReaching(before)
   const none = (
@@ -417,13 +408,22 @@ export function ObservationsTimelinePage() {
       ) : (
         <>
           <StreamReadErrors obs={obs} className="mt-4" />
-          {controls.allPending && (
-            <Skeleton
-              role="status"
-              aria-label="Reading the earliest point"
-              className="mt-8 h-[236px] w-full"
-            />
-          )}
+          {controls.allPending &&
+            (metrics.some((m) => obs.failed(m)) ? (
+              <p
+                data-slot="timeline-all-waiting"
+                className="mt-4 text-[12.5px] text-muted-foreground"
+              >
+                All starts at the earliest point of every chosen metric, and one
+                of them did not load. Try it again above.
+              </p>
+            ) : (
+              <Skeleton
+                role="status"
+                aria-label="Reading the earliest point"
+                className="mt-8 h-[236px] w-full"
+              />
+            ))}
           {!controls.allPending && before !== undefined && (
             <p
               data-slot="timeline-older"

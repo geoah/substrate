@@ -1085,12 +1085,14 @@ row of controls scopes every chart:
 - the metrics;
 - the range: today, the last 7 or 30 days, 6 months, a year, **All**, or a
   custom range of days on the calendar (`?range=`, `all` for All). All
-  runs from the day of the chosen metrics' earliest point through today.
-  The page reads that point first, one request per metric: a downsample to
-  one column from 1900 to now (`downsample={"points": 1}`), whose `first`
-  value carries the instant of each stream's first point. Automatic then
-  sizes the bucket to the whole span, a week or a month for anything past
-  two months, so the read stays inside the bucket budget;
+  runs from the day of the earliest point the chosen streams hold through
+  today: the latest read the page discovers streams with answers each
+  stream's earliest point (`first`), whatever its form, summaries and
+  coded metrics included, so finding it reads no history. All waits until
+  every chosen metric's streams are read, and where one metric's read
+  failed it says so beside the retry rather than start from the others.
+  Automatic then sizes the bucket to the whole span, a week or a month for
+  anything past two months, so the read stays inside the bucket budget;
 - the bucket: automatic from the range, 1, 5 or 15 minutes, an hour, a day,
   a week or a month. Automatic reads a window of two hours or less, such as
   a workout's trace, by the minute. It reads in days where it would read in

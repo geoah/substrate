@@ -578,8 +578,6 @@ export const WEIGHING: SubstrateRecord = record(
 export interface SeenRead {
   filter: RecordFilter
   aggregate: Aggregate
-  /** The `downsample` parameter, where the read sent one. */
-  downsample?: { points: number }
 }
 
 function json(body: unknown, status = 200): Response {
@@ -714,14 +712,7 @@ export function observationsServer(
     ) as RecordFilter
     const aggregate = url.searchParams.get("aggregate")
     if (aggregate) {
-      const downsample = url.searchParams.get("downsample")
-      const read: SeenRead = {
-        filter,
-        aggregate: JSON.parse(aggregate) as Aggregate,
-        ...(downsample
-          ? { downsample: JSON.parse(downsample) as { points: number } }
-          : {}),
-      }
+      const read = { filter, aggregate: JSON.parse(aggregate) as Aggregate }
       sent.push(read)
       seen.push(...perMetric(read))
       const out = read.aggregate.metrics ? together(read, answer) : answer(read)

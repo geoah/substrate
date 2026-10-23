@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sort"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 
 // aggregateLatest answers one row per group of the groupBy stream keys: the
 // newest point of the group's streams (the latest instant, then the greater
-// record id), with the streams' point count.
+// record id), with the streams' point count and the instant of their
+// earliest point.
 func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) (*substrate.AggregateResult, error) {
 	streams, err := ds.selectStreams(ctx, tx, p)
 	if err != nil {
@@ -35,11 +37,16 @@ func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		}
 		res.Unit = units.value
 	}
+	firsts, err := earliestPoints(ctx, tx, streams)
+	if err != nil {
+		return nil, err
+	}
 	type group struct {
 		key    substrate.AggregateGroup
 		sort   string
 		newest *aggStream
 		points int64
+		first  *time.Time
 	}
 	byKey := map[string]*group{}
 	var list []*group
@@ -52,6 +59,9 @@ func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 			list = append(list, g)
 		}
 		g.points += s.points
+		if f, ok := firsts[s.id]; ok && (g.first == nil || f.Before(*g.first)) {
+			g.first = &f
+		}
 		if g.newest == nil || newer(s, g.newest) {
 			g.newest = s
 		}
@@ -69,6 +79,7 @@ func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 			Start: s.ts.In(zone), End: s.tsEnd.In(zone), Form: s.form, From: substrate.AggregateFromRaw,
 			Count: g.points,
 		}
+		row.First = g.first
 		if s.form == vocabulary.FormSummary {
 			row.From = substrate.AggregateFromSummaries
 		}
@@ -117,4 +128,39 @@ func newer(a, b *aggStream) bool {
 		return a.ts.After(b.ts)
 	}
 	return a.recordID > b.recordID
+}
+
+// earliestPoints is each stream's earliest available point's instant, at
+// its record's offset: the
+// first point of its earliest segment holding one, one index probe per
+// stream (observed_segments_stream_idx), whatever the stream's length, so
+// a dense gauge costs what a sparse one does.
+func earliestPoints(ctx context.Context, tx *sql.Tx, streams []*aggStream) (map[int64]time.Time, error) {
+	if len(streams) == 0 {
+		return nil, nil
+	}
+	ids := make([]int64, len(streams))
+	for i, s := range streams {
+		ids[i] = s.id
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT w.id, f.first_ts, f.utc_offset_min FROM unnest($1::bigint[]) AS w(id)
+		CROSS JOIN LATERAL (SELECT g.first_ts, g.utc_offset_min FROM observed_segments g
+			WHERE g.stream = w.id AND g.available > 0 ORDER BY g.first_ts LIMIT 1) f`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate earliest points: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[int64]time.Time, len(streams))
+	for rows.Next() {
+		var id, offset int64
+		var t time.Time
+		if err := rows.Scan(&id, &t, &offset); err != nil {
+			return nil, fmt.Errorf("substrate/engine: aggregate earliest points: %w", err)
+		}
+		out[id] = t.In(time.FixedZone("", int(offset)*60))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate earliest points: %w", err)
+	}
+	return out, nil
 }

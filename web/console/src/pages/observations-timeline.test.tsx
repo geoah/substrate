@@ -44,6 +44,7 @@ import {
   METRIC,
   METRICS,
   MIA,
+  RECOVERY,
   SLEEP,
   SLEEP_STAGE,
   SOURCE,
@@ -2099,73 +2100,123 @@ function mountWatched(
 }
 
 describe("the All range", () => {
-  /** The Withings' first weigh-in, the earliest a downsample answers. */
-  const FIRST = "2026-03-02T07:15:00+02:00"
-  function earliest(read: SeenRead): AggregateResult {
-    if (!read.downsample) return answer(read)
-    return {
-      ...LATEST,
-      rows: [
-        {
-          start: "1900-01-01T00:00:00Z",
-          end: "2026-10-23T00:00:00Z",
-          form: "gauge",
-          group: { source: WITHINGS },
-          values: [
-            { reducer: "first", value: "74.1", unit: "kg", at: FIRST },
-            { reducer: "last", value: "72.3", unit: "kg" },
-          ],
-          count: 40,
-          bounded: 0,
-          synthetic: false,
-        },
-      ],
-    }
+  /** Each stream's earliest point, as the latest read answers it. */
+  const FIRSTS: Record<string, string> = {
+    [`${HEART}\n${GARMIN}`]: "2025-11-01T06:00:00+02:00",
+    [`${HEART}\n${APPLE}`]: "2026-01-04T08:00:00+02:00",
+    [`${BODY_MASS}\n${WITHINGS}`]: "2026-03-02T07:15:00+02:00",
+    // A vendor summary's history and a coded amount's.
+    [`${RECOVERY}\n${WHOOP}`]: "2025-06-01T23:10:00+03:00",
+    [`${SLEEP_STAGE}\n${WHOOP}`]: "2025-08-01T23:40:00+03:00",
+  }
+  const WITH_FIRSTS: AggregateResult = {
+    ...LATEST,
+    rows: LATEST.rows.map((r) => ({
+      ...r,
+      first: FIRSTS[`${r.group?.metric}\n${r.group?.source}`],
+    })),
+  }
+  function withFirsts(read: SeenRead): AggregateResult {
+    return read.aggregate.metric
+      ? answer(read)
+      : latestAnswer(read, WITH_FIRSTS)
+  }
+  /** The chart reads, one per metric drawn. */
+  function drawn(seen: SeenRead[], metric: string): SeenRead[] {
+    return charts(seen, metric).filter((r) => r.aggregate.range)
   }
 
-  it("reads from the metric's earliest point to today, the bucket sized to fit", async () => {
-    const server = mountWatched("?metric=health/body_mass&range=all", earliest)
+  it("reads from the earliest point of the chosen metrics' streams to today, the bucket sized to fit", async () => {
+    const server = mountWatched(
+      "?metric=health/body_mass,health/heart_rate&range=all",
+      withFirsts
+    )
     await waitFor(() =>
-      expect(
-        charts(server.seen, "health/body_mass").some((r) => !r.downsample)
-      ).toBe(true)
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
     )
-    // A metric is probed once its record is known, never by a bare id.
-    expect(
-      server.seen.filter((r) => r.downsample).map((r) => r.aggregate.metric)
-    ).toEqual([{ ref: `${METRIC}/health/body_mass` }])
-    // One one-column downsample per metric finds the earliest point.
-    const probe = charts(server.seen, "health/body_mass").find(
-      (r) => r.downsample
-    )!
-    expect(probe.downsample).toEqual({ points: 1 })
-    expect(probe.aggregate.range?.gte).toBe("1900-01-01T00:00:00Z")
-    expect(probe.aggregate.reducers).toBeUndefined()
-    const read = charts(server.seen, "health/body_mass").filter(
-      (r) => !r.downsample
-    )[0]
+    const read = drawn(server.seen, "health/body_mass")[0]
+    // The Garmin's heart rate goes back furthest.
     expect(read.aggregate.range?.gte).toBe(
-      isoWithOffset(allRange(Date.parse(FIRST)).start)
+      isoWithOffset(allRange(Date.parse(FIRSTS[`${HEART}\n${GARMIN}`])).start)
     )
-    // Months of weigh-ins read by the week or the month, never the hour.
+    // A year of readings by the week or the month, never the hour.
     expect(["week", "month"]).toContain(read.aggregate.bucket?.calendar)
-    expect(screen.getByRole("button", { name: /^All$/ }).textContent).toContain(
-      "All"
+    // Nothing but discovery is asked to find it.
+    expect(
+      server.seen.every((r) => r.aggregate.range || r.aggregate.latest)
+    ).toBe(true)
+  })
+
+  it("reaches back to a vendor summary's and a coded metric's earliest point", async () => {
+    const server = mountWatched(
+      "?metric=healthwhoop/recovery,health/sleep_stage&range=all",
+      withFirsts
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/sleep_stage").length).toBeGreaterThan(0)
+    )
+    expect(
+      drawn(server.seen, "health/sleep_stage")[0].aggregate.range?.gte
+    ).toBe(
+      isoWithOffset(allRange(Date.parse(FIRSTS[`${RECOVERY}\n${WHOOP}`])).start)
+    )
+  })
+
+  it("holds All while one metric's streams fail, says so, and reads it once they load", async () => {
+    let failures = 1
+    const server = mountWatched(
+      "?metric=health/body_mass,health/heart_rate&range=all",
+      (read) => {
+        const metrics = read.filter.properties?.metric as
+          { in?: string[] } | undefined
+        if (
+          !read.aggregate.metric &&
+          !read.aggregate.metrics &&
+          metrics?.in?.join() === HEART &&
+          failures > 0
+        ) {
+          failures--
+          return unavailable()
+        }
+        return withFirsts(read)
+      }
+    )
+    const note = await screen.findByRole("alert", {
+      name: "Heart rate: the streams didn’t load",
+    })
+    expect(
+      (await screen.findByText(/one of them did not load/)).textContent
+    ).toContain("All starts at the earliest point of every chosen metric")
+    // Nothing is drawn from the weight's start alone.
+    expect(drawn(server.seen, "health/body_mass")).toHaveLength(0)
+    fireEvent.click(within(note).getByRole("button", { name: "Try again" }))
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    expect(drawn(server.seen, "health/body_mass")[0].aggregate.range?.gte).toBe(
+      isoWithOffset(allRange(Date.parse(FIRSTS[`${HEART}\n${GARMIN}`])).start)
     )
   })
 
   it("offers All in the range picker, kept in the address", async () => {
-    const server = mountWatched(`?metric=health/body_mass&${WINDOW}`, earliest)
+    const server = mountWatched(
+      `?metric=health/body_mass&${WINDOW}`,
+      withFirsts
+    )
     await lane("Weight")
     fireEvent.click(screen.getAllByRole("button", { name: /Sep 21/ })[0])
     fireEvent.click(await screen.findByRole("option", { name: "All" }))
     await waitFor(() => expect(server.param("range")).toBe("all"))
-    await waitFor(
-      () =>
-        expect(
-          charts(server.seen, "health/body_mass").some((r) => r.downsample)
-        ).toBe(true),
-      { timeout: 5000 }
+    await waitFor(() =>
+      expect(
+        drawn(server.seen, "health/body_mass").some(
+          (r) =>
+            r.aggregate.range?.gte ===
+            isoWithOffset(
+              allRange(Date.parse(FIRSTS[`${BODY_MASS}\n${WITHINGS}`])).start
+            )
+        )
+      ).toBe(true)
     )
   })
 })
