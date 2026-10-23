@@ -1092,7 +1092,8 @@ row of controls scopes every chart:
   the point's recorded date where that is earlier than your own date at its
   instant (23:30 at -07:00 is the next day in UTC), so a read by where you
   were keeps it, and it reaches back to the date a later reading written
-  further west (as far as -12:00) could record, since a stream's offsets
+  further west (as far as -18:00, the furthest offset the server accepts)
+  could record, since a stream's offsets
   may change. All waits until
   every chosen metric's streams are read, and where one metric's read
   failed it says so beside the retry rather than start from the others.

@@ -356,6 +356,13 @@ describe("firstDayStart", () => {
     )
   })
 
+  it("reaches as far west as the server accepts an offset, -18:00", () => {
+    // 13:00 UTC on October 2, then 14:00 UTC written at -18:00: October 1.
+    expect(firstDayStart("2026-10-02T13:00:00Z")).toBeLessThanOrEqual(
+      new Date(2026, 9, 1).getTime()
+    )
+  })
+
   it("never starts after the point's instant", () => {
     for (const iso of [
       "2026-10-02T00:30:00+09:00",
