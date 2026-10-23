@@ -78,7 +78,7 @@ final class Updater: NSObject, ObservableObject {
     }
     @Published private(set) var canCheck = false
     /// The outcome of a check somebody asked for; a scheduled one stays quiet.
-    @Published private(set) var note: String?
+    @Published var note: String?
     /// iOS: a newer release this device can install.
     @Published var offer: ReleaseIndex.Release?
 
@@ -93,6 +93,11 @@ final class Updater: NSObject, ObservableObject {
                 startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
             controller.updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheck)
             self.controller = controller
+            // Sparkle's schedule only checks once the interval has passed
+            // since the last check; a launch checks regardless.
+            if !controller.updater.sessionInProgress {
+                controller.updater.checkForUpdatesInBackground()
+            }
         }
         #else
         canCheck = enabled
@@ -198,19 +203,15 @@ struct BuildFooter: View {
     @EnvironmentObject private var updates: Updater
 
     var body: some View {
+        // A pre-release's version is long: on its own line it wraps whole
+        // rather than being squeezed beside the label.
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text("Version").foregroundStyle(.secondary)
-                Text(updates.build.version).monospaced().textSelection(.enabled)
-                if updates.enabled {
-                    Spacer()
-                    Button("Check for Updates") { updates.checkNow() }
-                        .buttonStyle(.borderless)
-                        .disabled(!updates.canCheck)
-                }
-            }
-            if let note = updates.note {
-                Text(note).foregroundStyle(.secondary)
+            Text("Version").foregroundStyle(.secondary)
+            Text(updates.build.version).monospaced().textSelection(.enabled)
+            if updates.enabled {
+                Button("Check for Updates") { updates.checkNow() }
+                    .buttonStyle(.borderless)
+                    .disabled(!updates.canCheck)
             }
         }
         .font(.footnote)
@@ -218,7 +219,8 @@ struct BuildFooter: View {
 }
 
 extension View {
-    /// iOS: the offer of a newer release, wherever the app is.
+    /// iOS: the offer of a newer release, and the answer to a check somebody
+    /// asked for, wherever the app is.
     func updateOffer(_ updates: Updater) -> some View {
         #if os(iOS)
         alert(
@@ -230,6 +232,15 @@ extension View {
             Button("Not Now", role: .cancel) { updates.skip(release) }
         } message: { release in
             Text("Substrate \(release.version) is ready to install. You have \(updates.build.version).")
+        }
+        .alert(
+            "Check for Updates",
+            isPresented: Binding(get: { updates.note != nil }, set: { if !$0 { updates.note = nil } }),
+            presenting: updates.note
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { note in
+            Text(note)
         }
         #else
         self

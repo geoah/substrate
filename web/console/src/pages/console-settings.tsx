@@ -35,7 +35,7 @@ import {
   CONSOLE_PREFERENCE_KIND,
   type ThemePreference,
 } from "@/lib/console-preferences"
-import { changeServer, nativeShell } from "@/lib/shell"
+import { changeServer, checkForUpdates, nativeShell } from "@/lib/shell"
 import { AccountRows } from "@/pages/account"
 import { ApiTokens, SignedInRows } from "@/pages/tokens"
 
@@ -222,6 +222,30 @@ function ShellServerRow() {
   )
 }
 
+/** The native app's own version, and the check for a newer one: the app
+ * checks by itself at launch, and this is the way to ask now. */
+function ShellAppRow() {
+  const shell = nativeShell()
+  if (!shell?.version) return null
+  return (
+    <SettingRow
+      title="App version"
+      description={
+        <span className="font-mono [overflow-wrap:anywhere]">
+          {shell.version}
+        </span>
+      }
+      control={
+        shell.updates ? (
+          <Button variant="outline" size="sm" onClick={() => checkForUpdates()}>
+            Check for updates
+          </Button>
+        ) : undefined
+      }
+    />
+  )
+}
+
 function DeveloperRows() {
   const kinds = useQuery(kindsQueryOptions)
   const system = (kinds.data ?? []).filter(
@@ -304,6 +328,7 @@ export function ConsoleSettingsPage() {
       </SettingsSection>
       <SettingsSection title="Signed in">
         <ShellServerRow />
+        <ShellAppRow />
         <SignedInRows />
       </SettingsSection>
       <SettingsSection title="Your data">
