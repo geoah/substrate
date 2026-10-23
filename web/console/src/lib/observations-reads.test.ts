@@ -144,11 +144,25 @@ describe("one chart's request", () => {
 
   it("groups a coded metric by code and asks timeInState bare", () => {
     const read = laneRead(
-      spec({ shape: "coded", reducer: "timeInState", group: "source" })
+      spec({ shape: "coded", reducer: "timeInState", group: "metric" })
     ).aggregate
     expect(read.groupBy).toEqual(["code"])
     // Bare, it answers the time each code holds, each value with its code.
     expect(read.reducers).toEqual(["timeInState"])
+  })
+
+  it("keeps each source's codes apart on a coded metric grouped by source", () => {
+    // Two devices' nights overlap: a priority would keep one of them.
+    const read = laneRead(
+      spec({
+        shape: "coded",
+        reducer: "timeInState",
+        group: "source",
+        sourceOrder: ["a", "b"],
+      })
+    ).aggregate
+    expect(read.groupBy).toEqual(["code", "source", "channel"])
+    expect(read.sources).toBeUndefined()
   })
 
   it("sends the output unit only where one was picked", () => {

@@ -1060,7 +1060,9 @@ reads the day's total. The link names every key of the stream, a key the
 stream names nothing for as `~none` (`?about=~none` for the owner's), so the
 timeline reads that stream and not every source's or everyone's values of
 the metric. A folded row's metric opens the timeline on every source it
-folds, one line each (`?source=<a>,<b>&group=source`). A value of its own
+folds, one line each (`?source=<a>,<b>&group=source`), a category one
+stack per source. The search matches a folded row by every source it
+names. A value of its own
 that starts with `~` gets one more in front,
 so a channel named `~none` is `?channel=~~none` and is never read as no
 channel.
@@ -1126,9 +1128,13 @@ row of controls scopes every chart:
   time in each stage as one span over the whole night;
 - where a day, week or month starts: where you were, or your time zone;
 - what to group by: metric, source or about. A category metric is always
-  grouped by code. Where every metric drawn is one, **Group by** is
-  disabled and says so, and beside other metrics its chart says Group by
-  does not apply to it;
+  grouped by code: grouped by source, each source's codes stack apart
+  (two devices' overlapping nights both draw, never one picked by
+  priority), and grouped by about its chart says Group by does not apply
+  to it. Grouped by source, a metric whose sources' vendor summaries keep
+  no statistic the read can share (one source's average beside another's
+  highest) is read once per statistic, each plot named for it ("Heart rate
+  (average)"), so every source is drawn;
 - where to read from: automatic, raw points, vendor summaries, or raw where
   a bucket is covered;
 - the sources, things and channels to keep;

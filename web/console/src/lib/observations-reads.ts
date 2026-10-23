@@ -154,6 +154,11 @@ export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
 export function laneGroupBy(spec: LaneSpec): AggregateGroupKey[] {
   const groupKey = laneGroupKey(spec)
   if (groupKey === "source") return ["source", "channel"]
+  // A category grouped by source keeps each source's codes apart, so two
+  // devices' overlapping nights are both drawn.
+  if (groupKey === "code" && spec.group === "source") {
+    return ["code", "source", "channel"]
+  }
   return [
     ...(groupKey ? [groupKey] : []),
     ...(spec.byChannel ? ["channel" as const] : []),
@@ -191,7 +196,7 @@ export function laneRead(spec: LaneSpec): AggregateRead {
     bucket: spec.bucket,
     ...(groupBy.length ? { groupBy } : {}),
     reducers: laneReducers(spec),
-    ...(groupKey !== "source" && ranked > 1
+    ...(groupKey !== "source" && spec.group !== "source" && ranked > 1
       ? {
           sources: {
             policy: "priority",

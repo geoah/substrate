@@ -57,7 +57,7 @@ import {
   presetReaching,
   RANGE_PRESETS,
 } from "@/lib/observations-time"
-import { groupFixed, planPlot, splitCharts } from "@/lib/overlay"
+import { planPlots, splitCharts } from "@/lib/overlay"
 import { shortRef } from "@/lib/stream-table"
 import {
   ARRAY,
@@ -250,8 +250,8 @@ export function ObservationsTimelinePage() {
   // while the others stay drawn; one whose read failed is said apart.
   const known = metrics.filter((m) => obs.knows(m) && !obs.failed(m))
   const waiting = metrics.filter((m) => !obs.knows(m)).length
-  const plots = known.map((metric) =>
-    planPlot(obs, metric, {
+  const plots = known.flatMap((metric) =>
+    planPlots(obs, metric, {
       range,
       size,
       timezone: controls.timezone,
@@ -347,7 +347,6 @@ export function ObservationsTimelinePage() {
           <GroupControl
             value={group}
             onChange={(next) => void setGroup(next === "metric" ? null : next)}
-            fixed={groupFixed(plots)}
           />
           <button
             type="button"
@@ -470,7 +469,7 @@ export function ObservationsTimelinePage() {
           {!controls.allPending &&
             charts.map((chart) => (
               <OverlayChart
-                key={chart.map((p) => p.metric).join("\n")}
+                key={chart.map((p) => p.id).join("\n")}
                 obs={obs}
                 plots={chart}
                 range={range}

@@ -291,11 +291,14 @@ export function ObservationsPage() {
   }, [])
   const shown = useMemo(() => {
     const matched = rows.filter((r) =>
-      streamMatches(r, choices, search, obs.pins.metric)
+      streamMatches(r, choices, "", obs.pins.metric)
     )
     // Grouped by source, each source's streams are its group's rows: a row
-    // folding several sources would belong to none of them.
-    const folded = group === "source" ? matched : foldSources(matched)
+    // folding several sources would belong to none of them. The search
+    // reads the rows as shown, so a folded row is found by all it names.
+    const folded = (group === "source" ? matched : foldSources(matched)).filter(
+      (r) => streamMatches(r, NO_CHOICES, search, obs.pins.metric)
+    )
     const sorted = sortStreams(folded, sort)
     return openFolds(
       group
@@ -739,6 +742,7 @@ export function ObservationsPage() {
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set()
+const NO_CHOICES = streamChoices([])
 
 /** A group head's value, drawn the way the grid's cells draw it. */
 function GroupValue({

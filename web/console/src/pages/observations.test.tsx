@@ -679,6 +679,19 @@ describe("the streams table", () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(5))
   })
 
+  it("finds a folded row by the sources it names together", async () => {
+    mount(`?search=${encodeURIComponent("Garmin Apple")}`)
+    const table = await screen.findByRole("table")
+    await waitFor(() =>
+      expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1)
+    )
+    await waitFor(() =>
+      expect(bodyRows()[0].textContent).toContain(
+        "Garmin Forerunner 265, Apple Watch S10"
+      )
+    )
+  })
+
   it("keeps a source's channel a row of its own beside the metric's folded row", async () => {
     mount("", KINDS, (read) => latestAnswer(read, LATEST_CHANNELS))
     const body = await rows()

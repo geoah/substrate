@@ -179,6 +179,8 @@ export function streamMatches(
     row.metric,
     row.sourceTitle,
     row.source,
+    // A folded row is found by every source it names.
+    ...(row.members ?? []).flatMap((m) => [m.sourceTitle, m.source]),
     row.aboutTitle,
     row.about,
     row.channel,

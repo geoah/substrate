@@ -246,7 +246,12 @@ export function OverlayChart({
           : plot.groupKey === "code" && s.value
             ? codeWords(s.value)
             : plot.name
-    return s.channel ? `${name} (${s.channel})` : name
+    // A category's stack per source names its source.
+    const within = [
+      ...(s.source ? [sourceText(s.source)] : []),
+      ...(s.channel ? [s.channel] : []),
+    ]
+    return within.length ? `${name} (${within.join(", ")})` : name
   }
 
   // A read that landed with no rows beside a metric that has some: the
@@ -272,10 +277,13 @@ export function OverlayChart({
     mark: d.plot.mark,
     band: d.plot.band && lonely(d.plot),
     axis: d.side,
-    // A channel's categories stack apart from another channel's.
+    // A channel's or a source's categories stack apart from another's.
     stack:
       d.plot.mark === "stack"
-        ? seriesKey(d.plot.metric, d.series.channel ?? "")
+        ? seriesKey(
+            d.plot.metric,
+            `${d.series.source ?? ""}\u0001${d.series.channel ?? ""}`
+          )
         : undefined,
     stale: d.stale,
   }))
@@ -374,7 +382,7 @@ export function OverlayChart({
           <p className="mt-1 text-muted-foreground">Nothing measured.</p>
         )}
         {byPlot.map(({ plot, rows }) => (
-          <div key={plot.metric} className="mt-2 border-t border-border pt-2">
+          <div key={plot.id} className="mt-2 border-t border-border pt-2">
             <p className="mb-1 text-faint">
               {plot.name}, {lowerFirst(choiceWords(plot))}
             </p>
@@ -433,7 +441,7 @@ export function OverlayChart({
       <div className="flex flex-col gap-1.5">
         {states.map((state) => (
           <PlotHead
-            key={state.plot.metric}
+            key={state.plot.id}
             state={state}
             empty={empty(state)}
             series={all.filter((d) => d.plot === state.plot)}
@@ -497,7 +505,7 @@ export function OverlayChart({
       {states.map(({ plot, rows }) =>
         rows.length > 0 ? (
           <RollupTable
-            key={plot.metric}
+            key={plot.id}
             rows={rows}
             reducers={answerReducers(rows)}
             groupKey={plot.groupKey}
@@ -514,7 +522,7 @@ export function OverlayChart({
       {technical &&
         reading.map((plot) => (
           <RequestDetails
-            key={plot.metric}
+            key={plot.id}
             read={plot.read!}
             caption={drawn.length > 1 ? plot.name : undefined}
           />
@@ -558,7 +566,7 @@ function drawnSeries(
     for (const v of own) {
       // Where the first category's codes are fixed, those it holds wear
       // their own colours and those it does not hold draw nothing.
-      if (plot === coded && plot.codes?.includes(v)) continue
+      if (plot === coded && plot.codes?.includes(codeOfKey(v))) continue
       const key = seriesKey(plot.metric, v)
       if (!universe.includes(key)) universe.push(key)
     }
@@ -568,7 +576,8 @@ function drawnSeries(
         ? [...answered].sort((a, b) => own.indexOf(a.key) - own.indexOf(b.key))
         : answered
     for (const s of ordered) {
-      const at = plot === coded ? (plot.codes ?? []).indexOf(s.key) : -1
+      const at =
+        plot === coded ? (plot.codes ?? []).indexOf(s.value ?? s.key) : -1
       if (at >= 0) fixed.set(seriesKey(plot.metric, s.key), at)
       all.push({
         key: seriesKey(plot.metric, s.key),
@@ -587,6 +596,14 @@ function drawnSeries(
       colors.get(d.key) ?? (d.series.key ? "var(--faint)" : "var(--series-1)")
   }
   return all
+}
+
+/** A category series key's code: the part before its channel or source. */
+function codeOfKey(key: string): string {
+  const cut = [key.indexOf("\u0001"), key.indexOf("\u0002")].filter(
+    (i) => i >= 0
+  )
+  return cut.length ? key.slice(0, Math.min(...cut)) : key
 }
 
 /** One metric's row above the chart: its name and form, its axis, its
@@ -633,7 +650,7 @@ function PlotHead({
       : undefined
   return (
     <div
-      key={plot.metric}
+      key={plot.id}
       role="group"
       aria-label={plot.name}
       data-slot="chart-plot"
@@ -825,11 +842,14 @@ function chartNotes(
       )
     }
     if (plot.shape === "coded") {
-      // Grouped by source or about, it says it leaves this one be.
+      // Grouped by source, each source's codes stack apart; grouped by
+      // about, it says it leaves this one be.
       own.push(
-        plot.spec && plot.spec.group !== "metric"
-          ? "Stacked by category: Group by does not apply to a category metric."
-          : "Stacked by category."
+        plot.spec?.group === "source"
+          ? "Stacked by category, one stack per source."
+          : plot.spec?.group === "about"
+            ? "Stacked by category: Group by about does not apply to a category metric."
+            : "Stacked by category."
       )
     }
     if (!held && overfull(plot, rows)) {

@@ -21,6 +21,7 @@ import {
   DEFAULT_PRECISION,
   distinct,
   statisticChoices,
+  statisticWords,
   formOf,
   rawOnly,
   reducerChoiceWords,
@@ -240,6 +241,10 @@ export interface ReducerOption {
 
 /** One metric of a chart, planned before its read answers. */
 export interface Plot {
+  /** What tells it apart in a chart: its metric, and its statistic where
+   * the metric's sources are split by the statistic they keep
+   * (`planPlots`). */
+  id: string
   metric: string
   name: string
   shape: ReadingShape
@@ -346,6 +351,70 @@ export function fromOf(
     return { from: "summaries", reason: "summaries-only" }
   }
   return { from: "prefer-raw", reason: "some-summaries" }
+}
+
+/** One metric's plots: one (`planPlot`), or grouped by source where the
+ * sources' summaries keep no statistic the read can share (one source's
+ * average beside another's highest), one per statistic, each read apart and
+ * named for its statistic, so every source is drawn. */
+export function planPlots(
+  obs: PlotSource,
+  metric: string,
+  scope: PlotScope
+): Plot[] {
+  const plan = planPlot(obs, metric, scope)
+  if (
+    scope.group !== "source" ||
+    !plan.statistic ||
+    !plan.statisticLeftOut.length
+  ) {
+    return [plan]
+  }
+  const streams = (scope.streams ?? obs.streams).filter(
+    (s) =>
+      sameRef(s.metric, metric) &&
+      (!scope.sources.length ||
+        scope.sources.some((c) =>
+          c === NONE ? !s.source : Boolean(s.source && sameRef(s.source, c))
+        ))
+  )
+  const left = plan.statisticLeftOut
+  const isLeft = (s: Stream) =>
+    left.some((l) => (l ? sameRef(s.source, l) : !s.source))
+  const kept = distinct(
+    streams.filter((s) => !isLeft(s)).map((s) => s.source || NONE)
+  )
+  // Each left-out source joins the statistic it keeps by default.
+  const byStatistic = new Map<string, string[]>()
+  for (const source of left) {
+    const own = streams.filter((s) =>
+      source ? sameRef(s.source, source) : !s.source
+    )
+    const [statistic] = statisticChoices(own.flatMap((s) => s.statistics ?? []))
+    if (!statistic) continue
+    byStatistic.set(statistic, [
+      ...(byStatistic.get(statistic) ?? []),
+      source || NONE,
+    ])
+  }
+  const named = (p: Plot, statistic: string): Plot => ({
+    ...p,
+    id: `${metric}\u0000${statistic}`,
+    name: `${p.name} (${statisticWords(statistic).toLowerCase()})`,
+  })
+  return [
+    named(
+      planPlot(obs, metric, {
+        ...scope,
+        sources: kept,
+        statistic: plan.statistic,
+      }),
+      plan.statistic
+    ),
+    ...[...byStatistic].map(([statistic, sources]) =>
+      named(planPlot(obs, metric, { ...scope, sources, statistic }), statistic)
+    ),
+  ]
 }
 
 /** One metric's plot: its form, reducer, unit, mark, axis, and the read it
@@ -469,18 +538,20 @@ export function planPlot(
       : scope.group === "metric"
         ? undefined
         : scope.group
+  // Grouped by source, a category keeps each source's codes apart too.
+  const bySource =
+    groupKey === "source" || (shape === "coded" && scope.group === "source")
   const channelsTaken = new Set(selected.map((s) => s.channel ?? "")).size
-  const byChannel = groupKey === "source" || channelsTaken > 1
+  const byChannel = bySource || channelsTaken > 1
   // The part of a series a stream decides: its source or its thing where
   // the chart is grouped by one, and its channel where the read groups by
   // channel. Spelled as the answer's groups are, record paths.
   const partOf = (s: Pick<Stream, "source" | "about" | "channel">) => {
-    const base =
-      groupKey === "source"
-        ? (refPathOf(s.source, obs.pins.source) ?? s.source ?? "")
-        : groupKey === "about"
-          ? (refPathOf(s.about, obs.pins.about) ?? s.about ?? "")
-          : ""
+    const base = bySource
+      ? (refPathOf(s.source, obs.pins.source) ?? s.source ?? "")
+      : groupKey === "about"
+        ? (refPathOf(s.about, obs.pins.about) ?? s.about ?? "")
+        : ""
     return byChannel ? channelKey(base, s.channel) : base
   }
   // The groups the read makes, as it groups: a category per code, each
@@ -511,7 +582,7 @@ export function planPlot(
   // or its channel), a stream the selection leaves out answers a series of
   // its own unless it shares a selected one, so its rows can be dropped; a
   // stream sharing a selected series folds into that line.
-  const apart = groupKey === "source" || groupKey === "about" || byChannel
+  const apart = bySource || groupKey === "about" || byChannel
   const extra = scope.streams
     ? selected.filter((s) => !own.some((o) => o.key === s.key))
     : []
@@ -541,7 +612,7 @@ export function planPlot(
         about: chosenAbouts.map((a) => refPathOf(a, obs.pins.about) ?? a),
         ...(channels.length ? { channels: [...channels] } : {}),
         ...(narrowsStatistic ? { statistic } : {}),
-        ...(byChannel && groupKey !== "source" ? { byChannel } : {}),
+        ...(byChannel && !bySource ? { byChannel } : {}),
         // Past the default, the read asks for the cap: the estimate is a
         // guess (a month as 30 days, the codes a metric lists none of), and
         // the cap is what holds a read back.
@@ -563,6 +634,7 @@ export function planPlot(
 
   const mark = markOf(shape, reducer)
   return {
+    id: metric,
     metric,
     name,
     shape,
@@ -803,16 +875,6 @@ export function universeOf(
 /** The key one series is told apart by across a chart's metrics. */
 export function seriesKey(metric: string, value: string): string {
   return `${metric}\u0000${value}`
-}
-
-/** Why Group by does nothing for `plots`, where every one is a category:
- * a category's stacks are always its codes (`planPlot`). */
-export function groupFixed(
-  plots: readonly Pick<Plot, "shape">[]
-): string | undefined {
-  return plots.length > 0 && plots.every((p) => p.shape === "coded")
-    ? "A category metric is always grouped by its categories."
-    : undefined
 }
 
 /** A category's colour, the same on every surface that draws it (the
