@@ -23,6 +23,7 @@ export const STREAM_KEYS = parseAsArrayOf(
 ).withDefault([])
 export const RANGE_VALUES = [
   ...RANGE_PRESETS.map((p) => p.value),
+  "all",
   "custom",
 ] as const
 export const BUCKET_VALUES = BUCKET_CHOICES.map((b) => b.value)

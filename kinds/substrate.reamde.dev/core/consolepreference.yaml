@@ -4,7 +4,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 3
+  version: 4
   description: Repository-owned console preferences, for navigation and display,
     shared across sessions.
   purpose: internal
@@ -62,6 +62,10 @@ data:
         - light
         - dark
       description: The color theme; system follows the device.
+    connectGaps:
+      type: bool
+      description: Whether timeline charts draw a line on across buckets with
+        no value, the gap dashed.
     views:
       type: object
       repeated: true

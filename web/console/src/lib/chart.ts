@@ -226,6 +226,27 @@ export function linePath(points: readonly (XY | null)[]): string {
   return out
 }
 
+/** The segments that bridge a line's breaks: from the last point before
+ * each run of missing ones to the first after it. A break at either end
+ * has nothing to bridge to. */
+export function gapPath(points: readonly (XY | null)[]): string {
+  let out = ""
+  let last: XY | null = null
+  let broken = false
+  for (const p of points) {
+    if (!p) {
+      broken = last !== null
+      continue
+    }
+    if (broken && last) {
+      out += `M${r(last.x)} ${r(last.y)}L${r(p.x)} ${r(p.y)}`
+    }
+    last = p
+    broken = false
+  }
+  return out
+}
+
 export interface Span {
   x: number
   y0: number

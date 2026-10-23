@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  allRange,
   autoBucket,
   coveredWords,
   endPlacedBucket,
@@ -325,5 +326,15 @@ describe("the covered time", () => {
     expect(coveredWords("PT7H10M40S")).toBe("7h 11m")
     expect(coveredWords("PT8M12S")).toBe("8m 12s")
     expect(coveredWords("soon")).toBe("soon")
+  })
+})
+
+describe("allRange", () => {
+  it("runs from the earliest point's day through today", () => {
+    const now = new Date(2026, 9, 23, 15, 30).getTime()
+    expect(allRange(new Date(2024, 1, 3, 7, 15).getTime(), now)).toEqual({
+      start: new Date(2024, 1, 3).getTime(),
+      end: new Date(2026, 9, 24).getTime(),
+    })
   })
 })

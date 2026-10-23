@@ -24,6 +24,28 @@ export function isRangePreset(value: unknown): value is RangePreset {
   return RANGE_PRESETS.some((p) => p.value === value)
 }
 
+/** A range the picker offers: a preset, or `all`, from the earliest point
+ * the chosen streams hold to today. */
+export type RangeKey = RangePreset | "all"
+
+export const ALL_RANGE: { value: "all"; label: string } = {
+  value: "all",
+  label: "All",
+}
+
+/** Every day from the one holding `earliest` through today. */
+export function allRange(earliest: number, now = Date.now()): TimeRange {
+  const first = new Date(Math.min(earliest, now))
+  return {
+    start: new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate()
+    ).getTime(),
+    end: daysEnding(now, 1).end,
+  }
+}
+
 /** The shortest preset whose window reaches back to `t`, a stream's newest
  * value; undefined where even the last year does not. */
 export function presetReaching(

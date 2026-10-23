@@ -12,10 +12,16 @@
  * one request, across charts, and each chart carries its metrics' numbers
  * under it, with the requests themselves in technical mode. */
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useQueries } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { ListIcon } from "lucide-react"
-import { parseAsStringLiteral, useQueryState } from "nuqs"
+import {
+  parseAsBoolean,
+  parseAsString,
+  parseAsStringLiteral,
+  useQueryState,
+} from "nuqs"
 
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
@@ -45,11 +51,17 @@ import { RangePicker } from "@/components/observations/range-picker"
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useConnectGaps } from "@/hooks/use-console-preferences"
 import { useFacetValues, useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
+import { aggregateQueryOptions } from "@/lib/api/observations"
 import type { AggregateFrom } from "@/lib/api/types"
 import { chosenValue, distinct, NONE, sameRef } from "@/lib/observations"
-import { FROM_CHOICES } from "@/lib/observations-reads"
+import {
+  earliestOf,
+  earliestRead,
+  FROM_CHOICES,
+} from "@/lib/observations-reads"
 import {
   endPlacedBucket,
   presetReaching,
@@ -90,12 +102,15 @@ export function ObservationsTimelinePage() {
   const { pins } = obs
   const sources = distinct(sourceParam.map((v) => shortRef(v, pins.source)))
   const abouts = distinct(aboutParam.map((v) => shortRef(v, pins.about)))
-  const controls = useTimelineControls("7d")
-  const { range } = controls
   const [group, setGroup] = useQueryState(
     "group",
     parseAsStringLiteral(GROUP_VALUES).withDefault("metric")
   )
+  // Whether lines run on across empty buckets: the address's where it says,
+  // else the reader's preference. A toggle writes both.
+  const [connectParam, setConnect] = useQueryState("connect", parseAsBoolean)
+  const [connectPref, setConnectPref] = useConnectGaps()
+  const connect = connectParam ?? connectPref
   const [fromParam, setFrom] = useQueryState(
     "from",
     parseAsStringLiteral(FROM_VALUES)
@@ -120,6 +135,29 @@ export function ObservationsTimelinePage() {
     : fallback
       ? [fallback]
       : []
+  // `All` reads every chosen metric's earliest point first: the range runs
+  // from the earliest of them to today.
+  const [rangeKey] = useQueryState("range", parseAsString)
+  const [opened] = useState(() => Date.now())
+  const earliestReads = useQueries({
+    // A metric is probed once its record is known: an address may name
+    // it by a bare id the metric pin resolves.
+    queries: (rangeKey === "all"
+      ? metrics.filter((m) => obs.knows(m))
+      : []
+    ).map((m) => ({
+      ...aggregateQueryOptions(earliestRead(m, opened), obs.observedIds),
+      retry: false,
+    })),
+  })
+  const earliest = earliestReads.some((r) => r.isPending)
+    ? undefined
+    : earliestReads.reduce<number | null>((min, r) => {
+        const t = r.data ? earliestOf(r.data) : null
+        return t !== null && (min === null || t < min) ? t : min
+      }, null)
+  const controls = useTimelineControls("7d", { earliest })
+  const { range } = controls
   useEffect(() => {
     if (metricParam.length || !fallback) return
     void setMetricParam([fallback], { history: "replace" })
@@ -300,6 +338,7 @@ export function ObservationsTimelinePage() {
             range={range}
             onPreset={controls.onPreset}
             onCustom={controls.onCustom}
+            all
           />
         </div>
         {obs.metricListError && (
@@ -316,6 +355,22 @@ export function ObservationsTimelinePage() {
             onChange={(next) => void setGroup(next === "metric" ? null : next)}
             fixed={groupFixed(plots)}
           />
+          <button
+            type="button"
+            aria-pressed={connect}
+            title={
+              connect
+                ? "Break each line where a bucket holds no value"
+                : "Draw each line on across buckets with no value, the gap dashed"
+            }
+            className="inline-flex h-7 cursor-pointer items-center rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 aria-pressed:border-transparent aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
+            onClick={() => {
+              void setConnect(!connect)
+              setConnectPref(!connect)
+            }}
+          >
+            Connect gaps
+          </button>
           <Labelled label="Read from">
             <Segmented
               label="Read from"
@@ -362,7 +417,14 @@ export function ObservationsTimelinePage() {
       ) : (
         <>
           <StreamReadErrors obs={obs} className="mt-4" />
-          {before !== undefined && (
+          {controls.allPending && (
+            <Skeleton
+              role="status"
+              aria-label="Reading the earliest point"
+              className="mt-8 h-[236px] w-full"
+            />
+          )}
+          {!controls.allPending && before !== undefined && (
             <p
               data-slot="timeline-older"
               className="mt-4 text-[12.5px] text-muted-foreground"
@@ -402,20 +464,22 @@ export function ObservationsTimelinePage() {
               )}
             </p>
           )}
-          {charts.map((chart) => (
-            <OverlayChart
-              key={chart.map((p) => p.metric).join("\n")}
-              obs={obs}
-              plots={chart}
-              range={range}
-              size={size}
-              title
-              onReducer={controls.onReducer}
-              onUnit={controls.onUnit}
-              onStatistic={controls.onStatistic}
-              onZoom={controls.zoom}
-            />
-          ))}
+          {!controls.allPending &&
+            charts.map((chart) => (
+              <OverlayChart
+                key={chart.map((p) => p.metric).join("\n")}
+                obs={obs}
+                plots={chart}
+                range={range}
+                size={size}
+                title
+                onReducer={controls.onReducer}
+                onUnit={controls.onUnit}
+                onStatistic={controls.onStatistic}
+                onZoom={controls.zoom}
+                connect={connect}
+              />
+            ))}
           {waiting > 0 && (
             <Skeleton
               role="status"

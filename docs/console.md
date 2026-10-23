@@ -141,7 +141,7 @@ signed in to the repository looks the same
 ([0132](decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
 It carries the sidebar's folded groups and favorites (`collapsed`,
 `favorites`), each collection's saved views (`views`) and the layout settings (`recordWidth`, `tableWidth`, `density`,
-`technicalDetails`, `theme`), each optional, so an absent one is the console's
+`technicalDetails`, `theme`, and the timeline's `connectGaps`), each optional, so an absent one is the console's
 own default. Whether the sidebar is open is a fact about one window, so it is
 kept in this browser alone and never written to the record, and a
 `sidebarOpen` an older console stored there is ignored. A change is a
@@ -1083,8 +1083,14 @@ rate, HRV and steps are two charts, heart rate with HRV and then steps. One
 row of controls scopes every chart:
 
 - the metrics;
-- the range: today, the last 7 or 30 days, 6 months, a year, or a custom
-  range of days on the calendar;
+- the range: today, the last 7 or 30 days, 6 months, a year, **All**, or a
+  custom range of days on the calendar (`?range=`, `all` for All). All
+  runs from the day of the chosen metrics' earliest point through today.
+  The page reads that point first, one request per metric: a downsample to
+  one column from 1900 to now (`downsample={"points": 1}`), whose `first`
+  value carries the instant of each stream's first point. Automatic then
+  sizes the bucket to the whole span, a week or a month for anything past
+  two months, so the read stays inside the bucket budget;
 - the bucket: automatic from the range, 1, 5 or 15 minutes, an hour, a day,
   a week or a month. Automatic reads a window of two hours or less, such as
   a workout's trace, by the minute. It reads in days where it would read in
@@ -1098,7 +1104,13 @@ row of controls scopes every chart:
   does not apply to it;
 - where to read from: automatic, raw points, vendor summaries, or raw where
   a bucket is covered;
-- the sources, things and channels to keep.
+- the sources, things and channels to keep;
+- **Connect gaps**: a line breaks where a bucket holds no value, so sparse
+  readings draw as dots and short runs. With it on, each break is bridged
+  by a dashed segment from the last value before it to the first after it,
+  so the line runs on and the gap still shows. It is kept in the address
+  (`?connect=true`) and as the `connectGaps` preference, which applies
+  where the address does not say.
 
 Under each chart, a table holds each metric's numbers and copies them as
 tab-separated text, the exact digits. On screen a value's digits are in

@@ -1203,6 +1203,40 @@ func TestAggregateDownsample(t *testing.T) {
 	}
 }
 
+// A one-point downsample over a century is how the console's timeline finds
+// a metric's earliest point for its "All" range: one column, whose first
+// value carries the instant of the stream's first point.
+func TestAggregateDownsampleFindsTheEarliestPoint(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.heartRate("garmin", day, 7*time.Minute, 0, time.Time{}, time.Time{})
+	res, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+		Aggregate: &substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+			Range:  rng(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), day.AddDate(0, 1, 0)),
+		},
+		Downsample: &substrate.Downsample{Points: 1},
+	})
+	if err != nil {
+		t.Fatalf("downsample: %v", err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("%d columns, want 1", len(res.Rows))
+	}
+	first, _ := observed.First(f.stream("health/heart_rate", "garmin"), observed.Window{From: day.AddDate(-1, 0, 0), To: day.AddDate(0, 1, 0)})
+	for _, v := range res.Rows[0].Values {
+		if v.Reducer.Name != substrate.ReducerFirst {
+			continue
+		}
+		if v.At == nil || !v.At.Equal(first.At) {
+			t.Fatalf("first at %v, want %s", v.At, first.At)
+		}
+		return
+	}
+	t.Fatal("no first value")
+}
+
 // A money property per month: summed exactly per currency, the anchor a
 // declared datetime.
 func TestAggregatePropertyOverMoney(t *testing.T) {

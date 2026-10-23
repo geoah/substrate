@@ -17,7 +17,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react"
-import { NuqsTestingAdapter } from "nuqs/adapters/testing"
+import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -29,7 +29,7 @@ import type {
 } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { recordTimelineSearch, streamSearch } from "@/lib/observations"
-import { isoWithOffset, windowWords } from "@/lib/observations-time"
+import { allRange, isoWithOffset, windowWords } from "@/lib/observations-time"
 import {
   APPLE,
   BODY_MASS,
@@ -2052,5 +2052,156 @@ describe("the charts", () => {
     const plain = await lane("Weight")
     await within(plain).findByRole("button", { name: "Show the numbers" })
     expect(plain.querySelector("[data-slot=lane-request]")).toBe(null)
+  })
+})
+
+/** The page with the address it writes and the preferences it sets kept. */
+function mountWatched(
+  searchParams: string,
+  respond: (read: SeenRead) => AggregateResult | Response = answer,
+  connectGaps = false
+) {
+  const server = observationsServer(respond)
+  vi.stubGlobal("fetch", vi.fn(pageFetch(server)))
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const urls: UrlUpdateEvent[] = []
+  const settings: [string, unknown][] = []
+  render(
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          connectGaps,
+        },
+        busy: false,
+        change: () => {},
+        set: (key, value) => void settings.push([key, value]),
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <NuqsTestingAdapter
+          searchParams={searchParams}
+          hasMemory
+          onUrlUpdate={(e) => void urls.push(e)}
+        >
+          <ObservationsTimelinePage />
+        </NuqsTestingAdapter>
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
+  )
+  const param = (key: string) => urls.at(-1)?.searchParams.get(key) ?? null
+  return Object.assign(server, { param, settings })
+}
+
+describe("the All range", () => {
+  /** The Withings' first weigh-in, the earliest a downsample answers. */
+  const FIRST = "2026-03-02T07:15:00+02:00"
+  function earliest(read: SeenRead): AggregateResult {
+    if (!read.downsample) return answer(read)
+    return {
+      ...LATEST,
+      rows: [
+        {
+          start: "1900-01-01T00:00:00Z",
+          end: "2026-10-23T00:00:00Z",
+          form: "gauge",
+          group: { source: WITHINGS },
+          values: [
+            { reducer: "first", value: "74.1", unit: "kg", at: FIRST },
+            { reducer: "last", value: "72.3", unit: "kg" },
+          ],
+          count: 40,
+          bounded: 0,
+          synthetic: false,
+        },
+      ],
+    }
+  }
+
+  it("reads from the metric's earliest point to today, the bucket sized to fit", async () => {
+    const server = mountWatched("?metric=health/body_mass&range=all", earliest)
+    await waitFor(() =>
+      expect(
+        charts(server.seen, "health/body_mass").some((r) => !r.downsample)
+      ).toBe(true)
+    )
+    // A metric is probed once its record is known, never by a bare id.
+    expect(
+      server.seen.filter((r) => r.downsample).map((r) => r.aggregate.metric)
+    ).toEqual([{ ref: `${METRIC}/health/body_mass` }])
+    // One one-column downsample per metric finds the earliest point.
+    const probe = charts(server.seen, "health/body_mass").find(
+      (r) => r.downsample
+    )!
+    expect(probe.downsample).toEqual({ points: 1 })
+    expect(probe.aggregate.range?.gte).toBe("1900-01-01T00:00:00Z")
+    expect(probe.aggregate.reducers).toBeUndefined()
+    const read = charts(server.seen, "health/body_mass").filter(
+      (r) => !r.downsample
+    )[0]
+    expect(read.aggregate.range?.gte).toBe(
+      isoWithOffset(allRange(Date.parse(FIRST)).start)
+    )
+    // Months of weigh-ins read by the week or the month, never the hour.
+    expect(["week", "month"]).toContain(read.aggregate.bucket?.calendar)
+    expect(screen.getByRole("button", { name: /^All$/ }).textContent).toContain(
+      "All"
+    )
+  })
+
+  it("offers All in the range picker, kept in the address", async () => {
+    const server = mountWatched(`?metric=health/body_mass&${WINDOW}`, earliest)
+    await lane("Weight")
+    fireEvent.click(screen.getAllByRole("button", { name: /Sep 21/ })[0])
+    fireEvent.click(await screen.findByRole("option", { name: "All" }))
+    await waitFor(() => expect(server.param("range")).toBe("all"))
+    await waitFor(
+      () =>
+        expect(
+          charts(server.seen, "health/body_mass").some((r) => r.downsample)
+        ).toBe(true),
+      { timeout: 5000 }
+    )
+  })
+})
+
+describe("connecting a line's gaps", () => {
+  it("bridges a gap with a dashed segment once Connect gaps is on, kept in the address and the preference", async () => {
+    const server = mountWatched(`?metric=health/body_mass&${WINDOW}`)
+    const chart = await lane("Weight")
+    await waitFor(() =>
+      expect(chart.querySelector("[data-series]")).toBeTruthy()
+    )
+    expect(chart.querySelector("[data-slot=chart-gap]")).toBe(null)
+    const toggle = screen.getByRole("button", { name: "Connect gaps" })
+    expect(toggle.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(toggle)
+    await waitFor(() => expect(server.param("connect")).toBe("true"))
+    expect(server.settings).toEqual([["connectGaps", true]])
+    // The week with no weigh-in sits between two that hold one.
+    const gap = await waitFor(() => {
+      const path = chart.querySelector("[data-slot=chart-gap]")
+      expect(path?.getAttribute("d")).toMatch(/^M[^M]+L/)
+      return path!
+    })
+    expect(gap.getAttribute("stroke-dasharray")).toBe("3 3")
+  })
+
+  it("connects the gaps where the preference says so and the address does not", async () => {
+    mountWatched(`?metric=health/body_mass&${WINDOW}`, answer, true)
+    const chart = await lane("Weight")
+    await waitFor(() =>
+      expect(chart.querySelector("[data-slot=chart-gap]")).toBeTruthy()
+    )
+    expect(
+      screen
+        .getByRole("button", { name: "Connect gaps" })
+        .getAttribute("aria-pressed")
+    ).toBe("true")
   })
 })

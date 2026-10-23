@@ -1,5 +1,6 @@
 /** The timeline's range: presets as rows (today, the last 7 and 30 days, 6
- * months, a year) and a custom range of whole days, each end picked on the
+ * months, a year), where the caller offers it every day since the earliest
+ * point (`all`), and a custom range of whole days, each end picked on the
  * property sheet's own calendar. A range a chart zoomed into reads as its
  * window (`rangeWords`). */
 
@@ -15,13 +16,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
+  ALL_RANGE,
   dayKeyOf,
   dayRange,
   dayWords,
   isRangePreset,
   RANGE_PRESETS,
   rangeWords,
-  type RangePreset,
+  type RangeKey,
   type TimeRange,
 } from "@/lib/observations-time"
 
@@ -30,19 +32,24 @@ export function RangePicker({
   range,
   onPreset,
   onCustom,
+  all = false,
 }: {
   /** The preset in force, or `custom`. */
-  preset: RangePreset | "custom"
+  preset: RangeKey | "custom"
   range: TimeRange
-  onPreset: (preset: RangePreset) => void
+  onPreset: (preset: RangeKey) => void
   onCustom: (range: TimeRange) => void
+  /** Offer `all`, which the caller reads the earliest point for. */
+  all?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<"start" | "end" | null>(null)
   const label =
     preset === "custom"
       ? rangeWords(range)
-      : (RANGE_PRESETS.find((p) => p.value === preset)?.label ?? preset)
+      : preset === "all"
+        ? ALL_RANGE.label
+        : (RANGE_PRESETS.find((p) => p.value === preset)?.label ?? preset)
   const firstDay = dayKeyOf(range.start)
   const lastDay = dayKeyOf(range.end - 1)
 
@@ -76,13 +83,15 @@ export function RangePicker({
             label="Range"
             options={[
               ...RANGE_PRESETS,
+              ...(all ? [ALL_RANGE] : []),
               { value: "custom", label: "Custom range" },
             ]}
             selected={[preset]}
             onChange={([next]) => {
               setOpen(false)
-              if (isRangePreset(next)) onPreset(next)
-              else if (next === "custom") onCustom(range)
+              if (isRangePreset(next) || (all && next === "all")) {
+                onPreset(next)
+              } else if (next === "custom") onCustom(range)
             }}
           />
         </PopoverContent>
