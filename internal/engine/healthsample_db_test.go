@@ -7,14 +7,18 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os/exec"
+	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/samples"
 )
 
 // A kind binding core's `revised` holds its `revision` the way an observed
@@ -344,4 +348,59 @@ func storedPath(v any) string {
 	}
 	s, _ := v.(string)
 	return s
+}
+
+// health 8 anchors `health/blood_glucose` to mmol/L{glucose}. A repository
+// whose copy of version 7 still anchors it to plain mmol/L and holds a value
+// in it refuses the re-import, because the new metric would strand the
+// value; deleting it is not enough, since a tombstone counts. Once the value
+// is purged the re-import lands, and the reading is written again in the
+// annotated unit.
+func TestHealthReimportRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testing.T) {
+	t.Parallel()
+	r := openObserved(t)
+	ctx := context.Background()
+	home := testdb.Repository(t)
+	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the sample catalog: %v", err)
+	}
+	reimport := func() error {
+		_, _, err := c.Import(ctx, substrate.ActorAPI, samples.Authority+"/health", r.ds)
+		return err
+	}
+	// Version 7's metric, as the import wrote it.
+	if _, err := r.ds.Patch(ctx, substrate.BundleActor(home, "health"), r.metric, "health/blood_glucose",
+		substrate.PatchInput{Properties: map[string]any{"unit": unitRef("mmol/L")}}); err != nil {
+		t.Fatalf("put version 7's metric: %v", err)
+	}
+	reading := func(unit string) map[string]any {
+		return map[string]any{
+			"metric": r.metricRef("health/blood_glucose"), "form": "gauge", "hold": "PT15M",
+			"value": quantity("5.4", unit), "at": "2026-10-07T07:20:00+03:00", "utcOffset": 180, "revision": 1,
+		}
+	}
+	if _, err := r.put(t, r.observation, "meter/1", reading("mmol/L")); err != nil {
+		t.Fatalf("put a plain mmol/L reading under version 7: %v", err)
+	}
+	stranded := func(what string, err error) {
+		t.Helper()
+		if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "mmol/L does not convert to the metric's unit mmol/L_glucose") {
+			t.Errorf("%s: err = %v, want the conflict naming the stranded mmol/L value", what, err)
+		}
+	}
+	stranded("the re-import over a plain mmol/L reading", reimport())
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "meter/1", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the reading: %v", err)
+	}
+	stranded("the re-import over a deleted plain mmol/L reading", reimport())
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "meter/1", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge the reading: %v", err)
+	}
+	if err := reimport(); err != nil {
+		t.Fatalf("the re-import once the reading is purged: %v", err)
+	}
+	if _, err := r.put(t, r.observation, "meter/1", reading("mmol/L{glucose}")); err != nil {
+		t.Errorf("write the reading again in mmol/L{glucose}: %v", err)
+	}
 }

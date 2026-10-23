@@ -148,3 +148,69 @@ func TestATracePointPastTheDigitBoundIsRefused(t *testing.T) {
 	})
 	refused(t, "a 16385-digit point", err, "at most 1000 digits")
 }
+
+// A meter's glucose in mg/dL and one in mmol/L are one series: the health
+// sample's analyte-annotated units convert through glucose's molar mass, so
+// `health/blood_glucose` admits both and an aggregate reads both, in the
+// metric's mmol/L or in the unit the read names. Each value keeps the digits
+// it was written with, and plain mg/dL, which no conversion joins to mmol/L,
+// is refused.
+func TestBloodGlucoseInEitherUnitReadsAsOneSeries(t *testing.T) {
+	t.Parallel()
+	r := openObserved(t)
+	ctx := context.Background()
+	reading := func(value, unit, at string) map[string]any {
+		return map[string]any{
+			"metric": r.metricRef("health/blood_glucose"), "form": "gauge", "hold": "PT15M",
+			"value": quantity(value, unit), "at": at, "utcOffset": 180, "revision": 1,
+		}
+	}
+	for id, props := range map[string]map[string]any{
+		"meter/athens": reading("5.4", "mmol/L{glucose}", "2026-10-07T07:20:00+03:00"),
+		"meter/boston": reading("97", "mg/dL{glucose}", "2026-10-08T07:22:00+03:00"),
+	} {
+		if _, err := r.put(t, r.observation, id, props); err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	if q, _ := r.get(t, r.observation, "meter/boston").Properties["value"].(map[string]any); q["value"] != "97" || q["unit"] != "mg/dL_glucose" {
+		t.Errorf("the mg/dL reading is stored as %v, want its own digits in mg/dL_glucose", q)
+	}
+	read := func(unit string) map[string]float64 {
+		t.Helper()
+		res, err := r.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: r.metric + "/health/blood_glucose"},
+			Range:    &substrate.AggregateRange{Gte: "2026-10-01T00:00:00Z", Lt: "2026-11-01T00:00:00Z"},
+			Bucket:   &substrate.AggregateBucket{Calendar: "month", Timezone: "Europe/Athens"},
+			Unit:     unit,
+			Reducers: []substrate.AggregateReducer{{Name: "count"}, {Name: "min"}, {Name: "max"}},
+		}})
+		if err != nil {
+			t.Fatalf("aggregate in %q: %v", unit, err)
+		}
+		if len(res.Rows) != 1 {
+			t.Fatalf("aggregate in %q: %d rows, want the month's one", unit, len(res.Rows))
+		}
+		out := map[string]float64{}
+		for _, name := range []string{"count", "min", "max"} {
+			v, ok := val(res.Rows[0], name)
+			if !ok {
+				t.Fatalf("aggregate in %q: no %s", unit, name)
+			}
+			out[name] = num(t, v)
+		}
+		return out
+	}
+	near := func(got, want float64) bool { return got > want-1e-6 && got < want+1e-6 }
+	// 97 mg/dL is 97 / 18.0156 mmol/L; 5.4 mmol/L is 5.4 x 18.0156 mg/dL.
+	if got := read(""); got["count"] != 2 || !near(got["min"], 97/18.0156) || !near(got["max"], 5.4) {
+		t.Errorf("in the metric's mmol/L: %v, want count 2, min %.6f, max 5.4", got, 97/18.0156)
+	}
+	if got := read("mg/dL{glucose}"); got["count"] != 2 || !near(got["min"], 97) || !near(got["max"], 5.4*18.0156) {
+		t.Errorf("in mg/dL{glucose}: %v, want count 2, min 97, max %.5f", got, 5.4*18.0156)
+	}
+	for _, unit := range []string{"mg/dL", "mmol/L"} {
+		_, err := r.put(t, r.observation, "meter/plain", reading("101", unit, "2026-10-09T07:21:00+03:00"))
+		refused(t, "a glucose reading in plain "+unit, err, "does not convert to the metric's unit")
+	}
+}

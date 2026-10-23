@@ -482,7 +482,7 @@ observation.
 | `labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
 | `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age, tone}`; `tone` is how a reader draws the band, absent for the lab's normal range and `poor` for a cut-off past which a value is abnormal), `channel` (the body region of a regional body composition result, such as `trunk`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
 
-The catalogue (`samples/health/metrics.yaml`) is 56 `metric` records with ids
+The catalogue (`samples/health/metrics.yaml`) is 55 `metric` records with ids
 `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose
 and fitness metrics wearables report, and the common labs. A vendor's own
 score ships with its adapter sample, not here: WHOOP's are
@@ -493,7 +493,8 @@ concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because no
 conversion joins the two units (it takes a molar mass) and a read of one in
 the other's unit is refused. HbA1c is `hba1c` (NGSP, `percent`) and
 `hba1c_ifcc` (IFCC, `mmol/mol`), which never convert into each other: they
-relate by a formula, not a unit.
+relate by a formula, not a unit. A meter's glucose is one metric in two
+units ([glucose in either unit](#glucose-in-either-unit)).
 The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
@@ -543,7 +544,7 @@ property sheet.
 
 ### Lab results in both unit systems
 
-The sample ships an `analyte` record for each metric of the nine lab pairs
+The sample ships an `analyte` record for each metric of the eight lab pairs
 (`samples/health/metrics_analytes.yaml`, ids the metric's): the LOINC parts
 of the metric's code, the analyte's `molarMass` in grams per mole, and one
 conversion onto the other metric of the pair. A mass and an amount
@@ -570,7 +571,78 @@ lab's own or the derived one; a read that names both metrics, or groups the
 latest values by metric, shows both. A result written before the sample was
 imported is converted by replaying the trigger from 0. Meter and continuous
 monitor readings of glucose are observations, not lab results, and are not
-converted.
+converted: their units convert instead.
+
+### Glucose in either unit
+
+A glucose meter reports in mg/dL or in mmol/L, by country and by setting,
+and one person's history can hold both. The plain units never convert to
+each other, because the factor is the analyte's molar mass. The health
+sample therefore ships two units annotated with the analyte
+(`samples/health/analyte_units.yaml`), records of core's `unit` kind:
+`mmol/L_glucose` (code `mmol/L{glucose}`) and `mg/dL_glucose` (code
+`mg/dL{glucose}`), joined by one conversion of factor 18.0156 (glucose's
+180.156 g/mol).
+
+`health/blood_glucose` anchors to `mmol/L_glucose`, so it admits a reading in
+either annotated unit and refuses plain `mg/dL` and `mmol/L`. An adapter
+writes the annotated code for the unit the device reported, and the value
+keeps the device's digits: 97 mg/dL is stored as `97` in `mg/dL_glucose`. An
+aggregate of the metric reads every value as one series, converted at read
+into the request's `unit`, else the metric's (mmol/L), so a mixed history
+averages, ranks and buckets together. Each title prints the unit's symbol,
+`mg/dL` or `mmol/L`.
+
+#### Glucose written before health 8
+
+Before version 8 of the health sample, `health/blood_glucose` took plain
+mmol/L and a mass reading went to `health/blood_glucose_mass`. The upgrade
+leaves that metric and its values in place, but a repository whose
+`health/blood_glucose` holds a value in plain mmol/L, deleted ones included
+until they are collected, refuses the upgrade with a conflict naming the
+metric. No migration rewrites them; the owner moves them by hand, and three
+things are lost on the way:
+
+- A purge tombstones every record that references the purged one through
+  `onDelete: cascade`. No shipped kind does that to an observation, a trace
+  or a lab result; a kind of your own may.
+- A rewritten record is a new record at the same id: its version starts
+  again at 1 and its creation time is the rewrite's.
+- A lab result's converted twin (`<id>/as/health/blood_glucose`, written by
+  `convertlab`) cannot be kept. Once the metric changes, any delivery of the
+  lab result it came from deletes it, so purge both and write the lab
+  result again; one metric needs no twin.
+
+The order, with `A` your repository's authority:
+
+```bash
+A=ada.example.com
+M=$A/observations/metric/health
+F='{"properties":{"metric":{"in":["'$M'/blood_glucose","'$M'/blood_glucose_mass"]}}}'
+KINDS="$A/observations/observation $A/observations/trace $A/health/labresult"
+# 1. A recovery export, and every glucose record as apply-able YAML.
+bin/substratectl export > before-glucose.tar
+for k in $KINDS; do bin/substratectl get "$k" --filter "$F" --limit 1000 -o yaml; done > glucose.yaml
+# 2. Save the records of your own kinds that reference one of them with
+#    `onDelete: cascade` (`get <kind> --filter ... -o yaml`), into dependents.yaml.
+# 3. Purge every glucose record, derived twins included.
+for k in $KINDS; do
+  bin/substratectl get "$k" --filter "$F" --limit 1000 -o json | jq -r '.[].metadata.id' |
+    while read -r id; do bin/substratectl delete "$k" "$id" --purge; done
+done
+# 4. Upgrade the health sample.
+bin/substratectl import samples.substrate.reamde.dev/health
+# 5. Write them again: one metric, annotated units, same digits, no twins.
+sed -e 's#metric/health/blood_glucose_mass$#metric/health/blood_glucose#' \
+    -e 's#unit: mg/dL$#unit: mg/dL{glucose}#' -e 's#unit: mmol/L$#unit: mmol/L{glucose}#' \
+    glucose.yaml | yq 'select(.data.properties.derivedFrom == null)' > glucose-v8.yaml
+bin/substratectl apply -f glucose-v8.yaml
+# 6. Restore the dependents.
+bin/substratectl apply -f dependents.yaml
+```
+
+Once nothing names it, `health/blood_glucose_mass` and its analyte record
+may be deleted.
 
 ### How long a gauge value stands
 
@@ -622,6 +694,11 @@ Every adapter holds to one set of rules:
   the provider measures it, a day total is a `sum` summary, and sleep the
   device did not stage is the `asleep` code. A night's whole time in bed is
   its `timeInBed`, never an `in_bed` amount.
+- **The analyte in the unit.** A glucose reading is `health/blood_glucose`
+  in `mg/dL{glucose}` or `mmol/L{glucose}`, whichever the device reported,
+  with its digits as sent: never plain `mg/dL` or `mmol/L`, and never
+  converted by the adapter
+  ([glucose in either unit](#glucose-in-either-unit)).
 - **A night's own figures.** A sleep carries `efficiency` (time asleep over
   time in bed) and `latency` where the provider sends what they are
   computed from, and `isNap`, which WHOOP sends.

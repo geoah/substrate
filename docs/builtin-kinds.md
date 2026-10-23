@@ -116,11 +116,15 @@ which it requires.
 | `labreport` | One report from a lab, with its status and the original document.                                     |
 | `labresult` | One analyte's result, binding `observed(single)` and `result`, with the lab's range, flag, specimen and status. |
 
-It ships a catalogue of 56 metric records with ids `health/<name>`, such as
+It ships a catalogue of 55 metric records with ids `health/<name>`, such as
 `health/heart_rate` and `health/ldl_cholesterol`, each with its LOINC,
 HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
-ships 18 `analyte` records, one for each metric of the nine lab pairs (one
-analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol).
+ships 17 `analyte` records: one for each metric of the eight lab pairs (one
+analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol),
+and one for `health/blood_glucose`. It ships two units of core's `unit`
+kind, `mmol/L{glucose}` and `mg/dL{glucose}`, and the conversion between
+them, so a meter's glucose in either unit reads as one series
+([glucose in either unit](observations.md#glucose-in-either-unit)).
 Its function `convertlab`, fired by its trigger `health-on-labresult` on every
 write of a `labresult`, writes the result again in the other metric of its
 pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).

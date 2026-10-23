@@ -3,7 +3,9 @@
 # LOINC parts of the metric's code (as LOINC publishes them) and the
 # conversion the `convertlab` function writes onto the other metric of the
 # pair. A mass and an amount concentration of one analyte convert by its
-# molar mass; HbA1c's two units by a formula.
+# molar mass; HbA1c's two units by a formula. Blood glucose is one metric
+# whose units convert on their own (analyte_units.yaml), so its record
+# carries its LOINC parts and molar mass and no conversion.
 #
 # The file sorts after metrics.yaml on purpose: the import puts a sample's
 # data records in file order, and each analyte's `metric` must exist.
@@ -217,7 +219,9 @@ data:
         formula: molar-mass
         version: "1"
 ---
-# blood_glucose and blood_glucose_mass: 180.156 g/mol, glucose, C6H12O6.
+# blood_glucose: 180.156 g/mol, glucose, C6H12O6. One metric in both unit
+# systems through the annotated units of analyte_units.yaml, whose
+# conversion is this molar mass, so it lists no conversion of its own.
 kind: samples.substrate.reamde.dev/health/analyte
 metadata:
   id: health/blood_glucose
@@ -232,31 +236,6 @@ data:
       system: Bld
       scale: Qn
     molarMass: "180.156"
-    conversions:
-      - target:
-          ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose_mass
-        formula: molar-mass
-        version: "1"
----
-kind: samples.substrate.reamde.dev/health/analyte
-metadata:
-  id: health/blood_glucose_mass
-data:
-  properties:
-    metric:
-      ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose_mass
-    loincParts:
-      component: "Glucose"
-      property: MCnc
-      timing: Pt
-      system: Bld
-      scale: Qn
-    molarMass: "180.156"
-    conversions:
-      - target:
-          ref: samples.substrate.reamde.dev/observations/metric/health/blood_glucose
-        formula: molar-mass
-        version: "1"
 ---
 # vitamin_d and vitamin_d_mass: 400.64 g/mol, 25-hydroxyvitamin D3, C27H44O2,
 # which the usual 2.496 nmol/L per ng/mL takes for D2 and D3 together.

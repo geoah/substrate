@@ -17,10 +17,13 @@
 # and the mass concentration suffixed `_mass` (mg/dL): no linear conversion
 # joins the two units, and the sample's `convertlab` function writes a lab result of one
 # in the other as a derived result, from the analyte's molar mass
-# (metrics_analytes.yaml). A vendor's own score (WHOOP's recovery) is not
-# here: it ships with that vendor's adapter sample (`healthwhoop/recovery` in
-# samples/healthwhoop), so a repository without the vendor holds none of
-# its vocabulary.
+# (metrics_analytes.yaml). A meter's and a continuous monitor's glucose is
+# the exception: one metric, `blood_glucose`, in units annotated with the
+# analyte (`mmol/L{glucose}` and `mg/dL{glucose}`, analyte_units.yaml),
+# which do convert, so a mixed-unit history reads as one series. A vendor's
+# own score (WHOOP's recovery) is not here: it ships with that vendor's
+# adapter sample (`healthwhoop/recovery` in samples/healthwhoop), so a
+# repository without the vendor holds none of its vocabulary.
 #
 # Code systems: `http://loinc.org` (LOINC), `healthkit` (an Apple HealthKit
 # type identifier), `healthconnect` (an Android Health Connect record type),
@@ -985,21 +988,28 @@ data:
   properties:
     name: Blood glucose
     description: >-
-      Glucose in the blood as an amount concentration, from a meter or a continuous
-      monitor. A reading in mg/dL is blood_glucose_mass. A lab result in one
-      is written in the other by the sample's convertlab function; a meter's
-      readings are not converted. A writer copies the hold, PT15M, onto each
+      Glucose in the blood, from a meter or a continuous monitor, in mmol/L{glucose}
+      or mg/dL{glucose} as the device reports it. The two units carry the
+      analyte, so they convert through glucose's molar mass and an aggregate
+      reads both as one series, in mmol/L unless the read names mg/dL{glucose}.
+      A writer sends the annotated code, never plain mg/dL or mmol/L, which
+      convert to nothing here. A writer copies the hold, PT15M, onto each
       value: a continuous monitor reads every 5 to 15 minutes.
     codes:
       - system: "http://loinc.org"
         code: "15074-8"
         display: "Glucose [Moles/volume] in Blood"
+      - system: "http://loinc.org"
+        code: "2339-0"
+        display: "Glucose [Mass/volume] in Blood"
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBloodGlucose
       - system: healthconnect
         code: BloodGlucoseRecord
       - system: googlefit
         code: com.google.blood_glucose
     unit:
-      ref: substrate.reamde.dev/core/unit/mmol/L
+      ref: substrate.reamde.dev/core/unit/mmol/L_glucose
     form: gauge
     hold: PT15M
     reducers:
@@ -1010,37 +1020,6 @@ data:
       - durationIn
     compatibility: whole-blood
     displayPrecision: 1
-    category: glucose
----
-kind: samples.substrate.reamde.dev/observations/metric
-metadata:
-  id: health/blood_glucose_mass
-data:
-  properties:
-    name: Blood glucose (mass)
-    description: >-
-      Glucose in the blood as a mass concentration, as US meters and Apple
-      Health report it. A reading in mmol/L is blood_glucose. A writer copies
-      the hold, PT15M, onto each value: a continuous monitor reads every 5
-      to 15 minutes.
-    codes:
-      - system: "http://loinc.org"
-        code: "2339-0"
-        display: "Glucose [Mass/volume] in Blood"
-      - system: healthkit
-        code: HKQuantityTypeIdentifierBloodGlucose
-    unit:
-      ref: substrate.reamde.dev/core/unit/mg/dL
-    form: gauge
-    hold: PT15M
-    reducers:
-      - avg
-      - min
-      - max
-      - percentile
-      - durationIn
-    compatibility: whole-blood
-    displayPrecision: 0
     category: glucose
 ---
 kind: samples.substrate.reamde.dev/observations/metric
