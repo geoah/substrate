@@ -8,14 +8,19 @@ package providertest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/samples"
@@ -699,65 +704,155 @@ var whoopScoreMoves = map[string]string{
 	"health/whoop_sleep_performance": "healthwhoop/sleep_performance",
 }
 
-// TestHealthWhoopUpgradeMovesScoresOntoItsOwnMetrics: a repository that
-// imported health and healthwhoop before WHOOP's scores moved holds the
-// three `health/whoop_*` metrics and outputs naming them. The upgrade
-// deletes neither; the replay its README asks for rewrites each of those
-// outputs, same id, onto the `healthwhoop/` metric, after which the old
-// metrics name no value and the owner may delete them.
-func TestHealthWhoopUpgradeMovesScoresOntoItsOwnMetrics(t *testing.T) {
-	ds, fake := newHealthWhoop(t)
-	ctx := context.Background()
-	// The old world: the three metrics under their health ids, and the
-	// adapter at 9 writing them.
-	shipped := map[string]map[string]any{}
-	for _, d := range loadDocs(t, samplesDir+"/healthwhoop/metrics.yaml") {
-		id, _ := d["metadata"].(map[string]any)["id"].(string)
-		shipped[id], _ = d["data"].(map[string]any)["properties"].(map[string]any)
+// healthWhoopV9Samples is the shipped sample tree as it stood at healthwhoop
+// 9, derived from this one by undoing the move: the three metrics back in
+// the health catalogue under their `health/whoop_*` ids, and the adapter,
+// its stamp, its package version and the views naming those ids.
+func healthWhoopV9Samples(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(samplesDir)); err != nil {
+		t.Fatalf("copy the samples: %v", err)
 	}
-	docs := loadDocs(t, samplesDir+"/healthwhoop/bundle.yaml")
-	rewriteSource(t, docs, `ADAPTER = "`+healthWhoopAdapter+`"`, `ADAPTER = "healthwhoop@9"`)
-	for old, now := range whoopScoreMoves {
-		if shipped[now] == nil {
-			t.Fatalf("healthwhoop ships no %s", now)
+	read := func(name string) string {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
 		}
-		mustPut(t, ds, substrate.PutInput{Kind: obsMetric, ID: old, Properties: shipped[now]})
-		rewriteSource(t, docs, `"`+now+`"`, `"`+old+`"`)
+		return string(raw)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor(samples.Authority, "healthwhoop"), docs); err != nil {
-		t.Fatalf("apply the adapter at 9: %v", err)
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
+	undo := func(text string, quoted bool) string {
+		for old, now := range whoopScoreMoves {
+			if quoted {
+				old, now = `"`+old+`"`, `"`+now+`"`
+			} else {
+				old, now = "/"+old+"\n", "/"+now+"\n"
+			}
+			if !strings.Contains(text, now) {
+				t.Fatalf("the shipped tree no longer names %s", now)
+			}
+			text = strings.ReplaceAll(text, now, old)
+		}
+		return text
+	}
+	metrics := read("healthwhoop/metrics.yaml")
+	for old, now := range whoopScoreMoves {
+		metrics = strings.ReplaceAll(metrics, "id: "+now+"\n", "id: "+old+"\n")
+	}
+	write("health/metrics.yaml", read("health/metrics.yaml")+"---\n"+metrics)
+	if err := os.Remove(filepath.Join(dir, "healthwhoop/metrics.yaml")); err != nil {
+		t.Fatalf("remove the v10 metrics: %v", err)
+	}
+	bundle := undo(read("healthwhoop/bundle.yaml"), true)
+	for _, r := range [][2]string{
+		{`ADAPTER = "` + healthWhoopAdapter + `"`, `ADAPTER = "healthwhoop@9"`},
+		{"\n  version: 10\n", "\n  version: 9\n"},
+	} {
+		if !strings.Contains(bundle, r[0]) {
+			t.Fatalf("healthwhoop/bundle.yaml no longer holds %q", r[0])
+		}
+		bundle = strings.Replace(bundle, r[0], r[1], 1)
+	}
+	write("healthwhoop/bundle.yaml", bundle)
+	write("healthwhoop/views.yaml", undo(read("healthwhoop/views.yaml"), false))
+	return dir
+}
+
+// TestHealthWhoopUpgradeMovesScoresOntoItsOwnMetrics: a repository that
+// imported observations, health and healthwhoop 9 through the catalog holds
+// the three `health/whoop_*` metrics and outputs naming them. Re-importing
+// health and healthwhoop from this tree creates the `healthwhoop/` metrics,
+// points the unedited views at them and deletes nothing; the replay the
+// README asks for then rewrites each output, same id, onto the new metric,
+// after which the old metrics name no value and the owner may delete them.
+func TestHealthWhoopUpgradeMovesScoresOntoItsOwnMetrics(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	ctx := context.Background()
+	home := ds.Repository().Authority
+	metricKind := home + "/observations/metric"
+	observationKind := home + "/observations/observation"
+	viewKind := "substrate.reamde.dev/console/recordview"
+	views := []string{home + "/healthwhoop/cycle", home + "/healthwhoop/sleep"}
+	if err := enginetest.PutSampleUnits(ctx, ds, "observations", "health", "healthwhoop"); err != nil {
+		t.Fatalf("put the units: %v", err)
+	}
+	importAll := func(root string) {
+		t.Helper()
+		cat, err := catalog.Load(catalog.SampleRoot(os.DirFS(root)))
+		if err != nil {
+			t.Fatalf("load the catalog at %s: %v", root, err)
+		}
+		for _, pkg := range []string{"observations", "health", "healthwhoop"} {
+			if _, _, err := cat.Import(ctx, substrate.ActorAPI, samples.Authority+"/"+pkg, ds); err != nil {
+				t.Fatalf("import %s from %s: %v", pkg, root, err)
+			}
+		}
+	}
+	metricOfHome := func(props map[string]any) string {
+		return strings.TrimPrefix(storedRefPath(props["metric"]), metricKind+"/")
+	}
+	viewText := func(id string) string {
+		t.Helper()
+		raw, err := json.Marshal(mustGet(t, ds, viewKind, id).Properties)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", id, err)
+		}
+		return string(raw)
+	}
+
+	importAll(healthWhoopV9Samples(t))
 	whoopSync(t, ds, fake, whoopProps(nil))
 	healthDrain(t, ds)
 	before := map[string]string{}
-	for _, row := range listLive(t, ds, obsObservation) {
-		if _, moves := whoopScoreMoves[metricOf(row.Properties)]; moves {
-			before[row.ID] = metricOf(row.Properties)
+	for _, row := range listLive(t, ds, observationKind) {
+		if _, moves := whoopScoreMoves[metricOfHome(row.Properties)]; moves {
+			before[row.ID] = metricOfHome(row.Properties)
 		}
 	}
 	if len(before) == 0 {
-		t.Fatal("the adapter at 9 wrote no output naming a health/whoop_* metric")
+		t.Fatal("healthwhoop 9 wrote no output naming a health/whoop_* metric")
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, obsMetric, "health/whoop_recovery", substrate.DeleteInput{}); err == nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, metricKind, "health/whoop_recovery", substrate.DeleteInput{}); err == nil {
 		t.Fatal("deleted health/whoop_recovery while outputs still name it")
 	}
 
-	// The upgrade: the shipped closure, then the replay.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor(samples.Authority, "healthwhoop"),
-		loadDocs(t, samplesDir+"/healthwhoop/bundle.yaml")); err != nil {
-		t.Fatalf("upgrade to %s: %v", healthWhoopAdapter, err)
+	// The upgrade: the catalog's import door over this tree, then the replay.
+	importAll(samplesDir)
+	for old, now := range whoopScoreMoves {
+		mustGet(t, ds, metricKind, old)
+		if m := mustGet(t, ds, metricKind, now); m.Properties["name"] == nil {
+			t.Errorf("%s landed without its name: %+v", now, m.Properties)
+		}
+		for _, view := range views {
+			if text := viewText(view); strings.Contains(text, "/"+old+`"`) {
+				t.Errorf("%s still names %s after the upgrade", view, old)
+			}
+		}
+	}
+	for _, view := range views {
+		if text := viewText(view); !strings.Contains(text, metricKind+"/healthwhoop/") {
+			t.Errorf("%s names no healthwhoop metric after the upgrade: %s", view, text)
+		}
 	}
 	replayAdapter(t, ds, healthWhoopRun)
 
 	moved := 0
-	for _, row := range listLive(t, ds, obsObservation) {
-		metric := metricOf(row.Properties)
+	for _, row := range listLive(t, ds, observationKind) {
+		metric := metricOfHome(row.Properties)
 		if _, stale := whoopScoreMoves[metric]; stale {
 			t.Errorf("%s still names %s after the replay", row.ID, metric)
 		}
 		if was, ok := before[row.ID]; ok {
-			if metric != whoopScoreMoves[was] {
-				t.Errorf("%s names %s after the replay, want %s", row.ID, metric, whoopScoreMoves[was])
+			if metric != whoopScoreMoves[was] || row.Properties["adapter"] != healthWhoopAdapter {
+				t.Errorf("%s names %s under %v after the replay, want %s under %s",
+					row.ID, metric, row.Properties["adapter"], whoopScoreMoves[was], healthWhoopAdapter)
 			}
 			moved++
 		}
@@ -766,8 +861,7 @@ func TestHealthWhoopUpgradeMovesScoresOntoItsOwnMetrics(t *testing.T) {
 		t.Errorf("%d of the %d outputs that named a health/whoop_* metric are live after the replay", moved, len(before))
 	}
 	for old := range whoopScoreMoves {
-		mustGet(t, ds, obsMetric, old)
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, obsMetric, old, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorAPI, metricKind, old, substrate.DeleteInput{}); err != nil {
 			t.Errorf("delete %s once nothing names it: %v", old, err)
 		}
 	}
