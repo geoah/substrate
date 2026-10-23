@@ -84,8 +84,15 @@ func (t *txn) checkObserved(sp *applySpec, before, row *erow, accepted *[]string
 	}
 	if observed {
 		_, result := sp.ty.Binding(vocabulary.TraitResultCore)
+		// A code the live row already holds stays admitted past the length
+		// bound, so a row written before it is still editable.
+		var stored map[string]bool
+		if before != nil && before.DeletedAt == nil && !sp.resurrect {
+			stored = vocabulary.StoredCodesOf(before.Props)
+		}
 		problems = vocabulary.CheckObserved(vocabulary.ObservedRecord{
 			Variant: b.Variant, At: row.At, EndsAt: row.EndsAt, Props: row.Props, Result: result, Units: units,
+			StoredCodes: stored,
 		})
 	}
 	if metric {

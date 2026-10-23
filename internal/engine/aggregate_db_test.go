@@ -919,8 +919,18 @@ func TestAggregateReadsFreeTextStatesAsCodes(t *testing.T) {
 	latest := f.agg(ctx, substrate.Filter{}, substrate.Aggregate{
 		Metric: &substrate.AggregateMetric{Ref: f.metricPath("homeassistant/media_title")}, GroupBy: []string{"source"}, Latest: true,
 	})
+	wantLatest := map[string]string{f.sourcePath("living-room-tv"): titles[2], f.sourcePath("kitchen-speaker"): "Ελληνικά νέα"}
+	if len(latest.Rows) != 2 {
+		t.Fatalf("the latest read: %d rows, want one per source: %+v", len(latest.Rows), latest.Rows)
+	}
 	for _, row := range latest.Rows {
-		if want := map[string]string{f.sourcePath("living-room-tv"): titles[2], f.sourcePath("kitchen-speaker"): "Ελληνικά νέα"}[row.Group.Source]; row.Values[0].Code != want {
+		want, ok := wantLatest[row.Group.Source]
+		if !ok {
+			t.Errorf("the latest read answered %s twice or a source it does not hold", row.Group.Source)
+			continue
+		}
+		delete(wantLatest, row.Group.Source)
+		if row.Values[0].Code != want {
 			t.Errorf("latest of %s: %q, want %q", row.Group.Source, row.Values[0].Code, want)
 		}
 	}

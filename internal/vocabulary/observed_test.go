@@ -201,6 +201,14 @@ func TestCheckObservedRefusals(t *testing.T) {
 			edit(single(t), map[string]any{"value": nil, "code": strings.Repeat("é", 256)}),
 			"props.code: a code is at most 255 characters, got 256",
 		},
+		"a changed code past 255 characters": {
+			func() vocabulary.ObservedRecord {
+				r := edit(single(t), map[string]any{"value": nil, "code": strings.Repeat("a", 300)})
+				r.StoredCodes = map[string]bool{strings.Repeat("b", 300): true}
+				return r
+			}(),
+			"props.code: a code is at most 255 characters, got 300",
+		},
 		"a trace code past 255 characters": {
 			edit(packed(t), map[string]any{"values": nil, "unit": nil, "codes": []any{"open", strings.Repeat("x", 300), strings.Repeat("y", 300)}}),
 			"props.codes[1]: a code is at most 255 characters, got 300",
@@ -743,6 +751,22 @@ func TestResultBindingHoldsItsObjectShapes(t *testing.T) {
 		err := installObservations(t, withLab(m))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want a refusal saying %q", c.prop, err, c.want)
+		}
+	}
+}
+
+// A code past the length bound that the stored row already holds is
+// admitted, on a single record and in a trace, so a row written before the
+// bound stays editable; StoredCodesOf reads both shapes.
+func TestCheckObservedAdmitsAStoredLongCode(t *testing.T) {
+	long := strings.Repeat("é", 300)
+	single := edit(single(t), map[string]any{"value": nil, "code": long})
+	single.StoredCodes = vocabulary.StoredCodesOf(map[string]any{"code": long})
+	trace := edit(packed(t), map[string]any{"values": nil, "unit": nil, "codes": []any{"open", long, nil}})
+	trace.StoredCodes = vocabulary.StoredCodesOf(map[string]any{"codes": []any{long, nil}})
+	for name, r := range map[string]vocabulary.ObservedRecord{"single": single, "trace": trace} {
+		if problems := vocabulary.CheckObserved(r); len(problems) != 0 {
+			t.Errorf("%s holding its stored long code: %v, want it admitted", name, problems)
 		}
 	}
 }

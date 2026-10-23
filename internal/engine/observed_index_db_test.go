@@ -2411,3 +2411,40 @@ func TestObservedSharedMetricsKeepTheHourAndDayTiers(t *testing.T) {
 		t.Errorf("15-minute buckets answered %d rows %s, want the raw read's 8 %s", len(res.Rows), got, want)
 	}
 }
+
+// A code past the 255-character bound is refused on a new or changed code,
+// and a row stored before the bound stays editable: an upgrade must not lock
+// a row it already holds. The row is written while its kind binds no
+// observed trait, then the kind binds it, as a repository that stored the
+// code under an older binary would hold it. A patch that leaves its codes as
+// they are is admitted, a patch writing a new long code is refused, and a
+// patch replacing the long code with a short one is admitted.
+func TestObservedStoredLongCodeStaysEditable(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	long := strings.Repeat("m", 300)
+	door := func(codes []any) map[string]any {
+		return map[string]any{
+			"metric": r.metricRef("illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
+			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M", "codes": codes,
+		}
+	}
+	_, err := r.put(t, r.trace, "door/hall", door([]any{"open", long}))
+	refused(t, "a new trace with a long code", err, "props.codes[1]: a code is at most 255 characters, got 300")
+
+	pkg := testdb.Repository(t) + "/players"
+	r.applyPackedClosure(t, pkg, false)
+	r.mustPut(t, pkg+"/reading", "p1", door([]any{"open", long, "closed"}))
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	if _, err := r.patch(t, pkg+"/reading", "p1", map[string]any{"quality": "valid"}); err != nil {
+		t.Errorf("a patch leaving the stored long code as it is: %v, want it admitted", err)
+	}
+	_, err = r.patch(t, pkg+"/reading", "p1", map[string]any{"codes": []any{"open", long, strings.Repeat("n", 256)}})
+	refused(t, "a patch adding a new long code", err, "props.codes[2]: a code is at most 255 characters, got 256")
+	if _, err := r.patch(t, pkg+"/reading", "p1", map[string]any{"codes": []any{"open", "paused", "closed"}}); err != nil {
+		t.Errorf("a patch replacing the long code: %v, want it admitted", err)
+	}
+	_, err = r.patch(t, pkg+"/reading", "p1", map[string]any{"codes": []any{"open", long, "closed"}})
+	refused(t, "a patch writing the long code back", err, "props.codes[1]: a code is at most 255 characters, got 300")
+}

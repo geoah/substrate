@@ -253,6 +253,26 @@ type ObservedRecord struct {
 	// `circular` needs a unit with a turn. A nil graph holds no unit, so a
 	// `circular` record is refused.
 	Units *UnitGraph
+	// StoredCodes are the codes the live record this write rewrites already
+	// holds (StoredCodesOf). A code past MaxObservedCode is admitted where
+	// it is one of them, so a row written before the bound stays editable:
+	// the bound holds every new or changed code.
+	StoredCodes map[string]bool
+}
+
+// StoredCodesOf is the codes a stored record holds, `code` and every entry
+// of `codes`, for ObservedRecord.StoredCodes.
+func StoredCodesOf(props map[string]any) map[string]bool {
+	out := map[string]bool{}
+	if s, ok := props[obsCode].(string); ok {
+		out[s] = true
+	}
+	for _, v := range listOf(props[obsCodes]) {
+		if s, ok := v.(string); ok {
+			out[s] = true
+		}
+	}
+	return out
 }
 
 // CheckObserved holds one record to the trait's rules and answers every
@@ -354,7 +374,7 @@ func (c *obsCheck) single(form string) {
 	}
 	if code, isString := c.r.Props[obsCode].(string); isString && code == "" {
 		c.addf("props.code: a code is not empty: drop code")
-	} else if n := utf8.RuneCountInString(code); n > MaxObservedCode {
+	} else if n := utf8.RuneCountInString(code); n > MaxObservedCode && !c.r.StoredCodes[code] {
 		c.addf("props.code: a code is at most %d characters, got %d; keep longer text in an ordinary record", MaxObservedCode, n)
 	}
 	if form == FormAmount || form == FormSummary {
@@ -471,7 +491,7 @@ func (c *obsCheck) packed(form string) {
 			switch n := utf8.RuneCountInString(s); {
 			case isString && s == "":
 				c.addf("props.codes[%d]: a code is not empty; null marks a point with nothing from it on", i)
-			case n > MaxObservedCode && !long:
+			case n > MaxObservedCode && !long && !c.r.StoredCodes[s]:
 				long = true
 				c.addf("props.codes[%d]: a code is at most %d characters, got %d; keep longer text in an ordinary record", i, MaxObservedCode, n)
 			}
