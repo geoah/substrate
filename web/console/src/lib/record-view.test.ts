@@ -25,6 +25,7 @@ import {
   fetchChartSummaries,
   summaryBuckets,
   summarySeries,
+  summaryValueIn,
   changeSinceWords,
   deltaWords,
   foldedBy,
@@ -2008,6 +2009,94 @@ describe("summaries a chart draws where its line has no value", () => {
         (s) => s.source
       )
     ).toEqual([WATCH, RING])
+  })
+
+  const at = (h: string) => `2026-10-11T${h}:00Z`
+  const spans = (out: ReturnType<typeof chartSummaries>) =>
+    out.map((s) => [
+      s.source?.slice(s.source.lastIndexOf("/") + 1),
+      new Date(s.start).toISOString().slice(11, 16),
+      new Date(s.end).toISOString().slice(11, 16),
+    ])
+
+  it("draws a later source's summary around a better one inside it", () => {
+    const records = [
+      obs({
+        ...night,
+        at: at("01:00"),
+        endsAt: at("07:00"),
+        source: { ref: RING },
+      }),
+      obs({
+        ...night,
+        at: at("02:00"),
+        endsAt: at("03:00"),
+        source: { ref: WATCH },
+      }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const out = chartSummaries({ records, included }, {}, "priority", HRV)
+    expect(spans(out)).toEqual([
+      ["ring", "01:00", "02:00"],
+      ["watch", "02:00", "03:00"],
+      ["ring", "03:00", "07:00"],
+    ])
+    // Each piece still names the summary's own span.
+    expect(out[2].span).toEqual({
+      start: Date.parse(at("01:00")),
+      end: Date.parse(at("07:00")),
+    })
+  })
+
+  it("breaks a tie between sources as the server does, by their paths", () => {
+    const A = "a.example.com/observations/source/a-band"
+    const Z = "a.example.com/observations/source/z-band"
+    const records = [
+      obs({ ...night, source: { ref: Z } }),
+      obs({ ...night, source: { ref: A } }),
+    ]
+    // Neither ranked, then both ranked first: one line either way.
+    const unranked: Record<string, SubstrateRecord> = {}
+    for (const included of [
+      unranked,
+      { [A]: sourceRecord(A, 1), [Z]: sourceRecord(Z, 1) },
+    ]) {
+      expect(
+        chartSummaries({ records, included }, {}, "priority", HRV).map(
+          (s) => s.source
+        )
+      ).toEqual([A])
+    }
+    // Under prefer every source but the record's own ties, whatever its
+    // priorities: the server ranks by the order alone there.
+    expect(
+      chartSummaries(
+        {
+          records,
+          included: { [A]: sourceRecord(A, 2), [Z]: sourceRecord(Z, 1) },
+        },
+        { source: RING },
+        "prefer",
+        HRV
+      ).map((s) => s.source)
+    ).toEqual([A])
+  })
+
+  it("converts a temperature difference without the offset", () => {
+    const deviation = { value: "1", unit: "Cel", delta: true }
+    expect(summaryValueIn(deviation, "degF", SHIPPED_UNITS)).toBeCloseTo(1.8)
+    const [kept] = chartSummaries(
+      {
+        records: [obs({ ...night, value: deviation, source: { ref: RING } })],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    expect(kept.delta).toBe(true)
   })
 
   it("holds each summary level across exactly its span, with nothing across a gap", () => {

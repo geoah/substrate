@@ -1388,11 +1388,17 @@ export const CHART_SUMMARIES_PAGES = 5
  * a single value a source computed over a span inside it, such as WHOOP's
  * heart rate variability for one night. */
 export interface ChartSummary {
+  /** The part of the summary's span it is drawn over: the whole span, or
+   * where a source the policy puts first covers some of it, the rest. */
   start: number
   end: number
+  /** The summary's own span, which its words name. */
+  span: { start: number; end: number }
   /** The stored digits. */
   value: string
   unit: string
+  /** A temperature difference, which converts without the offset. */
+  delta?: boolean
   statistic?: string
   /** The source's record path; undefined for a value naming none. */
   source?: string
@@ -1458,10 +1464,11 @@ export async function fetchChartSummaries(
   return out
 }
 
-/** A source's rank for a metric: its record's `priorities` for the metric
- * (1 first), an unranked source after every ranked one, and a value naming
- * no source after every named one, as the aggregate read ranks them. */
-function sourceRank(
+/** A source's rank for a metric under `priority`: its record's
+ * `priorities` for the metric (1 first), an unranked source after every
+ * ranked one, and a value naming no source after every named one, as the
+ * aggregate read ranks them (rankByPriorities). */
+function priorityRank(
   source: string | undefined,
   metric: string,
   included: Record<string, SubstrateRecord>
@@ -1481,68 +1488,128 @@ function sourceRank(
     : Number.MAX_SAFE_INTEGER - 1
 }
 
+/** Byte order, as the server compares stream keys. */
+function byteCompare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/** One summary as read, with what ranks its stream. */
+interface Read {
+  s: ChartSummary
+  stream: string
+  rank: number
+  /** The stream's keys in the server's order: kind, source, about,
+   * channel. */
+  keys: string[]
+}
+
 /** The summaries a chart draws from its read: each holding a value over a
- * span, and where sources overlap, the one the policy puts first. Under
- * `prefer` that is the record's own source, then the sources' priorities
- * for the metric; under `priority` the priorities alone; under `only` the
- * read already kept the record's own source. A summary is kept unless it
- * overlaps one of a source ranked before its own, so a span only a later
- * source covers is still drawn. */
+ * span, cut where sources overlap so each stretch of time is drawn from the
+ * stream the policy puts first there, as the aggregate read picks: under
+ * `prefer` the record's own source, then every other named source, then a
+ * value naming none; under `priority` each source's `priorities` for the
+ * metric; a tie in the server's stream order (kind, source, about,
+ * channel). The rest of a later stream's summary, which nothing earlier
+ * covers, is still drawn. Under `only` the read already kept the record's
+ * own source. */
 export function chartSummaries(
   read: Pick<SummaryPages, "records"> & Partial<Pick<SummaryPages, "included">>,
   b: Pick<Bound, "source">,
   policy: SourcePolicy,
   metric: string
 ): ChartSummary[] {
-  const all: ChartSummary[] = []
+  const included = read.included ?? {}
+  const self = b.source
+  const reads: Read[] = []
   for (const r of read.records) {
     const p = r.properties ?? {}
     const start = typeof p.at === "string" ? Date.parse(p.at) : NaN
     const end = typeof p.endsAt === "string" ? Date.parse(p.endsAt) : NaN
     if (Number.isNaN(start) || Number.isNaN(end) || end <= start) continue
-    const q = p.value as { value?: unknown; unit?: unknown } | undefined
+    const q = p.value as
+      { value?: unknown; unit?: unknown; delta?: unknown } | undefined
     if (!q || typeof q.value !== "string" || typeof q.unit !== "string") {
       continue
     }
     const source = readReference(p.source)?.path
-    all.push({
-      start,
-      end,
-      value: q.value,
-      unit: q.unit,
-      ...(typeof p.statistic === "string" && p.statistic
-        ? { statistic: p.statistic }
-        : {}),
-      ...(source ? { source } : {}),
+    const about = readReference(p.about)?.path ?? ""
+    const channel = typeof p.channel === "string" ? p.channel : ""
+    const rank =
+      policy === "priority"
+        ? priorityRank(source, metric, included)
+        : !source
+          ? 2
+          : self && sameRef(source, self)
+            ? 0
+            : 1
+    const keys = [r.kind, source ?? "", about, channel]
+    reads.push({
+      s: {
+        start,
+        end,
+        span: { start, end },
+        value: q.value,
+        unit: q.unit,
+        ...(q.delta === true ? { delta: true } : {}),
+        ...(typeof p.statistic === "string" && p.statistic
+          ? { statistic: p.statistic }
+          : {}),
+        ...(source ? { source } : {}),
+      },
+      stream: keys.join("\u001f"),
+      rank,
+      keys,
     })
   }
-  if (policy === "only") return all
-  const included = read.included ?? {}
-  const self = b.source
-  const rank = (s: ChartSummary) =>
-    policy === "prefer" && self && s.source && sameRef(s.source, self)
-      ? 0
-      : sourceRank(s.source, metric, included)
-  const ranked = all
-    .map((s) => ({ s, rank: rank(s) }))
-    .sort(
-      (x, y) =>
-        x.rank - y.rank ||
-        (x.s.source ?? "").localeCompare(y.s.source ?? "") ||
-        x.s.start - y.s.start
-    )
-  const kept: { s: ChartSummary; rank: number }[] = []
-  for (const c of ranked) {
-    const beaten = kept.some(
-      (k) =>
-        k.s.source !== c.s.source &&
-        k.rank < c.rank &&
-        k.s.start < c.s.end &&
-        c.s.start < k.s.end
-    )
-    if (!beaten) kept.push(c)
+  if (policy === "only") return reads.map((r) => r.s)
+  reads.sort((x, y) => {
+    if (x.rank !== y.rank) return x.rank - y.rank
+    for (let i = 0; i < x.keys.length; i++) {
+      const c = byteCompare(x.keys[i], y.keys[i])
+      if (c) return c
+    }
+    return 0
+  })
+  // The time cut at every summary's ends: within each piece the first
+  // stream covering it is drawn, every statistic of it.
+  const cuts = [...new Set(reads.flatMap((r) => [r.s.start, r.s.end]))].sort(
+    (x, y) => x - y
+  )
+  const out: ChartSummary[] = []
+  const open = new Map<Read, ChartSummary>()
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const [a, z] = [cuts[i], cuts[i + 1]]
+    const covering = reads.filter((r) => r.s.start <= a && r.s.end >= z)
+    const winner = covering[0]?.stream
+    for (const r of covering) {
+      if (r.stream !== winner) continue
+      const piece = open.get(r)
+      if (piece && piece.end === a) {
+        piece.end = z
+        continue
+      }
+      const next = { ...r.s, start: a, end: z }
+      open.set(r, next)
+      out.push(next)
+    }
   }
-  return kept.map((k) => k.s).sort((x, y) => x.start - y.start)
+  return out.sort((x, y) => x.start - y.start)
+}
+
+/** A summary's value in the chart's unit: a temperature difference
+ * (`delta`) converts without the offset, so a night 1 °C above its
+ * baseline is 1.8 °F above it, never 33.8 °F. Undefined where the units
+ * do not convert. */
+export function summaryValueIn(
+  s: Pick<ChartSummary, "value" | "unit" | "delta">,
+  unit: string,
+  units: Pick<UnitReader, "convert">
+): number | undefined {
+  const n = numberOf(s.value)
+  if (n === null) return undefined
+  return s.unit === unit
+    ? n
+    : units.convert(n, s.unit, unit, { delta: Boolean(s.delta) })
 }
 
 /** The buckets a chart draws summaries on: the window cut at every

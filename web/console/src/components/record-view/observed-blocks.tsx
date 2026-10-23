@@ -79,6 +79,7 @@ import {
   spansTotalsRead,
   summaryBuckets,
   summarySeries,
+  summaryValueIn,
   toneSoft,
   type Bound,
   type ChartBlock,
@@ -601,11 +602,7 @@ function SummaryLine({
   )
   const lines = useMemo(
     () =>
-      summarySeries(summaries, buckets, (s) => {
-        const n = numberOf(s.value)
-        if (n === null) return undefined
-        return s.unit === unit ? n : units.convert(n, s.unit, unit)
-      }),
+      summarySeries(summaries, buckets, (s) => summaryValueIn(s, unit, units)),
     [summaries, buckets, unit, units]
   )
   const sources = useMemo(
@@ -673,7 +670,8 @@ function SummaryLine({
                   {held.map(({ line, s }) => (
                     <div key={line.key} className="contents">
                       <dt className="text-faint">
-                        {lineName(line)}, {windowWords(s.start, s.end)}
+                        {lineName(line)},{" "}
+                        {windowWords(s.span.start, s.span.end)}
                       </dt>
                       <dd className="text-right whitespace-nowrap tabular-nums">
                         {readingText(

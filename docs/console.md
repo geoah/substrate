@@ -537,10 +537,14 @@ properties the sheet folds away because a section shows them. Then come its
   block's narrowing, `channel` and `statistic`: each summary's one value
   as a level stroke across exactly the span it covers, nothing across a
   gap, one line per source and statistic. Where sources' summaries
-  overlap, the first the block's `sources` puts first is drawn: the
-  record's own under `prefer`, then the sources' `priorities` for the
-  metric, which alone decide under `priority`; a span only a later source
-  covers is still drawn. The chart reads up to 1,000 summaries, 200 a
+  overlap, each stretch of time is drawn from the stream the aggregate read
+  would put first there: under `prefer` the record's own source, then
+  every other named source, then a value naming none; under `priority`
+  each source's `priorities` for the metric; a tie in the server's stream
+  order (kind, then source path). The part of a later source's summary no
+  earlier one covers is still drawn, and its tooltip names the summary's
+  whole span. A temperature difference (`delta`) converts without the
+  offset. The chart reads up to 1,000 summaries, 200 a
   page, and says so where the window holds more; a failed read says so
   with a retry. WHOOP's nightly heart rate variability on a sleep is one
   such summary; a cycle's average heart rate, which reaches past the
