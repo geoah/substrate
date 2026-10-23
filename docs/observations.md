@@ -114,6 +114,8 @@ under its own authority
 ([decision 0159](decisions/0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md)).
 Their names are frozen: a sample's kind cannot be moved by an upgrade, and
 `TestObservationsSampleKindNamesAreFrozen` holds them.
+[Decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)
+keeps `source` here too, rather than in core or a seeded package.
 
 | Kind | Binds | One record is |
 | --- | --- | --- |
@@ -234,6 +236,22 @@ by the priorities of a source whose kind binds the trait and of no other.
 ```text
 422 props.priorities.health/heart_rate: a priority is keyed by the metric's full record path, <kind>/<id>, such as <authority>/observations/metric/health/heart_rate
 422 props.rollups[1]: 15m comes after the coarser 1h; list the tiers finest first, each dividing the next
+```
+
+### Finding the source kind
+
+Each repository holds its own copy of `source`, under its own authority
+(`ada.example.com/observations/source`), so a script or an app that works
+across repositories finds it by its trait instead of spelling it
+([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)).
+`GET /api/v1/records` with `filter.implements` set to
+`substrate.reamde.dev/core/source` lists the sources of every kind that
+binds it, each row naming its `kind`. The kinds list (`substratectl kinds -o
+json`, or the records of `substrate.reamde.dev/core/kind`) names each kind
+with the traits it binds, which answers before any source is written.
+
+```http
+GET /api/v1/records?filter={"implements":"substrate.reamde.dev/core/source"}
 ```
 
 ### One device by several routes
