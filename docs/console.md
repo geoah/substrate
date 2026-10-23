@@ -522,8 +522,12 @@ properties the sheet folds away because a section shows them. Then come its
   one `durationIn` band per heart rate zone. `reducers` are the aggregate
   read's, with `low` and `high` for a `durationIn` band (low under high) and
   `rank` for a percentile, and a `label` each. `sources` is `prefer` (the record's own
-  source first, then the sources' priorities; the sources that drew the line
-  are named under it), `only` (the record's own source alone) or `priority`.
+  source first, then every other named source alike, in the server's
+  stream order of kind and source path, then a value naming none; the
+  sources that drew the line are named under it), `only` (the record's own
+  source alone) or `priority` (the sources' `priorities` for the metric).
+  Where the record names no source, `prefer` and `only` rank by the
+  sources' `priorities` too, as `priority` does.
   `from` says where the read takes its values: `raw` (the default),
   `summaries` or `prefer-raw`; `statistic` keeps the one summary statistic
   a summaries read wants, such as `vendor` or `avg`; `channel` keeps one
@@ -537,14 +541,13 @@ properties the sheet folds away because a section shows them. Then come its
   block's narrowing, `channel` and `statistic`: each summary's one value
   as a level stroke across exactly the span it covers, nothing across a
   gap, one line per source and statistic. Where sources' summaries
-  overlap, each stretch of time is drawn from the stream the aggregate read
-  would put first there: under `prefer` the record's own source, then
-  every other named source, then a value naming none; under `priority`
-  each source's `priorities` for the metric; a tie in the server's stream
-  order (kind, then source path). The part of a later source's summary no
+  overlap, each stretch of time is drawn from the stream `sources` puts
+  first there, ranked as above, and of that stream, for each statistic,
+  the summary that started last. The part of a later source's summary no
   earlier one covers is still drawn, and its tooltip names the summary's
   whole span. A temperature difference (`delta`) converts without the
-  offset. The chart reads up to 1,000 summaries, 200 a
+  offset. A summary that is a bound (`<0.5 mg/L`) is said under the chart,
+  never drawn as a value. The chart reads up to 1,000 summaries, 200 a
   page, and says so where the window holds more; a failed read says so
   with a retry. WHOOP's nightly heart rate variability on a sleep is one
   such summary; a cycle's average heart rate, which reaches past the

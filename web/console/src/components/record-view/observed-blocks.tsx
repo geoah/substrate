@@ -66,6 +66,8 @@ import {
   chartMeasured,
   chartMetricRows,
   chartReads,
+  CHART_SUMMARIES_PAGE,
+  CHART_SUMMARIES_PAGES,
   chartSummaries,
   chartSummariesParams,
   fetchChartSummaries,
@@ -618,6 +620,31 @@ function SummaryLine({
     return stat ? `${who}, ${lowerName(stat)}` : who
   }
   const during = spanWords(ctx.bound, ctx.noun).during
+  // A bound (`<0.5`) is no value a stroke may draw: it is said instead,
+  // once per summary however many pieces it was cut into.
+  const bounds = summaries.filter(
+    (s, i) =>
+      s.comparator &&
+      summaries.findIndex(
+        (o) =>
+          o.span.start === s.span.start &&
+          o.span.end === s.span.end &&
+          o.source === s.source &&
+          o.value === s.value
+      ) === i
+  )
+  const boundWords = bounds.map(
+    (s) =>
+      `${sourceName(s.source)}: ${readingText(units, s.value, s.unit, info?.displayPrecision, s.comparator)} over ${windowWords(s.span.start, s.span.end)}`
+  )
+  if (!lines.some((l) => l.points.some((p) => p.value !== null))) {
+    return (
+      <Quiet>
+        No samples of {lowerName(name)} were kept {during}, and its summaries
+        are bounds, not values: {listWords(boundWords)}.
+      </Quiet>
+    )
+  }
   return (
     <>
       {ctx.zoomed && (
@@ -692,10 +719,16 @@ function SummaryLine({
         }}
       />
       <Quiet>{summaryWords(name, lines.map(lineName), during)}</Quiet>
+      {boundWords.length > 0 && (
+        <Quiet>
+          Bounds, not values, so not drawn: {listWords(boundWords)}.
+        </Quiet>
+      )}
       {truncated && (
         <Quiet>
-          Shows the first {summaries.length.toLocaleString("en")} summaries read
-          inside this window; more follow.
+          Shows the first{" "}
+          {(CHART_SUMMARIES_PAGE * CHART_SUMMARIES_PAGES).toLocaleString("en")}{" "}
+          summaries read inside this window; more follow.
         </Quiet>
       )}
     </>

@@ -1328,6 +1328,31 @@ describe("a chart's summaries read", () => {
     )
   })
 
+  it("says a summary that is a bound rather than drawing it as a value", async () => {
+    mount([VIEW], NIGHT, SESSION, {
+      metrics: [...METRICS, HRV_METRIC],
+      unmeasured: [HRV],
+      curve: answer([]),
+      summaries: [
+        record(OBSERVATION, "w-bound", {
+          metric: { ref: HRV },
+          form: "summary",
+          value: { value: "20", unit: "ms", comparator: "<" },
+          statistic: "vendor",
+          at: "2026-10-10T22:40:00Z",
+          endsAt: "2026-10-11T06:50:00Z",
+          source: { ref: WHOOP },
+        }),
+      ],
+    })
+    const night = await screen.findByRole("region", { name: "Night" })
+    await waitFor(() =>
+      expect(night.textContent).toContain("are bounds, not values")
+    )
+    expect(night.textContent).toContain("<20 ms")
+    expect(night.querySelector("[data-slot=chart-level]")).toBe(null)
+  })
+
   it("reads past the first page, where the record's own source's summary is", async () => {
     // The Garmin's readings inside the night fill the first page; WHOOP's
     // night, which the record names, is on the second and wins.

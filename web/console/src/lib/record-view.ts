@@ -1399,6 +1399,8 @@ export interface ChartSummary {
   unit: string
   /** A temperature difference, which converts without the offset. */
   delta?: boolean
+  /** A bound (`<`, `<=`, `>=`, `>`): the true value lies past `value`. */
+  comparator?: string
   statistic?: string
   /** The source's record path; undefined for a value naming none. */
   source?: string
@@ -1504,14 +1506,17 @@ interface Read {
 }
 
 /** The summaries a chart draws from its read: each holding a value over a
- * span, cut where sources overlap so each stretch of time is drawn from the
- * stream the policy puts first there, as the aggregate read picks: under
- * `prefer` the record's own source, then every other named source, then a
- * value naming none; under `priority` each source's `priorities` for the
- * metric; a tie in the server's stream order (kind, source, about,
- * channel). The rest of a later stream's summary, which nothing earlier
- * covers, is still drawn. Under `only` the read already kept the record's
- * own source. */
+ * span, cut where summaries overlap so each stretch of time is drawn from
+ * the stream the aggregate read puts first there, and of that stream, for
+ * each statistic, the summary that started last (a night's own value over
+ * the week it falls in). The ranking is the read's (`sourcesOf`): under
+ * `prefer` with a record naming a source, that source, then every other
+ * named source alike, then a value naming none; under `priority`, or with
+ * no source to prefer, each source's `priorities` for the metric; a tie in
+ * the server's stream order (kind, then source path, compared as bytes).
+ * The rest of a later stream's summary, which nothing earlier covers, is
+ * still drawn. Pieces are at most the cut points times the statistics, so
+ * the read's 1,000 summaries never make more than a few thousand. */
 export function chartSummaries(
   read: Pick<SummaryPages, "records"> & Partial<Pick<SummaryPages, "included">>,
   b: Pick<Bound, "source">,
@@ -1520,6 +1525,9 @@ export function chartSummaries(
 ): ChartSummary[] {
   const included = read.included ?? {}
   const self = b.source
+  // The read's own ranking: `only` narrowed to the record's source, and
+  // with no source to prefer, `prefer` and `only` rank by priorities.
+  const byPriorities = policy === "priority" || !self
   const reads: Read[] = []
   for (const r of read.records) {
     const p = r.properties ?? {}
@@ -1527,21 +1535,20 @@ export function chartSummaries(
     const end = typeof p.endsAt === "string" ? Date.parse(p.endsAt) : NaN
     if (Number.isNaN(start) || Number.isNaN(end) || end <= start) continue
     const q = p.value as
-      { value?: unknown; unit?: unknown; delta?: unknown } | undefined
+      { value?: unknown; unit?: unknown; comparator?: unknown } | undefined
     if (!q || typeof q.value !== "string" || typeof q.unit !== "string") {
       continue
     }
     const source = readReference(p.source)?.path
     const about = readReference(p.about)?.path ?? ""
     const channel = typeof p.channel === "string" ? p.channel : ""
-    const rank =
-      policy === "priority"
-        ? priorityRank(source, metric, included)
-        : !source
-          ? 2
-          : self && sameRef(source, self)
-            ? 0
-            : 1
+    const rank = byPriorities
+      ? priorityRank(source, metric, included)
+      : !source
+        ? 2
+        : self && sameRef(source, self)
+          ? 0
+          : 1
     const keys = [r.kind, source ?? "", about, channel]
     reads.push({
       s: {
@@ -1550,7 +1557,11 @@ export function chartSummaries(
         span: { start, end },
         value: q.value,
         unit: q.unit,
-        ...(q.delta === true ? { delta: true } : {}),
+        // `delta` is the observation's own property, not the quantity's.
+        ...(p.delta === true ? { delta: true } : {}),
+        ...(typeof q.comparator === "string" && q.comparator
+          ? { comparator: q.comparator }
+          : {}),
         ...(typeof p.statistic === "string" && p.statistic
           ? { statistic: p.statistic }
           : {}),
@@ -1561,7 +1572,6 @@ export function chartSummaries(
       keys,
     })
   }
-  if (policy === "only") return reads.map((r) => r.s)
   reads.sort((x, y) => {
     if (x.rank !== y.rank) return x.rank - y.rank
     for (let i = 0; i < x.keys.length; i++) {
@@ -1570,8 +1580,6 @@ export function chartSummaries(
     }
     return 0
   })
-  // The time cut at every summary's ends: within each piece the first
-  // stream covering it is drawn, every statistic of it.
   const cuts = [...new Set(reads.flatMap((r) => [r.s.start, r.s.end]))].sort(
     (x, y) => x - y
   )
@@ -1579,10 +1587,19 @@ export function chartSummaries(
   const open = new Map<Read, ChartSummary>()
   for (let i = 0; i + 1 < cuts.length; i++) {
     const [a, z] = [cuts[i], cuts[i + 1]]
-    const covering = reads.filter((r) => r.s.start <= a && r.s.end >= z)
-    const winner = covering[0]?.stream
-    for (const r of covering) {
+    let winner: string | undefined
+    // Of the first stream covering the piece, each statistic's summary
+    // that started last.
+    const chosen = new Map<string, Read>()
+    for (const r of reads) {
+      if (r.s.start > a || r.s.end < z) continue
+      winner ??= r.stream
       if (r.stream !== winner) continue
+      const stat = r.s.statistic ?? ""
+      const held = chosen.get(stat)
+      if (!held || r.s.span.start > held.s.span.start) chosen.set(stat, r)
+    }
+    for (const r of chosen.values()) {
       const piece = open.get(r)
       if (piece && piece.end === a) {
         piece.end = z
@@ -1601,10 +1618,12 @@ export function chartSummaries(
  * baseline is 1.8 °F above it, never 33.8 °F. Undefined where the units
  * do not convert. */
 export function summaryValueIn(
-  s: Pick<ChartSummary, "value" | "unit" | "delta">,
+  s: Pick<ChartSummary, "value" | "unit" | "delta" | "comparator">,
   unit: string,
   units: Pick<UnitReader, "convert">
 ): number | undefined {
+  // A bound is no value a level stroke may draw.
+  if (s.comparator) return undefined
   const n = numberOf(s.value)
   if (n === null) return undefined
   return s.unit === unit
@@ -1657,18 +1676,24 @@ export function summarySeries(
   const groups = new Map<string, ChartSummary[]>()
   for (const s of summaries) {
     const key = `${s.source ?? ""}\n${s.statistic ?? ""}`
-    groups.set(key, [...(groups.get(key) ?? []), s])
+    const members = groups.get(key)
+    if (members) members.push(s)
+    else groups.set(key, [s])
   }
+  // Each piece covers whole buckets from the one that starts where it does.
+  const first = new Map(buckets.map((b, i) => [b.start, i]))
   return [...groups].map(([key, members]) => {
-    const held = buckets.map((b) => {
-      let best: ChartSummary | undefined
-      for (const s of members) {
-        if (s.start > b.start || s.end < b.end) continue
-        if (valueOf(s) === undefined) continue
-        if (!best || s.start > best.start) best = s
+    const held: (ChartSummary | undefined)[] = buckets.map(() => undefined)
+    for (const s of members) {
+      if (valueOf(s) === undefined) continue
+      for (
+        let i = first.get(s.start) ?? buckets.length;
+        i < buckets.length && buckets[i].end <= s.end;
+        i++
+      ) {
+        if (!held[i] || s.span.start > held[i]!.span.start) held[i] = s
       }
-      return best
-    })
+    }
     return {
       key,
       source: members[0].source,

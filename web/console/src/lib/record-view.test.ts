@@ -1987,7 +1987,8 @@ describe("summaries a chart draws where its line has no value", () => {
     expect(sources("prefer")).toEqual([RING])
     // The watch ranks first for HRV, whatever source the record names.
     expect(sources("priority")).toEqual([WATCH])
-    expect(sources("only")).toEqual([WATCH, RING])
+    // The read under `only` holds the record's own source's alone.
+    expect(sources("only")).toEqual([RING])
   })
 
   it("draws a lower-ranked source's summary over a span no better one covers", () => {
@@ -2086,17 +2087,136 @@ describe("summaries a chart draws where its line has no value", () => {
   })
 
   it("converts a temperature difference without the offset", () => {
-    const deviation = { value: "1", unit: "Cel", delta: true }
-    expect(summaryValueIn(deviation, "degF", SHIPPED_UNITS)).toBeCloseTo(1.8)
+    // `delta` is the observation's own property, beside its value.
     const [kept] = chartSummaries(
       {
-        records: [obs({ ...night, value: deviation, source: { ref: RING } })],
+        records: [
+          obs({
+            ...night,
+            value: { value: "1", unit: "Cel" },
+            delta: true,
+            source: { ref: RING },
+          }),
+        ],
       },
       {},
       "prefer",
       HRV
     )
     expect(kept.delta).toBe(true)
+    expect(summaryValueIn(kept, "degF", SHIPPED_UNITS)).toBeCloseTo(1.8)
+  })
+
+  it("keeps a bound a bound, never a value a stroke draws", () => {
+    const [kept] = chartSummaries(
+      {
+        records: [
+          obs({
+            ...night,
+            value: { value: "0.5", unit: "ms", comparator: "<" },
+            source: { ref: RING },
+          }),
+        ],
+      },
+      {},
+      "prefer",
+      HRV
+    )
+    expect(kept.comparator).toBe("<")
+    expect(summaryValueIn(kept, "ms", SHIPPED_UNITS)).toBeUndefined()
+  })
+
+  it("ranks by priorities under prefer and only where the record names no source", () => {
+    const A = "a.example.com/observations/source/a-band"
+    const Z = "a.example.com/observations/source/z-band"
+    const records = [
+      obs({ ...night, source: { ref: A } }),
+      obs({ ...night, source: { ref: Z } }),
+    ]
+    const included = { [A]: sourceRecord(A, 2), [Z]: sourceRecord(Z, 1) }
+    for (const policy of ["prefer", "only"] as const) {
+      expect(
+        chartSummaries({ records, included }, {}, policy, HRV).map(
+          (s) => s.source
+        )
+      ).toEqual([Z])
+    }
+  })
+
+  it("resumes, after a better source, the summary of the same source that started last", () => {
+    const records = [
+      obs({
+        ...night,
+        at: at("00:00"),
+        endsAt: at("10:00"),
+        value: { value: "50", unit: "ms" },
+        source: { ref: RING },
+      }),
+      obs({
+        ...night,
+        at: at("02:00"),
+        endsAt: at("08:00"),
+        value: { value: "70", unit: "ms" },
+        source: { ref: RING },
+      }),
+      obs({
+        ...night,
+        at: at("04:00"),
+        endsAt: at("06:00"),
+        value: { value: "60", unit: "ms" },
+        source: { ref: WATCH },
+      }),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const out = chartSummaries({ records, included }, {}, "priority", HRV)
+    expect(
+      out.map((s) => [new Date(s.start).toISOString().slice(11, 16), s.value])
+    ).toEqual([
+      ["00:00", "50"],
+      ["02:00", "70"],
+      ["04:00", "60"],
+      ["06:00", "70"],
+      ["08:00", "50"],
+    ])
+  })
+
+  it("cuts a thousand overlapping summaries into a bounded number of pieces", () => {
+    // 500 long summaries from the ring, each interrupted by an hour of the
+    // watch's, ranked first.
+    const base = Date.parse("2026-01-01T00:00:00Z")
+    const h = 3_600_000
+    const records = [
+      ...Array.from({ length: 500 }, (_, i) =>
+        obs({
+          ...night,
+          at: new Date(base + i * h).toISOString(),
+          endsAt: new Date(base + (i + 500) * h).toISOString(),
+          source: { ref: RING },
+        })
+      ),
+      ...Array.from({ length: 500 }, (_, i) =>
+        obs({
+          ...night,
+          at: new Date(base + (2 * i + 1) * h).toISOString(),
+          endsAt: new Date(base + (2 * i + 1.5) * h).toISOString(),
+          source: { ref: WATCH },
+        })
+      ),
+    ]
+    const included = {
+      [WATCH]: sourceRecord(WATCH, 1),
+      [RING]: sourceRecord(RING, 2),
+    }
+    const out = chartSummaries({ records, included }, {}, "priority", HRV)
+    // One piece per cut at most, for one statistic.
+    expect(out.length).toBeLessThanOrEqual(4 * 1000)
+    const window: TimeRange = { start: base, end: base + 1000 * h }
+    const buckets = summaryBuckets(window, out)
+    const lines = summarySeries(out, buckets, (s) => Number(s.value))
+    expect(lines).toHaveLength(2)
   })
 
   it("holds each summary level across exactly its span, with nothing across a gap", () => {
