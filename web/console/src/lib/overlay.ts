@@ -276,6 +276,9 @@ export interface Plot {
   groupKey?: AggregateGroupKey
   /** The read groups by channel too, so each channel is a series. */
   byChannel: boolean
+  /** Its series are told apart by source: grouped by source, a category's
+   * stacks too (`plotRows` keeps a selection's by the same key). */
+  bySource?: boolean
   /** The column the chart draws, a reducer key. */
   pickedKey: string
   /** Why the plot asks nothing, in words; absent where it reads. */
@@ -354,9 +357,12 @@ export function fromOf(
 }
 
 /** One metric's plots: one (`planPlot`), or grouped by source where the
- * sources' summaries keep no statistic the read can share (one source's
- * average beside another's highest), one per statistic, each read apart and
- * named for its statistic, so every source is drawn. */
+ * read's one statistic would leave some streams out (one source's average
+ * beside another's highest), one per statistic. The streams are taken
+ * under the reader's sources, things and channels first; each takes the
+ * statistic the single read would, else the one it keeps by default, and
+ * each plot reads the sources and channels of its own streams, within the
+ * reader's choices, named for the statistic it was planned with. */
 export function planPlots(
   obs: PlotSource,
   metric: string,
@@ -370,51 +376,47 @@ export function planPlots(
   ) {
     return [plan]
   }
+  const chosen = (list: readonly string[] | undefined, value?: string) =>
+    !list?.length ||
+    list.some((c) =>
+      c === NONE ? !value : Boolean(value && sameRef(value, c))
+    )
   const streams = (scope.streams ?? obs.streams).filter(
     (s) =>
       sameRef(s.metric, metric) &&
-      (!scope.sources.length ||
-        scope.sources.some((c) =>
-          c === NONE ? !s.source : Boolean(s.source && sameRef(s.source, c))
-        ))
+      chosen(scope.sources, s.source) &&
+      chosen(scope.abouts, s.about) &&
+      (!scope.channels?.length || scope.channels.includes(s.channel || NONE))
   )
-  const left = plan.statisticLeftOut
-  const isLeft = (s: Stream) =>
-    left.some((l) => (l ? sameRef(s.source, l) : !s.source))
-  const kept = distinct(
-    streams.filter((s) => !isLeft(s)).map((s) => s.source || NONE)
-  )
-  // Each left-out source joins the statistic it keeps by default.
-  const byStatistic = new Map<string, string[]>()
-  for (const source of left) {
-    const own = streams.filter((s) =>
-      source ? sameRef(s.source, source) : !s.source
-    )
-    const [statistic] = statisticChoices(own.flatMap((s) => s.statistics ?? []))
-    if (!statistic) continue
-    byStatistic.set(statistic, [
-      ...(byStatistic.get(statistic) ?? []),
-      source || NONE,
-    ])
+  const byStatistic = new Map<string, Stream[]>()
+  for (const s of streams) {
+    const kept = s.statistics ?? []
+    const statistic =
+      !keepsSummaries(s) || kept.includes(plan.statistic) || !kept.length
+        ? plan.statistic
+        : statisticChoices(kept)[0]
+    byStatistic.set(statistic, [...(byStatistic.get(statistic) ?? []), s])
   }
-  const named = (p: Plot, statistic: string): Plot => ({
-    ...p,
-    id: `${metric}\u0000${statistic}`,
-    name: `${p.name} (${statisticWords(statistic).toLowerCase()})`,
+  if (byStatistic.size < 2) return [plan]
+  const ids = new Set<string>()
+  return [...byStatistic].map(([statistic, members]) => {
+    const p = planPlot(obs, metric, {
+      ...scope,
+      // Never empty: each statistic has a stream, and so a source.
+      sources: distinct(members.map((s) => s.source || NONE)),
+      channels: distinct(members.map((s) => s.channel || NONE)),
+      statistic,
+    })
+    const planned = p.statistic ?? statistic
+    let id = `${metric}\u0000${planned}`
+    while (ids.has(id)) id += "\u0000"
+    ids.add(id)
+    return {
+      ...p,
+      id,
+      name: `${p.name} (${statisticWords(planned).toLowerCase()})`,
+    }
   })
-  return [
-    named(
-      planPlot(obs, metric, {
-        ...scope,
-        sources: kept,
-        statistic: plan.statistic,
-      }),
-      plan.statistic
-    ),
-    ...[...byStatistic].map(([statistic, sources]) =>
-      named(planPlot(obs, metric, { ...scope, sources, statistic }), statistic)
-    ),
-  ]
 }
 
 /** One metric's plot: its form, reducer, unit, mark, axis, and the read it
@@ -654,6 +656,7 @@ export function planPlot(
     estimate,
     groupKey: spec ? laneGroupKey(spec) : undefined,
     byChannel,
+    ...(bySource ? { bySource } : {}),
     pickedKey: spec ? reducerKey(laneReducers(spec)[0]) : reducer,
     blocked,
     sourceOrder,
@@ -783,7 +786,7 @@ function menuOf(
  * in the recorded-local calendar, those of a date outside the range the
  * reader asked for. */
 export function plotRows(
-  plot: Pick<Plot, "only" | "groupKey" | "byChannel" | "local">,
+  plot: Pick<Plot, "only" | "groupKey" | "byChannel" | "bySource" | "local">,
   rows: readonly AggregateRow[]
 ): readonly AggregateRow[] {
   const dated = plot.local
@@ -793,7 +796,7 @@ export function plotRows(
   if (!only) return dated
   return dated.filter((r) => {
     const base =
-      plot.groupKey === "source"
+      plot.groupKey === "source" || plot.bySource
         ? (r.group?.source ?? "")
         : plot.groupKey === "about"
           ? (r.group?.about ?? "")

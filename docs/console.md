@@ -1131,10 +1131,14 @@ row of controls scopes every chart:
   grouped by code: grouped by source, each source's codes stack apart
   (two devices' overlapping nights both draw, never one picked by
   priority), and grouped by about its chart says Group by does not apply
-  to it. Grouped by source, a metric whose sources' vendor summaries keep
-  no statistic the read can share (one source's average beside another's
+  to it. Grouped by source, a metric whose streams' vendor summaries keep
+  no statistic one read can share (one source's average beside another's
   highest) is read once per statistic, each plot named for it ("Heart rate
-  (average)"), so every source is drawn;
+  (average)"), so every stream is drawn: the streams are taken under the
+  chosen sources, things and channels first, each takes the statistic the
+  single read would where it keeps it, else its own default, and each plot
+  reads its own streams' sources and channels, never more than were
+  chosen;
 - where to read from: automatic, raw points, vendor summaries, or raw where
   a bucket is covered;
 - the sources, things and channels to keep;

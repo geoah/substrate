@@ -45,6 +45,7 @@ import {
   mixedFrom,
   overfull,
   planPlot,
+  planPlots,
   plotRows,
   seriesColors,
   seriesKey,
@@ -1087,5 +1088,125 @@ describe("one metric's plot", () => {
     const colors = seriesColors(Array.from({ length: 9 }, (_, i) => `s${i}`))
     expect(colors.get("s7")).toBe("var(--series-8)")
     expect(colors.get("s8")).toBe("var(--faint)")
+  })
+})
+
+describe("one metric's plots grouped by source", () => {
+  const C = `${SOURCE}/oura-ring`
+  /** One stream of heart rate summaries. */
+  function hr(source: string, statistics: string[], channel?: string): Stream {
+    return {
+      key: `${HEART}\n${source}\n\n${channel ?? ""}`,
+      metric: HEART,
+      source,
+      ...(channel ? { channel } : {}),
+      value: "60",
+      unit: "/min",
+      form: "summary",
+      at: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      statistics,
+      statistic: statistics[0],
+    }
+  }
+  const scope = (over: Partial<PlotScope>): PlotScope => ({
+    ...SCOPE,
+    group: "source",
+    ...over,
+  })
+
+  it("reads each statistic's streams apart, never widening the chosen sources", () => {
+    // WHOOP and the Garmin each keep cycle averages and workout maxima; the
+    // ring is not chosen.
+    const streams = [
+      hr(WHOOP, ["avg"]),
+      hr(WHOOP, ["max"], "workout"),
+      hr(GARMIN, ["avg"]),
+      hr(GARMIN, ["max"], "workout"),
+      hr(C, ["avg"]),
+    ]
+    const plots = planPlots(
+      source(streams),
+      HEART,
+      scope({ sources: [WHOOP, GARMIN] })
+    )
+    expect(plots.map((p) => p.name)).toEqual([
+      "Heart rate (average)",
+      "Heart rate (highest)",
+    ])
+    for (const p of plots) {
+      expect(p.spec?.sources.length).toBeGreaterThan(0)
+      expect(p.spec?.sources).not.toContain(C)
+    }
+    expect(plots[1].spec?.channels).toEqual(["workout"])
+    expect(new Set(plots.map((p) => p.id)).size).toBe(2)
+  })
+
+  it("chooses each stream's statistic under the chosen channels, and names the plot for it", () => {
+    // WHOOP keeps cycle maxima and workout averages, the Garmin cycle
+    // averages; the folded row is the cycles'.
+    const streams = [
+      hr(WHOOP, ["max"]),
+      hr(WHOOP, ["avg"], "workout"),
+      hr(GARMIN, ["avg"]),
+    ]
+    const plots = planPlots(
+      source(streams),
+      HEART,
+      scope({ sources: [WHOOP, GARMIN], channels: [NONE] })
+    )
+    const named = Object.fromEntries(
+      plots.map((p) => [p.name, p.spec?.sources])
+    )
+    expect(named).toEqual({
+      "Heart rate (average)": [GARMIN],
+      "Heart rate (highest)": [WHOOP],
+    })
+  })
+})
+
+describe("a category's rows grouped by source", () => {
+  it("keeps a selection's stacks by source and channel", () => {
+    const night = (source: string, channel?: string): Stream => ({
+      key: `${SLEEP_STAGE}\n${source}\n\n${channel ?? ""}`,
+      metric: SLEEP_STAGE,
+      source,
+      ...(channel ? { channel } : {}),
+      value: null,
+      code: "deep",
+      form: "amount",
+      at: "2026-10-06T23:10:00+03:00",
+      end: "2026-10-07T06:20:00+03:00",
+    })
+    // WHOOP's night and the Garmin's nap are selected; WHOOP's nap is not,
+    // and the read's source and channel filters take it too.
+    const selected = [night(WHOOP), night(GARMIN, "nap")]
+    const p = planPlot(
+      source([...selected, night(WHOOP, "nap")]),
+      SLEEP_STAGE,
+      {
+        ...SCOPE,
+        group: "source",
+        streams: selected,
+      }
+    )
+    const row = (src: string, channel?: string) => ({
+      start: "2026-10-06T00:00:00+03:00",
+      end: "2026-10-07T00:00:00+03:00",
+      group: { code: "deep", source: src, ...(channel ? { channel } : {}) },
+      values: [],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+    })
+    const kept = plotRows(p, [
+      row(WHOOP),
+      row(GARMIN, "nap"),
+      row(WHOOP, "nap"),
+    ])
+    expect(kept.map((r) => [r.group?.source, r.group?.channel])).toEqual([
+      [WHOOP, undefined],
+      [GARMIN, "nap"],
+    ])
   })
 })
