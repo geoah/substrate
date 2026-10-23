@@ -369,13 +369,7 @@ export function planPlots(
   scope: PlotScope
 ): Plot[] {
   const plan = planPlot(obs, metric, scope)
-  if (
-    scope.group !== "source" ||
-    !plan.statistic ||
-    !plan.statisticLeftOut.length
-  ) {
-    return [plan]
-  }
+  if (scope.group !== "source" || !plan.statistic) return [plan]
   const chosen = (list: readonly string[] | undefined, value?: string) =>
     !list?.length ||
     list.some((c) =>
@@ -388,24 +382,35 @@ export function planPlots(
       chosen(scope.abouts, s.about) &&
       (!scope.channels?.length || scope.channels.includes(s.channel || NONE))
   )
-  const byStatistic = new Map<string, Stream[]>()
+  // Each stream's statistic, and the thing it is about: a read's rows are
+  // told apart by source and channel alone, so a plot reads one thing.
+  const parts = new Map<string, { statistic: string; streams: Stream[] }>()
   for (const s of streams) {
     const kept = s.statistics ?? []
     const statistic =
-      !keepsSummaries(s) || kept.includes(plan.statistic) || !kept.length
+      !keepsSummaries(s) || !kept.length || kept.includes(plan.statistic)
         ? plan.statistic
         : statisticChoices(kept)[0]
-    byStatistic.set(statistic, [...(byStatistic.get(statistic) ?? []), s])
+    const key = `${statistic}\n${s.about ?? ""}`
+    const part = parts.get(key) ?? { statistic, streams: [] }
+    part.streams.push(s)
+    parts.set(key, part)
   }
-  if (byStatistic.size < 2) return [plan]
+  if (new Set([...parts.values()].map((p) => p.statistic)).size < 2) {
+    return [plan]
+  }
   const ids = new Set<string>()
-  return [...byStatistic].map(([statistic, members]) => {
+  return [...parts.values()].map(({ statistic, streams: members }) => {
+    // The read narrows sources, things and channels each on its own; the
+    // plot's streams are its selection, so a stream another plot reads
+    // (its source on another channel) is dropped from this one's rows.
     const p = planPlot(obs, metric, {
       ...scope,
-      // Never empty: each statistic has a stream, and so a source.
       sources: distinct(members.map((s) => s.source || NONE)),
+      abouts: distinct(members.map((s) => s.about || NONE)),
       channels: distinct(members.map((s) => s.channel || NONE)),
       statistic,
+      streams: members,
     })
     const planned = p.statistic ?? statistic
     let id = `${metric}\u0000${planned}`
@@ -826,15 +831,18 @@ export function overfull(
 ): boolean {
   const per = DURATION_MS[plot.unit]
   if (plot.shape !== "coded" || !per) return false
+  // Per bucket and stack: each source's and channel's codes stack apart,
+  // and each stack's time is held to the bucket alone.
   const held = new Map<string, { time: number; length: number }>()
   for (const row of rows) {
     const v = rowValue(row, plot.pickedKey)
     const time = Number(v?.value ?? 0) * per
     const length = Date.parse(row.end) - Date.parse(row.start)
     if (!Number.isFinite(time) || !(length > 0)) continue
-    const at = held.get(row.start) ?? { time: 0, length }
+    const stack = `${row.start}\n${row.group?.source ?? ""}\n${row.group?.channel ?? ""}`
+    const at = held.get(stack) ?? { time: 0, length }
     at.time += time
-    held.set(row.start, at)
+    held.set(stack, at)
   }
   // A minute's slack for rounding at the bucket's edges.
   return [...held.values()].some((b) => b.time > b.length + 60_000)

@@ -708,6 +708,55 @@ describe("the timeline's requests", () => {
     expect(screen.queryByText(/is left out/)).toBe(null)
   })
 
+  it("hides one statistic's line from its own legend, never the other's", async () => {
+    // WHOOP keeps your heart rate's average and Mia's highest: one source,
+    // two plots.
+    const summary = (statistic: string, about?: string) => ({
+      start: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      form: "summary",
+      group: {
+        metric: HEART,
+        source: WHOOP,
+        statistic,
+        ...(about ? { about } : {}),
+      },
+      values: [{ reducer: "last", value: "60", unit: "/min" }],
+      count: 30,
+      bounded: 0,
+      synthetic: false,
+    })
+    const day = (d: string, value: string) => ({
+      start: `2026-10-0${d}T00:00:00+03:00`,
+      end: `2026-10-0${Number(d) + 1}T00:00:00+03:00`,
+      form: "summary",
+      from: "summaries",
+      group: { source: WHOOP },
+      sources: [WHOOP],
+      values: [{ reducer: "avg", value, unit: "/min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+    })
+    mount(
+      `?metric=health/heart_rate&source=whoop-4-0&group=source&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric
+          ? { ...ZONES, rows: [day("5", "60"), day("6", "62"), day("7", "61")] }
+          : latestAnswer(read, {
+              ...LATEST,
+              rows: [summary("avg"), summary("max", MIA)],
+            })
+    )
+    const chart = await lane("Heart rate (average) and Heart rate (highest)")
+    const lines = () => chart.querySelectorAll("svg g[data-series]").length
+    await waitFor(() => expect(lines()).toBe(2))
+    const [first] = within(chart).getAllByRole("button", { pressed: true })
+    fireEvent.click(first)
+    expect(lines()).toBe(1)
+  })
+
   it("says Group by about does not apply to a category metric", async () => {
     mount(`?metric=health/sleep_stage,health/body_mass&group=about&${WINDOW}`)
     const both = await lane("Sleep stage and Weight")

@@ -281,7 +281,7 @@ export function OverlayChart({
     stack:
       d.plot.mark === "stack"
         ? seriesKey(
-            d.plot.metric,
+            d.plot.id,
             `${d.series.source ?? ""}\u0001${d.series.channel ?? ""}`
           )
         : undefined,
@@ -567,7 +567,7 @@ function drawnSeries(
       // Where the first category's codes are fixed, those it holds wear
       // their own colours and those it does not hold draw nothing.
       if (plot === coded && plot.codes?.includes(codeOfKey(v))) continue
-      const key = seriesKey(plot.metric, v)
+      const key = seriesKey(plot.id, v)
       if (!universe.includes(key)) universe.push(key)
     }
     // Categories stack and list in the metric's own order.
@@ -578,9 +578,9 @@ function drawnSeries(
     for (const s of ordered) {
       const at =
         plot === coded ? (plot.codes ?? []).indexOf(s.value ?? s.key) : -1
-      if (at >= 0) fixed.set(seriesKey(plot.metric, s.key), at)
+      if (at >= 0) fixed.set(seriesKey(plot.id, s.key), at)
       all.push({
-        key: seriesKey(plot.metric, s.key),
+        key: seriesKey(plot.id, s.key),
         plot,
         series: s,
         label: labelOf(plot, s),

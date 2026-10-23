@@ -1136,9 +1136,11 @@ row of controls scopes every chart:
   highest) is read once per statistic, each plot named for it ("Heart rate
   (average)"), so every stream is drawn: the streams are taken under the
   chosen sources, things and channels first, each takes the statistic the
-  single read would where it keeps it, else its own default, and each plot
-  reads its own streams' sources and channels, never more than were
-  chosen;
+  single read would where it keeps it, else its own default, a stream
+  naming no source included, and each plot reads one thing's streams and
+  draws those alone, never more sources than were chosen. A category's
+  time over its bucket is checked per source and channel, each its own
+  stack;
 - where to read from: automatic, raw points, vendor summaries, or raw where
   a bucket is covered;
 - the sources, things and channels to keep;

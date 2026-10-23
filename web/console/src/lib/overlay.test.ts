@@ -1165,6 +1165,100 @@ describe("one metric's plots grouped by source", () => {
   })
 })
 
+describe("one metric's plots grouped by source, against their answers", () => {
+  function hr(
+    source: string | undefined,
+    statistics: string[],
+    channel?: string,
+    about?: string
+  ): Stream {
+    return {
+      key: `${HEART}\n${source ?? ""}\n${about ?? ""}\n${channel ?? ""}`,
+      metric: HEART,
+      ...(source ? { source } : {}),
+      ...(about ? { about } : {}),
+      ...(channel ? { channel } : {}),
+      value: "60",
+      unit: "/min",
+      form: "summary",
+      at: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T19:00:00Z",
+      statistics,
+      statistic: statistics[0],
+    }
+  }
+  const row = (source: string, channel?: string) => ({
+    start: "2026-10-07T00:00:00Z",
+    end: "2026-10-08T00:00:00Z",
+    form: "summary",
+    group: { source, ...(channel ? { channel } : {}) },
+    values: [{ reducer: "avg", value: "60", unit: "/min" }],
+    count: 1,
+    bounded: 0,
+    synthetic: false,
+  })
+
+  it("draws in each statistic's plot only the streams it was given", () => {
+    // WHOOP's cycles keep both statistics and go with the average; its
+    // workouts and the Garmin's cycles keep the highest alone.
+    const streams = [
+      hr(WHOOP, ["avg", "max"]),
+      hr(WHOOP, ["max"], "workout"),
+      hr(GARMIN, ["max"]),
+    ]
+    const [avg, max] = planPlots(source(streams), HEART, {
+      ...SCOPE,
+      group: "source",
+      sources: [WHOOP, GARMIN],
+    })
+    expect([avg.name, max.name]).toEqual([
+      "Heart rate (average)",
+      "Heart rate (highest)",
+    ])
+    // The highest's read takes WHOOP's cycles too (sources and channels
+    // narrow apart); its rows keep the streams it was given.
+    const drawn = plotRows(max, [
+      row(WHOOP),
+      row(WHOOP, "workout"),
+      row(GARMIN),
+    ])
+    expect(drawn.map((r) => [r.group?.source, r.group?.channel])).toEqual([
+      [WHOOP, "workout"],
+      [GARMIN, undefined],
+    ])
+  })
+
+  it("keeps a stream naming no source in a plot of its own statistic", () => {
+    const plots = planPlots(
+      source([hr(WHOOP, ["avg"]), hr(undefined, ["max"])]),
+      HEART,
+      { ...SCOPE, group: "source" }
+    )
+    expect(plots.map((p) => [p.name, p.spec?.sources])).toEqual([
+      ["Heart rate (average)", [WHOOP]],
+      ["Heart rate (highest)", [NONE]],
+    ])
+  })
+})
+
+describe("a category's time in a bucket", () => {
+  it("is held to the bucket per source and channel, each its own stack", () => {
+    const hour = (src: string) => ({
+      start: "2026-10-07T01:00:00Z",
+      end: "2026-10-07T02:00:00Z",
+      form: "amount",
+      group: { code: "deep", source: src },
+      values: [{ reducer: "sum", value: "60", unit: "min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+    })
+    const plot = { shape: "coded" as const, unit: "min", pickedKey: "sum" }
+    expect(overfull(plot, [hour(WHOOP), hour(GARMIN)])).toBe(false)
+    expect(overfull(plot, [hour(WHOOP), hour(WHOOP)])).toBe(true)
+  })
+})
+
 describe("a category's rows grouped by source", () => {
   it("keeps a selection's stacks by source and channel", () => {
     const night = (source: string, channel?: string): Stream => ({
