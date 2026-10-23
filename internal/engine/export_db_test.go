@@ -618,3 +618,87 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 		t.Fatalf("head = %d after %d writes from %d", got, writers, head)
 	}
 }
+
+// A blob the export listed at its pin and that blob collection reaches before
+// the stream does (a webhook body whose trigger retired, #1022) stays in the
+// store until the stream ends: the export completes, the archive carries the
+// bytes its restored manifest names, and the restore reads them. Once the
+// stream has ended the next collection deletes the bytes.
+//
+// Not parallel: it sets BlobUploadGrace, so the unreferenced blob is
+// collectable at once.
+func TestExportHoldsListedBlobsAgainstCollection(t *testing.T) {
+	prev := engine.BlobUploadGrace
+	engine.BlobUploadGrace = 0
+	t.Cleanup(func() { engine.BlobUploadGrace = prev })
+
+	svc, _ := newService(t)
+	ctx := context.Background()
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nothing references the blob, so the next collection takes it.
+	digest := putBlob(t, ds, []byte("a webhook body nobody references"))
+	head := maxSeq(t, ds)
+	id := repositoryIDOf(t, ds)
+	onDisk := filepath.Join(changelogfile.BlobsDir(repoDirOf(t, svc, ds)), digest)
+
+	ex, err := ds.Export(ctx)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if ex.Point().Blobs != 1 {
+		t.Fatalf("the pin listed %d blobs, want the one", ex.Point().Blobs)
+	}
+	// Between the pin and the stream, collection tombstones the manifest.
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("run gc: %v", err)
+	}
+	if m, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", digest); err != nil || m.DeletedAt == nil {
+		t.Fatalf("collection did not tombstone the listed blob's manifest (%v); the test proves nothing", err)
+	}
+	if _, err := os.Stat(onDisk); err != nil {
+		t.Fatalf("collection deleted the bytes a streaming export listed: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := ex.WriteTo(&buf); err != nil {
+		t.Fatalf("stream the export: %v", err)
+	}
+	root := t.TempDir()
+	extractExport(t, root, buf.Bytes())
+	dir, err := changelogfile.RepoDir(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := changelogfile.ReadSnapshot(dir)
+	if err != nil {
+		t.Fatalf("the archive carries no readable %s: %v", changelogfile.SnapshotName, err)
+	}
+	if snap.Head != head || len(snap.Blobs) != 1 || snap.Blobs[0] != digest {
+		t.Fatalf("snapshot = %+v, want head %d with the blob %s", snap, head, digest)
+	}
+
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root)
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
+	if err != nil {
+		t.Fatalf("open the restored repository: %v", err)
+	}
+	if got := getBlob(t, ds2, digest); string(got) != "a webhook body nobody references" {
+		t.Fatalf("restored blob bytes = %q", got)
+	}
+	if verified := mustVerify(t, svc2, "ada.example.com"); !verified.OK || verified.Head != head || verified.Blobs != 1 {
+		t.Fatalf("the restored repository does not verify: %+v", verified)
+	}
+
+	// The stream has ended, so the hold is gone and the orphan sweep deletes
+	// the bytes no live manifest names.
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("run gc after the stream: %v", err)
+	}
+	if _, err := os.Stat(onDisk); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the bytes outlived the export's hold: %v", err)
+	}
+}

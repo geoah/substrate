@@ -1199,7 +1199,9 @@ key: `repository.json` keeps the DEK wrapped under this server's
 `SUBSTRATE_CREDENTIAL_KEY`, so a same-key restore boots with nothing else, and
 the `recoverykey` record in the changelog holds the same DEK wrapped to the
 owner's recovery key, which is what opens the archive anywhere else. The blob
-bytes ride under `blobs/`, so an export is self-contained. One export streams
+bytes ride under `blobs/`, so an export is self-contained. Blob collection
+leaves the bytes of every blob the export listed in the store until the
+stream ends, and the orphan sweep deletes them on a later pass. One export streams
 per repository at a time and a second request answers `409 conflict`; a
 response the server could not finish is aborted rather than closed as a tar
 that looks complete.

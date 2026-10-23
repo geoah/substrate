@@ -10,7 +10,8 @@ package engine
 // state. The mutex is then released and the files are streamed as of that
 // state: a finished segment never changes, the active segment is cut at the
 // length it had, the sealed records were read under the mutex, and a blob's
-// bytes are content-addressed. Writes go on while a client downloads.
+// bytes are content-addressed and held against collection until the stream
+// ends (holdExportBlobs). Writes go on while a client downloads.
 
 import (
 	"archive/tar"
@@ -159,9 +160,15 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 		return nil, err
 	}
 	digests := make([]string, 0, len(e.blobs))
+	held := make(map[string]bool, len(e.blobs))
 	for _, b := range e.blobs {
 		digests = append(digests, b.digest)
+		held[b.digest] = true
 	}
+	// The hold is set under writerMu, which a collection's tombstone commits
+	// under, so a blob listed here was live at the pin and its bytes are
+	// deleted only after this point: deleteOrphanBytes sees the hold.
+	ds.holdExportBlobs(held)
 	taken := nowUTC()
 	// The bytes ride in the archive under blobs/, so the copy is laid out the
 	// way a repository directory is.
@@ -191,6 +198,7 @@ func (e *export) Point() substrate.ExportPoint { return e.point }
 // vouches for it.
 func (e *export) WriteTo(w io.Writer) (int64, error) {
 	defer e.ds.exporting.Store(false)
+	defer e.ds.holdExportBlobs(nil)
 	cw := &countingWriter{w: w}
 	tw := tar.NewWriter(cw)
 	err := e.write(tw)
@@ -396,6 +404,21 @@ func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b
 		return fmt.Errorf("substrate/engine: blob %s: %d of %d bytes copied: %w", b.digest, n, b.size, err)
 	}
 	return nil
+}
+
+// holdExportBlobs replaces the set of digests the streaming export holds
+// against byte deletion; nil releases them.
+func (ds *dataset) holdExportBlobs(held map[string]bool) {
+	ds.exportHeldMu.Lock()
+	ds.exportHeld = held
+	ds.exportHeldMu.Unlock()
+}
+
+// exportHolds reports whether the streaming export listed digest.
+func (ds *dataset) exportHolds(digest string) bool {
+	ds.exportHeldMu.Lock()
+	defer ds.exportHeldMu.Unlock()
+	return ds.exportHeld[digest]
 }
 
 // countingWriter counts the bytes that reached w.

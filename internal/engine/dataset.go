@@ -271,6 +271,14 @@ type dataset struct {
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.
 	exporting atomic.Bool
+	// exportHeld, under exportHeldMu, is the digests the streaming export
+	// listed, set by Export with the slot and cleared when WriteTo returns.
+	// deleteOrphanBytes leaves a held digest's bytes in the store: the
+	// archive's changelog ends before the collection that tombstoned the
+	// manifest, so the restore needs the bytes the stream has not reached
+	// yet (#1022). The orphan sweep deletes them once the hold is gone.
+	exportHeldMu sync.Mutex
+	exportHeld   map[string]bool
 
 	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
 	// previous pass looked at, so a store with more objects than one batch is
