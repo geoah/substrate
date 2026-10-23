@@ -17,6 +17,7 @@ import { recordTitle, scalarText } from "@/lib/format"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecsByName, titleEditor } from "@/lib/record-schema"
+import { substrateOrigin } from "@/lib/shell"
 import { sheetRows } from "@/components/property-sheet/sheet-rows"
 import type { UnitReader } from "@/lib/unit-reader"
 
@@ -253,7 +254,7 @@ export function duplicateProperties(
 /** The record page's own address, whole, for pasting elsewhere. */
 export function recordLink(
   record: SubstrateRecord,
-  origin = window.location.origin
+  origin = substrateOrigin()
 ): string {
   const { authority, pkg, name } = splitKind(record.kind)
   const path = [authority, pkg, name, record.id].map(encodeURIComponent)

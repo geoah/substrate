@@ -791,6 +791,46 @@ usage = 'arg "<base>" help="The URL the substrate serves the console at, such as
 run = 'node scripts/render-smoke.mjs "$usage_base"'
 
 # =============================================================================
+# Apple apps (web/apple)
+# =============================================================================
+#
+# The console, bundled, in a native shell for macOS, iPadOS and iOS. Every
+# task is a subcommand of .mise/apple.sh; macOS only, and nothing in CI runs
+# them. The console build is a dependency because the bundle copies
+# web/console/dist as it is.
+
+[tasks."apple:project"]
+description = "Generate web/apple/Substrate.xcodeproj from project.yml"
+run = ".mise/apple.sh project"
+
+[tasks."apple:build"]
+description = "Build the console, the macOS app and the iOS app for the simulator"
+depends = ["console:build"]
+run = ".mise/apple.sh build"
+
+[tasks."apple:build:device"]
+description = "Build the console and the iOS app for a device"
+depends = ["console:build"]
+run = ".mise/apple.sh build:device"
+
+[tasks."apple:install"]
+description = "Build the console and the macOS app, install it in /Applications and open it"
+depends = ["console:build"]
+run = ".mise/apple.sh install"
+
+[tasks."apple:sim"]
+description = "Build the console and the iOS app, and run it on a simulator"
+depends = ["console:build"]
+run = ".mise/apple.sh sim"
+
+# SUBSTRATE_APPLE_RELEASE_URL (a public S3 folder, path-style) and the AWS_*
+# key that may write it come from the environment, never from this file.
+[tasks."apple:release"]
+description = "Build, sign and publish both apps as a release (prerelease, or stable), with the feeds that update them"
+depends = ["console:build"]
+run = ".mise/apple.sh release"
+
+# =============================================================================
 # Image
 # =============================================================================
 

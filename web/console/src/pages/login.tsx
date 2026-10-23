@@ -5,6 +5,7 @@ import { BoxesIcon } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
+import { ShellServer } from "@/components/shell-server"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -202,6 +203,7 @@ export function LoginPage() {
           </Link>{" "}
           to choose your name.
         </p>
+        <ShellServer />
       </div>
     </div>
   )

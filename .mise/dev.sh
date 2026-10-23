@@ -416,9 +416,9 @@ server_start() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
-		"${web[@]}" \
-		"${egress[@]}" \
-		"${tick[@]}" \
+		${web[@]+"${web[@]}"} \
+		${egress[@]+"${egress[@]}"} \
+		${tick[@]+"${tick[@]}"} \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -484,9 +484,9 @@ cmd_run() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
-		"${web[@]}" \
-		"${egress[@]}" \
-		"${tick[@]}" \
+		${web[@]+"${web[@]}"} \
+		${egress[@]+"${egress[@]}"} \
+		${tick[@]+"${tick[@]}"} \
 		bin/substrate
 }
 
