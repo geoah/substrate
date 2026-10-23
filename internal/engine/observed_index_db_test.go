@@ -2219,3 +2219,40 @@ func TestObservedMetricWriteDuringItsReprojectionPage(t *testing.T) {
 		return specTiers
 	})
 }
+
+// A point at 0001-01-01T00:00:00Z, the zero time.Time, is a point like any
+// other: its segment counts it available and names it as the newest
+// available instant, which the observed_segments check requires, and its
+// stream's latest row and rollups hold it.
+func TestObservedPointAtTheZeroTimeIsIndexed(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	r.mustPut(t, r.observation, "year-one/gauge", map[string]any{
+		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("year-one"), "form": "gauge",
+		"value": quantity("20", "Cel"), "at": "0001-01-01T00:00:00Z", "utcOffset": 0,
+	})
+	r.mustPut(t, r.observation, "year-one/amount", map[string]any{
+		"metric": r.metricRef("health/steps"), "source": r.sourceRef("year-one"), "form": "amount",
+		"value": quantity("12", "{steps}"), "at": "0001-01-01T00:00:00Z", "endsAt": "0001-01-01T00:10:00Z", "utcOffset": 0,
+	})
+	r.mustPut(t, r.trace, "year-one/counter", map[string]any{
+		"metric": r.metricRef("energy"), "source": r.sourceRef("year-one"), "form": "counter", "unit": "kW.h",
+		"resetRule": "monotonic", "at": "0001-01-01T00:00:00Z", "endsAt": "0001-01-01T00:30:00Z", "every": "PT15M", "values": []any{"1", "2"}, "utcOffset": 0,
+	})
+	zero := time.Time{}
+	if n := r.count(t, `SELECT count(*) FROM observed_segments WHERE first_ts = $1`, zero); n != 3 {
+		t.Errorf("%d segments start at 0001-01-01T00:00:00Z, want 3", n)
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_segments WHERE last_available = $1`, zero); n != 2 {
+		t.Errorf("%d segments name 0001-01-01T00:00:00Z as their newest available point, want 2 (the gauge and the amount)", n)
+	}
+	l, ok := r.latest(t, "air_temperature", r.source+"/year-one")
+	if !ok || !l.ts.Equal(zero) || l.points != 1 {
+		t.Errorf("the gauge stream's latest row is %+v (present %v), want the year-one point", l, ok)
+	}
+	if n := r.count(t, `SELECT count(*) FROM test_rollups WHERE source = $1 AND bucket = $2`, r.source+"/year-one", zero); n != 3 {
+		t.Errorf("%d streams hold a 15m row at 0001-01-01T00:00:00Z, want 3", n)
+	}
+	checkRollupsMatchSpec(t, r.ds, r.db)
+	r.rebuildMatches(t)
+}

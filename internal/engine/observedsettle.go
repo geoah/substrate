@@ -349,7 +349,7 @@ func (s *obsSettle) insertSegmentBatch(segs []obsSegment) error {
 	for i, g := range segs {
 		kind[i], id[i], form[i], stream[i] = g.ref.Kind, g.ref.ID, g.form, g.stream
 		first[i], last[i], end[i], points[i], available[i] = g.first, g.last, g.end, int64(g.points), int64(g.available)
-		if !g.lastAvailable.IsZero() {
+		if g.available > 0 {
 			lastAvailable[i] = ptrTo(g.lastAvailable)
 		}
 		offset[i], known[i], fp[i] = g.offset, g.known, g.fingerprint
