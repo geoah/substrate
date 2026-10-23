@@ -1,17 +1,21 @@
 /** An agent's reply as blocks and inline runs: the small markdown subset
  * models actually write (paragraphs, bullet and numbered lists, headings,
- * fenced code, `code` and **bold**), plus record paths, which the agent is
- * told to name records by and which render as the record itself.
+ * fenced code, `code`, **bold** and [links](…)), plus record paths, which the
+ * agent is told to name records by and which render as the record itself.
  *
  * Deliberately a subset and deliberately inert: the text is model-authored,
  * so nothing here produces HTML — the component renders runs as elements,
  * and anything this does not recognise stays the text it was. */
 
+import { splitRecordPath } from "@/lib/record-path"
+
 export type Inline =
   | { type: "text"; text: string }
-  | { type: "strong"; text: string }
+  | { type: "strong"; runs: Inline[] }
   | { type: "code"; text: string }
   | { type: "record"; kind: string; id: string; text: string }
+  /** A web page: `href` is always an `http:` or `https:` URL. */
+  | { type: "link"; href: string; text: string }
 
 export type Block =
   | { type: "paragraph"; lines: Inline[][] }
@@ -56,26 +60,141 @@ function withRecords(text: string): Inline[] {
   return out
 }
 
+/** The record-link schemes: `substrate://`, the form the console's own
+ * editor writes (decision record 0137), and `ref:`, which agents write too. */
+const RECORD_SCHEMES = ["substrate://", "ref:"]
+
+/** A markdown backslash escape: `\` before ASCII punctuation. */
+const ESCAPE = /\\([!-/:-@[-`{-~])/g
+
+/** One link's run: a record, a web page, or, for any other target, the link
+ * text with the target beside it, as text. A target is never an `href`
+ * unless it is `http:` or `https:`, so `javascript:` and the rest stay
+ * inert. */
+function linkRun(label: string, written: string): Inline {
+  const text = label.replace(ESCAPE, "$1")
+  const target = written.replace(ESCAPE, "$1")
+  const lower = target.toLowerCase()
+  for (const scheme of RECORD_SCHEMES) {
+    if (!lower.startsWith(scheme)) continue
+    const hit = splitRecordPath(target.slice(scheme.length))
+    if (hit) return { type: "record", ...hit, text: text || hit.id }
+  }
+  if (/^https?:\/\//.test(lower)) {
+    try {
+      const url = new URL(target)
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        return { type: "link", href: url.href, text: text || target }
+      }
+    } catch {
+      // Not a URL after all: shown as text below.
+    }
+  }
+  return {
+    type: "text",
+    text: !text || text === target ? target : `${text} (${target})`,
+  }
+}
+
+/** The link starting at `start`, which holds `[`: `[text](target)` with an
+ * optional `"title"`, brackets in the text balanced or escaped, parentheses
+ * in the target balanced. Undefined when the source there is not one. */
+function linkAt(
+  line: string,
+  start: number
+): { run: Inline; end: number } | undefined {
+  let depth = 0
+  let close = -1
+  for (let i = start; i < line.length; i++) {
+    const c = line[i]
+    if (c === "\\") {
+      i++
+    } else if (c === "[") {
+      depth++
+    } else if (c === "]" && --depth === 0) {
+      close = i
+      break
+    }
+  }
+  if (close < 0 || line[close + 1] !== "(") return undefined
+  let i = close + 2
+  while (line[i] === " ") i++
+  let target: string
+  if (line[i] === "<") {
+    const end = line.indexOf(">", i + 1)
+    if (end < 0) return undefined
+    target = line.slice(i + 1, end)
+    i = end + 1
+  } else {
+    let parens = 0
+    const from = i
+    for (; i < line.length; i++) {
+      const c = line[i]
+      if (c === "\\") i++
+      else if (c === " ") break
+      else if (c === "(") parens++
+      else if (c === ")" && parens-- === 0) break
+    }
+    target = line.slice(from, Math.min(i, line.length))
+  }
+  while (line[i] === " ") i++
+  const quote = line[i]
+  if (quote === '"' || quote === "'") {
+    const end = line.indexOf(quote, i + 1)
+    if (end < 0) return undefined
+    i = end + 1
+    while (line[i] === " ") i++
+  }
+  if (line[i] !== ")" || !target) return undefined
+  return { run: linkRun(line.slice(start + 1, close), target), end: i + 1 }
+}
+
 /** One line's inline runs. */
 export function inlineRuns(line: string): Inline[] {
+  return runsOf(line, false)
+}
+
+/** Inside bold, links, code and record paths are read; bold does not nest. */
+function runsOf(line: string, inBold: boolean): Inline[] {
   const out: Inline[] = []
-  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*/g
-  let at = 0
-  for (let m = pattern.exec(line); m; m = pattern.exec(line)) {
-    if (m.index > at) out.push(...withRecords(line.slice(at, m.index)))
-    if (m[1] !== undefined) {
-      const path = recordPathOf(m[1])
-      out.push(
-        path
-          ? { type: "record", ...path, text: m[1] }
-          : { type: "code", text: m[1] }
-      )
-    } else {
-      out.push({ type: "strong", text: m[2] })
-    }
-    at = m.index + m[0].length
+  let plain = 0
+  const take = (run: Inline, from: number) => {
+    if (from > plain) out.push(...withRecords(line.slice(plain, from)))
+    out.push(run)
   }
-  if (at < line.length) out.push(...withRecords(line.slice(at)))
+  let i = 0
+  while (i < line.length) {
+    const c = line[i]
+    if (c === "`") {
+      const end = line.indexOf("`", i + 1)
+      if (end > i + 1) {
+        const text = line.slice(i + 1, end)
+        const path = recordPathOf(text)
+        take(
+          path ? { type: "record", ...path, text } : { type: "code", text },
+          i
+        )
+        i = plain = end + 1
+        continue
+      }
+    } else if (c === "*" && line[i + 1] === "*" && !inBold) {
+      const end = line.indexOf("*", i + 2)
+      if (end > i + 2 && line[end + 1] === "*") {
+        take({ type: "strong", runs: runsOf(line.slice(i + 2, end), true) }, i)
+        i = plain = end + 2
+        continue
+      }
+    } else if (c === "[") {
+      const link = linkAt(line, i)
+      if (link) {
+        take(link.run, i)
+        i = plain = link.end
+        continue
+      }
+    }
+    i++
+  }
+  if (plain < line.length) out.push(...withRecords(line.slice(plain)))
   return out
 }
 
