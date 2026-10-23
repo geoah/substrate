@@ -113,6 +113,38 @@ for a backfill alone. A year of daily means reads one `1d` row a day and
 sensor, 365 rows, and the hour rows of the two days a year the clock
 changes.
 
+## The settle's statements (issue 990, 2026-10-23)
+
+The 80 ms a trace put took over a patch was blamed on the settle's round
+trips. The benchmark now counts each put's statements and the time they
+take (a pgx tracer), and the count says the round trips were not most of
+it. Two runs of 7 days (`SUBSTRATE_BENCH_DAYS=7`, 4,214 puts each), same
+box and container as above, at commit 62810042 with the settle as it was and
+then with the settle batched to one statement per step. Other work kept the
+load average between 3 and 20 through both runs.
+
+| Per put, write phase | Before | After |
+| --- | ---: | ---: |
+| statements | 63.4 | 53.4 |
+| of them on observed_ tables | 21.4 | 11.4 |
+| time in those statements | 15.5 ms | 13.3 ms |
+| sensor put, p50 | 145.3 ms | 141.8 ms |
+| wearable put, p50 | 142.6 ms | 138.6 ms |
+| sensor put, p95 | 331.8 ms | 373.0 ms |
+| write WAL | 108,819,280 bytes | 110,654,184 bytes |
+
+The settle now sends 11 statements for a trace put: one read of the old
+segments with their streams, one write of the segments and extents, one
+read and one write per rollup tier, and the latest row's read and write.
+That saves about 2 ms a put. The p50s moved by less than the runs' own
+noise: the patch, which the change does not touch, measured 91.9 ms in the
+first run and 110.7 ms in the second. Where a put's time goes, from the
+tracer's split of a one-day run: `COMMIT` is 35 ms (the disk's sync), the
+observed statements 13 ms, the 15 `property_managers` inserts a put 7 ms,
+and about 85 ms is outside any statement. That last part holds validating
+and deriving the readings and writing and syncing the changelog segment
+file; the tracer does not split it further.
+
 ## Before: one row per point (2026-10-11)
 
 These are the first layout's numbers, kept for comparison: one row per
