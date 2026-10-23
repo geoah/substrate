@@ -10,7 +10,12 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { recordsQueryOptions } from "./records"
+import {
+  fetchRecord,
+  fetchRecordsPage,
+  recordsQueryOptions,
+  type ListParams,
+} from "./records"
 import {
   collectionPath,
   corePath,
@@ -194,18 +199,7 @@ export function policiesForAgent(
  * assistant turn that dispatched them. */
 export function threadMessagesQueryOptions(threadId: string) {
   return queryOptions({
-    ...recordsQueryOptions({
-      authority: CORE_AUTHORITY,
-      package: LLM_PACKAGE_NAME,
-      name: "message",
-      first: TRANSCRIPT_WINDOW,
-      // `thread` is a REFERENCE property on the message.
-      filter: { properties: { thread: { eq: threadId } } },
-      // DESCENDING, then reversed by the reader: the page cap is a cap, and a
-      // long conversation must lose its oldest turns rather than the reply
-      // that just streamed. `turn` is int-typed, so this is a numeric sort.
-      orderBy: "turn:desc,createdAt:desc",
-    }),
+    ...recordsQueryOptions(threadMessagesParams(threadId)),
     // A live chat re-reads the settled transcript once the stream ends.
     enabled: Boolean(threadId),
     // NOT the list default: `placeholderData: (prev) => prev` would hold the
@@ -213,6 +207,47 @@ export function threadMessagesQueryOptions(threadId: string) {
     // hold it forever on a new conversation, where the query never runs.
     placeholderData: undefined,
   })
+}
+
+function threadMessagesParams(threadId: string): ListParams {
+  return {
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "message",
+    first: TRANSCRIPT_WINDOW,
+    // `thread` is a REFERENCE property on the message.
+    filter: { properties: { thread: { eq: threadId } } },
+    // DESCENDING, then reversed by the reader: the page cap is a cap, and a
+    // long conversation must lose its oldest turns rather than the reply
+    // that just streamed. `turn` is int-typed, so this is a numeric sort.
+    orderBy: "turn:desc,createdAt:desc",
+  }
+}
+
+/** A thread as it stands now: its status, read first, then its newest
+ * messages. Read straight from the server and never through the query
+ * cache, so it neither joins a read already in flight (which may predate a
+ * write) nor writes into the transcript a live turn is drawn over. A turn
+ * claims its thread (`running`) before it writes its user message, so a
+ * thread that was not running before its messages were read holds every
+ * message it admitted by then. */
+export async function readThreadNow(
+  threadId: string,
+  signal?: AbortSignal
+): Promise<{ status: string; messages: SubstrateRecord[] }> {
+  const thread = await fetchRecord(
+    CORE_AUTHORITY,
+    LLM_PACKAGE_NAME,
+    "thread",
+    threadId,
+    signal
+  )
+  const page = await fetchRecordsPage(threadMessagesParams(threadId), signal)
+  const status = thread.properties.status
+  return {
+    status: typeof status === "string" ? status : "",
+    messages: page.records,
+  }
 }
 
 /** How many turns of one thread the surface reads. The wire caps a page at

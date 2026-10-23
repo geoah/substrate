@@ -562,6 +562,19 @@ describe("a send after a turn", () => {
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("third")
     // The settled turn is still on screen, not wiped by the refusal.
     expect(screen.getByText("the stored reply")).toBeTruthy()
+
+    // Sending the next message keeps the refused one recoverable.
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(calls).toHaveLength(3)
+    expect(calls[2].message).toBe("third")
+    const kept = screen.getByRole("alert")
+    expect(kept.textContent).toContain("second")
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+    // Until it is dismissed.
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }))
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 
   it("sends nothing after a reload during a busy turn", async () => {
@@ -722,13 +735,39 @@ describe("a late transcript read", () => {
 
 describe("a send whose delivery is unknown", () => {
   let rows: ReturnType<typeof message>[] = []
+  // The thread record's status, or "fail" for a read the server refuses.
+  let threadStatus = "ok"
+  // The next transcript list read answers what the thread held when it was
+  // asked, but only after the delivery check has started.
+  let slowNext = false
   function stubLiveRows() {
+    threadStatus = "ok"
+    slowNext = false
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ records: rows }), { status: 200 })
-      )
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes("/llm/thread/")) {
+          if (threadStatus === "fail") {
+            return new Response(
+              JSON.stringify({
+                error: { code: "internal", message: "db down" },
+              }),
+              { status: 500 }
+            )
+          }
+          const record = runningThread("t-8")
+          record.properties = { status: threadStatus }
+          return new Response(JSON.stringify(record), { status: 200 })
+        }
+        const snapshot = rows
+        if (slowNext) {
+          slowNext = false
+          await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 500))
+        }
+        return new Response(JSON.stringify({ records: snapshot }), {
+          status: 200,
+        })
+      })
     )
   }
   const lost = (reason = "the connection failed before the server answered") =>
@@ -827,6 +866,99 @@ describe("a send whose delivery is unknown", () => {
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
     expect(screen.getByText("one more thing")).toBeTruthy()
     expect(calls).toHaveLength(1)
+  })
+
+  it("does not take another tab's newer message for the lost one", async () => {
+    await sendThenLose("one more thing", () => lost())
+    rows = [message("m2", 2, "user", "from another tab"), ...rows]
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "didn’t arrive"
+        ),
+      settledCheck
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "one more thing"
+    )
+  })
+
+  it("keeps the message to copy while a turn runs that does not hold it yet", async () => {
+    await sendThenLose("one more thing", () => lost())
+    threadStatus = "running"
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "may still arrive"
+        ),
+      settledCheck
+    )
+    expect(screen.getByRole("alert").textContent).toContain("one more thing")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+  })
+
+  it("says the chat could not be checked when the read fails", async () => {
+    await sendThenLose("one more thing", () => lost())
+    threadStatus = "fail"
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "couldn’t be checked"
+        ),
+      settledCheck
+    )
+    expect(screen.getByRole("alert").textContent).not.toContain("didn’t arrive")
+  })
+
+  it("does not trust a transcript read that started before the message landed", async () => {
+    await sendThenLose("one more thing", () => {
+      slowNext = true
+      lost()
+    })
+    // The message lands after the slow read took its snapshot.
+    rows = [message("m2", 2, "user", "one more thing"), ...rows]
+    await act(() => new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 900)))
+    expect(screen.queryByText(/didn’t arrive/)).toBeNull()
+    await waitFor(
+      () => expect(screen.queryByRole("alert")).toBeNull(),
+      settledCheck
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+  })
+
+  it("does not draw an attached turn's stored rows over its live ones", async () => {
+    rows = [
+      message("m1", 1, "assistant", "an answer"),
+      message("m0", 0, "user", "question"),
+    ]
+    stubLiveRows()
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const tree = (record?: SubstrateRecord) => (
+      <QueryClientProvider client={client}>
+        <Harness initialThread="t-8" threadRecord={record} />
+      </QueryClientProvider>
+    )
+    const view = render(tree())
+    await waitFor(() => expect(screen.getByText("an answer")).toBeTruthy())
+    type("one more thing")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => lost())
+    // The message landed and its turn runs: the page attaches to it.
+    rows = [message("m2", 2, "user", "one more thing"), ...rows]
+    threadStatus = "running"
+    view.rerender(tree(runningThread("t-8")))
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-8" })
+      attaches[0].onEvent({ kind: "delta", text: "live part", turn: 3 })
+    })
+    // The turn stores its reply so far while the check is waiting.
+    rows = [message("m3", 3, "assistant", "live part"), ...rows]
+    await act(() => new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 500)))
+    expect(screen.getAllByText("live part")).toHaveLength(1)
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 
   it("checks the thread when the stream closes before any event", async () => {

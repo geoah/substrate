@@ -64,6 +64,7 @@ import {
 } from "@/lib/agent-chat"
 import {
   attachThread,
+  readThreadNow,
   stopThread,
   TransportError,
   streamChat,
@@ -98,12 +99,16 @@ export const RELOAD_WAIT_MS = 15_000
  * may be a moment after the connection that carried it dropped. */
 export const RECONCILE_DELAY_MS = 1_000
 
-/** What became of a send that started no turn, shown until the next one. */
+/** What became of a send that started no turn. Each one is shown until the
+ * message is sent again or discarded, so a second failure never hides the
+ * first. */
 type Outcome = {
+  id: number
   /** `refused`: the server's own refusal. The rest are a send whose delivery
-   * was unknown: being checked, found missing, not checkable, or a new chat,
+   * was unknown: being checked, found missing, not checkable, still possible
+   * (a turn is running and the message is not in it yet), or a new chat,
    * which has no thread to check. */
-  kind: "refused" | "checking" | "missing" | "unchecked" | "new"
+  kind: "refused" | "checking" | "missing" | "unchecked" | "pending" | "new"
   /** The server's words, or what failed. */
   reason: string
   message: string
@@ -146,7 +151,13 @@ function KeylessCallout({ provider }: { provider: string }) {
 }
 
 /** What became of a send that started no turn. */
-function OutcomeNote({ outcome }: { outcome: Outcome }) {
+function OutcomeNote({
+  outcome,
+  onDiscard,
+}: {
+  outcome: Outcome
+  onDiscard: () => void
+}) {
   const { kind, reason, message, restored } = outcome
   const back = restored
     ? "It is back in the box below."
@@ -160,7 +171,9 @@ function OutcomeNote({ outcome }: { outcome: Outcome }) {
           ? `Your message didn’t arrive. ${back}`
           : kind === "new"
             ? "The connection dropped before the server confirmed your message. It may have started a new chat: look for it in the chat list before sending it again. It is below, to copy."
-            : "The connection dropped before the server confirmed your message, and the chat couldn’t be checked. Look for it in the chat before sending it again. It is below, to copy."
+            : kind === "pending"
+              ? "The connection dropped before the server confirmed your message. A turn is running on this chat and your message isn’t in it yet, so it may still arrive: look for it before sending it again. It is below, to copy."
+              : "The connection dropped before the server confirmed your message, and the chat couldn’t be checked. Look for it in the chat before sending it again. It is below, to copy."
   return (
     <div
       role="alert"
@@ -181,6 +194,13 @@ function OutcomeNote({ outcome }: { outcome: Outcome }) {
             {message}
           </p>
           <CopyButton value={message} label="Copy your message" />
+        </div>
+      )}
+      {kind !== "checking" && (
+        <div>
+          <Button size="sm" variant="outline" onClick={onDiscard}>
+            Dismiss
+          </Button>
         </div>
       )}
     </div>
@@ -237,8 +257,22 @@ export function Conversation({
   const [error, setError] = useState<string | null>(null)
   // A send that started no turn: refused by the server, or of unknown
   // delivery, which reads differently from an agent that could not answer.
-  const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const checking = outcome?.kind === "checking"
+  const [outcomes, setOutcomes] = useState<Outcome[]>([])
+  const checking = outcomes.some((o) => o.kind === "checking")
+  const outcomeSeq = useRef(0)
+  function addOutcome(o: Omit<Outcome, "id">): number {
+    const id = ++outcomeSeq.current
+    setOutcomes((list) => [...list, { ...o, id }])
+    return id
+  }
+  // Replaces one outcome, or drops it with null.
+  function setOutcome(id: number, o: Omit<Outcome, "id"> | null) {
+    setOutcomes((list) =>
+      o
+        ? list.map((x) => (x.id === id ? { ...o, id } : x))
+        : list.filter((x) => x.id !== id)
+    )
+  }
   // Every delivery check gets a number; one carrying a stale number (a
   // newer check, or a conversation that unmounted) does nothing.
   const checkRef = useRef(0)
@@ -602,11 +636,14 @@ export function Conversation({
     return true
   }
 
-  // Finds out whether a send of unknown delivery reached the thread, by
-  // whether the thread gained a user message past `baseline`, the newest
-  // turn the transcript held when it was sent. A turn running on the thread
-  // is attached to (the thread is re-read and the attach above fires). Only
-  // a message the thread does not have is offered again.
+  // Finds out whether a send of unknown delivery reached the thread. Only a
+  // user message past `baseline` (the newest turn the transcript held when
+  // it was sent) with the sent text counts: another tab's message does not.
+  // The read is fresh and outside the transcript cache (`readThreadNow`).
+  // Absence is conclusive only when no turn is running; otherwise the
+  // message may still arrive, and is kept to copy rather than put back. A
+  // running turn is attached to (the thread is re-read and the attach above
+  // fires).
   async function reconcile(
     thread: string,
     message: string,
@@ -618,36 +655,55 @@ export function Conversation({
     setAttachedFor("")
     void client.invalidateQueries({ queryKey: ["records"] })
     const unknown = { reason, message, restored: false }
-    if (!thread) return setOutcome({ kind: "new", ...unknown })
-    if (baseline === undefined)
-      return setOutcome({ kind: "unchecked", ...unknown })
-    setOutcome({ kind: "checking", ...unknown })
+    if (!thread) return void addOutcome({ kind: "new", ...unknown })
+    if (baseline === undefined) {
+      return void addOutcome({ kind: "unchecked", ...unknown })
+    }
+    const id = addOutcome({ kind: "checking", ...unknown })
     await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS))
     if (check !== checkRef.current) return
-    let arrived: boolean | undefined
+    const ctrl = new AbortController()
+    let found: "arrived" | "absent" | "pending" | undefined
     try {
-      const page = await Promise.race([
-        client.fetchQuery({
-          ...threadMessagesQueryOptions(thread),
-          staleTime: 0,
-        }),
+      const now = await Promise.race([
+        readThreadNow(thread, ctrl.signal),
         new Promise<undefined>((r) => setTimeout(r, RELOAD_WAIT_MS)),
       ])
-      if (page) {
-        arrived = page.records.some(
+      if (now) {
+        const ours = now.messages.some(
           (r) =>
-            r.properties.role === "user" && Number(r.properties.turn) > baseline
+            r.properties.role === "user" &&
+            Number(r.properties.turn) > baseline &&
+            r.properties.content === message
         )
+        found = ours
+          ? "arrived"
+          : now.status === "running"
+            ? "pending"
+            : "absent"
       }
     } catch {
-      arrived = undefined
+      found = undefined
+    } finally {
+      ctrl.abort()
     }
     if (check !== checkRef.current) return
-    if (arrived) return setOutcome(null)
-    if (arrived === undefined) {
-      return setOutcome({ kind: "unchecked", ...unknown })
+    if (found === "arrived") {
+      // The transcript shows it once it is read again; a live turn's own
+      // settle reads it.
+      void client.invalidateQueries({
+        queryKey: threadMessagesQueryOptions(thread).queryKey,
+      })
+      return setOutcome(id, null)
     }
-    setOutcome({ kind: "missing", ...unknown, restored: giveBack(message) })
+    if (found === "absent") {
+      return setOutcome(id, {
+        kind: "missing",
+        ...unknown,
+        restored: giveBack(message),
+      })
+    }
+    setOutcome(id, { kind: found ?? "unchecked", ...unknown })
   }
 
   function send(text = draft) {
@@ -657,7 +713,11 @@ export function Conversation({
     onDraft("")
     void dropReads()
     setError(null)
-    setOutcome(null)
+    // An outcome stays until its message is sent again or dismissed. One
+    // whose message went back into the composer is that composer's now.
+    setOutcomes((list) =>
+      list.filter((o) => !o.restored && o.message !== message)
+    )
     setResult(null)
     seqRef.current++
     // The previous run's overlay is the persisted transcript's job now —
@@ -746,7 +806,7 @@ export function Conversation({
           message: err.message,
         })
         end()
-        setOutcome({
+        addOutcome({
           kind: "refused",
           reason: err.message,
           message,
@@ -871,7 +931,13 @@ export function Conversation({
               {name} couldn’t answer: {error}
             </div>
           )}
-          {outcome && <OutcomeNote outcome={outcome} />}
+          {outcomes.map((o) => (
+            <OutcomeNote
+              key={o.id}
+              outcome={o}
+              onDiscard={() => setOutcome(o.id, null)}
+            />
+          ))}
           {reloadFailed && (
             <div
               role="alert"
