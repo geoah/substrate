@@ -44,6 +44,8 @@
     "cmdk": "^1.1.1",
     "lucide-react": "^1.49.0",
     "nuqs": "^2.10.1",
+    "pdfjs-dist": "6.4.299",
+    "perfect-freehand": "1.2.3",
     "qrcode.react": "4.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

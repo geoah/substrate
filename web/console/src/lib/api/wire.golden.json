@@ -176,6 +176,13 @@
     "unit": false,
     "value": true
   },
+  "BlobInfo": {
+    "digest": true,
+    "mediaType": false,
+    "name": false,
+    "size": true,
+    "status": true
+  },
   "BundleClosure": {
     "agentDescriptions": false,
     "agents": true,
