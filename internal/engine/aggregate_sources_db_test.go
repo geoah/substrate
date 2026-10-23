@@ -6,12 +6,14 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -627,5 +629,70 @@ func TestAggregatePriorityChoosesALinkedWinnerInTheRead(t *testing.T) {
 	}
 	if got := read("", day.Add(24*time.Hour)); !slices.Equal(got, []string{"73"}) {
 		t.Errorf("1 September, raw: %v, want withings' 73 alone, the device's winner in the range", got)
+	}
+}
+
+// A range of recorded-local dates reads the instants around them, and a day
+// those instants reach outside the dates is reduced and never answered: the
+// winner of a linked device is chosen on the dates themselves. withings
+// (ranked 1) weighs only on 2 September and apple (ranked 2) on 1 September,
+// both at offset zero, so 1 September read as a recorded-local date answers
+// apple's 70, though the scan reaches 2 September's morning.
+func TestAggregatePriorityChoosesALinkedWinnerOnTheRecordedLocalDates(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for id, rank := range map[string]int{"withings": 1, "apple": 2} {
+		f.mustPut(t, f.source, id, map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
+	}
+	f.mustPut(t, f.source+"link", "scale", map[string]any{
+		"name": "scale", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	})
+	f.weighing("w/withings", "withings", "72", day.Add(31*time.Hour), nil)
+	f.weighing("w/apple", "apple", "70", day.Add(7*time.Hour), nil)
+	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    &substrate.AggregateRange{Gte: "2026-09-01", Lt: "2026-09-02", RecordedLocal: true},
+		Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+		Reducers: reducers("min"),
+		Sources:  &substrate.AggregateSources{Policy: "priority"},
+	})
+	if len(res.Rows) != 1 {
+		t.Fatalf("1 September as a recorded-local date: %d rows, want one: %+v", len(res.Rows), res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "min"); v != "70" {
+		t.Errorf("1 September as a recorded-local date: %+v, want one row, apple's 70", res.Rows)
+	}
+}
+
+// A source named by many links is read a bounded lookup at a time: with 300
+// links naming withings and maxSamples 40, the read is refused after
+// reading at most the 41 references one lookup may take, never the 600 the
+// links hold.
+func TestAggregatePriorityBoundsTheLinkLookups(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.source, "withings", map[string]any{"name": "withings"})
+	for i := range 300 {
+		f.mustPut(t, f.source+"link", fmt.Sprintf("l%03d", i), map[string]any{
+			"name": "fan", "sources": []any{f.sourceRef("withings"), f.sourceRef(fmt.Sprintf("other%03d", i))},
+		})
+	}
+	f.weighing("w/withings", "withings", "72", at, nil)
+	f.weighing("w/apple", "apple", "70", at.Add(time.Hour), nil)
+	ctx, trace := engine.AggregateTraced(context.Background())
+	_, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    rng(at.Add(-time.Hour), at.Add(2*time.Hour)),
+		Reducers: reducers("count"),
+		Sources:  &substrate.AggregateSources{Policy: "priority"},
+		Budget:   &substrate.AggregateBudget{MaxSamples: 40},
+	}})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "the source links the priority policy reads") {
+		t.Errorf("300 links under maxSamples 40: %v, want the links' budget refusal", err)
+	}
+	if n := trace.LinkRows(); n > 41 {
+		t.Errorf("the link lookups read %d refs rows, want at most the 41 one bounded lookup takes", n)
 	}
 }

@@ -231,6 +231,8 @@ type aggTrace struct {
 	// discoverBatch, where set, replaces discoverBatch for the read, and
 	// discoverPairs is the most pairs one discovery statement read.
 	discoverBatch, discoverPairs int
+	// linkRows is the refs rows the priority policy's link lookups read.
+	linkRows int64
 }
 
 // everyThousand counts a Go-side loop's steps and answers the context's

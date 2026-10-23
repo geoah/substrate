@@ -317,7 +317,11 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 		if samples, err = p.links.expand(ctx, tx, selected, samples, p.maxSamples); err != nil {
 			return nil, err
 		}
-		streams, selected = p.links.keep(streams, selected)
+		candidates, err := ds.linkCandidates(ctx, tx, p, streams, windows)
+		if err != nil {
+			return nil, err
+		}
+		streams, selected = p.links.keep(streams, candidates, selected)
 	}
 	if err := p.checkOffsets(streams); err != nil {
 		return nil, err

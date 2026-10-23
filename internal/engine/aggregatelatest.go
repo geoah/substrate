@@ -25,7 +25,7 @@ func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		if _, err := links.expand(ctx, tx, streams, 0, p.maxSamples); err != nil {
 			return nil, err
 		}
-		streams, _ = links.keep(streams, nil)
+		streams, _ = links.keep(streams, streams, nil)
 	}
 	res := &substrate.AggregateResult{Metric: p.metric, From: substrate.AggregateFromRaw, Exact: true}
 	var units *aggUnits

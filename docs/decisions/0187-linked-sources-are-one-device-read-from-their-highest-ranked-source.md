@@ -43,11 +43,13 @@ kind without changing one a repository already imported.
   device's streams by metric and `about` and keeps the streams of the
   highest-ranked source (the request's `order`, else the sources'
   `priorities`, the stream order breaking a tie) among those holding a value
-  in the read's range and `from`. It drops the other linked sources' streams
-  whole. `separate` ignores links.
+  in the read's range and `from`, on a range of recorded-local dates a value
+  on those dates. It drops the other linked sources' streams whole.
+  `separate` ignores links.
 - The read follows links outward from its own sources through the refs
-  index, once per request for every metric of it, and charges each reference
-  it reads to `maxSamples`.
+  index, once per request for every metric of it, one bounded lookup at a
+  time, each reading at most the `maxSamples` left plus one, and charges each
+  reference it reads.
 - A caller holding a reads allowlist needs every kind binding the trait
   granted for a priority read, `order` or none, as it needs the source kind
   for a ranking by `priorities`.
@@ -78,8 +80,10 @@ Near-equal matching is what 0162 rejected.
 
 `TestAggregatePriorityTakesALinkedDeviceFromOneSource` holds the read rule,
 `about`, transitivity, the budget and deletion;
-`TestAggregatePriorityChoosesALinkedWinnerInTheRead` holds the choice within
-the range and `from`;
+`TestAggregatePriorityChoosesALinkedWinnerInTheRead` and
+`TestAggregatePriorityChoosesALinkedWinnerOnTheRecordedLocalDates` hold the
+choice within the range, `from` and the dates;
+`TestAggregatePriorityBoundsTheLinkLookups` holds the lookup bound;
 `TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind` holds the
 allowlist; `TestObservationsSampleKindNamesAreFrozen` holds the kind name.
 

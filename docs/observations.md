@@ -260,12 +260,15 @@ data:
 Under `priority`, a linked device answers each metric and `about` from one
 source: the highest-ranked (the request's `order`, else the sources'
 `priorities`, the stream order breaking a tie) among the linked sources
-holding a value in the read's range and `from`. The other linked sources'
+holding a value in the read's range and `from`; a range of recorded-local
+dates counts only values on those dates, never on the days the scan reaches
+around them. The other linked sources'
 values of that metric and `about` leave the read, whole, so a reading only a
 lower-ranked route delivered is not counted while the winner has any value
 in the read. Links join: two links sharing a source make one device of every
 source either names. The read follows links outward from its own sources
-through the refs index and charges each reference it reads to `maxSamples`.
+through the refs index, each lookup reading at most the `maxSamples` the
+read has left plus one, and charges each reference it reads.
 The `separate` policy ignores links. The read takes links from records of any kind
 binding core's `substrate.reamde.dev/core/sourcelink` trait, which contracts
 `sources`, a list of references; an entry naming a record whose kind does not
