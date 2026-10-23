@@ -44,11 +44,19 @@ data:
   # `score`), the spelling the repository stores since decision record
   # 0186, so a reconcile compares a stored value with what it would write;
   # ADAPTER is healthwhoop@9.
-  version: 9
+  # 10: WHOOP's recovery, strain and sleep performance metrics ship here as
+  # `healthwhoop/recovery`, `healthwhoop/strain` and
+  # `healthwhoop/sleep_performance` (metrics.yaml), no longer in the health
+  # sample as `health/whoop_*`, and the adapter and the views name them;
+  # ADAPTER is healthwhoop@10. An upgrade leaves the old three metric
+  # records in place, so replay the trigger from 0 to move the outputs
+  # already written onto the new ids (README.md).
+  version: 10
 ---
 # ---- the bundle document: the import unit -------------------------------------
-# One function and its record trigger (triggers.yaml). No inputs and no
-# settings: the WHOOP credentials are the provider's.
+# One function and its record trigger (triggers.yaml), with WHOOP's three
+# score metrics (metrics.yaml) and two record views (views.yaml) as data. No
+# inputs and no settings: the WHOOP credentials are the provider's.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/healthwhoop
@@ -173,7 +181,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthwhoop-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthwhoop@9"
+    ADAPTER = "healthwhoop@10"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -210,12 +218,12 @@ data:
     # summary is WHOOP's own computation over the cycle (`statistic: vendor`,
     # `period: cycle`); an amount is the cycle's total.
     CYCLE_READINGS = (
-        ("strain", "health/whoop_strain", "score", "summary", "strain"),
+        ("strain", "healthwhoop/strain", "score", "summary", "strain"),
         ("kilojoule", "health/energy_expended", "kJ", "amount", "energy"),
     )
     # A recovery's five readings: (score field, metric id, unit, id role).
     RECOVERY_READINGS = (
-        ("recoveryScore", "health/whoop_recovery", "percent", "recovery"),
+        ("recoveryScore", "healthwhoop/recovery", "percent", "recovery"),
         ("hrvRmssdMilli", "health/hrv_rmssd", "ms", "hrv"),
         ("restingHeartRate", "health/resting_heart_rate", "1/min", "resting_heart_rate"),
         ("spo2Percentage", "health/spo2", "percent", "spo2"),
@@ -224,7 +232,7 @@ data:
     # A sleep's two scores over the night: (score field, metric id, unit, id
     # role).
     SLEEP_READINGS = (
-        ("sleepPerformancePercentage", "health/whoop_sleep_performance", "percent", "sleep_performance"),
+        ("sleepPerformancePercentage", "healthwhoop/sleep_performance", "percent", "sleep_performance"),
         ("respiratoryRate", "health/respiratory_rate", "1/min", "respiratory_rate"),
     )
     # WHOOP's stage totals and the `health/sleep_stage` code each one is.

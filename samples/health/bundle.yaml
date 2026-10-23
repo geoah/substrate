@@ -45,7 +45,12 @@ data:
   # `unit`, a lab result retires the managed `measure`, and `convertlab`
   # reads a target metric's unit reference and tells a mass from an amount
   # concentration with host.units.converts.
-  version: 6
+  # 7: WHOOP's recovery, strain and sleep performance metrics leave this
+  # catalogue for the healthwhoop sample, as `healthwhoop/recovery`,
+  # `healthwhoop/strain` and `healthwhoop/sleep_performance`. An upgrade
+  # deletes no record: a repository keeps its `health/whoop_*` metrics and
+  # the values that name them (samples/healthwhoop/README.md).
+  version: 7
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds, one function and the metric catalogue (metrics.yaml) with the lab

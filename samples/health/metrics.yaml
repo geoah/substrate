@@ -17,8 +17,10 @@
 # and the mass concentration suffixed `_mass` (mg/dL): no linear conversion
 # joins the two units, and the sample's `convertlab` function writes a lab result of one
 # in the other as a derived result, from the analyte's molar mass
-# (metrics_analytes.yaml). A vendor's score is named for the vendor
-# (`whoop_recovery`) and never mapped onto another vendor's.
+# (metrics_analytes.yaml). A vendor's own score (WHOOP's recovery) is not
+# here: it ships with that vendor's adapter sample (`healthwhoop/recovery` in
+# samples/healthwhoop), so a repository without the vendor holds none of
+# its vocabulary.
 #
 # Code systems: `http://loinc.org` (LOINC), `healthkit` (an Apple HealthKit
 # type identifier), `healthconnect` (an Android Health Connect record type),
@@ -1081,88 +1083,6 @@ data:
     # A night lands on the day it ends, so each day holds one night.
     bucketPlace: end
     category: sleep
----
-kind: samples.substrate.reamde.dev/observations/metric
-metadata:
-  id: health/whoop_recovery
-data:
-  properties:
-    name: WHOOP recovery
-    description: >-
-      WHOOP's recovery score for one physiological cycle, from 0 to 100 percent.
-      WHOOP's own method, never mapped onto another vendor's.
-    codes:
-      - system: whoop
-        code: recovery_score
-        display: Recovery score
-    unit:
-      ref: substrate.reamde.dev/core/unit/percent
-    form: summary
-    reducers:
-      - last
-      - avg
-    displayPrecision: 0
-    # A nightly summary lands on the day the night ends, as WHOOP scores it;
-    # a raw reading is an instant, which places the same either way.
-    bucketPlace: end
-    category: scores
-    algorithm:
-      vendor: WHOOP
-      name: recovery
----
-kind: samples.substrate.reamde.dev/observations/metric
-metadata:
-  id: health/whoop_strain
-data:
-  properties:
-    name: WHOOP strain
-    description: >-
-      WHOOP's day strain for one physiological cycle, a dimensionless score
-      from 0 to 21. WHOOP's own method, never mapped onto another vendor's.
-    codes:
-      - system: whoop
-        code: strain
-        display: Cycle strain
-    unit:
-      ref: substrate.reamde.dev/core/unit/score
-    form: summary
-    reducers:
-      - last
-      - avg
-      - max
-    displayPrecision: 1
-    category: scores
-    algorithm:
-      vendor: WHOOP
-      name: strain
----
-kind: samples.substrate.reamde.dev/observations/metric
-metadata:
-  id: health/whoop_sleep_performance
-data:
-  properties:
-    name: WHOOP sleep performance
-    description: >-
-      The sleep WHOOP measured as a share of the sleep it judged needed, for
-      one sleep. WHOOP's own method.
-    codes:
-      - system: whoop
-        code: sleep_performance_percentage
-        display: Sleep performance
-    unit:
-      ref: substrate.reamde.dev/core/unit/percent
-    form: summary
-    reducers:
-      - last
-      - avg
-    displayPrecision: 0
-    # A nightly summary lands on the day the night ends, as WHOOP scores it;
-    # a raw reading is an instant, which places the same either way.
-    bucketPlace: end
-    category: scores
-    algorithm:
-      vendor: WHOOP
-      name: sleep performance
 ---
 kind: samples.substrate.reamde.dev/observations/metric
 metadata:

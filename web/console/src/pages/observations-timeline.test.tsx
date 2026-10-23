@@ -2025,12 +2025,12 @@ describe("the charts", () => {
   })
 
   it("reads a vendor summary from summaries until the reader picks", async () => {
-    const server = mount(`?metric=health/whoop_recovery&${WINDOW}`)
+    const server = mount(`?metric=healthwhoop/recovery&${WINDOW}`)
     await waitFor(() =>
-      expect(charts(server.seen, "health/whoop_recovery")).toHaveLength(1)
+      expect(charts(server.seen, "healthwhoop/recovery")).toHaveLength(1)
     )
     expect(
-      charts(server.seen, "health/whoop_recovery")[0].aggregate
+      charts(server.seen, "healthwhoop/recovery")[0].aggregate
     ).toMatchObject({ from: "summaries", reducers: ["avg"] })
   })
 

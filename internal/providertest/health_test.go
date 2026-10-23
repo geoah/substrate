@@ -35,7 +35,7 @@ const (
 // The adapter stamp each shipped adapter writes on its outputs, its
 // function's ADAPTER constant.
 const (
-	healthWhoopAdapter = "healthwhoop@9"
+	healthWhoopAdapter = "healthwhoop@10"
 )
 
 // asFloat reads a number however it reached the test: a float64 from

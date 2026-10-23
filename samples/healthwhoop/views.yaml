@@ -45,48 +45,48 @@ data:
           baseline: 30
           channel: none
           bands:
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               high: 34
               label: Red
               tone: poor
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               low: 34
               high: 67
               label: Yellow
               tone: fair
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               low: 67
               label: Green
               tone: good
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_strain
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/strain
               high: 10
               label: Light
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_strain
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/strain
               low: 10
               high: 14
               label: Moderate
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_strain
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/strain
               low: 14
               high: 18
               label: High
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_strain
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/strain
               low: 18
               label: All out
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               high: 70
               label: Poor
               tone: poor
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               low: 70
               high: 85
               label: Sufficient
               tone: fair
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               low: 85
               label: Optimal
               tone: good
           items:
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               from: summaries
               statistic: vendor
               label: Recovery
@@ -94,14 +94,14 @@ data:
               min: 0
               max: 100
               better: higher
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_strain
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/strain
               from: summaries
               statistic: vendor
               label: Strain
               show: dial
               min: 0
               max: 21
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               from: summaries
               statistic: vendor
               label: Sleep performance
@@ -175,13 +175,13 @@ data:
           rolling: 7
           channel: none
           items:
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               from: summaries
               statistic: vendor
               label: Recovery
               show: bars
               better: higher
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_strain
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/strain
               from: summaries
               statistic: vendor
               label: Strain
@@ -223,34 +223,34 @@ data:
           sources: only
           empty: hide
           bands:
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               high: 70
               label: Poor
               tone: poor
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               low: 70
               high: 85
               label: Sufficient
               tone: fair
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               low: 85
               label: Optimal
               tone: good
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               high: 34
               label: Red
               tone: poor
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               low: 34
               high: 67
               label: Yellow
               tone: fair
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               low: 67
               label: Green
               tone: good
           items:
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               from: summaries
               statistic: vendor
               label: Sleep performance
@@ -258,7 +258,7 @@ data:
               min: 0
               max: 100
               better: higher
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_recovery
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/recovery
               from: summaries
               statistic: vendor
               label: Recovery it scored
@@ -287,7 +287,7 @@ data:
           sources: only
           empty: hide
           items:
-            - metric: samples.substrate.reamde.dev/observations/metric/health/whoop_sleep_performance
+            - metric: samples.substrate.reamde.dev/observations/metric/healthwhoop/sleep_performance
               from: summaries
               statistic: vendor
               label: Sleep performance

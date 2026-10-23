@@ -154,7 +154,7 @@ export const METRICS: SubstrateRecord[] = [
     codeSet: ["rem", "deep", "light", "awake"],
     bucketPlace: "end",
   }),
-  record(METRIC, "health/whoop_recovery", {
+  record(METRIC, "healthwhoop/recovery", {
     title: "Recovery",
     name: "Recovery",
     form: "summary",
@@ -195,7 +195,7 @@ export const HEART = `${METRIC}/health/heart_rate`
 export const STEPS_METRIC = `${METRIC}/health/steps`
 export const BODY_MASS = `${METRIC}/health/body_mass`
 export const SLEEP_STAGE = `${METRIC}/health/sleep_stage`
-export const RECOVERY = `${METRIC}/health/whoop_recovery`
+export const RECOVERY = `${METRIC}/healthwhoop/recovery`
 export const GARMIN = `${SOURCE}/garmin-forerunner-265`
 export const APPLE = `${SOURCE}/apple-watch-s10`
 export const WITHINGS = `${SOURCE}/withings-body-plus`

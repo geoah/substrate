@@ -78,6 +78,9 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	r.mustPut(t, r.metric, "golden/fine", map[string]any{
 		"name": "Fine power", "unit": unitRef("W"), "form": "gauge", "rollups": []any{"5m", "1h"},
 	})
+	r.mustPut(t, r.metric, "golden/score", map[string]any{
+		"name": "A vendor's nightly score", "unit": unitRef("percent"), "form": "summary",
+	})
 	// A gauge trace each hour across the clock change of 2026-10-25, a null
 	// in the middle of one, the second hour's hold shorter than its gaps.
 	for i, c := range []struct {
@@ -162,7 +165,7 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	})
 	// A summary, a censored lab value and a metric with its own tiers.
 	obs("night/hrv", map[string]any{
-		"metric": r.metricRef("health/whoop_recovery"), "source": r.sourceRef("strap"), "form": "summary", "statistic": "vendor",
+		"metric": r.metricRef("golden/score"), "source": r.sourceRef("strap"), "form": "summary", "statistic": "vendor",
 		"period": "cycle", "value": quantity("67", "%"), "at": "2026-10-24T22:31:00Z", "endsAt": "2026-10-25T06:02:00Z",
 	})
 	r.mustPut(t, r.labresult, "lab/tsh", map[string]any{

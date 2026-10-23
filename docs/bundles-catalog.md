@@ -78,7 +78,7 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
-| WHOOP to health | Sample | none        | 0     | 1         | 1       | 0      |
+| WHOOP to health | Sample | none        | 0     | 1         | 6       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -1711,6 +1711,12 @@ that deletes a mirror row WHOOP deleted.
 
 - **Kinds**: none; it writes `observations/observation`, `observations/source`,
   `health/sleep` and `health/workout`.
+- **Metrics (3)**: WHOOP's own scores, `healthwhoop/recovery`,
+  `healthwhoop/strain` and `healthwhoop/sleep_performance`, as `metric`
+  records in `samples/healthwhoop/metrics.yaml`. Before version 10 they were
+  `health/whoop_*` in the health sample; an upgrade leaves those three
+  records in place, and a replay from 0 moves the outputs already written
+  onto the new ids (`samples/healthwhoop/README.md`).
 - **Functions (1)**: `adaptwhoop` rebuilds every record one mirror row
   implies and hands the set to `host.observed.reconcile`, which writes what
   changed and deletes the records naming that row in `origin` that it no
@@ -1737,17 +1743,17 @@ that deletes a mirror row WHOOP deleted.
 
 | WHOOP field | Written as | Form | Unit |
 | --- | --- | --- | --- |
-| recovery `recoveryScore` | `health/whoop_recovery` | summary, `vendor`, period `sleep`, over the night it scores | `percent` |
+| recovery `recoveryScore` | `healthwhoop/recovery` | summary, `vendor`, period `sleep`, over the night it scores | `percent` |
 | recovery `hrvRmssdMilli` | `health/hrv_rmssd` | summary, `vendor`, period `sleep`, over the night it scores | `ms` |
 | recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `sleep`, over the night it scores | `1/min` |
 | recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `sleep`, over the night it scores | `percent` |
 | recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `sleep`, over the night it scores | `Cel` |
-| cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `score` |
+| cycle `strain` | `healthwhoop/strain` | summary, `vendor`, period `cycle` | `score` |
 | cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
 | cycle `averageHeartRate`, `maxHeartRate` | `health/heart_rate` | summary, `avg` and `max`, period `cycle` | `1/min` |
 | workout `averageHeartRate`, `maxHeartRate` | `health/heart_rate`, channel `workout` | summary, `avg` and `max`, period `workout`, over the workout's span | `1/min` |
 | sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
-| sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `percent` |
+| sleep `sleepPerformancePercentage` | `healthwhoop/sleep_performance` | summary, `vendor`, period `sleep` | `percent` |
 | sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `1/min` |
 | sleep | `health/sleep`: `name` (`Night of Tue 6 Oct` by the evening before the morning it ended, `Nap, Sun 27 Sep 14:20` by its local start), span, `isNap` (WHOOP's `nap`), `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency` (WHOOP's own), `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency`; WHOOP sends no latency | | |
 | workout | `health/workout`: `name` (`Running, Sat 10 Oct 07:08`, the sport and the local start, `Workout` for `other`), span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |

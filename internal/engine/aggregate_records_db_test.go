@@ -782,13 +782,13 @@ func TestAggregateRecordWindowLeavesOutWhatStartsAtItsEnd(t *testing.T) {
 	f.mustPut(t, f.sleepKind(), "whoop/night", map[string]any{
 		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339Nano), "endsAt": end.Format(time.RFC3339Nano),
 	})
-	f.mustPut(t, f.observation, "whoop/recovery", map[string]any{
-		"metric": f.metricRef("health/whoop_recovery"), "source": f.sourceRef("whoop"), "form": "summary",
-		"statistic": "vendor", "period": "night", "value": quantity("78", "%"),
+	f.mustPut(t, f.observation, "whoop/spo2", map[string]any{
+		"metric": f.metricRef("health/spo2"), "source": f.sourceRef("whoop"), "form": "summary",
+		"statistic": "vendor", "period": "night", "value": quantity("95", "%"),
 		"at": end.Format(time.RFC3339Nano), "endsAt": end.Add(24 * time.Hour).Format(time.RFC3339Nano), "utcOffset": 180,
 	})
 	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/whoop_recovery")},
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/spo2")},
 		From:   "summaries",
 		Range:  rng(start.Add(-time.Hour), end),
 		Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{

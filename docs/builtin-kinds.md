@@ -116,7 +116,7 @@ which it requires.
 | `labreport` | One report from a lab, with its status and the original document.                                     |
 | `labresult` | One analyte's result, binding `observed(single)` and `result`, with the lab's range, flag, specimen and status. |
 
-It ships a catalogue of 59 metric records with ids `health/<name>`, such as
+It ships a catalogue of 56 metric records with ids `health/<name>`, such as
 `health/heart_rate` and `health/ldl_cholesterol`, each with its LOINC,
 HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
 ships 18 `analyte` records, one for each metric of the nine lab pairs (one

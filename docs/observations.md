@@ -147,9 +147,9 @@ is the decimal places a reader shows; `category` groups it for navigation;
 `bucketPlace` (`start` or `end`) says where a read places a value's span,
 which the aggregate read applies where the request names no `bucket.place`
 (`health/sleep_stage` sets `end`, so a night lands on the day it ends, as
-do the nightly summaries of `whoop_recovery`, `whoop_sleep_performance`,
-`hrv_rmssd`, `resting_heart_rate`, `respiratory_rate`, `spo2` and
-`skin_temperature`, whose raw readings are instants and place the same
+do the nightly summaries of `hrv_rmssd`, `resting_heart_rate`,
+`respiratory_rate`, `spo2`, `skin_temperature` and WHOOP's
+`healthwhoop/recovery` and `healthwhoop/sleep_performance`, whose raw readings are instants and place the same
 either way);
 `rollups` lists the rollup tiers the observed index keeps for it;
 `algorithm` (`{vendor, name, version}`) names a vendor's scoring method. The sample ships
@@ -482,11 +482,12 @@ observation.
 | `labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
 | `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age, tone}`; `tone` is how a reader draws the band, absent for the lab's normal range and `poor` for a cut-off past which a value is abnormal), `channel` (the body region of a regional body composition result, such as `trunk`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
 
-The catalogue (`samples/health/metrics.yaml`) is 59 `metric` records with ids
+The catalogue (`samples/health/metrics.yaml`) is 56 `metric` records with ids
 `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose
-and fitness metrics wearables report, the WHOOP scores (`whoop_recovery`,
-`whoop_strain`, `whoop_sleep_performance`), and the
-common labs. A lab analyte reported in both unit systems is two metrics, the
+and fitness metrics wearables report, and the common labs. A vendor's own
+score ships with its adapter sample, not here: WHOOP's are
+`healthwhoop/recovery`, `healthwhoop/strain` and
+`healthwhoop/sleep_performance` in `samples/healthwhoop/metrics.yaml`. A lab analyte reported in both unit systems is two metrics, the
 amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
 concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because no
 conversion joins the two units (it takes a molar mass) and a read of one in
@@ -1032,7 +1033,7 @@ they are read over time, and otherwise belong on such a record.
 
 One record is a list read, as for any kind: today's WHOOP recovery is
 `filter.properties.periodId` equal to last night's sleep id beside `metric`
-equal to the `health/whoop_recovery` metric, and every body weight under 155 lb is
+equal to the `healthwhoop/recovery` metric, and every body weight under 155 lb is
 `metric` equal to the `health/body_mass` metric and `value` less than
 `{"value": "155", "unit": "lb"}` (without the metric, muscle and bone
 mass rows match too). Everything bucketed is the records route's
@@ -1140,7 +1141,7 @@ carries the night's `record` beside its recovery:
 ```json
 {"filter": {"kinds": ["ada.example.com/observations/observation"]},
  "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/whoop_recovery"},
+   "metric": {"ref": "ada.example.com/observations/metric/healthwhoop/recovery"},
    "from": "summaries",
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
