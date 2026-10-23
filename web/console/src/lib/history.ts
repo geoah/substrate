@@ -534,6 +534,7 @@ const LAYOUT_WORDS: Record<string, string> = {
   collapsed: "folded sections",
   favorites: "favorites",
   technicalDetails: "technical details",
+  connectGaps: "connected chart lines",
   sidebarOpen: "sidebar",
 }
 

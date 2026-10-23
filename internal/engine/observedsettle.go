@@ -230,7 +230,7 @@ func (s *obsSettle) readSegmentsAndStreams(refs []eref, keys []obsKey) (map[eref
 			 AND s.channel = k.channel AND s.statistic = k.statistic)
 		SELECT st.id, st.metric, st.kind, st.source, st.about, st.channel, st.statistic, st.max_extent_ms,
 			o.kind, o.record_id, o.form, o.first_ts, o.last_ts, o.end_ts, o.points, o.available,
-			o.last_available, o.utc_offset_min, o.offset_known, to_jsonb(o.codes), o.fingerprint
+			o.last_available, o.first_available, o.utc_offset_min, o.offset_known, to_jsonb(o.codes), o.fingerprint
 		FROM st LEFT JOIN old o ON o.stream = st.id`, args...)
 	if err != nil {
 		return nil, nil, err
@@ -238,15 +238,15 @@ func (s *obsSettle) readSegmentsAndStreams(refs []eref, keys []obsKey) (map[eref
 	for rows.Next() {
 		var info obsStreamInfo
 		var (
-			kind, id, form          sql.NullString
-			first, last, end, avail sql.NullTime
-			points, available, off  sql.NullInt64
-			known                   sql.NullBool
-			codes, fingerprint      []byte
+			kind, id, form                      sql.NullString
+			first, last, end, avail, firstAvail sql.NullTime
+			points, available, off              sql.NullInt64
+			known                               sql.NullBool
+			codes, fingerprint                  []byte
 		)
 		if err := rows.Scan(&info.id, &info.key.metric, &info.key.kind, &info.key.source, &info.key.about, &info.key.channel,
 			&info.key.statistic, &info.maxExtentMs, &kind, &id, &form, &first, &last, &end, &points, &available,
-			&avail, &off, &known, &codes, &fingerprint); err != nil {
+			&avail, &firstAvail, &off, &known, &codes, &fingerprint); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
 		}
@@ -264,6 +264,9 @@ func (s *obsSettle) readSegmentsAndStreams(refs []eref, keys []obsKey) (map[eref
 		}
 		if avail.Valid {
 			seg.lastAvailable = avail.Time
+		}
+		if firstAvail.Valid {
+			seg.firstAvailable = firstAvail.Time
 		}
 		olds[seg.ref] = seg
 	}
@@ -366,7 +369,7 @@ func (s *obsSettle) writeSegmentBatch(gone [2][]string, streams, extents []int64
 	kind, id, form, codes := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	stream, offset := make([]int64, n), make([]int64, n)
 	first, last, end := make([]time.Time, n), make([]time.Time, n), make([]time.Time, n)
-	lastAvailable := make([]*time.Time, n)
+	lastAvailable, firstAvailable := make([]*time.Time, n), make([]*time.Time, n)
 	points, available := make([]int64, n), make([]int64, n)
 	known := make([]bool, n)
 	fp := make([][]byte, n)
@@ -375,6 +378,9 @@ func (s *obsSettle) writeSegmentBatch(gone [2][]string, streams, extents []int64
 		first[i], last[i], end[i], points[i], available[i] = g.first, g.last, g.end, int64(g.points), int64(g.available)
 		if g.available > 0 {
 			lastAvailable[i] = ptrTo(g.lastAvailable)
+		}
+		if g.available > 0 {
+			firstAvailable[i] = ptrTo(g.firstAvailable)
 		}
 		offset[i], known[i], fp[i] = g.offset, g.known, g.fingerprint
 		raw, err := jsonb(g.codes)
@@ -387,25 +393,26 @@ func (s *obsSettle) writeSegmentBatch(gone [2][]string, streams, extents []int64
 	// extents another table, so no row is touched twice.
 	_, err := s.t.exec(`
 		WITH gone AS (
-			DELETE FROM observed_segments g USING unnest($15::text[], $16::text[]) AS w(kind, id)
+			DELETE FROM observed_segments g USING unnest($16::text[], $17::text[]) AS w(kind, id)
 			WHERE g.kind = w.kind AND g.record_id = w.id),
 		widened AS (
 			UPDATE observed_streams s SET max_extent_ms = w.ms
-			FROM unnest($17::bigint[], $18::bigint[]) AS w(id, ms)
+			FROM unnest($18::bigint[], $19::bigint[]) AS w(id, ms)
 			WHERE s.id = w.id AND s.max_extent_ms < w.ms)
 		INSERT INTO observed_segments (kind, record_id, stream, form, first_ts, last_ts, end_ts, points, available,
-			last_available, utc_offset_min, offset_known, codes, fingerprint)
-		SELECT u.kind, u.id, u.stream, u.form, u.first, u.last, u.e, u.points, u.available, u.last_available, u.off, u.known,
-			ARRAY(SELECT jsonb_array_elements_text(u.codes::jsonb)), u.fp
+			last_available, first_available, utc_offset_min, offset_known, codes, fingerprint)
+		SELECT u.kind, u.id, u.stream, u.form, u.first, u.last, u.e, u.points, u.available, u.last_available, u.first_available,
+			u.off, u.known, ARRAY(SELECT jsonb_array_elements_text(u.codes::jsonb)), u.fp
 		FROM unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::timestamptz[], $6::timestamptz[], $7::timestamptz[],
-		            $8::int[], $9::int[], $10::timestamptz[], $11::int[], $12::boolean[], $13::text[], $14::bytea[])
-		     AS u(kind, id, stream, form, first, last, e, points, available, last_available, off, known, codes, fp)
+		            $8::int[], $9::int[], $10::timestamptz[], $11::timestamptz[], $12::int[], $13::boolean[], $14::text[], $15::bytea[])
+		     AS u(kind, id, stream, form, first, last, e, points, available, last_available, first_available, off, known, codes, fp)
 		ON CONFLICT (repository, kind, record_id) DO UPDATE SET
 			stream = EXCLUDED.stream, form = EXCLUDED.form, first_ts = EXCLUDED.first_ts, last_ts = EXCLUDED.last_ts,
 			end_ts = EXCLUDED.end_ts, points = EXCLUDED.points, available = EXCLUDED.available,
-			last_available = EXCLUDED.last_available, utc_offset_min = EXCLUDED.utc_offset_min,
-			offset_known = EXCLUDED.offset_known, codes = EXCLUDED.codes, fingerprint = EXCLUDED.fingerprint`,
-		kind, id, stream, form, first, last, end, points, available, lastAvailable, offset, known, codes, fp,
+			last_available = EXCLUDED.last_available, first_available = EXCLUDED.first_available,
+			utc_offset_min = EXCLUDED.utc_offset_min, offset_known = EXCLUDED.offset_known, codes = EXCLUDED.codes,
+			fingerprint = EXCLUDED.fingerprint`,
+		kind, id, stream, form, first, last, end, points, available, lastAvailable, firstAvailable, offset, known, codes, fp,
 		gone[0], gone[1], streams, extents)
 	return err
 }

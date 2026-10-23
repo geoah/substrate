@@ -381,6 +381,22 @@ describe("the latest read's streams", () => {
     })
   })
 
+  it("keeps a stream's earliest point, the earliest of its statistics'", () => {
+    const row = (statistic: string, first: string) => ({
+      ...LATEST.rows[0],
+      form: "summary",
+      group: { metric: HEART, source: WHOOP, statistic },
+      first,
+    })
+    const [whoop] = streamsOf({
+      rows: [
+        row("max", "2025-05-02T00:00:00Z"),
+        row("avg", "2025-03-09T00:00:00Z"),
+      ],
+    })
+    expect(whoop.first).toBe("2025-03-09T00:00:00Z")
+  })
+
   it("folds a stream's statistics into one stream that names them", () => {
     // WHOOP's heart rate keeps each cycle's average and maximum: the latest
     // read groups by statistic and answers a row for each.

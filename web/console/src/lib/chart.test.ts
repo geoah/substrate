@@ -7,6 +7,7 @@ import {
   bandPath,
   barPath,
   bucketAt,
+  gapPath,
   linePath,
   linearScale,
   niceDomain,
@@ -182,5 +183,15 @@ describe("paths", () => {
     expect(bucketAt(5, windows)).toBe(0)
     expect(bucketAt(10, windows)).toBe(1)
     expect(bucketAt(25, windows)).toBe(-1)
+  })
+})
+
+describe("gapPath", () => {
+  it("bridges each run of missing points between two drawn ones, and nothing at the ends", () => {
+    const p = (x: number, y: number) => ({ x, y })
+    expect(gapPath([null, p(0, 1), p(1, 2), null, null, p(4, 3), null])).toBe(
+      "M1 2L4 3"
+    )
+    expect(gapPath([p(0, 0), p(1, 1)])).toBe("")
   })
 })

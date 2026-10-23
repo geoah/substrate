@@ -504,6 +504,7 @@ const aggregateRow: Shape<AggregateRow> = {
   coverage: false,
   values: true,
   count: true,
+  first: false,
   offsetless: false,
   prorated: false,
   bounded: false,

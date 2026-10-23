@@ -5,6 +5,8 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  allRange,
+  firstDayStart,
   autoBucket,
   coveredWords,
   endPlacedBucket,
@@ -325,5 +327,49 @@ describe("the covered time", () => {
     expect(coveredWords("PT7H10M40S")).toBe("7h 11m")
     expect(coveredWords("PT8M12S")).toBe("8m 12s")
     expect(coveredWords("soon")).toBe("soon")
+  })
+})
+
+describe("allRange", () => {
+  it("runs from the earliest point's day through today", () => {
+    const now = new Date(2026, 9, 23, 15, 30).getTime()
+    expect(allRange(new Date(2024, 1, 3, 7, 15).getTime(), now)).toEqual({
+      start: new Date(2024, 1, 3).getTime(),
+      end: new Date(2026, 9, 24).getTime(),
+    })
+  })
+})
+
+describe("firstDayStart", () => {
+  it("keeps a point's recorded date where the reader's date is later", () => {
+    // 23:30 on October 1 at -07:00 is October 2 in UTC and east of it.
+    expect(firstDayStart("2026-10-01T23:30:00-07:00")).toBe(
+      new Date(2026, 9, 1).getTime()
+    )
+  })
+
+  it("reaches the date a later point of the stream may record further west", () => {
+    // The stream's earliest instant is 00:30 UTC on October 2; a later one,
+    // 00:45 UTC, was written at -01:00 and records October 1.
+    expect(firstDayStart("2026-10-02T00:30:00Z")).toBeLessThanOrEqual(
+      new Date(2026, 9, 1).getTime()
+    )
+  })
+
+  it("reaches as far west as the server accepts an offset, -18:00", () => {
+    // 13:00 UTC on October 2, then 14:00 UTC written at -18:00: October 1.
+    expect(firstDayStart("2026-10-02T13:00:00Z")).toBeLessThanOrEqual(
+      new Date(2026, 9, 1).getTime()
+    )
+  })
+
+  it("never starts after the point's instant", () => {
+    for (const iso of [
+      "2026-10-02T00:30:00+09:00",
+      "2026-10-01T23:30:00-07:00",
+      "2026-10-01T12:00:00Z",
+    ]) {
+      expect(firstDayStart(iso)).toBeLessThanOrEqual(Date.parse(iso))
+    }
   })
 })

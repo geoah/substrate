@@ -57,6 +57,12 @@ export function useTechnicalDetails(): [boolean, (on: boolean) => void] {
   ]
 }
 
+/** Whether a timeline's lines run on across buckets with no value. */
+export function useConnectGaps(): [boolean, (on: boolean) => void] {
+  const { preferences, set } = useConsolePreferences()
+  return [preferences.connectGaps, (on: boolean) => set("connectGaps", on)]
+}
+
 export function useLayoutWidths(): {
   recordWidth: RecordWidth
   tableWidth: TableWidth

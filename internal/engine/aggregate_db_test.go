@@ -1203,6 +1203,129 @@ func TestAggregateDownsample(t *testing.T) {
 	}
 }
 
+// The latest read answers each group's earliest point beside its newest:
+// what the console's timeline reads "All" from. A dense gauge still being
+// written, a summary stream and a coded amount each answer the instant of
+// their first point, from the segments alone.
+func TestAggregateLatestReadAnswersTheEarliestPoint(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	// A day of heart rate every ten seconds, ending inside the current
+	// rollup bucket.
+	day := time.Now().UTC().Truncate(time.Minute).Add(-24*time.Hour + 3*time.Minute)
+	f.heartRate("garmin", day, 10*time.Second, 0, time.Time{}, time.Time{})
+	night := time.Date(2025, 10, 1, 23, 10, 0, 0, time.FixedZone("", 3*3600))
+	for d := range 3 {
+		at := night.AddDate(0, 0, d)
+		f.mustPut(t, f.observation, "whoop/hrv/"+at.Format("2006-01-02"), map[string]any{
+			"metric": f.metricRef("health/hrv_rmssd"), "source": f.sourceRef("whoop"), "form": "summary",
+			"statistic": "vendor", "period": "night", "value": quantity("62", "ms"), "at": at.Format(time.RFC3339),
+			"endsAt": at.Add(7 * time.Hour).Format(time.RFC3339), "utcOffset": 180,
+		})
+		f.mustPut(t, f.observation, "whoop/deep/"+at.Format("2006-01-02"), map[string]any{
+			"metric": f.metricRef("health/sleep_stage"), "source": f.sourceRef("whoop"), "form": "amount",
+			"code": "deep", "value": quantity("80", "min"), "at": at.Add(time.Hour).Format(time.RFC3339),
+			"endsAt": at.Add(7 * time.Hour).Format(time.RFC3339), "utcOffset": 180,
+		})
+	}
+	res := f.agg(context.Background(), substrate.Filter{Implements: "substrate.reamde.dev/core/observed"},
+		substrate.Aggregate{GroupBy: []string{"metric", "source", "statistic"}, Latest: true})
+	firsts := map[string]time.Time{}
+	for _, row := range res.Rows {
+		if row.First == nil {
+			t.Fatalf("the %s row names no earliest point", row.Group.Metric)
+		}
+		firsts[strings.TrimPrefix(row.Group.Metric, f.metric+"/")] = *row.First
+	}
+	for metric, want := range map[string]time.Time{
+		"health/heart_rate":  day,
+		"health/hrv_rmssd":   night,
+		"health/sleep_stage": night.Add(time.Hour),
+	} {
+		if got, ok := firsts[metric]; !ok || !got.Equal(want) {
+			t.Errorf("%s earliest = %v, want %s", metric, got, want)
+		}
+	}
+	if _, off := firsts["health/hrv_rmssd"].Zone(); off != 3*3600 {
+		t.Errorf("the summary's earliest is at offset %d, want its own +03:00", off)
+	}
+}
+
+// A segment's first points may be null, and two segments may overlap: the
+// earliest point is the earliest AVAILABLE one across them, and a long run
+// of segments of nulls before it costs the look-up nothing.
+func TestAggregateLatestReadAnswersTheEarliestAvailablePoint(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	ctx := context.Background()
+	oct1 := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	// A trace from October 1 whose first reading is null and whose next is
+	// on October 3, and a weighing on October 2 inside its span.
+	f.series("scale/trace", map[string]any{
+		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("withings"),
+		"form": "gauge", "unit": "kg", "hold": "PT1H", "utcOffset": 0,
+		"values": []any{nil, "72.1"},
+	}, oct1, oct1.AddDate(0, 0, 3), []int64{0, 2 * 86_400_000}, nil)
+	f.mustPut(t, f.observation, "scale/oct2", map[string]any{
+		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("withings"), "form": "gauge",
+		"value": quantity("71.9", "kg"), "at": oct1.AddDate(0, 0, 1).Format(time.RFC3339), "utcOffset": 0,
+	})
+	res := f.agg(ctx, substrate.Filter{Implements: "substrate.reamde.dev/core/observed"},
+		substrate.Aggregate{GroupBy: []string{"metric"}, Latest: true})
+	if len(res.Rows) != 1 || res.Rows[0].First == nil {
+		t.Fatalf("rows = %+v", res.Rows)
+	}
+	if got := *res.Rows[0].First; !got.Equal(oct1.AddDate(0, 0, 1)) {
+		t.Errorf("earliest = %s, want October 2's weighing, the earliest available point", got)
+	}
+
+	// Ten thousand segments of nulls before the first available point.
+	var stream int64
+	if err := f.db.QueryRow(`SELECT id FROM observed_streams WHERE metric LIKE '%/health/body_mass'`).Scan(&stream); err != nil {
+		t.Fatalf("the stream: %v", err)
+	}
+	repo := testdb.Repository(t)
+	if _, err := f.db.Exec(`INSERT INTO observed_segments (repository, kind, record_id, stream, form, first_ts, last_ts, end_ts,
+		points, available, utc_offset_min, offset_known, codes, fingerprint)
+		SELECT $1, $2, 'nulls/' || i, $3, 'gauge', t, t, t, 1, 0, 0, true, '{}', '\x00'
+		FROM generate_series(1, 10000) AS i, LATERAL (SELECT timestamptz '2020-01-01' + i * interval '1 minute' AS t) w`,
+		repo, f.trace, stream); err != nil {
+		t.Fatalf("write the nulls: %v", err)
+	}
+	if _, err := f.db.Exec(`ANALYZE observed_segments`); err != nil {
+		t.Fatal(err)
+	}
+	db, err := engine.SharedScopedDB(f.svc, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.QueryContext(ctx, `EXPLAIN (COSTS OFF) `+engine.EarliestPointsQuery, []int64{stream})
+	if err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	var plan []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, line)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	text := strings.Join(plan, "\n")
+	if !strings.Contains(text, "observed_segments_first_available_idx") || strings.Contains(text, "Seq Scan on observed_segments") {
+		t.Errorf("the look-up does not probe the index of available segments:\n%s", text)
+	}
+	res = f.agg(ctx, substrate.Filter{Implements: "substrate.reamde.dev/core/observed"},
+		substrate.Aggregate{GroupBy: []string{"metric"}, Latest: true})
+	if got := *res.Rows[0].First; !got.Equal(oct1.AddDate(0, 0, 1)) {
+		t.Errorf("after the nulls, earliest = %s", got)
+	}
+}
+
 // A money property per month: summed exactly per currency, the anchor a
 // declared datetime.
 func TestAggregatePropertyOverMoney(t *testing.T) {

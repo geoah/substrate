@@ -42,6 +42,8 @@ export interface DisplaySettings {
   density: Density
   technicalDetails: boolean
   theme: ThemePreference
+  /** Whether a timeline's lines run on across buckets with no value. */
+  connectGaps: boolean
 }
 
 export type ConsolePreferences = NavigationPreferences & DisplaySettings
@@ -80,6 +82,7 @@ export const DEFAULT_SETTINGS: DisplaySettings = {
   density: "comfortable",
   technicalDetails: false,
   theme: "system",
+  connectGaps: false,
 }
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as SettingKey[]
@@ -90,6 +93,7 @@ const ALLOWED: { [K in SettingKey]: readonly DisplaySettings[K][] } = {
   density: ["comfortable", "compact"],
   technicalDetails: [true, false],
   theme: ["system", "light", "dark"],
+  connectGaps: [true, false],
 }
 
 function valid<K extends SettingKey>(

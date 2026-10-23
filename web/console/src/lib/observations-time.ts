@@ -24,6 +24,56 @@ export function isRangePreset(value: unknown): value is RangePreset {
   return RANGE_PRESETS.some((p) => p.value === value)
 }
 
+/** A range the picker offers: a preset, or `all`, from the earliest point
+ * the chosen streams hold to today. */
+export type RangeKey = RangePreset | "all"
+
+export const ALL_RANGE: { value: "all"; label: string } = {
+  value: "all",
+  label: "All",
+}
+
+/** The furthest west a recorded UTC offset may reach, in milliseconds:
+ * the server accepts 18 hours either way (vocabulary.MaxUTCOffsetMinutes). */
+const WESTMOST_OFFSET_MS = 18 * 3_600_000
+
+/** The start of the first day a stream whose earliest point is at `iso`
+ * may hold a reading on, for a reader: the earliest of the point's recorded
+ * date (the date its own offset names, which a recorded-local read cuts
+ * by), the reader's date at its instant, and the earliest date any later
+ * point could record (a later instant written at a westerly offset may name
+ * an earlier date, down to -18:00), each at the reader's midnight. A point
+ * at 23:30 on October 1 at -07:00 is October 2 to a reader in UTC, and
+ * still October 1's to a recorded-local day read. */
+export function firstDayStart(iso: string): number {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return NaN
+  const midnight = (y: number, m: number, d: number) =>
+    new Date(y, m, d).getTime()
+  const at = new Date(t)
+  const west = new Date(t - WESTMOST_OFFSET_MS)
+  const starts = [
+    midnight(at.getFullYear(), at.getMonth(), at.getDate()),
+    midnight(west.getUTCFullYear(), west.getUTCMonth(), west.getUTCDate()),
+  ]
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (m) starts.push(midnight(+m[1], +m[2] - 1, +m[3]))
+  return Math.min(...starts)
+}
+
+/** Every day from the one holding `earliest` through today. */
+export function allRange(earliest: number, now = Date.now()): TimeRange {
+  const first = new Date(Math.min(earliest, now))
+  return {
+    start: new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate()
+    ).getTime(),
+    end: daysEnding(now, 1).end,
+  }
+}
+
 /** The shortest preset whose window reaches back to `t`, a stream's newest
  * value; undefined where even the last year does not. */
 export function presetReaching(

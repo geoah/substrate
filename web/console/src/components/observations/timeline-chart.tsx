@@ -12,7 +12,10 @@
  * tinted, one crosshair marks it with a dot on every line, and one tooltip
  * lists every series at that bucket. A click zooms into the bucket and a
  * drag across several zooms into them all; from the keyboard the arrows move
- * between buckets, Enter zooms and Escape leaves. */
+ * between buckets, Enter zooms and Escape leaves.
+ *
+ * A line breaks where a bucket holds no value. With `connect` each break is
+ * bridged by a dashed segment, so the line runs on and the gap still shows. */
 
 import {
   memo,
@@ -29,6 +32,7 @@ import {
   bandPath,
   barPath,
   bucketAt,
+  gapPath,
   linePath,
   linearScale,
   niceDomain,
@@ -148,6 +152,7 @@ export function TimelineChart({
   bands,
   highlight,
   height: plotHeight = PLOT,
+  connect = false,
 }: {
   buckets: Bucket[]
   series: ChartSeries[]
@@ -170,6 +175,8 @@ export function TimelineChart({
   highlight?: number
   /** The plot's height in pixels, 200 by default. */
   height?: number
+  /** Bridge each line's breaks with a dashed segment. */
+  connect?: boolean
 }) {
   const { ref, width } = useWidth(720)
   useEffect(() => {
@@ -342,7 +349,12 @@ export function TimelineChart({
             fill="var(--selection)"
           />
         )}
-        <Figures layout={layout} series={series} buckets={buckets} />
+        <Figures
+          layout={layout}
+          series={series}
+          buckets={buckets}
+          connect={connect}
+        />
         {active !== null && (
           <line
             data-slot="chart-crosshair"
@@ -639,10 +651,12 @@ const Figures = memo(function Figures({
   layout,
   series,
   buckets,
+  connect,
 }: {
   layout: Layout
   series: readonly ChartSeries[]
   buckets: readonly Bucket[]
+  connect: boolean
 }) {
   const { top, plot, windows, scaleOf, slotOf, stacks, lines, xLabels } = layout
   const mids = windows.map((w) => w.mid)
@@ -713,6 +727,7 @@ const Figures = memo(function Figures({
           band={s.band === true}
           mids={mids}
           y={scaleOf(s).y}
+          connect={connect}
         />
       ))}
       {xLabels.map((l) => (
@@ -735,11 +750,13 @@ function LineSeries({
   band,
   mids,
   y,
+  connect,
 }: {
   series: ChartSeries
   band: boolean
   mids: number[]
   y: (v: number) => number
+  connect: boolean
 }) {
   // A bucket the answer covered with no reading of its own (a weigh-in's
   // level holding between weigh-ins: a row, its count 0, no value) joins
@@ -781,6 +798,18 @@ function LineSeries({
         strokeLinecap="round"
         strokeDasharray={series.dash ? "4 2" : undefined}
       />
+      {connect && (
+        <path
+          data-slot="chart-gap"
+          d={gapPath(line)}
+          fill="none"
+          stroke={series.color}
+          strokeWidth={1.5}
+          strokeOpacity={0.7}
+          strokeDasharray="3 3"
+          strokeLinecap="round"
+        />
+      )}
       {dots.map((p) => (
         <circle
           key={p.bucket}

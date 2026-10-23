@@ -152,6 +152,7 @@ export function OverlayChart({
   onUnit,
   onStatistic,
   onZoom,
+  connect = false,
   className,
 }: {
   obs: Observations
@@ -166,6 +167,8 @@ export function OverlayChart({
   onUnit: (metric: string, value: string) => void
   onStatistic: (metric: string, value: string) => void
   onZoom: (range: TimeRange) => void
+  /** Bridge each line's breaks (`TimelineChart`'s `connect`). */
+  connect?: boolean
   className?: string
 }) {
   const units = useUnits()
@@ -479,6 +482,7 @@ export function OverlayChart({
             size={size}
             label={label}
             tooltip={tooltip}
+            connect={connect}
             onZoom={(next, keyboard) => {
               setFocusFor(keyboard ? `${next.start}-${next.end}` : undefined)
               onZoom(next)

@@ -936,6 +936,8 @@ export interface Stream extends StreamForm {
   end?: string
   /** Every point the stream holds. */
   count?: number
+  /** Its earliest point's time, where the latest read said. */
+  first?: string
   coverage?: string
   /** The statistics its vendor summaries keep (`avg`, `max`, `vendor`),
    * where it keeps any. */
@@ -1101,6 +1103,7 @@ export function streamsOf(
       ...(row.end && row.end !== row.start ? { end: row.end } : {}),
       count: row.count,
       coverage: row.coverage,
+      ...(row.first ? { first: row.first } : {}),
       ...(statistic ? { statistics: [statistic], statistic } : {}),
     }
     const held = byKey.get(key)
@@ -1125,11 +1128,16 @@ export function streamsOf(
         statistic !== undefined &&
         statistic === defaultStatistic(statistics))
     const next = newer ? { stream, statistic } : held
+    const firsts = [held.stream.first, stream.first].filter((f): f is string =>
+      Boolean(f)
+    )
+    const first = firsts.sort((a, b) => Date.parse(a) - Date.parse(b))[0]
     byKey.set(key, {
       statistic: next.statistic,
       stream: {
         ...next.stream,
         count,
+        ...(first ? { first } : {}),
         ...(statistics.length ? { statistics } : {}),
       },
     })

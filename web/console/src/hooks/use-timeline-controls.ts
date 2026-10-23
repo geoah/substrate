@@ -9,12 +9,14 @@ import { useMemo, useState } from "react"
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs"
 
 import {
+  allRange,
   bucketSizeOf,
   presetRange,
   readerTimezone,
   type BucketChoice,
   type BucketSize,
   type DayBoundary,
+  type RangeKey,
   type RangePreset,
   type TimeRange,
 } from "@/lib/observations-time"
@@ -32,7 +34,10 @@ import {
 export interface TimelineControls {
   /** The window read, and how the range picker names it. */
   range: TimeRange
-  preset: RangePreset | "custom"
+  preset: RangeKey | "custom"
+  /** `all` is picked and its earliest point is still being read: the
+   * window is not known yet, and nothing should read it. */
+  allPending: boolean
   /** The bucket picked, and the size it reads at. */
   bucket: BucketChoice
   size: BucketSize
@@ -46,7 +51,7 @@ export interface TimelineControls {
   reducerOf: (metric: string) => string | undefined
   unitOf: (metric: string) => string | undefined
   statisticOf: (metric: string) => string | undefined
-  onPreset: (preset: RangePreset) => void
+  onPreset: (preset: RangeKey) => void
   onCustom: (range: TimeRange) => void
   onBucket: (bucket: BucketChoice) => void
   onDays: (days: DayBoundary) => void
@@ -57,8 +62,16 @@ export interface TimelineControls {
   zoom: (range: TimeRange) => void
 }
 
+/** `all`, where the caller offers it: the earliest point the chosen streams
+ * hold, undefined while it is read and null where they hold none. A caller
+ * that does not offer it reads an `all` address as its default range. */
+export interface AllRange {
+  earliest: number | null | undefined
+}
+
 export function useTimelineControls(
-  defaultRange: RangePreset
+  defaultRange: RangePreset,
+  all?: AllRange
 ): TimelineControls {
   const [rangeParam, setRangeParam] = useQueryState(
     "range",
@@ -90,12 +103,19 @@ export function useTimelineControls(
   const statistics = readChoices(statisticTokens)
   const custom =
     rangeParam === "custom" ? customRange(startParam, endParam) : undefined
-  const preset: RangePreset | "custom" = custom
+  const preset: RangeKey | "custom" = custom
     ? "custom"
-    : rangeParam === "custom"
+    : rangeParam === "custom" || (rangeParam === "all" && !all)
       ? defaultRange
       : rangeParam
-  const range = custom ?? presetRange(preset as RangePreset, now)
+  const earliest = preset === "all" ? all?.earliest : undefined
+  const range =
+    custom ??
+    (preset === "all"
+      ? typeof earliest === "number"
+        ? allRange(earliest, now)
+        : presetRange(defaultRange, now)
+      : presetRange(preset as RangePreset, now))
 
   function onCustom(next: TimeRange) {
     void setRangeParam("custom")
@@ -106,6 +126,7 @@ export function useTimelineControls(
   return {
     range,
     preset,
+    allPending: preset === "all" && earliest === undefined,
     bucket,
     size: bucketSizeOf(bucket, range),
     timezone,

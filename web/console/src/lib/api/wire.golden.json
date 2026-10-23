@@ -148,6 +148,7 @@
     "count": true,
     "coverage": false,
     "end": true,
+    "first": false,
     "form": false,
     "from": false,
     "group": false,

@@ -17,7 +17,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react"
-import { NuqsTestingAdapter } from "nuqs/adapters/testing"
+import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -29,7 +29,12 @@ import type {
 } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { recordTimelineSearch, streamSearch } from "@/lib/observations"
-import { isoWithOffset, windowWords } from "@/lib/observations-time"
+import {
+  allRange,
+  firstDayStart,
+  isoWithOffset,
+  windowWords,
+} from "@/lib/observations-time"
 import {
   APPLE,
   BODY_MASS,
@@ -44,6 +49,7 @@ import {
   METRIC,
   METRICS,
   MIA,
+  RECOVERY,
   SLEEP,
   SLEEP_STAGE,
   SOURCE,
@@ -2052,5 +2058,279 @@ describe("the charts", () => {
     const plain = await lane("Weight")
     await within(plain).findByRole("button", { name: "Show the numbers" })
     expect(plain.querySelector("[data-slot=lane-request]")).toBe(null)
+  })
+})
+
+/** The page with the address it writes and the preferences it sets kept. */
+function mountWatched(
+  searchParams: string,
+  respond: (read: SeenRead) => AggregateResult | Response = answer,
+  connectGaps = false
+) {
+  const server = observationsServer(respond)
+  vi.stubGlobal("fetch", vi.fn(pageFetch(server)))
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const urls: UrlUpdateEvent[] = []
+  const settings: [string, unknown][] = []
+  render(
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          connectGaps,
+        },
+        busy: false,
+        change: () => {},
+        set: (key, value) => void settings.push([key, value]),
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <NuqsTestingAdapter
+          searchParams={searchParams}
+          hasMemory
+          onUrlUpdate={(e) => void urls.push(e)}
+        >
+          <ObservationsTimelinePage />
+        </NuqsTestingAdapter>
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
+  )
+  const param = (key: string) => urls.at(-1)?.searchParams.get(key) ?? null
+  return Object.assign(server, { param, settings })
+}
+
+describe("the All range", () => {
+  /** Each stream's earliest point, as the latest read answers it. */
+  const FIRSTS: Record<string, string> = {
+    [`${HEART}\n${GARMIN}`]: "2025-11-01T06:00:00+02:00",
+    [`${HEART}\n${APPLE}`]: "2026-01-04T08:00:00+02:00",
+    [`${BODY_MASS}\n${WITHINGS}`]: "2026-03-02T07:15:00+02:00",
+    // A vendor summary's history and a coded amount's.
+    [`${RECOVERY}\n${WHOOP}`]: "2025-06-01T23:10:00+03:00",
+    [`${SLEEP_STAGE}\n${WHOOP}`]: "2025-08-01T23:40:00+03:00",
+  }
+  const WITH_FIRSTS: AggregateResult = {
+    ...LATEST,
+    rows: LATEST.rows.map((r) => ({
+      ...r,
+      first: FIRSTS[`${r.group?.metric}\n${r.group?.source}`],
+    })),
+  }
+  function withFirsts(read: SeenRead): AggregateResult {
+    return read.aggregate.metric
+      ? answer(read)
+      : latestAnswer(read, WITH_FIRSTS)
+  }
+  /** The chart reads, one per metric drawn. */
+  function drawn(seen: SeenRead[], metric: string): SeenRead[] {
+    return charts(seen, metric).filter((r) => r.aggregate.range)
+  }
+
+  it("reads from the earliest point of the chosen metrics' streams to today, the bucket sized to fit", async () => {
+    const server = mountWatched(
+      "?metric=health/body_mass,health/heart_rate&range=all",
+      withFirsts
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    const read = drawn(server.seen, "health/body_mass")[0]
+    // The Garmin's heart rate goes back furthest.
+    expect(read.aggregate.range?.gte).toBe(
+      isoWithOffset(
+        allRange(firstDayStart(FIRSTS[`${HEART}\n${GARMIN}`])).start
+      )
+    )
+    // A year of readings by the week or the month, never the hour.
+    expect(["week", "month"]).toContain(read.aggregate.bucket?.calendar)
+    // Nothing but discovery is asked to find it.
+    expect(
+      server.seen.every((r) => r.aggregate.range || r.aggregate.latest)
+    ).toBe(true)
+  })
+
+  it("reaches back to a vendor summary's and a coded metric's earliest point", async () => {
+    const server = mountWatched(
+      "?metric=healthwhoop/recovery,health/sleep_stage&range=all",
+      withFirsts
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/sleep_stage").length).toBeGreaterThan(0)
+    )
+    expect(
+      drawn(server.seen, "health/sleep_stage")[0].aggregate.range?.gte
+    ).toBe(
+      isoWithOffset(
+        allRange(firstDayStart(FIRSTS[`${RECOVERY}\n${WHOOP}`])).start
+      )
+    )
+  })
+
+  it("holds All while one metric's streams fail, says so, and reads it once they load", async () => {
+    let failures = 1
+    const server = mountWatched(
+      "?metric=health/body_mass,health/heart_rate&range=all",
+      (read) => {
+        const metrics = read.filter.properties?.metric as
+          { in?: string[] } | undefined
+        if (
+          !read.aggregate.metric &&
+          !read.aggregate.metrics &&
+          metrics?.in?.join() === HEART &&
+          failures > 0
+        ) {
+          failures--
+          return unavailable()
+        }
+        return withFirsts(read)
+      }
+    )
+    const note = await screen.findByRole("alert", {
+      name: "Heart rate: the streams didn’t load",
+    })
+    expect(
+      (await screen.findByText(/one of them did not load/)).textContent
+    ).toContain("All starts at the earliest point of every chosen metric")
+    // Nothing is drawn from the weight's start alone.
+    expect(drawn(server.seen, "health/body_mass")).toHaveLength(0)
+    fireEvent.click(within(note).getByRole("button", { name: "Try again" }))
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    expect(drawn(server.seen, "health/body_mass")[0].aggregate.range?.gte).toBe(
+      isoWithOffset(
+        allRange(firstDayStart(FIRSTS[`${HEART}\n${GARMIN}`])).start
+      )
+    )
+  })
+
+  it("keeps the first reading's recorded date where the reader's date is later", async () => {
+    // 23:30 on October 1 at -07:00: October 2 to a reader in UTC, and the
+    // first day a recorded-local day read must hold.
+    const late: AggregateResult = {
+      ...LATEST,
+      rows: LATEST.rows
+        .filter((r) => r.group?.metric === BODY_MASS)
+        .map((r) => ({ ...r, first: "2026-10-01T23:30:00-07:00" })),
+    }
+    const server = mountWatched("?metric=health/body_mass&range=all", (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, late)
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    const range = drawn(server.seen, "health/body_mass")[0].aggregate.range!
+    const oct1 = new Date(2026, 9, 1).getTime()
+    // Read by recorded-local dates, or by instants, it starts on October 1.
+    expect(range.recordedLocal ? range.gte : Date.parse(range.gte)).toBe(
+      range.recordedLocal ? "2026-10-01" : oct1
+    )
+  })
+
+  it("keeps a later reading recorded on an earlier date at another offset", async () => {
+    // One stream: its earliest instant is 00:30 UTC on October 2, and a
+    // later reading, 23:45 on October 1 at -01:00, records October 1.
+    const mixed: AggregateResult = {
+      ...LATEST,
+      rows: LATEST.rows
+        .filter((r) => r.group?.metric === BODY_MASS)
+        .map((r) => ({ ...r, first: "2026-10-02T00:30:00Z" })),
+    }
+    const server = mountWatched("?metric=health/body_mass&range=all", (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, mixed)
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    const range = drawn(server.seen, "health/body_mass")[0].aggregate.range!
+    const start = range.recordedLocal
+      ? new Date(`${range.gte}T00:00:00`).getTime()
+      : Date.parse(range.gte)
+    expect(start).toBeLessThanOrEqual(new Date(2026, 9, 1).getTime())
+  })
+
+  it("keeps a later reading recorded at -18:00 on an earlier date", async () => {
+    // 13:00 UTC on October 2, and a later reading at 14:00 UTC written at
+    // -18:00, which records October 1.
+    const west: AggregateResult = {
+      ...LATEST,
+      rows: LATEST.rows
+        .filter((r) => r.group?.metric === BODY_MASS)
+        .map((r) => ({ ...r, first: "2026-10-02T13:00:00Z" })),
+    }
+    const server = mountWatched("?metric=health/body_mass&range=all", (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, west)
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    const range = drawn(server.seen, "health/body_mass")[0].aggregate.range!
+    const start = range.recordedLocal
+      ? new Date(`${range.gte}T00:00:00`).getTime()
+      : Date.parse(range.gte)
+    expect(start).toBeLessThanOrEqual(new Date(2026, 9, 1).getTime())
+  })
+
+  it("offers All in the range picker, kept in the address", async () => {
+    const server = mountWatched(
+      `?metric=health/body_mass&${WINDOW}`,
+      withFirsts
+    )
+    await lane("Weight")
+    fireEvent.click(screen.getAllByRole("button", { name: /Sep 21/ })[0])
+    fireEvent.click(await screen.findByRole("option", { name: "All" }))
+    await waitFor(() => expect(server.param("range")).toBe("all"))
+    await waitFor(() =>
+      expect(
+        drawn(server.seen, "health/body_mass").some(
+          (r) =>
+            r.aggregate.range?.gte ===
+            isoWithOffset(
+              allRange(firstDayStart(FIRSTS[`${BODY_MASS}\n${WITHINGS}`])).start
+            )
+        )
+      ).toBe(true)
+    )
+  })
+})
+
+describe("connecting a line's gaps", () => {
+  it("bridges a gap with a dashed segment once Connect gaps is on, kept in the address and the preference", async () => {
+    const server = mountWatched(`?metric=health/body_mass&${WINDOW}`)
+    const chart = await lane("Weight")
+    await waitFor(() =>
+      expect(chart.querySelector("[data-series]")).toBeTruthy()
+    )
+    expect(chart.querySelector("[data-slot=chart-gap]")).toBe(null)
+    const toggle = screen.getByRole("button", { name: "Connect gaps" })
+    expect(toggle.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(toggle)
+    await waitFor(() => expect(server.param("connect")).toBe("true"))
+    expect(server.settings).toEqual([["connectGaps", true]])
+    // The week with no weigh-in sits between two that hold one.
+    const gap = await waitFor(() => {
+      const path = chart.querySelector("[data-slot=chart-gap]")
+      expect(path?.getAttribute("d")).toMatch(/^M[^M]+L/)
+      return path!
+    })
+    expect(gap.getAttribute("stroke-dasharray")).toBe("3 3")
+  })
+
+  it("connects the gaps where the preference says so and the address does not", async () => {
+    mountWatched(`?metric=health/body_mass&${WINDOW}`, answer, true)
+    const chart = await lane("Weight")
+    await waitFor(() =>
+      expect(chart.querySelector("[data-slot=chart-gap]")).toBeTruthy()
+    )
+    expect(
+      screen
+        .getByRole("button", { name: "Connect gaps" })
+        .getAttribute("aria-pressed")
+    ).toBe("true")
   })
 })
