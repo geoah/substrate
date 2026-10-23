@@ -3,8 +3,10 @@ package kinds_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"path"
 	"slices"
 	"strings"
@@ -355,7 +357,8 @@ func TestRevisionKindsBindTheRuleThatHoldsIt(t *testing.T) {
 // function writes a result of one in the other from the `analyte` records:
 // one per metric of a pair, its LOINC parts the ones LOINC publishes for the
 // metric's code, one molar mass on both and a conversion onto the twin.
-// HbA1c's two units convert by a formula, not a molar mass.
+// HbA1c's two units convert by a formula, not a molar mass. Blood glucose is
+// no pair: its units convert (TestHealthGlucoseIsOneMetricInTwoUnits).
 func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
 	metrics := healthRecords(t, "observations/metric")
 	analytes := healthRecords(t, "health/analyte")
@@ -409,8 +412,8 @@ func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
 			t.Errorf("%s and %s carry molar masses %v and %v, want one", id, twin, analytes[id]["molarMass"], analytes[twin]["molarMass"])
 		}
 	}
-	if pairs < 8 {
-		t.Errorf("%d lab twins, want the eight the catalogue lists", pairs)
+	if pairs < 7 {
+		t.Errorf("%d lab twins, want the seven the catalogue lists", pairs)
 	}
 	for id, a := range analytes {
 		parts, _ := a["loincParts"].(map[string]any)
@@ -424,5 +427,100 @@ func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
 	}
 	if target, formula := conversion("health/hba1c_ifcc"); target != "health/hba1c" || formula != "ifcc-to-ngsp" {
 		t.Errorf("hba1c_ifcc converts onto %q by %q", target, formula)
+	}
+}
+
+// unitDocs decodes the unit and conversion records of one YAML file.
+func unitDocs(t *testing.T, raw []byte) ([]vocabulary.UnitRecord, []vocabulary.ConversionRecord) {
+	t.Helper()
+	var us []vocabulary.UnitRecord
+	var cs []vocabulary.ConversionRecord
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	for {
+		var doc struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				ID string `yaml:"id"`
+			} `yaml:"metadata"`
+			Data struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"data"`
+		}
+		if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		switch doc.Kind {
+		case vocabulary.KindUnit:
+			u, err := vocabulary.CheckUnitRecord(doc.Metadata.ID, doc.Data.Properties)
+			if err != nil {
+				t.Fatalf("unit %s: %v", doc.Metadata.ID, err)
+			}
+			us = append(us, u)
+		case vocabulary.KindConversion:
+			c, err := vocabulary.CheckConversionRecord(doc.Metadata.ID, doc.Data.Properties)
+			if err != nil {
+				t.Fatalf("conversion %s: %v", doc.Metadata.ID, err)
+			}
+			cs = append(cs, c)
+		}
+	}
+	return us, cs
+}
+
+// BLOOD GLUCOSE IS ONE METRIC IN TWO UNITS. A meter reports mg/dL or
+// mmol/L, and the plain units never convert, because the factor is the
+// analyte's molar mass. The health sample ships `mmol/L{glucose}` and
+// `mg/dL{glucose}` and one conversion between them, and
+// `health/blood_glucose` anchors to the first, so a mixed history is one
+// series. Over the seeded graph with the sample's units added: the two
+// annotated units convert at the analyte record's molar mass, the plain
+// units still convert to nothing across, and no annotated unit joins a
+// plain one.
+func TestHealthGlucoseIsOneMetricInTwoUnits(t *testing.T) {
+	us, cs := unitDocs(t, unitseed.Units())
+	more, moreCs := unitDocs(t, unitseed.Conversions())
+	us, cs = append(us, more...), append(cs, moreCs...)
+	raw, err := fs.ReadFile(samples.Samples(), "health/analyte_units.yaml")
+	if err != nil {
+		t.Fatalf("read the glucose units: %v", err)
+	}
+	more, moreCs = unitDocs(t, raw)
+	if len(more) != 2 || len(moreCs) != 1 {
+		t.Fatalf("analyte_units.yaml ships %d units and %d conversions, want 2 and 1", len(more), len(moreCs))
+	}
+	g, problems := vocabulary.BuildUnitGraph(append(us, more...), append(cs, moreCs...))
+	if len(problems) > 0 {
+		t.Fatalf("the seeded graph with the glucose units: %v", problems)
+	}
+	for code, want := range map[string]string{"mmol/L{glucose}": "mmol/L_glucose", "mg/dL{glucose}": "mg/dL_glucose"} {
+		if id, ok := g.Resolve(code); !ok || id != want {
+			t.Errorf("%s resolves to %q, want %s", code, id, want)
+		}
+	}
+	analyte := healthRecords(t, "health/analyte")["health/blood_glucose"]
+	molar, ok := new(big.Rat).SetString(fmt.Sprint(analyte["molarMass"]))
+	if !ok {
+		t.Fatalf("health/blood_glucose's analyte carries molar mass %v", analyte["molarMass"])
+	}
+	// mmol/L to mg/dL: times the molar mass (mg per mmol), over 10 (dL per L).
+	want := new(big.Rat).Quo(molar, big.NewRat(10, 1))
+	factor, offset, err := g.Linear("mmol/L_glucose", "mg/dL_glucose", false)
+	if err != nil || factor.Cmp(want) != 0 || offset.Sign() != 0 {
+		t.Errorf("mmol/L{glucose} to mg/dL{glucose} is %v + %v (%v), want %v from the molar mass %v", factor, offset, err, want, molar)
+	}
+	for _, pair := range [][2]string{{"mmol/L", "mg/dL"}, {"mmol/L_glucose", "mmol/L"}, {"mg/dL_glucose", "mg/dL"}} {
+		if _, _, err := g.Linear(pair[0], pair[1], false); err == nil {
+			t.Errorf("%s converts to %s; a plain and an analyte-annotated concentration must stay apart", pair[0], pair[1])
+		}
+	}
+	metric := healthRecords(t, "observations/metric")["health/blood_glucose"]
+	ref, _ := metric["unit"].(map[string]any)
+	if ref["ref"] != vocabulary.KindUnit+"/mmol/L_glucose" {
+		t.Errorf("health/blood_glucose's unit is %v, want mmol/L_glucose", metric["unit"])
+	}
+	if _, kept := healthRecords(t, "observations/metric")["health/blood_glucose_mass"]; kept {
+		t.Error("health/blood_glucose_mass is still shipped: a mass reading is health/blood_glucose in mg/dL{glucose}")
 	}
 }

@@ -50,11 +50,20 @@ data:
   # `healthwhoop/strain` and `healthwhoop/sleep_performance`. An upgrade
   # deletes no record: a repository keeps its `health/whoop_*` metrics and
   # the values that name them (samples/healthwhoop/README.md).
-  version: 7
+  # 8: blood glucose is one metric in two units: `mmol/L{glucose}` and
+  # `mg/dL{glucose}`, unit records joined by glucose's molar mass
+  # (analyte_units.yaml). `health/blood_glucose` anchors to the first and
+  # takes the HealthKit code; `health/blood_glucose_mass` and its analyte
+  # leave the catalogue, and an upgrade leaves a repository's copies in
+  # place. A repository holding `health/blood_glucose` values in plain
+  # mmol/L refuses the upgrade until they are purged (a tombstone counts);
+  # docs/observations.md#glucose-written-before-health-8 has the order.
+  version: 8
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds, one function and the metric catalogue (metrics.yaml) with the lab
-# analytes (metrics_analytes.yaml) as data. The metric rows are records of
+# analytes (metrics_analytes.yaml) and the glucose units
+# (analyte_units.yaml) as data. The metric rows are records of
 # the base package's kind, so a re-import of this sample rewrites them and
 # its removal leaves them. The record views (views.yaml: a sleep, a workout,
 # a lab report, a lab result, and a lab trend on the metric kind) are data
