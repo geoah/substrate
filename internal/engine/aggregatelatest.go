@@ -130,6 +130,16 @@ func newer(a, b *aggStream) bool {
 	return a.recordID > b.recordID
 }
 
+// earliestPointsQuery reads each stream's earliest available point: the
+// least first_available of its segments, which each segment stores for its
+// own available points, so a segment whose first points are null and one
+// that overlaps it are both read right. The partial index
+// observed_segments_first_available_idx holds only segments with an
+// available point, so a long run of segments of nulls costs nothing.
+const earliestPointsQuery = `SELECT w.id, f.first_available, f.utc_offset_min FROM unnest($1::bigint[]) AS w(id)
+	CROSS JOIN LATERAL (SELECT g.first_available, g.utc_offset_min FROM observed_segments g
+		WHERE g.stream = w.id AND g.first_available IS NOT NULL ORDER BY g.first_available LIMIT 1) f`
+
 // earliestPoints is each stream's earliest available point's instant, at
 // its record's offset: the
 // first point of its earliest segment holding one, one index probe per
@@ -143,9 +153,7 @@ func earliestPoints(ctx context.Context, tx *sql.Tx, streams []*aggStream) (map[
 	for i, s := range streams {
 		ids[i] = s.id
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT w.id, f.first_ts, f.utc_offset_min FROM unnest($1::bigint[]) AS w(id)
-		CROSS JOIN LATERAL (SELECT g.first_ts, g.utc_offset_min FROM observed_segments g
-			WHERE g.stream = w.id AND g.available > 0 ORDER BY g.first_ts LIMIT 1) f`, ids)
+	rows, err := tx.QueryContext(ctx, earliestPointsQuery, ids)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate earliest points: %w", err)
 	}

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   allRange,
+  firstDayStart,
   autoBucket,
   coveredWords,
   endPlacedBucket,
@@ -336,5 +337,24 @@ describe("allRange", () => {
       start: new Date(2024, 1, 3).getTime(),
       end: new Date(2026, 9, 24).getTime(),
     })
+  })
+})
+
+describe("firstDayStart", () => {
+  it("keeps a point's recorded date where the reader's date is later", () => {
+    // 23:30 on October 1 at -07:00 is October 2 in UTC and east of it.
+    expect(firstDayStart("2026-10-01T23:30:00-07:00")).toBe(
+      new Date(2026, 9, 1).getTime()
+    )
+  })
+
+  it("never starts after the point's instant", () => {
+    for (const iso of [
+      "2026-10-02T00:30:00+09:00",
+      "2026-10-01T23:30:00-07:00",
+      "2026-10-01T12:00:00Z",
+    ]) {
+      expect(firstDayStart(iso)).toBeLessThanOrEqual(Date.parse(iso))
+    }
   })
 })

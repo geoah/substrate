@@ -53,8 +53,10 @@ import (
 // (checkObservedIndex). A change that only adds a column bumps it too, since
 // the stored rows hold the column's default. Version 2 is the unit graph
 // switch (decision 0186): no point carries a base value, and a circular
-// point's angle reads its unit's turn.
-const observedIndexVersion = 2
+// point's angle reads its unit's turn. Version 3 adds each segment's
+// earliest available instant (first_available), which the latest read's
+// `first` reads.
+const observedIndexVersion = 3
 
 // checkObservedIndex is the open ladder's step: where observed_index records
 // older rules than this binary's, or none (a repository written before

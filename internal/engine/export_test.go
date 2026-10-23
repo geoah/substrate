@@ -57,6 +57,10 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
 
+// EarliestPointsQuery is the latest read's look-up of each stream's
+// earliest available point, for a test to EXPLAIN.
+const EarliestPointsQuery = earliestPointsQuery
+
 // SetRepositoryConnsPerHandle caps what each repository opened from here on
 // may take of the shared pool. At 1, a path that holds a connection and asks
 // its repository for a second waits forever, which is what a saturated

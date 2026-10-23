@@ -29,7 +29,12 @@ import type {
 } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { recordTimelineSearch, streamSearch } from "@/lib/observations"
-import { allRange, isoWithOffset, windowWords } from "@/lib/observations-time"
+import {
+  allRange,
+  firstDayStart,
+  isoWithOffset,
+  windowWords,
+} from "@/lib/observations-time"
 import {
   APPLE,
   BODY_MASS,
@@ -2137,7 +2142,9 @@ describe("the All range", () => {
     const read = drawn(server.seen, "health/body_mass")[0]
     // The Garmin's heart rate goes back furthest.
     expect(read.aggregate.range?.gte).toBe(
-      isoWithOffset(allRange(Date.parse(FIRSTS[`${HEART}\n${GARMIN}`])).start)
+      isoWithOffset(
+        allRange(firstDayStart(FIRSTS[`${HEART}\n${GARMIN}`])).start
+      )
     )
     // A year of readings by the week or the month, never the hour.
     expect(["week", "month"]).toContain(read.aggregate.bucket?.calendar)
@@ -2158,7 +2165,9 @@ describe("the All range", () => {
     expect(
       drawn(server.seen, "health/sleep_stage")[0].aggregate.range?.gte
     ).toBe(
-      isoWithOffset(allRange(Date.parse(FIRSTS[`${RECOVERY}\n${WHOOP}`])).start)
+      isoWithOffset(
+        allRange(firstDayStart(FIRSTS[`${RECOVERY}\n${WHOOP}`])).start
+      )
     )
   })
 
@@ -2194,7 +2203,32 @@ describe("the All range", () => {
       expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
     )
     expect(drawn(server.seen, "health/body_mass")[0].aggregate.range?.gte).toBe(
-      isoWithOffset(allRange(Date.parse(FIRSTS[`${HEART}\n${GARMIN}`])).start)
+      isoWithOffset(
+        allRange(firstDayStart(FIRSTS[`${HEART}\n${GARMIN}`])).start
+      )
+    )
+  })
+
+  it("keeps the first reading's recorded date where the reader's date is later", async () => {
+    // 23:30 on October 1 at -07:00: October 2 to a reader in UTC, and the
+    // first day a recorded-local day read must hold.
+    const late: AggregateResult = {
+      ...LATEST,
+      rows: LATEST.rows
+        .filter((r) => r.group?.metric === BODY_MASS)
+        .map((r) => ({ ...r, first: "2026-10-01T23:30:00-07:00" })),
+    }
+    const server = mountWatched("?metric=health/body_mass&range=all", (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, late)
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    const range = drawn(server.seen, "health/body_mass")[0].aggregate.range!
+    const oct1 = new Date(2026, 9, 1).getTime()
+    // Read by recorded-local dates, or by instants, it starts on October 1.
+    expect(range.recordedLocal ? range.gte : Date.parse(range.gte)).toBe(
+      range.recordedLocal ? "2026-10-01" : oct1
     )
   })
 
@@ -2213,7 +2247,7 @@ describe("the All range", () => {
           (r) =>
             r.aggregate.range?.gte ===
             isoWithOffset(
-              allRange(Date.parse(FIRSTS[`${BODY_MASS}\n${WITHINGS}`])).start
+              allRange(firstDayStart(FIRSTS[`${BODY_MASS}\n${WITHINGS}`])).start
             )
         )
       ).toBe(true)

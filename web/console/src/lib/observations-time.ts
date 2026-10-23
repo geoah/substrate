@@ -33,6 +33,26 @@ export const ALL_RANGE: { value: "all"; label: string } = {
   label: "All",
 }
 
+/** The start of the first day a point at `iso` falls on for a reader: the
+ * earlier of its recorded date (the date its own offset names, which a
+ * recorded-local read cuts by) and the reader's date at its instant, each
+ * at the reader's midnight. A point late on October 1 at -07:00 is October 2
+ * to a reader in UTC, and still October 1's to a recorded-local day read. */
+export function firstDayStart(iso: string): number {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return NaN
+  const at = new Date(t)
+  const reader = new Date(
+    at.getFullYear(),
+    at.getMonth(),
+    at.getDate()
+  ).getTime()
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return reader
+  const recorded = new Date(+m[1], +m[2] - 1, +m[3]).getTime()
+  return Math.min(reader, recorded)
+}
+
 /** Every day from the one holding `earliest` through today. */
 export function allRange(earliest: number, now = Date.now()): TimeRange {
   const first = new Date(Math.min(earliest, now))

@@ -70,14 +70,16 @@ type obsSegment struct {
 	form              string
 	first, last, end  time.Time
 	points, available int
-	// lastAvailable is the newest available point's instant, meaningful only
-	// where available is above zero: the zero time is an instant a point may
-	// hold (0001-01-01T00:00:00Z), so it cannot stand for none.
-	lastAvailable time.Time
-	offset        int64
-	known         bool
-	codes         []string
-	fingerprint   []byte
+	// lastAvailable is the newest available point's instant, and
+	// firstAvailable the earliest's, both meaningful only where available is
+	// above zero: the zero time is an instant a point may hold
+	// (0001-01-01T00:00:00Z), so it cannot stand for none.
+	lastAvailable  time.Time
+	firstAvailable time.Time
+	offset         int64
+	known          bool
+	codes          []string
+	fingerprint    []byte
 }
 
 // segment is what one record's derived rows store in observed_segments.
@@ -100,6 +102,9 @@ func (r *observedRows) segment() obsSegment {
 			codes[p.code] = true
 			if s.available == 1 || p.ts.After(s.lastAvailable) {
 				s.lastAvailable = p.ts
+			}
+			if s.available == 1 || p.ts.Before(s.firstAvailable) {
+				s.firstAvailable = p.ts
 			}
 		}
 	}
@@ -271,19 +276,22 @@ func newObsStore(ctx context.Context, q dbx, view kindLookup, units *vocabulary.
 
 // segmentColumns are the columns of observed_segments scanSegment reads.
 const segmentColumns = `kind, record_id, stream, form, first_ts, last_ts, end_ts, points, available,
-	last_available, utc_offset_min, offset_known, to_jsonb(codes)`
+	last_available, first_available, utc_offset_min, offset_known, to_jsonb(codes)`
 
 // scanSegment reads segmentColumns after any leading columns in lead.
 func scanSegment(rows *sql.Rows, lead ...any) (obsSegment, error) {
 	var s obsSegment
-	var last sql.NullTime
+	var last, first sql.NullTime
 	var codes []byte
 	if err := rows.Scan(append(lead, &s.ref.Kind, &s.ref.ID, &s.stream, &s.form, &s.first, &s.last, &s.end, &s.points, &s.available,
-		&last, &s.offset, &s.known, &codes)...); err != nil {
+		&last, &first, &s.offset, &s.known, &codes)...); err != nil {
 		return s, err
 	}
 	if last.Valid {
 		s.lastAvailable = last.Time
+	}
+	if first.Valid {
+		s.firstAvailable = first.Time
 	}
 	s.codes = jsonStrings(codes)
 	return s, nil

@@ -53,6 +53,7 @@ import { chosenValue, distinct, NONE, sameRef } from "@/lib/observations"
 import { FROM_CHOICES } from "@/lib/observations-reads"
 import {
   endPlacedBucket,
+  firstDayStart,
   presetReaching,
   RANGE_PRESETS,
 } from "@/lib/observations-time"
@@ -168,8 +169,10 @@ export function ObservationsTimelinePage() {
             (!channels.length ||
               channels.some((v) => chosenValue(s.channel, v)))
         )
+        // Each stream's first day, its recorded date or the reader's,
+        // whichever is earlier, so a recorded-local read keeps it.
         .reduce<number | null>((min, s) => {
-          const t = s.first ? Date.parse(s.first) : NaN
+          const t = s.first ? firstDayStart(s.first) : NaN
           return Number.isNaN(t) || (min !== null && min <= t) ? min : t
         }, null)
   const controls = useTimelineControls("7d", { earliest })
