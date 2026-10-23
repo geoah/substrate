@@ -193,7 +193,7 @@ describe("streamChat post-200 failures", () => {
     expect(error).toBe(message)
   })
 
-  it("says a request that never reached the server did not", async () => {
+  it("says delivery is unknown when the connection fails before an answer", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -209,7 +209,9 @@ describe("streamChat post-200 failures", () => {
         onDone: () => resolve("settled"),
       })
     })
-    expect(error).toBe("the request did not reach the server (Load failed)")
+    expect(error).toBe(
+      "the connection failed before the server answered (Load failed)"
+    )
   })
 
   it("settles onDone on a clean run carrying a result", async () => {

@@ -58,7 +58,12 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
 
 import type { AgentEvent } from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
-import { Conversation, RELOAD_WAIT_MS } from "./conversation"
+import { TransportError } from "@/lib/api/agents"
+import {
+  Conversation,
+  RECONCILE_DELAY_MS,
+  RELOAD_WAIT_MS,
+} from "./conversation"
 
 afterEach(() => {
   cleanup()
@@ -68,6 +73,7 @@ afterEach(() => {
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  sessionStorage.clear()
 })
 
 function Harness({
@@ -571,27 +577,298 @@ describe("a send after a turn", () => {
     expect(screen.getByText("the stored reply")).toBeTruthy()
   })
 
-  it("says so when the request closes before a turn starts", async () => {
-    await settleOneTurn(
-      async () => new Response(JSON.stringify({ records: [] }), { status: 200 })
-    )
-    await waitFor(() =>
-      expect(
-        screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
-      ).toBeTruthy()
-    )
+  it("keeps what was typed after a held message when the held message goes", async () => {
+    let land: (r: Response) => void = () => {}
+    await settleOneTurn(() => new Promise<Response>((r) => (land = r)))
     type("second")
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    type("third")
+    await act(async () => {
+      land(new Response(JSON.stringify({ records: [] }), { status: 200 }))
+      await new Promise((r) => setTimeout(r, 10))
+    })
     await waitFor(() => expect(calls).toHaveLength(2))
-    act(() => calls[1].onDone?.())
-    expect(screen.getByRole("alert").textContent).toContain(
-      "closed the request before the turn started"
+    expect(calls[1].message).toBe("second")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("third")
+  })
+
+  it("keeps a held message across leaving the chat and coming back", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ records: [] })))
     )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
-      "second"
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Keyed thread="t-1" />
+      </QueryClientProvider>
+    )
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    type("first")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => calls[0].onEvent({ kind: "thread", thread: "t-1" }))
+    // The turn is still running: this one is held.
+    type("second")
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
+    expect(screen.getByText(/Sends when/).textContent).toContain("second")
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Keyed thread="t-2" />
+      </QueryClientProvider>
+    )
+    expect(screen.queryByText(/Sends when/)).toBeNull()
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Keyed thread="t-1" />
+      </QueryClientProvider>
+    )
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].message).toBe("second")
+    expect(calls[1].thread).toBe("t-1")
+  })
+
+  it("starts a fresh read when Try again meets a new chat's stuck first read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const fetches = vi.fn(() => new Promise<Response>(() => {}))
+    vi.stubGlobal("fetch", fetches)
+    mount()
+    type("hello")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-new" })
+      calls[0].onEvent({ kind: "done", result: settled })
+      calls[0].onDone?.()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(RELOAD_WAIT_MS)
+      await Promise.resolve()
+    })
+    await screen.findByRole("alert")
+    const before = fetches.mock.calls.length
+    expect(before).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    await waitFor(() =>
+      expect(fetches.mock.calls.length).toBeGreaterThan(before)
     )
   })
 })
+
+describe("a late transcript read", () => {
+  const first = [
+    message("m1", 1, "assistant", "the reply"),
+    message("m0", 0, "user", "first"),
+  ]
+  const both = [
+    message("m3", 3, "assistant", "reply two"),
+    message("m2", 2, "user", "second"),
+    ...first,
+  ]
+  const result = {
+    reply: "",
+    thread: "t-1",
+    status: "ok",
+    effects: 0,
+    turns: 1,
+    toolCalls: 0,
+    promptTokens: 1,
+    completionTokens: 1,
+    totalTokens: 2,
+    costUSD: 0,
+  }
+
+  /** Every records read waits until the test answers it, by its index. */
+  function deferredReads() {
+    const reads: ((rows: unknown[]) => void)[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            reads.push((rows) =>
+              resolve(new Response(JSON.stringify({ records: rows })))
+            )
+          })
+      )
+    )
+    return reads
+  }
+
+  async function answer(read: (rows: unknown[]) => void, rows: unknown[]) {
+    await act(async () => {
+      read(rows)
+      await new Promise((r) => setTimeout(r, 10))
+    })
+  }
+
+  /** Turn one settles, its read hangs past the wait, turn two starts. */
+  async function turnTwoAfterAStuckRead() {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const reads = deferredReads()
+    mount("t-1")
+    await waitFor(() => expect(reads).toHaveLength(1))
+    await answer(reads[0], [])
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "first" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-1" })
+      calls[0].onEvent({ kind: "delta", text: "the reply" })
+      calls[0].onEvent({ kind: "done", result })
+      calls[0].onDone?.()
+    })
+    await waitFor(() => expect(reads).toHaveLength(2))
+    await act(async () => {
+      vi.advanceTimersByTime(RELOAD_WAIT_MS)
+      await Promise.resolve()
+    })
+    await screen.findByRole("alert")
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "second" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(calls).toHaveLength(2)
+    act(() => {
+      calls[1].onEvent({ kind: "thread", thread: "t-1" })
+      calls[1].onEvent({ kind: "delta", text: "reply two" })
+    })
+    return reads
+  }
+
+  function finishTurnTwo() {
+    act(() => {
+      calls[1].onEvent({ kind: "done", result })
+      calls[1].onDone?.()
+    })
+  }
+
+  it("does not double turn one when it lands during turn two", async () => {
+    const reads = await turnTwoAfterAStuckRead()
+    await answer(reads[1], first)
+    expect(screen.getAllByText("the reply")).toHaveLength(1)
+    finishTurnTwo()
+    await waitFor(() => expect(reads).toHaveLength(3))
+    await answer(reads[2], both)
+    expect(screen.getAllByText("the reply")).toHaveLength(1)
+    expect(screen.getAllByText("reply two")).toHaveLength(1)
+  })
+
+  it("does not hide turn two when it lands after turn two settles", async () => {
+    const reads = await turnTwoAfterAStuckRead()
+    finishTurnTwo()
+    await waitFor(() => expect(reads).toHaveLength(3))
+    await answer(reads[1], first)
+    expect(screen.getAllByText("reply two")).toHaveLength(1)
+    await answer(reads[2], both)
+    expect(screen.getAllByText("reply two")).toHaveLength(1)
+    expect(screen.getAllByText("the reply")).toHaveLength(1)
+  })
+})
+
+describe("a send whose delivery is unknown", () => {
+  let rows: ReturnType<typeof message>[] = []
+  function stubLiveRows() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: rows }), { status: 200 })
+      )
+    )
+  }
+
+  async function sendThenLoseTheConnection(fail: () => void) {
+    rows = [message("m0", 0, "user", "question")]
+    stubLiveRows()
+    mount("t-8")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "one more thing" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(fail)
+    // Not "wasn't sent", and nothing offered for a resend yet.
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Checking whether it reached the chat"
+    )
+    expect(screen.getByRole("alert").textContent).not.toContain("wasn’t sent")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+  }
+
+  const dropped = () =>
+    calls[0].onError?.(
+      new TransportError(
+        "the connection failed before the server answered (Load failed)"
+      )
+    )
+
+  it("gives the message back once the thread shows it never arrived", async () => {
+    await sendThenLoseTheConnection(dropped)
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "It isn’t in this chat"
+        ),
+      { timeout: RECONCILE_DELAY_MS + 2000 }
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "one more thing"
+    )
+  })
+
+  it("offers no resend when the thread shows the message arrived", async () => {
+    await sendThenLoseTheConnection(dropped)
+    rows = [message("m1", 1, "user", "one more thing"), ...rows]
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull(), {
+      timeout: RECONCILE_DELAY_MS + 2000,
+    })
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    expect(calls).toHaveLength(1)
+  })
+
+  it("checks the thread when the stream closes before any event", async () => {
+    await sendThenLoseTheConnection(() => calls[0].onDone?.())
+    await waitFor(
+      () =>
+        expect(screen.getByRole("alert").textContent).toContain(
+          "It isn’t in this chat"
+        ),
+      { timeout: RECONCILE_DELAY_MS + 2000 }
+    )
+  })
+
+  it("points a new chat at the chat list before a resend", () => {
+    mount()
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "hello" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(dropped)
+    expect(screen.getByRole("alert").textContent).toContain(
+      "look for it in the chat list"
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("hello")
+  })
+})
+
+/** A conversation the page remounts by thread, as the agents page does. */
+function Keyed({ thread }: { thread: string }) {
+  const [draft, setDraft] = useState("")
+  return (
+    <Conversation
+      key={thread}
+      agentId="helper"
+      thread={thread}
+      title="Chat"
+      onThread={() => {}}
+      draft={draft}
+      onDraft={setDraft}
+    />
+  )
+}
 
 function message(id: string, turn: number, role: string, content: string) {
   return {

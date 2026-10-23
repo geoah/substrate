@@ -329,6 +329,11 @@ function threadVerbPath(thread: string, verb: string): string {
   return `${collectionPath(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread")}/${encodeURIComponent(thread)}/${verb}`
 }
 
+/** The connection failed, before or after the server answered: whether the
+ * request took effect is unknown, unlike an `ApiError`, which is the
+ * server's own answer. */
+export class TransportError extends Error {}
+
 /** Fetches an ndjson agent stream and reads it to its end. The body never
  * ends until the turn settles, so `request` cannot carry it. */
 function openAgentStream(
@@ -339,8 +344,8 @@ function openAgentStream(
   const ctrl = new AbortController()
 
   void (async () => {
-    // Whether the server answered at all: a fetch that rejects before it
-    // did never reached it (or its answer never reached the page).
+    // Whether the server's answer began to arrive. A fetch that rejects
+    // before it may still have delivered the request.
     let answered = false
     try {
       const headers: Record<string, string> = {
@@ -383,10 +388,10 @@ function openAgentStream(
       handlers.onError?.(
         cause instanceof ApiError
           ? cause
-          : new Error(
+          : new TransportError(
               answered
-                ? message
-                : `the request did not reach the server (${message})`
+                ? `the connection closed while the answer was read (${message})`
+                : `the connection failed before the server answered (${message})`
             )
       )
     }
