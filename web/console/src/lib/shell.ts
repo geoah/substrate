@@ -10,6 +10,11 @@ export interface ShellInfo {
   platform: "macos" | "ios"
   /** The substrate's origin, `https://substrate.example.com`. */
   server: string
+  /** The app's own version, as its release stamped it. */
+  version?: string
+  /** The app was released and checks for newer releases itself; a local
+   * build was not and never looks. */
+  updates?: boolean
 }
 
 interface ShellWindow {
@@ -47,5 +52,13 @@ export function substrateHostname(win: Window = window): string {
 export function changeServer(win: unknown = window): void {
   ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
     type: "changeServer",
+  })
+}
+
+/** Ask the shell to look for a newer release of the app now. The shell
+ * answers natively: an offer to install, or that this is the newest. */
+export function checkForUpdates(win: unknown = window): void {
+  ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
+    type: "checkForUpdates",
   })
 }

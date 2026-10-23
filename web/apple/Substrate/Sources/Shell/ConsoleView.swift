@@ -47,6 +47,7 @@ private struct ConsoleWindow: View {
 
 private struct ConsoleContent: View {
     @ObservedObject var controller: ConsoleController
+    @EnvironmentObject private var updates: Updater
 
     var body: some View {
         ConsoleWebView(controller: controller)
@@ -59,9 +60,15 @@ private struct ConsoleContent: View {
             #endif
             .sheet(isPresented: $controller.picking) {
                 ServerPicker(cancellable: true)
+                    // An alert from the window under a sheet never shows, so
+                    // the picker's own check answers from the sheet.
+                    .updateOffer(updates)
                     #if os(macOS)
                     .frame(width: 460)
                     #endif
+            }
+            .onAppear {
+                controller.checkForUpdates = { updates.checkNow() }
             }
     }
 }
