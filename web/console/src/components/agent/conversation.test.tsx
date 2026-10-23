@@ -4,7 +4,10 @@
  * the error is shown, and what was typed comes back so a retry is one press.
  * A question another page handed over to be asked is sent once, on open.
  * A running turn shows Stop, and a thread that is still running when it is
- * opened is attached to, without the events its stored rows already hold. */
+ * opened is attached to, without the events its stored rows already hold.
+ * A send is never dropped: one made before the previous turn hands over is
+ * held, shown and sent once it can, a re-read that never lands releases the
+ * composer after RELOAD_WAIT_MS, and a refusal puts the message back. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -55,7 +58,7 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
 
 import type { AgentEvent } from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
-import { Conversation } from "./conversation"
+import { Conversation, RELOAD_WAIT_MS } from "./conversation"
 
 afterEach(() => {
   cleanup()
@@ -64,6 +67,7 @@ afterEach(() => {
   stops.length = 0
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 function Harness({
@@ -395,12 +399,197 @@ describe("Conversation", () => {
     const refusal =
       "substrate: version conflict: 4 chat turns are already running in this repository: wait for one to finish, or stop one"
     act(() => calls[0].onError?.(new ApiError("conflict", refusal, 409)))
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Your message wasn’t sent"
+    )
     expect(screen.getByText(/4 chat turns are already running/)).toBeTruthy()
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "one more thing"
     )
     await act(() => new Promise((r) => setTimeout(r, 50)))
     expect(attaches).toHaveLength(0)
+  })
+})
+
+describe("a send after a turn", () => {
+  const settled = {
+    reply: "hi",
+    thread: "t-1",
+    status: "ok",
+    effects: 0,
+    turns: 1,
+    toolCalls: 0,
+    promptTokens: 1,
+    completionTokens: 1,
+    totalTokens: 2,
+    costUSD: 0,
+  }
+
+  /** Mounts thread t-1, sends one message and settles its turn. Every
+   * records read after the settle answers with `reread`. */
+  async function settleOneTurn(reread: () => Promise<Response>) {
+    let settledYet = false
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        settledYet
+          ? reread()
+          : new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    mount("t-1")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "first" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    settledYet = true
+    act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-1" })
+      calls[0].onEvent({ kind: "delta", text: "the reply" })
+      calls[0].onEvent({ kind: "done", result: settled })
+      calls[0].onDone?.()
+    })
+  }
+
+  function type(text: string) {
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: text } })
+  }
+
+  it("holds a send made before the re-read lands, shows it, and sends it after", async () => {
+    let land: (r: Response) => void = () => {}
+    await settleOneTurn(() => new Promise<Response>((r) => (land = r)))
+    type("second")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    // Not dropped: held, shown, and out of the composer.
+    expect(calls).toHaveLength(1)
+    expect(screen.getByText(/Sends when/).textContent).toContain("second")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+
+    await act(async () => {
+      land(new Response(JSON.stringify({ records: [] }), { status: 200 }))
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].message).toBe("second")
+    expect(calls[1].thread).toBe("t-1")
+    expect(screen.queryByText(/Sends when/)).toBeNull()
+  })
+
+  it("holds a send made by Enter too, and gives a held message back on request", async () => {
+    await settleOneTurn(() => new Promise<Response>(() => {}))
+    type("second")
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
+    expect(screen.getByText(/Sends when/).textContent).toContain("second")
+    fireEvent.click(screen.getByRole("button", { name: "Don’t send" }))
+    expect(screen.queryByText(/Sends when/)).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "second"
+    )
+    expect(calls).toHaveLength(1)
+  })
+
+  it("releases the composer when the re-read never comes back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await settleOneTurn(() => new Promise<Response>(() => {}))
+    await act(async () => {
+      vi.advanceTimersByTime(RELOAD_WAIT_MS)
+      await Promise.resolve()
+    })
+    const note = await screen.findByRole("alert")
+    expect(note.textContent).toContain("has not come back")
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Try again" })
+        .disabled
+    ).toBe(false)
+    type("second")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(calls).toHaveLength(2)
+    expect(calls[1].message).toBe("second")
+    // The turn whose rows never arrived is still on screen.
+    expect(screen.getByText("the reply")).toBeTruthy()
+  })
+
+  it("sends a held message once the re-read is given up on", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await settleOneTurn(() => new Promise<Response>(() => {}))
+    type("second")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(calls).toHaveLength(1)
+    await act(async () => {
+      vi.advanceTimersByTime(RELOAD_WAIT_MS + 10)
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].message).toBe("second")
+    expect(screen.getByText("the reply")).toBeTruthy()
+  })
+
+  it("sends what was held once the re-read fails", async () => {
+    await settleOneTurn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "db down" } }), {
+          status: 500,
+        })
+    )
+    type("second")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].message).toBe("second")
+  })
+
+  it("puts a refused message back ahead of what was typed since", async () => {
+    const rows = [
+      message("m1", 1, "assistant", "the stored reply"),
+      message("m0", 0, "user", "first"),
+    ]
+    await settleOneTurn(
+      async () =>
+        new Response(JSON.stringify({ records: rows }), { status: 200 })
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
+      ).toBeTruthy()
+    )
+    type("second")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    type("third")
+    act(() =>
+      calls[1].onError?.(
+        new ApiError("conflict", "a chat turn is already running", 409)
+      )
+    )
+    expect(screen.getByRole("alert").textContent).toContain(
+      "a chat turn is already running"
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "second\n\nthird"
+    )
+    // The settled turn is still on screen, not wiped by the refusal.
+    expect(screen.getByText("the stored reply")).toBeTruthy()
+  })
+
+  it("says so when the request closes before a turn starts", async () => {
+    await settleOneTurn(
+      async () => new Response(JSON.stringify({ records: [] }), { status: 200 })
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
+      ).toBeTruthy()
+    )
+    type("second")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    act(() => calls[1].onDone?.())
+    expect(screen.getByRole("alert").textContent).toContain(
+      "closed the request before the turn started"
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "second"
+    )
   })
 })
 

@@ -339,6 +339,9 @@ function openAgentStream(
   const ctrl = new AbortController()
 
   void (async () => {
+    // Whether the server answered at all: a fetch that rejects before it
+    // did never reached it (or its answer never reached the page).
+    let answered = false
     try {
       const headers: Record<string, string> = {
         Accept: "application/x-ndjson",
@@ -353,6 +356,7 @@ function openAgentStream(
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         signal: ctrl.signal,
       })
+      answered = true
       if (res.status === 401) {
         sessionExpired()
         handlers.onError?.(new ApiError("auth", "session expired", 401))
@@ -375,10 +379,15 @@ function openAgentStream(
       if (ctrl.signal.aborted) return
       // An ApiError keeps its status, so a caller can tell a refusal that
       // will not change (a deleted thread) from a failure worth retrying.
+      const message = (cause as Error).message || "chat stream failed"
       handlers.onError?.(
         cause instanceof ApiError
           ? cause
-          : new Error((cause as Error).message ?? "chat stream failed")
+          : new Error(
+              answered
+                ? message
+                : `the request did not reach the server (${message})`
+            )
       )
     }
   })()

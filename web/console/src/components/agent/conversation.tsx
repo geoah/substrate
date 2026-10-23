@@ -23,7 +23,13 @@
  * Opening a thread whose record says `running` attaches to it once the stored
  * rows are read: the replay's events the rows already hold are dropped by
  * their `turn`, and the rest feed the same overlay a send does. Stop ends
- * the turn on the server, and the stream's own `done` settles the overlay. */
+ * the turn on the server, and the stream's own `done` settles the overlay.
+ *
+ * A send is never dropped without a word (#1038). One made while a turn runs
+ * or hands over is held, shown above the composer, and sent once the
+ * conversation can take it; a handover whose re-read does not land within
+ * RELOAD_WAIT_MS is given up on like one that failed; and a send the server
+ * refuses comes back to the composer with the server's words. */
 
 import {
   useEffect,
@@ -76,6 +82,12 @@ import {
   type LiveOverlay,
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
+
+/** How long the transcript re-read after a turn may take before the composer
+ * is released anyway. The read is one page of rows; past this it is stuck
+ * (a request the network or a relay never answers), and a send must not wait
+ * on it forever. */
+export const RELOAD_WAIT_MS = 15_000
 
 /** The callout for an agent whose provider row has no key: the run would be
  * refused at dispatch, so the page says why before anybody types. */
@@ -148,6 +160,14 @@ export function Conversation({
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A send the server refused before any turn ran: nothing was sent, which
+  // reads differently from an agent that could not answer.
+  const [refusal, setRefusal] = useState<string | null>(null)
+  // A message sent while the previous turn was still handing over: it goes
+  // once the conversation can take it, and is shown until then.
+  const [queued, setQueued] = useState<string | null>(null)
+  // The settle whose re-read outlived RELOAD_WAIT_MS.
+  const [slowFor, setSlowFor] = useState(0)
   // A turn no client can stream holds the thread (a triggered run): the page
   // says so and re-reads the thread as it changes, instead of waiting.
   const [background, setBackground] = useState(false)
@@ -206,11 +226,25 @@ export function Conversation({
   // The read after a run failed for good: no handover will come on its own.
   // The overlay stays (it is the only view of the run), the composer is
   // released, and a retry that lands completes the handover.
-  const reloadFailed =
+  const reloadErrored =
     settledAt > 0 &&
     !handedOver &&
     messages.isError &&
     messages.errorUpdatedAt >= settledAt
+  // A read that never comes back is treated like one that failed: the
+  // composer is released and the page says so, with a retry.
+  const reloadSlow = settledAt > 0 && !handedOver && slowFor === settledAt
+  const reloadFailed = reloadErrored || reloadSlow
+  useEffect(() => {
+    if (!settledAt || handedOver || reloadErrored) return
+    const timer = setTimeout(() => {
+      console.warn(
+        `chat: the transcript re-read after a turn did not come back in ${RELOAD_WAIT_MS / 1000} s`
+      )
+      setSlowFor(settledAt)
+    }, RELOAD_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [settledAt, handedOver, reloadErrored])
   const turns = handedOver
     ? transcriptOf(persisted)
     : [...transcriptOf(persisted), ...live.turns]
@@ -463,19 +497,56 @@ export function Conversation({
     })
   }
 
+  // A queued message goes the moment the conversation can take it.
+  const sendQueued = useEffectEvent((message: string) => {
+    setQueued(null)
+    send(message)
+  })
+  useEffect(() => {
+    if (queued === null || busy) return
+    // On the next task, not inside the effect: the send sets state, and a
+    // cleanup before it fires (a remount) must not send twice.
+    const timer = setTimeout(() => sendQueued(queued), 0)
+    return () => clearTimeout(timer)
+  }, [queued, busy])
+
+  // Puts a message that was not sent back in the composer, ahead of
+  // anything typed since, so neither is lost.
+  function restore(message: string) {
+    const typed = draftRef.current.trim()
+    onDraft(typed && typed !== message ? `${message}\n\n${typed}` : message)
+  }
+
+  function cancelQueued() {
+    if (queued === null) return
+    setQueued(null)
+    restore(queued)
+  }
+
   function send(text = draft) {
     const message = text.trim()
-    if (!message || busy || !agentId || keylessProvider) return
+    if (!message || !agentId || keylessProvider) return
+    if (busy) {
+      // The previous turn has not handed over yet (or is still running):
+      // the message waits, visibly, instead of being dropped. A second one
+      // joins it rather than replacing it.
+      onDraft("")
+      setQueued((held) => (held ? `${held}\n\n${message}` : message))
+      return
+    }
     onDraft("")
     setError(null)
+    setRefusal(null)
     setResult(null)
     seqRef.current++
     // The previous run's overlay is the persisted transcript's job now —
     // unless its read failed, when the overlay is still the only view of it.
+    const kept = reloadFailed ? liveRef.current.turns : []
+    const settledBefore = settledAt
     setSettledAt(0)
     update({
       turns: [
-        ...(reloadFailed ? liveRef.current.turns : []),
+        ...kept,
         {
           key: `live-u${seqRef.current}`,
           role: "user",
@@ -506,10 +577,13 @@ export function Conversation({
       if (run !== runRef.current) return
       if (named && done) return settle()
       if (named) return reattach(run, runThreadRef.current, 0)
-      update(EMPTY_OVERLAY)
+      // Nothing ran, so the previous turn's handover (and its failed or slow
+      // re-read, with its retry) is where the page was.
+      update({ ...EMPTY_OVERLAY, turns: kept })
+      setSettledAt(settledBefore)
       setStreaming(false)
       setStopping(false)
-      if (!draftRef.current.trim()) onDraft(message)
+      restore(message)
     }
 
     handleRef.current = streamChat({
@@ -526,11 +600,30 @@ export function Conversation({
       },
       onError: (err) => {
         if (run !== runRef.current) return
-        if (named) lastErrorRef.current = err.message
-        else setError(err.message)
+        if (named) {
+          lastErrorRef.current = err.message
+        } else {
+          // What the owner needs to tell a refusal from a relay failure:
+          // the status, the code and the server's own words.
+          console.error("chat: send refused before the turn started", {
+            status: err instanceof ApiError ? err.status : undefined,
+            code: err instanceof ApiError ? err.code : undefined,
+            message: err.message,
+          })
+          setRefusal(err.message)
+        }
         end()
       },
-      onDone: end,
+      onDone: () => {
+        if (run === runRef.current && !named && !done) {
+          // A stream that closed without a single event: the request was
+          // answered but no turn started, and nothing says why.
+          setRefusal(
+            "the server closed the request before the turn started; try again"
+          )
+        }
+        end()
+      },
     })
   }
 
@@ -641,6 +734,15 @@ export function Conversation({
               {name} couldn’t answer: {error}
             </div>
           )}
+          {refusal && (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
+            >
+              Your message wasn’t sent, and it is back in the box below:{" "}
+              {refusal}
+            </div>
+          )}
           {reloadFailed && (
             <div
               role="alert"
@@ -648,12 +750,15 @@ export function Conversation({
             >
               <span>
                 The conversation didn’t reload after that answer:{" "}
-                {messages.error?.message}
+                {reloadErrored
+                  ? messages.error?.message
+                  : `the read has not come back after ${RELOAD_WAIT_MS / 1000} seconds`}
               </span>
               <Button
                 size="sm"
                 variant="outline"
-                disabled={messages.isFetching}
+                // A read that is stuck is still "fetching": a retry replaces it.
+                disabled={messages.isFetching && !reloadSlow}
                 onClick={() => void messages.refetch()}
               >
                 Try again
@@ -676,6 +781,20 @@ export function Conversation({
         {keylessProvider && (
           <div className="px-4 pt-3 md:px-6">
             <KeylessCallout provider={keylessProvider} />
+          </div>
+        )}
+        {queued !== null && (
+          <div
+            role="status"
+            className="mx-4 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-panel px-3.5 py-2 text-[13px] md:mx-6"
+          >
+            <span className="min-w-0 flex-1 text-muted-foreground">
+              Sends when {name} is ready:{" "}
+              <span className="text-foreground">{queued}</span>
+            </span>
+            <Button size="sm" variant="outline" onClick={cancelQueued}>
+              Don’t send
+            </Button>
           </div>
         )}
         <Composer

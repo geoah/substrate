@@ -193,6 +193,25 @@ describe("streamChat post-200 failures", () => {
     expect(error).toBe(message)
   })
 
+  it("says a request that never reached the server did not", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Load failed")
+      })
+    )
+    const error = await new Promise<string>((resolve) => {
+      streamChat({
+        agent: "a",
+        message: "hi",
+        onEvent: () => {},
+        onError: (e) => resolve(e.message),
+        onDone: () => resolve("settled"),
+      })
+    })
+    expect(error).toBe("the request did not reach the server (Load failed)")
+  })
+
   it("settles onDone on a clean run carrying a result", async () => {
     const r = await runStream([
       '{"kind":"thread","thread":"t-1"}',

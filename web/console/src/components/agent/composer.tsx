@@ -38,7 +38,8 @@ export function Composer({
   /** The agents a new chat may go to; absent on an existing thread. */
   agents?: string[]
   onPickAgent?: (agent: string) => void
-  /** A run is in flight. */
+  /** A run is in flight. A send now is the conversation's to hold until
+   * the run hands over, so it is still offered. */
   busy: boolean
   /** Sending cannot work at all (no agent, no key). */
   disabled?: boolean
@@ -58,7 +59,7 @@ export function Composer({
   }, [value])
 
   const name = agentId ? agentName(agentId) : "an agent"
-  const canSend = !busy && !disabled && value.trim().length > 0
+  const canSend = !disabled && value.trim().length > 0
 
   return (
     <div className="px-4 pt-3 pb-4 md:px-6">
@@ -130,7 +131,11 @@ export function Composer({
               disabled={!canSend}
               onClick={onSend}
             >
-              {busy ? <Spinner className="size-3.5" /> : <ArrowUpIcon />}
+              {busy && !canSend ? (
+                <Spinner className="size-3.5" />
+              ) : (
+                <ArrowUpIcon />
+              )}
             </Button>
           )}
         </div>
