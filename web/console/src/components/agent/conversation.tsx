@@ -66,7 +66,6 @@ import {
   attachThread,
   readThreadNow,
   stopThread,
-  TransportError,
   streamChat,
   threadMessagesQueryOptions,
   transcriptOrder,
@@ -152,7 +151,7 @@ function OutcomeNote({
   const { kind, reason, message, restored } = outcome
   const lead =
     kind === "refused"
-      ? `Your message wasn’t sent. ${restored ? "It is back in the box below." : "It is below, to copy."}`
+      ? `Your message wasn’t sent. ${restored ? "It was put back in the box below, and a copy is here." : "A copy is here."}`
       : kind === "checking"
         ? "The connection dropped before the server confirmed your message. Checking whether it arrived…"
         : "The connection dropped before the server confirmed your message, so it may not have arrived. Look for it in the chat, or for a new chat in the chat list, before sending it again. It is below, to copy."
@@ -170,7 +169,9 @@ function OutcomeNote({
         {kind === "refused" ? "The server said: " : "What failed: "}
         {reason}
       </p>
-      {!restored && kind !== "checking" && (
+      {/* Always the saved copy: the composer may have been cleared since
+          (switching chats clears it). */}
+      {kind !== "checking" && (
         <div className="flex items-start gap-2">
           <p className="min-w-0 flex-1 rounded-md border bg-background px-2.5 py-1.5 whitespace-pre-wrap text-foreground">
             {message}
@@ -692,7 +693,7 @@ export function Conversation({
     setError(null)
     // An outcome stays until its message is sent again or dismissed. One
     // whose message went back into the composer is that composer's now.
-    keepUnsent(unsentAt, (o) => !o.restored && o.message !== message)
+    keepUnsent(unsentAt, (o) => o.message !== message)
     setResult(null)
     seqRef.current++
     // The previous run's overlay is the persisted transcript's job now —
@@ -772,10 +773,19 @@ export function Conversation({
           lastErrorRef.current = err.message
           return end()
         }
-        if (err instanceof TransportError) return end(err.message)
-        // The server's own refusal: nothing ran. What the owner needs to
-        // tell a refusal from a relay failure: the status, the code and the
-        // server's words.
+        // Only a 4xx with the server's envelope says nothing ran. A 5xx can
+        // come after the user message was stored (a shutdown between the
+        // thread's claim and the turn's start answers 503), and a failure
+        // after the 200 came after admission: both are of unknown delivery.
+        if (!(
+          err instanceof ApiError &&
+          err.status >= 400 &&
+          err.status < 500
+        )) {
+          return end(err.message)
+        }
+        // The server's own refusal. What the owner needs to tell a refusal
+        // from a relay failure: the status, the code and the server's words.
         console.error("chat: send refused before the turn started", {
           status: err instanceof ApiError ? err.status : undefined,
           code: err instanceof ApiError ? err.code : undefined,

@@ -12,15 +12,15 @@ import { getRepository } from "@/lib/api/session"
 /** What became of one send that started no turn. */
 export interface Unsent {
   id: number
-  /** `refused`: the server's own refusal, so nothing ran. `checking` and
-   * `unknown`: the connection failed before the server confirmed anything,
-   * so the message may or may not have arrived. */
+  /** `refused`: the server's own 4xx refusal, so nothing ran. `checking`
+   * and `unknown`: anything else (a connection failure, a gateway's answer,
+   * a 5xx), so the message may or may not have arrived. */
   kind: "refused" | "checking" | "unknown"
   /** The server's words, or what failed. */
   reason: string
   message: string
-  /** The message went back into the composer; otherwise its notice shows it
-   * with a copy action. */
+  /** The message was also put back into the composer. Its notice shows the
+   * saved copy either way, because the composer may be cleared since. */
   restored: boolean
 }
 

@@ -129,7 +129,9 @@ describe("Conversation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     expect(calls).toHaveLength(1)
 
-    act(() => calls[0].onError?.(new Error("dispatch refused")))
+    act(() =>
+      calls[0].onError?.(new ApiError("guard", "dispatch refused", 403))
+    )
 
     expect(screen.getByText(/dispatch refused/)).toBeTruthy()
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
@@ -137,9 +139,12 @@ describe("Conversation", () => {
     )
     const send = screen.getByRole("button", { name: "Send" })
     expect((send as HTMLButtonElement).disabled).toBe(false)
-    // The optimistic bubble is not left behind as if it had been sent.
+    // The optimistic bubble is not left behind as if it had been sent: the
+    // only copy outside the composer is the notice's.
     expect(
-      screen.queryAllByText("hello there", { ignore: "textarea" })
+      screen
+        .queryAllByText("hello there", { ignore: "textarea" })
+        .filter((el) => !el.closest("[role=alert]"))
     ).toHaveLength(0)
 
     fireEvent.click(send)
@@ -873,6 +878,26 @@ describe("a send whose delivery is unknown", () => {
     )
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
     expect(calls).toHaveLength(1)
+  })
+
+  it("treats a 503 with the server's envelope as unknown, not as refused", async () => {
+    await sendThenLose("one more thing", () =>
+      calls[0].onError?.(
+        new ApiError(
+          "unavailable",
+          "the server is shutting down: send the message again once it is back",
+          503
+        )
+      )
+    )
+    // The shutdown came after the thread's claim stored the message.
+    rows = [message("m2", 2, "user", "one more thing"), ...rows]
+    await waitFor(
+      () => expect(screen.queryByRole("alert")).toBeNull(),
+      settledCheck
+    )
+    expect(screen.queryByText(/wasn’t sent/)).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   })
 
   it("attaches to the turn the check finds running, with no running record given", async () => {
