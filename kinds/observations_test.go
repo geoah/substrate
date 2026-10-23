@@ -33,13 +33,13 @@ func shippedSample(t *testing.T, pkg string) *catalog.Bundle {
 	return b
 }
 
-// THE FOUR BASE KIND NAMES ARE FROZEN (decision 0159). A sample's kind cannot
-// be moved by the catalog's upgrade: renaming one after the first import is a
-// repository migration in every repository that took it. A fifth kind is an
+// THE BASE KIND NAMES ARE FROZEN (decision 0159). A sample's kind cannot be
+// moved by the catalog's upgrade: renaming one after the first import is a
+// repository migration in every repository that took it. A new kind is an
 // addition, which this pin lets through; a rename or a removal fails here.
 func TestObservationsSampleKindNamesAreFrozen(t *testing.T) {
 	b := shippedSample(t, "observations")
-	for _, name := range []string{"metric", "observation", "trace", "source"} {
+	for _, name := range []string{"metric", "observation", "trace", "source", "sourcelink"} {
 		if !slices.Contains(b.Closure.Kinds, samples.Authority+"/observations/"+name) {
 			t.Errorf("observations/%s is gone: the base kind names are frozen before the first import", name)
 		}

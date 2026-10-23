@@ -30,6 +30,10 @@ const (
 // per metric, keyed by the metric's full record path.
 const SourcePriorities = "priorities"
 
+// SourceLinkSources is the `sourcelink` trait's one property: the sources
+// that are one device.
+const SourceLinkSources = "sources"
+
 // The `result` trait's property names. `value`, `code`, `absentReason` and
 // `sourceValue` beside them are `observed(single)`'s.
 const (

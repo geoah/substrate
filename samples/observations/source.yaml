@@ -1,8 +1,10 @@
 # the device that produced a value, never the delivery that brought it: one
 # watch reached through two providers without a shared upstream identity is
 # two sources, and a read's source policy chooses between them (decision
-# record 0162). The delivery is each value's `origin`. Binds core's `source`
-# trait, whose `priorities` the aggregate read ranks sources by.
+# record 0162); a `sourcelink` says they are one device, which a priority
+# read takes from its highest-ranked source alone (decision record 0187).
+# The delivery is each value's `origin`. Binds core's `source` trait, whose
+# `priorities` the aggregate read ranks sources by.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: samples.substrate.reamde.dev/observations/source

@@ -97,6 +97,7 @@ write is held to.
 | `observation` | One measured value, binding core's `observed(single)`: a number with its unit, or a code.                   |
 | `trace`       | The values of one metric from one source over one fixed period, binding `observed(packed)`.                  |
 | `source`      | The device, app, service or lab a value came from, binding core's `source`: its rank per metric.            |
+| `sourcelink`  | The sources that are one device reached by several routes, binding core's `sourcelink`.                      |
 
 It ships six metric records several domains share: `air_temperature`,
 `relative_humidity`, `energy`, `power`, `illuminance` and

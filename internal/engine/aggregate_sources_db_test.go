@@ -474,3 +474,87 @@ func TestAggregatePriorityReachesAnOlderLongerSpan(t *testing.T) {
 		})
 	}
 }
+
+// One scale reaching the repository through its maker's app (withings,
+// ranked 1) and through Apple Health (apple, ranked 2) is two sources, and
+// Apple Health stamps the 07:00 weigh-in two seconds early, outside the
+// higher source's hold, so the priority policy alone counts it twice. A
+// record of the observations sample's `sourcelink` kind, binding core's
+// `sourcelink`, says the two are one device (decision 0187): under priority
+// the device answers from its highest-ranked source alone, so the weigh-in
+// counts once, and an order naming apple first makes apple that source. A
+// gym scale no link names keeps its own reading, a weighing about someone
+// else is a stream of its own, `separate` ignores the link, two links
+// sharing a source join, and deleting the links counts the weigh-in twice
+// again.
+func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := openAgg(t)
+	link := f.source + "link"
+	at := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
+	for id, rank := range map[string]any{"withings": 1, "apple": 2, "gym": nil, "healthconnect": nil} {
+		props := map[string]any{"name": id}
+		if rank != nil {
+			props["priorities"] = map[string]any{f.metricPath("health/body_mass"): rank}
+		}
+		f.mustPut(t, f.source, id, props)
+	}
+	f.weighing("w/withings", "withings", "72.4", at, nil)
+	f.weighing("w/apple", "apple", "72.4", at.Add(-2*time.Second), nil)
+	f.weighing("w/gym", "gym", "73.1", at.Add(11*time.Hour), nil)
+	bob := map[string]any{"about": map[string]any{"ref": f.sourcePath("bob")}}
+	f.weighing("w/bob", "apple", "81", at.Add(time.Hour), bob)
+	read := func(about bool, sources substrate.AggregateSources) *substrate.AggregateResult {
+		cond := substrate.Cond{Exists: &about}
+		return f.agg(ctx, substrate.Filter{Properties: map[string]substrate.Cond{"about": cond}}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(at.Add(-time.Hour), at.Add(23*time.Hour)),
+			Reducers: reducers("count"),
+			Sources:  &sources,
+		})
+	}
+	priority := func(order ...string) substrate.AggregateSources {
+		return substrate.AggregateSources{Policy: "priority", Order: order}
+	}
+	check := func(label string, res *substrate.AggregateResult, count string, sources ...string) {
+		t.Helper()
+		var want []string
+		for _, s := range sources {
+			want = append(want, f.sourcePath(s))
+		}
+		slices.Sort(want)
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s: %d rows, want one: %+v", label, len(res.Rows), res.Rows)
+		}
+		got, _ := val(res.Rows[0], "count")
+		if got != count || !slices.Equal(res.Sources, want) {
+			t.Errorf("%s: count %s from %v, want %s from %v", label, got, res.Sources, count, want)
+		}
+	}
+	check("unlinked", read(false, priority()), "3", "apple", "gym", "withings")
+
+	f.mustPut(t, link, "scale", map[string]any{
+		"name": "Withings Body+", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	})
+	check("linked", read(false, priority()), "2", "gym", "withings")
+	check("linked, apple ordered first", read(false, priority("apple")), "2", "apple", "gym")
+	check("linked, about bob", read(true, priority()), "1", "apple")
+	if res := read(false, substrate.AggregateSources{Policy: "separate"}); len(res.Rows) != 3 {
+		t.Errorf("separate: %d rows, want one per source, the link ignored", len(res.Rows))
+	}
+
+	if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, "scale", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the link: %v", err)
+	}
+	f.mustPut(t, link, "a", map[string]any{"name": "a", "sources": []any{f.sourceRef("withings"), f.sourceRef("healthconnect")}})
+	f.mustPut(t, link, "b", map[string]any{"name": "b", "sources": []any{f.sourceRef("healthconnect"), f.sourceRef("apple")}})
+	check("linked through healthconnect", read(false, priority()), "2", "gym", "withings")
+
+	for _, id := range []string{"a", "b"} {
+		if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, id, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("delete link %s: %v", id, err)
+		}
+	}
+	check("links deleted", read(false, priority()), "3", "apple", "gym", "withings")
+}
