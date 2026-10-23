@@ -2232,6 +2232,28 @@ describe("the All range", () => {
     )
   })
 
+  it("keeps a later reading recorded on an earlier date at another offset", async () => {
+    // One stream: its earliest instant is 00:30 UTC on October 2, and a
+    // later reading, 23:45 on October 1 at -01:00, records October 1.
+    const mixed: AggregateResult = {
+      ...LATEST,
+      rows: LATEST.rows
+        .filter((r) => r.group?.metric === BODY_MASS)
+        .map((r) => ({ ...r, first: "2026-10-02T00:30:00Z" })),
+    }
+    const server = mountWatched("?metric=health/body_mass&range=all", (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, mixed)
+    )
+    await waitFor(() =>
+      expect(drawn(server.seen, "health/body_mass").length).toBeGreaterThan(0)
+    )
+    const range = drawn(server.seen, "health/body_mass")[0].aggregate.range!
+    const start = range.recordedLocal
+      ? new Date(`${range.gte}T00:00:00`).getTime()
+      : Date.parse(range.gte)
+    expect(start).toBeLessThanOrEqual(new Date(2026, 9, 1).getTime())
+  })
+
   it("offers All in the range picker, kept in the address", async () => {
     const server = mountWatched(
       `?metric=health/body_mass&${WINDOW}`,

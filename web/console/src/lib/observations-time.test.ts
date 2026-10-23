@@ -348,6 +348,14 @@ describe("firstDayStart", () => {
     )
   })
 
+  it("reaches the date a later point of the stream may record further west", () => {
+    // The stream's earliest instant is 00:30 UTC on October 2; a later one,
+    // 00:45 UTC, was written at -01:00 and records October 1.
+    expect(firstDayStart("2026-10-02T00:30:00Z")).toBeLessThanOrEqual(
+      new Date(2026, 9, 1).getTime()
+    )
+  })
+
   it("never starts after the point's instant", () => {
     for (const iso of [
       "2026-10-02T00:30:00+09:00",
