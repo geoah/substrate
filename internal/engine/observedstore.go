@@ -591,28 +591,6 @@ func (st *obsStore) newest(info *obsStreamInfo) (*observedRows, int, error) {
 	return r, at, nil
 }
 
-// streamInfos reads the named streams' rows.
-func streamInfos(ctx context.Context, q dbx, ids []int64) (map[int64]*obsStreamInfo, error) {
-	out := map[int64]*obsStreamInfo{}
-	if len(ids) == 0 {
-		return out, nil
-	}
-	rows, err := q.QueryContext(ctx, `SELECT id, metric, kind, source, about, channel, statistic, max_extent_ms
-		FROM observed_streams WHERE id = ANY($1::bigint[])`, ids)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: observed streams: %w", err)
-	}
-	for rows.Next() {
-		var s obsStreamInfo
-		if err := rows.Scan(&s.id, &s.key.metric, &s.key.kind, &s.key.source, &s.key.about, &s.key.channel, &s.key.statistic, &s.maxExtentMs); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		out[s.id] = &s
-	}
-	return out, finishRows(rows)
-}
-
 // tierSeconds is a tier's width as observed_rollups.tier stores it.
 func tierSeconds(w time.Duration) int64 { return int64(w / time.Second) }
 

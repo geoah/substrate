@@ -132,7 +132,9 @@ func finishRows(rows *sql.Rows) error {
 // applySegments writes each written record's segment where its fingerprint
 // moved (or the pass forces it), allocating stream ids and widening
 // extents, and records the instants and streams the old and new segments
-// touched.
+// touched. It reads once (the old segments and every stream either side
+// names) and writes once, allocating in between only a stream the
+// repository has not seen.
 func (s *obsSettle) applySegments() error {
 	refs := make([]eref, 0, len(s.touch.ops))
 	for ref := range s.touch.ops {
@@ -144,11 +146,19 @@ func (s *obsSettle) applySegments() error {
 		}
 		return refs[i].ID < refs[j].ID
 	})
-	olds, err := s.oldSegments(refs)
+	var keys []obsKey
+	seen := map[obsKey]bool{}
+	for _, ref := range refs {
+		if nr := s.touch.ops[ref]; nr != nil && !seen[nr.key] {
+			seen[nr.key] = true
+			keys = append(keys, nr.key)
+		}
+	}
+	olds, ids, err := s.readSegmentsAndStreams(refs, keys)
 	if err != nil {
 		return err
 	}
-	var gone []eref
+	var removed []eref
 	var fresh []*observedRows
 	for _, ref := range refs {
 		nr := s.touch.ops[ref]
@@ -160,7 +170,9 @@ func (s *obsSettle) applySegments() error {
 			continue
 		}
 		if had {
-			gone = append(gone, ref)
+			if nr == nil {
+				removed = append(removed, ref)
+			}
 			s.touchSegment(old)
 			s.latest[old.stream] -= int64(old.available)
 		}
@@ -168,11 +180,7 @@ func (s *obsSettle) applySegments() error {
 			fresh = append(fresh, nr)
 		}
 	}
-	if err := s.deleteSegments(gone); err != nil {
-		return err
-	}
-	ids, err := s.streamIDs(fresh)
-	if err != nil {
+	if err := s.allocateStreams(fresh, ids); err != nil {
 		return err
 	}
 	segs := make([]obsSegment, len(fresh))
@@ -185,22 +193,7 @@ func (s *obsSettle) applySegments() error {
 		s.touchSegment(segs[i])
 		s.latest[segs[i].stream] += int64(segs[i].available)
 	}
-	if err := s.insertSegments(segs); err != nil {
-		return err
-	}
-	if err := s.widenExtents(segs); err != nil {
-		return err
-	}
-	var touched []int64
-	for sf := range s.ranges {
-		touched = append(touched, sf.stream)
-	}
-	for id := range s.latest {
-		touched = append(touched, id)
-	}
-	slices.Sort(touched)
-	s.streams, err = streamInfos(s.t.ctx, s.t.tx, slices.Compact(touched))
-	return err
+	return s.writeSegments(removed, segs)
 }
 
 func (s *obsSettle) touchSegment(seg obsSegment) {
@@ -208,112 +201,112 @@ func (s *obsSettle) touchSegment(seg obsSegment) {
 	s.ranges[sf] = append(s.ranges[sf], obsSpan{lo: seg.first, hi: seg.last})
 }
 
-// oldSegments reads the stored segments of the written records.
-func (s *obsSettle) oldSegments(refs []eref) (map[eref]obsSegment, error) {
-	out := map[eref]obsSegment{}
+// readSegmentsAndStreams reads, in one statement, the stored segments of the
+// written records and every stream they or the written keys name: a stream
+// row with each of its old segments, or alone where it has none. It fills
+// s.streams and answers the old segments and the id of each key the
+// repository has seen.
+func (s *obsSettle) readSegmentsAndStreams(refs []eref, keys []obsKey) (map[eref]obsSegment, map[obsKey]int64, error) {
+	olds, ids := map[eref]obsSegment{}, map[obsKey]int64{}
+	s.streams = map[int64]*obsStreamInfo{}
 	if len(refs) == 0 {
-		return out, nil
+		return olds, ids, nil
 	}
-	kinds, ids := make([]string, len(refs)), make([]string, len(refs))
+	kinds, recordIDs := make([]string, len(refs)), make([]string, len(refs))
 	for i, r := range refs {
-		kinds[i], ids[i] = r.Kind, r.ID
+		kinds[i], recordIDs[i] = r.Kind, r.ID
 	}
-	rows, err := s.t.query(`SELECT `+segmentColumns+`, fingerprint FROM observed_segments
-		WHERE (kind, record_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))`, kinds, ids)
+	args := append([]any{kinds, recordIDs}, keyColumns(keys)...)
+	rows, err := s.t.query(`
+		WITH old AS (
+			SELECT g.* FROM observed_segments g
+			WHERE (g.kind, g.record_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))),
+		st AS (
+			SELECT s.* FROM observed_streams s WHERE s.id IN (SELECT stream FROM old)
+			UNION
+			SELECT s.* FROM observed_streams s
+			JOIN unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[]) AS k(metric, kind, source, about, channel, statistic)
+			  ON s.metric = k.metric AND s.kind = k.kind AND s.source = k.source AND s.about = k.about
+			 AND s.channel = k.channel AND s.statistic = k.statistic)
+		SELECT st.id, st.metric, st.kind, st.source, st.about, st.channel, st.statistic, st.max_extent_ms,
+			o.kind, o.record_id, o.form, o.first_ts, o.last_ts, o.end_ts, o.points, o.available,
+			o.last_available, o.utc_offset_min, o.offset_known, to_jsonb(o.codes), o.fingerprint
+		FROM st LEFT JOIN old o ON o.stream = st.id`, args...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for rows.Next() {
-		var seg obsSegment
-		var last sql.NullTime
-		var codes []byte
-		if err := rows.Scan(&seg.ref.Kind, &seg.ref.ID, &seg.stream, &seg.form, &seg.first, &seg.last, &seg.end, &seg.points, &seg.available,
-			&last, &seg.offset, &seg.known, &codes, &seg.fingerprint); err != nil {
+		var info obsStreamInfo
+		var (
+			kind, id, form          sql.NullString
+			first, last, end, avail sql.NullTime
+			points, available, off  sql.NullInt64
+			known                   sql.NullBool
+			codes, fingerprint      []byte
+		)
+		if err := rows.Scan(&info.id, &info.key.metric, &info.key.kind, &info.key.source, &info.key.about, &info.key.channel,
+			&info.key.statistic, &info.maxExtentMs, &kind, &id, &form, &first, &last, &end, &points, &available,
+			&avail, &off, &known, &codes, &fingerprint); err != nil {
 			_ = rows.Close()
-			return nil, err
+			return nil, nil, err
 		}
-		if last.Valid {
-			seg.lastAvailable = last.Time
+		if s.streams[info.id] == nil {
+			s.streams[info.id] = &info
+			ids[info.key] = info.id
 		}
-		seg.codes = jsonStrings(codes)
-		out[seg.ref] = seg
+		if !kind.Valid {
+			continue
+		}
+		seg := obsSegment{
+			ref: eref{Kind: kind.String, ID: id.String}, stream: info.id, form: form.String,
+			first: first.Time, last: last.Time, end: end.Time, points: int(points.Int64), available: int(available.Int64),
+			offset: off.Int64, known: known.Bool, codes: jsonStrings(codes), fingerprint: fingerprint,
+		}
+		if avail.Valid {
+			seg.lastAvailable = avail.Time
+		}
+		olds[seg.ref] = seg
 	}
-	return out, finishRows(rows)
+	return olds, ids, finishRows(rows)
 }
 
-func (s *obsSettle) deleteSegments(refs []eref) error {
-	if len(refs) == 0 {
-		return nil
-	}
-	kinds, ids := make([]string, len(refs)), make([]string, len(refs))
-	for i, r := range refs {
-		kinds[i], ids[i] = r.Kind, r.ID
-	}
-	_, err := s.t.exec(`DELETE FROM observed_segments g USING unnest($1::text[], $2::text[]) AS w(kind, id)
-		WHERE g.kind = w.kind AND g.record_id = w.id`, kinds, ids)
-	return err
-}
-
-// streamIDs is the id of each written record's stream, allocating the ones
-// the repository has not seen. The observed lock makes this the only
+// allocateStreams gives each written record's stream the repository has not
+// seen an id, into ids and s.streams. The observed lock makes this the only
 // transaction allocating in the repository.
-func (s *obsSettle) streamIDs(rows []*observedRows) (map[obsKey]int64, error) {
-	out := map[obsKey]int64{}
-	var keys []obsKey
-	for _, r := range rows {
-		if _, ok := out[r.key]; !ok {
-			out[r.key] = 0
-			keys = append(keys, r.key)
-		}
-	}
-	if len(keys) == 0 {
-		return out, nil
-	}
-	cols := keyColumns(keys)
-	rs, err := s.t.query(`SELECT s.id, s.metric, s.kind, s.source, s.about, s.channel, s.statistic FROM observed_streams s
-		JOIN unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS k(metric, kind, source, about, channel, statistic)
-		  ON s.metric = k.metric AND s.kind = k.kind AND s.source = k.source AND s.about = k.about
-		 AND s.channel = k.channel AND s.statistic = k.statistic`, cols...)
-	if err != nil {
-		return nil, err
-	}
-	if err := scanStreamIDs(rs, out); err != nil {
-		return nil, err
-	}
+func (s *obsSettle) allocateStreams(rows []*observedRows, ids map[obsKey]int64) error {
 	var missing []obsKey
-	for _, k := range keys {
-		if out[k] == 0 {
-			missing = append(missing, k)
+	for _, r := range rows {
+		if _, ok := ids[r.key]; !ok {
+			ids[r.key] = 0
+			missing = append(missing, r.key)
 		}
 	}
 	if len(missing) == 0 {
-		return out, nil
+		return nil
 	}
-	rs, err = s.t.query(`INSERT INTO observed_streams (metric, kind, source, about, channel, statistic)
+	rs, err := s.t.query(`INSERT INTO observed_streams (metric, kind, source, about, channel, statistic)
 		SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
 		RETURNING id, metric, kind, source, about, channel, statistic`, keyColumns(missing)...)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return out, scanStreamIDs(rs, out)
-}
-
-// scanStreamIDs reads stream ids by key into out.
-func scanStreamIDs(rs *sql.Rows, out map[obsKey]int64) error {
 	for rs.Next() {
-		var id int64
-		var k obsKey
-		if err := rs.Scan(&id, &k.metric, &k.kind, &k.source, &k.about, &k.channel, &k.statistic); err != nil {
+		info := &obsStreamInfo{}
+		if err := rs.Scan(&info.id, &info.key.metric, &info.key.kind, &info.key.source, &info.key.about, &info.key.channel, &info.key.statistic); err != nil {
 			_ = rs.Close()
 			return err
 		}
-		out[k] = id
+		ids[info.key] = info.id
+		s.streams[info.id] = info
 	}
 	return finishRows(rs)
 }
 
 func keyColumns(keys []obsKey) []any {
 	cols := make([][]string, 6)
+	for i := range cols {
+		cols[i] = []string{}
+	}
 	for _, k := range keys {
 		for i, v := range []string{k.metric, k.kind, k.source, k.about, k.channel, k.statistic} {
 			cols[i] = append(cols[i], v)
@@ -326,10 +319,41 @@ func keyColumns(keys []obsKey) []any {
 	return out
 }
 
-func (s *obsSettle) insertSegments(segs []obsSegment) error {
-	for len(segs) > 0 {
+// writeSegments deletes the segments of the removed records, writes the
+// written ones over what each record stored, and raises each written
+// stream's max_extent_ms to its longest new segment's, rounded up to the
+// millisecond: one statement per batch of segments, the first carrying the
+// deletion and the extents. An extent never lowers: a bound too wide costs a
+// read time, one too narrow its points.
+func (s *obsSettle) writeSegments(removed []eref, segs []obsSegment) error {
+	longest := map[int64]int64{}
+	for _, g := range segs {
+		longest[g.stream] = max(longest[g.stream], g.extentMillis())
+	}
+	streams := make([]int64, 0, len(longest))
+	for id := range longest {
+		streams = append(streams, id)
+	}
+	slices.Sort(streams)
+	ms := make([]int64, len(streams))
+	for i, id := range streams {
+		ms[i] = longest[id]
+		if info := s.streams[id]; info != nil && info.maxExtentMs < ms[i] {
+			info.maxExtentMs = ms[i]
+		}
+	}
+	gone := [2][]string{{}, {}}
+	for _, r := range removed {
+		gone[0], gone[1] = append(gone[0], r.Kind), append(gone[1], r.ID)
+	}
+	for first := true; first || len(segs) > 0; first = false {
 		n := min(len(segs), observedInsertBatch)
-		if err := s.insertSegmentBatch(segs[:n]); err != nil {
+		if !first {
+			gone, streams, ms = [2][]string{{}, {}}, []int64{}, []int64{}
+		} else if n == 0 && len(removed) == 0 && len(streams) == 0 {
+			return nil
+		}
+		if err := s.writeSegmentBatch(gone, streams, ms, segs[:n]); err != nil {
 			return err
 		}
 		segs = segs[n:]
@@ -337,7 +361,7 @@ func (s *obsSettle) insertSegments(segs []obsSegment) error {
 	return nil
 }
 
-func (s *obsSettle) insertSegmentBatch(segs []obsSegment) error {
+func (s *obsSettle) writeSegmentBatch(gone [2][]string, streams, extents []int64, segs []obsSegment) error {
 	n := len(segs)
 	kind, id, form, codes := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	stream, offset := make([]int64, n), make([]int64, n)
@@ -359,41 +383,30 @@ func (s *obsSettle) insertSegmentBatch(segs []obsSegment) error {
 		}
 		codes[i] = string(raw)
 	}
+	// The deletion names records the insert does not write, and the
+	// extents another table, so no row is touched twice.
 	_, err := s.t.exec(`
+		WITH gone AS (
+			DELETE FROM observed_segments g USING unnest($15::text[], $16::text[]) AS w(kind, id)
+			WHERE g.kind = w.kind AND g.record_id = w.id),
+		widened AS (
+			UPDATE observed_streams s SET max_extent_ms = w.ms
+			FROM unnest($17::bigint[], $18::bigint[]) AS w(id, ms)
+			WHERE s.id = w.id AND s.max_extent_ms < w.ms)
 		INSERT INTO observed_segments (kind, record_id, stream, form, first_ts, last_ts, end_ts, points, available,
 			last_available, utc_offset_min, offset_known, codes, fingerprint)
 		SELECT u.kind, u.id, u.stream, u.form, u.first, u.last, u.e, u.points, u.available, u.last_available, u.off, u.known,
 			ARRAY(SELECT jsonb_array_elements_text(u.codes::jsonb)), u.fp
 		FROM unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::timestamptz[], $6::timestamptz[], $7::timestamptz[],
 		            $8::int[], $9::int[], $10::timestamptz[], $11::int[], $12::boolean[], $13::text[], $14::bytea[])
-		     AS u(kind, id, stream, form, first, last, e, points, available, last_available, off, known, codes, fp)`,
-		kind, id, stream, form, first, last, end, points, available, lastAvailable, offset, known, codes, fp)
-	return err
-}
-
-// widenExtents raises each written stream's max_extent_ms to its longest
-// new segment's, rounded up to the millisecond. It never lowers one: a bound
-// too wide costs a read time, one too narrow its points.
-func (s *obsSettle) widenExtents(segs []obsSegment) error {
-	longest := map[int64]int64{}
-	for _, g := range segs {
-		longest[g.stream] = max(longest[g.stream], g.extentMillis())
-	}
-	if len(longest) == 0 {
-		return nil
-	}
-	ids := make([]int64, 0, len(longest))
-	for id := range longest {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	ms := make([]int64, len(ids))
-	for i, id := range ids {
-		ms[i] = longest[id]
-	}
-	_, err := s.t.exec(`UPDATE observed_streams s SET max_extent_ms = w.ms
-		FROM unnest($1::bigint[], $2::bigint[]) AS w(id, ms)
-		WHERE s.id = w.id AND s.max_extent_ms < w.ms`, ids, ms)
+		     AS u(kind, id, stream, form, first, last, e, points, available, last_available, off, known, codes, fp)
+		ON CONFLICT (repository, kind, record_id) DO UPDATE SET
+			stream = EXCLUDED.stream, form = EXCLUDED.form, first_ts = EXCLUDED.first_ts, last_ts = EXCLUDED.last_ts,
+			end_ts = EXCLUDED.end_ts, points = EXCLUDED.points, available = EXCLUDED.available,
+			last_available = EXCLUDED.last_available, utc_offset_min = EXCLUDED.utc_offset_min,
+			offset_known = EXCLUDED.offset_known, codes = EXCLUDED.codes, fingerprint = EXCLUDED.fingerprint`,
+		kind, id, stream, form, first, last, end, points, available, lastAvailable, offset, known, codes, fp,
+		gone[0], gone[1], streams, extents)
 	return err
 }
 
@@ -534,14 +547,15 @@ func (s *obsSettle) recomputeFinest(sf obsSF, info *obsStreamInfo, w time.Durati
 	changed := changedBuckets{}
 	done := map[time.Time]bool{}
 	var all []rollupRow
-	for _, sp := range spans {
-		// The buckets to recompute are those an old point stood in, which
-		// its row names, and those a new point falls in; the points of the
-		// stream's other records are read for those buckets alone.
-		old, err := s.oldBuckets(sf, w, sp.lo.Add(-w), sp.hi)
-		if err != nil {
-			return nil, err
-		}
+	// The buckets to recompute are those an old point stood in, which its
+	// row names, and those a new point falls in; the points of the stream's
+	// other records are read for those buckets alone.
+	olds, err := s.oldBucketsInSpans(sf, w, spans)
+	if err != nil {
+		return nil, err
+	}
+	for i, sp := range spans {
+		old := olds[i]
 		window := map[time.Time]bool{}
 		for start, offs := range old {
 			window[start] = true
@@ -580,10 +594,11 @@ func (s *obsSettle) recomputeFinest(sf obsSF, info *obsStreamInfo, w time.Durati
 			}
 			if next != nil {
 				g := s.store.groups[next.Group]
-				holding, err := s.oldBuckets(sf, w, next.At.Add(-w), next.At)
+				held, err := s.oldBucketsInSpans(sf, w, []obsSpan{{lo: next.At, hi: next.At}})
 				if err != nil {
 					return nil, err
 				}
+				holding := held[0]
 				holding.add(observed.TierStart(next.At, w, g.offset), g.offset)
 				for start, offs := range holding {
 					for off := range offs {
@@ -615,10 +630,7 @@ func (s *obsSettle) recomputeFinest(sf obsSF, info *obsStreamInfo, w time.Durati
 		}
 		all = append(all, rows...)
 	}
-	if err := s.replaceRows(sf, w, sortedTimes(done)); err != nil {
-		return nil, err
-	}
-	return changed, s.insertRollups(sf, w, all)
+	return changed, s.writeRollups(sf, w, sortedTimes(done), all)
 }
 
 // bucketsFromPoints computes the buckets of width w at starts from pts,
@@ -688,31 +700,18 @@ func (s *obsSettle) recomputeCoarser(sf obsSF, info *obsStreamInfo, w, finer tim
 			set[observed.TierStart(start, w, off)] = true
 		}
 	}
-	// A point ends the hold of the point before it whatever their offsets,
-	// so a bucket of this tier at another alignment that overlaps a changed
-	// finer bucket may have changed too, though none of its groups did.
-	overlapping, err := s.bucketsOverlapping(sf, w, sortedTimes(belowStarts(below)), finer)
+	old, fine, err := s.coarserInputs(sf, w, finer, sortedTimes(set), sortedTimes(belowStarts(below)))
 	if err != nil {
 		return nil, err
 	}
-	for start := range overlapping {
-		set[start] = true
-	}
-	starts := sortedTimes(set)
 	changed := changedBuckets{}
-	old, err := s.oldBucketsAt(sf, w, starts)
-	if err != nil {
-		return nil, err
-	}
 	for start, offs := range old {
+		set[start] = true
 		for off := range offs {
 			changed.add(start, off)
 		}
 	}
-	fine, err := s.rowsMeeting(sf, finer, starts, w)
-	if err != nil {
-		return nil, err
-	}
+	starts := sortedTimes(set)
 	var all []rollupRow
 	for _, start := range starts {
 		end := start.Add(w)
@@ -746,10 +745,7 @@ func (s *obsSettle) recomputeCoarser(sf obsSF, info *obsStreamInfo, w, finer tim
 			all = append(all, r)
 		}
 	}
-	if err := s.replaceRows(sf, w, starts); err != nil {
-		return nil, err
-	}
-	return changed, s.insertRollups(sf, w, all)
+	return changed, s.writeRollups(sf, w, starts, all)
 }
 
 // belowStarts is the set of the changed buckets' starts.
@@ -780,108 +776,120 @@ func mergePoints(a, b []observed.Point) []observed.Point {
 	})
 }
 
-// oldBuckets reads the buckets of tier w with a row starting in (lo, hi],
-// each with its rows' offsets.
-func (s *obsSettle) oldBuckets(sf obsSF, w time.Duration, lo, hi time.Time) (changedBuckets, error) {
-	rows, err := s.t.query(`SELECT DISTINCT bucket, utc_offset_min FROM observed_rollups
-		WHERE stream = $1 AND form = $2 AND tier = $3 AND bucket > $4 AND bucket <= $5`,
+// oldBucketsInSpans reads, for each span, the buckets of tier w with a row
+// starting in (lo - w, hi], each with its rows' offsets: the buckets a point
+// of the span stood in.
+func (s *obsSettle) oldBucketsInSpans(sf obsSF, w time.Duration, spans []obsSpan) ([]changedBuckets, error) {
+	out := make([]changedBuckets, len(spans))
+	for i := range out {
+		out[i] = changedBuckets{}
+	}
+	if len(spans) == 0 {
+		return out, nil
+	}
+	lo, hi := make([]time.Time, len(spans)), make([]time.Time, len(spans))
+	for i, sp := range spans {
+		lo[i], hi[i] = sp.lo.Add(-w), sp.hi
+	}
+	rows, err := s.t.query(`SELECT DISTINCT w.i, r.bucket, r.utc_offset_min
+		FROM unnest($4::timestamptz[], $5::timestamptz[]) WITH ORDINALITY AS w(lo, hi, i)
+		JOIN observed_rollups r ON r.stream = $1 AND r.form = $2 AND r.tier = $3 AND r.bucket > w.lo AND r.bucket <= w.hi`,
 		sf.stream, sf.form, tierSeconds(w), lo, hi)
 	if err != nil {
 		return nil, err
 	}
-	return scanBuckets(rows)
-}
-
-// bucketsOverlapping reads the buckets of tier w holding a row that overlap
-// one of the buckets of width span at starts, each with its rows' offsets.
-func (s *obsSettle) bucketsOverlapping(sf obsSF, w time.Duration, starts []time.Time, span time.Duration) (changedBuckets, error) {
-	if len(starts) == 0 {
-		return changedBuckets{}, nil
-	}
-	rows, err := s.t.query(`SELECT DISTINCT r.bucket, r.utc_offset_min
-		FROM unnest($4::timestamptz[]) AS c(a)
-		JOIN observed_rollups r ON r.stream = $1 AND r.form = $2 AND r.tier = $3
-		 AND r.bucket > c.a - $5::bigint * interval '1 second' AND r.bucket < c.a + $6::bigint * interval '1 second'`,
-		sf.stream, sf.form, tierSeconds(w), starts, tierSeconds(w), tierSeconds(span))
-	if err != nil {
-		return nil, err
-	}
-	return scanBuckets(rows)
-}
-
-// oldBucketsAt reads which of the buckets of tier w at starts hold a row,
-// each with its rows' offsets.
-func (s *obsSettle) oldBucketsAt(sf obsSF, w time.Duration, starts []time.Time) (changedBuckets, error) {
-	rows, err := s.t.query(`SELECT DISTINCT bucket, utc_offset_min FROM observed_rollups
-		WHERE stream = $1 AND form = $2 AND tier = $3 AND bucket = ANY($4::timestamptz[])`,
-		sf.stream, sf.form, tierSeconds(w), starts)
-	if err != nil {
-		return nil, err
-	}
-	return scanBuckets(rows)
-}
-
-func scanBuckets(rows *sql.Rows) (changedBuckets, error) {
-	out := changedBuckets{}
 	for rows.Next() {
+		var i int64
 		var start time.Time
 		var off int64
-		if err := rows.Scan(&start, &off); err != nil {
+		if err := rows.Scan(&i, &start, &off); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		out.add(start.UTC(), off)
+		out[i-1].add(start.UTC(), off)
 	}
 	return out, finishRows(rows)
 }
 
-// rowsMeeting reads the rows of tier w whose bucket meets one of the buckets
-// of width span at starts.
-func (s *obsSettle) rowsMeeting(sf obsSF, w time.Duration, starts []time.Time, span time.Duration) ([]observed.Row, error) {
-	ends := make([]time.Time, len(starts))
-	for i, st := range starts {
-		ends[i] = st.Add(span)
+// coarserInputs reads, in one statement, what a recompute of tier w over the
+// finer tier's changed buckets at below needs: the buckets of tier w that
+// hold a row at one of the starts or overlapping a changed bucket, each with
+// its rows' offsets, and the finer rows that may meet any of them. A point
+// ends the hold of the point before it whatever their offsets, so a bucket of
+// this tier at another alignment that overlaps a changed finer bucket may
+// have changed too, though none of its groups did.
+//
+// Every bucket the recompute reads starts within (c - w, c + finer) of a
+// changed bucket c, and the finer rows meeting it start within (c - w -
+// finer, c + finer + w), so the finer rows are read for that window around
+// each changed bucket; the recompute keeps the ones inside each bucket.
+func (s *obsSettle) coarserInputs(sf obsSF, w, finer time.Duration, starts, below []time.Time) (changedBuckets, []observed.Row, error) {
+	old := changedBuckets{}
+	if len(starts) == 0 && len(below) == 0 {
+		return old, nil, nil
 	}
-	rows, err := s.t.query(`SELECT DISTINCT ON (r.bucket, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known) `+rollupColumns+`
-		FROM unnest($4::timestamptz[], $5::timestamptz[]) AS c(a, b)
-		CROSS JOIN LATERAL (
-			SELECT * FROM observed_rollups r
-			WHERE r.stream = $1 AND r.form = $2 AND r.tier = $3
-			  AND r.bucket > c.a - $6::bigint * interval '1 second' AND r.bucket < c.b) r
-		ORDER BY r.bucket, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known`,
-		sf.stream, sf.form, tierSeconds(w), starts, ends, tierSeconds(w))
+	rows, err := s.t.query(`SELECT DISTINCT ON (r.tier, r.bucket, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known) r.tier, `+rollupColumns+`
+		FROM (
+			SELECT * FROM observed_rollups
+			WHERE stream = $1 AND form = $2 AND tier = $3 AND bucket = ANY($4::timestamptz[])
+			UNION ALL
+			SELECT q.* FROM unnest($5::timestamptz[]) AS c(a) CROSS JOIN LATERAL (
+				SELECT * FROM observed_rollups r
+				WHERE r.stream = $1 AND r.form = $2 AND r.tier = $3
+				  AND r.bucket > c.a - $3::bigint * interval '1 second' AND r.bucket < c.a + $6::bigint * interval '1 second') q
+			UNION ALL
+			SELECT q.* FROM unnest($5::timestamptz[]) AS c(a) CROSS JOIN LATERAL (
+				SELECT * FROM observed_rollups r
+				WHERE r.stream = $1 AND r.form = $2 AND r.tier = $6
+				  AND r.bucket > c.a - ($3::bigint + $6::bigint) * interval '1 second'
+				  AND r.bucket < c.a + ($3::bigint + $6::bigint) * interval '1 second') q
+		) r
+		ORDER BY r.tier, r.bucket, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known`,
+		sf.stream, sf.form, tierSeconds(w), starts, below, tierSeconds(finer))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var out []observed.Row
+	var fine []observed.Row
 	for rows.Next() {
-		row, g, err := scanRollup(rows, w)
+		var tier int64
+		row, g, err := scanRollup(rows, finer, &tier)
 		if err != nil {
 			_ = rows.Close()
-			return nil, err
+			return nil, nil, err
+		}
+		if tier == tierSeconds(w) {
+			old.add(row.Start, g.offset)
+			continue
 		}
 		s.store.groups[g.key()] = g
-		out = append(out, row)
+		fine = append(fine, row)
 	}
-	return out, finishRows(rows)
+	return old, fine, finishRows(rows)
 }
 
-// replaceRows deletes the rows of tier w at starts.
-func (s *obsSettle) replaceRows(sf obsSF, w time.Duration, starts []time.Time) error {
-	if len(starts) == 0 {
-		return nil
+// writeRollups replaces one stream form's rows of tier w at starts with the
+// computed rows, in batches: a computed row writes over the stored row of
+// its key, and the first batch's statement deletes every stored row at
+// starts whose key no computed row has.
+func (s *obsSettle) writeRollups(sf obsSF, w time.Duration, starts []time.Time, rows []rollupRow) error {
+	n := len(rows)
+	keys := rollupKeys{
+		bucket: make([]time.Time, n), code: make([]string, n), unit: make([]string, n),
+		delta: make([]bool, n), offset: make([]int64, n), known: make([]bool, n),
 	}
-	_, err := s.t.exec(`DELETE FROM observed_rollups WHERE stream = $1 AND form = $2 AND tier = $3 AND bucket = ANY($4::timestamptz[])`,
-		sf.stream, sf.form, tierSeconds(w), starts)
-	return err
-}
-
-// insertRollups writes one stream form's computed rows of one tier, in
-// batches.
-func (s *obsSettle) insertRollups(sf obsSF, w time.Duration, rows []rollupRow) error {
-	for len(rows) > 0 {
+	for i, r := range rows {
+		keys.bucket[i], keys.code[i], keys.unit[i] = r.start, r.group.code, r.group.unit
+		keys.delta[i], keys.offset[i], keys.known[i] = r.group.delta, r.group.offset, !r.group.offsetUnknown
+	}
+	for first := true; first || len(rows) > 0; first = false {
+		if first && len(starts) == 0 && len(rows) == 0 {
+			return nil
+		}
+		if !first {
+			starts, keys = []time.Time{}, rollupKeys{}
+		}
 		n := min(len(rows), observedInsertBatch)
-		if err := s.insertRollupBatch(sf, w, rows[:n]); err != nil {
+		if err := s.writeRollupBatch(sf, w, starts, keys, rows[:n]); err != nil {
 			return err
 		}
 		rows = rows[n:]
@@ -889,7 +897,16 @@ func (s *obsSettle) insertRollups(sf obsSF, w time.Duration, rows []rollupRow) e
 	return nil
 }
 
-func (s *obsSettle) insertRollupBatch(sf obsSF, w time.Duration, rows []rollupRow) error {
+// rollupKeys are the key columns of computed rollup rows past the stream,
+// form and tier.
+type rollupKeys struct {
+	bucket       []time.Time
+	code, unit   []string
+	delta, known []bool
+	offset       []int64
+}
+
+func (s *obsSettle) writeRollupBatch(sf obsSF, w time.Duration, starts []time.Time, keys rollupKeys, rows []rollupRow) error {
 	n := len(rows)
 	var (
 		code, unit                      = make([]string, n), make([]string, n)
@@ -939,7 +956,17 @@ func (s *obsSettle) insertRollupBatch(sf obsSF, w time.Duration, rows []rollupRo
 			sin[i], cos[i] = ptrTo(st.SinSum), ptrTo(st.CosSum)
 		}
 	}
+	// The deletion names keys no computed row has, so no row is touched
+	// twice.
 	_, err := s.t.exec(`
+		WITH stale AS (
+			DELETE FROM observed_rollups r
+			WHERE r.stream = $1 AND r.form = $2 AND r.tier = $3 AND r.bucket = ANY($39::timestamptz[])
+			  AND NOT EXISTS (
+				SELECT 1 FROM unnest($40::timestamptz[], $41::text[], $42::text[], $43::boolean[], $44::int[], $45::boolean[])
+				     AS k(bucket, code, unit, delta, off, known)
+				WHERE k.bucket = r.bucket AND k.code = r.code AND k.unit = r.unit AND k.delta = r.delta
+				  AND k.off = r.utc_offset_min AND k.known = r.offset_known))
 		INSERT INTO observed_rollups (stream, form, tier,
 			code, unit, delta, utc_offset_min, bucket, n, bounded, sum, min, max, mean, m2,
 			first_ts, first_value, last_ts, last_value, covered_ms, held_ms, twa_sum, last_hold_ms,
@@ -959,12 +986,23 @@ func (s *obsSettle) insertRollupBatch(sf obsSF, w time.Duration, rows []rollupRo
 		     AS u(code, unit, delta, off, bucket, n, bounded, sum, min, max, mean, m2,
 		          first_ts, first_value, last_ts, last_value, covered, held, twa, last_hold,
 		          max_gap, start_gap, increase, resets, sin, cos, span_end,
-		          first_record, first_ord, last_record, last_ord, min_value, max_value, known, end_gap)`,
+		          first_record, first_ord, last_record, last_ord, min_value, max_value, known, end_gap)
+		ON CONFLICT (repository, stream, form, tier, bucket, code, unit, delta, utc_offset_min, offset_known) DO UPDATE SET
+			n = EXCLUDED.n, bounded = EXCLUDED.bounded, sum = EXCLUDED.sum, min = EXCLUDED.min, max = EXCLUDED.max,
+			min_value = EXCLUDED.min_value, max_value = EXCLUDED.max_value, mean = EXCLUDED.mean, m2 = EXCLUDED.m2,
+			first_ts = EXCLUDED.first_ts, first_value = EXCLUDED.first_value, first_record_id = EXCLUDED.first_record_id,
+			first_ord = EXCLUDED.first_ord, last_ts = EXCLUDED.last_ts, last_value = EXCLUDED.last_value,
+			last_record_id = EXCLUDED.last_record_id, last_ord = EXCLUDED.last_ord, covered_ms = EXCLUDED.covered_ms,
+			span_end = EXCLUDED.span_end, held_ms = EXCLUDED.held_ms, twa_sum = EXCLUDED.twa_sum,
+			last_hold_ms = EXCLUDED.last_hold_ms, max_gap_ms = EXCLUDED.max_gap_ms, start_gap_ms = EXCLUDED.start_gap_ms,
+			end_gap_ms = EXCLUDED.end_gap_ms, increase = EXCLUDED.increase, resets = EXCLUDED.resets,
+			sin_sum = EXCLUDED.sin_sum, cos_sum = EXCLUDED.cos_sum`,
 		sf.stream, sf.form, tierSeconds(w),
 		code, unit, delta, offset, bucket, count, bounded, sum, minV, maxV, mean, m2,
 		firstTS, firstValue, lastTS, lastValue, covered, held, twa, lastHold,
 		maxGap, startGap, increase, resets, sin, cos, spanEnd,
-		firstRecord, firstOrd, lastRecord, lastOrd, minExact, maxExact, known, endGap)
+		firstRecord, firstOrd, lastRecord, lastOrd, minExact, maxExact, known, endGap,
+		starts, keys.bucket, keys.code, keys.unit, keys.delta, keys.offset, keys.known)
 	return err
 }
 
@@ -1060,13 +1098,22 @@ func scanRollup(rows *sql.Rows, w time.Duration, lead ...any) (observed.Row, obs
 
 // recomputeLatest rewrites every touched stream's latest row from its
 // newest available point, its point count moved by the transaction's change
-// in it; a stream left with no available point loses its row.
+// in it; a stream left with no available point loses its row. The rows are
+// written in one statement.
 func (s *obsSettle) recomputeLatest() error {
 	ids := make([]int64, 0, len(s.latest))
 	for id := range s.latest {
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
+	var (
+		gone, stream, offset, points []int64
+		ts, tsEnd                    []time.Time
+		value                        []*string
+		code, unit, form, comparator []string
+		delta, known                 []bool
+		recordID                     []string
+	)
 	for _, id := range ids {
 		info := s.streams[id]
 		if info == nil {
@@ -1077,38 +1124,45 @@ func (s *obsSettle) recomputeLatest() error {
 			return err
 		}
 		if r == nil {
-			if _, err := s.t.exec(`DELETE FROM observed_latest WHERE stream = $1`, id); err != nil {
-				return err
-			}
+			gone = append(gone, id)
 			continue
 		}
 		p := r.points[at]
 		// The background pass counts the stream's points again from its
 		// segments, so a re-derivation also repairs a count that drifted;
 		// a write moves the count by what it changed.
-		points, exact := s.latest[id], false
+		n := s.latest[id]
 		if s.touch.force {
-			if err := s.t.row(`SELECT coalesce(sum(available), 0) FROM observed_segments WHERE stream = $1`, id).Scan(&points); err != nil {
+			if err := s.t.row(`SELECT coalesce(sum(available), 0) FROM observed_segments WHERE stream = $1`, id).Scan(&n); err != nil {
 				return err
 			}
-			exact = true
 		}
-		if _, err := s.t.exec(`
-			INSERT INTO observed_latest (stream, ts, ts_end, value, code, unit, delta, form, comparator,
-				utc_offset_min, offset_known, record_id, points)
-			VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-			ON CONFLICT (repository, stream) DO UPDATE SET
-				ts = EXCLUDED.ts, ts_end = EXCLUDED.ts_end, value = EXCLUDED.value, code = EXCLUDED.code,
-				unit = EXCLUDED.unit, delta = EXCLUDED.delta, form = EXCLUDED.form, comparator = EXCLUDED.comparator,
-				utc_offset_min = EXCLUDED.utc_offset_min, offset_known = EXCLUDED.offset_known,
-				record_id = EXCLUDED.record_id,
-				points = CASE WHEN $14 THEN EXCLUDED.points ELSE observed_latest.points + EXCLUDED.points END`,
-			id, p.ts, p.tsEnd, p.exact, p.code, r.unit, r.delta, r.form, p.comparator,
-			p.offset, p.offsetKnown, r.id, points, exact); err != nil {
-			return err
-		}
+		stream, ts, tsEnd, value = append(stream, id), append(ts, p.ts), append(tsEnd, p.tsEnd), append(value, p.exact)
+		code, unit, delta, form = append(code, p.code), append(unit, r.unit), append(delta, r.delta), append(form, r.form)
+		comparator, offset, known = append(comparator, p.comparator), append(offset, p.offset), append(known, p.offsetKnown)
+		recordID, points = append(recordID, r.id), append(points, n)
 	}
-	return nil
+	if len(gone) == 0 && len(stream) == 0 {
+		return nil
+	}
+	// The deletion names streams the insert does not write.
+	_, err := s.t.exec(`
+		WITH gone AS (DELETE FROM observed_latest WHERE stream = ANY($14::bigint[]))
+		INSERT INTO observed_latest (stream, ts, ts_end, value, code, unit, delta, form, comparator,
+			utc_offset_min, offset_known, record_id, points)
+		SELECT u.stream, u.ts, u.ts_end, u.value::numeric, u.code, u.unit, u.delta, u.form, u.comparator,
+			u.off, u.known, u.record_id, u.points
+		FROM unnest($1::bigint[], $2::timestamptz[], $3::timestamptz[], $4::text[], $5::text[], $6::text[], $7::boolean[],
+		            $8::text[], $9::text[], $10::int[], $11::boolean[], $12::text[], $13::bigint[])
+		     AS u(stream, ts, ts_end, value, code, unit, delta, form, comparator, off, known, record_id, points)
+		ON CONFLICT (repository, stream) DO UPDATE SET
+			ts = EXCLUDED.ts, ts_end = EXCLUDED.ts_end, value = EXCLUDED.value, code = EXCLUDED.code,
+			unit = EXCLUDED.unit, delta = EXCLUDED.delta, form = EXCLUDED.form, comparator = EXCLUDED.comparator,
+			utc_offset_min = EXCLUDED.utc_offset_min, offset_known = EXCLUDED.offset_known,
+			record_id = EXCLUDED.record_id,
+			points = CASE WHEN $15 THEN EXCLUDED.points ELSE observed_latest.points + EXCLUDED.points END`,
+		stream, ts, tsEnd, value, code, unit, delta, form, comparator, offset, known, recordID, points, gone, s.touch.force)
+	return err
 }
 
 // --- metrics ---

@@ -15,6 +15,7 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -2255,4 +2256,63 @@ func TestObservedPointAtTheZeroTimeIsIndexed(t *testing.T) {
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
 	r.rebuildMatches(t)
+}
+
+// observedStatements is a pgx tracer that counts, while armed, the
+// statements that read or write an observed_ table.
+type observedStatements struct {
+	armed atomic.Bool
+	n     atomic.Int64
+}
+
+func (w *observedStatements) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	if w.armed.Load() && strings.Contains(d.SQL, "observed_") {
+		w.n.Add(1)
+	}
+	return ctx
+}
+
+func (w *observedStatements) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+// The settle sends one statement per step, not one per table and step: a
+// trace written beside its stream's earlier traces reads and writes its
+// segment in two statements, each of its three tiers in two, and its latest
+// row in two, eleven in all (issue 990: it sent 21). A write that corrects
+// one moves no more.
+func TestObservedSettleSendsOneStatementPerStep(t *testing.T) {
+	t.Parallel()
+	statements := &observedStatements{}
+	r := openObservedIndex(t, engine.WithTestQueryTracer(statements))
+	trace := func(hour, rev int) map[string]any {
+		values := make([]any, 60)
+		for i := range values {
+			values[i] = strconv.Itoa(20 + rev + i%3)
+		}
+		at := time.Date(2026, 10, 7, hour, 0, 0, 0, time.UTC)
+		return map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("probe"), "form": "gauge", "unit": "Cel",
+			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339), "every": "PT1M",
+			"values": values, "utcOffset": 0, "hold": "PT2M", "revision": rev,
+		}
+	}
+	for hour := range 3 {
+		r.mustPut(t, r.trace, fmt.Sprintf("probe/%02d", hour), trace(hour, 1))
+	}
+	for _, step := range []struct {
+		name string
+		id   string
+		hour int
+		rev  int
+	}{
+		{"a new trace", "probe/03", 3, 1},
+		{"a correction", "probe/01", 1, 2},
+	} {
+		statements.armed.Store(true)
+		r.mustPut(t, r.trace, step.id, trace(step.hour, step.rev))
+		statements.armed.Store(false)
+		if n := statements.n.Swap(0); n > 11 {
+			t.Errorf("%s sent %d statements on the observed tables, want at most 11", step.name, n)
+		}
+	}
+	checkRollupsMatchSpec(t, r.ds, r.db)
 }
