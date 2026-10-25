@@ -256,6 +256,14 @@ type Property struct {
 	// write. A deprecated property may not also be `required:`, which would tell
 	// a form to stop offering a value it refuses to submit without.
 	Deprecated bool
+	// MediaTypes is the RESERVED format list of a blob-ref: the media types
+	// its bytes are (`application/pdf`, `application/vnd.inkidian+json`).
+	// Admitted, validated and stored; a client reads it to pick a renderer
+	// and an upload filter, and no write is refused for bytes of another
+	// format today.
+	// Loader-validated: lowercase `type/subtype` or `type/*`, no parameters, no
+	// `*/*`, no duplicates, never empty, and on no other datatype.
+	MediaTypes []string
 	// RenamedFrom is the previous name of this property. Admission moves every
 	// live record's value from that name to this one, as ordinary record
 	// writes in the same transaction (engine/rename.go, decision 0063), and
