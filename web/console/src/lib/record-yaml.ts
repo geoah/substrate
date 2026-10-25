@@ -5,9 +5,9 @@
  * Everything here is data-in/data-out so it can be unit-tested without a DOM:
  * - `templateYAML(units, kind)` builds the apply-able envelope a NEW record starts
  *   from, entirely from the declared schema: every property seeded with its
- *   `default` (else a typed zero), required properties first, and a trailing
- *   comment carrying required/optional, the datatype, the one-liner and a
- *   worked example. Schema-driven, never kind-special-cased.
+ *   `default` (else a typed zero, blank for an optional number), required
+ *   properties first, and a trailing comment carrying required/optional, the
+ *   datatype, the one-liner and a worked example. Schema-driven, never kind-special-cased.
  * - `applyManifestYAML(record)` is the EDIT seed: the same envelope
  *   (`kind`/`metadata`/`data`) the manifest view shows, MINUS the server-owned
  *   `status` block.
@@ -598,10 +598,15 @@ export function blankIsUnset(spec: PropSpec, value: unknown): boolean {
 
 /** Drop the properties a blank template line left behind, so a create that
  * filled in three of eleven properties does not carry eight empty strings into
- * a 422. An explicit `null` survives: that is the delete marker. */
+ * a 422. An explicit `null` survives: that is the delete marker.
+ *
+ * A CREATE also drops an optional text left empty: the record has no value to
+ * clear, so `""` would only store an empty string where nothing was said. An
+ * edit keeps it, because there `""` is how the form clears a stored text. */
 function pruneBlanks(
   props: Record<string, unknown>,
-  kind?: KindInfo
+  kind: KindInfo | undefined,
+  create: boolean
 ): Record<string, unknown> {
   if (!kind) return props
   const specs = new Map(propSpecs(kind).map((s) => [s.name, s]))
@@ -609,6 +614,7 @@ function pruneBlanks(
   for (const [name, value] of Object.entries(props)) {
     const spec = specs.get(name)
     if (spec && blankIsUnset(spec, value)) continue
+    if (spec && create && !spec.required && value === "") continue
     out[name] = value
   }
   return out
@@ -618,8 +624,13 @@ function pruneBlanks(
  * `properties` under `data`, `labels`/`annotations` under `metadata`,
  * and `metadata.id` as the write's own key (omitted when blank, so the
  * substrate mints one on create). Pass the kind and blank lines the author
- * never filled in are left out of the write. */
-export function toPutInput(doc: ApplyDoc, kind?: KindInfo): PutInput {
+ * never filled in are left out of the write; pass `create` and an optional
+ * text left empty is left out too. */
+export function toPutInput(
+  doc: ApplyDoc,
+  kind?: KindInfo,
+  { create = false }: { create?: boolean } = {}
+): PutInput {
   const out: PutInput = {}
   const id = doc.metadata?.id
   if (typeof id === "string" && id.trim()) out.id = id.trim()
@@ -632,7 +643,11 @@ export function toPutInput(doc: ApplyDoc, kind?: KindInfo): PutInput {
   if (data.properties && typeof data.properties === "object") {
     // Managed properties never reach the wire from this lens: a hand-typed
     // version would disagree with the engine's stamp and the write refused.
-    out.properties = pruneBlanks(withoutManaged(data.properties, kind), kind)
+    out.properties = pruneBlanks(
+      withoutManaged(data.properties, kind),
+      kind,
+      create
+    )
   }
   return out
 }

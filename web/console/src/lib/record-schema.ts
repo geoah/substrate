@@ -599,16 +599,17 @@ export function exampleFor(
 
 /** The seed a create template gives a property: its declared `default` when it
  * has one, else a typed zero. Repeated properties seed to an empty list
- * whatever their element datatype. */
+ * whatever their element datatype. An OPTIONAL number seeds blank: a zero
+ * nobody typed would be written as a value, and refused by a `min` above it. */
 export function seedValue(spec: PropSpec): unknown {
   if (spec.default !== undefined && spec.default !== null) return spec.default
   if (spec.keyed) return {}
   if (spec.repeated) return []
   if (spec.kind === "state") return spec.initial ?? spec.states?.[0] ?? ""
   if (isBooleanKind(spec.kind)) return false
-  if (isNumericKind(spec.kind)) return 0
+  if (isNumericKind(spec.kind)) return spec.required ? 0 : ""
   // A decimal's zero is spelled, not numbered: the value is a string of digits.
-  if (spec.kind === "decimal") return "0"
+  if (spec.kind === "decimal") return spec.required ? "0" : ""
   if (isObjectKind(spec.kind)) return {}
   return ""
 }
