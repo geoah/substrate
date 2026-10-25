@@ -1,13 +1,20 @@
 /** The repository's daily spend cap (`substrate.reamde.dev/llm/spendCentsPerDay`,
  * a core `setting` record nothing seeds): the cap in dollars and what every
  * agent's runs spent in the last 24 hours against it, summed from one read of
- * the newest runs the way the agent page sums one agent's. Editing writes the
- * record in cents; an empty cap writes an empty value, which is no cap. */
+ * the newest runs, live and deleted, the way the agent page sums one agent's.
+ * Editing writes the record in cents; removing the cap writes an empty value,
+ * which is no cap. */
 
-import { useState, type ReactNode } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query"
 
 import { EmptyValue } from "@/components/identity/empty-value"
+import { Facts } from "@/components/identity/facts"
 import { Pill } from "@/components/identity/pill"
 import { SettingRow } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
@@ -24,32 +31,34 @@ import {
   capWords,
   costWords,
   parseCapDollars,
+  reachedCap,
   repositorySpendCap,
   type CapSpend,
+  type RepositorySpendCap,
 } from "@/lib/agent-runs"
 import { repositoryRunsQueryOptions } from "@/lib/api/agents"
 import {
   repositorySpendCapQueryOptions,
   saveRepositorySpendCap,
 } from "@/lib/api/settings"
+import type { Page } from "@/lib/api/types"
 
 const CAP_LABEL = "Cap"
 const SPENT_LABEL = "Spent in the last 24 hours"
-const CAP_HINT = "In US dollars, to the cent. Empty is no cap."
+const CAP_HINT = "In US dollars, to the cent."
 
 export function SpendCapRow() {
   const setting = useQuery(repositorySpendCapQueryOptions)
   const runs = useQuery(repositoryRunsQueryOptions())
+  const deletedRuns = useQuery(repositoryRunsQueryOptions({ deleted: true }))
   const [editing, setEditing] = useState(false)
 
   const cap = repositorySpendCap(setting.data)
-  const spend = runs.isSuccess
-    ? capWindowSpend(runs.data.records ?? [], {
-        truncated: Boolean(runs.data.cursor),
-      })
-    : undefined
+  const spend = repositorySpend(runs, deletedRuns)
   const reached =
-    cap !== undefined && spend !== undefined && spend.usd * 100 >= cap
+    cap.state === "set" &&
+    spend !== undefined &&
+    reachedCap(spend.usd, cap.cents)
 
   return (
     <SettingRow
@@ -63,7 +72,7 @@ export function SpendCapRow() {
             disabled={!setting.isSuccess}
             onClick={() => setEditing(true)}
           >
-            {cap === undefined ? "Set a cap" : "Change"}
+            {cap.state === "none" ? "Set a cap" : "Change"}
           </Button>
         )
       }
@@ -73,19 +82,19 @@ export function SpendCapRow() {
           [
             CAP_LABEL,
             editing ? (
-              <CapEditor cap={cap} onDone={() => setEditing(false)} />
+              <CapEditor
+                cap={cap}
+                exists={Boolean(setting.data)}
+                onDone={() => setEditing(false)}
+              />
             ) : setting.isPending ? (
               <span className="text-faint">Reading…</span>
             ) : setting.isError ? (
               <EmptyValue>
                 The cap didn’t load: {setting.error.message}
               </EmptyValue>
-            ) : cap === undefined ? (
-              <EmptyValue>No cap</EmptyValue>
             ) : (
-              <span className="tabular-nums">
-                {capWords(cap)} in any 24 hours
-              </span>
+              <CapValue cap={cap} />
             ),
           ],
           [
@@ -104,8 +113,15 @@ export function SpendCapRow() {
         )}
         <p>
           Counts the cost each run recorded when it finished, including the
-          agents it asked.
+          agents it asked and runs deleted since.
         </p>
+        {spend !== undefined && !spend.complete && (
+          <p>
+            {deletedRuns.isError
+              ? "The deleted runs didn’t load, so this counts only the runs still here."
+              : "There are more runs than one read holds, so some that finished in the window aren’t counted here."}
+          </p>
+        )}
         {spend !== undefined && spend.running > 0 && (
           <p>
             A run still going counts against the cap as it spends, and shows
@@ -115,6 +131,56 @@ export function SpendCapRow() {
       </div>
     </SettingRow>
   )
+}
+
+/** The window's spend over the live runs and the deleted ones together.
+ * Without the deleted runs the sum is only a floor, so a failed read of them
+ * marks it incomplete rather than leaving it to look whole. */
+function repositorySpend(
+  runs: UseQueryResult<Page>,
+  deletedRuns: UseQueryResult<Page>
+): CapSpend | undefined {
+  if (!runs.isSuccess) return undefined
+  const live = capWindowSpend(runs.data.records ?? [], {
+    truncated: Boolean(runs.data.cursor),
+  })
+  if (deletedRuns.isError) return { ...live, complete: false }
+  if (!deletedRuns.isSuccess) return undefined
+  const deleted = capWindowSpend(deletedRuns.data.records ?? [], {
+    truncated: Boolean(deletedRuns.data.cursor),
+  })
+  return {
+    usd: live.usd + deleted.usd,
+    complete: live.complete && deleted.complete,
+    running: live.running,
+  }
+}
+
+function CapValue({ cap }: { cap: RepositorySpendCap }) {
+  switch (cap.state) {
+    case "none":
+      return <EmptyValue>No cap</EmptyValue>
+    case "set":
+      return (
+        <span className="tabular-nums">
+          {capWords(cap.cents)} in any 24 hours
+        </span>
+      )
+    case "unreadable":
+      return (
+        <span className="flex flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <Pill tone="warn">Unreadable</Pill>
+            <code className="font-mono text-[12.5px] break-all">
+              {cap.value}
+            </code>
+          </span>
+          <span className="text-[12.5px] text-muted-foreground">
+            Every agent run is held until this is a whole number of cents.
+          </span>
+        </span>
+      )
+  }
 }
 
 function Spent({
@@ -146,18 +212,23 @@ function Spent({
 
 function CapEditor({
   cap,
+  exists,
   onDone,
 }: {
-  cap: number | undefined
+  cap: RepositorySpendCap
+  exists: boolean
   onDone: () => void
 }) {
   const queryClient = useQueryClient()
   const [text, setText] = useState(capInputText(cap))
   const parsed = parseCapDollars(text)
-  const error = "error" in parsed ? parsed.error : undefined
+  // A blank field is not an error yet, only not a cap: Save waits for one.
+  const blank = text.trim() === ""
+  const error = "error" in parsed && !blank ? parsed.error : undefined
 
   const save = useMutation({
-    mutationFn: saveRepositorySpendCap,
+    mutationFn: (cents: number | null) =>
+      saveRepositorySpendCap({ cents, exists }),
     onSuccess: (_, cents) => {
       toast.add({
         type: "success",
@@ -198,19 +269,19 @@ function CapEditor({
             inputMode="decimal"
             autoFocus
             value={text}
-            placeholder="No cap"
+            placeholder="20.00"
             onChange={(e) => setText(e.target.value)}
           />
         </InputGroup>
         <Button
           type="submit"
           size="sm"
-          disabled={error !== undefined || save.isPending}
+          disabled={!("cents" in parsed) || save.isPending}
         >
           {save.isPending && <Spinner />}
           Save
         </Button>
-        {cap !== undefined && (
+        {cap.state !== "none" && (
           <Button
             type="button"
             variant="outline"
@@ -231,29 +302,19 @@ function CapEditor({
           Cancel
         </Button>
       </div>
-      <p
-        id="spend-cap-hint"
-        className={
-          error ? "text-[12.5px] text-destructive" : "text-[12.5px] text-faint"
-        }
-      >
-        {error ?? CAP_HINT}
-      </p>
+      {error === undefined ? (
+        <p id="spend-cap-hint" className="text-[12.5px] text-faint">
+          {CAP_HINT}
+        </p>
+      ) : (
+        <p
+          id="spend-cap-hint"
+          role="alert"
+          className="text-[12.5px] text-destructive"
+        >
+          {error}
+        </p>
+      )}
     </form>
-  )
-}
-
-function Facts({ rows }: { rows: Array<[string, ReactNode]> }) {
-  return (
-    <dl className="grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-x-3 border-t sm:grid-cols-[minmax(120px,190px)_minmax(0,1fr)]">
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="py-2.5 text-[13.5px] text-muted-foreground">
-            {label}
-          </dt>
-          <dd className="min-w-0 py-2.5 text-[13.5px]">{value}</dd>
-        </div>
-      ))}
-    </dl>
   )
 }

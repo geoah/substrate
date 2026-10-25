@@ -94,11 +94,16 @@ export const repositorySpendCapQueryOptions = queryOptions({
 
 /** Write the repository's cap in US cents, or no cap (`null`, an empty
  * value). A PUT, because the record may not exist yet; it merges, so a
- * description written by hand stays. `type: int` is what makes the engine
- * refuse a value that is not a whole number of cents. */
-export function saveRepositorySpendCap(
+ * description written by hand stays, and so does a name: the display name is
+ * written only by the PUT that creates the record. `type: int` is what makes
+ * the engine refuse a value that is not a whole number of cents. */
+export function saveRepositorySpendCap({
+  cents,
+  exists,
+}: {
   cents: number | null
-): Promise<SubstrateRecord> {
+  exists: boolean
+}): Promise<SubstrateRecord> {
   return putRecord(
     CORE_AUTHORITY,
     CORE_PACKAGE_NAME,
@@ -106,7 +111,7 @@ export function saveRepositorySpendCap(
     REPOSITORY_SPEND_CAP_ID,
     {
       properties: {
-        displayName: "Daily agent spend cap",
+        ...(exists ? {} : { displayName: "Daily agent spend cap" }),
         type: "int",
         value: cents === null ? "" : String(cents),
       },

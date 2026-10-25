@@ -139,14 +139,19 @@ export function agentRunsQueryOptions(agentId: string) {
 /** Every agent's runs, most recently active first, in one read: what the
  * repository's spend cap counts. Ordered by `updatedAt` for the reason
  * `agentRunsQueryOptions` is, so a figure over the last 24 hours knows whether
- * the read reached back that far. */
-export function repositoryRunsQueryOptions() {
+ * the read reached back that far. `deleted` reads the tombstoned runs
+ * instead: the engine counts a deleted run's cost, because the money was
+ * spent, and a list reads live rows or tombstones, never both. A tombstone's
+ * `updatedAt` is when it was deleted, after it finished, so the same bound
+ * holds for it. */
+export function repositoryRunsQueryOptions({ deleted = false } = {}) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,
     name: "thread",
     first: AGENT_RUNS_WINDOW,
     orderBy: "updatedAt:desc",
+    filter: deleted ? { deleted: true } : undefined,
   })
 }
 
