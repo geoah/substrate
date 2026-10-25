@@ -1779,3 +1779,68 @@ func TestFreshRepositoryHoldsKeylessProviders(t *testing.T) {
 		t.Fatalf("the refusal must say what to do, got: %v", err)
 	}
 }
+
+// A message insert that fails once, in a run that is neither a chat turn nor
+// detached, settles the thread `error` with the insert's failure as its
+// reason: the root's tool row, and a sub-agent's reply, whose caller goes on.
+func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	t.Run("root", func(t *testing.T) {
+		t.Parallel()
+		ds, fake := openAgentDataset(t)
+		var once sync.Once
+		ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
+			var err error
+			if props["role"] == "tool" {
+				once.Do(func() { err = errors.New("the insert was refused") })
+			}
+			return err
+		}
+		fake.script("root", fakeTurn{calls: []fakeCall{{"scribe", `{"input":"summarize"}`}}})
+		fake.script("sub", fakeTurn{content: "the summary"})
+		if _, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go"); err == nil {
+			t.Fatal("a run whose tool row could not be written succeeded")
+		}
+		roots := agentThreadsOf(t, ds, "classifier")
+		if len(roots) != 1 {
+			t.Fatalf("classifier threads: %d", len(roots))
+		}
+		reason := fmt.Sprint(roots[0]["reason"])
+		if roots[0]["status"] != threadError || !strings.Contains(reason, "message write failed: the insert was refused") {
+			t.Fatalf("root thread = %v (%q), want error naming the insert", roots[0]["status"], reason)
+		}
+	})
+	t.Run("subagent", func(t *testing.T) {
+		t.Parallel()
+		ds, fake := openAgentDataset(t)
+		var once sync.Once
+		ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
+			var err error
+			if props["role"] == "assistant" && props["content"] == "the summary" {
+				once.Do(func() { err = errors.New("the insert was refused") })
+			}
+			return err
+		}
+		fake.script("root",
+			fakeTurn{calls: []fakeCall{{"scribe", `{"input":"summarize"}`}}},
+			fakeTurn{content: "done"},
+		)
+		fake.script("sub", fakeTurn{content: "the summary"})
+		res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
+		if err != nil {
+			t.Fatalf("call: %v", err)
+		}
+		if res.Status != threadOK {
+			t.Fatalf("root = %v (%v), want ok past its sub-agent's failure", res.Status, res.Reason)
+		}
+		children := agentThreadsOf(t, ds, "scribe")
+		if len(children) != 1 {
+			t.Fatalf("scribe threads: %d", len(children))
+		}
+		reason := fmt.Sprint(children[0]["reason"])
+		if children[0]["status"] != threadError || !strings.Contains(reason, "message write failed: the insert was refused") {
+			t.Fatalf("sub-agent thread = %v (%q), want error naming the insert", children[0]["status"], reason)
+		}
+	})
+}
