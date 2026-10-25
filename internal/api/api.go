@@ -142,11 +142,13 @@ func New(cfg Config) http.Handler {
 	// name which proxies it trusts first.
 	//
 	// securityHeaders is first so that every response carries them, the
-	// router's own 404 and 405 and a recovered panic's 500 among them.
+	// router's own 404 and 405 and a recovered panic's 500 among them. cors
+	// is next, for the same reason, and because it answers a preflight before
+	// the router can refuse the OPTIONS method.
 	// requestID sits outside recoverer so a panic's log line names the
 	// request, and both sit inside httpMetrics so a recovered panic is
 	// counted as the 500 it answered.
-	r.Use(securityHeaders, httpMetrics, peerAddress, requestID, recoverer)
+	r.Use(securityHeaders, cors, httpMetrics, peerAddress, requestID, recoverer)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

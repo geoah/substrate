@@ -272,3 +272,64 @@ func TestOAuthReturnPageScriptRunsByItsNonceAlone(t *testing.T) {
 		seen[nonce] = true
 	}
 }
+
+// Any origin may call the API: a preflight is answered before routing with
+// every method this server serves and the headers it asked for, and an actual
+// response names the wildcard and exposes the headers a client acts on. No
+// response ever allows credentials, because the wildcard is safe only while
+// nothing authenticates by cookie.
+func TestAnyOriginMayCallTheAPI(t *testing.T) {
+	svc := newFakeService()
+	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
+	h := New(Config{Service: svc, Now: clock.now})
+	tok := svc.token(fakeRepository)
+	const origin = "https://app.example.com"
+
+	for _, path := range []string{recordsPath, "/login", "/.well-known/substrate/server.json"} {
+		req := httptest.NewRequest(http.MethodOptions, path, nil)
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+		req.Header.Set("Access-Control-Request-Headers", "authorization, content-type, idempotency-key")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		wantStatus(t, rec, http.StatusNoContent)
+		got := rec.Header()
+		if v := got.Get("Access-Control-Allow-Origin"); v != "*" {
+			t.Errorf("preflight %s: Allow-Origin = %q, want *", path, v)
+		}
+		if v := got.Get("Access-Control-Allow-Methods"); !strings.Contains(v, http.MethodPost) || !strings.Contains(v, http.MethodDelete) {
+			t.Errorf("preflight %s: Allow-Methods = %q", path, v)
+		}
+		if v := got.Get("Access-Control-Allow-Headers"); v != "authorization, content-type, idempotency-key" {
+			t.Errorf("preflight %s: Allow-Headers = %q", path, v)
+		}
+		if v := got.Get("Access-Control-Allow-Credentials"); v != "" {
+			t.Errorf("preflight %s: Allow-Credentials = %q, want none", path, v)
+		}
+		wantSecurityHeaders(t, "preflight "+path, rec)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, recordsPath, nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	wantStatus(t, rec, http.StatusOK)
+	if v := rec.Header().Get("Access-Control-Allow-Origin"); v != "*" {
+		t.Errorf("read: Allow-Origin = %q, want *", v)
+	}
+	if v := rec.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(v, "ETag") || !strings.Contains(v, requestIDHeader) {
+		t.Errorf("read: Expose-Headers = %q", v)
+	}
+	if v := rec.Header().Get("Access-Control-Allow-Credentials"); v != "" {
+		t.Errorf("read: Allow-Credentials = %q, want none", v)
+	}
+
+	// A request with no Origin is not a browser's cross-origin call and
+	// carries no CORS headers.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if v := rec.Header().Get("Access-Control-Allow-Origin"); v != "" {
+		t.Errorf("no Origin: Allow-Origin = %q, want none", v)
+	}
+}
