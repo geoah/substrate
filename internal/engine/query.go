@@ -1112,10 +1112,19 @@ func (ds *dataset) kindlessDatatype(name string) (_ vocabulary.Datatype, kinds [
 // declares money may be another kind's string, and the cast must not fail
 // that kind's rows.
 func moneyValueSQL(expr string) string {
-	return `(CASE WHEN jsonb_typeof(` + expr + `) = 'object'` +
-		` AND (` + expr + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
+	return `(CASE WHEN ` + moneyAmountValidSQL(expr) +
 		` THEN ((` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
 		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + `)::numeric END)`
+}
+
+// moneyAmountValidSQL holds when the money value at `expr` carries an amount
+// numeric reads: the pattern is the amount's grammar, and pg_input_is_valid
+// the cast's range, which a quarantined or hand-restored row is not held to.
+// It belongs in a CASE's WHEN, ahead of the cast.
+func moneyAmountValidSQL(expr string) string {
+	amount := `(` + expr + `->>'` + vocabulary.MoneyAmount + `')`
+	return `jsonb_typeof(` + expr + `) = 'object' AND ` + amount + ` ~ '^-?[0-9]+$'` +
+		` AND pg_input_is_valid(` + amount + `, 'numeric')`
 }
 
 // currencyDecimalsSQL is CurrencyDecimals in SQL: the minor unit of the code
@@ -1154,10 +1163,13 @@ func condMoney(b *builder, key string, c substrate.Cond) error {
 			return "", fmt.Errorf("%w: %s compares against a money value: %w", substrate.ErrValidation, key, err)
 		}
 		mv := m.(map[string]any)
+		// The CASE, not an AND beside the comparison, keeps the cast off an
+		// amount numeric refuses: Postgres may evaluate a WHERE's conjuncts in
+		// any order, and a kindless read reaches rows no money declaration
+		// speaks for.
 		return `(` + v + `->>'` + vocabulary.MoneyCurrency + `') = ` + b.arg(mv[vocabulary.MoneyCurrency]) +
-			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
-			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `')::numeric ` + op + ` ` +
-			b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
+			` AND (CASE WHEN ` + moneyAmountValidSQL(v) + ` THEN (` + v + `->>'` + vocabulary.MoneyAmount + `')::numeric END) ` +
+			op + ` ` + b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
 	}
 	for _, x := range []struct {
 		op string
@@ -1919,6 +1931,17 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 // and one such row's text must not fail the cast for the whole read. A date
 // is midnight UTC, as ParseInstant reads it; cast bare, Postgres would read it
 // in the session's timezone.
+//
+// Each string branch holds two tests. The pattern is the datatype's grammar,
+// so a value Postgres reads but the datatype never spells ('NaN', '0x1F',
+// '1_000', 'now', 'infinity') is not a value of it. pg_input_is_valid is the
+// cast's own range, so a value of the right shape that the cast would still
+// refuse (an instant before 4713 BC or in year 0, which an offset can carry
+// a written 0001 into, or a decimal past numeric's 16383 fractional digits)
+// reads NULL instead of failing the read, and one the cast accepts is never
+// dropped, whatever the length of its year or its digits: `decimal` is
+// unbounded on write. Both tests sit in the WHEN so the cast only ever sees
+// what passed them; an AND in a WHERE has no evaluation order.
 func typedValueSQL(v, text string, kind vocabulary.Datatype, kinds string) (string, bool) {
 	guard := ``
 	if kinds != `` {
@@ -1927,12 +1950,15 @@ func typedValueSQL(v, text string, kind vocabulary.Datatype, kinds string) (stri
 	switch kind {
 	case vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal:
 		return `(CASE WHEN ` + guard + `(jsonb_typeof(` + v + `) = 'number' OR (jsonb_typeof(` + v + `) = 'string'` +
-			` AND length(` + text + `) <= ` + strconv.Itoa(vocabulary.MaxDecimalDigits+2) +
-			` AND ` + text + ` ~ '^-?[0-9]+(\.[0-9]+)?$')) THEN (` + text + `)::numeric END)`, true
+			` AND ` + text + ` ~ '^-?[0-9]+(\.[0-9]+)?$' AND pg_input_is_valid(` + text + `, 'numeric')))` +
+			` THEN (` + text + `)::numeric END)`, true
 	case vocabulary.DatatypeDatetime, vocabulary.DatatypeDate:
 		date := `jsonb_typeof(` + v + `) = 'string' AND ` + text
-		return `(CASE WHEN ` + guard + date + ` ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN (` + text + ` || 'T00:00:00Z')::timestamptz` +
-			` WHEN ` + guard + date + ` ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN (` + text + `)::timestamptz END)`, true
+		midnight := `(` + text + ` || 'T00:00:00Z')`
+		return `(CASE WHEN ` + guard + date + ` ~ '^[0-9]{4,}-[0-9]{2}-[0-9]{2}$'` +
+			` AND pg_input_is_valid(` + midnight + `, 'timestamptz') THEN ` + midnight + `::timestamptz` +
+			` WHEN ` + guard + date + ` ~ '^[0-9]{4,}-[0-9]{2}-[0-9]{2}T'` +
+			` AND pg_input_is_valid(` + text + `, 'timestamptz') THEN (` + text + `)::timestamptz END)`, true
 	case vocabulary.DatatypeBool:
 		return `(CASE WHEN ` + guard + `jsonb_typeof(` + v + `) = 'boolean' THEN (` + text + `)::boolean END)`, true
 	}
@@ -2045,7 +2071,11 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 
 // typedOrderSQL is the order key of a property every candidate kind declares
 // as `kind`. An order naming no kind confines the cast to the loaded kinds
-// declaring the name, as condJSON does; the rest sort as NULL.
+// declaring the name, as condJSON does; the rest sort as NULL. condJSON binds
+// its list and this spells it inline, because the order's text is the cursor's
+// signature: a kind declaring the name installed between two pages changes
+// which rows sort as NULL, and the literal list refuses the stale cursor where
+// a placeholder would let it seek past rows.
 func (ds *dataset) typedOrderSQL(types []*vocabulary.Kind, property string, kind vocabulary.Datatype) string {
 	kinds := ``
 	if len(types) == 0 {

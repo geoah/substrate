@@ -813,6 +813,157 @@ func TestKindlessMoneyOperandIsRefusedWhereTheKindsDisagree(t *testing.T) {
 	}
 }
 
+// Every value the write path accepts reaches a typed read whole: an offset
+// carries a written 9999 into a five-digit year the timestamptz cast reads,
+// and `decimal` is unbounded. Both compare by value, in a read naming the kind
+// and in one naming none. An offset also carried a written 0001 into year 0,
+// which the cast refuses, before the write path held the UTC year to the
+// range; a row stored then reads as no instant (out of every range, last in
+// an ascending order) instead of failing the read.
+func TestATypedReadComparesEveryValueTheWritePathAccepts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, dsn := newDatasetWithDSN(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "extreme"}, map[string]any{"properties": map[string]any{
+			"extremeAt":   map[string]any{"type": "datetime"},
+			"extremeSize": map[string]any{"type": "decimal"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kind: %v", err)
+	}
+	put := func(property string, v any) string {
+		r := mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/extreme", Properties: map[string]any{property: v}})
+		return fmt.Sprint(r.Properties[property])
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: kindlessPackage + "/extreme", Properties: map[string]any{"extremeAt": "0001-01-01T00:30:00+01:00"},
+	}); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("an offset carrying 0001 into year 0: %v, want a validation refusal", err)
+	}
+	const yearZero = "0000-12-31T23:30:00Z"
+	r := mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/extreme", Properties: map[string]any{"extremeAt": "2000-01-01T00:00:00Z"}})
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{extremeAt}', to_jsonb($1::text)) WHERE kind = $2 AND id = $3`,
+		yearZero, kindlessPackage+"/extreme", r.ID); err != nil {
+		t.Fatalf("store the year-0 instant the write path once accepted: %v", err)
+	}
+	yearTenThousand := put("extremeAt", "9999-12-31T23:30:00-01:00")
+	if yearTenThousand != "10000-01-01T00:30:00Z" {
+		t.Fatalf("stored %q; the cases below assume the write path's normalization", yearTenThousand)
+	}
+	put("extremeAt", "9999-12-31T22:00:00Z")
+	put("extremeAt", "2026-10-25T00:00:00Z")
+	long := func(lead string) string { return lead + strings.Repeat("0", 1199) }
+	put("extremeSize", long("1"))
+	put("extremeSize", long("2"))
+	put("extremeSize", "5")
+
+	for _, kinds := range [][]string{{kindlessPackage + "/extreme"}, nil} {
+		for _, tc := range []struct {
+			name     string
+			property string
+			cond     substrate.Cond
+			want     []string
+		}{
+			{"a five-digit year is in range", "extremeAt", substrate.Cond{Gte: "9999-12-31T23:00:00Z"}, []string{yearTenThousand}},
+			{"year 0 is in no range", "extremeAt", substrate.Cond{Lt: "2026-01-01T00:00:00Z"}, nil},
+			{
+				"an order puts year 0 last", "extremeAt",
+				substrate.Cond{Exists: new(true)},
+				[]string{"2026-10-25T00:00:00Z", "9999-12-31T22:00:00Z", yearTenThousand, yearZero},
+			},
+			{"a 1,200-digit decimal is in range", "extremeSize", substrate.Cond{Gt: "100"}, []string{long("1"), long("2")}},
+			{"a 1,200-digit decimal bounds a range", "extremeSize", substrate.Cond{Gt: "6", Lt: long("2")}, []string{long("1")}},
+		} {
+			page, err := ds.List(ctx, substrate.Query{
+				Filter:  substrate.Filter{Kinds: kinds, Properties: map[string]substrate.Cond{tc.property: tc.cond}},
+				OrderBy: []substrate.Order{{Property: tc.property}},
+				First:   50,
+			})
+			if err != nil {
+				t.Errorf("kinds %v, %s: %v", kinds, tc.name, err)
+				continue
+			}
+			var got []string
+			for _, r := range page.Records {
+				got = append(got, fmt.Sprint(r.Properties[tc.property]))
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("kinds %v, %s: read %d rows %.80v, want %d %.80v", kinds, tc.name, len(got), got, len(tc.want), tc.want)
+			}
+		}
+	}
+}
+
+// A kindless money filter scans rows no loaded declaration speaks for, and a
+// quarantined package's row is not held to the money grammar: an amount that
+// is no number, or one with more digits than numeric holds, reads as no
+// value instead of failing the cast for the whole read, filtered or ordered.
+func TestKindlessMoneyFilterSkipsAnAmountNumericRefuses(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := pfOpener(t, dsn, t.TempDir())
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const parked = "parked.example.substrate.reamde.dev/parked"
+	fee := map[string]any{"properties": map[string]any{"feeCharge": map[string]any{"type": "money"}}}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "fee"}, fee),
+		vocabulary.PackageManifest(parked, 0),
+		vocabulary.KindManifest(parked, map[string]any{"singular": "levy"}, fee),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, amount := range []int64{900, 1200} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/fee", Properties: map[string]any{"feeCharge": moneyValue(amount, "EUR")}})
+	}
+	raw := rawDB(t, dsn)
+	for _, amount := range []string{"n/a", strings.Repeat("9", 140000)} {
+		r := mustPut(t, ds, owner, substrate.PutInput{Kind: parked + "/levy", Properties: map[string]any{"feeCharge": moneyValue(1, "EUR")}})
+		if _, err := raw.ExecContext(ctx,
+			`UPDATE records SET props = jsonb_set(props, '{feeCharge,amount}', to_jsonb($1::text)) WHERE kind = $2 AND id = $3`,
+			amount, parked+"/levy", r.ID); err != nil {
+			t.Fatalf("write the amount numeric refuses: %v", err)
+		}
+	}
+	// A key no dialect reserves quarantines the package at the next open.
+	if _, err := raw.ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{properties,feeCharge,unheardOf}', 'true') WHERE id = $1`, parked+"/levy"); err != nil {
+		t.Fatalf("corrupt the stored declaration: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, order := range [][]substrate.Order{nil, {{Property: "feeCharge"}}} {
+		page, err := ds2.List(ctx, substrate.Query{
+			Filter:  substrate.Filter{Properties: map[string]substrate.Cond{"feeCharge": {Gte: moneyValue(1000, "EUR")}}},
+			OrderBy: order,
+			First:   50,
+		})
+		if err != nil {
+			t.Fatalf("order %v: %v", order, err)
+		}
+		if len(page.Records) != 1 || page.Records[0].Kind != kindlessPackage+"/fee" {
+			t.Fatalf("order %v: filtered to %d records, want the one fee of 12.00 EUR", order, len(page.Records))
+		}
+	}
+}
+
 // The round trip the datetime cast has to survive: the order expression is
 // projected as the cursor key (a timestamptz rendered to text), passed back as
 // a bound parameter and compared against the native expression in

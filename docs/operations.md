@@ -9,7 +9,9 @@ backup and recovery procedures. A substrate on your own machine is
 
 ## What it needs
 
-- **Postgres**, with the `vector` and `pgcrypto` extensions available. The
+- **Postgres 16 or later**, with the `vector` and `pgcrypto` extensions
+  available. A typed filter or order asks `pg_input_is_valid`, new in 16,
+  whether a stored value casts before it casts it. The
   binary runs its own migration at boot, creates the two roles isolation rests
   on (`substrate_app`, bound by row level security, and `substrate_maint`,
   which bypasses it for registration and cross-repository lookups), and enables
