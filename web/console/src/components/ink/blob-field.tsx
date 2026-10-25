@@ -6,7 +6,7 @@ import { useRef, useState } from "react"
 import { FileIcon, PenLineIcon, UploadIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { isBlobDigest, putBlob } from "@/lib/api/blobs"
+import { holdBlob, isBlobDigest, putBlob } from "@/lib/api/blobs"
 import type { BlobInfo } from "@/lib/api/types"
 import { INK_MEDIA_TYPE, inkText, newInkDocument, readInk } from "@/lib/ink"
 import { byteSize } from "@/lib/ink-record"
@@ -84,6 +84,9 @@ export function BlobField({
     setError(undefined)
     try {
       const info = await putBlob(bytes, meta)
+      // Uploaded now, for the name, the size and any refusal; held so the
+      // record write stores it again, however long the form stays open.
+      holdBlob(info.digest, bytes, meta)
       setStored(info)
       onChange(info.digest)
     } catch (e) {

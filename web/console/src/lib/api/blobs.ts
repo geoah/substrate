@@ -61,7 +61,7 @@ async function refusal(res: Response): Promise<ApiError> {
  * same digest, and a second upload keeps the name and media type the first
  * one gave. A record must name the blob within the server's upload grace (a
  * minute) or the sweep collects it, so call this right before the write that
- * references it. */
+ * references it, or hold the bytes (holdBlob) where a form uploads early. */
 export async function putBlob(
   bytes: Blob | ArrayBuffer | Uint8Array | string,
   meta: { name?: string; mediaType?: string } = {}
@@ -103,6 +103,63 @@ export async function putBlob(
   }
   if (!res.ok) throw await refusal(res)
   return (await res.json()) as BlobInfo
+}
+
+/** The bytes of blobs a form uploaded before its record was written, by
+ * digest. The server collects a blob no record names once it is a minute old
+ * (`BlobUploadGrace`, at a sweep every five minutes), so a form left open
+ * longer would name a blob that is gone; the record write stores these again
+ * first (restoreHeldBlobs). A File is a handle on the user's disk, so holding
+ * one costs no memory. */
+const held = new Map<
+  string,
+  { bytes: Blob | string; meta: { name?: string; mediaType?: string } }
+>()
+
+/** Keep the bytes behind `digest` until a record write names it. */
+export function holdBlob(
+  digest: string,
+  bytes: Blob | string,
+  meta: { name?: string; mediaType?: string }
+) {
+  held.set(digest, { bytes, meta })
+}
+
+/** The held digests a write's properties name, a list's items included. */
+function heldIn(properties: Record<string, unknown> | undefined): string[] {
+  if (!properties || held.size === 0) return []
+  const out = new Set<string>()
+  for (const value of Object.values(properties))
+    for (const item of Array.isArray(value) ? value : [value])
+      if (typeof item === "string" && held.has(item)) out.add(item)
+  return [...out]
+}
+
+/** Store again every held blob `properties` names, right before the write
+ * that names it: a no-op for a blob that still stands, and the blob back for
+ * one the sweep collected. A failed upload is left to the write, which
+ * succeeds where the blob still stands and names the missing blob where it
+ * does not. */
+export async function restoreHeldBlobs(
+  properties: Record<string, unknown> | undefined
+): Promise<void> {
+  for (const digest of heldIn(properties)) {
+    const blob = held.get(digest)
+    if (!blob) continue
+    try {
+      await putBlob(blob.bytes, blob.meta)
+    } catch {
+      // The write decides, as above.
+    }
+  }
+}
+
+/** Forget the held bytes a written record now names: the record keeps
+ * them. */
+export function releaseHeldBlobs(
+  properties: Record<string, unknown> | undefined
+) {
+  for (const digest of heldIn(properties)) held.delete(digest)
 }
 
 /** The bytes a digest names. */
