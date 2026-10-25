@@ -368,23 +368,26 @@ type arm struct {
 
 // capped reports whether the lexical arm stopped short of ranking every
 // match by BM25F: a pass read a bounded share, the strict pass took some or
-// its newest matches unranked, the top-up was skipped or dropped, or the
-// scoring fell back to the order the passes hold.
+// its newest matches unranked or read none in time, the top-up was skipped
+// or dropped, or the scoring fell back to the order the passes hold.
 func (c lexicalCap) capped() bool {
-	return c.readCapped || c.order == orderNewest || c.order == orderSampled || c.noTopUp || c.budget || c.unscored
+	return c.readCapped || c.order == orderNewest || c.order == orderSampled || c.order == orderUnread ||
+		c.noTopUp || c.budget || c.unscored
 }
 
 // note is what a capped search tells its caller, an agent above all: why the
 // ranking is partial and what narrows the next query. Empty when not capped.
-// The strict pass's share is half the budget, the top-up's deadline four
-// fifths of it, and scoring has what is left; a sentence names the one that
-// ran out.
+// The strict pass's share is half the budget, its read through the index
+// stops at three quarters, the top-up's deadline is four fifths of it, and
+// scoring has what is left; a sentence names the one that ran out.
 func (c lexicalCap) note(budget time.Duration) string {
 	var parts []string
 	if c.budget {
 		parts = append(parts, fmt.Sprintf("Search stopped looking for records matching only some of the words at four fifths of its %s budget, so the lexical hits are only records matching every word.", budget))
 	}
 	switch {
+	case c.order == orderUnread:
+		parts = append(parts, fmt.Sprintf("Search ran out of its %s budget before it could read any of the matching records in time, so there are no lexical hits; records may still match.", budget))
 	case c.order == orderSampled && c.unscored:
 		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget finding the matching records and out of the rest scoring them, so the lexical hits are some of the matches, unranked and ordered newest first.", budget))
 	case c.order == orderSampled:

@@ -8,7 +8,6 @@ package engine_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -96,14 +95,19 @@ func TestLexicalSearchReadsABoundedShareOfTheMatches(t *testing.T) {
 	}
 }
 
-// A budget spent before anything was found is an error naming it, never an
-// empty ranking that reads as "no matches".
-func TestLexicalSearchPastItsBudgetBeforeAnyMatchFails(t *testing.T) {
+// A budget spent before anything was read answers no lexical hits, capped,
+// with a note saying matches could not be read in time, never an empty
+// ranking that reads as "no matches" and never a 503: running out of time is
+// not the database failing (#968).
+func TestLexicalSearchPastItsBudgetBeforeAnyMatchAnswersCapped(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t, engine.WithSearchBudget(time.Nanosecond))
 	putBoundTask(t, ds, "a", "flight booking")
-	_, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
-	if !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(err.Error(), "budget") {
-		t.Fatalf("err = %v, want unavailable naming the budget", err)
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("a search past its budget failed: %v", err)
+	}
+	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records in time") {
+		t.Fatalf("hits = %d, capped = %v, note = %q", len(res.Hits), res.Capped, res.Note)
 	}
 }

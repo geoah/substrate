@@ -44,8 +44,9 @@ type SearchResult struct {
 	// index answered first, were taken, it ran
 	// out before the relaxed top-up and the records matching every word
 	// answered alone, or it ran out while scoring and the lexical hits are
-	// ordered by ts_rank, or newest first, which Hit.Lexical then carries.
-	// Note says which, and how to narrow the query.
+	// ordered by ts_rank, or newest first, which Hit.Lexical then carries, or
+	// it could read no match in time and has no lexical hits. Note says
+	// which, and how to narrow the query.
 	Capped bool   `json:"capped,omitempty"`
 	Note   string `json:"note,omitempty"`
 }

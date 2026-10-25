@@ -17,8 +17,22 @@
 -- without the TOAST it detoasts: counting `dinner` there scanned the whole
 -- table and read every row's vector, some 900 MiB of TOAST. This function is
 -- planned with sequential and plain index scans off, which leaves the bitmap
--- scans, and of those the one through records_fts_idx answers the match from
--- the index without reading a vector.
+-- scans, and of those the one through records_fts_idx. Its heap scan rechecks
+-- a row's vector only where the index cannot answer alone: a phrase (`<->`,
+-- what a quoted query compiles to), and a lossy page, where the bitmap kept
+-- the page and not its rows. Either is a read of TOAST, bounded only by the
+-- caller's deadline.
+--
+-- work_mem keeps the bitmap exact. records_fts_idx covers every repository's
+-- rows, so a word every row holds marks every heap page of the table, and a
+-- bitmap entry is 64 bytes a page (tidbitmap.c: a 48-byte PagetableEntry and
+-- two hash pointers). At the 4 MB default that is 65,536 pages, 512 MiB of
+-- heap; past it pages go lossy and every row on them is rechecked. On a table
+-- of 620,000 records and 168,769 heap pages a kind holding one match of such
+-- a word read 593,407 TOAST blocks lossy, 4.5 s, and 1.3 s exact. 64 MB is
+-- 1,048,576 pages, 8 GiB of heap, six times that table. The setting is the
+-- call's alone and restored after it, and a bitmap takes memory only for the
+-- pages it marks, so a rare word costs what it did.
 --
 -- It is SECURITY DEFINER and owned by substrate_maint (BYPASSRLS), like
 -- records_matching, and applies the policy's own predicate, `repository =
@@ -37,6 +51,7 @@ BEGIN
         SET search_path = %1$I, pg_temp
         SET enable_seqscan = off
         SET enable_indexscan = off
+        SET work_mem = '64MB'
         AS $body$
             SELECT r.kind, r.id FROM %1$I.records r
             WHERE r.repository = current_setting('substrate.repository', true)

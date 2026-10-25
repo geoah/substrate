@@ -1026,8 +1026,12 @@ and pre-ranked, because both read each record's text, which a cold disk
 serves slowly. When counting or finding them runs past that half (a common
 word, read on the row newest first), 400 of them are taken from the full-text
 index instead, whichever it answers first, or all of them where the index
-holds fewer. When the pre-rank runs past it, the newest 400 are taken. Either
-way they go to scoring without a pre-rank, and the relaxed pass is skipped.
+holds no more. That read stops at three quarters of the budget; past it, and
+whenever the budget runs out before any match was read, the lexical arm
+answers no hits, with a note saying the matches could not be read in time,
+never a 503. When the pre-rank runs past the half, the newest 400 are taken.
+Either way they go to scoring without a pre-rank, and the relaxed pass is
+skipped.
 The relaxed pass itself stops at four fifths of the budget. When BM25F scoring of the candidates does not finish within
 the budget, the lexical hits are ordered by the pre-rank instead (in
 `lexical` mode the records matching every word still come first), or newest

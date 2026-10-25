@@ -146,4 +146,8 @@ func TestLexicalCapNote(t *testing.T) {
 	if got != want {
 		t.Fatalf("note = %q\nwant %q", got, want)
 	}
+	unread := lexicalCap{order: orderUnread}
+	if !unread.capped() || !strings.Contains(unread.note(5*time.Second), "before it could read any of the matching records in time") {
+		t.Fatalf("an unread pass: capped = %v, note = %q", unread.capped(), unread.note(5*time.Second))
+	}
 }

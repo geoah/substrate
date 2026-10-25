@@ -262,8 +262,8 @@ func TestLexicalSearchTakesIndexedMatchesWhenTheCountRunsOutOfBudget(t *testing.
 	}
 }
 
-// Past the share, the index's answer is a sample when it fills the pass and
-// every match when it does not.
+// Past the share, the index's answer is a sample when more match than the
+// pass keeps and every match when no more do, exactly as many included.
 func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -275,7 +275,7 @@ func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
 	for _, tc := range []struct {
 		take, n int
 		want    candOrder
-	}{{2, 2, orderSampled}, {10, 3, orderIndexed}} {
+	}{{2, 2, orderSampled}, {3, 3, orderIndexed}, {10, 3, orderIndexed}} {
 		pass := lexicalPass{plan: parseSearch("flight"), readMax: searchReadMax, matchMax: searchReadMax, rankBy: time.Now().Add(time.Second)}
 		cands, over, order, err := ds.lexicalCandidates(ctx, pass, false, tc.take)
 		if err != nil {
@@ -284,6 +284,33 @@ func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
 		if len(cands) != tc.n || over || order != tc.want {
 			t.Fatalf("take %d: %d candidates, over %v, order %v; want %d, false, %v", tc.take, len(cands), over, order, tc.n, tc.want)
 		}
+	}
+}
+
+// The index's way out has its own deadline inside the budget. A word every
+// row holds, searched for a kind few rows are, can overflow the bitmap and
+// recheck every row's vector on the pages it marks lossy: cold that read
+// alone spent the rest of the budget and the search answered 503 (#968).
+// Past the deadline the search answers no hits, capped, saying the matches
+// could not be read in time.
+func TestLexicalSearchAnswersCappedWhenTheIndexedReadRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "a", "flight", "")
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchCountHook = coldRead(t, ds)
+	ds.svc.searchSampleHook = coldRead(t, ds)
+	began := time.Now()
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("an indexed read past its deadline failed the search: %v", err)
+	}
+	if took := time.Since(began); took > budget {
+		t.Fatalf("the search took %s, past its %s budget", took, budget)
+	}
+	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records in time") {
+		t.Fatalf("hits = %d, capped = %v, note = %q", len(res.Hits), res.Capped, res.Note)
 	}
 }
 
@@ -303,7 +330,7 @@ func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	pass := lexicalPass{plan: parseSearch("flight"), types: []string{person}, restrict: true}
-	cands, err := ds.indexedCandidates(ctx, pass, 1)
+	cands, _, err := ds.indexedCandidates(ctx, pass, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

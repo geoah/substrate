@@ -531,6 +531,11 @@ type service struct {
 	// reads them: the seam a cold walk of a common word's rows spends the
 	// budget in.
 	searchIdentityHook func(context.Context)
+	// searchSampleHook, set only by a test, runs with the context the strict
+	// candidate pass reads its matches through the index under, past a count
+	// or an identity read that ran out of its share, before it reads them:
+	// the seam a lossy bitmap's recheck spends that read's deadline in.
+	searchSampleHook func(context.Context)
 	// searchSemanticHook, set only by a test, runs with the semantic arm's
 	// context and transaction after the scan settings and before the
 	// candidate read: the seam that runs a statement the arm's budget

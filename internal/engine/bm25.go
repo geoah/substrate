@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/geoah/substrate/internal/substrate"
 )
 
 // THE LEXICAL ARM'S RANKING: BM25F over the weighted bands.
@@ -61,7 +59,7 @@ const (
 	// DefaultSearchBudget is the wall clock one lexical search may spend
 	// (WithSearchBudget overrides it per service): past it the relaxed top-up
 	// is dropped, scoring falls back to the pre-rank order, or the search
-	// fails when nothing was found yet.
+	// answers no lexical hits, capped, when nothing was read yet.
 	DefaultSearchBudget = 5 * time.Second
 	// bm25PrefixWeight is what a completion of a prefix term counts, against
 	// the typed word itself.
@@ -71,12 +69,12 @@ const (
 	// itself.
 	dfCap = 20000
 	// probeCost is roughly how many rows matching in place costs what one
-	// match read through records_matching does, the count that picks the path
+	// match read through the index does, the count that picks the path
 	// included: about 13 µs a match against 0.5 µs a row, measured on 150k
 	// rows, and break-even near a thirtieth of the repository.
 	probeCost = 32
 	// indexedMatchMax is the most matches a list `search` filter reads
-	// through records_matching. Past it the filter matches on the row, where
+	// through the index. Past it the filter matches on the row, where
 	// the list's own order stops at the page: newest first walks
 	// records_created_at_idx, 0.3 ms for a word 5000 rows hold against 57 ms
 	// through the function.
@@ -339,11 +337,12 @@ func bm25IDF(n, df float64) float64 {
 // lexicalCap says where a lexical search stopped short of ranking every
 // match: a pass met more matching rows than it reads (readCapped, at readMax),
 // or the strict pass ran past its share of the budget and its candidates were
-// taken in another order (order, orderNewest or orderSampled) or read whole
-// through the index (orderIndexed), the relaxed top-up skipped either way
-// (noTopUp), or the relaxed top-up ran out of the budget and the strict
-// pass's candidates answered alone (budget), or BM25F scoring ran out of it
-// and the candidates answered in the order the pass holds (unscored).
+// taken in another order (order, orderNewest or orderSampled), read whole
+// through the index (orderIndexed) or not read at all (orderUnread), the
+// relaxed top-up skipped either way (noTopUp), or the relaxed top-up ran out
+// of the budget and the strict pass's candidates answered alone (budget), or
+// BM25F scoring ran out of it and the candidates answered in the order the
+// pass holds (unscored).
 type lexicalCap struct {
 	readCapped bool
 	readMax    int
@@ -370,6 +369,10 @@ const (
 	// the newest-first read ran out of the pass's share: ranked like
 	// orderPreRanked, but too late for the top-up.
 	orderIndexed
+	// orderUnread is no match at all: the read through the index ran out of
+	// its own deadline too, or the search's budget ran out before any pass
+	// read a match.
+	orderUnread
 )
 
 // lexicalCand is one candidate as a pass found it: whole when the strict pass
@@ -402,11 +405,15 @@ type lexicalPass struct {
 	// readMax is the most matching rows a pass reads before any ranking.
 	readMax int
 	// matchMax is the match count past which a pass matches on the row
-	// instead of through records_matching.
+	// instead of through the index.
 	matchMax int
 	// rankBy, when set, is when the pass stops reading vectors to pre-rank
 	// and answers its newest matches unranked.
 	rankBy time.Time
+	// sampleBy, when set, is when the read through the index that follows a
+	// count or an identity read past rankBy stops, and the pass answers no
+	// match.
+	sampleBy time.Time
 }
 
 // lexical ranks the records the plan matches, each scored by BM25F. The
@@ -420,12 +427,15 @@ type lexicalPass struct {
 //
 // The whole arm runs under the service's search budget (DefaultSearchBudget).
 // A strict pass still reading its matches at half of it takes some of them
-// unranked and drops the top-up, marked capped. A top-up that runs out of it
-// is dropped and the strict candidates answer, marked capped. Scoring that runs out of it falls back to the order the
-// passes already hold, strict candidates first and then by pre-rank, marked
-// capped: that order costs no statement, so scoring may spend every
-// millisecond left. A budget spent before any candidate was found is
-// substrate.ErrUnavailable naming it.
+// through the index unranked, by three quarters of it, and drops the top-up,
+// marked capped. A top-up that runs out of it is dropped and the strict
+// candidates answer, marked capped. Scoring that runs out of it falls back to
+// the order the passes already hold, strict candidates first and then by
+// pre-rank, marked capped: that order costs no statement, so scoring may
+// spend every millisecond left. A read that runs out of it before any match
+// was read answers no lexical hits, marked capped: running out of time is not
+// the database failing, and a 503 for a common word is the bug #968 was. A
+// canceled caller and a failing statement are errors.
 func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string, restrict bool, k int) (map[eref]arm, lexicalCap, error) {
 	budget := ds.svc.searchBudget
 	began := time.Now()
@@ -435,8 +445,8 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	var capped lexicalCap
 	failed := func(err error) (map[eref]arm, lexicalCap, error) {
 		if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("%w: search ran past its %s budget before it ranked anything: use one or two distinctive words (a name, a code, a number)",
-				substrate.ErrUnavailable, budget)
+			capped.order = orderUnread
+			return map[eref]arm{}, capped, nil
 		}
 		return nil, capped, err
 	}
@@ -448,8 +458,8 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	pool := max(bm25Pool, 4*k)
 	pass := lexicalPass{plan: plan, types: types, restrict: restrict, readMax: ds.svc.searchReadMax}
 	capped.readMax = pass.readMax
-	// A pass counts its matches through records_matching, capped, and reads
-	// them through it while there are few: each is a probe back to its row.
+	// A pass counts its matches through the index, capped, and reads them
+	// through it while there are few: each is a probe back to its row.
 	// Past the count it matches on the row instead, walking the repository
 	// newest first, where a common word fills the read quickly.
 	pass.matchMax = max(int(st.n/probeCost), pass.readMax)
@@ -457,9 +467,12 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 		pass.matchMax = ds.svc.searchMatchMax
 	}
 	// The strict pass reads vectors to pre-rank for at most half the budget,
-	// so a cold read still leaves scoring the other half.
+	// so a cold read still leaves scoring the other half. Its way out through
+	// the index stops at three quarters: a lossy bitmap or a phrase reads
+	// vectors there too, and scoring keeps the last quarter.
 	strict := pass
 	strict.rankBy = began.Add(budget / 2)
+	strict.sampleBy = began.Add(budget - budget/4)
 	cands, over, order, err := ds.lexicalCandidates(ctx, strict, false, pool)
 	if err != nil {
 		return failed(err)
@@ -545,9 +558,10 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 // A pre-rank past rankBy answers the newest take unranked (orderNewest); a
 // count or an identity read past it answers take of the matches through the
 // index, newest first among them (orderSampled), or every match when the index
-// holds fewer (orderIndexed). Either way a cold read degrades the order instead
-// of failing the search, and the pages it did read stay cached for scoring and
-// the next search.
+// holds no more (orderIndexed), or none when that read runs past sampleBy too
+// (orderUnread). Either way a cold read degrades the answer instead of failing
+// the search, and the pages it did read stay cached for scoring and the next
+// search.
 func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, relaxed bool, take int) ([]lexicalCand, bool, candOrder, error) {
 	// rankBy bounds the count and the identity read as well as the pre-rank:
 	// a word too common for the index is matched on the row, and under the
@@ -565,14 +579,25 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 		if !pastRankBy(ctx, rctx, pass) {
 			return nil, false, 0, err
 		}
-		sampled, err := ds.indexedCandidates(ctx, pass, take)
-		if err != nil {
-			return nil, false, 0, err
+		sctx := ctx
+		if !pass.sampleBy.IsZero() {
+			var cancel context.CancelFunc
+			sctx, cancel = context.WithDeadline(ctx, pass.sampleBy)
+			defer cancel()
 		}
-		if len(sampled) < take {
+		if hook := ds.svc.searchSampleHook; hook != nil {
+			hook(sctx)
+		}
+		sampled, complete, err := ds.indexedCandidates(sctx, pass, take)
+		switch {
+		case err == nil && complete:
 			return sampled, false, orderIndexed, nil
+		case err == nil:
+			return sampled, false, orderSampled, nil
+		case ctx.Err() == nil && errors.Is(sctx.Err(), context.DeadlineExceeded):
+			return nil, false, orderUnread, nil
 		}
-		return sampled, false, orderSampled, nil
+		return nil, false, 0, err
 	}
 
 	if hook := ds.svc.searchCountHook; hook != nil && !relaxed {
@@ -683,23 +708,26 @@ func (ds *dataset) lexicalIdentities(ctx context.Context, query string, args ...
 // indexedCandidates is the strict pass's way out of a read that ran past
 // rankBy: take of its matches through records_fts_idx (records_matching_kinds,
 // migration 0018, the kinds applied before the cap), the rows the index
-// answers first, whichever they are, newest first among them. It reads no
-// vector and stops at take, so it answers in what the index costs, where the
-// newest-first read matched every row it met.
-func (ds *dataset) indexedCandidates(ctx context.Context, pass lexicalPass, take int) ([]lexicalCand, error) {
+// answers first, whichever they are, newest first among them. complete
+// reports that there were no more: it reads take+1, so exactly take matches
+// are every match and not a sample. It stops at take+1 and reads a vector
+// only where the bitmap cannot answer alone, a phrase or a lossy page, so it
+// answers in about what the index costs, where the newest-first read matched
+// every row it met.
+func (ds *dataset) indexedCandidates(ctx context.Context, pass lexicalPass, take int) ([]lexicalCand, bool, error) {
 	b := &builder{}
 	q := pass.plan.expr(b, false)
 	kinds := passKinds(b, pass)
 	found, err := ds.lexicalIdentities(ctx, `
 		SELECT r.kind, r.id, `+demotion("r")+`
-		FROM records_matching_kinds(`+q+`, `+kinds+`, `+b.arg(take)+`) m
+		FROM records_matching_kinds(`+q+`, `+kinds+`, `+b.arg(take+1)+`) m
 		JOIN records r ON r.kind = m.kind AND r.id = m.id
 		WHERE r.deleted_at IS NULL
 		ORDER BY r.created_at DESC, r.kind, r.id`, b.args...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return newestFirst(found, take), nil
+	return newestFirst(found, take), len(found) <= take, nil
 }
 
 // preRank orders the found candidates by ts_rank normalized by preRankNorm and
@@ -841,7 +869,9 @@ func (ds *dataset) idfFor(ctx context.Context, terms []scoreTerm, st searchStats
 }
 
 // termIDF reads each term's document frequency in one statement, each count
-// capped at dfCap inside records_matching, and turns it into the term's IDF.
+// capped at dfCap inside records_matching_kinds, and turns it into the term's
+// IDF. Not records_matching: its generic plan may scan the table and read
+// every row's vector to count (migration 0018).
 func (ds *dataset) termIDF(ctx context.Context, terms []scoreTerm, st searchStats) ([]float64, error) {
 	if len(terms) == 0 {
 		return nil, nil
@@ -851,7 +881,7 @@ func (ds *dataset) termIDF(ctx context.Context, terms []scoreTerm, st searchStat
 	capArg := b.arg(dfCap)
 	for i, t := range terms {
 		expr := searchOperand{words: []string{t.word}, prefix: t.prefix}.sql(b)
-		cols[i] = `(SELECT count(*) FROM records_matching(` + expr + `, ` + capArg + `))`
+		cols[i] = `(SELECT count(*) FROM records_matching_kinds(` + expr + `, NULL, ` + capArg + `))`
 	}
 	dfs := make([]int64, len(terms))
 	dest := make([]any, len(terms))

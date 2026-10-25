@@ -842,7 +842,8 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		}
 		// Under row level security `fts @@` on the row cannot probe the
 		// index, so a term few live rows hold is read through
-		// records_matching (migration 0010). A common term stays on the row:
+		// records_matching_kinds (migration 0018), not records_matching,
+		// whose generic plan may scan the table. A common term stays on the row:
 		// each identity the function returns is a probe back to its row, and
 		// the list's order finds a page of a common term's rows sooner. So
 		// does a search of tombstones, which the function does not answer.
@@ -862,7 +863,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			}
 		}
 		if few {
-			b.add(`(kind, id) IN (SELECT m.kind, m.id FROM records_matching(` + tq + `, NULL) m)`)
+			b.add(`(kind, id) IN (SELECT m.kind, m.id FROM records_matching_kinds(` + tq + `, NULL, NULL) m)`)
 		} else {
 			b.add(`fts @@ ` + tq)
 		}
