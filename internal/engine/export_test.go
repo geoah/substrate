@@ -609,7 +609,7 @@ func WithCatchUpBatch(n int) Option { return func(o *options) { o.catchUpBatch =
 func WithValuesBudget(n int) Option { return func(o *options) { o.valuesBudget = n } }
 
 // WithSearchMatchMax sets the match count past which a search matches on the
-// row instead of through records_matching (bm25.go indexedMatch), so a test
+// row instead of through records_matching_kinds (bm25.go indexedMatch), so a test
 // can read a small fixture down either path: 0 puts every matching query on
 // the row.
 func WithSearchMatchMax(n int) Option {

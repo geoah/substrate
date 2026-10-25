@@ -81,7 +81,7 @@ type options struct {
 	// writes.
 	valuesBudget int
 	// searchMatchMax, when set, replaces both match caps a search reads
-	// records_matching under (bm25.go indexedMatch). Only a test sets it
+	// through the index under (bm25.go indexedMatch). Only a test sets it
 	// (export_test.go), to put a small fixture on the row path.
 	searchMatchMax    int
 	searchMatchMaxSet bool
@@ -518,6 +518,24 @@ type service struct {
 	// searchScoreHook, set only by a test, runs before a lexical search
 	// scores its candidates: the seam that spends the budget before scoring.
 	searchScoreHook func()
+	// searchPreRankHook, set only by a test, runs with the context the strict
+	// candidate pass reads the vectors it pre-ranks under, before it reads
+	// them: the seam a cold read of them spends the budget in.
+	searchPreRankHook func(context.Context)
+	// searchCountHook, set only by a test, runs with the context the strict
+	// candidate pass counts its matches under, before it counts them: the
+	// seam a count that reads vectors spends the budget in.
+	searchCountHook func(context.Context)
+	// searchIdentityHook, set only by a test, runs with the context the
+	// strict candidate pass reads its matching identities under, before it
+	// reads them: the seam a cold walk of a common word's rows spends the
+	// budget in.
+	searchIdentityHook func(context.Context)
+	// searchSampleHook, set only by a test, runs with the context the strict
+	// candidate pass reads its matches through the index under, past a count
+	// or an identity read that ran out of its share, before it reads them:
+	// the seam a lossy bitmap's recheck spends that read's deadline in.
+	searchSampleHook func(context.Context)
 	// searchSemanticHook, set only by a test, runs with the semantic arm's
 	// context and transaction after the scan settings and before the
 	// candidate read: the seam that runs a statement the arm's budget

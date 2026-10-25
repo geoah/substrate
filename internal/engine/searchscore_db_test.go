@@ -2,11 +2,16 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -119,7 +124,7 @@ func TestLexicalPreRankDoesNotRewardLength(t *testing.T) {
 	putScoreTask(t, ds, "long", "errand", longRepetitive("flight"))
 	putScoreTask(t, ds, "short", "errand", "flight")
 	pass := lexicalPass{plan: parseSearch("flight"), readMax: searchReadMax, matchMax: searchReadMax}
-	cands, _, err := ds.lexicalCandidates(ctx, pass, false, 2)
+	cands, _, _, err := ds.lexicalCandidates(ctx, pass, false, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,5 +133,310 @@ func TestLexicalPreRankDoesNotRewardLength(t *testing.T) {
 	}
 	if cands[0].rank <= cands[1].rank {
 		t.Fatalf("pre-ranks short %v, long %v: want short above", cands[0].rank, cands[1].rank)
+	}
+}
+
+// coldRead is a statement that runs until its context cancels it, on a
+// connection of the dataset's own pool: what a cold read of TOASTed vectors
+// does to the budget, a real statement canceled and a connection the pool
+// must replace before the search's next one.
+func coldRead(t *testing.T, ds *dataset) func(context.Context) {
+	return func(ctx context.Context) {
+		if _, err := ds.db.ExecContext(ctx, `SELECT pg_sleep(60)`); err == nil {
+			t.Error("the cold read finished instead of being canceled")
+		}
+	}
+}
+
+// A strict pass whose vectors read cold past its share of the budget still
+// answers: the newest matches are scored instead of the best by pre-rank,
+// marked capped, where the pass that pre-ranked every match before returning
+// one failed the search with nothing ranked (#968).
+func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "old", "flight", "")
+	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchPreRankHook = coldRead(t, ds)
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical, K: 1})
+	if err != nil {
+		t.Fatalf("a pre-rank past the budget failed the search: %v", err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "old" {
+		t.Fatalf("hits = %+v, want BM25F to rank the title match first", res.Hits)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "so the newest matches were ranked instead of the closest ones") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// When scoring runs out of the budget too, the newest matches answer newest
+// first.
+func TestLexicalSearchAnswersNewestFirstWhenPreRankAndScoringRunOut(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "old", "flight", "")
+	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchPreRankHook = func(ctx context.Context) { <-ctx.Done() }
+	ds.svc.searchScoreHook = func() { time.Sleep(budget) }
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("a pre-rank and scoring past the budget failed the search: %v", err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, h.Record.ID)
+	}
+	if strings.Join(got, ",") != "new,old" {
+		t.Fatalf("hits = %v, want newest first", got)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "ordered newest first") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// A word too common for records_matching is matched on the row, newest first,
+// and under the policy that reads every vector the walk passes: cold, the
+// identity read alone spent the budget and the search answered 503 before
+// any candidate existed (#968). Past the strict pass's share it takes some
+// matches through the index instead, marked capped, and skips the top-up.
+func TestLexicalSearchTakesIndexedMatchesWhenTheIdentityReadRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t, WithSearchMatchMax(0))
+	putScoreTask(t, ds, "old", "flight", "")
+	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	putScoreTask(t, ds, "partial", "flight", "nothing about it")
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchIdentityHook = coldRead(t, ds)
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("an identity read past the budget failed the search: %v", err)
+	}
+	if len(res.Hits) != 0 {
+		t.Fatalf("hits = %+v, want none: nothing matches every word and the top-up is skipped", res.Hits)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "were not searched") || strings.Contains(res.Note, "four fifths") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+
+	res, err = ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("an identity read past the budget failed the search: %v", err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, h.Record.ID)
+	}
+	if len(got) != 3 {
+		t.Fatalf("hits = %v, want every match", got)
+	}
+	// Fewer matches than the pass keeps: the index answered every one, and
+	// BM25F ranked them all.
+	if res.Capped {
+		t.Fatalf("capped with every match ranked: note = %q", res.Note)
+	}
+}
+
+// The count that picks a pass's path is a statement under the strict pass's
+// share like the reads after it. Through records_matching it could scan the
+// table and read every vector (migration 0018), and it ran under the whole
+// budget before any other bound: cold, it alone answered 503 (#968). Past the
+// share the pass takes its matches through the index instead.
+func TestLexicalSearchTakesIndexedMatchesWhenTheCountRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "both", "flight booking", "")
+	putScoreTask(t, ds, "partial", "flight", "")
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchCountHook = coldRead(t, ds)
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("a count past the budget failed the search: %v", err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "both" {
+		t.Fatalf("hits = %+v, want the strict match alone", res.Hits)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "were not searched") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// Past the share, the index's answer is a sample when more match than the
+// pass keeps and every match when no more do, exactly as many included.
+func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	for i := range 3 {
+		putScoreTask(t, ds, fmt.Sprintf("t%d", i), "flight", "")
+	}
+	ds.svc.searchCountHook = coldRead(t, ds)
+	for _, tc := range []struct {
+		take, n int
+		want    candOrder
+	}{{2, 2, orderSampled}, {3, 3, orderIndexed}, {10, 3, orderIndexed}} {
+		pass := lexicalPass{plan: parseSearch("flight"), readMax: searchReadMax, matchMax: searchReadMax, rankBy: time.Now().Add(time.Second)}
+		cands, over, order, err := ds.lexicalCandidates(ctx, pass, false, tc.take)
+		if err != nil {
+			t.Fatalf("take %d: %v", tc.take, err)
+		}
+		if len(cands) != tc.n || over || order != tc.want {
+			t.Fatalf("take %d: %d candidates, over %v, order %v; want %d, false, %v", tc.take, len(cands), over, order, tc.n, tc.want)
+		}
+	}
+}
+
+// The index's way out has its own deadline inside the budget. A word every
+// row holds, searched for a kind few rows are, can overflow the bitmap and
+// recheck every row's vector on the pages it marks lossy: cold that read
+// alone spent the rest of the budget and the search answered 503 (#968).
+// Past the deadline the search answers no hits, capped, saying the matches
+// could not be read in time.
+func TestLexicalSearchAnswersCappedWhenTheIndexedReadRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "a", "flight", "")
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchCountHook = coldRead(t, ds)
+	ds.svc.searchSampleHook = coldRead(t, ds)
+	began := time.Now()
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("an indexed read past its deadline failed the search: %v", err)
+	}
+	if took := time.Since(began); took > budget {
+		t.Fatalf("the search took %s, past its %s budget", took, budget)
+	}
+	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records, so there are no lexical hits") {
+		t.Fatalf("hits = %d, capped = %v, note = %q", len(res.Hits), res.Capped, res.Note)
+	}
+}
+
+// lateError holds back the error of a statement that failed on its own until
+// a set time, the way a slow server's answer arrives after the deadline it
+// raced.
+type lateError struct {
+	mu    sync.Mutex
+	code  string
+	until time.Time
+}
+
+func (l *lateError) hold(code string, until time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.code, l.until = code, until
+}
+
+func (*lateError) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
+	return ctx
+}
+
+func (l *lateError) TraceQueryEnd(_ context.Context, _ *pgx.Conn, d pgx.TraceQueryEndData) {
+	var pgErr *pgconn.PgError
+	if !errors.As(d.Err, &pgErr) {
+		return
+	}
+	l.mu.Lock()
+	code, until := l.code, l.until
+	l.mu.Unlock()
+	if code != "" && pgErr.Code == code {
+		time.Sleep(time.Until(until))
+	}
+}
+
+// A statement that fails on its own fails the search even when its error
+// arrives after a deadline: the identity read's SQL error (a negative LIMIT,
+// 2201W) delivered past the strict pass's half and before the index read's
+// three quarters, and the same error delivered past the whole budget. Only
+// the deadline's own error answers capped; these answered a sample and an
+// empty capped ranking, the error swallowed.
+func TestLexicalSearchFailsOnAStatementErrorThatArrivesPastADeadline(t *testing.T) {
+	t.Parallel()
+	const budget = 2 * time.Second
+	for _, tc := range []struct {
+		name  string
+		after time.Duration
+	}{
+		{"past the strict pass's half", budget * 3 / 5},
+		{"past the whole budget", budget + budget/10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			late := &lateError{}
+			ds := openInternalDataset(t, WithTestQueryTracer(late))
+			putScoreTask(t, ds, "a", "flight", "")
+			ds.svc.searchBudget = budget
+			ds.svc.searchReadMax = -5
+			late.hold("2201W", time.Now().Add(tc.after))
+			res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "2201W" {
+				t.Fatalf("err = %v, hits = %d, capped = %v; want the statement's 2201W", err, len(res.Hits), res.Capped)
+			}
+		})
+	}
+}
+
+// A closed pool fails the search even when the index read's deadline has
+// passed by the time it answers; it answered no hits, capped.
+func TestLexicalSearchFailsOnAClosedPoolPastTheIndexedReadsDeadline(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "a", "flight", "")
+	ds.svc.searchBudget = 2 * time.Second
+	ds.svc.searchCountHook = coldRead(t, ds)
+	ds.svc.searchSampleHook = func(ctx context.Context) {
+		<-ctx.Done()
+		_ = ds.db.Close()
+	}
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if !errors.Is(err, sql.ErrConnDone) && (err == nil || !strings.Contains(err.Error(), "database is closed")) {
+		t.Fatalf("err = %v, hits = %d, capped = %v; want the closed pool's error", err, len(res.Hits), res.Capped)
+	}
+}
+
+// The index's way out applies the kinds before its cap: a search naming a
+// kind that a small share of the matches hold still finds them.
+func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	for i := range 5 {
+		putScoreTask(t, ds, fmt.Sprintf("t%d", i), "flight", "")
+	}
+	const person = "samples.substrate.reamde.dev/people/person"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: person, ID: "pilot", Properties: map[string]any{"name": "flight"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pass := lexicalPass{plan: parseSearch("flight"), types: []string{person}, restrict: true}
+	cands, _, err := ds.indexedCandidates(ctx, pass, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 1 || cands[0].id.Kind != person || cands[0].id.ID != "pilot" {
+		t.Fatalf("candidates = %+v, want the person", cands)
+	}
+	// The count applies them too: one person, six matches.
+	b := &builder{}
+	few, err := indexedMatch(ctx, ds.db, b, pass.plan.expr(b, false), passKinds(b, pass), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !few {
+		t.Fatal("the count of one kind's matches counted every kind's")
+	}
+	pass.restrict = false
+	b = &builder{}
+	if few, err = indexedMatch(ctx, ds.db, b, pass.plan.expr(b, false), passKinds(b, pass), 1); err != nil || few {
+		t.Fatalf("every kind: few = %v, err = %v, want six matches past one", few, err)
 	}
 }
