@@ -31,7 +31,7 @@ const LLM = Authority + "/llm"
 //
 //go:embed all:authority.yaml all:calendar all:firecrawl all:health all:healthwhoop
 //go:embed all:llm all:messaging all:notes all:observations all:pebble all:people all:readinglist
-//go:embed all:scheduling all:tasks
+//go:embed all:ink all:scheduling all:tasks
 var files embed.FS
 
 // Samples is the whole sample tree, as a filesystem whose root holds one

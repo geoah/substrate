@@ -1,0 +1,111 @@
+# The ink sample: handwriting and drawings, in the Inkidian `.inkd` format.
+#
+# An `.inkd` file is plain JSON: fixed-size pages, each a paper pattern and a
+# list of pen, pencil and marker strokes, every point carrying position,
+# pressure, time and stylus angle. The spec is format/SPEC.md in
+# github.com/toffalori/obsidian-inkidian; the iPad app writes it and the
+# Obsidian plugin reads it.
+#
+# Ink is always a file the record points at, never JSON inside the record: a
+# write carries at most 1 MiB, a few dense handwritten pages, and a file
+# round-trips with Inkidian byte for byte (docs/plans/ink.md compares the
+# options).
+#
+#   note    a handwritten note: the record points at its `.inkd` file.
+#   markup  a PDF with handwriting over it. The PDF blob stays as it was and
+#           the ink is a separate `.inkd` blob, one page per PDF page.
+#
+# `mediaTypes` on a blobref is what tells a client the property holds ink, or
+# a PDF, before it holds anything.
+#
+# OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
+# example, not shipped vocabulary. Its declarations may change or leave
+# without an upgrade path, and installing it accepts that.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/ink
+data:
+  authority: samples.substrate.reamde.dev
+  package: ink
+  version: 1
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/ink
+data:
+  authority: samples.substrate.reamde.dev
+  package: ink
+  description: >-
+    Handwritten notes and marked-up PDFs, in the Inkidian .inkd format the
+    Inkidian iPad app writes and its Obsidian plugin reads.
+  installs:
+    - samples.substrate.reamde.dev/ink/note
+    - samples.substrate.reamde.dev/ink/markup
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/ink/note
+data:
+  authority: samples.substrate.reamde.dev
+  package: ink
+  description: >-
+    A handwritten note: pages of pen strokes, kept as an Inkidian .inkd file.
+  purpose: primary
+  names:
+    singular: note
+  label:
+    singular: Handwritten note
+    plural: Handwritten notes
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the note is called, such as its file name without
+        .inkd
+    file:
+      type: blobref
+      required: true
+      mediaTypes:
+        - application/vnd.inkidian+json
+      description: the note itself, an Inkidian .inkd file
+    transcript:
+      type: markdown
+      description: the handwriting as text, written by a person or an agent
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/ink/markup
+data:
+  authority: samples.substrate.reamde.dev
+  package: ink
+  description: >-
+    A PDF with handwriting over it. The PDF is kept as it was uploaded, and
+    the ink is a separate Inkidian .inkd file with one page per PDF page.
+  purpose: primary
+  names:
+    singular: markup
+  label:
+    singular: Marked-up PDF
+    plural: Marked-up PDFs
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the marked-up document is called
+    document:
+      type: blobref
+      required: true
+      mediaTypes:
+        - application/pdf
+      description: the PDF, unchanged
+    ink:
+      type: blobref
+      mediaTypes:
+        - application/vnd.inkidian+json
+      description: the handwriting over the PDF, an Inkidian .inkd file whose
+        page n is drawn on the PDF's page n
+    transcript:
+      type: markdown
+      description: the handwriting as text, written by a person or an agent
