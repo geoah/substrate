@@ -47,11 +47,17 @@ sets every one it can:
   answering after the stop, so a hook that does nothing fails the case rather
   than passing it, and a case that fails while the server is down starts it
   again for the cases after it.
-- `uv`: `uv` on PATH and a reachable package index, which BUN-07 needs because
-  a provider's body declares its dependencies in a PEP 723 block and the
-  runner resolves them with `uv sync --script` before the body runs. Neither
-  is arrangeable from here, so the case SKIPs with the reason rather than
-  reading an offline machine as a broken sandbox.
+- `uv`: `uv` on PATH, a `python3` on PATH at 3.11 or newer, and a reachable
+  package index, which BUN-04 and BUN-07 need because a provider's body
+  declares its dependencies (and `requires-python = ">=3.11"`) in a PEP 723
+  block and the runner resolves them with `uv sync --script`, against the
+  `python3` on PATH, when the provider installs and before the body runs.
+  None is arrangeable from here, so each case SKIPs with the reason rather
+  than reading an offline machine or an old interpreter as a broken sandbox.
+  This tree's mise does not pin python. Every dev start, the one `test:e2e`
+  and its restart hook use included, puts the directory of `mise which uv`
+  first on the server's PATH, because the sandbox runs uv by its resolved path
+  and mise's shim resolves to `mise`, which it refuses.
 
 An id is `<AREA>-<NN>`, where the area names the surface the case drives, and
 an id is permanent: a case that moves keeps it, so a six-month-old report
