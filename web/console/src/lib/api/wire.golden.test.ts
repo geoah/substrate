@@ -58,6 +58,7 @@ import type {
   AggregateRow,
   AggregateSources,
   AggregateValue,
+  BlobInfo,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -271,6 +272,14 @@ const kindInfo: Shape<KindInfo> = {
 const kindLabel: Shape<KindLabel> = {
   singular: true,
   plural: true,
+}
+
+const blobInfo: Shape<BlobInfo> = {
+  digest: true,
+  size: true,
+  name: false,
+  mediaType: false,
+  status: true,
 }
 
 const change: Shape<Change> = {
@@ -914,6 +923,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RecordFilter: recordFilter,
   KindInfo: kindInfo,
   KindLabel: kindLabel,
+  BlobInfo: blobInfo,
   Change: change,
   AffectedRecord: affectedRecord,
   PropertyChange: propertyChange,

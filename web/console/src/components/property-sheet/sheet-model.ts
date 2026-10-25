@@ -10,6 +10,7 @@ import {
   CheckSquareIcon,
   CircleDotIcon,
   ClockIcon,
+  FileIcon,
   GlobeIcon,
   HashIcon,
   LinkIcon,
@@ -38,6 +39,8 @@ import { formatQuantityText } from "@/lib/units"
 /** How a row is edited: on its own line, from a list that drops under it,
  * or in a panel that takes the row's full width. */
 export function editStyle(field: FormField): "line" | "pop" | "panel" {
+  // A file is uploaded from a panel, never typed as its digest on the line.
+  if (field.spec.kind === "blobref" && !field.spec.repeated) return "panel"
   switch (field.control) {
     case "text":
     case "number":
@@ -193,6 +196,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   decimal: HashIcon,
   money: BanknoteIcon,
   quantity: RulerIcon,
+  blobref: FileIcon,
 }
 
 /** A property's icon: a reference wears its target kind's own glyph icon, an

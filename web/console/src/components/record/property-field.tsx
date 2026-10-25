@@ -31,6 +31,7 @@ import { PlusIcon, XIcon } from "lucide-react"
 
 import { fromLocalInput, toLocalInput } from "@/components/property-sheet/dates"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { BlobField } from "@/components/ink/blob-field"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
@@ -118,6 +119,8 @@ export interface PropertyFieldProps {
   /** The control alone: the surface around it says the label and the
    * one-liner (the property sheet's rows). Errors still show. */
   bare?: boolean
+  /** The name a file this control makes (a blank ink note) is stored under. */
+  fileName?: string
 }
 
 /** A worked example as a placeholder. In the data voice an example reads like
@@ -138,6 +141,7 @@ export function PropertyField({
   labelAction,
   idPrefix = "f",
   bare = false,
+  fileName,
 }: PropertyFieldProps) {
   const [technical] = useTechnicalDetails()
   const id = `${idPrefix}-${field.name}`
@@ -241,6 +245,24 @@ export function PropertyField({
       </>
     )
 
+  // A file is uploaded, never typed as its digest.
+  if (field.spec.kind === "blobref" && !field.spec.repeated) {
+    return (
+      <Field>
+        {label}
+        <BlobField
+          id={id}
+          spec={field.spec}
+          value={text}
+          onChange={onChange}
+          invalid={Boolean(error)}
+          fileName={fileName}
+        />
+        {help()}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+    )
+  }
   if (field.control === "select") {
     // An OPTIONAL enum may be emptied (unset is a real answer); a required one
     // never offers the empty beside its own values.

@@ -16,6 +16,7 @@ import { PropertySheet } from "@/components/property-sheet/property-sheet"
 import { sheetRows } from "@/components/property-sheet/sheet-rows"
 import { ConnectedSection } from "@/components/record/connected"
 import { HistorySection } from "@/components/record/history"
+import { InkSections } from "@/components/ink/ink-section"
 import { RecordBody } from "@/components/record/record-body"
 import { RecordDetails } from "@/components/record/record-details"
 import { RecordHeader } from "@/components/record/record-header"
@@ -52,6 +53,8 @@ import { METRIC_TRAIT, SYNC_TRAIT } from "@/lib/core-kinds"
 import { OBSERVED_SHOWN, observedVariant } from "@/lib/observations"
 import { readOnlyReason } from "@/lib/provenance"
 import { foldedBy } from "@/lib/record-view"
+import { inkPlan, inkPlanNames } from "@/lib/ink-record"
+import { propSpecs } from "@/lib/record-schema"
 import { kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
 import { useUnits } from "@/hooks/use-units"
@@ -144,15 +147,25 @@ export function RecordDocument({
   // its own sections show.
   const variant = observedVariant(kind)
   const views = useRecordViews(kind)
+  // The ink a record holds is drawn in its own sections, so the sheet
+  // folds those properties away like a view's.
+  const inkNames = useMemo(
+    () =>
+      kind ? inkPlanNames(inkPlan(propSpecs(kind), record.properties)) : [],
+    [kind, record.properties]
+  )
   const elsewhere = useMemo(() => {
-    const folded = foldedBy(views)
+    const folded = [...foldedBy(views), ...inkNames]
     const shown = variant ? OBSERVED_SHOWN[variant] : undefined
     if (!folded.length) return shown
     return {
       names: [...(shown?.names ?? []), ...folded],
-      where: shown?.where ?? views[0]?.name ?? "the view above",
+      where:
+        shown?.where ??
+        views[0]?.name ??
+        (inkNames.length ? "the ink above" : "the view above"),
     }
-  }, [variant, views])
+  }, [variant, views, inkNames])
   const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (
@@ -182,6 +195,7 @@ export function RecordDocument({
             kind={kind}
             kinds={kinds}
           />
+          <InkSections record={record} kind={kind} readOnly={readOnly} />
           {kindHasTrait(kind, METRIC_TRAIT) && (
             <MetricRollups record={record} readOnly={readOnly} />
           )}
