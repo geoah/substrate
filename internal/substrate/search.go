@@ -40,7 +40,8 @@ type SearchResult struct {
 	Pending int   `json:"pending"`
 	// Capped says the lexical arm stopped short of ranking every match by
 	// BM25F: it read a bounded share of a query's matches, its time budget
-	// ran short while reading the matches and the newest were taken, it ran
+	// ran short while reading the matches and the newest, or the ones the
+	// index answered first, were taken, it ran
 	// out before the relaxed top-up and the records matching every word
 	// answered alone, or it ran out while scoring and the lexical hits are
 	// ordered by ts_rank, or newest first, which Hit.Lexical then carries.

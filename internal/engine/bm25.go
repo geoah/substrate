@@ -339,17 +339,33 @@ func bm25IDF(n, df float64) float64 {
 // lexicalCap says where a lexical search stopped short of ranking every
 // match: a pass met more matching rows than it reads (readCapped, at readMax),
 // or the strict pass ran past its share of the budget reading vectors and its
-// newest matches were taken unranked (unranked), or the relaxed top-up ran out
-// of the budget and the strict pass's candidates answered alone (budget), or
-// BM25F scoring ran out of it and the candidates answered in their pre-rank
-// order (unscored), newest first where unranked.
+// candidates were taken in another order (order, past orderPreRanked) and the
+// relaxed top-up skipped (noTopUp), or the relaxed top-up ran out of the
+// budget and the strict pass's candidates answered alone (budget), or BM25F
+// scoring ran out of it and the candidates answered in the order the pass
+// holds (unscored).
 type lexicalCap struct {
 	readCapped bool
 	readMax    int
-	unranked   bool
+	order      candOrder
+	noTopUp    bool
 	budget     bool
 	unscored   bool
 }
+
+// candOrder is how a strict pass ordered the candidates it kept.
+type candOrder int
+
+const (
+	// orderPreRanked is by pre-rank, the best of the matches it read.
+	orderPreRanked candOrder = iota
+	// orderNewest is the newest matches, newest first: the pre-rank ran out
+	// of the pass's share of the budget.
+	orderNewest
+	// orderSampled is the matches the index answered first, newest first
+	// among them: the newest-first read ran out of the pass's share.
+	orderSampled
+)
 
 // lexicalCand is one candidate as a pass found it: whole when the strict pass
 // did, and its pre-rank, the length-normalized ts_rank the pass ordered by.
@@ -398,7 +414,7 @@ type lexicalPass struct {
 // repository for `flight booking confirmation`.
 //
 // The whole arm runs under the service's search budget (DefaultSearchBudget).
-// A strict pass still pre-ranking at half of it takes its newest matches
+// A strict pass still reading its matches at half of it takes some of them
 // unranked and drops the top-up, marked capped. A top-up that runs out of it
 // is dropped and the strict candidates answer, marked capped. Scoring that runs out of it falls back to the order the
 // passes already hold, strict candidates first and then by pre-rank, marked
@@ -439,17 +455,17 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	// so a cold read still leaves scoring the other half.
 	strict := pass
 	strict.rankBy = began.Add(budget / 2)
-	cands, over, ranked, err := ds.lexicalCandidates(ctx, strict, false, pool)
+	cands, over, order, err := ds.lexicalCandidates(ctx, strict, false, pool)
 	if err != nil {
 		return failed(err)
 	}
 	capped.readCapped = over
-	capped.unranked = !ranked
+	capped.order = order
 	switch {
 	case len(cands) >= pool || !plan.relaxes():
-	case !ranked:
+	case order != orderPreRanked:
 		// The top-up would read vectors as cold as the ones that ran out.
-		capped.budget = true
+		capped.noTopUp = true
 	default:
 		if hook := ds.svc.searchTopUpHook; hook != nil {
 			hook()
@@ -516,17 +532,21 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 // reports that more rows matched than the pass read.
 //
 // The identities are read without the vectors, and the pre-rank reads them in
-// a second statement under pass.rankBy when it is set. That statement is the
-// whole cost of a common word: one row of an agent transcript carries hundreds
-// of kB of vector in TOAST, and 697 matches of `dinner` were 9.4 s read cold
-// and 146 ms warm. Past rankBy the newest take answer unranked, newest first
-// (ranked false), so a cold read degrades the order instead of failing the
-// search; the pages it did read stay cached for scoring and the next search.
-func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, relaxed bool, take int) ([]lexicalCand, bool, bool, error) {
+// a second statement, both under pass.rankBy when it is set. Reading vectors
+// is the whole cost of a common word: one row of an agent transcript carries
+// hundreds of kB of vector in TOAST, and 697 matches of `dinner` were 9.4 s
+// read cold and 146 ms warm. The pre-rank reads every vector it ranks, and the
+// identity read of a word matched on the row reads every vector it walks past.
+// A pre-rank past rankBy answers the newest take unranked (orderNewest); an
+// identity read past it answers take of the matches through the index,
+// newest first among them (orderSampled). Either way a cold read degrades the
+// order instead of failing the search, and the pages it did read stay cached
+// for scoring and the next search.
+func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, relaxed bool, take int) ([]lexicalCand, bool, candOrder, error) {
 	probe := &builder{}
 	few, err := indexedMatch(ctx, ds.db, probe, pass.plan.expr(probe, relaxed), pass.matchMax)
 	if err != nil {
-		return nil, false, false, err
+		return nil, false, 0, err
 	}
 	b := &builder{}
 	q := pass.plan.expr(b, relaxed)
@@ -543,62 +563,121 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 			JOIN records r ON r.kind = m.kind AND r.id = m.id
 			WHERE r.deleted_at IS NULL`
 	}
-	// The read stops at readMax+1 rows: on the row it walks
-	// records_created_at_idx backwards and matches each row it meets, so the
-	// rows it reads are about readMax times the share of the repository the
-	// query misses. The one row past readMax only says the pass was cut; the
-	// newest readMax are ranked.
-	rows, err := ds.db.QueryContext(ctx, `
-		SELECT r.kind, r.id, `+demotion("r")+` FROM `+source+clause+`
-		ORDER BY r.created_at DESC
-		LIMIT `+b.arg(pass.readMax+1), b.args...)
-	if err != nil {
-		return nil, false, false, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
-	}
-	var found []lexicalCand
-	for rows.Next() {
-		c := lexicalCand{whole: true}
-		if err := rows.Scan(&c.id.Kind, &c.id.ID, &c.demoted); err != nil {
-			_ = rows.Close()
-			return nil, false, false, err
-		}
-		found = append(found, c)
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, false, false, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
-	}
-	over := len(found) > pass.readMax
-	if over {
-		found = found[:pass.readMax]
-	}
-	if len(found) == 0 {
-		return nil, over, true, nil
-	}
-
+	// rankBy bounds the identity read as well as the pre-rank: a word too
+	// common for records_matching is matched on the row, and under the policy
+	// that reads each row's whole vector, so a cold read of the identities
+	// alone can spend the budget.
 	rctx := ctx
 	if !pass.rankBy.IsZero() {
 		var cancel context.CancelFunc
 		rctx, cancel = context.WithDeadline(ctx, pass.rankBy)
 		defer cancel()
 	}
+	if hook := ds.svc.searchIdentityHook; hook != nil && !relaxed {
+		hook(rctx)
+	}
+	// The read stops at readMax+1 rows: on the row it walks
+	// records_created_at_idx backwards and matches each row it meets, so the
+	// rows it reads are about readMax times the share of the repository the
+	// query misses. The one row past readMax only says the pass was cut; the
+	// newest readMax are ranked.
+	found, err := ds.lexicalIdentities(rctx, `
+		SELECT r.kind, r.id, `+demotion("r")+` FROM `+source+clause+`
+		ORDER BY r.created_at DESC
+		LIMIT `+b.arg(pass.readMax+1), b.args...)
+	if err != nil {
+		if !pastRankBy(ctx, rctx, pass) {
+			return nil, false, 0, err
+		}
+		// The rows the index answers first, whichever they are, newest first:
+		// a sample of the matches, read without a vector.
+		sampled, err := ds.indexedCandidates(ctx, pass, take)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		return sampled, false, orderSampled, nil
+	}
+	over := len(found) > pass.readMax
+	if over {
+		found = found[:pass.readMax]
+	}
+	if len(found) == 0 {
+		return nil, over, orderPreRanked, nil
+	}
+
 	if hook := ds.svc.searchPreRankHook; hook != nil && !relaxed {
 		hook(rctx)
 	}
 	ranked, err := ds.preRank(rctx, pass.plan, found, take)
 	if err != nil {
-		if pass.rankBy.IsZero() || !errors.Is(rctx.Err(), context.DeadlineExceeded) {
-			return nil, false, false, err
+		if !pastRankBy(ctx, rctx, pass) {
+			return nil, false, 0, err
 		}
-		// Newest first, each rank in (0, 1) and falling, so the fallback past
-		// scoring keeps this order too.
-		found = found[:min(take, len(found))]
-		for i := range found {
-			found[i].rank = 1 / float64(i+2)
-		}
-		return found, over, false, nil
+		return newestFirst(found, take), over, orderNewest, nil
 	}
-	return ranked, over, true, nil
+	return ranked, over, orderPreRanked, nil
+}
+
+// pastRankBy reports whether a pass's statement failed because rankBy came
+// and not the search's own deadline or the caller.
+func pastRankBy(ctx, rctx context.Context, pass lexicalPass) bool {
+	return !pass.rankBy.IsZero() && ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded)
+}
+
+// newestFirst keeps the first take of found, already newest first, each rank
+// in (0, 1) and falling, so the fallback past scoring keeps this order too.
+func newestFirst(found []lexicalCand, take int) []lexicalCand {
+	found = found[:min(take, len(found))]
+	for i := range found {
+		found[i].rank = 1 / float64(i+2)
+	}
+	return found
+}
+
+// lexicalIdentities reads the candidate identities a pass's query answers,
+// each whole.
+func (ds *dataset) lexicalIdentities(ctx context.Context, query string, args ...any) ([]lexicalCand, error) {
+	rows, err := ds.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var found []lexicalCand
+	for rows.Next() {
+		c := lexicalCand{whole: true}
+		if err := rows.Scan(&c.id.Kind, &c.id.ID, &c.demoted); err != nil {
+			return nil, err
+		}
+		found = append(found, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("substrate/engine: lexical search: candidates: %w", err)
+	}
+	return found, nil
+}
+
+// indexedCandidates is the strict pass's way out of a read that ran past
+// rankBy: take of its matches through records_fts_idx (records_matching_kinds,
+// migration 0018, the kinds applied before the cap), newest first among
+// them. It reads no vector and walks no other row, so it answers in what the
+// index costs, where the newest-first read matched every row it met.
+func (ds *dataset) indexedCandidates(ctx context.Context, pass lexicalPass, take int) ([]lexicalCand, error) {
+	b := &builder{}
+	q := pass.plan.expr(b, false)
+	kinds := "NULL"
+	if pass.restrict {
+		kinds = b.textArray(pass.types)
+	}
+	found, err := ds.lexicalIdentities(ctx, `
+		SELECT r.kind, r.id, `+demotion("r")+`
+		FROM records_matching_kinds(`+q+`, `+kinds+`, `+b.arg(take)+`) m
+		JOIN records r ON r.kind = m.kind AND r.id = m.id
+		WHERE r.deleted_at IS NULL
+		ORDER BY r.created_at DESC, r.kind, r.id`, b.args...)
+	if err != nil {
+		return nil, err
+	}
+	return newestFirst(found, take), nil
 }
 
 // preRank orders the found candidates by ts_rank normalized by preRankNorm and

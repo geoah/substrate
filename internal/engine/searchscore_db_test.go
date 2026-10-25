@@ -131,11 +131,22 @@ func TestLexicalPreRankDoesNotRewardLength(t *testing.T) {
 	}
 }
 
+// coldRead is a statement that runs until its context cancels it, on a
+// connection of the dataset's own pool: what a cold read of TOASTed vectors
+// does to the budget, a real statement canceled and a connection the pool
+// must replace before the search's next one.
+func coldRead(t *testing.T, ds *dataset) func(context.Context) {
+	return func(ctx context.Context) {
+		if _, err := ds.db.ExecContext(ctx, `SELECT pg_sleep(60)`); err == nil {
+			t.Error("the cold read finished instead of being canceled")
+		}
+	}
+}
+
 // A strict pass whose vectors read cold past its share of the budget still
-// answers (the hook stands for a read that runs until it is canceled):
-// the newest matches are scored instead of the best by pre-rank, marked
-// capped, where the pass that pre-ranked every match before returning one
-// failed the search with nothing ranked (#968).
+// answers: the newest matches are scored instead of the best by pre-rank,
+// marked capped, where the pass that pre-ranked every match before returning
+// one failed the search with nothing ranked (#968).
 func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
@@ -143,7 +154,7 @@ func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T)
 	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
 	const budget = 2 * time.Second
 	ds.svc.searchBudget = budget
-	ds.svc.searchPreRankHook = func(ctx context.Context) { <-ctx.Done() }
+	ds.svc.searchPreRankHook = coldRead(t, ds)
 	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical, K: 1})
 	if err != nil {
 		t.Fatalf("a pre-rank past the budget failed the search: %v", err)
@@ -180,5 +191,71 @@ func TestLexicalSearchAnswersNewestFirstWhenPreRankAndScoringRunOut(t *testing.T
 	}
 	if !res.Capped || !strings.Contains(res.Note, "ordered newest first") {
 		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// A word too common for records_matching is matched on the row, newest first,
+// and under the policy that reads every vector the walk passes: cold, the
+// identity read alone spent the budget and the search answered 503 before
+// any candidate existed (#968). Past the strict pass's share it takes some
+// matches through the index instead, marked capped, and skips the top-up.
+func TestLexicalSearchTakesIndexedMatchesWhenTheIdentityReadRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t, WithSearchMatchMax(0))
+	putScoreTask(t, ds, "old", "flight", "")
+	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	putScoreTask(t, ds, "partial", "flight", "nothing about it")
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchIdentityHook = coldRead(t, ds)
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("an identity read past the budget failed the search: %v", err)
+	}
+	if len(res.Hits) != 0 {
+		t.Fatalf("hits = %+v, want none: nothing matches every word and the top-up is skipped", res.Hits)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "were not searched") || strings.Contains(res.Note, "stopped at the") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+
+	res, err = ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("an identity read past the budget failed the search: %v", err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, h.Record.ID)
+	}
+	if len(got) != 3 {
+		t.Fatalf("hits = %v, want every match", got)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "so some of the matches were ranked instead of the closest ones") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// The index's way out applies the kinds before its cap: a search naming a
+// kind that a small share of the matches hold still finds them.
+func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	for i := range 5 {
+		putScoreTask(t, ds, fmt.Sprintf("t%d", i), "flight", "")
+	}
+	const person = "samples.substrate.reamde.dev/people/person"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: person, ID: "pilot", Properties: map[string]any{"name": "flight"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pass := lexicalPass{plan: parseSearch("flight"), types: []string{person}, restrict: true}
+	cands, err := ds.indexedCandidates(ctx, pass, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 1 || cands[0].id.Kind != person || cands[0].id.ID != "pilot" {
+		t.Fatalf("candidates = %+v, want the person", cands)
 	}
 }

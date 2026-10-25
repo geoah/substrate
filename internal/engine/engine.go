@@ -522,6 +522,11 @@ type service struct {
 	// candidate pass reads the vectors it pre-ranks under, before it reads
 	// them: the seam a cold read of them spends the budget in.
 	searchPreRankHook func(context.Context)
+	// searchIdentityHook, set only by a test, runs with the context the
+	// strict candidate pass reads its matching identities under, before it
+	// reads them: the seam a cold walk of a common word's rows spends the
+	// budget in.
+	searchIdentityHook func(context.Context)
 	// searchSemanticHook, set only by a test, runs with the semantic arm's
 	// context and transaction after the scan settings and before the
 	// candidate read: the seam that runs a statement the arm's budget
