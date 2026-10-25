@@ -558,10 +558,16 @@ def main(input, host):
 
 func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 	t.Helper()
+	return agentThreadsIn(t, ds, crewPackage, agent)
+}
+
+// agentThreadsIn is agentThreadsOf for an agent of package pkg.
+func agentThreadsIn(t *testing.T, ds *dataset, pkg, agent string) []map[string]any {
+	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id, props FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2
-		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, crewPackage+"/"+agent))
+		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, pkg+"/"+agent))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1849,23 +1855,7 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 	t.Run("parent deadline", func(t *testing.T) {
 		t.Parallel()
 		ds, fake := openAgentDataset(t)
-		const pkg = "hurry.test.dev/hurry"
-		agent := func(name string, data map[string]any) map[string]any {
-			data["description"] = name + " under test"
-			data["prompt"] = "You are " + name + "."
-			return vocabulary.AgentManifest(pkg, name, data)
-		}
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-			vocabulary.PackageManifest(pkg, 0),
-			agent("hurried", map[string]any{
-				"provider": "rootllm", "model": "root",
-				"subagents": []any{pkg + "/errand"},
-				"budgets":   map[string]any{"deadlineSeconds": 1},
-			}),
-			agent("errand", map[string]any{"provider": "subllm", "model": "sub"}),
-		}); err != nil {
-			t.Fatalf("install %s: %v", pkg, err)
-		}
+		installHurriedAgent(t, ds)
 		var once sync.Once
 		ds.agentRowWrite = func(ctx context.Context, props map[string]any) error {
 			var err error
@@ -1882,7 +1872,7 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 		}
 		fake.script("root", fakeTurn{calls: []fakeCall{{"errand", `{"input":"summarize"}`}}})
 		fake.script("sub", fakeTurn{content: "the summary"})
-		res, err := ds.CallAgent(ctx, pkg+"/hurried", "go")
+		res, err := ds.CallAgent(ctx, hurryPackage+"/hurried", "go")
 		if err != nil {
 			t.Fatalf("call: %v", err)
 		}
@@ -1892,7 +1882,7 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 		rows, err := ds.db.QueryContext(ctx, `
 			SELECT props->>'status', coalesce(props->>'reason', '') FROM records
 			WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2`,
-			typeThread, vocabulary.RecordPath(kindAgent, pkg+"/errand"))
+			typeThread, vocabulary.RecordPath(kindAgent, hurryPackage+"/errand"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1915,4 +1905,125 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 			t.Fatalf("errand threads: %d", n)
 		}
 	})
+	// The parent's deadline has ended, so its loop context's error is fixed;
+	// the caller's cancellation after it must still reach the sub-agent's
+	// write, or the root waits out a write nobody wants.
+	t.Run("caller cancel after the parent deadline", func(t *testing.T) {
+		t.Parallel()
+		ds, fake := openAgentDataset(t)
+		installHurriedAgent(t, ds)
+		writing := make(chan struct{})
+		ended := make(chan error, 1)
+		ds.agentRowWrite = func(ctx context.Context, props map[string]any) error {
+			if props["role"] != "assistant" || props["content"] != "the summary" {
+				return nil
+			}
+			close(writing)
+			select {
+			case <-ctx.Done():
+				ended <- ctx.Err()
+				return ctx.Err()
+			case <-time.After(30 * time.Second):
+				ended <- nil
+				return errors.New("the write was never canceled")
+			}
+		}
+		fake.script("root", fakeTurn{calls: []fakeCall{{"errand", `{"input":"summarize"}`}}})
+		fake.script("sub", fakeTurn{content: "the summary"})
+		cctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		started := time.Now()
+		returned := make(chan struct{})
+		go func() {
+			defer close(returned)
+			_, _ = ds.CallAgent(cctx, hurryPackage+"/hurried", "go")
+		}()
+		waitArrived(t, writing, "the sub-agent's reply write")
+		time.Sleep(time.Until(started.Add(1500 * time.Millisecond)))
+		cancel()
+		select {
+		case err := <-ended:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("the sub-agent's write ended with %v, want canceled", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the caller's cancellation never reached the sub-agent's write")
+		}
+		select {
+		case <-returned:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the root never returned")
+		}
+	})
+	// A shutdown after the parent's deadline, while a chat turn's sub-agent
+	// writes its tool row: the child settles `stopped` by the shutdown, as it
+	// does before the deadline, not `overbudget`.
+	t.Run("shutdown after the parent deadline", func(t *testing.T) {
+		t.Parallel()
+		ds, fake := openAgentDataset(t)
+		installHurriedAgent(t, ds)
+		writing, release := make(chan struct{}), make(chan struct{})
+		ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
+			if props["role"] == "tool" && props["name"] == "lookup" {
+				close(writing)
+				<-release
+			}
+			return nil
+		}
+		fake.script("root", fakeTurn{calls: []fakeCall{{"errand", `{"input":"summarize"}`}}})
+		fake.script("sub", fakeTurn{calls: []fakeCall{{"lookup", `{}`}}})
+		log := newEventLog()
+		started := time.Now()
+		go func() {
+			_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, hurryPackage+"/hurried", "", "go", log.emit)
+		}()
+		waitArrived(t, writing, "the sub-agent's tool row write")
+		time.Sleep(time.Until(started.Add(1500 * time.Millisecond)))
+		thread := log.waitFor(t, substrate.AgentEventThread).Thread
+		v, ok := ds.runningThreads.Load(thread)
+		if !ok {
+			close(release)
+			t.Fatal("the chat turn is not running")
+		}
+		hub := v.(*agentLoop).in.stopHub
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			ds.svc.stopBackground(backgroundDrainTimeout)
+		}()
+		waitUntil(t, "the shutdown to end the turn", hub.ended)
+		close(release)
+		<-drained
+		children := agentThreadsIn(t, ds, hurryPackage, "errand")
+		if len(children) != 1 {
+			t.Fatalf("errand threads: %d", len(children))
+		}
+		if got := children[0]; got["status"] != threadStopped || got["reason"] != reasonShutdown {
+			t.Fatalf("sub-agent thread = %v (%v), want stopped by the shutdown", got["status"], got["reason"])
+		}
+	})
+}
+
+const hurryPackage = "hurry.test.dev/hurry"
+
+// installHurriedAgent installs hurryPackage: `hurried` (provider rootllm, a
+// one-second deadline) and its sub-agent `errand` (provider subllm).
+func installHurriedAgent(t *testing.T, ds *dataset) {
+	t.Helper()
+	agent := func(name string, data map[string]any) map[string]any {
+		data["description"] = name + " under test"
+		data["prompt"] = "You are " + name + "."
+		return vocabulary.AgentManifest(hurryPackage, name, data)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(hurryPackage, 0),
+		agent("hurried", map[string]any{
+			"provider": "rootllm", "model": "root",
+			"subagents": []any{hurryPackage + "/errand"},
+			"budgets":   map[string]any{"deadlineSeconds": 1},
+		}),
+		agent("errand", map[string]any{"provider": "subllm", "model": "sub"}),
+	}); err != nil {
+		t.Fatalf("install %s: %v", hurryPackage, err)
+	}
 }

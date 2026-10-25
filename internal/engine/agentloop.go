@@ -534,6 +534,10 @@ type agentLoop struct {
 	actor    substrate.Actor
 
 	threadID string
+	// runCtx is the context run received, below the loop's own deadline: a
+	// sub-agent's cancellation hangs off it, because a context's error is
+	// fixed once set and the deadline's would hide a later stop.
+	runCtx context.Context
 	// turn is the next message ordinal on the thread. turnMu guards it,
 	// because a resolution written into the thread while the loop runs
 	// draws its ordinal here too (nextThreadTurn), so no two rows share one.
@@ -753,6 +757,7 @@ func (l *agentLoop) run(ctx context.Context) (*substrate.AgentResult, error) {
 		defer ds.spend.finish(l.spend)
 	}
 	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
+	l.runCtx = ctx
 	messages := l.compactAtOpen(ctx, l.opening)
 
 	started := nowUTC()
@@ -2787,16 +2792,13 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	// ctx carries this loop's deadline. The child takes it as its own
 	// instead of running on it: a write or a settle on a context that
 	// deadline ended fails, and would leave the child `running` under its
-	// lease. A cancellation still reaches the child; what that leaves is the
-	// caller's (decision 0169).
+	// lease. A cancellation still reaches the child, before the deadline or
+	// after it, through the run's own context, which the deadline never
+	// ends; what that leaves is the caller's (decision 0169).
 	notAfter, _ := ctx.Deadline()
 	cctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	defer context.AfterFunc(ctx, func() {
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			cancel()
-		}
-	})()
+	defer context.AfterFunc(l.runCtx, cancel)()
 	var child string
 	res, err := l.ds.runAgent(cctx, sub, agentInvocation{
 		mode: agentModeSubagent, user: input, notAfter: notAfter,
