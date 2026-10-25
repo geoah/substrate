@@ -16,8 +16,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -656,6 +658,158 @@ func TestKindlessFilterComparesEveryTypedPropertyByValue(t *testing.T) {
 				t.Fatalf("filtered to %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// A kindless read scans rows no loaded declaration speaks for: a package
+// quarantined at open is out of the registry, so its kinds cannot vote on a
+// name, and its rows still sit in the table. Its "unrated" at a name every
+// loaded kind declares an int must not match, and must not fail the cast for
+// the whole read, filtered or ordered.
+func TestKindlessTypedReadSkipsRowsNoLoadedKindSpeaksFor(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := pfOpener(t, dsn, t.TempDir())
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const parked = "parked.example.substrate.reamde.dev/parked"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "review"}, map[string]any{"properties": map[string]any{
+			"reviewScore": map[string]any{"type": "int"},
+		}}),
+		vocabulary.PackageManifest(parked, 0),
+		vocabulary.KindManifest(parked, map[string]any{"singular": "critique"}, map[string]any{"properties": map[string]any{
+			"reviewScore": map[string]any{"type": "string"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, v := range []any{9, 12} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/review", Properties: map[string]any{"reviewScore": v}})
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: parked + "/critique", Properties: map[string]any{"reviewScore": "unrated"}})
+	// A key no dialect reserves quarantines the package at the next open.
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{properties,reviewScore,unheardOf}', 'true') WHERE id = $1`, parked+"/critique"); err != nil {
+		t.Fatalf("corrupt the stored declaration: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := ds2.Put(ctx, owner, substrate.PutInput{Kind: parked + "/critique", Properties: map[string]any{"reviewScore": "7"}}); err == nil {
+		t.Fatal("the corrupted package should be quarantined, its kind out of the registry")
+	}
+	page, err := ds2.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"reviewScore": {Gte: 10}}},
+		First:  50,
+	})
+	if err != nil {
+		t.Fatalf("filter: %v", err)
+	}
+	if len(page.Records) != 1 || fmt.Sprint(page.Records[0].Properties["reviewScore"]) != "12" {
+		t.Fatalf("filtered to %v, want the one review scoring 12", page.Records)
+	}
+	page, err = ds2.List(ctx, substrate.Query{
+		Filter:  substrate.Filter{Properties: map[string]substrate.Cond{"reviewScore": {Exists: new(true)}}},
+		OrderBy: []substrate.Order{{Property: "reviewScore"}},
+		First:   50,
+	})
+	if err != nil {
+		t.Fatalf("order: %v", err)
+	}
+	got := make([]string, 0, len(page.Records))
+	for _, r := range page.Records {
+		got = append(got, fmt.Sprint(r.Properties["reviewScore"]))
+	}
+	if strings.Join(got, ",") != "9,12,unrated" {
+		t.Fatalf("ordered %v, want 9,12 then the row no loaded kind speaks for", got)
+	}
+}
+
+// A stored date is midnight UTC, the instant ParseInstant reads the same
+// spelling as, whatever the session's timezone: cast bare, Postgres read it in
+// the session's zone, so under New York "2026-10-24" was 04:00Z and failed a
+// bound of 03:00Z.
+func TestADateComparesAsMidnightUTCInAnySessionTimezone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone = %L', current_database(), 'America/New_York'); END $$`); err != nil {
+		t.Fatalf("set the database's timezone: %v", err)
+	}
+	svc := pfOpener(t, dsn, t.TempDir())()
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "deadline"}, map[string]any{"properties": map[string]any{
+			"deadlineOn": map[string]any{"type": "date"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kind: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/deadline", Properties: map[string]any{"deadlineOn": "2026-10-24"}})
+	for _, kinds := range [][]string{nil, {kindlessPackage + "/deadline"}} {
+		for _, cond := range []substrate.Cond{{Lt: "2026-10-24T03:00:00Z"}, {Eq: "2026-10-24T00:00:00Z"}} {
+			page, err := ds.List(ctx, substrate.Query{
+				Filter: substrate.Filter{Kinds: kinds, Properties: map[string]substrate.Cond{"deadlineOn": cond}},
+				First:  50,
+			})
+			if err != nil {
+				t.Fatalf("kinds %v, %+v: %v", kinds, cond, err)
+			}
+			if len(page.Records) != 1 {
+				t.Errorf("kinds %v, %+v matched %d rows, want the date", kinds, cond, len(page.Records))
+			}
+		}
+	}
+}
+
+// A money operand on a name the kinds disagree about has nothing to compare
+// against: as text it is Go's rendering of a map, and it matched whatever
+// sorted after "map[". It is refused the way a quantity's is.
+func TestKindlessMoneyOperandIsRefusedWhereTheKindsDisagree(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "fee"}, map[string]any{"properties": map[string]any{
+			"feeCharge": map[string]any{"type": "money"},
+		}}),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "memo"}, map[string]any{"properties": map[string]any{
+			"feeCharge": map[string]any{"type": "string"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/memo", Properties: map[string]any{"feeCharge": "waived"}})
+	_, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"feeCharge": {Gte: moneyValue(1000, "EUR")}}},
+		First:  50,
+	})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "filter.kinds") {
+		t.Fatalf("a money operand over a name the kinds disagree about: %v, want a refusal naming filter.kinds", err)
 	}
 }
 
