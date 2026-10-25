@@ -1583,6 +1583,9 @@ func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string,
 		// A settle with no reason clears an older one: a continued thread that
 		// ends ok must not keep the reason its last run died with.
 		props["reason"] = nil
+		// The lease is the running turn's alone: a settled thread that kept
+		// one reads to any client as a turn still holding it.
+		props["leaseUntil"] = nil
 		if reason != "" {
 			props["reason"] = reason
 		}
