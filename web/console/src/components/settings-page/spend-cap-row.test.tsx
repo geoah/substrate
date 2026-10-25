@@ -104,6 +104,7 @@ describe("SpendCapRow", () => {
   const puts: unknown[] = []
   let livePage: () => Response
   let deletedPage: () => Response
+  let settingPage: (() => Response) | undefined
 
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock)
@@ -113,10 +114,12 @@ describe("SpendCapRow", () => {
     puts.length = 0
     livePage = () => json(200, { records: THREADS })
     deletedPage = () => json(200, { records: [] })
+    settingPage = undefined
     fetchMock.mockImplementation(async (url, init) => {
       const method = init?.method ?? "GET"
       const path = String(url)
       if (path === SETTING_PATH && method === "GET") {
+        if (settingPage) return settingPage()
         return stored
           ? json(200, stored)
           : json(404, { error: { code: "not_found", message: "not found" } })
@@ -297,6 +300,51 @@ describe("SpendCapRow", () => {
     expect(screen.queryByText("at least")).toBeNull()
   })
 
+  // The two reads are separate snapshots: a run read live and deleted before
+  // the deleted read is in both, and counts once.
+  it("counts a run once when it is in both reads", async () => {
+    stored = setting("1000")
+    const run = {
+      kind: "substrate.reamde.dev/llm/thread",
+      id: "t6",
+      updatedAt: hoursAgo(2),
+      properties: {
+        mode: "chat",
+        status: "ok",
+        finishedAt: hoursAgo(2),
+        costUSD: 6,
+      },
+    }
+    livePage = () => json(200, { records: [run] })
+    deletedPage = () =>
+      json(200, {
+        records: [{ ...run, updatedAt: hoursAgo(1), deletedAt: hoursAgo(1) }],
+      })
+    renderRow()
+    expect(await screen.findByText("$10.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("$6.00")).toBeTruthy()
+    expect(screen.queryByText("At the cap")).toBeNull()
+  })
+
+  // The single read answers a deleted setting with its properties; the
+  // engine reads it as no cap, and a put restores it with its name.
+  it("reads a deleted cap as no cap, and sets it again without renaming it", async () => {
+    stored = { ...setting("100"), deletedAt: hoursAgo(1) } as ReturnType<
+      typeof setting
+    >
+    renderRow()
+    expect(await screen.findByText("No cap")).toBeTruthy()
+    expect(screen.queryByText("At the cap")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Set a cap" }))
+    const input = screen.getByRole("textbox", { name: "Cap" })
+    expect((input as HTMLInputElement).value).toBe("")
+    fireEvent.change(input, { target: { value: "20" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toEqual({ properties: { type: "int", value: "2000" } })
+    expect(await screen.findByText("$20.00 in any 24 hours")).toBeTruthy()
+  })
+
   it("gives the spend as a floor when the deleted runs don't load", async () => {
     deletedPage = () =>
       json(500, { error: { code: "internal", message: "boom" } })
@@ -351,9 +399,8 @@ describe("SpendCapRow", () => {
 
   it("says when the cap or the runs didn't load", async () => {
     livePage = () => json(500, { error: { code: "internal", message: "boom" } })
-    fetchMock.mockImplementationOnce(async () =>
+    settingPage = () =>
       json(500, { error: { code: "internal", message: "the cap broke" } })
-    )
     renderRow()
     expect(
       await screen.findByText("The cap didn’t load: the cap broke")

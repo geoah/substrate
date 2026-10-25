@@ -438,7 +438,14 @@ export function capWindowSpend(
 
 /** A cap in cents as dollars, to the cent: "$1.50", "$0.00". */
 export function capWords(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+  return `$${centsAsDollars(cents)}`
+}
+
+/** Whole cents as "1.50", in integers: a float division misreads a cap near
+ * the largest one by a cent, and saving the editor's text would write it. */
+function centsAsDollars(cents: number): string {
+  const n = BigInt(cents)
+  return `${n / 100n}.${String(n % 100n).padStart(2, "0")}`
 }
 
 /** The largest cap the engine admits: the largest integer an `int` property
@@ -453,7 +460,7 @@ export function reachedCap(usd: number, cents: number): boolean {
 }
 
 /** The repository's cap as the engine reads its setting: no cap (no record,
- * or no value), a cap in US cents, or a value it cannot read, which holds
+ * a deleted one, or no value), a cap in US cents, or a value it cannot read, which holds
  * every agent run until it is a whole number of cents. */
 export type RepositorySpendCap =
   | { state: "none" }
@@ -467,6 +474,7 @@ export type RepositorySpendCap =
 export function repositorySpendCap(
   setting: SubstrateRecord | null | undefined
 ): RepositorySpendCap {
+  if (setting?.deletedAt) return { state: "none" }
   const value = setting?.properties.value
   if (typeof value !== "string" || value === "") return { state: "none" }
   if (!/^[+-]?\d+$/.test(value)) return { state: "unreadable", value }
@@ -505,7 +513,7 @@ export function parseCapDollars(
 
 /** A cap as the editor's text: "20.00", "" for none or an unreadable one. */
 export function capInputText(cap: RepositorySpendCap): string {
-  return cap.state === "set" ? (cap.cents / 100).toFixed(2) : ""
+  return cap.state === "set" ? centsAsDollars(cap.cents) : ""
 }
 
 // ── the policies, in words ──────────────────────────────────────────────────

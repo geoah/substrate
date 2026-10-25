@@ -1,8 +1,8 @@
 /** Settings (`/settings`): how the console looks (saved on the repository's
  * console preference record, so every browser signed in looks the same),
  * what every agent may spend in a day, the account, where you are signed in,
- * a download of everything, and for developers the system kinds, the raw tokens and what this server says
- * about itself. */
+ * a download of everything, and for developers the system kinds, the raw
+ * tokens and what this server says about itself. */
 
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"

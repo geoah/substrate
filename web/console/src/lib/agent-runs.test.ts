@@ -391,6 +391,13 @@ describe("agent runs", () => {
     expect(repositorySpendCap(setting("9007199254740991"))).toEqual(
       set(9007199254740991)
     )
+    // A deleted setting is no cap to the engine, whatever it still holds.
+    expect(
+      repositorySpendCap({
+        ...setting("2000"),
+        deletedAt: "2026-10-01T00:00:00Z",
+      })
+    ).toEqual(none)
   })
 
   it("reaches a cap the way the engine does, past a float sum's last bits", () => {
@@ -428,5 +435,16 @@ describe("agent runs", () => {
     expect(capInputText({ state: "none" })).toBe("")
     expect(capInputText({ state: "unreadable", value: "x" })).toBe("")
     expect(capInputText({ state: "set", cents: 150 })).toBe("1.50")
+    // The editor's text reads back as the cap it shows, to the largest one.
+    for (const cents of [
+      0, 7, 50, 150, 2000, 123456789, 9007199254740990, 9007199254740991,
+    ]) {
+      const text = capInputText({ state: "set", cents })
+      expect(parseCapDollars(text)).toEqual({ cents })
+      expect(capWords(cents)).toBe(`$${text}`)
+    }
+    expect(capInputText({ state: "set", cents: 9007199254740990 })).toBe(
+      "90071992547409.90"
+    )
   })
 })

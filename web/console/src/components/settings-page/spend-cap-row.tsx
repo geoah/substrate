@@ -41,7 +41,7 @@ import {
   repositorySpendCapQueryOptions,
   saveRepositorySpendCap,
 } from "@/lib/api/settings"
-import type { Page } from "@/lib/api/types"
+import type { Page, SubstrateRecord } from "@/lib/api/types"
 
 const CAP_LABEL = "Cap"
 const SPENT_LABEL = "Spent in the last 24 hours"
@@ -135,25 +135,47 @@ export function SpendCapRow() {
 
 /** The window's spend over the live runs and the deleted ones together.
  * Without the deleted runs the sum is only a floor, so a failed read of them
- * marks it incomplete rather than leaving it to look whole. */
+ * marks it incomplete rather than leaving it to look whole. The two reads are
+ * separate snapshots, so a run deleted between them is in both: it counts
+ * once, as the newer of the two. */
 function repositorySpend(
   runs: UseQueryResult<Page>,
   deletedRuns: UseQueryResult<Page>
 ): CapSpend | undefined {
   if (!runs.isSuccess) return undefined
-  const live = capWindowSpend(runs.data.records ?? [], {
+  const liveList = runs.data.records ?? []
+  const live = capWindowSpend(liveList, {
     truncated: Boolean(runs.data.cursor),
   })
   if (deletedRuns.isError) return { ...live, complete: false }
   if (!deletedRuns.isSuccess) return undefined
-  const deleted = capWindowSpend(deletedRuns.data.records ?? [], {
+  const deletedList = deletedRuns.data.records ?? []
+  const deleted = capWindowSpend(deletedList, {
     truncated: Boolean(deletedRuns.data.cursor),
   })
+  const newest = newestById([...liveList, ...deletedList])
+  const kept = (r: SubstrateRecord) => newest.get(recordKey(r)) === r
+  const keptLive = capWindowSpend(liveList.filter(kept))
   return {
-    usd: live.usd + deleted.usd,
+    usd: keptLive.usd + capWindowSpend(deletedList.filter(kept)).usd,
     complete: live.complete && deleted.complete,
-    running: live.running,
+    running: keptLive.running,
   }
+}
+
+const recordKey = (r: SubstrateRecord) => `${r.kind}/${r.id}`
+
+/** Each record by kind and id, the most recently updated of its copies; a
+ * tie goes to the later one, so the deleted read's tombstone wins. */
+function newestById(records: SubstrateRecord[]): Map<string, SubstrateRecord> {
+  const newest = new Map<string, SubstrateRecord>()
+  for (const r of records) {
+    const held = newest.get(recordKey(r))
+    if (!held || !(Date.parse(r.updatedAt) < Date.parse(held.updatedAt))) {
+      newest.set(recordKey(r), r)
+    }
+  }
+  return newest
 }
 
 function CapValue({ cap }: { cap: RepositorySpendCap }) {
