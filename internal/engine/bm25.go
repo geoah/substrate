@@ -676,8 +676,11 @@ const sqlstateQueryCanceled = "57014"
 // itself decides, not the clock: a statement that failed on its own (a SQL
 // error, a closed pool, a lost connection) fails the search even when its
 // error arrived after the deadline. Only the context's own error and the
-// server's query_canceled (what pgx's cancel request draws) count, and either
-// only while deadline is done and parent is not.
+// server's query_canceled count, and either only while deadline is done and
+// parent is not. pgx's default handler surfaces a deadline as the context's
+// error; a query_canceled reaching here comes from a server statement_timeout,
+// an external pg_cancel_backend, or a cancel-request watcher if one is ever
+// configured.
 func deadlineErr(err error, deadline, parent context.Context) bool {
 	if err == nil || parent.Err() != nil || !errors.Is(deadline.Err(), context.DeadlineExceeded) {
 		return false
