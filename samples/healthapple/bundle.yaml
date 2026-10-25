@@ -21,7 +21,12 @@ data:
   # sleep batch's outputs are recomputed with every sleep batch near it,
   # on each change and deletion, and durations are measured on UTC
   # instants; ADAPTER is healthapple@7.
-  version: 7
+  # 8: every unit is written as the id of a unit record (`1/min`, `percent`,
+  # `steps`, `mmHg`), the spelling the repository stores since decision
+  # record 0186, and a meter's glucose is one `health/blood_glucose`
+  # series in `mmol/L{glucose}` or `mg/dL{glucose}`, never plain mmol/L
+  # or a `blood_glucose_mass` metric; ADAPTER is healthapple@8.
+  version: 8
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -38,11 +43,14 @@ data:
     - samples.substrate.reamde.dev/health
     - providers.substrate.reamde.dev/applehealth
   requiresAtLeast:
-    # 2 is the trace's one `utcOffset`, which this adapter writes.
-    samples.substrate.reamde.dev/observations: 2
+    # 2 is the trace's one `utcOffset`, and 4 names each metric's unit as a
+    # unit record, whose id this adapter writes; 6 is the version current
+    # when this floor was set.
+    samples.substrate.reamde.dev/observations: 6
     # 2 declares the sleep's and the workout's `name`, which this adapter
-    # writes.
-    samples.substrate.reamde.dev/health: 2
+    # writes; 8 makes `health/blood_glucose` one metric in the glucose
+    # units this adapter writes (analyte_units.yaml).
+    samples.substrate.reamde.dev/health: 8
     # 2 keeps a row's own `units` and escapes composed id parts one to one.
     providers.substrate.reamde.dev/applehealth: 2
   installs:
@@ -118,8 +126,10 @@ data:
     Raw values come only from the seconds and minutes groupings; an hour, a day
     or a coarser bucket is the app's own aggregate, written as `summary`
     observations so a raw read never counts it twice beside the minutes. Units are
-    converted to each metric's unit through the engine's table; a metric this
-    table does not map, or a unit it cannot read, is skipped and named in the
+    converted to each metric's unit through the repository's unit graph
+    (host.units, decision record 0186) and written as the unit record's id;
+    a metric this table does not map, or a unit no unit record answers or
+    no linear conversion joins to the metric's, is skipped and named in the
     result, never guessed.
     """
 
@@ -134,7 +144,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthapple-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthapple@7"
+    ADAPTER = "healthapple@8"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"
@@ -170,48 +180,53 @@ data:
     # the metric's unit, the metric's hold). `dense` is packed into hourly traces;
     # `sparse` is one observation per reading; `daily` is a value Apple computes
     # once a day. The units and holds are the health catalogue's
-    # (samples/health/metrics.yaml): a gauge with no hold stands until its
+    # (samples/health/metrics.yaml), each unit the id of its unit record, the
+    # spelling the repository stores: a gauge with no hold stands until its
     # stream's next point, so a night's last SpO2 reading would cover the day.
     # A spot reading (a weighing, a night's wrist temperature, an HRV or VO2
     # max estimate) holds PT0S: it is a point in time, so a read's average of
     # it is the mean of the readings, never weighted by the gaps between them.
     METRICS = {
-        "heart_rate": ("heart_rate", "dense", "gauge", "/min", "PT4M"),
-        "respiratory_rate": ("respiratory_rate", "dense", "gauge", "/min", "PT30M"),
-        "blood_oxygen_saturation": ("spo2", "dense", "gauge", "%", "PT20M"),
-        "step_count": ("steps", "dense", "amount", "{steps}", None),
+        "heart_rate": ("heart_rate", "dense", "gauge", "1/min", "PT4M"),
+        "respiratory_rate": ("respiratory_rate", "dense", "gauge", "1/min", "PT30M"),
+        "blood_oxygen_saturation": ("spo2", "dense", "gauge", "percent", "PT20M"),
+        "step_count": ("steps", "dense", "amount", "steps", None),
         "walking_running_distance": ("distance", "dense", "amount", "m", None),
-        "flights_climbed": ("floors", "dense", "amount", "{floors}", None),
+        "flights_climbed": ("floors", "dense", "amount", "floors", None),
         "active_energy": ("active_energy", "dense", "amount", "kcal", None),
         "basal_energy_burned": ("basal_energy", "dense", "amount", "kcal", None),
         "heart_rate_variability": ("hrv_sdnn", "sparse", "gauge", "ms", "PT0S"),
         "apple_sleeping_wrist_temperature": ("skin_temperature", "sparse", "gauge", "Cel", "PT0S"),
-        "vo2_max": ("vo2_max", "sparse", "gauge", "mL/(kg.min)", "PT0S"),
+        "vo2_max": ("vo2_max", "sparse", "gauge", "mL/kg/min", "PT0S"),
         "weight_body_mass": ("body_mass", "sparse", "gauge", "kg", "PT0S"),
-        "body_fat_percentage": ("body_fat_fraction", "sparse", "gauge", "%", "PT0S"),
+        "body_fat_percentage": ("body_fat_fraction", "sparse", "gauge", "percent", "PT0S"),
         "body_mass_index": ("bmi", "sparse", "gauge", "kg/m2", "PT0S"),
         "height": ("height", "sparse", "gauge", "m", "PT0S"),
-        "resting_heart_rate": ("resting_heart_rate", "daily", "summary", "/min", None),
+        "resting_heart_rate": ("resting_heart_rate", "daily", "summary", "1/min", None),
     }
     # Spellings the app's help pages and the vendor's own receiver use for the
     # same metrics.
     ALIASES = {"weight_&_body_mass": "weight_body_mass", "vo2max": "vo2_max"}
-    PRESSURE = ("systolic_blood_pressure", "diastolic_blood_pressure", "mm[Hg]", "PT0S")
-    GLUCOSE = {"mass-concentration": ("blood_glucose_mass", "mg/dL"),
-               "amount-concentration": ("blood_glucose", "mmol/L")}
+    PRESSURE = ("systolic_blood_pressure", "diastolic_blood_pressure", "mmHg", "PT0S")
+    # A meter's glucose is one metric in two units that carry the analyte
+    # (samples/health/analyte_units.yaml): (the plain unit the app reports,
+    # the glucose unit its digits are written in). The app sends plain mg/dL
+    # or HealthKit's molar-mass mmol/L, which no conversion joins to the
+    # metric's unit, so a reading keeps its digits and takes the glucose
+    # unit of the same scale (docs/observations.md, glucose in either unit).
+    GLUCOSE_METRIC = "blood_glucose"
+    GLUCOSE = (("mmol/L", "mmol/L_glucose"), ("mg/dL", "mg/dL_glucose"))
     # The catalogue's PT15M: a CGM's reading every five minutes is weighted by
     # the time it stands, and meter readings further apart than the hold each
     # weigh the same, so their average is the mean of the readings.
     GLUCOSE_HOLD = "PT15M"
 
-    # The app's unit spellings this adapter reads differently from the engine's
-    # table; every other spelling, `count/min` and `bpm` (both `/min`)
-    # included, goes to host.units.canonical. `ft` is the femtotonne in UCUM
-    # and `st` the stere, so the foot and the stone are mapped here. Apple's
-    # dimensionless `count` is the metric's own counted unit (steps, floors, a
-    # BMI), handled in Units.
-    APP_UNITS = {"ft": "[ft_i]", "st": "[stone_av]"}
-    COUNTED = ("{steps}", "{floors}", "kg/m2")
+    # Every app spelling goes to host.units.canonical, which answers the id
+    # of the unit record that spelling names (`count/min` and `bpm` are
+    # `1/min`, `ft` the foot, `st` the stone). Apple's dimensionless `count`
+    # is the metric's own counted unit (steps, floors, a BMI), handled in
+    # Units: the repository's `count` converts to none of them.
+    COUNTED = ("steps", "floors", "kg/m2")
 
     FINE = ("seconds", "minutes")
     STEP = {"seconds": 1, "minutes": 60}
@@ -424,28 +439,30 @@ data:
 
     # ---- units ------------------------------------------------------------------
 
+    def canonical(host, app_unit):
+        """The id of the unit record an app spelling names, or None."""
+        if not isinstance(app_unit, str) or not app_unit:
+            return None
+        try:
+            return host.units.canonical(app_unit)
+        except Exception:
+            return None
+
+
     class Units:
         """One of the app's units read once, and every value converted through
-        the engine's table, digits kept where nothing converts."""
+        the repository's unit graph, digits kept where nothing converts."""
 
         def __init__(self, host, app_unit, target):
             self.host, self.target, self.code = host, target, None
             if app_unit == "count" and target in COUNTED:
                 self.code = target
                 return
-            code = APP_UNITS.get(app_unit)
-            if code is None and isinstance(app_unit, str) and app_unit:
-                try:
-                    code = host.units.canonical(app_unit)
-                except Exception:
-                    code = None
+            code = canonical(host, app_unit)
             if code is None:
-                raise ValueError("unit %r is not one the unit table reads" % (app_unit,))
-            if code != target:
-                try:
-                    host.units.convert("1", code, target)
-                except Exception as e:
-                    raise ValueError("unit %r does not convert to %s" % (app_unit, target)) from e
+                raise ValueError("unit %r is not one a unit record names" % (app_unit,))
+            if code != target and not host.units.converts(code, target):
+                raise ValueError("unit %r does not convert to %s" % (app_unit, target))
             self.code = code
 
         def value(self, v):
@@ -626,21 +643,30 @@ data:
             gauge(w, diastolic, slug, src, dt, dv, unit, hold, {"components": components})
 
 
+    class Digits:
+        """A glucose reading's digits as the device sent them."""
+
+        def __init__(self, host):
+            self.host = host
+
+        def value(self, v):
+            return self.host.observed.number(v)
+
+
     def glucose_unit(host, w, app_unit):
-        """(metric, unit, Units) for one of the app's glucose units, the metric
-        chosen by the unit's measure, or None and the reason named."""
-        code = APP_UNITS.get(app_unit)
-        try:
-            code = code or host.units.canonical(app_unit)
-            measure = host.units.measure(code)
-        except Exception:
-            w.skip("blood_glucose: unit %r is not one the unit table reads" % (app_unit,))
+        """(metric, unit, Digits) for one of the app's glucose units: the
+        glucose unit of the scale the app reported, or None and the reason
+        named. The digits are kept as sent, never converted, so a unit other
+        than mg/dL or mmol/L is skipped."""
+        code = canonical(host, app_unit)
+        if code is None:
+            w.skip("blood_glucose: unit %r is not one a unit record names" % (app_unit,))
             return None
-        if measure not in GLUCOSE:
-            w.skip("blood_glucose: unit %r is not a concentration" % (app_unit,))
-            return None
-        metric, unit = GLUCOSE[measure]
-        return metric, unit, Units(host, app_unit, unit)
+        for plain, unit in GLUCOSE:
+            if code in (plain, unit):
+                return GLUCOSE_METRIC, unit, Digits(host)
+        w.skip("blood_glucose: unit %r is not mg/dL or mmol/L" % (app_unit,))
+        return None
 
 
     def glucose_outputs(host, w, props, rows, grouping):
@@ -930,12 +956,9 @@ data:
         value, app_unit = host.observed.number(q.get("qty")), q.get("units")
         if value is None or not isinstance(app_unit, str):
             return None
-        code = APP_UNITS.get(app_unit)
+        code = canonical(host, app_unit)
         if code is None:
-            try:
-                code = host.units.canonical(app_unit)
-            except Exception:
-                return None
+            return None
         if target and code != target:
             try:
                 value, code = host.units.convert(value, code, target), target
@@ -971,8 +994,8 @@ data:
         hr = props.get("heartRate") if isinstance(props.get("heartRate"), dict) else {}
         for prop, q, target in (("distance", props.get("distance"), None),
                                 ("activeEnergy", props.get("activeEnergyBurned"), None),
-                                ("averageHeartRate", props.get("avgHeartRate") or hr.get("avg"), "/min"),
-                                ("maxHeartRate", props.get("maxHeartRate") or hr.get("max"), "/min"),
+                                ("averageHeartRate", props.get("avgHeartRate") or hr.get("avg"), "1/min"),
+                                ("maxHeartRate", props.get("maxHeartRate") or hr.get("max"), "1/min"),
                                 ("elevationGain", props.get("elevationUp"), None)):
             got = quantity(host, q, target)
             if got:

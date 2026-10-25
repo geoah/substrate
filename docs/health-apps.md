@@ -91,7 +91,7 @@ source in `order` that holds it:
      {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"], "from": "prefer-raw"},
      {"ref": "ada.example.com/observations/metric/health/active_energy", "reducers": ["sum"], "unit": "kcal", "from": "prefer-raw"},
      {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
-     {"ref": "ada.example.com/observations/metric/health/whoop_recovery", "from": "summaries", "statistic": "vendor"},
+     {"ref": "ada.example.com/observations/metric/healthwhoop/recovery", "from": "summaries", "statistic": "vendor"},
      {"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
      {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "vendor"}],
    "range": {"gte": "2026-10-11T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
@@ -104,8 +104,8 @@ source in `order` that holds it:
 ```
 
 ```text
-{"units": {"health/active_energy": "kcal", "health/hrv_rmssd": "ms", "health/resting_heart_rate": "/min",
-           "health/sleep_stage": "h", "health/steps": "{steps}", "health/whoop_recovery": "%"},
+{"units": {"health/active_energy": "kcal", "health/hrv_rmssd": "ms", "health/resting_heart_rate": "1/min",
+           "health/sleep_stage": "h", "health/steps": "steps", "healthwhoop/recovery": "percent"},
  "bucket": {"calendar": "day", "place": "end"}, "exact": false,
  "rows": [{"start": "2026-10-11T00:00:00+03:00", "end": "2026-10-12T00:00:00+03:00",
            "group": {"metric": "health/active_energy"}, "from": "raw", "sources": ["applehealth/iphone/apple-watch"],
@@ -115,7 +115,7 @@ source in `order` that holds it:
            "values": [{"reducer": "last", "value": "61.180447", "unit": "ms"}], "count": 1, ...},
           {"start": "2026-10-11T00:00:00+03:00", ...,
            "group": {"metric": "health/resting_heart_rate"}, "from": "summaries", "sources": ["whoop/e2e"],
-           "values": [{"reducer": "last", "value": "50", "unit": "/min"}], "count": 1, ...},
+           "values": [{"reducer": "last", "value": "50", "unit": "1/min"}], "count": 1, ...},
           {..., "group": {"metric": "health/sleep_stage", "code": "awake"}, "sources": ["whoop/e2e"],
            "values": [{"reducer": "sum", "value": "0.1578475", "unit": "h"}], "count": 1, ...},
           {..., "group": {"metric": "health/sleep_stage", "code": "deep"},
@@ -127,10 +127,10 @@ source in `order` that holds it:
           {"start": "2026-10-11T00:00:00+03:00", ...,
            "group": {"metric": "health/steps"}, "from": "raw",
            "sources": ["applehealth/iphone/apple-watch", "applehealth/iphone/iphone"],
-           "values": [{"reducer": "sum", "value": "22999.7547924254", "unit": "{steps}"}], "count": 158, ...},
+           "values": [{"reducer": "sum", "value": "22999.7547924254", "unit": "steps"}], "count": 158, ...},
           {"start": "2026-10-11T00:00:00+03:00", ...,
-           "group": {"metric": "health/whoop_recovery"}, "from": "summaries", "sources": ["whoop/e2e"],
-           "values": [{"reducer": "last", "value": "67", "unit": "%"}], "count": 1, ...}], ...}
+           "group": {"metric": "healthwhoop/recovery"}, "from": "summaries", "sources": ["whoop/e2e"],
+           "values": [{"reducer": "last", "value": "67", "unit": "percent"}], "count": 1, ...}], ...}
 ```
 
 WHOOP writes no steps and no active energy, so those rows fall to the Apple
@@ -156,13 +156,13 @@ answers the newest value of each metric from any source, with its instant:
 ```text
 {"rows": [{"start": "2026-10-10T08:25:04+03:00", "group": {"metric": "health/body_fat_fraction"},
            "sources": ["applehealth/iphone/withings"],
-           "values": [{"reducer": "last", "value": "26", "unit": "%"}], "count": 49, ...},
+           "values": [{"reducer": "last", "value": "26", "unit": "percent"}], "count": 49, ...},
           {"start": "2026-10-10T08:25:04+03:00", "group": {"metric": "health/body_mass"},
            "sources": ["applehealth/iphone/withings"],
            "values": [{"reducer": "last", "value": "71.9", "unit": "kg"}], "count": 50, ...},
           {"start": "2026-10-11T10:24:00+03:00", "group": {"metric": "health/vo2_max"},
            "sources": ["applehealth/iphone/apple-watch"],
-           "values": [{"reducer": "last", "value": "48.12", "unit": "mL/(kg.min)"}], "count": 36, ...}], ...}
+           "values": [{"reducer": "last", "value": "48.12", "unit": "mL/kg/min"}], "count": 36, ...}], ...}
 ```
 
 A row's `start` is the value's instant at its own offset, and `count` is
@@ -231,11 +231,11 @@ daily resting heart rate, one source's value per day:
 ```
 
 ```text
-{"metric": "health/resting_heart_rate", "unit": "/min", "from": "summaries",
+{"metric": "health/resting_heart_rate", "unit": "1/min", "from": "summaries",
  "rows": [{"start": "2026-09-12T00:00:00+03:00", "end": "2026-09-13T00:00:00+03:00", "sources": ["applehealth/iphone/health"],
-           "values": [{"reducer": "last", "value": "52", "unit": "/min"},
-                      {"reducer": "avg", "of": "last", "rolling": 30, "n": 30, "value": "53.4", "unit": "/min"},
-                      {"reducer": "stddev", "of": "last", "rolling": 30, "n": 30, "value": "3.30252428706689", "unit": "/min"}], ...},
+           "values": [{"reducer": "last", "value": "52", "unit": "1/min"},
+                      {"reducer": "avg", "of": "last", "rolling": 30, "n": 30, "value": "53.4", "unit": "1/min"},
+                      {"reducer": "stddev", "of": "last", "rolling": 30, "n": 30, "value": "3.30252428706689", "unit": "1/min"}], ...},
           ...
           {"start": "2026-09-20T00:00:00+01:00", "end": "2026-09-21T00:00:00+01:00", ...,
            "values": [{"reducer": "last", "value": "51", ...},
@@ -284,11 +284,11 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/sleep"],
     "properties": {"source": {"ref": ".../source/applehealth/iphone/apple-watch"}, "at": "2026-09-21T22:39:00Z", "endsAt": "2026-09-22T06:24:00Z",
                    "utcOffsetStart": 60, "utcOffsetEnd": 60, "timeInBed": "PT7H45M", "timeAsleep": "PT7H28M8S",
                    "deep": "PT1H31M37S", "rem": "PT1H49M", "light": "PT4H7M31S", "awake": "PT16M52S",
-                   "efficiency": {"value": "96.37", "unit": "%"}, "latency": "PT13M", "isNap": false, ...}},
+                   "efficiency": {"value": "96.37", "unit": "percent"}, "latency": "PT13M", "isNap": false, ...}},
    {"id": "whoop/e2e/0915234f-c9d5-4cd7-b894-ab927380b68c/sleep",
     "properties": {"source": {"ref": ".../source/whoop/e2e"}, "at": "2026-09-21T22:39:00.693Z", "endsAt": "2026-09-22T06:24:00.227Z",
                    "utcOffsetStart": 60, "utcOffsetEnd": 60, "timeAsleep": "PT7H30M49.542S", "disturbances": 11,
-                   "respiratoryRate": {"value": "14.3720703", "unit": "/min"},
+                   "respiratoryRate": {"value": "14.3720703", "unit": "1/min"},
                    "scores": {"sleepPerformance": "98", "sleepConsistency": "86"}, ...}}], ...}
 ```
 
@@ -358,18 +358,18 @@ the same records-mode window:
 ```
 
 ```text
-{"units": {"health/heart_rate": "/min", "health/respiratory_rate": "/min", "health/spo2": "%"},
+{"units": {"health/heart_rate": "1/min", "health/respiratory_rate": "1/min", "health/spo2": "percent"},
  "rows": [{"start": "2026-09-21T23:39:00.693+01:00", "end": "2026-09-22T07:24:00.227+01:00",
            "group": {"metric": "health/heart_rate"}, "record": {"ref": ".../health/sleep/whoop/e2e/0915234f-c9d5-4cd7-b894-ab927380b68c/sleep", ...},
            "sources": ["applehealth/iphone/apple-watch"], "coverage": "PT5H50M59.307S",
-           "values": [{"reducer": "min", "value": "42", "unit": "/min"},
-                      {"reducer": "avg", "value": "49.5409663765289", "unit": "/min"},
-                      {"reducer": {"percentile": 0.05}, "value": "42.45", "unit": "/min"}], "count": 90, ...},
+           "values": [{"reducer": "min", "value": "42", "unit": "1/min"},
+                      {"reducer": "avg", "value": "49.5409663765289", "unit": "1/min"},
+                      {"reducer": {"percentile": 0.05}, "value": "42.45", "unit": "1/min"}], "count": 90, ...},
           {..., "group": {"metric": "health/respiratory_rate"}, "sources": ["applehealth/iphone/health"],
-           "values": [{"reducer": "avg", "value": "14.7129052406395", "unit": "/min"}], "count": 30, ...},
+           "values": [{"reducer": "avg", "value": "14.7129052406395", "unit": "1/min"}], "count": 30, ...},
           {..., "group": {"metric": "health/spo2"}, "sources": ["applehealth/iphone/health"],
-           "values": [{"reducer": "min", "value": "94", "unit": "%"},
-                      {"reducer": "avg", "value": "96.795687375997", "unit": "%"}], "count": 46, ...}], ...}
+           "values": [{"reducer": "min", "value": "94", "unit": "percent"},
+                      {"reducer": "avg", "value": "96.795687375997", "unit": "percent"}], "count": 46, ...}], ...}
 ```
 
 The window is the WHOOP night, and the points inside it are Apple's: WHOOP
@@ -449,8 +449,8 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/workout"],
     "properties": {"source": {"ref": ".../source/applehealth/iphone/apple-watch"}, "sport": "running", "sportSource": "Outdoor Run",
                    "at": "2026-09-22T06:47:45Z", "endsAt": "2026-09-22T07:24:28Z", "utcOffsetStart": 60,
                    "duration": "PT36M43S", "distance": {"value": "5.945", "unit": "km"},
-                   "activeEnergy": {"value": "377.2", "unit": "kcal"}, "averageHeartRate": {"value": "142", "unit": "/min"},
-                   "maxHeartRate": {"value": "162", "unit": "/min"}, "elevationGain": {"value": "44.7", "unit": "m"}, ...}},
+                   "activeEnergy": {"value": "377.2", "unit": "kcal"}, "averageHeartRate": {"value": "142", "unit": "1/min"},
+                   "maxHeartRate": {"value": "162", "unit": "1/min"}, "elevationGain": {"value": "44.7", "unit": "m"}, ...}},
    {"id": "whoop/e2e/c953c21f-cb2c-403a-964a-33b0c2e58afd/workout",
     "properties": {"source": {"ref": ".../source/whoop/e2e"}, "sport": "running", "sportSource": "running", "strain": "10.6036",
                    "duration": "PT36M59.785S", "distance": {"value": "5975.12967505", "unit": "m"},
@@ -485,7 +485,7 @@ them.
 ```
 
 ```text
-{"metric": "health/heart_rate", "unit": "/min", "sources": ["applehealth/iphone/apple-watch"],
+{"metric": "health/heart_rate", "unit": "1/min", "sources": ["applehealth/iphone/apple-watch"],
  "rows": [{"start": "2026-09-22T07:47:45+01:00", "end": "2026-09-22T08:24:28+01:00",
            "record": {"ref": "ada.example.com/health/workout/applehealth/iphone/9931515A-49DA-4850-A20D-956A5228C096", "version": 1},
            "values": [{"reducer": {"durationIn": [94, 113]}, "value": "0", "unit": "min"},
@@ -493,8 +493,8 @@ them.
                       {"reducer": {"durationIn": [132, 150]}, "value": "18", "unit": "min"},
                       {"reducer": {"durationIn": [150, 169]}, "value": "8", "unit": "min"},
                       {"reducer": {"durationIn": [169, 220]}, "value": "0", "unit": "min"},
-                      {"reducer": "avg", "value": "141.598968587156", "unit": "/min"},
-                      {"reducer": "max", "value": "156.186952", "unit": "/min"}],
+                      {"reducer": "avg", "value": "141.598968587156", "unit": "1/min"},
+                      {"reducer": "max", "value": "156.186952", "unit": "1/min"}],
            "count": 7, "coverage": "PT27M15S", "nonAdditive": true, ...}], ...}
 ```
 
@@ -521,21 +521,21 @@ recovery:
 ```
 
 ```text
-{"units": {"health/distance": "m", "health/heart_rate": "/min"}, "bucket": {"every": "PT1M"},
+{"units": {"health/distance": "m", "health/heart_rate": "1/min"}, "bucket": {"every": "PT1M"},
  "rows": [{"start": "2026-09-22T07:47:00+01:00", "group": {"metric": "health/heart_rate"},
-           "values": [{"reducer": "avg", "value": "58", "unit": "/min"}], "count": 0, ...},
+           "values": [{"reducer": "avg", "value": "58", "unit": "1/min"}], "count": 0, ...},
           ...
           {"start": "2026-09-22T07:51:00+01:00", "group": {"metric": "health/distance"},
            "values": [{"reducer": "sum", "value": "158.8043674", "unit": "m"}], "count": 1, ...},
           {"start": "2026-09-22T07:51:00+01:00", "group": {"metric": "health/heart_rate"},
-           "values": [{"reducer": "avg", "value": "156.186952", "unit": "/min"}], "count": 1, ...},
+           "values": [{"reducer": "avg", "value": "156.186952", "unit": "1/min"}], "count": 1, ...},
           ...
           {"start": "2026-09-22T08:23:00+01:00", "group": {"metric": "health/heart_rate"},
-           "values": [{"reducer": "avg", "value": "142.700619", "unit": "/min"}], "count": 0, ...},
+           "values": [{"reducer": "avg", "value": "142.700619", "unit": "1/min"}], "count": 0, ...},
           {"start": "2026-09-22T08:24:00+01:00", "group": {"metric": "health/distance"},
            "values": [{"reducer": "sum", "value": null, "unit": "m"}], "count": 0, ...},
           {"start": "2026-09-22T08:25:00+01:00", "group": {"metric": "health/heart_rate"},
-           "values": [{"reducer": "avg", "value": "90", "unit": "/min"}], "count": 1, ...},
+           "values": [{"reducer": "avg", "value": "90", "unit": "1/min"}], "count": 1, ...},
           ...], ...}
 ```
 
@@ -545,7 +545,7 @@ row at all (08:24, 08:29 and 08:30). The first reading after the run, at
 08:25, is 90 per minute: 66 below the run's highest. A one-minute recovery
 needs a stream that keeps sampling densely after the end.
 
-Pace is the app's arithmetic: the unit table has a `pace` measure, but no
+Pace is the app's arithmetic: the repository has `min/km` and `m/s` units, but no
 adapter writes `health/pace` or `health/speed`. A minute's pace is 1,000
 over its distance in metres, in minutes per kilometre (158.8 m is 6:18), and
 the run's mean pace is its `duration` over its `distance`, never a mean of
@@ -649,11 +649,11 @@ names. Each row says which source and which points served it:
 ```
 
 ```text
-{"metric": "health/steps", "unit": "{steps}", "bucket": {"calendar": "day", "fallbackTimezone": "Europe/Athens"},
+{"metric": "health/steps", "unit": "steps", "bucket": {"calendar": "day", "fallbackTimezone": "Europe/Athens"},
  "from": "prefer-raw",
  "rows": [{"start": "2026-09-19T00:00:00+03:00", "end": "2026-09-20T00:00:00+03:00", "from": "raw",
            "sources": ["applehealth/iphone/apple-watch", "applehealth/iphone/iphone"],
-           "values": [{"reducer": "sum", "value": "7575.28085904331", "unit": "{steps}"}], "count": 159, ...},
+           "values": [{"reducer": "sum", "value": "7575.28085904331", "unit": "steps"}], "count": 159, ...},
           {"start": "2026-09-20T00:00:00+01:00", "end": "2026-09-21T00:00:00+01:00",
            "values": [{"reducer": "sum", "value": "11275.5748838589", ...}], "count": 125, ...},
           {"start": "2026-09-21T00:00:00+01:00", "end": "2026-09-22T00:00:00+01:00",
@@ -772,10 +772,10 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"
 ```text
 {"records": [
    {"id": "applehealth/iphone/withings/systolic_blood_pressure/2026-09-27T05:51:30Z",
-    "properties": {"at": "2026-09-27T05:51:30Z", "utcOffset": 180, "value": {"value": "118", "unit": "mm[Hg]"},
+    "properties": {"at": "2026-09-27T05:51:30Z", "utcOffset": 180, "value": {"value": "118", "unit": "mmHg"},
                    "source": {"ref": ".../source/applehealth/iphone/withings"}, "hold": "PT0S",
-                   "components": [{"metric": {"ref": ".../metric/health/systolic_blood_pressure"}, "value": {"value": "118", "unit": "mm[Hg]"}},
-                                  {"metric": {"ref": ".../metric/health/diastolic_blood_pressure"}, "value": {"value": "69", "unit": "mm[Hg]"}}],
+                   "components": [{"metric": {"ref": ".../metric/health/systolic_blood_pressure"}, "value": {"value": "118", "unit": "mmHg"}},
+                                  {"metric": {"ref": ".../metric/health/diastolic_blood_pressure"}, "value": {"value": "69", "unit": "mmHg"}}],
                    "origin": {"ref": "providers.substrate.reamde.dev/applehealth/metricbatch/applehealth/iphone/blood_pressure/minutes/2026-09-27T05"}, ...}}], ...}
 ```
 
@@ -797,13 +797,13 @@ The month's averages, both numbers aligned in one read, one row per source:
 ```
 
 ```text
-{"units": {"health/diastolic_blood_pressure": "mm[Hg]", "health/systolic_blood_pressure": "mm[Hg]"},
+{"units": {"health/diastolic_blood_pressure": "mmHg", "health/systolic_blood_pressure": "mmHg"},
  "bucket": {"calendar": "month", "timezone": "Europe/Athens"},
  "rows": [{"start": "2026-09-01T00:00:00+03:00", "end": "2026-10-01T00:00:00+03:00",
            "group": {"metric": "health/diastolic_blood_pressure", "source": "applehealth/iphone/withings"},
-           "values": [{"reducer": "avg", "value": "72.3333333333333", "unit": "mm[Hg]"}, {"reducer": "max", "value": "77", ...}], "count": 3, ...},
+           "values": [{"reducer": "avg", "value": "72.3333333333333", "unit": "mmHg"}, {"reducer": "max", "value": "77", ...}], "count": 3, ...},
           {..., "group": {"metric": "health/systolic_blood_pressure", "source": "applehealth/iphone/withings"},
-           "values": [{"reducer": "avg", "value": "114.666666666667", "unit": "mm[Hg]"}, {"reducer": "max", "value": "118", ...}], "count": 3, ...}], ...}
+           "values": [{"reducer": "avg", "value": "114.666666666667", "unit": "mmHg"}, {"reducer": "max", "value": "118", ...}], "count": 3, ...}], ...}
 ```
 
 The category of a reading (normal, elevated, stage 1, stage 2) is the
@@ -874,7 +874,7 @@ lab, each reading once:
 
 The same trend in mg/dL is a read of `health/ldl_cholesterol_mass` with
 `"unit": "mg/dL"`; a read of `ldl_cholesterol` in mg/dL is a `422`, because
-the two are different measures:
+no linear conversion joins the two units:
 
 ```text
 {"metric": "health/ldl_cholesterol_mass", "unit": "mg/dL", "exact": true,
@@ -909,7 +909,7 @@ which ends at midnight and stays on that day:
 ```
 
 ```text
-{"metric": "health/resting_heart_rate", "unit": "/min", "from": "summaries",
+{"metric": "health/resting_heart_rate", "unit": "1/min", "from": "summaries",
  "rows": [{"start": "2026-10-05T00:00:00+03:00", "end": "2026-10-12T00:00:00+03:00", "sources": ["applehealth/iphone/health"],
            "values": [{"reducer": "avg", "value": "51", ...}, {"reducer": "min", "value": "48", ...},
                       {"reducer": "max", "value": "55", ...}, {"reducer": "count", "value": "7"}], ...},
@@ -955,7 +955,7 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"
 {"records": [
    {"id": "whoop/e2e/744890628/resting_heart_rate",
     "properties": {"at": "2026-09-28T20:11:00.823Z", "endsAt": "2026-09-29T03:46:00.868Z", "utcOffset": 180,
-                   "value": {"value": "47", "unit": "/min"}, "form": "summary", "statistic": "vendor",
+                   "value": {"value": "47", "unit": "1/min"}, "form": "summary", "statistic": "vendor",
                    "period": "sleep", "periodId": "d2f5a65a-24c4-42ca-9294-42f2881b3370", ...}}],
  "cursor": "...", ...}
 ```
@@ -990,20 +990,20 @@ answers it in one request:
 ```text
 {"rows": [...,
           {"start": "2026-10-11T23:56:00+03:00", "group": {"metric": "health/heart_rate", "source": "applehealth/iphone/apple-watch"},
-           "form": "gauge", "values": [{"reducer": "last", "value": "49", "unit": "/min"}], "count": 24915, ...},
+           "form": "gauge", "values": [{"reducer": "last", "value": "49", "unit": "1/min"}], "count": 24915, ...},
           {"start": "2026-10-11T00:13:00.105+03:00", "end": "2026-10-11T22:47:00.201+03:00",
            "group": {"metric": "health/heart_rate", "source": "whoop/e2e", "statistic": "avg"},
-           "form": "summary", "values": [{"reducer": "last", "value": "65", "unit": "/min"}], "count": 90, ...},
+           "form": "summary", "values": [{"reducer": "last", "value": "65", "unit": "1/min"}], "count": 90, ...},
           {"start": "2026-10-11T00:13:00.105+03:00", "end": "2026-10-11T22:47:00.201+03:00",
            "group": {"metric": "health/heart_rate", "source": "whoop/e2e", "statistic": "max"},
-           "form": "summary", "values": [{"reducer": "last", "value": "158", "unit": "/min"}], "count": 90, ...},
+           "form": "summary", "values": [{"reducer": "last", "value": "158", "unit": "1/min"}], "count": 90, ...},
           {"start": "2026-10-11T08:43:00.935+03:00", "end": "2026-10-11T10:22:00.653+03:00",
            "group": {"metric": "health/heart_rate", "source": "whoop/e2e", "channel": "workout", "statistic": "avg"},
-           "form": "summary", "values": [{"reducer": "last", "value": "153", "unit": "/min"}], "count": 62, ...},
+           "form": "summary", "values": [{"reducer": "last", "value": "153", "unit": "1/min"}], "count": 62, ...},
           ...,
           {"start": "2026-10-11T21:55:00+03:00", "end": "2026-10-11T21:56:00+03:00",
            "group": {"metric": "health/steps", "source": "applehealth/iphone/iphone"},
-           "form": "amount", "values": [{"reducer": "last", "value": "10.8053996785", "unit": "{steps}"}], "count": 13900, ...}, ...],
+           "form": "amount", "values": [{"reducer": "last", "value": "10.8053996785", "unit": "steps"}], "count": 13900, ...}, ...],
  "sources": [9 source paths], ...}
 ```
 
@@ -1075,12 +1075,12 @@ answering `first`, `last`, `min` and `max` with the instant each was taken:
 ```
 
 ```text
-{"metric": "health/heart_rate", "unit": "/min", "bucket": {"every": "PT30M", "origin": "2026-09-19T21:00:00Z"},
+{"metric": "health/heart_rate", "unit": "1/min", "bucket": {"every": "PT30M", "origin": "2026-09-19T21:00:00Z"},
  "rows": [{"start": "2026-09-20T00:00:00+03:00", "end": "2026-09-20T00:30:00+03:00",
-           "values": [{"reducer": "first", "value": "71", "unit": "/min", "at": "2026-09-20T00:00:00+03:00"},
-                      {"reducer": "last", "value": "73", "unit": "/min", "at": "2026-09-20T00:25:00+03:00"},
-                      {"reducer": "min", "value": "65", "unit": "/min", "at": "2026-09-20T00:20:00+03:00"},
-                      {"reducer": "max", "value": "73", "unit": "/min", "at": "2026-09-20T00:25:00+03:00"}], "count": 6, ...},
+           "values": [{"reducer": "first", "value": "71", "unit": "1/min", "at": "2026-09-20T00:00:00+03:00"},
+                      {"reducer": "last", "value": "73", "unit": "1/min", "at": "2026-09-20T00:25:00+03:00"},
+                      {"reducer": "min", "value": "65", "unit": "1/min", "at": "2026-09-20T00:20:00+03:00"},
+                      {"reducer": "max", "value": "73", "unit": "1/min", "at": "2026-09-20T00:25:00+03:00"}], "count": 6, ...},
           ...], ...}
 ```
 
@@ -1105,12 +1105,12 @@ value carries its own:
 ```
 
 ```text
-{"units": {"health/heart_rate": "/min", "health/steps": "{steps}"}, "bucket": {"every": "PT1H"},
+{"units": {"health/heart_rate": "1/min", "health/steps": "steps"}, "bucket": {"every": "PT1H"},
  "rows": [...,
           {"start": "2026-09-22T07:00:00+01:00", "end": "2026-09-22T08:00:00+01:00", "group": {"metric": "health/heart_rate"},
-           "values": [{"reducer": "avg", "value": "74.7517098723404", "unit": "/min"}, {"reducer": "max", "value": "156.186952", "unit": "/min"}], "count": 12, ...},
+           "values": [{"reducer": "avg", "value": "74.7517098723404", "unit": "1/min"}, {"reducer": "max", "value": "156.186952", "unit": "1/min"}], "count": 12, ...},
           {"start": "2026-09-22T07:00:00+01:00", "end": "2026-09-22T08:00:00+01:00", "group": {"metric": "health/steps"},
-           "values": [{"reducer": "sum", "value": "2207.1752888377", "unit": "{steps}"}], "count": 6, ...},
+           "values": [{"reducer": "sum", "value": "2207.1752888377", "unit": "steps"}], "count": 6, ...},
           {"start": "2026-09-22T08:00:00+01:00", ..., "group": {"metric": "health/heart_rate"},
            "values": [{"reducer": "avg", "value": "109.970036428571", ...}, {"reducer": "max", "value": "148.46532", ...}], ...},
           {"start": "2026-09-22T08:00:00+01:00", ..., "group": {"metric": "health/steps"},
@@ -1131,7 +1131,7 @@ that tracks it:
 - Units: every read takes `unit`, but no record holds the person's
   preference, so each app keeps its own
   ([G-34](plans/observations/requirements.md#g-34-unit-preference));
-  `GET /api/v1/units` serves the unit table and its exact factors.
+  `GET /api/v1/units` serves the repository's units and their exact maps.
 - Pace, splits, exponentially weighted load and score bands are the app's
   arithmetic
   ([R-UNIT-2](plans/observations/requirements.md#apps-units),

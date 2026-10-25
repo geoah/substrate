@@ -1694,7 +1694,7 @@ the owner's own record from a source ranked above the provider
 ([correcting a value](observations.md#correcting-a-value-an-adapter-wrote)). Package `samples.substrate.reamde.dev/healthapple`
 requires `observations`, `health` and
 `providers.substrate.reamde.dev/applehealth`, with `requiresAtLeast`
-floors of 2 for each.
+floors of 6 for `observations`, 8 for `health` and 2 for the provider.
 
 - **Kinds (0)**: it writes the `observations` and `health` kinds.
 - **Functions (1)**: `adaptapplehealth` reads one mirror row and writes
@@ -1706,13 +1706,15 @@ floors of 2 for each.
 
 **What it writes.** A Health Auto Export metric maps to a `health/` metric
 or is skipped and named in the function's `skipped` result, never guessed.
-Values are converted into the metric's unit through the engine's unit table
-(`host.units`), which reads HealthKit's spellings (`lb`, `mi`, `hr`,
-`count/min`, `bpm`, `mmol<180.1558800000541>/L` and the rest) as
-[aliases](units.md#aliases). The adapter maps two spellings itself: `ft` is
-a foot, which the table reads as the femtotonne, and `st` a stone, which UCUM
-spells as the stere. The app's `count` is the metric's own counted unit,
-which the table refuses as a bare spelling. Each row converts from the unit
+Values are converted into the metric's unit through the repository's
+[unit records](units.md) (`host.units`), which read HealthKit's spellings
+(`lb`, `mi`, `hr`, `ft`, `st`, `count/min`, `bpm`,
+`mmol<180.1558800000541>/L` and the rest) as unit ids, codes or aliases,
+and written as the unit record's id. A spelling no unit record answers, or
+one no linear conversion joins to the metric's unit, skips its rows and is
+named in `skipped`. The app's `count` is the metric's own counted unit
+(`steps`, `floors`, `kg/m2`), because the repository's `count` converts to
+none of them. Each row converts from the unit
 it was sent in: a row the provider kept from before a change of Unit
 Preferences names its own `units`. A date reads as the provider read it: a
 number, or the decimal text the provider keeps one as, is epoch seconds, and
@@ -1720,24 +1722,24 @@ a date without an offset is on the account's `timezone`, else UTC.
 
 | App metric | Metric | Written as | Unit |
 | --- | --- | --- | --- |
-| `heart_rate` | `heart_rate` | gauge trace of `Avg`, hold `PT4M` | `/min` |
-| `respiratory_rate` | `respiratory_rate` | gauge trace, hold `PT30M` | `/min` |
-| `blood_oxygen_saturation` | `spo2` | gauge trace, hold `PT20M` | `%` |
-| `step_count` | `steps` | amount trace | `{steps}` |
+| `heart_rate` | `heart_rate` | gauge trace of `Avg`, hold `PT4M` | `1/min` |
+| `respiratory_rate` | `respiratory_rate` | gauge trace, hold `PT30M` | `1/min` |
+| `blood_oxygen_saturation` | `spo2` | gauge trace, hold `PT20M` | `percent` |
+| `step_count` | `steps` | amount trace | `steps` |
 | `walking_running_distance` | `distance` | amount trace | `m` |
-| `flights_climbed` | `floors` | amount trace | `{floors}` |
+| `flights_climbed` | `floors` | amount trace | `floors` |
 | `active_energy` | `active_energy` | amount trace | `kcal` |
 | `basal_energy_burned` | `basal_energy` | amount trace | `kcal` |
 | `heart_rate_variability` | `hrv_sdnn` | gauge observation, hold `PT0S` | `ms` |
 | `apple_sleeping_wrist_temperature` | `skin_temperature` | gauge observation, hold `PT0S` | `Cel` |
-| `vo2_max` | `vo2_max` | gauge observation, hold `PT0S` | `mL/(kg.min)` |
+| `vo2_max` | `vo2_max` | gauge observation, hold `PT0S` | `mL/kg/min` |
 | `weight_body_mass` | `body_mass` | gauge observation, hold `PT0S` | `kg` |
-| `body_fat_percentage` | `body_fat_fraction` | gauge observation, hold `PT0S` | `%` |
+| `body_fat_percentage` | `body_fat_fraction` | gauge observation, hold `PT0S` | `percent` |
 | `body_mass_index` | `bmi` | gauge observation, hold `PT0S` | `kg/m2` |
 | `height` | `height` | gauge observation, hold `PT0S` | `m` |
-| `blood_pressure` | `systolic_blood_pressure`, `diastolic_blood_pressure` | two gauge observations, each with both as `components`, hold `PT0S` | `mm[Hg]` |
-| `blood_glucose` | `blood_glucose_mass` or `blood_glucose`, by the app's unit | gauge observation, hold `PT15M`, `mealTime` as a qualifier | `mg/dL`, `mmol/L` |
-| `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `/min` |
+| `blood_pressure` | `systolic_blood_pressure`, `diastolic_blood_pressure` | two gauge observations, each with both as `components`, hold `PT0S` | `mmHg` |
+| `blood_glucose` | `blood_glucose` | gauge observation, hold `PT15M`, `mealTime` as a qualifier; a reading keeps its digits, in `mg/dL_glucose` where the app sent mg/dL and `mmol/L_glucose` where it sent mmol/L; another unit is skipped | `mg/dL_glucose`, `mmol/L_glucose` |
+| `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `1/min` |
 | `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value`; see Sleep below | `min` |
 
 Everything else the app sends (`apple_exercise_time`, `physical_effort`,
@@ -1807,7 +1809,7 @@ of Tue 6 Oct`, `Nap, Wed 7 Oct 14:05`, `Running, Wed 7 Oct 08:05`.
 `.../<metric>/<period>/<instant>/<statistic>` (the period keeps an hours and
 a days automation's buckets at one instant apart), a workout
 `applehealth/<account>/<HealthKit id>`; an id past 128 bytes is hashed
-through `host.ids.external`. The source is
+through `host.observed.record_id`. The source is
 the row's `source` label with the owner's name taken off (`Ada's Apple Watch`
 is `apple-watch`, `Garmin Connect` is `garmin-connect`), and a label that is
 empty, absent or joins several devices with `|` is `health`, the phone's

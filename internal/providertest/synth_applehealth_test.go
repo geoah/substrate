@@ -260,7 +260,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		"health/hrv_sdnn": hrv, "health/resting_heart_rate": len(days),
 		"health/body_mass": weighIns, "health/body_fat_fraction": weighIns,
 		"health/systolic_blood_pressure": pressures, "health/diastolic_blood_pressure": pressures,
-		"health/sleep_stage": stages, "health/blood_glucose_mass": glucose,
+		"health/sleep_stage": stages, "health/blood_glucose": glucose,
 		"health/vo2_max": runs, "health/skin_temperature": len(days), "health/bmi": weighIns,
 		"health/height": 1,
 	}

@@ -111,7 +111,7 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 
 	hr := mustGet(t, ds, obsTrace, "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07")
 	p := hr.Properties
-	if p["form"] != "gauge" || p["unit"] != "/min" || p["hold"] != "PT4M" || asFloat(t, p["utcOffset"]) != 180 ||
+	if p["form"] != "gauge" || p["unit"] != "1/min" || p["hold"] != "PT4M" || asFloat(t, p["utcOffset"]) != 180 ||
 		storedRefPath(p["metric"]) != healthMetrics+"heart_rate" ||
 		storedRefPath(p["source"]) != obsSource+"/applehealth/iphone/apple-watch" ||
 		asFloat(t, p["revision"]) != float64(asInstant(t, received).Unix()) {
@@ -141,7 +141,7 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 	// Steps: a merged `Watch|iPhone` label is the phone's merged source.
 	steps := mustGet(t, ds, obsTrace, "applehealth/iphone/health/steps/2026-10-07T04").Properties
 	vals, offs := strs(steps["values"]), strs(steps["offsets"])
-	if steps["form"] != "amount" || steps["unit"] != "{steps}" || steps["hold"] != nil ||
+	if steps["form"] != "amount" || steps["unit"] != "steps" || steps["hold"] != nil ||
 		vals[0] != "47.6988740604333" || vals[1] != "null" || offs[0] != "120000" || offs[1] != "180000" ||
 		offs[2] != "420000" {
 		t.Fatalf("steps trace = offsets %v values %v", offs[:4], vals[:4])
@@ -315,12 +315,12 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 	}
 	sys := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/systolic_blood_pressure/2026-09-12T05:10:30Z").Properties
 	dia := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/diastolic_blood_pressure/2026-09-12T05:10:30Z").Properties
-	if obj(t, sys["value"], "value") != "118" || obj(t, dia["value"], "value") != "76" || obj(t, sys["value"], "unit") != "mm[Hg]" ||
+	if obj(t, sys["value"], "value") != "118" || obj(t, dia["value"], "value") != "76" || obj(t, sys["value"], "unit") != "mmHg" ||
 		sys["hold"] != "PT0S" || len(sys["components"].([]any)) != 2 {
 		t.Fatalf("blood pressure = %v / %v", sys, dia)
 	}
-	glucose := mustGet(t, ds, obsObservation, "applehealth/iphone/iphone/blood_glucose_mass/2026-09-20T05:12:00Z").Properties
-	if obj(t, glucose["value"], "unit") != "mg/dL" || obj(t, glucose["qualifiers"].([]any)[0], "code") != "before-meal" {
+	glucose := mustGet(t, ds, obsObservation, "applehealth/iphone/iphone/blood_glucose/2026-09-20T05:12:00Z").Properties
+	if obj(t, glucose["value"], "unit") != "mg/dL_glucose" || obj(t, glucose["qualifiers"].([]any)[0], "code") != "before-meal" {
 		t.Fatalf("glucose = %v", glucose)
 	}
 	for _, row := range listLive(t, ds, obsObservation) {
@@ -335,11 +335,11 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 	assertCatalogued(t, ds)
 }
 
-// HealthKit's own unit spellings reach the engine's table as the app sends
-// them: a weigh-in in `lb` and glucose in HealthKit's molar-mass annotated
-// mmol/L are read by the table's aliases, and a height in `ft` is a foot and
-// a weigh-in in `st` a stone, which the adapter maps itself because UCUM's
-// `ft` is the femtotonne and its `st` the stere.
+// HealthKit's own unit spellings reach the repository's unit records as the
+// app sends them: a weigh-in in `lb`, a height in `ft` (the foot) and a
+// weigh-in in `st` (the stone) are read by the seeded units' ids and
+// aliases, and glucose in HealthKit's molar-mass annotated mmol/L is read
+// as plain mmol/L and written in the glucose unit `mmol/L_glucose`.
 func TestHealthAppleReadsHealthKitUnits(t *testing.T) {
 	ds := newHealthApple(t)
 	body, _ := json.Marshal(map[string]any{"data": map[string]any{"metrics": []any{
@@ -368,7 +368,7 @@ func TestHealthAppleReadsHealthKitUnits(t *testing.T) {
 	for _, c := range []struct{ id, value, unit string }{
 		{"applehealth/iphone/garmin-connect/body_mass/2026-09-11T04:02:41Z", "72.5747792", "kg"},
 		{"applehealth/iphone/garmin-connect/body_mass/2026-09-12T04:02:41Z", "73.02837157", "kg"},
-		{"applehealth/iphone/iphone/blood_glucose/2026-09-20T05:12:00Z", "5.1", "mmol/L"},
+		{"applehealth/iphone/iphone/blood_glucose/2026-09-20T05:12:00Z", "5.1", "mmol/L_glucose"},
 		{"applehealth/iphone/iphone/height/2026-09-21T05:00:00Z", "1.7526", "m"},
 	} {
 		v := mustGet(t, ds, obsObservation, c.id).Properties["value"]
@@ -427,7 +427,7 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	if run["sport"] != "running" || run["sportSource"] != "Running" ||
 		storedRefPath(run["source"]) != obsSource+"/applehealth/iphone/garmin-connect" ||
 		obj(t, run["distance"], "value") != "6.1" || obj(t, run["distance"], "unit") != "km" ||
-		obj(t, run["averageHeartRate"], "unit") != "/min" || run["duration"] != "PT36M19S" ||
+		obj(t, run["averageHeartRate"], "unit") != "1/min" || run["duration"] != "PT36M19S" ||
 		run["activeEnergy"] == nil || run["totalEnergy"] != nil ||
 		storedRefPath(run["origin"]) != ahWorkout+"/applehealth/iphone/EB0B1D81-50F6-4AB6-8841-28B68D3DE5C6" {
 		t.Fatalf("the run = %v", run)
@@ -575,7 +575,7 @@ func TestHealthAppleDailySummaries(t *testing.T) {
 		mustGet(t, ds, obsObservation, "applehealth/iphone/apple-watch/heart_rate/day/2026-09-10T21:00:00Z/"+stat)
 	}
 	rest := mustGet(t, ds, obsObservation, "applehealth/iphone/health/resting_heart_rate/day/2026-09-10T21:00:00Z/vendor").Properties
-	if rest["statistic"] != "vendor" || obj(t, rest["value"], "value") != "49" || obj(t, rest["value"], "unit") != "/min" {
+	if rest["statistic"] != "vendor" || obj(t, rest["value"], "value") != "49" || obj(t, rest["value"], "unit") != "1/min" {
 		t.Fatalf("resting heart rate = %v", rest)
 	}
 	// An aggregated night spans the time in bed (22:47:41 to 06:50:03), and
