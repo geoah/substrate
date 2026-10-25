@@ -28,6 +28,10 @@ export const LLM_PACKAGE_NAME = "llm"
  * these collections are always present. */
 export const LLM_PACKAGE = `${CORE_AUTHORITY}/${LLM_PACKAGE_NAME}`
 
+/** The id of the repository's daily spend cap: a core `setting` record the
+ * engine reads over every agent's runs. Nothing seeds it. */
+export const REPOSITORY_SPEND_CAP_ID = `${LLM_PACKAGE}/spendCentsPerDay`
+
 /** The kind every kind declaration is a record of. A grant entry is a
  * reference at one, so its path starts with this. */
 export const KIND_KIND = `${CORE_PACKAGE}/kind`

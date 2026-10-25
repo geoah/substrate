@@ -438,7 +438,82 @@ export function capWindowSpend(
 
 /** A cap in cents as dollars, to the cent: "$1.50", "$0.00". */
 export function capWords(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+  return `$${centsAsDollars(cents)}`
+}
+
+/** Whole cents as "1.50", in integers: a float division misreads a cap near
+ * the largest one by a cent, and saving the editor's text would write it. */
+function centsAsDollars(cents: number): string {
+  const n = BigInt(cents)
+  return `${n / 100n}.${String(n % 100n).padStart(2, "0")}`
+}
+
+/** The largest cap the engine admits: the largest integer an `int` property
+ * holds exactly (`vocabulary.MaxAgentSpendCentsPerDay`). */
+export const MAX_SPEND_CAP_CENTS = 2 ** 53 - 1
+
+/** Whether a spend in USD has reached a cap in cents, the way the engine
+ * decides it (`engine/spend.go` reachedCap): a float sum's last bits must not
+ * leave a run under a cap it has spent, so 0.29 USD reaches 29 cents. */
+export function reachedCap(usd: number, cents: number): boolean {
+  return usd * 100 >= cents - 1e-9
+}
+
+/** The repository's cap as the engine reads its setting: no cap (no record,
+ * a deleted one, or no value), a cap in US cents, or a value it cannot read, which holds
+ * every agent run until it is a whole number of cents. */
+export type RepositorySpendCap =
+  | { state: "none" }
+  | { state: "set"; cents: number }
+  | { state: "unreadable"; value: string }
+
+/** The repository's cap read off its setting record, accepting exactly what
+ * the engine's `strconv.ParseInt(value, 10, 64)` does (an optional sign, then
+ * digits) and refusing what `parseSpendCents` refuses after it: a value out
+ * of int64, below 0 or above the largest cap. "-0" is a cap of 0. */
+export function repositorySpendCap(
+  setting: SubstrateRecord | null | undefined
+): RepositorySpendCap {
+  if (setting?.deletedAt) return { state: "none" }
+  const value = setting?.properties.value
+  if (typeof value !== "string" || value === "") return { state: "none" }
+  if (!/^[+-]?\d+$/.test(value)) return { state: "unreadable", value }
+  const cents = BigInt(value)
+  if (cents < 0n || cents > BigInt(MAX_SPEND_CAP_CENTS)) {
+    return { state: "unreadable", value }
+  }
+  return { state: "set", cents: Number(cents) }
+}
+
+/** A cap as typed, in dollars, to whole cents. Blank is refused, so clearing
+ * the field never removes a cap by accident; removing one is its own action.
+ * A comma is refused rather than guessed at: "1,50" is a dollar and a half in
+ * half the world and a hundred and fifty in the other. The engine refuses a
+ * negative or fractional number of cents, so a sign or a third decimal is
+ * refused here first, in words. */
+export function parseCapDollars(
+  text: string
+): { cents: number } | { error: string } {
+  const typed = text.trim().replace(/^\$\s*/, "")
+  if (typed.startsWith("-")) return { error: "A cap can’t be negative." }
+  const m = /^(\d*)(?:\.(\d*))?$/.exec(typed)
+  if (!m || (m[1] === "" && !m[2])) {
+    return { error: "Type an amount in dollars, like 20 or 12.50." }
+  }
+  const cents = m[2] ?? ""
+  if (cents.length > 2) {
+    return { error: "A cap is a whole number of cents: two decimals at most." }
+  }
+  const total = Number(m[1] || "0") * 100 + Number(cents.padEnd(2, "0"))
+  if (!Number.isSafeInteger(total) || total > MAX_SPEND_CAP_CENTS) {
+    return { error: "That cap is larger than a substrate can hold." }
+  }
+  return { cents: total }
+}
+
+/** A cap as the editor's text: "20.00", "" for none or an unreadable one. */
+export function capInputText(cap: RepositorySpendCap): string {
+  return cap.state === "set" ? centsAsDollars(cap.cents) : ""
 }
 
 // ── the policies, in words ──────────────────────────────────────────────────

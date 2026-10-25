@@ -4,14 +4,18 @@ import {
   agentLimits,
   agentSpendCap,
   askedByAgent,
+  capInputText,
   capWindowSpend,
   capWords,
   costWords,
   durationWords,
   failureGroups,
   isConversation,
+  parseCapDollars,
   periodTotals,
   policySentence,
+  reachedCap,
+  repositorySpendCap,
   runOutlastsInvocation,
   runDurationMs,
   runStartWords,
@@ -360,6 +364,87 @@ describe("agent runs", () => {
     })
     expect(policySentence(rec({ action: "allow", selector: {} })).text).toBe(
       "Can add, change and delete anything in your data without asking"
+    )
+  })
+
+  it("reads the repository cap off its setting the way the engine parses it", () => {
+    const setting = (value: unknown) => rec({ value })
+    const none = { state: "none" }
+    const set = (cents: number) => ({ state: "set", cents })
+    const bad = (value: string) => ({ state: "unreadable", value })
+    expect(repositorySpendCap(null)).toEqual(none)
+    expect(repositorySpendCap(setting(""))).toEqual(none)
+    expect(repositorySpendCap(setting(undefined))).toEqual(none)
+    expect(repositorySpendCap(setting("0"))).toEqual(set(0))
+    expect(repositorySpendCap(setting("2000"))).toEqual(set(2000))
+    // strconv.ParseInt takes a sign, so the engine enforces these.
+    expect(repositorySpendCap(setting("+2000"))).toEqual(set(2000))
+    expect(repositorySpendCap(setting("-0"))).toEqual(set(0))
+    // What the engine cannot read holds every run: never "no cap".
+    expect(repositorySpendCap(setting("-1"))).toEqual(bad("-1"))
+    expect(repositorySpendCap(setting("1.5"))).toEqual(bad("1.5"))
+    expect(repositorySpendCap(setting(" 5"))).toEqual(bad(" 5"))
+    expect(repositorySpendCap(setting("1_000"))).toEqual(bad("1_000"))
+    expect(repositorySpendCap(setting("9007199254740992"))).toEqual(
+      bad("9007199254740992")
+    )
+    expect(repositorySpendCap(setting("9007199254740991"))).toEqual(
+      set(9007199254740991)
+    )
+    // A deleted setting is no cap to the engine, whatever it still holds.
+    expect(
+      repositorySpendCap({
+        ...setting("2000"),
+        deletedAt: "2026-10-01T00:00:00Z",
+      })
+    ).toEqual(none)
+  })
+
+  it("reaches a cap the way the engine does, past a float sum's last bits", () => {
+    expect(0.29 * 100 >= 29).toBe(false)
+    expect(reachedCap(0.29, 29)).toBe(true)
+    expect(reachedCap(0.57, 57)).toBe(true)
+    expect(reachedCap(0.58, 58)).toBe(true)
+    expect(reachedCap(0.1 + 0.2, 30)).toBe(true)
+    expect(reachedCap(0.28, 29)).toBe(false)
+    expect(reachedCap(0, 0)).toBe(true)
+  })
+
+  it("reads a typed cap in dollars as whole cents, refusing what the engine would", () => {
+    const typeIt = "Type an amount in dollars, like 20 or 12.50."
+    expect(parseCapDollars("20")).toEqual({ cents: 2000 })
+    expect(parseCapDollars("$12.5")).toEqual({ cents: 1250 })
+    expect(parseCapDollars("0.07")).toEqual({ cents: 7 })
+    expect(parseCapDollars(".5")).toEqual({ cents: 50 })
+    expect(parseCapDollars("0")).toEqual({ cents: 0 })
+    // Blank never clears a cap: removing one is its own action.
+    expect(parseCapDollars("")).toEqual({ error: typeIt })
+    expect(parseCapDollars("  ")).toEqual({ error: typeIt })
+    expect(parseCapDollars("$")).toEqual({ error: typeIt })
+    // A comma is a decimal point to half the world: refused, not guessed.
+    expect(parseCapDollars("1,50")).toEqual({ error: typeIt })
+    expect(parseCapDollars("0,50")).toEqual({ error: typeIt })
+    expect(parseCapDollars("1,000")).toEqual({ error: typeIt })
+    expect(parseCapDollars(",")).toEqual({ error: typeIt })
+    expect(parseCapDollars("-1")).toEqual({ error: "A cap can’t be negative." })
+    expect(parseCapDollars("1.005")).toHaveProperty("error")
+    expect(parseCapDollars("abc")).toHaveProperty("error")
+    expect(parseCapDollars(".")).toHaveProperty("error")
+    expect(parseCapDollars("1e9")).toHaveProperty("error")
+    expect(parseCapDollars("99999999999999999")).toHaveProperty("error")
+    expect(capInputText({ state: "none" })).toBe("")
+    expect(capInputText({ state: "unreadable", value: "x" })).toBe("")
+    expect(capInputText({ state: "set", cents: 150 })).toBe("1.50")
+    // The editor's text reads back as the cap it shows, to the largest one.
+    for (const cents of [
+      0, 7, 50, 150, 2000, 123456789, 9007199254740990, 9007199254740991,
+    ]) {
+      const text = capInputText({ state: "set", cents })
+      expect(parseCapDollars(text)).toEqual({ cents })
+      expect(capWords(cents)).toBe(`$${text}`)
+    }
+    expect(capInputText({ state: "set", cents: 9007199254740990 })).toBe(
+      "90071992547409.90"
     )
   })
 })

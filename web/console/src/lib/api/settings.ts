@@ -15,8 +15,9 @@ import {
   CORE_PACKAGE_NAME,
   request,
 } from "./http"
-import { listPath, patchRecord } from "./records"
-import type { Page, SubstrateRecord } from "./types"
+import { fetchRecord, listPath, patchRecord, putRecord } from "./records"
+import { ApiError, type Page, type SubstrateRecord } from "./types"
+import { REPOSITORY_SPEND_CAP_ID } from "@/lib/core-kinds"
 
 export const SETTING_KIND = `${CORE_PACKAGE}/setting`
 export const SECRET_KIND = `${CORE_PACKAGE}/secret`
@@ -63,4 +64,57 @@ export function saveSettingValue(
   return patchRecord(CORE_AUTHORITY, CORE_PACKAGE_NAME, name, record.id, {
     properties: { value },
   })
+}
+
+/** The repository's spend cap setting, or null when it has none: nothing
+ * seeds it, so a 404 is the usual answer, not a failure. */
+export const repositorySpendCapQueryOptions = queryOptions({
+  queryKey: [
+    "record",
+    CORE_AUTHORITY,
+    CORE_PACKAGE_NAME,
+    SETTING_NAME,
+    REPOSITORY_SPEND_CAP_ID,
+  ],
+  queryFn: async ({ signal }) => {
+    try {
+      return await fetchRecord(
+        CORE_AUTHORITY,
+        CORE_PACKAGE_NAME,
+        SETTING_NAME,
+        REPOSITORY_SPEND_CAP_ID,
+        signal
+      )
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "not_found") return null
+      throw error
+    }
+  },
+})
+
+/** Write the repository's cap in US cents, or no cap (`null`, an empty
+ * value). A PUT, because the record may not exist yet; it merges, so a
+ * description written by hand stays, and so does a name: the display name is
+ * written only by the PUT that creates the record. `type: int` is what makes
+ * the engine refuse a value that is not a whole number of cents. */
+export function saveRepositorySpendCap({
+  cents,
+  exists,
+}: {
+  cents: number | null
+  exists: boolean
+}): Promise<SubstrateRecord> {
+  return putRecord(
+    CORE_AUTHORITY,
+    CORE_PACKAGE_NAME,
+    SETTING_NAME,
+    REPOSITORY_SPEND_CAP_ID,
+    {
+      properties: {
+        ...(exists ? {} : { displayName: "Daily agent spend cap" }),
+        type: "int",
+        value: cents === null ? "" : String(cents),
+      },
+    }
+  )
 }

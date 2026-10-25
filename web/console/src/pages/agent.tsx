@@ -23,6 +23,7 @@ import { GrantsEditor } from "@/components/agent/grants-editor"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { RunsOn } from "@/components/agent/runs-on"
 import { EmptyValue } from "@/components/identity/empty-value"
+import { Facts } from "@/components/identity/facts"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
@@ -61,6 +62,7 @@ import {
   isConversation,
   periodTotals,
   policySentence,
+  reachedCap,
   runOutlastsInvocation,
   runCost,
   runDurationMs,
@@ -402,21 +404,6 @@ export function AgentPage() {
   )
 }
 
-function Facts({ rows }: { rows: Array<[string, ReactNode]> }) {
-  return (
-    <dl className="grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-x-3 border-t sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)]">
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="py-2.5 text-[13.5px] text-muted-foreground">
-            {label}
-          </dt>
-          <dd className="min-w-0 py-2.5 text-[13.5px]">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
 /** The declared field a limit lives at, by its path through the agent kind's
  * properties: the record page reads its label and description there too. */
 function specAt(specs: PropSpec[], path: string[]): PropSpec | undefined {
@@ -481,7 +468,7 @@ function Limits({
  * and counts what running runs have spent, which their rows do not carry
  * until they settle. */
 function SpendCap({ cap, spend }: { cap: number; spend?: CapSpend }) {
-  const reached = spend !== undefined && spend.usd * 100 >= cap
+  const reached = spend !== undefined && reachedCap(spend.usd, cap)
   return (
     <>
       <Facts

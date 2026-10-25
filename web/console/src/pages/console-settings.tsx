@@ -1,8 +1,8 @@
 /** Settings (`/settings`): how the console looks (saved on the repository's
  * console preference record, so every browser signed in looks the same),
- * the account, where you are signed in, a download of everything, and for
- * developers the system kinds, the raw tokens and what this server says
- * about itself. */
+ * what every agent may spend in a day, the account, where you are signed in,
+ * a download of everything, and for developers the system kinds, the raw
+ * tokens and what this server says about itself. */
 
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -17,6 +17,7 @@ import {
   SettingsSection,
   WidthPicker,
 } from "@/components/settings-page/setting-row"
+import { SpendCapRow } from "@/components/settings-page/spend-cap-row"
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Spinner } from "@/components/ui/spinner"
@@ -323,6 +324,9 @@ export function ConsoleSettingsPage() {
           </div>
         </div>
       )}
+      <SettingsSection title="Agents" id="agents">
+        <SpendCapRow />
+      </SettingsSection>
       <SettingsSection title="Account">
         <AccountRows />
       </SettingsSection>
