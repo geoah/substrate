@@ -185,6 +185,46 @@ func TestASettleAfterAFailedWriteLeavesANewerClaimAlone(t *testing.T) {
 	}
 }
 
+// A turn that finishes after its lease expired and another run claimed the
+// thread leaves that claim's status, lease and reply alone, and still adds
+// its own counters to the row (#1038 review: the terminal settle removed the
+// newer run's lease).
+func TestATurnThatLostItsLeaseLeavesTheNewerClaimRunning(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	var newer string
+	var claimErr error
+	fake.script("chat", fakeTurn{content: "lands late"})
+	turn, log := chatInBackground(ds, "chatter", "hi")
+	onFirstReply(ds, func() {
+		thread := log.snapshot()[0].Thread
+		claimErr = ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
+			newer = t.now.Add(time.Hour).Format(time.RFC3339Nano)
+			_, err := t.patch(eref{Kind: typeThread, ID: thread}, substrate.PatchInput{Properties: map[string]any{
+				"status": threadRunning, "leaseUntil": newer,
+			}})
+			return err
+		})
+	})
+	if err := waitTurn(t, turn); err != nil {
+		t.Fatalf("the late turn: %v", err)
+	}
+	if claimErr != nil {
+		t.Fatalf("the newer claim: %v", claimErr)
+	}
+	props := threadProps(t, ds, log.snapshot()[0].Thread)
+	if props["status"] != threadRunning || props["leaseUntil"] != newer {
+		t.Fatalf("thread = %v (lease %v), want the newer claim running under lease %v", props["status"], props["leaseUntil"], newer)
+	}
+	if props["reason"] != nil || props["finishedAt"] != nil || props[propThreadLastReply] != nil {
+		t.Fatalf("the late settle wrote reason %v, finishedAt %v, lastReply %v onto the newer claim",
+			props["reason"], props["finishedAt"], props[propThreadLastReply])
+	}
+	if turns, _ := anyFloat(props["turns"]); turns != 1 {
+		t.Fatalf("turns = %v, want the late turn's counters on the row", props["turns"])
+	}
+}
+
 // The settle after a failed write goes ahead of background writers queued at
 // the write gate: with the lock held, one background writer admitted and two
 // queued, the reply write times out in the queue, and the settle commits

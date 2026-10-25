@@ -1048,10 +1048,10 @@ func (l *agentLoop) failWrite(ctx context.Context, err error) error {
 }
 
 // settleAfterFailure settles the thread `error` with reason after a write,
-// a read or a model call of the run failed. It patches only while the row
-// still carries the lease value this run wrote: another run may have
-// claimed the thread since. A settle that fails anyway leaves reason for
-// settleLostThreads, which otherwise could only say that the run was lost.
+// a read or a model call of the run failed. Like every settle, it leaves the
+// status of a thread another run claimed since alone (settle). A settle that
+// fails anyway leaves reason for settleLostThreads, which otherwise could
+// only say that the run was lost.
 //
 // A detached turn settles on a context of its own: its run context may have
 // ended and a failed write's budget is spent. That settle goes ahead of
@@ -1070,7 +1070,7 @@ func (l *agentLoop) settleAfterFailure(ctx context.Context, reason, reply string
 		sctx, cancel = context.WithTimeout(withForegroundWrites(context.WithoutCancel(ctx)), timeout)
 		defer cancel()
 	}
-	err := l.settleRow(sctx, threadError, reason, reply, true, nil)
+	err := l.settle(sctx, threadError, reason, reply, nil)
 	if err != nil {
 		l.ds.noteLostRun(l, reason)
 	}
@@ -1510,13 +1510,12 @@ func lastReplyOf(reply string) string {
 // settle can lose an increment. `then` runs after the patch, in the same
 // transaction: the delivery's completion on the returning path, nil
 // otherwise.
+//
+// A row this run's lease no longer holds (holdsLease) takes the counters
+// alone: another run claimed the thread after the lease expired, and its
+// status, lease, reason and reply are that run's. The spend still lands, so
+// the thread's cost counts every run that paid for it.
 func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn) error) error {
-	return l.settleRow(ctx, status, reason, reply, false, then)
-}
-
-// settleRow is settle. With leased set it leaves a row this run's lease no
-// longer holds untouched (holdsLease).
-func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string, leased bool, then func(t *txn) error) error {
 	prompt, completion, cost := l.prompt, l.completion, l.cost
 	cacheRead, cacheWrite := l.cacheRead, l.cacheWrite
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
@@ -1555,11 +1554,6 @@ func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string,
 		if err != nil {
 			return err
 		}
-		if leased && !l.holdsLease(row) {
-			l.ds.svc.log.Warn("substrate: a thread's settle was refused, the row no longer carries this run's lease",
-				"thread", l.threadID, "status", status)
-			return nil
-		}
 		base := func(key string) int {
 			if row == nil {
 				return 0
@@ -1572,25 +1566,33 @@ func (l *agentLoop) settleRow(ctx context.Context, status, reason, reply string,
 			baseCost, _ = anyFloat(row.Props["costUSD"])
 		}
 		props := map[string]any{
-			"status": status, "turns": base("turns") + l.turns,
+			"turns":        base("turns") + l.turns,
 			"toolCalls":    base("toolCalls") + l.toolCalls,
 			"promptTokens": base("promptTokens") + prompt, "completionTokens": base("completionTokens") + completion,
 			"totalTokens":     base("totalTokens") + prompt + completion,
 			"cacheReadTokens": base("cacheReadTokens") + cacheRead, "cacheWriteTokens": base("cacheWriteTokens") + cacheWrite,
-			"costUSD":    baseCost + cost,
-			"finishedAt": nowUTC().Format(time.RFC3339Nano),
+			"costUSD": baseCost + cost,
 		}
-		// A settle with no reason clears an older one: a continued thread that
-		// ends ok must not keep the reason its last run died with.
-		props["reason"] = nil
-		// The lease is the running turn's alone: a settled thread that kept
-		// one reads to any client as a turn still holding it.
-		props["leaseUntil"] = nil
-		if reason != "" {
-			props["reason"] = reason
-		}
-		if preview := lastReplyOf(reply); preview != "" {
-			props[propThreadLastReply] = preview
+		switch {
+		case row == nil || row.DeletedAt != nil:
+		case !l.holdsLease(row):
+			l.ds.svc.log.Warn("substrate: a thread's settle wrote its counters alone, the row no longer carries this run's lease",
+				"thread", l.threadID, "status", status)
+		default:
+			props["status"] = status
+			props["finishedAt"] = nowUTC().Format(time.RFC3339Nano)
+			// A settle with no reason clears an older one: a continued thread
+			// that ends ok must not keep the reason its last run died with.
+			props["reason"] = nil
+			// The lease is the running turn's alone: a settled thread that kept
+			// one reads to any client as a turn still holding it.
+			props["leaseUntil"] = nil
+			if reason != "" {
+				props["reason"] = reason
+			}
+			if preview := lastReplyOf(reply); preview != "" {
+				props[propThreadLastReply] = preview
+			}
 		}
 		// A thread deleted while the turn ran takes no settle: a tombstone
 		// refuses the patch, a collected row is absent, and what `then`

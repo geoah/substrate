@@ -66,6 +66,9 @@ func TestTheSweepLeavesALiveLoopsThreadRunning(t *testing.T) {
 		t.Fatalf("sweep: %v", err)
 	}
 	onlyKeeperThread(t, ds, threadRunning)
+	// Rewriting the value stood in for the clock passing it; only a claim
+	// changes the value, and the live loop settles a row carrying its own.
+	restoreThreadLease(t, ds, live)
 
 	release()
 	deadline := time.Now().Add(30 * time.Second)
@@ -96,17 +99,28 @@ func onlyKeeperThread(t *testing.T, ds *dataset, status string) map[string]any {
 // run that died would leave it once its deadline and slack ran out.
 func expireThreadLease(t *testing.T, ds *dataset, thread map[string]any) {
 	t.Helper()
+	setThreadLease(t, ds, thread, func(t *txn) any { return t.now.Add(-time.Minute).Format(time.RFC3339Nano) })
+}
+
+// restoreThreadLease writes back the lease thread carried when it was read.
+func restoreThreadLease(t *testing.T, ds *dataset, thread map[string]any) {
+	t.Helper()
+	setThreadLease(t, ds, thread, func(*txn) any { return thread["leaseUntil"] })
+}
+
+func setThreadLease(t *testing.T, ds *dataset, thread map[string]any, lease func(*txn) any) {
+	t.Helper()
 	id, _ := thread["__id"].(string)
 	if id == "" {
 		t.Fatalf("thread without an id: %+v", thread)
 	}
 	err := ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
 		_, err := t.patch(eref{Kind: typeThread, ID: id}, substrate.PatchInput{Properties: map[string]any{
-			"leaseUntil": t.now.Add(-time.Minute).Format(time.RFC3339Nano),
+			"leaseUntil": lease(t),
 		}})
 		return err
 	})
 	if err != nil {
-		t.Fatalf("expire the lease: %v", err)
+		t.Fatalf("set the lease: %v", err)
 	}
 }
