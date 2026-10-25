@@ -290,7 +290,9 @@ export function RecordEditorForm({
           0
         )
       }
-      const input = toPutInput(parsed.value, kind)
+      const input = toPutInput(parsed.value, kind, {
+        create: mode === "create",
+      })
       return mode === "edit" && record
         ? putRecord(authority, pkg, name, record.id, input)
         : createRecord(authority, pkg, name, input)
