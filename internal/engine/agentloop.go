@@ -985,7 +985,8 @@ loop:
 	}
 	sctx, cancelSettle := l.settleContext(ctx)
 	defer cancelSettle()
-	if err := l.settle(sctx, status, reason, reply, complete); err != nil {
+	held, err := l.settle(sctx, status, reason, reply, complete)
+	if err != nil {
 		// The terminal patch rolled back with the completion: settle the
 		// thread as an error in a transaction of its own, on a budget of its
 		// own (the first may have spent it), so it does not stay `running`
@@ -1000,8 +1001,9 @@ loop:
 	// lease to this very run, so its resume was dropped. The rows are right
 	// there — pick them up with a fresh continuation instead of waiting for
 	// the sweep (agentdecision.go). A stopped thread holds until its owner
-	// writes again: their next message replays the resolution rows.
-	if status != threadStopped && l.stopRequested() == "" {
+	// writes again: their next message replays the resolution rows. A settle
+	// that lost its lease leaves the thread to the run that claimed it.
+	if held && status != threadStopped && l.stopRequested() == "" {
 		l.recheckResolutions(sctx)
 	}
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
@@ -1070,7 +1072,7 @@ func (l *agentLoop) settleAfterFailure(ctx context.Context, reason, reply string
 		sctx, cancel = context.WithTimeout(withForegroundWrites(context.WithoutCancel(ctx)), timeout)
 		defer cancel()
 	}
-	err := l.settle(sctx, threadError, reason, reply, nil)
+	_, err := l.settle(sctx, threadError, reason, reply, nil)
 	if err != nil {
 		l.ds.noteLostRun(l, reason)
 	}
@@ -1514,8 +1516,9 @@ func lastReplyOf(reply string) string {
 // A row this run's lease no longer holds (holdsLease) takes the counters
 // alone: another run claimed the thread after the lease expired, and its
 // status, lease, reason and reply are that run's. The spend still lands, so
-// the thread's cost counts every run that paid for it.
-func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn) error) error {
+// the thread's cost counts every run that paid for it. held reports whether
+// the row was this run's and took the terminal shape.
+func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn) error) (held bool, err error) {
 	prompt, completion, cost := l.prompt, l.completion, l.cost
 	cacheRead, cacheWrite := l.cacheRead, l.cacheWrite
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
@@ -1526,8 +1529,8 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	// patch that committed puts the chain's cost on a row (spend.go).
 	var patched bool
 	var lifetime float64
-	err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
-		patched = false
+	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+		patched, held = false, false
 		t.causedBy = l.in.causedBy
 		// The last word on a stop: one that came after the run's own check
 		// still turns a natural end into `stopped`, here, in the transaction
@@ -1579,6 +1582,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 			l.ds.svc.log.Warn("substrate: a thread's settle wrote its counters alone, the row no longer carries this run's lease",
 				"thread", l.threadID, "status", status)
 		default:
+			held = true
 			props["status"] = status
 			props["finishedAt"] = nowUTC().Format(time.RFC3339Nano)
 			// A settle with no reason clears an older one: a continued thread
@@ -1611,12 +1615,14 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	if err == nil && patched {
 		// At once, before the resolution re-check and the done event, so no
 		// check reads a committed thread as a run still going.
-		l.ds.spend.commit(l.spend, lifetime)
+		// A settle that lost its lease wrote no `finishedAt`, so no snapshot
+		// holds its cost until the run that claimed the thread settles.
+		l.ds.spend.commit(l.spend, lifetime, held)
 	}
 	if err == nil {
 		l.settledStatus, l.settledReason = status, reason
 	}
-	return err
+	return held, err
 }
 
 // holdsLease reports whether row is this run's claim: `running` and
