@@ -136,6 +136,20 @@ export function agentRunsQueryOptions(agentId: string) {
   })
 }
 
+/** Every agent's runs, most recently active first, in one read: what the
+ * repository's spend cap counts. Ordered by `updatedAt` for the reason
+ * `agentRunsQueryOptions` is, so a figure over the last 24 hours knows whether
+ * the read reached back that far. */
+export function repositoryRunsQueryOptions() {
+  return recordsQueryOptions({
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "thread",
+    first: AGENT_RUNS_WINDOW,
+    orderBy: "updatedAt:desc",
+  })
+}
+
 /** The user messages of a set of threads, oldest turn first, so the first
  * one per thread is what opened it (`openingMessages` reads it). One read for
  * the whole list: `thread` is a reference whose declaration pins the kind, so

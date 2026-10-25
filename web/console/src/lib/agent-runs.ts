@@ -441,6 +441,54 @@ export function capWords(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
 
+/** The largest cap the engine admits: the largest integer an `int` property
+ * holds exactly (`vocabulary.MaxAgentSpendCentsPerDay`). */
+export const MAX_SPEND_CAP_CENTS = 2 ** 53 - 1
+
+/** The repository's cap in US cents, read off its setting record, or
+ * undefined when there is none: no record, an empty value, or one the engine
+ * would not parse either (it reads that as no cap too). */
+export function repositorySpendCap(
+  setting: SubstrateRecord | null | undefined
+): number | undefined {
+  const value = setting?.properties.value
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return undefined
+  const cents = Number(value)
+  return cents <= MAX_SPEND_CAP_CENTS ? cents : undefined
+}
+
+/** A cap as typed, in dollars, to whole cents. Blank is no cap (`null`); the
+ * engine refuses a negative or fractional number of cents, so a sign or a
+ * third decimal is refused here first, in words. */
+export function parseCapDollars(
+  text: string
+): { cents: number | null } | { error: string } {
+  const typed = text
+    .trim()
+    .replace(/^\$\s*/, "")
+    .replaceAll(",", "")
+  if (typed === "") return { cents: null }
+  if (typed.startsWith("-")) return { error: "A cap can’t be negative." }
+  const m = /^(\d*)(?:\.(\d*))?$/.exec(typed)
+  if (!m || (m[1] === "" && !m[2])) {
+    return { error: "Type an amount in dollars, like 20 or 12.50." }
+  }
+  const cents = m[2] ?? ""
+  if (cents.length > 2) {
+    return { error: "A cap is a whole number of cents: two decimals at most." }
+  }
+  const total = Number(m[1] || "0") * 100 + Number(cents.padEnd(2, "0"))
+  if (!Number.isSafeInteger(total) || total > MAX_SPEND_CAP_CENTS) {
+    return { error: "That cap is larger than a substrate can hold." }
+  }
+  return { cents: total }
+}
+
+/** A cap in cents as the editor's text: "20.00", "" for none. */
+export function capInputText(cents: number | undefined): string {
+  return cents === undefined ? "" : (cents / 100).toFixed(2)
+}
+
 // ── the policies, in words ──────────────────────────────────────────────────
 
 function selectorOf(policy: SubstrateRecord): Record<string, unknown> {

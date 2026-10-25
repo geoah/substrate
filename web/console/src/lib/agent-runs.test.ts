@@ -4,14 +4,17 @@ import {
   agentLimits,
   agentSpendCap,
   askedByAgent,
+  capInputText,
   capWindowSpend,
   capWords,
   costWords,
   durationWords,
   failureGroups,
   isConversation,
+  parseCapDollars,
   periodTotals,
   policySentence,
+  repositorySpendCap,
   runOutlastsInvocation,
   runDurationMs,
   runStartWords,
@@ -361,5 +364,34 @@ describe("agent runs", () => {
     expect(policySentence(rec({ action: "allow", selector: {} })).text).toBe(
       "Can add, change and delete anything in your data without asking"
     )
+  })
+
+  it("reads the repository cap off its setting, empty or unparsable as none", () => {
+    const setting = (value: unknown) => rec({ value })
+    expect(repositorySpendCap(null)).toBeUndefined()
+    expect(repositorySpendCap(setting(""))).toBeUndefined()
+    expect(repositorySpendCap(setting("-1"))).toBeUndefined()
+    expect(repositorySpendCap(setting("1.5"))).toBeUndefined()
+    expect(repositorySpendCap(setting("0"))).toBe(0)
+    expect(repositorySpendCap(setting("2000"))).toBe(2000)
+  })
+
+  it("reads a typed cap in dollars as whole cents, refusing what the engine would", () => {
+    expect(parseCapDollars("")).toEqual({ cents: null })
+    expect(parseCapDollars("  ")).toEqual({ cents: null })
+    expect(parseCapDollars("20")).toEqual({ cents: 2000 })
+    expect(parseCapDollars("$12.5")).toEqual({ cents: 1250 })
+    expect(parseCapDollars("0.07")).toEqual({ cents: 7 })
+    expect(parseCapDollars(".5")).toEqual({ cents: 50 })
+    expect(parseCapDollars("1,000")).toEqual({ cents: 100000 })
+    expect(parseCapDollars("0")).toEqual({ cents: 0 })
+    expect(parseCapDollars("-1")).toEqual({ error: "A cap can’t be negative." })
+    expect(parseCapDollars("1.005")).toHaveProperty("error")
+    expect(parseCapDollars("abc")).toHaveProperty("error")
+    expect(parseCapDollars(".")).toHaveProperty("error")
+    expect(parseCapDollars("1e9")).toHaveProperty("error")
+    expect(parseCapDollars("99999999999999999")).toHaveProperty("error")
+    expect(capInputText(undefined)).toBe("")
+    expect(capInputText(150)).toBe("1.50")
   })
 })
