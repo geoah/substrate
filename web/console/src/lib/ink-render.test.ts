@@ -12,6 +12,7 @@ import {
   inkBounds,
   inkShape,
   lineCount,
+  MAX_PATTERN_LINES,
   strokeAlpha,
   strokeWidthAt,
   strokesHit,
@@ -124,6 +125,48 @@ describe("backgroundPattern (§5)", () => {
     expect(backgroundPattern({ type: "blank" }, 100, 100)).toEqual({
       type: "none",
     })
+  })
+})
+
+describe("a pattern too dense to draw", () => {
+  const none = { type: "none" }
+
+  it("is blank paper, for a tiny spacing or a vast page", () => {
+    for (const type of ["lined", "grid", "dots"]) {
+      for (const [spacing, width, height] of [
+        [1e-300, 1240, 1754],
+        [0.001, 1240, 1754],
+        [32, 1e300, 1e300],
+        [1e-300, Number.MAX_VALUE, Number.MAX_VALUE],
+      ])
+        expect(
+          backgroundPattern({ type, spacing }, width, height),
+          `${type} ${spacing} ${width}x${height}`
+        ).toEqual(none)
+    }
+  })
+
+  it("never builds the lines of blank paper", () => {
+    expect(
+      backgroundPattern({ type: "blank", spacing: 1e-300 }, 1e300, 1e300)
+    ).toEqual(none)
+  })
+
+  it("still draws a pattern right at the bound", () => {
+    const lined = backgroundPattern(
+      { type: "lined", spacing: 1 },
+      10,
+      MAX_PATTERN_LINES + 1
+    )
+    expect(lined.type).toBe("lines")
+    expect(lined.type === "lines" && lined.d.split("M").length - 1).toBe(
+      MAX_PATTERN_LINES
+    )
+    // A lined page has no verticals, so a narrow spacing on a wide page is
+    // bounded by its height alone.
+    expect(
+      backgroundPattern({ type: "lined", spacing: 1 }, 1e6, 100).type
+    ).toBe("lines")
   })
 })
 

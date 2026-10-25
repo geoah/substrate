@@ -132,8 +132,14 @@ export function readInk(input: unknown): InkReadResult {
     return invalid("its page size is missing")
   if (!Array.isArray(json.pages) || json.pages.length === 0)
     return invalid("it has no pages")
-  if (!json.pages.every((p) => isObject(p) && Array.isArray(p.strokes)))
+  const pages: unknown[] = json.pages
+  if (!pages.every((p) => isObject(p) && Array.isArray(p.strokes)))
     return invalid("a page has no stroke list")
+  // Every read of a stroke (the summary, the outline, the eraser) takes its
+  // fields, so a stroke that is not an object cannot be drawn leniently.
+  const strokes = pages.flatMap((p) => (p as { strokes: unknown[] }).strokes)
+  if (!strokes.every(isObject))
+    return invalid("a page holds a stroke that is not an object")
   return { ok: true, document: json as InkDocument }
 }
 

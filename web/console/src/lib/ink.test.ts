@@ -2,8 +2,11 @@
  * leniently, and that an edit keeps every field it did not touch, which the
  * spec requires of a writer so a newer app's note survives the console. */
 
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
+import { InkPageView } from "@/components/ink/ink-page"
 import {
   backgroundSpacing,
   backgroundType,
@@ -23,6 +26,7 @@ import {
   type InkDocument,
   type InkStroke,
 } from "./ink"
+import { cropBox, inkShape, strokesHit } from "./ink-render"
 
 const NOW = new Date("2026-10-23T12:00:00.250Z")
 
@@ -100,6 +104,40 @@ describe("readInk", () => {
     expect(
       readInk({ ...newerNote(), pages: [{ id: "x", background: {} }] })
     ).toMatchObject({ reason: "invalid" })
+  })
+
+  it("refuses a stroke that is not an object, before anything reads it", () => {
+    for (const bad of [null, 1, "s1", true, [[10, 20, 0.5]]]) {
+      const note = newerNote()
+      note.pages[1].strokes = [bad as unknown as InkStroke]
+      expect(readInk(inkText(note)), JSON.stringify(bad)).toEqual({
+        ok: false,
+        reason: "invalid",
+        message:
+          "This note can't be displayed because a page holds a stroke that is not an object.",
+      })
+    }
+  })
+
+  it("reads an odd stroke object leniently: summed, drawn, unknown fields kept", () => {
+    const note = newerNote()
+    note.pages[0].strokes.push(
+      { futureStroke: "kept", points: "not a list" } as unknown as InkStroke,
+      { id: "s3", points: [null, [5, 5], "x", [6, 6, 2]] } as InkStroke
+    )
+    const read = readInk(inkText(note))
+    if (!read.ok) throw new Error(read.message)
+    const { document } = read
+    expect(document.pages[0].strokes[1].futureStroke).toBe("kept")
+    expect(inkSummary(document)).toEqual({ pages: 2, strokes: 3, points: 6 })
+    for (const s of document.pages[0].strokes)
+      expect(() => inkShape(s)).not.toThrow()
+    expect(() => strokesHit(document.pages[0].strokes, 5, 5, 4)).not.toThrow()
+    expect(() => cropBox(document.pages[0], 1240, 1754)).not.toThrow()
+    const svg = renderToStaticMarkup(
+      createElement(InkPageView, { document, pageIndex: 0 })
+    )
+    expect(svg).toContain('data-slot="ink-page"')
   })
 
   it("refuses a newer format version rather than drawing part of it", () => {

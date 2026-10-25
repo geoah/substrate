@@ -5,13 +5,15 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { DownloadIcon, PenLineIcon, UploadIcon } from "lucide-react"
+import {
+  DownloadIcon,
+  PenLineIcon,
+  RefreshCwIcon,
+  UploadIcon,
+} from "lucide-react"
 
 import { SectionHead } from "@/components/identity/section-head"
-import {
-  useRecordPatch,
-  writeError,
-} from "@/components/property-sheet/use-record-patch"
+import { useRecordPatch } from "@/components/property-sheet/use-record-patch"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -20,7 +22,7 @@ import {
   readBlobInfo,
   saveBytes,
 } from "@/lib/api/blobs"
-import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   INK_MEDIA_TYPE,
   inkSummary,
@@ -43,6 +45,8 @@ import { FileButton } from "./blob-field"
 import { InkEditor } from "./ink-editor"
 import { InkPageView } from "./ink-page"
 import { PdfMarkupSection } from "./pdf-markup"
+import { inkSaveFailure, type InkSaveFailure } from "./save-failure"
+import { SaveFailureNote } from "./save-failure-note"
 
 export function InkSections({
   record,
@@ -84,7 +88,12 @@ function useInkValue(record: SubstrateRecord, spec: PropSpec) {
   if (!blob) return { state: "empty" as const }
   if (bytes.isPending) return { state: "loading" as const, blob }
   if (bytes.isError)
-    return { state: "error" as const, message: bytes.error.message, blob }
+    return {
+      state: "error" as const,
+      message: `The note didn’t load: ${bytes.error.message}`,
+      blob,
+      retry: () => void bytes.refetch(),
+    }
   const read = inkFromBytes(bytes.data)
   return read.ok
     ? {
@@ -94,14 +103,6 @@ function useInkValue(record: SubstrateRecord, spec: PropSpec) {
         bytes: bytes.data,
       }
     : { state: "error" as const, message: read.message, blob }
-}
-
-/** What a refused save says. The one refusal worth its own words is the
- * blob store's cap. */
-function saveError(error: unknown): string {
-  if (error instanceof ApiError && error.status === 413)
-    return "This note is larger than the 64 MiB a substrate stores in one file."
-  return writeError(error)
 }
 
 export function InkPropertySection({
@@ -114,16 +115,21 @@ export function InkPropertySection({
   readOnly: boolean
 }) {
   const ink = useInkValue(record, spec)
-  const patch = useRecordPatch(record)
-  const [editing, setEditing] = useState<InkDocument | undefined>()
+  // The version the drawing began from, held while the editor is open: the
+  // page re-reads a record that moves under the reader, and a save asserting
+  // the newer version would silently replace the other save.
+  const [editing, setEditing] = useState<
+    { document: InkDocument; base: number } | undefined
+  >()
+  const patch = useRecordPatch(record, editing?.base)
   const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState<string | undefined>()
+  const [failure, setFailure] = useState<InkSaveFailure | undefined>()
   const fileName = inkFileName(recordTitle(record.properties), spec.name)
 
   /** Write `document` (or the file's own bytes, kept exact) into the
    * property. */
   const save = async (document: InkDocument, bytes?: Blob) => {
-    setError(undefined)
+    setFailure(undefined)
     setUploading(true)
     try {
       const info = await putBlob(bytes ?? inkText(document), {
@@ -133,7 +139,7 @@ export function InkPropertySection({
       await patch.mutateAsync({ [spec.name]: info.digest })
       setEditing(undefined)
     } catch (e) {
-      setError(saveError(e))
+      setFailure(inkSaveFailure(e, document))
     } finally {
       setUploading(false)
     }
@@ -142,7 +148,7 @@ export function InkPropertySection({
   const importFile = async (file: File) => {
     const read = readInk(await file.text())
     if (!read.ok) {
-      setError(read.message)
+      setFailure({ message: read.message })
       return
     }
     await save(read.document, file)
@@ -176,45 +182,56 @@ export function InkPropertySection({
               {!readOnly && (
                 <ImportButton onFile={importFile} disabled={uploading} />
               )}
-              {!readOnly && ink.state !== "loading" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setEditing(
-                      ink.state === "ready"
-                        ? ink.document
-                        : newInkDocument({ background: "lined" })
-                    )
-                  }
-                >
-                  <PenLineIcon data-icon="inline-start" />
-                  {ink.state === "ready" ? "Draw" : "Start drawing"}
-                </Button>
-              )}
+              {/* Drawing starts from the stored note, or from blank paper
+                  where the record names none: never from blank paper over
+                  a note that failed to load, which a save would replace. */}
+              {!readOnly &&
+                (ink.state === "ready" || ink.state === "empty") && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setEditing({
+                        document:
+                          ink.state === "ready"
+                            ? ink.document
+                            : newInkDocument({ background: "lined" }),
+                        base: record.version,
+                      })
+                    }
+                  >
+                    <PenLineIcon data-icon="inline-start" />
+                    {ink.state === "ready" ? "Draw" : "Start drawing"}
+                  </Button>
+                )}
             </>
           )
         }
       />
       {editing ? (
         <InkEditor
-          initial={editing}
+          initial={editing.document}
           saving={uploading}
           onSave={(document) => void save(document)}
           onCancel={() => {
-            setError(undefined)
+            setFailure(undefined)
             setEditing(undefined)
           }}
           note={
-            error ??
-            "Saving stores a new .inkd file and points this note at it."
+            failure ? (
+              <SaveFailureNote failure={failure} fileName={fileName} />
+            ) : (
+              "Saving stores a new .inkd file and points this note at it."
+            )
           }
         />
       ) : (
         <>
           <InkPages ink={ink} />
-          {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+          {failure && (
+            <p className="mt-2 text-xs text-destructive">{failure.message}</p>
+          )}
         </>
       )}
     </section>
@@ -251,7 +268,17 @@ function InkPages({ ink }: { ink: ReturnType<typeof useInkValue> }) {
       </p>
     )
   if (ink.state === "error")
-    return <p className="text-sm text-destructive">{ink.message}</p>
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm text-destructive">{ink.message}</p>
+        {"retry" in ink && (
+          <Button type="button" variant="outline" size="sm" onClick={ink.retry}>
+            <RefreshCwIcon data-icon="inline-start" />
+            Retry
+          </Button>
+        )}
+      </div>
+    )
   const { document } = ink
   return (
     <ol className="grid max-w-3xl gap-4" data-slot="ink-pages">

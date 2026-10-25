@@ -147,7 +147,9 @@ into the PDF needs no conversion.
 - A `markup` shows the PDF's pages with the layer over them, and Annotate
   draws on the layer.
 - The new-record form uploads a file for a `blobref`, and offers "Start a
-  blank note" where the property holds ink.
+  blank note" where the property holds ink. The record write uploads the
+  file again first, so a form left open past the blob store's one-minute
+  grace still saves.
 - Any other `blobref` reads as its file name, size and type with a Download
   button, where it used to be raw JSON.
 - PDF.js loads only when a PDF is shown.
@@ -158,9 +160,9 @@ into the PDF needs no conversion.
 - A replaced `.inkd` file is collected once unreferenced, so a note's older
   versions are not restorable. Keeping them is a question for the blob store,
   not for ink.
-- A file picked in the new-record form is uploaded at once. If the form stays
-  open past the blob store's one-minute grace and a sweep runs, the create is
-  refused, naming the unknown blob.
+- One property that declares several media types (`application/*`, or both
+  PDF and `.inkd`) is shown and uploaded by its declaration, not by the
+  stored file: the upload refuses a PDF there as not an Inkidian note.
 - No export writes the layer into the PDF as `/Ink` annotations, and ink
   already inside a PDF is shown but not editable.
 - No agent fills `transcript` yet. A vision model reading a rendered page is
