@@ -201,12 +201,19 @@ func TestAWriteIsRefusedWhenTheDirectoryCannotTakeIt(t *testing.T) {
 			}
 
 			// The acknowledged set: a provider with a secret, an OAuth
-			// credential on it, one consumed TOTP step.
+			// credential on it, one consumed TOTP step. The account holds the
+			// credential's ref, written in the transaction that stores the
+			// token as the OAuth callback writes `tokenRef`: a row no record
+			// holds is an orphan the import's open erases.
 			account := eref{Kind: bindingProviderKind, ID: "acked"}
 			putProviderSecret(t, ds, account.ID, "sk-acked")
 			const credRef = "cred-acked"
 			if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
-				return tx.putCredential(credRef, account, &oauth2.Token{AccessToken: "first", RefreshToken: "r", Expiry: nowUTC().Add(time.Hour)})
+				if err := tx.putCredential(credRef, account, &oauth2.Token{AccessToken: "first", RefreshToken: "r", Expiry: nowUTC().Add(time.Hour)}); err != nil {
+					return err
+				}
+				_, err := tx.patch(account, substrate.PatchInput{Properties: map[string]any{"apiKey": credRef}})
+				return err
 			}); err != nil {
 				t.Fatalf("put credential: %v", err)
 			}

@@ -1115,8 +1115,8 @@ server finishes it can hold the segment with a sidecar that does not match
 yet; a copy that reads `sealed/` before `changelog/` can hold a line whose
 sealed file it missed; one that reads `sealed/` after `changelog/`, as
 `rsync` does, can hold the file of a secret written or erased meanwhile,
-which no record in the copy holds and the scratch server's open erases; and a copy
-that reads `blobs/` before `changelog/`
+which no record in the copy holds and the scratch server's open erases;
+and a copy that reads `blobs/` before `changelog/`
 can hold a blob manifest marked `stored` whose bytes it missed, because an
 upload writes the bytes first and the `stored` manifest after
 ([the blob store](#the-blob-store)), and `rsync` reads `blobs/` before
