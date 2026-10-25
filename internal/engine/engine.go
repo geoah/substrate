@@ -81,7 +81,7 @@ type options struct {
 	// writes.
 	valuesBudget int
 	// searchMatchMax, when set, replaces both match caps a search reads
-	// records_matching under (bm25.go indexedMatch). Only a test sets it
+	// through the index under (bm25.go indexedMatch). Only a test sets it
 	// (export_test.go), to put a small fixture on the row path.
 	searchMatchMax    int
 	searchMatchMaxSet bool
@@ -522,6 +522,10 @@ type service struct {
 	// candidate pass reads the vectors it pre-ranks under, before it reads
 	// them: the seam a cold read of them spends the budget in.
 	searchPreRankHook func(context.Context)
+	// searchCountHook, set only by a test, runs with the context the strict
+	// candidate pass counts its matches under, before it counts them: the
+	// seam a count that reads vectors spends the budget in.
+	searchCountHook func(context.Context)
 	// searchIdentityHook, set only by a test, runs with the context the
 	// strict candidate pass reads its matching identities under, before it
 	// reads them: the seam a cold walk of a common word's rows spends the

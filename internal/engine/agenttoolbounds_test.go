@@ -140,7 +140,7 @@ func TestLexicalCapNote(t *testing.T) {
 		t.Fatalf("an uncapped search has a note: %q", n)
 	}
 	got := lexicalCap{budget: true, readCapped: true, readMax: 2000}.note(5 * time.Second)
-	want := "Search stopped at the 5s budget, so the lexical hits are only records matching every word. " +
+	want := "Search stopped looking for records matching only some of the words at four fifths of its 5s budget, so the lexical hits are only records matching every word. " +
 		"More than 2000 records match, so only the newest 2000 matches were ranked. " +
 		"Use one or two distinctive words (a name, a code, a number), or filter.kinds, to narrow it."
 	if got != want {

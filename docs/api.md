@@ -1023,11 +1023,12 @@ not crowd out short records naming it; the cost is that a long record titled
 by the word can be cut when many short records hold it. The arm runs under a
 5 s budget, and the records matching every word get half of it to be found
 and pre-ranked, because both read each record's text, which a cold disk
-serves slowly. When finding them runs past that half (a common word, read
-on the row newest first), 400 of them are taken from the full-text index
-instead, whichever it answers first. When the pre-rank runs past it, the
-newest 400 are taken. Either way they go to scoring without a pre-rank, and the relaxed
-pass is skipped. When BM25F scoring of the candidates does not finish within
+serves slowly. When counting or finding them runs past that half (a common
+word, read on the row newest first), 400 of them are taken from the full-text
+index instead, whichever it answers first, or all of them where the index
+holds fewer. When the pre-rank runs past it, the newest 400 are taken. Either
+way they go to scoring without a pre-rank, and the relaxed pass is skipped.
+The relaxed pass itself stops at four fifths of the budget. When BM25F scoring of the candidates does not finish within
 the budget, the lexical hits are ordered by the pre-rank instead (in
 `lexical` mode the records matching every word still come first), or newest
 first where the pre-rank was skipped, and `scores.lexical` carries that

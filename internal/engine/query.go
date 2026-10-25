@@ -857,7 +857,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			if err != nil {
 				return nil, err
 			}
-			if few, err = indexedMatch(ctx, x, probe, ptq, limit); err != nil {
+			if few, err = indexedMatch(ctx, x, probe, ptq, "NULL", limit); err != nil {
 				return nil, err
 			}
 		}

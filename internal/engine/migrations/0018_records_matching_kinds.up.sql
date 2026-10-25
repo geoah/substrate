@@ -1,17 +1,24 @@
 -- The live records of the given kinds a tsquery matches in the session's
 -- repository, read through records_fts_idx, at most lim of them.
 --
--- A lexical search whose strict pass runs out of its share of the budget
--- reading a common word's matches newest first takes some matches from the
--- index instead (internal/engine/bm25.go, lexicalCandidates). Under the
--- policy the newest-first read walks records_created_at_idx and matches each
--- row it meets, reading the row's whole text vector from TOAST: on a
--- repository of 620k records a word nineteen thousand rows held ran past the
--- whole budget cold. records_matching (migration 0010) answers through the
--- index in tens of milliseconds, but its cap reaches inside before any kind
--- filter, so a search naming kinds that are a small share of the matches got
--- back few of them or none. This function applies the kinds inside, before
--- the cap.
+-- A lexical search counts a pass's matches through it, capped, and reads them
+-- through it while there are few; a strict pass that runs out of its share of
+-- the budget reading a common word's matches newest first takes some matches
+-- from it instead (internal/engine/bm25.go, lexicalCandidates). Reading a
+-- row's text vector is the whole cost of a common word: one row of an agent
+-- transcript carries hundreds of kB of vector in TOAST, and on a repository
+-- of 620k records the 697 matches of `dinner` took 9.4 s to rank cold.
+--
+-- records_matching (migration 0010) is not enough for either job. Its cap
+-- reaches inside before any kind filter, so a search naming kinds that are a
+-- small share of the matches got back few of them or none; this function
+-- applies the kinds inside, before the cap. And its body is planned
+-- generically, LIMIT unknown, and the planner prices a sequential scan
+-- without the TOAST it detoasts: counting `dinner` there scanned the whole
+-- table and read every row's vector, some 900 MiB of TOAST. This function is
+-- planned with sequential and plain index scans off, which leaves the bitmap
+-- scans, and of those the one through records_fts_idx answers the match from
+-- the index without reading a vector.
 --
 -- It is SECURITY DEFINER and owned by substrate_maint (BYPASSRLS), like
 -- records_matching, and applies the policy's own predicate, `repository =
@@ -28,6 +35,8 @@ BEGIN
         RETURNS TABLE (kind text, id text)
         LANGUAGE sql STABLE SECURITY DEFINER
         SET search_path = %1$I, pg_temp
+        SET enable_seqscan = off
+        SET enable_indexscan = off
         AS $body$
             SELECT r.kind, r.id FROM %1$I.records r
             WHERE r.repository = current_setting('substrate.repository', true)

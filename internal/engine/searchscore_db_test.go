@@ -215,7 +215,7 @@ func TestLexicalSearchTakesIndexedMatchesWhenTheIdentityReadRunsOutOfBudget(t *t
 	if len(res.Hits) != 0 {
 		t.Fatalf("hits = %+v, want none: nothing matches every word and the top-up is skipped", res.Hits)
 	}
-	if !res.Capped || !strings.Contains(res.Note, "were not searched") || strings.Contains(res.Note, "stopped at the") {
+	if !res.Capped || !strings.Contains(res.Note, "were not searched") || strings.Contains(res.Note, "four fifths") {
 		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
 	}
 
@@ -230,8 +230,60 @@ func TestLexicalSearchTakesIndexedMatchesWhenTheIdentityReadRunsOutOfBudget(t *t
 	if len(got) != 3 {
 		t.Fatalf("hits = %v, want every match", got)
 	}
-	if !res.Capped || !strings.Contains(res.Note, "so some of the matches were ranked instead of the closest ones") {
+	// Fewer matches than the pass keeps: the index answered every one, and
+	// BM25F ranked them all.
+	if res.Capped {
+		t.Fatalf("capped with every match ranked: note = %q", res.Note)
+	}
+}
+
+// The count that picks a pass's path is a statement under the strict pass's
+// share like the reads after it. Through records_matching it could scan the
+// table and read every vector (migration 0018), and it ran under the whole
+// budget before any other bound: cold, it alone answered 503 (#968). Past the
+// share the pass takes its matches through the index instead.
+func TestLexicalSearchTakesIndexedMatchesWhenTheCountRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "both", "flight booking", "")
+	putScoreTask(t, ds, "partial", "flight", "")
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchCountHook = coldRead(t, ds)
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("a count past the budget failed the search: %v", err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "both" {
+		t.Fatalf("hits = %+v, want the strict match alone", res.Hits)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "were not searched") {
 		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// Past the share, the index's answer is a sample when it fills the pass and
+// every match when it does not.
+func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	for i := range 3 {
+		putScoreTask(t, ds, fmt.Sprintf("t%d", i), "flight", "")
+	}
+	ds.svc.searchCountHook = coldRead(t, ds)
+	for _, tc := range []struct {
+		take, n int
+		want    candOrder
+	}{{2, 2, orderSampled}, {10, 3, orderIndexed}} {
+		pass := lexicalPass{plan: parseSearch("flight"), readMax: searchReadMax, matchMax: searchReadMax, rankBy: time.Now().Add(time.Second)}
+		cands, over, order, err := ds.lexicalCandidates(ctx, pass, false, tc.take)
+		if err != nil {
+			t.Fatalf("take %d: %v", tc.take, err)
+		}
+		if len(cands) != tc.n || over || order != tc.want {
+			t.Fatalf("take %d: %d candidates, over %v, order %v; want %d, false, %v", tc.take, len(cands), over, order, tc.n, tc.want)
+		}
 	}
 }
 
@@ -257,5 +309,19 @@ func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
 	}
 	if len(cands) != 1 || cands[0].id.Kind != person || cands[0].id.ID != "pilot" {
 		t.Fatalf("candidates = %+v, want the person", cands)
+	}
+	// The count applies them too: one person, six matches.
+	b := &builder{}
+	few, err := indexedMatch(ctx, ds.db, b, pass.plan.expr(b, false), passKinds(b, pass), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !few {
+		t.Fatal("the count of one kind's matches counted every kind's")
+	}
+	pass.restrict = false
+	b = &builder{}
+	if few, err = indexedMatch(ctx, ds.db, b, pass.plan.expr(b, false), passKinds(b, pass), 1); err != nil || few {
+		t.Fatalf("every kind: few = %v, err = %v, want six matches past one", few, err)
 	}
 }

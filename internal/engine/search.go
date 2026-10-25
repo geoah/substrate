@@ -367,27 +367,32 @@ type arm struct {
 }
 
 // capped reports whether the lexical arm stopped short of ranking every
-// match by BM25F: a pass read a bounded share, the strict pass took its newest
-// matches unranked, the top-up was dropped, or the scoring fell back to the
-// pre-rank.
+// match by BM25F: a pass read a bounded share, the strict pass took some or
+// its newest matches unranked, the top-up was skipped or dropped, or the
+// scoring fell back to the order the passes hold.
 func (c lexicalCap) capped() bool {
-	return c.readCapped || c.order != orderPreRanked || c.noTopUp || c.budget || c.unscored
+	return c.readCapped || c.order == orderNewest || c.order == orderSampled || c.noTopUp || c.budget || c.unscored
 }
 
 // note is what a capped search tells its caller, an agent above all: why the
 // ranking is partial and what narrows the next query. Empty when not capped.
+// The strict pass's share is half the budget, the top-up's deadline four
+// fifths of it, and scoring has what is left; a sentence names the one that
+// ran out.
 func (c lexicalCap) note(budget time.Duration) string {
 	var parts []string
 	if c.budget {
-		parts = append(parts, fmt.Sprintf("Search stopped at the %s budget, so the lexical hits are only records matching every word.", budget))
+		parts = append(parts, fmt.Sprintf("Search stopped looking for records matching only some of the words at four fifths of its %s budget, so the lexical hits are only records matching every word.", budget))
 	}
 	switch {
 	case c.order == orderSampled && c.unscored:
-		parts = append(parts, fmt.Sprintf("Search ran out of its %s budget finding the matching records, so the lexical hits are some of the matches, unranked and ordered newest first.", budget))
+		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget finding the matching records and out of the rest scoring them, so the lexical hits are some of the matches, unranked and ordered newest first.", budget))
 	case c.order == orderSampled:
 		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget finding the matching records, so some of the matches were ranked instead of the closest ones.", budget))
+	case c.order == orderIndexed && c.unscored:
+		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget finding the matching records and out of the rest scoring them, so the lexical hits are every match, unranked and ordered newest first.", budget))
 	case c.order == orderNewest && c.unscored:
-		parts = append(parts, fmt.Sprintf("Search ran out of its %s budget reading the matching records, so the lexical hits are the newest matches, ordered newest first.", budget))
+		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget reading the matching records and out of the rest scoring them, so the lexical hits are the newest matches, ordered newest first.", budget))
 	case c.order == orderNewest:
 		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget reading the matching records, so the newest matches were ranked instead of the closest ones.", budget))
 	case c.unscored:
@@ -396,7 +401,8 @@ func (c lexicalCap) note(budget time.Duration) string {
 	if c.noTopUp {
 		parts = append(parts, "Records matching only some of the words were not searched.")
 	}
-	// Past orderPreRanked the order sentence already says which matches answer.
+	// Past orderPreRanked the order sentence already says which matches
+	// answer, and orderIndexed read every one.
 	if c.readCapped && c.order == orderPreRanked {
 		parts = append(parts, fmt.Sprintf("More than %d records match, so only the newest %d matches were ranked.", c.readMax, c.readMax))
 	}
