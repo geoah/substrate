@@ -130,6 +130,12 @@ export function outlinePath(points: number[][]): string {
   return `${path.trimEnd()}Z`
 }
 
+/** The most lines a pattern draws across one side of a page. A4 at the
+ * default spacing is 54; a document asking for more than this (a tiny
+ * `spacing`, a vast page) gets blank paper, because the lines would be finer
+ * than a screen shows and building them could exhaust the page's memory. */
+export const MAX_PATTERN_LINES = 1000
+
 /** The background pattern (§5) as one path of 1 pt lines, or the dot centers
  * for `dots`. Only lines and dots strictly inside the page are drawn. */
 export function backgroundPattern(
@@ -147,10 +153,13 @@ export function backgroundPattern(
       color: string
     } {
   const type = backgroundType(background)
+  if (type === "blank") return { type: "none" }
   const spacing = backgroundSpacing(background)
   const color = backgroundColor(background)
   const rows = lineCount(height, spacing)
-  const columns = lineCount(width, spacing)
+  const columns = type === "lined" ? 0 : lineCount(width, spacing)
+  if (!(rows <= MAX_PATTERN_LINES && columns <= MAX_PATTERN_LINES))
+    return { type: "none" }
   const horizontal = Array.from(
     { length: rows },
     (_, k) => `M0 ${round((k + 1) * spacing, 2)}H${round(width, 2)}`
@@ -160,8 +169,6 @@ export function backgroundPattern(
     (_, k) => `M${round((k + 1) * spacing, 2)} 0V${round(height, 2)}`
   )
   switch (type) {
-    case "blank":
-      return { type: "none" }
     case "lined":
       return rows > 0
         ? { type: "lines", d: horizontal.join(""), color }
