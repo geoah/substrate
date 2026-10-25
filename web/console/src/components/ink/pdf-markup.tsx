@@ -10,14 +10,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { DownloadIcon, PenLineIcon } from "lucide-react"
+import { DownloadIcon, PenLineIcon, RefreshCwIcon } from "lucide-react"
 import type { PDFDocumentProxy } from "pdfjs-dist"
 
 import { SectionHead } from "@/components/identity/section-head"
-import {
-  useRecordPatch,
-  writeError,
-} from "@/components/property-sheet/use-record-patch"
+import { useRecordPatch } from "@/components/property-sheet/use-record-patch"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -47,6 +44,8 @@ import { recordTitle } from "@/lib/format"
 import type { PropSpec } from "@/lib/record-schema"
 
 import { InkPageView, StrokeShape } from "./ink-page"
+import { inkSaveFailure, type InkSaveFailure } from "./save-failure"
+import { SaveFailureNote } from "./save-failure-note"
 import { InkToolbar } from "./ink-toolbar"
 import { DEFAULT_TOOLS, penSettings, type ToolState } from "./tools"
 import { useInkDrawing, type PenSettings } from "./use-ink-drawing"
@@ -306,7 +305,7 @@ function MarkupEditor({
   saving: boolean
   onSave: (layer: InkDocument) => void
   onCancel: () => void
-  note?: string
+  note?: React.ReactNode
 }) {
   const { document, canUndo, canRedo, dirty, dispatch } = useInkHistory(initial)
   const [tools, setTools] = useState<ToolState>(DEFAULT_TOOLS)
@@ -378,40 +377,47 @@ export function PdfMarkupSection({
   const pdfBytes = useQuery(blobQueryOptions(pdfBlob?.digest))
   const inkBytes = useQuery(blobQueryOptions(inkBlob?.digest))
   const loaded = usePdf(pdfBytes.data)
-  const patch = useRecordPatch(record)
-  const [annotating, setAnnotating] = useState(false)
+  // The layer and the version annotating began from, held while it is open:
+  // the page re-reads a record that moves under the reader, and a save
+  // asserting the newer version would silently replace the other save, while
+  // re-deriving the layer would unmount the drawing.
+  const [session, setSession] = useState<
+    { base: number; layer: InkDocument } | undefined
+  >()
+  const annotating = session !== undefined
+  const patch = useRecordPatch(record, session?.base)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | undefined>()
+  const [failure, setFailure] = useState<InkSaveFailure | undefined>()
 
   const read = useMemo(
     () => (inkBytes.data ? inkFromBytes(inkBytes.data) : undefined),
     [inkBytes.data]
   )
   const sizes = loaded && "sizes" in loaded ? loaded.sizes : undefined
-  const layer = useMemo(
-    () =>
-      sizes
-        ? read?.ok
-          ? withPageCount(read.document, sizes.length)
-          : newLayer(sizes)
-        : undefined,
-    [read, sizes]
-  )
+  const named = Boolean(inkBlob)
+  // A blank layer only where the record names none. A stored layer still
+  // loading, or that failed to load or to read, gets no layer at all, so
+  // nothing can be drawn and saved over it.
+  const layer = useMemo(() => {
+    if (!sizes) return undefined
+    if (read?.ok) return withPageCount(read.document, sizes.length)
+    return named ? undefined : newLayer(sizes)
+  }, [read, sizes, named])
   const fileName = inkFileName(recordTitle(record.properties), "markup")
 
   const save = async (next: InkDocument) => {
     if (!inkSpec) return
     setSaving(true)
-    setError(undefined)
+    setFailure(undefined)
     try {
       const info = await putBlob(inkText(next), {
         name: fileName,
         mediaType: INK_MEDIA_TYPE,
       })
       await patch.mutateAsync({ [inkSpec.name]: info.digest })
-      setAnnotating(false)
+      setSession(undefined)
     } catch (e) {
-      setError(writeError(e))
+      setFailure(inkSaveFailure(e, next))
     } finally {
       setSaving(false)
     }
@@ -424,7 +430,7 @@ export function PdfMarkupSection({
     inkSpec &&
       (summary
         ? `ink layer: ${inkCounts(summary).split(", ")[1]}`
-        : "no ink layer yet"),
+        : !inkBlob && "no ink layer yet"),
   ]
     .filter(Boolean)
     .join(" · ")
@@ -440,28 +446,49 @@ export function PdfMarkupSection({
           (loaded && "error" in loaded ? loaded.error : "")}
       </p>
     )
-  } else if (read && !read.ok) {
-    body = <p className="text-sm text-destructive">{read.message}</p>
-  } else if (!loaded || !layer || !sizes || (inkBlob && inkBytes.isPending)) {
-    body = <Skeleton className="aspect-[595/842] w-full max-w-3xl" />
-  } else if (annotating && "pdf" in loaded) {
+  } else if (session && loaded && "pdf" in loaded && sizes) {
     body = (
       <MarkupEditor
         pdf={loaded.pdf}
         sizes={sizes}
-        initial={layer}
+        initial={session.layer}
         saving={saving}
         onSave={(next) => void save(next)}
         onCancel={() => {
-          setError(undefined)
-          setAnnotating(false)
+          setFailure(undefined)
+          setSession(undefined)
         }}
         note={
-          error ??
-          "The PDF stays as it is. Saving stores the ink as a separate .inkd file over it."
+          failure ? (
+            <SaveFailureNote failure={failure} fileName={fileName} />
+          ) : (
+            "The PDF stays as it is. Saving stores the ink as a separate .inkd file over it."
+          )
         }
       />
     )
+  } else if (inkBlob && inkBytes.isError) {
+    body = (
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm text-destructive">
+          The ink layer didn’t load, so annotating is off until it does:{" "}
+          {inkBytes.error.message}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void inkBytes.refetch()}
+        >
+          <RefreshCwIcon data-icon="inline-start" />
+          Retry
+        </Button>
+      </div>
+    )
+  } else if (read && !read.ok) {
+    body = <p className="text-sm text-destructive">{read.message}</p>
+  } else if (!loaded || !layer || !sizes || (inkBlob && inkBytes.isPending)) {
+    body = <Skeleton className="aspect-[595/842] w-full max-w-3xl" />
   } else if ("pdf" in loaded) {
     body = (
       <>
@@ -473,7 +500,9 @@ export function PdfMarkupSection({
           tools={DEFAULT_TOOLS}
           dispatch={noDispatch}
         />
-        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        {failure && (
+          <p className="mt-2 text-xs text-destructive">{failure.message}</p>
+        )}
       </>
     )
   }
@@ -522,7 +551,7 @@ export function PdfMarkupSection({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setAnnotating(true)}
+                  onClick={() => setSession({ base: record.version, layer })}
                 >
                   <PenLineIcon data-icon="inline-start" />
                   Annotate
