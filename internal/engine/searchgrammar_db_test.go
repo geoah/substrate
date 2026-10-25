@@ -133,17 +133,17 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 	}
 }
 
-// A search reads a term few live rows hold through records_matching and a
-// common term, or any search of tombstones, on the row, by a capped count
-// (bm25.go indexedMatch). The two paths answer the same rows: the cap only
+// A search reads a term few live rows hold through records_matching_kinds
+// and a common term, or any search of tombstones, on the row, by a capped
+// count (bm25.go indexedMatch). The two paths answer the same rows: the cap only
 // moves the cost.
 func TestSearchAnswersTheSameOnEitherMatchPath(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	paths := map[string]substrate.Dataset{}
 	for name, opts := range map[string][]engine.Option{
-		"records_matching": nil,
-		"on the row":       {engine.WithSearchMatchMax(0)},
+		"through the index": nil,
+		"on the row":        {engine.WithSearchMatchMax(0)},
 	} {
 		_, ds := newCoreDataset(t, opts...)
 		importVocabulary(t, ds, "calendar")

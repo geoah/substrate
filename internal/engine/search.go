@@ -387,7 +387,7 @@ func (c lexicalCap) note(budget time.Duration) string {
 	}
 	switch {
 	case c.order == orderUnread:
-		parts = append(parts, fmt.Sprintf("Search ran out of its %s budget before it could read any of the matching records in time, so there are no lexical hits; records may still match.", budget))
+		parts = append(parts, fmt.Sprintf("Search reached its deadline for reading matches, within its %s budget, before it could read any of the matching records, so there are no lexical hits; records may still match.", budget))
 	case c.order == orderSampled && c.unscored:
 		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget finding the matching records and out of the rest scoring them, so the lexical hits are some of the matches, unranked and ordered newest first.", budget))
 	case c.order == orderSampled:

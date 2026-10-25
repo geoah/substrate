@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // THE LEXICAL ARM'S RANKING: BM25F over the weighted bands.
@@ -444,7 +446,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	defer cancel()
 	var capped lexicalCap
 	failed := func(err error) (map[eref]arm, lexicalCap, error) {
-		if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if deadlineErr(err, ctx, parent) {
 			capped.order = orderUnread
 			return map[eref]arm{}, capped, nil
 		}
@@ -494,13 +496,13 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 		for i := range more {
 			more[i].whole = false
 		}
-		expired := tctx.Err() != nil
+		expired := deadlineErr(err, tctx, parent)
 		tcancel()
 		switch {
 		case err == nil:
 			cands = append(cands, more...)
 			capped.readCapped = capped.readCapped || over
-		case expired && parent.Err() == nil:
+		case expired:
 			capped.budget = true
 		default:
 			return failed(err)
@@ -516,8 +518,8 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	// Past the budget with the caller still waiting, the candidates answer in
 	// the order the passes hold; a canceled caller gets the error.
 	preRanked := func(err error) (map[eref]arm, lexicalCap, error) {
-		if ctx.Err() == nil || parent.Err() != nil {
-			return failed(err)
+		if !deadlineErr(err, ctx, parent) {
+			return nil, capped, err
 		}
 		capped.unscored = true
 		for _, c := range cands {
@@ -576,7 +578,7 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 	}
 	// sample is the way out of a count or an identity read past rankBy.
 	sample := func(err error) ([]lexicalCand, bool, candOrder, error) {
-		if !pastRankBy(ctx, rctx, pass) {
+		if !pastRankBy(err, ctx, rctx, pass) {
 			return nil, false, 0, err
 		}
 		sctx := ctx
@@ -594,7 +596,7 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 			return sampled, false, orderIndexed, nil
 		case err == nil:
 			return sampled, false, orderSampled, nil
-		case ctx.Err() == nil && errors.Is(sctx.Err(), context.DeadlineExceeded):
+		case deadlineErr(err, sctx, ctx):
 			return nil, false, orderUnread, nil
 		}
 		return nil, false, 0, err
@@ -651,7 +653,7 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 	}
 	ranked, err := ds.preRank(rctx, pass.plan, found, take)
 	if err != nil {
-		if !pastRankBy(ctx, rctx, pass) {
+		if !pastRankBy(err, ctx, rctx, pass) {
 			return nil, false, 0, err
 		}
 		return newestFirst(found, take), over, orderNewest, nil
@@ -661,8 +663,27 @@ func (ds *dataset) lexicalCandidates(ctx context.Context, pass lexicalPass, rela
 
 // pastRankBy reports whether a pass's statement failed because rankBy came
 // and not the search's own deadline or the caller.
-func pastRankBy(ctx, rctx context.Context, pass lexicalPass) bool {
-	return !pass.rankBy.IsZero() && ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded)
+func pastRankBy(err error, ctx, rctx context.Context, pass lexicalPass) bool {
+	return !pass.rankBy.IsZero() && deadlineErr(err, rctx, ctx)
+}
+
+// sqlstateQueryCanceled is Postgres's SQLSTATE for a statement a cancel
+// request stopped.
+const sqlstateQueryCanceled = "57014"
+
+// deadlineErr reports whether err is a statement canceled because deadline
+// passed while parent, the context deadline derives from, did not. The error
+// itself decides, not the clock: a statement that failed on its own (a SQL
+// error, a closed pool, a lost connection) fails the search even when its
+// error arrived after the deadline. Only the context's own error and the
+// server's query_canceled (what pgx's cancel request draws) count, and either
+// only while deadline is done and parent is not.
+func deadlineErr(err error, deadline, parent context.Context) bool {
+	if err == nil || parent.Err() != nil || !errors.Is(deadline.Err(), context.DeadlineExceeded) {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	return errors.Is(err, context.DeadlineExceeded) || errors.As(err, &pgErr) && pgErr.Code == sqlstateQueryCanceled
 }
 
 // passKinds is the SQL for the kinds a pass names, NULL for every kind.

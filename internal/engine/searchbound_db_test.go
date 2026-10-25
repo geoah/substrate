@@ -107,7 +107,7 @@ func TestLexicalSearchPastItsBudgetBeforeAnyMatchAnswersCapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a search past its budget failed: %v", err)
 	}
-	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records in time") {
+	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records, so there are no lexical hits") {
 		t.Fatalf("hits = %d, capped = %v, note = %q", len(res.Hits), res.Capped, res.Note)
 	}
 }

@@ -2,11 +2,16 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -309,8 +314,91 @@ func TestLexicalSearchAnswersCappedWhenTheIndexedReadRunsOutOfBudget(t *testing.
 	if took := time.Since(began); took > budget {
 		t.Fatalf("the search took %s, past its %s budget", took, budget)
 	}
-	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records in time") {
+	if len(res.Hits) != 0 || !res.Capped || !strings.Contains(res.Note, "before it could read any of the matching records, so there are no lexical hits") {
 		t.Fatalf("hits = %d, capped = %v, note = %q", len(res.Hits), res.Capped, res.Note)
+	}
+}
+
+// lateError holds back the error of a statement that failed on its own until
+// a set time, the way a slow server's answer arrives after the deadline it
+// raced.
+type lateError struct {
+	mu    sync.Mutex
+	code  string
+	until time.Time
+}
+
+func (l *lateError) hold(code string, until time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.code, l.until = code, until
+}
+
+func (*lateError) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
+	return ctx
+}
+
+func (l *lateError) TraceQueryEnd(_ context.Context, _ *pgx.Conn, d pgx.TraceQueryEndData) {
+	var pgErr *pgconn.PgError
+	if !errors.As(d.Err, &pgErr) {
+		return
+	}
+	l.mu.Lock()
+	code, until := l.code, l.until
+	l.mu.Unlock()
+	if code != "" && pgErr.Code == code {
+		time.Sleep(time.Until(until))
+	}
+}
+
+// A statement that fails on its own fails the search even when its error
+// arrives after a deadline: the identity read's SQL error (a negative LIMIT,
+// 2201W) delivered past the strict pass's half and before the index read's
+// three quarters, and the same error delivered past the whole budget. Only
+// the deadline's own error answers capped; these answered a sample and an
+// empty capped ranking, the error swallowed.
+func TestLexicalSearchFailsOnAStatementErrorThatArrivesPastADeadline(t *testing.T) {
+	t.Parallel()
+	const budget = 2 * time.Second
+	for _, tc := range []struct {
+		name  string
+		after time.Duration
+	}{
+		{"past the strict pass's half", budget * 3 / 5},
+		{"past the whole budget", budget + budget/10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			late := &lateError{}
+			ds := openInternalDataset(t, WithTestQueryTracer(late))
+			putScoreTask(t, ds, "a", "flight", "")
+			ds.svc.searchBudget = budget
+			ds.svc.searchReadMax = -5
+			late.hold("2201W", time.Now().Add(tc.after))
+			res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "2201W" {
+				t.Fatalf("err = %v, hits = %d, capped = %v; want the statement's 2201W", err, len(res.Hits), res.Capped)
+			}
+		})
+	}
+}
+
+// A closed pool fails the search even when the index read's deadline has
+// passed by the time it answers; it answered no hits, capped.
+func TestLexicalSearchFailsOnAClosedPoolPastTheIndexedReadsDeadline(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "a", "flight", "")
+	ds.svc.searchBudget = 2 * time.Second
+	ds.svc.searchCountHook = coldRead(t, ds)
+	ds.svc.searchSampleHook = func(ctx context.Context) {
+		<-ctx.Done()
+		_ = ds.db.Close()
+	}
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if !errors.Is(err, sql.ErrConnDone) && (err == nil || !strings.Contains(err.Error(), "database is closed")) {
+		t.Fatalf("err = %v, hits = %d, capped = %v; want the closed pool's error", err, len(res.Hits), res.Capped)
 	}
 }
 
