@@ -161,11 +161,12 @@ const maxQuantityUnits = 256
 // value at `v` is not a quantity's digits: a name one kind declares a quantity
 // may be another kind's object of another shape, and the cast must not fail
 // that kind's rows. Digits past vocabulary.MaxDecimalDigits read NULL too,
-// because past numeric's own bound the cast fails the whole query.
+// because past numeric's own bound the cast fails the whole query. The cast
+// is on the CASE's result for the reason typedValueSQL gives.
 func quantityValueSQL(v string) string {
 	value := `(` + v + `->>'` + vocabulary.QuantityValue + `')`
 	return `(CASE WHEN length(` + value + `) <= ` + strconv.Itoa(vocabulary.MaxDecimalDigits+2) +
-		` AND ` + value + ` ~ '^-?[0-9]+(\.[0-9]+)?$' THEN ` + value + `::numeric END)`
+		` AND ` + value + ` ~ '^-?[0-9]+(\.[0-9]+)?$' THEN ` + value + ` END)::numeric`
 }
 
 // orNull is an expression, or SQL's NULL where there is none.

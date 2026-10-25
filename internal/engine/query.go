@@ -1113,14 +1113,17 @@ func (ds *dataset) kindlessDatatype(name string) (_ vocabulary.Datatype, kinds [
 // that kind's rows.
 func moneyValueSQL(expr string) string {
 	return `(CASE WHEN ` + moneyAmountValidSQL(expr) +
-		` THEN ((` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
-		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + `)::numeric END)`
+		` THEN (` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
+		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + ` END)::numeric`
 }
 
 // moneyAmountValidSQL holds when the money value at `expr` carries an amount
 // numeric reads: the pattern is the amount's grammar, and pg_input_is_valid
 // the cast's range, which a quarantined or hand-restored row is not held to.
-// It belongs in a CASE's WHEN, ahead of the cast.
+// It belongs in a CASE's WHEN, and the cast goes on the CASE's result, never
+// inside its THEN: where the value is a parameter (a mapping's where asks of a
+// row it has not stored), a custom plan folds an immutable cast of a constant
+// before the stable guard runs, and a THEN's cast fails the statement.
 func moneyAmountValidSQL(expr string) string {
 	amount := `(` + expr + `->>'` + vocabulary.MoneyAmount + `')`
 	return `jsonb_typeof(` + expr + `) = 'object' AND ` + amount + ` ~ '^-?[0-9]+$'` +
@@ -1168,7 +1171,7 @@ func condMoney(b *builder, key string, c substrate.Cond) error {
 		// any order, and a kindless read reaches rows no money declaration
 		// speaks for.
 		return `(` + v + `->>'` + vocabulary.MoneyCurrency + `') = ` + b.arg(mv[vocabulary.MoneyCurrency]) +
-			` AND (CASE WHEN ` + moneyAmountValidSQL(v) + ` THEN (` + v + `->>'` + vocabulary.MoneyAmount + `')::numeric END) ` +
+			` AND (CASE WHEN ` + moneyAmountValidSQL(v) + ` THEN (` + v + `->>'` + vocabulary.MoneyAmount + `') END)::numeric ` +
 			op + ` ` + b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
 	}
 	for _, x := range []struct {
@@ -1941,7 +1944,9 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 // reads NULL instead of failing the read, and one the cast accepts is never
 // dropped, whatever the length of its year or its digits: `decimal` is
 // unbounded on write. Both tests sit in the WHEN so the cast only ever sees
-// what passed them; an AND in a WHERE has no evaluation order.
+// what passed them; an AND in a WHERE has no evaluation order. The cast is on
+// the CASE's text result, not in a THEN: a THEN over a parameter is a constant
+// a custom plan folds, cast and all, before the stable guard is asked.
 func typedValueSQL(v, text string, kind vocabulary.Datatype, kinds string) (string, bool) {
 	guard := ``
 	if kinds != `` {
@@ -1951,16 +1956,16 @@ func typedValueSQL(v, text string, kind vocabulary.Datatype, kinds string) (stri
 	case vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal:
 		return `(CASE WHEN ` + guard + `(jsonb_typeof(` + v + `) = 'number' OR (jsonb_typeof(` + v + `) = 'string'` +
 			` AND ` + text + ` ~ '^-?[0-9]+(\.[0-9]+)?$' AND pg_input_is_valid(` + text + `, 'numeric')))` +
-			` THEN (` + text + `)::numeric END)`, true
+			` THEN ` + text + ` END)::numeric`, true
 	case vocabulary.DatatypeDatetime, vocabulary.DatatypeDate:
 		date := `jsonb_typeof(` + v + `) = 'string' AND ` + text
 		midnight := `(` + text + ` || 'T00:00:00Z')`
 		return `(CASE WHEN ` + guard + date + ` ~ '^[0-9]{4,}-[0-9]{2}-[0-9]{2}$'` +
-			` AND pg_input_is_valid(` + midnight + `, 'timestamptz') THEN ` + midnight + `::timestamptz` +
+			` AND pg_input_is_valid(` + midnight + `, 'timestamptz') THEN ` + midnight +
 			` WHEN ` + guard + date + ` ~ '^[0-9]{4,}-[0-9]{2}-[0-9]{2}T'` +
-			` AND pg_input_is_valid(` + text + `, 'timestamptz') THEN (` + text + `)::timestamptz END)`, true
+			` AND pg_input_is_valid(` + text + `, 'timestamptz') THEN ` + text + ` END)::timestamptz`, true
 	case vocabulary.DatatypeBool:
-		return `(CASE WHEN ` + guard + `jsonb_typeof(` + v + `) = 'boolean' THEN (` + text + `)::boolean END)`, true
+		return `(CASE WHEN ` + guard + `jsonb_typeof(` + v + `) = 'boolean' THEN ` + text + ` END)::boolean`, true
 	}
 	return ``, false
 }
