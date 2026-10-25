@@ -11,6 +11,21 @@ its four modes, the record path, the filter grammar, pagination, the five
 mutations, discovery, search and the errors. Authentication has a page of its
 own, [users and tokens](auth.md).
 
+## Calling it from a browser
+
+Any origin may call the server: a web application on another host reads and
+writes the API, registers and logs in the same way the console does. Every
+response to a request carrying `Origin` names `Access-Control-Allow-Origin: *`
+and exposes `ETag`, `Location`, `Retry-After`, `Content-Disposition` and
+`X-Request-Id`. A preflight is answered with `204` before routing, allowing
+every method the server serves and echoing the headers it asks for.
+
+The wildcard is safe because nothing authenticates by ambient credential: a
+caller attaches its own bearer token, and the server sets no cookie.
+`Access-Control-Allow-Credentials` is never sent, so a browser attaches no
+cookie or client certificate to a cross-origin call either. An application
+keeps its token itself, which makes guarding that token its own job.
+
 ## REST resources
 
 Two shapes carry every record read and write. The **records route** is the
