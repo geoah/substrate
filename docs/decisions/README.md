@@ -348,3 +348,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0187](0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md) | Linked sources are one device, read from their highest-ranked source | proposed |
 | [0188](0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md) | The Observations page folds a metric's sources into one row, and keeps channels apart | proposed |
 | [0189](0189-the-observation-source-kind-stays-in-the-observations-sample.md) | The observation source kind stays in the observations sample | accepted |
+| [0190](0190-a-blobref-declares-the-media-types-of-its-bytes.md) | A blobref declares the media types of its bytes | accepted |
