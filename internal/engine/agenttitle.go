@@ -149,24 +149,26 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 	if title == "" && usage.PromptTokens+usage.CompletionTokens == 0 {
 		return
 	}
-	lifetime, patched, err := l.writeTitle(ctx, title, usage, cost)
+	lifetime, finished, patched, err := l.writeTitle(ctx, title, usage, cost)
 	if err != nil {
 		l.ds.svc.log.Warn("substrate: thread title not written", "thread", l.threadID, "error", err)
 		return
 	}
 	if patched {
-		l.ds.spend.commit(run, lifetime)
+		l.ds.spend.commit(run, lifetime, finished)
 	}
 }
 
 // writeTitle patches the generated subject and adds the call's usage onto
 // the thread's tallies, so costUSD stays the thread's whole cost. The usage
 // is billed whether or not the subject lands; the subject lands only while
-// the agent still manages it. It reports the costUSD the patch wrote, and
-// whether a patch was made at all: a deleted thread takes none.
-func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usage, cost float64) (lifetime float64, patched bool, err error) {
+// the agent still manages it. It reports the costUSD the patch wrote, whether
+// the row carries the first turn's `finishedAt` (a turn that lost its lease
+// wrote none, so no snapshot holds the row yet), and whether a patch was
+// made at all: a deleted thread takes none.
+func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usage, cost float64) (lifetime float64, finished, patched bool, err error) {
 	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
-		patched = false
+		patched, finished = false, false
 		t.causedBy = l.in.causedBy
 		// The order every put takes (claimThread says why).
 		if err := t.lockRegistryDepShared(); err != nil {
@@ -208,7 +210,8 @@ func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usa
 			return err
 		}
 		patched, lifetime = true, num("costUSD")+cost
+		finished = row.Props["finishedAt"] != nil
 		return nil
 	})
-	return lifetime, patched && err == nil, err
+	return lifetime, finished, patched && err == nil, err
 }

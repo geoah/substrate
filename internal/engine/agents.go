@@ -799,6 +799,7 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 				"status":     threadError,
 				"reason":     reason,
 				"finishedAt": t.now.Format(time.RFC3339Nano),
+				"leaseUntil": nil,
 			}}); err != nil {
 				return err
 			}
@@ -898,6 +899,7 @@ func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 				"status":     threadError,
 				"reason":     interruptedThreadReason,
 				"finishedAt": t.now.Format(time.RFC3339Nano),
+				"leaseUntil": nil,
 			}})
 			return err
 		})

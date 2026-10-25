@@ -39,10 +39,12 @@ func TestSpendLedgerReconcilesWithTheSnapshotByThread(t *testing.T) {
 			2,
 		},
 		{
-			"a run whose commit the snapshot already holds adds nothing",
+			// The moment between a settle's commit and the ledger's mark: an
+			// over-count until the mark, never an under-count.
+			"a run going adds its charge over whatever the snapshot holds",
 			spendRun{thread: "t", base: 5, charge: 2},
 			map[string]float64{"t": 7},
-			0,
+			2,
 		},
 		{
 			"a run going on a thread that finished before the window adds its charge alone",
@@ -101,15 +103,29 @@ func TestSpendLedgerReconcilesWithTheSnapshotByThread(t *testing.T) {
 	if _, all := l.unsettled(snapshot(nil), now); math.Abs(all-3) > spendEpsilon {
 		t.Errorf("a committed turn and the next going: added %v, want 3", all)
 	}
+
+	// A settle that lost its lease committed its cost onto a thread a newer
+	// claim holds: that claim's charges add to it, and so do a second run's.
+	l = spendLedger{runs: []*spendRun{
+		{agent: agent, thread: "t", charge: 2, state: spendCommitted, lifetime: 2, at: now},
+		{agent: agent, thread: "t", charge: 1},
+		{agent: agent, thread: "t", base: 2, charge: 1},
+	}}
+	if _, all := l.unsettled(snapshot(nil), now); math.Abs(all-4) > spendEpsilon {
+		t.Errorf("a lost-lease commit and two runs going: added %v, want 4", all)
+	}
 }
 
-// prune keeps a committed run only while a snapshot in use may predate its
-// commit, and a lost run only while it is inside the window.
+// prune keeps a finished commit only while a snapshot in use may predate it,
+// and a commit of the counters alone and a lost run only while they are
+// inside the window.
 func TestSpendLedgerPrunesWhatNoSnapshotNeeds(t *testing.T) {
 	now := time.Now()
 	l := spendLedger{runs: []*spendRun{
-		{thread: "old-commit", state: spendCommitted, at: now.Add(-3 * spendViewMaxAge)},
-		{thread: "new-commit", state: spendCommitted, at: now},
+		{thread: "old-commit", state: spendCommitted, finished: true, at: now.Add(-3 * spendViewMaxAge)},
+		{thread: "new-commit", state: spendCommitted, finished: true, at: now},
+		{thread: "old-counters", state: spendCommitted, at: now.Add(-3 * spendViewMaxAge)},
+		{thread: "gone-counters", state: spendCommitted, at: now.Add(-spendWindow - time.Minute)},
 		{thread: "old-lost", charge: 1, state: spendLost, at: now.Add(-spendWindow - time.Minute)},
 		{thread: "new-lost", charge: 1, state: spendLost, at: now},
 		{thread: "free-lost", state: spendLost, at: now},
@@ -118,7 +134,7 @@ func TestSpendLedgerPrunesWhatNoSnapshotNeeds(t *testing.T) {
 	going := l.open("a", "going", 0)
 	committed := l.open("a", "committed", 0)
 	l.charge(committed, 1)
-	l.commit(committed, 1)
+	l.commit(committed, 1, true)
 	lost := l.open("a", "lost", 0)
 	l.charge(lost, 1)
 	l.finish(committed)
@@ -127,7 +143,7 @@ func TestSpendLedgerPrunesWhatNoSnapshotNeeds(t *testing.T) {
 	for _, r := range l.runs {
 		kept = append(kept, r.thread)
 	}
-	if want := []string{"new-commit", "new-lost", "going", "committed", "lost"}; !slices.Equal(kept, want) {
+	if want := []string{"new-commit", "old-counters", "new-lost", "going", "committed", "lost"}; !slices.Equal(kept, want) {
 		t.Fatalf("kept %v, want %v", kept, want)
 	}
 	if going.state != spendRunning || committed.state != spendCommitted || lost.state != spendLost {

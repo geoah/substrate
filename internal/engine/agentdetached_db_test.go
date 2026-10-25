@@ -365,3 +365,57 @@ func TestAnAttachReplaysTheTurnsReasoningWithItsTurn(t *testing.T) {
 		}
 	}
 }
+
+// A settled thread holds no lease, and the owner's next message is a new turn
+// at once, after a turn that called sub-agents too (#1038: the thread settled
+// `ok` and kept `leaseUntil` minutes past it).
+func TestASettledTurnLeavesNoLeaseAndTheNextMessageRuns(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("root",
+		fakeTurn{calls: []fakeCall{{"scribe", `{"input":"first"}`}, {"scribe", `{"input":"second"}`}}},
+		fakeTurn{content: "both summarized"},
+		fakeTurn{content: "and again"},
+	)
+	fake.script("sub", fakeTurn{content: "one"}, fakeTurn{content: "two"})
+
+	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", "", "delegate", nil)
+	if err != nil || first.Status != threadOK {
+		t.Fatalf("first turn = %+v, %v", first, err)
+	}
+	props := threadProps(t, ds, first.Thread)
+	if props["status"] != threadOK {
+		t.Fatalf("thread status = %v (%v), want ok", props["status"], props["reason"])
+	}
+	if lease, held := props["leaseUntil"]; held {
+		t.Fatalf("the settled thread still holds leaseUntil %v", lease)
+	}
+	children := agentThreadsOf(t, ds, "scribe")
+	if len(children) != 2 {
+		t.Fatalf("scribe threads: %d, want 2", len(children))
+	}
+	for _, child := range children {
+		if lease, held := child["leaseUntil"]; held || child["status"] != threadOK {
+			t.Fatalf("sub-agent thread = %v, leaseUntil %v; want ok and no lease", child["status"], lease)
+		}
+	}
+
+	second, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", first.Thread, "once more", nil)
+	if err != nil || second.Status != threadOK || second.Reply != "and again" {
+		t.Fatalf("the next message on the settled thread = %+v, %v", second, err)
+	}
+	msgs := threadMessages(t, ds, first.Thread)
+	var users []any
+	for _, m := range msgs {
+		if m["role"] == "user" {
+			users = append(users, m["content"])
+		}
+	}
+	if len(users) != 2 || users[1] != "once more" {
+		t.Fatalf("user messages = %v, want both sends", users)
+	}
+	if lease, held := threadProps(t, ds, first.Thread)["leaseUntil"]; held {
+		t.Fatalf("the second settle left leaseUntil %v", lease)
+	}
+}

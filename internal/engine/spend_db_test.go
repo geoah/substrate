@@ -821,3 +821,97 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 		t.Fatalf("after GC, on a fresh snapshot: %d cents, want 300", got)
 	}
 }
+
+// lostLeasePair opens two chat runs of open on one thread: a, whose lease
+// expired, and b, which claimed the thread after it. Neither has run yet.
+func lostLeasePair(t *testing.T) (ds *dataset, fake *fakeLLM, ca context.Context, a *agentLoop, cb context.Context, b *agentLoop) {
+	t.Helper()
+	ds, fake = openSpendDataset(t)
+	ag, err := ds.registry().ResolveAgent(spendPackage + "/open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, a, err = ds.prepareAgentRun(context.Background(), ag, agentInvocation{mode: agentModeChat, user: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.leaseAt = nowUTC().Add(-time.Minute)
+	if err := ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
+		_, err := t.patch(eref{Kind: typeThread, ID: a.threadID}, substrate.PatchInput{Properties: map[string]any{
+			"leaseUntil": a.leaseAt.Format(time.RFC3339Nano),
+		}})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cb, b, err = ds.prepareAgentRun(context.Background(), ag, agentInvocation{mode: agentModeChat, threadID: a.threadID, user: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ds, fake, ca, a, cb, b
+}
+
+// A run that lost its lease puts its cost on a row no snapshot holds until
+// the run that claimed the thread settles, so the ledger keeps counting it
+// past the two minutes a finished settle needs (#1051 review: the spend fell
+// to nothing and a cap it had reached let runs through).
+func TestASpendCapCountsALostLeaseSettleUntilTheThreadFinishes(t *testing.T) {
+	t.Parallel()
+	ds, fake, ca, a, cb, b := lostLeasePair(t)
+	fake.script("open", fakeTurn{content: "late", promptTokens: 20}, fakeTurn{content: "newer"})
+	if _, err := a.run(ca); err != nil {
+		t.Fatal(err)
+	}
+	if got := spentOf(t, ds, "open", true); got != 200 {
+		t.Fatalf("spend after the late settle = %d cents, want 200", got)
+	}
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		Kind: kindSetting, ID: spendSettingID, Properties: map[string]any{"value": "150", "type": "int"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ag, err := ds.registry().ResolveAgent(spendPackage + "/open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(2*spendViewMaxAge + time.Second)
+	ds.spend.now = func() time.Time { return later }
+	if got := spentOf(t, ds, "open", true); got != 200 {
+		t.Errorf("spend two minutes on, the newer claim still running = %d cents, want 200", got)
+	}
+	if held, err := ds.spendHold(context.Background(), ag); err != nil || held == "" {
+		t.Errorf("the repository cap of 150 cents: hold %q (%v), want held", held, err)
+	}
+	if _, err := b.run(cb); err != nil {
+		t.Fatal(err)
+	}
+	if got := spentOf(t, ds, "open", true); got != 300 {
+		t.Errorf("spend after the newer claim settled = %d cents, want 300", got)
+	}
+}
+
+// The charges of the run that claimed a thread add to what a run that lost
+// its lease committed on it, never hide under it (#1051 review: the most
+// either said counted, not both).
+func TestASpendCapCountsTheNewerClaimsChargesOverALostLeaseSettle(t *testing.T) {
+	t.Parallel()
+	ds, fake, ca, a, cb, b := lostLeasePair(t)
+	fake.script("open", fakeTurn{content: "late", promptTokens: 20}, fakeTurn{content: "newer"})
+	// The terminal write fails, so the late cost lands through the settle
+	// after a failed write.
+	ds.agentRowWrite = func(context.Context, map[string]any) error { return errors.New("the reply write fails") }
+	if _, err := a.run(ca); err == nil {
+		t.Fatal("the late run: want its failed write")
+	}
+	ds.agentRowWrite = nil
+	b.charge(&llm.Usage{PromptTokens: 10, CompletionTokens: 5})
+	if got := spentOf(t, ds, "open", true); got != 300 {
+		t.Errorf("200 cents committed late and 100 charged by the newer claim: spend = %d cents, want 300", got)
+	}
+	if _, err := b.run(cb); err != nil {
+		t.Fatal(err)
+	}
+	if got := spentOf(t, ds, "open", true); got != 400 {
+		t.Errorf("spend after the newer claim settled = %d cents, want 400", got)
+	}
+}

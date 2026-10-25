@@ -19,6 +19,15 @@ package engine
 // whole window. Reconciling by thread is what keeps a run from counting
 // twice when the snapshot already holds its settle.
 //
+// A settle that lost its lease to a newer run adds its counters to the row
+// and leaves `finishedAt` to that run, so no snapshot holds what it added
+// until the newer run settles, and a check may come long before: the cost
+// committed and the snapshot not covering it are two facts, and the ledger
+// keeps such a run for the whole window rather than the two minutes a
+// covered commit needs. A thread's row cost only grows, so the most any
+// read says it holds is a floor, and the charges of the runs still going on
+// it are on no row and add to that floor rather than hide under it.
+//
 // The documented overshoot: a run admitted under a cap runs to its own end
 // (its maxTurns and deadline still bound it), and a model call already
 // running is charged only when it returns, so an admission made meanwhile
@@ -133,6 +142,10 @@ type spendRun struct {
 	state  spendRunState
 	// lifetime is the costUSD the committed settle wrote.
 	lifetime float64
+	// finished is whether that settle wrote `finishedAt` too, so every
+	// snapshot read after it holds the row; a settle that lost its lease
+	// wrote the counters alone.
+	finished bool
 	// at is when the run left spendRunning: its settle's commit, or its end.
 	at time.Time
 }
@@ -198,15 +211,15 @@ func (s *spendLedger) charge(r *spendRun, usd float64) {
 }
 
 // commit records that a settle committed the run's thread row with
-// lifetime as its costUSD. The settle calls it the moment its transaction
+// lifetime as its costUSD, and finished when it wrote `finishedAt` too. The settle calls it the moment its transaction
 // commits, before anything else the loop does on its way out, so a check in
 // between reads the thread's whole cost and not the run's charge alone.
-func (s *spendLedger) commit(r *spendRun, lifetime float64) {
+func (s *spendLedger) commit(r *spendRun, lifetime float64, finished bool) {
 	if r == nil {
 		return
 	}
 	s.mu.Lock()
-	r.state, r.lifetime, r.at = spendCommitted, lifetime, s.clock()
+	r.state, r.lifetime, r.finished, r.at = spendCommitted, lifetime, finished, s.clock()
 	s.mu.Unlock()
 }
 
@@ -225,15 +238,17 @@ func (s *spendLedger) finish(r *spendRun) {
 }
 
 // prune drops what no check needs any longer, each run by its own stamp: a
-// committed run older than twice the snapshot's age limit, because every
-// snapshot in use was read after it committed; a lost run once it leaves the
-// window. Every spend read prunes, not only a run's end, so an idle
+// finished commit older than twice the snapshot's age limit, because every
+// snapshot in use was read after it committed; a commit that wrote the
+// counters alone and a lost run once they leave the window, because no
+// snapshot need ever hold them. Every spend read prunes, not only a run's end, so an idle
 // repository's cap is not held by an entry nothing ends. Caller holds mu.
 func (s *spendLedger) prune(now time.Time) {
 	keep := s.runs[:0]
 	for _, r := range s.runs {
 		switch {
-		case r.state == spendCommitted && now.Sub(r.at) >= 2*spendViewMaxAge:
+		case r.state == spendCommitted && r.finished && now.Sub(r.at) >= 2*spendViewMaxAge:
+		case r.state == spendCommitted && now.Sub(r.at) >= spendWindow:
 		case r.state == spendLost && (now.Sub(r.at) >= spendWindow || r.charge <= 0):
 		default:
 			keep = append(keep, r)
@@ -244,10 +259,11 @@ func (s *spendLedger) prune(now time.Time) {
 }
 
 // unsettled is what the snapshot does not hold, per agent identity and in
-// all, reconciled by thread. Per thread it wants the most any run on it
-// says the thread holds: a committed run's lifetime; a running run's base
-// plus its charge where the thread's earlier cost is inside the window (the
-// snapshot holds the thread, or a run committed it), else its charge alone,
+// all, reconciled by thread. Per thread it wants the most any read says the
+// row holds (the snapshot, a committed run's lifetime, a running run's
+// base) plus the charges of every run still going on it, which no row holds
+// yet. A running run's base counts only where the thread's earlier cost is
+// inside the window (the snapshot holds the thread, or a run committed it),
 // because a continuation of a thread that finished before the window brings
 // only its new spend into it until it settles. What the snapshot already
 // holds for the thread is not added again. A lost run adds its charge
@@ -288,14 +304,14 @@ func (s *spendLedger) unsettled(sums *spendSums, now time.Time) (map[string]floa
 	}
 	for id, w := range byThread {
 		have, held := sums.threads[id]
-		target := w.committed
+		floor, going := max(w.committed, have.usd), 0.0
 		for _, r := range w.running {
 			if held || w.has {
-				target = max(target, r.base+r.charge)
-			} else {
-				target = max(target, r.charge)
+				floor = max(floor, r.base)
 			}
+			going += r.charge
 		}
+		target := floor + going
 		if d := target - have.usd; d > spendEpsilon {
 			byAgent[w.agent] += d
 			all += d
