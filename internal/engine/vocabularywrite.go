@@ -372,7 +372,9 @@ func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) 
 // shippedHands are the actors whose writes leave a shipped record the
 // shipper's to replace: the shipper, the core seed and the engine. Every one
 // is reserved (substrate.ReservedActor), so no request can claim one and pass
-// its edit off as the shipped record's own.
+// its edit off as the shipped record's own. The shipper's own sync writes
+// under the shipper's actor and so leaves the record replaceable, while its
+// functions and agents write under their own actors and hold it.
 func shippedHands(shipper substrate.Actor) []string {
 	return []string{string(shipper), string(substrate.ActorSeed), string(substrate.ActorSystem)}
 }
