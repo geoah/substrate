@@ -367,9 +367,10 @@ type arm struct {
 }
 
 // capped reports whether the lexical arm stopped short of ranking every
-// match by BM25F: a pass read a bounded share, the top-up was dropped, or the
-// scoring fell back to the pre-rank.
-func (c lexicalCap) capped() bool { return c.readCapped || c.budget || c.unscored }
+// match by BM25F: a pass read a bounded share, the strict pass took its newest
+// matches unranked, the top-up was dropped, or the scoring fell back to the
+// pre-rank.
+func (c lexicalCap) capped() bool { return c.readCapped || c.unranked || c.budget || c.unscored }
 
 // note is what a capped search tells its caller, an agent above all: why the
 // ranking is partial and what narrows the next query. Empty when not capped.
@@ -378,7 +379,12 @@ func (c lexicalCap) note(budget time.Duration) string {
 	if c.budget {
 		parts = append(parts, fmt.Sprintf("Search stopped at the %s budget, so the lexical hits are only records matching every word.", budget))
 	}
-	if c.unscored {
+	switch {
+	case c.unranked && c.unscored:
+		parts = append(parts, fmt.Sprintf("Search ran out of its %s budget reading the matching records, so the lexical hits are the newest matches, ordered newest first.", budget))
+	case c.unranked:
+		parts = append(parts, fmt.Sprintf("Search ran past half its %s budget reading the matching records, so the newest matches were ranked instead of the closest ones.", budget))
+	case c.unscored:
 		parts = append(parts, fmt.Sprintf("Search ran out of its %s budget while ranking, so the lexical hits are ordered by ts_rank instead of BM25F.", budget))
 	}
 	if c.readCapped {

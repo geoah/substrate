@@ -518,6 +518,10 @@ type service struct {
 	// searchScoreHook, set only by a test, runs before a lexical search
 	// scores its candidates: the seam that spends the budget before scoring.
 	searchScoreHook func()
+	// searchPreRankHook, set only by a test, runs with the context the strict
+	// candidate pass reads the vectors it pre-ranks under, before it reads
+	// them: the seam a cold read of them spends the budget in.
+	searchPreRankHook func(context.Context)
 	// searchSemanticHook, set only by a test, runs with the semantic arm's
 	// context and transaction after the scan settings and before the
 	// candidate read: the seam that runs a statement the arm's budget

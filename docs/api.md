@@ -1021,10 +1021,13 @@ pre-rank: `ts_rank` against the query's positive words, divided by log2 of
 the record's length plus one. A long text that repeats a word therefore does
 not crowd out short records naming it; the cost is that a long record titled
 by the word can be cut when many short records hold it. The arm runs under a
-5 s budget. When BM25F scoring of the candidates does not finish within it,
+5 s budget. When the pre-rank of the records matching every word does not
+finish within half of it (their text read cold from disk), the newest 400 of
+them are scored instead and the relaxed pass is skipped. When BM25F scoring of the candidates does not finish within it,
 the lexical hits are ordered by the pre-rank instead (in `lexical` mode the
-records matching every word still come first), and `scores.lexical` carries
-the pre-rank. Any of these cuts sets `capped: true` beside the ranking and a
+records matching every word still come first), or newest first where the
+pre-rank was skipped, and `scores.lexical` carries that order as a value in
+(0, 1). Any of these cuts sets `capped: true` beside the ranking and a
 `note` saying which cut happened and how to narrow the query.
 
 **How the semantic arm is bounded.** The arm reads its candidates from an

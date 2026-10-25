@@ -119,7 +119,7 @@ func TestLexicalPreRankDoesNotRewardLength(t *testing.T) {
 	putScoreTask(t, ds, "long", "errand", longRepetitive("flight"))
 	putScoreTask(t, ds, "short", "errand", "flight")
 	pass := lexicalPass{plan: parseSearch("flight"), readMax: searchReadMax, matchMax: searchReadMax}
-	cands, _, err := ds.lexicalCandidates(ctx, pass, false, 2)
+	cands, _, _, err := ds.lexicalCandidates(ctx, pass, false, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,5 +128,57 @@ func TestLexicalPreRankDoesNotRewardLength(t *testing.T) {
 	}
 	if cands[0].rank <= cands[1].rank {
 		t.Fatalf("pre-ranks short %v, long %v: want short above", cands[0].rank, cands[1].rank)
+	}
+}
+
+// A strict pass whose vectors read cold past its share of the budget still
+// answers (the hook stands for a read that runs until it is canceled):
+// the newest matches are scored instead of the best by pre-rank, marked
+// capped, where the pass that pre-ranked every match before returning one
+// failed the search with nothing ranked (#968).
+func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "old", "flight", "")
+	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchPreRankHook = func(ctx context.Context) { <-ctx.Done() }
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical, K: 1})
+	if err != nil {
+		t.Fatalf("a pre-rank past the budget failed the search: %v", err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "old" {
+		t.Fatalf("hits = %+v, want BM25F to rank the title match first", res.Hits)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "so the newest matches were ranked instead of the closest ones") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
+	}
+}
+
+// When scoring runs out of the budget too, the newest matches answer newest
+// first.
+func TestLexicalSearchAnswersNewestFirstWhenPreRankAndScoringRunOut(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "old", "flight", "")
+	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	const budget = 2 * time.Second
+	ds.svc.searchBudget = budget
+	ds.svc.searchPreRankHook = func(ctx context.Context) { <-ctx.Done() }
+	ds.svc.searchScoreHook = func() { time.Sleep(budget) }
+	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical})
+	if err != nil {
+		t.Fatalf("a pre-rank and scoring past the budget failed the search: %v", err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, h.Record.ID)
+	}
+	if strings.Join(got, ",") != "new,old" {
+		t.Fatalf("hits = %v, want newest first", got)
+	}
+	if !res.Capped || !strings.Contains(res.Note, "ordered newest first") {
+		t.Fatalf("capped = %v, note = %q", res.Capped, res.Note)
 	}
 }
