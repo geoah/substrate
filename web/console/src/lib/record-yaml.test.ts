@@ -680,4 +680,50 @@ describe("toPutInput: blank template lines", () => {
     // A plain string's empty IS a value somebody could mean.
     expect(props).toHaveProperty("title", "")
   })
+
+  /** A research paper: a year no paper has at 0, and an abstract that may be
+   * left for later. */
+  const paperKind: KindInfo = {
+    ...taskKind,
+    identity: "samples.substrate.reamde.dev/papers/paper",
+    name: "paper",
+    package: "papers",
+    definition: {
+      properties: {
+        name: { type: "string", required: true },
+        year: { type: "int", min: 1000 },
+        pages: { type: "int", required: true },
+        abstract: { type: "markdown" },
+      },
+    },
+  }
+
+  it("seeds an optional number blank, so a `min` above zero does not bar the create", () => {
+    const text = templateYAML(SHIPPED_UNITS, paperKind)
+    const parsed = parseApplyDoc(text)
+    expect(parsed.value?.data?.properties).toMatchObject({
+      year: "",
+      pages: 0,
+    })
+    const named = text.replace('name: ""', "name: Attention")
+    expect(
+      validateApplyDoc(SHIPPED_UNITS, named, paperKind).filter(
+        (p) => p.severity === "error"
+      )
+    ).toEqual([])
+  })
+
+  it("leaves an optional number and text out of a create, and keeps an edit's clear", () => {
+    const text = templateYAML(SHIPPED_UNITS, paperKind).replace(
+      'name: ""',
+      "name: Attention"
+    )
+    const doc = parseApplyDoc(text).value!
+    expect(toPutInput(doc, paperKind, { create: true }).properties).toEqual({
+      name: "Attention",
+      pages: 0,
+    })
+    // On an edit an emptied text is how the form clears the stored one.
+    expect(toPutInput(doc, paperKind).properties).toHaveProperty("abstract", "")
+  })
 })

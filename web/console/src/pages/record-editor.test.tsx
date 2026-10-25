@@ -99,9 +99,11 @@ function renderEditor(
     record?: SubstrateRecord
     seed?: string
     technical?: boolean
+    kind?: KindInfo
   } = {}
 ) {
   const mode = over.mode ?? "create"
+  const kind = over.kind ?? taskKind
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -127,10 +129,10 @@ function renderEditor(
             pkg="tasks"
             name="task"
             mode={mode}
-            kind={taskKind}
-            kinds={[taskKind]}
+            kind={kind}
+            kinds={[kind]}
             record={over.record}
-            seed={over.seed ?? templateYAML(SHIPPED_UNITS, taskKind)}
+            seed={over.seed ?? templateYAML(SHIPPED_UNITS, kind)}
           />
         </Toaster>
       </QueryClientProvider>
@@ -269,6 +271,33 @@ describe("the new-record sheet", () => {
       status: "open",
     })
     expect(input.id).toBeUndefined()
+  })
+
+  it("leaves an optional number and text the person never touched out of the write", async () => {
+    const paperKind: KindInfo = {
+      ...taskKind,
+      identity: "samples.substrate.reamde.dev/papers/paper",
+      name: "paper",
+      package: "papers",
+      definition: {
+        properties: {
+          title: { type: "string", required: true },
+          year: { type: "int", min: 1000 },
+          abstract: { type: "markdown" },
+        },
+      },
+    }
+    createRecord.mockResolvedValue({ ...openTask, id: "p1" })
+    renderEditor({ kind: paperKind })
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "Year left alone" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create paper" }))
+    await waitFor(() => expect(createRecord).toHaveBeenCalled())
+    expect(screen.queryAllByRole("alert")).toEqual([])
+    expect(createRecord.mock.calls[0][3].properties).toEqual({
+      title: "Year left alone",
+    })
   })
 
   it("says why the server refused, in words", async () => {
