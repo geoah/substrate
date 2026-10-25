@@ -51,7 +51,10 @@ sets every one it can:
   a provider's body declares its dependencies in a PEP 723 block and the
   runner resolves them with `uv sync --script` before the body runs. Neither
   is arrangeable from here, so the case SKIPs with the reason rather than
-  reading an offline machine as a broken sandbox.
+  reading an offline machine as a broken sandbox. The dev start puts the
+  directory of `mise which uv` first on the server's PATH, because the
+  sandbox runs uv by its resolved path and mise's shim resolves to `mise`,
+  which it refuses.
 
 An id is `<AREA>-<NN>`, where the area names the surface the case drives, and
 an id is permanent: a case that moves keeps it, so a six-month-old report

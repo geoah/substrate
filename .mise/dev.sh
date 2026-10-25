@@ -381,6 +381,22 @@ urls() {
 # The key lands in the repository's sealed store, not in this shell's history
 # of exported variables, which is the point of the move.
 
+# The runner confines `uv` to the file PATH resolves it to, and a version
+# manager's shim resolves to the manager's own binary (every mise shim is a
+# link to `mise`), which re-execs uv only when it runs under uv's name. The
+# sandbox refuses that exec, so a PATH that finds the shim first fails every
+# PEP 723 body (BUN-04, BUN-07; #842). The real binary's directory goes first;
+# without mise, or without a uv it manages, PATH is left as the caller's.
+server_path() {
+	local uv
+	uv="$(mise which uv 2>/dev/null)" || uv=""
+	if [ -n "$uv" ] && [ -x "$uv" ]; then
+		echo "$(dirname "$uv"):${PATH}"
+	else
+		echo "$PATH"
+	fi
+}
+
 server_start() {
 	if server_pid >/dev/null; then
 		echo "dev: already running (pid $(server_pid)); mise run dev:restart"
@@ -407,6 +423,7 @@ server_start() {
 	local tick=()
 	[ -n "${SUBSTRATE_TRIGGER_INTERVAL:-}" ] && tick=("SUBSTRATE_TRIGGER_INTERVAL=${SUBSTRATE_TRIGGER_INTERVAL}")
 	nohup env \
+		"PATH=$(server_path)" \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
