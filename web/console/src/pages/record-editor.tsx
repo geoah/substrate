@@ -47,6 +47,7 @@ import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { SectionBoundary } from "@/components/page-error"
 import { AdapterNotice } from "@/components/record/adapter-notice"
+import { InkCreate } from "@/components/ink/ink-create"
 import { CreateSheet } from "@/components/record/create-sheet"
 import { PropertyForm } from "@/components/record/property-form"
 
@@ -72,6 +73,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "@/components/ui/toast"
 import { createRecord, recordQueryOptions, putRecord } from "@/lib/api/records"
+import { inkCreation } from "@/lib/ink-record"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { ApiError, type SubstrateRecord, type KindInfo } from "@/lib/api/types"
 import { grantHints } from "@/lib/agent-grants"
@@ -175,6 +177,22 @@ function RecordEditor({
         kind={kindInfo}
         reason={locked}
         params={{ authority, pkg, name, id: record.data.id }}
+      />
+    )
+  }
+
+  // A kind whose one ink file and heading are all a create needs is drawn
+  // first: New opens drawing mode, and Save creates the record.
+  const inkFirst = mode === "create" ? inkCreation(kindInfo) : undefined
+  if (inkFirst) {
+    return (
+      <InkCreate
+        authority={authority}
+        pkg={pkg}
+        name={name}
+        kind={kindInfo}
+        ink={inkFirst.ink}
+        heading={inkFirst.heading}
       />
     )
   }

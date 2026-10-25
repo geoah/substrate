@@ -783,6 +783,18 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
   return out.length ? out : undefined
 }
 
+/** A blob's manifest (`substrate.BlobInfo`): what `PUT /blobs` answers and
+ * what a `blobref` property reads back as. The bytes are never here. `name`
+ * and `mediaType` are what the first uploader said, not facts about the
+ * bytes. */
+export interface BlobInfo {
+  digest: string
+  size: number
+  name?: string
+  mediaType?: string
+  status: "pending" | "stored" | "failed"
+}
+
 /** What a client calls one record of a kind and what it calls the
  * collection, as the kind's `label:` declares them. */
 export interface KindLabel {

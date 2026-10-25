@@ -19,6 +19,7 @@
 
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
+import { releaseHeldBlobs, restoreHeldBlobs } from "./blobs"
 import { fetchChangesPage, type HistoryPosition } from "./changes"
 import {
   CORE_PACKAGE,
@@ -682,7 +683,7 @@ export type RecordWrite = Omit<PutInput, "kind">
 /** Create one record: under a server-minted id it is `POST /api/v1/records`,
  * the body naming its `kind`; with a chosen id it is `putRecord`, which fixes
  * (kind, id) in the URL, because the POST refuses an id in the body. */
-export function createRecord(
+export async function createRecord(
   authority: string,
   pkg: string,
   name: string,
@@ -695,25 +696,31 @@ export function createRecord(
     return putRecord(authority, pkg, name, id, rest)
   }
   const body: PutInput = { kind: joinKind(authority, pkg, name), ...input }
-  return request<SubstrateRecord>("POST", RECORDS_PATH, body)
+  await restoreHeldBlobs(input.properties)
+  const saved = await request<SubstrateRecord>("POST", RECORDS_PATH, body)
+  releaseHeldBlobs(input.properties)
+  return saved
 }
 
 /** Upsert one record by id: `PUT /{authority}/{package}/{name}/{id}`. The
  * apply the YAML editor's Edit flow makes: the server MERGES the authored
  * envelope into the record and never prunes — a key the document leaves out
  * stands, and deletion is only ever the explicit delete verb. */
-export function putRecord(
+export async function putRecord(
   authority: string,
   pkg: string,
   name: string,
   id: string,
   input: RecordWrite
 ): Promise<SubstrateRecord> {
-  return request<SubstrateRecord>(
+  await restoreHeldBlobs(input.properties)
+  const saved = await request<SubstrateRecord>(
     "PUT",
     `${collectionPath(authority, pkg, name)}/${seg(id)}`,
     input
   )
+  releaseHeldBlobs(input.properties)
+  return saved
 }
 
 /** A patch write body (`substrate.PatchInput`). `ifVersion` is the CAS
@@ -734,18 +741,21 @@ export interface RecordPatch {
 /** Patch one record in place: `PATCH /{authority}/{package}/{name}/{id}`. Maps
  * merge key-wise (a null value deletes the key); omitted fields are untouched —
  * so a blank secret input simply isn't sent and the sealed value stands. */
-export function patchRecord(
+export async function patchRecord(
   authority: string,
   pkg: string,
   name: string,
   id: string,
   patch: RecordPatch
 ): Promise<SubstrateRecord> {
-  return request<SubstrateRecord>(
+  await restoreHeldBlobs(patch.properties)
+  const saved = await request<SubstrateRecord>(
     "PATCH",
     `${collectionPath(authority, pkg, name)}/${seg(id)}`,
     patch
   )
+  releaseHeldBlobs(patch.properties)
+  return saved
 }
 
 // ── the reverse read: what points at a record ───────────────────────────────

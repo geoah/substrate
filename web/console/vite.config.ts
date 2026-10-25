@@ -25,6 +25,16 @@ const authTarget = {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rolldownOptions: {
+      output: {
+        // License comments (`/*!`, `@license`) ride into the bundle: MIT and
+        // Apache-2.0 code ships with its notice, the dependencies' and the
+        // Inkidian renderer's that lib/ink.ts and lib/ink-render.ts adapt.
+        comments: { legal: true, annotation: false, jsdoc: false },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
