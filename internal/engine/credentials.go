@@ -422,8 +422,9 @@ func deriveCredentialKey(key string) ([]byte, error) {
 // the kind move does, and the OAuth teardown through the deleteSealedRowsOf
 // under it. A row its owner does not hold is an
 // ORPHAN (sealedUnheld): nothing reads it, `repository verify` names it, and
-// the GC sweep erases it (gc.go sweepUnheldSealed), which is how rows purged
-// before #236 leave.
+// the writable open (repodir.go eraseUnheldSealedAtOpen) and the GC sweep
+// (gc.go sweepUnheldSealed) erase it, which is how rows purged before #236
+// leave.
 //
 // Erasure removes the row from the live table and the file from sealed/, and
 // nothing more. The ciphertext stays in Postgres's dead tuples until VACUUM,

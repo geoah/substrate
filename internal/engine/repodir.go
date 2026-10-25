@@ -1305,7 +1305,30 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 		ds.svc.log.Warn("substrate: the changelog file was behind the table at open and was caught up",
 			"repository", ds.scope.Repository, "entries", n)
 	}
+	if err := ds.eraseUnheldSealedAtOpen(ctx); err != nil {
+		return err
+	}
 	return mirrorSealedFromTable(ctx, ds.db, fileSealedStore{}, ds.dir)
+}
+
+// eraseUnheldSealedAtOpen deletes every sealed row its owner does not hold
+// (credentials.go sealedUnheld), so the mirror after it removes their files
+// and the open leaves sealed/ with no orphan for `repository verify` or
+// `repository snapshot` to refuse (#829). Waiting for the GC sweep is not
+// enough: a snapshot runs on a stopped server, which never sweeps. It runs
+// here, with the fold complete and before the dataset serves, so no write
+// sits between inserting a sealed row and storing its ref on the owner, the
+// window sweepUnheldSealed closes with the changelog lock.
+func (ds *dataset) eraseUnheldSealedAtOpen(ctx context.Context) error {
+	res, err := ds.db.ExecContext(ctx, `DELETE FROM sealed s WHERE `+sealedUnheld)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: erase sealed rows no record holds: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n > 0 {
+		ds.svc.log.Info("substrate: the open erased sealed rows no record holds",
+			"repository", ds.scope.Repository, "rows", n)
+	}
+	return nil
 }
 
 // ownConnection dials a one-connection pool pinned to the repository, outside

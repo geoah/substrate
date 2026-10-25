@@ -74,9 +74,10 @@ func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 // (credentials.go sealedUnheld), with the row's file under sealed/. Since
 // #236 the purge erases its own record's rows, so what this finds are rows a
 // purge left before that and rows an imported copy of such a directory
-// carries. It runs on every sweep rather than once at boot because the GC
-// pass is already the erasure schedule and needs no marker to say it ran. A
-// sweep with nothing to erase costs one read of the sealed table. The delete
+// carries. The writable open erases them too (eraseUnheldSealedAtOpen), so a
+// repository opened by this binary starts with none; the sweep is what keeps
+// a long-running server clean of any left since. A sweep with nothing to
+// erase costs one read of the sealed table. The delete
 // runs under inTx's changelog lock, which every write that inserts a sealed
 // row holds until it has stored the ref on the owner, so the sweep never
 // sees a row between the insert and that write.
