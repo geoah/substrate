@@ -8,9 +8,9 @@ package engine
 //
 // The seed writes with apply semantics as the seed actor. A shipped record
 // the repository lacks is written, and one whose row differs from it is
-// refreshed, unless the owner ever wrote or deleted the record (ownerWrote's
-// rule, the human doors alone): an owner's edit and an owner's deletion
-// stand. A shipped record whose write would make the graph name a problem it
+// refreshed, unless any hand but the seed's and the engine's ever wrote or
+// deleted the record (anotherHandWrote's rule): an owner's, an agent's or a
+// bundle's edit and deletion stand. A shipped record whose write would make the graph name a problem it
 // did not name before (a spelling the owner's own unit answers, a cycle the
 // owner's factor contradicts), or take a unit from a stored value (a refresh
 // that splits two units records use, which the use guard refuses), is
@@ -98,8 +98,8 @@ type seedRow struct {
 }
 
 // readSeedRows reads every unit and conversion row q sees, and which of
-// those records the owner ever wrote or deleted (a changelog entry under a
-// human door), a purged one included.
+// those records another hand ever wrote or deleted (a changelog entry under
+// an actor shippedHands(ActorSeed) does not name), a purged one included.
 func readSeedRows(ctx context.Context, q dbx) (map[eref]seedRow, map[eref]bool, error) {
 	kinds := []string{vocabulary.KindUnit, vocabulary.KindConversion}
 	rows, err := q.QueryContext(ctx, `SELECT kind, id, props, deleted_at IS NOT NULL FROM records WHERE kind = ANY($1::text[])`, kinds)
@@ -125,13 +125,9 @@ func readSeedRows(ctx context.Context, q dbx) (map[eref]seedRow, map[eref]bool, 
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, nil, err
 	}
-	humans := make([]string, 0, len(substrate.HumanActors))
-	for a := range substrate.HumanActors {
-		humans = append(humans, string(a))
-	}
 	owned, err := q.QueryContext(ctx, `
 		SELECT DISTINCT kind, record_id FROM changelog
-		WHERE kind = ANY($1::text[]) AND actor = ANY($2::text[])`, kinds, humans)
+		WHERE kind = ANY($1::text[]) AND actor <> ALL($2::text[])`, kinds, shippedHands(substrate.ActorSeed))
 	if err != nil {
 		return nil, nil, fmt.Errorf("substrate/engine: read who wrote the units: %w", err)
 	}

@@ -266,7 +266,8 @@ func TestCreationSeedsLLMSample(t *testing.T) {
 }
 
 // A deleted seeded provider stays gone: the open catch-up is create-only,
-// including tombstones.
+// and the deletion is read from the changelog, so a collected tombstone does
+// not bring it back either.
 func TestSeededProviderDeleteIsNotResurrected(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -281,6 +282,12 @@ func TestSeededProviderDeleteIsNotResurrected(t *testing.T) {
 	}
 	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/llm/provider", "gemini", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete gemini: %v", err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/llm/provider", "gemini"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the sweep left the deleted provider's row: %v", err)
 	}
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()

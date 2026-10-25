@@ -1,10 +1,10 @@
 package catalog_test
 
 // A sample's shipped data records other than its record views (decision
-// record 0166, issue #950): the health sample's metric catalogue takes the
-// same rule through a re-import. A metric record the owner edited, trimmed or
-// deleted is left as the owner left it, and one only the closure wrote takes
-// the shipped one again.
+// records 0166 and 0189, issue #950): the health sample's metric catalogue
+// takes the same rule through a re-import. A metric record any other hand
+// edited, trimmed or deleted is left as that hand left it, and one only the
+// closure wrote takes the shipped one again.
 
 import (
 	"context"
@@ -45,8 +45,13 @@ func TestReimportKeepsAnEditedMetricRecord(t *testing.T) {
 	if _, err := ds.Delete(ctx, substrate.ActorCLI, metricKind, "health/resting_heart_rate", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the resting heart rate metric: %v", err)
 	}
-	// The closure's own write stands in for an older shipped value: no human
-	// door touched the record, so the re-import refreshes it.
+	// Every hand but the closure's own holds a record: a door the caller
+	// names, an agent's and another bundle's.
+	patch(substrate.Actor("my-import-script"), "health/ldl_cholesterol", map[string]any{"name": "LDL (script)"})
+	patch(substrate.AgentActor(homeAuthority, "llm", "substrate"), "health/hdl_cholesterol", map[string]any{"name": "HDL (agent)"})
+	patch(substrate.BundleActor(homeAuthority, "observations"), "health/triglycerides", map[string]any{"name": "TG (observations)"})
+	// The closure's own write stands in for an older shipped value: no other
+	// hand touched the record, so the re-import refreshes it.
 	patch(substrate.BundleActor(homeAuthority, "health"), "health/hrv_rmssd", map[string]any{"name": "stale"})
 
 	importSamples(t, c, ds, healthSample)
@@ -59,6 +64,15 @@ func TestReimportKeepsAnEditedMetricRecord(t *testing.T) {
 	}
 	if r, err := ds.Get(ctx, metricKind, "health/resting_heart_rate"); err == nil && r.DeletedAt == nil {
 		t.Errorf("a re-import recreated the metric the owner deleted: name = %v", r.Properties["name"])
+	}
+	for id, want := range map[string]string{
+		"health/ldl_cholesterol": "LDL (script)",
+		"health/hdl_cholesterol": "HDL (agent)",
+		"health/triglycerides":   "TG (observations)",
+	} {
+		if got := metric(id).Properties["name"]; got != want {
+			t.Errorf("a re-import overwrote the %s metric another hand wrote: name = %v, want %s", id, got, want)
+		}
 	}
 	if got := metric("health/hrv_rmssd").Properties["name"]; got == "stale" {
 		t.Error("a re-import left a metric only the closure wrote at its older value")

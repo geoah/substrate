@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-21
 decision-makers: George Antoniadis
+amended-by: 0191
 ---
 
 # 0186. Units and conversions are core records, and a value converts through the repository's graph

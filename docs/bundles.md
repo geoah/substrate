@@ -786,16 +786,18 @@ interactive clients (`api`, `console`, `substratectl`) with a 403, before the
 closure is touched: taking bundle code is a person's action.
 
 A door writes a shipped data record (a record view, a metric record, any
-record a closure ships beside its declarations) only where the repository's
-owner never wrote or deleted the one at its id: the record's changelog holds
-no entry under `api`, `console` or `substratectl`. An owner's edit, a property
-the owner removed and a record the owner deleted all stay as the owner left
-them through every re-import and upgrade, and a record only the closure and
-the engine wrote takes the newer shipped one. Triggers are the exception:
-they name the callables the same closure ships, so the door always writes
-them. To take a newer shipped record over an edited one, apply the shipped
-document by hand
-([0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)).
+record a closure ships beside its declarations) only where no other hand ever
+wrote or deleted the one at its id: every entry in the record's changelog is
+the closure's own (`bundle:<authority>:<package>`), the core seed's
+(`bundle:core`) or the engine's (`substrate`). An edit, a removed property
+and a deletion stay as they were left through every re-import and upgrade,
+whoever made them: the owner at any door they name, an agent, a function or
+another bundle. A record only the closure and the engine wrote takes the
+newer shipped one. Triggers are the exception: they name the callables the
+same closure ships, so the door always writes them. To take a newer shipped
+record over an edited one, apply the shipped document by hand
+([0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md),
+[0191](decisions/0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md)).
 An imported record carries the repository's authority, while the shipped
 file still names `samples.substrate.reamde.dev` in its ids and references.
 Applied unchanged, the file writes records of a copy the repository may not

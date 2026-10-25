@@ -289,9 +289,9 @@ repository runs the same seed again, before anything that reads a quantity:
 - a shipped record the repository lacks is written;
 - a shipped record only the seed has written is refreshed to the shipped
   version;
-- a record a person has written or deleted (through the API, the console or
-  `substratectl`) is left as they left it, so an edited unit stops receiving
-  shipped corrections;
+- a record any other hand has written or deleted (a person at any door, an
+  agent, a function, a bundle) is left as it was left, a collected tombstone
+  included, so an edited unit stops receiving shipped corrections;
 - a shipped record that would contradict the repository's own graph (a
   spelling another unit answers, a cycle with another answer, a split of used
   units) is skipped and logged. The open never fails for one.

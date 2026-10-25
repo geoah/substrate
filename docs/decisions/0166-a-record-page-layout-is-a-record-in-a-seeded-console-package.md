@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-18
 decision-makers: George Antoniadis
+amended-by: 0191
 ---
 
 # 0166. A record page's layout is a record in a seeded console package
