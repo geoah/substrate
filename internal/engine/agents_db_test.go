@@ -1843,4 +1843,76 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 			t.Fatalf("sub-agent thread = %v (%q), want error naming the insert", children[0]["status"], reason)
 		}
 	})
+	// The parent's deadline ends while its sub-agent's reply is being
+	// written: the child's settle must not run on the context that deadline
+	// ended.
+	t.Run("parent deadline", func(t *testing.T) {
+		t.Parallel()
+		ds, fake := openAgentDataset(t)
+		const pkg = "hurry.test.dev/hurry"
+		agent := func(name string, data map[string]any) map[string]any {
+			data["description"] = name + " under test"
+			data["prompt"] = "You are " + name + "."
+			return vocabulary.AgentManifest(pkg, name, data)
+		}
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			agent("hurried", map[string]any{
+				"provider": "rootllm", "model": "root",
+				"subagents": []any{pkg + "/errand"},
+				"budgets":   map[string]any{"deadlineSeconds": 1},
+			}),
+			agent("errand", map[string]any{"provider": "subllm", "model": "sub"}),
+		}); err != nil {
+			t.Fatalf("install %s: %v", pkg, err)
+		}
+		var once sync.Once
+		ds.agentRowWrite = func(ctx context.Context, props map[string]any) error {
+			var err error
+			if props["role"] == "assistant" && props["content"] == "the summary" {
+				once.Do(func() {
+					select {
+					case <-ctx.Done():
+					case <-time.After(1500 * time.Millisecond):
+					}
+					err = errors.New("the insert was refused")
+				})
+			}
+			return err
+		}
+		fake.script("root", fakeTurn{calls: []fakeCall{{"errand", `{"input":"summarize"}`}}})
+		fake.script("sub", fakeTurn{content: "the summary"})
+		res, err := ds.CallAgent(ctx, pkg+"/hurried", "go")
+		if err != nil {
+			t.Fatalf("call: %v", err)
+		}
+		if res.Status != threadOverBudget {
+			t.Fatalf("root = %v (%v), want overbudget", res.Status, res.Reason)
+		}
+		rows, err := ds.db.QueryContext(ctx, `
+			SELECT props->>'status', coalesce(props->>'reason', '') FROM records
+			WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2`,
+			typeThread, vocabulary.RecordPath(kindAgent, pkg+"/errand"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var n int
+		for rows.Next() {
+			n++
+			var status, reason string
+			if err := rows.Scan(&status, &reason); err != nil {
+				t.Fatal(err)
+			}
+			if status != threadError || !strings.Contains(reason, "message write failed: the insert was refused") {
+				t.Fatalf("sub-agent thread = %v (%q), want error naming the insert", status, reason)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("errand threads: %d", n)
+		}
+	})
 }
