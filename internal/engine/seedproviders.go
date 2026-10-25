@@ -11,9 +11,11 @@ import (
 
 // defaultLLMProviders are the three vendor rows a repository is born with,
 // keyless. Dispatch refuses a row until its owner writes apiKey; the seed
-// cannot invent one. Create-only, including tombstones: an owner who deleted
-// a row does not see it come back on the next open, and an owner who edited
-// one is not overwritten.
+// cannot invent one. Create-only, and an absent row is written only where no
+// hand but the seed's and the engine's ever wrote it (anotherHandWrote): an
+// owner who deleted a row does not see it come back on the next open, after
+// the sweep collected the tombstone too, and an owner who edited one is not
+// overwritten.
 //
 // Shipped sample agents name `openai`. The other two rows are the same shape
 // for the other vendors, so keying one is a write to that row and nothing else.
@@ -93,6 +95,13 @@ func (t *txn) seedDefaultProviders() error {
 		if existing != nil {
 			continue
 		}
+		held, err := t.anotherHandWrote(eref{Kind: typeProvider, ID: p.id}, substrate.ActorSystem)
+		if err != nil {
+			return err
+		}
+		if held {
+			continue
+		}
 		if _, err := t.put(substrate.PutInput{Kind: typeProvider, ID: p.id, Properties: p.props}); err != nil {
 			return fmt.Errorf("substrate/engine: seed llm/provider %s: %w", p.id, err)
 		}
@@ -101,7 +110,8 @@ func (t *txn) seedDefaultProviders() error {
 }
 
 // ensureDefaultProviders writes the three vendor rows if this repository
-// does not already hold them (live or tombstoned). Creation writes them in
+// does not already hold them (live or tombstoned) and no other hand wrote
+// them (seedDefaultProviders decides, under the lock). Creation writes them in
 // the seed transaction; this is the catch-up for a repository born before
 // the seed existed.
 func (ds *dataset) ensureDefaultProviders(ctx context.Context) error {
@@ -113,7 +123,17 @@ func (ds *dataset) ensureDefaultProviders(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if row == nil {
+		if row != nil {
+			continue
+		}
+		// Read before the transaction, so an open after the sweep collected
+		// a deleted row takes no changelog lock to find nothing to write.
+		var held bool
+		if err := ds.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`,
+			p.id, typeProvider, shippedHands(substrate.ActorSystem)).Scan(&held); err != nil {
+			return err
+		}
+		if !held {
 			return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 				return t.seedDefaultProviders()
 			})

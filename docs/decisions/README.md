@@ -349,3 +349,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0188](0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md) | The Observations page folds a metric's sources into one row, and keeps channels apart | proposed |
 | [0189](0189-the-observation-source-kind-stays-in-the-observations-sample.md) | The observation source kind stays in the observations sample | accepted |
 | [0190](0190-a-blobref-declares-the-media-types-of-its-bytes.md) | A blobref declares the media types of its bytes | accepted |
+| [0191](0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md) | A shipped record is held by any hand but the one that ships it | accepted |

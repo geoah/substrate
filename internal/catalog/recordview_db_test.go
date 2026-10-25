@@ -4,9 +4,9 @@ package catalog_test
 // view lands at an id under the repository's own authority, naming the
 // repository's own kind and metric records, because the import rehomes its
 // id, its `appliesTo` and its metric references with everything else; and a
-// re-import writes a shipped view only where the owner never wrote or deleted
-// the one at its id, so the owner's edit and the owner's deletion both
-// survive.
+// re-import writes a shipped view only where no hand but its shipper wrote or
+// deleted the one at its id (record 0191), so the owner's edit and the
+// owner's deletion both survive.
 
 import (
 	"bytes"

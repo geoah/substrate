@@ -286,8 +286,9 @@ func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, er
 // document that fails to admit — a malformed trigger, an unresolvable callable,
 // a failed write — rolls the schema apply back with it, so a failed install
 // never leaves a live half-installed closure. The data documents
-// are UPSERTS: a re-install refreshes the wiring in place, except a record the
-// owner wrote or deleted (ownerWrote), which it leaves as the owner left it. The transaction's
+// are UPSERTS: a re-install refreshes the wiring in place, except a record
+// another hand wrote or deleted (anotherHandWrote), which it leaves as that
+// hand left it. The transaction's
 // declarations are the candidate registry, so a data document may name a kind,
 // a mapping or a callable the same closure installs.
 func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
@@ -319,7 +320,7 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 					}
 				}
 				if in.Kind != typeTrigger {
-					held, err := t.ownerWrote(eref{Kind: in.Kind, ID: in.ID})
+					held, err := t.anotherHandWrote(eref{Kind: in.Kind, ID: in.ID}, actor)
 					if err != nil {
 						return fmt.Errorf("shipped record %s: %w", in.ID, err)
 					}
@@ -346,29 +347,36 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	return out, nil
 }
 
-// ownerWrote reports whether the repository's owner ever wrote or deleted
-// the record at ref: whether its changelog holds an entry under one of the
-// human doors (substrate.HumanActors). An install, import or upgrade writes a
-// shipped data record only where the owner never did, so an edit, a removed
-// property and a deletion all survive it, and a record only the shipped
-// closure and the engine wrote takes the newer shipped one (record 0166).
-// Delivery wiring (a trigger) is exempt at the caller: it names the callables
-// the same closure ships, so it moves with them. The check runs under the
-// record's advisory lock, so a concurrent writer of the same id serializes
-// behind it.
-func (t *txn) ownerWrote(ref eref) (bool, error) {
+// anotherHandWrote reports whether a hand other than the shipping ones ever
+// wrote or deleted the record at ref: whether its changelog, the purged
+// record's included, holds an entry under any actor shippedHands(shipper)
+// does not name. An install, import, upgrade or seed writes a shipped data
+// record only where none did, so an edit, a removed property and a deletion
+// survive it whoever made them (the owner at any door they name, an agent, a
+// function, another bundle), and a record only the shipping hands wrote takes
+// the newer shipped one (records 0166 and 0191). Delivery wiring (a trigger)
+// is exempt at the caller: it names the callables the same closure ships, so
+// it moves with them. The check runs under the record's advisory lock, so a
+// concurrent writer of the same id serializes behind it.
+func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) {
 	at, err := t.lockCanonical(ref)
 	if err != nil {
 		return false, err
 	}
-	humans := make([]string, 0, len(substrate.HumanActors))
-	for a := range substrate.HumanActors {
-		humans = append(humans, string(a))
-	}
 	var wrote bool
-	err = t.row(`SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor = ANY($3))`,
-		at.ID, at.Kind, humans).Scan(&wrote)
+	err = t.row(`SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`,
+		at.ID, at.Kind, shippedHands(shipper)).Scan(&wrote)
 	return wrote, err
+}
+
+// shippedHands are the actors whose writes leave a shipped record the
+// shipper's to replace: the shipper, the core seed and the engine. Every one
+// is reserved (substrate.ReservedActor), so no request can claim one and pass
+// its edit off as the shipped record's own. The shipper's own sync writes
+// under the shipper's actor and so leaves the record replaceable, while its
+// functions and agents write under their own actors and hold it.
+func shippedHands(shipper substrate.Actor) []string {
+	return []string{string(shipper), string(substrate.ActorSeed), string(substrate.ActorSystem)}
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the

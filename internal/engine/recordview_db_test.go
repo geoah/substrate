@@ -816,7 +816,8 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 // A closure's shipped data record replaces the stored one while the owner
 // never wrote it, and stays as the owner left it once the owner did: an edit,
 // a removed property and a deletion all survive the upgrade (record 0166).
-// Another bundle's or the engine's write is not the owner's.
+// The engine's write is a shipping hand's; another bundle's holds the
+// record (record 0191).
 func TestReinstallReplacesAnUneditedViewAndKeepsTheOwnersOne(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
