@@ -16,8 +16,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -566,6 +568,398 @@ func TestFilterByADecimalRangeComparesNumerically(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("filtered to %v, want %v", got, want)
+		}
+	}
+}
+
+const kindlessPackage = "kindless.example.substrate.reamde.dev/kindless"
+
+// A filter naming no kind compares a typed property by value where every kind
+// declaring it agrees, as a quantity's always has: {"gte": "10"} over decimals
+// used to compare text, so "9.50" passed and "100.1" did not. Every name is
+// one no seeded kind declares, so the kindless read sees these rows alone.
+func TestKindlessFilterComparesEveryTypedPropertyByValue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	kind := func(name string, props map[string]any) map[string]any {
+		return vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": name},
+			map[string]any{"properties": props})
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		kind("tally", map[string]any{"tallyCount": map[string]any{"type": "int"}}),
+		kind("ledger", map[string]any{"ledgerBalance": map[string]any{"type": "decimal"}}),
+		kind("fee", map[string]any{"feeCharge": map[string]any{"type": "money"}}),
+		kind("alarm", map[string]any{"alarmAt": map[string]any{"type": "datetime"}}),
+		// One name, an int on one kind and a decimal on the other: both numbers.
+		kind("gauge", map[string]any{"gaugeReading": map[string]any{"type": "int"}}),
+		kind("meter", map[string]any{"gaugeReading": map[string]any{"type": "decimal"}}),
+		// One name, an int on one kind and a string on the other: still text.
+		kind("badge", map[string]any{"badgeCode": map[string]any{"type": "int"}}),
+		kind("sticker", map[string]any{"badgeCode": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	put := func(kind, property string, values ...any) {
+		for _, v := range values {
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: kindlessPackage + "/" + kind, Properties: map[string]any{property: v},
+			})
+		}
+	}
+	put("tally", "tallyCount", 9, 100, 2, 10)
+	put("ledger", "ledgerBalance", "9.50", "100.1", "2", "10.05")
+	put("fee", "feeCharge", moneyValue(950, "EUR"), moneyValue(10010, "EUR"), moneyValue(200, "EUR"), moneyValue(1005, "EUR"), moneyValue(5000, "USD"))
+	put("alarm", "alarmAt", firedAtChronological[3], firedAtChronological[0], firedAtChronological[2], firedAtChronological[1])
+	put("gauge", "gaugeReading", 9, 100)
+	put("meter", "gaugeReading", "2", "10.5")
+	put("badge", "badgeCode", 9, 10)
+	put("sticker", "badgeCode", "2")
+
+	for _, tc := range []struct {
+		name     string
+		property string
+		cond     substrate.Cond
+		want     []string
+	}{
+		{"an int", "tallyCount", substrate.Cond{Gte: 10}, []string{"10", "100"}},
+		{"a decimal", "ledgerBalance", substrate.Cond{Gte: "10"}, []string{"10.05", "100.1"}},
+		{"a decimal range", "ledgerBalance", substrate.Cond{Gt: "2", Lt: "10"}, []string{"9.50"}},
+		{"money within its currency", "feeCharge", substrate.Cond{Gte: moneyValue(1000, "EUR")}, []string{"10.05 EUR", "100.10 EUR"}},
+		{"a datetime", "alarmAt", substrate.Cond{Gte: firedAtChronological[1]}, firedAtChronological[1:]},
+		{"an int and a decimal", "gaugeReading", substrate.Cond{Gte: "10"}, []string{"10.5", "100"}},
+		{"an int and a string compare as text", "badgeCode", substrate.Cond{Gte: "10"}, []string{"10", "2", "9"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			page, err := ds.List(ctx, substrate.Query{
+				Filter:  substrate.Filter{Properties: map[string]substrate.Cond{tc.property: tc.cond}},
+				OrderBy: []substrate.Order{{Property: tc.property}},
+				First:   50,
+			})
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			got := make([]string, 0, len(page.Records))
+			for _, r := range page.Records {
+				v := r.Properties[tc.property]
+				if m, ok := v.(map[string]any); ok {
+					amount, _ := m["amount"].(json.Number)
+					if amount == "" {
+						amount = json.Number(fmt.Sprint(m["amount"]))
+					}
+					n, _ := amount.Int64()
+					v = fmt.Sprintf("%d.%02d %v", n/100, n%100, m["currency"])
+				}
+				got = append(got, fmt.Sprint(v))
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("filtered to %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A kindless read scans rows no loaded declaration speaks for: a package
+// quarantined at open is out of the registry, so its kinds cannot vote on a
+// name, and its rows still sit in the table. Its "unrated" at a name every
+// loaded kind declares an int must not match, and must not fail the cast for
+// the whole read, filtered or ordered.
+func TestKindlessTypedReadSkipsRowsNoLoadedKindSpeaksFor(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := pfOpener(t, dsn, t.TempDir())
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const parked = "parked.example.substrate.reamde.dev/parked"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "review"}, map[string]any{"properties": map[string]any{
+			"reviewScore": map[string]any{"type": "int"},
+		}}),
+		vocabulary.PackageManifest(parked, 0),
+		vocabulary.KindManifest(parked, map[string]any{"singular": "critique"}, map[string]any{"properties": map[string]any{
+			"reviewScore": map[string]any{"type": "string"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, v := range []any{9, 12} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/review", Properties: map[string]any{"reviewScore": v}})
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: parked + "/critique", Properties: map[string]any{"reviewScore": "unrated"}})
+	// A key no dialect reserves quarantines the package at the next open.
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{properties,reviewScore,unheardOf}', 'true') WHERE id = $1`, parked+"/critique"); err != nil {
+		t.Fatalf("corrupt the stored declaration: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := ds2.Put(ctx, owner, substrate.PutInput{Kind: parked + "/critique", Properties: map[string]any{"reviewScore": "7"}}); err == nil {
+		t.Fatal("the corrupted package should be quarantined, its kind out of the registry")
+	}
+	page, err := ds2.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"reviewScore": {Gte: 10}}},
+		First:  50,
+	})
+	if err != nil {
+		t.Fatalf("filter: %v", err)
+	}
+	if len(page.Records) != 1 || fmt.Sprint(page.Records[0].Properties["reviewScore"]) != "12" {
+		t.Fatalf("filtered to %v, want the one review scoring 12", page.Records)
+	}
+	page, err = ds2.List(ctx, substrate.Query{
+		Filter:  substrate.Filter{Properties: map[string]substrate.Cond{"reviewScore": {Exists: new(true)}}},
+		OrderBy: []substrate.Order{{Property: "reviewScore"}},
+		First:   50,
+	})
+	if err != nil {
+		t.Fatalf("order: %v", err)
+	}
+	got := make([]string, 0, len(page.Records))
+	for _, r := range page.Records {
+		got = append(got, fmt.Sprint(r.Properties["reviewScore"]))
+	}
+	if strings.Join(got, ",") != "9,12,unrated" {
+		t.Fatalf("ordered %v, want 9,12 then the row no loaded kind speaks for", got)
+	}
+}
+
+// A stored date is midnight UTC, the instant ParseInstant reads the same
+// spelling as, whatever the session's timezone: cast bare, Postgres read it in
+// the session's zone, so under New York "2026-10-24" was 04:00Z and failed a
+// bound of 03:00Z.
+func TestADateComparesAsMidnightUTCInAnySessionTimezone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone = %L', current_database(), 'America/New_York'); END $$`); err != nil {
+		t.Fatalf("set the database's timezone: %v", err)
+	}
+	svc := pfOpener(t, dsn, t.TempDir())()
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "deadline"}, map[string]any{"properties": map[string]any{
+			"deadlineOn": map[string]any{"type": "date"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kind: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/deadline", Properties: map[string]any{"deadlineOn": "2026-10-24"}})
+	for _, kinds := range [][]string{nil, {kindlessPackage + "/deadline"}} {
+		for _, cond := range []substrate.Cond{{Lt: "2026-10-24T03:00:00Z"}, {Eq: "2026-10-24T00:00:00Z"}} {
+			page, err := ds.List(ctx, substrate.Query{
+				Filter: substrate.Filter{Kinds: kinds, Properties: map[string]substrate.Cond{"deadlineOn": cond}},
+				First:  50,
+			})
+			if err != nil {
+				t.Fatalf("kinds %v, %+v: %v", kinds, cond, err)
+			}
+			if len(page.Records) != 1 {
+				t.Errorf("kinds %v, %+v matched %d rows, want the date", kinds, cond, len(page.Records))
+			}
+		}
+	}
+}
+
+// A money operand on a name the kinds disagree about has nothing to compare
+// against: as text it is Go's rendering of a map, and it matched whatever
+// sorted after "map[". It is refused the way a quantity's is.
+func TestKindlessMoneyOperandIsRefusedWhereTheKindsDisagree(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "fee"}, map[string]any{"properties": map[string]any{
+			"feeCharge": map[string]any{"type": "money"},
+		}}),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "memo"}, map[string]any{"properties": map[string]any{
+			"feeCharge": map[string]any{"type": "string"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/memo", Properties: map[string]any{"feeCharge": "waived"}})
+	_, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"feeCharge": {Gte: moneyValue(1000, "EUR")}}},
+		First:  50,
+	})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "filter.kinds") {
+		t.Fatalf("a money operand over a name the kinds disagree about: %v, want a refusal naming filter.kinds", err)
+	}
+}
+
+// Every value the write path accepts reaches a typed read whole: an offset
+// carries a written 9999 into a five-digit year the timestamptz cast reads,
+// and `decimal` is unbounded. Both compare by value, in a read naming the kind
+// and in one naming none. An offset also carried a written 0001 into year 0,
+// which the cast refuses, before the write path held the UTC year to the
+// range; a row stored then reads as no instant (out of every range, last in
+// an ascending order) instead of failing the read.
+func TestATypedReadComparesEveryValueTheWritePathAccepts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, dsn := newDatasetWithDSN(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "extreme"}, map[string]any{"properties": map[string]any{
+			"extremeAt":   map[string]any{"type": "datetime"},
+			"extremeSize": map[string]any{"type": "decimal"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kind: %v", err)
+	}
+	put := func(property string, v any) string {
+		r := mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/extreme", Properties: map[string]any{property: v}})
+		return fmt.Sprint(r.Properties[property])
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: kindlessPackage + "/extreme", Properties: map[string]any{"extremeAt": "0001-01-01T00:30:00+01:00"},
+	}); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("an offset carrying 0001 into year 0: %v, want a validation refusal", err)
+	}
+	const yearZero = "0000-12-31T23:30:00Z"
+	r := mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/extreme", Properties: map[string]any{"extremeAt": "2000-01-01T00:00:00Z"}})
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{extremeAt}', to_jsonb($1::text)) WHERE kind = $2 AND id = $3`,
+		yearZero, kindlessPackage+"/extreme", r.ID); err != nil {
+		t.Fatalf("store the year-0 instant the write path once accepted: %v", err)
+	}
+	yearTenThousand := put("extremeAt", "9999-12-31T23:30:00-01:00")
+	if yearTenThousand != "10000-01-01T00:30:00Z" {
+		t.Fatalf("stored %q; the cases below assume the write path's normalization", yearTenThousand)
+	}
+	put("extremeAt", "9999-12-31T22:00:00Z")
+	put("extremeAt", "2026-10-25T00:00:00Z")
+	long := func(lead string) string { return lead + strings.Repeat("0", 1199) }
+	put("extremeSize", long("1"))
+	put("extremeSize", long("2"))
+	put("extremeSize", "5")
+
+	for _, kinds := range [][]string{{kindlessPackage + "/extreme"}, nil} {
+		for _, tc := range []struct {
+			name     string
+			property string
+			cond     substrate.Cond
+			want     []string
+		}{
+			{"a five-digit year is in range", "extremeAt", substrate.Cond{Gte: "9999-12-31T23:00:00Z"}, []string{yearTenThousand}},
+			{"year 0 is in no range", "extremeAt", substrate.Cond{Lt: "2026-01-01T00:00:00Z"}, nil},
+			{
+				"an order puts year 0 last", "extremeAt",
+				substrate.Cond{Exists: new(true)},
+				[]string{"2026-10-25T00:00:00Z", "9999-12-31T22:00:00Z", yearTenThousand, yearZero},
+			},
+			{"a 1,200-digit decimal is in range", "extremeSize", substrate.Cond{Gt: "100"}, []string{long("1"), long("2")}},
+			{"a 1,200-digit decimal bounds a range", "extremeSize", substrate.Cond{Gt: "6", Lt: long("2")}, []string{long("1")}},
+		} {
+			page, err := ds.List(ctx, substrate.Query{
+				Filter:  substrate.Filter{Kinds: kinds, Properties: map[string]substrate.Cond{tc.property: tc.cond}},
+				OrderBy: []substrate.Order{{Property: tc.property}},
+				First:   50,
+			})
+			if err != nil {
+				t.Errorf("kinds %v, %s: %v", kinds, tc.name, err)
+				continue
+			}
+			var got []string
+			for _, r := range page.Records {
+				got = append(got, fmt.Sprint(r.Properties[tc.property]))
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("kinds %v, %s: read %d rows %.80v, want %d %.80v", kinds, tc.name, len(got), got, len(tc.want), tc.want)
+			}
+		}
+	}
+}
+
+// A kindless money filter scans rows no loaded declaration speaks for, and a
+// quarantined package's row is not held to the money grammar: an amount that
+// is no number, or one with more digits than numeric holds, reads as no
+// value instead of failing the cast for the whole read, filtered or ordered.
+func TestKindlessMoneyFilterSkipsAnAmountNumericRefuses(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := pfOpener(t, dsn, t.TempDir())
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const parked = "parked.example.substrate.reamde.dev/parked"
+	fee := map[string]any{"properties": map[string]any{"feeCharge": map[string]any{"type": "money"}}}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "fee"}, fee),
+		vocabulary.PackageManifest(parked, 0),
+		vocabulary.KindManifest(parked, map[string]any{"singular": "levy"}, fee),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, amount := range []int64{900, 1200} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/fee", Properties: map[string]any{"feeCharge": moneyValue(amount, "EUR")}})
+	}
+	raw := rawDB(t, dsn)
+	for _, amount := range []string{"n/a", strings.Repeat("9", 140000)} {
+		r := mustPut(t, ds, owner, substrate.PutInput{Kind: parked + "/levy", Properties: map[string]any{"feeCharge": moneyValue(1, "EUR")}})
+		if _, err := raw.ExecContext(ctx,
+			`UPDATE records SET props = jsonb_set(props, '{feeCharge,amount}', to_jsonb($1::text)) WHERE kind = $2 AND id = $3`,
+			amount, parked+"/levy", r.ID); err != nil {
+			t.Fatalf("write the amount numeric refuses: %v", err)
+		}
+	}
+	// A key no dialect reserves quarantines the package at the next open.
+	if _, err := raw.ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{properties,feeCharge,unheardOf}', 'true') WHERE id = $1`, parked+"/levy"); err != nil {
+		t.Fatalf("corrupt the stored declaration: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, order := range [][]substrate.Order{nil, {{Property: "feeCharge"}}} {
+		page, err := ds2.List(ctx, substrate.Query{
+			Filter:  substrate.Filter{Properties: map[string]substrate.Cond{"feeCharge": {Gte: moneyValue(1000, "EUR")}}},
+			OrderBy: order,
+			First:   50,
+		})
+		if err != nil {
+			t.Fatalf("order %v: %v", order, err)
+		}
+		if len(page.Records) != 1 || page.Records[0].Kind != kindlessPackage+"/fee" {
+			t.Fatalf("order %v: filtered to %d records, want the one fee of 12.00 EUR", order, len(page.Records))
 		}
 	}
 }

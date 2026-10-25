@@ -296,6 +296,7 @@ func TestCoerceDatetimeStaysInPostgresRange(t *testing.T) {
 	}{
 		{dt, "0000-01-01T00:00:00Z", "no year zero"},
 		{dt, "0000-12-31T23:59:59Z", "no year zero"},
+		{dt, "0001-01-01T00:30:00+01:00", "no year zero"},
 		{date, "0000-01-01", "no year zero"},
 	} {
 		if _, err := coerceScalar(tc.p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {

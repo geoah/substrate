@@ -37,9 +37,11 @@ const (
 // (condJSON's range filters, orderExpr's ordering), so a single stored instant
 // outside the range fails the whole collection listing rather than its own row.
 // Year 0 is the reachable case: `time.Parse` takes "0000-01-01T00:00:00Z", the
-// numeric bound admits it, and Postgres has no year zero at all.
+// numeric bound admits it, and Postgres has no year zero at all. The year
+// is read in UTC, the spelling the value is stored in: an offset carries a
+// written "0001-01-01T00:30:00+01:00" into year 0.
 func CheckInstantRange(ts time.Time) error {
-	switch y := ts.Year(); {
+	switch y := ts.UTC().Year(); {
 	case y == 0:
 		return fmt.Errorf("year 0000 is not an instant Postgres stores: there is no year zero, and the range is 4713 BC to 294276 AD")
 	case y < pgMinYear || y > pgMaxYear:

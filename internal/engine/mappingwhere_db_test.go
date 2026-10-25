@@ -39,6 +39,7 @@ func prManifest() enginetest.Manifest {
 						"author":  map[string]any{"type": "email"},
 						"state":   map[string]any{"type": "enum", "values": []any{"open", "closed"}},
 						"reviews": map[string]any{"type": "int"},
+						"size":    map[string]any{"type": "decimal"},
 						// A declared name the filter grammar reads as the
 						// record's own column, as the GitHub mirrors declare.
 						"updatedAt": map[string]any{"type": "datetime"},
@@ -124,6 +125,38 @@ func TestAMappingWhereDecidesWhichSourcesProject(t *testing.T) {
 	reopened := syncPR(t, ds, "pr1", "open")
 	if got := mustGet(t, ds, typePerson, personOf(t, ds, reopened)); got.Properties["name"] != "Review pr1" {
 		t.Fatalf("a reopened pull request did not project: %v", got.Properties)
+	}
+}
+
+// A where asks of the row as bound parameters, not stored columns, and
+// `decimal` is unbounded on write, so a value past numeric's 131072 integer
+// digits reaches it. A custom plan folds an immutable cast of a constant
+// before the stable guard runs: the value reads as none, and the write that
+// carries it succeeds rather than failing on the cast.
+func TestAMappingWhereReadsADecimalNumericRefuses(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	installSources(t, ds, []enginetest.Manifest{prManifest()},
+		[]map[string]any{prMapping(map[string]any{"size": map[string]any{"gt": "0"}})})
+
+	for _, tc := range []struct {
+		id, size string
+		covered  bool
+	}{
+		{"pr1", strings.Repeat("9", 131073), false},
+		{"pr2", "-1", false},
+		{"pr3", "12.5", true},
+	} {
+		r, err := ds.Put(context.Background(), prsync, substrate.PutInput{
+			Kind: typePR, ID: tc.id,
+			Properties: map[string]any{"heading": "Review " + tc.id, "author": tc.id + "@example.com", "size": tc.size},
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.id, err)
+		}
+		if got := refPathValue(mustGet(t, ds, typePR, r.ID), "person") != ""; got != tc.covered {
+			t.Errorf("%s: projected %v, want %v", tc.id, got, tc.covered)
+		}
 	}
 }
 

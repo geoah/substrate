@@ -894,7 +894,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		}
 	}
 	for _, name := range sortedKeys(f.Labels) {
-		if err := condJSON(b, `labels`, name, f.Labels[name], ""); err != nil {
+		if err := condJSON(b, `labels`, name, f.Labels[name], "", nil); err != nil {
 			return nil, err
 		}
 	}
@@ -995,6 +995,13 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 			return fmt.Errorf("%w: %s is a quantity on some kinds and not on others: name the kinds to compare in filter.kinds",
 				substrate.ErrValidation, name)
 		}
+		if typed, _ := ds.kindlessDatatype(name); typed != vocabulary.DatatypeMoney && slices.ContainsFunc(ds.registry().Kinds(), func(t *vocabulary.Kind) bool {
+			p, ok := t.Prop(name)
+			return ok && p.Datatype == vocabulary.DatatypeMoney
+		}) {
+			return fmt.Errorf("%w: %s is money on some kinds and not on others: name the kinds to compare in filter.kinds",
+				substrate.ErrValidation, name)
+		}
 	}
 	// A state property filters like any other property; only its STORAGE is
 	// the states column.
@@ -1002,7 +1009,7 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		if c.Match != "" {
 			return fmt.Errorf("%w: %s is a state — match needs a text property, use eq or in", substrate.ErrValidation, name)
 		}
-		return condJSON(b, `states`, name, c, vocabulary.DatatypeString)
+		return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil)
 	}
 	if ds.sensitiveProp(types, name) {
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
@@ -1029,6 +1036,10 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		}
 	}
 	kind := vocabulary.Datatype("")
+	var declaring []string
+	if len(types) == 0 {
+		kind, declaring = ds.kindlessDatatype(name)
+	}
 	for _, t := range types {
 		if p, ok := t.Prop(name); ok {
 			kind = p.Datatype
@@ -1047,7 +1058,51 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 	if kind == vocabulary.DatatypeQuantity {
 		return ds.condQuantity(ctx, x, b, types, name, c)
 	}
-	return condJSON(b, `props`, name, c, kind)
+	return condJSON(b, `props`, name, c, kind, declaring)
+}
+
+// kindlessDatatype is the datatype a filter naming no kind compares `name`
+// as: the one every loaded kind declaring it agrees on, scalar and unkeyed,
+// under numericProp's every-not-any rule. The first declaration cannot decide
+// it the way it does over named kinds, because the read spans every kind, and
+// a cast one kind's text rows would fail must not run. An int, a float and a
+// decimal agree as a number, compared through the decimal cast, which reads
+// all three exactly; a datetime and a date agree as an instant. Any other
+// disagreement is text, as before. kinds is the loaded kinds declaring the
+// name, the only rows the vote speaks for: a quarantined package's rows are
+// still in the table, and its declarations are not in the registry.
+func (ds *dataset) kindlessDatatype(name string) (_ vocabulary.Datatype, kinds []string) {
+	numeric := func(d vocabulary.Datatype) bool {
+		return d == vocabulary.DatatypeInt || d == vocabulary.DatatypeFloat || d == vocabulary.DatatypeDecimal
+	}
+	var out vocabulary.Datatype
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || p.Keyed {
+			return "", nil
+		}
+		kinds = append(kinds, t.Identity)
+		d := p.Datatype
+		if d == vocabulary.DatatypeDate {
+			d = vocabulary.DatatypeDatetime
+		}
+		switch {
+		case out == "", out == d:
+			out = d
+		case numeric(out) && numeric(d):
+			out = vocabulary.DatatypeDecimal
+		default:
+			return "", nil
+		}
+	}
+	switch {
+	case numeric(out), out == vocabulary.DatatypeMoney, out == vocabulary.DatatypeDatetime, out == vocabulary.DatatypeBool:
+		return out, kinds
+	}
+	return "", nil
 }
 
 // moneyValueSQL is the exact number a stored money value at `expr` (a jsonb
@@ -1057,10 +1112,22 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 // declares money may be another kind's string, and the cast must not fail
 // that kind's rows.
 func moneyValueSQL(expr string) string {
-	return `(CASE WHEN jsonb_typeof(` + expr + `) = 'object'` +
-		` AND (` + expr + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
-		` THEN ((` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
-		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + `)::numeric END)`
+	return `(CASE WHEN ` + moneyAmountValidSQL(expr) +
+		` THEN (` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
+		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + ` END)::numeric`
+}
+
+// moneyAmountValidSQL holds when the money value at `expr` carries an amount
+// numeric reads: the pattern is the amount's grammar, and pg_input_is_valid
+// the cast's range, which a quarantined or hand-restored row is not held to.
+// It belongs in a CASE's WHEN, and the cast goes on the CASE's result, never
+// inside its THEN: where the value is a parameter (a mapping's where asks of a
+// row it has not stored), a custom plan folds an immutable cast of a constant
+// before the stable guard runs, and a THEN's cast fails the statement.
+func moneyAmountValidSQL(expr string) string {
+	amount := `(` + expr + `->>'` + vocabulary.MoneyAmount + `')`
+	return `jsonb_typeof(` + expr + `) = 'object' AND ` + amount + ` ~ '^-?[0-9]+$'` +
+		` AND pg_input_is_valid(` + amount + `, 'numeric')`
 }
 
 // currencyDecimalsSQL is CurrencyDecimals in SQL: the minor unit of the code
@@ -1099,10 +1166,13 @@ func condMoney(b *builder, key string, c substrate.Cond) error {
 			return "", fmt.Errorf("%w: %s compares against a money value: %w", substrate.ErrValidation, key, err)
 		}
 		mv := m.(map[string]any)
+		// The CASE, not an AND beside the comparison, keeps the cast off an
+		// amount numeric refuses: Postgres may evaluate a WHERE's conjuncts in
+		// any order, and a kindless read reaches rows no money declaration
+		// speaks for.
 		return `(` + v + `->>'` + vocabulary.MoneyCurrency + `') = ` + b.arg(mv[vocabulary.MoneyCurrency]) +
-			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
-			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `')::numeric ` + op + ` ` +
-			b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
+			` AND (CASE WHEN ` + moneyAmountValidSQL(v) + ` THEN (` + v + `->>'` + vocabulary.MoneyAmount + `') END)::numeric ` +
+			op + ` ` + b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
 	}
 	for _, x := range []struct {
 		op string
@@ -1732,8 +1802,9 @@ func columnValue(col string, v any) (any, error) {
 }
 
 // condJSON filters one key of a jsonb column, casting by declared kind so
-// ranges compare as numbers or instants rather than text.
-func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Datatype) error {
+// ranges compare as numbers or instants rather than text. A non-empty kinds
+// confines the cast to those kinds' rows (kindlessDatatype says why).
+func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Datatype, kinds []string) error {
 	// The key is bound LAZILY: a placeholder the WHERE never mentions leaves
 	// Postgres unable to infer its type ("could not determine data type of
 	// parameter $n"), so it is only appended when a clause actually uses it.
@@ -1746,18 +1817,27 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 	}
 	cast := func(v any) (any, error) { return fmt.Sprint(v), nil }
 	typedExpr := func() string { return textExpr() }
+	if _, typed := typedValueSQL(``, ``, kind, ``); typed {
+		kindsArg := ""
+		typedExpr = func() string {
+			if len(kinds) > 0 && kindsArg == "" {
+				kindsArg = b.textArray(kinds)
+			}
+			text := textExpr()
+			expr, _ := typedValueSQL(col+`->(`+keyArg+`::text)`, text, kind, kindsArg)
+			return expr
+		}
+	}
 	// argCast is appended to the bound comparison value's placeholder, for the
 	// one kind whose Go value (a string of exact digits) does not name its SQL
 	// type by itself.
 	argCast := ""
 	switch kind {
 	case vocabulary.DatatypeInt, vocabulary.DatatypeFloat:
-		typedExpr = func() string { return `(` + textExpr() + `)::numeric` }
 		cast = func(v any) (any, error) { return asFloat(v) }
 	case vocabulary.DatatypeDecimal:
 		// The bound rides as its exact digits, cast in SQL, so a filter over
 		// money never takes the float64 detour the datatype exists to refuse.
-		typedExpr = func() string { return `(` + textExpr() + `)::numeric` }
 		argCast = `::numeric`
 		cast = func(v any) (any, error) {
 			if s, ok := v.(string); ok {
@@ -1774,7 +1854,6 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 			return strconv.FormatFloat(f, 'f', -1, 64), nil
 		}
 	case vocabulary.DatatypeDatetime, vocabulary.DatatypeDate:
-		typedExpr = func() string { return `(` + textExpr() + `)::timestamptz` }
 		cast = func(v any) (any, error) {
 			switch t := v.(type) {
 			case time.Time:
@@ -1788,7 +1867,6 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 			}
 		}
 	case vocabulary.DatatypeBool:
-		typedExpr = func() string { return `(` + textExpr() + `)::boolean` }
 		cast = func(v any) (any, error) { return v, nil }
 	}
 	for _, x := range []struct {
@@ -1846,6 +1924,50 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		b.add(clause)
 	}
 	return nil
+}
+
+// typedValueSQL is the value at v (a jsonb expression; text is its ->>
+// rendering) as the SQL type `kind` compares in, and false where `kind`
+// compares as text. A row whose value is not of that shape reads NULL, and so
+// does a row whose kind is not in kinds (a text[] expression) when one is
+// given: a read spanning kinds scans rows no declaration in force speaks for,
+// and one such row's text must not fail the cast for the whole read. A date
+// is midnight UTC, as ParseInstant reads it; cast bare, Postgres would read it
+// in the session's timezone.
+//
+// Each string branch holds two tests. The pattern is the datatype's grammar,
+// so a value Postgres reads but the datatype never spells ('NaN', '0x1F',
+// '1_000', 'now', 'infinity') is not a value of it. pg_input_is_valid is the
+// cast's own range, so a value of the right shape that the cast would still
+// refuse (an instant before 4713 BC or in year 0, which an offset can carry
+// a written 0001 into, or a decimal past numeric's 16383 fractional digits)
+// reads NULL instead of failing the read, and one the cast accepts is never
+// dropped, whatever the length of its year or its digits: `decimal` is
+// unbounded on write. Both tests sit in the WHEN so the cast only ever sees
+// what passed them; an AND in a WHERE has no evaluation order. The cast is on
+// the CASE's text result, not in a THEN: a THEN over a parameter is a constant
+// a custom plan folds, cast and all, before the stable guard is asked.
+func typedValueSQL(v, text string, kind vocabulary.Datatype, kinds string) (string, bool) {
+	guard := ``
+	if kinds != `` {
+		guard = `kind = ANY(` + kinds + `) AND `
+	}
+	switch kind {
+	case vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal:
+		return `(CASE WHEN ` + guard + `(jsonb_typeof(` + v + `) = 'number' OR (jsonb_typeof(` + v + `) = 'string'` +
+			` AND ` + text + ` ~ '^-?[0-9]+(\.[0-9]+)?$' AND pg_input_is_valid(` + text + `, 'numeric')))` +
+			` THEN ` + text + ` END)::numeric`, true
+	case vocabulary.DatatypeDatetime, vocabulary.DatatypeDate:
+		date := `jsonb_typeof(` + v + `) = 'string' AND ` + text
+		midnight := `(` + text + ` || 'T00:00:00Z')`
+		return `(CASE WHEN ` + guard + date + ` ~ '^[0-9]{4,}-[0-9]{2}-[0-9]{2}$'` +
+			` AND pg_input_is_valid(` + midnight + `, 'timestamptz') THEN ` + midnight +
+			` WHEN ` + guard + date + ` ~ '^[0-9]{4,}-[0-9]{2}-[0-9]{2}T'` +
+			` AND pg_input_is_valid(` + text + `, 'timestamptz') THEN ` + text + ` END)::timestamptz`, true
+	case vocabulary.DatatypeBool:
+		return `(CASE WHEN ` + guard + `jsonb_typeof(` + v + `) = 'boolean' THEN ` + text + ` END)::boolean`, true
+	}
+	return ``, false
 }
 
 func likePrefix(p string) string {
@@ -1911,7 +2033,7 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 		// The declared datatype is the only thing that can say otherwise, and
 		// the same cast the FILTER already applies (condJSON) applies here.
 		if ds.numericProp(types, property) {
-			return `(props->>` + sqlLiteral(property) + `)::numeric`, nil
+			return ds.typedOrderSQL(types, property, vocabulary.DatatypeDecimal), nil
 		}
 		// MONEY sorts by the exact number it denotes, across currencies: an
 		// order is one key, and a list that wants one currency filters on it.
@@ -1936,7 +2058,7 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 		// filter (condJSON casts the same way), and fall to the (kind, id)
 		// tiebreak, so the order stays strict and paging is unaffected.
 		if ds.datetimeProp(types, property) {
-			return `(props->>` + sqlLiteral(property) + `)::timestamptz`, nil
+			return ds.typedOrderSQL(types, property, vocabulary.DatatypeDatetime), nil
 		}
 		// A REFERENCE sorts by the path it points at. Its stored value is the
 		// object `{ref: …}` (decision 0044), so `props->>` is the serialized
@@ -1950,6 +2072,28 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 	default:
 		return "", fmt.Errorf("%w: cannot order by %q", substrate.ErrValidation, property)
 	}
+}
+
+// typedOrderSQL is the order key of a property every candidate kind declares
+// as `kind`. An order naming no kind confines the cast to the loaded kinds
+// declaring the name, as condJSON does; the rest sort as NULL. condJSON binds
+// its list and this spells it inline, because the order's text is the cursor's
+// signature: a kind declaring the name installed between two pages changes
+// which rows sort as NULL, and the literal list refuses the stale cursor where
+// a placeholder would let it seek past rows.
+func (ds *dataset) typedOrderSQL(types []*vocabulary.Kind, property string, kind vocabulary.Datatype) string {
+	kinds := ``
+	if len(types) == 0 {
+		var lits []string
+		for _, t := range ds.registry().Kinds() {
+			if _, ok := t.Prop(property); ok {
+				lits = append(lits, sqlLiteral(t.Identity))
+			}
+		}
+		kinds = `ARRAY[` + strings.Join(lits, `, `) + `]::text[]`
+	}
+	expr, _ := typedValueSQL(`(props->`+sqlLiteral(property)+`)`, `(props->>`+sqlLiteral(property)+`)`, kind, kinds)
+	return expr
 }
 
 // orderTerms resolves the query's orderBy to the full list of sort keys,
