@@ -492,6 +492,7 @@ cmd_run() {
 	local tick=()
 	[ -n "${SUBSTRATE_TRIGGER_INTERVAL:-}" ] && tick=("SUBSTRATE_TRIGGER_INTERVAL=${SUBSTRATE_TRIGGER_INTERVAL}")
 	exec env \
+		"PATH=$(server_path)" \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \

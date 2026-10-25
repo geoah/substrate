@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -692,6 +693,9 @@ func xvInput(st xvBundleStatus, name string) (xvInputStatus, []xvSetupItem) {
 // records under the bundle's own id instead of an input at all (decision
 // record 0076).
 func xvCaseBundleInput(c *C) {
+	// Installing notion prepares its PEP 723 body before admission, so the
+	// install itself needs what BUN-07 needs.
+	c.xvRequirePEP723()
 	st := c.xvInstall(xvNotionBundle)
 	in, steps := xvInput(st, "connector")
 	c.requiref(in.Name == "connector" && in.Kind == xvNotionConfigKind,
@@ -827,16 +831,11 @@ func xvCaseBundleInput(c *C) {
 // prove a cold resolve or that anything was fetched — the runner's uv cache is
 // shared across runs of this tree and is usually warm.
 //
-// The uv and index preconditions are checked on the test CLIENT because
+// The uv, python and index preconditions are checked on the test CLIENT because
 // `mise run test:e2e` runs the suite on the same host as the server, which is
 // the only place from here that says anything about what the server can do.
 func xvCaseProviderProvisions(c *C) {
-	if _, err := exec.LookPath("uv"); err != nil {
-		c.skipf("uv is not on PATH: a PEP 723 body cannot provision here")
-	}
-	if err := xvIndexReachable(); err != nil {
-		c.skipf("the python package index is unreachable (%v): a cold resolve needs the network", err)
-	}
+	c.xvRequirePEP723()
 
 	st := c.xvInstall(xvGitHubBundle)
 	c.requiref(!st.Quarantined, "the installed provider is quarantined: %s", st.QuarantineReason)
@@ -858,6 +857,43 @@ func xvCaseProviderProvisions(c *C) {
 	}
 	c.requiref(status == http.StatusOK, "calling %s answered %d: %s", xvGitHubSync, status, raw)
 	c.stepf("`%s` ran: the provisioned environment imports the dependency its PEP 723 block declares", xvGitHubSync)
+}
+
+// xvMinPython is the floor every shipped provider body declares in its PEP 723
+// block (`requires-python = ">=3.11"`). The runner pins uv to the python3 on
+// PATH, so a box whose python3 is older cannot provision any of them.
+var xvMinPython = [2]int{3, 11}
+
+// xvRequirePEP723 SKIPs a case whose provider body cannot provision on this
+// host: no uv, a python3 below xvMinPython, or no reachable index. Each is a
+// fact about the machine, not about the substrate.
+func (c *C) xvRequirePEP723() {
+	c.t.Helper()
+	if _, err := exec.LookPath("uv"); err != nil {
+		c.skipf("uv is not on PATH: a PEP 723 body cannot provision here")
+	}
+	if err := xvPythonRecentEnough(); err != nil {
+		c.skipf("%v: the shipped provider bodies declare requires-python >= %d.%d", err, xvMinPython[0], xvMinPython[1])
+	}
+	if err := xvIndexReachable(); err != nil {
+		c.skipf("the python package index is unreachable (%v): a cold resolve needs the network", err)
+	}
+}
+
+// xvPythonRecentEnough asks the python3 on PATH for its version.
+func xvPythonRecentEnough() error {
+	out, err := exec.Command("python3", "-c", "import sys; print(*sys.version_info[:2])").Output()
+	if err != nil {
+		return fmt.Errorf("python3 did not report its version: %w", err)
+	}
+	var major, minor int
+	if _, err := fmt.Sscan(string(out), &major, &minor); err != nil {
+		return fmt.Errorf("python3 reported an unreadable version %q", strings.TrimSpace(string(out)))
+	}
+	if major < xvMinPython[0] || (major == xvMinPython[0] && minor < xvMinPython[1]) {
+		return fmt.Errorf("python3 on PATH is %d.%d", major, minor)
+	}
+	return nil
 }
 
 // xvIndexReachable is the network precondition. A case that cannot reach an
