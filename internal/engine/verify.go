@@ -64,7 +64,7 @@ type VerifyReport struct {
 	SealedOpened int `json:"sealedOpened"`
 	// SealedOrphans is how many sealed refs, rows and files alike, no live or
 	// tombstoned record holds (credentials.go sealedUnheld). Each is a
-	// finding, and the GC sweep erases the rows among them.
+	// finding, and the next writable open or GC sweep erases them.
 	SealedOrphans int `json:"sealedOrphans"`
 	// SecretRefs is how many secret references live records hold, each held
 	// to a sealed file.
@@ -572,8 +572,8 @@ func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo
 
 // verifyUnheldSealed names every sealed ref, in the table or under sealed/,
 // that no live or tombstoned record holds (credentials.go sealedUnheld): the
-// material nothing reads, which a purge before #236 left and the GC sweep
-// erases. A ref with a row is judged by the row's owner and a file with no
+// material nothing reads, which a purge before #236 left and the writable
+// open and the GC sweep erase. A ref with a row is judged by the row's owner and a file with no
 // row by the owner its file names, so a file that is not its row is not
 // judged twice.
 func verifyUnheldSealed(ctx context.Context, tx dbx, rows map[string]changelogfile.SealedRecord, files []changelogfile.SealedRecord, report *VerifyReport, found func(string)) error {

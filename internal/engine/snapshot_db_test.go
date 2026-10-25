@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
@@ -154,6 +155,73 @@ func TestVerifyOpensEverySealedFileUnderTheKey(t *testing.T) {
 	blind := mustVerify(t, keyless, "ada.example.com")
 	if !blind.OK || blind.SealedOpened != 0 {
 		t.Fatalf("without the key the damage must be invisible and nothing opened: %+v", blind)
+	}
+}
+
+// A sealed row and file no record holds, which a purge before #236 left,
+// fail verify, and the GC sweep that erases them never runs on the stopped
+// server a snapshot needs. The open erases them, so a snapshot taken right
+// after it succeeds and the copy carries no orphan (#829).
+func TestSnapshotAfterOpenSucceedsOverASealedOrphan(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	ctx := context.Background()
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := putProvider(t, ds, dsn, "kept", "sk-kept")
+	gone := putProvider(t, ds, dsn, "gone", "sk-gone")
+	dir := repoDirOf(t, svc, ds)
+	file := filepath.Join(changelogfile.SealedDir(dir), changelogfile.SealedFileName(gone))
+	saved, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := rawDB(t, dsn)
+	var repository, recordKind, recordID string
+	var payload []byte
+	var updatedAt time.Time
+	if err := raw.QueryRow(`SELECT repository, record_kind, record_id, payload, updated_at FROM sealed WHERE ref = $1`, gone).
+		Scan(&repository, &recordKind, &recordID, &payload, &updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.Delete(ctx, owner, typeProvider, "gone", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("delete with purge: %v", err)
+	}
+	// What a purge before #236 left: the record gone through the changelog,
+	// its sealed row and file in place, the payload still opening.
+	if _, err := raw.Exec(`INSERT INTO sealed (repository, ref, record_kind, record_id, payload, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		repository, gone, recordKind, recordID, payload, updatedAt); err != nil {
+		t.Fatalf("plant the orphan row: %v", err)
+	}
+	if err := os.WriteFile(file, saved, 0o600); err != nil {
+		t.Fatalf("plant the orphan file: %v", err)
+	}
+	if report := mustVerify(t, svc, "ada.example.com"); report.OK || report.SealedOrphans != 1 {
+		t.Fatalf("setup: verify does not name the planted orphan: %+v", report)
+	}
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The operator's process over the stopped server: nothing in it sweeps.
+	operator := mustReopen(t, dsn, root)
+	report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", t.TempDir())
+	if err != nil {
+		t.Fatalf("snapshot over a sealed orphan: %v", err)
+	}
+	if sealedRowCount(t, dsn, gone) != 0 || sealedFileExists(t, dir, gone) {
+		t.Fatal("the open left the orphan's sealed row or file behind")
+	}
+	if sealedFileExists(t, report.Directory, gone) || !sealedFileExists(t, report.Directory, kept) {
+		t.Fatal("the copy carries the orphan, or lost the live secret")
+	}
+	if got := openSecret(t, dsn, kept); got != "sk-kept" {
+		t.Fatalf("the live secret = %q", got)
+	}
+	if v := mustVerify(t, operator, "ada.example.com"); !v.OK || v.SealedOrphans != 0 {
+		t.Fatalf("the repository does not verify after the open: %+v", v)
 	}
 }
 

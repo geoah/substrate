@@ -726,10 +726,14 @@ a request uses.
 **A purge erases the record's sealed material.** When the GC sweep purges a
 tombstone, or `DELETE ?purge=true` purges a record, the record's rows in
 `sealed` and their files under `sealed/` go in the same transaction. A
-tombstone keeps them, so a restore reads its secrets again. Each sweep also
-erases every sealed row that no record, live or tombstoned, holds the ref of:
-the rows purges in earlier releases left behind, and any an imported copy
-carries. `repository verify` names each such row or file as an orphan. The
+tombstone keeps them, so a restore reads its secrets again. Every open of
+a repository as its writer, the server's and an operator command's alike,
+and each sweep after it, also erase every sealed row that no record, live or
+tombstoned, holds the ref of: the rows purges in earlier releases left
+behind, and any an imported copy carries. So `repository snapshot`, which
+opens the repository first, never meets one, and `repository verify`, which
+opens it read-only, names each such row or file as an orphan until the next
+open erases it. The
 erasure covers the live table and the directory only, so every earlier copy
 that held the record's secrets keeps their ciphertext
 ([a rotated or deleted secret stays in older backups](#a-rotated-or-deleted-secret-stays-in-older-backups)).
@@ -1111,7 +1115,7 @@ server finishes it can hold the segment with a sidecar that does not match
 yet; a copy that reads `sealed/` before `changelog/` can hold a line whose
 sealed file it missed; one that reads `sealed/` after `changelog/`, as
 `rsync` does, can hold the file of a secret written or erased meanwhile,
-which no record in the copy holds and verify names as an orphan; and a copy
+which no record in the copy holds and the scratch server's open erases; and a copy
 that reads `blobs/` before `changelog/`
 can hold a blob manifest marked `stored` whose bytes it missed, because an
 upload writes the bytes first and the `stored` manifest after
@@ -1524,8 +1528,8 @@ the exec path needs nothing open at all.
   records of a package the loader parked are not walked) must have its
   sealed file, every sealed row and file must have its ref held by the
   record that owns it, live or tombstoned (one that is not is an orphan,
-  counted and named by ref, and the next GC sweep erases an orphan row and
-  its file), and with
+  counted and named by ref, and the next writable open or GC sweep erases
+  an orphan row and its file), and with
   `SUBSTRATE_CREDENTIAL_KEY` in the environment every sealed file is opened
   under the repository's key; without the key the files are compared with
   the rows and the report says nothing was opened. A directory that is a

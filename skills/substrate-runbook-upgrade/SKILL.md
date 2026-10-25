@@ -333,7 +333,11 @@ Never run `docker compose down -v`: it deletes the database, the data root
 and the key volumes.
 
 A snapshot that reports a finding is not a backup. Stop and show the user
-the finding; do not deploy. Then confirm that the operator holds
+the finding; do not deploy. One finding has a known cause and a fix: `an
+orphan: no live or tombstoned record holds the ref` on a `sealed` ref, from
+a release whose open does not erase them yet, is material an older purge left
+that nothing reads. Start the server, let its GC sweep erase them (about five
+minutes after boot), stop it again and retake the snapshot. Then confirm that the operator holds
 `SUBSTRATE_CREDENTIAL_KEY` apart from the backup (on compose it is
 `/keys/credential.key` in the `substrate-keys` volume, unless the
 environment sets one), and that the user holds their recovery key.
