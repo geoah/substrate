@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,13 +40,13 @@ type Output struct {
 // account the deliveries name). A sample imported after rows landed is
 // replayed from the start of the changelog by the loader.
 type Setup struct {
-	// Provider is the package to install through the catalog, for a
-	// provider that receives pushes; empty for a mock-driven provider, which
-	// the e2e runner installs rewired.
+	// Provider is the package to install through the catalog, such as
+	// providers.substrate.reamde.dev/applehealth; empty for a mock-driven
+	// provider, which the e2e runner installs rewired.
 	Provider string `json:"provider,omitempty"`
-	// Samples are the sample packages to import, in order, such as the
-	// provider's adapter. The observations and health samples are imported
-	// first whatever the list says.
+	// Samples are the sample packages to import, in order, such as
+	// samples.substrate.reamde.dev/healthapple. The observations and health
+	// samples are imported first whatever the list says.
 	Samples []string `json:"samples,omitempty"`
 	// Records are documents (kind, metadata.id, data.properties) to write
 	// before the deliveries post, such as the account record.
@@ -96,8 +97,8 @@ func orEmpty(m map[string]string) map[string]any {
 
 // Emitter turns the persona into one provider's data.
 type Emitter interface {
-	// Name is the provider's package name, such as whoop, or manual for the
-	// hand-entered records.
+	// Name is the provider's package name: whoop, applehealth, or manual
+	// for the hand-entered records.
 	Name() string
 	// Emit generates the output.
 	Emit(p *Persona) (*Output, error)
@@ -114,7 +115,7 @@ func init() { register(Manual{}) }
 // their syncs run while the pushes post, the hand-entered records last. An
 // emitter it does not list loads after `manual`, so a new provider is listed
 // here too.
-var loadOrder = []string{"whoop", "manual"}
+var loadOrder = []string{"whoop", "applehealth", "manual"}
 
 // Emitters is every emitter, in load order; one registered under a name
 // the order does not list comes after them, by name.
@@ -199,4 +200,10 @@ func JSON(v any) []byte {
 		panic(fmt.Sprintf("synth: encoding: %v", err))
 	}
 	return buf.Bytes()
+}
+
+// round keeps places decimals.
+func round(v float64, places int) float64 {
+	f := math.Pow(10, float64(places))
+	return math.Round(v*f) / f
 }

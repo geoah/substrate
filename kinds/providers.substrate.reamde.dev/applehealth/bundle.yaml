@@ -1,0 +1,2828 @@
+# The Apple Health provider: a receiver for what the Health Auto Export iOS
+# app POSTs from the phone. Apple Health has no cloud API, so nothing here
+# calls out; the app's REST API automation sends JSON to the
+# `applehealth-webhook` trigger (triggers.yaml) and `applehealthingest`
+# writes it as mirror rows, in the app's field names and units.
+#
+# What the app sends, per section, is documented at
+# https://help.healthyapps.dev/en/health-auto-export/export-format/ and the
+# deviations real exports show are in README.md.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/applehealth
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  # 2: a metric batch row keeps its own `units` where a unit preference
+  # changed under it, a batch records `coverage`, the receipt counts
+  # `stale`, and composed ids escape a part one to one. 3: every delivery
+  # records its arrival where it changed nothing (a batch's `coverage`, an
+  # entry's receipt), the receipt keeps each metric's span
+  # (`metricSpans`), and every write is guarded by the version it read.
+  version: 3
+---
+# No inputs and no OAuth: the app authenticates with the key the owner sets
+# on the webhook trigger, and the accounts are records the owner writes.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/applehealth
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "Keeps a copy of the Apple Health data your iPhone sends through
+    the Health Auto Export app: metrics, workouts, moods, medications, symptoms,
+    cycle tracking and ECGs."
+  installs:
+    - providers.substrate.reamde.dev/applehealth/account
+    - providers.substrate.reamde.dev/applehealth/export
+    - providers.substrate.reamde.dev/applehealth/metricbatch
+    - providers.substrate.reamde.dev/applehealth/workout
+    - providers.substrate.reamde.dev/applehealth/stateofmind
+    - providers.substrate.reamde.dev/applehealth/medication
+    - providers.substrate.reamde.dev/applehealth/symptom
+    - providers.substrate.reamde.dev/applehealth/cycleevent
+    - providers.substrate.reamde.dev/applehealth/ecg
+    - providers.substrate.reamde.dev/applehealth/heartratenotification
+    - providers.substrate.reamde.dev/applehealth/applehealthingest
+---
+# Written by its owner, never by a sync: the id is the owner's choice
+# (`iphone`), and a delivery names it in the X-Substrate-Account header, or
+# falls back to the only account there is. The accountconfig trait's OAuth
+# properties are declared because the trait contracts them; no OAuth flow
+# runs for this bundle. The webhook path is not record-sourced, so the
+# dispatcher stamps none of the sync trait's properties and the function
+# stamps them itself.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/account
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "A phone that sends you its Apple Health data through the Health
+    Auto Export app. You create one by hand and name its id in the app's X-Substrate-Account
+    header; each delivery's outcome is stamped here."
+  purpose: internal
+  names:
+    singular: account
+  traits:
+    - substrate.reamde.dev/core/accountconfig
+    - substrate.reamde.dev/core/sync
+  displayTemplate: "{displayName|id}"
+  properties:
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: "accountconfig trait contract, unused: the app authenticates
+        with the webhook trigger's key"
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "accountconfig trait contract, unused: no OAuth flow reports
+        a status here"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: "accountconfig trait contract, unused: the app sends whatever
+        its automation selects"
+    displayName:
+      type: string
+      writer: owner
+      displayName: Name
+      description: "a name for this phone, shown wherever the account is listed"
+    timezone:
+      type: timezone
+      writer: owner
+      displayName: Time zone
+      description: "the IANA zone a date without an offset is read in; the
+        app's dates carry offsets, so this is a fallback, and UTC when unset"
+    enabledMetrics:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: Health metrics
+      description: "keep the health metrics (heart rate, steps, sleep, weight
+        and the rest) a delivery carries; off drops them, and the app does
+        not send them again"
+    enabledWorkouts:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: Workouts
+      description: "keep the workouts a delivery carries; off drops them,
+        and the app does not send them again"
+    enabledStateOfMind:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: State of mind
+      description: "keep the state of mind entries a delivery carries; off
+        drops them, and the app does not send them again"
+    enabledMedications:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: Medications
+      description: "keep the medication doses a delivery carries; off drops
+        them, and the app does not send them again"
+    enabledSymptoms:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: Symptoms
+      description: "keep the symptoms a delivery carries; off drops them,
+        and the app does not send them again"
+    enabledCycleTracking:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: Cycle tracking
+      description: "keep the cycle tracking entries a delivery carries; off
+        drops them, and the app does not send them again"
+    enabledEcg:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: ECG
+      description: "keep the ECG recordings a delivery carries; off drops
+        them, and the app does not send them again"
+    enabledHeartRateNotifications:
+      type: bool
+      required: true
+      default: true
+      writer: owner
+      displayName: Heart rate notifications
+      description: "keep the heart rate notifications a delivery carries;
+        off drops them, and the app does not send them again"
+    lastExport:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      writer: connector
+      displayName: Last delivery
+      description: "the last delivery this phone sent that was written"
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: "while true every delivery from this phone is dropped unwritten;
+        the app does not send it again"
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: "sync trait contract, unused: the phone decides when it
+        sends, so nothing here can ask for a delivery"
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request acknowledged
+      description: "sync trait contract, unused, for the same reason as syncRequestedAt"
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: "running while a delivery is being written over several
+        pages, ok once it is; a refused delivery parks on the trigger instead"
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: "what the last delivery wrote: records written, records
+        deleted, records left unchanged, records a later delivery had already
+        written, metric rows read"
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: "when the last delivery finished writing"
+    lastSyncStartedAt:
+      type: datetime
+      writer: connector
+      displayName: Last sync started
+      description: "when the last delivery arrived"
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: "from the last delivery's arrival to the end of its writing,
+        in milliseconds"
+    syncProgress:
+      type: json
+      writer: connector
+      displayName: Sync progress
+      description: "{phase, done, total, pending} while a delivery is written
+        over several pages; cleared when it finishes"
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: "sync trait contract: cleared by every delivery that is
+        written, because a refused one parks on the trigger with its reason"
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: "when syncError was written; cleared with it"
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: "sync trait contract, unwritten: one delivery is one stream"
+---
+# One per delivery, at the webhook fire id. `at` is when the substrate
+# received it. The body itself is not kept here: the webhook ledger holds
+# it while the delivery is parked, and bodySha256 names it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/export
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "One delivery from the Health Auto Export app. It records when
+    it arrived, which automation sent it, how big it was and what it held.
+    A receipt; the data itself lands as metric batches, workouts and the other
+    mirror kinds."
+  purpose: internal
+  names:
+    singular: export
+  label:
+    singular: "Delivery"
+    plural: "Deliveries"
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "{automationName|id} {at}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this delivery came from"
+    sessionId:
+      type: string
+      displayName: Session
+      description: "the request's `session-id` header, as the app sent it"
+    automationName:
+      type: string
+      displayName: Automation
+      description: "the request's `automation-name` header, as the app sent
+        it"
+    automationId:
+      type: string
+      displayName: Automation ID
+      description: "the request's `automation-id` header, as the app sent
+        it"
+    automationAggregation:
+      type: string
+      displayName: Time grouping
+      description: "the request's `automation-aggregation` header, as the
+        app sent it"
+    automationPeriod:
+      type: string
+      displayName: Date range
+      description: "the request's `automation-period` header, as the app sent
+        it"
+    userAgent:
+      type: string
+      displayName: App version
+      description: "the request's `user-agent` header, as the app sent it"
+    contentType:
+      type: string
+      displayName: Content type
+      description: "the request's `content-type` header, as the app sent it"
+    byteSize:
+      type: int
+      displayName: Size
+      description: "the body's size in bytes"
+    bodySha256:
+      type: string
+      displayName: Body SHA-256
+      description: "the SHA-256 of the body as received, hex; the app's own
+        bytes differ between two sends of the same data"
+    counts:
+      type: object
+      displayName: Counts
+      description: "how many entries each section of `data` held"
+      fields:
+        metrics:
+          type: int
+          description: "metric objects in `data.metrics`"
+        metricRows:
+          type: int
+          description: "rows across those metrics"
+        workouts:
+          type: int
+          description: "entries in `data.workouts`, when the account keeps
+            them"
+        stateOfMind:
+          type: int
+          description: "entries in `data.stateOfMind`, when the account keeps
+            them"
+        medications:
+          type: int
+          description: "entries in `data.medications`, when the account keeps
+            them"
+        symptoms:
+          type: int
+          description: "entries in `data.symptoms`, when the account keeps
+            them"
+        cycleTracking:
+          type: int
+          description: "entries in `data.cycleTracking`, when the account
+            keeps them"
+        ecg:
+          type: int
+          description: "entries in `data.ecg`, when the account keeps them"
+        heartRateNotifications:
+          type: int
+          description: "entries in `data.heartRateNotifications`, when the
+            account keeps them"
+    metricNames:
+      type: string
+      repeated: true
+      displayName: Metrics
+      description: "the metric names the delivery carried, sorted"
+    spanStart:
+      type: datetime
+      displayName: Earliest
+      description: "the earliest instant any row or entry in the delivery
+        names"
+    spanEnd:
+      type: datetime
+      displayName: Latest
+      description: "the latest instant any row or entry in the delivery names"
+    metricSpans:
+      type: object
+      repeated: true
+      displayName: Metric spans
+      description: "each metric's first to last row in the delivery, the stretch
+        it covered; a delivery received earlier, retried later, writes no
+        row of that metric inside it, also where the stretch held no row"
+      fields:
+        name:
+          type: string
+          description: "the metric as the app names it"
+        grouping:
+          type: string
+          description: "the automation's time grouping"
+        start:
+          type: datetime
+          description: "the metric's first row"
+        end:
+          type: datetime
+          description: "the metric's last row"
+    skippedSections:
+      type: string
+      repeated: true
+      displayName: Skipped sections
+      description: "sections the delivery carried and the account's toggles
+        dropped"
+    droppedFields:
+      type: string
+      repeated: true
+      displayName: Dropped fields
+      description: "fields the delivery carried that no declaration here has
+        a place for, as `section.field`; at most 100"
+    droppedRows:
+      type: int
+      displayName: Dropped rows
+      description: "metric rows dropped because they were not objects or carried
+        no readable date"
+    written:
+      type: int
+      displayName: Written
+      description: "records this delivery created or changed"
+    unchanged:
+      type: int
+      displayName: Unchanged
+      description: "records this delivery implied that already held what it
+        carried"
+    deleted:
+      type: int
+      displayName: Deleted
+      description: "metric batches this delivery deleted because it carried
+        no row for them inside their metric's span"
+    stale:
+      type: int
+      displayName: Left to a later delivery
+      description: "records this delivery left as they were, in whole or in
+        part, because a delivery received after it had already written them:
+        a parked delivery retried late"
+    oversized:
+      type: string
+      repeated: true
+      displayName: Too big to write
+      description: "records too big for one function response, skipped unwritten,
+        as `<kind> <id> (<bytes> bytes)`; at most 20"
+---
+# Keyed `applehealth/<account>/<metric>/<grouping>/<period>`: the period is
+# the UTC hour for seconds and minutes, the UTC day for hours, the UTC month
+# for days and the UTC year above that. `at` and `endsAt` are the period. A
+# row is keyed by its instant, never its `source`, because a correction can
+# relabel it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/metricbatch
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "One health metric from your phone over one stretch of time,
+    as the app sent it. Heart rate for an hour, or steps by day for a month.
+    Its rows keep the app's fields and units, and a later delivery of the
+    same time rewrites them."
+  purpose: supporting
+  names:
+    singular: metricbatch
+  label:
+    singular: "Metric batch"
+    plural: "Metric batches"
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{name} {at}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this batch arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the delivery that last changed this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    name:
+      type: string
+      required: true
+      displayName: Metric
+      description: "`name`: the metric as the app names it, snake_case (`heart_rate`,
+        `step_count`, `weight_body_mass`)"
+    units:
+      type: string
+      displayName: Units
+      description: "`units`: the unit the rows' numbers are in, from the app's
+        Unit Preferences (`count/min`, `kJ`, `km`), unless a row names its
+        own"
+    coverage:
+      type: object
+      repeated: true
+      displayName: Delivery spans
+      description: "the stretches of this period each delivery covered and
+        when it arrived; a delivery received earlier, retried later, leaves
+        the rows a later one covered as they are"
+      fields:
+        start:
+          type: datetime
+          description: "the first instant the delivery covered in this period"
+        end:
+          type: datetime
+          description: "the last instant it covered"
+        receivedAt:
+          type: datetime
+          description: "when that delivery arrived"
+    grouping:
+      type: string
+      required: true
+      displayName: Time grouping
+      description: "the automation's time grouping from `automation-aggregation`
+        (seconds, minutes, hours, days, weeks, months, years), or unknown"
+    rows:
+      type: object
+      repeated: true
+      displayName: Rows
+      description: "`data`: the metric's rows in this period, ordered by time;
+        one per bucket with Summarize Data on, one per sample with it off"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket or sample time as the app wrote
+            it, `yyyy-MM-dd HH:mm:ss Z`, in the phone's zone when it sent"
+        startDate:
+          type: string
+          description: "`startDate`: a sleep segment's start, sent instead
+            of `date` when Summarize Data is off"
+        endDate:
+          type: string
+          description: "`endDate`: a sleep segment's end"
+        units:
+          type: string
+          description: "the unit this row's numbers are in where it is not
+            the batch's: a row a delivery sent before the app's Unit Preferences
+            changed"
+        qty:
+          type: float
+          description: "`qty`: the value, in the batch's units; a cumulative
+            value is split between buckets where a sample spans two"
+        min:
+          type: float
+          description: "`Min`: heart rate's lowest reading in the bucket"
+        avg:
+          type: float
+          description: "`Avg`: heart rate's mean in the bucket"
+        max:
+          type: float
+          description: "`Max`: heart rate's highest reading in the bucket"
+        systolic:
+          type: float
+          description: "`systolic`: blood pressure, in the batch's units"
+        diastolic:
+          type: float
+          description: "`diastolic`: blood pressure, in the batch's units"
+        source:
+          type: string
+          description: "`source`: the device or app Health names for the row;
+            sources merged into one bucket are joined by `|`, and app 10.0.4
+            sends it empty"
+        mealTime:
+          type: string
+          description: "`mealTime`: blood glucose's Before Meal, After Meal
+            or Unspecified"
+        reason:
+          type: string
+          description: "`reason`: insulin delivery's Bolus or Basal"
+        value:
+          type: string
+          description: "`value`: a sleep segment's stage (Core, REM, Deep,
+            Awake, In Bed), or Complete and Incomplete for handwashing"
+        unspecified:
+          type: float
+          description: "`Unspecified`: sexual activity with protection unrecorded"
+        protectionUsed:
+          type: float
+          description: "`Protection Used`: sexual activity with protection"
+        protectionNotUsed:
+          type: float
+          description: "`Protection Not Used`: sexual activity without protection"
+        totalSleep:
+          type: float
+          description: "`totalSleep`: hours asleep in the night, with Summarize
+            Data on"
+        asleep:
+          type: float
+          description: "`asleep`: hours of unstaged sleep, not a total"
+        core:
+          type: float
+          description: "`core`: hours of core sleep"
+        deep:
+          type: float
+          description: "`deep`: hours of deep sleep"
+        rem:
+          type: float
+          description: "`rem`: hours of REM sleep"
+        awake:
+          type: float
+          description: "`awake`: hours awake in the night"
+        inBed:
+          type: float
+          description: "`inBed`: hours in bed"
+        sleepStart:
+          type: string
+          description: "`sleepStart`: when the night's sleep began, as the
+            app wrote it"
+        sleepEnd:
+          type: string
+          description: "`sleepEnd`: when it ended"
+        inBedStart:
+          type: string
+          description: "`inBedStart`: when the night's time in bed began"
+        inBedEnd:
+          type: string
+          description: "`inBedEnd`: when it ended"
+---
+# Keyed `applehealth/<account>/<id>`, the id HealthKit gives the workout.
+# Export Version 2 is the shape declared; a version 1 workout carries no id and is refused.
+# Workouts carry no `source`: the device shows only on the rows of
+# `heartRateData` and the series.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/workout
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "A workout recorded on your phone or watch, as the app sent
+    it. It holds the activity, when it ran, energy, distance and heart rate
+    and, where the automation includes them, its metrics over time and its
+    GPS route."
+  names:
+    singular: workout
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{name} {start}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this workout arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    workoutId:
+      type: string
+      required: true
+      displayName: Workout ID
+      description: "`id`: HealthKit's UUID for the workout"
+    name:
+      type: string
+      displayName: Activity
+      description: "`name`: the activity, in the phone's language (`Running`,
+        `Outdoor Walk`)"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the workout began, as the app wrote it;
+        `at` holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    duration:
+      type: float
+      displayName: Duration (s)
+      description: "`duration`: seconds"
+    location:
+      type: string
+      displayName: Location
+      description: "`location`: Indoor, Outdoor, Pool or Open Water"
+    isIndoor:
+      type: bool
+      displayName: Indoor
+      description: "`isIndoor`"
+    activeEnergyBurned:
+      type: object
+      displayName: Active energy
+      description: "`activeEnergyBurned`: the active energy burned, as `{qty,
+        units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the active energy burned, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    totalEnergy:
+      type: object
+      displayName: Total energy
+      description: "`totalEnergy`: the total energy burned, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the total energy burned, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    intensity:
+      type: object
+      displayName: Intensity
+      description: "`intensity`: the intensity, in MET, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the intensity, in MET, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    distance:
+      type: object
+      displayName: Distance
+      description: "`distance`: the distance covered, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the distance covered, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    speed:
+      type: object
+      displayName: Speed
+      description: "`speed`: the speed, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the speed, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    avgSpeed:
+      type: object
+      displayName: Average speed
+      description: "`avgSpeed`: the average speed, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the average speed, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    maxSpeed:
+      type: object
+      displayName: Maximum speed
+      description: "`maxSpeed`: the maximum speed, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the maximum speed, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    elevationUp:
+      type: object
+      displayName: Elevation gain
+      description: "`elevationUp`: the elevation climbed, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the elevation climbed, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    elevationDown:
+      type: object
+      displayName: Elevation loss
+      description: "`elevationDown`: the elevation descended, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the elevation descended, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    temperature:
+      type: object
+      displayName: Temperature
+      description: "`temperature`: the air temperature, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the air temperature, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    humidity:
+      type: object
+      displayName: Humidity
+      description: "`humidity`: the relative humidity, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the relative humidity, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    lapLength:
+      type: object
+      displayName: Lap length
+      description: "`lapLength`: the pool lap length, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the pool lap length, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    totalSwimmingStrokeCount:
+      type: object
+      displayName: Swimming strokes
+      description: "`totalSwimmingStrokeCount`: the swimming strokes, as `{qty,
+        units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the swimming strokes, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    swimCadence:
+      type: object
+      displayName: Swim cadence
+      description: "`swimCadence`: the swim cadence, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the swim cadence, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    stepCadence:
+      type: object
+      displayName: Step cadence
+      description: "`stepCadence`: the step cadence, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the step cadence, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    flightsClimbed:
+      type: object
+      displayName: Flights climbed
+      description: "`flightsClimbed`: the flights of stairs climbed, as `{qty,
+        units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the flights of stairs climbed, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    avgHeartRate:
+      type: object
+      displayName: Average heart rate
+      description: "`avgHeartRate`: the average heart rate, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the average heart rate, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    maxHeartRate:
+      type: object
+      displayName: Maximum heart rate
+      description: "`maxHeartRate`: the maximum heart rate, as `{qty, units}`"
+      fields:
+        qty:
+          type: float
+          description: "`qty`: the maximum heart rate, in `units`"
+        units:
+          type: string
+          description: "`units`: the unit `qty` is in, as the app wrote it"
+    strokeStyle:
+      type: string
+      displayName: Stroke style
+      description: "`strokeStyle`: Backstroke, Breaststroke, Butterfly, Freestyle,
+        Mixed, Kickboard or Unknown"
+    swolfScore:
+      type: float
+      displayName: SWOLF
+      description: "`swolfScore`: strokes plus seconds per pool length"
+    salinity:
+      type: string
+      displayName: Salinity
+      description: "`salinity`: Fresh Water or Salt Water"
+    heartRate:
+      type: object
+      displayName: Heart rate
+      description: "`heartRate`: the workout's lowest, mean and highest heart
+        rate"
+      fields:
+        min:
+          type: object
+          description: "`min`: the lowest"
+          fields:
+            qty:
+              type: float
+              description: "`qty`: the lowest heart rate, in `units`"
+            units:
+              type: string
+              description: "`units`: the unit `qty` is in, as the app wrote
+                it"
+        avg:
+          type: object
+          description: "`avg`: the mean"
+          fields:
+            qty:
+              type: float
+              description: "`qty`: the mean heart rate, in `units`"
+            units:
+              type: string
+              description: "`units`: the unit `qty` is in, as the app wrote
+                it"
+        max:
+          type: object
+          description: "`max`: the highest"
+          fields:
+            qty:
+              type: float
+              description: "`qty`: the highest heart rate, in `units`"
+            units:
+              type: string
+              description: "`units`: the unit `qty` is in, as the app wrote
+                it"
+    heartRateData:
+      type: object
+      repeated: true
+      displayName: Heart rate over time
+      description: "`heartRateData`: heart rate through the workout, per minute
+        or per second as the automation groups it"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        min:
+          type: float
+          description: "`Min`: the lowest reading in the bucket"
+        avg:
+          type: float
+          description: "`Avg`: the mean in the bucket"
+        max:
+          type: float
+          description: "`Max`: the highest reading in the bucket"
+        qty:
+          type: float
+          description: "`qty`: one reading, where the app sends a value instead
+            of Min, Avg and Max"
+        units:
+          type: string
+          description: "`units`: as the app wrote it (`bpm`)"
+        source:
+          type: string
+          description: "`source`: the device Health names for the reading,
+            the one place a workout says which watch recorded it"
+    heartRateRecovery:
+      type: object
+      repeated: true
+      displayName: Heart rate recovery
+      description: "`heartRateRecovery`: heart rate in the minutes after the
+        workout ended"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        min:
+          type: float
+          description: "`Min`: the lowest reading in the bucket"
+        avg:
+          type: float
+          description: "`Avg`: the mean in the bucket"
+        max:
+          type: float
+          description: "`Max`: the highest reading in the bucket"
+        qty:
+          type: float
+          description: "`qty`: one reading, where the app sends a value instead
+            of Min, Avg and Max"
+        units:
+          type: string
+          description: "`units`: as the app wrote it (`bpm`)"
+        source:
+          type: string
+          description: "`source`: the device Health names for the reading,
+            the one place a workout says which watch recorded it"
+    activeEnergy:
+      type: object
+      repeated: true
+      displayName: Active energy over time
+      description: "`activeEnergy`: active energy through the workout, sent
+        with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the active energy in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    basalEnergy:
+      type: object
+      repeated: true
+      displayName: Resting energy over time
+      description: "`basalEnergy`: resting energy through the workout, sent
+        with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the resting energy in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    stepCount:
+      type: object
+      repeated: true
+      displayName: Steps over time
+      description: "`stepCount`: steps through the workout, sent with Include
+        Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the steps in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    walkingAndRunningDistance:
+      type: object
+      repeated: true
+      displayName: Walking and running distance over time
+      description: "`walkingAndRunningDistance`: walking and running distance
+        through the workout, sent with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the walking and running distance in the bucket,
+            in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    cyclingCadence:
+      type: object
+      repeated: true
+      displayName: Cycling cadence over time
+      description: "`cyclingCadence`: cycling cadence through the workout,
+        sent with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the cycling cadence in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    cyclingDistance:
+      type: object
+      repeated: true
+      displayName: Cycling distance over time
+      description: "`cyclingDistance`: cycling distance through the workout,
+        sent with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the cycling distance in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    cyclingPower:
+      type: object
+      repeated: true
+      displayName: Cycling power over time
+      description: "`cyclingPower`: cycling power through the workout, sent
+        with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the cycling power in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    cyclingSpeed:
+      type: object
+      repeated: true
+      displayName: Cycling speed over time
+      description: "`cyclingSpeed`: cycling speed through the workout, sent
+        with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the cycling speed in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    swimDistance:
+      type: object
+      repeated: true
+      displayName: Swim distance over time
+      description: "`swimDistance`: swim distance through the workout, sent
+        with Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the swim distance in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    swimStroke:
+      type: object
+      repeated: true
+      displayName: Swim strokes over time
+      description: "`swimStroke`: swim strokes through the workout, sent with
+        Include Workout Metrics"
+      fields:
+        date:
+          type: string
+          description: "`date`: the bucket's time as the app wrote it"
+        qty:
+          type: float
+          description: "`qty`: the swim strokes in the bucket, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it"
+        source:
+          type: string
+          description: "`source`: the device Health names for the value"
+    route:
+      type: object
+      repeated: true
+      displayName: Route
+      description: "`route`: the GPS track, sent with Include Route Data"
+      fields:
+        latitude:
+          type: float
+          description: "`latitude`, degrees"
+        longitude:
+          type: float
+          description: "`longitude`, degrees"
+        altitude:
+          type: float
+          description: "`altitude`, metres"
+        course:
+          type: float
+          description: "`course`, degrees from north, 0 to 360"
+        courseAccuracy:
+          type: float
+          description: "`courseAccuracy`, degrees"
+        horizontalAccuracy:
+          type: float
+          description: "`horizontalAccuracy`, metres"
+        verticalAccuracy:
+          type: float
+          description: "`verticalAccuracy`, metres"
+        timestamp:
+          type: string
+          description: "`timestamp`: the point's time as the app wrote it"
+        speed:
+          type: float
+          description: "`speed`, metres per second"
+        speedAccuracy:
+          type: float
+          description: "`speedAccuracy`, metres per second"
+    metadata:
+      type: json
+      displayName: Metadata
+      description: "`metadata`: HealthKit's metadata keys for the workout
+        as the app sent them (`HKTimeZone`, `HKWeatherTemperature`)"
+---
+# Keyed `applehealth/<account>/<id>`, HealthKit's UUID. The app writes these
+# dates in ISO 8601 with `Z`, unlike every other section.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/stateofmind
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "A mood or emotion you logged in the Health app, on iOS 18
+    and later. It holds how pleasant it felt, the words you chose for it and
+    what it was about."
+  names:
+    singular: stateofmind
+  label:
+    singular: "State of mind"
+    plural: "States of mind"
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{valenceClassification|kind} {start}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this entry arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    stateOfMindId:
+      type: string
+      required: true
+      displayName: Entry ID
+      description: "`id`: HealthKit's UUID for the entry"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the feeling began, as the app wrote it;
+        `at` holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    kind:
+      type: string
+      displayName: Kind of entry
+      description: "`kind`: daily_mood or momentary_emotion"
+    labels:
+      type: string
+      repeated: true
+      displayName: Labels
+      description: "`labels`: the words chosen (calm, anxious, happy), lowercase"
+    associations:
+      type: string
+      repeated: true
+      displayName: Associations
+      description: "`associations`: what it was about (work, family, fitness)"
+    valence:
+      type: float
+      displayName: Valence
+      description: "`valence`: from -1, very unpleasant, to 1, very pleasant"
+    valenceClassification:
+      type: string
+      displayName: Feeling
+      description: "`valenceClassification`: very_unpleasant through very_pleasant,
+        seven steps"
+    metadata:
+      type: json
+      displayName: Metadata
+      description: "`metadata`: the entry's metadata keys as the app sent
+        them"
+---
+# The app gives a dose no id, so it is keyed by the medication and its
+# scheduled time, else its start.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/medication
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "One medication dose logged in the Health app, on iOS 26 and
+    later. It holds the medication, when it was scheduled and logged, and
+    whether it was taken."
+  names:
+    singular: medication
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{displayText|nickname} {status}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this dose arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    displayText:
+      type: string
+      displayName: Medication
+      description: "`displayText`: the medication's name (`Aspirin`)"
+    nickname:
+      type: string
+      displayName: Nickname
+      description: "`nickname`: the name you gave it"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the dose began, as the app wrote it; `at`
+        holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    scheduledDate:
+      type: string
+      displayName: Scheduled
+      description: "`scheduledDate`: when the dose was scheduled, as the app
+        wrote it"
+    form:
+      type: string
+      displayName: Form
+      description: "`form`: Capsule, Tablet, Liquid and so on, in the phone's
+        language"
+    status:
+      type: string
+      displayName: Status
+      description: "`status`: Taken, Skipped, Snoozed, Not Logged and so on,
+        in the phone's language"
+    isArchived:
+      type: bool
+      displayName: Archived
+      description: "`isArchived`: whether the medication is no longer tracked"
+    dosage:
+      type: float
+      displayName: Dosage
+      description: "`dosage`: the amount, in units that depend on the medication"
+    codings:
+      type: object
+      repeated: true
+      displayName: Codes
+      description: "`codings`: the medication's codes in RxNorm, NDC or another
+        system"
+      fields:
+        code:
+          type: string
+          description: "`code`"
+        system:
+          type: string
+          description: "`system`: the coding system"
+        version:
+          type: string
+          description: "`version`: the system's version"
+---
+# The app gives a symptom no id, so it is keyed by its name and start.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/symptom
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "A symptom logged in the Health app, such as a headache or
+    fatigue, with how severe it was and when."
+  names:
+    singular: symptom
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{name} {severity}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this symptom arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    name:
+      type: string
+      displayName: Symptom
+      description: "`name`: the symptom, in the phone's language (`Headache`)"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the symptom began, as the app wrote it;
+        `at` holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    severity:
+      type: string
+      displayName: Severity
+      description: "`severity`: Mild, Moderate, Severe or what the recording
+        app wrote"
+    userEntered:
+      type: bool
+      displayName: Entered by hand
+      description: "`userEntered`: true when typed in by hand"
+    source:
+      type: string
+      displayName: Source
+      description: "`source`: the app or device that recorded it"
+---
+# One entry of the app's `cycleTracking` section. It gives no id, so an
+# entry is keyed by its name and start.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/cycleevent
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "One cycle tracking entry logged in the Health app. It covers
+    menstrual flow, an ovulation or pregnancy test result, cervical mucus,
+    sexual activity and similar."
+  names:
+    singular: cycleevent
+  label:
+    singular: "Cycle tracking entry"
+    plural: "Cycle tracking entries"
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{name} {value}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this entry arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    name:
+      type: string
+      displayName: Entry
+      description: "`name`: what was logged (`Menstrual Flow`, `Ovulation
+        Test Result`)"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the entry began, as the app wrote it; `at`
+        holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    value:
+      type: string
+      displayName: Value
+      description: "`value`: the level or result (`Light`, `Positive/Peak`),
+        often empty"
+    isCycleStart:
+      type: bool
+      displayName: Cycle start
+      description: "`isCycleStart`: sent on a menstrual flow entry only when
+        true"
+    source:
+      type: string
+      displayName: Source
+      description: "`source`: the app or device that recorded it, where the
+        app sends one"
+---
+# Keyed by its start. A 30-second recording holds about 15,000 voltage
+# samples, so one record is close to 1 MB.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/ecg
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "One ECG recorded on your watch. It holds the classification
+    it gave, your average heart rate and every voltage sample of the recording."
+  names:
+    singular: ecg
+  label:
+    singular: "ECG"
+    plural: "ECGs"
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{classification} {start}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this recording arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the recording began, as the app wrote it;
+        `at` holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    classification:
+      type: string
+      displayName: Classification
+      description: "`classification`: Sinus Rhythm, Atrial Fibrillation, Inconclusive
+        and so on"
+    severity:
+      type: string
+      displayName: Severity
+      description: "`severity`, where the app sends one (`Not Set`)"
+    averageHeartRate:
+      type: float
+      displayName: Average heart rate
+      description: "`averageHeartRate`: beats per minute"
+    numberOfVoltageMeasurements:
+      type: int
+      displayName: Samples
+      description: "`numberOfVoltageMeasurements`"
+    samplingFrequency:
+      type: float
+      displayName: Sampling frequency
+      description: "`samplingFrequency`: hertz, usually 512"
+    source:
+      type: string
+      displayName: Source
+      description: "`source`: the watch or app that recorded it"
+    voltageMeasurements:
+      type: object
+      repeated: true
+      displayName: Voltage
+      description: "`voltageMeasurements`: the recording, one entry per sample"
+      fields:
+        date:
+          type: string
+          description: "`date`: the sample's time as the app wrote it, or
+            the epoch seconds as text where it sends a number"
+        voltage:
+          type: float
+          description: "`voltage`, in `units`"
+        units:
+          type: string
+          description: "`units`: as the app wrote it (`V`, `mcV`)"
+---
+# Two shapes are declared: the documented one (`heartRate`, `heartRateVariation`)
+# and the one the app was seen sending (`heartNotification`, `heartRateData`,
+# `source` as an object). Keyed by the notification and its start.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/heartratenotification
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "A heart rate notification your watch raised. It covers a high
+    or low heart rate, or an irregular rhythm, with the readings around it."
+  names:
+    singular: heartratenotification
+  label:
+    singular: "Heart rate notification"
+    plural: "Heart rate notifications"
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{heartNotification|start}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: "the phone this notification arrived from"
+    export:
+      type: reference
+      kind: providers.substrate.reamde.dev/applehealth/export
+      displayName: Delivery
+      description: "the latest delivery that carried this record"
+    receivedAt:
+      type: datetime
+      displayName: Received
+      description: "when that delivery arrived"
+    heartNotification:
+      type: string
+      displayName: Notification
+      description: "`heartNotification`: what the watch noticed, in the phone's
+        language"
+    threshold:
+      type: float
+      displayName: Threshold
+      description: "`threshold`: the high or low limit crossed, beats per
+        minute"
+    start:
+      type: string
+      displayName: Start
+      description: "`start`: when the notification began, as the app wrote
+        it; `at` holds the instant"
+    end:
+      type: string
+      displayName: End
+      description: "`end`: when it ended, as the app wrote it; `endsAt` holds
+        the instant"
+    source:
+      type: object
+      displayName: Source
+      description: "`source`: the device, as `{name, identifier}`; a plain
+        string the app sends lands in `name`"
+      fields:
+        name:
+          type: string
+          description: "`name`"
+        identifier:
+          type: string
+          description: "`identifier`"
+    heartRateData:
+      type: object
+      repeated: true
+      displayName: Readings
+      description: "`heartRateData`: the readings, as the app sends them"
+      fields:
+        qty:
+          type: float
+          description: "`qty`, in `units`"
+        units:
+          type: string
+          description: "`units` (`count/min`)"
+        date:
+          type: string
+          description: "`date`, as the app wrote it"
+        start:
+          type: string
+          description: "`start`, as the app wrote it or epoch seconds as text"
+        end:
+          type: string
+          description: "`end`, as the app wrote it or epoch seconds as text"
+    heartRate:
+      type: object
+      repeated: true
+      displayName: Heart rate
+      description: "`heartRate`: the readings, in the documented shape"
+      fields:
+        hr:
+          type: float
+          description: "`hr`, beats per minute"
+        units:
+          type: string
+          description: "`units` (`bpm`)"
+        timestamp:
+          type: object
+          description: "`timestamp`"
+          fields:
+            start:
+              type: string
+              description: "`start`, as the app wrote it"
+            end:
+              type: string
+              description: "`end`, as the app wrote it"
+            interval:
+              type: object
+              description: "`interval`: the sampling interval"
+              fields:
+                duration:
+                  type: float
+                  description: "`duration`"
+                units:
+                  type: string
+                  description: "`units` (`s`)"
+    heartRateVariation:
+      type: object
+      repeated: true
+      displayName: Heart rate variability
+      description: "`heartRateVariation`: variability readings, in the documented
+        shape"
+      fields:
+        hrv:
+          type: float
+          description: "`hrv`, milliseconds"
+        units:
+          type: string
+          description: "`units` (`ms`)"
+        timestamp:
+          type: object
+          description: "`timestamp`"
+          fields:
+            start:
+              type: string
+              description: "`start`, as the app wrote it"
+            end:
+              type: string
+              description: "`end`, as the app wrote it"
+            interval:
+              type: object
+              description: "`interval`: the sampling interval"
+              fields:
+                duration:
+                  type: float
+                  description: "`duration`"
+                units:
+                  type: string
+                  description: "`units` (`s`)"
+---
+# Runs on the `applehealth-webhook` trigger. A refused delivery (no account,
+# a body that is not the app's JSON) raises, so the delivery parks with its
+# body kept and `substratectl trigger retry` delivers it after the fix; the
+# app itself never sends a part again. Reads are the merge: a metric batch
+# is read, merged with the delivery's rows and written back under
+# `ifVersion`, so two deliveries racing on one batch retry rather than lose
+# rows.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/applehealth/applehealthingest
+data:
+  authority: providers.substrate.reamde.dev
+  package: applehealth
+  description: "Write one Health Auto Export delivery as applehealth mirror
+    rows: metric batches, workouts, state of mind, medications, symptoms,
+    cycle tracking, ECGs and heart rate notifications, plus one export receipt,
+    and stamp the account's sync state. A redelivery of the same time rewrites
+    the same records. Runs on the applehealth-webhook trigger; not meant to
+    be called by hand."
+  runtime: python
+  timeout: PT60S
+  returns:
+    - name: export
+      type: string
+      description: "the export receipt's id, the delivery's fire id"
+    - name: account
+      type: string
+      description: "the account the delivery was written to"
+    - name: written
+      type: int
+      description: "records created or changed so far"
+    - name: unchanged
+      type: int
+      description: "records that already held what the delivery carried"
+    - name: deleted
+      type: int
+      description: "metric batches deleted so far, each left with no row"
+    - name: stale
+      type: int
+      description: "records left as they were because a delivery received
+        later had already written them"
+    - name: remaining
+      type: int
+      description: "records still to write on the next page"
+    - name: skipped
+      type: string
+      description: "why nothing was written, when nothing was"
+    - name: droppedFields
+      type: string
+      repeated: true
+      description: "fields with no declared place, as section.field"
+    - name: oversized
+      type: string
+      repeated: true
+      description: "records too big for one response frame, skipped unwritten"
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/applehealth/export
+        - providers.substrate.reamde.dev/applehealth/metricbatch
+        - providers.substrate.reamde.dev/applehealth/workout
+        - providers.substrate.reamde.dev/applehealth/stateofmind
+        - providers.substrate.reamde.dev/applehealth/medication
+        - providers.substrate.reamde.dev/applehealth/symptom
+        - providers.substrate.reamde.dev/applehealth/cycleevent
+        - providers.substrate.reamde.dev/applehealth/ecg
+        - providers.substrate.reamde.dev/applehealth/heartratenotification
+      budgets:
+        calls: 1000
+        rows: 10000
+    writes:
+      - providers.substrate.reamde.dev/applehealth/account
+      - providers.substrate.reamde.dev/applehealth/export
+      - providers.substrate.reamde.dev/applehealth/metricbatch
+      - providers.substrate.reamde.dev/applehealth/workout
+      - providers.substrate.reamde.dev/applehealth/stateofmind
+      - providers.substrate.reamde.dev/applehealth/medication
+      - providers.substrate.reamde.dev/applehealth/symptom
+      - providers.substrate.reamde.dev/applehealth/cycleevent
+      - providers.substrate.reamde.dev/applehealth/ecg
+      - providers.substrate.reamde.dev/applehealth/heartratenotification
+  source: |
+    """Health Auto Export delivery -> applehealth mirror rows.
+
+    One webhook POST from the app is one delivery. The body is the app's JSON
+    export, `{"data": {"metrics": [...], "workouts": [...], ...}}`, and every
+    section it carries lands as mirror rows, in the app's own field names and
+    units. Nothing is converted and nothing is computed beyond the instants the
+    timeline needs.
+
+    The writes are idempotent by time, not by delivery. The app never re-sends a
+    failed part and a correction arrives as the same bucket sent again, sometimes
+    under another `source` label, so a metric row is keyed by its instant and a
+    metric batch by (account, metric, grouping, period): a redelivery rewrites the
+    same batch, and a row the later delivery no longer carries inside the span it
+    covers is gone from the batch, and a batch left with no row is deleted. The
+    span is the metric's first to last row in the delivery; up to GAP_PERIODS
+    periods inside it that carry no fresh row are read back too. Every other
+    section is keyed by the app's own `id`, or by its name and start where it
+    has none.
+
+    Deliveries apply in the order they arrived. A batch records the stretch
+    each delivery covered and when it arrived (`coverage`), an entry the
+    latest delivery that carried it (its receipt), both also where the
+    delivery changed nothing, and the receipt each metric's stretch
+    (`metricSpans`). A delivery received earlier, retried after a later one,
+    reads the later receipts and leaves the rows inside the later one's
+    stretch, a period it covered with no row included, and every entry the
+    later one carried as they are. Every write is guarded by the version the
+    delivery read, so a concurrent delivery that wrote first sends this one
+    back to read again.
+
+    A delivery the body cannot read raises, so it parks with its body kept and a
+    retry after the fix (an account created, a provider upgraded) delivers it.
+    """
+
+    import base64
+    import datetime
+    import hashlib
+    import json
+    import math
+    import re
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    PKG = "providers.substrate.reamde.dev/applehealth/"
+    ACCOUNT = PKG + "account"
+    EXPORT = PKG + "export"
+    METRICBATCH = PKG + "metricbatch"
+    WORKOUT = PKG + "workout"
+    STATEOFMIND = PKG + "stateofmind"
+    MEDICATION = PKG + "medication"
+    SYMPTOM = PKG + "symptom"
+    CYCLEEVENT = PKG + "cycleevent"
+    ECG = PKG + "ecg"
+    HRNOTIFICATION = PKG + "heartratenotification"
+
+    ACCOUNT_HEADER = "x-substrate-account"
+
+    # One page's bounds. The body's response frame is capped at 8 MiB (host.py
+    # MAX_FRAME_BYTES), so a page stops staging past half of it, and a page reads
+    # at most the 1000 calls its declaration grants, with room for the rest.
+    PAGE_BYTES = 4 << 20
+    PAGE_UNITS = 900
+    # One record past this cannot ride any frame beside its envelope, so it is
+    # skipped and named rather than staged to fail every attempt the same way.
+    OVERSIZE_BYTES = 6 << 20
+    MAX_OVERSIZED = 20
+    MAX_ID = 128
+    MAX_DROPPED = 100
+    # How many periods inside one metric's span, carrying none of its rows, a
+    # delivery reads back (one call each) to empty: six weeks of hour batches.
+    GAP_PERIODS = 1000
+
+    UTC = datetime.timezone.utc
+
+    # The app's time grouping (the `automation-aggregation` header) decides how
+    # much time one metric batch covers, so a batch holds at most a few thousand
+    # rows: an hour of seconds or minutes, a day of hours, a month of days, a
+    # year of anything coarser.
+    PERIOD_OF = {
+        "seconds": "hour", "minutes": "hour", "hours": "day", "days": "month",
+        "weeks": "year", "months": "year", "years": "year",
+    }
+
+    # Field specs: the app's key maps to (property or field name, spec). A spec is
+    # "f" a number, "i" an integer, "s" a string, "b" a boolean, "d" a date as the
+    # app wrote it (a string, or an epoch number kept as its decimal text), "ls" a
+    # list of strings, "j" any JSON, a dict an object of its own, and ("list",
+    # spec) a list of such objects.
+    QTY = {"qty": ("qty", "f"), "units": ("units", "s")}
+
+    METRIC_ROW = {
+        "date": ("date", "d"), "startDate": ("startDate", "d"), "endDate": ("endDate", "d"),
+        "qty": ("qty", "f"),
+        "Min": ("min", "f"), "Avg": ("avg", "f"), "Max": ("max", "f"),
+        "min": ("min", "f"), "avg": ("avg", "f"), "max": ("max", "f"),
+        "systolic": ("systolic", "f"), "diastolic": ("diastolic", "f"),
+        "source": ("source", "s"),
+        "mealTime": ("mealTime", "s"), "reason": ("reason", "s"), "value": ("value", "s"),
+        "Unspecified": ("unspecified", "f"), "Protection Used": ("protectionUsed", "f"),
+        "Protection Not Used": ("protectionNotUsed", "f"),
+        "totalSleep": ("totalSleep", "f"), "asleep": ("asleep", "f"), "core": ("core", "f"),
+        "deep": ("deep", "f"), "rem": ("rem", "f"), "awake": ("awake", "f"),
+        "inBed": ("inBed", "f"),
+        "sleepStart": ("sleepStart", "d"), "sleepEnd": ("sleepEnd", "d"),
+        "inBedStart": ("inBedStart", "d"), "inBedEnd": ("inBedEnd", "d"),
+    }
+
+    HR_ROW = {
+        "date": ("date", "d"),
+        "Min": ("min", "f"), "Avg": ("avg", "f"), "Max": ("max", "f"),
+        "min": ("min", "f"), "avg": ("avg", "f"), "max": ("max", "f"),
+        "qty": ("qty", "f"), "units": ("units", "s"), "source": ("source", "s"),
+    }
+
+    SERIES_ROW = {
+        "date": ("date", "d"), "qty": ("qty", "f"), "units": ("units", "s"),
+        "source": ("source", "s"),
+    }
+
+    ROUTE_POINT = {
+        "latitude": ("latitude", "f"), "longitude": ("longitude", "f"),
+        "altitude": ("altitude", "f"), "course": ("course", "f"),
+        "courseAccuracy": ("courseAccuracy", "f"),
+        "horizontalAccuracy": ("horizontalAccuracy", "f"),
+        "verticalAccuracy": ("verticalAccuracy", "f"),
+        "timestamp": ("timestamp", "d"), "speed": ("speed", "f"),
+        "speedAccuracy": ("speedAccuracy", "f"),
+    }
+
+    WORKOUT_QTY = (
+        "activeEnergyBurned", "totalEnergy", "intensity", "distance", "speed",
+        "avgSpeed", "maxSpeed", "elevationUp", "elevationDown", "temperature",
+        "humidity", "lapLength", "totalSwimmingStrokeCount", "swimCadence",
+        "stepCadence", "flightsClimbed", "avgHeartRate", "maxHeartRate",
+    )
+    WORKOUT_SERIES = (
+        "activeEnergy", "basalEnergy", "stepCount", "walkingAndRunningDistance",
+        "cyclingCadence", "cyclingDistance", "cyclingPower", "cyclingSpeed",
+        "swimDistance", "swimStroke",
+    )
+    WORKOUT_ENTRY = dict(
+        {"id": ("workoutId", "s"), "name": ("name", "s"), "start": ("start", "d"),
+         "end": ("end", "d"), "duration": ("duration", "f"), "location": ("location", "s"),
+         "isIndoor": ("isIndoor", "b"), "strokeStyle": ("strokeStyle", "s"),
+         "swolfScore": ("swolfScore", "f"), "salinity": ("salinity", "s"),
+         "heartRate": ("heartRate", {"min": ("min", QTY), "avg": ("avg", QTY), "max": ("max", QTY)}),
+         "heartRateData": ("heartRateData", ("list", HR_ROW)),
+         "heartRateRecovery": ("heartRateRecovery", ("list", HR_ROW)),
+         "route": ("route", ("list", ROUTE_POINT)),
+         "metadata": ("metadata", "j")},
+        **{k: (k, QTY) for k in WORKOUT_QTY},
+        **{k: (k, ("list", SERIES_ROW)) for k in WORKOUT_SERIES})
+
+    STATE_OF_MIND_ENTRY = {
+        "id": ("stateOfMindId", "s"), "start": ("start", "d"), "end": ("end", "d"),
+        "kind": ("kind", "s"), "labels": ("labels", "ls"), "associations": ("associations", "ls"),
+        "valence": ("valence", "f"), "valenceClassification": ("valenceClassification", "s"),
+        "metadata": ("metadata", "j"),
+    }
+
+    MEDICATION_ENTRY = {
+        "displayText": ("displayText", "s"), "nickname": ("nickname", "s"),
+        "start": ("start", "d"), "end": ("end", "d"), "scheduledDate": ("scheduledDate", "d"),
+        "form": ("form", "s"), "status": ("status", "s"), "isArchived": ("isArchived", "b"),
+        "dosage": ("dosage", "f"),
+        "codings": ("codings", ("list", {"code": ("code", "s"), "system": ("system", "s"),
+                                         "version": ("version", "s")})),
+    }
+
+    SYMPTOM_ENTRY = {
+        "start": ("start", "d"), "end": ("end", "d"), "name": ("name", "s"),
+        "severity": ("severity", "s"), "userEntered": ("userEntered", "b"),
+        "source": ("source", "s"),
+    }
+
+    CYCLE_ENTRY = {
+        "start": ("start", "d"), "end": ("end", "d"), "name": ("name", "s"),
+        "value": ("value", "s"), "isCycleStart": ("isCycleStart", "b"),
+        "source": ("source", "s"),
+    }
+
+    ECG_ENTRY = {
+        "start": ("start", "d"), "end": ("end", "d"), "classification": ("classification", "s"),
+        "severity": ("severity", "s"), "averageHeartRate": ("averageHeartRate", "f"),
+        "numberOfVoltageMeasurements": ("numberOfVoltageMeasurements", "i"),
+        "samplingFrequency": ("samplingFrequency", "f"), "source": ("source", "s"),
+        "voltageMeasurements": ("voltageMeasurements", ("list", {
+            "date": ("date", "d"), "voltage": ("voltage", "f"), "units": ("units", "s")})),
+    }
+
+    TIMESTAMP = {
+        "start": ("start", "d"), "end": ("end", "d"),
+        "interval": ("interval", {"duration": ("duration", "f"), "units": ("units", "s")}),
+    }
+    HR_NOTIFICATION_ENTRY = {
+        "heartNotification": ("heartNotification", "s"), "threshold": ("threshold", "f"),
+        "start": ("start", "d"), "end": ("end", "d"),
+        "source": ("source", {"name": ("name", "s"), "identifier": ("identifier", "s")}),
+        "heartRateData": ("heartRateData", ("list", {
+            "qty": ("qty", "f"), "units": ("units", "s"), "date": ("date", "d"),
+            "start": ("start", "d"), "end": ("end", "d")})),
+        "heartRate": ("heartRate", ("list", {
+            "hr": ("hr", "f"), "units": ("units", "s"), "timestamp": ("timestamp", TIMESTAMP)})),
+        "heartRateVariation": ("heartRateVariation", ("list", {
+            "hrv": ("hrv", "f"), "units": ("units", "s"), "timestamp": ("timestamp", TIMESTAMP)})),
+    }
+
+    # The sections other than metrics: the account toggle that keeps each, the
+    # kind its entries land as, the spec, and the id the app gives an entry
+    # (None where it gives none and the name and start compose one).
+    SECTIONS = (
+        ("workouts", "enabledWorkouts", WORKOUT, WORKOUT_ENTRY, "id", None),
+        ("stateOfMind", "enabledStateOfMind", STATEOFMIND, STATE_OF_MIND_ENTRY, "id", None),
+        ("medications", "enabledMedications", MEDICATION, MEDICATION_ENTRY, None, ("displayText", "nickname")),
+        ("symptoms", "enabledSymptoms", SYMPTOM, SYMPTOM_ENTRY, None, ("name",)),
+        ("cycleTracking", "enabledCycleTracking", CYCLEEVENT, CYCLE_ENTRY, None, ("name",)),
+        ("ecg", "enabledEcg", ECG, ECG_ENTRY, None, ()),
+        ("heartRateNotifications", "enabledHeartRateNotifications", HRNOTIFICATION, HR_NOTIFICATION_ENTRY,
+         None, ("heartNotification",)),
+    )
+    KNOWN_SECTIONS = ("metrics",) + tuple(s[0] for s in SECTIONS)
+
+    DATE_RE = re.compile(
+        r"^(\d{4})-(\d{2})-(\d{2})"
+        r"(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?)?"
+        r"\s*(Z|z|[+-]\d{2}(?::?\d{2})?)?$")
+    # A segment keeps these as written; `~` is the escape and `/` joins parts.
+    ID_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:@-")
+    EDGE_CHARS = frozenset("._:@-")
+    # An epoch date fit() stored as its decimal text.
+    EPOCH_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
+
+
+    class Refused(Exception):
+        """A delivery this body will not write: the run fails with the message."""
+
+
+    # What a builder answers besides a property map (write it) and None (the
+    # stored record already holds it): nothing is stored and nothing is to be
+    # written, or a delivery received later already wrote what this one
+    # carries. A Drop is the stored record going, a Note its arrival recorded.
+    ABSENT = object()
+    STALE = object()
+
+
+    class Drop:
+        """The stored batch goes; its tombstone keeps the coverage, so a
+        delivery received earlier, retried later, does not write it back."""
+
+        def __init__(self, coverage):
+            self.coverage = coverage
+
+
+    class Note:
+        """The stored values stand and only this delivery's arrival is
+        recorded, `props` patched onto the record. Without it a delivery that
+        changed nothing leaves no trace, and an older one retried after it
+        overwrites what it confirmed. `stale` where a later delivery covered
+        part of this one."""
+
+        def __init__(self, props, stale=False):
+            self.props, self.stale = props, stale
+
+
+    # ---- values -----------------------------------------------------------------
+
+    def number(v):
+        return (isinstance(v, (int, float)) and not isinstance(v, bool)
+                and not (isinstance(v, float) and not math.isfinite(v)))
+
+
+    def parse_instant(value, tz):
+        """The instant one of the app's dates names, as an aware UTC datetime, or
+        None. A date without an offset is read in the account's time zone, else
+        UTC; a number is epoch seconds (milliseconds past 1e11), and so is the
+        decimal text fit() stores a number as, so a stored row and a fresh one
+        name the same instant."""
+        if isinstance(value, str) and EPOCH_RE.match(value.strip()):
+            value = float(value)
+        if number(value):
+            secs = float(value)
+            if abs(secs) > 1e11:
+                secs /= 1000.0
+            try:
+                return datetime.datetime.fromtimestamp(secs, UTC)
+            except (OverflowError, OSError, ValueError):
+                return None
+        if not isinstance(value, str):
+            return None
+        m = DATE_RE.match(value.strip())
+        if not m:
+            return None
+        y, mo, d, h, mi, s, frac, off = m.groups()
+        try:
+            micro = int((frac or "0")[:6].ljust(6, "0"))
+            naive = datetime.datetime(int(y), int(mo), int(d), int(h or 0), int(mi or 0),
+                                      int(s or 0), micro)
+            if off is None:
+                aware = naive.replace(tzinfo=tz or UTC)
+            elif off in ("Z", "z"):
+                aware = naive.replace(tzinfo=UTC)
+            else:
+                digits = off[1:].replace(":", "")
+                delta = datetime.timedelta(hours=int(digits[:2]), minutes=int(digits[2:4] or 0))
+                aware = naive.replace(tzinfo=datetime.timezone(-delta if off[0] == "-" else delta))
+            return aware.astimezone(UTC)
+        except (ValueError, OverflowError):
+            return None
+
+
+    def rfc3339(dt):
+        out = dt.strftime("%Y-%m-%dT%H:%M:%S")
+        if dt.microsecond:
+            out += "." + ("%06d" % dt.microsecond).rstrip("0")
+        return out + "Z"
+
+
+    def id_instant(dt):
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def segment(s):
+        """One id segment, one-to-one with the text: every byte outside the id
+        alphabet, a `/`, a `~`, and a `-._:@` at either end are `~` and two
+        hex digits, and the empty text is a lone `~`. Two accounts `phone/a`
+        and `phone-a` therefore never compose one id, and no segment reads as
+        `.` or `..` in a path."""
+        s = str(s)
+        if not s:
+            return "~"
+        out, last = [], len(s) - 1
+        for i, ch in enumerate(s):
+            if ch in ID_CHARS and not ((i == 0 or i == last) and ch in EDGE_CHARS):
+                out.append(ch)
+            else:
+                out.extend("~%02X" % b for b in ch.encode("utf-8"))
+        return "".join(out)
+
+
+    def slug(s):
+        return re.sub(r"[^a-z0-9]+", "-", str(s).lower()).strip("-") or "x"
+
+
+    def suffixed(rid, n):
+        """The nth record of one id within a delivery (two symptoms of one name
+        logged in the same second)."""
+        tail = "/%d" % n
+        if len(rid) + len(tail) <= MAX_ID:
+            return rid + tail
+        return rid[:MAX_ID - len(tail)] + tail
+
+
+    def fit(value, spec, path, dropped):
+        """The value in its declared shape, or None (recorded in dropped) when the
+        app sent something the declaration has no place for."""
+        if value is None:
+            return None
+        if isinstance(spec, dict):
+            if not isinstance(value, dict):
+                dropped.add(path)
+                return None
+            out = {}
+            for key, v in value.items():
+                if key not in spec:
+                    dropped.add(path + "." + str(key))
+                    continue
+                name, sub = spec[key]
+                got = fit(v, sub, path + "." + str(key), dropped)
+                if got is not None:
+                    out[name] = got
+            return out or None
+        if isinstance(spec, tuple):
+            if not isinstance(value, list):
+                dropped.add(path)
+                return None
+            out = [fit(v, spec[1], path, dropped) for v in value]
+            return [v for v in out if v is not None] or None
+        if spec == "f":
+            if number(value):
+                return value
+        elif spec == "i":
+            if number(value) and float(value).is_integer():
+                return int(value)
+        elif spec == "s":
+            if isinstance(value, str):
+                return value
+        elif spec == "d":
+            if isinstance(value, str):
+                return value
+            if number(value):
+                return repr(value)
+        elif spec == "b":
+            if isinstance(value, bool):
+                return value
+        elif spec == "ls":
+            if isinstance(value, list):
+                kept = [v for v in value if isinstance(v, str)]
+                if len(kept) != len(value):
+                    dropped.add(path)
+                return kept or None
+        elif spec == "j":
+            return value
+        dropped.add(path)
+        return None
+
+
+    def same(stored, props):
+        """Whether a stored record already carries every property props names, so
+        the write would change nothing but its receipt."""
+        if not stored:
+            return False
+        have = stored.get("properties") or {}
+        return all(have.get(k) == v for k, v in props.items())
+
+
+    # ---- periods ----------------------------------------------------------------
+
+    def period(size, dt):
+        if size == "hour":
+            start = dt.replace(minute=0, second=0, microsecond=0)
+            return start.strftime("%Y-%m-%dT%H"), start, start + datetime.timedelta(hours=1)
+        if size == "day":
+            start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            return start.strftime("%Y-%m-%d"), start, start + datetime.timedelta(days=1)
+        if size == "month":
+            start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end = (start.replace(year=start.year + 1, month=1) if start.month == 12
+                   else start.replace(month=start.month + 1))
+            return start.strftime("%Y-%m"), start, end
+        start = dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return start.strftime("%Y"), start, start.replace(year=start.year + 1)
+
+
+    def grouping_of(headers):
+        g = (headers.get("automation-aggregation") or "").strip().lower()
+        if g in PERIOD_OF:
+            return g, PERIOD_OF[g]
+        if g + "s" in PERIOD_OF:
+            return g + "s", PERIOD_OF[g + "s"]
+        return "unknown", "day"
+
+
+    def row_instant(row, tz):
+        when = row.get("date")
+        if when is None:
+            when = row.get("startDate")
+        return parse_instant(when, tz)
+
+
+    def row_order(item):
+        when, row = item
+        return (when, row.get("source") or "", json.dumps(row, sort_keys=True))
+
+
+    # ---- the request ------------------------------------------------------------
+
+    def resolve_account(accounts, headers):
+        accounts = [a for a in (accounts or []) if isinstance(a, dict) and a.get("kind") == ACCOUNT]
+        named = (headers.get(ACCOUNT_HEADER) or "").strip()
+        if named:
+            for a in accounts:
+                if a.get("id") == named:
+                    return a
+            raise Refused("the delivery names account %r in X-Substrate-Account and no %s record "
+                          "has that id: create it, then retry the parked delivery" % (named, ACCOUNT))
+        if len(accounts) == 1:
+            return accounts[0]
+        if not accounts:
+            raise Refused("no %s record exists: create one (its id is yours to choose), then retry "
+                          "the parked delivery" % ACCOUNT)
+        raise Refused("the delivery carries no X-Substrate-Account header and %d account records "
+                      "exist (%s): add the header to the automation, then retry the parked delivery"
+                      % (len(accounts), ", ".join(sorted(str(a.get("id")) for a in accounts))))
+
+
+    def body_bytes(request):
+        if request.get("parts") is not None:
+            raise Refused("the body is multipart/form-data, which is the app's CSV format: set the "
+                          "automation's Export Format to JSON")
+        body = request.get("body") or {}
+        if isinstance(body.get("text"), str):
+            return body["text"].encode("utf-8")
+        if isinstance(body.get("base64"), str):
+            try:
+                return base64.b64decode(body["base64"], validate=True)
+            except ValueError as e:
+                raise Refused("the body is not readable base64: %s" % e) from e
+        raise Refused("the request carries no body")
+
+
+    def zone_of(props):
+        name = props.get("timezone")
+        if not isinstance(name, str) or not name:
+            return None
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            return None
+
+
+    class Unit:
+        """One record the delivery implies: its kind and id, and how to build its
+        properties from the stored record (None when nothing would change)."""
+
+        def __init__(self, kind, rid, build):
+            self.kind, self.id, self.build = kind, rid, build
+
+
+    class Delivery:
+        def __init__(self):
+            self.units = []
+            self.counts = {"metrics": 0, "metricRows": 0}
+            self.metric_names = []
+            self.skipped = []
+            self.dropped = set()
+            self.dropped_rows = 0
+            self.lo = None
+            self.hi = None
+            self.spans = []
+
+        def saw(self, dt):
+            if dt is None:
+                return
+            self.lo = dt if self.lo is None or dt < self.lo else self.lo
+            self.hi = dt if self.hi is None or dt > self.hi else self.hi
+
+
+    def read_delivery(raw, headers, account, fire_id, received_at, record_id, later):
+        """Every record the delivery implies, in a stable order, or Refused.
+        `record_id` is host.observed.record_id; `later` maps (metric,
+        grouping) to the spans deliveries received after this one covered."""
+        received = rfc3339(received_at)
+        aid = account["id"]
+
+        def compose(*parts):
+            # The one mirror row id rule every provider follows:
+            # `applehealth/<parts>` where that is a record id of at most 128
+            # bytes, else host.ids.external's hash of it. Each part is held to
+            # the id alphabet first, so a label with a space stays readable.
+            return record_id("applehealth", aid, *[segment(p) for p in parts])
+
+        props = account.get("properties") or {}
+        tz = zone_of(props)
+        try:
+            doc = json.loads(raw)
+        except (ValueError, UnicodeDecodeError) as e:
+            raise Refused("the body is not JSON: %s" % e) from e
+        if not isinstance(doc, dict) or not isinstance(doc.get("data"), dict):
+            raise Refused("the body has no `data` object: this is not a Health Auto Export JSON export")
+        data = doc["data"]
+        for key in doc:
+            if key != "data":
+                raise Refused("the body carries %r beside `data`: this is not a Health Auto Export "
+                              "JSON export" % key)
+        for key, value in data.items():
+            if key in KNOWN_SECTIONS and value is not None and not isinstance(value, list):
+                raise Refused("data.%s is not a list" % key)
+
+        d = Delivery()
+        account_ref = {"ref": ACCOUNT + "/" + aid}
+        export_ref = {"ref": EXPORT + "/" + fire_id}
+        receipt = {"export": export_ref, "receivedAt": received}
+        for key in data:
+            if key not in KNOWN_SECTIONS:
+                d.dropped.add("data." + str(key))
+
+        # ---- metrics ----
+        metrics = data.get("metrics") or []
+        if metrics and props.get("enabledMetrics") is False:
+            d.skipped.append("metrics")
+            metrics = []
+        grouping, size = grouping_of(headers)
+        by_name = {}
+        for i, metric in enumerate(metrics):
+            if not isinstance(metric, dict):
+                raise Refused("data.metrics[%d] is not an object" % i)
+            name = metric.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise Refused("data.metrics[%d] has no name" % i)
+            units = metric.get("units")
+            if units is not None and not isinstance(units, str):
+                raise Refused("data.metrics[%d] (%s): units is not a string" % (i, name))
+            rows = metric.get("data")
+            if rows is None:
+                rows = []
+            if not isinstance(rows, list):
+                raise Refused("data.metrics[%d] (%s): data is not a list" % (i, name))
+            if name in by_name and by_name[name]["units"] != units:
+                raise Refused("data.metrics names %s twice, in %r and %r" % (name, by_name[name]["units"], units))
+            entry = by_name.setdefault(name, {"units": units, "rows": []})
+            for key in metric:
+                if key not in ("name", "units", "data"):
+                    d.dropped.add("metrics.%s.%s" % (name, key))
+            d.counts["metrics"] += 1
+            for row in rows:
+                d.counts["metricRows"] += 1
+                if not isinstance(row, dict):
+                    d.dropped_rows += 1
+                    continue
+                when = row_instant(row, tz)
+                fitted = fit(row, METRIC_ROW, "metrics.%s" % name, d.dropped)
+                if when is None or not fitted:
+                    d.dropped_rows += 1
+                    continue
+                d.saw(when)
+                entry["rows"].append((when, fitted))
+        for name in sorted(by_name):
+            entry = by_name[name]
+            d.metric_names.append(name)
+            rows = entry["rows"]
+            if not rows:
+                continue
+            lo = min(w for w, _ in rows)
+            hi = max(w for w, _ in rows)
+            d.spans.append({"name": name, "grouping": grouping, "start": rfc3339(lo), "end": rfc3339(hi)})
+            batches = {}
+            for when, row in rows:
+                key, start, end = period(size, when)
+                batches.setdefault(key, (start, end, []))[2].append((when, row))
+            for key in sorted(batches):
+                start, end, fresh = batches[key]
+                d.units.append(Unit(METRICBATCH, compose(aid, name, grouping, key),
+                                    batch_builder(account_ref, receipt, name, entry["units"], grouping,
+                                                  start, end, fresh, lo, hi, tz, received_at,
+                                                  later.get((name, grouping), []))))
+            # The periods inside the span this delivery carries no row for: a
+            # batch stored there holds rows the delivery no longer carries.
+            at, last, gaps = period(size, lo)[2], period(size, hi)[1], 0
+            while at < last and gaps < GAP_PERIODS:
+                key, start, end = period(size, at)
+                if key not in batches:
+                    d.units.append(Unit(METRICBATCH, compose(aid, name, grouping, key),
+                                        batch_builder(account_ref, receipt, name, entry["units"],
+                                                      grouping, start, end, [], lo, hi, tz, received_at,
+                                                      later.get((name, grouping), []))))
+                    gaps += 1
+                at = end
+
+        # ---- everything else ----
+        for section, toggle, kind, spec, own_id, name_keys in SECTIONS:
+            owned = tuple(name for name, _ in spec.values()) + ("account", "at", "endsAt")
+            entries = data.get(section) or []
+            if entries and props.get(toggle) is False:
+                d.skipped.append(section)
+                continue
+            d.counts[section] = len(entries)
+            seen = {}
+            for n, entry in enumerate(entries):
+                where = "data.%s[%d]" % (section, n)
+                if not isinstance(entry, dict):
+                    raise Refused("%s is not an object" % where)
+                fitted = fit(entry, spec, section, d.dropped) or {}
+                if section == "heartRateNotifications" and isinstance(entry.get("source"), str):
+                    fitted["source"] = {"name": entry["source"]}
+                    d.dropped.discard(section + ".source")
+                start = parse_instant(entry.get("start"), tz)
+                end = parse_instant(entry.get("end"), tz)
+                d.saw(start)
+                d.saw(end)
+                if own_id:
+                    upstream = entry.get(own_id)
+                    if not isinstance(upstream, str) or not upstream.strip():
+                        raise Refused("%s has no id%s" % (where, ": set the automation's Export Version "
+                                                           "to 2" if section == "workouts" else ""))
+                    rid = compose(aid, upstream)
+                else:
+                    when = start
+                    if section == "medications":
+                        when = parse_instant(entry.get("scheduledDate"), tz) or start
+                    label = next((entry[k] for k in name_keys
+                                  if isinstance(entry.get(k), str) and entry[k].strip()), None)
+                    parts = [aid] + ([slug(label or section)] if name_keys else [])
+                    rid = compose(*(parts + [id_instant(when)])) if when else compose(aid, fire_id, section, n)
+                seen[rid] = seen.get(rid, 0) + 1
+                if seen[rid] > 1:
+                    rid = suffixed(rid, seen[rid])
+                props_out = dict(fitted)
+                props_out["account"] = account_ref
+                if start is not None:
+                    props_out["at"] = rfc3339(start)
+                    if end is not None and end >= start:
+                        props_out["endsAt"] = rfc3339(end)
+                d.units.append(Unit(kind, rid, entry_builder(props_out, owned, receipt, received_at)))
+        return d
+
+
+    def received_of(stored):
+        """When the delivery that last wrote a stored record arrived, or None."""
+        return parse_instant(((stored or {}).get("properties") or {}).get("receivedAt"), None)
+
+
+    def entry_builder(props, owned, receipt, received_at):
+        """An entry's properties after this delivery: every property the
+        section declares, None where the delivery no longer carries it, so a
+        put clears a field a corrected export removed. A record a later
+        delivery carried stays as it is: a parked delivery retried after it
+        is older than what it would overwrite. A delivery that carries the
+        entry unchanged still moves its receipt forward, so an older one
+        retried after it finds it newer."""
+        full = {name: None for name in owned}
+        full.update(props)
+
+        def build(live, stored):
+            last = received_of(stored)
+            if last is not None and last > received_at:
+                return STALE
+            if same(live, full):
+                return Note(dict(receipt)) if last is None or last < received_at else None
+            out = dict(full)
+            out.update(receipt)
+            return out
+        return build
+
+
+    def coverage_of(stored, start, end):
+        """A stored batch's coverage as (start, end, received) instants. A batch
+        written before coverage was kept counts as covered over its whole
+        period by the delivery that last wrote it."""
+        have = (stored or {}).get("properties") or {}
+        out = []
+        for c in have.get("coverage") or []:
+            if not isinstance(c, dict):
+                continue
+            s, e, at = (parse_instant(c.get(k), None) for k in ("start", "end", "receivedAt"))
+            if s is not None and e is not None and at is not None:
+                out.append((s, e, at))
+        if not out and have.get("coverage") is None and have.get("rows"):
+            at = received_of(stored)
+            if at is not None:
+                out.append((start, end, at))
+        return out
+
+
+    def merge_coverage(coverage, entry):
+        """The coverage with entry added, less every span another of the same
+        age or newer covers whole."""
+        spans = sorted(coverage + [entry], key=lambda c: (-c[2].timestamp(), c[0], -c[1].timestamp()))
+        kept = []
+        for s, e, at in spans:
+            if not any(ks <= s and e <= ke and kat >= at for ks, ke, kat in kept):
+                kept.append((s, e, at))
+        kept.sort(key=lambda c: (c[0], c[1], c[2]))
+        return [{"start": rfc3339(s), "end": rfc3339(e), "receivedAt": rfc3339(at)} for s, e, at in kept]
+
+
+    def unit_row(row, have_units, units):
+        """A kept row in the batch's units after this delivery: a row whose
+        unit differs carries its own `units`, so a change of the app's Unit
+        Preferences never rewrites or drops a reading sent before it."""
+        own = row.get("units", have_units)
+        if own == units:
+            if "units" not in row:
+                return row
+            row = dict(row)
+            del row["units"]
+            return row
+        if own is None or row.get("units") == own:
+            return row
+        row = dict(row)
+        row["units"] = own
+        return row
+
+
+    def batch_builder(account_ref, receipt, name, units, grouping, start, end, fresh, lo, hi, tz,
+                      received_at, later):
+        """A metric batch's rows after this delivery: the stored rows outside the
+        span [lo, hi] this delivery covers for the metric, and every row the
+        delivery carries inside the batch's period. Where a delivery received
+        later covered a row's time (the batch's `coverage`), that later
+        delivery's rows stand: a parked delivery retried late neither replaces
+        nor deletes them, and so do the receipts of later deliveries (`later`,
+        their spans of this metric), which also hold where a later delivery
+        found the period empty and wrote nothing. The coverage gains this
+        delivery's span also where its rows stand, patched alone."""
+        cover = (max(lo, start), min(hi, end), received_at)
+
+        def build(live, stored):
+            coverage = coverage_of(stored, start, end)
+            newer = [(s, e) for s, e, at in coverage if at > received_at] + later
+
+            def masked(when):
+                return any(s <= when <= e for s, e in newer)
+
+            have = (live or {}).get("properties") or {}
+            have_units = have.get("units")
+            have_rows = have.get("rows") or []
+            kept, held = [], False
+            for row in have_rows:
+                when = row_instant(row, tz)
+                inside = when is not None and lo <= when <= hi
+                if inside and masked(when):
+                    held = True
+                if not inside or masked(when):
+                    kept.append((when or start, unit_row(row, have_units, units)))
+            mine = [(when, row) for when, row in fresh if not masked(when)]
+            held = held or len(mine) < len(fresh)
+            rows = [row for _, row in sorted(kept + mine, key=row_order)]
+            spans = merge_coverage(coverage, cover)
+            moved = spans != (((stored or {}).get("properties") or {}).get("coverage") or [])
+            props = {"account": account_ref, "name": name, "grouping": grouping,
+                     "at": rfc3339(start), "endsAt": rfc3339(end), "rows": rows, "coverage": spans,
+                     "units": units}
+            props.update(receipt)
+            if live and have_units == units and have_rows == rows:
+                if moved:
+                    return Note({"coverage": spans}, stale=held)
+                return STALE if held else None
+            if not rows:
+                if live:
+                    return Drop(spans)
+                return STALE if held else ABSENT
+            return props
+        return build
+
+
+    def later_spans(host, aid, received):
+        """(metric, grouping) -> the spans the receipts of deliveries received
+        after `received` covered. Usually none: a delivery is the latest."""
+        out, after = {}, None
+        while True:
+            query = {"filter": {"kinds": [EXPORT], "properties": {
+                "account": {"eq": ACCOUNT + "/" + aid}, "at": {"gt": received}}}, "first": 500}
+            if after:
+                query["after"] = after
+            page = host.list(**query)
+            for rec in page.get("records") or []:
+                for span in (rec.get("properties") or {}).get("metricSpans") or []:
+                    if not isinstance(span, dict):
+                        continue
+                    s, e = parse_instant(span.get("start"), None), parse_instant(span.get("end"), None)
+                    if s is not None and e is not None:
+                        out.setdefault((span.get("name"), span.get("grouping")), []).append((s, e))
+            after = page.get("cursor")
+            if not after:
+                return out
+
+
+    # ---- the run ----------------------------------------------------------------
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        request = envelope.get("request")
+        if not isinstance(request, dict):
+            raise Refused("applehealthingest runs on the applehealth-webhook trigger; this "
+                          "invocation carries no webhook request")
+        fire = envelope.get("fire") or {}
+        fire_id = fire.get("id")
+        received_at = parse_instant(fire.get("at"), None)
+        if not isinstance(fire_id, str) or not fire_id or received_at is None:
+            raise Refused("the envelope carries no fire id and time")
+        received = rfc3339(received_at)
+        headers = {str(k).lower(): str(v) for k, v in (request.get("headers") or {}).items()}
+        account = resolve_account((input.get("config") or {}).get("accounts"), headers)
+        aid = account["id"]
+        if (account.get("properties") or {}).get("syncPaused") is True:
+            host.log("applehealth: account %s is paused, the delivery is dropped" % aid)
+            return {"output": {"account": aid, "skipped": "the account is paused"}}
+
+        raw = body_bytes(request)
+        d = read_delivery(raw, headers, account, fire_id, received_at, host.observed.record_id,
+                          later_spans(host, aid, received))
+        receipt = {"export": {"ref": EXPORT + "/" + fire_id}, "receivedAt": received}
+
+        cur = host.page.resume() or {}
+        i = int(cur.get("next") or 0)
+        written = int(cur.get("written") or 0)
+        unchanged = int(cur.get("unchanged") or 0)
+        deleted = int(cur.get("deleted") or 0)
+        stale = int(cur.get("stale") or 0)
+        oversized = list(cur.get("oversized") or [])
+        used_bytes = used_units = 0
+        total = len(d.units)
+        while i < total:
+            if used_units >= PAGE_UNITS:
+                break
+            unit = d.units[i]
+            stored = host.records.get(unit.kind, unit.id)
+            # A read by id answers a tombstone too. A deleted record is absent
+            # to the builders as rows (its rows are not merged back, and a
+            # record sent again is written again), but its receipt and
+            # coverage still say which delivery wrote it last; the guard
+            # still names its version.
+            live = None if stored is None or stored.get("deletedAt") else stored
+            props = unit.build(live, stored)
+            if props is ABSENT:
+                pass
+            elif props is None:
+                unchanged += 1
+            elif props is STALE:
+                stale += 1
+            elif isinstance(props, Note):
+                host.effects.patch(unit.kind, unit.id, properties=props.props,
+                                   if_version=host.version(stored))
+                if props.stale:
+                    stale += 1
+                else:
+                    unchanged += 1
+            elif isinstance(props, Drop):
+                # A delete takes no version guard, so the receipt patch before
+                # it carries the one a concurrent delivery's write would trip.
+                host.effects.patch(unit.kind, unit.id, properties=dict(receipt, coverage=props.coverage),
+                                   if_version=host.version(stored))
+                host.effects.delete(unit.kind, unit.id)
+                deleted += 1
+            else:
+                size = len(json.dumps(props))
+                if size > OVERSIZE_BYTES:
+                    if len(oversized) < MAX_OVERSIZED:
+                        oversized.append("%s %s (%d bytes)" % (unit.kind, unit.id, size))
+                    host.log("applehealth: %s %s is %d bytes, more than one response "
+                             "holds; skipped" % (unit.kind, unit.id, size))
+                else:
+                    if used_units and used_bytes + size > PAGE_BYTES:
+                        break
+                    host.effects.put(unit.kind, unit.id, properties=props,
+                                     if_version=host.version(stored))
+                    written += 1
+                    used_bytes += size
+            used_units += 1
+            i += 1
+
+        if i < total:
+            host.effects.patch(ACCOUNT, aid, properties={
+                "syncState": "running", "lastSyncStartedAt": received,
+                "syncProgress": {"phase": "writing", "done": i, "total": total, "pending": total - i}})
+            return {"output": {"export": fire_id, "account": aid, "written": written,
+                               "unchanged": unchanged, "deleted": deleted, "stale": stale,
+                               "remaining": total - i},
+                    "more": host.page.more({"next": i, "written": written, "unchanged": unchanged,
+                                            "deleted": deleted, "stale": stale,
+                                            "oversized": oversized})}
+
+        dropped = sorted(d.dropped)
+        export = {
+            "account": {"ref": ACCOUNT + "/" + aid},
+            "at": received,
+            "byteSize": len(raw),
+            "bodySha256": hashlib.sha256(raw).hexdigest(),
+            "counts": d.counts,
+            "written": written,
+            "unchanged": unchanged,
+            "deleted": deleted,
+            "stale": stale,
+            "droppedRows": d.dropped_rows,
+        }
+        for header, prop in (("session-id", "sessionId"), ("automation-name", "automationName"),
+                             ("automation-id", "automationId"),
+                             ("automation-aggregation", "automationAggregation"),
+                             ("automation-period", "automationPeriod"), ("user-agent", "userAgent"),
+                             ("content-type", "contentType")):
+            if headers.get(header):
+                export[prop] = headers[header]
+        if d.metric_names:
+            export["metricNames"] = d.metric_names
+        if d.skipped:
+            export["skippedSections"] = d.skipped
+        if dropped:
+            export["droppedFields"] = dropped[:MAX_DROPPED]
+        if oversized:
+            export["oversized"] = oversized
+        if d.lo is not None:
+            export["spanStart"] = rfc3339(d.lo)
+            export["spanEnd"] = rfc3339(d.hi)
+        if d.spans:
+            export["metricSpans"] = d.spans
+        host.effects.put(EXPORT, fire_id, properties=export)
+
+        now = datetime.datetime.now(UTC)
+        message = ("%d records written, %d deleted, %d unchanged, %d left to a later delivery, "
+                   "from %d metric rows of %d metrics" % (written, deleted, unchanged, stale,
+                                                          d.counts["metricRows"], len(d.metric_names)))
+        host.effects.patch(ACCOUNT, aid, properties={
+            "syncState": "ok", "syncMessage": message, "lastSyncedAt": rfc3339(now),
+            "lastSyncStartedAt": received,
+            "lastSyncDurationMs": max(0, int((now - received_at).total_seconds() * 1000)),
+            "syncProgress": None, "syncError": None, "syncErrorAt": None,
+            "lastExport": {"ref": EXPORT + "/" + fire_id}})
+        if dropped:
+            host.log("applehealth: dropped fields the declaration has no place for: %s"
+                     % ", ".join(dropped[:20]))
+        out = {"export": fire_id, "account": aid, "written": written, "unchanged": unchanged,
+               "deleted": deleted, "stale": stale, "remaining": 0}
+        if dropped:
+            out["droppedFields"] = dropped[:MAX_DROPPED]
+        if oversized:
+            out["oversized"] = oversized
+        return {"output": out}

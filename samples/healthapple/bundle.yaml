@@ -1,0 +1,1076 @@
+# The Apple Health adapter: what the `applehealth` provider mirrors from the
+# Health Auto Export app, written as the `health` sample's observations. A
+# SAMPLE: it imports under the repository's own authority, so every
+# `samples.substrate.reamde.dev` below, in the function's source too, is rewritten to it
+# on import, while the provider's kinds keep their publisher's authority.
+#
+# One function on one record trigger (triggers.yaml). A mirror row (a metric
+# batch or a workout) is the origin of everything written from it: every
+# delivery writes the whole set the row implies and deletes what it no longer
+# implies, so a corrected redelivery rewrites the same ids and a deleted row
+# takes its outputs with it.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/healthapple
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthapple
+  # 6: a row's own `units`, epoch dates and dates without an offset read
+  # in the account's zone, composed id parts escaped one to one, and a
+  # night's stage totals left out where its segments are written. 7: a
+  # sleep batch's outputs are recomputed with every sleep batch near it,
+  # on each change and deletion, and durations are measured on UTC
+  # instants; ADAPTER is healthapple@7.
+  # 8: every unit is written as the id of a unit record (`1/min`, `percent`,
+  # `steps`, `mmHg`), the spelling the repository stores since decision
+  # record 0186, and a meter's glucose is one `health/blood_glucose`
+  # series in `mmol/L{glucose}` or `mg/dL{glucose}`, never plain mmol/L
+  # or a `blood_glucose_mass` metric; ADAPTER is healthapple@8.
+  version: 8
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/healthapple
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthapple
+  description: >-
+    Turns what the Apple Health provider receives into health records: traces,
+    observations, nights and workouts. Needs the health sample and the Apple
+    Health provider.
+  requires:
+    - samples.substrate.reamde.dev/observations
+    - samples.substrate.reamde.dev/health
+    - providers.substrate.reamde.dev/applehealth
+  requiresAtLeast:
+    # 2 is the trace's one `utcOffset`, and 4 names each metric's unit as a
+    # unit record, whose id this adapter writes; 6 is the version current
+    # when this floor was set.
+    samples.substrate.reamde.dev/observations: 6
+    # 2 declares the sleep's and the workout's `name`, which this adapter
+    # writes; 8 makes `health/blood_glucose` one metric in the glucose
+    # units this adapter writes (analyte_units.yaml).
+    samples.substrate.reamde.dev/health: 8
+    # 2 keeps a row's own `units` and escapes composed id parts one to one.
+    providers.substrate.reamde.dev/applehealth: 2
+  installs:
+    - samples.substrate.reamde.dev/healthapple/adaptapplehealth
+---
+# Reads are the reconciliation: the outputs that already point at the origin
+# (`filter.referencing`), and the account for the merged source's name. The
+# sources it mints are written `ifAbsent`, so an owner's edit to one (its
+# name, its `priorities`) stands.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/healthapple/adaptapplehealth
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthapple
+  description: >-
+    Write one applehealth metric batch or workout as health records: dense
+    metrics (heart rate, steps, distance, energy) as hourly traces per source,
+    sparse ones (weight, body fat, blood pressure, glucose, HRV) as observations,
+    the app's hour and day buckets as summaries, sleep as stage amounts and
+    nights, and a workout as a health workout. Deletes what the row no longer
+    implies. Runs on the healthapple-on-mirror trigger; not meant to be called
+    by hand.
+  runtime: python
+  timeout: PT60S
+  returns:
+    - name: origin
+      type: string
+      description: the mirror row this delivery wrote from, as its record
+        path
+    - name: written
+      type: int
+      description: outputs created or changed
+    - name: unchanged
+      type: int
+      description: outputs that already held what the row implies
+    - name: deleted
+      type: int
+      description: earlier outputs the row no longer implies
+    - name: skipped
+      type: string
+      repeated: true
+      description: what the row carried that no metric maps, and why
+  permissions:
+    reads:
+      kinds:
+        - samples.substrate.reamde.dev/observations/trace
+        - samples.substrate.reamde.dev/observations/observation
+        - samples.substrate.reamde.dev/health/sleep
+        - samples.substrate.reamde.dev/health/workout
+        - providers.substrate.reamde.dev/applehealth/account
+        - providers.substrate.reamde.dev/applehealth/metricbatch
+      budgets:
+        calls: 100
+        rows: 10000
+    writes:
+      - samples.substrate.reamde.dev/observations/trace
+      - samples.substrate.reamde.dev/observations/observation
+      - samples.substrate.reamde.dev/observations/source
+      - samples.substrate.reamde.dev/health/sleep
+      - samples.substrate.reamde.dev/health/workout
+  source: |
+    """applehealth mirror rows -> observations, traces, sleeps and workouts.
+
+    One delivery is one mirror row (a metric batch or a workout) that changed or
+    went away. The row is the ORIGIN of everything written from it: every output
+    names it (`origin`, or `origins` on a trace), and every delivery writes the
+    whole set of outputs the row now implies and deletes the earlier ones it no
+    longer implies, found by reading what points at the row. A corrected
+    redelivery therefore rewrites the same ids under a higher `revision`, and a
+    deleted row takes its outputs with it.
+
+    Raw values come only from the seconds and minutes groupings; an hour, a day
+    or a coarser bucket is the app's own aggregate, written as `summary`
+    observations so a raw read never counts it twice beside the minutes. Units are
+    converted to each metric's unit through the repository's unit graph
+    (host.units, decision record 0186) and written as the unit record's id;
+    a metric this table does not map, or a unit no unit record answers or
+    no linear conversion joins to the metric's, is skipped and named in the
+    result, never guessed.
+    """
+
+    import datetime
+    import decimal
+    import re
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    # This code's own version, `<package>@<package version>`, stamped on
+    # every output apart from the row's `revision` (decision record 0162).
+    # Raise it and the package's `version` together with any change to
+    # what a mirror row becomes: the new package version is what offers
+    # a repository the upgrade. Then replay `healthapple-on-mirror` from 0:
+    # every output is rewritten at the revision it already holds.
+    ADAPTER = "healthapple@8"
+
+    PROVIDER = "providers.substrate.reamde.dev/applehealth/"
+    BATCH = PROVIDER + "metricbatch"
+    MIRROR_WORKOUT = PROVIDER + "workout"
+    ACCOUNT = PROVIDER + "account"
+    OBS = "samples.substrate.reamde.dev/observations/"
+    TRACE = OBS + "trace"
+    OBSERVATION = OBS + "observation"
+    SOURCE = OBS + "source"
+    METRIC = OBS + "metric/health/"
+    HEALTH = "samples.substrate.reamde.dev/health/"
+    SLEEP = HEALTH + "sleep"
+    WORKOUT = HEALTH + "workout"
+
+    # The properties this function owns on each output kind: a rewrite clears
+    # the ones a new shape no longer carries (a trace moving from `every` to
+    # `offsets` must not keep both).
+    OWNED = {
+        TRACE: ("metric", "source", "form", "unit", "every", "offsets", "values", "codes", "hold",
+                "at", "endsAt", "utcOffset", "origins", "revision"),
+        OBSERVATION: ("metric", "source", "form", "value", "code", "statistic", "period", "periodId",
+                      "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin",
+                      "revision"),
+        SLEEP: ("name", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "isNap", "timeInBed",
+                "timeAsleep", "awake", "light", "deep", "rem", "latency", "efficiency", "origin",
+                "revision"),
+        WORKOUT: ("name", "sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
+                  "duration", "distance", "activeEnergy", "averageHeartRate", "maxHeartRate", "elevationGain",
+                  "origin", "revision"),
+    }
+
+    # Health Auto Export's metric name -> (metric id under health/, shape, form,
+    # the metric's unit, the metric's hold). `dense` is packed into hourly traces;
+    # `sparse` is one observation per reading; `daily` is a value Apple computes
+    # once a day. The units and holds are the health catalogue's
+    # (samples/health/metrics.yaml), each unit the id of its unit record, the
+    # spelling the repository stores: a gauge with no hold stands until its
+    # stream's next point, so a night's last SpO2 reading would cover the day.
+    # A spot reading (a weighing, a night's wrist temperature, an HRV or VO2
+    # max estimate) holds PT0S: it is a point in time, so a read's average of
+    # it is the mean of the readings, never weighted by the gaps between them.
+    METRICS = {
+        "heart_rate": ("heart_rate", "dense", "gauge", "1/min", "PT4M"),
+        "respiratory_rate": ("respiratory_rate", "dense", "gauge", "1/min", "PT30M"),
+        "blood_oxygen_saturation": ("spo2", "dense", "gauge", "percent", "PT20M"),
+        "step_count": ("steps", "dense", "amount", "steps", None),
+        "walking_running_distance": ("distance", "dense", "amount", "m", None),
+        "flights_climbed": ("floors", "dense", "amount", "floors", None),
+        "active_energy": ("active_energy", "dense", "amount", "kcal", None),
+        "basal_energy_burned": ("basal_energy", "dense", "amount", "kcal", None),
+        "heart_rate_variability": ("hrv_sdnn", "sparse", "gauge", "ms", "PT0S"),
+        "apple_sleeping_wrist_temperature": ("skin_temperature", "sparse", "gauge", "Cel", "PT0S"),
+        "vo2_max": ("vo2_max", "sparse", "gauge", "mL/kg/min", "PT0S"),
+        "weight_body_mass": ("body_mass", "sparse", "gauge", "kg", "PT0S"),
+        "body_fat_percentage": ("body_fat_fraction", "sparse", "gauge", "percent", "PT0S"),
+        "body_mass_index": ("bmi", "sparse", "gauge", "kg/m2", "PT0S"),
+        "height": ("height", "sparse", "gauge", "m", "PT0S"),
+        "resting_heart_rate": ("resting_heart_rate", "daily", "summary", "1/min", None),
+    }
+    # Spellings the app's help pages and the vendor's own receiver use for the
+    # same metrics.
+    ALIASES = {"weight_&_body_mass": "weight_body_mass", "vo2max": "vo2_max"}
+    PRESSURE = ("systolic_blood_pressure", "diastolic_blood_pressure", "mmHg", "PT0S")
+    # A meter's glucose is one metric in two units that carry the analyte
+    # (samples/health/analyte_units.yaml): (the plain unit the app reports,
+    # the glucose unit its digits are written in). The app sends plain mg/dL
+    # or HealthKit's molar-mass mmol/L, which no conversion joins to the
+    # metric's unit, so a reading keeps its digits and takes the glucose
+    # unit of the same scale (docs/observations.md, glucose in either unit).
+    GLUCOSE_METRIC = "blood_glucose"
+    GLUCOSE = (("mmol/L", "mmol/L_glucose"), ("mg/dL", "mg/dL_glucose"))
+    # The catalogue's PT15M: a CGM's reading every five minutes is weighted by
+    # the time it stands, and meter readings further apart than the hold each
+    # weigh the same, so their average is the mean of the readings.
+    GLUCOSE_HOLD = "PT15M"
+
+    # Every app spelling goes to host.units.canonical, which answers the id
+    # of the unit record that spelling names (`count/min` and `bpm` are
+    # `1/min`, `ft` the foot, `st` the stone). Apple's dimensionless `count`
+    # is the metric's own counted unit (steps, floors, a BMI), handled in
+    # Units: the repository's `count` converts to none of them.
+    COUNTED = ("steps", "floors", "kg/m2")
+
+    FINE = ("seconds", "minutes")
+    STEP = {"seconds": 1, "minutes": 60}
+    COARSE = {"hours": "hour", "days": "day", "weeks": "week", "months": "month", "years": "year"}
+
+    # A segment's value onto health/sleep_stage's code set. Sleep the device
+    # did not stage is `asleep`. The In Bed segment spans the whole night under
+    # the stages, so it is the night's timeInBed and no stage: summed by code,
+    # the night would count twice.
+    STAGES = {"awake": "awake", "core": "light", "deep": "deep", "rem": "rem", "asleep": "asleep",
+              "unspecified": "asleep", "asleep unspecified": "asleep", "asleepunspecified": "asleep"}
+    IN_BED = "in bed"
+    # An aggregated night's stage fields: (field, code, the sleep record's
+    # property). `asleep` is unstaged sleep, which only timeAsleep holds.
+    NIGHT = (("core", "light", "light"), ("deep", "deep", "deep"), ("rem", "rem", "rem"),
+             ("awake", "awake", "awake"), ("asleep", "asleep", None))
+    # The app sends no nap flag: a sleep shorter than this that begins
+    # between NAP_HOURS (local time) is a nap.
+    NAP_LONGEST = 3 * 3600
+    NAP_HOURS = (9, 21)
+
+    # HealthKit's workout names onto the workout kind's code set. A name not
+    # here is `other`; the name itself stays in `sportSource`.
+    SPORTS = {
+        "running": "running", "outdoor run": "running", "indoor run": "running",
+        "walking": "walking", "outdoor walk": "walking", "indoor walk": "walking",
+        "cycling": "cycling", "outdoor cycle": "cycling", "indoor cycle": "cycling",
+        "swimming": "swimming", "pool swim": "swimming", "open water swim": "swimming",
+        "hiking": "hiking", "yoga": "yoga", "pilates": "pilates", "rowing": "rowing",
+        "elliptical": "elliptical", "stair stepper": "stairs", "stairs": "stairs",
+        "traditional strength training": "strength", "functional strength training": "strength",
+        "high intensity interval training": "hiit", "dance": "dance", "cardio dance": "dance",
+        "social dance": "dance", "boxing": "boxing", "kickboxing": "boxing",
+        "climbing": "climbing", "tennis": "tennis", "golf": "golf",
+        "downhill skiing": "skiing", "cross country skiing": "skiing",
+    }
+
+    DATE_RE = re.compile(
+        r"^(\d{4})-(\d{2})-(\d{2})"
+        r"(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?)?"
+        r"\s*(Z|z|[+-]\d{2}(?::?\d{2})?)?$")
+    POSSESSIVE = re.compile(r"^.{1,40}?['’]s\s+")
+    # The provider keeps an epoch date as its decimal text.
+    EPOCH_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
+    # A segment keeps these as written; `~` is the escape and `/` joins parts.
+    ID_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:@-")
+    EDGE_CHARS = frozenset("._:@-")
+    ESCAPED = re.compile(r"(?:~[0-9A-F]{2})+")
+    UTC = datetime.timezone.utc
+
+
+    # ---- values -----------------------------------------------------------------
+
+    def parse_date(value, zone=None):
+        """One of the app's dates as an aware datetime in the offset it was
+        written with, or None. It names the instant the provider read it as:
+        a date without an offset is on the account's clock (`zone`), else
+        UTC, and a number, or the decimal text the provider keeps one as, is
+        epoch seconds (milliseconds past 1e11) on that clock."""
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, str) and EPOCH_RE.match(value.strip()):
+            value = float(value)
+        if isinstance(value, (int, float)):
+            secs = float(value)
+            if abs(secs) > 1e11:
+                secs /= 1000.0
+            try:
+                return datetime.datetime.fromtimestamp(secs, zone or UTC)
+            except (OverflowError, OSError, ValueError):
+                return None
+        m = DATE_RE.match(str(value).strip())
+        if not m:
+            return None
+        y, mo, d, h, mi, s, frac, off = m.groups()
+        try:
+            tz = zone or UTC
+            if off in ("Z", "z"):
+                tz = UTC
+            elif off:
+                digits = off[1:].replace(":", "")
+                delta = datetime.timedelta(hours=int(digits[:2]), minutes=int(digits[2:4] or 0))
+                tz = datetime.timezone(-delta if off[0] == "-" else delta)
+            return datetime.datetime(int(y), int(mo), int(d), int(h or 0), int(mi or 0), int(s or 0),
+                                     int((frac or "0")[:6].ljust(6, "0")), tz)
+        except (ValueError, OverflowError):
+            return None
+
+
+    def zone_of(account):
+        name = ((account or {}).get("properties") or {}).get("timezone")
+        if not isinstance(name, str) or not name:
+            return None
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            return None
+
+
+    def instant_id(dt):
+        return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def minutes_text(seconds):
+        return format((decimal.Decimal(seconds) / 60).quantize(decimal.Decimal("0.001")).normalize(), "f")
+
+
+    def segment(s):
+        """One id segment, one to one with the text, as the provider composes
+        its own: every byte outside the id alphabet, a `/`, a `~`, and a
+        `-._:@` at either end are `~` and two hex digits; the empty text is
+        a lone `~`."""
+        s = str(s)
+        if not s:
+            return "~"
+        out, last = [], len(s) - 1
+        for i, ch in enumerate(s):
+            if ch in ID_CHARS and not ((i == 0 or i == last) and ch in EDGE_CHARS):
+                out.append(ch)
+            else:
+                out.extend("~%02X" % b for b in ch.encode("utf-8"))
+        return "".join(out)
+
+
+    def unsegment(s):
+        """The text a segment escapes."""
+        if s == "~":
+            return ""
+        return ESCAPED.sub(lambda m: bytes.fromhex(m.group(0).replace("~", "")).decode("utf-8", "replace"), s)
+
+
+    def ref(kind, rid):
+        return {"ref": kind + "/" + rid}
+
+
+    def metric_ref(name):
+        return {"ref": METRIC + name}
+
+
+    def source_slug(label):
+        """The source a row's `source` label names: the device with its owner's
+        name taken off (`Ada's Apple Watch` is `apple-watch`), or `health`, the
+        phone's merged series, where the label is empty, absent or joins several
+        devices with `|`."""
+        if not isinstance(label, str) or not label.strip() or "|" in label:
+            return "health"
+        name = POSSESSIVE.sub("", label.replace(" ", " ").strip())
+        return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "health"
+
+
+    def source_class(slug):
+        if slug == "health":
+            return "app"
+        if "watch" in slug:
+            return "watch"
+        if "ring" in slug.split("-"):
+            return "ring"
+        if "connect" in slug:
+            return "service"
+        return None
+
+
+    class Writer:
+        """The outputs one origin implies, keyed by (kind, id), and the sources
+        they name."""
+
+        def __init__(self, host, aid, origin, revision, zone=None):
+            self.host, self.aid, self.origin, self.revision, self.zone = host, aid, origin, revision, zone
+            self.outputs = {}
+            self.sources = {}
+            self.skipped = []
+
+        def compose(self, *parts):
+            """An output id, `applehealth/<account>/<parts>`, each part held
+            to the id alphabet, hashed where it passes 128 bytes."""
+            return self.host.observed.record_id("applehealth", self.aid,
+                                                *[segment(p) for p in (self.aid,) + parts])
+
+        def source(self, label):
+            slug = source_slug(label)
+            if slug not in self.sources:
+                self.sources[slug] = label if slug != "health" else None
+            return slug, ref(SOURCE, self.compose(slug))
+
+        def add(self, kind, rid, props):
+            n, base = 1, rid
+            while (kind, rid) in self.outputs:
+                n += 1
+                rid = "%s/%d" % (base, n)
+            if kind == TRACE:
+                props["origins"] = [ref(*self.origin)]
+            else:
+                props["origin"] = ref(*self.origin)
+            props["revision"] = self.revision
+            self.outputs[(kind, rid)] = props
+
+        def offset(self, dt):
+            """The UTC offset `dt` was written in, in minutes east."""
+            return self.host.observed.utc_offset(dt)
+
+        def skip(self, reason):
+            if reason not in self.skipped:
+                self.skipped.append(reason)
+
+        def duration(self, seconds):
+            """A length of time to the whole second: the app sends hours as
+            floats, so what is left below a second is the float's error."""
+            return self.host.observed.duration(max(0, int(round(seconds))))
+
+
+    # ---- units ------------------------------------------------------------------
+
+    def canonical(host, app_unit):
+        """The id of the unit record an app spelling names, or None."""
+        if not isinstance(app_unit, str) or not app_unit:
+            return None
+        try:
+            return host.units.canonical(app_unit)
+        except Exception:
+            return None
+
+
+    class Units:
+        """One of the app's units read once, and every value converted through
+        the repository's unit graph, digits kept where nothing converts."""
+
+        def __init__(self, host, app_unit, target):
+            self.host, self.target, self.code = host, target, None
+            if app_unit == "count" and target in COUNTED:
+                self.code = target
+                return
+            code = canonical(host, app_unit)
+            if code is None:
+                raise ValueError("unit %r is not one a unit record names" % (app_unit,))
+            if code != target and not host.units.converts(code, target):
+                raise ValueError("unit %r does not convert to %s" % (app_unit, target))
+            self.code = code
+
+        def value(self, v):
+            text = self.host.observed.number(v)
+            if text is None or self.code == self.target:
+                return text
+            return self.host.units.convert(text, self.code, self.target)
+
+
+    def row_unit(props, row):
+        """The unit a row's numbers are in: its own `units`, which the provider
+        keeps on a row sent before the app's Unit Preferences changed, else
+        the batch's."""
+        own = row.get("units")
+        return own if isinstance(own, str) and own else props.get("units")
+
+
+    class RowUnits:
+        """Each row's numbers converted from the unit it was sent in. A unit
+        the table cannot read skips its rows, named once."""
+
+        def __init__(self, host, w, name, props, target):
+            self.host, self.w, self.name, self.props, self.target = host, w, name, props, target
+            self.by_unit = {}
+
+        def value(self, row, field):
+            app_unit = row_unit(self.props, row)
+            if app_unit not in self.by_unit:
+                try:
+                    self.by_unit[app_unit] = Units(self.host, app_unit, self.target)
+                except ValueError as e:
+                    self.w.skip("%s: %s" % (self.name, e))
+                    self.by_unit[app_unit] = None
+            units = self.by_unit[app_unit]
+            return None if units is None else units.value(row.get(field))
+
+
+    # ---- metric batches ---------------------------------------------------------
+
+    def row_time(w, row):
+        return parse_date(row.get("date") if row.get("date") is not None else row.get("startDate"), w.zone)
+
+
+    def bucket_end(dt, grouping):
+        if grouping == "hours":
+            return dt + datetime.timedelta(hours=1)
+        if grouping == "days":
+            return dt + datetime.timedelta(days=1)
+        if grouping == "weeks":
+            return dt + datetime.timedelta(days=7)
+        if grouping == "months":
+            y, m = (dt.year + 1, 1) if dt.month == 12 else (dt.year, dt.month + 1)
+            return dt.replace(year=y, month=m, day=min(dt.day, 28))
+        return dt.replace(year=dt.year + 1)
+
+
+    def period_label(dt, grouping):
+        """The bucket as the phone's calendar names it: 2026-10-07, 2026-10."""
+        return dt.strftime({"hours": "%Y-%m-%dT%H", "months": "%Y-%m", "years": "%Y"}.get(grouping, "%Y-%m-%d"))
+
+
+    def summary(w, metric, slug, src, dt, end, grouping, statistic, value, unit, period=None):
+        """A bucket of the app's own aggregate. Its id names the period, so an
+        hours and a days automation that start a bucket at one instant write
+        two summaries."""
+        period = period or COARSE[grouping]
+        w.add(OBSERVATION, w.compose(slug, metric, period, instant_id(dt), statistic), {
+            "metric": metric_ref(metric), "source": src, "form": "summary", "statistic": statistic,
+            "period": period, "periodId": period_label(dt, grouping),
+            "value": {"value": value, "unit": unit}, "at": w.host.observed.instant(dt),
+            "endsAt": w.host.observed.instant(end),
+            "utcOffset": w.offset(dt)})
+
+
+    def gauge(w, metric, slug, src, dt, value, unit, hold=None, extra=None):
+        props = {"metric": metric_ref(metric), "source": src, "form": "gauge",
+                 "value": {"value": value, "unit": unit}, "at": w.host.observed.instant(dt),
+                 "utcOffset": w.offset(dt)}
+        if hold:
+            props["hold"] = hold
+        if extra:
+            props.update(extra)
+        w.add(OBSERVATION, w.compose(slug, metric, instant_id(dt)), props)
+
+
+    def traces(host, w, metric, form, unit, hold, grouping, by_source):
+        """One trace per source and UTC hour. An amount's value spans its bucket,
+        so a bucket the next row does not follow ends in a null."""
+        for slug in sorted(by_source):
+            src, rows = by_source[slug]
+            points = []
+            rows = sorted(rows, key=lambda p: p[0])
+            for i, (dt, value) in enumerate(rows):
+                points.append((dt, value))
+                if form != "amount":
+                    continue
+                end = dt + datetime.timedelta(seconds=STEP[grouping])
+                nxt = rows[i + 1][0] if i + 1 < len(rows) else None
+                hour_end = dt.astimezone(UTC).replace(minute=0, second=0, microsecond=0) + \
+                    datetime.timedelta(hours=1)
+                if (nxt is None or nxt > end) and end < hour_end:
+                    points.append((end, None))
+            for doc in host.observed.trace(points, metric=metric_ref(metric), source=src, unit=unit,
+                                           form=form, period="PT1H", hold=hold):
+                at = parse_date(doc["at"])
+                doc_id = w.compose(slug, metric, host.observed.period_id(at, "PT1H"))
+                w.add(TRACE, doc_id, doc)
+
+
+    def batch_outputs(host, w, props):
+        name = props.get("name")
+        name = ALIASES.get(name, name)
+        grouping = props.get("grouping") or "unknown"
+        rows = [r for r in (props.get("rows") or []) if isinstance(r, dict)]
+        if grouping not in FINE and grouping not in COARSE:
+            w.skip("%s: the time grouping is %s, so a row's bucket is not known" % (name, grouping))
+            return
+        if name == "blood_pressure":
+            return pressure_outputs(host, w, props, rows, grouping)
+        if name == "blood_glucose":
+            return glucose_outputs(host, w, props, rows, grouping)
+        spec = METRICS.get(name)
+        if spec is None:
+            w.skip("%s: no health metric maps it" % name)
+            return
+        metric, shape, form, unit, hold = spec
+        units = RowUnits(host, w, name, props, unit)
+        by_source = {}
+        for row in rows:
+            dt = row_time(w, row)
+            if dt is None:
+                continue
+            slug, src = w.source(row.get("source"))
+            if shape == "daily":
+                day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                value = units.value(row, "qty")
+                if value is not None:
+                    summary(w, metric, slug, src, day, day + datetime.timedelta(days=1), "days",
+                            "vendor", value, unit, period="day")
+                continue
+            if grouping in COARSE:
+                end = bucket_end(dt, grouping)
+                stats = (("avg", "avg"), ("min", "min"), ("max", "max")) if "avg" in row else \
+                    ((("sum" if form == "amount" else "avg"), "qty"),)
+                for statistic, field in stats:
+                    value = units.value(row, field)
+                    if value is not None:
+                        summary(w, metric, slug, src, dt, end, grouping, statistic, value, unit)
+                continue
+            value = units.value(row, "avg" if "avg" in row else "qty")
+            if value is None:
+                continue
+            if shape == "dense":
+                by_source.setdefault(slug, (src, []))[1].append((dt, value))
+            else:
+                gauge(w, metric, slug, src, dt, value, unit, hold)
+        if by_source:
+            traces(host, w, metric, form, unit, hold, grouping, by_source)
+
+
+    def pressure_outputs(host, w, props, rows, grouping):
+        systolic, diastolic, unit, hold = PRESSURE
+        units = RowUnits(host, w, "blood_pressure", props, unit)
+        for row in rows:
+            dt = row_time(w, row)
+            sv, dv = units.value(row, "systolic"), units.value(row, "diastolic")
+            if dt is None or sv is None or dv is None:
+                continue
+            slug, src = w.source(row.get("source"))
+            if grouping in COARSE:
+                end = bucket_end(dt, grouping)
+                summary(w, systolic, slug, src, dt, end, grouping, "avg", sv, unit)
+                summary(w, diastolic, slug, src, dt, end, grouping, "avg", dv, unit)
+                continue
+            components = [{"metric": metric_ref(systolic), "value": {"value": sv, "unit": unit}},
+                          {"metric": metric_ref(diastolic), "value": {"value": dv, "unit": unit}}]
+            gauge(w, systolic, slug, src, dt, sv, unit, hold, {"components": components})
+            gauge(w, diastolic, slug, src, dt, dv, unit, hold, {"components": components})
+
+
+    class Digits:
+        """A glucose reading's digits as the device sent them."""
+
+        def __init__(self, host):
+            self.host = host
+
+        def value(self, v):
+            return self.host.observed.number(v)
+
+
+    def glucose_unit(host, w, app_unit):
+        """(metric, unit, Digits) for one of the app's glucose units: the
+        glucose unit of the scale the app reported, or None and the reason
+        named. The digits are kept as sent, never converted, so a unit other
+        than mg/dL or mmol/L is skipped."""
+        code = canonical(host, app_unit)
+        if code is None:
+            w.skip("blood_glucose: unit %r is not one a unit record names" % (app_unit,))
+            return None
+        for plain, unit in GLUCOSE:
+            if code in (plain, unit):
+                return GLUCOSE_METRIC, unit, Digits(host)
+        w.skip("blood_glucose: unit %r is not mg/dL or mmol/L" % (app_unit,))
+        return None
+
+
+    def glucose_outputs(host, w, props, rows, grouping):
+        by_unit = {}
+        for row in rows:
+            app_unit = row_unit(props, row)
+            if app_unit not in by_unit:
+                by_unit[app_unit] = glucose_unit(host, w, app_unit)
+            if by_unit[app_unit] is None:
+                continue
+            metric, unit, units = by_unit[app_unit]
+            dt = row_time(w, row)
+            value = units.value(row.get("qty"))
+            if dt is None or value is None:
+                continue
+            slug, src = w.source(row.get("source"))
+            if grouping in COARSE:
+                summary(w, metric, slug, src, dt, bucket_end(dt, grouping), grouping, "avg", value, unit)
+                continue
+            extra = None
+            if isinstance(row.get("mealTime"), str) and row["mealTime"]:
+                code = re.sub(r"[^a-z0-9]+", "-", row["mealTime"].lower()).strip("-")
+                extra = {"qualifiers": [{"system": "applehealth/mealTime", "code": code}]}
+            gauge(w, metric, slug, src, dt, value, unit, GLUCOSE_HOLD, extra)
+
+
+    def hours_seconds(host, v):
+        text = host.observed.number(v)
+        return None if text is None else float(decimal.Decimal(text) * 3600)
+
+
+    def utc(dt):
+        return dt.astimezone(UTC)
+
+
+    def elapsed(a, b):
+        """Seconds from a to b. Two datetimes on one zone subtract as wall
+        clocks in Python, so a night across a change of offset is measured
+        on UTC instants."""
+        return (utc(b) - utc(a)).total_seconds()
+
+
+    def overlaps(s1, e1, s2, e2):
+        return utc(s1) < utc(e2) and utc(s2) < utc(e1)
+
+
+    def is_nap(at, ends):
+        """The app sends no nap flag: a sleep shorter than NAP_LONGEST that
+        begins between NAP_HOURS on its own clock is a nap."""
+        return elapsed(at, ends) < NAP_LONGEST and NAP_HOURS[0] <= at.hour < NAP_HOURS[1]
+
+
+    def night_span(w, row, ss, se):
+        """A night spans the time in bed where the app names it, the time
+        asleep inside it, and how long it took to fall asleep."""
+        ibs, ibe = parse_date(row.get("inBedStart"), w.zone), parse_date(row.get("inBedEnd"), w.zone)
+        at = min((t for t in (ss, ibs) if t is not None), key=utc)
+        ends = max((t for t in (se, ibe) if t is not None), key=utc)
+        nap = is_nap(at, ends)
+        night = {"at": w.host.observed.instant(at), "endsAt": w.host.observed.instant(ends),
+                 "utcOffsetStart": w.offset(at), "utcOffsetEnd": w.offset(ends), "isNap": nap,
+                 "name": w.host.observed.sleep_name(nap, at, ends, w.offset(at), w.offset(ends))}
+        if ibs is not None and utc(ss) > utc(ibs):
+            night["latency"] = w.duration(elapsed(ibs, ss))
+        in_bed = hours_seconds(w.host, row.get("inBed"))
+        if in_bed:
+            night["timeInBed"] = w.duration(in_bed)
+        return night, in_bed, at, ends
+
+
+    def sleep_rows(w, path, props, revision, tally=None):
+        """One sleep batch's rows as (segments, nights): a segment is one
+        staged stretch, with the night its fields name where they name one;
+        a night is a row of the aggregated shape. `tally` counts the In Bed
+        segments and the values no stage maps."""
+        segments, nights = [], []
+        for row in props.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            slug, src = w.source(row.get("source"))
+            if row.get("startDate") is not None:
+                s, e = parse_date(row.get("startDate"), w.zone), parse_date(row.get("endDate"), w.zone)
+                value = str(row.get("value") or "").strip().lower()
+                stage = STAGES.get(value)
+                if s is None or e is None or utc(e) <= utc(s):
+                    continue
+                if stage is None:
+                    if tally is not None:
+                        tally["in_bed" if value == IN_BED else "unknown"] += 1
+                    continue
+                ss, se = parse_date(row.get("sleepStart"), w.zone), parse_date(row.get("sleepEnd"), w.zone)
+                if ss is None or se is None or utc(se) <= utc(ss):
+                    ss = se = None
+                segments.append({"slug": slug, "src": src, "s": s, "e": e, "stage": stage, "ss": ss, "se": se,
+                                 "row": row, "origin": path, "revision": revision})
+                continue
+            ss = parse_date(row.get("sleepStart"), w.zone) or parse_date(row.get("inBedStart"), w.zone)
+            se = parse_date(row.get("sleepEnd"), w.zone) or parse_date(row.get("inBedEnd"), w.zone)
+            if ss is None or se is None or utc(se) <= utc(ss):
+                continue
+            nights.append({"slug": slug, "src": src, "ss": ss, "se": se, "row": row, "origin": path,
+                           "revision": revision})
+        return segments, nights
+
+
+    def one_each(items, key):
+        """One item per key, the one from the first origin by path: two
+        automations that send one stretch write it once, from either."""
+        out = {}
+        for item in sorted(items, key=lambda x: x["origin"]):
+            out.setdefault(key(item), item)
+        return list(out.values())
+
+
+    def every(host, flt):
+        out, after = [], None
+        while True:
+            query = {"filter": flt, "first": 500}
+            if after:
+                query["after"] = after
+            page = host.list(**query)
+            out.extend(page.get("records") or [])
+            after = page.get("cursor")
+            if not after:
+                return out
+
+
+    def is_sleep_output(rec):
+        props = rec.get("properties") or {}
+        return rec.get("kind") == SLEEP or (
+            rec.get("kind") == OBSERVATION and host_ref(props.get("metric")) == METRIC + "sleep_stage")
+
+
+    def host_ref(v):
+        return v.get("ref") if isinstance(v, dict) else v
+
+
+    def span_of(rec):
+        props = rec.get("properties") or {}
+        at = parse_date(props.get("at"))
+        ends = parse_date(props.get("endsAt")) or at
+        return (at, ends) if at is not None else None
+
+
+    def sleep_outputs(host, w, props, stored):
+        """A sleep batch's outputs, recomputed with every night they share.
+
+        Segments and aggregated nights of one source arrive in different
+        batches (an hour of segments, a month of nights), so what one batch
+        writes depends on the others: the outputs of every night near this
+        batch's rows, as they are now and as they were (`stored`, what points
+        at it), are recomputed from every sleep batch of the account that
+        still holds a row there, and reconciled for all of them at once. A
+        create, an update and a deletion run the same rule, so the outputs
+        depend on the surviving rows alone, never on the order they came.
+
+        The rule, per source: a segment is one stage amount; an aggregated
+        night is a sleep record with its durations, and one stage amount per
+        stage only where no segment of the same source overlaps it, so a sum
+        by code counts each minute once. Segments that name a night write
+        its sleep record where no aggregated night of their sources overlaps
+        it, under the source with the most of its segments (the first by
+        name on a tie). A stretch two batches hold is written once, from the
+        batch first by path."""
+        path = BATCH + "/" + w.origin[1]
+        tally = {"in_bed": 0, "unknown": 0}
+        segments, nights = sleep_rows(w, path, props, w.revision, tally) if props is not None else ([], [])
+        spans = [(x["s"], x["e"]) for x in segments] + \
+            [(x["ss"], x["se"]) for x in segments if x["ss"] is not None]
+        for n in nights:
+            spans.append(night_span(w, n["row"], n["ss"], n["se"])[2:])
+        spans.extend(s for s in (span_of(rec) for rec in stored) if s is not None)
+        if not spans:
+            return host.observed.reconcile(path, {}, owned=OWNED, adapter=ADAPTER, stored=stored), tally, 0
+        lo = min(utc(s) for s, _ in spans)
+        hi = max(utc(e) for _, e in spans)
+
+        # A row lies within a day of its batch's period, and a night is under
+        # a day long, so every row of a night that reaches [lo, hi] is in a
+        # batch within two days of it.
+        slack = datetime.timedelta(days=2)
+        near = every(host, {"kinds": [BATCH], "properties": {
+            "name": {"eq": "sleep_analysis"}, "account": {"eq": ACCOUNT + "/" + w.aid},
+            "at": {"lt": w.host.observed.instant(hi + slack)},
+            "endsAt": {"gt": w.host.observed.instant(lo - slack)}}})
+        paths = [path]
+        for rec in near:
+            if rec.get("id") == w.origin[1]:
+                continue
+            other = BATCH + "/" + rec["id"]
+            paths.append(other)
+            rp = rec.get("properties") or {}
+            received = parse_date(rp.get("receivedAt"))
+            more = sleep_rows(w, other, rp, int(received.timestamp()) if received else 0)
+            segments.extend(more[0])
+            nights.extend(more[1])
+        segments = one_each(segments, lambda x: (x["slug"], utc(x["s"])))
+        nights = one_each(nights, lambda x: (x["slug"], utc(x["ss"])))
+
+        built = {}
+
+        def add(kind, rid, out, item, start, end):
+            out["origin"] = {"ref": item["origin"]}
+            out["revision"] = item["revision"]
+            built[(kind, rid)] = (out, item["origin"], start, end)
+
+        for x in segments:
+            add(OBSERVATION, w.compose(x["slug"], "sleep_stage", instant_id(x["s"])), {
+                "metric": metric_ref("sleep_stage"), "source": x["src"], "form": "amount", "code": x["stage"],
+                "value": {"value": minutes_text(elapsed(x["s"], x["e"])), "unit": "min"},
+                "at": w.host.observed.instant(x["s"]), "endsAt": w.host.observed.instant(x["e"]),
+                "utcOffset": w.offset(x["s"])}, x, x["s"], x["e"])
+        told = 0
+        for n in nights:
+            slug, ss, se = n["slug"], n["ss"], n["se"]
+            night, bed, at, ends = night_span(w, n["row"], ss, se)
+            night["source"] = n["src"]
+            total = hours_seconds(w.host, n["row"].get("totalSleep"))
+            if total:
+                night["timeAsleep"] = w.duration(total)
+                night["efficiency"] = w.host.observed.percent(total, bed)
+            totals = []
+            for field, stage, prop in NIGHT:
+                secs = hours_seconds(w.host, n["row"].get(field))
+                if not secs:
+                    continue
+                if prop:
+                    night[prop] = w.duration(secs)
+                totals.append((stage, secs))
+            add(SLEEP, w.compose(slug, "sleep", instant_id(ss)), night, n, at, ends)
+            if any(x["slug"] == slug and overlaps(x["s"], x["e"], ss, se) for x in segments):
+                if totals and n["origin"] == path:
+                    told += 1
+                continue
+            for stage, secs in totals:
+                add(OBSERVATION, w.compose(slug, "sleep_stage", instant_id(ss), stage), {
+                    "metric": metric_ref("sleep_stage"), "source": n["src"], "form": "amount", "code": stage,
+                    "value": {"value": minutes_text(secs), "unit": "min"},
+                    "at": w.host.observed.instant(ss), "endsAt": w.host.observed.instant(se),
+                    "utcOffset": w.offset(ss)}, n, ss, se)
+        told_by = {}
+        for x in segments:
+            if x["ss"] is not None:
+                told_by.setdefault(utc(x["ss"]), []).append(x)
+        for key in sorted(told_by):
+            xs = told_by[key]
+            counts = {}
+            for x in xs:
+                counts[x["slug"]] = counts.get(x["slug"], 0) + 1
+            lead = min(xs, key=lambda x: (utc(x["s"]), x["origin"]))
+            ss, se = lead["ss"], lead["se"]
+            if any(n["slug"] in counts and overlaps(n["ss"], n["se"], ss, se) for n in nights):
+                continue
+            slug = min(counts, key=lambda k: (-counts[k], k))
+            lead = min((x for x in xs if x["slug"] == slug), key=lambda x: (utc(x["s"]), x["origin"]))
+            night, _, at, ends = night_span(w, lead["row"], ss, se)
+            night["source"] = lead["src"]
+            add(SLEEP, w.compose(slug, "sleep", instant_id(ss)), night, lead, at, ends)
+
+        # Another batch's output far from [lo, hi] was built from rows this
+        # read may not hold, so only the ones that reach it are reconciled.
+        def near_here(start, end):
+            return utc(start) <= hi and utc(end) >= lo
+
+        outputs = {key: out for key, (out, origin, start, end) in built.items()
+                   if origin == path or near_here(start, end)}
+        others = set(paths[1:])
+        day = datetime.timedelta(days=1)
+        window = {"gte": w.host.observed.instant(lo - day), "lte": w.host.observed.instant(hi)}
+        for flt in ({"kinds": [OBSERVATION], "properties": {"metric": {"eq": METRIC + "sleep_stage"},
+                                                            "at": window}},
+                    {"kinds": [SLEEP], "properties": {"at": window}}):
+            for rec in every(host, flt):
+                origin = host_ref((rec.get("properties") or {}).get("origin"))
+                span = span_of(rec)
+                if origin in others and span is not None and near_here(*span):
+                    stored.append(rec)
+        w.outputs = outputs
+        return host.observed.reconcile(paths, outputs, owned=OWNED, adapter=ADAPTER, stored=stored), tally, told
+
+
+    # ---- workouts ---------------------------------------------------------------
+
+    def quantity(host, q, target=None):
+        if not isinstance(q, dict):
+            return None
+        value, app_unit = host.observed.number(q.get("qty")), q.get("units")
+        if value is None or not isinstance(app_unit, str):
+            return None
+        code = canonical(host, app_unit)
+        if code is None:
+            return None
+        if target and code != target:
+            try:
+                value, code = host.units.convert(value, code, target), target
+            except Exception:
+                return None
+        return {"value": value, "unit": code}
+
+
+    def workout_outputs(host, w, props):
+        upstream = props.get("workoutId")
+        s, e = parse_date(props.get("start"), w.zone), parse_date(props.get("end"), w.zone)
+        if not upstream or s is None:
+            w.skip("workout: no id or start")
+            return
+        labels = {}
+        for field in ("heartRateData", "stepCount", "walkingAndRunningDistance", "activeEnergy"):
+            for row in props.get(field) or []:
+                if isinstance(row, dict) and isinstance(row.get("source"), str) and row["source"]:
+                    labels[row["source"]] = labels.get(row["source"], 0) + 1
+        label = max(sorted(labels), key=lambda k: labels[k]) if labels else None
+        slug, src = w.source(label)
+        name = props.get("name") if isinstance(props.get("name"), str) else ""
+        out = {"source": src, "at": host.observed.instant(s), "utcOffsetStart": w.offset(s),
+               "sport": SPORTS.get(name.strip().lower(), "other")}
+        out["name"] = host.observed.workout_name(out["sport"], s, w.offset(s))
+        if name:
+            out["sportSource"] = name
+        if e is not None and e > s:
+            out["endsAt"] = host.observed.instant(e)
+            out["utcOffsetEnd"] = w.offset(e)
+        if host.observed.number(props.get("duration")) is not None:
+            out["duration"] = w.duration(float(props["duration"]))
+        hr = props.get("heartRate") if isinstance(props.get("heartRate"), dict) else {}
+        for prop, q, target in (("distance", props.get("distance"), None),
+                                ("activeEnergy", props.get("activeEnergyBurned"), None),
+                                ("averageHeartRate", props.get("avgHeartRate") or hr.get("avg"), "1/min"),
+                                ("maxHeartRate", props.get("maxHeartRate") or hr.get("max"), "1/min"),
+                                ("elevationGain", props.get("elevationUp"), None)):
+            got = quantity(host, q, target)
+            if got:
+                out[prop] = got
+        w.add(WORKOUT, w.compose(upstream), out)
+
+
+    # ---- the run ----------------------------------------------------------------
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        change = envelope.get("change") or {}
+        record = envelope.get("record")
+        kind = (record or {}).get("kind") or change.get("kind")
+        rid = (record or {}).get("id") or change.get("id")
+        if kind not in (BATCH, MIRROR_WORKOUT) or not rid:
+            return {"output": {"skipped": ["not an applehealth metric batch or workout"]}}
+        origin_path = kind + "/" + rid
+        props = (record or {}).get("properties") or {}
+        # A deleted row carries no account: its tombstone names it, and so
+        # does its id, `applehealth/<account>/...`, unless hashed past 128
+        # bytes.
+        gone = host.records.get(kind, rid) if record is None and kind == BATCH else None
+        parts = rid.split("/")
+        aid = host.observed.ref_id(props.get("account"), ACCOUNT) or \
+            host.observed.ref_id(((gone or {}).get("properties") or {}).get("account"), ACCOUNT) or \
+            (unsegment(parts[1]) if len(parts) > 1 else rid)
+        received = parse_date(props.get("receivedAt"))
+        revision = int(received.timestamp()) if received else 0
+        acct = host.records.get(ACCOUNT, aid) if record is not None or gone is not None else None
+        w = Writer(host, aid, (kind, rid), revision, zone_of(acct))
+
+        # A sleep batch's outputs are recomputed with the nights it shares
+        # (sleep_outputs); a deleted batch is one when what pointed at it was.
+        stored = None
+        sleep = False
+        if kind == BATCH:
+            if record is not None:
+                sleep = ALIASES.get(props.get("name"), props.get("name")) == "sleep_analysis"
+            else:
+                stored = every(host, {"kinds": list(OWNED), "referencing": {"ref": origin_path}})
+                sleep = any(is_sleep_output(rec) for rec in stored)
+        if sleep:
+            if stored is None:
+                stored = every(host, {"kinds": list(OWNED), "referencing": {"ref": origin_path}})
+            counts, tally, told = sleep_outputs(host, w, props if record is not None else None, stored)
+            if tally["in_bed"]:
+                w.skip("sleep_analysis: %d In Bed segments are the night's timeInBed, no stage" % tally["in_bed"])
+            if tally["unknown"]:
+                w.skip("sleep_analysis: %d segments of a value no stage maps" % tally["unknown"])
+            if told:
+                w.skip("sleep_analysis: %d nights' stage totals left out, their segments are the stage "
+                       "amounts" % told)
+        else:
+            if record is not None:
+                if kind == BATCH:
+                    batch_outputs(host, w, props)
+                else:
+                    workout_outputs(host, w, props)
+            counts = host.observed.reconcile(origin_path, w.outputs, owned=OWNED, adapter=ADAPTER,
+                                             stored=stored)
+        if w.sources:
+            display = None
+            if acct and w.outputs:
+                display = (acct.get("properties") or {}).get("displayName")
+            for slug, label in sorted(w.sources.items()):
+                name = label if label else "Apple Health on %s" % (display or aid)
+                src = {"name": name, "account": ref(ACCOUNT, aid)}
+                cls = source_class(slug)
+                if cls:
+                    src["class"] = cls
+                host.effects.put(SOURCE, w.compose(slug), properties=src, if_absent=True)
+        out = {"origin": origin_path}
+        out.update(counts)
+        if w.skipped:
+            out["skipped"] = w.skipped
+            host.log("healthapple: %s skipped %s" % (origin_path, "; ".join(w.skipped)))
+        return {"output": out}
