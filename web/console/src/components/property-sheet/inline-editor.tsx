@@ -40,7 +40,9 @@ import {
 } from "@/components/ui/popover"
 import { Spinner } from "@/components/ui/spinner"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { kindByIdentity } from "@/lib/definition"
 import { enumLabel } from "@/lib/grid-values"
+import { noteFileName } from "@/lib/ink-record"
 import { moneyCurrency } from "@/lib/money"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import {
@@ -565,6 +567,11 @@ function PanelEditor(props: InlineEditorProps) {
         self={record.id}
         idPrefix="sheet"
         bare
+        fileName={noteFileName(
+          record.properties,
+          kindByIdentity(kinds, record.kind),
+          row.name
+        )}
       />
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={pending} onClick={commit}>

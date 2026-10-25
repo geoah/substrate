@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { heldBlobInfo, holdBlob, isBlobDigest, putBlob } from "@/lib/api/blobs"
 import type { BlobInfo } from "@/lib/api/types"
 import { INK_MEDIA_TYPE, inkText, newInkDocument, readInk } from "@/lib/ink"
-import { byteSize } from "@/lib/ink-record"
+import { byteSize, inkFileName } from "@/lib/ink-record"
 import { acceptFor, declaresMediaType } from "@/lib/media-types"
 import type { PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
@@ -60,7 +60,7 @@ export function BlobField({
   value,
   onChange,
   invalid,
-  fileName = "note.inkd",
+  fileName,
 }: {
   id: string
   spec: PropSpec
@@ -68,7 +68,8 @@ export function BlobField({
   value: string
   onChange: (digest: string) => void
   invalid?: boolean
-  /** The name a blank note is stored under. */
+  /** The name a blank note is stored under: the record page's rule, the
+   * heading else the property's name. */
   fileName?: string
 }) {
   const [stored, setStored] = useState<BlobInfo | undefined>()
@@ -151,7 +152,7 @@ export function BlobField({
             disabled={busy}
             onClick={() =>
               void store(inkText(newInkDocument({ background: "lined" })), {
-                name: fileName,
+                name: fileName ?? inkFileName(undefined, spec.name),
                 mediaType: INK_MEDIA_TYPE,
               })
             }

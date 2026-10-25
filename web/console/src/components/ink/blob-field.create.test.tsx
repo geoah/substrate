@@ -109,4 +109,23 @@ describe("a blank note started in the create sheet", () => {
     expect(field?.textContent).toContain(name)
     expect(field?.textContent).not.toContain("blob-sha256-")
   })
+
+  it("is named after the heading, as the record page names a note it draws", async () => {
+    renderDraft()
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+      target: { value: "Blank page for tomorrow" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /^File .*edit$/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Start a blank note/ }))
+    await waitFor(() =>
+      expect(uploads).toEqual(["Blank page for tomorrow.inkd"])
+    )
+  })
+
+  it("takes the property's name while the heading is empty", async () => {
+    renderDraft()
+    fireEvent.click(screen.getByRole("button", { name: /^File .*edit$/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Start a blank note/ }))
+    await waitFor(() => expect(uploads).toEqual(["file.inkd"]))
+  })
 })

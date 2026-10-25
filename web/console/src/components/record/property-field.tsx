@@ -119,6 +119,8 @@ export interface PropertyFieldProps {
   /** The control alone: the surface around it says the label and the
    * one-liner (the property sheet's rows). Errors still show. */
   bare?: boolean
+  /** The name a file this control makes (a blank ink note) is stored under. */
+  fileName?: string
 }
 
 /** A worked example as a placeholder. In the data voice an example reads like
@@ -139,6 +141,7 @@ export function PropertyField({
   labelAction,
   idPrefix = "f",
   bare = false,
+  fileName,
 }: PropertyFieldProps) {
   const [technical] = useTechnicalDetails()
   const id = `${idPrefix}-${field.name}`
@@ -253,6 +256,7 @@ export function PropertyField({
           value={text}
           onChange={onChange}
           invalid={Boolean(error)}
+          fileName={fileName}
         />
         {help()}
         {error && <FieldError>{error}</FieldError>}

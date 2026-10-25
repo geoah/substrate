@@ -6,6 +6,8 @@
  * paper of its own. */
 
 import { readBlobInfo } from "@/lib/api/blobs"
+import type { KindInfo } from "@/lib/api/types"
+import { recordTitle } from "@/lib/format"
 import { INK_MEDIA_TYPE, readInk, type InkDocument } from "@/lib/ink"
 import {
   PDF_MEDIA_TYPE,
@@ -13,7 +15,7 @@ import {
   isInkBlob,
   isPdfBlob,
 } from "@/lib/media-types"
-import type { PropSpec } from "@/lib/record-schema"
+import { titleProperty, type PropSpec } from "@/lib/record-schema"
 
 export interface InkPlan {
   /** Ink drawn on its own paper, one section each. */
@@ -75,6 +77,22 @@ export function inkFileName(title: string | undefined, fallback = "note") {
     .replace(/\s+/g, " ")
     .trim()
   return `${base || fallback}.inkd`
+}
+
+/** The file name a note held in `property` is saved under: the record's
+ * title, else (a record not written yet has no derived title) the property
+ * its kind's heading is typed into, else the property's own name. */
+export function noteFileName(
+  properties: Record<string, unknown>,
+  kind: KindInfo | undefined,
+  property: string
+): string {
+  const heading = titleProperty(kind)
+  const typed = heading ? properties[heading] : undefined
+  return inkFileName(
+    recordTitle(properties) || (typeof typed === "string" ? typed : ""),
+    property
+  )
 }
 
 /** A layer with at least `count` pages, one per PDF page. Pages are added
