@@ -111,11 +111,12 @@ is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
-`linear`, `notion`, `whoop`, `beeper`, `slack` and `slacklive`, all published under
-`providers.substrate.reamde.dev`. Installing one from the catalog writes
-`source: published` on its package, and from then on only an install or an
-upgrade writes its declarations: a `POST …/vocabulary/apply` naming that
-package is `403` for every token, because a mirror kind edited under the sync
+`linear`, `notion`, `whoop`, `beeper`, `slack`, `slacklive` and `applehealth`,
+all published under `providers.substrate.reamde.dev`. Installing one from the
+catalog writes `source: published` on its package, and from then on only an
+install or an upgrade writes its declarations: a `POST …/vocabulary/apply`
+naming that package is `403` for every token, because a mirror kind edited
+under the sync
 that writes it breaks the next sync. Nothing else about the bundle changes.
 Its records are the repository's to write, delete and purge, disable and
 enable and uninstall work as they do on any bundle, and the upgrade offer is
@@ -302,12 +303,13 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the nine shipped ones are
+A **provider** is a package a publisher owns: the ten shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop`, `/beeper`, `/slack`, `/slacklive` and `/apple`. The tier is read from the tree the closure
-came from, never guessed from an OAuth block, from account kinds, or from the
-package's name: a token or webhook provider may declare no OAuth, and an
-account-shaped package is not necessarily one.
+`/whoop`, `/beeper`, `/slack`, `/slacklive`, `/apple` and `/applehealth`. The
+tier is read from the tree the closure came from, never guessed from an OAuth
+block, from account kinds, or from the package's name: a token or webhook
+provider may declare no OAuth, and an account-shaped package is not
+necessarily one.
 
 An OAuth provider (Google, GitHub, WHOOP) ships, on top of the usual closure,
 the pieces the substrate's OAuth facility recognizes by
@@ -324,7 +326,10 @@ its `config` record, and the trait's `tokenRef`, `tokenStatus` and
 `grantedScopes` stay declared and unwritten.
 A pushed provider (Apple) ships neither: an app on the owner's device writes
 its records with the owner's token through the ordinary record routes, so
-the closure declares kinds and no account, config or function.
+the closure declares kinds and no account, config or function. A webhook
+provider (Apple Health) ships the same `accountconfig` kind, no `oauth2:`
+block and no `config` record: the sender authenticates with the key on its
+webhook trigger, and the owner creates each account by hand.
 
 A provider's records mirror in as ordinary records of the bundle's own kinds,
 under ids composed from the provider's own identifiers
@@ -704,11 +709,12 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the eight **providers** under `kinds/providers.substrate.reamde.dev`, and the
-thirteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
+the ten **providers** under `kinds/providers.substrate.reamde.dev`, and the
+fourteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `observations`, `health`, and the worked examples
-`llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`). A
-repository takes a sample itself: registration seeds
+`llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`,
+`healthapple`). A repository takes a sample
+itself: registration seeds
 `substrate.reamde.dev/core`, imports the `llm` sample onto the repository's
 own authority with its three keyless `provider` rows (`openai`, `anthropic`,
 `gemini`), and nothing else.

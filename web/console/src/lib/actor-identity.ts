@@ -27,6 +27,7 @@ const BRANDS: Record<string, { name?: string; color: string }> = {
   slacklive: { name: "Slack live events", color: "#E01E5A" },
   beeper: { color: "#6D5DFC" },
   whoop: { color: "#1CB5AC" },
+  applehealth: { color: "#FF2D55" },
 }
 
 function capitalise(text: string): string {

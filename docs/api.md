@@ -56,13 +56,20 @@ id may exist under two kinds as two unrelated records, and a record read is
 always scoped to its kind. There is no cross-kind read by bare id anywhere on
 the surface; a list that spans kinds names each one in `filter.kinds`.
 
-One id form needs care. A [kind declaration](vocabulary.md)'s id **is** a kind
-reference, so it carries a `/`. A client percent-encodes it, and the API
-decodes it exactly once:
+An id that holds a `/` needs care: a client percent-encodes each `/` in it,
+and the API decodes it exactly once. Unencoded, each `/` starts a path
+segment, so the path names no record. A [kind declaration](vocabulary.md)'s
+id **is** a kind reference, so it always holds two, and most ids the
+[observation adapters](observations.md#the-adapters) write hold several:
 
 ```http
 GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
+GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19
 ```
+
+An adapter's `record_id` ([the SDK](functions.md#the-sdk)) hashes an id that
+would leave the id alphabet or pass 128 bytes into one with no `/`, such as
+`applehealth-` and a 32-digit hexadecimal digest, which needs no encoding.
 
 ### The records route
 
@@ -1142,44 +1149,41 @@ pass is re-deriving is a `503 unavailable` with `Retry-After`, checked in the
 read's own snapshot before anything is read ([readiness](#readiness)).
 
 ```http
-GET /api/v1/records?filter={"kinds":["ada.example.com/observations/observation"],"properties":{"source":{"eq":"whoop/e2e"}}}
-  &aggregate={"metric": {"ref": "ada.example.com/observations/metric/health/hrv_rmssd"},
-              "from": "summaries",
-              "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-09-21T00:00:00+03:00"},
-              "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens", "place": "end"},
-              "reducers": ["avg", "min", "max"],
-              "unit": "ms"}
+GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
+  &aggregate={"metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+              "range": {"gte": "2026-07-20T00:00:00+03:00", "lt": "2026-07-27T00:00:00+03:00"},
+              "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+              "reducers": [{"durationIn": [95, 114]}, {"durationIn": [114, 133]}, "avg"],
+              "maxGap": "PT5M",
+              "sources": {"policy": "priority", "order": ["applehealth/iphone/apple-watch", "whoop/e2e"]},
+              "durationUnit": "min"}
 
-→ {"metric": "ada.example.com/observations/metric/health/hrv_rmssd",
-   "unit": "ms",
-   "bucket": {"calendar": "week", "timezone": "Europe/Athens", "weekStart": "monday", "place": "end"},
-   "from": "summaries", "exact": false,
-   "rows": [{"start": "2026-09-07T00:00:00+03:00", "end": "2026-09-14T00:00:00+03:00",
-             "form": "summary", "from": "summaries",
-             "sources": ["ada.example.com/observations/source/whoop/e2e"],
-             "coverage": "P2DT6H7M59.525S",
-             "values": [{"reducer": "avg", "value": "61.8710214285714", "unit": "ms"},
-                        {"reducer": "min", "value": "55.821587", "unit": "ms"},
-                        {"reducer": "max", "value": "79.313144", "unit": "ms"}],
-             "count": 7},
-            {"start": "2026-09-14T00:00:00+03:00", "end": "2026-09-21T00:00:00+03:00",
-             "form": "summary", "from": "summaries",
-             "sources": ["ada.example.com/observations/source/whoop/e2e"],
-             "coverage": "P2DT8H45M59.797S",
-             "values": [{"reducer": "avg", "value": "64.5431157142857", "unit": "ms"},
-                        {"reducer": "min", "value": "42.928113", "unit": "ms"},
-                        {"reducer": "max", "value": "85.453595", "unit": "ms"}],
-             "count": 7}],
-   "sources": ["ada.example.com/observations/source/whoop/e2e"],
-   "head": {"changelog": 72472, "generation": "pn2vgcqd6wfg"}}
+→ {"metric": "ada.example.com/observations/metric/health/heart_rate",
+   "unit": "1/min",
+   "bucket": {"calendar": "week", "timezone": "Europe/Athens", "weekStart": "monday"},
+   "from": "raw", "exact": false,
+   "rows": [{"start": "2026-07-20T00:00:00+03:00", "end": "2026-07-27T00:00:00+03:00",
+             "form": "gauge", "from": "raw",
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"],
+             "coverage": "P5DT3H33M",
+             "values": [{"reducer": {"durationIn": [95, 114]}, "value": "19", "unit": "min"},
+                        {"reducer": {"durationIn": [114, 133]}, "value": "35", "unit": "min"},
+                        {"reducer": "avg", "value": "65.0605308112775", "unit": "1/min"}],
+             "count": 1933}],
+   "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"],
+   "head": {"changelog": 72469, "generation": "pn2vgcqd6wfg"}}
 ```
 
-WHOOP writes each night's heart rate variability as a summary over the
-night, its own `vendor` value, so the read takes `from: summaries`, and
-`place` `end` files a night under the week of the morning it ended. A
-summary is reduced as the values it holds: `avg` is the plain mean of the
-week's seven nights, and `coverage` is the time those nights span. The
-answer was read from a demo repository holding the synthetic WHOOP data.
+The `order` ranks the Apple Watch first, and each source below it fills
+what the ones above it do not cover. WHOOP writes heart rate only as
+summaries, so a read of raw points finds none of its values and the row
+names the watch alone. The `avg` is the week's time-weighted mean heart
+rate. The watch samples about every five minutes and holds each value four,
+so `coverage` is about three quarters of the week.
+
+[Building health apps](health-apps.md) has a section for each screen of a
+health app, each with the reads that fill it and the answer a demo
+repository gave.
 
 A function reads the same body with
 [`host.records.aggregate`](functions.md#the-sdk), an agent with the `query`
@@ -1294,7 +1298,7 @@ filter matches, so a night three devices recorded is three windows.
 `bucket.records.sources` chooses among them:
 
 ```json
-{"policy": "priority", "order": ["whoop/e2e", "manual"], "property": "source", "match": ["sport"]}
+{"policy": "priority", "order": ["whoop/e2e", "applehealth/iphone/apple-watch"], "property": "source", "match": ["sport"]}
 ```
 
 `property` names the records' declared property that holds their source (a
@@ -1370,25 +1374,25 @@ alone: `range`, `bucket`, `reducers`, `fill`, `rolling`, `maxGap`,
 
 `metrics` names up to 16 metrics read over one `range`, `bucket`,
 `groupBy`, `sources` policy, `fill`, `rolling` and `budget`, so a day's
-screen is one request. WHOOP's sleep, resting heart rate, HRV and recovery
-for 2026-08-12 in Athens, each night on the day it ended:
+screen is one request. Sleep, resting heart rate, HRV and steps for
+2026-08-12 in Athens, each night on the day it ended:
 
 ```http
-GET /api/v1/records?filter={"properties":{"source":{"eq":"whoop/e2e"}}}
-  &aggregate=
+GET /api/v1/records?aggregate=
   {"metrics": [{"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
                {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
                {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "vendor"},
-               {"ref": "ada.example.com/observations/metric/healthwhoop/recovery", "from": "summaries", "statistic": "vendor"}],
+               {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"]}],
    "range": {"gte": "2026-08-12T00:00:00+03:00", "lt": "2026-08-13T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "groupBy": ["code"],
+   "sources": {"policy": "priority"},
    "reducers": ["last"]}
 
 → {"units": {"ada.example.com/observations/metric/health/hrv_rmssd": "ms",
              "ada.example.com/observations/metric/health/resting_heart_rate": "1/min",
              "ada.example.com/observations/metric/health/sleep_stage": "h",
-             "ada.example.com/observations/metric/healthwhoop/recovery": "percent"},
+             "ada.example.com/observations/metric/health/steps": "steps"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "exact": false,
    "rows": [{"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
@@ -1397,24 +1401,29 @@ GET /api/v1/records?filter={"properties":{"source":{"eq":"whoop/e2e"}}}
              "values": [{"reducer": "last", "value": "59.692649", "unit": "ms"}], "count": 1},
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
              "group": {"metric": "ada.example.com/observations/metric/health/resting_heart_rate"}, "from": "summaries",
-             "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
-             "values": [{"reducer": "last", "value": "53", "unit": "1/min"}], "count": 1},
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/health"], "coverage": "P1D",
+             "values": [{"reducer": "last", "value": "54", "unit": "1/min"}], "count": 1},
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
              "group": {"code": "deep", "metric": "ada.example.com/observations/metric/health/sleep_stage"}, "from": "raw",
-             "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
-             "values": [{"reducer": "sum", "value": "1.74777416666667", "unit": "h"}], "count": 1},
-            {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
-             "group": {"metric": "ada.example.com/observations/metric/healthwhoop/recovery"}, "from": "summaries",
-             "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
-             "values": [{"reducer": "last", "value": "63", "unit": "percent"}], "count": 1}],
-   "sources": ["ada.example.com/observations/source/whoop/e2e"],
-   "head": {"changelog": 72472, "generation": "pn2vgcqd6wfg"}}
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"], "coverage": "PT7H45M",
+             "values": [{"reducer": "sum", "value": "1.73916666666667", "unit": "h"}], "count": 1},
+            {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
+             "group": {"metric": "ada.example.com/observations/metric/health/steps"}, "from": "raw",
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
+                         "ada.example.com/observations/source/applehealth/iphone/iphone"], "coverage": "PT2H56M",
+             "values": [{"reducer": "sum", "value": "7465.4839260528", "unit": "steps"}], "count": 176}],
+   "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
+               "ada.example.com/observations/source/applehealth/iphone/health",
+               "ada.example.com/observations/source/applehealth/iphone/iphone",
+               "ada.example.com/observations/source/whoop/e2e"],
+   "head": {"changelog": 72469, "generation": "pn2vgcqd6wfg"}}
 ```
 
 The answer above leaves out the sleep stages other than `deep`; each code is
-a row of its own. The filter keeps WHOOP's values, so each metric answers
-from that one source; without it, every source's values are read under the
-`sources` policy the request names beside `metrics`.
+a row of its own. With no `order` and no source record ranking these
+metrics, `priority` ranks the sources by path, so the Apple Watch's sleep
+wins over WHOOP's night and the watch's step amounts win over the phone's
+where they overlap.
 
 - An entry names the metric by its record path in `ref`, the unit its values
   answer in (the metric record's `unit` by default), the unit its durations
@@ -1842,7 +1851,7 @@ and one device's night where several recorded it:
 {"filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
  "aggregate": {"property": {"name": "timeAsleep", "anchor": "endsAt", "utcOffset": "utcOffsetEnd",
                             "sources": {"policy": "priority", "property": "source",
-                                        "order": ["whoop/e2e", "manual"]}},
+                                        "order": ["whoop/e2e", "applehealth/iphone/apple-watch"]}},
                "range": {"gte": "2026-09-06T00:00:00+03:00", "lt": "2026-10-04T00:00:00+03:00"},
                "bucket": {"calendar": "week", "weekStart": "sunday"},
                "reducers": ["avg", "stddev", "count"],

@@ -67,7 +67,33 @@ build one per goroutine.
 | Emitter | Writes | How it reaches a substrate |
 | --- | --- | --- |
 | `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
+| `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, writes the `iphone` account, imports `healthapple`, arms the trigger and posts them one at a time |
 | `manual` | `labs.yaml`: three `labreport` records, 30 `labresult` records, the two labs' and the hand-entry `source` records, and one weigh-in typed in on a hotel scale on the trip's third day, when the range holds it | `synth load` writes them through `PUT /api/v1/...` after importing the samples; `substratectl apply -f` does the same |
+
+`applehealth` writes what the Health Auto Export app POSTs at the end of
+each local day. Heart rate comes from "Ada's Apple Watch" about every 5
+minutes as one-minute `Min`/`Avg`/`Max` rows, with a spread during
+workouts. Steps come per 5-minute bucket, from "Ada's iPhone" by day and the
+watch before 07:00, after 22:00 and during runs; on about one day in four the
+watch also counts the walks to work, to lunch and home, and both devices'
+rows are sent for the same buckets, so a reader has to choose between two
+sources. Distance, flights, and active and basal energy come one row per
+minute that has any, as the app sends them at Time Grouping Minutes: basal
+energy every minute, distance and active energy over each step bucket's five
+minutes and each workout's minutes, a flight at the minute climbed; in km and
+kJ, each bucket counted once. Each night carries resting heart rate,
+three SDNN readings, respiratory rate every 15 minutes, SpO2 every 10 and the
+sleeping wrist temperature, without a `source` key, as the app sends them.
+The watch sends a VO2 max estimate after each run. Weight, body fat and BMI
+come on weigh-in mornings and blood pressure on Sundays, from "Withings", and
+glucose in mg/dL on meter mornings, from "Contour". The height is typed into
+the phone once, in centimeters, on the first morning. The night is one
+aggregated `sleep_analysis` row, and each workout carries the app's activity
+name and `heartRateData` every 60 s. Dates are `yyyy-MM-dd HH:mm:ss Z` in the
+day's zone, `+0300` at home and `+0100` in London. The 90-day default is 90
+deliveries (29 MB, about 331,000 rows), written under five sources:
+`applehealth/iphone/apple-watch`, `.../iphone`, `.../withings`, `.../contour`
+and `.../health` for rows without a source or with merged labels.
 
 `whoop` writes WHOOP's summaries and never a sample series, because WHOOP's
 API has none. One physiological cycle per local day, from the onset of the
@@ -175,14 +201,17 @@ holds the token.
   is four to twelve hours, a heart rate stays between 40 and the maximum,
   the ill days walk less and train not at all, days tile time, no night
   overlaps a workout, readings happen awake), the recording names and the
-  mock server's parameter sets.
+  mock server's parameter sets, a writer that replaces an earlier run, and
+  every emitter agreeing on every night and workout within a minute.
 - `cmd/synth`'s tests drive `load` against a fake substrate: the import
   order, the authority check, the catalog read, the refusal of a
-  repository holding provider data synth did not write, the absolute `-ctl`
-  and recordings path the runner is handed, and an interrupt the runner
-  cleans up after.
+  repository holding provider data synth did not write, the webhook key and
+  its absence from a printed error, the retries, `-resume`, the token kept
+  off the webhook door, the absolute `-ctl` and recordings path the runner
+  is handed, and an interrupt the runner cleans up after.
 - `internal/providertest` drives the emitted data through the real
-  functions over the real engine: a sync through the loopback fake over the
+  functions over the real engine: a delivery through `applehealthingest`, a
+  sync through the loopback fake over the
   generated recordings, the hand-entered records through `convertlab`, then
   the adapter samples by their own triggers. Those run under
   `mise run test:db:rest`.

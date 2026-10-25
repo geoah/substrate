@@ -233,6 +233,7 @@ var healthMetricLiteral = regexp.MustCompile(`^health(whoop)?/[a-z0-9_]+$`)
 // TestAdapterTablesMatchTheCatalogue: every metric an adapter's tables or
 // literals name is in the catalogue, in the id of a unit that converts to
 // the metric's unit;
+// Apple Health's raw readings are in the metric's own unit, form and hold;
 // WHOOP's mapped fields are the `whoop` codes the metric lists; every sleep
 // stage code is in `health/sleep_stage`'s code set and every sport code in
 // the workout kind's.
@@ -285,6 +286,60 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 		for _, row := range rows(t, got.Tables, "STAGES") {
 			if !slices.Contains(stages, row[1]) {
 				t.Errorf("STAGES: %s maps to %q, not a health/sleep_stage code %v", row[0], row[1], stages)
+			}
+		}
+		for name, code := range mapping(t, got.Tables, "SPORTS") {
+			if !slices.Contains(sports, fmt.Sprint(code)) {
+				t.Errorf("SPORTS: %s maps to %v, not a workout sport", name, code)
+			}
+		}
+	})
+
+	t.Run("applehealth", func(t *testing.T) {
+		got := readAdapterTables(t, samplesDir+"/healthapple/bundle.yaml", "adaptapplehealth")
+		for _, name := range got.MetricRefs {
+			metric(t, "health/"+name)
+		}
+		// A raw reading is written in the metric's own unit, form and hold;
+		// a daily value is a summary of a summary metric.
+		for name, spec := range mapping(t, got.Tables, "METRICS") {
+			row := asList(spec)
+			text := func(i int) string {
+				if row[i] == nil {
+					return ""
+				}
+				return fmt.Sprint(row[i])
+			}
+			id, form, unit, hold := "health/"+text(0), text(2), text(3), text(4)
+			m := metric(t, id)
+			if unit != m.Unit || form != m.Form || hold != m.Hold {
+				t.Errorf("METRICS[%s]: %s is written as %s in %s holding %q; the catalogue says %s in %s holding %q",
+					name, id, form, unit, hold, m.Form, m.Unit, m.Hold)
+			}
+		}
+		pressure := rows(t, map[string]any{"PRESSURE": []any{got.Tables["PRESSURE"]}}, "PRESSURE")[0]
+		for _, id := range pressure[:2] {
+			if m := metric(t, "health/"+id); pressure[2] != m.Unit || pressure[3] != m.Hold || m.Form != "gauge" {
+				t.Errorf("PRESSURE: %s is a gauge in %s holding %s; the catalogue says %s in %s holding %q", id, pressure[2], pressure[3], m.Form, m.Unit, m.Hold)
+			}
+		}
+		hold, _ := got.Tables["GLUCOSE_HOLD"].(string)
+		for measure, spec := range mapping(t, got.Tables, "GLUCOSE") {
+			row := asList(spec)
+			id, unit := "health/"+fmt.Sprint(row[0]), fmt.Sprint(row[1])
+			m := metric(t, id)
+			if unit != m.Unit || hold != m.Hold || m.Measures != measure {
+				t.Errorf("GLUCOSE[%s]: %s in %s holding %s; the catalogue says %s in %s holding %q", measure, id, unit, hold, m.Measures, m.Unit, m.Hold)
+			}
+		}
+		for value, code := range mapping(t, got.Tables, "STAGES") {
+			if !slices.Contains(stages, fmt.Sprint(code)) {
+				t.Errorf("STAGES: %q maps to %v, not a health/sleep_stage code %v", value, code, stages)
+			}
+		}
+		for _, row := range rows(t, got.Tables, "NIGHT") {
+			if !slices.Contains(stages, row[1]) {
+				t.Errorf("NIGHT: %s maps to %q, not a health/sleep_stage code", row[0], row[1])
 			}
 		}
 		for name, code := range mapping(t, got.Tables, "SPORTS") {

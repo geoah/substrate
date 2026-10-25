@@ -41,6 +41,9 @@ API call that completes a task.
   results), core's `observed` trait and the rules every write of one is held
   to, the `observations` and `health` samples, the observed index, and the
   aggregate reads that answer a screen of a health app
+- [Building health apps](health-apps.md): the requests behind each screen of
+  a health app (a day, a night, a workout, trends, labs, sync), each run
+  against a demo repository
 - [Vocabulary as records](vocabulary.md) — the declarable kinds, admission,
   and how the vocabulary evolves
 - [Projection](projection.md) — record mappings, managed properties, and merges
