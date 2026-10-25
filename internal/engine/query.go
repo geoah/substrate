@@ -1029,6 +1029,9 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		}
 	}
 	kind := vocabulary.Datatype("")
+	if len(types) == 0 {
+		kind = ds.kindlessDatatype(name)
+	}
 	for _, t := range types {
 		if p, ok := t.Prop(name); ok {
 			kind = p.Datatype
@@ -1048,6 +1051,47 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		return ds.condQuantity(ctx, x, b, types, name, c)
 	}
 	return condJSON(b, `props`, name, c, kind)
+}
+
+// kindlessDatatype is the datatype a filter naming no kind compares `name`
+// as: the one every loaded kind declaring it agrees on, scalar and unkeyed,
+// under numericProp's every-not-any rule. The first declaration cannot decide
+// it the way it does over named kinds, because the read spans every kind, and
+// a cast one kind's text rows would fail must not run. An int, a float and a
+// decimal agree as a number, compared through the decimal cast, which reads
+// all three exactly; a datetime and a date agree as an instant. Any other
+// disagreement is text, as before.
+func (ds *dataset) kindlessDatatype(name string) vocabulary.Datatype {
+	numeric := func(d vocabulary.Datatype) bool {
+		return d == vocabulary.DatatypeInt || d == vocabulary.DatatypeFloat || d == vocabulary.DatatypeDecimal
+	}
+	var out vocabulary.Datatype
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || p.Keyed {
+			return ""
+		}
+		d := p.Datatype
+		if d == vocabulary.DatatypeDate {
+			d = vocabulary.DatatypeDatetime
+		}
+		switch {
+		case out == "", out == d:
+			out = d
+		case numeric(out) && numeric(d):
+			out = vocabulary.DatatypeDecimal
+		default:
+			return ""
+		}
+	}
+	switch {
+	case numeric(out), out == vocabulary.DatatypeMoney, out == vocabulary.DatatypeDatetime, out == vocabulary.DatatypeBool:
+		return out
+	}
+	return ""
 }
 
 // moneyValueSQL is the exact number a stored money value at `expr` (a jsonb

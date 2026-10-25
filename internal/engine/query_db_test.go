@@ -570,6 +570,95 @@ func TestFilterByADecimalRangeComparesNumerically(t *testing.T) {
 	}
 }
 
+const kindlessPackage = "kindless.example.substrate.reamde.dev/kindless"
+
+// A filter naming no kind compares a typed property by value where every kind
+// declaring it agrees, as a quantity's always has: {"gte": "10"} over decimals
+// used to compare text, so "9.50" passed and "100.1" did not. Every name is
+// one no seeded kind declares, so the kindless read sees these rows alone.
+func TestKindlessFilterComparesEveryTypedPropertyByValue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	kind := func(name string, props map[string]any) map[string]any {
+		return vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": name},
+			map[string]any{"properties": props})
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		kind("tally", map[string]any{"tallyCount": map[string]any{"type": "int"}}),
+		kind("ledger", map[string]any{"ledgerBalance": map[string]any{"type": "decimal"}}),
+		kind("fee", map[string]any{"feeCharge": map[string]any{"type": "money"}}),
+		kind("alarm", map[string]any{"alarmAt": map[string]any{"type": "datetime"}}),
+		// One name, an int on one kind and a decimal on the other: both numbers.
+		kind("gauge", map[string]any{"gaugeReading": map[string]any{"type": "int"}}),
+		kind("meter", map[string]any{"gaugeReading": map[string]any{"type": "decimal"}}),
+		// One name, an int on one kind and a string on the other: still text.
+		kind("badge", map[string]any{"badgeCode": map[string]any{"type": "int"}}),
+		kind("sticker", map[string]any{"badgeCode": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	put := func(kind, property string, values ...any) {
+		for _, v := range values {
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: kindlessPackage + "/" + kind, Properties: map[string]any{property: v},
+			})
+		}
+	}
+	put("tally", "tallyCount", 9, 100, 2, 10)
+	put("ledger", "ledgerBalance", "9.50", "100.1", "2", "10.05")
+	put("fee", "feeCharge", moneyValue(950, "EUR"), moneyValue(10010, "EUR"), moneyValue(200, "EUR"), moneyValue(1005, "EUR"), moneyValue(5000, "USD"))
+	put("alarm", "alarmAt", firedAtChronological[3], firedAtChronological[0], firedAtChronological[2], firedAtChronological[1])
+	put("gauge", "gaugeReading", 9, 100)
+	put("meter", "gaugeReading", "2", "10.5")
+	put("badge", "badgeCode", 9, 10)
+	put("sticker", "badgeCode", "2")
+
+	for _, tc := range []struct {
+		name     string
+		property string
+		cond     substrate.Cond
+		want     []string
+	}{
+		{"an int", "tallyCount", substrate.Cond{Gte: 10}, []string{"10", "100"}},
+		{"a decimal", "ledgerBalance", substrate.Cond{Gte: "10"}, []string{"10.05", "100.1"}},
+		{"a decimal range", "ledgerBalance", substrate.Cond{Gt: "2", Lt: "10"}, []string{"9.50"}},
+		{"money within its currency", "feeCharge", substrate.Cond{Gte: moneyValue(1000, "EUR")}, []string{"10.05 EUR", "100.10 EUR"}},
+		{"a datetime", "alarmAt", substrate.Cond{Gte: firedAtChronological[1]}, firedAtChronological[1:]},
+		{"an int and a decimal", "gaugeReading", substrate.Cond{Gte: "10"}, []string{"10.5", "100"}},
+		{"an int and a string compare as text", "badgeCode", substrate.Cond{Gte: "10"}, []string{"10", "2", "9"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			page, err := ds.List(ctx, substrate.Query{
+				Filter:  substrate.Filter{Properties: map[string]substrate.Cond{tc.property: tc.cond}},
+				OrderBy: []substrate.Order{{Property: tc.property}},
+				First:   50,
+			})
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			got := make([]string, 0, len(page.Records))
+			for _, r := range page.Records {
+				v := r.Properties[tc.property]
+				if m, ok := v.(map[string]any); ok {
+					amount, _ := m["amount"].(json.Number)
+					if amount == "" {
+						amount = json.Number(fmt.Sprint(m["amount"]))
+					}
+					n, _ := amount.Int64()
+					v = fmt.Sprintf("%d.%02d %v", n/100, n%100, m["currency"])
+				}
+				got = append(got, fmt.Sprint(v))
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("filtered to %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // The round trip the datetime cast has to survive: the order expression is
 // projected as the cursor key (a timestamptz rendered to text), passed back as
 // a bound parameter and compared against the native expression in
