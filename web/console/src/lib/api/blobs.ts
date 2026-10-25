@@ -125,6 +125,25 @@ export function holdBlob(
   held.set(digest, { bytes, meta })
 }
 
+/** The manifest of a blob a form uploaded and holds, or undefined for any
+ * other value. Before its record is written a blobref is a bare digest, and
+ * this is where its name and size are known. */
+export function heldBlobInfo(value: unknown): BlobInfo | undefined {
+  if (!isBlobDigest(value)) return undefined
+  const blob = held.get(value)
+  if (!blob) return undefined
+  return {
+    digest: value,
+    size:
+      blob.bytes instanceof Blob
+        ? blob.bytes.size
+        : new TextEncoder().encode(blob.bytes).length,
+    name: blob.meta.name,
+    mediaType: blob.meta.mediaType,
+    status: "stored",
+  }
+}
+
 /** The held digests a write's properties name, a list's items included. */
 function heldIn(properties: Record<string, unknown> | undefined): string[] {
   if (!properties || held.size === 0) return []

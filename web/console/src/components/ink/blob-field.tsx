@@ -6,7 +6,7 @@ import { useRef, useState } from "react"
 import { FileIcon, PenLineIcon, UploadIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { holdBlob, isBlobDigest, putBlob } from "@/lib/api/blobs"
+import { heldBlobInfo, holdBlob, isBlobDigest, putBlob } from "@/lib/api/blobs"
 import type { BlobInfo } from "@/lib/api/types"
 import { INK_MEDIA_TYPE, inkText, newInkDocument, readInk } from "@/lib/ink"
 import { byteSize } from "@/lib/ink-record"
@@ -111,7 +111,9 @@ export function BlobField({
     })
   }
 
-  const shown = stored && stored.digest === value ? stored : undefined
+  // A field mounted again (the sheet's panel reopened) has no upload of its
+  // own to read; the bytes the form holds still know the name.
+  const shown = stored && stored.digest === value ? stored : heldBlobInfo(value)
   return (
     <div id={id} className="flex flex-col gap-1.5" data-slot="blob-field">
       <div
