@@ -172,9 +172,10 @@ type agentInvocation struct {
 	// loop's function tools start from it, so a body that runs an agent
 	// whose tool calls that body back is refused as recursion (record 0121).
 	callStack []string
-	// notAfter, when set, is the calling body's own deadline: the loop's
-	// deadline is the earlier of it and the agent's budget, so the loop
-	// settles its thread before the body's runner gives up on it.
+	// notAfter, when set, is the calling body's or the parent loop's own
+	// deadline: the loop's deadline is the earlier of it and the agent's
+	// budget, so the loop settles its thread before its caller gives up on
+	// it.
 	notAfter time.Time
 	// emit streams loop events; nil disables streaming.
 	emit func(substrate.AgentEvent)
@@ -533,6 +534,10 @@ type agentLoop struct {
 	actor    substrate.Actor
 
 	threadID string
+	// runCtx is the context run received, below the loop's own deadline: a
+	// sub-agent's cancellation hangs off it, because a context's error is
+	// fixed once set and the deadline's would hide a later stop.
+	runCtx context.Context
 	// turn is the next message ordinal on the thread. turnMu guards it,
 	// because a resolution written into the thread while the loop runs
 	// draws its ordinal here too (nextThreadTurn), so no two rows share one.
@@ -752,6 +757,7 @@ func (l *agentLoop) run(ctx context.Context) (*substrate.AgentResult, error) {
 		defer ds.spend.finish(l.spend)
 	}
 	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
+	l.runCtx = ctx
 	messages := l.compactAtOpen(ctx, l.opening)
 
 	started := nowUTC()
@@ -2783,9 +2789,19 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	// after runAgent returns, so the stretch is complete whatever status the
 	// child ended in, an error path that skipped its settle included.
 	mark := len(l.in.tally.changes)
+	// ctx carries this loop's deadline. The child takes it as its own
+	// instead of running on it: a write or a settle on a context that
+	// deadline ended fails, and would leave the child `running` under its
+	// lease. A cancellation still reaches the child, before the deadline or
+	// after it, through the run's own context, which the deadline never
+	// ends; what that leaves is the caller's (decision 0169).
+	notAfter, _ := ctx.Deadline()
+	cctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	defer context.AfterFunc(l.runCtx, cancel)()
 	var child string
-	res, err := l.ds.runAgent(ctx, sub, agentInvocation{
-		mode: agentModeSubagent, user: input,
+	res, err := l.ds.runAgent(cctx, sub, agentInvocation{
+		mode: agentModeSubagent, user: input, notAfter: notAfter,
 		parent: l.threadID, depth: depth,
 		// A stop of the detached turn stops the child with it, and the
 		// child settles `stopped` on its own bounded writes.
