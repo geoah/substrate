@@ -1910,9 +1910,18 @@ a date without an offset is on the account's `timezone`, else UTC.
 | `blood_glucose` | `blood_glucose` | gauge observation, hold `PT15M`, `mealTime` as a qualifier; a reading keeps its digits, in `mg/dL_glucose` where the app sent mg/dL and `mmol/L_glucose` where it sent mmol/L; another unit is skipped | `mg/dL_glucose`, `mmol/L_glucose` |
 | `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `1/min` |
 | `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value`; see Sleep below | `min` |
+| `basal_body_temperature` | `basal_body_temperature` | gauge observation, hold `PT0S` | `Cel` |
+| `mindful_minutes` | `mindful_minutes` | amount trace | `min` |
+| `dietary_water` | `water` | amount trace | `mL` |
+| `dietary_energy` | `dietary_energy` | amount trace | `kcal` |
+| `protein`, `carbohydrates`, `total_fat`, `saturated_fat`, `dietary_sugar`, `fiber` | `protein`, `carbohydrates`, `fat`, `saturated_fat`, `sugar`, `fiber` | amount traces | `g` |
+| `sodium`, `cholesterol`, `caffeine` | `sodium`, `cholesterol`, `caffeine` | amount traces | `mg` |
 
 Everything else the app sends (`apple_exercise_time`, `physical_effort`,
 `walking_asymmetry_percentage`, `lean_body_mass` and the rest) is skipped.
+Cycle tracking stays in its `cycleevent` mirror rows and a workout's route on
+its `workout` mirror row: neither is a quantity the catalogue has a metric
+for (decision record 0163 keeps positions out of observations).
 
 **Raw values come from the Seconds and Minutes groupings only.** A batch at
 Hours, Days or a coarser grouping holds the app's own aggregates, so each row

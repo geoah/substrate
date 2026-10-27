@@ -17,7 +17,9 @@ data:
   package: health
   # 1: the body, sleep and training half of the health sample at its version 8
   # (sleep, workout, 33 metrics, the glucose units and two record views).
-  version: 1
+  # 2: mindful minutes, water, eleven nutrients and basal body temperature, as
+  # 13 metrics (46).
+  version: 2
 ---
 # ---- the bundle document: the install unit ------------------------------------
 # Two kinds, and the metric catalogue (metrics.yaml) with the glucose units
