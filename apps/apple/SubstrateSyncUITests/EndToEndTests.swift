@@ -8,8 +8,11 @@ import XCTest
 ///   TEST_RUNNER_SYNC_E2E_REPOSITORY=synctest TEST_RUNNER_SYNC_E2E_PASSWORD=… \
 ///   xcodebuild … -only-testing:SubstrateSyncUITests test
 ///
-/// Grant Contacts and Calendars first (`xcrun simctl privacy <udid> grant
-/// contacts dev.reamde.substrate.sync`, and `calendar`). Health stays off:
+/// Grant Contacts, Calendars, Reminders and Always location first (`xcrun
+/// simctl privacy <udid> grant contacts dev.reamde.substrate.sync`,
+/// `calendar`, `reminders` and `location-always`), and reset the simulator's
+/// Keychain (`xcrun simctl keychain <udid> reset`), which outlives the app,
+/// so the test signs in to the server it names. Health stays off:
 /// HealthKit's sheet does not reliably answer a test, so its deliveries are
 /// checked by posting the encoder's goldens to the webhook instead.
 final class EndToEndTests: XCTestCase {
@@ -40,6 +43,11 @@ final class EndToEndTests: XCTestCase {
             app.buttons["Sign In"].tap()
         }
 
+        // iOS offers to save the password the sign-in typed, over whatever
+        // screen comes next.
+        let notNow = app.buttons["Not Now"]
+        if notNow.waitForExistence(timeout: 5) { notNow.tap() }
+
         let setUp = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Set Up'")).firstMatch
         let syncNow = app.buttons["Sync Now"]
         if setUp.waitForExistence(timeout: 30), !syncNow.exists {
@@ -47,8 +55,6 @@ final class EndToEndTests: XCTestCase {
             setUp.tap()
         }
         XCTAssertTrue(syncNow.waitForExistence(timeout: 180), "set up did not finish: \(app.debugDescription)")
-        // iOS offers to save the password the sign-in typed.
-        let notNow = app.buttons["Not Now"]
         if notNow.waitForExistence(timeout: 3) { notNow.tap() }
 
         // Sample data is behind the gear, with the rest of the settings.
@@ -80,7 +86,7 @@ final class EndToEndTests: XCTestCase {
         shot("home")
 
         // Each source's page says what its last run wrote.
-        for source in ["contacts", "calendars"] {
+        for source in ["contacts", "calendars", "reminders"] {
             app.buttons["source.\(source)"].tap()
             let lastRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written'")).firstMatch
             XCTAssertTrue(lastRun.waitForExistence(timeout: 10), app.debugDescription)
@@ -100,7 +106,7 @@ final class EndToEndTests: XCTestCase {
         syncNow.tap()
         _ = app.buttons["Stop"].waitForExistence(timeout: 5)
         XCTAssertTrue(syncNow.waitForExistence(timeout: 240), "the second sync did not end: \(app.debugDescription)")
-        for source in ["contacts", "calendars"] {
+        for source in ["contacts", "calendars", "reminders"] {
             app.buttons["source.\(source)"].tap()
             let lastRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written'")).firstMatch
             XCTAssertTrue(lastRun.waitForExistence(timeout: 10), app.debugDescription)
@@ -108,6 +114,23 @@ final class EndToEndTests: XCTestCase {
             XCTAssertTrue(lastRun.label.contains(" 0 written"), "the second sync wrote \(source) again: \(lastRun.label)")
             back()
         }
+
+        // Places is off until turned on; the sample data put two visits in
+        // its log, and location access was granted before the launch.
+        app.buttons["source.places"].tap()
+        let places = app.switches["Sync Places"]
+        scrollTo(places, in: app)
+        // A switch row's middle is its label; the knob is at its trailing end.
+        if places.value as? String == "0" { places.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
+        let syncPlaces = app.buttons["Sync Places Now"]
+        scrollTo(syncPlaces, in: app, up: true)
+        syncPlaces.tap()
+        let placesRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' visits · '")).firstMatch
+        XCTAssertTrue(placesRun.waitForExistence(timeout: 120), "the places sync did not end: \(app.debugDescription)")
+        print("E2E places: \(placesRun.label)")
+        XCTAssertTrue(placesRun.label.contains(" written"), placesRun.label)
+        shot("places")
+        back()
 
         if shots != nil {
             app.buttons["source.health"].tap()

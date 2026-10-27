@@ -133,9 +133,11 @@ Release builds carry none of it.
 
 A second app in the same project: `SubstrateSync` (bundle id
 `dev.reamde.substrate.sync`), iPhone and iPad only, iOS 26. It carries no
-console and no Sparkle. It reads the device's Health, Contacts and Calendar
-and pushes them into one repository, signed in with the owner's password,
-over the API alone. Nothing is written back to the device.
+console and no Sparkle. It reads the device's Health, Contacts, Calendar,
+Reminders and the places it stays at, and pushes them into one repository,
+signed in with the owner's password, over the API alone. Nothing is written
+back to the device. Its share extension, Send to Substrate, saves what any
+app shares.
 
 ```bash
 mise run apple:build:sync     # the app for the simulator
@@ -146,7 +148,10 @@ mise run apple:release:sync   # archived, signed and published under sync/
 | --------- | -------- | --- |
 | Contacts  | `providers.substrate.reamde.dev/apple/addressbook` and `…/contact` | `PUT` per changed contact, `PATCH` to null for a vanished key, `DELETE` for a vanished contact, then the address book row |
 | Calendars | `…/apple/eventstore`, `…/calendar` and `…/event` | every event calendar and every occurrence from 90 days back to 180 ahead; an event that ages out of the window keeps its row |
+| Reminders | `…/apple/reminderlist` and `…/reminder`, under the event store | every list and every reminder, completed ones too; a deleted one is removed |
+| Places    | `…/apple/visitstore` and `…/visit` | the visits iOS reported while Places was on, kept a year on the phone, named by Apple Maps |
 | Health    | `providers.substrate.reamde.dev/applehealth` mirror rows, then observations, sleep and workouts through the provider's own adapter, under `substrate.reamde.dev` | Health Auto Export's JSON to `/webhooks/<authority>/applehealth-webhook`, two deliveries per local day |
+| Shares    | `…/apple/share`, the images as blobs | the share extension, once per share |
 
 The ids and the field rules are the apple package's
 [README](../../kinds/providers.substrate.reamde.dev/apple/README.md); the
@@ -176,8 +181,8 @@ contacts' address book, the calendar store or the Health account gone from
 the server, sends everything again.
 
 **Set up** lists what the repository lacks and does it with one button:
-installs (or upgrades to version 2) `providers.substrate.reamde.dev/apple`
-and installs (or upgrades to version 4) `…/applehealth`, which ships the
+installs (or upgrades to version 3) `providers.substrate.reamde.dev/apple`
+and installs (or upgrades to version 5) `…/applehealth`, which ships the
 adapter and installs the `substrate.reamde.dev/health` catalogue it
 requires; then it creates the Health account
 `substrate-sync-<first 8 characters of the install id>`, and arms the
@@ -197,6 +202,31 @@ range longer than a month first asks HealthKit which days hold data, so years
 of history are not read one empty day at a time. A background run sends only
 the last three days. A delivery replaces a metric's rows across its span, so
 a day is always sent whole, and a day larger than 4 MiB is split by metric.
+Besides the measured metrics, a day carries what is logged: mindful minutes
+(each session at the minute it starts), water and eleven nutrients, and basal
+body temperature, which the adapter maps to the `health/*` metrics of those
+names; cycle tracking, as the `cycleTracking` section (`cycleevent` rows); and
+each workout's GPS route, thinned to 15,000 points, which stays on the
+workout's mirror row.
+
+**Reminders** are read whole each sync: every list (an `EKCalendar` for
+reminders) and every reminder, with its due day, and its due moment where it
+has a time. A list or a reminder gone from the phone is deleted, and an empty
+answer from EventKit deletes nothing.
+
+**Places** is off until it is turned on, because it asks for Always location
+access. It uses iOS's visit monitoring, which reports a stay when the phone
+arrives and again when it leaves, at little cost to the battery, and relaunches
+the app in the background to do it. Each report is kept in a log on the phone
+for a year; a sync names up to 25 new visits a run through MapKit's reverse
+geocoder and sends them all, so a reset repository gets the year back. iOS
+keeps no history of its own, so Places starts when it is turned on.
+
+**Send to Substrate** is a share extension: a link, text and up to four
+images from any app's share sheet, with a note, saved as one `share` record.
+It reads the app's sign-in from the Keychain group the two share, uploads the
+images as blobs and writes the record within the minute the server keeps an
+unreferenced blob. A link shared again updates its record.
 
 **Home is an overview.** A status card says what is syncing (the source,
 its step and how far it has got, and Stop) or how the last sync ended, above

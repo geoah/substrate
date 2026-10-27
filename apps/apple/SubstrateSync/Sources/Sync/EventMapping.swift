@@ -95,7 +95,7 @@ enum EventMapping {
         return s.isEmpty ? nil : s
     }
 
-    private static func rule(_ r: EKRecurrenceRule) -> JSON {
+    static func rule(_ r: EKRecurrenceRule) -> JSON {
         var f = Fields()
         f.set("frequency", frequency(r.frequency))
         f.set("interval", r.interval)

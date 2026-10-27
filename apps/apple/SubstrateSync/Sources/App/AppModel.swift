@@ -27,10 +27,10 @@ final class AppModel: ObservableObject {
     static let appleProvider = "providers.substrate.reamde.dev/apple"
     static let healthProvider = "providers.substrate.reamde.dev/applehealth"
     /// The apple package version that declares the calendar kinds.
-    static let appleVersion = 2
+    static let appleVersion = 3
     /// The applehealth version that carries its adapter into the health
     /// catalogue (decision record 0192).
-    static let healthVersion = 4
+    static let healthVersion = 5
 
     @Published private(set) var session: Session?
     @Published private(set) var state = LocalState.load()
@@ -167,11 +167,11 @@ final class AppModel: ObservableObject {
                 }
                 if id == Self.appleProvider, let v = item?.version, v < Self.appleVersion {
                     done = false
-                    detail = "This server ships version \(v); calendars need version \(Self.appleVersion)."
+                    detail = "This server ships version \(v); reminders, places and shares need version \(Self.appleVersion)."
                 }
                 if id == Self.healthProvider, let v = item?.version, v < Self.healthVersion {
                     done = false
-                    detail = "This server ships version \(v); turning deliveries into health records needs version \(Self.healthVersion)."
+                    detail = "This server ships version \(v); mindful minutes, water and nutrients need version \(Self.healthVersion)."
                 }
                 steps.append(SetupStep(id: id, kind: .install(id), title: "Install \(id)", done: done, detail: detail))
             }
@@ -290,6 +290,17 @@ final class AppModel: ObservableObject {
         case .denied, .restricted: "Not allowed"
         default: "Not asked yet"
         }
+        let reminders: String = switch EKEventStore.authorizationStatus(for: .reminder) {
+        case .fullAccess: "Allowed"
+        case .denied, .restricted: "Not allowed"
+        default: "Not asked yet"
+        }
+        let places: String = switch PlaceMonitor.shared.authorization {
+        case .authorizedAlways: "Always"
+        case .authorizedWhenInUse: "While using: Always is needed"
+        case .denied, .restricted: "Not allowed"
+        default: "Not asked yet"
+        }
         // HealthKit never says whether reading was allowed; it says whether
         // the question was asked.
         let health: String
@@ -298,7 +309,7 @@ final class AppModel: ObservableObject {
         } else {
             health = UserDefaults.standard.bool(forKey: "health.asked") ? "Asked" : "Not asked yet"
         }
-        access = [.contacts: contacts, .calendars: calendars, .health: health]
+        access = [.contacts: contacts, .calendars: calendars, .health: health, .reminders: reminders, .places: places]
     }
 
     func requestAccess(_ source: Source) async {
@@ -307,6 +318,10 @@ final class AppModel: ObservableObject {
             _ = try? await CNContactStore().requestAccess(for: .contacts)
         case .calendars:
             _ = try? await EKEventStore().requestFullAccessToEvents()
+        case .reminders:
+            _ = try? await EKEventStore().requestFullAccessToReminders()
+        case .places:
+            await PlaceMonitor.shared.requestAccess()
         case .health:
             guard HealthReader.isAvailable else { break }
             try? await SyncEngine.shared.health.requestAuthorization(toShare: SampleData.shareTypes, read: HealthReader.readTypes)
@@ -348,6 +363,12 @@ final class AppModel: ObservableObject {
             let window = Self.window
             let synced = state.events.values.filter { $0.start.map(window.contains) ?? false }.count
             return (min(synced, total), total, "events")
+        case .reminders:
+            guard let total = state.device.reminders else { return nil }
+            return (min(state.reminders.count, total), total, "reminders")
+        case .places:
+            let total = PlaceLog.shared.all.count
+            return (min(state.visits.count, total), total, "visits")
         }
     }
 

@@ -176,6 +176,26 @@ struct Client: Sendable {
         return (try? JSONDecoder().decode(Accepted.self, from: data))?.fire ?? ""
     }
 
+    /// Stores bytes as a blob and answers its digest, the value a `blobref`
+    /// property takes. The record naming it must follow within a minute: the
+    /// server collects a blob nothing references after that.
+    func putBlob(_ data: Data, mediaType: String, name: String?) async throws -> String {
+        var path = "api/v1/blobs"
+        if let name, let query = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) { path += "?name=" + query }
+        guard let url = URL(string: server.absoluteString.trimmingSuffix("/") + "/" + path) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 300
+        request.setValue(mediaType, forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let secret { request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = data
+        let (body, status) = try await perform(request)
+        guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: body) }
+        struct Stored: Decodable { let digest: String }
+        return try JSONDecoder().decode(Stored.self, from: body).digest
+    }
+
     /// A row of the trigger's parked list: a delivery its function refused,
     /// kept with its reason, or one the server accepted and has not run yet,
     /// or is running now, which the list carries too and which is no failure.
