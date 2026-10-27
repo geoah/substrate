@@ -144,6 +144,7 @@ const WORDS = new Set([
   "split",
   "state",
   "status",
+  "store",
   "symptom",
   "sync",
   "task",
