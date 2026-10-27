@@ -35,6 +35,7 @@ const (
 // The adapter stamp each shipped adapter writes on its outputs, its
 // function's ADAPTER constant.
 const (
+	healthAppleAdapter = "healthapple@8"
 	healthWhoopAdapter = "healthwhoop@10"
 )
 
@@ -229,7 +230,7 @@ var adapterConstant = regexp.MustCompile(`(?m)^ADAPTER = "([^"]+)"$`)
 func TestHealthAdaptersStampTheirPackageVersion(t *testing.T) {
 	t.Parallel()
 	for name, want := range map[string]string{
-		"healthwhoop": healthWhoopAdapter,
+		"healthapple": healthAppleAdapter, "healthwhoop": healthWhoopAdapter,
 	} {
 		var version any
 		var stamps []string

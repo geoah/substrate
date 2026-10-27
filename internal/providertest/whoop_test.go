@@ -1534,7 +1534,8 @@ func whoopPatch(t *testing.T, ds substrate.Dataset, kind, id string, props map[s
 // TestShippedWebhookTriggersAreClosed pins how each shipped webhook trigger
 // keeps an install from taking unauthenticated requests. WHOOP ships enabled
 // because its declared signature fails closed until the config record holds
-// the client secret.
+// the client secret. Apple Health has no signature to declare: it ships
+// disabled and keyless, and the key the owner sets is its gate.
 func TestShippedWebhookTriggersAreClosed(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -1542,6 +1543,7 @@ func TestShippedWebhookTriggersAreClosed(t *testing.T) {
 		enabled, signed bool
 	}{
 		{whoopDir, "whoop-webhook", true, true},
+		{appleHealthDir, "applehealth-webhook", false, false},
 	} {
 		var found bool
 		for _, d := range loadDocs(t, tc.dir+"/triggers.yaml") {

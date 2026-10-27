@@ -1217,7 +1217,8 @@ data:
   a byte of the body, so a request that names no trigger, or a keyed trigger
   without its key, is never read past the default. A sender has 30 seconds
   per started MiB of the bound to deliver the body. An agent callable reads
-  at most 1 MiB whatever `maxBody` says.
+  at most 1 MiB whatever `maxBody` says. Apple Health's trigger declares
+  8 MiB, because a day of minute-grouped samples passes 1 MiB.
 
 `callable` is a [reference](data-model.md#property-types) naming the function
 or [agent](agents.md) to run, written as one `<kind>/<id>` path (the example
