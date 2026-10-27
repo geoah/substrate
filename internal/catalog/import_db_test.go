@@ -27,6 +27,13 @@ const (
 	peopleSampleID   = samplesPlacehldr + "/people"
 	schedulingSample = samplesPlacehldr + "/scheduling"
 	calendarSample   = samplesPlacehldr + "/calendar"
+
+	// The first-party catalogues (record 0192): published packages the
+	// provider door installs verbatim, never rehomed. Labs requires health.
+	healthID = "substrate.reamde.dev/health"
+	labsID   = "substrate.reamde.dev/labs"
+	// metricKind is the seeded kind every catalogue's metric records are of.
+	metricKind = "substrate.reamde.dev/observations/metric"
 )
 
 // importSamples takes each sample the user's way, in the order `requires:`
@@ -245,8 +252,7 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 
 	// `requires:` forces an order; a refused import is retried after the rest
 	// of the pass, so the loop needs no knowledge of the graph. A provider a
-	// sample requires (healthwhoop's WHOOP, healthapple's Apple Health)
-	// takes the install door first, once.
+	// sample requires takes the install door first, once.
 	var pending []*catalog.Bundle
 	installed := map[string]bool{}
 	for _, b := range c.Bundles() {

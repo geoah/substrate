@@ -25,6 +25,11 @@ func TestTheUpgradeThatDeclaresTheUnitKindsSeedsThem(t *testing.T) {
 	if err := os.Remove(filepath.Join(older, core, "unit.yaml")); err != nil {
 		t.Fatalf("drop the unit kinds from binary N: %v", err)
 	}
+	// Binary N seeded no observations package either (record 0192): its
+	// metric kind names the unit kind.
+	if err := os.RemoveAll(filepath.Join(older, vocabulary.PackageObservations)); err != nil {
+		t.Fatal(err)
+	}
 	svc := openTree(t, dsn, older, engine.WithDataRoot(root), engine.WithUnitSeed(true))
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create on binary N: %v", err)

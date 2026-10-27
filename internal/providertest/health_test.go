@@ -14,29 +14,35 @@ import (
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
 )
 
-// The observations and health sample kinds the health adapter suites read
-// back, under the shipped samples authority. Shared by every adapter suite in
-// this package, so a suite's own constants never redeclare them.
+// The first-party kinds the health adapters write (decision record 0192):
+// the seeded observations package, which every repository holds under one
+// name, and the health catalogue, which installing either provider brings.
+// Shared by every adapter suite in this package, so a suite's own constants
+// never redeclare them.
 const (
-	obsObservation = samples.Authority + "/observations/observation"
-	obsTrace       = samples.Authority + "/observations/trace"
-	obsSource      = samples.Authority + "/observations/source"
-	obsMetric      = samples.Authority + "/observations/metric"
-	healthSleep    = samples.Authority + "/health/sleep"
-	healthWorkout  = samples.Authority + "/health/workout"
+	healthPackage  = vocabulary.AuthorityPublisher + "/health"
+	labsPackage    = vocabulary.AuthorityPublisher + "/labs"
+	obsObservation = vocabulary.PackageObservations + "/observation"
+	obsTrace       = vocabulary.PackageObservations + "/trace"
+	obsSource      = vocabulary.PackageObservations + "/source"
+	obsMetric      = vocabulary.PackageObservations + "/metric"
+	healthSleep    = healthPackage + "/sleep"
+	healthWorkout  = healthPackage + "/workout"
 	// healthMetrics prefixes a health catalogue metric's id into its record
 	// path: healthMetrics + "heart_rate".
 	healthMetrics = obsMetric + "/health/"
 )
 
-// The adapter stamp each shipped adapter writes on its outputs, its
-// function's ADAPTER constant.
+// The adapter stamp each provider's adapter writes on its outputs, its
+// function's ADAPTER constant, and the record trigger that delivers the
+// provider's mirror rows to it.
 const (
-	healthAppleAdapter = "healthapple@8"
-	healthWhoopAdapter = "healthwhoop@10"
+	appleHealthAdapter        = "applehealth@4"
+	appleHealthAdapterTrigger = "applehealth-to-health"
+	whoopAdapter              = "whoop@25"
+	whoopAdapterTrigger       = "whoop-to-health"
 )
 
 // asFloat reads a number however it reached the test: a float64 from
@@ -160,10 +166,10 @@ func assertAdapterStamp(t *testing.T, rows map[string]*substrate.Record, stamp s
 	}
 }
 
-// upgradeAdapter lands a new version of a health adapter the way an upgrade
-// does: the same closure applied again, its ADAPTER constant raised from the
-// stamp it ships (`healthwhoop@2`) to the next version, and nothing upstream
-// changed. It answers the new stamp.
+// upgradeAdapter lands a new version of a provider's adapter the way an
+// upgrade does: the provider's closure applied again under its bundle's
+// actor, its ADAPTER constant raised from the stamp it ships (`whoop@25`) to
+// the next version, and nothing upstream changed. It answers the new stamp.
 func upgradeAdapter(t *testing.T, ds substrate.Dataset, shipped string) string {
 	t.Helper()
 	name, version, ok := strings.Cut(shipped, "@")
@@ -172,9 +178,9 @@ func upgradeAdapter(t *testing.T, ds substrate.Dataset, shipped string) string {
 		t.Fatalf("%q is not an adapter stamp <package>@<version>", shipped)
 	}
 	next := fmt.Sprintf("%s@%d", name, n+1)
-	docs := loadDocs(t, samplesDir+"/"+name+"/bundle.yaml")
+	docs := loadDocs(t, providersDir+"/"+name+"/bundle.yaml")
 	rewriteSource(t, docs, `ADAPTER = "`+shipped+`"`, `ADAPTER = "`+next+`"`)
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.BundleActor(samples.Authority, name), docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.BundleActor(providersAuthority, name), docs); err != nil {
 		t.Fatalf("upgrade %s: %v", name, err)
 	}
 	return next
@@ -222,19 +228,19 @@ func assertAdapterRewrite(t *testing.T, ds substrate.Dataset, stamp string, befo
 // adapterConstant is the ADAPTER line at the top of an adapter's function.
 var adapterConstant = regexp.MustCompile(`(?m)^ADAPTER = "([^"]+)"$`)
 
-// TestHealthAdaptersStampTheirPackageVersion: each adapter's ADAPTER stamp is
+// TestHealthAdaptersStampTheirPackageVersion: each provider's adapter stamps
 // `<package>@<package version>`, and the shared constants the suites assert
 // are those stamps. A stamp raised without the package's version is code no
-// repository that imported the package is offered, and a package version
+// repository that installed the provider is offered, and a package version
 // raised without the stamp rewrites nothing on a replay.
 func TestHealthAdaptersStampTheirPackageVersion(t *testing.T) {
 	t.Parallel()
 	for name, want := range map[string]string{
-		"healthapple": healthAppleAdapter, "healthwhoop": healthWhoopAdapter,
+		"applehealth": appleHealthAdapter, "whoop": whoopAdapter,
 	} {
 		var version any
 		var stamps []string
-		for _, d := range loadDocs(t, samplesDir+"/"+name+"/bundle.yaml") {
+		for _, d := range loadDocs(t, providersDir+"/"+name+"/bundle.yaml") {
 			data, _ := d["data"].(map[string]any)
 			switch d["kind"] {
 			case vocabulary.CoreKind(vocabulary.DocPackage):

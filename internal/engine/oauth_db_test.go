@@ -568,7 +568,7 @@ func newDatasetWithSchemaDB(t *testing.T, opts ...engine.Option) (substrate.Serv
 	t.Helper()
 	dsn := engine.MigratedDSN(t)
 	all := []engine.Option{
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
@@ -818,7 +818,7 @@ func TestOAuthEmptyStateKeyRefusesTheBoot(t *testing.T) {
 	t.Parallel()
 	dsn := engine.MigratedDSN(t)
 	_, err := engine.OpenForTest(t, context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithOAuth("", "https://substrate.example/callback", nil),
 	)
 	if err == nil || !strings.Contains(err.Error(), "state key") {

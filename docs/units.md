@@ -203,15 +203,16 @@ weighs.
 
 ## Add a metric
 
-A metric, a record of a kind binding core's `metric` trait (the
-`observations` sample's `metric`, under the repository's own authority after
-the import), names its default `unit` and the `units` a value may be written
-in, each a reference to a unit record:
+A metric, a record of a kind binding core's `metric` trait (the seeded
+`substrate.reamde.dev/observations/metric`), names its default `unit` and
+the `units` a value may be written in, each a reference to a unit record.
+Its id takes a prefix of your own, because `health/`, `labs/` and the other
+package prefixes belong to the packages that ship them:
 
 ```yaml
-kind: ada.example.com/observations/metric
+kind: substrate.reamde.dev/observations/metric
 metadata:
-  id: health/body_mass
+  id: ada/body_mass
 data:
   properties:
     name: Body weight
@@ -241,9 +242,9 @@ A filter converts its operand into each unit the rows use, so this one
 matches every weigh-in under 159.61 `lb`, whatever unit it was written in:
 
 ```json
-{"kinds": ["ada.example.com/observations/observation"],
+{"kinds": ["substrate.reamde.dev/observations/observation"],
  "properties": {
-   "metric": {"eq": "ada.example.com/observations/metric/health/body_mass"},
+   "metric": {"eq": "substrate.reamde.dev/observations/metric/ada/body_mass"},
    "value": {"lt": {"value": "159.61", "unit": "lb"}}}}
 ```
 

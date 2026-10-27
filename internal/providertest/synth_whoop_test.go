@@ -2,9 +2,9 @@ package providertest
 
 // The contract between internal/synth's WHOOP emitter and the shipped WHOOP
 // closure: three generated days, served by the mock server's own lookup,
-// walked by the real `whoopsync`, then delivered to the `healthwhoop`
-// adapter. A change to a shape the sync or the adapter reads that the
-// emitter does not follow fails here.
+// walked by the real `whoopsync`, then delivered to the provider's
+// `adaptwhoop` adapter. A change to a shape the sync or the adapter reads
+// that the emitter does not follow fails here.
 
 import (
 	"encoding/json"
@@ -69,9 +69,9 @@ func synthWhoopRecords(t *testing.T, out *synth.Output, prefix string) []map[str
 }
 
 func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
-	// The repository first: newHealthWhoop skips without uv and goes
+	// The repository first: newWhoopAdapter skips without uv and goes
 	// parallel before any data is generated.
-	ds, _ := newHealthWhoop(t)
+	ds, _ := newWhoopAdapter(t)
 	// Friday to Monday across the end of the cold: a sick day's nap WHOOP
 	// cannot score, a scored Sunday nap, the long run and maybe yoga, and a
 	// strap new on Friday that calibrates until Monday.
@@ -180,10 +180,10 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		byMetric[metricOf(row.Properties)]++
 	}
 	for metric, want := range map[string]int{
-		"healthwhoop/strain": len(days), "health/energy_expended": len(days),
-		"healthwhoop/recovery": len(days), "health/hrv_rmssd": len(days), "health/resting_heart_rate": len(days),
+		"whoop/strain": len(days), "health/energy_expended": len(days),
+		"whoop/recovery": len(days), "health/hrv_rmssd": len(days), "health/resting_heart_rate": len(days),
 		"health/spo2": len(days), "health/skin_temperature": len(days),
-		"health/sleep_stage": 4 * scored, "healthwhoop/sleep_performance": scored, "health/respiratory_rate": scored,
+		"health/sleep_stage": 4 * scored, "whoop/sleep_performance": scored, "health/respiratory_rate": scored,
 		"health/heart_rate": 2*len(days) + 2*workouts,
 	} {
 		if byMetric[metric] != want {
@@ -197,7 +197,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	// first three recoveries and the adapter marks those scores estimated.
 	var estimated []string
 	for _, row := range listLive(t, ds, obsObservation) {
-		if metricOf(row.Properties) == "healthwhoop/recovery" && row.Properties["quality"] == "estimated" {
+		if metricOf(row.Properties) == "whoop/recovery" && row.Properties["quality"] == "estimated" {
 			estimated = append(estimated, row.ID)
 		}
 	}

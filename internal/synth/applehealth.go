@@ -18,7 +18,7 @@ import (
 // automation at Time Grouping Minutes, Summarize Data on, Export Version 2,
 // sent at the end of the day. The shapes are the recorded deliveries under
 // internal/providertest/testdata/applehealth and the fields
-// `applehealthingest` and the `healthapple` adapter read.
+// `applehealthingest` and the provider's `adaptapplehealth` adapter read.
 //
 // A day's delivery carries:
 //
@@ -108,7 +108,6 @@ var ahWorkoutNames = map[Sport]string{
 func (AppleHealth) Emit(p *Persona) (*Output, error) {
 	out := &Output{Setup: Setup{
 		Provider: "providers.substrate.reamde.dev/applehealth",
-		Samples:  []string{"samples.substrate.reamde.dev/healthapple"},
 		Records: []map[string]any{{
 			"kind":     "providers.substrate.reamde.dev/applehealth/account",
 			"metadata": map[string]any{"id": ahAccountID},

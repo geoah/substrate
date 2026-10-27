@@ -1,7 +1,8 @@
 /** Fixtures for the observations suites, shaped like the wire contract the
  * observations brief pins and built from the proposal's worked examples
- * (docs/plans/observations/proposal/02*.md): the registry an imported
- * `observations` sample leaves, its metric records, a latest read of six
+ * (docs/plans/observations/proposal/02*.md): the seeded `observations`
+ * package every repository holds (decision record 0192), the metric records
+ * the `health` catalogue and the WHOOP provider ship, a latest read of six
  * streams, and four answers (weekly heart rate zones, daily steps with
  * `from` per row, a weight trend, sleep stages grouped by code). Only test
  * suites import this file. */
@@ -31,11 +32,15 @@ import {
   type Series,
 } from "@/lib/observations-answer"
 
+/** The repository's own authority, which the suites' own kinds live under. */
 export const AUTHORITY = "ada.example.com"
-export const OBSERVATION = `${AUTHORITY}/observations/observation`
-export const TRACE = `${AUTHORITY}/observations/trace`
-export const METRIC = `${AUTHORITY}/observations/metric`
-export const SOURCE = `${AUTHORITY}/observations/source`
+/** The seeded observations package, under the substrate's own authority. */
+export const SEED_AUTHORITY = "substrate.reamde.dev"
+export const OBSERVATIONS = `${SEED_AUTHORITY}/observations`
+export const OBSERVATION = `${OBSERVATIONS}/observation`
+export const TRACE = `${OBSERVATIONS}/trace`
+export const METRIC = `${OBSERVATIONS}/metric`
+export const SOURCE = `${OBSERVATIONS}/source`
 
 function kind(
   name: string,
@@ -43,15 +48,15 @@ function kind(
   properties: Record<string, unknown>
 ): KindInfo {
   return {
-    identity: `${AUTHORITY}/observations/${name}`,
+    identity: `${OBSERVATIONS}/${name}`,
     name,
-    authority: AUTHORITY,
+    authority: SEED_AUTHORITY,
     package: "observations",
     version: 1,
-    source: "installed",
+    source: "builtin",
     description: "",
     definition: {
-      authority: AUTHORITY,
+      authority: SEED_AUTHORITY,
       package: "observations",
       traits,
       properties,
@@ -154,7 +159,7 @@ export const METRICS: SubstrateRecord[] = [
     codeSet: ["rem", "deep", "light", "awake"],
     bucketPlace: "end",
   }),
-  record(METRIC, "healthwhoop/recovery", {
+  record(METRIC, "whoop/recovery", {
     title: "Recovery",
     name: "Recovery",
     form: "summary",
@@ -195,7 +200,7 @@ export const HEART = `${METRIC}/health/heart_rate`
 export const STEPS_METRIC = `${METRIC}/health/steps`
 export const BODY_MASS = `${METRIC}/health/body_mass`
 export const SLEEP_STAGE = `${METRIC}/health/sleep_stage`
-export const RECOVERY = `${METRIC}/healthwhoop/recovery`
+export const RECOVERY = `${METRIC}/whoop/recovery`
 export const GARMIN = `${SOURCE}/garmin-forerunner-265`
 export const APPLE = `${SOURCE}/apple-watch-s10`
 export const WITHINGS = `${SOURCE}/withings-body-plus`
@@ -516,7 +521,7 @@ export const SLEEP: AggregateResult = {
       form: "amount",
       group: { code },
       record: {
-        ref: `${AUTHORITY}/health/sleep/whoop/ada/e3b0c442/sleep`,
+        ref: `${SEED_AUTHORITY}/health/sleep/whoop/ada/e3b0c442/sleep`,
         version: 2,
       },
       nonAdditive: true,

@@ -61,35 +61,35 @@ func TestObservedMetricRollupsChangeRederivesItsRows(t *testing.T) {
 	f := openAgg(t)
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	utc := func(time.Time) int { return 0 }
-	f.tierHours("attic", "air_temperature", "gauge", "Cel", from, from.Add(30*time.Hour), utc)
+	f.tierHours("attic", "environment/air_temperature", "gauge", "Cel", from, from.Add(30*time.Hour), utc)
 	f.tierHours("phone", "health/steps", "amount", "{steps}", from, from.Add(30*time.Hour), utc)
 	defaults := []int{900, 3600, 86400}
-	if got := tiersHeld(t, f.obsIndex, "air_temperature"); !sameInts(got, defaults) {
+	if got := tiersHeld(t, f.obsIndex, "environment/air_temperature"); !sameInts(got, defaults) {
 		t.Fatalf("the default tiers hold %v, want %v", got, defaults)
 	}
 	steps := observedTables(t, f.db)
 	read := func(name string) {
 		t.Helper()
 		f.bothPaths(substrate.Filter{}, substrate.Aggregate{
-			Metric: &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")}, Range: rng(from, from.Add(30*time.Hour)),
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")}, Range: rng(from, from.Add(30*time.Hour)),
 			Bucket: &substrate.AggregateBucket{Every: "PT1H"}, Reducers: reducers("avg", "max", "count"),
 		})
 	}
-	f.rollups("air_temperature", "5m", "1d")
+	f.rollups("environment/air_temperature", "5m", "1d")
 	engine.DrainIndexReprojection(t, f.ds)
-	if got := tiersHeld(t, f.obsIndex, "air_temperature"); !sameInts(got, []int{300, 86400}) {
+	if got := tiersHeld(t, f.obsIndex, "environment/air_temperature"); !sameInts(got, []int{300, 86400}) {
 		t.Errorf("after the metric named 5m and 1d its rows are in %v", got)
 	}
 	if got := tiersHeld(t, f.obsIndex, "health/steps"); !sameInts(got, defaults) {
 		t.Errorf("another metric's rows moved to %v", got)
 	}
 	read("5m and 1d")
-	checkRollupsMatchSpecTiers(t, f, map[string][]time.Duration{f.metricPath("air_temperature"): {5 * time.Minute, 24 * time.Hour}})
-	_, err := f.ds.Delete(context.Background(), owner, f.metric, "air_temperature", substrate.DeleteInput{})
+	checkRollupsMatchSpecTiers(t, f, map[string][]time.Duration{f.metricPath("environment/air_temperature"): {5 * time.Minute, 24 * time.Hour}})
+	_, err := f.ds.Delete(context.Background(), owner, f.metric, "environment/air_temperature", substrate.DeleteInput{})
 	if !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("deleting a metric values point at: err = %v, want a conflict", err)
 	}
-	if _, err := f.patch(t, f.metric, "air_temperature", map[string]any{"rollups": nil}); err != nil {
+	if _, err := f.patch(t, f.metric, "environment/air_temperature", map[string]any{"rollups": nil}); err != nil {
 		t.Fatal(err)
 	}
 	engine.DrainIndexReprojection(t, f.ds)
@@ -126,7 +126,7 @@ func TestObservedMetricRollupsChangeRefusesThatMetricAlone(t *testing.T) {
 	})), t: t}
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	utc := func(time.Time) int { return 0 }
-	f.tierHours("attic", "air_temperature", "gauge", "Cel", from, from.Add(6*time.Hour), utc)
+	f.tierHours("attic", "environment/air_temperature", "gauge", "Cel", from, from.Add(6*time.Hour), utc)
 	f.tierHours("phone", "health/steps", "amount", "{steps}", from, from.Add(6*time.Hour), utc)
 	engine.DrainIndexReprojection(t, f.ds)
 	bucketed := func(metric string) substrate.Aggregate {
@@ -140,12 +140,12 @@ func TestObservedMetricRollupsChangeRefusesThatMetricAlone(t *testing.T) {
 		a         substrate.Aggregate
 		available bool
 	}{
-		{"the changed metric", bucketed("air_temperature"), false},
+		{"the changed metric", bucketed("environment/air_temperature"), false},
 		{"another metric of the kind", bucketed("health/steps"), true},
 		{"several metrics, the changed one among them", substrate.Aggregate{
 			Metrics: []substrate.AggregateMetricRead{
 				{Ref: f.metricPath("health/steps"), Reducers: reducers("sum")},
-				{Ref: f.metricPath("air_temperature"), Reducers: reducers("max")},
+				{Ref: f.metricPath("environment/air_temperature"), Reducers: reducers("max")},
 			},
 			Range: rng(from, from.Add(6*time.Hour)), Bucket: &substrate.AggregateBucket{Every: "PT1H"},
 		}, false},
@@ -153,7 +153,7 @@ func TestObservedMetricRollupsChangeRefusesThatMetricAlone(t *testing.T) {
 		{"latest of another metric", substrate.Aggregate{Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")}, Latest: true}, true},
 	}
 	armed.Store(true)
-	f.rollups("air_temperature", "5m", "1d")
+	f.rollups("environment/air_temperature", "5m", "1d")
 	select {
 	case <-held:
 	case <-time.After(time.Minute):
@@ -214,9 +214,9 @@ func TestObservedRebuildRefusesReadsUntilTheIndexIsDerived(t *testing.T) {
 		}
 	})), t: t}
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	f.tierHours("attic", "air_temperature", "gauge", "Cel", from, from.Add(6*time.Hour), func(time.Time) int { return 0 })
+	f.tierHours("attic", "environment/air_temperature", "gauge", "Cel", from, from.Add(6*time.Hour), func(time.Time) int { return 0 })
 	q := substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
-		Metric: &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")}, Range: rng(from, from.Add(6*time.Hour)),
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")}, Range: rng(from, from.Add(6*time.Hour)),
 		Bucket: &substrate.AggregateBucket{Every: "PT1H"}, Reducers: reducers("avg"),
 	}}
 	before := f.agg(context.Background(), substrate.Filter{}, *q.Aggregate)
@@ -261,7 +261,7 @@ func TestObservedReindexRepairsTheIndex(t *testing.T) {
 		t.Fatalf("reindex: %v", err)
 	}
 	if len(report.Kinds) != 2 || report.Records == 0 {
-		t.Errorf("reindex queued %+v, want the sample's two observed kinds and their records", report)
+		t.Errorf("reindex queued %+v, want the observations package's two observed kinds and their records", report)
 	}
 	engine.DrainIndexReprojection(t, ds)
 	if got := observedTables(t, db); got != want {

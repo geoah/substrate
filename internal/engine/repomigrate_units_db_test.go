@@ -6,8 +6,9 @@ package engine_test
 // the observations and health samples as `main` shipped them
 // (testdata/preunits/samples), imported under the repository's own
 // authority, with metric records and observations written. The next binary
-// opens it, migrates it, upgrades core, seeds the units and reads the same
-// values.
+// opens it, migrates it, upgrades core, seeds the units and the
+// observations package (record 0192) beside the imported copies, and reads
+// the same values.
 
 import (
 	"bytes"
@@ -28,17 +29,20 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
 )
 
 const preunitsDir = "testdata/preunits"
 
 // preunitsTree is the shipped tree as the binary before the unit graph
 // shipped it: today's tree with core's header and propertytype from then,
-// and no unit kinds.
+// no unit kinds, and no seeded observations package, which was a sample
+// then (record 0192) and names the unit kind.
 func preunitsTree(t *testing.T) string {
 	t.Helper()
 	tree := shippedTree(t)
+	if err := os.RemoveAll(filepath.Join(tree, vocabulary.PackageObservations)); err != nil {
+		t.Fatal(err)
+	}
 	core := filepath.Join(tree, "substrate.reamde.dev", "core")
 	for _, name := range []string{"core.yaml", "propertytype.yaml"} {
 		raw, err := os.ReadFile(filepath.Join(preunitsDir, "kinds", name))
@@ -406,20 +410,21 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		"at":    "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 	}})
 
-	// The catalog's upgrade of each migrated copy to the samples this binary
-	// ships lands over the stored records, the new convertlab included.
-	shipped, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatal(err)
+	// The samples are gone from this binary, so no shipped closure upgrades
+	// the migrated copies: they stay the repository's own, and the seeded
+	// observations package lands beside them (record 0192), which a new
+	// value written through its kinds proves.
+	if info, err := ds.KindByRef(ctx, kindObservation); err != nil || info.Source != vocabulary.SourceBuiltin {
+		t.Fatalf("the seeded %s after the open: %+v, %v", kindObservation, info, err)
 	}
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := shipped.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
-			t.Fatalf("upgrade the migrated %s to the shipped sample: %v", id, err)
-		}
-	}
-	if got := mustGet(t, ds, metric, "health/body_mass").Properties["unit"]; !jsonSame(got, unitRef("kg")) {
-		t.Errorf("body_mass after the sample upgrade: unit %v", got)
-	}
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindMetric, ID: "health/body_mass", Properties: map[string]any{
+		"name": "Body mass", "unit": unitRef("kg"), "form": "gauge",
+	}})
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindObservation, ID: "w3", Properties: map[string]any{
+		"metric": map[string]any{"ref": kindMetric + "/health/body_mass"}, "form": "gauge", "hold": "PT0S",
+		"value": map[string]any{"value": "71", "unit": "kg"},
+		"at":    "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
+	}})
 
 	raw, err := engine.OpenScopedDB(dsn, repo, engine.RoleApp)
 	if err != nil {

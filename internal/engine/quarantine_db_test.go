@@ -33,7 +33,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -194,7 +194,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -338,7 +338,7 @@ func TestAStoredTokenGrantQuarantinesItsPackage(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -398,7 +398,7 @@ func TestBundleStatusReportsAQuarantinedPackage(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -466,7 +466,7 @@ func TestASeededClosureRefusesRatherThanQuarantines(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() (substrate.Service, error) {
 		return engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()),
-			engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsFS(engine.SeedKinds))
 	}
 	svc, err := open()
 	if err != nil {

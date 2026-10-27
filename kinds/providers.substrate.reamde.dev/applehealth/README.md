@@ -127,6 +127,31 @@ an empty `source`. Workouts carry no `source`; their `heartRateData` rows do.
 The full reference, with what each field means:
 [docs/bundles-catalog.md#apple-health](../../../docs/bundles-catalog.md#apple-health).
 
+## Into health
+
+The provider carries its adapter (decision record 0192). `adaptapplehealth`,
+on the `applehealth-to-health` record trigger over `metricbatch` and
+`workout`, turns each mirror row into the seeded observations package's
+traces and observations and the `health` catalogue's sleeps and workouts,
+mapped onto the catalogue's well-known metrics (`health/heart_rate`,
+`health/steps`, …). Installing the provider installs `health` first. The
+trigger declares `fromStart`, so rows the mirror held before the adapter
+shipped are converted on the dispatcher's next pass.
+
+Every output carries `adapter: applehealth@<version>`, the `ADAPTER` constant
+at the top of the function, apart from `revision`, which is when the provider
+received the row. A change to what a mirror row becomes raises the constant
+and the package's `version` together. After an upgrade, replay the trigger
+from the start (`bin/substratectl trigger replay applehealth-to-health --from
+0`): every mirror row is delivered again, and each output is rewritten under
+the new version at the revision it already holds.
+
+Two limits come from the app. It sends no nap flag, so the adapter calls a
+sleep shorter than three hours that begins between 09:00 and 21:00 on its own
+clock a nap. And it sends no deletion: a sample or workout deleted on the
+phone keeps its mirror row, and the records built from it, unless a later
+export re-sends the samples around it. Delete the mirror row to remove them.
+
 ## What the tests are checked against
 
 No test fixture is a delivery captured from a real account. The eight

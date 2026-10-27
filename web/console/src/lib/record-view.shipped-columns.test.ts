@@ -1,4 +1,4 @@
-/** The columns of the tables the samples' shipped record views list. A
+/** The columns of the tables the shipped record views list. A
  * property the listed kind declares as an object draws as a nested sheet, a
  * label and a value per field, which makes every row of the table as tall as
  * the object has fields. A shipped table names such a property only where
@@ -11,17 +11,15 @@ import { parseAllDocuments } from "yaml"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { RECORD_VIEW_KIND, recordViewOf } from "@/lib/record-view"
 
-const viewFiles = import.meta.glob<string>("../../../../samples/*/views.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})
+const viewFiles = import.meta.glob<string>(
+  ["../../../../samples/*/views.yaml", "../../../../kinds/*/*/views.yaml"],
+  { query: "?raw", import: "default", eager: true }
+)
 
-const sampleFiles = import.meta.glob<string>("../../../../samples/*/*.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})
+const shippedFiles = import.meta.glob<string>(
+  ["../../../../samples/*/*.yaml", "../../../../kinds/*/*/*.yaml"],
+  { query: "?raw", import: "default", eager: true }
+)
 
 interface Doc {
   kind?: string
@@ -40,9 +38,10 @@ const KIND_PREFIX = `${KIND_DECLARATION}/`
 // trait's meaning (components/record-view/table-block.tsx).
 const ONE_LINE_OBJECTS = new Set(["interpretation", "referenceRanges"])
 
-// Every property a sample kind declares as an object, by the kind's reference.
+// Every property a shipped kind declares as an object, by the kind's
+// reference.
 const OBJECT_PROPERTIES = new Map<string, Set<string>>(
-  Object.values(sampleFiles)
+  Object.values(shippedFiles)
     .flatMap(docs)
     .filter((d) => d?.kind === KIND_DECLARATION && d.metadata?.id)
     .map((d) => {
@@ -70,7 +69,7 @@ const VIEWS: SubstrateRecord[] = Object.values(viewFiles)
     updatedAt: "",
   }))
 
-// Each shipped table with a sample kind, as the view id, the kind and the
+// Each shipped table with a shipped kind, as the view id, the kind and the
 // columns it names.
 const TABLES = VIEWS.flatMap((record) =>
   recordViewOf(record).sections.flatMap((s) => {
@@ -89,9 +88,9 @@ describe("the shipped tables' columns", () => {
     // The lab result kind declares specimen as an object, so the rule below
     // has something to hold.
     expect(
-      OBJECT_PROPERTIES.get(
-        "samples.substrate.reamde.dev/health/labresult"
-      )?.has("specimen")
+      OBJECT_PROPERTIES.get("substrate.reamde.dev/labs/labresult")?.has(
+        "specimen"
+      )
     ).toBe(true)
   })
 

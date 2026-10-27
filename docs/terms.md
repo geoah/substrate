@@ -67,7 +67,7 @@ unit's linear component, which a declaration names with `unit:` (decision
 | **unit** | A record of core's `unit` kind: what a quantity is written in (`kg`, `Cel`, `1/min`), with its name, symbol, UCUM `code` and aliases. Every repository is seeded with the shipped units and may add its own ([units](units.md)). |
 | **conversion** | A record of core's `conversion` kind joining two units: an exact `factor` and `offset`, or a CEL expression and its inverse. The server chains conversions to convert a value; units joined by linear conversions form a **linear component**, the set a value converts and compares within. Decision record 0186. |
 | **observed value** | A record of a kind that binds core's `observed` trait: one value (`observed(single)`, an observation) or many values of one metric over one fixed period (`observed(packed)`, a trace). Decision record 0154. |
-| **metric** | A record of the `observations` sample's `metric` kind: what can be measured, its codes in other systems and the units its values are written in. |
+| **metric** | A record of the seeded `substrate.reamde.dev/observations/metric` kind: what can be measured, its codes in other systems and the units its values are written in. Its id starts with the package that ships it (`health/heart_rate`). Decision record 0192. |
 | **source** | On an observed value, the device, app, service or lab that produced it. The mirror row that delivered it is its `origin`. Not a declaration's managed `source`. |
 | **form** | What an observed value's number means, written on the value: `gauge` (a level), `amount` (accrued over a span), `counter` (a running total) or `summary` (a statistic its source computed). It decides which reducers apply. Decision record 0156. |
 | **hold** | How long a gauge's value stands after its point when no newer one arrives. Decision record 0158. |
@@ -78,7 +78,7 @@ unit's linear component, which a declaration names with `unit:` (decision
 | **group** | In the observed index, the points of one stream, form and bucket that share a code, unit, `delta` and UTC offset: one rollup row each. In an aggregate read, the streams one combination of `groupBy` values selects: one row per bucket each. Never the old word for an authority. |
 | **bucket** | One time window of an aggregate read: a fixed length, a calendar unit in a zone, a recorded-local day, or a matched record's span. |
 | **recorded-local calendar** | The calendar time mode with no `timezone`: each value lands on the date its own UTC offset names, so a day spent abroad is that place's day. |
-| **adapter** | A sample whose function turns one provider's mirror rows into observed values and health records, stamping `adapter` (`healthwhoop@3`) on each. Also the code that speaks an `llm/provider`'s [wire](#installed-things). |
+| **adapter** | A provider's function that turns its own mirror rows into observed values and health records, stamping `adapter` (`whoop@25`) on each. Also the code that speaks an `llm/provider`'s [wire](#installed-things). |
 
 ## Installed things
 
@@ -86,6 +86,7 @@ unit's linear component, which a declaration names with `unit:` (decision
 | ---- | ---------- |
 | **bundle** | The unit of installation: a closure of declarations and behavior, applied and removed as one unit. It owns one package, and its `metadata.id` is that package's identity. |
 | **provider** | One of the two catalog tiers: a package a publisher owns (`providers.substrate.reamde.dev/google`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers. Decision record 0048. |
+| **catalogue** | A first-party package under `substrate.reamde.dev` holding one domain's shared metrics, kinds, units and functions (`health`, `labs`, `environment`). The catalog serves it in the provider tier: it INSTALLS published under its own authority and upgrades from the catalog, and no seed writes it. Not the **catalog** itself. Decision record 0192. |
 | **sample** | The other catalog tier: a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left. Decision records 0048 and 0070. |
 | **vocabulary bundle** | A description, not a catalog tier: a bundle that happens to ship only kinds and rules, with no functions and no provider. Nothing in the code reads it. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |

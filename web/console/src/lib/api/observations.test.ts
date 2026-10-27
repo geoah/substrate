@@ -6,7 +6,12 @@ import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { latestRead } from "@/lib/observations-reads"
-import { LATEST, OBSERVATION, TRACE } from "@/lib/observations.test-fixtures"
+import {
+  LATEST,
+  METRIC,
+  OBSERVATION,
+  TRACE,
+} from "@/lib/observations.test-fixtures"
 
 import {
   aggregateCurl,
@@ -20,14 +25,14 @@ import { recordWriteReaches } from "./records"
 const sleepRead: AggregateRead = {
   filter: { kinds: [OBSERVATION] },
   aggregate: {
-    metric: { ref: "ada.example.com/observations/metric/health/sleep_stage" },
+    metric: { ref: `${METRIC}/health/sleep_stage` },
     from: "raw",
     range: {
       gte: "2026-09-01T00:00:00+03:00",
       lt: "2026-10-01T00:00:00+03:00",
     },
     bucket: {
-      records: { filter: { kinds: ["ada.example.com/health/sleep"] } },
+      records: { filter: { kinds: ["substrate.reamde.dev/health/sleep"] } },
     },
     groupBy: ["code"],
     reducers: ["sum"],

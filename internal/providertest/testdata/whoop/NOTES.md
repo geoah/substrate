@@ -1,4 +1,4 @@
-# WHOOP developer API v2: notes for the `healthwhoop` adapter
+# WHOOP developer API v2: notes for the WHOOP provider and its `adaptwhoop` adapter
 
 The provider (`kinds/providers.substrate.reamde.dev/whoop`; its version is
 the `version:` in that bundle's package header) pulls `/v2/cycle`,

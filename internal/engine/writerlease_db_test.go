@@ -26,7 +26,7 @@ func TestASecondWriterOfARepositoryIsRefusedAtOpen(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "the first writer's"}})
 
 	_, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
@@ -81,7 +81,7 @@ func TestARepositoryRegisteredAfterTheBootIsLeasedAtItsOpen(t *testing.T) {
 	// The second process boots FIRST, over a database with no repositories,
 	// so its boot check leases nothing at all.
 	second, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
@@ -90,7 +90,7 @@ func TestARepositoryRegisteredAfterTheBootIsLeasedAtItsOpen(t *testing.T) {
 	t.Cleanup(func() { _ = second.Close() })
 
 	first, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {

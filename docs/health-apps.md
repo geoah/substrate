@@ -3,8 +3,9 @@
 This page is for someone building an app like WHOOP, Oura, Apple Health or
 Garmin Connect on a substrate. Each section is one screen: the requests that
 fill it and the answer each one gave, abbreviated. The requests read the
-records the `observations` and `health` samples declare and the provider
-adapters write ([observations](observations.md)), through the records route's
+records of the seeded `observations` package and the `health` and `labs`
+catalogues, which the provider adapters write
+([observations](observations.md)), through the records route's
 [aggregate read](api.md#the-aggregate-read) and its list read. Where a screen
 still needs work in the app or a change in the substrate, the section says
 so and links the requirement it falls under in
@@ -32,8 +33,9 @@ filter and `sources.order` take:
 | `manual` | values Ada entered by hand: a hotel scale's weighing in London |
 | `bioiatriki`, `harborpoint` | an Athens lab (SI units) and a US lab (mg/dL) |
 
-A source's record path is `ada.example.com/observations/source/<id>`, and a
-metric's is `ada.example.com/observations/metric/health/<name>`. The answers
+A source's record path is `substrate.reamde.dev/observations/source/<id>`, and a
+metric's is `substrate.reamde.dev/observations/metric/<package>/<name>`
+(`health/steps`, `labs/ldl_cholesterol`, `whoop/recovery`). The answers
 below shorten both to the id after `source/` or `metric/`, and cut keys a
 screen does not use; `...` marks a cut. A record's reference property keeps
 its wire shape, `{"ref": "<path>"}`, with the path cut to
@@ -55,7 +57,7 @@ The same document is the body `substratectl aggregate --body` takes:
 ```bash
 curl -sG "$SUBSTRATE_SERVER/api/v1/records" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" \
-  --data-urlencode 'aggregate={"metric": {"ref": "ada.example.com/observations/metric/health/steps"}, ...}'
+  --data-urlencode 'aggregate={"metric": {"ref": "substrate.reamde.dev/observations/metric/health/steps"}, ...}'
 
 substratectl aggregate --body today.json -o json
 ```
@@ -64,8 +66,8 @@ A function's `host.records.aggregate` takes the document with one addition,
 `filter.kinds`, because the function's reads allowlist refuses a body that
 names no kind ([the SDK](functions.md#the-sdk)). A metric read without it
 reads every kind that binds `observed`, here
-`ada.example.com/observations/observation`,
-`ada.example.com/observations/trace` and `ada.example.com/health/labresult`,
+`substrate.reamde.dev/observations/observation`,
+`substrate.reamde.dev/observations/trace` and `substrate.reamde.dev/labs/labresult`,
 so a function names the ones its metric is written in.
 
 A list read is shown as the request line itself, its `filter`, `orderBy`
@@ -88,12 +90,12 @@ source in `order` that holds it:
 ```json
 {"aggregate": {
    "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"], "from": "prefer-raw"},
-     {"ref": "ada.example.com/observations/metric/health/active_energy", "reducers": ["sum"], "unit": "kcal", "from": "prefer-raw"},
-     {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
-     {"ref": "ada.example.com/observations/metric/healthwhoop/recovery", "from": "summaries", "statistic": "vendor"},
-     {"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
-     {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "vendor"}],
+     {"ref": "substrate.reamde.dev/observations/metric/health/steps", "reducers": ["sum"], "from": "prefer-raw"},
+     {"ref": "substrate.reamde.dev/observations/metric/health/active_energy", "reducers": ["sum"], "unit": "kcal", "from": "prefer-raw"},
+     {"ref": "substrate.reamde.dev/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
+     {"ref": "substrate.reamde.dev/observations/metric/whoop/recovery", "from": "summaries", "statistic": "vendor"},
+     {"ref": "substrate.reamde.dev/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
+     {"ref": "substrate.reamde.dev/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "vendor"}],
    "range": {"gte": "2026-10-11T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
    "bucket": {"calendar": "day", "place": "end"},
    "groupBy": ["code"],
@@ -105,7 +107,7 @@ source in `order` that holds it:
 
 ```text
 {"units": {"health/active_energy": "kcal", "health/hrv_rmssd": "ms", "health/resting_heart_rate": "1/min",
-           "health/sleep_stage": "h", "health/steps": "steps", "healthwhoop/recovery": "percent"},
+           "health/sleep_stage": "h", "health/steps": "steps", "whoop/recovery": "percent"},
  "bucket": {"calendar": "day", "place": "end"}, "exact": false,
  "rows": [{"start": "2026-10-11T00:00:00+03:00", "end": "2026-10-12T00:00:00+03:00",
            "group": {"metric": "health/active_energy"}, "from": "raw", "sources": ["applehealth/iphone/apple-watch"],
@@ -129,7 +131,7 @@ source in `order` that holds it:
            "sources": ["applehealth/iphone/apple-watch", "applehealth/iphone/iphone"],
            "values": [{"reducer": "sum", "value": "22999.7547924254", "unit": "steps"}], "count": 158, ...},
           {"start": "2026-10-11T00:00:00+03:00", ...,
-           "group": {"metric": "healthwhoop/recovery"}, "from": "summaries", "sources": ["whoop/e2e"],
+           "group": {"metric": "whoop/recovery"}, "from": "summaries", "sources": ["whoop/e2e"],
            "values": [{"reducer": "last", "value": "67", "unit": "percent"}], "count": 1, ...}], ...}
 ```
 
@@ -182,9 +184,9 @@ numbers:
 ```json
 {"aggregate": {
    "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/energy_expended", "from": "prefer-raw", "unit": "kcal"},
-     {"ref": "ada.example.com/observations/metric/health/active_energy", "from": "prefer-raw"},
-     {"ref": "ada.example.com/observations/metric/health/basal_energy", "from": "prefer-raw"}],
+     {"ref": "substrate.reamde.dev/observations/metric/health/energy_expended", "from": "prefer-raw", "unit": "kcal"},
+     {"ref": "substrate.reamde.dev/observations/metric/health/active_energy", "from": "prefer-raw"},
+     {"ref": "substrate.reamde.dev/observations/metric/health/basal_energy", "from": "prefer-raw"}],
    "range": {"gte": "2026-10-10T00:00:00+03:00", "lt": "2026-10-11T00:00:00+03:00"},
    "bucket": {"calendar": "day"},
    "groupBy": ["source"],
@@ -221,7 +223,7 @@ daily resting heart rate, one source's value per day:
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/resting_heart_rate"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/resting_heart_rate"},
    "from": "summaries",
    "range": {"gte": "2026-09-12T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
    "bucket": {"calendar": "day"},
@@ -273,7 +275,7 @@ during the night. Every device that recorded the night wrote a
 `health/sleep` record of its own:
 
 ```http
-GET /api/v1/records?filter={"kinds": ["ada.example.com/health/sleep"],
+GET /api/v1/records?filter={"kinds": ["substrate.reamde.dev/health/sleep"],
                             "properties": {"endsAt": {"gte": "2026-09-22T00:00:00+01:00", "lt": "2026-09-22T14:00:00+01:00"}}}
                    &orderBy=source
 ```
@@ -301,12 +303,12 @@ overlap, the request's `sources` keeps the WHOOP stages inside it, and
 `utcOffsets` writes the row at the night's own offsets:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+{"filter": {"kinds": ["substrate.reamde.dev/observations/observation"]},
  "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/sleep_stage"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/sleep_stage"},
    "range": {"gte": "2026-09-21T12:00:00+01:00", "lt": "2026-09-22T12:00:00+01:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+     "filter": {"kinds": ["substrate.reamde.dev/health/sleep"], "properties": {"isNap": {"eq": false}}},
      "sources": {"policy": "priority", "property": "source",
                  "order": ["whoop/e2e", "applehealth/iphone/apple-watch"]},
      "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
@@ -319,7 +321,7 @@ overlap, the request's `sources` keeps the WHOOP stages inside it, and
 ```text
 {"metric": "health/sleep_stage", "unit": "min", "sources": ["whoop/e2e"],
  "rows": [{"start": "2026-09-21T23:39:00.693+01:00", "end": "2026-09-22T07:24:00.227+01:00", "group": {"code": "awake"},
-           "record": {"ref": "ada.example.com/health/sleep/whoop/e2e/0915234f-c9d5-4cd7-b894-ab927380b68c/sleep", "version": 1},
+           "record": {"ref": "substrate.reamde.dev/health/sleep/whoop/e2e/0915234f-c9d5-4cd7-b894-ab927380b68c/sleep", "version": 1},
            "values": [{"reducer": "sum", "value": "14.1665333333333", "unit": "min"}], "count": 1, ...},
           {..., "group": {"code": "deep"}, "values": [{"reducer": "sum", "value": "90.6856166666667", ...}], "count": 1, ...},
           {..., "group": {"code": "light"}, "values": [{"reducer": "sum", "value": "251.140083333333", ...}], "count": 1, ...},
@@ -344,12 +346,12 @@ the same records-mode window:
 ```json
 {"aggregate": {
    "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/heart_rate", "reducers": ["min", "avg", {"percentile": 0.05}]},
-     {"ref": "ada.example.com/observations/metric/health/spo2", "reducers": ["min", "avg"]},
-     {"ref": "ada.example.com/observations/metric/health/respiratory_rate", "reducers": ["avg"]}],
+     {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate", "reducers": ["min", "avg", {"percentile": 0.05}]},
+     {"ref": "substrate.reamde.dev/observations/metric/health/spo2", "reducers": ["min", "avg"]},
+     {"ref": "substrate.reamde.dev/observations/metric/health/respiratory_rate", "reducers": ["avg"]}],
    "range": {"gte": "2026-09-21T12:00:00+01:00", "lt": "2026-09-22T12:00:00+01:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+     "filter": {"kinds": ["substrate.reamde.dev/health/sleep"], "properties": {"isNap": {"eq": false}}},
      "sources": {"policy": "priority", "property": "source",
                  "order": ["whoop/e2e", "applehealth/iphone/apple-watch"]},
      "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
@@ -383,7 +385,7 @@ column does: its `min` carries the instant `at` it was taken.
 
 ```json
 {"filter": {"properties": {"source": {"eq": "applehealth/iphone/apple-watch"}}},
- "aggregate": {"metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+ "aggregate": {"metric": {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate"},
                "range": {"gte": "2026-09-21T23:39:00+01:00", "lt": "2026-09-22T07:24:00+01:00"}},
  "downsample": {"points": 1}}
 ```
@@ -405,7 +407,7 @@ woke at. A property read over the sleep records does it, one device's night
 where several recorded it:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+{"filter": {"kinds": ["substrate.reamde.dev/health/sleep"], "properties": {"isNap": {"eq": false}}},
  "aggregate": {
    "property": {"name": "timeAsleep", "anchor": "endsAt", "utcOffset": "utcOffsetEnd",
                 "sources": {"policy": "priority", "property": "source",
@@ -438,7 +440,7 @@ zone, the heart rate and pace curves, and the recovery after it. Each device
 that recorded the run wrote a `health/workout`:
 
 ```http
-GET /api/v1/records?filter={"kinds": ["ada.example.com/health/workout"],
+GET /api/v1/records?filter={"kinds": ["substrate.reamde.dev/health/workout"],
                             "properties": {"at": {"gte": "2026-09-22T06:00:00+01:00"}, "endsAt": {"lt": "2026-09-22T10:00:00+01:00"}}}
                    &orderBy=source
 ```
@@ -471,10 +473,10 @@ them.
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate"},
    "range": {"gte": "2026-09-22T00:00:00+01:00", "lt": "2026-09-23T00:00:00+01:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/workout"], "properties": {"sport": {"eq": "running"}}},
+     "filter": {"kinds": ["substrate.reamde.dev/health/workout"], "properties": {"sport": {"eq": "running"}}},
      "sources": {"policy": "priority", "property": "source", "match": ["sport"],
                  "order": ["applehealth/iphone/apple-watch", "whoop/e2e"]},
      "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
@@ -487,7 +489,7 @@ them.
 ```text
 {"metric": "health/heart_rate", "unit": "1/min", "sources": ["applehealth/iphone/apple-watch"],
  "rows": [{"start": "2026-09-22T07:47:45+01:00", "end": "2026-09-22T08:24:28+01:00",
-           "record": {"ref": "ada.example.com/health/workout/applehealth/iphone/9931515A-49DA-4850-A20D-956A5228C096", "version": 1},
+           "record": {"ref": "substrate.reamde.dev/health/workout/applehealth/iphone/9931515A-49DA-4850-A20D-956A5228C096", "version": 1},
            "values": [{"reducer": {"durationIn": [94, 113]}, "value": "0", "unit": "min"},
                       {"reducer": {"durationIn": [113, 132]}, "value": "0", "unit": "min"},
                       {"reducer": {"durationIn": [132, 150]}, "value": "18", "unit": "min"},
@@ -514,8 +516,8 @@ recovery:
 {"filter": {"properties": {"source": {"eq": "applehealth/iphone/apple-watch"}}},
  "aggregate": {
    "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/heart_rate", "reducers": ["avg"]},
-     {"ref": "ada.example.com/observations/metric/health/distance", "reducers": ["sum"], "unit": "m"}],
+     {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate", "reducers": ["avg"]},
+     {"ref": "substrate.reamde.dev/observations/metric/health/distance", "reducers": ["sum"], "unit": "m"}],
    "range": {"gte": "2026-09-22T07:47:00+01:00", "lt": "2026-09-22T08:35:00+01:00"},
    "bucket": {"every": "PT1M"}}}
 ```
@@ -561,7 +563,7 @@ workout records themselves: `property.sources` counts each run once where
 several devices recorded it, and `property.groupBy` makes a row per sport:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/health/workout"]},
+{"filter": {"kinds": ["substrate.reamde.dev/health/workout"]},
  "aggregate": {
    "property": {"name": "duration", "utcOffset": "utcOffsetStart", "groupBy": ["sport"],
                 "sources": {"policy": "priority", "property": "source", "match": ["sport"],
@@ -599,7 +601,7 @@ The load: training minutes per day, rest days filled with zero, and the
 7-day mean beside the 28-day mean, one read per window length:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/health/workout"]},
+{"filter": {"kinds": ["substrate.reamde.dev/health/workout"]},
  "aggregate": {
    "property": {"name": "duration", "utcOffset": "utcOffsetStart",
                 "sources": {"policy": "priority", "property": "source", "match": ["sport"],
@@ -639,7 +641,7 @@ names. Each row says which source and which points served it:
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/steps"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/steps"},
    "from": "prefer-raw",
    "range": {"gte": "2026-09-19T00:00:00+03:00", "lt": "2026-09-26T00:00:00+03:00"},
    "bucket": {"calendar": "day", "fallbackTimezone": "Europe/Athens"},
@@ -702,7 +704,7 @@ the one Ada typed in by hand:
 ```json
 {"filter": {"properties": {"source": {"in": ["applehealth/iphone/withings", "manual"]}}},
  "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/body_mass"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/body_mass"},
    "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
    "reducers": ["avg", "min", "max", "count"],
@@ -763,7 +765,7 @@ Each reading is two observations, systolic and diastolic, each carrying
 both numbers in `components`:
 
 ```http
-GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"],
+GET /api/v1/records?filter={"kinds": ["substrate.reamde.dev/observations/observation"],
                             "properties": {"metric": {"eq": "health/systolic_blood_pressure"},
                                            "at": {"gte": "2026-09-27T00:00:00+03:00", "lt": "2026-09-28T00:00:00+03:00"}}}
                    &orderBy=at&first=10
@@ -789,8 +791,8 @@ The month's averages, both numbers aligned in one read, one row per source:
 ```json
 {"aggregate": {
    "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/systolic_blood_pressure", "reducers": ["avg", "max"]},
-     {"ref": "ada.example.com/observations/metric/health/diastolic_blood_pressure", "reducers": ["avg", "max"]}],
+     {"ref": "substrate.reamde.dev/observations/metric/health/systolic_blood_pressure", "reducers": ["avg", "max"]},
+     {"ref": "substrate.reamde.dev/observations/metric/health/diastolic_blood_pressure", "reducers": ["avg", "max"]}],
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"calendar": "month", "timezone": "Europe/Athens"},
    "groupBy": ["source"]}}
@@ -815,26 +817,26 @@ app's: no record holds a classification table
 A report and every result on it:
 
 ```http
-GET /api/v1/records?filter={"kinds": ["ada.example.com/health/labresult"],
-                            "referencing": {"ref": "ada.example.com/health/labreport/harborpoint/2026-08-31", "property": "report"}}
+GET /api/v1/records?filter={"kinds": ["substrate.reamde.dev/labs/labresult"],
+                            "referencing": {"ref": "substrate.reamde.dev/labs/labreport/harborpoint/2026-08-31", "property": "report"}}
                    &orderBy=metric&first=50
 ```
 
 ```text
 {"records": [
    ...,
-   {"id": "harborpoint/2026-08-31/hba1c/as/health/hba1c_ifcc",
+   {"id": "harborpoint/2026-08-31/hba1c/as/labs/hba1c_ifcc",
     "properties": {"value": {"value": "34.4", "unit": "mmol/mol"},
                    "conversion": {"formula": "ngsp-to-ifcc", "parameters": {"slope": "10.929", "intercept": "2.15"}, ...}, ...}},
    ...,
-   {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass/as/health/ldl_cholesterol",
-    "properties": {"metric": {"ref": ".../metric/health/ldl_cholesterol"}, "value": {"value": "2.897", "unit": "mmol/L"},
+   {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass/as/labs/ldl_cholesterol",
+    "properties": {"metric": {"ref": ".../metric/labs/ldl_cholesterol"}, "value": {"value": "2.897", "unit": "mmol/L"},
                    "referenceRanges": [{"high": {"value": "2.586", "unit": "mmol/L"}}],
                    "interpretation": [{"code": "H", "display": "High"}],
-                   "derivedFrom": [{"ref": "ada.example.com/health/labresult/harborpoint/2026-08-31/ldl_cholesterol_mass"}],
+                   "derivedFrom": [{"ref": "substrate.reamde.dev/labs/labresult/harborpoint/2026-08-31/ldl_cholesterol_mass"}],
                    "conversion": {"formula": "molar-mass", "parameters": {"molarMass": "386.65"}, "version": "1"}, ...}},
    {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass",
-    "properties": {"metric": {"ref": ".../metric/health/ldl_cholesterol_mass"}, "value": {"value": "112", "unit": "mg/dL"},
+    "properties": {"metric": {"ref": ".../metric/labs/ldl_cholesterol_mass"}, "value": {"value": "112", "unit": "mg/dL"},
                    "coding": {"system": "http://loinc.org", "code": "13457-7"},
                    "referenceRanges": [{"high": {"value": "100", "unit": "mg/dL"}}],
                    "interpretation": [{"code": "H", "display": "High"}], "status": "final", ...}},
@@ -847,14 +849,14 @@ eight `convertlab` derived, in the order of their metric paths. A derived
 result converts the reference range with the value, each bound at the
 value's decimal places, and keeps the lab's flag.
 
-The US lab reported in mg/dL, and the health sample's `convertlab` function
+The US lab reported in mg/dL, and the `labs` catalogue's `convertlab` function
 wrote each result again in the paired SI metric, naming its input and the
 formula. So one analyte's trend reads in either unit system across every
 lab, each reading once:
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/ldl_cholesterol"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/labs/ldl_cholesterol"},
    "range": {"gte": "2026-07-01T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
    "groupBy": ["source"],
@@ -863,7 +865,7 @@ lab, each reading once:
 ```
 
 ```text
-{"metric": "health/ldl_cholesterol", "unit": "mmol/L", "exact": true,
+{"metric": "labs/ldl_cholesterol", "unit": "mmol/L", "exact": true,
  "rows": [{"start": "2026-07-20T00:00:00+03:00", "group": {"source": "bioiatriki"},
            "values": [{"reducer": "last", "value": "3.1", "unit": "mmol/L"}], "count": 1, ...},
           {"start": "2026-08-31T00:00:00+03:00", "group": {"source": "harborpoint"},
@@ -872,12 +874,12 @@ lab, each reading once:
            "values": [{"reducer": "last", "value": "2.8", "unit": "mmol/L"}], "count": 1, ...}], ...}
 ```
 
-The same trend in mg/dL is a read of `health/ldl_cholesterol_mass` with
+The same trend in mg/dL is a read of `labs/ldl_cholesterol_mass` with
 `"unit": "mg/dL"`; a read of `ldl_cholesterol` in mg/dL is a `422`, because
 no linear conversion joins the two units:
 
 ```text
-{"metric": "health/ldl_cholesterol_mass", "unit": "mg/dL", "exact": true,
+{"metric": "labs/ldl_cholesterol_mass", "unit": "mg/dL", "exact": true,
  "rows": [{"start": "2026-07-20T00:00:00+03:00", "group": {"source": "bioiatriki"},
            "values": [{"reducer": "last", "value": "120", "unit": "mg/dL"}], ...},
           {"start": "2026-08-31T00:00:00+03:00", "group": {"source": "harborpoint"},
@@ -901,7 +903,7 @@ which ends at midnight and stays on that day:
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/resting_heart_rate"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/resting_heart_rate"},
    "from": "summaries",
    "range": {"gte": "2026-10-05T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
    "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens", "place": "end"},
@@ -945,7 +947,7 @@ read, which orders by `at` alone, so the month is `at` from its start and
 WHOOP's per-night summaries here:
 
 ```http
-GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"],
+GET /api/v1/records?filter={"kinds": ["substrate.reamde.dev/observations/observation"],
                             "properties": {"metric": {"eq": "health/resting_heart_rate"}, "source": {"eq": "whoop/e2e"},
                                            "at": {"gte": "2026-09-01T00:00:00+03:00"}, "endsAt": {"lt": "2026-10-01T00:00:00+03:00"}}}
                    &orderBy=value&first=1
@@ -1023,20 +1025,20 @@ changed. Every read answers the changelog position it was served at, in
 record a later write touched:
 
 ```bash
-curl -sN "$SUBSTRATE_SERVER/api/v1/changes?watch=1&from=50000&generation=pn2vgcqd6wfg&values=1&kinds=ada.example.com/observations/observation,ada.example.com/observations/trace,ada.example.com/health/sleep,ada.example.com/health/workout" \
+curl -sN "$SUBSTRATE_SERVER/api/v1/changes?watch=1&from=50000&generation=pn2vgcqd6wfg&values=1&kinds=substrate.reamde.dev/observations/observation,substrate.reamde.dev/observations/trace,substrate.reamde.dev/health/sleep,substrate.reamde.dev/health/workout" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN"
 ```
 
 ```text
 {"bookmark": 50000, "generation": "pn2vgcqd6wfg"}
-{"seq": 50003, "op": "put", "kind": "ada.example.com/observations/trace",
- "recordId": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "actor": "function:ada.example.com:healthapple:adaptapplehealth",
+{"seq": 50003, "op": "put", "kind": "substrate.reamde.dev/observations/trace",
+ "recordId": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "actor": "function:providers.substrate.reamde.dev:applehealth:adaptapplehealth",
  "payload": {"created": true, ...},
- "affected": [{"kind": "ada.example.com/observations/trace", "id": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "version": 1,
+ "affected": [{"kind": "substrate.reamde.dev/observations/trace", "id": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "version": 1,
                "properties": [{"name": "at", "after": "2026-09-06T07:00:00Z"},
                               {"name": "endsAt", "after": "2026-09-06T08:00:00Z"},
                               {"name": "hold", "after": "PT4M"},
-                              {"name": "metric", "after": {"ref": "ada.example.com/observations/metric/health/heart_rate"}},
+                              {"name": "metric", "after": {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate"}},
                               {"name": "source", "after": {"ref": ".../source/applehealth/iphone/apple-watch"}}, ...]}]}
 {"seq": 50008, ..., "recordId": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T08", ...}
 ...
@@ -1053,7 +1055,7 @@ after. A creation moves every property, so its `metric`, `source`, `at` and
 changed: a rescore, or a re-delivered hour of a trace, that changes `value`
 or `values` names neither `metric` nor `at`. To place an update the app
 reads the record at its path, the id percent-encoded
-(`GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fheart_rate%2F2026-09-06T07`),
+(`GET /api/v1/substrate.reamde.dev/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fheart_rate%2F2026-09-06T07`),
 or keeps its own map from record to day. A delete moves no property and
 leaves no record to read, so only that map places it. A feed that names the
 time ranges a write touched is a follow-up
@@ -1069,7 +1071,7 @@ answering `first`, `last`, `min` and `max` with the instant each was taken:
 
 ```json
 {"filter": {"properties": {"source": {"eq": "applehealth/iphone/apple-watch"}}},
- "aggregate": {"metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+ "aggregate": {"metric": {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate"},
                "range": {"gte": "2026-09-20T00:00:00+03:00", "lt": "2026-09-27T00:00:00+03:00"}},
  "downsample": {"points": 400}}
 ```
@@ -1097,8 +1099,8 @@ value carries its own:
 ```json
 {"aggregate": {
    "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/heart_rate", "reducers": ["avg", "max"]},
-     {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"]}],
+     {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate", "reducers": ["avg", "max"]},
+     {"ref": "substrate.reamde.dev/observations/metric/health/steps", "reducers": ["sum"]}],
    "range": {"gte": "2026-09-22T06:00:00+01:00", "lt": "2026-09-22T12:00:00+01:00"},
    "bucket": {"every": "PT1H"},
    "sources": {"policy": "priority", "order": ["applehealth/iphone/apple-watch", "applehealth/iphone/iphone"]}}}

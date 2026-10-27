@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -540,10 +539,7 @@ func TestSlackLiveRequiresTheSlackBundle(t *testing.T) {
 		slackAccountKind, slackPackage+"/team", slackPackage+"/conversation",
 		slackPackage+"/message", slackPackage+"/user", slackPackage+"/file")
 
-	alone, err := enginetest.SeededRegistry(seedKindsDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	alone := seededRegistry(t)
 	packages, err = vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatal(err)

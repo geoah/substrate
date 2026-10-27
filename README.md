@@ -33,9 +33,10 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
   and their conversions are records each repository holds and extends.
   Every kind that binds core's `observed` trait is indexed, and the records route's aggregate read reduces it into
   time buckets: average heart rate per week, steps per local day across
-  travel, one source preferred over another. The catalog's `observations`
-  and `health` samples and its two health adapters (WHOOP, Apple Health)
-  bring a wearable's data into one model; Garmin and Google Fit are planned
+  travel, one source preferred over another. The seeded `observations`
+  package, the catalog's `health` and `labs` catalogues and the adapters the
+  WHOOP and Apple Health providers ship bring a wearable's data into one
+  model; Garmin and Google Fit are planned
   ([docs/observations.md](docs/observations.md)).
 - **Bundles.** Vocabulary, functions and agents install and uninstall as one
   unit. The catalog compiled into the binary ships sync for Google, GitHub,
@@ -91,7 +92,8 @@ bin/substratectl register --server http://localhost:8080
 ```
 
 A fresh repository holds the core vocabulary, the `llm` package with three
-keyless provider rows and the LLM sample's agents, and nothing else. Teach it
+keyless provider rows, the `console` and `observations` packages and the LLM
+sample's agents, and nothing else. Teach it
 yours: kinds are declared in YAML in a package under an authority you name,
 and a declaration is itself a record write. One file declares a package and,
 in it, a project and a task, with typed properties, a state machine, and a

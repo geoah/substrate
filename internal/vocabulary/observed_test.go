@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
+	"io/fs"
+	"path"
 	"reflect"
 	"slices"
 	"sort"
@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
 )
 
 func instant(t *testing.T, s string) *time.Time {
@@ -438,21 +439,21 @@ func TestTracePointsReadAReplayedTrace(t *testing.T) {
 	}
 }
 
-// observationsDeclarations reads the shipped observations sample's
+// observationsDeclarations reads the seeded observations package's
 // declarations, the kinds that bind `observed` among them, as maps a case may
 // edit before it builds them.
 func observationsDeclarations(t *testing.T) []map[string]any {
 	t.Helper()
-	entries, err := os.ReadDir("../../samples/observations")
+	entries, err := fs.ReadDir(kinds.All(), vocabulary.PackageObservations)
 	if err != nil {
-		t.Fatalf("read the observations sample: %v", err)
+		t.Fatalf("read the observations package: %v", err)
 	}
 	var out []map[string]any
 	for _, e := range entries {
-		if filepath.Ext(e.Name()) != ".yaml" {
+		if path.Ext(e.Name()) != ".yaml" {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join("../../samples/observations", e.Name()))
+		body, err := fs.ReadFile(kinds.All(), vocabulary.PackageObservations+"/"+e.Name())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -474,14 +475,24 @@ func observationsDeclarations(t *testing.T) []map[string]any {
 	return out
 }
 
-// installObservations builds the documents and installs them on the seed.
+// installObservations builds the documents and installs them on the seed in
+// place of its observations package, as the engine's write replaces the
+// package it touches.
 func installObservations(t *testing.T, raw []map[string]any) error {
 	t.Helper()
-	reg, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
+	return installOn(t, seedWithoutObservations(t), raw)
+}
+
+// seedWithoutObservations is the seed with its observations package removed,
+// for a case to install its own edit of it.
+func seedWithoutObservations(t *testing.T) *vocabulary.Registry {
+	t.Helper()
+	reg, err := vocabulary.LoadFS(kinds.Seed())
 	if err != nil {
 		t.Fatalf("load the seed: %v", err)
 	}
-	return installOn(t, reg, raw)
+	reg.Remove(vocabulary.PackageObservations)
+	return reg
 }
 
 // installOn builds the documents and installs them on reg.
@@ -509,7 +520,7 @@ func installOn(t *testing.T, reg *vocabulary.Registry, raw []map[string]any) err
 // that declares one `values` refuses every write.
 func TestObservedBindingHoldsListAndSingleShapes(t *testing.T) {
 	if err := installObservations(t, observationsDeclarations(t)); err != nil {
-		t.Fatalf("the shipped observations sample is refused: %v", err)
+		t.Fatalf("the seeded observations package is refused: %v", err)
 	}
 	for _, c := range []struct {
 		kind, prop string
@@ -529,19 +540,19 @@ func TestObservedBindingHoldsListAndSingleShapes(t *testing.T) {
 		{"metric", "units", map[string]any{"repeated": nil}, "requires units to be a list"},
 		// A metric's units are unit records (decision 0186).
 		{"metric", "unit", map[string]any{"kind": "any"}, "requires unit to pin kind substrate.reamde.dev/core/unit"},
-		{"metric", "units", map[string]any{"kind": "samples.substrate.reamde.dev/observations/source"}, "requires units to pin kind substrate.reamde.dev/core/unit"},
+		{"metric", "units", map[string]any{"kind": vocabulary.PackageObservations + "/source"}, "requires units to pin kind substrate.reamde.dev/core/unit"},
 		{"source", "priorities", map[string]any{"keyed": nil}, "trait substrate.reamde.dev/core/source requires priorities to be a keyed map"},
 		// The metric a value names carries the metric contract, or the
 		// write rules and the aggregate read have no unit to read.
 		{"observation", "metric", map[string]any{"kind": "any"}, "pins no kind; an observed value's metric pins a kind that binds substrate.reamde.dev/core/metric"},
-		{"trace", "metric", map[string]any{"kind": "samples.substrate.reamde.dev/observations/source"}, "which does not bind substrate.reamde.dev/core/metric"},
+		{"trace", "metric", map[string]any{"kind": vocabulary.PackageObservations + "/source"}, "which does not bind substrate.reamde.dev/core/metric"},
 		{"trace", "metric", map[string]any{"kind": nil, "trait": "substrate.reamde.dev/core/source"}, "pins trait substrate.reamde.dev/core/source"},
 	} {
 		docs := observationsDeclarations(t)
 		found := false
 		for _, d := range docs {
 			meta, _ := d["metadata"].(map[string]any)
-			if meta["id"] != "samples.substrate.reamde.dev/observations/"+c.kind {
+			if meta["id"] != vocabulary.PackageObservations+"/"+c.kind {
 				continue
 			}
 			props := d["data"].(map[string]any)["properties"].(map[string]any)
@@ -573,26 +584,26 @@ func TestObservedBindingHoldsListAndSingleShapes(t *testing.T) {
 // rebuilds the package it touches, so a check of that package alone admits
 // the change and the other package is quarantined at the next open.
 func TestObservedMetricPinIsHeldAcrossPackages(t *testing.T) {
-	const metricKind = "samples.substrate.reamde.dev/observations/metric"
+	const metricKind = vocabulary.PackageObservations + "/metric"
+	const vitalsPackage = "ada.example.com/vitals"
 	vitals := func() []map[string]any {
 		var reading map[string]any
 		for _, d := range observationsDeclarations(t) {
-			if meta, _ := d["metadata"].(map[string]any); meta["id"] == "samples.substrate.reamde.dev/observations/observation" {
+			if meta, _ := d["metadata"].(map[string]any); meta["id"] == vocabulary.PackageObservations+"/observation" {
 				reading = d
 			}
 		}
 		if reading == nil {
 			t.Fatal("no observations/observation declaration")
 		}
-		reading["metadata"].(map[string]any)["id"] = "samples.substrate.reamde.dev/vitals/observation"
+		reading["metadata"].(map[string]any)["id"] = vitalsPackage + "/observation"
 		data := reading["data"].(map[string]any)
+		data["authority"] = "ada.example.com"
 		data["package"] = "vitals"
-		props := data["properties"].(map[string]any)
-		props["source"].(map[string]any)["kind"] = "samples.substrate.reamde.dev/observations/source"
 		return []map[string]any{{
 			"kind":     "substrate.reamde.dev/core/package",
-			"metadata": map[string]any{"id": "samples.substrate.reamde.dev/vitals"},
-			"data":     map[string]any{"authority": "samples.substrate.reamde.dev", "package": "vitals", "version": 1},
+			"metadata": map[string]any{"id": vitalsPackage},
+			"data":     map[string]any{"authority": "ada.example.com", "package": "vitals", "version": 1},
 		}, reading}
 	}
 	// The observations package with its metric kind unbound, its own values
@@ -605,7 +616,7 @@ func TestObservedMetricPinIsHeldAcrossPackages(t *testing.T) {
 			switch meta["id"] {
 			case metricKind:
 				data["traits"] = []any{}
-			case "samples.substrate.reamde.dev/observations/observation", "samples.substrate.reamde.dev/observations/trace":
+			case vocabulary.PackageObservations + "/observation", vocabulary.PackageObservations + "/trace":
 				p := data["properties"].(map[string]any)["metric"].(map[string]any)
 				delete(p, "kind")
 				p["trait"] = vocabulary.TraitMetricCore
@@ -613,10 +624,7 @@ func TestObservedMetricPinIsHeldAcrossPackages(t *testing.T) {
 		}
 		return docs
 	}
-	seed, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
-	if err != nil {
-		t.Fatalf("load the seed: %v", err)
-	}
+	seed := seedWithoutObservations(t)
 	if err := installOn(t, seed.Clone(), unbound()); err != nil {
 		t.Fatalf("the unbound observations package alone is refused: %v", err)
 	}
@@ -625,9 +633,9 @@ func TestObservedMetricPinIsHeldAcrossPackages(t *testing.T) {
 		t.Fatalf("observations and vitals are refused: %v", err)
 	}
 	// The engine's write: the touched package removed, its rebuild installed.
-	reg.Remove("samples.substrate.reamde.dev/observations")
-	err = installOn(t, reg, unbound())
-	want := "samples.substrate.reamde.dev/vitals/observation: data.properties.metric: pins " + metricKind + ", which does not bind"
+	reg.Remove(vocabulary.PackageObservations)
+	err := installOn(t, reg, unbound())
+	want := vitalsPackage + "/observation: data.properties.metric: pins " + metricKind + ", which does not bind"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("dropping the metric binding under another package's value: %v, want a refusal saying %q", err, want)
 	}
@@ -646,7 +654,7 @@ func TestObservedMetricPinIsHeldAcrossPackages(t *testing.T) {
 					data["installs"] = slices.DeleteFunc(slices.Clone(installs), func(v any) bool { return v == metricKind })
 				}
 			}
-			if meta["id"] == "samples.substrate.reamde.dev/observations/observation" {
+			if meta["id"] == vocabulary.PackageObservations+"/observation" {
 				props := d["data"].(map[string]any)["properties"].(map[string]any)
 				fields := props["components"].(map[string]any)["fields"].(map[string]any)
 				delete(fields["metric"].(map[string]any), "kind")
@@ -662,9 +670,9 @@ func TestObservedMetricPinIsHeldAcrossPackages(t *testing.T) {
 	if err := installOn(t, reg, append(observationsDeclarations(t), vitals()...)); err != nil {
 		t.Fatalf("observations and vitals are refused: %v", err)
 	}
-	reg.Remove("samples.substrate.reamde.dev/observations")
+	reg.Remove(vocabulary.PackageObservations)
 	err = installOn(t, reg, deleted())
-	want = "samples.substrate.reamde.dev/vitals/observation: data.properties.metric: pins " + metricKind + ", which no package declares"
+	want = vitalsPackage + "/observation: data.properties.metric: pins " + metricKind + ", which no package declares"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("deleting the metric kind under another package's value: %v, want a refusal saying %q", err, want)
 	}
@@ -676,7 +684,7 @@ func TestObservedMetricMayPinTheMetricTrait(t *testing.T) {
 	docs := observationsDeclarations(t)
 	for _, d := range docs {
 		meta, _ := d["metadata"].(map[string]any)
-		if meta["id"] != "samples.substrate.reamde.dev/observations/trace" {
+		if meta["id"] != vocabulary.PackageObservations+"/trace" {
 			continue
 		}
 		props := d["data"].(map[string]any)["properties"].(map[string]any)
@@ -693,7 +701,7 @@ func TestObservedMetricMayPinTheMetricTrait(t *testing.T) {
 // the result-shape rule and the console read; a trait contracts the datatype
 // (`json`, which an object meets) and the loader holds the fields.
 func TestResultBindingHoldsItsObjectShapes(t *testing.T) {
-	body, err := os.ReadFile("../../samples/health/labresult.yaml")
+	body, err := fs.ReadFile(kinds.All(), vocabulary.AuthorityPublisher+"/labs/labresult.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,22 +711,15 @@ func TestResultBindingHoldsItsObjectShapes(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Moved into the observations package, so it installs beside the
-		// kinds it points at; its report lives in health.
-		m["metadata"].(map[string]any)["id"] = "samples.substrate.reamde.dev/observations/labresult"
+		// kinds it points at; its report lives in labs.
+		m["metadata"].(map[string]any)["id"] = vocabulary.PackageObservations + "/labresult"
 		data := m["data"].(map[string]any)
 		data["package"] = "observations"
 		delete(data["properties"].(map[string]any), "report")
 		return m
 	}
 	withLab := func(m map[string]any) []map[string]any {
-		docs := observationsDeclarations(t)
-		for _, d := range docs {
-			if d["kind"] == "substrate.reamde.dev/core/bundle" {
-				data := d["data"].(map[string]any)
-				data["installs"] = append(data["installs"].([]any), "samples.substrate.reamde.dev/observations/labresult")
-			}
-		}
-		return append(docs, m)
+		return append(observationsDeclarations(t), m)
 	}
 	if err := installObservations(t, withLab(lab())); err != nil {
 		t.Fatalf("the lab result is refused: %v", err)

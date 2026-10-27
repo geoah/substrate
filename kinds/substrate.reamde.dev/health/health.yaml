@@ -1,0 +1,38 @@
+# The `health` catalogue: a person's body, sleep and training (decision record
+# 0192). Scalars are generic: a heart rate or a weight is an observation or a
+# trace of the seeded observations package pointing at one of the metric
+# records this package ships (metrics.yaml, ids `health/<name>`), so a new
+# metric is a record, not an upgrade. Sessions are typed: a night's sleep and
+# a workout have their own kinds, because their fields are structural and a
+# reader filters by them.
+#
+# Every provider that reports health data (applehealth, whoop) requires this
+# package and maps into it. Health never edits a base kind: health-only
+# context is a `qualifiers` code on an observation.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/health
+data:
+  authority: substrate.reamde.dev
+  package: health
+  # 1: the body, sleep and training half of the health sample at its version 8
+  # (sleep, workout, 33 metrics, the glucose units and two record views).
+  version: 1
+---
+# ---- the bundle document: the install unit ------------------------------------
+# Two kinds, and the metric catalogue (metrics.yaml) with the glucose units
+# (analyte_units.yaml) and the record views (views.yaml) as data. An upgrade
+# replaces a shipped record only where its owner has not edited it.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: substrate.reamde.dev/health
+data:
+  authority: substrate.reamde.dev
+  package: health
+  description: >-
+    Your body, sleep and workouts: nights, training sessions, and the metrics
+    wearables, scales and meters measure, which every health provider maps
+    into.
+  installs:
+    - substrate.reamde.dev/health/sleep
+    - substrate.reamde.dev/health/workout

@@ -148,7 +148,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -490,7 +490,7 @@ func TestADeclaredKindLabelIsStoredAndRead(t *testing.T) {
 	var svc substrate.Service
 	open := func(create bool) substrate.Dataset {
 		var err error
-		svc, err = engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+		svc, err = engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -553,7 +553,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -1113,7 +1113,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.SeedKindsDir))
+			engine.WithKindsFS(engine.SeedKinds))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

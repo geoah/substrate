@@ -110,9 +110,11 @@ func whoopCatalogWith(t *testing.T, version int64, rel whoopRelease) *catalog.Ca
 
 // handApplyWhoop applies the shipped whoop files by hand with the package
 // header at version, the bundle description edited when edit is set: the
-// hand applies that run a package past the shipped line.
+// hand applies that run a package past the shipped line. The health
+// catalogue whoop requires is installed first.
 func handApplyWhoop(t *testing.T, ds substrate.Dataset, version int64, edit bool) {
 	t.Helper()
+	installHealth(t, ds)
 	docs := whoopClosure(t)
 	for _, d := range docs {
 		data, _ := d["data"].(map[string]any)
@@ -121,7 +123,7 @@ func handApplyWhoop(t *testing.T, ds substrate.Dataset, version int64, edit bool
 			data["version"] = version
 		case "substrate.reamde.dev/core/bundle":
 			if edit {
-				data["description"] = "edited by hand: " + data["description"].(string)
+				data["description"] = "Edited by hand."
 			}
 		}
 	}
@@ -221,6 +223,9 @@ func TestAStampAboveTheShippedVersionOffersNothing(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
 	shipped := whoopShipped(t)
+	// The whoop-only catalog does not serve the health catalogue whoop
+	// requires, so its install cannot bring it.
+	installHealth(t, ds)
 	if _, _, err := whoopCatalog(t, shipped+5, true).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
 		t.Fatalf("install the newer whoop: %v", err)
 	}
@@ -407,6 +412,7 @@ func TestAnUninstallClearsTheShippedVersion(t *testing.T) {
 func TestAChangedPackageHeaderMovesThePackage(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
+	installHealth(t, ds)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure: %v", err)
 	}

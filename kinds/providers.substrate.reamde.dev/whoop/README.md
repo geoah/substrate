@@ -68,10 +68,9 @@ for. The stream's cursor moves only once every read-back has answered.
 Recovery rows synced before version 21 have no `cycleId`. The first sync
 after the upgrade reads the recovery collection again from a week before the
 oldest of them, which writes each one's `cycleId`, and deletes a recovery
-row the walk does not return. Where the
-[WHOOP to health](../../../docs/bundles-catalog.md#whoop-to-health-sample)
-sample is installed, the health records built from a deleted row are deleted
-with it.
+row the walk does not return. The
+[WHOOP to health](../../../docs/bundles-catalog.md#whoop-to-health)
+adapter deletes the health records built from a deleted row with it.
 
 Cycle rows synced before version 24 have no `day` and keep the title
 `Cycle <WHOOP id>`. The first sync after the upgrade reads the cycle
@@ -83,6 +82,42 @@ An account that has recoveries on and sleeps off reconnects once:
 `whoopwebhook` cannot read the sleep a `recovery.updated` event names. It marks
 the recovery row for the sync to read back instead, and names WHOOP's `403` in
 its output.
+
+## Into health
+
+The provider carries its adapter (decision record 0192). `adaptwhoop`, on the
+`whoop-to-health` record trigger over `cycle`, `recovery`, `sleep` and
+`workout`, writes the seeded observations package's observations and the
+`health` catalogue's sleeps and workouts. Installing the provider installs
+`health` first. WHOOP sends scored summaries, never raw samples, so it writes
+no traces.
+
+What WHOOP measures that others do too is written to the `health` metrics:
+resting heart rate, HRV, SpO2, skin temperature, respiratory rate, energy and
+sleep stages. What only WHOOP computes is its own: `metrics.yaml` ships
+`whoop/recovery`, `whoop/strain` and `whoop/sleep_performance`, and
+`views.yaml` a WHOOP cycle's page and WHOOP's scores on a sleep's page, with
+WHOOP's published bands as data.
+
+- A sleep stage total is one `amount` observation of `health/sleep_stage`
+  carrying `code` (the stage) and `value` (minutes), spanning the whole sleep:
+  WHOOP reports totals per stage, not when each stage happened.
+- A scored cycle's and workout's average and maximum heart rate are two
+  `summary` observations of `health/heart_rate` over its span (`statistic`
+  `avg` and `max`, `period` `cycle` or `workout`). Read them with `from:
+  summaries`.
+- A workout's `sport` is WHOOP's sport name mapped onto the workout kind's
+  code set (`weightlifting` is `strength`), `other` where none fits, and the
+  name itself is `sportSource`. Its kilojoules are `totalEnergy`.
+- A recovery's readings measure the night it scores, so they span that
+  sleep, with `period` `sleep` and the sleep's id as `periodId`.
+- A cycle runs from one sleep onset to the next, so its strain, energy and
+  heart rate are filed under the evening it starts.
+
+Every output carries `adapter: whoop@<version>` apart from `revision`, which
+is WHOOP's `updated_at`. After an upgrade that changes what a mirror row
+becomes, replay the trigger from the start (`bin/substratectl trigger replay
+whoop-to-health --from 0`).
 
 ## What the tests are checked against
 

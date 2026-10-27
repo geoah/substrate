@@ -34,7 +34,7 @@ const (
 func rmOpen(t *testing.T, dsn, root string) substrate.Service {
 	t.Helper()
 	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithDataRoot(root), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+		engine.WithDataRoot(root), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsFS(engine.SeedKinds))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

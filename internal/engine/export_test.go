@@ -24,6 +24,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
 )
 
 // TestCredentialKey is a conforming credential key: standard-base64 of 32
@@ -124,7 +125,7 @@ var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, ds
 	}
 	defer func() { _ = os.RemoveAll(root) }()
 	svc, err := Open(ctx, dsn,
-		WithKindsDir(SeedKindsDir),
+		WithKindsFS(SeedKinds),
 		WithDataRoot(root),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
@@ -465,10 +466,11 @@ func SearchReindexDone(ds substrate.Dataset) <-chan struct{} {
 	return ds.(*dataset).reindex.finished()
 }
 
-// SeedKindsDir is the shipped SEED AUTHORITY, relative to this package — core
-// and llm together (record 0077): what every test open loads unless it brings
-// a patched tree.
-const SeedKindsDir = "../../kinds/substrate.reamde.dev"
+// SeedKinds is the shipped seed, the packages every repository is created
+// with (kinds.Seed()): what every test open loads unless it brings a patched
+// tree. It is not the seed authority's directory on disk, which also holds
+// the first-party catalogues the catalog serves (record 0192).
+var SeedKinds = kinds.Seed()
 
 // testClocks holds one TestClock per test name (ClockOf), so a subtest and a
 // repeated run (-count=N) start at zero.
@@ -487,20 +489,32 @@ func ClockOf(t *testing.T) *TestClock {
 }
 
 // OpenForTest is the ONE way a test opens a service: Open with the shipped
-// core kinds, the binary's credential key and the test's TOTP clock, then the
+// seed, the binary's credential key and the test's TOTP clock, then the
 // caller's options, which win where they name the same thing (a patched
 // kinds tree, another key). It does not close the service: the callers
 // differ on when.
+//
+// The seed is added only when the caller names no vocabulary source of its
+// own: Open prefers a filesystem to a directory, so a default WithKindsFS
+// would outrank a caller's patched WithKindsDir tree.
 func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) (substrate.Service, error) {
 	t.Helper()
-	all := append([]Option{
-		WithKindsDir(SeedKindsDir),
+	var named options
+	for _, fn := range opts {
+		fn(&named)
+	}
+	var seed []Option
+	if named.kindsFS == nil && named.kindsDir == "" && named.registry == nil {
+		seed = []Option{WithKindsFS(SeedKinds)}
+	}
+	all := append(seed, []Option{
 		WithCredentialKey(TestCredentialKey),
 		WithTestTOTPClock(ClockOf(t).Now),
 		WithLLMSampleSeed(false),
 		WithLLMProviderSeed(false),
 		WithUnitSeed(false),
-	}, opts...)
+	}...)
+	all = append(all, opts...)
 	return Open(ctx, dsn, all...)
 }
 

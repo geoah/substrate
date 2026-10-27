@@ -465,7 +465,7 @@ func otherCredentialKey(t *testing.T) ([]byte, string) {
 func openWithKey(t *testing.T, dsn, root, key string) (substrate.Service, error) {
 	t.Helper()
 	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(key))
 	if err == nil {

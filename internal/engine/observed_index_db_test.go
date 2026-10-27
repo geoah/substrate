@@ -24,26 +24,25 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/observed"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
 )
 
-// obsIndex is a repository holding the observations and health samples, with
-// the tamperer's seat on its database to read the index tables.
+// obsIndex is a repository holding the first-party health, labs and
+// environment catalogues, with the tamperer's seat on its database to read
+// the index tables.
 type obsIndex struct {
 	observedRepo
 	svc substrate.Service
 	db  *sql.DB
 }
 
-// sharedMetrics are the observations sample's six metrics, which keep the
-// 1h and 1d tiers as shipped (samples/observations/metrics.yaml).
-var sharedMetrics = []string{"air_temperature", "relative_humidity", "energy", "power", "illuminance", "atmospheric_pressure"}
+// sharedMetrics are the environment catalogue's six metrics, which keep the
+// 1h and 1d tiers as shipped (kinds/substrate.reamde.dev/environment/metrics.yaml).
+var sharedMetrics = []string{"environment/air_temperature", "environment/relative_humidity", "environment/energy", "environment/power", "environment/illuminance", "environment/atmospheric_pressure"}
 
 // openObservedIndex is openObservedIndexAsShipped with the shared metrics
 // set back to the default tiers, 15m, 1h and 1d: the tests read the 15m tier
@@ -70,27 +69,10 @@ func openObservedIndexAsShipped(t *testing.T, opts ...engine.Option) obsIndex {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatalf("load the sample catalog: %v", err)
-	}
-	putSampleUnits(t, ds, "observations", "health")
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
-			t.Fatalf("import %s: %v", id, err)
-		}
-	}
-	home := testdb.Repository(t)
+	r := installObserved(t, ds)
 	db := rawDB(t, dsn)
 	observedTestViews(t, db)
-	return obsIndex{
-		observedRepo: observedRepo{
-			ds: ds, observation: home + "/observations/observation", trace: home + "/observations/trace",
-			metric: home + "/observations/metric", source: home + "/observations/source",
-			labreport: home + "/health/labreport", labresult: home + "/health/labresult",
-		},
-		svc: svc, db: db,
-	}
+	return obsIndex{observedRepo: r, svc: svc, db: db}
 }
 
 // observedTestViews names each stream in the rollup and latest tables by
@@ -235,7 +217,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	}
 
 	r.mustPut(t, r.observation, "door/1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "about": map[string]any{"ref": r.source + "/front-door"},
+		"metric": r.metricRef("environment/air_temperature"), "about": map[string]any{"ref": r.source + "/front-door"},
 		"channel": "contact", "form": "gauge", "code": "open", "hold": "PT0S", "at": "2026-10-07T17:42:05Z",
 	})
 	if got := r.points(t, r.observation, "door/1"); len(got) != 1 || got[0].code != "open" || got[0].value.Valid ||
@@ -265,7 +247,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	}
 
 	r.mustPut(t, r.trace, "meter/2026-10-07T06", map[string]any{
-		"metric": r.metricRef("energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+		"metric": r.metricRef("environment/energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT15M",
 		"values": []any{"18342.655", "18342.700", "0.010", "0.050"}, "revision": 1,
 	})
@@ -298,7 +280,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	}
 
 	r.mustPut(t, r.labresult, "medichecks/george/MC-1/tsh", map[string]any{
-		"metric": r.metricRef("health/tsh"), "hold": "PT0S",
+		"metric": r.metricRef("labs/tsh"), "hold": "PT0S",
 		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},
 		"at":    "2026-09-14T08:05:00+01:00", "utcOffset": 60, "status": "final", "revision": 1,
 	})
@@ -657,13 +639,13 @@ func TestObservedRollupEqualsTheRawAggregate(t *testing.T) {
 		{"2026-10-07T08:31:00Z", "closed"},
 	} {
 		r.mustPut(t, r.observation, fmt.Sprintf("door/%d", i), map[string]any{
-			"metric": r.metricRef("air_temperature"), "about": r.sourceRef("front-door"), "form": "gauge",
+			"metric": r.metricRef("environment/air_temperature"), "about": r.sourceRef("front-door"), "form": "gauge",
 			"code": c.code, "hold": "PT1H", "at": c.at,
 		})
 	}
 	// A meter that resets twice inside one bucket, read every two minutes.
 	r.mustPut(t, r.trace, "meter/06", map[string]any{
-		"metric": r.metricRef("energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+		"metric": r.metricRef("environment/energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT2M",
 		"values": []any{"100.000", "100.250", "0.125", "0.500", "0.050", "0.300", "0.800", "1.100"},
 	})
@@ -696,7 +678,7 @@ func TestObservedRollupEqualsTheRawAggregate(t *testing.T) {
 	var increase string
 	var resets int
 	if err := r.db.QueryRow(`SELECT increase::text, resets FROM test_rollups
-		WHERE metric = $1 AND bucket = '2026-10-07T06:00:00Z'`, r.metric+"/energy").Scan(&increase, &resets); err != nil {
+		WHERE metric = $1 AND bucket = '2026-10-07T06:00:00Z'`, r.metric+"/environment/energy").Scan(&increase, &resets); err != nil {
 		t.Fatal(err)
 	}
 	if !sameDecimal(increase, "1.85") || resets != 2 {
@@ -1015,7 +997,7 @@ func TestObservedTiesAtOneInstantFollowByteOrder(t *testing.T) {
 	ids := []string{"tie/a1", "tie/B1", "tie/b-2", "tie/b1"}
 	for i, id := range ids {
 		r.mustPut(t, r.observation, id, map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("probe"), "form": "gauge",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("probe"), "form": "gauge",
 			"value": quantity(fmt.Sprintf("2%d", i), "Cel"), "at": "2026-10-07T06:00:00Z",
 		})
 	}
@@ -1028,12 +1010,12 @@ func TestObservedTiesAtOneInstantFollowByteOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("the database orders the ids from %s to %s; byte order from %s to %s", dbFirst, dbLast, first, last)
-	if l, ok := r.latest(t, "air_temperature", r.source+"/probe"); !ok || l.recordID != last {
+	if l, ok := r.latest(t, "environment/air_temperature", r.source+"/probe"); !ok || l.recordID != last {
 		t.Errorf("the latest row is %q (%v), want %q, the greatest id in byte order", l.recordID, ok, last)
 	}
 	var rowFirst, rowLast string
 	if err := r.db.QueryRow(`SELECT first_record_id, last_record_id FROM test_rollups WHERE metric = $1`,
-		r.metric+"/air_temperature").Scan(&rowFirst, &rowLast); err != nil {
+		r.metric+"/environment/air_temperature").Scan(&rowFirst, &rowLast); err != nil {
 		t.Fatal(err)
 	}
 	if rowFirst != first || rowLast != last {
@@ -1051,7 +1033,7 @@ func TestObservedSingleGaugeHoldsUntilItsEnd(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
 	gauge := func(id, source string, props map[string]any) {
-		p := map[string]any{"metric": r.metricRef("air_temperature"), "source": r.sourceRef(source), "form": "gauge"}
+		p := map[string]any{"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef(source), "form": "gauge"}
 		for k, v := range props {
 			p[k] = v
 		}
@@ -1088,7 +1070,7 @@ func TestObservedSingleGaugeHoldsUntilItsEnd(t *testing.T) {
 		res, err := r.ds.Aggregate(context.Background(), substrate.AggregateQuery{
 			Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: r.source + "/door"}}},
 			Aggregate: &substrate.Aggregate{
-				Metric:       &substrate.AggregateMetric{Ref: r.metric + "/air_temperature"},
+				Metric:       &substrate.AggregateMetric{Ref: r.metric + "/environment/air_temperature"},
 				Range:        &substrate.AggregateRange{Gte: from.Format(time.RFC3339), Lt: from.Add(time.Hour).Format(time.RFC3339)},
 				Reducers:     []substrate.AggregateReducer{{Name: "timeInState", States: []string{"open"}}},
 				DurationUnit: "min", MaxGap: maxGap,
@@ -1130,7 +1112,7 @@ func TestObservedMarksAValueWrittenWithoutAnOffset(t *testing.T) {
 	weigh("w/athens", 180)
 	trace := func(id string, offsets map[string]any) {
 		p := map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef(id), "form": "gauge", "unit": "Cel",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef(id), "form": "gauge", "unit": "Cel",
 			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT30M", "values": []any{"20", "21"},
 		}
 		for k, v := range offsets {
@@ -1304,7 +1286,7 @@ func TestObservedIndexFollowsTheBinding(t *testing.T) {
 		t.Fatalf("declare the unbound kind: %v", err)
 	}
 	r.mustPut(t, pkg+"/reading", "r1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "form": "gauge", "value": quantity("21.5", "Cel"),
+		"metric": r.metricRef("environment/air_temperature"), "form": "gauge", "value": quantity("21.5", "Cel"),
 		"at": "2026-10-07T06:00:00Z",
 	})
 	if got := r.points(t, pkg+"/reading", "r1"); len(got) != 0 {
@@ -1317,7 +1299,7 @@ func TestObservedIndexFollowsTheBinding(t *testing.T) {
 	if got := r.points(t, pkg+"/reading", "r1"); len(got) != 1 || got[0].exact.String != "21.5" {
 		t.Fatalf("binding the kind derived %+v", got)
 	}
-	if l, ok := r.latest(t, "air_temperature", ""); !ok || l.recordID != "r1" {
+	if l, ok := r.latest(t, "environment/air_temperature", ""); !ok || l.recordID != "r1" {
 		t.Errorf("binding the kind left no latest row: %+v", l)
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
@@ -1328,7 +1310,7 @@ func TestObservedIndexFollowsTheBinding(t *testing.T) {
 	if got := r.points(t, pkg+"/reading", "r1"); len(got) != 0 {
 		t.Errorf("unbinding the kind kept %d points", len(got))
 	}
-	if _, ok := r.latest(t, "air_temperature", ""); ok {
+	if _, ok := r.latest(t, "environment/air_temperature", ""); ok {
 		t.Error("unbinding the kind kept its latest row")
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
@@ -1350,7 +1332,7 @@ func TestBootImportReproducesTheObservedIndex(t *testing.T) {
 	var rederived atomic.Int64
 	svc2 := reopenWith(t, engine.MigratedDSN(t), copyRepositoryDir(t, root, id),
 		engine.WithTestReprojectionHook(func(_ context.Context, kind string) error {
-			if kind == obsSampleObservation || kind == obsSampleTrace {
+			if kind == kindObservation || kind == kindTrace {
 				rederived.Add(1)
 			}
 			return nil
@@ -1376,7 +1358,7 @@ func TestObservedIndexRederivesWhenItsRulesChange(t *testing.T) {
 	t.Parallel()
 	var pages atomic.Int64
 	hook := engine.WithTestReprojectionHook(func(_ context.Context, kind string) error {
-		if kind == obsSampleObservation || kind == obsSampleTrace {
+		if kind == kindObservation || kind == kindTrace {
 			pages.Add(1)
 		}
 		return nil
@@ -1438,14 +1420,7 @@ func TestObservedIndexRederivesWhenItsRulesChange(t *testing.T) {
 
 // --- the shared history ---
 
-// The observations sample's own kinds, as importVocabulary installs them.
-const (
-	obsSampleObservation = "samples.substrate.reamde.dev/observations/observation"
-	obsSampleTrace       = "samples.substrate.reamde.dev/observations/trace"
-	obsSampleMetric      = "samples.substrate.reamde.dev/observations/metric"
-)
-
-// writeObservedHistory imports the observations sample and writes one of
+// writeObservedHistory installs the environment catalogue and writes one of
 // every observed shape the index derives, then moves them: a trace of a
 // gauge with a null and an offset change, its rewrite at a higher revision,
 // a counter trace, an amount with its category, a summary, coded gauges, a
@@ -1453,51 +1428,51 @@ const (
 func writeObservedHistory(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	ctx := context.Background()
-	importVocabulary(t, ds, "observations")
-	ref := func(id string) map[string]any { return map[string]any{"ref": obsSampleMetric + "/" + id} }
+	installCatalogues(t, ds, "environment")
+	ref := func(id string) map[string]any { return map[string]any{"ref": kindMetric + "/" + id} }
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
 		mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: id, Properties: props})
 	}
 	temperature := func(values []any, rev int) map[string]any {
 		return map[string]any{
-			"metric": ref("air_temperature"), "form": "gauge", "unit": "Cel", "hold": "PT20M",
+			"metric": ref("environment/air_temperature"), "form": "gauge", "unit": "Cel", "hold": "PT20M",
 			"at": "2026-10-25T00:00:00Z", "endsAt": "2026-10-25T01:00:00Z", "utcOffset": 180,
 			"offsets": []any{0, 118000, 899000, 1500000, 3000000}, "values": values, "revision": rev,
 		}
 	}
-	put(obsSampleTrace, "sensor/kitchen/2026-10-25T00", temperature([]any{"21.5", "21.7", nil, "22.0", "22.4"}, 1))
-	put(obsSampleTrace, "sensor/kitchen/2026-10-25T00", temperature([]any{"21.5", "21.8", "21.9", nil, "22.3"}, 2))
-	put(obsSampleTrace, "meter/main/2026-10-25T00", map[string]any{
-		"metric": ref("energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+	put(kindTrace, "sensor/kitchen/2026-10-25T00", temperature([]any{"21.5", "21.7", nil, "22.0", "22.4"}, 1))
+	put(kindTrace, "sensor/kitchen/2026-10-25T00", temperature([]any{"21.5", "21.8", "21.9", nil, "22.3"}, 2))
+	put(kindTrace, "meter/main/2026-10-25T00", map[string]any{
+		"metric": ref("environment/energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
 		"at": "2026-10-25T00:00:00Z", "endsAt": "2026-10-25T02:00:00Z", "every": "PT15M",
 		"values": []any{"18342.655", "18342.700", "0.010", "0.050", "0.400", "0.900", "0.020", "0.090"},
 	})
-	put(obsSampleObservation, "plug/kettle/2026-10-25", map[string]any{
-		"metric": ref("energy"), "form": "amount", "value": quantity("1.2", "kW.h"), "code": "kettle",
+	put(kindObservation, "plug/kettle/2026-10-25", map[string]any{
+		"metric": ref("environment/energy"), "form": "amount", "value": quantity("1.2", "kW.h"), "code": "kettle",
 		"at": "2026-10-25T07:00:00Z", "endsAt": "2026-10-25T08:00:00Z",
 	})
-	put(obsSampleObservation, "plug/daily/2026-10-25", map[string]any{
-		"metric": ref("power"), "form": "summary", "statistic": "avg", "period": "day",
+	put(kindObservation, "plug/daily/2026-10-25", map[string]any{
+		"metric": ref("environment/power"), "form": "summary", "statistic": "avg", "period": "day",
 		"value": quantity("340", "W"), "at": "2026-10-25T00:00:00Z", "endsAt": "2026-10-26T00:00:00Z",
 	})
 	for i, code := range []string{"closed", "open", "closed", "open"} {
-		put(obsSampleObservation, fmt.Sprintf("door/front/%d", i), map[string]any{
-			"metric": ref("illuminance"), "channel": "contact", "form": "gauge", "code": code,
+		put(kindObservation, fmt.Sprintf("door/front/%d", i), map[string]any{
+			"metric": ref("environment/illuminance"), "channel": "contact", "form": "gauge", "code": code,
 			"at": time.Date(2026, 10, 25, 8, 3*i+1, 0, 0, time.UTC).Format(time.RFC3339),
 		})
 	}
-	if _, err := ds.Delete(ctx, owner, obsSampleObservation, "door/front/1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, kindObservation, "door/front/1", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, obsSampleObservation, "door/front/2", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, kindObservation, "door/front/2", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	put(obsSampleObservation, "door/front/2", map[string]any{
-		"metric": ref("illuminance"), "channel": "contact", "form": "gauge", "code": "closed",
+	put(kindObservation, "door/front/2", map[string]any{
+		"metric": ref("environment/illuminance"), "channel": "contact", "form": "gauge", "code": "closed",
 		"at": "2026-10-25T08:07:00Z",
 	})
-	if _, err := ds.Delete(ctx, owner, obsSampleObservation, "door/front/3", substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := ds.Delete(ctx, owner, kindObservation, "door/front/3", substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
 }
@@ -1536,7 +1511,7 @@ func TestRebuildReproducesTheObservedTables(t *testing.T) {
 	checkRollupsMatchSpecWith(t, ds, db, shippedTiers)
 }
 
-// shippedTiers are a metric's tiers as the samples ship it: the shared
+// shippedTiers are a metric's tiers as the catalogues ship it: the shared
 // metrics keep 1h and 1d, every other the default.
 func shippedTiers(metric string) []time.Duration {
 	for _, id := range sharedMetrics {
@@ -1560,7 +1535,7 @@ func TestObservedRollupRowsAlwaysCarryTheirDetail(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i, v := range []string{"10.50", "12.25"} {
 		r.mustPut(t, r.observation, fmt.Sprintf("meter/%d", i), map[string]any{
-			"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
+			"metric": r.metricRef("environment/energy"), "source": r.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
 			"value": quantity(v, "kW.h"), "at": start.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
 		})
 	}
@@ -1570,11 +1545,11 @@ func TestObservedRollupRowsAlwaysCarryTheirDetail(t *testing.T) {
 		"at":    start.Format(time.RFC3339), "endsAt": start.Add(5 * time.Minute).Format(time.RFC3339),
 	})
 	r.mustPut(t, r.observation, "door/1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("contact"), "form": "gauge", "code": "open",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("contact"), "form": "gauge", "code": "open",
 		"at": start.Format(time.RFC3339),
 	})
 	r.mustPut(t, r.observation, "air/1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("thermometer"), "form": "gauge",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("thermometer"), "form": "gauge",
 		"value": quantity("21.10", "Cel"), "at": start.Format(time.RFC3339),
 	})
 	rows := storedRollups(t, r.db)
@@ -1745,14 +1720,14 @@ func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
 	r := openObservedIndex(t)
 	door := func(codes []any) map[string]any {
 		return map[string]any{
-			"metric": r.metricRef("illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
+			"metric": r.metricRef("environment/illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
 			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M", "codes": codes,
 		}
 	}
 	_, err := r.put(t, r.trace, "door/hall", door([]any{"open", ""}))
 	refused(t, "a trace with an empty code", err, "props.codes[1]: a code is not empty")
 	_, err = r.put(t, r.observation, "door/hall/1", map[string]any{
-		"metric": r.metricRef("illuminance"), "form": "gauge", "code": "", "at": "2026-10-07T06:00:00Z",
+		"metric": r.metricRef("environment/illuminance"), "form": "gauge", "code": "", "at": "2026-10-07T06:00:00Z",
 	})
 	refused(t, "an observation with an empty code", err, "props.code: a code is not empty")
 
@@ -1777,7 +1752,7 @@ func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
 	// Unrelated patches of a trace whose null is a legitimate unavailable
 	// point, each a deletion and an insertion of its points.
 	r.mustPut(t, r.trace, "door/porch", map[string]any{
-		"metric": r.metricRef("illuminance"), "source": r.sourceRef("porch"), "channel": "contact", "form": "gauge",
+		"metric": r.metricRef("environment/illuminance"), "source": r.sourceRef("porch"), "channel": "contact", "form": "gauge",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M",
 		"codes": []any{"open", nil, "closed"},
 	})
@@ -1787,7 +1762,7 @@ func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
 		}
 	}
 	for _, source := range []string{"hall", "porch"} {
-		if l, ok := r.latest(t, "illuminance", r.source+"/"+source); !ok || l.points != 2 {
+		if l, ok := r.latest(t, "environment/illuminance", r.source+"/"+source); !ok || l.points != 2 {
 			t.Errorf("the %s stream counts %d points (%v), want its two available ones", source, l.points, ok)
 		}
 	}
@@ -1830,14 +1805,14 @@ func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
 	hour := func(at string, values []any) map[string]any {
 		start := mustTime(t, at)
 		return map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
 			"at": at, "endsAt": start.Add(time.Hour).Format(time.RFC3339), "every": "PT20M", "values": values,
 		}
 	}
 	r.mustPut(t, kind, "h06", hour("2026-10-07T06:00:00Z", []any{"20.5", "20.7", "20.9"}))
 	r.mustPut(t, kind, "h07", hour("2026-10-07T07:00:00Z", []any{"21.5", "21.7", "21.9"}))
 	r.mustPut(t, kind, "h08", hour("2026-10-07T08:00:00Z", []any{"22.5", nil, "22.9"}))
-	if l, ok := r.latest(t, "air_temperature", r.source+"/attic"); !ok || l.recordID != "h08" {
+	if l, ok := r.latest(t, "environment/air_temperature", r.source+"/attic"); !ok || l.recordID != "h08" {
 		t.Fatalf("the stream's latest row is %+v (%v), want h08's", l, ok)
 	}
 
@@ -1862,7 +1837,7 @@ func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
 	// The kind no longer binds the trait, so its rows derive no point while
 	// the pass is held, and reads of it are refused until the pass is done:
 	// the latest row names neither record that left.
-	if l, ok := r.latest(t, "air_temperature", r.source+"/attic"); ok && (l.recordID == "h07" || l.recordID == "h08") {
+	if l, ok := r.latest(t, "environment/air_temperature", r.source+"/attic"); ok && (l.recordID == "h07" || l.recordID == "h08") {
 		t.Errorf("with h07 and h08 gone the stream's latest row is %+v", l)
 	}
 
@@ -1871,7 +1846,7 @@ func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
 	if n := r.count(t, `SELECT count(*) FROM observed_segments WHERE kind = $1`, kind); n != 0 {
 		t.Errorf("the unbound kind kept %d segments after the pass", n)
 	}
-	if _, ok := r.latest(t, "air_temperature", r.source+"/attic"); ok {
+	if _, ok := r.latest(t, "environment/air_temperature", r.source+"/attic"); ok {
 		t.Error("the unbound kind's stream kept its latest row after the pass")
 	}
 	r.rebuildMatches(t)
@@ -1951,7 +1926,7 @@ func TestObservedWriteAnswersAFailedRollupInsert(t *testing.T) {
 		}
 	}
 	_, err := r.put(t, r.trace, "long", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("long"), "form": "gauge", "unit": "Cel",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("long"), "form": "gauge", "unit": "Cel",
 		"at": "2026-09-01T00:00:00Z", "endsAt": "2026-09-01T01:00:00Z", "every": "PT15M", "values": []any{"20", "21", "22", "23"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "the test refuses this rollup insert") {
@@ -1976,7 +1951,7 @@ func TestObservedCounterRecomputesTheNextReadingsBucket(t *testing.T) {
 	reading := func(id, at, value string) {
 		t.Helper()
 		r.mustPut(t, r.observation, id, map[string]any{
-			"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
+			"metric": r.metricRef("environment/energy"), "source": r.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
 			"value": quantity(value, "kW.h"), "at": "2026-10-07T" + at + ":00Z",
 		})
 	}
@@ -2039,7 +2014,7 @@ func TestObservedCoarserRowsFollowAPointAtAnotherOffset(t *testing.T) {
 	gauge := func(id, at string, offset int) {
 		t.Helper()
 		r.mustPut(t, r.observation, id, map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("porch"), "form": "gauge",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("porch"), "form": "gauge",
 			"value": quantity("20", "Cel"), "at": "2026-10-07T" + at + ":00Z", "utcOffset": offset,
 		})
 	}
@@ -2103,11 +2078,11 @@ func TestObservedSubMillisecondExtentKeepsItsPoints(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
 	r.mustPut(t, r.trace, "fast/1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("fast"), "form": "gauge", "unit": "Cel",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("fast"), "form": "gauge", "unit": "Cel",
 		"at": "2026-10-07T09:59:59.9995Z", "endsAt": "2026-10-07T10:00:00.0005Z", "every": "PT0.0005S", "values": []any{"20", "21"}, "utcOffset": 0,
 	})
 	r.mustPut(t, r.trace, "fast/2", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("fast"), "form": "gauge", "unit": "Cel",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("fast"), "form": "gauge", "unit": "Cel",
 		"at": "2026-10-07T10:01:00Z", "endsAt": "2026-10-07T10:02:00Z", "every": "PT1M", "values": []any{"22"}, "utcOffset": 0,
 	})
 	if n := r.count(t, `SELECT n FROM test_rollups WHERE source = $1 AND bucket = '2026-10-07T10:00:00Z'`, r.source+"/fast"); n != 2 {
@@ -2127,12 +2102,12 @@ func TestObservedExtentPastADurationKeepsTheStreamsPoints(t *testing.T) {
 	reading := func(id, at, value string) {
 		t.Helper()
 		r.mustPut(t, r.observation, id, map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("long"), "form": "gauge",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("long"), "form": "gauge",
 			"value": quantity(value, "Cel"), "at": at, "utcOffset": 0,
 		})
 	}
 	r.mustPut(t, r.observation, "long/1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("long"), "form": "gauge",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("long"), "form": "gauge",
 		"value": quantity("20", "Cel"), "at": "2000-01-01T00:00:00Z", "endsAt": "2400-01-01T00:00:00Z", "utcOffset": 0,
 	})
 	reading("long/2", "2026-10-07T10:01:00Z", "21")
@@ -2151,11 +2126,11 @@ func TestObservedExtentPastADurationKeepsTheStreamsPoints(t *testing.T) {
 	// An extent across the whole admitted range reaches back past the
 	// earliest instant Postgres holds; the read's bound stops there.
 	r.mustPut(t, r.observation, "eons/1", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("eons"), "form": "gauge",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("eons"), "form": "gauge",
 		"value": quantity("20", "Cel"), "at": "0001-01-02T00:00:00Z", "endsAt": "9999-01-01T00:00:00Z", "utcOffset": 0,
 	})
 	r.mustPut(t, r.observation, "eons/2", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("eons"), "form": "gauge",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("eons"), "form": "gauge",
 		"value": quantity("21", "Cel"), "at": "2026-10-07T10:01:00Z", "utcOffset": 0,
 	})
 	if n := r.count(t, `SELECT n FROM test_rollups WHERE source = $1 AND bucket = '2026-10-07T10:00:00Z'`, r.source+"/eons"); n != 1 {
@@ -2259,7 +2234,7 @@ func TestObservedPointAtTheZeroTimeIsIndexed(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
 	r.mustPut(t, r.observation, "year-one/gauge", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("year-one"), "form": "gauge",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("year-one"), "form": "gauge",
 		"value": quantity("20", "Cel"), "at": "0001-01-01T00:00:00Z", "utcOffset": 0,
 	})
 	r.mustPut(t, r.observation, "year-one/amount", map[string]any{
@@ -2267,7 +2242,7 @@ func TestObservedPointAtTheZeroTimeIsIndexed(t *testing.T) {
 		"value": quantity("12", "{steps}"), "at": "0001-01-01T00:00:00Z", "endsAt": "0001-01-01T00:10:00Z", "utcOffset": 0,
 	})
 	r.mustPut(t, r.trace, "year-one/counter", map[string]any{
-		"metric": r.metricRef("energy"), "source": r.sourceRef("year-one"), "form": "counter", "unit": "kW.h",
+		"metric": r.metricRef("environment/energy"), "source": r.sourceRef("year-one"), "form": "counter", "unit": "kW.h",
 		"resetRule": "monotonic", "at": "0001-01-01T00:00:00Z", "endsAt": "0001-01-01T00:30:00Z", "every": "PT15M", "values": []any{"1", "2"}, "utcOffset": 0,
 	})
 	zero := time.Time{}
@@ -2277,7 +2252,7 @@ func TestObservedPointAtTheZeroTimeIsIndexed(t *testing.T) {
 	if n := r.count(t, `SELECT count(*) FROM observed_segments WHERE last_available = $1`, zero); n != 2 {
 		t.Errorf("%d segments name 0001-01-01T00:00:00Z as their newest available point, want 2 (the gauge and the amount)", n)
 	}
-	l, ok := r.latest(t, "air_temperature", r.source+"/year-one")
+	l, ok := r.latest(t, "environment/air_temperature", r.source+"/year-one")
 	if !ok || !l.ts.Equal(zero) || l.points != 1 {
 		t.Errorf("the gauge stream's latest row is %+v (present %v), want the year-one point", l, ok)
 	}
@@ -2320,7 +2295,7 @@ func TestObservedSettleSendsOneStatementPerStep(t *testing.T) {
 		}
 		at := time.Date(2026, 10, 7, hour, 0, 0, 0, time.UTC)
 		return map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("probe"), "form": "gauge", "unit": "Cel",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("probe"), "form": "gauge", "unit": "Cel",
 			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339), "every": "PT1M",
 			"values": values, "utcOffset": 0, "hold": "PT2M", "revision": rev,
 		}
@@ -2365,7 +2340,7 @@ func TestObservedSharedMetricsKeepTheHourAndDayTiers(t *testing.T) {
 		values[i] = strconv.Itoa(18 + i%7)
 	}
 	r.mustPut(t, r.trace, "kitchen/2026-10-07T10", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("kitchen"), "form": "gauge", "unit": "Cel",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("kitchen"), "form": "gauge", "unit": "Cel",
 		"at": "2026-10-07T10:00:00Z", "endsAt": "2026-10-07T12:00:00Z", "every": "PT1M", "values": values, "utcOffset": 0,
 	})
 	tiers := map[int64]int{}
@@ -2391,7 +2366,7 @@ func TestObservedSharedMetricsKeepTheHourAndDayTiers(t *testing.T) {
 	q := substrate.AggregateQuery{
 		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: r.source + "/kitchen"}}},
 		Aggregate: &substrate.Aggregate{
-			Metric:   &substrate.AggregateMetric{Ref: r.metric + "/air_temperature"},
+			Metric:   &substrate.AggregateMetric{Ref: r.metric + "/environment/air_temperature"},
 			Range:    &substrate.AggregateRange{Gte: "2026-10-07T10:00:00Z", Lt: "2026-10-07T12:00:00Z"},
 			Bucket:   &substrate.AggregateBucket{Every: "PT15M"},
 			Reducers: []substrate.AggregateReducer{{Name: "avg"}, {Name: "min"}, {Name: "max"}},
@@ -2425,7 +2400,7 @@ func TestObservedStoredLongCodeStaysEditable(t *testing.T) {
 	long := strings.Repeat("m", 300)
 	door := func(codes []any) map[string]any {
 		return map[string]any{
-			"metric": r.metricRef("illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
+			"metric": r.metricRef("environment/illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
 			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M", "codes": codes,
 		}
 	}

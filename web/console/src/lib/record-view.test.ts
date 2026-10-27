@@ -71,6 +71,7 @@ import {
   KINDS,
   METRIC,
   MIA,
+  OBSERVATION,
 } from "@/lib/observations.test-fixtures"
 import { NONE_TOKEN } from "@/lib/observations"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
@@ -491,7 +492,7 @@ describe("the reads over the window", () => {
 
 describe("a coded metric's spans", () => {
   const span = (code: string, at: string, endsAt: string) =>
-    record(`${AUTHORITY}/observations/observation`, `${code}/${at}`, {
+    record(OBSERVATION, `${code}/${at}`, {
       code,
       at,
       endsAt,

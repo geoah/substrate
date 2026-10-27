@@ -930,16 +930,29 @@ func TestAppleHealthRefusals(t *testing.T) {
 
 // --- the webhook door ----------------------------------------------------------
 
+// ahWebhookTrigger is the shipped webhook trigger's document, freshly
+// decoded so a case may edit it: triggers.yaml also ships the adapter's
+// record trigger.
+func ahWebhookTrigger(t *testing.T) map[string]any {
+	t.Helper()
+	for _, m := range loadDocs(t, appleHealthDir+"/triggers.yaml") {
+		if m["metadata"].(map[string]any)["id"] == ahTrigger {
+			return m
+		}
+	}
+	t.Fatalf("%s/triggers.yaml ships no %s", appleHealthDir, ahTrigger)
+	return nil
+}
+
 // ahDoor serves the API over the engine and arms the shipped trigger with a
 // key, the way an owner does before pointing the app at it.
 func ahDoor(t *testing.T, svc substrate.Service, ds substrate.Dataset, key string) (*httptest.Server, string) {
 	t.Helper()
-	for _, m := range loadDocs(t, appleHealthDir+"/triggers.yaml") {
-		props := m["data"].(map[string]any)["properties"].(map[string]any)
-		props["enabled"] = true
-		props["source"].(map[string]any)["webhook"].(map[string]any)["key"] = key
-		putDataDoc(t, ds, m)
-	}
+	m := ahWebhookTrigger(t)
+	props := m["data"].(map[string]any)["properties"].(map[string]any)
+	props["enabled"] = true
+	props["source"].(map[string]any)["webhook"].(map[string]any)["key"] = key
+	putDataDoc(t, ds, m)
 	srv := httptest.NewServer(api.New(api.Config{Service: svc}))
 	t.Cleanup(srv.Close)
 	return srv, srv.URL + "/webhooks/" + ds.Repository().Authority + "/" + ahTrigger
@@ -1089,18 +1102,17 @@ func TestAppleHealthDeliveryNearTheCap(t *testing.T) {
 	const key = "ahk_0123456789abcdef"
 	_, url := ahDoor(t, svc, ds, key)
 	const plain = "applehealth-default-cap"
-	for _, m := range loadDocs(t, appleHealthDir+"/triggers.yaml") {
-		m["metadata"].(map[string]any)["id"] = plain
-		props := m["data"].(map[string]any)["properties"].(map[string]any)
-		props["enabled"] = true
-		hook := props["source"].(map[string]any)["webhook"].(map[string]any)
-		if hook["maxBody"] == nil {
-			t.Fatal("the shipped trigger declares no maxBody")
-		}
-		delete(hook, "maxBody")
-		hook["key"] = key
-		putDataDoc(t, ds, m)
+	m := ahWebhookTrigger(t)
+	m["metadata"].(map[string]any)["id"] = plain
+	props := m["data"].(map[string]any)["properties"].(map[string]any)
+	props["enabled"] = true
+	hook := props["source"].(map[string]any)["webhook"].(map[string]any)
+	if hook["maxBody"] == nil {
+		t.Fatal("the shipped trigger declares no maxBody")
 	}
+	delete(hook, "maxBody")
+	hook["key"] = key
+	putDataDoc(t, ds, m)
 	plainURL := strings.TrimSuffix(url, ahTrigger) + plain
 
 	start := time.Date(2026, 10, 7, 0, 0, 0, 0, time.FixedZone("", 3*3600))

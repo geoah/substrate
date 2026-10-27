@@ -1,0 +1,216 @@
+# Two record views, as DATA: the record pages of a sleep and a workout. They
+# are records of the seeded console package's `recordview` kind (decision
+# records 0166 and 0175), which the console renders above the generic
+# property sheet; the console names no domain kind, so these records are the
+# only place a sleep's hypnogram or a workout's heart rate zones are asked for.
+#
+# An install or upgrade replaces a view its owner never wrote, and leaves one
+# the owner edited or deleted as the owner left it (docs/bundles.md, "The two
+# doors"). The ids carry this package's name, so they never meet an owner's
+# own view.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: substrate.reamde.dev/health/sleep
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep
+    name: During this sleep
+    intro: What was measured between the sleep's start and its end.
+    window:
+      start: at
+      end: endsAt
+      about: about
+      source: source
+    fold:
+      - timeInBed
+      - timeAsleep
+      - awake
+      - light
+      - deep
+      - rem
+      - efficiency
+      - disturbances
+      - respiratoryRate
+    sections:
+      - chart:
+          label: Heart rate, heart rate variability and breathing
+          metrics:
+            - substrate.reamde.dev/observations/metric/health/heart_rate
+            - substrate.reamde.dev/observations/metric/health/hrv_rmssd
+            - substrate.reamde.dev/observations/metric/health/respiratory_rate
+          reducers:
+            - reducer: avg
+              label: Average
+            - reducer: min
+              label: Lowest
+            - reducer: max
+              label: Highest
+          bucket: auto
+          sources: prefer
+          # A metric with no samples inside the night draws its summaries
+          # that lie inside it instead: WHOOP's HRV and respiratory rate are
+          # one value over the sleep. A chart with neither, as heart rate is
+          # for WHOOP, is left out rather than said.
+          empty: hide
+      - spans:
+          label: Sleep stages
+          metric: substrate.reamde.dev/observations/metric/health/sleep_stage
+          codes:
+            - code: awake
+              label: Awake
+            - code: in_bed
+              label: In bed
+            - code: rem
+              label: REM
+            - code: asleep
+              label: Asleep
+            - code: light
+              label: Light
+            - code: deep
+              label: Deep
+          totals: true
+          sources: only
+      # The night's own numbers and stage totals, as the device that recorded
+      # the sleep wrote them: these read no observation.
+      - stats:
+          label: The night in numbers
+          items:
+            - property: timeAsleep
+              label: Asleep
+            - property: timeInBed
+              label: In bed
+            - property: efficiency
+              label: Efficiency
+            - property: disturbances
+              label: Disturbances
+            - property: respiratoryRate
+              label: Breathing
+      - breakdown:
+          label: Stages as a share of time in bed
+          items:
+            - property: awake
+              label: Awake
+            - property: light
+              label: Light
+            - property: deep
+              label: Deep
+            - property: rem
+              label: REM
+          total: timeInBed
+---
+# Five heart rate zones of 19 beats each, from half of a 190 maximum, the
+# top one open to 220. An owner with a measured maximum edits the bounds here.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: substrate.reamde.dev/health/workout
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/substrate.reamde.dev/health/workout
+    name: During this workout
+    intro: What was measured between the workout's start and its end.
+    window:
+      start: at
+      end: endsAt
+      about: about
+      source: source
+    fold:
+      - distance
+      - duration
+      - strain
+      - averageHeartRate
+      - maxHeartRate
+      - totalEnergy
+      - zoneDurations
+    sections:
+      - properties:
+          list:
+            - property: distance
+              label: Distance
+            - property: duration
+              label: Time moving
+      # The effort and the zones as the device counted them, from the
+      # workout's own properties: a source that writes no heart rate samples,
+      # as WHOOP does not, still shows its zones here.
+      - stats:
+          label: Effort
+          items:
+            - property: strain
+              label: Strain
+            - property: averageHeartRate
+              label: Average heart rate
+            - property: maxHeartRate
+              label: Max heart rate
+            - property: totalEnergy
+              label: Energy
+      - breakdown:
+          label: Time in heart rate zones, as the device counted them
+          property: zoneDurations
+          keys:
+            - key: zone0
+              label: Zone 0
+            - key: zone1
+              label: Zone 1
+            - key: zone2
+              label: Zone 2
+            - key: zone3
+              label: Zone 3
+            - key: zone4
+              label: Zone 4
+            - key: zone5
+              label: Zone 5
+          total: duration
+      - chart:
+          label: Heart rate
+          metrics:
+            - substrate.reamde.dev/observations/metric/health/heart_rate
+          reducers:
+            - reducer: avg
+              label: Average
+            - reducer: min
+              label: Lowest
+            - reducer: max
+              label: Highest
+          bucket: auto
+          sources: prefer
+          empty: hide
+      - chart:
+          label: Time in heart rate zones
+          metrics:
+            - substrate.reamde.dev/observations/metric/health/heart_rate
+          reducers:
+            - reducer: durationIn
+              low: 95
+              high: 114
+              label: Zone 1
+            - reducer: durationIn
+              low: 114
+              high: 133
+              label: Zone 2
+            - reducer: durationIn
+              low: 133
+              high: 152
+              label: Zone 3
+            - reducer: durationIn
+              low: 152
+              high: 171
+              label: Zone 4
+            - reducer: durationIn
+              low: 171
+              high: 220
+              label: Zone 5
+          bucket: whole
+          unit: min
+          sources: prefer
+          empty: hide
+      - chart:
+          label: Speed
+          metrics:
+            - substrate.reamde.dev/observations/metric/health/speed
+          reducers:
+            - reducer: avg
+              label: Average
+            - reducer: max
+              label: Highest
+          bucket: auto
+          sources: prefer
+          empty: hide

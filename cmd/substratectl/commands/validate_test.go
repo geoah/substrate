@@ -6,8 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/geoah/substrate/kinds"
 )
 
 // reflectionHeader is the package document of the package issue 887 was
@@ -401,18 +404,23 @@ data:
 	}
 }
 
-// Every shipped sample and provider, checked together so each reference
-// lands among the files, passes whole: the offline check refuses nothing the
-// server admits from the tree.
+// Every shipped sample, provider and well-known catalogue, checked together
+// so each reference lands among the files, passes whole: the offline check
+// refuses nothing the server admits from the tree. The seeded packages are
+// the check's own seed, so they are not passed again.
 func TestValidatePassesEveryShippedPackage(t *testing.T) {
 	h := newHarness(t)
 	var args []string
-	for _, root := range []string{"../../../samples", "../../../kinds/providers.substrate.reamde.dev"} {
+	seed := "../../../kinds/" + kinds.SeedAuthority
+	for _, root := range []string{"../../../samples", "../../../kinds/providers.substrate.reamde.dev", seed} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if !d.IsDir() && filepath.Ext(path) == ".yaml" {
+			if d.IsDir() && path != seed && slices.Contains(kinds.SeedPackages, kinds.SeedAuthority+"/"+d.Name()) {
+				return filepath.SkipDir
+			}
+			if !d.IsDir() && filepath.Ext(path) == ".yaml" && path != seed+"/authority.yaml" {
 				args = append(args, "-f", path)
 			}
 			return nil

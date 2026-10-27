@@ -425,6 +425,9 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := c.installRequirements(ctx, actor, b, ds, map[string]bool{b.ID: true}); err != nil {
+		return nil, nil, err
+	}
 	// INSTALL IS A COPY: the catalog's manifests are written
 	// into the repository's own changelog under the BUNDLE's actor, not the
 	// requester's. Installing is an owner action, which is the check above,
@@ -450,6 +453,21 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	// verbatim sample stays editable, and a stamp that kept offering it the
 	// next shipped closure would offer to replace edits nothing records
 	// (there is no digest to tell an edited copy by).
+	report, err := c.installed(ctx, b, ds, confirm)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b, report, nil
+}
+
+// installOne is the shipped-spelled install of one bundle, its requirements
+// already in place.
+func (c *Catalog) installOne(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) error {
+	_, err := c.installed(ctx, b, ds, confirm)
+	return err
+}
+
+func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) ([]substrate.SuggestedMapping, error) {
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider, Confirm: confirm}
 	if b.Tier == substrate.TierProvider {
 		opts.ShippedVersion = b.Version
@@ -460,12 +478,12 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	// report is SHIPPED-spelled, because that is what this door applies.
 	vocabularyDocs, report, err := b.admitted(ctx, ds, viewShipped)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), vocabularyDocs, b.dataDocs, opts); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return b, report, nil
+	return report, nil
 }
 
 // Import is the SAMPLE door (decision record 0048): the same atomic admission
@@ -561,6 +579,49 @@ func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Data
 		return nil, nil, err
 	}
 	return b, report, nil
+}
+
+// installRequirements installs, before b, every package b requires that the
+// repository lacks, or holds below b's floor, and that the catalog PUBLISHES:
+// a first-party catalogue or a provider (record 0192), so installing a
+// provider brings the catalogue its adapter writes. Each goes through the
+// same door, its own requirements first. A required SAMPLE is left alone, for
+// the admission to refuse as before: a copy is the owner's to take. `seen`
+// breaks a cycle and installs each requirement once.
+func (c *Catalog) installRequirements(ctx context.Context, actor substrate.Actor, b *Bundle, ds substrate.Dataset, seen map[string]bool) error {
+	if len(b.Requires) == 0 {
+		return nil
+	}
+	statuses, err := ds.BundleStatuses(ctx)
+	if err != nil {
+		return err
+	}
+	held := map[string]int64{}
+	for _, st := range statuses {
+		if st.Installed {
+			held[st.ID] = st.Version
+		}
+	}
+	for _, req := range b.Requires {
+		if seen[req] {
+			continue
+		}
+		seen[req] = true
+		dep, ok := c.byID[req]
+		if !ok || dep.Tier != substrate.TierProvider {
+			continue
+		}
+		if v, has := held[req]; has && v >= b.RequiresAtLeast[req] {
+			continue
+		}
+		if err := c.installRequirements(ctx, actor, dep, ds, seen); err != nil {
+			return err
+		}
+		if err := c.installOne(ctx, dep, ds, nil); err != nil {
+			return fmt.Errorf("install %s, which %s requires: %w", req, b.ID, err)
+		}
+	}
+	return nil
 }
 
 // installable is the gate both doors share: the owner check and the lookup.

@@ -20,8 +20,7 @@ import (
 // [start, start+span) and its stage amounts laid end to end from stagesAt.
 func (f aggFix) sleepNight(source string, n int, start time.Time, span time.Duration, stagesAt time.Time, stages []stage) {
 	f.t.Helper()
-	home := strings.TrimSuffix(f.observation, "/observations/observation")
-	f.mustPut(f.t, home+"/health/sleep", fmt.Sprintf("%s/%d", source, n), map[string]any{
+	f.mustPut(f.t, kindSleep, fmt.Sprintf("%s/%d", source, n), map[string]any{
 		"source": f.sourceRef(source), "at": start.Format(time.RFC3339Nano), "endsAt": start.Add(span).Format(time.RFC3339Nano),
 		"utcOffsetStart": 180, "utcOffsetEnd": 180,
 	})
@@ -42,10 +41,8 @@ type stage struct {
 	min  int
 }
 
-// sleepKind is the repository's health/sleep kind.
-func (f aggFix) sleepKind() string {
-	return strings.TrimSuffix(f.observation, "/observations/observation") + "/health/sleep"
-}
+// sleepKind is the health catalogue's sleep kind.
+func (f aggFix) sleepKind() string { return kindSleep }
 
 // Several sources write one night as a sleep record each, and the records
 // mode makes a window of every one: three sources' nights are three windows
@@ -282,18 +279,15 @@ func TestAggregateRecordSourcesKeepANightUnderAnUnfinishedOne(t *testing.T) {
 // distance in km.
 func (f aggFix) workout(id, source, sport string, at time.Time, span time.Duration, km string) {
 	f.t.Helper()
-	home := strings.TrimSuffix(f.observation, "/observations/observation")
-	f.mustPut(f.t, home+"/health/workout", id, map[string]any{
+	f.mustPut(f.t, kindWorkout, id, map[string]any{
 		"source": f.sourceRef(source), "sport": sport, "distance": quantity(km, "km"),
 		"at": at.Format(time.RFC3339Nano), "endsAt": at.Add(span).Format(time.RFC3339Nano),
 		"utcOffsetStart": 180, "utcOffsetEnd": 180, "duration": vocabularyDuration(span.Milliseconds()),
 	})
 }
 
-// workoutKind is the repository's health/workout kind.
-func (f aggFix) workoutKind() string {
-	return strings.TrimSuffix(f.observation, "/observations/observation") + "/health/workout"
-}
+// workoutKind is the health catalogue's workout kind.
+func (f aggFix) workoutKind() string { return kindWorkout }
 
 // A property read over workouts that three sources each wrote counts one
 // run three times. property.sources keeps the highest-ranked source's

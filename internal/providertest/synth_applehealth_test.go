@@ -4,8 +4,8 @@ package providertest
 // applehealth closure: three generated days, each delivery read back from
 // the envelope file `synth generate` writes, handed to the real
 // `applehealthingest` the way the webhook door hands it, then delivered to
-// the `healthapple` adapter. A change to a shape the ingest or the adapter
-// reads that the emitter does not follow fails here.
+// the provider's `adaptapplehealth` adapter. A change to a shape the ingest
+// or the adapter reads that the emitter does not follow fails here.
 
 import (
 	"encoding/json"
@@ -95,9 +95,9 @@ func synthAHRequest(t *testing.T, path string) (map[string]any, string) {
 }
 
 func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
-	// The repository first: newHealthApple skips without python3 and goes
-	// parallel before any data is generated.
-	ds := newHealthApple(t)
+	// The repository first: newAppleHealthAdapter skips without python3 and
+	// goes parallel before any data is generated.
+	ds := newAppleHealthAdapter(t)
 	// Saturday to Monday: two weigh-ins, the Sunday blood pressure, a strength
 	// session, the long run and maybe yoga.
 	p, err := synth.NewPersona(synth.Options{

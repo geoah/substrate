@@ -17,6 +17,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/kinds"
 )
 
 // countedDataset counts the upgrade previews the catalog asks the dataset
@@ -148,7 +149,7 @@ func TestUpgradePreviewIsCountedOncePerChangelogHead(t *testing.T) {
 func newDatasets(t *testing.T, names ...string) []substrate.Dataset {
 	t.Helper()
 	svc, err := engine.Open(context.Background(), testdb.NewSchema(t),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev"),
+		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(credKey),
 	)

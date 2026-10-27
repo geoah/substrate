@@ -340,7 +340,10 @@ func (l *loader) buildBundle(gd *packageDocs) {
 		}
 		b.Installs = append(b.Installs, id)
 	}
-	if len(b.Installs) == 0 {
+	// A package that declares nothing ships records only, such as a
+	// well-known catalogue of metrics (record 0192): its closure is empty, and
+	// an empty `installs:` says so. Any declared member must still be listed.
+	if len(b.Installs) == 0 && len(gd.memberIDs) > 0 {
 		l.errf("%s: data.installs is required and non-empty — the exact identities the bundle ships", where)
 		return
 	}
@@ -743,7 +746,7 @@ func (r *Registry) resolveBundle(g *Package) []string {
 	// into every repository at creation, so they are always present, and a
 	// bundle taking an `llm/provider` input is asking for a row of a kind
 	// nobody can be without (record 0077).
-	required := map[string]bool{PackageCore: true, PackageLLM: true, PackageConsole: true, g.Identity: true}
+	required := map[string]bool{PackageCore: true, PackageLLM: true, PackageConsole: true, PackageObservations: true, g.Identity: true}
 	for _, req := range b.Requires {
 		required[req] = true
 	}

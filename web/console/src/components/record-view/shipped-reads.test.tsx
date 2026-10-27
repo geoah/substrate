@@ -32,21 +32,16 @@ afterEach(() => {
 })
 
 const viewFiles = import.meta.glob<string>(
-  "../../../../../samples/*/views.yaml",
-  {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }
+  [
+    "../../../../../samples/*/views.yaml",
+    "../../../../../kinds/*/*/views.yaml",
+  ],
+  { query: "?raw", import: "default", eager: true }
 )
 
-const sampleFiles = import.meta.glob<string>(
-  "../../../../../samples/*/*.yaml",
-  {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }
+const shippedFiles = import.meta.glob<string>(
+  ["../../../../../samples/*/*.yaml", "../../../../../kinds/*/*/*.yaml"],
+  { query: "?raw", import: "default", eager: true }
 )
 
 interface Doc {
@@ -75,8 +70,8 @@ function record(
   }
 }
 
-// Every metric record a sample ships, answered by its id.
-const METRICS = Object.values(sampleFiles)
+// Every metric record the tree ships, answered by its id.
+const METRICS = Object.values(shippedFiles)
   .flatMap(docs)
   .filter((d) => d?.kind?.endsWith("/metric") && d.metadata?.id)
   .map((d) => record(d.kind!, d.metadata!.id!, d.data?.properties ?? {}))
@@ -104,7 +99,9 @@ function recordFor(view: RecordView, kind: string): SubstrateRecord {
   if (w?.about)
     p[w.about] = { ref: "samples.substrate.reamde.dev/people/person/me" }
   if (w?.source)
-    p[w.source] = { ref: "providers.substrate.reamde.dev/whoop/source/strap" }
+    p[w.source] = {
+      ref: "substrate.reamde.dev/observations/source/whoop/strap",
+    }
   return record(kind, "r1", p)
 }
 
@@ -178,19 +175,19 @@ async function aggregateReads(view: RecordView, kind: string): Promise<number> {
 const READS: Record<string, number> = {
   // The chart's three metrics in one read, and the stage totals: the stats
   // and the breakdown read the sleep's own properties.
-  "samples.substrate.reamde.dev/health/sleep": 2,
+  "substrate.reamde.dev/health/sleep": 2,
   // Three charts, one read each.
-  "samples.substrate.reamde.dev/health/workout": 3,
+  "substrate.reamde.dev/health/workout": 3,
   // stats: recovery, strain, sleep performance, calories and average heart
   // rate in one read, max heart rate in a second (a read names a metric
   // once), each repeated over the baseline: 4. The vitals: 1, and 1 over
   // the baseline. Stage totals: 1. The trend: 1.
-  "samples.substrate.reamde.dev/healthwhoop/cycle": 8,
+  "providers.substrate.reamde.dev/whoop/cycle": 8,
   // stats: 1, and 1 over the baseline. The trend: 1.
-  "samples.substrate.reamde.dev/healthwhoop/sleep": 3,
-  "samples.substrate.reamde.dev/health/labreport": 0,
-  "samples.substrate.reamde.dev/health/labresult": 0,
-  "samples.substrate.reamde.dev/health/metric": 0,
+  "providers.substrate.reamde.dev/whoop/sleep": 3,
+  "substrate.reamde.dev/labs/labreport": 0,
+  "substrate.reamde.dev/labs/labresult": 0,
+  "substrate.reamde.dev/labs/metric": 0,
 }
 
 describe("the shipped record views", () => {

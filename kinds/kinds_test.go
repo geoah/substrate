@@ -63,22 +63,16 @@ func TestEveryManifestOnDiskIsEmbedded(t *testing.T) {
 	}
 }
 
-// Seed and Bundles partition the tree: every authority is in exactly one, and
-// an authority directory that appeared in neither would be shipped and unread.
+// Seed and Bundles partition the tree: every authority is a bundle authority,
+// the seed authority is in both, and inside it every package is in exactly
+// one half, the seeded ones by name and the catalogues by carrying a bundle
+// document (record 0192). A directory in neither would be shipped and unread.
 func TestSeedAndBundlesPartitionTheTree(t *testing.T) {
 	seed := rootNames(t, kinds.Seed())
 	if len(seed) != 1 || seed[0] != kinds.SeedAuthority {
 		t.Fatalf("seed root = %v, want just %s", seed, kinds.SeedAuthority)
 	}
 	bundles := rootNames(t, kinds.Bundles())
-	if len(bundles) == 0 {
-		t.Fatal("no bundle authorities")
-	}
-	for _, name := range bundles {
-		if name == kinds.SeedAuthority {
-			t.Errorf("%s is in both halves", name)
-		}
-	}
 	onDisk, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read the tree on disk: %v", err)
@@ -89,10 +83,53 @@ func TestSeedAndBundlesPartitionTheTree(t *testing.T) {
 			dirs++
 		}
 	}
-	if len(seed)+len(bundles) != dirs {
-		t.Errorf("seed(%d) + bundles(%d) != %d authorities on disk",
-			len(seed), len(bundles), dirs)
+	if len(bundles) != dirs {
+		t.Errorf("bundles hold %d authorities, %d on disk", len(bundles), dirs)
 	}
+	seeded := packageNames(t, kinds.Seed(), kinds.SeedAuthority)
+	served := packageNames(t, kinds.Bundles(), kinds.SeedAuthority)
+	all := packageNames(t, kinds.All(), kinds.SeedAuthority)
+	want := map[string]bool{}
+	for _, p := range kinds.SeedPackages {
+		want[p] = true
+	}
+	for _, p := range seeded {
+		if !want[p] {
+			t.Errorf("%s is seeded but not in kinds.SeedPackages", p)
+		}
+		delete(want, p)
+	}
+	for p := range want {
+		t.Errorf("%s is in kinds.SeedPackages but has no directory", p)
+	}
+	for _, p := range served {
+		if slices.Contains(seeded, p) {
+			t.Errorf("%s is in both halves", p)
+		}
+		if _, err := fs.Stat(kinds.All(), p+"/"+path.Base(p)+".yaml"); err != nil {
+			t.Errorf("%s is a catalogue and needs its bundle document in %s.yaml", p, path.Base(p))
+		}
+	}
+	if len(seeded)+len(served) != len(all) {
+		t.Errorf("seed(%d) + catalogues(%d) != %d packages under %s", len(seeded), len(served), len(all), kinds.SeedAuthority)
+	}
+}
+
+// packageNames lists the package directories under one authority, as
+// `<authority>/<package>`.
+func packageNames(t *testing.T, fsys fs.FS, authority string) []string {
+	t.Helper()
+	entries, err := fs.ReadDir(fsys, authority)
+	if err != nil {
+		t.Fatalf("read %s: %v", authority, err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			out = append(out, authority+"/"+e.Name())
+		}
+	}
+	return out
 }
 
 // The seed loads as a registry, and the bundles load as a catalog: the two
@@ -305,9 +342,10 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 // A SHIPPED KIND'S PURPOSE IS ONE OF THE THREE, AND THE SEED IS MACHINERY
 // (decision record 0133). The loader already refuses any other value; this
 // reads the documents so the rule holds for every file in both trees, and adds
-// the one the loader cannot know: a seeded kind is the substrate's own
-// machinery, so an unclassified core or llm kind would read as primary and
-// land in every console's navigation.
+// the one the loader cannot know: a kind of the substrate's own state (core,
+// llm, console) is machinery, so an unclassified one would read as primary and
+// land in every console's navigation. The seeded observations package and the
+// catalogues are the owner's data and keep their own purpose (record 0192).
 func TestEveryShippedPurposeIsValidAndTheSeedIsInternal(t *testing.T) {
 	valid := map[string]bool{
 		vocabulary.PurposePrimary:    true,
@@ -326,7 +364,7 @@ func TestEveryShippedPurposeIsValidAndTheSeedIsInternal(t *testing.T) {
 				t.Errorf("%s: purpose %v is not primary, supporting or internal", d.ID, raw)
 			}
 		}
-		if authority, _, _ := vocabulary.SplitKindRef(d.ID); authority == kinds.SeedAuthority && raw != vocabulary.PurposeInternal {
+		if authority, pkg, _ := vocabulary.SplitKindRef(d.ID); vocabulary.SubstrateStatePackage(authority+"/"+pkg) && raw != vocabulary.PurposeInternal {
 			t.Errorf("%s is seeded machinery and declares purpose %v; declare `purpose: internal`", d.ID, raw)
 		}
 	}
@@ -486,17 +524,18 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 			}
 		}
 	}
-	// An adapter sample lands after BOTH halves it reads and writes: the
-	// provider whose mirror kinds its function reads and its trigger watches,
-	// and the domain samples whose kinds it writes.
-	adapter, err := reg.ResolveFunction(samples.Authority + "/healthwhoop/adaptwhoop")
+	// A provider's adapter lands with the provider, writing the seeded
+	// observations kinds and the health catalogue its `requires:` brought
+	// (record 0192).
+	adapter, err := reg.ResolveFunction("providers.substrate.reamde.dev/whoop/adaptwhoop")
 	if err != nil {
-		t.Fatalf("the healthwhoop adapter did not land: %v", err)
+		t.Fatalf("the WHOOP adapter did not land: %v", err)
 	}
-	if !slices.Contains(adapter.Caps.Emit, samples.Authority+"/observations/observation") ||
+	if !slices.Contains(adapter.Caps.Emit, kinds.SeedObservationsPackage+"/observation") ||
+		!slices.Contains(adapter.Caps.Emit, kinds.SeedAuthority+"/health/sleep") ||
 		adapter.Caps.Reads == nil ||
 		!slices.Contains(adapter.Caps.Reads.Kinds, "providers.substrate.reamde.dev/whoop/recovery") {
-		t.Errorf("the healthwhoop adapter emits %v and reads %+v", adapter.Caps.Emit, adapter.Caps.Reads)
+		t.Errorf("the WHOOP adapter emits %v and reads %+v", adapter.Caps.Emit, adapter.Caps.Reads)
 	}
 	// The suggested mappings landed and RESOLVED: five onto the shipped
 	// person, one onto the shipped task. `installs:` is the package both
@@ -533,9 +572,9 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // mirror as their source, and the import DROPS the ones whose provider is
 // absent (decision record 0049). So this is the fresh-repository case, and the
 // filter is what makes it admit: without it every sample carrying one would be
-// refused for vocabulary the reader never asked for. `healthwhoop` requires
-// the WHOOP provider and `healthapple` requires Apple Health; each lands
-// under its own authority as shipped, and no suggested mapping reads either.
+// refused for vocabulary the reader never asked for. A provider a sample
+// requires lands under its own authority as shipped, because the rehome
+// rewrites the samples authority alone.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
@@ -623,18 +662,6 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	}
 	if _, ok := reg.ByIdentity(samples.Authority + "/tasks/task"); ok {
 		t.Errorf("%s/tasks/task is live after a rehome that should have moved it", samples.Authority)
-	}
-	// An adapter's grants move with the sample's kinds and leave the
-	// provider's mirror kinds where the provider publishes them.
-	fn, err := reg.ResolveFunction(home + "/healthwhoop/adaptwhoop")
-	if err != nil {
-		t.Fatalf("the rehomed healthwhoop adapter: %v", err)
-	}
-	if !slices.Contains(fn.Caps.Emit, home+"/observations/observation") {
-		t.Errorf("the rehomed adapter writes %v, want %s/observations/observation", fn.Caps.Emit, home)
-	}
-	if fn.Caps.Reads == nil || !slices.Contains(fn.Caps.Reads.Kinds, "providers.substrate.reamde.dev/whoop/cycle") {
-		t.Errorf("the rehomed adapter no longer reads the WHOOP mirror at its own authority: %+v", fn.Caps.Reads)
 	}
 	// The five suggested mappings were the ones dropped, and nothing that
 	// projects onto the repository's own kinds survived: on a repository with
