@@ -750,6 +750,11 @@ one the repository lacks, or holds under its `requiresAtLeast` floor, is
 installed first, through the same door and its own requirements first, so installing
 `whoop` installs `health` and installing `slacklive` installs `slack`
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+Each requirement commits on its own, before the bundle that needs it, so a
+bundle refused after its requirements landed leaves them installed, as
+installing them one by one would have. The upgrade preview stages the same
+requirements ahead of the closure, so an upgrade that brings one is offered
+unblocked and lists what the requirement adds.
 A required SAMPLE is never taken for you, because a copy is the owner's to
 take: importing `tasks` into a repository that has not imported `people` is
 **refused** by the ordinary admission, before anything is touched, with a
@@ -918,15 +923,17 @@ as an imported copy (`ada.example.com/scheduling`) is refused, and the refusal
 names the copy: a package under another authority is another package, and
 importing the bundle instead rehomes its requirements with it.
 
-**No provider requires a sample package, and every provider but one installs
-on a bare repository.** A provider ships mirror kinds in its own shape and
-writes nothing else: no reference pinned at a sample kind, no core row. So the
+**No provider requires a sample package, so every provider installs on a
+bare repository.** A provider ships mirror kinds in its own shape and writes
+nothing else: no reference pinned at a sample kind, no core row. So the
 console can install any of them from a repository that has imported nothing,
 and the console's Add button is never disabled for a missing requirement. The
-one exception is `slacklive`, which `requires:` the Slack provider and writes
-its rows
-([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)):
-its Add takes the Slack bundle first.
+three that require anything require a published package, which their Add
+takes first: `slacklive` requires the Slack provider and writes its rows
+([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)),
+and `whoop` and `applehealth` require the `health` catalogue their adapters
+write
+([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the
 repository declares, from a mirror onto a kind of its own. A mapping onto a

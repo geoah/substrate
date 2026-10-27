@@ -254,8 +254,9 @@ struct WorkoutSummary: Sendable {
     }
 }
 
-/// The Fitness app's name for a workout, which the healthapple adapter's
-/// SPORTS table keys on (samples/healthapple/bundle.yaml).
+/// The Fitness app's name for a workout, which the applehealth provider's
+/// adapter keys its SPORTS table on
+/// (kinds/providers.substrate.reamde.dev/applehealth/bundle.yaml).
 enum WorkoutNames {
     static func name(_ activity: HKWorkoutActivityType, indoor: Bool, openWater: Bool) -> String {
         switch activity {

@@ -241,3 +241,131 @@ func TestAShippedTriggerCannotTakeAnotherPackagesTriggerID(t *testing.T) {
 		t.Errorf("the re-install left the trigger at %s", got)
 	}
 }
+
+// Re-installing or upgrading a provider writes its shipped trigger again, and
+// the shipped document ships disabled and without a key. What the owner set
+// on it, being enabled and the webhook key every sender was given, survives:
+// a provider upgrade never disarms a webhook it does not own the key of.
+func TestAReinstallKeepsAnArmedWebhook(t *testing.T) {
+	ctx := context.Background()
+	c := loadCatalog(t)
+	ds := newDataset(t)
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {
+		t.Fatalf("install %s: %v", applehealthID, err)
+	}
+	const triggerKind, id, key = "substrate.reamde.dev/core/trigger", "applehealth-webhook", "an-owners-key-0123456789abcdef"
+	row, err := ds.Get(ctx, triggerKind, id)
+	if err != nil {
+		t.Fatalf("read the shipped trigger: %v", err)
+	}
+	source, _ := row.Properties["source"].(map[string]any)
+	webhook, _ := source["webhook"].(map[string]any)
+	webhook["key"] = key
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: triggerKind, ID: id, Properties: map[string]any{"enabled": true, "source": source},
+	}); err != nil {
+		t.Fatalf("arm the trigger: %v", err)
+	}
+
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {
+		t.Fatalf("re-install %s: %v", applehealthID, err)
+	}
+	row, err = ds.Get(ctx, triggerKind, id)
+	if err != nil {
+		t.Fatalf("read the trigger after the re-install: %v", err)
+	}
+	source, _ = row.Properties["source"].(map[string]any)
+	webhook, _ = source["webhook"].(map[string]any)
+	if row.Properties["enabled"] != true || webhook["key"] != key {
+		t.Fatalf("the re-install left enabled=%v key=%v, want the owner's true and %q", row.Properties["enabled"], webhook["key"], key)
+	}
+	if headers, _ := webhook["headers"].([]any); len(headers) == 0 {
+		t.Errorf("the shipped headers did not land with the kept key: %v", webhook)
+	}
+}
+
+// requireTree is a provider tree of two packages under one authority, each
+// declaring one kind: `needs` at version v, requiring `needed` when requires
+// is set, and `needed`.
+func requireTree(t *testing.T, v int64, requires bool) *catalog.Catalog {
+	t.Helper()
+	files := fstest.MapFS{}
+	for _, name := range []string{"needs", "needed"} {
+		pkg := requireAuthority + "/" + name
+		version := int64(1)
+		header := map[string]any{"description": "a provider of one kind", "installs": []any{pkg + "/note"}}
+		if name == "needs" {
+			version = v
+			if requires {
+				header["requires"] = []any{requireAuthority + "/needed"}
+			}
+		}
+		docs := []map[string]any{
+			vocabulary.PackageManifest(pkg, version),
+			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+			vocabulary.BundleManifest(pkg, header),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "note"},
+				map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
+					"name": map[string]any{"type": "string"},
+				}}),
+		}
+		var file strings.Builder
+		for _, d := range docs {
+			out, err := yaml.Marshal(d)
+			if err != nil {
+				t.Fatalf("render a manifest: %v", err)
+			}
+			file.WriteString("---\n")
+			file.Write(out)
+		}
+		files[name+"/bundle.yaml"] = &fstest.MapFile{Data: []byte(file.String())}
+	}
+	c, err := catalog.Load(catalog.ProviderRoot(files))
+	if err != nil {
+		t.Fatalf("load the provider tree: %v", err)
+	}
+	if w := c.Warnings(); len(w) > 0 {
+		t.Fatalf("the provider tree did not load: %v", w)
+	}
+	return c
+}
+
+const requireAuthority = "requires.example.com"
+
+// A provider whose next version requires a published package the repository
+// lacks is offered that version unblocked: the install brings the
+// requirement first, so the preview stages it too and lists what it adds.
+// Taking the upgrade then installs both.
+func TestAnUpgradePreviewCountsTheRequirementsTheInstallBrings(t *testing.T) {
+	ctx := context.Background()
+	ds := newDataset(t)
+	needs, needed := requireAuthority+"/needs", requireAuthority+"/needed"
+	if _, _, err := requireTree(t, 1, false).Install(ctx, substrate.ActorAPI, needs, ds); err != nil {
+		t.Fatalf("install %s: %v", needs, err)
+	}
+
+	next := requireTree(t, 2, true)
+	plan, err := next.Upgrade(ctx, needs, ds, nil)
+	if err != nil {
+		t.Fatalf("preview %s: %v", needs, err)
+	}
+	if plan == nil || !plan.Available || len(plan.Blockers) > 0 {
+		t.Fatalf("preview = %+v, want an unblocked upgrade", plan)
+	}
+	brings := false
+	for _, ch := range plan.Changes {
+		if ch.ID == needed+"/note" {
+			brings = true
+		}
+	}
+	if !brings {
+		t.Errorf("the preview does not list %s/note, which the upgrade installs: %+v", needed, plan.Changes)
+	}
+
+	if _, _, err := next.Install(ctx, substrate.ActorAPI, needs, ds); err != nil {
+		t.Fatalf("take the upgrade: %v", err)
+	}
+	if _, err := ds.KindByRef(ctx, needed+"/note"); err != nil {
+		t.Errorf("the upgrade did not bring %s: %v", needed, err)
+	}
+}
