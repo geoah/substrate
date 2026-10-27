@@ -62,8 +62,9 @@ final class AppModel: ObservableObject {
     init() {
         session = Keychain.load()
         Task {
-            await SyncEngine.shared.setOnChange { [weak self] state in self?.state = state }
-            await SyncEngine.shared.setOnProgress { [weak self] source, text in self?.progress[source] = text }
+            // The model lives as long as the app, so the engine holds it.
+            await SyncEngine.shared.setOnChange { state in self.state = state }
+            await SyncEngine.shared.setOnProgress { source, text in self.progress[source] = text }
         }
         refreshAccess()
     }

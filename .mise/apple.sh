@@ -245,7 +245,9 @@ release_sync() {
 	export_archive iOS "${SUBSTRATE_APPLE_EXPORT_IOS:-debugging}" "$out"
 
 	local ipa="$rel/SubstrateSync-${version%%+*}-iOS.ipa"
-	cp "$out/iOS/SubstrateSync.ipa" "$stage/$ipa"
+	# The export names the IPA after the app's display name, "Substrate Sync".
+	local exported=("$out/iOS"/*.ipa)
+	cp "${exported[0]}" "$stage/$ipa"
 	local icon="SubstrateSync/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
 	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
 	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
