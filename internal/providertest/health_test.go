@@ -39,7 +39,7 @@ const (
 // function's ADAPTER constant, and the record trigger that delivers the
 // provider's mirror rows to it.
 const (
-	appleHealthAdapter        = "applehealth@4"
+	appleHealthAdapter        = "applehealth@5"
 	appleHealthAdapterTrigger = "applehealth-to-health"
 	whoopAdapter              = "whoop@25"
 	whoopAdapterTrigger       = "whoop-to-health"
