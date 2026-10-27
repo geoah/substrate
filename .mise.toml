@@ -791,7 +791,7 @@ usage = 'arg "<base>" help="The URL the substrate serves the console at, such as
 run = 'node scripts/render-smoke.mjs "$usage_base"'
 
 # =============================================================================
-# Apple apps (web/apple)
+# Apple apps (apps/apple)
 # =============================================================================
 #
 # The console, bundled, in a native shell for macOS, iPadOS and iOS, and
@@ -802,7 +802,7 @@ run = 'node scripts/render-smoke.mjs "$usage_base"'
 # Sync carries no console.
 
 [tasks."apple:project"]
-description = "Generate web/apple/Substrate.xcodeproj from project.yml"
+description = "Generate apps/apple/Substrate.xcodeproj from project.yml"
 run = ".mise/apple.sh project"
 
 [tasks."apple:build"]

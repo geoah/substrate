@@ -139,7 +139,7 @@ each carries a `_fixture.note` saying what it shows:
 | `delivery_0` to `delivery_5` | scenarios for app version 10.0.3 (a month of days, a day by minute, a night and its workouts, body measurements, a corrected redelivery, a delivery sent from London) |
 | `delivery_6` | app 10.0.4's empty and missing `source`, as the app's public issue tracker reports them (Lybron/health-auto-export#78) |
 | `delivery_7` | the shapes the help pages document for the other sections and two shapes the issue tracker reports (#68, #69); its note says it is not a recorded delivery |
-| `app_minutes`, `app_seconds` | what Substrate Sync (`web/apple/SubstrateSync`) sends for one day, written by its encoder's test, which holds the app to them byte for byte |
+| `app_minutes`, `app_seconds` | what Substrate Sync (`apps/apple/SubstrateSync`) sends for one day, written by its encoder's test, which holds the app to them byte for byte |
 
 The tests therefore prove the provider and the adapter agree with this
 reading of the format, not that the app sends it. A delivery captured from

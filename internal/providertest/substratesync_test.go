@@ -1,6 +1,6 @@
 package providertest
 
-// Substrate Sync's deliveries. The iPhone and iPad app (web/apple/SubstrateSync)
+// Substrate Sync's deliveries. The iPhone and iPad app (apps/apple/SubstrateSync)
 // reads HealthKit itself and POSTs Health Auto Export's JSON to the same
 // webhook, as two deliveries per local day: every metric at Time Grouping
 // Minutes, and the sleep segments and workouts at Seconds. app_minutes.json

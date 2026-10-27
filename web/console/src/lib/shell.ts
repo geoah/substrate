@@ -1,4 +1,4 @@
-/** The native Apple apps (`web/apple`) load this console from their own
+/** The native Apple apps (`apps/apple`) load this console from their own
  * bundle, on an origin of their own, and forward the API paths to the
  * substrate the user picked. The page therefore cannot read the substrate's
  * address off `window.location`: the shell writes it to `window.substrateShell`

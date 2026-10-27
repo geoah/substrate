@@ -1,6 +1,6 @@
 {
   "_fixture" : {
-    "note" : "Substrate Sync's minutes delivery for one day, from its encoder (web/apple/SubstrateSyncTests). Every metric the app reads, at one row per minute."
+    "note" : "Substrate Sync's minutes delivery for one day, from its encoder (apps/apple/SubstrateSyncTests). Every metric the app reads, at one row per minute."
   },
   "request" : {
     "body" : {

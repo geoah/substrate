@@ -62,7 +62,7 @@ targets:
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # The console copy below reads ../console/dist, outside the target.
+        # The console copy below reads ../../web/console/dist, outside the target.
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
       configs:
         # A debug build runs outside the sandbox, so DebugDriver's folder is
@@ -78,7 +78,7 @@ targets:
         showEnvVars: false
         script: |
           set -euo pipefail
-          src="${PROJECT_DIR}/../console/dist"
+          src="${PROJECT_DIR}/../../web/console/dist"
           if [ ! -f "${src}/index.html" ]; then
             echo "error: ${src} has no build; run mise run console:build" >&2
             exit 1

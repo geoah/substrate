@@ -340,12 +340,12 @@ final class HealthGoldenTests: XCTestCase {
     func testMinutesDelivery() throws {
         try check("app_minutes.json", Self.envelope(
             Self.minutes, automation: "0B7E4D2A-6C1F-4E8B-9A3D-5F2C7B1E8D40", session: "C3A1F5E7-2B4D-4F6A-8C0E-1D3B5F7A9C2E",
-            note: "Substrate Sync's minutes delivery for one day, from its encoder (web/apple/SubstrateSyncTests). Every metric the app reads, at one row per minute."))
+            note: "Substrate Sync's minutes delivery for one day, from its encoder (apps/apple/SubstrateSyncTests). Every metric the app reads, at one row per minute."))
     }
 
     func testSecondsDelivery() throws {
         try check("app_seconds.json", Self.envelope(
             Self.seconds, automation: "7D2E9F41-8A3B-4C5D-B6E7-F80912A3B4C5", session: "C3A1F5E7-2B4D-4F6A-8C0E-1D3B5F7A9C2E",
-            note: "Substrate Sync's seconds delivery for one day, from its encoder (web/apple/SubstrateSyncTests). Sleep segments with their night's fields, and two workouts."))
+            note: "Substrate Sync's seconds delivery for one day, from its encoder (apps/apple/SubstrateSyncTests). Sleep segments with their night's fields, and two workouts."))
     }
 }

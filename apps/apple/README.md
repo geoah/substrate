@@ -118,7 +118,7 @@ the environment starts it pointed at a server, past the picker.
 ```bash
 # macOS
 SUBSTRATE_SHELL_SERVER=http://localhost:8080 \
-  web/apple/build/dd/Build/Products/Debug/Substrate.app/Contents/MacOS/Substrate &
+  apps/apple/build/dd/Build/Products/Debug/Substrate.app/Contents/MacOS/Substrate &
 dir="$(getconf DARWIN_USER_TEMP_DIR)automation"
 echo 'return document.title' >"$dir/eval.js"; sleep 1; cat "$dir/result.json"
 
@@ -159,7 +159,7 @@ the provider and the adapter. After a deliberate change to the format,
 regenerate them and run both:
 
 ```bash
-TEST_RUNNER_SUBSTRATE_UPDATE_GOLDEN=1 xcodebuild -project web/apple/Substrate.xcodeproj \
+TEST_RUNNER_SUBSTRATE_UPDATE_GOLDEN=1 xcodebuild -project apps/apple/Substrate.xcodeproj \
   -scheme SubstrateSync -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
 go test -count=1 -run TestSubstrateSync ./internal/providertest/
 ```

@@ -1,6 +1,6 @@
 {
   "_fixture" : {
-    "note" : "Substrate Sync's seconds delivery for one day, from its encoder (web/apple/SubstrateSyncTests). Sleep segments with their night's fields, and two workouts."
+    "note" : "Substrate Sync's seconds delivery for one day, from its encoder (apps/apple/SubstrateSyncTests). Sleep segments with their night's fields, and two workouts."
   },
   "request" : {
     "body" : {

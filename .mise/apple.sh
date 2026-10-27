@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The Apple apps (web/apple): the console, bundled, in a native shell for
+# The Apple apps (apps/apple): the console, bundled, in a native shell for
 # macOS, iPadOS and iOS. Every `mise run apple:*` task is one subcommand here.
 #
 # The console is built by `console:build` and copied into the bundle by the
@@ -10,7 +10,7 @@
 # app id and the device profile with.
 set -euo pipefail
 
-cd "$(dirname "$0")/../web/apple"
+cd "$(dirname "$0")/../apps/apple"
 
 readonly XCODEGEN="xcodegen@2.46.0"
 readonly PROJECT="Substrate.xcodeproj"
