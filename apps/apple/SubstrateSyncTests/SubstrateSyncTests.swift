@@ -356,6 +356,14 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(TimelineItem.build(runs: [health, contacts], entries: lines, only: .contacts), [.run(contacts, [lines[3]])])
     }
 
+    func testWritesGoInBatchesThatEachCommit() {
+        let batches = SyncEngine.batches(Array(0 ..< 250))
+        XCTAssertEqual(batches.map(\.offset), [0, 100, 200])
+        XCTAssertEqual(batches.map(\.batch.count), [100, 100, 50])
+        XCTAssertEqual(batches.flatMap(\.batch), Array(0 ..< 250))
+        XCTAssertTrue(SyncEngine.batches([Int]()).isEmpty)
+    }
+
     func testAChartGroupsSoItHasAFewDozenBarsAtMost() {
         XCTAssertEqual(Granularity.fitting(days: 13), .day)
         XCTAssertEqual(Granularity.fitting(days: 90), .week)

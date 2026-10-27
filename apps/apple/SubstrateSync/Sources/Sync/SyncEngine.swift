@@ -442,28 +442,32 @@ actor SyncEngine {
         if !complete, !missing.isEmpty {
             log(.contacts, "\(missing.count) contacts this phone pushed before are not shared with the app now; they stay on the server", .warning)
         }
-        log(.contacts, "\(changed.count) new or changed, \(contacts.count - changed.count) unchanged, \(vanished.count) gone from the device")
+        let new = changed.keys.filter { previous[$0] == nil }.count
+        log(.contacts, "\(new) new, \(changed.count - new) changed, \(contacts.count - changed.count) unchanged, \(vanished.count) gone from the device")
         let toWrite = changed.count
         await progress(.contacts, "Writing contacts", 0, toWrite)
 
-        let writes = await eachLimited(Array(changed), progress: { n in await self.progress(.contacts, "Writing contacts", n, toWrite) }) { pair in
-            let (id, props) = pair
-            try await client.put(kind, id, props.foundation)
-            let gone = Set(previous[id]?.keys ?? []).subtracting(props.keys)
-            try await client.clear(kind, id, keys: gone.sorted())
-        }
         var failures: [Error] = []
         var named: [(String, Error)] = []
         var written = 0
-        for ((id, props), result) in writes {
-            switch result {
-            case .success:
-                state.contacts[id] = Pushed(props)
-                written += 1
-            case let .failure(e):
-                failures.append(e)
-                named.append((Self.label(props, id), e))
+        for (offset, batch) in Self.batches(Array(changed)) {
+            if Task.isCancelled { break }
+            for ((id, props), result) in await eachLimited(batch, progress: { n in await self.progress(.contacts, "Writing contacts", offset + n, toWrite) }, { pair in
+                let (id, props) = pair
+                try await client.put(kind, id, props.foundation)
+                let gone = Set(previous[id]?.keys ?? []).subtracting(props.keys)
+                try await client.clear(kind, id, keys: gone.sorted())
+            }) {
+                switch result {
+                case .success:
+                    state.contacts[id] = Pushed(props)
+                    written += 1
+                case let .failure(e):
+                    failures.append(e)
+                    named.append((Self.label(props, id), e))
+                }
             }
+            commit(&state)
         }
         if !vanished.isEmpty { await progress(.contacts, "Removing contacts gone from the device", 0, vanished.count) }
         var removed = 0
@@ -488,6 +492,13 @@ actor SyncEngine {
             "deviceName": name, "contactCount": contacts.count, "lastSyncedAt": Formats.utc(Date()),
         ])
         return "\(contacts.count) contacts · \(written) written · \(removed) removed"
+    }
+
+    /// Rows to write, a hundred at a time, each batch with how many came
+    /// before it. The state is committed after each, so a run stopped or
+    /// killed part way keeps what it wrote and the next sync carries on.
+    static func batches<T>(_ items: [T], size: Int = 100) -> [(offset: Int, batch: [T])] {
+        stride(from: 0, to: items.count, by: size).map { ($0, Array(items[$0 ..< min($0 + size, items.count)])) }
     }
 
     /// A batch that failed because the run was stopped is a stop, not a list
@@ -588,23 +599,28 @@ actor SyncEngine {
         let previous = state.events
         let changed = current.filter { previous[$0.key]?.hash != Pushed.hash($0.value.props) }
         let toWrite = changed.count
-        log(.calendars, "\(changed.count) events new or changed, \(current.count - changed.count) unchanged")
+        let new = changed.keys.filter { previous[$0] == nil }.count
+        log(.calendars, "\(new) events new, \(changed.count - new) changed, \(current.count - changed.count) unchanged")
         await progress(.calendars, "Writing events", 0, toWrite)
         var named: [(String, Error)] = []
         var written = 0
-        for ((id, o), result) in await eachLimited(Array(changed), progress: { n in await self.progress(.calendars, "Writing events", n, toWrite) }, { pair in
-            let (id, o) = pair
-            try await client.put(eventKind, id, o.props.foundation)
-            try await client.clear(eventKind, id, keys: Set(previous[id]?.keys ?? []).subtracting(o.props.keys).sorted())
-        }) {
-            switch result {
-            case .success:
-                state.events[id] = Pushed(o.props, start: o.start, calendar: o.calendar)
-                written += 1
-            case let .failure(e):
-                failures.append(e)
-                named.append((Self.label(o.props, id), e))
+        for (offset, batch) in Self.batches(Array(changed)) {
+            if Task.isCancelled { break }
+            for ((id, o), result) in await eachLimited(batch, progress: { n in await self.progress(.calendars, "Writing events", offset + n, toWrite) }, { pair in
+                let (id, o) = pair
+                try await client.put(eventKind, id, o.props.foundation)
+                try await client.clear(eventKind, id, keys: Set(previous[id]?.keys ?? []).subtracting(o.props.keys).sorted())
+            }) {
+                switch result {
+                case .success:
+                    state.events[id] = Pushed(o.props, start: o.start, calendar: o.calendar)
+                    written += 1
+                case let .failure(e):
+                    failures.append(e)
+                    named.append((Self.label(o.props, id), e))
+                }
             }
+            commit(&state)
         }
         // Absent from the scan: deleted when its start is inside the window,
         // kept when it aged out of it.
@@ -749,6 +765,7 @@ actor SyncEngine {
         var sent = 0
         var empty = 0
         var refused = 0
+        var firstRefusal: (day: String, reason: String)?
         var waiting = 0
         var skippedDays = 0
         for (c, chunk) in stride(from: 0, to: days.count, by: Self.chunk).map({ Array(days[$0 ..< min($0 + Self.chunk, days.count)]) }).enumerated() {
@@ -816,6 +833,7 @@ actor SyncEngine {
             for day in outcome.pending { state.healthPending[day] = fires[day] }
             for (day, reason) in outcome.failed.sorted(by: { $0.key < $1.key }) {
                 log(.health, "\(day) was refused by the server and will be sent again: \(reason)", .error)
+                if firstRefusal == nil { firstRefusal = (day, reason) }
             }
             sent += outcome.sent.count
             refused += outcome.failed.count
@@ -831,8 +849,11 @@ actor SyncEngine {
         if empty > 0 { summary += " · \(empty) days with no data" }
         if waiting > 0 { summary += " · \(waiting) still being filed" }
         if skippedDays > 0 { summary += " · \(skippedDays) days in part, see Activity" }
-        if refused > 0 {
-            throw ContextError(context: "\(refused) of \(days.count) days were refused (see Activity)", underlying: Message(summary))
+        // The server's own reason, for the first day it refused: the error
+        // the owner reads is the one to act on, not a count.
+        if let first = firstRefusal {
+            let more = refused > 1 ? ", and \(refused - 1) more \(refused == 2 ? "day" : "days") (see Activity)" : ""
+            throw Message("The server refused \(first.day)\(more): \(first.reason)\n\nThe rest went through (\(summary)). A refused day is sent again at the next sync.")
         }
         return summary
     }

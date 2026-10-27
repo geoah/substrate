@@ -360,7 +360,7 @@ final class AppModel: ObservableObject {
     /// The figures in a few words, for the overview.
     func coverageLine(_ source: Source) -> String? {
         guard let f = figures(source), f.total > 0 else { return nil }
-        return f.synced >= f.total ? "All \(f.total.formatted()) \(f.noun)" : "\(f.synced.formatted()) of \(f.total.formatted()) \(f.noun)"
+        return f.synced >= f.total ? "All \(f.total.formatted()) \(f.noun) synced" : "\(f.synced.formatted()) of \(f.total.formatted()) \(f.noun) synced"
     }
 
     /// The calendar window, from today.
@@ -369,6 +369,12 @@ final class AppModel: ObservableObject {
         let now = Date()
         return cal.startOfDay(for: cal.date(byAdding: .day, value: -Settings.windowBack, to: now)!)
             ..< cal.startOfDay(for: cal.date(byAdding: .day, value: Settings.windowAhead, to: now)!)
+    }
+
+    /// When the source last ran, whether or not the run finished: a source
+    /// whose every run ended in an error has still run.
+    func lastRun(_ source: Source) -> Date? {
+        state.runs.first { $0.source == source }?.finished ?? state.status[source]?.lastSync
     }
 
     /// Health days delivered and not yet filed by the server.

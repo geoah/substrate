@@ -141,7 +141,7 @@ private struct SourceRow: View {
         guard Settings.enabled(source) else { return "Not synced" }
         var parts: [String] = []
         if let coverage = model.coverageLine(source) { parts.append(coverage) }
-        if let last = model.state.status[source]?.lastSync {
+        if let last = model.lastRun(source) {
             parts.append(last.formatted(.relative(presentation: .named)))
         }
         return parts.isEmpty ? "Never synced" : parts.joined(separator: " · ")

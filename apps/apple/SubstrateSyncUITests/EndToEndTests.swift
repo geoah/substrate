@@ -96,6 +96,19 @@ final class EndToEndTests: XCTestCase {
             }
             back()
         }
+        // A second sync finds everything in place and writes nothing.
+        syncNow.tap()
+        _ = app.buttons["Stop"].waitForExistence(timeout: 5)
+        XCTAssertTrue(syncNow.waitForExistence(timeout: 240), "the second sync did not end: \(app.debugDescription)")
+        for source in ["contacts", "calendars"] {
+            app.buttons["source.\(source)"].tap()
+            let lastRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written'")).firstMatch
+            XCTAssertTrue(lastRun.waitForExistence(timeout: 10), app.debugDescription)
+            print("E2E \(source) again: \(lastRun.label)")
+            XCTAssertTrue(lastRun.label.contains(" 0 written"), "the second sync wrote \(source) again: \(lastRun.label)")
+            back()
+        }
+
         if shots != nil {
             app.buttons["source.health"].tap()
             shot("health")

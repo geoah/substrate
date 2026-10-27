@@ -46,10 +46,10 @@ private struct StateCard: View {
                 StatusBadge(text: overview.badge, color: overview.tone.color)
                 Spacer()
                 Group {
-                    if let last = status?.lastSync {
-                        Text("Synced \(last.formatted(.relative(presentation: .named)))")
+                    if let last = model.lastRun(source) {
+                        Text("Last run \(last.formatted(.relative(presentation: .named)))")
                     } else {
-                        Text("Never synced")
+                        Text("Never run")
                     }
                 }
                 .font(.footnote).foregroundStyle(.secondary)
@@ -59,6 +59,10 @@ private struct StateCard: View {
             }
             if let error = overview.error {
                 ErrorBox(title: "The last sync failed", message: error)
+                if let last = status?.lastSync {
+                    Text("Last complete sync \(last.formatted(.relative(presentation: .named))).")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             if source == .health, model.progress[.health] == nil, !model.healthWaiting.isEmpty {
                 Text("\(model.healthWaiting.count) days were delivered and are waiting for the server to file them. The next sync checks them before it sends anything.")
@@ -89,12 +93,9 @@ private struct HealthCoverage: View {
                 let waiting = model.healthWaiting.intersection(inRange).count
                 let toSend = inRange.count - synced - waiting
                 VStack(alignment: .leading, spacing: 10) {
-                    Figures(synced: synced, total: inRange.count, noun: "days with data synced")
-                    if waiting > 0 || toSend > 0 {
-                        Text([waiting > 0 ? "\(waiting) waiting for the server" : nil,
-                              toSend > 0 ? "\(toSend) go at the next sync" : nil].compactMap { $0 }.joined(separator: " · "))
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
+                    Figures(synced: synced, total: inRange.count, noun: "days synced")
+                    Text(explanation(days: inRange.count, synced: synced, waiting: waiting, toSend: toSend))
+                        .font(.footnote).foregroundStyle(.secondary)
                     let buckets = buckets(inRange)
                     if buckets.count > 1 {
                         CoverageChart(buckets: buckets, granularity: granularity(inRange), unit: "days")
@@ -135,6 +136,26 @@ private struct HealthCoverage: View {
                 if model.coverageLoading { ProgressView().controlSize(.mini) }
             }
         }
+    }
+
+    /// What the figures count, in a sentence: "Health has data on 13 of the
+    /// last 14 days. 11 are on the server, 2 go at the next sync."
+    private func explanation(days: Int, synced: Int, waiting: Int, toSend: Int) -> String {
+        var calendar = Calendar.current
+        calendar.timeZone = .current
+        let today = calendar.startOfDay(for: Date())
+        let scope: String
+        if let start = Settings.history.start(today: today, calendar: calendar) {
+            let span = (calendar.dateComponents([.day], from: start, to: today).day ?? 0) + 1
+            scope = "Health has data on \(days.formatted()) of the last \(span.formatted()) days."
+        } else {
+            scope = "Health has data on \(days.formatted()) days in all."
+        }
+        var parts = ["\(synced.formatted()) \(synced == 1 ? "is" : "are") on the server"]
+        if waiting > 0 { parts.append("\(waiting.formatted()) \(waiting == 1 ? "is" : "are") waiting for the server to file \(waiting == 1 ? "it" : "them")") }
+        if toSend > 0 { parts.append("\(toSend.formatted()) go\(toSend == 1 ? "es" : "") at the next sync") }
+        let list = parts.count > 1 ? parts.dropLast().joined(separator: ", ") + " and " + parts.last! : parts[0]
+        return "\(scope) \(list)."
     }
 
     private func granularity(_ days: Set<String>) -> Granularity {
