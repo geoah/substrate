@@ -21,8 +21,10 @@
 # WHY THE PACKAGE IS `apple` AND NOT `contacts`. A package is the unit one
 # publisher versions, so it is named for the source (as `google` holds four
 # products). Each framework's kinds are named for its own objects:
-# `addressbook` and `contact` are the Contacts framework's, `eventstore`,
-# `calendar` and `event` are EventKit's.
+# `addressbook` and `contact` are the Contacts framework's; `eventstore`,
+# `calendar`, `event`, `reminderlist` and `reminder` are EventKit's; `visit`
+# is CoreLocation's. `visitstore` and `share` have no Apple object behind
+# them and are this package's names.
 #
 # THE RULES, the same ones the google preamble states:
 #   - the kind IS the object, complete: every `CNContact` key this version
@@ -37,7 +39,8 @@
 #     `calendar.eventstore`, `event.calendar`;
 #   - a name the dialect reserves keeps Apple's word with its object's in
 #     front: every record carries `title`, so `EKCalendar.title` is
-#     `calendarTitle` and `EKEvent.title` is `eventTitle`.
+#     `calendarTitle`, `EKEvent.title` is `eventTitle`, a reminders list's
+#     is `listTitle` and `EKReminder.title` is `reminderTitle`.
 #
 # WHAT IS LEFT OUT, and why, so nobody reads the gaps as an oversight:
 #   - `note`: reading it needs Apple's `com.apple.developer.contacts.notes`
@@ -59,6 +62,14 @@
 #   eventstore:  ExternalID("apple", "eventstore", <install UUID, lowercase>)
 #   calendar:    ExternalID("apple", <eventstore id>, <calendarIdentifier>)
 #   event:       ExternalID("apple", <eventstore id>, <occurrence key>)
+#   reminderlist: ExternalID("apple", <eventstore id>, <calendarIdentifier>)
+#   reminder:    ExternalID("apple", <eventstore id>, <calendarItemIdentifier>)
+#   visitstore:  ExternalID("apple", "visitstore", <install UUID, lowercase>)
+#   visit:       ExternalID("apple", <visitstore id>, <visit key>)
+#   share:       ExternalID("apple", "share", <the link>), or a UUID for a
+#                share with no link
+# A visit's key is "arrival:" and its arrival in UTC, or "departure:" and its
+# departure where CoreLocation does not know the arrival.
 # `CNContact.identifier` is unique per contact STORE, not globally, which is
 # why the address book's id is the account component, and the event store
 # scopes a calendar and an event the same way. An event's key is its
@@ -83,7 +94,10 @@ data:
   package: apple
   # 1: `addressbook` and `contact`, the Contacts framework pushed by a device.
   # 2: `eventstore`, `calendar` and `event`, EventKit pushed by a device.
-  version: 2
+  # 3: `reminderlist` and `reminder` (EventKit's reminders), `visitstore` and
+  #    `visit` (CoreLocation's visits), and `share`, what the owner sends from
+  #    another app; the event store counts reminders too.
+  version: 3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No input and no
@@ -96,15 +110,20 @@ data:
   authority: providers.substrate.reamde.dev
   package: apple
   description: >-
-    Keeps a copy of the contacts and calendar events on your iPhone or iPad,
-    pushed by an app on the device in Apple's own shape. One way: nothing
-    is ever written back to the device.
+    Keeps a copy of the contacts, events, reminders and places on your iPhone
+    or iPad, and what you share to it, pushed by an app on the device. Nothing
+    is written back.
   installs:
     - providers.substrate.reamde.dev/apple/addressbook
     - providers.substrate.reamde.dev/apple/contact
     - providers.substrate.reamde.dev/apple/eventstore
     - providers.substrate.reamde.dev/apple/calendar
     - providers.substrate.reamde.dev/apple/event
+    - providers.substrate.reamde.dev/apple/reminderlist
+    - providers.substrate.reamde.dev/apple/reminder
+    - providers.substrate.reamde.dev/apple/visitstore
+    - providers.substrate.reamde.dev/apple/visit
+    - providers.substrate.reamde.dev/apple/share
 ---
 # ---- one device's contact store -------------------------------------------
 # One row per contact store on one install of the pushing app. It is the
@@ -577,6 +596,18 @@ data:
       description: >-
         how many event occurrences the last complete push held, inside its
         window.
+    reminderListCount:
+      type: int
+      min: 0
+      displayName: Reminders list count
+      description: >-
+        how many reminders lists the device's last complete push held.
+    reminderCount:
+      type: int
+      min: 0
+      displayName: Reminder count
+      description: >-
+        how many reminders the device's last complete push held.
     # --- instants ---------------------------------------------------------
     windowStart:
       type: datetime
@@ -602,8 +633,8 @@ data:
 # between calendars, of which the two fields a reader needs ride here as
 # `sourceTitle` and `sourceType` rather than as a kind of its own.
 #
-# Only event calendars are pushed: a reminders list is an `EKCalendar` too,
-# and none is read.
+# Only event calendars are calendar rows: a reminders list is an `EKCalendar`
+# too, and is pushed as a `reminderlist`.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/apple/calendar
@@ -1028,3 +1059,480 @@ data:
       displayName: Last modified
       description: >-
         `lastModifiedDate`, when the event was last changed.
+---
+# ---- one reminders list: an `EKCalendar` that holds reminders --------------
+# EventKit keeps reminders in the same store as events, in calendars whose
+# entity type is reminders. The list is its own kind rather than a calendar
+# row, so the calendars a reader lists are the ones that hold events; its
+# id is computed in the event store, as a calendar's is. Apple's `title` is
+# `listTitle` (see the calendar).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/reminderlist
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    A reminders list on your iPhone or iPad. One Apple EKCalendar that holds
+    reminders, pushed by an app on the device and keyed within one event store.
+  purpose: supporting
+  names:
+    singular: reminderlist
+  label:
+    singular: Reminders list
+    plural: Reminders lists
+  displayTemplate: "{listTitle|calendarIdentifier}"
+  properties:
+    eventstore:
+      type: reference
+      kind: providers.substrate.reamde.dev/apple/eventstore
+      required: true
+      onDelete: cascade
+      displayName: Event store
+      description: >-
+        the event store this list was pushed from. Always written.
+    calendarIdentifier:
+      type: string
+      required: true
+      displayName: List identifier
+      description: >-
+        `calendarIdentifier`, Apple's id for the list, unique within one device's
+        event store.
+    listTitle:
+      type: string
+      displayName: Title
+      description: >-
+        `title`, the list's name as the device shows it.
+    type:
+      type: enum
+      values:
+        - value: local
+          label: local
+        - value: caldav
+          label: calDAV
+        - value: exchange
+          label: exchange
+        - value: subscription
+          label: subscription
+        - value: birthday
+          label: birthday
+      displayName: Type
+      description: >-
+        `type`, the kind of calendar the list is (`EKCalendarType`).
+    sourceTitle:
+      type: string
+      displayName: Account
+      description: >-
+        `source.title`, the account the list belongs to, such as iCloud.
+    sourceType:
+      type: enum
+      values:
+        - value: local
+          label: local
+        - value: exchange
+          label: exchange
+        - value: caldav
+          label: calDAV
+        - value: mobileme
+          label: mobileMe
+        - value: subscribed
+          label: subscribed
+        - value: birthdays
+          label: birthdays
+      displayName: Account type
+      description: >-
+        `source.sourceType`, the kind of account (`EKSourceType`).
+    color:
+      type: string
+      displayName: Colour
+      description: >-
+        `cgColor`, written as `#RRGGBB` in sRGB.
+    allowsContentModifications:
+      type: bool
+      displayName: Editable
+      description: >-
+        `allowsContentModifications`, whether reminders may be added, changed
+        or removed on the device.
+---
+# ---- one reminder: an `EKReminder` -----------------------------------------
+# Every property is the `EKReminder` (or `EKCalendarItem`) key of the same
+# name, with these exceptions. `list` is the reminders list row. Apple's
+# `title` is `reminderTitle`. And a due date is either a day or a moment:
+# EventKit keeps it as date components, with an hour or without one, so
+# `dueDay` is the civil day it names and `dueDate` is the moment when it
+# names a time. `startDay` and `startDate` are the same for the start.
+#
+# A repeating reminder is ONE row: unlike an event, EventKit hands out the
+# reminder and not its occurrences, and completing one moves its due date.
+#
+# WHAT IS LEFT OUT: an alarm's proximity and structured location (a
+# location-based alarm keeps only its kind here), and a recurrence rule's
+# day rules (see the event).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/reminder
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    A reminder on your iPhone or iPad. One Apple EKReminder, completed or
+    not, pushed by an app on the device; a repeating reminder is one row.
+  names:
+    singular: reminder
+  label:
+    singular: Reminder
+    plural: Reminders
+  displayTemplate: "{reminderTitle|calendarItemIdentifier}"
+  properties:
+    # --- identity -----------------------------------------------------------
+    list:
+      type: reference
+      kind: providers.substrate.reamde.dev/apple/reminderlist
+      required: true
+      onDelete: cascade
+      displayName: List
+      description: >-
+        the reminders list this reminder is in. Always written; moving it
+        to another list rewrites it and keeps the row.
+    calendarItemIdentifier:
+      type: string
+      required: true
+      displayName: Item identifier
+      description: >-
+        `calendarItemIdentifier`, Apple's id for the reminder on this device.
+    calendarItemExternalIdentifier:
+      type: string
+      displayName: External identifier
+      description: >-
+        `calendarItemExternalIdentifier`, the reminder's id on its account's
+        server, the same on every device of the account.
+    # --- the object's own fields --------------------------------------------
+    reminderTitle:
+      type: string
+      displayName: Title
+      description: >-
+        `title`, the reminder's text.
+    notes:
+      type: text
+      displayName: Notes
+      description: >-
+        `notes`, the reminder's notes.
+    url:
+      type: string
+      displayName: URL
+      description: >-
+        `url`, the link on the reminder, as written; Apple does not validate
+        it.
+    location:
+      type: string
+      displayName: Location
+      description: >-
+        `location`, the place written on the reminder.
+    priority:
+      type: int
+      min: 0
+      max: 9
+      displayName: Priority
+      description: >-
+        `priority`, 0 for none, 1 to 4 high, 5 medium and 6 to 9 low.
+    isCompleted:
+      type: bool
+      displayName: Completed
+      description: >-
+        `isCompleted`, whether the reminder is done.
+    completionDate:
+      type: datetime
+      displayName: Completed at
+      description: >-
+        `completionDate`, when it was marked done.
+    dueDay:
+      type: date
+      displayName: Due day
+      description: >-
+        the day `dueDateComponents` names, with or without a time.
+    dueDate:
+      type: datetime
+      displayName: Due at
+      description: >-
+        the moment `dueDateComponents` names, when it carries a time; absent
+        for a reminder due on a day.
+    startDay:
+      type: date
+      displayName: Start day
+      description: >-
+        the day `startDateComponents` names.
+    startDate:
+      type: datetime
+      displayName: Starts at
+      description: >-
+        the moment `startDateComponents` names, when it carries a time.
+    timeZone:
+      type: timezone
+      displayName: Time zone
+      description: >-
+        `timeZone`, the zone the reminder's dates are in; absent for a floating
+        one.
+    hasRecurrenceRules:
+      type: bool
+      displayName: Repeats
+      description: >-
+        `hasRecurrenceRules`, whether the reminder repeats.
+    recurrenceRules:
+      type: object
+      repeated: true
+      displayName: Recurrence rules
+      description: >-
+        `recurrenceRules`, each `EKRecurrenceRule` without its day rules.
+      fields:
+        frequency:
+          type: enum
+          values:
+            - value: daily
+              label: daily
+            - value: weekly
+              label: weekly
+            - value: monthly
+              label: monthly
+            - value: yearly
+              label: yearly
+          description: >-
+            `frequency`, how often the rule repeats.
+        interval:
+          type: int
+          min: 1
+          description: >-
+            `interval`, every how many periods it repeats.
+        endDate:
+          type: datetime
+          description: >-
+            `recurrenceEnd.endDate`, when the rule stops; absent for a rule
+            that ends after a count or never.
+        occurrenceCount:
+          type: int
+          min: 1
+          description: >-
+            `recurrenceEnd.occurrenceCount`, how many times it repeats; absent
+            for a rule that ends on a date or never.
+    alarms:
+      type: object
+      repeated: true
+      displayName: Alarms
+      description: >-
+        `alarms`, each `EKAlarm` as a moment or an offset from the due date.
+      fields:
+        absoluteDate:
+          type: datetime
+          description: >-
+            `absoluteDate`, the moment the alarm goes off; absent for an offset.
+        relativeOffset:
+          type: float
+          description: >-
+            `relativeOffset`, seconds from the due date, negative before it;
+            absent for a moment.
+    # --- instants -----------------------------------------------------------
+    creationDate:
+      type: datetime
+      displayName: Created
+      description: >-
+        `creationDate`, when the reminder was created.
+    lastModifiedDate:
+      type: datetime
+      displayName: Last modified
+      description: >-
+        `lastModifiedDate`, when the reminder was last changed.
+---
+# ---- one device's visits ------------------------------------------------------
+# One row per install of the pushing app that records visits: the scope every
+# visit id from that device is computed in, as the event store is for
+# calendars. CoreLocation has no store object, so the name is this package's.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/visitstore
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    The places one of your Apple devices recorded you staying at. One row
+    per install of the app that pushes them, and the scope of their ids.
+  purpose: supporting
+  names:
+    singular: visitstore
+  label:
+    singular: Visit store
+    plural: Visit stores
+  displayTemplate: "{deviceName|id}"
+  properties:
+    deviceName:
+      type: string
+      displayName: Device name
+      description: >-
+        the device's name as the app reads it (`UIDevice.name`).
+    visitCount:
+      type: int
+      min: 0
+      displayName: Visit count
+      description: >-
+        how many visits the device kept at its last push; it keeps a year.
+    lastSyncedAt:
+      type: datetime
+      displayName: Last synced
+      description: >-
+        when the device last finished pushing its visits.
+---
+# ---- one visit: a `CLVisit` ----------------------------------------------------
+# A place the device stayed at, as CoreLocation's visit monitoring reports it:
+# the coordinate, how sure it is, and when the stay began and ended. The place
+# name and address are what Apple Maps' reverse geocoder answered for the
+# coordinate on the device (`MKReverseGeocodingRequest`), not a fact
+# CoreLocation reports, and are absent where it found nothing.
+#
+# A visit is reported twice, on arrival and again on departure, so its id is
+# its arrival (or its departure where the arrival is unknown) within the visit
+# store, and the second report completes the same row. A visit with no
+# departure is one the device has not left yet.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/visit
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    A place your iPhone recorded you staying at, with when you arrived and
+    left. One CoreLocation visit, named by Apple Maps where it could.
+  names:
+    singular: visit
+  label:
+    singular: Visit
+    plural: Visits
+  displayTemplate: "{placeName|address|id}"
+  properties:
+    visitstore:
+      type: reference
+      kind: providers.substrate.reamde.dev/apple/visitstore
+      required: true
+      onDelete: cascade
+      displayName: Visit store
+      description: >-
+        the device's visit store this visit was pushed from. Always written.
+    arrivalDate:
+      type: datetime
+      displayName: Arrived
+      description: >-
+        `arrivalDate`, when the stay began; absent when the device was already
+        there as monitoring began.
+    departureDate:
+      type: datetime
+      displayName: Left
+      description: >-
+        `departureDate`, when the stay ended; absent while the device is still
+        there.
+    latitude:
+      type: float
+      min: -90
+      max: 90
+      displayName: Latitude
+      description: >-
+        `coordinate.latitude`, in degrees.
+    longitude:
+      type: float
+      min: -180
+      max: 180
+      displayName: Longitude
+      description: >-
+        `coordinate.longitude`, in degrees.
+    horizontalAccuracy:
+      type: float
+      min: 0
+      displayName: Accuracy
+      description: >-
+        `horizontalAccuracy`, the radius the coordinate is good to, in metres.
+    placeName:
+      type: string
+      displayName: Place
+      description: >-
+        the name Apple Maps gave the coordinate, such as a shop or a street.
+    address:
+      type: text
+      displayName: Address
+      description: >-
+        the full address Apple Maps gave the coordinate.
+    city:
+      type: string
+      displayName: City
+      description: >-
+        the city Apple Maps placed the coordinate in.
+    country:
+      type: string
+      displayName: Country
+      description: >-
+        the country or region Apple Maps placed the coordinate in.
+    category:
+      type: string
+      displayName: Category
+      description: >-
+        Apple Maps' point of interest category, such as MKPOICategoryRestaurant,
+        where the place is one.
+    timeZone:
+      type: timezone
+      displayName: Time zone
+      description: >-
+        the place's time zone, as Apple Maps gave it.
+---
+# ---- one thing shared from another app ---------------------------------------
+# What the owner sent to Substrate from an app's share sheet: a link, some
+# text, up to four images, or several of them, with a note typed in the sheet. A link's
+# id is the link itself within this package, so sharing it again updates the
+# same row; anything else gets an id of its own.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/share
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    Something you sent to Substrate from another app on your iPhone or iPad:
+    a link, some text or an image, with a note.
+  names:
+    singular: share
+  label:
+    singular: Share
+    plural: Shares
+  displayTemplate: "{shareTitle|url|text|note|id}"
+  properties:
+    url:
+      type: string
+      displayName: Link
+      description: >-
+        the link shared, as the app gave it.
+    shareTitle:
+      type: string
+      displayName: Title
+      description: >-
+        the title the app gave what it shared, such as a page's.
+    text:
+      type: text
+      displayName: Text
+      description: >-
+        the text shared.
+    images:
+      type: blobref
+      repeated: true
+      mediaTypes: [image/*]
+      displayName: Images
+      description: >-
+        the images shared, as the app gave them.
+    note:
+      type: text
+      displayName: Note
+      description: >-
+        what the owner wrote in the share sheet.
+    sharedAt:
+      type: datetime
+      displayName: Shared
+      description: >-
+        when it was sent.
+    deviceName:
+      type: string
+      displayName: Device name
+      description: >-
+        the device it was sent from (`UIDevice.name`).
