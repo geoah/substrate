@@ -43,7 +43,16 @@ final class AppModel: ObservableObject {
     @Published var setupError: String?
     /// A key someone else set on the trigger, waiting on the owner's choice.
     @Published var foreignKey = false
-    @Published private(set) var syncing = false
+    /// Syncs the owner started that have not finished: they chain, so a
+    /// second Sync Now (or a Send) waits its turn.
+    @Published private(set) var runningSyncs = 0
+    var syncing: Bool { runningSyncs > 0 }
+    /// The sources the running syncs cover, and when the first began: a
+    /// source in it that has not run since is queued.
+    @Published private(set) var syncSources: Set<Source> = []
+    @Published private(set) var syncStarted: Date?
+    /// The phone's event calendars, for the picker.
+    @Published private(set) var calendarChoices: [CalendarChoice] = []
     /// The server refused the token (it was revoked, or the repository was
     /// reset): nothing works until the owner signs in again.
     @Published var sessionExpired = false
@@ -317,6 +326,73 @@ final class AppModel: ObservableObject {
 
     // MARK: - coverage
 
+    /// Where one source stands, for the overview and its page.
+    func overview(_ source: Source) -> SourceOverview {
+        let running = progress[source] != nil
+        var queued = false
+        if syncing, !running, syncSources.contains(source), let started = syncStarted {
+            queued = !(state.runs.first { $0.source == source }.map { $0.finished >= started } ?? false)
+        }
+        return SourceOverview.of(
+            enabled: Settings.enabled(source), access: access[source], running: running, queued: queued,
+            status: state.status[source], waiting: source == .health ? healthWaiting.count : 0)
+    }
+
+    /// What a source has synced of what the phone holds: Health's days with
+    /// data inside the history, every contact, the events in the calendar
+    /// window of the calendars turned on.
+    func figures(_ source: Source) -> (synced: Int, total: Int, noun: String)? {
+        switch source {
+        case .health:
+            guard let inRange = healthInRange else { return nil }
+            return (inRange.intersection(state.healthDays).count, inRange.count, "days")
+        case .contacts:
+            guard let total = state.device.contacts else { return nil }
+            return (min(state.contacts.count, total), total, "contacts")
+        case .calendars:
+            guard let total = eventsAvailable?.count ?? state.device.events else { return nil }
+            let window = Self.window
+            let synced = state.events.values.filter { $0.start.map(window.contains) ?? false }.count
+            return (min(synced, total), total, "events")
+        }
+    }
+
+    /// The figures in a few words, for the overview.
+    func coverageLine(_ source: Source) -> String? {
+        guard let f = figures(source), f.total > 0 else { return nil }
+        return f.synced >= f.total ? "All \(f.total.formatted()) \(f.noun)" : "\(f.synced.formatted()) of \(f.total.formatted()) \(f.noun)"
+    }
+
+    /// The calendar window, from today.
+    static var window: Range<Date> {
+        let cal = Calendar.current
+        let now = Date()
+        return cal.startOfDay(for: cal.date(byAdding: .day, value: -Settings.windowBack, to: now)!)
+            ..< cal.startOfDay(for: cal.date(byAdding: .day, value: Settings.windowAhead, to: now)!)
+    }
+
+    /// Health days delivered and not yet filed by the server.
+    var healthWaiting: Set<String> { Set(state.healthPending.keys).subtracting(state.healthDays) }
+
+    /// Reads the phone's event calendars, grouped by account in the picker.
+    func loadCalendars() {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            calendarChoices = []
+            return
+        }
+        calendarChoices = EKEventStore().calendars(for: .event).map { c in
+            let note: String? = switch c.type {
+            case .subscription: "Subscribed"
+            case .birthday: "Birthdays from Contacts"
+            default: c.allowsContentModifications ? nil : "Read-only"
+            }
+            return CalendarChoice(
+                id: c.calendarIdentifier, title: c.title, account: c.source?.title ?? "Other", note: note,
+                color: Color(cgColor: c.cgColor))
+        }
+        .sorted { ($0.account, $0.title) < ($1.account, $1.title) }
+    }
+
     /// Reads what the device holds, to set beside what was synced.
     func loadCoverage() async {
         guard !coverageLoading else { return }
@@ -337,9 +413,12 @@ final class AppModel: ObservableObject {
             let now = Date()
             let start = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -Settings.windowBack, to: now)!)
             let end = calendar.startOfDay(for: calendar.date(byAdding: .day, value: Settings.windowAhead, to: now)!)
+            let excluded = Settings.excludedCalendars
             eventsAvailable = await Task.detached {
                 let store = EKEventStore()
-                return store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: nil))
+                let calendars = store.calendars(for: .event).filter { !excluded.contains($0.calendarIdentifier) }
+                guard !calendars.isEmpty else { return [] }
+                return store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: calendars))
                     .compactMap(\.startDate)
             }.value
         }
@@ -369,8 +448,19 @@ final class AppModel: ObservableObject {
     }
 
     func syncNow(_ only: Set<Source>? = nil) async {
-        syncing = true
-        defer { syncing = false }
+        if runningSyncs == 0 {
+            syncStarted = Date()
+            syncSources = []
+        }
+        runningSyncs += 1
+        syncSources.formUnion(Source.allCases.filter { Settings.enabled($0) && (only?.contains($0) ?? true) })
+        defer {
+            runningSyncs -= 1
+            if runningSyncs == 0 {
+                syncSources = []
+                syncStarted = nil
+            }
+        }
         for source in Source.allCases where Settings.enabled(source) && (only?.contains(source) ?? true) {
             if access[source] == "Not asked yet" { await requestAccess(source) }
         }

@@ -312,6 +312,58 @@ final class HealthScheduleTests: XCTestCase {
     }
 }
 
+/// What the overview shows for a source, and the activity timeline.
+final class OverviewTests: XCTestCase {
+    private let failed = SourceStatus(lastSync: Date(), counts: nil, lastError: "Sending 2026-10-20: refused")
+
+    func testARunningOrQueuedSourceDoesNotShowTheErrorItIsReplacing() {
+        let running = SourceOverview.of(enabled: true, access: "Asked", running: true, queued: false, status: failed, waiting: 0)
+        XCTAssertEqual(running.badge, "Syncing")
+        XCTAssertNil(running.error)
+        let queued = SourceOverview.of(enabled: true, access: "Asked", running: false, queued: true, status: failed, waiting: 0)
+        XCTAssertEqual(queued.badge, "Queued")
+        XCTAssertNil(queued.error)
+        let idle = SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: failed, waiting: 0)
+        XCTAssertEqual(idle.badge, "Failed")
+        XCTAssertEqual(idle.error, failed.lastError)
+    }
+
+    func testStatesInOrder() {
+        let ok = SourceStatus(lastSync: Date(), counts: "15 contacts", lastError: nil)
+        XCTAssertEqual(SourceOverview.of(enabled: false, access: "Allowed", running: true, queued: false, status: failed, waiting: 3).badge, "Off")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Not allowed", running: false, queued: false, status: ok, waiting: 0).badge, "No access")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 7).badge, "Being filed")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: nil, waiting: 0).badge, "Not synced yet")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: ok, waiting: 0).badge, "Up to date")
+    }
+
+    func testTheTimelineFoldsEachRunsLinesIntoIt() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let contacts = SyncRun(source: .contacts, started: t0, finished: t0 + 10, summary: "15 written", error: nil)
+        let health = SyncRun(source: .health, started: t0 + 20, finished: t0 + 60, summary: nil, error: "refused")
+        let lines = [
+            ActivityEntry(at: t0 + 60, source: .health, level: .error, message: "Sync did not finish"),
+            ActivityEntry(at: t0 + 30, source: .health, level: .info, message: "Sending 3 days"),
+            ActivityEntry(at: t0 + 15, source: nil, level: .warning, message: "Sync stopped by hand"),
+            ActivityEntry(at: t0 + 5, source: .contacts, level: .info, message: "Read 15 contacts"),
+        ]
+        let items = TimelineItem.build(runs: [health, contacts], entries: lines)
+        XCTAssertEqual(items, [
+            .run(health, [lines[0], lines[1]]),
+            .entry(lines[2]),
+            .run(contacts, [lines[3]]),
+        ])
+        XCTAssertEqual(TimelineItem.build(runs: [health, contacts], entries: lines, only: .contacts), [.run(contacts, [lines[3]])])
+    }
+
+    func testAChartGroupsSoItHasAFewDozenBarsAtMost() {
+        XCTAssertEqual(Granularity.fitting(days: 13), .day)
+        XCTAssertEqual(Granularity.fitting(days: 90), .week)
+        XCTAssertEqual(Granularity.fitting(days: 365), .month)
+        XCTAssertEqual(Granularity.fitting(days: 3000), .year)
+    }
+}
+
 /// The deliveries the app sends, held byte for byte against the goldens the
 /// Go suite runs through the provider and the healthapple adapter
 /// (internal/providertest/substratesync_test.go). Regenerate with

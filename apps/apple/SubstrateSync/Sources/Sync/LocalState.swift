@@ -91,6 +91,9 @@ struct LocalState: Codable, Sendable {
     var events: [String: Pushed] = [:]
     /// The local days whose Health deliveries were both accepted.
     var healthDays: Set<String> = []
+    /// Days delivered and not yet filed, with their fire ids: the next run
+    /// reads their receipts before it sends anything.
+    var healthPending: [String: [String]] = [:]
     /// One stable automation id per grouping.
     var automations: [String: String] = [:]
     var status: [Source: SourceStatus] = [:]
@@ -125,6 +128,7 @@ struct LocalState: Codable, Sendable {
         runs = try c.decodeIfPresent([SyncRun].self, forKey: .runs) ?? []
         device = try c.decodeIfPresent(DeviceCounts.self, forKey: .device) ?? DeviceCounts()
         repository = try c.decodeIfPresent(String.self, forKey: .repository)
+        healthPending = try c.decodeIfPresent([String: [String]].self, forKey: .healthPending) ?? [:]
     }
 
     var ids: AppleIDs { AppleIDs(install: install) }
@@ -166,6 +170,7 @@ struct LocalState: Codable, Sendable {
         events = [:]
         healthDays = []
         healthQueue = []
+        healthPending = [:]
         runs = []
         status = [:]
     }

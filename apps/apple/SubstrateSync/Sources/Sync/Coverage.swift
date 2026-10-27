@@ -3,15 +3,26 @@ import HealthKit
 
 /// How a coverage view groups time.
 enum Granularity: String, CaseIterable, Identifiable, Sendable {
-    case week, month, year
+    case day, week, month, year
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized + "s" }
     var component: Calendar.Component {
         switch self {
+        case .day: .day
         case .week: .weekOfYear
         case .month: .month
         case .year: .year
+        }
+    }
+
+    /// The grouping that keeps a chart of `days` to a few dozen bars at most.
+    static func fitting(days: Int) -> Granularity {
+        switch days {
+        case ..<32: .day
+        case ..<200: .week
+        case ..<1100: .month
+        default: .year
         }
     }
 }
@@ -82,6 +93,7 @@ enum Coverage {
         f.timeZone = calendar.timeZone
         f.locale = Locale(identifier: "en_US_POSIX")
         switch granularity {
+        case .day: f.dateFormat = "EEE d MMM yyyy"
         case .week: f.dateFormat = "'Week of' d MMM yyyy"
         case .month: f.dateFormat = "MMMM yyyy"
         case .year: f.dateFormat = "yyyy"

@@ -187,7 +187,7 @@ refusal is shown in the server's own words.
 **Health** goes as two deliveries per local day, oldest day first: every
 metric at one row per minute (`automation-aggregation: minutes`), and the
 sleep segments and workouts (`seconds`). The first sync sends the history
-Settings → Health history names (14 days unless it says 30 days, 3 or 6
+Health → History names (14 days unless it says 30 days, 3 or 6
 months, a year, or everything the phone holds); each later one sends the last
 three days again and any day not yet accepted. A day counts as sent only once
 the server has filed it (its `applehealth/export/<fire id>` receipt); one the
@@ -197,16 +197,32 @@ of history are not read one empty day at a time. A background run sends only
 the last three days. A delivery replaces a metric's rows across its span, so
 a day is always sent whole, and a day larger than 4 MiB is split by metric.
 
-**Home is one page of statistics and settings.** Each source shows its
-switch, access, how much of what the device holds has been synced (Health:
-days with steps, heart rate or sleep over the last ten years; Contacts: every
-contact; Calendars: the occurrences in the window), what it is doing now,
-its last sync and its last error. Coverage counts the days inside the chosen
-history, charts synced against available for the last twelve months, shows
-the four most recent, and keeps every month in a list of its own, by year;
-days older than the history are counted separately and go out from there on
-request. History shows the last five runs with what each wrote and how long
-it took, and keeps sixty.
+**Home is an overview.** A status card says what is syncing (the source,
+its step and how far it has got, and Stop) or how the last sync ended, above
+Sync Now. Each source is one row: what it has synced of what the phone holds,
+when, and its state as a badge (Up to date, Syncing, Queued, Being filed,
+Failed, No access, Off). A source that is running or waiting its turn shows
+that, never the error of the run it is replacing. Tapping a source opens its
+page: the state with the last run or its error and a button that syncs that
+source alone, its coverage once (Health: the days with data inside the
+history, those waiting for the server, those going at the next sync, a chart
+grouped to fit the history, and every period a tap away; the days older than
+the history are counted apart and sent on request), its settings (the
+switch, access, Health's history, which calendars), and its last runs.
+Activity is one timeline: each run with how it ended and how long it took,
+its log lines folded inside it, filterable by source. The account, the
+background frequency, the server set up, the version and Sign Out are behind
+the gear.
+
+**Calendars** sends the calendars turned on in Calendars → Calendars, by
+account. The setting keeps the ones turned off, so a calendar added on the
+phone later is sent until it is turned off; a calendar turned off is removed
+from the repository, with its events, at the next sync, as one deleted on the
+phone is.
+
+**A day waiting for the server** keeps the fire ids of its deliveries, and
+the next sync reads their receipts before it sends anything, so a day the
+server filed since is not sent again.
 
 **In the background** a refresh task syncs when the system allows, and
 HealthKit's observer queries (heart rate, steps, sleep, workouts) wake the

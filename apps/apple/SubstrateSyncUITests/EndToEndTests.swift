@@ -51,6 +51,8 @@ final class EndToEndTests: XCTestCase {
         let notNow = app.buttons["Not Now"]
         if notNow.waitForExistence(timeout: 3) { notNow.tap() }
 
+        // Sample data is behind the gear, with the rest of the settings.
+        app.navigationBars.buttons["Settings"].tap()
         let add = app.buttons["Add Sample Data"]
         scrollTo(add, in: app)
         add.tap()
@@ -58,27 +60,54 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 120), "no sample data note: \(app.debugDescription)")
         print("E2E sample data: \(note.label)")
         XCTAssertTrue(note.label.hasPrefix("Added"), note.label)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        scrollTo(syncNow, in: app, up: true)
+        XCTAssertTrue(syncNow.waitForExistence(timeout: 10), app.debugDescription)
         syncNow.tap()
-        // The status line says when the run ended, and how.
+        // The status card says when the run ended, and how.
         let ended = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Everything synced' OR label == 'The last sync did not finish'")).firstMatch
         XCTAssertTrue(ended.waitForExistence(timeout: 240), "the sync did not end: \(app.debugDescription)")
         XCTAssertTrue(ended.label.hasPrefix("Everything synced"), app.debugDescription)
-        // Each source writes its last run when it finishes; the list builds
-        // only the rows on screen, so the page is walked to find them.
-        var runs = Set<String>()
-        var failures = Set<String>()
-        for _ in 0 ..< 8 {
-            for label in app.staticTexts.allElementsBoundByIndex.map(\.label) {
-                if label.contains(" written") || label.contains(" deliveries") { runs.insert(label) }
-                if label.hasPrefix("Last sync of ") { failures.insert(label) }
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == 'Failed'")).count, 0, app.debugDescription)
+
+        // SYNC_E2E_SHOTS names a directory to keep a screenshot of each page in.
+        let shots = env["SYNC_E2E_SHOTS"].map { URL(fileURLWithPath: $0) }
+        func shot(_ name: String) {
+            guard let shots else { return }
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: shots.appendingPathComponent("\(name).png"))
+        }
+        let back = { app.navigationBars.buttons.element(boundBy: 0).tap() }
+        shot("home")
+
+        // Each source's page says what its last run wrote.
+        for source in ["contacts", "calendars"] {
+            app.buttons["source.\(source)"].tap()
+            let lastRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written'")).firstMatch
+            XCTAssertTrue(lastRun.waitForExistence(timeout: 10), app.debugDescription)
+            print("E2E \(source): \(lastRun.label)")
+            shot(source)
+            if source == "calendars" {
+                let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Calendars,'")).firstMatch
+                scrollTo(picker, in: app)
+                picker.tap()
+                XCTAssertTrue(app.switches.firstMatch.waitForExistence(timeout: 10), "no calendar to choose: \(app.debugDescription)")
+                shot("calendar-picker")
+                back()
             }
-            app.swipeUp()
+            back()
+        }
+        if shots != nil {
+            app.buttons["source.health"].tap()
+            shot("health")
+            back()
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Activity'")).firstMatch.tap()
+            shot("activity")
+            back()
+            app.navigationBars.buttons["Settings"].tap()
+            shot("settings")
+            back()
         }
         let screen = app.debugDescription
-        XCTAssertEqual(failures, [], screen)
-        XCTAssertGreaterThanOrEqual(runs.count, 2, "\(runs)")
         print("E2E home: \(screen)")
     }
 

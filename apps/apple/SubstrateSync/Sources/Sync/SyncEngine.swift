@@ -18,6 +18,21 @@ enum Settings {
         UserDefaults.standard.set(on, forKey: "enabled.\(source.rawValue)")
     }
 
+    /// The calendars left out of the sync, by `calendarIdentifier`. The set
+    /// holds the ones turned off, so a calendar added on the phone later is
+    /// synced until the owner turns it off.
+    static let excludedCalendarsKey = "calendars.excluded"
+
+    static var excludedCalendars: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: excludedCalendarsKey) ?? [])
+    }
+
+    static func setCalendar(_ id: String, included: Bool) {
+        var excluded = excludedCalendars
+        if included { excluded.remove(id) } else { excluded.insert(id) }
+        UserDefaults.standard.set(excluded.sorted(), forKey: excludedCalendarsKey)
+    }
+
     /// How far back Health is synced. Every sync sends the last few days;
     /// the rest of the range goes once, a day with data at a time.
     enum History: String, CaseIterable, Identifiable, Sendable {
@@ -349,18 +364,19 @@ actor SyncEngine {
         var filed = Set<String>()
         var parked: [String: String] = [:]
         let deadline = Date().addingTimeInterval(seconds)
+        // Every delivery is asked about at least once, so a zero deadline is
+        // one look at the receipts.
         while true {
+            try Task.checkCancellation()
             let open = all.subtracting(filed).subtracting(parked.keys)
             await progress(.health, "Waiting for the server to file \(label)", all.count - open.count, all.count)
-            if open.isEmpty || Date() > deadline { break }
-            try Task.checkCancellation()
             for fire in open where try await client.get(Self.healthExportKind, fire) != nil {
                 filed.insert(fire)
             }
             for p in try await client.parked(trigger: Self.trigger) {
                 if let f = p.fireId, open.contains(f) { parked[f] = p.lastError }
             }
-            if all.subtracting(filed).subtracting(parked.keys).isEmpty { continue }
+            if all.subtracting(filed).subtracting(parked.keys).isEmpty || Date() > deadline { break }
             try await Task.sleep(for: .seconds(2))
         }
         return Self.settle(fires, filed: filed, parked: parked)
@@ -504,16 +520,24 @@ actor SyncEngine {
         let window = windowStart ..< windowEnd
 
         let store = EKEventStore()
-        let calendars = store.calendars(for: .event)
+        let everything = store.calendars(for: .event)
+        // A calendar the owner turned off is left out of the scan, so the
+        // rules below remove it from the server, events and all, as they do a
+        // calendar deleted on the phone.
+        let excluded = Settings.excludedCalendars
+        let calendars = everything.filter { !excluded.contains($0.calendarIdentifier) }
+        let chosen = Set(calendars.map(\.calendarIdentifier))
         // A large window takes seconds to read: not on the actor, which the
         // progress callbacks and the app's updates go through.
-        let occurrences = await Task.detached {
-            store.events(matching: store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: nil))
+        let occurrences: [EKEvent] = chosen.isEmpty ? [] : await Task.detached {
+            let scanned = store.calendars(for: .event).filter { chosen.contains($0.calendarIdentifier) }
+            return store.events(matching: store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: scanned))
         }.value
 
         state.device.calendars = calendars.count
         state.device.events = occurrences.count
-        log(.calendars, "Read \(calendars.count) calendars and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
+        let off = everything.count - calendars.count
+        log(.calendars, "Read \(calendars.count) calendars" + (off > 0 ? " (\(off) turned off)" : "") + " and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
         let name = await deviceName
         try await client.put(storeKind, eventstore, ["deviceName": name])
         var failures: [Error] = []
@@ -534,15 +558,16 @@ actor SyncEngine {
             }
         }
         // A deleted calendar takes its events with it (the server cascades),
-        // so an empty scan deletes nothing.
-        if calendars.isEmpty, !previousCalendars.isEmpty { throw SyncError.emptyScan("calendars") }
+        // so an empty scan deletes nothing. Every calendar turned off is the
+        // owner's choice, not an empty scan.
+        if everything.isEmpty, !previousCalendars.isEmpty { throw SyncError.emptyScan("calendars") }
         let goneCalendars = previousCalendars.keys.filter { currentCalendars[$0] == nil }
         for (id, result) in await eachLimited(goneCalendars, { id in try await client.delete(calendarKind, id) }) {
             switch result {
             case .success:
                 state.calendars[id] = nil
                 state.events = state.events.filter { $0.value.calendar != id }
-                log(.calendars, "Removed a calendar gone from the device, with its events")
+                log(.calendars, "Removed a calendar turned off or gone from the device, with its events")
             case let .failure(e): failures.append(e)
             }
         }
@@ -675,6 +700,21 @@ actor SyncEngine {
             state.automations[g.rawValue] = UUID().uuidString
         }
         commit(&state)
+
+        // Days an earlier run delivered and the server had not yet filed:
+        // their receipts are read first, so a day filed since is not sent
+        // again. One still waiting, or parked, is sent again below.
+        if !state.healthPending.isEmpty {
+            let outcome = try await confirm(state.healthPending, client, deadline: 0, label: "earlier days")
+            for day in outcome.sent {
+                state.healthDays.insert(day)
+                state.healthQueue.remove(day)
+                state.healthPending[day] = nil
+            }
+            for day in outcome.failed.keys { state.healthPending[day] = nil }
+            if !outcome.sent.isEmpty { log(.health, "\(outcome.sent.count) days sent earlier are filed now") }
+            commit(&state)
+        }
         let reader = HealthReader(store: health)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
@@ -751,6 +791,7 @@ actor SyncEngine {
                 // A day read again is not sent until it is filed again, so a
                 // rescan that fails can never leave an older success standing.
                 state.healthDays.remove(name)
+                state.healthPending[name] = nil
                 if made.isEmpty {
                     // Nothing on the phone for the day: nothing to retry.
                     state.healthQueue.remove(name)
@@ -772,6 +813,7 @@ actor SyncEngine {
                 state.healthDays.insert(day)
                 state.healthQueue.remove(day)
             }
+            for day in outcome.pending { state.healthPending[day] = fires[day] }
             for (day, reason) in outcome.failed.sorted(by: { $0.key < $1.key }) {
                 log(.health, "\(day) was refused by the server and will be sent again: \(reason)", .error)
             }
