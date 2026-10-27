@@ -41,6 +41,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -321,6 +322,11 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 					if err := t.refuseTakenTrigger(in, actor); err != nil {
 						return err
 					}
+					kept, err := t.keepTriggerSettings(in)
+					if err != nil {
+						return err
+					}
+					in = kept
 				}
 				if in.Kind != typeTrigger {
 					held, err := t.anotherHandWrote(eref{Kind: in.Kind, ID: in.ID}, actor)
@@ -377,7 +383,9 @@ func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) 
 // one namespace, and a put merges, so without this an install repoints
 // someone else's delivery at its own function: the other package stops
 // receiving its records and its uninstall no longer finds the trigger. The
-// same package re-installing, and a trigger whose callable is gone, pass.
+// same package re-installing passes, and so does a deleted trigger; a live
+// one whose callable record was removed by hand still names its package, and
+// is refused like any other.
 func (t *txn) refuseTakenTrigger(in substrate.PutInput, shipper substrate.Actor) error {
 	cur, err := t.loadRow(eref{Kind: typeTrigger, ID: in.ID}, false)
 	if err != nil || cur == nil || cur.DeletedAt != nil {
@@ -395,6 +403,48 @@ func (t *txn) refuseTakenTrigger(in substrate.PutInput, shipper substrate.Actor)
 			substrate.ErrConflict, in.ID, held, owner)
 	}
 	return nil
+}
+
+// keepTriggerSettings carries what an owner set on a shipped trigger over a
+// re-install or an upgrade of the same package: whether it is enabled, and a
+// webhook's key. The shipped document is the trigger's shape (its source,
+// headers, callable); those two are the owner's, and writing the shipped ones
+// back would disable a trigger the owner armed and drop the key every sender
+// was given (record 0192). The shipped maps are copied, never changed: they
+// are the catalog's.
+func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, error) {
+	cur, err := t.loadRow(eref{Kind: typeTrigger, ID: in.ID}, false)
+	if err != nil || cur == nil || cur.DeletedAt != nil {
+		return in, err
+	}
+	if callablePackage(storedReferencePath(cur.Props["callable"])) != callablePackage(storedReferencePath(in.Properties["callable"])) {
+		return in, nil
+	}
+	props := maps.Clone(in.Properties)
+	if enabled, ok := cur.Props["enabled"].(bool); ok {
+		props["enabled"] = enabled
+	}
+	if key := webhookKey(cur.Props); key != "" {
+		source, _ := props["source"].(map[string]any)
+		webhook, _ := source["webhook"].(map[string]any)
+		if webhook != nil {
+			source = maps.Clone(source)
+			webhook = maps.Clone(webhook)
+			webhook["key"] = key
+			source["webhook"] = webhook
+			props["source"] = source
+		}
+	}
+	in.Properties = props
+	return in, nil
+}
+
+// webhookKey is a trigger's webhook key, or empty.
+func webhookKey(props map[string]any) string {
+	source, _ := props["source"].(map[string]any)
+	webhook, _ := source["webhook"].(map[string]any)
+	key, _ := webhook["key"].(string)
+	return key
 }
 
 // callablePackage is the package a trigger's callable belongs to:

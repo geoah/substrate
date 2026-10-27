@@ -70,7 +70,10 @@ func (r dbReader) query(sqlText string, args ...any) (*sql.Rows, error) {
 // (newer version, new here, or pruned by the whole-package replace) and the
 // guard lines the install verb would refuse it on. It writes nothing. A
 // repository that never installed the bundle's package answers not-available:
-// there is nothing to upgrade, only to install.
+// there is nothing to upgrade, only to install. The closure's LAST bundle
+// document names the package previewed; the documents before it are the
+// requirements the catalog installs first, staged with it so that what they
+// bring counts and what they satisfy blocks nothing.
 func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (substrate.BundleUpgrade, error) {
 	var plan substrate.BundleUpgrade
 	if len(vocabularyDocs) == 0 {

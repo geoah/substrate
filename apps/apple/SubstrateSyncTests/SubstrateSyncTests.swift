@@ -398,7 +398,7 @@ final class OverviewTests: XCTestCase {
 }
 
 /// The deliveries the app sends, held byte for byte against the goldens the
-/// Go suite runs through the provider and the healthapple adapter
+/// Go suite runs through the applehealth provider and its adapter
 /// (internal/providertest/substratesync_test.go). Regenerate with
 /// `TEST_RUNNER_SUBSTRATE_UPDATE_GOLDEN=1` in front of `xcodebuild test`.
 final class HealthGoldenTests: XCTestCase {
