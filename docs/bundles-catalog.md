@@ -1515,17 +1515,23 @@ ignored.
 ## Apple
 
 Package `providers.substrate.reamde.dev/apple`. Apple data that an app on
-the owner's device pushes into the repository, in Apple's own shape: today
-the Contacts framework (`CNContactStore`), and later Apple Health, whose
-kinds join this package. It is the one provider with no server side. The
+the owner's device pushes into the repository, in Apple's own shape: the
+Contacts framework (`CNContactStore`) and EventKit's calendars
+(`EKEventStore`). Apple Health is its own package, below, because it arrives
+through a webhook. It is the one provider with no server side. The
 closure declares kinds and nothing else: no config, no account, no OAuth, no
 function and no triggers, because Apple's on-device frameworks have no API a
 sync could call.
 
-- **Kinds (2)**: `addressbook` (one device's contact store, as one install
+- **Kinds (5)**: `addressbook` (one device's contact store, as one install
   of the pushing app sees it: `deviceName`, `lastSyncedAt` and
-  `contactCount`) and `contact` (one `CNContact`, field for field under
-  Apple's key names, plus `addressbook` and `displayName`).
+  `contactCount`), `contact` (one `CNContact`, field for field under
+  Apple's key names, plus `addressbook` and `displayName`), `eventstore`
+  (one device's calendar store: `deviceName`, `calendarCount`, `eventCount`,
+  `lastSyncedAt`, and `windowStart`/`windowEnd`, the span the last push
+  covered), `calendar` (one `EKCalendar` that holds events) and `event` (one
+  `EKEvent` occurrence, a repeating event being one row per occurrence in the
+  window).
 - **Functions, triggers**: none.
 - **Mappings**: none shipped. A person mapping can match on
   `emailAddresses[].value` and copy `displayName` and `phoneNumbers[].value`,
@@ -1547,7 +1553,19 @@ reference.
 address book is `ExternalID("apple", "addressbook", <install UUID>)` and a
 contact is `ExternalID("apple", <address book id>, <CNContact.identifier>)`,
 because Apple's identifier is unique within one contact store and not across
-devices. The bundle's README has test vectors for a port.
+devices. The event store is `ExternalID("apple", "eventstore", <install
+UUID>)`, a calendar `ExternalID("apple", <event store id>,
+<calendarIdentifier>)`, and an event `ExternalID("apple", <event store id>,
+<key>)`, where the key is `calendarItemIdentifier`, followed for an
+occurrence of a series by `@` and its `occurrenceDate` in UTC
+(`…@2026-10-27T09:00:00Z`). Scoping an event by the store keeps its id when
+it moves between calendars. The bundle's README has test vectors for a port.
+
+**The calendar window.** A series repeats without end, so the device pushes
+the occurrences between 90 days back and 180 ahead and records the span on
+the event store. An event whose start leaves the window keeps its row; one
+whose start is inside the window and that the device no longer returns is
+deleted, and a calendar gone from the device is deleted with its events.
 
 **Apple's values, as the device reads them.** Labels are plain strings;
 a built-in label arrives as a fixed English word ("mobile", "home fax")
@@ -1557,10 +1575,17 @@ output. `birthday` and each `dates[]` entry carry `month` and `day` with
 `emailAddresses[].value` is the `email` datatype, as on Google's contact, so
 an address that does not parse refuses the write and the app leaves it out.
 Phone numbers are `CNPhoneNumber.stringValue` as typed, and URLs are strings.
+Every record carries a derived `title`, so Apple's `title` is spelled
+`calendarTitle`, `eventTitle` and `structuredLocation.locationTitle`. Enum
+values are EventKit's case names as one lowercase word (`caldav`,
+`notsupported`, `inprocess`).
 
 **What it does not do.** Nothing is read back or written to the device. The
 contact omits `note` (it needs an Apple entitlement), the image (it arrives
-later as a blob reference) and `nonGregorianBirthday`. No property is
+later as a blob reference) and `nonGregorianBirthday`. The event omits
+alarms, attachments and its recurrence rules' day rules, and reminders are
+not read. No event kind implements the temporal trait, whose `at` and
+`endsAt` would copy `startDate` and `endDate`. No property is
 search-indexed, the same as Google's contact: a mapping's match probe reads
 the person side, not the contact.
 

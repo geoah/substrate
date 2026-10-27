@@ -3,8 +3,8 @@
 #
 # THE FIRST PUSHED PROVIDER. Every other package under this authority pulls:
 # an OAuth or token account, a sync function and its triggers. Apple's data
-# lives on the owner's devices behind on-device frameworks (Contacts today,
-# HealthKit later), with no server API to call, so the direction is reversed:
+# lives on the owner's devices behind on-device frameworks (Contacts and
+# EventKit), with no server API to call, so the direction is reversed:
 # an app on the device reads the framework and writes rows here with the
 # owner's own token, one way, through the ordinary record routes:
 #
@@ -15,15 +15,14 @@
 # Nothing here reads back, and nothing runs server-side: the package declares
 # KINDS ONLY. No config, no account, no input, no `oauth2:` block, no
 # function and no `triggers.yaml`. The device is the sync; the `addressbook`
-# row is where it reports, the way an account row reports for a pulled
-# provider.
+# and `eventstore` rows are where it reports, the way an account row reports
+# for a pulled provider.
 #
 # WHY THE PACKAGE IS `apple` AND NOT `contacts`. A package is the unit one
 # publisher versions, so it is named for the source (as `google` holds four
-# products), and Apple Health adds its kinds here beside these. A product's
-# kinds carry its product's stem when there is more than one product:
-# `addressbook` and `contact` are the Contacts framework's; Health's will be
-# its own.
+# products). Each framework's kinds are named for its own objects:
+# `addressbook` and `contact` are the Contacts framework's, `eventstore`,
+# `calendar` and `event` are EventKit's.
 #
 # THE RULES, the same ones the google preamble states:
 #   - the kind IS the object, complete: every `CNContact` key this version
@@ -34,7 +33,11 @@
 #     and the server never recomputes;
 #   - no consumer slot: no `person`, no `task`. The link a `recordmapping`
 #     makes is the mapping's, and the engine synthesises its subject slot;
-#   - every relation is a reference: `contact.addressbook`.
+#   - every relation is a reference: `contact.addressbook`,
+#     `calendar.eventstore`, `event.calendar`;
+#   - a name the dialect reserves keeps Apple's word with its object's in
+#     front: every record carries `title`, so `EKCalendar.title` is
+#     `calendarTitle` and `EKEvent.title` is `eventTitle`.
 #
 # WHAT IS LEFT OUT, and why, so nobody reads the gaps as an oversight:
 #   - `note`: reading it needs Apple's `com.apple.developer.contacts.notes`
@@ -44,15 +47,24 @@
 #   - `nonGregorianBirthday`: a birthday in another calendar, which needs the
 #     calendar identifier beside it to mean anything;
 #   - `CNLabeledValue.identifier`: the per-entry id is device-local like the
-#     contact's own, and nothing addresses an entry by it.
+#     contact's own, and nothing addresses an entry by it;
+#   - an event's alarms and attachments, and its recurrence rules' day rules:
+#     each occurrence is pushed, so its instants are here without them.
 #
 # IDS ARE COMPUTED ON THE DEVICE, with the same algorithm as
 # `host.ids.external` (internal/runner/ids.go, `ExternalID`), so a re-push
 # upserts rather than duplicates:
 #   addressbook: ExternalID("apple", "addressbook", <install UUID, lowercase>)
 #   contact:     ExternalID("apple", <addressbook id>, <CNContact.identifier>)
+#   eventstore:  ExternalID("apple", "eventstore", <install UUID, lowercase>)
+#   calendar:    ExternalID("apple", <eventstore id>, <calendarIdentifier>)
+#   event:       ExternalID("apple", <eventstore id>, <occurrence key>)
 # `CNContact.identifier` is unique per contact STORE, not globally, which is
-# why the address book's id is the account component. The README carries the
+# why the address book's id is the account component, and the event store
+# scopes a calendar and an event the same way. An event's key is its
+# `calendarItemIdentifier`, followed for an occurrence of a series by "@" and
+# its `occurrenceDate` in UTC; scoped by the store and not the calendar, an
+# event keeps its id when it moves between calendars. The README carries the
 # recipe and test vectors for the Swift port.
 #
 # WHO MAY WRITE. A token has full access to its repository, and a PUBLISHED
@@ -70,7 +82,8 @@ data:
   authority: providers.substrate.reamde.dev
   package: apple
   # 1: `addressbook` and `contact`, the Contacts framework pushed by a device.
-  version: 1
+  # 2: `eventstore`, `calendar` and `event`, EventKit pushed by a device.
+  version: 2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No input and no
@@ -83,11 +96,15 @@ data:
   authority: providers.substrate.reamde.dev
   package: apple
   description: >-
-    Keeps a copy of the contacts on your iPhone, pushed by an app on the device
-    in Apple's own shape. One way: nothing is ever written back to the phone.
+    Keeps a copy of the contacts and calendar events on your iPhone or iPad,
+    pushed by an app on the device in Apple's own shape. One way: nothing
+    is ever written back to the device.
   installs:
     - providers.substrate.reamde.dev/apple/addressbook
     - providers.substrate.reamde.dev/apple/contact
+    - providers.substrate.reamde.dev/apple/eventstore
+    - providers.substrate.reamde.dev/apple/calendar
+    - providers.substrate.reamde.dev/apple/event
 ---
 # ---- one device's contact store -------------------------------------------
 # One row per contact store on one install of the pushing app. It is the
@@ -510,3 +527,504 @@ data:
           type: string
           description: >-
             `CNContactRelation.name`, the related person's name as typed.
+---
+# ---- one device's calendar store ------------------------------------------
+# EventKit's `EKEventStore`, as one install of the pushing app sees it: the
+# Calendar analog of `addressbook`. It is the scope every calendar and event
+# id hashes under, and deleting it collects its calendars, whose events
+# cascade in turn.
+#
+# Its properties are the device's report on itself. `windowStart` and
+# `windowEnd` are the span the last push read occurrences in, because an
+# event store has no complete list of events to push: a series repeats
+# forever, so the device pushes the occurrences inside a window and says
+# which. An event row outside the window is the last push that saw it, not
+# a statement that it still exists.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/eventstore
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    The calendars on one of your Apple devices. One row per install of the
+    app that pushes them, and the scope every calendar and event id from that
+    device is computed in.
+  purpose: supporting
+  names:
+    singular: eventstore
+  label:
+    singular: Event store
+    plural: Event stores
+  displayTemplate: "{deviceName|id}"
+  properties:
+    deviceName:
+      type: string
+      displayName: Device name
+      description: >-
+        the device's name as the app reads it (`UIDevice.name`); absent when
+        the app sent none.
+    calendarCount:
+      type: int
+      min: 0
+      displayName: Calendar count
+      description: >-
+        how many event calendars the device's last complete push held.
+    eventCount:
+      type: int
+      min: 0
+      displayName: Event count
+      description: >-
+        how many event occurrences the last complete push held, inside its
+        window.
+    # --- instants ---------------------------------------------------------
+    windowStart:
+      type: datetime
+      displayName: Window start
+      description: >-
+        the start of the span the last push read occurrences in.
+    windowEnd:
+      type: datetime
+      displayName: Window end
+      description: >-
+        the end of the span the last push read occurrences in.
+    lastSyncedAt:
+      type: datetime
+      displayName: Last synced
+      description: >-
+        when the device last finished pushing this event store.
+---
+# ---- one Apple calendar: an `EKCalendar` that holds events -----------------
+# Every property is the `EKCalendar` key of the same name, with three
+# exceptions. `eventstore` is the row this calendar came from. `title` is a
+# name every record already carries (derived storage, decision 0016), so
+# Apple's `title` is `calendarTitle`. And `source` is an object Apple shares
+# between calendars, of which the two fields a reader needs ride here as
+# `sourceTitle` and `sourceType` rather than as a kind of its own.
+#
+# Only event calendars are pushed: a reminders list is an `EKCalendar` too,
+# and none is read.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/calendar
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    A calendar on your iPhone or iPad. One Apple EKCalendar that holds events,
+    pushed by an app on the device and keyed on its identifier within one
+    event store.
+  purpose: supporting
+  names:
+    singular: calendar
+  label:
+    singular: Calendar
+    plural: Calendars
+  displayTemplate: "{calendarTitle|calendarIdentifier}"
+  properties:
+    # --- identity -----------------------------------------------------------
+    eventstore:
+      type: reference
+      kind: providers.substrate.reamde.dev/apple/eventstore
+      required: true
+      onDelete: cascade
+      displayName: Event store
+      description: >-
+        the event store this calendar was pushed from. Always written.
+    calendarIdentifier:
+      type: string
+      required: true
+      displayName: Calendar identifier
+      description: >-
+        `calendarIdentifier`, Apple's id for the calendar, unique within one
+        device's event store.
+    # --- the object's own fields --------------------------------------------
+    calendarTitle:
+      type: string
+      displayName: Title
+      description: >-
+        `title`, the calendar's name as the device shows it.
+    type:
+      type: enum
+      values:
+        - value: local
+          label: local
+        - value: caldav
+          label: calDAV
+        - value: exchange
+          label: exchange
+        - value: subscription
+          label: subscription
+        - value: birthday
+          label: birthday
+      displayName: Type
+      description: >-
+        `type`, the kind of calendar (`EKCalendarType`).
+    sourceTitle:
+      type: string
+      displayName: Account
+      description: >-
+        `source.title`, the account the calendar belongs to, such as iCloud
+        or an address.
+    sourceType:
+      type: enum
+      values:
+        - value: local
+          label: local
+        - value: exchange
+          label: exchange
+        - value: caldav
+          label: calDAV
+        - value: mobileme
+          label: mobileMe
+        - value: subscribed
+          label: subscribed
+        - value: birthdays
+          label: birthdays
+      displayName: Account type
+      description: >-
+        `source.sourceType`, the kind of account (`EKSourceType`).
+    color:
+      type: string
+      displayName: Colour
+      description: >-
+        `cgColor`, written as `#RRGGBB` in sRGB.
+    allowsContentModifications:
+      type: bool
+      displayName: Editable
+      description: >-
+        `allowsContentModifications`, whether events may be added, changed
+        or removed on the device.
+    isSubscribed:
+      type: bool
+      displayName: Subscribed
+      description: >-
+        `isSubscribed`, whether the calendar is a subscription.
+    isImmutable:
+      type: bool
+      displayName: Immutable
+      description: >-
+        `isImmutable`, whether the calendar itself may not be changed.
+---
+# ---- one Apple event occurrence: an `EKEvent` ------------------------------
+# Every property is the `EKEvent` (or its superclass `EKCalendarItem`) key of
+# the same name, with two exceptions: `calendar` is a reference to the
+# calendar row, and Apple's `title` is `eventTitle` (see the calendar).
+#
+# ONE ROW PER OCCURRENCE. EventKit hands a series out as its occurrences, each
+# an `EKEvent` with its own `startDate` and `occurrenceDate`, and nothing on
+# the device names the series as a whole. So a single event is one row, and a
+# series is one row per occurrence inside the event store's window, keyed on
+# the item identifier and the occurrence's original start (see the README).
+# The rule itself rides on each occurrence as `recurrenceRules`, without the
+# day-of rules.
+#
+# No temporal trait: the trait's `at`/`endsAt` would be a second copy of
+# `startDate`/`endDate`, and this package carries no derived property.
+#
+# WHAT IS LEFT OUT: alarms, attachments, and a recurrence rule's day rules
+# (`daysOfTheWeek`, `daysOfTheMonth`, `daysOfTheYear`, `weeksOfTheYear`,
+# `monthsOfTheYear`, `setPositions`). Each occurrence is pushed, so the
+# instants are here even where the rule that made them is not.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/apple/event
+data:
+  authority: providers.substrate.reamde.dev
+  package: apple
+  description: >-
+    An event on your iPhone or iPad calendar. One Apple EKEvent occurrence,
+    pushed by an app on the device; a repeating event is one row per occurrence
+    in the window the device pushes.
+  names:
+    singular: event
+  label:
+    singular: Event
+    plural: Events
+  displayTemplate: "{eventTitle|calendarItemIdentifier}"
+  properties:
+    # --- identity -----------------------------------------------------------
+    calendar:
+      type: reference
+      kind: providers.substrate.reamde.dev/apple/calendar
+      required: true
+      onDelete: cascade
+      displayName: Calendar
+      description: >-
+        the calendar this event is on. Always written; moving the event to
+        another calendar rewrites it and keeps the row.
+    calendarItemIdentifier:
+      type: string
+      required: true
+      displayName: Item identifier
+      description: >-
+        `calendarItemIdentifier`, the device's id for the event, shared by
+        every occurrence of a series.
+    eventIdentifier:
+      type: string
+      displayName: Event identifier
+      description: >-
+        `eventIdentifier`, EventKit's other id for the event; absent for an
+        event not yet saved.
+    calendarItemExternalIdentifier:
+      type: string
+      displayName: External identifier
+      description: >-
+        `calendarItemExternalIdentifier`, the server's id for the event, such
+        as the CalDAV UID.
+    # --- the object's own fields --------------------------------------------
+    eventTitle:
+      type: string
+      displayName: Title
+      description: >-
+        `title`, the event's title.
+    location:
+      type: string
+      displayName: Location
+      description: >-
+        `location`, the place as text.
+    structuredLocation:
+      type: object
+      displayName: Structured location
+      description: >-
+        `structuredLocation`, the place with its coordinates, when the event
+        has one.
+      fields:
+        locationTitle:
+          type: string
+          description: >-
+            `title`, the place's name.
+        latitude:
+          type: float
+          min: -90
+          max: 90
+          description: >-
+            the latitude of `geoLocation`, in degrees.
+        longitude:
+          type: float
+          min: -180
+          max: 180
+          description: >-
+            the longitude of `geoLocation`, in degrees.
+        radius:
+          type: float
+          min: 0
+          description: >-
+            `radius`, in metres; absent when Apple uses its default.
+    notes:
+      type: text
+      displayName: Notes
+      description: >-
+        `notes`, the event's free text.
+    url:
+      type: string
+      displayName: URL
+      description: >-
+        `url`, as Apple stores it; a string, because Apple does not validate
+        it.
+    # --- when ---------------------------------------------------------------
+    startDate:
+      type: datetime
+      displayName: Starts
+      description: >-
+        `startDate`, the occurrence's start. An all-day event starts at local
+        midnight.
+    endDate:
+      type: datetime
+      displayName: Ends
+      description: >-
+        `endDate`, the occurrence's end.
+    isAllDay:
+      type: bool
+      displayName: All day
+      description: >-
+        `isAllDay`, whether the event takes whole days.
+    timeZone:
+      type: timezone
+      displayName: Time zone
+      description: >-
+        `timeZone`, the zone the event's clock is written in; absent for a
+        floating event.
+    occurrenceDate:
+      type: datetime
+      displayName: Occurrence date
+      description: >-
+        `occurrenceDate`, the start the occurrence had in its series before
+        any change to it.
+    isDetached:
+      type: bool
+      displayName: Detached
+      description: >-
+        `isDetached`, whether this occurrence was changed apart from its series.
+    hasRecurrenceRules:
+      type: bool
+      displayName: Repeats
+      description: >-
+        `hasRecurrenceRules`, whether the event repeats.
+    recurrenceRules:
+      type: object
+      repeated: true
+      displayName: Recurrence rules
+      description: >-
+        `recurrenceRules`, each `EKRecurrenceRule` without its day rules.
+      fields:
+        frequency:
+          type: enum
+          values:
+            - value: daily
+              label: daily
+            - value: weekly
+              label: weekly
+            - value: monthly
+              label: monthly
+            - value: yearly
+              label: yearly
+          description: >-
+            `frequency`, how often the rule repeats.
+        interval:
+          type: int
+          min: 1
+          description: >-
+            `interval`, every how many periods it repeats.
+        endDate:
+          type: datetime
+          description: >-
+            `recurrenceEnd.endDate`, when the rule stops; absent for a rule
+            that ends after a count or never.
+        occurrenceCount:
+          type: int
+          min: 1
+          description: >-
+            `recurrenceEnd.occurrenceCount`, how many times it repeats; absent
+            for a rule that ends on a date or never.
+    availability:
+      type: enum
+      values:
+        - value: notsupported
+          label: notSupported
+        - value: busy
+          label: busy
+        - value: free
+          label: free
+        - value: tentative
+          label: tentative
+        - value: unavailable
+          label: unavailable
+      displayName: Availability
+      description: >-
+        `availability`, how the event shows on a free and busy view.
+    status:
+      type: enum
+      values:
+        - value: none
+          label: none
+        - value: confirmed
+          label: confirmed
+        - value: tentative
+          label: tentative
+        - value: canceled
+          label: canceled
+      displayName: Status
+      description: >-
+        `status`, whether the event is confirmed, tentative or canceled.
+    # --- people -------------------------------------------------------------
+    organizer:
+      type: object
+      displayName: Organizer
+      description: >-
+        `organizer`, the participant who organized the event.
+      fields:
+        name:
+          type: string
+          description: >-
+            `name`, the organizer's name.
+        url:
+          type: string
+          description: >-
+            `url`, usually a mailto address.
+        isCurrentUser:
+          type: bool
+          description: >-
+            `isCurrentUser`, whether the organizer is the device's owner.
+    attendees:
+      type: object
+      repeated: true
+      displayName: Attendees
+      description: >-
+        `attendees`, each `EKParticipant` invited.
+      fields:
+        name:
+          type: string
+          description: >-
+            `name`, the attendee's name.
+        url:
+          type: string
+          description: >-
+            `url`, usually a mailto address.
+        participantRole:
+          type: enum
+          values:
+            - value: unknown
+              label: unknown
+            - value: required
+              label: required
+            - value: optional
+              label: optional
+            - value: chair
+              label: chair
+            - value: nonparticipant
+              label: nonParticipant
+          description: >-
+            `participantRole`, the attendee's role.
+        participantStatus:
+          type: enum
+          values:
+            - value: unknown
+              label: unknown
+            - value: pending
+              label: pending
+            - value: accepted
+              label: accepted
+            - value: declined
+              label: declined
+            - value: tentative
+              label: tentative
+            - value: delegated
+              label: delegated
+            - value: completed
+              label: completed
+            - value: inprocess
+              label: inProcess
+          description: >-
+            `participantStatus`, the attendee's answer.
+        participantType:
+          type: enum
+          values:
+            - value: unknown
+              label: unknown
+            - value: person
+              label: person
+            - value: room
+              label: room
+            - value: resource
+              label: resource
+            - value: group
+              label: group
+          description: >-
+            `participantType`, whether the attendee is a person, a room, a
+            resource or a group.
+        isCurrentUser:
+          type: bool
+          description: >-
+            `isCurrentUser`, whether the attendee is the device's owner.
+    # --- instants -----------------------------------------------------------
+    creationDate:
+      type: datetime
+      displayName: Created
+      description: >-
+        `creationDate`, when the event was created.
+    lastModifiedDate:
+      type: datetime
+      displayName: Last modified
+      description: >-
+        `lastModifiedDate`, when the event was last changed.
