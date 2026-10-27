@@ -79,6 +79,7 @@ actor SyncEngine {
 
     static let appleKinds = "providers.substrate.reamde.dev/apple/"
     static let healthAccountKind = "providers.substrate.reamde.dev/applehealth/account"
+    static let healthExportKind = "providers.substrate.reamde.dev/applehealth/export"
     static let triggerKind = "substrate.reamde.dev/core/trigger"
     static let trigger = "applehealth-webhook"
 
@@ -209,6 +210,53 @@ actor SyncEngine {
             await progress(source, nil)
             if let onChange { await onChange(state) }
         }
+    }
+
+    /// What became of one run's deliveries, by day.
+    struct Outcome: Equatable {
+        var sent: [String] = []
+        var failed: [String: String] = [:]
+        var pending: [String] = []
+    }
+
+    /// A day is sent when every delivery it made is filed (the provider wrote
+    /// its receipt), refused when any parked, and pending otherwise.
+    static func settle(_ fires: [String: [String]], filed: Set<String>, parked: [String: String]) -> Outcome {
+        var out = Outcome()
+        for (day, ids) in fires.sorted(by: { $0.key < $1.key }) {
+            if let reason = ids.lazy.compactMap({ parked[$0] }).first {
+                out.failed[day] = reason
+            } else if ids.allSatisfy(filed.contains) {
+                out.sent.append(day)
+            } else {
+                out.pending.append(day)
+            }
+        }
+        return out
+    }
+
+    /// Waits, up to three minutes, for the provider to file or park every
+    /// delivery the run posted, and says what became of each day.
+    private func confirm(_ fires: [String: [String]], _ client: Client) async throws -> Outcome {
+        let all = Set(fires.values.joined())
+        var filed = Set<String>()
+        var parked: [String: String] = [:]
+        let deadline = Date().addingTimeInterval(180)
+        while true {
+            let open = all.subtracting(filed).subtracting(parked.keys)
+            await progress(.health, "Waiting for the server to file the deliveries", all.count - open.count, all.count)
+            if open.isEmpty || Date() > deadline { break }
+            try Task.checkCancellation()
+            for fire in open where try await client.get(Self.healthExportKind, fire) != nil {
+                filed.insert(fire)
+            }
+            for p in try await client.parked(trigger: Self.trigger) {
+                if let f = p.fireId, open.contains(f) { parked[f] = p.lastError }
+            }
+            if all.subtracting(filed).subtracting(parked.keys).isEmpty { continue }
+            try await Task.sleep(for: .seconds(3))
+        }
+        return Self.settle(fires, filed: filed, parked: parked)
     }
 
     /// A row's name for the log: its display name or title where it has one.
@@ -453,6 +501,16 @@ actor SyncEngine {
               !key.isEmpty
         else { throw SyncError.notArmed }
 
+        // The account every delivery names: one the sync cannot find is made
+        // here, as Set Up makes it, rather than every delivery parking.
+        if try await client.get(Self.healthAccountKind, state.healthAccount) == nil {
+            let device = await deviceName
+            try await client.put(Self.healthAccountKind, state.healthAccount, [
+                "displayName": device, "timezone": TimeZone.current.identifier,
+            ])
+            log(.health, "Created the Health account \(state.healthAccount)")
+        }
+
         for g in Grouping.allCases where state.automation(g) == nil {
             state.automations[g.rawValue] = UUID().uuidString
         }
@@ -466,8 +524,10 @@ actor SyncEngine {
             today: Date(), backfill: Settings.backfillDays, sent: state.healthDays, queued: state.healthQueue, calendar: calendar)
         log(.health, days.isEmpty ? "No day to send" : "Sending \(days.count) days, \(Formats.day(days.first!, in: zone)) to \(Formats.day(days.last!, in: zone))")
         var posts = 0
-        var sentDays = 0
         var skippedDays = 0
+        // Each day's fire ids, settled after the posts: the door's 202 is
+        // "stored", and only the provider's receipt is "filed".
+        var fires: [String: [String]] = [:]
         for (i, day) in days.enumerated() {
             try Task.checkCancellation()
             let name = Formats.day(day, in: zone)
@@ -489,7 +549,8 @@ actor SyncEngine {
                 // sender, and a day's order is the order its rows replace.
                 for body in delivery.bodies() {
                     do {
-                        try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers)
+                        let fire = try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers)
+                        fires[name, default: []].append(fire)
                     } catch {
                         throw ContextError(context: "Sending \(name) (\(grouping.rawValue))", underlying: error)
                     }
@@ -505,15 +566,34 @@ actor SyncEngine {
             // which HealthKit does not tell apart) stays unsent, and so does
             // one with a part it could not read: the next sync reads it again
             // and sends it whole.
-            if accepted > 0 && skipped.isEmpty {
-                state.healthDays.insert(name)
-                sentDays += 1
-            } else if !skipped.isEmpty {
-                skippedDays += 1
+            if accepted == 0 || !skipped.isEmpty {
+                fires[name] = nil
+                if !skipped.isEmpty { skippedDays += 1 }
             }
-            state.healthQueue.remove(name)
-            commit(&state)
-            if let onChange { await onChange(state) }
+        }
+
+        let outcome = try await confirm(fires, client)
+        for day in outcome.sent {
+            state.healthDays.insert(day)
+            state.healthQueue.remove(day)
+        }
+        // A day that did not file goes again next time, wherever it is.
+        for day in Array(outcome.failed.keys) + outcome.pending {
+            state.healthDays.remove(day)
+            state.healthQueue.insert(day)
+        }
+        for (day, reason) in outcome.failed.sorted(by: { $0.key < $1.key }) {
+            log(.health, "\(day) was refused by the server and will be sent again: \(reason)", .error)
+        }
+        if !outcome.pending.isEmpty {
+            log(.health, "\(outcome.pending.count) days were stored but not yet filed; the next sync sends them again", .warning)
+        }
+        commit(&state)
+        if let onChange { await onChange(state) }
+        let sentDays = outcome.sent.count
+        if let (day, reason) = outcome.failed.min(by: { $0.key < $1.key }) {
+            throw ContextError(context: "\(outcome.failed.count) of \(days.count) days were refused, the first \(day)",
+                               underlying: Message(reason))
         }
         await progress(.health, "Done", days.count, days.count)
         return "\(sentDays) of \(days.count) days sent · \(posts) deliveries"

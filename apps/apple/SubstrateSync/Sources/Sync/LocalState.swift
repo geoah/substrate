@@ -81,7 +81,11 @@ struct SourceStatus: Codable, Equatable, Sendable {
 struct LocalState: Codable, Sendable {
     /// One per install, lowercase: the address book's and event store's id
     /// hash it, and the Health account's id is named from it.
-    var install: String = UUID().uuidString.lowercased()
+    /// The install's id, the same in every copy of the state: it lives in the
+    /// Keychain, not in this file, so two copies loaded before the first save
+    /// can never mint two ids (and name two Health accounts), and a reinstall
+    /// keeps its address book, event store and account.
+    var install: String { InstallID.current }
     var contacts: [String: Pushed] = [:]
     var calendars: [String: Pushed] = [:]
     var events: [String: Pushed] = [:]
@@ -108,7 +112,6 @@ struct LocalState: Codable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        install = try c.decode(String.self, forKey: .install)
         contacts = try c.decodeIfPresent([String: Pushed].self, forKey: .contacts) ?? [:]
         calendars = try c.decodeIfPresent([String: Pushed].self, forKey: .calendars) ?? [:]
         events = try c.decodeIfPresent([String: Pushed].self, forKey: .events) ?? [:]
@@ -129,6 +132,14 @@ struct LocalState: Codable, Sendable {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("sync-state.json")
+    }
+
+    /// The install id an older build kept in this file, if any, so the
+    /// Keychain takes it over rather than minting a new one.
+    static func storedInstall() -> String? {
+        struct Old: Decodable { let install: String? }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return (try? JSONDecoder().decode(Old.self, from: data))?.install
     }
 
     static func load() -> LocalState {
@@ -182,4 +193,16 @@ func eachLimited<T: Sendable, R: Sendable>(
         }
         return results
     }
+}
+
+/// The install's one id, made once and kept in the Keychain. Read once per
+/// process (a `static let` initializes exactly once, under the runtime's
+/// lock), taken over from an older build's state file where there is one.
+enum InstallID {
+    static let current: String = {
+        if let id = Keychain.string(account: "install"), !id.isEmpty { return id }
+        let id = LocalState.storedInstall() ?? UUID().uuidString.lowercased()
+        Keychain.setString(id, account: "install")
+        return id
+    }()
 }

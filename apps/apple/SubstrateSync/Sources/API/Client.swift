@@ -155,9 +155,12 @@ struct Client: Sendable {
         guard (200 ..< 300).contains(status) || status == 404 else { throw ServerError(status: status, data: data) }
     }
 
-    /// One Health delivery to the webhook door. 202 is stored; anything else
-    /// is the door's refusal.
-    func deliver(authority: String, trigger: String, body: Data, headers: [(String, String)]) async throws {
+    /// One Health delivery to the webhook door, answering the fire id it was
+    /// stored under. A 202 means stored, not filed: the provider's function
+    /// runs after it, and writes its receipt at that id or parks the
+    /// delivery (`parked`), so a caller confirms one or the other.
+    @discardableResult
+    func deliver(authority: String, trigger: String, body: Data, headers: [(String, String)]) async throws -> String {
         var request = URLRequest(url: server.appendingPathComponent("webhooks/\(authority)/\(trigger)"))
         request.httpMethod = "POST"
         request.timeoutInterval = 60
@@ -165,6 +168,22 @@ struct Client: Sendable {
         request.httpBody = body
         let (data, status) = try await perform(request)
         guard status == 202 || status == 200 else { throw ServerError(status: status, data: data) }
+        struct Accepted: Decodable { let fire: String }
+        return (try? JSONDecoder().decode(Accepted.self, from: data))?.fire ?? ""
+    }
+
+    /// A delivery the trigger's function refused, kept by the server with
+    /// its reason.
+    struct Parked: Decodable, Sendable {
+        let fireId: String?
+        let lastError: String
+    }
+
+    func parked(trigger: String) async throws -> [Parked] {
+        struct Page: Decodable { let items: [Parked] }
+        let (data, status) = try await send("GET", path: "api/v1/substrate.reamde.dev/core/trigger/\(escape(trigger))/parked")
+        guard status == 200 else { throw ServerError(status: status, data: data) }
+        return try JSONDecoder().decode(Page.self, from: data).items
     }
 
     private func recordPath(_ kind: String, _ id: String) -> String {

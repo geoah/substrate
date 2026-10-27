@@ -104,6 +104,41 @@ final class FormatTests: XCTestCase {
     }
 }
 
+/// A delivery the door stored is not yet a delivery the provider filed: a
+/// day counts as sent only when every one of its deliveries has a receipt,
+/// and a parked one sends the day again with the server's reason.
+final class HealthSettleTests: XCTestCase {
+    func testADayIsSentOnlyWhenEveryDeliveryIsFiled() {
+        let fires = ["2026-10-20": ["hook-a", "hook-b"], "2026-10-21": ["hook-c", "hook-d"], "2026-10-22": ["hook-e"]]
+        let out = SyncEngine.settle(
+            fires, filed: ["hook-a", "hook-b", "hook-c"],
+            parked: ["hook-e": "the delivery names account 'x' and no account record has that id"])
+        XCTAssertEqual(out.sent, ["2026-10-20"])
+        XCTAssertEqual(out.pending, ["2026-10-21"])
+        XCTAssertEqual(out.failed, ["2026-10-22": "the delivery names account 'x' and no account record has that id"])
+    }
+
+    func testAParkedDeliveryFailsItsDayEvenWhenTheOtherFiled() {
+        let out = SyncEngine.settle(["2026-10-20": ["hook-a", "hook-b"]], filed: ["hook-a"], parked: ["hook-b": "refused"])
+        XCTAssertEqual(out.sent, [])
+        XCTAssertEqual(out.failed["2026-10-20"], "refused")
+    }
+}
+
+/// Every copy of the state names one install, and so one Health account,
+/// address book and event store, before anything was ever saved.
+final class InstallIDTests: XCTestCase {
+    func testEveryCopyOfTheStateNamesOneInstall() {
+        let a = LocalState(), b = LocalState.load(), c = LocalState()
+        XCTAssertEqual(a.install, b.install)
+        XCTAssertEqual(b.install, c.install)
+        XCTAssertEqual(a.healthAccount, c.healthAccount)
+        XCTAssertEqual(a.ids.addressbook, b.ids.addressbook)
+        XCTAssertEqual(InstallID.current, Keychain.string(account: "install"))
+        XCTAssertEqual(UUID(uuidString: InstallID.current)?.uuidString.lowercased(), InstallID.current)
+    }
+}
+
 /// HealthKit answers a query over a type the device has no source of
 /// ("Unable to invalidate interval: no data source available") with its
 /// no-data error; a sync reads that as nothing, and any other error stays an

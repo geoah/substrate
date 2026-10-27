@@ -92,6 +92,13 @@ final class Activity: @unchecked Sendable {
     }
 }
 
+/// A reason in someone else's words, such as a parked delivery's.
+struct Message: LocalizedError {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var errorDescription: String? { text }
+}
+
 /// An error with where it happened, so a refusal reads as "Health,
 /// 2026-10-20, flights climbed: …" rather than HealthKit's sentence alone.
 struct ContextError: LocalizedError {
