@@ -120,13 +120,99 @@ dir="$(xcrun simctl get_app_container booted dev.reamde.substrate.console data)/
 
 Release builds carry none of it.
 
+## Substrate Sync
+
+A second app in the same project: `SubstrateSync` (bundle id
+`dev.reamde.substrate.sync`), iPhone and iPad only, iOS 26. It carries no
+console and no Sparkle. It reads the device's Health, Contacts and Calendar
+and pushes them into one repository, signed in with the owner's password,
+over the API alone. Nothing is written back to the device.
+
+```bash
+mise run apple:build:sync     # the app for the simulator
+mise run apple:release:sync   # archived, signed and published under sync/
+```
+
+| Source    | Lands as | How |
+| --------- | -------- | --- |
+| Contacts  | `providers.substrate.reamde.dev/apple/addressbook` and `…/contact` | `PUT` per changed contact, `PATCH` to null for a vanished key, `DELETE` for a vanished contact, then the address book row |
+| Calendars | `…/apple/eventstore`, `…/calendar` and `…/event` | every event calendar and every occurrence from 90 days back to 180 ahead; an event that ages out of the window keeps its row |
+| Health    | `providers.substrate.reamde.dev/applehealth` mirror rows, then observations, sleep and workouts through `samples.substrate.reamde.dev/healthapple` | Health Auto Export's JSON to `/webhooks/<authority>/applehealth-webhook`, two deliveries per local day |
+
+The ids and the field rules are the apple package's
+[README](../../kinds/providers.substrate.reamde.dev/apple/README.md); the
+Health format is the one `internal/synth/applehealth.go` emits, and two
+goldens hold the app to it from both sides:
+`internal/providertest/testdata/applehealth/app_minutes.json` and
+`app_seconds.json`. The app's tests compare its encoder with them byte for
+byte, and `internal/providertest/substratesync_test.go` runs them through
+the provider and the adapter. After a deliberate change to the format,
+regenerate them and run both:
+
+```bash
+TEST_RUNNER_SUBSTRATE_UPDATE_GOLDEN=1 xcodebuild -project web/apple/Substrate.xcodeproj \
+  -scheme SubstrateSync -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
+go test -count=1 -run TestSubstrateSync ./internal/providertest/
+```
+
+**Signing in** checks the address's discovery document, asks for a code only
+when `registration.totpRequired` says so, and keeps the token's secret, its
+id and the repository in the Keychain. Sign Out revokes the token.
+
+**Set up** lists what the repository lacks and does it with one button:
+installs (or upgrades to version 2) `providers.substrate.reamde.dev/apple`
+and installs `…/applehealth`, imports the `observations`, `health` and
+`healthapple` samples in that order, creates the Health account
+`substrate-sync-<first 8 characters of the install id>`, and arms the
+`applehealth-webhook` trigger. It keeps a key already on the trigger unless
+the owner says to replace it, and otherwise sets a new 32-character one. A
+refusal is shown in the server's own words.
+
+**Health** goes as two deliveries per local day, oldest day first: every
+metric at one row per minute (`automation-aggregation: minutes`), and the
+sleep segments and workouts (`seconds`). The first sync sends the backfill
+(14 days unless Settings says 7, 30 or 90); each later one sends yesterday,
+today and any day not yet accepted. A delivery replaces a metric's rows
+across its span, so a day is always sent whole, and a day larger than 4 MiB
+is split by metric.
+
+**Home is one page of statistics and settings.** Each source shows its
+switch, access, how much of what the device holds has been synced (Health:
+days with steps, heart rate or sleep over the last ten years; Contacts: every
+contact; Calendars: the occurrences in the window), what it is doing now,
+its last sync and its last error. Coverage charts synced against available by
+week, month or year, lists every stretch with its progress, and for Health
+queues a stretch's missing days (or all of them) for the next sync, so a
+history older than the backfill goes out on request. History lists the last
+sixty runs with what each wrote and how long it took.
+
+**In the background** a refresh task syncs when the system allows, and
+HealthKit's observer queries (heart rate, steps, sleep, workouts) wake the
+app to send Health. Settings → Sync in the background picks hourly, every
+six hours, daily, or only on Sync Now: it is the soonest a background run
+may sync a source again, the refresh task's earliest start, and HealthKit's
+delivery frequency (none when syncing by hand). iOS decides the moment. The debug build's Home has Add Sample
+Data, which writes yesterday's Health samples, three contacts and a sample
+calendar for a simulator to sync.
+
+**Releases** go to `$SUBSTRATE_APPLE_RELEASE_URL/sync/`, a folder of their
+own with the same `index.json`, install page and manifests (`feed.swift`
+reads the app's `name` from `release.json`), and the app's Check for Updates
+reads it. The build needs HealthKit on the development profile: with
+automatic signing `-allowProvisioningUpdates` adds it to
+`dev.reamde.substrate.sync`, else enable it on the identifier in the
+developer portal. The IPA installs on the team's registered devices, with
+Developer Mode on.
+
 ## Layout
 
 ```text
 project.yml                 the xcodegen spec, the only project source
-Support/                    Info.plist per platform, the macOS entitlements
+Support/                    Info.plist per platform and Substrate Sync's, the entitlements
 Substrate/Assets.xcassets   the icon (scripts/icon.swift draws it)
 Substrate/Sources/App/      the app, its macOS menus, ServerStore, the updater
 scripts/feed.swift          a release's index.json, appcast.xml, install page and manifest
 Substrate/Sources/Shell/    the scheme handler, the web view's controller, the picker, the debug driver
+SubstrateSync/Sources/      Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
+SubstrateSyncTests/         its tests: ids, labels, dates, the Health goldens
 ```

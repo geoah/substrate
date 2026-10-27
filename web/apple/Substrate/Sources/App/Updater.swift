@@ -36,6 +36,12 @@ struct BuildInfo: Sendable {
         updates = base.isEmpty ? nil : URL(string: base.hasSuffix("/") ? base : base + "/")
     }
 
+    /// The app's name as the home screen shows it: the console app and
+    /// Substrate Sync share this file.
+    static var appName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Substrate"
+    }
+
     static func newer(_ a: String, than b: String) -> Bool {
         a.compare(b, options: .numeric) == .orderedDescending
     }
@@ -231,7 +237,7 @@ extension View {
             Button("Install") { updates.install(release) }
             Button("Not Now", role: .cancel) { updates.skip(release) }
         } message: { release in
-            Text("Substrate \(release.version) is ready to install. You have \(updates.build.version).")
+            Text("\(BuildInfo.appName) \(release.version) is ready to install. You have \(updates.build.version).")
         }
         .alert(
             "Check for Updates",

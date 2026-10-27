@@ -1,6 +1,6 @@
 // Draws the app icon: web/console/public/substrate.svg's three layers on a
 // full-bleed square, which each platform masks to its own shape.
-// Usage: swift scripts/icon.swift <out.png>
+// Usage: swift scripts/icon.swift <out.png> [#rrggbb background]
 import AppKit
 
 let size = 1024.0
@@ -15,7 +15,13 @@ let ctx = NSGraphicsContext.current!.cgContext
 ctx.translateBy(x: 0, y: size)
 ctx.scaleBy(x: 1, y: -1)
 
-ctx.setFillColor(NSColor(srgbRed: 0x2f / 255, green: 0x6e / 255, blue: 0xa6 / 255, alpha: 1).cgColor)
+// The console's blue unless another background is named: Substrate Sync's
+// icon is the same mark on its own colour.
+let background = CommandLine.arguments.count > 2
+    ? UInt32(CommandLine.arguments[2].trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16)!
+    : 0x2f6ea6
+func channel(_ shift: UInt32) -> CGFloat { CGFloat((background >> shift) & 0xff) / 255 }
+ctx.setFillColor(NSColor(srgbRed: channel(16), green: channel(8), blue: channel(0), alpha: 1).cgColor)
 ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
 
 func point(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * unit, y: y * unit) }

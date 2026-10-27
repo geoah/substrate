@@ -24,6 +24,9 @@ struct Artifact: Codable {
 }
 
 struct Release: Codable {
+    /// The app's name, for the manifest and the page; absent is the console
+    /// app, "Substrate", whose feed predates the field.
+    var name: String?
     var version: String
     var shortVersion: String
     var build: String
@@ -55,6 +58,13 @@ if args[2] != "-", let data = try? Data(contentsOf: URL(fileURLWithPath: args[2]
 index.releases.removeAll { $0.build == release.build }
 index.releases.append(release)
 index.releases.sort { $0.build.compare($1.build, options: .numeric) == .orderedDescending }
+let name = release.name ?? "Substrate"
+// Another app's folder holds no Mac build, and its page says so.
+let hasMac = index.releases.contains { $0.macos != nil }
+let heading = hasMac ? "\(name) for iPhone, iPad and Mac" : "\(name) for iPhone and iPad"
+let blurb = name == "Substrate"
+    ? "The console in a native app that talks to a substrate's API. Installed builds update themselves from here."
+    : "Installed builds offer each newer release themselves."
 
 func absolute(_ path: String) -> String {
     URL(string: path, relativeTo: base)!.absoluteString
@@ -106,7 +116,7 @@ try write("""
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>Substrate</title>\(items)
+    <title>\(xml(name))</title>\(items)
   </channel>
 </rss>
 
@@ -125,7 +135,7 @@ if let ios = release.ios, let manifest = ios.manifest {
                 "bundle-identifier": release.bundleIdentifier,
                 "bundle-version": release.shortVersion,
                 "kind": "software",
-                "title": "Substrate",
+                "title": name,
             ],
         ]],
     ]
@@ -166,6 +176,7 @@ for r in index.releases {
           </tr>
     """
 }
+let mac = "<p><strong>Mac:</strong> download, unzip and move Substrate to Applications before opening it. If macOS says it cannot check the app, open System Settings → Privacy &amp; Security and choose Open Anyway. After that, Substrate → Check for Updates (and the scheduled check) installs newer releases itself.</p>"
 let latest = index.releases.first.map { "<p class=\"latest\">\(install($0))</p>" } ?? ""
 try write("""
 <!doctype html>
@@ -173,7 +184,7 @@ try write("""
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Substrate for iPhone, iPad and Mac</title>
+  <title>\(xml(heading))</title>
   <style>
     :root { color-scheme: light dark; font: 15px/1.5 -apple-system, system-ui, sans-serif; }
     body { max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
@@ -187,13 +198,13 @@ try write("""
   </style>
 </head>
 <body>
-  <h1>Substrate for iPhone, iPad and Mac</h1>
-  <p class="muted">The console in a native app that talks to a substrate's API. Installed builds update themselves from here.</p>
+  <h1>\(xml(heading))</h1>
+  <p class="muted">\(xml(blurb))</p>
   <h2>Latest</h2>
   \(latest)
   <h2>First install</h2>
   <p><strong>iPhone and iPad:</strong> open this page in Safari and tap Install. Only devices registered to the team can install it, and a development-signed build needs Developer Mode (Settings → Privacy &amp; Security). After that, the app offers each newer release itself.</p>
-  <p><strong>Mac:</strong> download, unzip and move Substrate to Applications before opening it. If macOS says it cannot check the app, open System Settings → Privacy &amp; Security and choose Open Anyway. After that, Substrate → Check for Updates (and the scheduled check) installs newer releases itself.</p>
+  \(hasMac ? mac : "")
   <h2>Every release</h2>
   <table>
     <thead><tr><th>Version</th><th>Channel</th><th>Commit</th><th>Built</th><th>Install</th></tr></thead>

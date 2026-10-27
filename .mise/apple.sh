@@ -42,6 +42,12 @@ build_sim() {
 	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/Substrate.app"
 }
 
+build_sync() {
+	xcodebuild -project "$PROJECT" -scheme SubstrateSync -derivedDataPath "$DERIVED" \
+		-allowProvisioningUpdates -quiet -destination 'generic/platform=iOS Simulator' -configuration Debug build
+	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateSync.app"
+}
+
 build_device() {
 	xcb -destination 'generic/platform=iOS' -configuration Release build
 	echo "apple: $DERIVED/Build/Products/Release-iphoneos/Substrate.app"
@@ -103,8 +109,11 @@ sim() {
 # version itself and needs a clean tree. Signing is the archive's identity
 # unless SUBSTRATE_APPLE_EXPORT_IOS / _MACOS names another export method
 # (release-testing for ad hoc, developer-id for a notarizable Mac build).
-release() {
-	local channel="${1:-prerelease}"
+#
+# Sets the caller's `short`, `build`, `commit` and `version` for a channel,
+# after checking the release folder and the key are in the environment.
+stamp() {
+	local channel="$1"
 	case "$channel" in
 	prerelease | stable) ;;
 	*)
@@ -112,8 +121,7 @@ release() {
 		return 2
 		;;
 	esac
-	local base="${SUBSTRATE_APPLE_RELEASE_URL:?set SUBSTRATE_APPLE_RELEASE_URL to the https address of the release folder}"
-	base="${base%/}"
+	: "${SUBSTRATE_APPLE_RELEASE_URL:?set SUBSTRATE_APPLE_RELEASE_URL to the https address of the release folder}"
 	: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the bucket}"
 	: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
 
@@ -125,7 +133,7 @@ release() {
 		fi
 		dirty=".dirty"
 	fi
-	local released major minor patch short build commit version
+	local released major minor patch
 	released="$(jq -r '."."' ../../.release-please-manifest.json)"
 	IFS=. read -r major minor patch <<<"$released"
 	build="$(date -u +%Y%m%d.%H%M%S)"
@@ -137,6 +145,12 @@ release() {
 		short="$major.$minor.$((patch + 1))"
 		version="$short-pre.$build+$commit"
 	fi
+}
+
+release() {
+	local channel="${1:-prerelease}" short build commit version
+	stamp "$channel"
+	local base="${SUBSTRATE_APPLE_RELEASE_URL%/}"
 
 	xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme "$SCHEME" \
 		-derivedDataPath "$DERIVED" -quiet
@@ -194,9 +208,62 @@ release() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
-	# The published index is the history the new one extends: a missing one
-	# is the first release, anything else that is not a 200 stops here
-	# rather than publish an index that forgot every release before.
+	publish "$base" "$out" "$stage" "$rel"
+	echo "apple: released $version ($channel)"
+	echo "apple: $base/index.html"
+}
+
+# Substrate Sync: the iPhone and iPad app alone, archived, exported the way
+# the console app's iOS build is, and published to its own folder, `sync/`
+# under the console app's, with feeds of its own. Its version is stamped the
+# same way, so the two apps built from one commit carry one version.
+release_sync() {
+	local channel="${1:-prerelease}" short build commit version
+	stamp "$channel"
+	local base="${SUBSTRATE_APPLE_RELEASE_URL%/}/sync"
+	local out="build/release-sync/$build" rel="releases/$build"
+	local stage="$out/stage"
+	rm -rf "$out"
+	mkdir -p "$stage/$rel"
+	xcodebuild -project "$PROJECT" -scheme SubstrateSync -derivedDataPath "$DERIVED" \
+		-allowProvisioningUpdates -quiet -destination 'generic/platform=iOS' -configuration Release archive \
+		-archivePath "$out/iOS.xcarchive" \
+		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build" \
+		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit" \
+		SUBSTRATE_UPDATES_URL="$base/"
+	export_archive iOS "${SUBSTRATE_APPLE_EXPORT_IOS:-debugging}" "$out"
+
+	local ipa="$rel/SubstrateSync-${version%%+*}-iOS.ipa"
+	cp "$out/iOS/SubstrateSync.ipa" "$stage/$ipa"
+	local icon="SubstrateSync/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
+	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
+
+	jq -n --arg version "$version" --arg short "$short" --arg build "$build" \
+		--arg channel "$channel" --arg commit "$commit" \
+		--arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		--arg ipa "$ipa" --argjson ipaLength "$(stat -f %z "$stage/$ipa")" \
+		--arg ipaSum "$(shasum -a 256 "$stage/$ipa" | cut -d' ' -f1)" \
+		--arg rel "$rel" '{
+			name: "Substrate Sync", version: $version, shortVersion: $short, build: $build,
+			channel: $channel, commit: $commit, date: $date, bundleIdentifier: "dev.reamde.substrate.sync",
+			ios: {path: $ipa, length: $ipaLength, sha256: $ipaSum, minimumSystemVersion: "26.0",
+				manifest: "\($rel)/manifest.plist", icon: "\($rel)/icon-512.png",
+				smallIcon: "\($rel)/icon-57.png"}
+		}' >"$stage/$rel/release.json"
+
+	publish "$base" "$out" "$stage" "$rel"
+	echo "apple: released Substrate Sync $version ($channel)"
+	echo "apple: $base/index.html"
+}
+
+# Uploads one staged release beside the ones `base` already holds and
+# rewrites its feeds. The published index is the history the new one
+# extends: a missing one is the first release, anything else that is not a
+# 200 stops here rather than publish an index that forgot every release
+# before.
+publish() {
+	local base="$1" out="$2" stage="$3" rel="$4"
 	local status
 	status="$(s3 -o "$out/published.json" -w '%{http_code}' "$base/index.json")"
 	case "$status" in
@@ -218,8 +285,6 @@ release() {
 	for file in index.json appcast.xml index.html; do
 		upload "$stage/$file" "$base/$file" "no-cache"
 	done
-	echo "apple: released $version ($channel)"
-	echo "apple: $base/index.html"
 }
 
 export_archive() {
@@ -270,6 +335,10 @@ build:device)
 	project
 	build_device
 	;;
+build:sync)
+	project
+	build_sync
+	;;
 install)
 	project
 	install_macos
@@ -282,8 +351,12 @@ release)
 	project
 	release "${2:-}"
 	;;
+release:sync)
+	project
+	release_sync "${2:-}"
+	;;
 *)
-	echo "usage: $0 project|build|build:macos|build:sim|build:device|install|sim|release [prerelease|stable]" >&2
+	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|install|sim|release|release:sync [prerelease|stable]" >&2
 	exit 2
 	;;
 esac

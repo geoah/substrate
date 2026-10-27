@@ -1,5 +1,6 @@
 # The Apple apps: the console, bundled, in a native window on macOS, iPadOS
-# and iOS. xcodegen writes Substrate.xcodeproj from this file and the project
+# and iOS; and Substrate Sync, an iPhone and iPad app that pushes Health,
+# Contacts and Calendar into a repository. xcodegen writes Substrate.xcodeproj from this file and the project
 # is never committed; `mise run apple:project` regenerates it.
 name: Substrate
 options:
@@ -35,6 +36,9 @@ targets:
     type: application
     platform: auto
     supportedDestinations: [iOS, macOS]
+    # A shared scheme: once one target declares its own, xcodebuild stops
+    # inventing the rest.
+    scheme: {}
     sources:
       - Substrate
     dependencies:
@@ -82,3 +86,57 @@ targets:
           dst="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/console"
           mkdir -p "${dst}"
           rsync -a --delete "${src}/" "${dst}/"
+  SubstrateSync:
+    # iPhone and iPad only, and nothing of the console: no bundled dist/, no
+    # Sparkle. The updater is the console app's file, whose iOS path reads
+    # this app's own release feed.
+    type: application
+    platform: iOS
+    sources:
+      - SubstrateSync
+      - Substrate/Sources/App/Updater.swift
+    scheme:
+      testTargets:
+        - SubstrateSyncTests
+        - SubstrateSyncUITests
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateSync
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Support/Info-Sync.plist
+        CODE_SIGN_ENTITLEMENTS: Support/SubstrateSync.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+  SubstrateSyncTests:
+    # The goldens these tests compare against live in the Go suite's
+    # testdata, read from the checkout, so one file holds the app and the
+    # receiver to the same format.
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SubstrateSyncTests
+    dependencies:
+      - target: SubstrateSync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1,2"
+  SubstrateSyncUITests:
+    # The app against a real substrate; skipped unless SYNC_E2E_SERVER names
+    # one (SubstrateSyncUITests/EndToEndTests.swift).
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - SubstrateSyncUITests
+    dependencies:
+      - target: SubstrateSync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1,2"
