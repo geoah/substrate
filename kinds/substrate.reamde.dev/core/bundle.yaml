@@ -76,10 +76,12 @@ data:
     # NOT a reference, and the one honest exception: a member is a kind, a
     # trait, a property type, a mapping, a function or an agent, so there is no
     # single kind to pin these at.
+    # Not required: a catalogue that ships records and declares nothing has an
+    # empty closure (decision record 0192). The loader still holds a package
+    # that declares members to listing every one.
     installs:
       type: string
       repeated: true
-      required: true
       description: the exact identities the bundle ships into its package
     # NOT a reference either: these are PACKAGE identities, read while the closure
     # is still being bucketed — before any registry exists to resolve a pin

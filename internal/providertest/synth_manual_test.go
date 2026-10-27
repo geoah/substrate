@@ -1,11 +1,12 @@
 package providertest
 
 // The contract between internal/synth's hand-entered records and the shipped
-// health sample: every document of `labs.yaml` written as `load` writes it,
-// then the sample's own trigger runs `convertlab`, which writes each lab
-// result on a paired metric in the other unit system. A change to the lab
-// result's shape, to a metric's codes, or to an analyte pair that the
-// emitter does not follow fails here.
+// labs catalogue (decision record 0192): every document of `labs.yaml`
+// written as `load` writes it, then the catalogue's own `labs-on-labresult`
+// trigger runs `convertlab`, which writes each lab result on a paired metric
+// in the other unit system. A change to the lab result's shape, to a
+// metric's codes, or to an analyte pair that the emitter does not follow
+// fails here.
 
 import (
 	"bytes"
@@ -19,10 +20,12 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/synth"
-	"github.com/geoah/substrate/samples"
 )
 
-const healthLabResult = samples.Authority + "/health/labresult"
+const (
+	labResult  = labsPackage + "/labresult"
+	labAnalyte = labsPackage + "/analyte"
+)
 
 func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 	requirePython(t)
@@ -31,12 +34,13 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := synth.Manual{Authority: samples.Authority}.Emit(p)
+	out, err := synth.Manual{}.Emit(p)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The labs catalogue through the catalog's door, which brings health.
 	_, ds := newCoreDataset(t)
-	importVocabulary(t, ds, "health")
+	installShipped(t, ds, labsPackage)
 
 	// Every document, in file order, as `synth load` writes it.
 	dec := yaml.NewDecoder(bytes.NewReader(out.Files[0].Body))
@@ -58,7 +62,7 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 			t.Fatal(err)
 		}
 		mustPut(t, ds, substrate.PutInput{Kind: doc.Kind, ID: doc.Metadata.ID, Properties: doc.Data.Properties})
-		if doc.Kind == healthLabResult {
+		if doc.Kind == labResult {
 			inputs[doc.Metadata.ID] = metricOf(doc.Data.Properties)
 		}
 	}
@@ -68,7 +72,7 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 	// the pair's other metric, the US panel's mg/dL as mmol/L and the
 	// Athens panels' mmol/L as mg/dL; the rest are not.
 	pairs := map[string]string{}
-	for _, row := range listLive(t, ds, samples.Authority+"/health/analyte") {
+	for _, row := range listLive(t, ds, labAnalyte) {
 		metric := strings.TrimPrefix(storedRefPath(row.Properties["metric"]), obsMetric+"/")
 		convs, _ := row.Properties["conversions"].([]any)
 		for _, c := range convs {
@@ -76,7 +80,7 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 		}
 	}
 	derived := 0
-	for _, row := range listLive(t, ds, healthLabResult) {
+	for _, row := range listLive(t, ds, labResult) {
 		if _, ok := inputs[row.ID]; ok {
 			continue
 		}
@@ -98,11 +102,11 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 
 	// Two values end to end, one each way.
 	for id, wantValue := range map[string][2]string{
-		"harborpoint/2026-08-31/ldl_cholesterol_mass/as/health/ldl_cholesterol": {"2.897", "mmol/L"},
-		"bioiatriki/2026-07-20/glucose_fasting/as/health/fasting_glucose_mass":  {"97.3", "mg/dL"},
-		"bioiatriki/2026-07-20/hba1c/as/health/hba1c_ifcc":                      {"34.4", "mmol/mol"},
+		"harborpoint/2026-08-31/ldl_cholesterol_mass/as/labs/ldl_cholesterol": {"2.897", "mmol/L"},
+		"bioiatriki/2026-07-20/glucose_fasting/as/labs/fasting_glucose_mass":  {"97.3", "mg/dL"},
+		"bioiatriki/2026-07-20/hba1c/as/labs/hba1c_ifcc":                      {"34.4", "mmol/mol"},
 	} {
-		v, u := quantityOf(t, mustGet(t, ds, healthLabResult, id).Properties, "value")
+		v, u := quantityOf(t, mustGet(t, ds, labResult, id).Properties, "value")
 		if v != wantValue[0] || u != wantValue[1] {
 			t.Errorf("%s is %s %s, want %s %s", id, v, u, wantValue[0], wantValue[1])
 		}
@@ -111,13 +115,13 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 	// so the two compare digit for digit and a result keeps its side of the
 	// range: 3 mmol/L of LDL is 116 mg/dL, not 120 beside a value of 120.
 	ranged := 0
-	for _, row := range listLive(t, ds, healthLabResult) {
+	for _, row := range listLive(t, ds, labResult) {
 		if _, ok := inputs[row.ID]; ok {
 			continue
 		}
 		v, _ := quantityOf(t, row.Properties, "value")
 		places := decimalPlaces(v)
-		src := mustGet(t, ds, healthLabResult, refIDs(row, "derivedFrom")[0]).Properties
+		src := mustGet(t, ds, labResult, refIDs(row, "derivedFrom")[0]).Properties
 		sv, _ := quantityOf(t, src, "value")
 		srcRanges, _ := src["referenceRanges"].([]any)
 		ranges, _ := row.Properties["referenceRanges"].([]any)
@@ -143,7 +147,7 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 	if ranged == 0 {
 		t.Error("no derived result carries a converted reference bound")
 	}
-	ldl := mustGet(t, ds, healthLabResult, "bioiatriki/2026-10-05/ldl_cholesterol/as/health/ldl_cholesterol_mass").Properties
+	ldl := mustGet(t, ds, labResult, "bioiatriki/2026-10-05/ldl_cholesterol/as/labs/ldl_cholesterol_mass").Properties
 	if high := ldl["referenceRanges"].([]any)[0].(map[string]any)["high"].(map[string]any); high["value"] != "116" || high["unit"] != "mg/dL" {
 		t.Errorf("3 mmol/L of LDL converted to %v %v, want 116 mg/dL", high["value"], high["unit"])
 	}

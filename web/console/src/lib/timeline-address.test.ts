@@ -12,7 +12,7 @@ describe("per-metric choices in the address", () => {
   })
 
   it("reads and writes a metric's choice whichever way it is spelled", () => {
-    const path = "samples.substrate.reamde.dev/observations/metric/health/steps"
+    const path = "substrate.reamde.dev/observations/metric/health/steps"
     const tokens = writeChoice(null, path, "max")
     expect(choiceOf(readChoices(tokens), "health/steps")).toBe("max")
     // Written by id, the path's token goes: one choice per metric.

@@ -22,8 +22,8 @@
 // other than the register form, or in a state a fresh repository never
 // reaches: a record page, a list of records the user wrote, a connected
 // provider. The one state it seeds is measurements: before the three-metric
-// timeline it imports the observations and health samples and writes a few
-// values of three metrics, so that check proves the charts draw.
+// timeline it installs the health catalogue and writes a few values of three
+// of its metrics, so that check proves the charts draw.
 //
 // /register creates a repository on every run, so point this at a throwaway
 // substrate whose door reads no invite code and no second factor, as
@@ -242,8 +242,8 @@ async function openDoor(origin) {
   }
 }
 
-/** Imports the observations and health samples into the signed-in
- * repository and writes, over the last few hours, heart rate and heart rate
+/** Installs the health catalogue into the signed-in repository (the
+ * observation kinds are seeded) and writes, over the last few hours, heart rate and heart rate
  * variability values (two units, so they share a chart on two axes) and
  * step counts (a third unit, a chart of its own). It runs in the page with
  * the token the register form stored, as the console's own requests do. */
@@ -266,13 +266,15 @@ async function seedObservations(page) {
       })
       return res.ok ? "" : `${method} ${path} answered ${res.status}`
     }
-    for (const sample of ["observations", "health"]) {
-      const id = encodeURIComponent(`samples.substrate.reamde.dev/${sample}`)
-      const failed = await send("POST", `/api/v1/catalog/${id}/import`)
-      if (failed) return failed
-    }
-    const kind = `${home}/observations/observation`
-    const metric = (id) => ({ ref: `${home}/observations/metric/health/${id}` })
+    const failed = await send(
+      "POST",
+      `/api/v1/catalog/${encodeURIComponent("substrate.reamde.dev/health")}/install`
+    )
+    if (failed) return failed
+    const kind = "substrate.reamde.dev/observations/observation"
+    const metric = (id) => ({
+      ref: `substrate.reamde.dev/observations/metric/health/${id}`,
+    })
     const hour = 3_600_000
     const now = Date.now()
     for (let i = 1; i <= 6; i++) {
@@ -399,8 +401,8 @@ const routes = [
         '"Observations" heading',
         pageTitle(page, "Observations")
       )
-      // A fresh repository binds no `observed` kind until a sample that
-      // records measurements is added, so its page says where they come from.
+      // A fresh repository holds the observation kinds but no measurement
+      // yet, so its page says where they come from.
       await loaded(
         page,
         "streams table or empty state",

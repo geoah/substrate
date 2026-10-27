@@ -262,8 +262,8 @@ opt into twice:
   holds exactly one, with the lab's `interpretation` and `referenceRanges`.
   On a kind that does not bind it those names are ordinary properties.
 - **`revised`** marks a kind an adapter rewrites from an upstream that
-  numbers its versions, such as the health sample's `sleep`, `workout` and
-  `labreport`. A write of an implementor whose `revision` is below the stored
+  numbers its versions, such as the `health` catalogue's `sleep` and
+  `workout` and the `labs` catalogue's `labreport`. A write of an implementor whose `revision` is below the stored
   one, or that removes it, is refused, the rule `observed` holds for observed
   values, so a stale delivery never reverts a newer result. Its `origin` is
   the provider record the adapter built the row from

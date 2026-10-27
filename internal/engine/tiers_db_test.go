@@ -50,7 +50,7 @@ func newTierDataset(t *testing.T) *dataset {
 	dsn := MigratedDSN(t)
 	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

@@ -5,7 +5,6 @@
 //
 //	synth generate [-out DIR] [-providers whoop,applehealth,manual]
 //	               [-from 2026-07-14] [-to 2026-10-11] [-seed ada] [-zone Europe/Athens]
-//	               [-authority ada.example.com]
 //	synth load -authority AUTHORITY [-dir DIR] [-server URL] [-providers ...]
 //	           [-key KEY] [-replace-key] [-resume PROVIDER/NNNN] [-settle 5m]
 //	           [-repo DIR] [-ctl PATH] [-python PATH]
@@ -60,14 +59,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
-func emitters(names, authority string) ([]synth.Emitter, error) {
+func emitters(names string) ([]synth.Emitter, error) {
 	all := synth.Emitters()
-	for i, e := range all {
-		if m, ok := e.(synth.Manual); ok {
-			m.Authority = authority
-			all[i] = m
-		}
-	}
 	if names == "" {
 		return all, nil
 	}
@@ -100,7 +93,6 @@ func generate(args []string, stdout io.Writer) error {
 	to := fs.String("to", "", "the last day, YYYY-MM-DD (default 2026-10-11)")
 	seed := fs.String("seed", "", "the seed every value derives from (default ada)")
 	zone := fs.String("zone", "", "the home zone (default Europe/Athens)")
-	authority := fs.String("authority", "ada.example.com", "the repository the manual records are written to")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -120,7 +112,7 @@ func generate(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	ems, err := emitters(*providers, *authority)
+	ems, err := emitters(*providers)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,9 @@
 package engine_test
 
-// The health sample's own kinds on the write path, imported the way a
-// repository imports them: the revision a session kind holds, a lab result's
-// reference range, a workout's sport and energy, and the function that
-// writes a lab result in its paired unit system.
+// The health and labs catalogues' own kinds on the write path, installed the
+// way a repository installs them (record 0192): the revision a session kind
+// holds, a lab result's reference range, a workout's sport and energy, and
+// the function that writes a lab result in its paired unit system.
 
 import (
 	"context"
@@ -16,9 +16,8 @@ import (
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
+	"github.com/geoah/substrate/kinds"
 )
 
 // A kind binding core's `revised` holds its `revision` the way an observed
@@ -28,7 +27,7 @@ import (
 func TestRevisedKindRefusesAFallingRevision(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	sleep := testdb.Repository(t) + "/health/sleep"
+	sleep := kindSleep
 	night := map[string]any{
 		"at": "2026-10-09T22:40:00+03:00", "endsAt": "2026-10-10T06:55:00+03:00",
 		"timeAsleep": "PT7H20M", "revision": 5,
@@ -60,7 +59,7 @@ func TestLabResultReferenceRangeIsQuantities(t *testing.T) {
 	r := openObserved(t)
 	ldl := func(rng map[string]any) map[string]any {
 		return map[string]any{
-			"metric": r.metricRef("health/ldl_cholesterol"), "form": "gauge", "hold": "PT0S",
+			"metric": r.metricRef("labs/ldl_cholesterol"), "form": "gauge", "hold": "PT0S",
 			"value": quantity("3.4", "mmol/L"), "at": "2026-09-14T08:05:00+01:00",
 			"referenceRanges": []any{rng},
 		}
@@ -85,7 +84,7 @@ func TestLabResultReferenceRangeIsQuantities(t *testing.T) {
 func TestWorkoutSportIsOneCodeSetAndEnergyIsSplit(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	workout := testdb.Repository(t) + "/health/workout"
+	workout := kindWorkout
 	session := func(props map[string]any) map[string]any {
 		out := map[string]any{"at": "2026-10-09T07:00:00+03:00", "endsAt": "2026-10-09T07:50:00+03:00", "revision": 1}
 		for k, v := range props {
@@ -110,8 +109,8 @@ func TestWorkoutSportIsOneCodeSetAndEnergyIsSplit(t *testing.T) {
 	refused(t, "energy that says neither active nor total", err, "energy")
 }
 
-// THE HEALTH SAMPLE WRITES A LAB RESULT IN ITS PAIRED UNIT SYSTEM. A US lab's
-// LDL in mg/dL and an HbA1c in NGSP % land, through the sample's own trigger,
+// THE LABS CATALOGUE WRITES A LAB RESULT IN ITS PAIRED UNIT SYSTEM. A US lab's
+// LDL in mg/dL and an HbA1c in NGSP % land, through the package's own trigger,
 // as derived results in mmol/L and IFCC mmol/mol: the value at one
 // significant digit more than the input's, the range converted with it, and
 // derivedFrom and conversion saying how. A derived result is never converted
@@ -122,7 +121,7 @@ func TestWorkoutSportIsOneCodeSetAndEnergyIsSplit(t *testing.T) {
 func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 is not on PATH; the health sample's function cannot run")
+		t.Skip("python3 is not on PATH; the labs catalogue's function cannot run")
 	}
 	r := openObserved(t)
 	ctx := context.Background()
@@ -149,27 +148,27 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 		}
 		return props
 	}
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("health/ldl_cholesterol_mass", "130", "mg/dL", 1,
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1,
 		map[string]any{"referenceRanges": []any{map[string]any{"high": quantity("100", "mg/dL"), "text": "optimal"}}})); err != nil {
 		t.Fatalf("put the LDL: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/a1c", result("health/hba1c", "5.2", "%", 1, nil)); err != nil {
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/a1c", result("labs/hba1c", "5.2", "%", 1, nil)); err != nil {
 		t.Fatalf("put the HbA1c: %v", err)
 	}
 	// A summary converts with the statistic and period its form requires; a
 	// counter is a running total and never converts.
-	if _, err := r.put(t, r.labresult, "home/2026-09-14/ldl-day", result("health/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
+	if _, err := r.put(t, r.labresult, "home/2026-09-14/ldl-day", result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
 		"form": "summary", "statistic": "avg", "period": "day", "hold": nil, "endsAt": "2026-09-15T00:00:00-04:00",
 	})); err != nil {
 		t.Fatalf("put the LDL summary: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "home/2026-09-14/ldl-total", result("health/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
+	if _, err := r.put(t, r.labresult, "home/2026-09-14/ldl-total", result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
 		"form": "counter", "hold": nil,
 	})); err != nil {
 		t.Fatalf("put the LDL counter: %v", err)
 	}
 	drain()
-	day := r.get(t, r.labresult, "home/2026-09-14/ldl-day/as/health/ldl_cholesterol").Properties
+	day := r.get(t, r.labresult, "home/2026-09-14/ldl-day/as/labs/ldl_cholesterol").Properties
 	if day["form"] != "summary" || day["statistic"] != "avg" || day["period"] != "day" {
 		t.Errorf("derived summary: form %v, statistic %v, period %v; want summary, avg, day", day["form"], day["statistic"], day["period"])
 	}
@@ -177,11 +176,11 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 		t.Errorf("a counter was converted: %d derived results", n)
 	}
 
-	ldl := r.get(t, r.labresult, "quest/2026-09-14/ldl/as/health/ldl_cholesterol").Properties
+	ldl := r.get(t, r.labresult, "quest/2026-09-14/ldl/as/labs/ldl_cholesterol").Properties
 	if v := ldl["value"].(map[string]any); v["value"] != "3.362" || v["unit"] != "mmol/L" {
 		t.Errorf("derived LDL = %v, want 3.362 mmol/L (130 mg/dL over 386.65 g/mol)", v)
 	}
-	if got := storedPath(ldl["metric"]); got != r.metric+"/health/ldl_cholesterol" {
+	if got := storedPath(ldl["metric"]); got != r.metric+"/labs/ldl_cholesterol" {
 		t.Errorf("derived LDL metric = %v", got)
 	}
 	if from := ldl["derivedFrom"].([]any); len(from) != 1 || storedPath(from[0]) != r.labresult+"/quest/2026-09-14/ldl" {
@@ -195,19 +194,19 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	if high := rng["high"].(map[string]any); high["value"] != "2.586" || high["unit"] != "mmol/L" || rng["text"] != "optimal" {
 		t.Errorf("derived range = %v, want high 2.586 mmol/L, text kept", rng)
 	}
-	a1c := r.get(t, r.labresult, "quest/2026-09-14/a1c/as/health/hba1c_ifcc").Properties
+	a1c := r.get(t, r.labresult, "quest/2026-09-14/a1c/as/labs/hba1c_ifcc").Properties
 	if v := a1c["value"].(map[string]any); v["value"] != "33.3" || v["unit"] != "mmol/mol" {
 		t.Errorf("derived HbA1c = %v, want 33.3 mmol/mol ((5.2 - 2.15) x 10.929)", v)
 	}
-	if n := len(derivedOf("quest/2026-09-14/ldl/as/health/ldl_cholesterol")); n != 0 {
+	if n := len(derivedOf("quest/2026-09-14/ldl/as/labs/ldl_cholesterol")); n != 0 {
 		t.Errorf("a derived result was converted again: %d derivations of it", n)
 	}
 
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("health/ldl_cholesterol_mass", "140", "mg/dL", 2, nil)); err != nil {
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("labs/ldl_cholesterol_mass", "140", "mg/dL", 2, nil)); err != nil {
 		t.Fatalf("correct the LDL: %v", err)
 	}
 	drain()
-	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/health/ldl_cholesterol").Properties
+	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/labs/ldl_cholesterol").Properties
 	if v := ldl["value"].(map[string]any); v["value"] != "3.621" || fmt.Sprint(ldl["revision"]) != "2" {
 		t.Errorf("after the correction: value %v at revision %v; want 3.621 at 2", v, ldl["revision"])
 	}
@@ -218,11 +217,11 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, "quest/2026-09-14/ldl", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the LDL: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("health/ldl_cholesterol_mass", "150", "mg/dL", 1, nil)); err != nil {
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("labs/ldl_cholesterol_mass", "150", "mg/dL", 1, nil)); err != nil {
 		t.Fatalf("write the LDL again: %v", err)
 	}
 	drain()
-	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/health/ldl_cholesterol").Properties
+	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/labs/ldl_cholesterol").Properties
 	if v := ldl["value"].(map[string]any); v["value"] != "3.879" || fmt.Sprint(ldl["revision"]) != "2" {
 		t.Errorf("after the input was written again: value %v at revision %v; want 3.879 at 2", v, ldl["revision"])
 	}
@@ -274,7 +273,7 @@ func drainTriggers(t *testing.T, ds substrate.Dataset) {
 func TestConvertLabConvertsThroughAffineConversions(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 is not on PATH; the health sample's function cannot run")
+		t.Skip("python3 is not on PATH; the labs catalogue's function cannot run")
 	}
 	r := openObserved(t)
 	ds := r.ds
@@ -293,8 +292,7 @@ func TestConvertLabConvertsThroughAffineConversions(t *testing.T) {
 	}
 	metric("test/assay_mass", "assay (mass)", "assay")
 	metric("test/assay_amount", "assay (amount)", "amtx")
-	home := testdb.Repository(t)
-	if _, err := r.put(t, home+"/health/analyte", "test/assay", map[string]any{
+	if _, err := r.put(t, vocabulary.AuthorityPublisher+"/labs/analyte", "test/assay", map[string]any{
 		"metric":    r.metricRef("test/assay_mass"),
 		"molarMass": "2",
 		"conversions": []any{map[string]any{
@@ -350,29 +348,29 @@ func storedPath(v any) string {
 	return s
 }
 
-// health 8 anchors `health/blood_glucose` to mmol/L{glucose}. A repository
-// whose copy of version 7 still anchors it to plain mmol/L and holds a value
-// in it refuses the re-import, because the new metric would strand the
-// value; deleting it is not enough, since a tombstone counts. Once the value
-// is purged the re-import lands, and the reading is written again in the
-// annotated unit.
-func TestHealthReimportRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testing.T) {
+// The health catalogue anchors `health/blood_glucose` to mmol/L{glucose}. A
+// repository whose metric record the closure last wrote anchored to plain
+// mmol/L (as the health sample before its version 8 shipped it), holding a
+// value in it, refuses the re-install, because the shipped metric would
+// strand the value; deleting it is not enough, since a tombstone counts. Once
+// the value is purged the re-install lands, and the reading is written again
+// in the annotated unit.
+func TestHealthReinstallRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
 	ctx := context.Background()
-	home := testdb.Repository(t)
-	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
 	if err != nil {
-		t.Fatalf("load the sample catalog: %v", err)
+		t.Fatalf("load the catalog: %v", err)
 	}
-	reimport := func() error {
-		_, _, err := c.Import(ctx, substrate.ActorAPI, samples.Authority+"/health", r.ds)
+	reinstall := func() error {
+		_, _, err := c.Install(ctx, substrate.ActorAPI, vocabulary.AuthorityPublisher+"/health", r.ds)
 		return err
 	}
-	// Version 7's metric, as the import wrote it.
-	if _, err := r.ds.Patch(ctx, substrate.BundleActor(home, "health"), r.metric, "health/blood_glucose",
+	// The older metric, as the closure's own hand wrote it.
+	if _, err := r.ds.Patch(ctx, substrate.BundleActor(vocabulary.AuthorityPublisher, "health"), r.metric, "health/blood_glucose",
 		substrate.PatchInput{Properties: map[string]any{"unit": unitRef("mmol/L")}}); err != nil {
-		t.Fatalf("put version 7's metric: %v", err)
+		t.Fatalf("put the older metric: %v", err)
 	}
 	reading := func(unit string) map[string]any {
 		return map[string]any{
@@ -381,7 +379,7 @@ func TestHealthReimportRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testing
 		}
 	}
 	if _, err := r.put(t, r.observation, "meter/1", reading("mmol/L")); err != nil {
-		t.Fatalf("put a plain mmol/L reading under version 7: %v", err)
+		t.Fatalf("put a plain mmol/L reading under the older metric: %v", err)
 	}
 	stranded := func(what string, err error) {
 		t.Helper()
@@ -389,16 +387,16 @@ func TestHealthReimportRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testing
 			t.Errorf("%s: err = %v, want the conflict naming the stranded mmol/L value", what, err)
 		}
 	}
-	stranded("the re-import over a plain mmol/L reading", reimport())
+	stranded("the re-install over a plain mmol/L reading", reinstall())
 	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "meter/1", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the reading: %v", err)
 	}
-	stranded("the re-import over a deleted plain mmol/L reading", reimport())
+	stranded("the re-install over a deleted plain mmol/L reading", reinstall())
 	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "meter/1", substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge the reading: %v", err)
 	}
-	if err := reimport(); err != nil {
-		t.Fatalf("the re-import once the reading is purged: %v", err)
+	if err := reinstall(); err != nil {
+		t.Fatalf("the re-install once the reading is purged: %v", err)
 	}
 	if _, err := r.put(t, r.observation, "meter/1", reading("mmol/L{glucose}")); err != nil {
 		t.Errorf("write the reading again in mmol/L{glucose}: %v", err)

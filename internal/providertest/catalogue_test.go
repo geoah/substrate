@@ -1,12 +1,12 @@
 package providertest
 
-// The health adapters' Python tables repeat the health catalogue
-// (samples/health/metrics.yaml and the workout kind): the metric each vendor
-// field lands on, its unit, form and hold, the sleep stage codes and the
-// workout sport codes, and for WHOOP the API field each catalogue metric
-// lists as its `whoop` code. Nothing at write time compares the two, so a
-// metric renamed, a code dropped or a hold changed in one place would leave
-// the other writing something the catalogue no longer says. These tests read
+// The providers' adapters' Python tables repeat the health catalogue
+// (kinds/substrate.reamde.dev/health/metrics.yaml and the workout kind): the
+// metric each vendor field lands on, its unit, form and hold, the sleep stage
+// codes and the workout sport codes, and for WHOOP the API field each
+// catalogue metric lists as its `whoop` code. Nothing at write time compares
+// the two, so a metric renamed, a code dropped or a hold changed in one place
+// would leave the other writing something the catalogue no longer says. These tests read
 // both sides: the tables as written (TestAdapterTablesMatchTheCatalogue) and
 // the outputs an adapter wrote (assertCatalogued, called by the adapter
 // suites).
@@ -45,14 +45,14 @@ type catalogueMetric struct {
 }
 
 // healthCatalogue reads the shipped catalogue, keyed by metric id
-// (`health/heart_rate`), with the metrics a vendor's adapter sample ships
-// beside it (`healthwhoop/recovery`).
+// (`health/heart_rate`), with the metrics a provider ships beside it for
+// what only it reports (`whoop/recovery`).
 func healthCatalogue(t *testing.T) map[string]catalogueMetric {
 	t.Helper()
 	out := map[string]catalogueMetric{}
-	for _, file := range []string{"/health/metrics.yaml", "/healthwhoop/metrics.yaml"} {
+	for _, file := range []string{publisherDir + "/health/metrics.yaml", whoopDir + "/metrics.yaml"} {
 		n := 0
-		for _, m := range loadDocs(t, samplesDir+file) {
+		for _, m := range loadDocs(t, file) {
 			if kind, _ := m["kind"].(string); !strings.HasSuffix(kind, "/observations/metric") {
 				continue
 			}
@@ -95,7 +95,7 @@ func asList(v any) []any {
 // workoutSports is the workout kind's sport code set.
 func workoutSports(t *testing.T) []string {
 	t.Helper()
-	for _, m := range loadDocs(t, samplesDir+"/health/workout.yaml") {
+	for _, m := range loadDocs(t, publisherDir+"/health/workout.yaml") {
 		props, _ := m["data"].(map[string]any)["properties"].(map[string]any)
 		sport, _ := props["sport"].(map[string]any)
 		var out []string
@@ -194,14 +194,14 @@ func mapping(t *testing.T, tables map[string]any, name string) map[string]any {
 	return m
 }
 
-// catalogueUnitGraph is the unit graph a repository holds once it imported
-// the health sample: the seeded units and conversions, and the glucose units
-// the sample adds (samples/health/analyte_units.yaml). It is built once.
+// catalogueUnitGraph is the unit graph a repository holds once it installed
+// the health catalogue: the seeded units and conversions, and the glucose
+// units the catalogue adds (health/analyte_units.yaml). It is built once.
 func catalogueUnitGraph(t *testing.T) *vocabulary.UnitGraph {
 	t.Helper()
 	g, err := catalogueUnits()
 	if err != nil {
-		t.Fatalf("the unit graph with the health sample's units: %v", err)
+		t.Fatalf("the unit graph with the health catalogue's units: %v", err)
 	}
 	return g
 }
@@ -209,11 +209,11 @@ func catalogueUnitGraph(t *testing.T) *vocabulary.UnitGraph {
 var catalogueUnits = sync.OnceValues(func() (*vocabulary.UnitGraph, error) {
 	var us []vocabulary.UnitRecord
 	var cs []vocabulary.ConversionRecord
-	sample, err := os.ReadFile(samplesDir + "/health/analyte_units.yaml")
+	shipped, err := os.ReadFile(publisherDir + "/health/analyte_units.yaml")
 	if err != nil {
 		return nil, err
 	}
-	for _, file := range [][]byte{unitseed.Units(), unitseed.Conversions(), sample} {
+	for _, file := range [][]byte{unitseed.Units(), unitseed.Conversions(), shipped} {
 		docs, err := decodeDocs(file)
 		if err != nil {
 			return nil, err
@@ -264,7 +264,7 @@ func decodeDocs(data []byte) ([]map[string]any, error) {
 }
 
 // sameComponent reports whether a unit spelling is the id of a unit a
-// repository holding the health sample has, joined by a linear conversion
+// repository holding the health catalogue has, joined by a linear conversion
 // to the metric's unit, which is what the metric rules admit and the
 // aggregate read converts (decision 0186). A spelling other than the id
 // would be stored as the id, so an adapter's reconcile would find every
@@ -300,7 +300,7 @@ func snakeCase(field string) string {
 	return b.String()
 }
 
-var healthMetricLiteral = regexp.MustCompile(`^health(whoop)?/[a-z0-9_]+$`)
+var healthMetricLiteral = regexp.MustCompile(`^(health|whoop)/[a-z0-9_]+$`)
 
 // TestAdapterTablesMatchTheCatalogue: every metric an adapter's tables or
 // literals name is in the catalogue, in the id of a unit that converts to
@@ -324,7 +324,7 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 	stages := metric(t, "health/sleep_stage").CodeSet
 
 	t.Run("whoop", func(t *testing.T) {
-		got := readAdapterTables(t, samplesDir+"/healthwhoop/bundle.yaml", "adaptwhoop")
+		got := readAdapterTables(t, whoopDir+"/bundle.yaml", "adaptwhoop")
 		for _, s := range got.Strings {
 			if healthMetricLiteral.MatchString(s) {
 				metric(t, s)
@@ -368,7 +368,7 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 	})
 
 	t.Run("applehealth", func(t *testing.T) {
-		got := readAdapterTables(t, samplesDir+"/healthapple/bundle.yaml", "adaptapplehealth")
+		got := readAdapterTables(t, appleHealthDir+"/bundle.yaml", "adaptapplehealth")
 		for _, name := range got.MetricRefs {
 			metric(t, "health/"+name)
 		}
@@ -395,9 +395,9 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 				t.Errorf("PRESSURE: %s is a gauge in %s holding %s; the catalogue says %s in %s holding %q", id, pressure[2], pressure[3], m.Form, m.Unit, m.Hold)
 			}
 		}
-		// A glucose reading is written in a glucose unit the health sample
-		// ships (analyte_units.yaml), the metric's own among them, each
-		// paired with the plain unit of its scale.
+		// A glucose reading is written in a glucose unit the health
+		// catalogue ships (analyte_units.yaml), the metric's own among
+		// them, each paired with the plain unit of its scale.
 		hold, _ := got.Tables["GLUCOSE_HOLD"].(string)
 		glucoseID, _ := got.Tables["GLUCOSE_METRIC"].(string)
 		glucose := metric(t, "health/"+glucoseID)
@@ -405,7 +405,7 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 			t.Errorf("GLUCOSE_HOLD: health/%s is a gauge holding %s; the catalogue says %s holding %q", glucoseID, hold, glucose.Form, glucose.Hold)
 		}
 		shipped := map[string]string{}
-		for _, d := range loadDocs(t, samplesDir+"/health/analyte_units.yaml") {
+		for _, d := range loadDocs(t, publisherDir+"/health/analyte_units.yaml") {
 			meta, _ := d["metadata"].(map[string]any)
 			data, _ := d["data"].(map[string]any)
 			props, _ := data["properties"].(map[string]any)
@@ -418,7 +418,7 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 			plain, unit := row[0], row[1]
 			code, ok := shipped[unit]
 			if !ok {
-				t.Errorf("GLUCOSE: %s is not a unit the health sample ships (%v)", unit, shipped)
+				t.Errorf("GLUCOSE: %s is not a unit the health catalogue ships (%v)", unit, shipped)
 			}
 			if want := plain + "{glucose}"; code != want {
 				t.Errorf("GLUCOSE: %s is written for plain %s, but its code is %s, not %s", unit, plain, code, want)

@@ -96,7 +96,7 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	} {
 		start, _ := time.Parse(time.RFC3339, c.at)
 		props := map[string]any{
-			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
+			"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
 			"at": c.at, "endsAt": start.Add(time.Hour).Format(time.RFC3339), "every": "PT10M", "values": c.values,
 			"utcOffset": c.offset,
 		}
@@ -108,12 +108,12 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	// A gauge written without an offset, a temperature difference, two
 	// units of one measure, and an angle.
 	trace("cellar/0", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("cellar"), "form": "gauge", "unit": "Cel",
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("cellar"), "form": "gauge", "unit": "Cel",
 		"at": "2026-10-25T03:00:00Z", "endsAt": "2026-10-25T04:00:00Z", "offsets": []any{0, 1200000, 3000000},
 		"values": []any{"12.0", "12.5", "12.25"},
 	})
 	obs("delta/0", map[string]any{
-		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("delta"), "form": "gauge", "delta": true,
+		"metric": r.metricRef("environment/air_temperature"), "source": r.sourceRef("delta"), "form": "gauge", "delta": true,
 		"value": quantity("1.5", "K"), "at": "2026-10-25T03:10:00Z", "utcOffset": berlinWinter,
 	})
 	obs("weight/kg", map[string]any{
@@ -132,7 +132,7 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	// A coded gauge, single and packed.
 	for i, code := range []string{"closed", "open", "closed"} {
 		obs(fmt.Sprintf("door/%d", i), map[string]any{
-			"metric": r.metricRef("illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
+			"metric": r.metricRef("environment/illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
 			"code": code, "at": time.Date(2026, 10, 25, 8, 7*i+1, 0, 0, time.UTC).Format(time.RFC3339),
 		})
 	}
@@ -154,12 +154,12 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	})
 	// Counters: one that resets, one that wraps.
 	trace("meter/0", map[string]any{
-		"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+		"metric": r.metricRef("environment/energy"), "source": r.sourceRef("meter"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
 		"at": "2026-10-25T05:00:00Z", "endsAt": "2026-10-25T07:00:00Z", "every": "PT15M", "utcOffset": berlinWinter,
 		"values": []any{"18342.655", "18342.700", "0.010", "0.050", "0.400", "0.900", "0.020", "0.090"},
 	})
 	trace("odometer/0", map[string]any{
-		"metric": r.metricRef("energy"), "source": r.sourceRef("odometer"), "form": "counter", "unit": "kW.h",
+		"metric": r.metricRef("environment/energy"), "source": r.sourceRef("odometer"), "form": "counter", "unit": "kW.h",
 		"resetRule": "wrap", "wrapAt": "1000", "at": "2026-10-25T05:00:00Z", "endsAt": "2026-10-25T06:00:00Z",
 		"every": "PT20M", "values": []any{"990", "998", "4"}, "utcOffset": berlinWinter,
 	})
@@ -169,7 +169,7 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 		"period": "cycle", "value": quantity("67", "%"), "at": "2026-10-24T22:31:00Z", "endsAt": "2026-10-25T06:02:00Z",
 	})
 	r.mustPut(t, r.labresult, "lab/tsh", map[string]any{
-		"metric": r.metricRef("health/tsh"), "hold": "PT0S",
+		"metric": r.metricRef("labs/tsh"), "hold": "PT0S",
 		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},
 		"at":    "2026-10-25T08:05:00Z", "utcOffset": berlinWinter, "status": "final",
 	})

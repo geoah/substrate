@@ -11,7 +11,10 @@ metadata:
 data:
   # The authority row carries a version of its own: the packages beneath it
   # version independently, and this one moves when the row itself does.
-  version: 3
+  # 4: names the observations package among the seeded ones, and the
+  # well-known catalogues (decision record 0192).
+  version: 4
   description: >-
-    The substrate's own vocabulary: the core, llm and console packages every
-    repository is seeded with.
+    The substrate's own vocabulary: the core, llm, console and observations
+    packages every repository is seeded with, and the well-known catalogues
+    a repository installs.

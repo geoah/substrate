@@ -11,7 +11,7 @@ your account too.
 ## The invite code
 
 Registering creates the user and, in the same transaction, the repository,
-seeded with the `core`, `llm` and `console` packages, three keyless `llm/provider` rows
+seeded with the `core`, `llm`, `console` and `observations` packages, three keyless `llm/provider` rows
 (`openai`, `anthropic`, `gemini`) and the LLM sample. One **invite code**, configured on the
 service as `SUBSTRATE_INVITE_CODE`, gates that door: with one set,
 `/register` and `/register/enroll` admit only a request that presents it, and

@@ -549,7 +549,7 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	// A second binary opening the same store rebuilds the registry from those
 	// rows. The kind has to come back LIVE, not quarantined, which a write to it
 	// proves: a quarantined pkg's kinds are not in the registry at all.
-	svc2, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+	svc2, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsFS(engine.SeedKinds))
 	if err != nil {
 		t.Fatalf("reopen the service: %v", err)
 	}

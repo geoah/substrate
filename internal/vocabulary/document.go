@@ -30,12 +30,29 @@ import (
 // PackageConsole is the third (record 0166): what the console shows, as
 // records, so a sample's kinds are presented from data and no console code
 // names them.
+//
+// PackageObservations is the fourth (record 0192): the measured-data kinds
+// every repository and every provider names the same way. Unlike the other
+// three it is the owner's data rather than the substrate's state, so its kinds
+// keep their own purpose and their records merge.
 const (
-	AuthorityPublisher = "substrate.reamde.dev"
-	PackageCore        = AuthorityPublisher + "/core"
-	PackageLLM         = AuthorityPublisher + "/llm"
-	PackageConsole     = AuthorityPublisher + "/console"
+	AuthorityPublisher  = "substrate.reamde.dev"
+	PackageCore         = AuthorityPublisher + "/core"
+	PackageLLM          = AuthorityPublisher + "/llm"
+	PackageConsole      = AuthorityPublisher + "/console"
+	PackageObservations = AuthorityPublisher + "/observations"
 )
+
+// SeededPackage reports whether a package is one the binary seeds.
+func SeededPackage(name string) bool {
+	return name == PackageCore || name == PackageLLM || name == PackageConsole || name == PackageObservations
+}
+
+// SubstrateStatePackage reports whether a seeded package holds the
+// substrate's own state (core, llm, console), as against the owner's data.
+func SubstrateStatePackage(name string) bool {
+	return name == PackageCore || name == PackageLLM || name == PackageConsole
+}
 
 // The manifest document kinds — the local names under PackageCore. The
 // envelope carries the full reference ("substrate.reamde.dev/core/kind"), so a

@@ -167,6 +167,41 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	}
 }
 
+// The seeded observations package is the owner's data, not the substrate's
+// state (record 0192): two source records that turn out to be one device
+// merge like any two records of one kind, the loser's id resolving to the
+// winner, and a split hands the loser back.
+// A seeded core kind's records still refuse the generic surface.
+func TestMergeTakesTheSeededObservationsKinds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+	source := vocabulary.PackageObservations + "/source"
+
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: source, ID: "withings", Properties: map[string]any{"name": "Withings scale"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: source, ID: "apple/scale", Properties: map[string]any{"name": "Scale via Apple Health"}})
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: source, Winner: winner.ID, Loser: loser.ID})
+	if err != nil {
+		t.Fatalf("merge two sources of the seeded observations package: %v", err)
+	}
+	if got := mustGet(t, ds, source, loser.ID); got.CanonicalID != winner.ID {
+		t.Fatalf("the merged-away source resolves to %q, want the winner %s", got.CanonicalID, winner.ID)
+	}
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
+		t.Fatalf("split the sources: %v", err)
+	}
+	if got := mustGet(t, ds, source, loser.ID); got.DeletedAt != nil || got.CanonicalID != "" {
+		t.Fatalf("after the split the loser reads deleted %v, resolving to %q; want it live under its own id", got.DeletedAt, got.CanonicalID)
+	}
+
+	putShippedUnits(t, ds, "kg")
+	_, err = ds.Merge(ctx, owner, substrate.MergeInput{Kind: vocabulary.KindUnit, Winner: "kg", Loser: "g"})
+	wantErr(t, err, substrate.ErrForbidden, "merging two records of a seeded core kind")
+	if g := mustGet(t, ds, vocabulary.KindUnit, "g"); g.DeletedAt != nil {
+		t.Fatal("a refused merge tombstoned a unit")
+	}
+}
+
 // Merge moves no link data. The winner keeps its own, the loser keeps its own
 // on the tombstone, and a split hands the loser back with it intact.
 func TestMergeSplitLeavesLinkDataWhereItIs(t *testing.T) {

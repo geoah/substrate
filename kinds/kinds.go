@@ -11,32 +11,44 @@
 // own embed (the samples package), because a sample is vocabulary to copy
 // rather than vocabulary the substrate runs.
 //
-// The split is by NAME rather than by nesting so that adding an authority is
-// adding a directory, and adding a SEEDED package is adding a directory under
-// the seed authority: nothing in Go names the packages it holds. A layout that
-// nested the two roles would let a new package land in the wrong half and go
-// unnoticed; here the only way to be the seed is to be the seed.
+// The split is by NAME: adding an authority is adding a directory, and adding
+// a package under the seed authority is adding a directory that is either in
+// [SeedPackages] or carries a bundle document, which kinds_test.go holds.
+// [Bundles] also serves the seed authority's catalogues (record 0192), the
+// well-known packages a repository installs when it wants them.
 package kinds
 
 import (
 	"embed"
 	"io/fs"
+	"strings"
 )
 
-// SeedAuthority is the one authority whose packages are the seed. Its packages
-// are core, llm (record 0077) and console (record 0166), and [Seed] is the
-// whole authority rather than any named package: adding one is adding a
-// directory, because every reader of the seed keys on the authority and on
-// `source: builtin`.
-//
-// SeedCorePackage, SeedLLMPackage and SeedConsolePackage name the three the
-// binary ships today, for the callers that address one of them in particular.
+// SeedAuthority is the substrate's own authority. The SEED is a list of its
+// packages, not the whole authority (record 0192): core, llm (0077), console
+// (0166) and observations are written into every repository, and every other
+// package under it is a well-known catalogue the catalog serves, installed when
+// a repository wants it.
 const (
-	SeedAuthority      = "substrate.reamde.dev"
-	SeedCorePackage    = SeedAuthority + "/core"
-	SeedLLMPackage     = SeedAuthority + "/llm"
-	SeedConsolePackage = SeedAuthority + "/console"
+	SeedAuthority           = "substrate.reamde.dev"
+	SeedCorePackage         = SeedAuthority + "/core"
+	SeedLLMPackage          = SeedAuthority + "/llm"
+	SeedConsolePackage      = SeedAuthority + "/console"
+	SeedObservationsPackage = SeedAuthority + "/observations"
 )
+
+// SeedPackages is every package the binary seeds. A directory under the seed
+// authority that is not here is a catalogue, and must carry a bundle document.
+var SeedPackages = []string{SeedCorePackage, SeedLLMPackage, SeedConsolePackage, SeedObservationsPackage}
+
+func seeded(dir string) bool {
+	for _, p := range SeedPackages {
+		if p == dir {
+			return true
+		}
+	}
+	return false
+}
 
 // The pattern is part of the contract: an authority directory it misses is a
 // vocabulary that silently stops existing in production while every other test
@@ -45,27 +57,40 @@ const (
 //go:embed all:substrate.reamde.dev all:providers.substrate.reamde.dev
 var files embed.FS
 
-// Seed is the seed authority alone — its core package and its own authority
-// manifest — as a filesystem whose root holds that one directory, the shape
-// the schema loader walks.
+// Seed is the seeded packages and their authority's manifest, as a filesystem
+// whose root holds the seed authority's one directory, the shape the schema
+// loader walks.
 func Seed() fs.FS {
-	return authorities(func(name string) bool { return name == SeedAuthority })
+	return rootFilterFS{keep: func(name string) bool {
+		if !strings.Contains(name, "/") {
+			return name == SeedAuthority
+		}
+		return !isDir(name) || seeded(name)
+	}}
 }
 
-// Bundles is every authority that is not the seed, as a filesystem holding one
-// directory per authority with one directory per package inside it — the shape
-// the catalog reads.
+// Bundles is everything the catalog serves: every other authority whole, and
+// the seed authority's catalogues with the manifest beside them, one directory
+// per authority with one directory per package inside it.
 func Bundles() fs.FS {
-	return authorities(func(name string) bool { return name != SeedAuthority })
+	return rootFilterFS{keep: func(name string) bool {
+		if !strings.Contains(name, "/") || !strings.HasPrefix(name, SeedAuthority+"/") {
+			return true
+		}
+		return !isDir(name) || !seeded(name)
+	}}
+}
+
+func isDir(name string) bool {
+	info, err := fs.Stat(files, name)
+	return err == nil && info.IsDir()
 }
 
 // All is the whole tree, seed and bundles together.
 func All() fs.FS { return files }
 
-func authorities(keep func(string) bool) fs.FS { return rootFilterFS{keep: keep} }
-
-// rootFilterFS narrows what the ROOT lists; every path below it reads through
-// untouched. Filtering only the root is what makes the two views cheap: a
+// rootFilterFS narrows what the root and the seed authority's directory list,
+// by the path of each entry; every path below them reads through untouched. A
 // caller that already holds a path never pays for the predicate, and a walk
 // that never enters a directory never sees it.
 type rootFilterFS struct {
@@ -78,12 +103,16 @@ func (f rootFilterFS) ReadFile(name string) ([]byte, error) { return files.ReadF
 
 func (f rootFilterFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	entries, err := files.ReadDir(name)
-	if err != nil || name != "." {
+	if err != nil || (name != "." && name != SeedAuthority) {
 		return entries, err
 	}
 	kept := make([]fs.DirEntry, 0, len(entries))
 	for _, e := range entries {
-		if f.keep(e.Name()) {
+		full := e.Name()
+		if name != "." {
+			full = name + "/" + e.Name()
+		}
+		if f.keep(full) {
 			kept = append(kept, e)
 		}
 	}

@@ -13,12 +13,16 @@
 //     type they link the shipped `account` reference (unpinned) at.
 //
 //   - ImportVocabulary / SeededRegistry install the sample packages:
-//     repository creation seeds the CORE PACKAGE ALONE, and the shipped
-//     vocabulary (people, tasks, messaging, calendar) is a set of sample
-//     packages a repository installs.
+//     repository creation seeds core, llm, console and observations, and the
+//     rest of the shipped vocabulary (people, tasks, messaging, calendar) is a
+//     set of sample packages a repository installs.
 //
-// It imports only substrate, vocabulary and the unit seed, so both engine
-// and engine_test may import it without a cycle.
+//   - InstallCatalogues installs the first-party catalogues (health, labs,
+//     environment) through the catalog's provider door (record 0192).
+//
+// It imports substrate, vocabulary, the catalog, the embedded trees and the
+// unit seed, none of which imports the engine, so both engine and
+// engine_test may import it without a cycle.
 package enginetest
 
 import (
@@ -29,22 +33,27 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
 )
 
 const typeTrigger = "substrate.reamde.dev/core/trigger"
 
 // --- the shipped vocabulary, imported ------------------------------------------
 
-// The two shipped trees, relative to the engine package: the provider packages
-// under kinds/, the sample packages under samples/.
+// The shipped trees, relative to the engine package: the provider packages
+// under kinds/, the seed authority's packages beside them (the seeded ones and
+// the first-party catalogues), and the sample packages under samples/.
 const (
 	CatalogDir = "../../kinds/" + providerAuthority
+	SeedDir    = "../../kinds/" + vocabulary.AuthorityPublisher
 	SamplesDir = "../../samples"
 )
 
@@ -58,8 +67,59 @@ const (
 // SamplePackage is a sample's package identity, from its bare name.
 func SamplePackage(name string) string { return SampleAuthority + "/" + name }
 
+// CataloguePackage is a first-party catalogue's package identity, from its
+// bare name ("health").
+func CataloguePackage(name string) string { return vocabulary.AuthorityPublisher + "/" + name }
+
+// InstallCatalogues installs first-party catalogues by their bare name
+// ("health", "labs", "environment") the way a repository takes them: through
+// the catalog's provider door, published and verbatim, every first-party
+// package each requires installed first (record 0192). The shipped units
+// they and their requirements name are put first, because a test repository
+// holds only the units a test puts.
+func InstallCatalogues(ctx context.Context, ds substrate.Dataset, names ...string) error {
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	if err != nil {
+		return fmt.Errorf("enginetest: load the catalog: %w", err)
+	}
+	var units []string
+	var withRequirements func(name string) error
+	withRequirements = func(name string) error {
+		if slices.Contains(units, name) {
+			return nil
+		}
+		b, ok := c.ByID(CataloguePackage(name))
+		if !ok {
+			return fmt.Errorf("enginetest: no first-party catalogue %s", name)
+		}
+		units = append(units, name)
+		for _, req := range b.Requires {
+			if label, ok := strings.CutPrefix(req, vocabulary.AuthorityPublisher+"/"); ok {
+				if err := withRequirements(label); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	for _, name := range names {
+		if err := withRequirements(name); err != nil {
+			return err
+		}
+	}
+	if err := PutCatalogueUnits(ctx, ds, units...); err != nil {
+		return fmt.Errorf("enginetest: install %v: %w", names, err)
+	}
+	for _, name := range names {
+		if _, _, err := c.Install(ctx, substrate.ActorAPI, CataloguePackage(name), ds); err != nil {
+			return fmt.Errorf("enginetest: install %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // Vocabulary names the shipped SAMPLE packages a test installs; a fresh
-// repository holds the core package alone.
+// repository holds the seeded packages alone.
 // Order follows the requires: people and scheduling come before the packages
 // that declare against them (messaging and calendar map onto people; tasks and
 // calendar bind scheduling's traits).
@@ -69,7 +129,7 @@ var Vocabulary = []string{"people", "scheduling", "tasks", "messaging", "calenda
 // ("people", "calendar") through the ONE install path — the schema-apply batch
 // verb, under the bundle's own actor, exactly as a catalog install does. A test
 // that reads or writes `samples.substrate.reamde.dev/people/person` calls this
-// first, because the creation seed writes the core package alone.
+// first, because the creation seed writes the seeded packages alone.
 func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string) error {
 	if len(names) == 0 {
 		names = Vocabulary
@@ -299,7 +359,7 @@ func bundleRequires(docs []map[string]any) []string {
 }
 
 // SeededRegistry is the registry a repository holds right after creation plus
-// the shipped sample packages it installed: the seeded tree (the core package
+// the shipped sample packages it installed: the seeded tree (the seeded packages
 // alone) with the named vocabulary installed on top, exactly as the changelog
 // would hold it. It is the registry half of ImportVocabulary, for the
 // admission tests that never open a database.

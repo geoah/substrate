@@ -48,7 +48,7 @@ func TestBulkRunDeclinesARecordAlreadyNamed(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey),
-				WithKindsDir(SeedKindsDir), WithUnitSeed(false))
+				WithKindsFS(SeedKinds), WithUnitSeed(false))
 			if err != nil {
 				t.Fatalf("open engine: %v", err)
 			}

@@ -4,7 +4,8 @@ An observation is a measured value: a weighing, an hour of heart rate, a
 nightly heart rate variability, a vendor's recovery score, an LDL result from
 a blood test. This page covers what holds one today: core's `observed` trait,
 the rules every write of an observed record is held to, the managed `stats`
-of a trace, the `observations` and `health` samples, the host SDK helpers
+of a trace, the seeded `observations` package and the `health`, `labs` and
+`environment` catalogues, the host SDK helpers
 a function builds observed values with, the observed index the fold derives
 from them, and the aggregate read that answers "average heart rate per week"
 from that index ([reading](#reading)). The plan is
@@ -108,14 +109,15 @@ counts in nothing
 
 ## The base kinds
 
-The `observations` sample (`samples.substrate.reamde.dev/observations`) holds
-the five kinds every observing domain shares, and a repository imports it
-under its own authority
-([decision 0159](decisions/0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md)).
-Their names are frozen: a sample's kind cannot be moved by an upgrade, and
-`TestObservationsSampleKindNamesAreFrozen` holds them.
-[Decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)
-keeps `source` here too, rather than in core or a seeded package.
+The `substrate.reamde.dev/observations` package holds the five kinds every
+observing domain shares. It is seeded into every repository beside `core`,
+`llm` and `console` and upgraded at open, so every repository and every
+provider names an observation the same way
+([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+Unlike the other three seeded packages its kinds are your data, not the
+substrate's state: they keep their own `purpose`, and their records can be
+merged ([merges](projection.md#merges)). The package ships no metrics; the
+[catalogues](#the-well-known-catalogues) and the providers do.
 
 | Kind | Binds | One record is |
 | --- | --- | --- |
@@ -151,14 +153,13 @@ which the aggregate read applies where the request names no `bucket.place`
 (`health/sleep_stage` sets `end`, so a night lands on the day it ends, as
 do the nightly summaries of `hrv_rmssd`, `resting_heart_rate`,
 `respiratory_rate`, `spo2`, `skin_temperature` and WHOOP's
-`healthwhoop/recovery` and `healthwhoop/sleep_performance`, whose raw readings are instants and place the same
+`whoop/recovery` and `whoop/sleep_performance`, whose raw readings are instants and place the same
 either way);
 `rollups` lists the rollup tiers the observed index keeps for it;
-`algorithm` (`{vendor, name, version}`) names a vendor's scoring method. The sample ships
-six metrics several domains share: `air_temperature`, `relative_humidity`,
-`energy`, `power`, `illuminance` and `atmospheric_pressure`. Each keeps the
-`1h` and `1d` rollup tiers and no `15m`, because a home sensor reports about
-once a minute ([rollup tiers](#rollup-tiers)).
+`algorithm` (`{vendor, name, version}`) names a vendor's scoring method. A
+metric's id starts with the package that ships it (`health/heart_rate`,
+`labs/ldl_cholesterol`, `whoop/strain`); that prefix is the package's, so a
+metric of your own takes another one.
 
 **`observation`** declares the trait's single properties and adds:
 `periodId`, the source's own identity for a summary's period (a WHOOP cycle
@@ -198,8 +199,8 @@ one; a request's `sources.order` wins.
 ### The metric and source contracts
 
 The engine and the console read a metric record and a source record through
-two core traits, never by the sample's property names, so a kind of your own
-can be a metric or a source by binding them.
+two core traits, never by the `observations` kinds' property names, so a
+kind of your own can be a metric or a source by binding them.
 
 `substrate.reamde.dev/core/metric` contracts `name`, `unit`, `units`,
 `form`, `codeSet`, `displayPrecision`, `category`, `bucketPlace` and
@@ -229,7 +230,7 @@ its values first.
 `substrate.reamde.dev/core/source` contracts `priorities`, a keyed map of
 ranks. A write is refused where a key is not the full record path of a
 record of a kind that binds `metric`
-(`ada.example.com/observations/metric/health/heart_rate`, never
+(`substrate.reamde.dev/observations/metric/health/heart_rate`, never
 `health/heart_rate`), or where a rank is below 1. The aggregate read ranks
 by the priorities of a source whose kind binds the trait and of no other.
 
@@ -240,10 +241,10 @@ by the priorities of a source whose kind binds the trait and of no other.
 
 ### Finding the source kind
 
-Each repository holds its own copy of `source`, under its own authority
-(`ada.example.com/observations/source`), so a script or an app that works
-across repositories finds it by its trait instead of spelling it
-([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)).
+Every repository names the seeded `source` kind the same way,
+`substrate.reamde.dev/observations/source`, but a kind of your own may bind
+core's `source` trait too, so a script or an app that reads every source
+finds them by the trait instead of spelling one kind.
 `GET /api/v1/records` with `filter.implements` set to
 `substrate.reamde.dev/core/source` lists the sources of every kind that
 binds it, each row naming its `kind`. The kinds list (`substratectl kinds -o
@@ -264,15 +265,15 @@ seconds early counts twice. A `sourcelink` record says the sources are one
 device ([decision 0187](decisions/0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md)):
 
 ```yaml
-kind: ada.example.com/observations/sourcelink
+kind: substrate.reamde.dev/observations/sourcelink
 metadata:
   id: withings-body
 data:
   properties:
     name: Withings Body+
     sources:
-      - {ref: ada.example.com/observations/source/withings/ada/scale}
-      - {ref: ada.example.com/observations/source/apple/ada/scale}
+      - {ref: substrate.reamde.dev/observations/source/withings/ada/scale}
+      - {ref: substrate.reamde.dev/observations/source/apple/ada/scale}
 ```
 
 Under `priority`, a linked device answers each metric and `about` from one
@@ -299,27 +300,25 @@ because what the read drops reveals what the links hold.
 
 ## Writing an observation by hand
 
-Import the samples first, `observations` and then `health`, which requires
-it:
+The `observation` kind is seeded, and the `health/body_mass` metric ships
+with the `health` catalogue, so install that first:
 
 ```bash
-bin/substratectl import samples.substrate.reamde.dev/observations
-bin/substratectl import samples.substrate.reamde.dev/health
+bin/substratectl install substrate.reamde.dev/health
 ```
 
-A weighing entered by hand, in a repository whose authority is
-`ada.example.com`:
+A weighing entered by hand:
 
 ```yaml
-kind: ada.example.com/observations/observation
+kind: substrate.reamde.dev/observations/observation
 metadata:
   id: manual/2026-10-09-weight
 data:
   properties:
     metric:
-      ref: ada.example.com/observations/metric/health/body_mass
+      ref: substrate.reamde.dev/observations/metric/health/body_mass
     source:
-      ref: ada.example.com/observations/source/manual
+      ref: substrate.reamde.dev/observations/source/manual
     form: gauge
     value:
       value: "72.1"
@@ -344,15 +343,15 @@ and a read counts it as covering every day between
 An hour of heart rate at irregular times, with one unavailable reading:
 
 ```yaml
-kind: ada.example.com/observations/trace
+kind: substrate.reamde.dev/observations/trace
 metadata:
   id: strap/ada/chest/heart_rate/2026-10-07T06
 data:
   properties:
     metric:
-      ref: ada.example.com/observations/metric/health/heart_rate
+      ref: substrate.reamde.dev/observations/metric/health/heart_rate
     source:
-      ref: ada.example.com/observations/source/strap/ada/chest
+      ref: substrate.reamde.dev/observations/source/strap/ada/chest
     form: gauge
     unit: 1/min
     hold: PT4M
@@ -439,7 +438,7 @@ A packed record is also held to these:
   before the bound stays editable.
 
 A kind that binds core's `result` trait beside `observed(single)`, as the
-health sample's `labresult` does, holds exactly one of `value`, the coded
+`labs` catalogue's `labresult` does, holds exactly one of `value`, the coded
 result (`codedValue`, with `code` as its index key), `ratio`, `text` and
 `absentReason` on every write; with none of them, `sourceValue` must keep the
 reading as received. `result` contracts `codedValue`, `ratio`, `text`,
@@ -482,47 +481,63 @@ trace of codes carries `count`, `first`, `last` and `coverage`, with each
 code as the `value`. The same properties always produce the same `stats`, so
 a rewrite that changes no point writes nothing.
 
-## What the health sample adds
+## The well-known catalogues
 
-`samples.substrate.reamde.dev/health` requires `observations` with a
-`requiresAtLeast` floor (`TestHealthRequiresObservations`) and adds five
-kinds, a catalogue, the lab analytes and one function. `sleep`, `workout` and `labreport` carry `origin` and
-`revision` as the base kinds do, and `sleep` and `workout` carry `adapter`,
-because an adapter writes them too. The three bind core's `revised` trait, so
-a rewrite with a lower `revision` is refused on them as it is on an
-observation.
+Three first-party packages under `substrate.reamde.dev` each ship one
+domain's shared metrics, kinds, units and functions
+([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+They are not seeded: the catalog serves them, and a repository installs one
+when it wants it, through the door a provider takes
+(`bin/substratectl install substrate.reamde.dev/labs`, or
+`POST /api/v1/catalog/{id}/install`). Like a provider, each lands under the
+authority that publishes it, is published (you write its records, never its
+declarations) and upgrades from the catalog
+([the two doors](bundles.md#the-two-doors)). An install first installs every
+published package the bundle requires and the repository lacks, so
+installing `labs`, or the Apple Health or WHOOP provider, installs `health`.
+
+| Package | Ships |
+| --- | --- |
+| `substrate.reamde.dev/health` | the `sleep` and `workout` kinds; 33 metrics, `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose and fitness metrics wearables, scales and meters report; two glucose units; the sleep and workout record views |
+| `substrate.reamde.dev/labs` | requires `health`; the `analyte`, `labreport` and `labresult` kinds; 22 lab metrics, `labs/<name>`, and 17 `analyte` records; the function `convertlab` and its trigger `labs-on-labresult`; three record views |
+| `substrate.reamde.dev/environment` | no kinds; six climate and energy metrics, `environment/air_temperature`, `environment/relative_humidity`, `environment/illuminance`, `environment/atmospheric_pressure`, `environment/energy` and `environment/power` |
+
+`sleep`, `workout` and `labreport` carry `origin` and `revision` as the base
+kinds do, and `sleep` and `workout` carry `adapter`, because an adapter
+writes them too. The three bind core's `revised` trait, so a rewrite with a
+lower `revision` is refused on them as it is on an observation.
 
 | Kind | One record is |
 | --- | --- |
-| `analyte` | the lab facts about one blood test metric: its LOINC parts, `molarMass` in grams per mole, the `conversions` a function may write, and a `fallbackRange` |
-| `sleep` | one night or nap: `name`, the heading the adapter writes on the clock the night was recorded on (`Night of Fri 10 Oct`, `Nap, Sun 12 Oct 14:30`) and the record's title, the span, `timeInBed`, `timeAsleep`, the stage durations `awake`, `light`, `deep` and `rem`, `latency`, `efficiency`, `respiratoryRate`, `disturbances` and the device's `scores` by their own names |
-| `workout` | one session: `name`, the heading the adapter writes from the sport and the local start (`Running, Sat 11 Oct 08:43`) and the record's title; `sport`, one code set every adapter maps onto (`running`, `walking`, `hiking`, `cycling`, `swimming`, `strength`, `yoga`, `rowing`, `hiit` and more, `other` for a sport with no value of its own) with the provider's own word in `sportSource`; the span, `duration`, `distance`, `activeEnergy` (above the resting rate) and `totalEnergy` (resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` by zone name, and the device's original `file` as a blob |
-| `labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
-| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age, tone}`; `tone` is how a reader draws the band, absent for the lab's normal range and `poor` for a cut-off past which a value is abnormal), `channel` (the body region of a regional body composition result, such as `trunk`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
+| `health/sleep` | one night or nap: `name`, the heading the adapter writes on the clock the night was recorded on (`Night of Fri 10 Oct`, `Nap, Sun 12 Oct 14:30`) and the record's title, the span, `timeInBed`, `timeAsleep`, the stage durations `awake`, `light`, `deep` and `rem`, `latency`, `efficiency`, `respiratoryRate`, `disturbances` and the device's `scores` by their own names |
+| `health/workout` | one session: `name`, the heading the adapter writes from the sport and the local start (`Running, Sat 11 Oct 08:43`) and the record's title; `sport`, one code set every adapter maps onto (`running`, `walking`, `hiking`, `cycling`, `swimming`, `strength`, `yoga`, `rowing`, `hiit` and more, `other` for a sport with no value of its own) with the provider's own word in `sportSource`; the span, `duration`, `distance`, `activeEnergy` (above the resting rate) and `totalEnergy` (resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` by zone name, and the device's original `file` as a blob |
+| `labs/analyte` | the lab facts about one blood test metric: its LOINC parts, `molarMass` in grams per mole, the `conversions` a function may write, and a `fallbackRange` |
+| `labs/labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
+| `labs/labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age, tone}`; `tone` is how a reader draws the band, absent for the lab's normal range and `poor` for a cut-off past which a value is abnormal), `channel` (the body region of a regional body composition result, such as `trunk`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
 
-The catalogue (`samples/health/metrics.yaml`) is 55 `metric` records with ids
-`health/<name>`: the heart, sleep, activity, body, blood pressure, glucose
-and fitness metrics wearables report, and the common labs. A vendor's own
-score ships with its adapter sample, not here: WHOOP's are
-`healthwhoop/recovery`, `healthwhoop/strain` and
-`healthwhoop/sleep_performance` in `samples/healthwhoop/metrics.yaml`. A lab analyte reported in both unit systems is two metrics, the
-amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
-concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because no
+A vendor's own score ships with its provider, not in a catalogue: WHOOP's
+are `whoop/recovery`, `whoop/strain` and `whoop/sleep_performance`, shipped
+by the [WHOOP](bundles-catalog.md#whoop) provider. A lab analyte reported in
+both unit systems is two metrics, the
+amount concentration unsuffixed (`labs/ldl_cholesterol`, mmol/L) and the mass
+concentration suffixed `_mass` (`labs/ldl_cholesterol_mass`, mg/dL), because no
 conversion joins the two units (it takes a molar mass) and a read of one in
-the other's unit is refused. HbA1c is `hba1c` (NGSP, `percent`) and
-`hba1c_ifcc` (IFCC, `mmol/mol`), which never convert into each other: they
+the other's unit is refused. HbA1c is `labs/hba1c` (NGSP, `percent`) and
+`labs/hba1c_ifcc` (IFCC, `mmol/mol`), which never convert into each other: they
 relate by a formula, not a unit. A meter's glucose is one metric in two
 units ([glucose in either unit](#glucose-in-either-unit)).
 The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
-certain ones.
+certain ones. The six `environment` metrics keep the `1h` and `1d` rollup
+tiers and no `15m`, because a home sensor reports about once a minute
+([rollup tiers](#rollup-tiers)).
 
-The sample ships five [record views](console.md#record-views)
-(`samples/health/views.yaml`), records of the seeded console package's
-`recordview` kind that describe a record page's layout. Each names its
-metrics by reference to the metric records and each listed kind by
-reference to its declaration, and the import lands them at ids under the
-repository's authority (`<authority>/health/sleep`).
+`health` and `labs` ship five [record views](console.md#record-views) between
+them, records of the seeded console package's `recordview` kind that
+describe a record page's layout. Each names its metrics by reference to the
+metric records and each listed kind by reference to its declaration, and
+its id starts with the package that ships it
+(`substrate.reamde.dev/health/sleep`).
 
 - **`health/sleep`**: the heart rate, heart rate variability (`hrv_rmssd`)
   and respiratory rate over the night, left out where none was measured
@@ -539,31 +554,31 @@ repository's authority (`<authority>/health/sleep`).
   minute, five 19-beat bands from half of a 190 maximum); and the speed.
   The heart rate, zone and speed charts are left out where nothing was
   measured, as on a WHOOP workout.
-- **`health/labreport`**: the report's lab, accession, issue time, status
+- **`labs/labreport`**: the report's lab, accession, issue time, status
   and review, and a table of its results with the metric, value, flag and
   reference ranges, a converted twin under the lab's own row.
-- **`health/labresult`**: every result of the same metric and channel over
+- **`labs/labresult`**: every result of the same metric and channel over
   time as points (a DXA scan's trunk lists the trunk's alone), each against
   the reference range its own lab printed, the page's own result ringed,
   with the rows below.
-- **`health/metric`**, on the observations sample's
-  `samples.substrate.reamde.dev/observations/metric` kind: the lab results
+- **`labs/metric`**, on the seeded
+  `substrate.reamde.dev/observations/metric` kind: the lab results
   naming the metric, as the same points and rows. A metric no lab result
   names lists none, and the view stays hidden, so the page of a metric such
   as `health/heart_rate` is unchanged.
 
-The healthwhoop adapter ships two more
-([WHOOP to health](bundles-catalog.md#whoop-to-health-sample)): a WHOOP
-cycle's page and WHOOP's scores on a sleep's page.
+The WHOOP provider ships two more ([WHOOP to health](bundles-catalog.md#whoop-to-health)):
+a WHOOP cycle's page and WHOOP's scores on a sleep's page.
 
-Edit a view to change it, such as zone bounds from a measured maximum; a
-re-import keeps your edit. The console draws a view above the record's
+Edit a view to change it, such as zone bounds from a measured maximum; an
+upgrade keeps your edit. The console draws a view above the record's
 property sheet.
 
 ### Lab results in both unit systems
 
-The sample ships an `analyte` record for each metric of the eight lab pairs
-(`samples/health/metrics_analytes.yaml`, ids the metric's): the LOINC parts
+The `labs` catalogue ships an `analyte` record for each metric of the eight
+lab pairs (`kinds/substrate.reamde.dev/labs/metrics_analytes.yaml`, ids the
+metric's): the LOINC parts
 of the metric's code, the analyte's `molarMass` in grams per mole, and one
 conversion onto the other metric of the pair. A mass and an amount
 concentration convert by the molar mass (`molar-mass`: cholesterol 386.65,
@@ -572,7 +587,7 @@ triglycerides by the clinical convention); HbA1c converts by the IFCC and
 NGSP master equation, IFCC mmol/mol = (NGSP % - 2.15) x 10.929
 (`ngsp-to-ifcc` and `ifcc-to-ngsp`).
 
-The sample's function `convertlab`, fired by its trigger `health-on-labresult`
+Its function `convertlab`, fired by its trigger `labs-on-labresult`
 on every write of a lab result, writes the result's value in the paired
 metric as a `labresult` of its own, with id `<input id>/as/<target metric
 id>`. The derived result repeats the input's report, source, time, specimen,
@@ -586,8 +601,8 @@ derived result is never
 converted again, a corrected input rewrites its derivations, and a deleted
 input takes them with it. A read of one metric counts each reading once, the
 lab's own or the derived one; a read that names both metrics, or groups the
-latest values by metric, shows both. A result written before the sample was
-imported is converted by replaying the trigger from 0. Meter and continuous
+latest values by metric, shows both. A result written before the package was
+installed is converted by replaying the trigger from 0. Meter and continuous
 monitor readings of glucose are observations, not lab results, and are not
 converted: their units convert instead.
 
@@ -595,9 +610,10 @@ converted: their units convert instead.
 
 A glucose meter reports in mg/dL or in mmol/L, by country and by setting,
 and one person's history can hold both. The plain units never convert to
-each other, because the factor is the analyte's molar mass. The health
-sample therefore ships two units annotated with the analyte
-(`samples/health/analyte_units.yaml`), records of core's `unit` kind:
+each other, because the factor is the analyte's molar mass. The `health`
+catalogue therefore ships two units annotated with the analyte
+(`kinds/substrate.reamde.dev/health/analyte_units.yaml`), records of core's
+`unit` kind:
 `mmol/L_glucose` (code `mmol/L{glucose}`) and `mg/dL_glucose` (code
 `mg/dL{glucose}`), joined by one conversion of factor 18.0156 (glucose's
 180.156 g/mol).
@@ -611,70 +627,19 @@ into the request's `unit`, else the metric's (mmol/L), so a mixed history
 averages, ranks and buckets together. Each title prints the unit's symbol,
 `mg/dL` or `mmol/L`.
 
-#### Glucose written before health 8
-
-Before version 8 of the health sample, `health/blood_glucose` took plain
-mmol/L and a mass reading went to `health/blood_glucose_mass`. The upgrade
-leaves that metric and its values in place, but a repository whose
-`health/blood_glucose` holds a value in plain mmol/L, deleted ones included
-until they are collected, refuses the upgrade with a conflict naming the
-metric. No migration rewrites them; the owner moves them by hand, and three
-things are lost on the way:
-
-- A purge tombstones every record that references the purged one through
-  `onDelete: cascade`. No shipped kind does that to an observation, a trace
-  or a lab result; a kind of your own may.
-- A rewritten record is a new record at the same id: its version starts
-  again at 1 and its creation time is the rewrite's.
-- A lab result's converted twin (`<id>/as/health/blood_glucose`, written by
-  `convertlab`) cannot be kept. Once the metric changes, any delivery of the
-  lab result it came from deletes it, so purge both and write the lab
-  result again; one metric needs no twin.
-
-The order, with `A` your repository's authority:
-
-```bash
-A=ada.example.com
-M=$A/observations/metric/health
-F='{"properties":{"metric":{"in":["'$M'/blood_glucose","'$M'/blood_glucose_mass"]}}}'
-KINDS="$A/observations/observation $A/observations/trace $A/health/labresult"
-# 1. A recovery export, and every glucose record as apply-able YAML.
-bin/substratectl export > before-glucose.tar
-for k in $KINDS; do bin/substratectl get "$k" --filter "$F" --limit 1000 -o yaml; done > glucose.yaml
-# 2. Save the records of your own kinds that reference one of them with
-#    `onDelete: cascade` (`get <kind> --filter ... -o yaml`), into dependents.yaml.
-# 3. Purge every glucose record, derived twins included.
-for k in $KINDS; do
-  bin/substratectl get "$k" --filter "$F" --limit 1000 -o json | jq -r '.[].metadata.id' |
-    while read -r id; do bin/substratectl delete "$k" "$id" --purge; done
-done
-# 4. Upgrade the health sample.
-bin/substratectl import samples.substrate.reamde.dev/health
-# 5. Write them again: one metric, annotated units, same digits, no twins.
-sed -e 's#metric/health/blood_glucose_mass$#metric/health/blood_glucose#' \
-    -e 's#unit: mg/dL$#unit: mg/dL{glucose}#' -e 's#unit: mmol/L$#unit: mmol/L{glucose}#' \
-    glucose.yaml | yq 'select(.data.properties.derivedFrom == null)' > glucose-v8.yaml
-bin/substratectl apply -f glucose-v8.yaml
-# 6. Restore the dependents.
-bin/substratectl apply -f dependents.yaml
-```
-
-Once nothing names it, `health/blood_glucose_mass` and its analyte record
-may be deleted.
-
 ### How long a gauge value stands
 
-Every gauge metric the health sample ships carries a `hold`, which a writer
-copies onto each value: about twice the time between a source's readings
+Every gauge metric the `health` and `labs` catalogues ship carries a
+`hold`, which a writer copies onto each value: about twice the time between
+a source's readings
 for a sampled stream (`PT20M` for SpO2, `PT10S` for a workout's speed), and
 `PT0S` for a sporadic measurement, which is a point: a weighing, a height, a
 VO2 max estimate, a night's skin temperature, a lab value and a blood
 pressure. An average of `PT0S` values is the mean of the readings. The
-observations sample's shared physical metrics (`air_temperature` and the
-rest) carry none, so a writer names the hold its sensor's reporting interval
-implies. A gauge value written without
-a hold stands until the next value of its stream, often a day later, and the
-coverage, the time-weighted mean and the priority policy all read it as
+`environment` metrics (`environment/air_temperature` and the rest) carry
+none, so a writer names the hold its sensor's reporting interval implies. A
+gauge value written without a hold stands until the next value of its
+stream, often a day later, and the coverage, the time-weighted mean and the priority policy all read it as
 still standing ([decision 0158](decisions/0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md)).
 A `PT0S` value holds no time, so under `priority` it covers only its own
 instant: a blood pressure two apps deliver at one instant is the higher
@@ -683,13 +648,16 @@ source's alone, and one stamped seconds apart is kept twice
 
 ## The adapters
 
-An adapter is a sample whose function turns one provider's mirror rows into
+An adapter is a provider's function that turns its own mirror rows into
 these records, each naming the mirror row it came from in `origin` and
-rewritten or deleted with it. Two ship, each with its mapping and rules in
-the catalog: [WHOOP to health](bundles-catalog.md#whoop-to-health-sample)
-(`healthwhoop`) and [Apple Health to
-health](bundles-catalog.md#apple-health-to-health-sample) (`healthapple`).
-Garmin and Google Fit adapters are planned.
+rewritten or deleted with it. It ships in the provider's package, which
+requires the `health` catalogue it writes, so installing the provider brings
+both ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+Two ship, each with its mapping and rules in the catalog:
+[WHOOP to health](bundles-catalog.md#whoop-to-health) (`adaptwhoop`, in
+`whoop`) and [Apple Health to
+health](bundles-catalog.md#apple-health-to-health) (`adaptapplehealth`, in
+`applehealth`). Garmin and Google Fit adapters are planned.
 Every adapter that writes traces composes their ids as
 [a trace's](#the-base-kinds) are,
 `<provider>/<account record id>/<source>/<metric>[/<channel>]/<period start>`,
@@ -728,7 +696,7 @@ The two hold to one set of rules:
   row is deleted by hand; the adapter's delete trigger then removes it.
 
 Every output also names the code that wrote it, in `adapter`:
-`<package>@<version>` (`healthwhoop@3`), a constant at the top of the
+`<package>@<version>` (`whoop@25`), a constant at the top of the
 adapter's function whose version is the package's own. The base kinds and `health/sleep` and `health/workout`
 declare it as their own property, apart from `revision`, which is the
 upstream's
@@ -739,7 +707,7 @@ with the change, apply the new closure, and replay the adapter's record
 trigger from the start:
 
 ```bash
-bin/substratectl trigger replay healthwhoop-on-mirror --from 0
+bin/substratectl trigger replay whoop-to-health --from 0
 ```
 
 Every mirror row is delivered again and every output is rewritten under the
@@ -761,7 +729,7 @@ it above the provider for the metric in its `priorities`, and write the
 corrected value as an observation of that source:
 
 ```yaml
-kind: <authority>/observations/source
+kind: substrate.reamde.dev/observations/source
 metadata:
   id: owner/scale
 data:
@@ -769,15 +737,15 @@ data:
     name: My scale
     class: scale
     priorities:
-      <authority>/observations/metric/health/body_mass: 1
+      substrate.reamde.dev/observations/metric/health/body_mass: 1
 ---
-kind: <authority>/observations/observation
+kind: substrate.reamde.dev/observations/observation
 metadata:
   id: owner/body_mass/2026-09-11T04:02:41Z
 data:
   properties:
-    metric: <authority>/observations/metric/health/body_mass
-    source: <authority>/observations/source/owner/scale
+    metric: substrate.reamde.dev/observations/metric/health/body_mass
+    source: substrate.reamde.dev/observations/source/owner/scale
     form: gauge
     hold: PT0S
     value:
@@ -792,6 +760,42 @@ the two overlap, and `separate` shows both. The adapter never writes the
 owner's source or the owner's records, so a delivery or a replay leaves the
 correction and its ranking in place. The provider's own value stays as the
 provider sent it, which keeps a later re-read of the provider honest.
+
+## Moving from the samples
+
+Before [decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)
+these kinds shipped as the samples `observations`, `health`, `healthapple`
+and `healthwhoop`. A repository that imported them holds its rows under its
+own authority (`ada.example.com/observations/observation`), and nothing
+moves them to the first-party kinds. The move, by hand:
+
+1. Take a recovery export, `bin/substratectl export > before.tar`.
+2. Disable the old `healthapple`, `healthwhoop` and `health` packages, so
+   nothing writes the old kinds: `bin/substratectl bundle disable
+   ada.example.com/healthwhoop`, and the same for the others.
+3. Install the providers again, which upgrades them (`bin/substratectl
+   install providers.substrate.reamde.dev/whoop`, `…/applehealth`), and,
+   for lab results, `substrate.reamde.dev/labs`. Each brings `health`. The
+   upgrade creates the provider's adapter trigger, which starts at the changelog's
+   start, so every mirror row the repository holds is converted into the
+   first-party kinds without a hand.
+4. Move what you wrote yourself (sources, source links, observations
+   entered by hand, lab reports and results) through the record routes: read
+   each with `get -o yaml`, rewrite its kind and every reference onto the
+   first-party spelling, and `apply -f` it. A metric id moves with its
+   package: a lab metric `health/<name>` is `labs/<name>`, an unprefixed
+   climate metric is `environment/<name>`, and `healthwhoop/<name>` is
+   `whoop/<name>`. Leave out a lab result that carries `derivedFrom`:
+   `convertlab` writes it again.
+5. Remove the old rows and packages. A metric any stored value points at,
+   tombstones included, cannot be deleted
+   ([the metric and source contracts](#the-metric-and-source-contracts)), so
+   purge the old observations, traces and lab results first (`delete
+   --purge`), then purge (`bundle purge --yes`) and uninstall each old
+   package, the adapters before `health` and `health` before `observations`.
+   The old record views (`ada.example.com/health/sleep` and the rest) are
+   records of the console's `recordview` kind, which no purge of those
+   packages reaches: delete them.
 
 ## Building observed values in a function
 
@@ -823,7 +827,7 @@ and the export never read them.
 A **stream** is one run of readings: the `kind`, `metric`, `source`, `about`
 and `channel` of a value, and a summary's `statistic`, so a night's average
 and its maximum at one instant are two streams. A reference column holds the
-target's record path (`ada.example.com/observations/metric/health/heart_rate`);
+target's record path (`substrate.reamde.dev/observations/metric/health/heart_rate`);
 an absent `source`, `about`, `channel` or `statistic` is the empty string.
 
 | Table | One row per | Holds |
@@ -1098,7 +1102,7 @@ observation leaves out `code` and says why in `absentReason` (such as
 is refused.
 
 ```yaml
-kind: ada.example.com/observations/metric
+kind: substrate.reamde.dev/observations/metric
 metadata:
   id: homeassistant/media_title
 data:
@@ -1134,7 +1138,7 @@ they are read over time, and otherwise belong on such a record.
 
 One record is a list read, as for any kind: today's WHOOP recovery is
 `filter.properties.periodId` equal to last night's sleep id beside `metric`
-equal to the `healthwhoop/recovery` metric, and every body weight under 155 lb is
+equal to the `whoop/recovery` metric, and every body weight under 155 lb is
 `metric` equal to the `health/body_mass` metric and `value` less than
 `{"value": "155", "unit": "lb"}` (without the metric, muscle and bone
 mass rows match too). Everything bucketed is the records route's
@@ -1174,7 +1178,7 @@ series times buckets, over the default
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/steps"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/steps"},
    "from": "prefer-raw",
    "range": {"gte": "2025-10-05T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "day"},
@@ -1188,7 +1192,7 @@ rows alone:
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/body_mass"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/body_mass"},
    "range": {"gte": "2025-10-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
    "reducers": ["avg", "min", "max", "count"],
@@ -1206,7 +1210,7 @@ window held):
 ```json
 {"filter": {"properties": {"source": {"eq": "garmin/ada/account"}, "statistic": {"eq": "avg"}}},
  "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/hrv_rmssd"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/hrv_rmssd"},
    "from": "summaries",
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
@@ -1230,12 +1234,12 @@ row's start and end at the night's own offsets, so a night slept abroad
 reads in the time it happened:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+{"filter": {"kinds": ["substrate.reamde.dev/observations/observation"]},
  "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/sleep_stage"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/health/sleep_stage"},
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+     "filter": {"kinds": ["substrate.reamde.dev/health/sleep"], "properties": {"isNap": {"eq": false}}},
      "sources": {"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"], "property": "source"},
      "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
    "groupBy": ["code"],
@@ -1250,13 +1254,13 @@ it scores, so each WHOOP night's records-mode window holds them. Each row
 carries the night's `record` beside its recovery:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+{"filter": {"kinds": ["substrate.reamde.dev/observations/observation"]},
  "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/healthwhoop/recovery"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/whoop/recovery"},
    "from": "summaries",
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/sleep"],
+     "filter": {"kinds": ["substrate.reamde.dev/health/sleep"],
                 "properties": {"source": {"eq": "whoop/e2e"}, "isNap": {"eq": false}}}}},
    "reducers": ["last"],
    "unit": "percent"}}
@@ -1272,7 +1276,7 @@ recorded it, the Garmin's first, and each week on the local days the
 sessions began:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/health/workout"]},
+{"filter": {"kinds": ["substrate.reamde.dev/health/workout"]},
  "aggregate": {
    "property": {"name": "duration", "utcOffset": "utcOffsetStart", "groupBy": ["sport"],
                 "sources": {"policy": "priority", "property": "source", "match": ["sport"],
@@ -1289,12 +1293,12 @@ so a higher-ranked device's workout without a distance leaves the next
 device's distance in.
 
 kWh per day from a meter that resets, reset-proof, for a meter a function
-writes as a counter under the `observations` sample's `energy` metric (no
-shipped adapter writes one):
+writes as a counter under the `environment` catalogue's `environment/energy`
+metric (no shipped adapter writes one):
 
 ```json
 {"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/energy"},
+   "metric": {"ref": "substrate.reamde.dev/observations/metric/environment/energy"},
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
    "reducers": ["increase"],

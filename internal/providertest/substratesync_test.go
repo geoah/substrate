@@ -24,13 +24,15 @@ import (
 // first eight characters of its install id.
 const syncAccount = "substrate-sync-6f1c2e9a"
 
+// newSubstrateSync is a repository as the app sets one up: one install of
+// applehealth through the catalog, which brings the health catalogue and the
+// adapter (decision record 0192), and the app's account.
 func newSubstrateSync(t *testing.T) substrate.Dataset {
 	t.Helper()
 	requirePython(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, appleHealthDir, nil)
-	importVocabulary(t, ds, "health", "healthapple")
+	installShipped(t, ds, appleHealthPkg)
 	mustPut(t, ds, substrate.PutInput{
 		Kind: ahAccount, ID: syncAccount,
 		Properties: map[string]any{"displayName": "Ada's iPhone", "timezone": "Europe/Athens"},

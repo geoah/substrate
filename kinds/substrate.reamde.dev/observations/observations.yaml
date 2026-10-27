@@ -1,0 +1,38 @@
+# The base of every observing domain: what a measured value is, where it came
+# from and what it is about. SEEDED into every repository (decision record
+# 0192), so every repository and every provider names an observation the same
+# way; the well-known catalogues (`health`, `labs`, `environment`) and the
+# providers' adapters add metrics under their own package prefix
+# (`health/heart_rate`, `whoop/strain`), and an owner's own metrics use theirs.
+#
+# Five kinds:
+#
+#   metric       the catalogue entry: what is observed and how to read it
+#   observation  one value per record, binding core's observed(single)
+#   trace        many values over a fixed period, binding observed(packed)
+#   source       the device, app, service or lab a value came from
+#   sourcelink   the sources that are one device reached by several routes
+#
+# The observed index reads nothing from a metric or a source: what an
+# indexed number means (its form, unit, hold, counter contract, delta and
+# circular flags) is on the observation or trace itself, so editing a metric
+# never relabels a stored value (decision record 0156). The write rules hold
+# every value to the units its metric admits (decision record 0186), the
+# aggregate read takes a metric's `unit` as the unit it answers in by
+# default, and a source's `priorities` as the priority policy's default
+# order.
+#
+# A domain never edits a base kind: domain-only context is a `qualifiers`
+# code on an observation, and domain-only definition data is a domain kind
+# pointing at the metric (`labs/analyte`). Unlike core, llm and console these
+# kinds are the owner's data, so they keep their own `purpose` and their
+# records merge.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/observations
+data:
+  authority: substrate.reamde.dev
+  package: observations
+  # The sample samples.substrate.reamde.dev/observations at its version 6,
+  # without its six example metrics (now the `environment` catalogue).
+  version: 1

@@ -39,7 +39,8 @@ API call that completes a task.
   and the cross-kind queries binding unlocks
 - [Observations](observations.md): measured values (readings, traces, lab
   results), core's `observed` trait and the rules every write of one is held
-  to, the `observations` and `health` samples, the observed index, and the
+  to, the seeded `observations` package and the `health`, `labs` and
+  `environment` catalogues, the observed index, and the
   aggregate reads that answer a screen of a health app
 - [Building health apps](health-apps.md): the requests behind each screen of
   a health app (a day, a night, a workout, trends, labs, sync), each run

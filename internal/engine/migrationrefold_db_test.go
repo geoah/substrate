@@ -210,14 +210,15 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 }
 
 // seedRefoldSource opens a store in a schema of its own and writes one
-// repository's history into it: the seeded core, llm and console declarations, the
+// repository's history into it: the seeded core, llm, console and observations
+// declarations, the
 // tasks sample with the people and scheduling packages it requires, task
 // records created, patched, labeled, annotated, referenced, deleted and put
 // back (writeSomeHistory), people fed by three mapped sources, with offers
 // beside an owner's hold, a merge and a source collected by the sweep
 // (writeMappedHistory), a record trigger and a schedule trigger, whose
-// creation writes their cursor and fire state, and the observations sample
-// with one of every observed shape (writeObservedHistory), so the observed
+// creation writes their cursor and fire state, and the environment catalogue's
+// metrics with one of every observed shape (writeObservedHistory), so the observed
 // index holds points, rollups and latest rows. Both triggers are disabled
 // and no dispatch runs, so the scan position a dispatch moves outside the
 // ledger (functions.go advanceCursor) never moves. Every stage copies these

@@ -117,7 +117,7 @@ func TestASecondProcessCannotClaimARepositoryMidCreation(t *testing.T) {
 
 	// The second process: its own service on the same database, booted while
 	// there is nothing to lease.
-	secondIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+	secondIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("open the second process: %v", err)
 	}

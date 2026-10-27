@@ -32,7 +32,7 @@ func openUnitsDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t),
-		WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestUnitGraphsOfTwoRepositoriesStayApart(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t),
-		WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -419,20 +419,12 @@ func TestDeletingAUsedUnitIsRefused(t *testing.T) {
 func TestATraceAndAMetricUseTheirUnit(t *testing.T) {
 	t.Parallel()
 	ds := openUnitsDataset(t)
-	importVocabulary(t, ds, "observations")
-	var metric, trace string
-	for _, k := range ds.registry().Kinds() {
-		switch {
-		case strings.HasSuffix(k.Identity, "/observations/metric"):
-			metric = k.Identity
-		case strings.HasSuffix(k.Identity, "/observations/trace"):
-			trace = k.Identity
-		}
+	// The seeded observations package declares both kinds (record 0192).
+	metric, trace := vocabulary.PackageObservations+"/metric", vocabulary.PackageObservations+"/trace"
+	// K is a shipped unit; degX is the owner's own.
+	if err := enginetest.PutShippedUnits(context.Background(), ds, "K"); err != nil {
+		t.Fatalf("put the shipped units: %v", err)
 	}
-	if metric == "" || trace == "" {
-		t.Fatalf("the observations sample brought metric %q and trace %q", metric, trace)
-	}
-	// K came with the sample's units; degX is the owner's own.
 	putUnit(t, ds, "degX", map[string]any{"name": "degree X", "code": "[degX]"})
 	putConversion(t, ds, "degX-K", "degX", "K", map[string]any{"factor": "2", "offset": "100"})
 	ctx := context.Background()

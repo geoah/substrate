@@ -434,7 +434,7 @@ func importIntoEmptyDatabase(t *testing.T, ds *dataset) *dataset {
 		t.Fatal(err)
 	}
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir))
+		WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}

@@ -317,7 +317,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md) | The forms are `gauge`, `amount`, `counter` and `summary`, and they live on the value | accepted |
 | [0157](0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md) | A counter is stored as sent and differenced at read under one of three contracts | accepted |
 | [0158](0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md) | A gauge carries a hold, a null ends it, and its mean is time-weighted | accepted |
-| [0159](0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md) | The base observation kinds live in a sample every domain sample requires | accepted |
+| [0159](0159-the-base-observation-kinds-live-in-a-sample-every-domain-sample-requires.md) | The base observation kinds live in a sample every domain sample requires | superseded |
 | [0160](0160-the-observed-index-keeps-a-segment-per-record-and-a-rollup-serves-only-exact-answers.md) | The observed index keeps a segment per record, and a rollup serves only exact answers | accepted |
 | [0161](0161-the-aggregate-read-is-a-mode-of-the-records-route-checked-before-it-runs.md) | The aggregate read is a mode of the records route, checked before it runs | accepted |
 | [0162](0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md) | An observed row names its origin and source, and composes its id from upstream data | accepted |
@@ -347,6 +347,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0186](0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md) | Units and conversions are core records, and a value converts through the repository's graph | accepted |
 | [0187](0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md) | Linked sources are one device, read from their highest-ranked source | proposed |
 | [0188](0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md) | The Observations page folds a metric's sources into one row, and keeps channels apart | proposed |
-| [0189](0189-the-observation-source-kind-stays-in-the-observations-sample.md) | The observation source kind stays in the observations sample | accepted |
+| [0189](0189-the-observation-source-kind-stays-in-the-observations-sample.md) | The observation source kind stays in the observations sample | superseded |
 | [0190](0190-a-blobref-declares-the-media-types-of-its-bytes.md) | A blobref declares the media types of its bytes | accepted |
 | [0191](0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md) | A shipped record is held by any hand but the one that ships it | accepted |
+| [0192](0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md) | Observations is seeded, and the well-known catalogues are first-party packages | accepted |

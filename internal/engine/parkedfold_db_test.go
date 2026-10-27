@@ -54,7 +54,6 @@ func pfOpener(t *testing.T, dsn, root string) func(opts ...engine.Option) substr
 	return func(opts ...engine.Option) substrate.Service {
 		t.Helper()
 		all := append([]engine.Option{
-			engine.WithKindsDir(engine.SeedKindsDir),
 			engine.WithDataRoot(root),
 			engine.WithCredentialKey(engine.TestCredentialKey),
 		}, opts...)

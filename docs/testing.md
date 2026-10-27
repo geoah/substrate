@@ -356,8 +356,8 @@ until #864. It visits `/` (expecting the redirect to `/login`), `/login`,
 `/register` (it registers a new repository through the form and acknowledges
 the recovery key), then `/data` and `/history`, where it waits for the
 collections table or the change rows, or their empty states, and the
-observations pages and the timeline, empty. Last, it imports the
-observations and health samples, writes six hours of heart rate, heart rate
+observations pages and the timeline, empty. Last, it installs the health
+catalogue, writes six hours of heart rate, heart rate
 variability and steps, and opens the timeline on those three metrics, which
 must draw two charts: heart rate with HRV on two axes, then steps. It prints
 one line per route. A route fails on an uncaught page error, a console error, a

@@ -24,7 +24,8 @@ type ahDoc struct {
 }
 
 // ahUnits is every metric the emitter sends and its unit: each one a metric
-// the healthapple adapter maps, so nothing lands only to be skipped.
+// the Apple Health provider's adapter (adaptapplehealth) maps, so nothing
+// lands only to be skipped.
 var ahUnits = map[string]string{
 	"heart_rate": "count/min", "step_count": "count", "walking_running_distance": "km",
 	"flights_climbed": "count", "active_energy": "kJ", "basal_energy_burned": "kJ",

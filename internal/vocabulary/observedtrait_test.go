@@ -1,24 +1,25 @@
 package vocabulary_test
 
 import (
-	"os"
 	"reflect"
 	"testing"
 
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
 )
 
 // THE OBSERVED TRAIT NEVER GAINS A PROPERTY (decision 0154).
 //
 // Every kind that binds a trait declares every property the trait lists, and
-// those kinds live in samples a repository imports under its own authority. A
-// property added here refuses every imported observation and trace at the next
-// boot, and a removed or retyped one changes what the observed index reads. So
+// those kinds are the seeded observations package's, the installed
+// catalogues' and any a repository declares itself. A property added here
+// refuses every one of them that lacks it at the next boot, and a removed or
+// retyped one changes what the observed index reads. So
 // the contract is pinned exactly: a later need is a second trait bound beside
 // this one, never an edit of this list. The one removal, `measure`, went with
 // the engine's unit table (decision 0186), before any release stored it.
 func TestObservedTraitContractIsPinned(t *testing.T) {
-	reg, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
+	reg, err := vocabulary.LoadFS(kinds.Seed())
 	if err != nil {
 		t.Fatalf("load the seed: %v", err)
 	}
@@ -68,12 +69,12 @@ func TestObservedTraitContractIsPinned(t *testing.T) {
 }
 
 // The traits beside `observed` are pinned the same way, for the same reason:
-// every kind that binds one lives in a sample a repository imports, so a
+// a kind that binds one may be installed or declared by a repository, so a
 // property added to one refuses those kinds at the next boot. The metric's
 // `units` and its `unit` as a reference came with the unit graph (decision
 // 0186), before any release stored a metric.
 func TestObservedCompanionTraitContractsArePinned(t *testing.T) {
-	reg, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
+	reg, err := vocabulary.LoadFS(kinds.Seed())
 	if err != nil {
 		t.Fatalf("load the seed: %v", err)
 	}

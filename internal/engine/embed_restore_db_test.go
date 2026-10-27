@@ -149,7 +149,7 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 	dsn2 := engine.MigratedDSN(t)
 	errKilled := errors.New("the process died here")
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(stage string) error {

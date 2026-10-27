@@ -1,0 +1,26 @@
+# The labs package's one delivery: every create, update and delete of a lab
+# result fires `convertlab` with that result's current state, which writes
+# the value in the paired unit system and deletes what the result no longer
+# implies.
+#
+# A new trigger starts at the changelog's head, so results written before
+# this package was installed are converted by replaying it from the start:
+# POST /api/v1/substrate.reamde.dev/core/trigger/labs-on-labresult/replay
+# with {"from": 0}. Every derived id is composed, so a replay over results
+# already converted writes nothing.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: labs-on-labresult
+data:
+  properties:
+    enabled: true
+    label: Lab results in both unit systems
+    source:
+      record:
+        kinds:
+          - substrate.reamde.dev/labs/labresult
+        ops:
+          - create
+          - update
+          - delete
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/labs/convertlab

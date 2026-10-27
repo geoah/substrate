@@ -21,9 +21,8 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 	t.Parallel()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	importVocabulary(t, ds, "observations")
-	const home = "samples.substrate.reamde.dev"
-	obs := home + "/observations/observation"
+	const pkg = vocabulary.PackageObservations
+	obs := pkg + "/observation"
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
@@ -33,10 +32,10 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 	if err := enginetest.PutShippedUnits(ctx, ds, "1/min"); err != nil {
 		t.Fatal(err)
 	}
-	put(home+"/observations/metric", "m1", map[string]any{"name": "M1", "form": "gauge", "unit": unitRef("1/min")})
-	put(home+"/observations/source", "s1", map[string]any{"name": "S1"})
+	put(pkg+"/metric", "m1", map[string]any{"name": "M1", "form": "gauge", "unit": unitRef("1/min")})
+	put(pkg+"/source", "s1", map[string]any{"name": "S1"})
 	put(obs, "o1", map[string]any{
-		"metric": map[string]any{"ref": home + "/observations/metric/m1"}, "source": map[string]any{"ref": home + "/observations/source/s1"},
+		"metric": map[string]any{"ref": pkg + "/metric/m1"}, "source": map[string]any{"ref": pkg + "/source/s1"},
 		"form": "gauge", "at": "2026-10-07T08:00:00Z", "hold": "PT1M", "value": map[string]any{"value": "70", "unit": "/min"},
 	})
 	db := rawDB(t, ds)

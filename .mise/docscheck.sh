@@ -86,15 +86,18 @@ fi
 # page open beside it. Two lists, each held where its words can only be
 # wrong:
 #
-# - Machinery words, in the seeded packages (kinds/substrate.reamde.dev/).
+# - Machinery words, in the packages of the substrate's own state (core, llm
+#   and console under kinds/substrate.reamde.dev/).
 #   There `body` meant the function's code and `host` meant the substrate,
 #   and neither said so (#49); `trip` and `touch` are the same shorthand, for
 #   a request and for a read or a write. The HTTP sense of `body` and the
 #   network sense of `host` have plainer spellings there (the headers that
 #   describe a request's content, a hostname), so they are refused too.
-#   A sample or a provider describes the user's data and an upstream service,
-#   where the words are honest: a message body, a meeting host, a WHOOP body
-#   measurement.
+#   A sample, a provider, the seeded observations package and a well-known
+#   catalogue (decision record 0192) describe the user's data and an upstream
+#   service, where the words are honest: a message body, a meeting host, a
+#   WHOOP body measurement. Those under the substrate's authority are still
+#   held to the dead words.
 # - The dead words the rule above refuses, in every package under kinds/ and
 #   samples/. A provider keeps `entity` and `integration`: its descriptions
 #   quote the upstream API's own reference for its fields (an HTTP entity
@@ -231,8 +234,17 @@ provider_dirs=()
 for dir in kinds/*/; do
   [ "$dir" = "kinds/substrate.reamde.dev/" ] || provider_dirs+=("${dir%/}")
 done
-refuse_description_words kinds/substrate.reamde.dev "body|host|trip|touch|${dead}" \
-  kinds/substrate.reamde.dev
+state_dirs=(kinds/substrate.reamde.dev/core kinds/substrate.reamde.dev/llm kinds/substrate.reamde.dev/console)
+data_dirs=()
+for dir in kinds/substrate.reamde.dev/*/; do
+  case "${dir%/}" in
+  kinds/substrate.reamde.dev/core | kinds/substrate.reamde.dev/llm | kinds/substrate.reamde.dev/console) ;;
+  *) data_dirs+=("${dir%/}") ;;
+  esac
+done
+refuse_description_words "core, llm and console" "body|host|trip|touch|${dead}" "${state_dirs[@]}"
+refuse_description_words "the substrate's data packages" "$dead" \
+  ${data_dirs[@]+"${data_dirs[@]}"}
 refuse_description_words "the providers under kinds/" "$dead_substrate" \
   ${provider_dirs[@]+"${provider_dirs[@]}"}
 refuse_description_words samples/ "$dead" samples

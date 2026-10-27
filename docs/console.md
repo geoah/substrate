@@ -482,8 +482,8 @@ of the seeded `substrate.reamde.dev/console/recordview` kind
 The console reads every view whose `appliesTo` names the page's kind and draws
 each, in id order, above the property sheet, under the view's `name` and
 `intro`. A kind with no view gets the generic page and nothing else. The
-console names no kind of its own accord: a sample's kinds get a layout only
-from a view the sample ships or the owner writes. "Saved view" stays the name
+console names no kind of its own accord: a package's kinds get a layout only
+from a view a package ships or the owner writes. "Saved view" stays the name
 for a table's saved filters and columns, which live elsewhere.
 
 A view binds its **window** by the names of the record's own properties:
@@ -673,7 +673,7 @@ A `baseline` repeats every value read once, by the calendar day over the
 days before the window, a gauge's `first` or `last` as `avg`. A chart splits its metrics over more reads only
 where their buckets together pass the server's bucket budget. The server
 serves two aggregate reads at a time per process, so a page queues the rest:
-the healthwhoop sample's cycle page costs eight (seven while the cycle is
+the WHOOP provider's cycle page costs eight (seven while the cycle is
 open, which reads no baseline for the values still growing), and
 `web/console/src/components/record-view/shipped-reads.test.tsx` holds every
 shipped view to its count. Tables issue one list read (three under `show:
@@ -706,22 +706,24 @@ the window the view binds (no end yet without `open`, or an end before its
 start), the view leaves out the blocks that read the window, and is left out
 itself where nothing else remains.
 
-**How a sample ships views.** A sample ships its views as data records beside
-its kinds, naming each kind's declaration in `appliesTo`
-(`substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/sleep`),
-and the import rehomes that reference with the kind. The health sample ships
-five and the healthwhoop sample two
-([what the health sample adds](observations.md#what-the-health-sample-adds)).
-A view on a provider's kind keeps its `appliesTo` through the import,
-because only `samples.substrate.reamde.dev` is rewritten.
+**How a package ships views.** A sample, a catalogue or a provider ships
+its views as data records beside its kinds, naming each kind's declaration
+in `appliesTo`
+(`substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep`). The
+`health` and `labs` catalogues ship five between them and the WHOOP provider
+two ([the well-known catalogues](observations.md#the-well-known-catalogues)).
+A sample's import rehomes `appliesTo` with the kind; a view on a provider's
+or a catalogue's kind keeps it, because only `samples.substrate.reamde.dev`
+is rewritten.
 
 **Upgrades.** An import or an upgrade replaces a shipped view that only the
 import has written. A view you wrote, edited, trimmed or deleted through the
 API, the console or `substratectl` stays as you left it on every re-import
-and upgrade. To take a newer shipped view over yours, apply the sample's file
-with `substratectl apply -f`, its authority rewritten to your repository's
-([the two doors](bundles.md#the-two-doors) gives the command), purging the
-view first where you added a property the shipped view does not set.
+and upgrade. To take a newer shipped view over yours, apply the shipped file
+with `substratectl apply -f`, a sample's with its authority rewritten to your
+repository's ([the two doors](bundles.md#the-two-doors) gives the commands),
+purging the view first where you added a property the shipped view does not
+set.
 
 ## The record editor
 
@@ -1012,8 +1014,8 @@ channel, their streams fold into one row; a channel stays a row of its own
 It is a place in the
 sidebar and ⌘K only where some kind binds core's
 `observed` trait, which the console finds in the registry by the trait and
-never by a fixed authority, so an imported `observations` or `health` sample
-under your own authority is found the same way. Where nothing records
+never by a fixed authority, so a kind of your own that binds it is found
+beside the seeded `observations` kinds. Where nothing records
 measurements yet, or nothing has been measured, the page says so and offers
 **Add a sample** (All data's **Add a collection**, on its samples) and
 **Providers**. The rows come from one

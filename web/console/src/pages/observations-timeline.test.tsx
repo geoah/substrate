@@ -2228,13 +2228,14 @@ describe("the charts", () => {
   })
 
   it("reads a vendor summary from summaries until the reader picks", async () => {
-    const server = mount(`?metric=healthwhoop/recovery&${WINDOW}`)
+    const server = mount(`?metric=whoop/recovery&${WINDOW}`)
     await waitFor(() =>
-      expect(charts(server.seen, "healthwhoop/recovery")).toHaveLength(1)
+      expect(charts(server.seen, "whoop/recovery")).toHaveLength(1)
     )
-    expect(
-      charts(server.seen, "healthwhoop/recovery")[0].aggregate
-    ).toMatchObject({ from: "summaries", reducers: ["avg"] })
+    expect(charts(server.seen, "whoop/recovery")[0].aggregate).toMatchObject({
+      from: "summaries",
+      reducers: ["avg"],
+    })
   })
 
   it("shows the request to run again, in technical mode only", async () => {
@@ -2353,7 +2354,7 @@ describe("the All range", () => {
 
   it("reaches back to a vendor summary's and a coded metric's earliest point", async () => {
     const server = mountWatched(
-      "?metric=healthwhoop/recovery,health/sleep_stage&range=all",
+      "?metric=whoop/recovery,health/sleep_stage&range=all",
       withFirsts
     )
     await waitFor(() =>

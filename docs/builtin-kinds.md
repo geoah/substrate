@@ -1,11 +1,14 @@
 # Built-in kinds
 
-This page maps the vocabulary this binary ships, package by package: the three
+This page maps the vocabulary this binary ships, package by package: the four
 packages a repository is seeded with, `substrate.reamde.dev/core`,
-`substrate.reamde.dev/llm` and `substrate.reamde.dev/console`, the LLM sample copied onto the repository's own
-authority at registration, and the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
+`substrate.reamde.dev/llm`, `substrate.reamde.dev/console` and
+`substrate.reamde.dev/observations`, the three well-known catalogues it can
+install (`health`, `labs` and `environment`, under the same authority), the
+LLM sample copied onto the repository's own authority at registration, and
+the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
-spells it, under the placeholder authority an import rewrites. Which door a
+spells it, a sample's under the placeholder authority an import rewrites. Which door a
 package takes, what an import rewrites and how an upgrade is offered are in
 [bundles](bundles.md#the-two-doors); the provider packages, and the five
 samples this page does not table (notes, llm, readinglist, firecrawl and pebble, whose
@@ -16,7 +19,7 @@ your own repository (`substratectl kinds`, or `GET /api/v1/records` with
 is the map and the repository is the source of truth.
 
 The tables for core are [below](#substratereamdedevcore); what follows first is
-the vocabulary you import.
+the vocabulary you import or install.
 
 ## samples.substrate.reamde.dev/people (a sample)
 
@@ -85,53 +88,57 @@ Like every suggested mapping it lands only where the Linear provider is already
 installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
-## samples.substrate.reamde.dev/observations (a sample)
+## substrate.reamde.dev/health (a well-known catalogue)
 
-Measured values and where they came from, the base every observing sample
-requires. [Observations](observations.md) has every property and the rules a
-write is held to.
+A person's body, sleep and training. Installed from the catalog, never
+copied: it lands under `substrate.reamde.dev` and upgrades from the catalog
+([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+The Apple Health and WHOOP providers require it, so installing either
+installs it.
 
-| Kind          | What it is                                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------------------------ |
-| `metric`      | Something that can be measured, binding core's `metric`: its names, codes in other systems, unit, rollup tiers and how its values are read. |
-| `observation` | One measured value, binding core's `observed(single)`: a number with its unit, or a code.                   |
-| `trace`       | The values of one metric from one source over one fixed period, binding `observed(packed)`.                  |
-| `source`      | The device, app, service or lab a value came from, binding core's `source`: its rank per metric.            |
-| `sourcelink`  | The sources that are one device reached by several routes, binding core's `sourcelink`.                      |
+| Kind      | What it is                                                                                     |
+| --------- | ---------------------------------------------------------------------------------------------- |
+| `sleep`   | One night or nap: its span, time in each stage, efficiency and the device's scores.            |
+| `workout` | One session: sport, span, distance, active and total energy, heart rate and time in each zone. |
 
-It ships six metric records several domains share: `air_temperature`,
-`relative_humidity`, `energy`, `power`, `illuminance` and
-`atmospheric_pressure`.
+It ships 33 metric records with ids `health/<name>`, such as
+`health/heart_rate` and `health/body_mass`, each with its LOINC,
+HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
+ships two units of core's `unit` kind, `mmol/L{glucose}` and
+`mg/dL{glucose}`, and the conversion between them, so a meter's glucose in
+either unit reads as one series
+([glucose in either unit](observations.md#glucose-in-either-unit)), and the
+[record views](console.md#record-views) of a sleep and a workout
+([the well-known catalogues](observations.md#the-well-known-catalogues)).
 
-## samples.substrate.reamde.dev/health (a sample)
+## substrate.reamde.dev/labs (a well-known catalogue)
 
-A person's body, sleep, training and blood tests, on top of `observations`,
-which it requires.
+Blood tests and what a lab reports. It requires `health`, and installing it
+installs `health` first.
 
 | Kind        | What it is                                                                                            |
 | ----------- | ----------------------------------------------------------------------------------------------------- |
 | `analyte`   | The lab facts about one blood test metric: LOINC parts, molar mass, conversions, a fallback range.   |
-| `sleep`     | One night or nap: its span, time in each stage, efficiency and the device's scores.                   |
-| `workout`   | One session: sport, span, distance, active and total energy, heart rate and time in each zone.        |
 | `labreport` | One report from a lab, with its status and the original document.                                     |
 | `labresult` | One analyte's result, binding `observed(single)` and `result`, with the lab's range, flag, specimen and status. |
 
-It ships a catalogue of 55 metric records with ids `health/<name>`, such as
-`health/heart_rate` and `health/ldl_cholesterol`, each with its LOINC,
-HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
-ships 17 `analyte` records: one for each metric of the eight lab pairs (one
-analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol),
-and one for `health/blood_glucose`. It ships two units of core's `unit`
-kind, `mmol/L{glucose}` and `mg/dL{glucose}`, and the conversion between
-them, so a meter's glucose in either unit reads as one series
-([glucose in either unit](observations.md#glucose-in-either-unit)).
-Its function `convertlab`, fired by its trigger `health-on-labresult` on every
+It ships 22 metric records with ids `labs/<name>`, such as
+`labs/ldl_cholesterol`, and 17 `analyte` records: one for each metric of
+the eight lab pairs (one analyte in mass and in molar units, and HbA1c as
+NGSP % and IFCC mmol/mol), and one for `health/blood_glucose`.
+Its function `convertlab`, fired by its trigger `labs-on-labresult` on every
 write of a `labresult`, writes the result again in the other metric of its
 pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).
-It ships five [record views](console.md#record-views): the record pages of a
-sleep, a workout, a lab report and a lab result, and a lab trend on the
-observations sample's `metric` kind
-([what the health sample adds](observations.md#what-the-health-sample-adds)).
+It ships three [record views](console.md#record-views): the record pages of
+a lab report and a lab result, and a lab trend on the seeded `metric` kind.
+
+## substrate.reamde.dev/environment (a well-known catalogue)
+
+No kinds: six metric records for a home, a weather station or an energy
+meter to write observations against, `environment/air_temperature`,
+`environment/relative_humidity`, `environment/illuminance`,
+`environment/atmospheric_pressure`, `environment/energy` and
+`environment/power`.
 
 ## substrate.reamde.dev/core
 
@@ -215,10 +222,31 @@ it at its next open.
 | ------------ | ------------------------------------------------------------------------------------------------ |
 | `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart`, `spans`, `stats` (tiles, dials and bars against a baseline), `trend` (daily, weekly or monthly strips), `table` (records of one kind as rows), `breakdown` (shares of the record's own properties) or `lanes` (declared, not yet drawn) ([record views](console.md#record-views)). |
 
-A sample ships its views as records; a re-import replaces a view only the
-sample and the engine wrote and leaves one any other hand edited or deleted
-as it was left
+A sample, a catalogue or a provider ships its views as records; a re-import
+or an upgrade replaces a view only that package and the engine wrote and
+leaves one any other hand edited or deleted as it was left
 ([the two doors](bundles.md#the-two-doors)).
 `consolepreference` stays in core.
+
+## substrate.reamde.dev/observations
+
+The fourth package the binary seeds: measured values and where they came
+from, the base every catalogue and every health provider writes into
+([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+It is seeded and upgraded as core is, but its kinds are your data rather
+than the substrate's state, so they keep their own purpose and their records
+merge. [Observations](observations.md) has every property and the rules a
+write is held to.
+
+| Kind          | What it is                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `metric`      | Something that can be measured, binding core's `metric`: its names, codes in other systems, unit, rollup tiers and how its values are read. |
+| `observation` | One measured value, binding core's `observed(single)`: a number with its unit, or a code.                   |
+| `trace`       | The values of one metric from one source over one fixed period, binding `observed(packed)`.                  |
+| `source`      | The device, app, service or lab a value came from, binding core's `source`: its rank per metric.            |
+| `sourcelink`  | The sources that are one device reached by several routes, binding core's `sourcelink`.                      |
+
+It ships no metric records: the catalogues and the providers do, each under
+its own id prefix (`health/heart_rate`, `whoop/strain`).
 
 Back to [the documentation index](README.md).

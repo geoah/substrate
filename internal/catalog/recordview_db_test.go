@@ -1,12 +1,11 @@
 package catalog_test
 
-// A sample's record views (decision record 0166) through the import door: a
-// view lands at an id under the repository's own authority, naming the
-// repository's own kind and metric records, because the import rehomes its
-// id, its `appliesTo` and its metric references with everything else; and a
-// re-import writes a shipped view only where no hand but its shipper wrote or
-// deleted the one at its id (record 0191), so the owner's edit and the
-// owner's deletion both survive.
+// A first-party catalogue's record views (decision records 0166 and 0192)
+// through the provider door: a view lands at its shipped id, naming the
+// published kind and the metric records the catalogue ships, because a
+// published package is installed verbatim; and a re-install writes a shipped
+// view only where no hand but its shipper wrote or deleted the one at its id
+// (record 0191), so the owner's edit and the owner's deletion both survive.
 
 import (
 	"bytes"
@@ -21,13 +20,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/samples"
+	"github.com/geoah/substrate/kinds"
 )
 
 const (
 	recordViewKind      = "substrate.reamde.dev/console/recordview"
-	observationsSample  = samplesPlacehldr + "/observations"
-	healthSample        = samplesPlacehldr + "/health"
 	kindDeclarationPath = "substrate.reamde.dev/core/kind/"
 )
 
@@ -71,8 +68,11 @@ func viewMetrics(t *testing.T, ds substrate.Dataset, id string) []string {
 	return out
 }
 
-// homeView is the id a health view lands at under the repository's authority.
-func homeView(name string) string { return homeAuthority + "/health/" + name }
+// healthView and labsView are the ids a first-party catalogue's views land
+// at: the shipped ids, the same in every repository.
+func healthView(name string) string { return healthID + "/" + name }
+
+func labsView(name string) string { return labsID + "/" + name }
 
 func viewName(t *testing.T, ds substrate.Dataset, id string) string {
 	t.Helper()
@@ -94,23 +94,27 @@ func viewIntro(t *testing.T, ds substrate.Dataset, id string) string {
 	return intro
 }
 
-func TestImportedRecordViewsFollowTheRehome(t *testing.T) {
+// A first-party catalogue's views (record 0192) land as shipped: at the
+// shipped id, applying to the published kind, and reading the metric records
+// the catalogue writes into the seeded metric kind. Nothing is rehomed, so
+// every repository holds them under the same names.
+func TestInstalledRecordViewsLandVerbatim(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
-	importSamples(t, c, ds, observationsSample, healthSample)
+	importVocabulary(t, c, ds, healthID)
 
 	for _, kind := range []string{"sleep", "workout"} {
-		want := kindDeclarationPath + homeAuthority + "/health/" + kind
-		if got := appliesTo(t, ds, homeView(kind)); got != want {
+		want := kindDeclarationPath + healthID + "/" + kind
+		if got := appliesTo(t, ds, healthView(kind)); got != want {
 			t.Errorf("the %s view applies to %q, want %q", kind, got, want)
 		}
-		metrics := viewMetrics(t, ds, homeView(kind))
+		metrics := viewMetrics(t, ds, healthView(kind))
 		if len(metrics) == 0 {
 			t.Errorf("the %s view names no metric", kind)
 		}
 		for _, m := range metrics {
-			if !strings.HasPrefix(m, homeAuthority+"/observations/metric/health/") {
-				t.Errorf("the %s view reads %q, want a metric record of %s/observations/metric", kind, m, homeAuthority)
+			if !strings.HasPrefix(m, metricKind+"/health/") {
+				t.Errorf("the %s view reads %q, want a health metric record of %s", kind, m, metricKind)
 			}
 		}
 		// The console finds a kind's views by this one filter.
@@ -121,68 +125,56 @@ func TestImportedRecordViewsFollowTheRehome(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list the views of %s: %v", kind, err)
 		}
-		if len(page.Records) != 1 || page.Records[0].ID != homeView(kind) {
-			t.Errorf("the views of %s are %d records, want the one %s", kind, len(page.Records), homeView(kind))
+		if len(page.Records) != 1 || page.Records[0].ID != healthView(kind) {
+			t.Errorf("the views of %s are %d records, want the one %s", kind, len(page.Records), healthView(kind))
 		}
 	}
 }
 
-func TestReimportKeepsAnEditedRecordView(t *testing.T) {
+func TestReinstallKeepsAnEditedRecordView(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
-	importSamples(t, c, ds, observationsSample, healthSample)
+	importVocabulary(t, c, ds, healthID)
 
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, homeView("workout"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, healthView("workout"), substrate.PatchInput{
 		Properties: map[string]any{"name": "My runs"},
 	}); err != nil {
 		t.Fatalf("edit the workout view: %v", err)
 	}
-	importSamples(t, c, ds, healthSample)
-	if got := viewName(t, ds, homeView("workout")); got != "My runs" {
-		t.Fatalf("a re-import overwrote the owner's view: name = %q", got)
+	importVocabulary(t, c, ds, healthID)
+	if got := viewName(t, ds, healthView("workout")); got != "My runs" {
+		t.Fatalf("a re-install overwrote the owner's view: name = %q", got)
 	}
 
-	// A deletion is the owner's too: the re-import does not bring the view back.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, recordViewKind, homeView("workout"), substrate.DeleteInput{}); err != nil {
+	// A deletion is the owner's too: the re-install does not bring the view back.
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, recordViewKind, healthView("workout"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the workout view: %v", err)
 	}
-	importSamples(t, c, ds, healthSample)
-	if view, err := ds.Get(ctx, recordViewKind, homeView("workout")); err == nil && view.DeletedAt == nil {
-		t.Fatalf("a re-import recreated the view the owner deleted: name = %q", view.Properties["name"])
+	importVocabulary(t, c, ds, healthID)
+	if view, err := ds.Get(ctx, recordViewKind, healthView("workout")); err == nil && view.DeletedAt == nil {
+		t.Fatalf("a re-install recreated the view the owner deleted: name = %q", view.Properties["name"])
 	}
 	// The view the owner never touched is still the shipped one.
-	if got := viewName(t, ds, homeView("sleep")); got == "" {
-		t.Fatal("the untouched sleep view is gone after the re-import")
+	if got := viewName(t, ds, healthView("sleep")); got == "" {
+		t.Fatal("the untouched sleep view is gone after the re-install")
 	}
 }
 
-// A sample installed verbatim and the same sample imported are two copies,
-// and their views stay two views: each lands at an id under its own
-// authority, applies to its own copy of the kind, and reads its own copy's
-// metric records, although both metric kinds hold a `health/heart_rate`.
-func TestInstalledAndImportedRecordViewsStayApart(t *testing.T) {
+// Each catalogue's views land under its own package, the lab trend view on
+// the seeded metric kind included: installing labs brings health first, and
+// the two hold five views between them, each at the id its package ships.
+func TestFirstPartyRecordViewsLandUnderTheirOwnPackages(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
-	importVocabulary(t, c, ds, observationsSample, healthSample)
-	importSamples(t, c, ds, observationsSample, healthSample)
+	importVocabulary(t, c, ds, labsID)
 
-	for _, copyOf := range []string{samplesPlacehldr, homeAuthority} {
-		for _, kind := range []string{"sleep", "workout"} {
-			id := copyOf + "/health/" + kind
-			if got, want := appliesTo(t, ds, id), kindDeclarationPath+copyOf+"/health/"+kind; got != want {
-				t.Errorf("the view %s applies to %q, want %q", id, got, want)
-			}
-			metrics := viewMetrics(t, ds, id)
-			if len(metrics) == 0 {
-				t.Errorf("the view %s names no metric", id)
-			}
-			for _, m := range metrics {
-				if !strings.HasPrefix(m, copyOf+"/observations/metric/health/") {
-					t.Errorf("the view %s reads %q, a metric outside its own copy", id, m)
-				}
-			}
-		}
+	want := map[string]string{
+		healthView("sleep"):   kindDeclarationPath + healthID + "/sleep",
+		healthView("workout"): kindDeclarationPath + healthID + "/workout",
+		labsView("labreport"): kindDeclarationPath + labsID + "/labreport",
+		labsView("labresult"): kindDeclarationPath + labsID + "/labresult",
+		labsView("metric"):    kindDeclarationPath + metricKind,
 	}
 	page, err := ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{
 		Kinds: []string{recordViewKind},
@@ -190,29 +182,24 @@ func TestInstalledAndImportedRecordViewsStayApart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list the views: %v", err)
 	}
-	// The health sample ships five views (sleep, workout, labreport,
-	// labresult and metric), one set per copy.
-	if len(page.Records) != 10 {
-		ids := make([]string, 0, len(page.Records))
-		for _, r := range page.Records {
-			ids = append(ids, r.ID)
-		}
-		t.Errorf("the two copies hold views %v, want ten", ids)
+	got := map[string]string{}
+	for _, r := range page.Records {
+		got[r.ID] = refPath(r.Properties["appliesTo"])
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the views landed as %v, want %v", got, want)
 	}
 }
 
-// applyShippedViews is the reset docs/bundles.md gives an owner of an imported
-// health sample: rewrite the sample's authority to the repository's own in the
-// shipped views.yaml (the `sed` step) and apply every document in it, as
-// `substratectl apply -f -` does, one put per document.
-func applyShippedViews(t *testing.T, ds substrate.Dataset, authority string) {
+// applyShippedViews is the reset docs/bundles.md gives an owner of a
+// first-party catalogue: apply every document in the shipped views.yaml as it
+// stands, as `substratectl apply -f` does, one put per document. Nothing is
+// rewritten, because the installed views carry the shipped ids.
+func applyShippedViews(t *testing.T, ds substrate.Dataset, pkg string) {
 	t.Helper()
-	raw, err := fs.ReadFile(samples.Samples(), "health/views.yaml")
+	raw, err := fs.ReadFile(kinds.Bundles(), pkg+"/views.yaml")
 	if err != nil {
 		t.Fatalf("read the shipped views: %v", err)
-	}
-	if authority != samplesPlacehldr {
-		raw = bytes.ReplaceAll(raw, []byte(samplesPlacehldr), []byte(authority))
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	for {
@@ -238,22 +225,20 @@ func applyShippedViews(t *testing.T, ds substrate.Dataset, authority string) {
 	}
 }
 
-// The owner of an imported sample takes a newer shipped view over an edited
-// one by applying the shipped file rehomed onto the repository's authority.
-// The file as shipped names the sample's authority in every id and reference,
-// so applied unchanged it would write a view of a copy this repository does
-// not hold and leave the edited one alone.
-func TestShippedRecordViewAppliedRehomedResetsAnEditedOne(t *testing.T) {
+// The owner of a first-party catalogue takes a newer shipped view over an
+// edited one by applying the shipped file: the views landed at the shipped
+// ids, so the file needs no rewrite.
+func TestShippedRecordViewAppliedResetsAnEditedOne(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
-	importSamples(t, c, ds, observationsSample, healthSample)
+	importVocabulary(t, c, ds, labsID)
 
-	shipped, err := ds.Get(ctx, recordViewKind, homeView("sleep"))
+	shipped, err := ds.Get(ctx, recordViewKind, healthView("sleep"))
 	if err != nil {
 		t.Fatalf("read the imported sleep view: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, homeView("sleep"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, healthView("sleep"), substrate.PatchInput{
 		Properties: map[string]any{"name": "My nights", "fold": []any{"score"}},
 	}); err != nil {
 		t.Fatalf("edit the sleep view: %v", err)
@@ -261,7 +246,7 @@ func TestShippedRecordViewAppliedRehomedResetsAnEditedOne(t *testing.T) {
 
 	// The lab report view ships no intro, so the owner's stands for a
 	// property the shipped file does not set.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, homeView("labreport"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, labsView("labreport"), substrate.PatchInput{
 		Properties: map[string]any{"intro": "My notes"},
 	}); err != nil {
 		t.Fatalf("edit the lab report view: %v", err)
@@ -269,8 +254,9 @@ func TestShippedRecordViewAppliedRehomedResetsAnEditedOne(t *testing.T) {
 
 	// An apply merges: every property the shipped view sets comes back, and
 	// one the owner added and the shipped view does not set stays.
-	applyShippedViews(t, ds, homeAuthority)
-	merged, err := ds.Get(ctx, recordViewKind, homeView("sleep"))
+	applyShippedViews(t, ds, healthID)
+	applyShippedViews(t, ds, labsID)
+	merged, err := ds.Get(ctx, recordViewKind, healthView("sleep"))
 	if err != nil {
 		t.Fatalf("read the sleep view: %v", err)
 	}
@@ -283,18 +269,19 @@ func TestShippedRecordViewAppliedRehomedResetsAnEditedOne(t *testing.T) {
 	if !reflect.DeepEqual(merged.Properties["fold"], shipped.Properties["fold"]) {
 		t.Errorf("the applied view folds %v, want the shipped %v", merged.Properties["fold"], shipped.Properties["fold"])
 	}
-	if got := viewIntro(t, ds, homeView("labreport")); got != "My notes" {
+	if got := viewIntro(t, ds, labsView("labreport")); got != "My notes" {
 		t.Errorf("the apply pruned the owner's intro (%q), but an apply never prunes", got)
 	}
 
 	// Purging the view first makes the apply land the shipped view whole: a
 	// put at a tombstone restores it with its old properties, a put after a
 	// purge creates it fresh.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, recordViewKind, homeView("sleep"), substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, recordViewKind, healthView("sleep"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("delete the sleep view: %v", err)
 	}
-	applyShippedViews(t, ds, homeAuthority)
-	reset, err := ds.Get(ctx, recordViewKind, homeView("sleep"))
+	applyShippedViews(t, ds, healthID)
+	applyShippedViews(t, ds, labsID)
+	reset, err := ds.Get(ctx, recordViewKind, healthView("sleep"))
 	if err != nil {
 		t.Fatalf("read the reset sleep view: %v", err)
 	}

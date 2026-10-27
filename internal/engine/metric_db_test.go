@@ -14,7 +14,7 @@ import (
 )
 
 // Since the unit graph switch (decision 0186) the write path stamps no
-// `measure`, which the sample kinds retire: a written one is refused, every
+// `measure`, which the observations kinds retire: a written one is refused, every
 // unit is stored as its unit record's id, and the observed index keeps no
 // base value.
 func TestObservedRecordsStoreTheUnitsIDAndNoMeasure(t *testing.T) {

@@ -10,51 +10,44 @@ import (
 )
 
 // Manual is the hand-entered data: three lab panels (a `labreport` and one
-// `labresult` per analyte, from the health sample) and one weigh-in typed in
-// on a hotel scale on the trip's third day when the range holds it, as
-// envelope documents for `substratectl apply`. It needs
-// the `observations` and `health` samples imported; the authority is the
-// repository's own.
-type Manual struct {
-	// Authority is the repository the documents are written to; empty is
-	// ada.example.com, the one the docs use.
-	Authority string
-}
+// `labresult` per analyte, from the `labs` catalogue) and one weigh-in typed
+// in on a hotel scale on the trip's third day when the range holds it, as
+// envelope documents for `substratectl apply`. It needs the `labs` catalogue
+// installed, which brings `health`; the kinds are the first-party ones every
+// repository names the same way (decision record 0192).
+type Manual struct{}
 
 // Name is the emitter's name.
 func (Manual) Name() string { return "manual" }
 
 // loinc is the analyte's code as the lab sends it, one of the codes the
-// health metric it lands on lists (samples/health/metrics.yaml), and that
-// metric.
+// lab metric it lands on lists (kinds/substrate.reamde.dev/labs/metrics.yaml),
+// and that metric.
 var loinc = map[string]struct{ code, display, metric string }{
-	"glucose_fasting":        {"14771-0", "Fasting glucose [Moles/volume] in Serum or Plasma", "health/fasting_glucose"},
-	"glucose_fasting_mass":   {"1558-6", "Fasting glucose [Mass/volume] in Serum or Plasma", "health/fasting_glucose_mass"},
-	"hba1c":                  {"4548-4", "Hemoglobin A1c/Hemoglobin.total in Blood", "health/hba1c"},
-	"cholesterol_total":      {"14647-2", "Cholesterol [Moles/volume] in Serum or Plasma", "health/total_cholesterol"},
-	"cholesterol_total_mass": {"2093-3", "Cholesterol [Mass/volume] in Serum or Plasma", "health/total_cholesterol_mass"},
-	"ldl_cholesterol":        {"22748-8", "Cholesterol in LDL [Moles/volume] in Serum or Plasma", "health/ldl_cholesterol"},
-	"ldl_cholesterol_mass":   {"13457-7", "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation", "health/ldl_cholesterol_mass"},
-	"hdl_cholesterol":        {"14646-4", "Cholesterol in HDL [Moles/volume] in Serum or Plasma", "health/hdl_cholesterol"},
-	"hdl_cholesterol_mass":   {"2085-9", "Cholesterol in HDL [Mass/volume] in Serum or Plasma", "health/hdl_cholesterol_mass"},
-	"triglycerides":          {"14927-8", "Triglyceride [Moles/volume] in Serum or Plasma", "health/triglycerides"},
-	"triglycerides_mass":     {"2571-8", "Triglyceride [Mass/volume] in Serum or Plasma", "health/triglycerides_mass"},
-	"ferritin":               {"2276-4", "Ferritin [Mass/volume] in Serum or Plasma", "health/ferritin"},
-	"vitamin_d_25oh":         {"68438-1", "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Moles/volume] in Serum or Plasma", "health/vitamin_d"},
-	"vitamin_d_25oh_mass":    {"62292-8", "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Mass/volume] in Serum or Plasma", "health/vitamin_d_mass"},
-	"creatinine_mass":        {"2160-0", "Creatinine [Mass/volume] in Serum or Plasma", "health/creatinine_mass"},
-	"tsh":                    {"3016-3", "Thyrotropin [Units/volume] in Serum or Plasma", "health/tsh"},
-	"hemoglobin":             {"718-7", "Hemoglobin [Mass/volume] in Blood", "health/haemoglobin"},
-	"crp":                    {"1988-5", "C reactive protein [Mass/volume] in Serum or Plasma", "health/crp"},
+	"glucose_fasting":        {"14771-0", "Fasting glucose [Moles/volume] in Serum or Plasma", "labs/fasting_glucose"},
+	"glucose_fasting_mass":   {"1558-6", "Fasting glucose [Mass/volume] in Serum or Plasma", "labs/fasting_glucose_mass"},
+	"hba1c":                  {"4548-4", "Hemoglobin A1c/Hemoglobin.total in Blood", "labs/hba1c"},
+	"cholesterol_total":      {"14647-2", "Cholesterol [Moles/volume] in Serum or Plasma", "labs/total_cholesterol"},
+	"cholesterol_total_mass": {"2093-3", "Cholesterol [Mass/volume] in Serum or Plasma", "labs/total_cholesterol_mass"},
+	"ldl_cholesterol":        {"22748-8", "Cholesterol in LDL [Moles/volume] in Serum or Plasma", "labs/ldl_cholesterol"},
+	"ldl_cholesterol_mass":   {"13457-7", "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation", "labs/ldl_cholesterol_mass"},
+	"hdl_cholesterol":        {"14646-4", "Cholesterol in HDL [Moles/volume] in Serum or Plasma", "labs/hdl_cholesterol"},
+	"hdl_cholesterol_mass":   {"2085-9", "Cholesterol in HDL [Mass/volume] in Serum or Plasma", "labs/hdl_cholesterol_mass"},
+	"triglycerides":          {"14927-8", "Triglyceride [Moles/volume] in Serum or Plasma", "labs/triglycerides"},
+	"triglycerides_mass":     {"2571-8", "Triglyceride [Mass/volume] in Serum or Plasma", "labs/triglycerides_mass"},
+	"ferritin":               {"2276-4", "Ferritin [Mass/volume] in Serum or Plasma", "labs/ferritin"},
+	"vitamin_d_25oh":         {"68438-1", "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Moles/volume] in Serum or Plasma", "labs/vitamin_d"},
+	"vitamin_d_25oh_mass":    {"62292-8", "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Mass/volume] in Serum or Plasma", "labs/vitamin_d_mass"},
+	"creatinine_mass":        {"2160-0", "Creatinine [Mass/volume] in Serum or Plasma", "labs/creatinine_mass"},
+	"tsh":                    {"3016-3", "Thyrotropin [Units/volume] in Serum or Plasma", "labs/tsh"},
+	"hemoglobin":             {"718-7", "Hemoglobin [Mass/volume] in Blood", "labs/haemoglobin"},
+	"crp":                    {"1988-5", "C reactive protein [Mass/volume] in Serum or Plasma", "labs/crp"},
 }
 
 // Emit writes `labs.yaml`: the sources, the reports, the results and the
 // weigh-in, one multi-document file.
 func (m Manual) Emit(p *Persona) (*Output, error) {
-	a := m.Authority
-	if a == "" {
-		a = "ada.example.com"
-	}
+	const a = "substrate.reamde.dev"
 	ref := func(kind, id string) map[string]any { return map[string]any{"ref": a + "/" + kind + "/" + id} }
 	doc := func(kind, id string, props map[string]any) map[string]any {
 		return map[string]any{"kind": a + "/" + kind, "metadata": map[string]any{"id": id}, "data": map[string]any{"properties": props}}
@@ -72,7 +65,7 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 		rid := panel.Slug + "/" + panel.Date.String()
 		collected := panel.Date.At(loc, 8, 10)
 		_, off := collected.Zone()
-		docs = append(docs, doc("health/labreport", rid, map[string]any{
+		docs = append(docs, doc("labs/labreport", rid, map[string]any{
 			"lab": panel.Lab, "accession": fmt.Sprintf("%s-%04d%02d%02d-4471", strings.ToUpper(panel.Slug[:3]), panel.Date.Year, panel.Date.Month, panel.Date.Day),
 			"orderedAt": panel.Date.At(loc, 7, 55).Format(time.RFC3339), "issuedAt": panel.Date.At(loc, 16, 40).Format(time.RFC3339),
 			"status": "final", "review": "reviewed", "source": ref("observations/source", panel.Slug), "revision": 1,
@@ -100,8 +93,8 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 			if r.Name == "hemoglobin" || r.Name == "hba1c" {
 				material = "whole blood"
 			}
-			docs = append(docs, doc("health/labresult", rid+"/"+r.Name, map[string]any{
-				"report": ref("health/labreport", rid),
+			docs = append(docs, doc("labs/labresult", rid+"/"+r.Name, map[string]any{
+				"report": ref("labs/labreport", rid),
 				"metric": ref("observations/metric", code.metric),
 				"source": ref("observations/source", panel.Slug),
 				"coding": map[string]any{"system": "http://loinc.org", "code": code.code, "display": code.display},

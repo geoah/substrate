@@ -46,7 +46,7 @@ func repoDirOf(t *testing.T, svc substrate.Service, ds substrate.Dataset) string
 func reopen(t *testing.T, dsn, root string) (substrate.Service, error) {
 	t.Helper()
 	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
@@ -63,7 +63,7 @@ func reopen(t *testing.T, dsn, root string) (substrate.Service, error) {
 func reopenBeside(t *testing.T, dsn, root string) (substrate.Service, error) {
 	t.Helper()
 	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestSkipWriterLease())
@@ -1019,7 +1019,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 
 	ctx := context.Background()
 	ro, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithDirectoryReadOnly())
@@ -1130,7 +1130,7 @@ func TestImportRefusesADirectoryTheKeyCannotOpen(t *testing.T) {
 	}
 	ctx := context.Background()
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
 	if err == nil {
@@ -1557,7 +1557,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 			for i, c := range tc.crashes {
 				seen := 0
 				_, err := engine.OpenForTest(t, ctx, dsn2,
-					engine.WithKindsDir(engine.SeedKindsDir),
+					engine.WithKindsFS(engine.SeedKinds),
 					engine.WithDataRoot(root2),
 					engine.WithCredentialKey(engine.TestCredentialKey),
 					engine.WithTestImportFault(batch, func(stage string) error {
@@ -1587,7 +1587,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 				// second process beside the (dead) server meets the marker at
 				// the open and is told to boot the server.
 				ro, err := engine.OpenForTest(t, ctx, dsn2,
-					engine.WithKindsDir(engine.SeedKindsDir),
+					engine.WithKindsFS(engine.SeedKinds),
 					engine.WithDataRoot(root2),
 					engine.WithCredentialKey(engine.TestCredentialKey),
 					engine.WithDirectoryReadOnly())
@@ -1666,7 +1666,7 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	errKilled := errors.New("the process died here")
 	ctx := context.Background()
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(int(head), func(stage string) error {
@@ -1809,7 +1809,7 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 	}
 
 	svc2, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithCatchUpBatch(3),
@@ -2010,7 +2010,7 @@ func TestABootImportSaysWhatItImportsBeforeTheWork(t *testing.T) {
 	dsn2 := engine.MigratedDSN(t)
 	var logs lockedLog
 	svc2, err := engine.OpenForTest(t, context.Background(), dsn2,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
@@ -2054,7 +2054,7 @@ func TestACanceledBootImportLogsWhereItStoppedAndResumes(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),

@@ -47,7 +47,7 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 
 	root2 := copyRepositoryDir(t, root, id)
 	svc2, err := engine.OpenForTest(t, context.Background(), engine.MigratedDSN(t),
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestProgressEvery(0),

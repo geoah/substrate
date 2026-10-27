@@ -770,9 +770,9 @@ is lowered again; a larger `permissions.reads.budgets.rows` does.
 ```python
 # permissions.reads.kinds grants observations/trace and observations/metric
 res = host.records.aggregate({
-    "filter": {"kinds": ["ada.example.com/observations/trace"]},
+    "filter": {"kinds": ["substrate.reamde.dev/observations/trace"]},
     "aggregate": {
-        "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+        "metric": {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate"},
         "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
         "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
         "reducers": [{"percentile": 0.05}, "min"],

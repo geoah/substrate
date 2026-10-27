@@ -1,0 +1,573 @@
+# The lab metrics, as DATA: ordinary records of the seeded observations
+# package's `metric` kind, with ids starting with the package that ships them
+# (`labs/`, decision record 0192). An analyte reported in two unit systems is
+# two metrics (`labs/ldl_cholesterol` in mmol/L, `labs/ldl_cholesterol_mass`
+# in mg/dL), because no linear conversion joins an amount and a mass
+# concentration; the analytes (metrics_analytes.yaml) say how they convert.
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/ldl_cholesterol
+data:
+  properties:
+    name: LDL cholesterol
+    description: >-
+      Cholesterol carried in low-density lipoprotein, as an amount concentration
+      in serum or plasma. A result in mg/dL is ldl_cholesterol_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "22748-8"
+        display: "Cholesterol in LDL [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/ldl_cholesterol_mass
+data:
+  properties:
+    name: LDL cholesterol (mass)
+    description: >-
+      Cholesterol carried in low-density lipoprotein, as a mass concentration
+      in serum or plasma. A result in mmol/L is ldl_cholesterol.
+    codes:
+      - system: "http://loinc.org"
+        code: "2089-1"
+        display: "Cholesterol in LDL [Mass/volume] in Serum or Plasma"
+      - system: "http://loinc.org"
+        code: "13457-7"
+        display: "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/hdl_cholesterol
+data:
+  properties:
+    name: HDL cholesterol
+    description: >-
+      Cholesterol carried in high-density lipoprotein, as an amount concentration
+      in serum or plasma.
+    codes:
+      - system: "http://loinc.org"
+        code: "14646-4"
+        display: "Cholesterol in HDL [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/hdl_cholesterol_mass
+data:
+  properties:
+    name: HDL cholesterol (mass)
+    description: >-
+      Cholesterol carried in high-density lipoprotein, as a mass concentration
+      in serum or plasma.
+    codes:
+      - system: "http://loinc.org"
+        code: "2085-9"
+        display: "Cholesterol in HDL [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/total_cholesterol
+data:
+  properties:
+    name: Total cholesterol
+    description: >-
+      All cholesterol in serum or plasma, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14647-2"
+        display: "Cholesterol [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/total_cholesterol_mass
+data:
+  properties:
+    name: Total cholesterol (mass)
+    description: All cholesterol in serum or plasma, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "2093-3"
+        display: "Cholesterol [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/triglycerides
+data:
+  properties:
+    name: Triglycerides
+    description: >-
+      Triglycerides in serum or plasma, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14927-8"
+        display: "Triglyceride [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/triglycerides_mass
+data:
+  properties:
+    name: Triglycerides (mass)
+    description: Triglycerides in serum or plasma, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "2571-8"
+        display: "Triglyceride [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/fasting_glucose
+data:
+  properties:
+    name: Fasting glucose
+    description: >-
+      Glucose in serum or plasma after a fast, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14771-0"
+        display: "Fasting glucose [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: serum
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/fasting_glucose_mass
+data:
+  properties:
+    name: Fasting glucose (mass)
+    description: >-
+      Glucose in serum or plasma after a fast, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "1558-6"
+        display: "Fasting glucose [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: serum
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/hba1c
+data:
+  properties:
+    name: HbA1c
+    description: >-
+      Glycated haemoglobin as a percentage of all haemoglobin, the NGSP and
+      DCCT unit. Never pooled with the IFCC value in mmol/mol, hba1c_ifcc;
+      the two relate by a formula, not a unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "4548-4"
+        display: Hemoglobin A1c/Hemoglobin.total in Blood
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: ngsp
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/hba1c_ifcc
+data:
+  properties:
+    name: HbA1c (IFCC)
+    description: >-
+      Glycated haemoglobin in mmol per mol of haemoglobin, the IFCC unit.
+      Never pooled with the NGSP percentage, hba1c.
+    codes:
+      - system: "http://loinc.org"
+        code: "59261-8"
+        display: Hemoglobin A1c/Hemoglobin.total in Blood by IFCC protocol
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/mol
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: ifcc
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/tsh
+data:
+  properties:
+    name: TSH
+    description: >-
+      Thyroid stimulating hormone in serum or plasma, in assay units.
+    codes:
+      - system: "http://loinc.org"
+        code: "3016-3"
+        display: "Thyrotropin [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mIU/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/vitamin_d
+data:
+  properties:
+    name: Vitamin D
+    description: >-
+      25-hydroxyvitamin D, D2 and D3 together, as an amount concentration
+      in serum or plasma. A result in ng/mL is vitamin_d_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "68438-1"
+        display: "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Moles/volume]
+          in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/vitamin_d_mass
+data:
+  properties:
+    name: Vitamin D (mass)
+    description: >-
+      25-hydroxyvitamin D, D2 and D3 together, as a mass concentration in
+      serum or plasma. A result in nmol/L is vitamin_d.
+    codes:
+      - system: "http://loinc.org"
+        code: "62292-8"
+        display: "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Mass/volume]
+          in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/ferritin
+data:
+  properties:
+    name: Ferritin
+    description: "Ferritin in serum or plasma, the body's iron store."
+    codes:
+      - system: "http://loinc.org"
+        code: "2276-4"
+        display: "Ferritin [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ug/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/crp
+data:
+  properties:
+    name: C-reactive protein
+    description: >-
+      C-reactive protein in serum or plasma, a marker of inflammation.
+    codes:
+      - system: "http://loinc.org"
+        code: "1988-5"
+        display: "C reactive protein [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/haemoglobin
+data:
+  properties:
+    name: Haemoglobin
+    description: Haemoglobin in blood.
+    codes:
+      - system: "http://loinc.org"
+        code: "718-7"
+        display: "Hemoglobin [Mass/volume] in Blood"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/creatinine
+data:
+  properties:
+    name: Creatinine
+    description: >-
+      Creatinine in serum or plasma, as an amount concentration, a marker
+      of kidney function.
+    codes:
+      - system: "http://loinc.org"
+        code: "14682-9"
+        display: "Creatinine [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/umol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/creatinine_mass
+data:
+  properties:
+    name: Creatinine (mass)
+    description: Creatinine in serum or plasma, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "2160-0"
+        display: "Creatinine [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/alt
+data:
+  properties:
+    name: ALT
+    description: >-
+      Alanine aminotransferase in serum or plasma, an enzyme activity, a marker
+      of liver function.
+    codes:
+      - system: "http://loinc.org"
+        code: "1742-6"
+        display: "Alanine aminotransferase [Enzymatic activity/volume] in
+          Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/ast
+data:
+  properties:
+    name: AST
+    description: >-
+      Aspartate aminotransferase in serum or plasma, an enzyme activity, a
+      marker of liver function.
+    codes:
+      - system: "http://loinc.org"
+        code: "1920-8"
+        display: "Aspartate aminotransferase [Enzymatic activity/volume] in
+          Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs

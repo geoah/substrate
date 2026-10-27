@@ -280,11 +280,12 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 
 // guardMergeType keeps the substrate's own state out of the generic merge
 // surface: a repository is not merged into another repository, and neither are
-// two agent threads. The test is the SOURCE, not the package name (record
-// 0077): every package the binary seeds is the substrate's own state, and
-// core stopped being the only one when the llm kinds left it.
+// two agent threads. The test is the SOURCE (record 0077), narrowed to the
+// seeded packages that hold the substrate's state: the observations package
+// is seeded too, but its sources and metrics are the owner's data, and two
+// records of one device are exactly what a merge is for (record 0192).
 func guardMergeType(ty *vocabulary.Kind) error {
-	if systemKinds[ty.Identity] || ty.Source == vocabulary.SourceBuiltin {
+	if systemKinds[ty.Identity] || (ty.Source == vocabulary.SourceBuiltin && vocabulary.SubstrateStatePackage(ty.Package)) {
 		return fmt.Errorf("%w: %s records are managed by the substrate, not the generic merge surface",
 			substrate.ErrForbidden, ty.Identity)
 	}

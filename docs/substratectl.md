@@ -155,7 +155,7 @@ its argument: `percentile:0.05`, `durationIn:95,114`,
 preferred over the other:
 
 ```
-substratectl aggregate ada.example.com/observations/metric/health/heart_rate \
+substratectl aggregate substrate.reamde.dev/observations/metric/health/heart_rate \
   --gte 2026-04-06T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
   --calendar week --week-start monday --timezone Europe/Athens \
   --reducer durationIn:95,114 --reducer durationIn:114,133 --reducer durationIn:133,152 \
@@ -170,7 +170,7 @@ with no `--timezone` is the recorded-local day. Four sources times 365 days
 pass the default `maxBuckets` of 1,440, so `--max-buckets` raises it:
 
 ```
-substratectl aggregate ada.example.com/observations/metric/health/steps \
+substratectl aggregate substrate.reamde.dev/observations/metric/health/steps \
   --gte 2025-10-05T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
   --calendar day --from prefer-raw --reducer sum --unit steps \
   --max-buckets 2000
@@ -180,7 +180,7 @@ The latest value of each metric from each source needs no range or bucket:
 
 ```
 substratectl aggregate --latest --group-by metric,source \
-  --filter '{"properties":{"metric":{"in":["ada.example.com/observations/metric/health/body_mass","ada.example.com/observations/metric/health/body_fat_fraction"]}}}'
+  --filter '{"properties":{"metric":{"in":["substrate.reamde.dev/observations/metric/health/body_mass","substrate.reamde.dev/observations/metric/health/body_fat_fraction"]}}}'
 ```
 
 Time spent asleep per stage in each night, the nights being the
@@ -188,9 +188,9 @@ Time spent asleep per stage in each night, the nights being the
 recorded one and WHOOP's stages kept inside it:
 
 ```
-substratectl aggregate ada.example.com/observations/metric/health/sleep_stage \
+substratectl aggregate substrate.reamde.dev/observations/metric/health/sleep_stage \
   --gte 2026-09-01T00:00:00+03:00 --lt 2026-10-01T00:00:00+03:00 \
-  --records ada.example.com/health/sleep --records-filter '{"properties":{"isNap":{"eq":false}}}' \
+  --records substrate.reamde.dev/health/sleep --records-filter '{"properties":{"isNap":{"eq":false}}}' \
   --records-utc-offsets utcOffsetStart,utcOffsetEnd \
   --record-policy priority --record-order whoop/e2e --record-source source \
   --policy priority --order whoop/e2e \
@@ -286,7 +286,7 @@ answer whole.
   function's 1000) is refused with the problem line the server's `422`
   carries. A package that builds is then resolved against the other
   packages among the files and the seeded packages the binary ships
-  (`core`, `llm` and `console`). Record documents get the envelope checks `apply` makes before it
+  (`core`, `llm`, `console` and `observations`). Record documents get the envelope checks `apply` makes before it
   sends them. Three cases need the repository, and `validate` lists each
   one it meets: a package whose package document is not among the files
   (its members are checked under a placeholder header), a declaration
