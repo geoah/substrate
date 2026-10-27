@@ -2,7 +2,9 @@
 
 Package `providers.substrate.reamde.dev/apple`: Apple data that an app on the
 owner's device pushes into the repository, in Apple's own shape: the
-Contacts framework and EventKit's calendars. One way: the device writes,
+Contacts framework, EventKit's calendars and reminders, CoreLocation's
+visits, and what the owner shares to Substrate from other apps. One way: the
+device writes,
 nothing reads back, and nothing is written to the device. Apple Health is a
 package of its own, `providers.substrate.reamde.dev/applehealth`, because it
 arrives through a webhook rather than the record routes.
@@ -20,6 +22,11 @@ device is the sync. It is the contract; this file is not.
 | `eventstore` | one device's calendar store (`EKEventStore`), as one install of the app sees it |
 | `calendar` | one `EKCalendar` that holds events, in that store |
 | `event` | one `EKEvent` occurrence on one of those calendars |
+| `reminderlist` | one `EKCalendar` that holds reminders, in the same event store |
+| `reminder` | one `EKReminder` on one of those lists, completed or not |
+| `visitstore` | one device's recorded visits, as one install of the app sees them |
+| `visit` | one `CLVisit`: a place the device stayed at, named by Apple Maps where it could be |
+| `share` | one thing sent from another app's share sheet: a link, text or images, with a note |
 
 Left out of `contact` on purpose: `note` (reading it needs Apple's
 `com.apple.developer.contacts.notes` entitlement), the image
@@ -29,12 +36,19 @@ Left out of `contact` on purpose: `note` (reading it needs Apple's
 Left out of `event`: alarms, attachments, and a recurrence rule's day rules
 (`daysOfTheWeek`, `daysOfTheMonth`, `daysOfTheYear`, `weeksOfTheYear`,
 `monthsOfTheYear`, `setPositions`). Every occurrence is pushed, so its
-instants are there without the rule that made them. Reminders are not read.
+instants are there without the rule that made them.
+
+Left out of `reminder`: an alarm's proximity and location, and the same day
+rules. A repeating reminder is one row, not one per occurrence: EventKit
+hands out the reminder, and completing it moves its due date. A due date is
+`dueDay` (the civil day the components name) and, when it carries a time,
+`dueDate` too.
 
 Every record carries a derived `title`, so the dialect reserves the name, and
 Apple's `title` keeps its word with its object's in front: `calendarTitle`
-on `calendar`, `eventTitle` on `event`, and `locationTitle` inside
-`structuredLocation`.
+on `calendar`, `eventTitle` on `event`, `listTitle` on `reminderlist`,
+`reminderTitle` on `reminder`, `shareTitle` on `share`, and `locationTitle`
+inside `structuredLocation`.
 
 ## How the device writes
 
@@ -64,6 +78,32 @@ Calendars follow the same routes, with the install path unchanged:
 - `PUT …/apple/event/<id>` for every occurrence inside the window, `PATCH`
   to clear a key that vanished, and `DELETE` for an event whose start is
   inside the window and that the device no longer returns.
+
+Reminders take the same routes under the same event store, with no window:
+every list and every reminder is pushed each time.
+
+- `PUT …/apple/eventstore/<id>` with `reminderListCount` and `reminderCount`
+  too.
+- `PUT …/apple/reminderlist/<id>` for every list, and `DELETE` for a list
+  gone from the device; its reminders go with it (`onDelete: cascade`).
+- `PUT …/apple/reminder/<id>` for every reminder, `PATCH` to clear a key that
+  vanished, and `DELETE` for a reminder the device no longer returns.
+
+Visits are what CoreLocation's visit monitoring reported while the owner had
+Places on, with Always location access. The device keeps a year of them and
+pushes them all, so a reset repository gets them back:
+
+- `PUT …/apple/visitstore/<id>` with `deviceName`, `visitCount` and
+  `lastSyncedAt`.
+- `PUT …/apple/visit/<id>` for every visit, the second report of a visit (its
+  departure) completing the row its arrival wrote. A visit older than the
+  year the device keeps stays in the repository; nothing is deleted.
+
+A share is written once, from the share sheet:
+
+- `PUT /api/v1/blobs` with each image's bytes first, then `PUT
+  …/apple/share/<id>` within the minute the server keeps a blob nothing names,
+  with `images` listing the digests.
 
 ### The window
 
@@ -108,6 +148,14 @@ Every id uses `ExternalID(provider, account, externalID)` from
 - event store: `ExternalID("apple", "eventstore", <install UUID>)`, the same
   install UUID as the address book's.
 - calendar: `ExternalID("apple", <event store id>, <calendarIdentifier>)`.
+- reminders list: `ExternalID("apple", <event store id>, <calendarIdentifier>)`.
+- reminder: `ExternalID("apple", <event store id>, <calendarItemIdentifier>)`.
+- visit store: `ExternalID("apple", "visitstore", <install UUID>)`.
+- visit: `ExternalID("apple", <visit store id>, <key>)`. The key is `arrival:`
+  and the arrival in UTC ISO 8601 to the second, or `departure:` and the
+  departure where CoreLocation does not know the arrival.
+- share: `ExternalID("apple", "share", <the link>)`, so a link shared again
+  updates its row; a share without a link takes a fresh UUID instead.
 - event: `ExternalID("apple", <event store id>, <key>)`. The key is
   `calendarItemIdentifier` for a single event. For an occurrence of a series
   (`hasRecurrenceRules` or `isDetached`) it is `calendarItemIdentifier`,
@@ -149,6 +197,17 @@ single event and one occurrence of a series, under two install UUIDs.
 | `apple-3529e6421577eab4ffe30ae2d6ac41d0` | `6A1F0C7E-2B3D-4C5E-9F80-1A2B3C4D5E6F` | `apple-d523d365336e82cafd613cd6be3c6572` |
 | `apple-3529e6421577eab4ffe30ae2d6ac41d0` | `1E5D2A9C-7F3B-4A61-8C2D-3B9E0F4A6D17` | `apple-731c06c8577a6fee5c2e34570677a37a` |
 | `apple-3529e6421577eab4ffe30ae2d6ac41d0` | `1E5D2A9C-7F3B-4A61-8C2D-3B9E0F4A6D17@2026-10-27T09:00:00Z` | `apple-0411aa3e3918115d2311cdbf83311ecb` |
+
+Reminder, visit and share vectors, by the same recipe:
+
+| Account | External id | Id |
+| --- | --- | --- |
+| `apple-d54c1030b4dd449c901e59a2e6e8363d` | `4C9E1B2A-7D3F-4E50-8A61-B2C3D4E5F607` (a list) | `apple-22767140db30b90972f627ba203de320` |
+| `apple-d54c1030b4dd449c901e59a2e6e8363d` | `8F2A6C1D-3E4B-4F5A-9B6C-7D8E9F0A1B2C` (a reminder) | `apple-a45e5e9da9e98130ec4d269d8a1aba19` |
+| `visitstore` | `6f1c2e9a-3b4d-4e5f-8a7b-9c0d1e2f3a4b` | `apple-4e3738eb0c9436e7b08bdd1a8b68ef08` |
+| `apple-4e3738eb0c9436e7b08bdd1a8b68ef08` | `arrival:2026-10-27T08:15:00Z` | `apple-847ec3b8965f9037b5a6e52ae28acb5c` |
+| `apple-4e3738eb0c9436e7b08bdd1a8b68ef08` | `departure:2026-10-27T18:40:00Z` | `apple-f22ab5f3787cd3f9a3076e3a0332c710` |
+| `share` | `https://example.com/article` | `apple-31a4b492dfd8bc6e77aea4fa0e31eb7e` |
 
 More on the package, and what it does not do:
 [docs/bundles-catalog.md#apple](../../../docs/bundles-catalog.md#apple).
