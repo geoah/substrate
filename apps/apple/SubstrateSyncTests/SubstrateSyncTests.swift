@@ -123,6 +123,31 @@ final class HealthSettleTests: XCTestCase {
         XCTAssertEqual(out.sent, [])
         XCTAssertEqual(out.failed["2026-10-20"], "refused")
     }
+
+    /// The parked list carries the requests the server accepted and has not
+    /// run, and the ones it is running: neither is a refusal.
+    func testOnlyARefusalInTheParkedListFailsADay() {
+        let items = [
+            Client.Parked(fireId: "hook-a", lastError: "delivery accepted: the fire has not settled, and a restart resumes it"),
+            Client.Parked(fireId: "hook-b", lastError: "run: runner: Refused: the body is not JSON", running: true),
+            Client.Parked(fireId: "hook-c", lastError: "run: runner: Refused: the body is not JSON"),
+            Client.Parked(fireId: "hook-z", lastError: "another sender's refusal"),
+        ]
+        XCTAssertEqual(SyncEngine.refusals(items, among: ["hook-a", "hook-b", "hook-c"]),
+                       ["hook-c": "run: runner: Refused: the body is not JSON"])
+    }
+
+    /// A source is due by when it last ran, not when it last succeeded: a
+    /// failing source is retried at the owner's frequency, not at every wake.
+    func testAFailingSourceIsNotDueAgainBeforeTheInterval() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var state = LocalState()
+        XCTAssertEqual(SyncEngine.due(state, only: [.health], interval: 3600, now: now), [.health])
+        state.status[.health] = SourceStatus(lastSync: nil, counts: nil, lastError: "refused")
+        state.record(SyncRun(source: .health, started: now - 70, finished: now - 60, summary: nil, error: "refused"))
+        XCTAssertEqual(SyncEngine.due(state, only: [.health], interval: 3600, now: now), [])
+        XCTAssertEqual(SyncEngine.due(state, only: [.health], interval: 3600, now: now + 3600), [.health])
+    }
 }
 
 /// Every copy of the state names one install, and so one Health account,

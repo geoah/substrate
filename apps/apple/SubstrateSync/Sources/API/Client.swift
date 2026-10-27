@@ -176,11 +176,20 @@ struct Client: Sendable {
         return (try? JSONDecoder().decode(Accepted.self, from: data))?.fire ?? ""
     }
 
-    /// A delivery the trigger's function refused, kept by the server with
-    /// its reason.
+    /// A row of the trigger's parked list: a delivery its function refused,
+    /// kept with its reason, or one the server accepted and has not run yet,
+    /// or is running now, which the list carries too and which is no failure.
     struct Parked: Decodable, Sendable {
         let fireId: String?
         let lastError: String
+        var running: Bool?
+
+        /// The server's words for a webhook request it accepted and has not
+        /// settled (internal/engine/webhooks.go pendingWebhookError).
+        static let pendingPrefix = "delivery accepted:"
+
+        /// Refused for good: neither waiting to run nor running.
+        var refused: Bool { running != true && !lastError.hasPrefix(Self.pendingPrefix) }
     }
 
     func parked(trigger: String) async throws -> [Parked] {

@@ -242,15 +242,21 @@ actor SyncEngine {
     }
 
     /// A background wake-up syncs a source only when the chosen interval has
-    /// passed since its last sync; Sync Now always does.
+    /// passed since it last RAN, finished or not: a source whose runs keep
+    /// failing is retried at the owner's frequency, not at every HealthKit
+    /// sample. A wake while a sync runs or waits adds nothing; Sync Now
+    /// always syncs.
     func syncIfDue(_ only: Set<Source>? = nil, budget: RunBudget = .background) async {
-        guard let interval = Settings.frequency.interval else { return }
-        let state = LocalState.load()
-        let due = Set(Source.allCases.filter { source in
-            (only?.contains(source) ?? true)
-                && (state.status[source]?.lastSync.map { Date().timeIntervalSince($0) >= interval * 0.9 } ?? true)
-        })
+        guard let interval = Settings.frequency.interval, running == nil else { return }
+        let due = Self.due(LocalState.load(), only: only, interval: interval, now: Date())
         if !due.isEmpty { await sync(due, budget: budget) }
+    }
+
+    static func due(_ state: LocalState, only: Set<Source>?, interval: TimeInterval, now: Date) -> Set<Source> {
+        Set(Source.allCases.filter { source in
+            let last = state.runs.first { $0.source == source }?.finished ?? state.status[source]?.lastSync
+            return (only?.contains(source) ?? true) && (last.map { now.timeIntervalSince($0) >= interval * 0.9 } ?? true)
+        })
     }
 
     /// Runs a sync of the sources given (all enabled ones by default) after
@@ -357,6 +363,17 @@ actor SyncEngine {
         return out
     }
 
+    /// The deliveries among `open` the server refused, with its reason. The
+    /// parked list also carries the ones it accepted and has not run yet, and
+    /// the ones it is running: those are still open, not refused.
+    static func refusals(_ items: [Client.Parked], among open: Set<String>) -> [String: String] {
+        var out: [String: String] = [:]
+        for p in items where p.refused {
+            if let f = p.fireId, open.contains(f) { out[f] = p.lastError }
+        }
+        return out
+    }
+
     /// Waits for the provider to file or park every delivery of a chunk, up
     /// to the budget's deadline, and says what became of each day.
     private func confirm(_ fires: [String: [String]], _ client: Client, deadline seconds: TimeInterval, label: String) async throws -> Outcome {
@@ -373,9 +390,7 @@ actor SyncEngine {
             for fire in open where try await client.get(Self.healthExportKind, fire) != nil {
                 filed.insert(fire)
             }
-            for p in try await client.parked(trigger: Self.trigger) {
-                if let f = p.fireId, open.contains(f) { parked[f] = p.lastError }
-            }
+            parked.merge(Self.refusals(try await client.parked(trigger: Self.trigger), among: open)) { a, _ in a }
             if all.subtracting(filed).subtracting(parked.keys).isEmpty || Date() > deadline { break }
             try await Task.sleep(for: .seconds(2))
         }
