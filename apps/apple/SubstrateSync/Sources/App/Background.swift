@@ -135,6 +135,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         Background.register()
         Background.observeHealth()
         Background.schedule()
+        // A visit relaunches the app in the background; its report reaches
+        // the monitor only once the delegate is set again.
+        PlaceMonitor.shared.start()
         return true
     }
 }

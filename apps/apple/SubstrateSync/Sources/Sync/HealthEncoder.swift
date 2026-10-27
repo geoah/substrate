@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import HealthKit
 
@@ -26,18 +27,20 @@ struct HealthDelivery: Sendable {
     let grouping: Grouping
     var metrics: [HealthMetric]
     var workouts: [JSON]
+    /// Cycle tracking entries, the `cycleTracking` section.
+    var cycle: [JSON] = []
     /// What could not be read, as `name: reason`; never sent.
     var skipped: [String] = []
 
-    var isEmpty: Bool { metrics.allSatisfy { $0.rows.isEmpty } && workouts.isEmpty }
+    var isEmpty: Bool { metrics.allSatisfy { $0.rows.isEmpty } && workouts.isEmpty && cycle.isEmpty }
 
     /// The bodies to POST, each under `limit` bytes: the day whole when it
     /// fits, else split by metric (a metric is never split, because its rows
     /// replace a span), with the workouts in bodies of their own.
     func bodies(limit: Int = 4 * 1024 * 1024) -> [Data] {
         let metrics = self.metrics.filter { !$0.rows.isEmpty }
-        let whole = Self.body(metrics: metrics, workouts: workouts)
-        if whole.count < limit { return metrics.isEmpty && workouts.isEmpty ? [] : [whole] }
+        let whole = Self.body(metrics: metrics, workouts: workouts, cycle: cycle)
+        if whole.count < limit { return metrics.isEmpty && workouts.isEmpty && cycle.isEmpty ? [] : [whole] }
         var out: [Data] = []
         var group: [HealthMetric] = []
         for metric in metrics {
@@ -59,14 +62,16 @@ struct HealthDelivery: Sendable {
             batch.append(workout)
         }
         if !batch.isEmpty { out.append(Self.body(metrics: [], workouts: batch)) }
+        if !cycle.isEmpty { out.append(Self.body(metrics: [], workouts: [], cycle: cycle)) }
         return out
     }
 
-    static func body(metrics: [HealthMetric], workouts: [JSON]) -> Data {
+    static func body(metrics: [HealthMetric], workouts: [JSON], cycle: [JSON] = []) -> Data {
         var data: [(String, JSON)] = [("metrics", .array(metrics.map { m in
             .object([("name", .string(m.name)), ("units", .string(m.units)), ("data", .array(m.rows))])
         }))]
         if !workouts.isEmpty { data.append(("workouts", .array(workouts))) }
+        if !cycle.isEmpty { data.append(("cycleTracking", .array(cycle))) }
         return JSON.object([("data", .object(data))]).encoded
     }
 
@@ -216,6 +221,8 @@ struct WorkoutSummary: Sendable {
     var elevationUpM: Double?
     var heartRateData: [Minute] = []
     var timeZone: String?
+    /// The GPS track, thinned to WorkoutRoute.limit points.
+    var route: [RoutePoint] = []
 
     func json(_ r: HealthRows) -> JSON {
         func qty(_ v: Double, _ units: String) -> JSON {
@@ -247,6 +254,7 @@ struct WorkoutSummary: Sendable {
             row.set("source", HealthRows.source(m.sources))
             return row.json
         }))
+        if !route.isEmpty { f.set("route", .array(route.map { $0.json(r) })) }
         var meta = Fields()
         meta.set("HKTimeZone", timeZone)
         // The app writes an empty metadata object for a workout with none.
@@ -294,5 +302,166 @@ enum WorkoutNames {
         case .jumpRope: "Jump Rope"
         default: "Other"
         }
+    }
+}
+
+/// One point of a workout's GPS track, as Health Auto Export writes it with
+/// Include Route Data. A value CoreLocation marks invalid (negative) is left
+/// out rather than sent as -1.
+struct RoutePoint: Sendable {
+    let at: Date
+    let latitude: Double
+    let longitude: Double
+    var altitude: Double?
+    var course: Double?
+    var courseAccuracy: Double?
+    var horizontalAccuracy: Double?
+    var verticalAccuracy: Double?
+    var speed: Double?
+    var speedAccuracy: Double?
+
+    init(at: Date, latitude: Double, longitude: Double) {
+        self.at = at
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+
+    init(_ l: CLLocation) {
+        self.init(at: l.timestamp, latitude: l.coordinate.latitude, longitude: l.coordinate.longitude)
+        func valid(_ v: Double) -> Double? { v >= 0 ? v : nil }
+        if l.verticalAccuracy >= 0 {
+            altitude = l.altitude
+            verticalAccuracy = l.verticalAccuracy
+        }
+        course = valid(l.course)
+        courseAccuracy = course == nil ? nil : valid(l.courseAccuracy)
+        horizontalAccuracy = valid(l.horizontalAccuracy)
+        speed = valid(l.speed)
+        speedAccuracy = speed == nil ? nil : valid(l.speedAccuracy)
+    }
+
+    func json(_ r: HealthRows) -> JSON {
+        var f = Fields()
+        f.set("latitude", rounded(latitude, 7))
+        f.set("longitude", rounded(longitude, 7))
+        f.set("altitude", altitude.map { rounded($0, 2) })
+        f.set("course", course.map { rounded($0, 2) })
+        f.set("courseAccuracy", courseAccuracy.map { rounded($0, 2) })
+        f.set("horizontalAccuracy", horizontalAccuracy.map { rounded($0, 2) })
+        f.set("verticalAccuracy", verticalAccuracy.map { rounded($0, 2) })
+        f.set("timestamp", r.date(at))
+        f.set("speed", speed.map { rounded($0, 3) })
+        f.set("speedAccuracy", speedAccuracy.map { rounded($0, 3) })
+        return f.json
+    }
+}
+
+enum WorkoutRoute {
+    /// The provider skips a workout record over 6 MiB; a point is about 250
+    /// bytes stored, so a track is thinned to this many, about four hours at
+    /// one a second.
+    static let limit = 15_000
+
+    /// Every point when they fit, else every nth and always the last.
+    static func thinned(_ points: [CLLocation], limit: Int = limit) -> [RoutePoint] {
+        thinned(points.map(RoutePoint.init), limit: limit)
+    }
+
+    static func thinned(_ points: [RoutePoint], limit: Int = limit) -> [RoutePoint] {
+        guard points.count > limit, limit > 1 else { return points }
+        let step = Int((Double(points.count - 1) / Double(limit - 1)).rounded(.up))
+        var out = stride(from: 0, to: points.count, by: step).map { points[$0] }
+        if out.count < limit, let last = points.last, (points.count - 1) % step != 0 { out.append(last) }
+        return out
+    }
+}
+
+/// Cycle tracking as Health Auto Export's `cycleTracking` section carries it:
+/// one entry per sample, by the Health app's name for the type and for its
+/// value.
+enum CycleTracking {
+    static let types: [(HKCategoryTypeIdentifier, String)] = [
+        (.menstrualFlow, "Menstrual Flow"),
+        (.intermenstrualBleeding, "Intermenstrual Bleeding"),
+        (.ovulationTestResult, "Ovulation Test Result"),
+        (.cervicalMucusQuality, "Cervical Mucus Quality"),
+        (.sexualActivity, "Sexual Activity"),
+        (.contraceptive, "Contraceptive"),
+        (.pregnancyTestResult, "Pregnancy Test Result"),
+        (.progesteroneTestResult, "Progesterone Test Result"),
+        (.lactation, "Lactation"),
+        (.pregnancy, "Pregnancy"),
+    ]
+
+    static func value(_ id: HKCategoryTypeIdentifier, _ raw: Int, _ metadata: [String: Any]?) -> String {
+        switch id {
+        case .menstrualFlow:
+            switch HKCategoryValueVaginalBleeding(rawValue: raw) {
+            case .light: return "Light"
+            case .medium: return "Medium"
+            case .heavy: return "Heavy"
+            case .none: return "None"
+            default: return "Unspecified"
+            }
+        case .ovulationTestResult:
+            switch HKCategoryValueOvulationTestResult(rawValue: raw) {
+            case .negative: return "Negative"
+            case .luteinizingHormoneSurge: return "LH Surge"
+            case .estrogenSurge: return "Estrogen Surge"
+            default: return "Indeterminate"
+            }
+        case .cervicalMucusQuality:
+            switch HKCategoryValueCervicalMucusQuality(rawValue: raw) {
+            case .dry: return "Dry"
+            case .sticky: return "Sticky"
+            case .creamy: return "Creamy"
+            case .watery: return "Watery"
+            case .eggWhite: return "Egg White"
+            default: return ""
+            }
+        case .sexualActivity:
+            switch (metadata?[HKMetadataKeySexualActivityProtectionUsed] as? NSNumber)?.boolValue {
+            case true?: return "Protection Used"
+            case false?: return "Protection Not Used"
+            case nil: return "Unspecified"
+            }
+        case .contraceptive:
+            switch HKCategoryValueContraceptive(rawValue: raw) {
+            case .implant: return "Implant"
+            case .injection: return "Injection"
+            case .intrauterineDevice: return "IUD"
+            case .intravaginalRing: return "Intravaginal Ring"
+            case .oral: return "Oral"
+            case .patch: return "Patch"
+            default: return "Unspecified"
+            }
+        case .pregnancyTestResult:
+            switch HKCategoryValuePregnancyTestResult(rawValue: raw) {
+            case .negative: return "Negative"
+            case .positive: return "Positive"
+            default: return "Indeterminate"
+            }
+        case .progesteroneTestResult:
+            switch HKCategoryValueProgesteroneTestResult(rawValue: raw) {
+            case .negative: return "Negative"
+            case .positive: return "Positive"
+            default: return "Indeterminate"
+            }
+        default:
+            return ""
+        }
+    }
+
+    static func entry(
+        name: String, value: String, start: Date, end: Date, cycleStart: Bool?, source: String, rows r: HealthRows
+    ) -> JSON {
+        var f = Fields()
+        f.set("start", r.date(start))
+        f.set("end", end > start ? r.date(end) : nil)
+        f.set("name", name)
+        f.set("value", value)
+        f.set("isCycleStart", cycleStart)
+        f.set("source", source)
+        return f.json
     }
 }

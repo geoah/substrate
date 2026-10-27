@@ -177,6 +177,8 @@ extension Source {
         case .health: .pink
         case .contacts: .gray
         case .calendars: .red
+        case .reminders: .orange
+        case .places: .blue
         }
     }
 }

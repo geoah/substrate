@@ -17,7 +17,7 @@ struct SourceView: View {
             if enabled {
                 switch source {
                 case .health: HealthCoverage()
-                case .contacts, .calendars: CountCoverage(source: source)
+                case .contacts, .calendars, .reminders, .places: CountCoverage(source: source)
                 }
             }
 
@@ -273,6 +273,12 @@ private struct SourceSettings: View {
                 .onChange(of: enabled) { _, on in
                     Settings.setEnabled(source, on)
                     if on, source == .health { Background.observeHealth() }
+                    if source == .places {
+                        Task {
+                            if on { await model.requestAccess(.places) }
+                            PlaceMonitor.shared.start()
+                        }
+                    }
                 }
             LabeledContent("Access") {
                 HStack(spacing: 8) {
@@ -280,7 +286,7 @@ private struct SourceSettings: View {
                     if access == "Not asked yet" {
                         Button("Allow") { Task { await model.requestAccess(source) } }
                             .buttonStyle(.bordered).controlSize(.small)
-                    } else if access.hasPrefix("Not allowed") || access.hasPrefix("Add only") {
+                    } else if access.hasPrefix("Not allowed") || access.hasPrefix("Add only") || access.hasPrefix("While using") {
                         Button("Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                         }
@@ -300,7 +306,7 @@ private struct SourceSettings: View {
                 } label: {
                     LabeledContent("Calendars", value: calendarsValue)
                 }
-            case .contacts:
+            case .contacts, .reminders, .places:
                 EmptyView()
             }
         } header: {
@@ -315,6 +321,10 @@ private struct SourceSettings: View {
                 if access == "Allowed for some contacts" {
                     Text("Only the contacts you chose to share are sent, and none is removed from your repository.")
                 }
+            case .reminders:
+                Text("Every list and every reminder, completed ones included. A reminder deleted on the phone is removed from your repository.")
+            case .places:
+                Text("The places you stay at, from iOS's visit monitoring, with a name from Apple Maps. It needs Always location access, and costs little battery: iOS reports a visit only when you arrive or leave. Visits are kept on this phone for a year and sent at each sync.")
             }
         }
         .onAppear { if source == .calendars { model.loadCalendars() } }

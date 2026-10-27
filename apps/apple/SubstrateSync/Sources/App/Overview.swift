@@ -28,7 +28,7 @@ struct SourceOverview: Equatable {
     }
 
     /// The access words (AppModel.refreshAccess) under which a sync cannot read.
-    private static let blocked = ["Not allowed", "Add only", "Not available"]
+    private static let blocked = ["Not allowed", "Add only", "Not available", "While using"]
 }
 
 /// One calendar on the phone, as the picker lists it.

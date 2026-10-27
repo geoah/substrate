@@ -10,8 +10,10 @@ enum Settings {
     static let windowBack = 90
     static let windowAhead = 180
 
+    /// Places is off until the owner turns it on: it asks for Always
+    /// location access. Every other source is on.
     static func enabled(_ source: Source) -> Bool {
-        UserDefaults.standard.object(forKey: "enabled.\(source.rawValue)") as? Bool ?? true
+        UserDefaults.standard.object(forKey: "enabled.\(source.rawValue)") as? Bool ?? (source != .places)
     }
 
     static func setEnabled(_ source: Source, _ on: Bool) {
@@ -312,6 +314,8 @@ actor SyncEngine {
                 case .contacts: status.counts = try await syncContacts(client, &state)
                 case .calendars: status.counts = try await syncCalendars(client, &state)
                 case .health: status.counts = try await syncHealth(client, session, &state, budget: budget)
+                case .reminders: status.counts = try await syncReminders(client, &state)
+                case .places: status.counts = try await syncPlaces(client, &state)
                 }
                 status.lastSync = Date()
                 status.lastError = nil
@@ -667,6 +671,186 @@ actor SyncEngine {
             "lastSyncedAt": Formats.utc(Date()),
         ])
         return "\(calendars.count) calendars · \(occurrences.count) events · \(written) written · \(removed) removed"
+    }
+
+    // MARK: - Rows
+
+    /// What `pushRows` did.
+    struct Pushes {
+        var written = 0
+        var removed = 0
+        var failures: [Error] = []
+        var named: [(String, Error)] = []
+    }
+
+    /// Writes every row of `current` whose content moved since the state at
+    /// `path` last recorded it, clears the keys a row lost, and, when
+    /// `deleting`, deletes the rows gone from `current`; a hundred at a time,
+    /// committing after each batch, so a run stopped part way keeps what it
+    /// wrote. `current` maps an id to its properties and what to remember of
+    /// it once written.
+    private func pushRows(
+        _ client: Client, _ state: inout LocalState, _ path: WritableKeyPath<LocalState, [String: Pushed]>,
+        kind: String, _ current: [String: Pushed.Row], deleting: Bool, source: Source, noun: String
+    ) async -> Pushes {
+        let previous = state[keyPath: path]
+        let changed = current.filter { previous[$0.key]?.hash != $0.value.pushed.hash }
+        let new = changed.keys.filter { previous[$0] == nil }.count
+        let vanished = deleting ? previous.keys.filter { current[$0] == nil } : []
+        log(source, "\(new) \(noun) new, \(changed.count - new) changed, \(current.count - changed.count) unchanged" + (deleting ? ", \(vanished.count) gone" : ""))
+        var out = Pushes()
+        let toWrite = changed.count
+        if toWrite > 0 { await progress(source, "Writing \(noun)", 0, toWrite) }
+        for (offset, batch) in Self.batches(Array(changed)) {
+            if Task.isCancelled { break }
+            for ((id, row), result) in await eachLimited(batch, progress: { n in await self.progress(source, "Writing \(noun)", offset + n, toWrite) }, { pair in
+                let (id, row) = pair
+                try await client.put(kind, id, row.props.foundation)
+                try await client.clear(kind, id, keys: Set(previous[id]?.keys ?? []).subtracting(row.props.keys).sorted())
+            }) {
+                switch result {
+                case .success:
+                    state[keyPath: path][id] = row.pushed
+                    out.written += 1
+                case let .failure(e):
+                    out.failures.append(e)
+                    out.named.append((Self.label(row.props, id), e))
+                }
+            }
+            commit(&state)
+        }
+        if !vanished.isEmpty, !Task.isCancelled {
+            await progress(source, "Removing \(noun) gone from the device", 0, vanished.count)
+            for (id, result) in await eachLimited(vanished, { id in try await client.delete(kind, id) }) {
+                switch result {
+                case .success:
+                    state[keyPath: path][id] = nil
+                    out.removed += 1
+                case let .failure(e):
+                    out.failures.append(e)
+                    out.named.append((id, e))
+                }
+            }
+            commit(&state)
+        }
+        return out
+    }
+
+    /// Ends a source's pushes: a stop is a stop, and any other failure is
+    /// logged by name and thrown with how many of how many failed.
+    private func settlePushes(_ source: Source, _ noun: String, _ pushes: [Pushes]) throws {
+        let failures = pushes.flatMap(\.failures)
+        try rethrowStop(failures)
+        logFailures(source, noun, pushes.flatMap(\.named))
+        if let first = failures.first {
+            throw ContextError(context: "\(failures.count) \(noun) writes failed, the first", underlying: first)
+        }
+    }
+
+    // MARK: - Reminders
+
+    private func syncReminders(_ client: Client, _ state: inout LocalState) async throws -> String {
+        guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { throw SyncError.noAccess("Reminders") }
+        let ids = state.ids
+        let eventstore = ids.eventstore
+        let storeKind = Self.appleKinds + "eventstore"
+        if try await client.get(storeKind, eventstore) == nil, !state.reminderLists.isEmpty || !state.reminders.isEmpty {
+            log(.reminders, "The server holds none of this phone's reminders: sending them all again")
+            state.reminderLists = [:]
+            state.reminders = [:]
+        }
+
+        let store = EKEventStore()
+        let lists = store.calendars(for: .reminder)
+        await progress(.reminders, "Reading reminders")
+        // Mapped inside EventKit's callback: a reminder is not sendable, its
+        // properties are.
+        let fetched: [(id: String, row: Pushed.Row)] = await withCheckedContinuation { continuation in
+            store.fetchReminders(matching: store.predicateForReminders(in: nil)) { reminders in
+                continuation.resume(returning: (reminders ?? []).compactMap { r in
+                    guard let list = r.calendar else { return nil }
+                    let listID = ids.calendar(list.calendarIdentifier)
+                    let props = ReminderMapping.reminder(r, list: listID)
+                    return (ids.reminder(r.calendarItemIdentifier), Pushed.Row(props, Pushed(props, calendar: listID)))
+                })
+            }
+        }
+        state.device.reminders = fetched.count
+        log(.reminders, "Read \(lists.count) lists and \(fetched.count) reminders")
+        // An empty answer is more often a store that is not ready than an
+        // owner who deleted every list; it never empties the repository.
+        if lists.isEmpty, !state.reminderLists.isEmpty { throw SyncError.emptyScan("reminder lists") }
+
+        let name = await deviceName
+        try await client.put(storeKind, eventstore, ["deviceName": name])
+        var currentLists: [String: Pushed.Row] = [:]
+        for l in lists {
+            let props = ReminderMapping.list(l, eventstore: eventstore)
+            currentLists[ids.calendar(l.calendarIdentifier)] = Pushed.Row(props, Pushed(props))
+        }
+        let listPushes = await pushRows(client, &state, \.reminderLists, kind: ReminderMapping.listKind, currentLists,
+                                        deleting: true, source: .reminders, noun: "lists")
+        // A deleted list takes its reminders with it on the server.
+        let goneLists = Set(state.reminders.values.compactMap(\.calendar)).subtracting(state.reminderLists.keys)
+        state.reminders = state.reminders.filter { !goneLists.contains($0.value.calendar ?? "") }
+        try settlePushes(.reminders, "list", [listPushes])
+
+        let current = Dictionary(fetched.map { ($0.id, $0.row) }, uniquingKeysWith: { a, _ in a })
+        let pushes = await pushRows(client, &state, \.reminders, kind: ReminderMapping.kind, current,
+                                    deleting: true, source: .reminders, noun: "reminders")
+        try settlePushes(.reminders, "reminder", [pushes])
+
+        try await client.put(storeKind, eventstore, [
+            "deviceName": name, "reminderListCount": lists.count, "reminderCount": fetched.count,
+            "lastSyncedAt": Formats.utc(Date()),
+        ])
+        return "\(lists.count) lists · \(fetched.count) reminders · \(pushes.written) written · \(pushes.removed) removed"
+    }
+
+    // MARK: - Places
+
+    private func syncPlaces(_ client: Client, _ state: inout LocalState) async throws -> String {
+        let allowed = await PlaceMonitor.shared.authorization == .authorizedAlways
+        var visits = PlaceLog.shared.all
+        if visits.isEmpty, !allowed { throw SyncError.noAccess("your location (Always) for Places") }
+        if !allowed { log(.places, "Location access is no longer Always: no new visits are recorded, and the ones kept are sent", .warning) }
+        let ids = state.ids
+        let visitstore = ids.visitstore
+        if try await client.get(VisitMapping.storeKind, visitstore) == nil, !state.visits.isEmpty {
+            log(.places, "The server holds none of this phone's visits: sending the year kept here again")
+            state.visits = [:]
+        }
+
+        // The geocoder is rate-limited: a few visits a run, newest first, and
+        // the rest at the next one. A failure is tried again next run.
+        let unnamed = visits.filter { !$0.geocoded }.prefix(25)
+        for (i, visit) in unnamed.enumerated() {
+            if Task.isCancelled { break }
+            await progress(.places, "Naming places", i, unnamed.count)
+            do {
+                PlaceLog.shared.named(visit.key, try await PlaceNamer.name(visit))
+            } catch {
+                log(.places, "Apple Maps did not name a place: \(error.localizedDescription); it is tried again next sync", .warning)
+                break
+            }
+        }
+        visits = PlaceLog.shared.all
+
+        let name = await deviceName
+        try await client.put(VisitMapping.storeKind, visitstore, ["deviceName": name])
+        var current: [String: Pushed.Row] = [:]
+        for v in visits {
+            let props = VisitMapping.visit(v, visitstore: visitstore)
+            current[ids.visit(v.key)] = Pushed.Row(props, Pushed(props, start: v.arrival ?? v.departure))
+        }
+        // A visit aged out of the year kept here stays in the repository.
+        let pushes = await pushRows(client, &state, \.visits, kind: VisitMapping.kind, current,
+                                    deleting: false, source: .places, noun: "visits")
+        try settlePushes(.places, "visit", [pushes])
+        try await client.put(VisitMapping.storeKind, visitstore, [
+            "deviceName": name, "visitCount": visits.count, "lastSyncedAt": Formats.utc(Date()),
+        ])
+        return "\(visits.count) visits · \(pushes.written) written"
     }
 
     // MARK: - Health

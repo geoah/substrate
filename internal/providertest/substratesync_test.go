@@ -121,6 +121,27 @@ func TestSubstrateSyncMinutesDelivery(t *testing.T) {
 	if watch["class"] != "watch" || watch["name"] != adaWatch {
 		t.Errorf("the watch's source = %v", watch)
 	}
+
+	// What a phone logs rather than measures: each an amount at its minute,
+	// and a basal temperature a spot reading.
+	for id, want := range map[string]string{
+		syncID("apple-watch", "mindful_minutes", "2026-10-07T04"): "min 10",
+		syncID("iphone", "mindful_minutes", "2026-10-07T19"):      "min 3.5",
+		syncID("iphone", "water", "2026-10-07T05"):                "mL 250",
+		syncID("iphone", "caffeine", "2026-10-07T05"):             "mg 95",
+		syncID("myfitnesspal", "dietary_energy", "2026-10-07T05"): "kcal 420",
+		syncID("myfitnesspal", "protein", "2026-10-07T05"):        "g 22.5",
+		syncID("myfitnesspal", "sodium", "2026-10-07T05"):         "mg 540",
+	} {
+		p := mustGet(t, ds, obsTrace, id).Properties
+		if got := fmt.Sprint(p["unit"], " ", strs(p["values"])[0]); p["form"] != "amount" || got != want {
+			t.Errorf("%s = %s %v, want an amount of %s", id, p["form"], got, want)
+		}
+	}
+	basal := mustGet(t, ds, obsObservation, syncID("iphone", "basal_body_temperature", "2026-10-07T03:45:00Z")).Properties
+	if v := fmt.Sprint(obj(t, basal["value"], "value"), " ", obj(t, basal["value"], "unit")); v != "36.42 Cel" {
+		t.Errorf("basal body temperature = %s", v)
+	}
 	assertCatalogued(t, ds)
 }
 
@@ -168,6 +189,18 @@ func TestSubstrateSyncSecondsDelivery(t *testing.T) {
 	mirror := mustGet(t, ds, ahWorkout, syncID("5B1F7A2C-3D4E-4F60-8A9B-0C1D2E3F4A5B")).Properties
 	if obj(t, mirror["metadata"], "HKTimeZone") != "Europe/Athens" {
 		t.Errorf("the run's mirror metadata = %v", mirror["metadata"])
+	}
+	// The route stays on the mirror (decision record 0163: a position is not
+	// a quantity), whole.
+	if route, _ := mirror["route"].([]any); len(route) != 3 || obj(t, route[0], "latitude") == nil || obj(t, route[2], "timestamp") != "2026-10-07 18:05:30 +0300" {
+		t.Errorf("the run's route = %v", mirror["route"])
+	}
+	cycle := map[string]string{}
+	for _, row := range listLive(t, ds, ahCycleEvent) {
+		cycle[fmt.Sprint(row.Properties["name"])] = fmt.Sprint(row.Properties["value"], " ", row.Properties["isCycleStart"])
+	}
+	if want := map[string]string{"Menstrual Flow": "Medium true", "Ovulation Test Result": "Negative <nil>"}; !maps.Equal(cycle, want) {
+		t.Errorf("cycle tracking entries = %v, want %v", cycle, want)
 	}
 	assertCatalogued(t, ds)
 }
