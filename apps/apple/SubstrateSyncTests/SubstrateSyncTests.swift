@@ -1,4 +1,5 @@
 import Foundation
+import HealthKit
 import XCTest
 
 @testable import SubstrateSync
@@ -100,6 +101,28 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(JSON.number(-3), "-3")
         XCTAssertEqual(JSON.number(.nan), "null")
         XCTAssertEqual(JSON.object([("a", .string("Ada’s\u{00a0}\"/"))]).text, "{\"a\":\"Ada’s\u{00a0}\\\"/\"}")
+    }
+}
+
+/// HealthKit answers a query over a type the device has no source of
+/// ("Unable to invalidate interval: no data source available") with its
+/// no-data error; a sync reads that as nothing, and any other error stays an
+/// error.
+final class HealthNoDataTests: XCTestCase {
+    func testNoDataIsEmpty() async throws {
+        let none: Int? = try await noDataIsEmpty { throw HKError(.errorNoData) }
+        XCTAssertNil(none)
+        let bridged: Int? = try await noDataIsEmpty {
+            throw NSError(domain: HKErrorDomain, code: HKError.Code.errorNoData.rawValue,
+                          userInfo: [NSLocalizedDescriptionKey: "Unable to invalidate interval: no data source available."])
+        }
+        XCTAssertNil(bridged)
+        let some = try await noDataIsEmpty { 7 }
+        XCTAssertEqual(some, 7)
+        do {
+            let _: Int? = try await noDataIsEmpty { throw HKError(.errorAuthorizationDenied) }
+            XCTFail("an authorization error read as no data")
+        } catch {}
     }
 }
 

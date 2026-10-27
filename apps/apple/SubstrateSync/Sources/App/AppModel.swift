@@ -46,7 +46,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var syncing = false
     @Published private(set) var access: [Source: String] = [:]
     /// What each running source is doing now.
-    @Published private(set) var progress: [Source: String] = [:]
+    @Published private(set) var progress: [Source: SyncProgress] = [:]
+    /// The activity log, newest first.
+    @Published private(set) var activity: [ActivityEntry] = Activity.shared.all
     /// The device's Health days with data, from the last coverage scan.
     @Published private(set) var healthAvailable: Set<String>?
     /// The start of every occurrence in the calendar window, from the last
@@ -64,9 +66,14 @@ final class AppModel: ObservableObject {
         Task {
             // The model lives as long as the app, so the engine holds it.
             await SyncEngine.shared.setOnChange { state in self.state = state }
-            await SyncEngine.shared.setOnProgress { source, text in self.progress[source] = text }
+            await SyncEngine.shared.setOnProgress { source, step in self.progress[source] = step }
         }
         refreshAccess()
+        Activity.shared.onEntry = { [weak self] entry in
+            guard let self else { return }
+            self.activity.insert(entry, at: 0)
+            if self.activity.count > Activity.limit { self.activity.removeLast() }
+        }
     }
 
     var client: Client? { session.map { Client(server: $0.server, secret: $0.secret) } }
@@ -311,6 +318,17 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(frequency.rawValue, forKey: Settings.frequencyKey)
         Background.schedule()
         Background.updateHealthDelivery()
+    }
+
+    /// Stops the running sync where it can stop cleanly.
+    func cancelSync() {
+        Activity.shared.log(nil, "Sync stopped by hand", level: .warning)
+        Task { await SyncEngine.shared.cancel() }
+    }
+
+    func clearActivity() {
+        Activity.shared.clear()
+        activity = []
     }
 
     func syncNow(_ only: Set<Source>? = nil) async {

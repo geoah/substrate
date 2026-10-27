@@ -160,7 +160,8 @@ struct LocalState: Codable, Sendable {
 /// each item's outcome. There is no batch route, so this is how a sync
 /// keeps a server busy without flooding it.
 func eachLimited<T: Sendable, R: Sendable>(
-    _ items: [T], limit: Int = 6, _ operation: @escaping @Sendable (T) async throws -> R
+    _ items: [T], limit: Int = 6, progress: (@Sendable (Int) async -> Void)? = nil,
+    _ operation: @escaping @Sendable (T) async throws -> R
 ) async -> [(T, Result<R, Error>)] {
     await withTaskGroup(of: (T, Result<R, Error>).self) { group in
         var results: [(T, Result<R, Error>)] = []
@@ -175,6 +176,7 @@ func eachLimited<T: Sendable, R: Sendable>(
         for _ in 0 ..< limit where !next() { break }
         while let result = await group.next() {
             results.append(result)
+            if let progress, results.count % 10 == 0 || results.count == items.count { await progress(results.count) }
             if Task.isCancelled { continue }
             _ = next()
         }

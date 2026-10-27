@@ -111,20 +111,24 @@ extension HealthReader {
         var days: Set<String> = []
         for (id, options) in [(HKQuantityTypeIdentifier.stepCount, HKStatisticsOptions.cumulativeSum),
                               (.heartRate, .discreteAverage)] {
-            let collection = try await HKStatisticsCollectionQueryDescriptor(
-                predicate: .quantitySample(type: HKQuantityType(id), predicate: predicate),
-                options: options, anchorDate: start, intervalComponents: DateComponents(day: 1)
-            ).result(for: store)
+            guard let collection = try await noDataIsEmpty({
+                try await HKStatisticsCollectionQueryDescriptor(
+                    predicate: .quantitySample(type: HKQuantityType(id), predicate: predicate),
+                    options: options, anchorDate: start, intervalComponents: DateComponents(day: 1)
+                ).result(for: store)
+            }) else { continue }
             collection.enumerateStatistics(from: start, to: now) { s, _ in
                 if s.sumQuantity() != nil || s.averageQuantity() != nil {
                     days.insert(Formats.day(s.startDate, in: calendar.timeZone))
                 }
             }
         }
-        let sleep = try await HKSampleQueryDescriptor(
-            predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
-            sortDescriptors: []
-        ).result(for: store)
+        let sleep = try await noDataIsEmpty {
+            try await HKSampleQueryDescriptor(
+                predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
+                sortDescriptors: []
+            ).result(for: store)
+        } ?? []
         for s in sleep { days.insert(Formats.day(s.startDate, in: calendar.timeZone)) }
         return days
     }

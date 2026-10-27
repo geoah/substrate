@@ -101,6 +101,11 @@ indirect enum JSON: Equatable, Sendable {
         }
     }
 
+    func objectValue(_ key: String) -> JSON? {
+        if case let .object(pairs) = self { return pairs.first { $0.0 == key }?.1 }
+        return nil
+    }
+
     var keys: [String] {
         if case let .object(pairs) = self { return pairs.map(\.0) }
         return []

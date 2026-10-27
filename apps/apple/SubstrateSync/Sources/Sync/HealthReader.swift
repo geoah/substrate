@@ -68,89 +68,124 @@ struct HealthReader: Sendable {
         [HKQuantityType(.heartRate), HKQuantityType(.stepCount), HKCategoryType(.sleepAnalysis), HKObjectType.workoutType()]
     }
 
-    func minutes(_ day: Range<Date>, zone: TimeZone) async throws -> HealthDelivery {
+    /// Every metric of one day, each read on its own: a metric the device
+    /// holds nothing for is an empty one, and one HealthKit refuses is left
+    /// out and named in `skipped`, so one bad type never stops the rest.
+    func minutes(_ day: Range<Date>, zone: TimeZone) async -> HealthDelivery {
         let rows = HealthRows(zone: zone)
-        var metrics: [HealthMetric] = []
+        var delivery = HealthDelivery(grouping: .minutes, metrics: [], workouts: [])
+        func add(_ name: String, _ units: String, _ read: () async throws -> [JSON]) async {
+            do {
+                delivery.metrics.append(HealthMetric(name: name, units: units, rows: try await read()))
+            } catch {
+                delivery.skipped.append("\(name): \(error.localizedDescription)")
+            }
+        }
 
-        let hr = try await collection(.heartRate, day, options: [.discreteMin, .discreteAverage, .discreteMax, .separateBySource])
-        metrics.append(HealthMetric(name: "heart_rate", units: "count/min", rows: buckets(hr, day).compactMap { s in
-            guard let mn = s.minimumQuantity(), let avg = s.averageQuantity(), let mx = s.maximumQuantity() else { return nil }
-            return rows.minMaxAvg(
-                at: s.startDate, min: mn.doubleValue(for: Self.perMinute), avg: avg.doubleValue(for: Self.perMinute),
-                max: mx.doubleValue(for: Self.perMinute), sources: names(s.sources))
-        }))
+        await add("heart_rate", "count/min") {
+            let hr = try await collection(.heartRate, day, options: [.discreteMin, .discreteAverage, .discreteMax, .separateBySource])
+            return buckets(hr, day).compactMap { s in
+                guard let mn = s.minimumQuantity(), let avg = s.averageQuantity(), let mx = s.maximumQuantity() else { return nil }
+                return rows.minMaxAvg(
+                    at: s.startDate, min: mn.doubleValue(for: Self.perMinute), avg: avg.doubleValue(for: Self.perMinute),
+                    max: mx.doubleValue(for: Self.perMinute), sources: names(s.sources))
+            }
+        }
 
         for m in Self.cumulative {
-            let c = try await collection(m.id, day, options: [.cumulativeSum, .separateBySource])
-            metrics.append(HealthMetric(name: m.name, units: m.units, rows: buckets(c, day).compactMap { s in
-                guard let sum = s.sumQuantity() else { return nil }
-                let v = sum.doubleValue(for: m.unit)
-                return v > 0 ? rows.quantity(at: s.startDate, qty: v, sources: names(s.sources)) : nil
-            }))
+            await add(m.name, m.units) {
+                let c = try await collection(m.id, day, options: [.cumulativeSum, .separateBySource])
+                return buckets(c, day).compactMap { s in
+                    guard let sum = s.sumQuantity() else { return nil }
+                    let v = sum.doubleValue(for: m.unit)
+                    return v > 0 ? rows.quantity(at: s.startDate, qty: v, sources: names(s.sources)) : nil
+                }
+            }
         }
 
         for m in Self.discrete {
-            let samples = try await quantitySamples(m.id, day)
-            metrics.append(HealthMetric(name: m.name, units: m.units, rows: byMinute(samples).map { minute, group in
-                let avg = group.map { $0.quantity.doubleValue(for: m.unit) }.reduce(0, +) / Double(group.count)
-                return rows.quantity(at: minute, qty: avg * m.scale, sources: group.map(\.sourceRevision.source.name))
-            }))
+            await add(m.name, m.units) {
+                byMinute(try await quantitySamples(m.id, day)).map { minute, group in
+                    let avg = group.map { $0.quantity.doubleValue(for: m.unit) }.reduce(0, +) / Double(group.count)
+                    return rows.quantity(at: minute, qty: avg * m.scale, sources: group.map(\.sourceRevision.source.name))
+                }
+            }
         }
 
-        let glucose = try await quantitySamples(.bloodGlucose, day)
         let mgdl = HKUnit(from: "mg/dL")
-        metrics.append(HealthMetric(name: "blood_glucose", units: "mg/dL", rows: byMinute(glucose).map { minute, group in
-            let avg = group.map { $0.quantity.doubleValue(for: mgdl) }.reduce(0, +) / Double(group.count)
-            let meal = group.lazy.compactMap { ($0.metadata?[HKMetadataKeyBloodGlucoseMealTime] as? NSNumber)?.intValue }.first
-            var extra: [(String, JSON)] = []
-            switch meal.flatMap(HKBloodGlucoseMealTime.init(rawValue:)) {
-            case .preprandial: extra.append(("mealTime", .string("Before Meal")))
-            case .postprandial: extra.append(("mealTime", .string("After Meal")))
-            default: break
+        await add("blood_glucose", "mg/dL") {
+            byMinute(try await quantitySamples(.bloodGlucose, day)).map { minute, group in
+                let avg = group.map { $0.quantity.doubleValue(for: mgdl) }.reduce(0, +) / Double(group.count)
+                let meal = group.lazy.compactMap { ($0.metadata?[HKMetadataKeyBloodGlucoseMealTime] as? NSNumber)?.intValue }.first
+                var extra: [(String, JSON)] = []
+                switch meal.flatMap(HKBloodGlucoseMealTime.init(rawValue:)) {
+                case .preprandial: extra.append(("mealTime", .string("Before Meal")))
+                case .postprandial: extra.append(("mealTime", .string("After Meal")))
+                default: break
+                }
+                return rows.quantity(at: minute, qty: avg, sources: group.map(\.sourceRevision.source.name), extra: extra)
             }
-            return rows.quantity(at: minute, qty: avg, sources: group.map(\.sourceRevision.source.name), extra: extra)
-        }))
+        }
 
         // A blood pressure correlation is a systolic and a diastolic sample at
         // one instant; a minute that has both is one reading.
         let mmHg = HKUnit.millimeterOfMercury()
-        let systolic = Dictionary(uniqueKeysWithValues: byMinute(try await quantitySamples(.bloodPressureSystolic, day)))
-        let diastolic = Dictionary(uniqueKeysWithValues: byMinute(try await quantitySamples(.bloodPressureDiastolic, day)))
-        metrics.append(HealthMetric(name: "blood_pressure", units: "mmHg", rows: systolic.keys.sorted().compactMap { minute in
-            guard let sys = systolic[minute], let dia = diastolic[minute] else { return nil }
-            func avg(_ g: [HKQuantitySample]) -> Double { g.map { $0.quantity.doubleValue(for: mmHg) }.reduce(0, +) / Double(g.count) }
-            return rows.pressure(at: minute, systolic: avg(sys), diastolic: avg(dia), sources: sys.map(\.sourceRevision.source.name))
-        }))
+        await add("blood_pressure", "mmHg") {
+            let systolic = Dictionary(uniqueKeysWithValues: byMinute(try await quantitySamples(.bloodPressureSystolic, day)))
+            let diastolic = Dictionary(uniqueKeysWithValues: byMinute(try await quantitySamples(.bloodPressureDiastolic, day)))
+            return systolic.keys.sorted().compactMap { minute in
+                guard let sys = systolic[minute], let dia = diastolic[minute] else { return nil }
+                func avg(_ g: [HKQuantitySample]) -> Double { g.map { $0.quantity.doubleValue(for: mmHg) }.reduce(0, +) / Double(g.count) }
+                return rows.pressure(at: minute, systolic: avg(sys), diastolic: avg(dia), sources: sys.map(\.sourceRevision.source.name))
+            }
+        }
 
-        return HealthDelivery(grouping: .minutes, metrics: metrics, workouts: [])
+        return delivery
     }
 
-    func seconds(_ day: Range<Date>, zone: TimeZone) async throws -> HealthDelivery {
+    /// Sleep and workouts of one day, each part read on its own as
+    /// `minutes` reads its metrics.
+    func seconds(_ day: Range<Date>, zone: TimeZone) async -> HealthDelivery {
         let rows = HealthRows(zone: zone)
+        var delivery = HealthDelivery(grouping: .seconds, metrics: [], workouts: [])
         // A night is worked out over the segments around the day too, so a
         // night across midnight carries the same fields in both days.
         let around = day.lowerBound.addingTimeInterval(-18 * 3600) ..< day.upperBound.addingTimeInterval(18 * 3600)
-        let predicate = HKQuery.predicateForSamples(withStart: around.lowerBound, end: around.upperBound)
-        let sleep = try await HKSampleQueryDescriptor(
-            predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        ).result(for: store)
-        let segments = sleep.compactMap { s -> SleepSegment? in
-            guard let value = Self.sleepValue(s.value) else { return nil }
-            return SleepSegment(start: s.startDate, end: s.endDate, value: value, source: s.sourceRevision.source.name)
+        do {
+            let predicate = HKQuery.predicateForSamples(withStart: around.lowerBound, end: around.upperBound)
+            let sleep = try await noDataIsEmpty {
+                try await HKSampleQueryDescriptor(
+                    predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
+                ).result(for: store)
+            } ?? []
+            let segments = sleep.compactMap { s -> SleepSegment? in
+                guard let value = Self.sleepValue(s.value) else { return nil }
+                return SleepSegment(start: s.startDate, end: s.endDate, value: value, source: s.sourceRevision.source.name)
+            }
+            delivery.metrics.append(HealthMetric(name: "sleep_analysis", units: "hr", rows: SleepNights.rows(all: segments, day: day, rows: rows)))
+        } catch {
+            delivery.skipped.append("sleep_analysis: \(error.localizedDescription)")
         }
 
-        let workouts = try await HKSampleQueryDescriptor(
-            predicates: [.workout(HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound, options: .strictStartDate))],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        ).result(for: store)
-        var summaries: [JSON] = []
-        for w in workouts { summaries.append(try await summary(w).json(rows)) }
-
-        return HealthDelivery(
-            grouping: .seconds,
-            metrics: [HealthMetric(name: "sleep_analysis", units: "hr", rows: SleepNights.rows(all: segments, day: day, rows: rows))],
-            workouts: summaries)
+        do {
+            let workouts = try await noDataIsEmpty {
+                try await HKSampleQueryDescriptor(
+                    predicates: [.workout(HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound, options: .strictStartDate))],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
+                ).result(for: store)
+            } ?? []
+            for w in workouts {
+                do {
+                    delivery.workouts.append(try await summary(w).json(rows))
+                } catch {
+                    delivery.skipped.append("workout \(w.uuid.uuidString): \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            delivery.skipped.append("workouts: \(error.localizedDescription)")
+        }
+        return delivery
     }
 
     static func sleepValue(_ raw: Int) -> String? {
@@ -199,17 +234,23 @@ struct HealthReader: Sendable {
 
     // MARK: - queries
 
+    /// A statistics query over a span, or nil where the device holds nothing
+    /// of the type: HealthKit answers that with an error ("no data source
+    /// available") rather than an empty collection.
     private func collection(
         _ id: HKQuantityTypeIdentifier, _ span: Range<Date>, anchor: Date? = nil, options: HKStatisticsOptions
-    ) async throws -> HKStatisticsCollection {
+    ) async throws -> HKStatisticsCollection? {
         let predicate = HKQuery.predicateForSamples(withStart: span.lowerBound, end: span.upperBound)
-        return try await HKStatisticsCollectionQueryDescriptor(
-            predicate: .quantitySample(type: HKQuantityType(id), predicate: predicate),
-            options: options, anchorDate: anchor ?? span.lowerBound, intervalComponents: DateComponents(minute: 1)
-        ).result(for: store)
+        return try await noDataIsEmpty {
+            try await HKStatisticsCollectionQueryDescriptor(
+                predicate: .quantitySample(type: HKQuantityType(id), predicate: predicate),
+                options: options, anchorDate: anchor ?? span.lowerBound, intervalComponents: DateComponents(minute: 1)
+            ).result(for: store)
+        }
     }
 
-    private func buckets(_ c: HKStatisticsCollection, _ span: Range<Date>) -> [HKStatistics] {
+    private func buckets(_ c: HKStatisticsCollection?, _ span: Range<Date>) -> [HKStatistics] {
+        guard let c else { return [] }
         var out: [HKStatistics] = []
         c.enumerateStatistics(from: span.lowerBound, to: span.upperBound) { s, _ in
             if span.contains(s.startDate) { out.append(s) }
@@ -219,10 +260,12 @@ struct HealthReader: Sendable {
 
     private func quantitySamples(_ id: HKQuantityTypeIdentifier, _ day: Range<Date>) async throws -> [HKQuantitySample] {
         let predicate = HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound, options: .strictStartDate)
-        return try await HKSampleQueryDescriptor(
-            predicates: [.quantitySample(type: HKQuantityType(id), predicate: predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        ).result(for: store)
+        return try await noDataIsEmpty {
+            try await HKSampleQueryDescriptor(
+                predicates: [.quantitySample(type: HKQuantityType(id), predicate: predicate)],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            ).result(for: store)
+        } ?? []
     }
 
     /// Samples grouped by the minute they start in, in order.
@@ -237,5 +280,18 @@ struct HealthReader: Sendable {
 
     private func names(_ sources: [HKSource]?) -> [String] {
         (sources ?? []).map(\.name).sorted()
+    }
+}
+
+/// Runs a HealthKit read, answering nil for HealthKit's "no data" error,
+/// which it raises for a type the device has no source of (heart rate on a
+/// phone with no watch) instead of answering empty.
+func noDataIsEmpty<T>(_ read: () async throws -> T) async throws -> T? {
+    do {
+        return try await read()
+    } catch let error as HKError where error.code == .errorNoData {
+        return nil
+    } catch let error as NSError where error.domain == HKErrorDomain && error.code == HKError.Code.errorNoData.rawValue {
+        return nil
     }
 }

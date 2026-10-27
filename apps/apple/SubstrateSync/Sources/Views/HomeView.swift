@@ -12,23 +12,15 @@ struct HomeView: View {
 
     var body: some View {
         Form {
+            StatusSection()
+
             ForEach(Source.allCases) { source in
                 SourceSection(source: source)
             }
 
-            Section {
-                Button {
-                    Task { await model.syncNow() }
-                } label: {
-                    HStack {
-                        Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-                        if model.syncing { Spacer(); ProgressView() }
-                    }
-                }
-                .disabled(model.syncing)
-            }
-
             CoverageSection()
+
+            ActivitySection()
 
             HistorySection()
 
@@ -119,9 +111,7 @@ private struct SourceSection: View {
                 }
             }
             if let now = model.progress[source] {
-                LabeledContent("Now") {
-                    HStack { ProgressView().controlSize(.small); Text(now) }
-                }
+                ProgressRow(progress: now)
             }
             LabeledContent("Access") {
                 HStack {
@@ -340,6 +330,155 @@ private struct HistorySection: View {
             }
             if runs.count > 8 {
                 Button(all ? "Show fewer" : "Show all \(runs.count)") { all.toggle() }
+            }
+        }
+    }
+}
+
+/// What the app is doing right now, at the top of the page: the source and
+/// step a sync is on, how far it has got, and a way to stop it; when idle,
+/// the button that starts one and how the last one ended.
+private struct StatusSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Section {
+            if model.syncing {
+                let running = Source.allCases.filter { model.progress[$0] != nil }
+                if running.isEmpty {
+                    HStack { ProgressView(); Text("Starting…").foregroundStyle(.secondary) }
+                }
+                ForEach(running) { source in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(source.title, systemImage: source.symbol).font(.headline)
+                        if let p = model.progress[source] { ProgressRow(progress: p) }
+                    }
+                }
+                Button("Stop", role: .destructive) { model.cancelSync() }
+            } else {
+                Button {
+                    Task { await model.syncNow() }
+                } label: {
+                    Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                }
+                if let summary {
+                    Text(summary.text).font(.footnote).foregroundStyle(summary.failed ? .red : .secondary)
+                }
+            }
+        } header: {
+            Text(model.syncing ? "Syncing" : "Status")
+        }
+    }
+
+    /// How the last run of each source ended, in one line.
+    private var summary: (text: String, failed: Bool)? {
+        let statuses = Source.allCases.compactMap { s in model.state.status[s].map { (s, $0) } }
+        guard !statuses.isEmpty else { return nil }
+        let failed = statuses.filter { $0.1.lastError != nil }.map(\.0.title)
+        if !failed.isEmpty {
+            return ("Last sync failed for \(failed.joined(separator: ", ")). See Activity below.", true)
+        }
+        guard let last = statuses.compactMap(\.1.lastSync).max() else { return nil }
+        return ("Everything synced \(last.formatted(.relative(presentation: .named))).", false)
+    }
+}
+
+/// One source's step, with a bar and counts where the step can count.
+private struct ProgressRow: View {
+    let progress: SyncProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(progress.step).font(.callout)
+                Spacer()
+                if progress.total > 0 {
+                    Text("\(progress.done.formatted()) of \(progress.total.formatted())")
+                        .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            if let fraction = progress.fraction {
+                ProgressView(value: fraction)
+            } else {
+                ProgressView().progressViewStyle(.linear)
+            }
+        }
+    }
+}
+
+/// The latest activity: what each run read, wrote, skipped and why it
+/// failed, newest first.
+private struct ActivitySection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Section {
+            if model.activity.isEmpty {
+                Text("Nothing has run yet.").foregroundStyle(.secondary)
+            }
+            ForEach(model.activity.prefix(12)) { entry in
+                ActivityRow(entry: entry)
+            }
+            if !model.activity.isEmpty {
+                NavigationLink("All activity (\(model.activity.count))") { ActivityView() }
+            }
+        } header: {
+            Text("Activity")
+        }
+    }
+}
+
+private struct ActivityRow: View {
+    let entry: ActivityEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).foregroundStyle(color)
+                Text(entry.source?.title ?? "Sync").font(.footnote.weight(.semibold))
+                Spacer()
+                Text(entry.at, format: .dateTime.hour().minute().second())
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            Text(entry.message)
+                .font(.footnote)
+                .foregroundStyle(entry.level == .info ? Color.primary : color)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var icon: String {
+        switch entry.level {
+        case .info: "info.circle"
+        case .warning: "exclamationmark.triangle"
+        case .error: "xmark.octagon"
+        }
+    }
+
+    private var color: Color {
+        switch entry.level {
+        case .info: .secondary
+        case .warning: .orange
+        case .error: .red
+        }
+    }
+}
+
+/// The whole log, to read or to share.
+struct ActivityView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        List(model.activity) { entry in
+            ActivityRow(entry: entry)
+        }
+        .navigationTitle("Activity")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(item: Activity.shared.text, preview: SharePreview("Substrate Sync activity"))
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button("Clear", role: .destructive) { model.clearActivity() }
             }
         }
     }

@@ -118,18 +118,32 @@ actor SyncEngine {
     var onChange: (@MainActor @Sendable (LocalState) -> Void)?
     /// Called on the main actor as a source works: what it is doing now, or
     /// nil when it is done.
-    var onProgress: (@MainActor @Sendable (Source, String?) -> Void)?
+    var onProgress: (@MainActor @Sendable (Source, SyncProgress?) -> Void)?
 
     func setOnChange(_ f: @escaping @MainActor @Sendable (LocalState) -> Void) {
         onChange = f
     }
 
-    func setOnProgress(_ f: @escaping @MainActor @Sendable (Source, String?) -> Void) {
+    func setOnProgress(_ f: @escaping @MainActor @Sendable (Source, SyncProgress?) -> Void) {
         onProgress = f
     }
 
-    private func progress(_ source: Source, _ text: String?) async {
-        if let onProgress { await onProgress(source, text) }
+    private func progress(_ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0) async {
+        if let onProgress { await onProgress(source, step.map { SyncProgress(step: $0, done: done, total: total) }) }
+    }
+
+    private func log(_ source: Source?, _ message: String, _ level: ActivityEntry.Level = .info) {
+        Activity.shared.log(source, message, level: level)
+    }
+
+    /// Logs the first few failed writes with the server's own words, and
+    /// says how many more there were, so one refused row is readable and a
+    /// thousand do not bury the log.
+    private func logFailures(_ source: Source, _ what: String, _ failures: [(String, Error)]) {
+        for (name, error) in failures.prefix(5) {
+            log(source, "\(what) \(name) failed: \(error.localizedDescription)", .error)
+        }
+        if failures.count > 5 { log(source, "\(failures.count - 5) more \(what) writes failed", .error) }
     }
 
     /// A background wake-up syncs a source only when the chosen interval has
@@ -169,7 +183,8 @@ actor SyncEngine {
             var state = LocalState.load()
             var status = state.status[source] ?? SourceStatus()
             let started = Date()
-            await progress(source, "Starting…")
+            await progress(source, "Starting")
+            log(source, "Sync started")
             do {
                 switch source {
                 case .contacts: status.counts = try await syncContacts(client, &state)
@@ -183,12 +198,25 @@ actor SyncEngine {
             } catch {
                 status.lastError = error.localizedDescription
             }
+            if let error = status.lastError {
+                log(source, "Sync failed: \(error)", .error)
+            } else {
+                log(source, "Sync finished: \(status.counts ?? "")")
+            }
             state.status[source] = status
             state.record(SyncRun(source: source, started: started, finished: Date(), summary: status.lastError == nil ? status.counts : nil, error: status.lastError))
             commit(&state)
             await progress(source, nil)
             if let onChange { await onChange(state) }
         }
+    }
+
+    /// A row's name for the log: its display name or title where it has one.
+    static func label(_ props: JSON, _ id: String) -> String {
+        for key in ["displayName", "eventTitle", "organizationName", "calendarTitle"] {
+            if let v = props.objectValue(key), case let .string(name) = v { return "\"\(name)\"" }
+        }
+        return id
     }
 
     private var deviceName: String {
@@ -215,6 +243,7 @@ actor SyncEngine {
 
         state.device.contacts = contacts.count
         await progress(.contacts, "Read \(contacts.count) contacts")
+        log(.contacts, "Read \(contacts.count) contacts from the device")
         let name = await deviceName
         try await client.put(book, addressbook, ["deviceName": name])
 
@@ -227,30 +256,41 @@ actor SyncEngine {
         // never empties the repository.
         if contacts.isEmpty, !previous.isEmpty { throw SyncError.emptyScan("contacts") }
         let vanished = previous.keys.filter { current[$0] == nil }
-        await progress(.contacts, "Writing \(changed.count), removing \(vanished.count)")
+        log(.contacts, "\(changed.count) new or changed, \(contacts.count - changed.count) unchanged, \(vanished.count) gone from the device")
+        let toWrite = changed.count
+        await progress(.contacts, "Writing contacts", 0, toWrite)
 
-        let writes = await eachLimited(Array(changed)) { pair in
+        let writes = await eachLimited(Array(changed), progress: { n in await self.progress(.contacts, "Writing contacts", n, toWrite) }) { pair in
             let (id, props) = pair
             try await client.put(kind, id, props.foundation)
             let gone = Set(previous[id]?.keys ?? []).subtracting(props.keys)
             try await client.clear(kind, id, keys: gone.sorted())
         }
         var failures: [Error] = []
+        var named: [(String, Error)] = []
         for ((id, props), result) in writes {
             switch result {
             case .success: state.contacts[id] = Pushed(props)
-            case let .failure(e): failures.append(e)
+            case let .failure(e):
+                failures.append(e)
+                named.append((Self.label(props, id), e))
             }
         }
+        if !vanished.isEmpty { await progress(.contacts, "Removing contacts gone from the device", 0, vanished.count) }
         let deletes = await eachLimited(vanished) { id in try await client.delete(kind, id) }
         for (id, result) in deletes {
             switch result {
             case .success: state.contacts[id] = nil
-            case let .failure(e): failures.append(e)
+            case let .failure(e):
+                failures.append(e)
+                named.append((id, e))
             }
         }
         commit(&state)
-        if let first = failures.first { throw first }
+        logFailures(.contacts, "contact", named)
+        if let first = failures.first {
+            throw ContextError(context: "\(failures.count) of \(changed.count + vanished.count) contact writes failed, the first", underlying: first)
+        }
 
         try await client.put(book, addressbook, [
             "deviceName": name, "contactCount": contacts.count, "lastSyncedAt": Formats.utc(Date()),
@@ -285,6 +325,7 @@ actor SyncEngine {
         state.device.calendars = calendars.count
         state.device.events = occurrences.count
         await progress(.calendars, "Read \(calendars.count) calendars, \(occurrences.count) events")
+        log(.calendars, "Read \(calendars.count) calendars and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
         let name = await deviceName
         try await client.put(storeKind, eventstore, ["deviceName": name])
         var failures: [Error] = []
@@ -314,12 +355,13 @@ actor SyncEngine {
             case .success:
                 state.calendars[id] = nil
                 state.events = state.events.filter { $0.value.calendar != id }
+                log(.calendars, "Removed a calendar gone from the device, with its events")
             case let .failure(e): failures.append(e)
             }
         }
         if let first = failures.first {
             commit(&state)
-            throw first
+            throw ContextError(context: "\(failures.count) calendar writes failed, the first", underlying: first)
         }
 
         struct Occurrence: Sendable { let props: JSON; let start: Date?; let calendar: String }
@@ -332,14 +374,20 @@ actor SyncEngine {
         }
         let previous = state.events
         let changed = current.filter { previous[$0.key]?.hash != Pushed.hash($0.value.props) }
-        for ((id, o), result) in await eachLimited(Array(changed), { pair in
+        let toWrite = changed.count
+        log(.calendars, "\(changed.count) events new or changed, \(current.count - changed.count) unchanged")
+        await progress(.calendars, "Writing events", 0, toWrite)
+        var named: [(String, Error)] = []
+        for ((id, o), result) in await eachLimited(Array(changed), progress: { n in await self.progress(.calendars, "Writing events", n, toWrite) }, { pair in
             let (id, o) = pair
             try await client.put(eventKind, id, o.props.foundation)
             try await client.clear(eventKind, id, keys: Set(previous[id]?.keys ?? []).subtracting(o.props.keys).sorted())
         }) {
             switch result {
             case .success: state.events[id] = Pushed(o.props, start: o.start, calendar: o.calendar)
-            case let .failure(e): failures.append(e)
+            case let .failure(e):
+                failures.append(e)
+                named.append((Self.label(o.props, id), e))
             }
         }
         // Absent from the scan: deleted when its start is inside the window,
@@ -347,14 +395,20 @@ actor SyncEngine {
         let vanished = previous.filter { id, p in
             current[id] == nil && p.start.map(window.contains) ?? true
         }.map(\.key)
+        if !vanished.isEmpty { await progress(.calendars, "Removing events gone from the device", 0, vanished.count) }
         for (id, result) in await eachLimited(vanished, { id in try await client.delete(eventKind, id) }) {
             switch result {
             case .success: state.events[id] = nil
-            case let .failure(e): failures.append(e)
+            case let .failure(e):
+                failures.append(e)
+                named.append((id, e))
             }
         }
         commit(&state)
-        if let first = failures.first { throw first }
+        logFailures(.calendars, "event", named)
+        if let first = failures.first {
+            throw ContextError(context: "\(failures.count) of \(changed.count + vanished.count) event writes failed, the first", underlying: first)
+        }
 
         try await client.put(storeKind, eventstore, [
             "deviceName": name, "calendarCount": calendars.count, "eventCount": occurrences.count,
@@ -410,40 +464,59 @@ actor SyncEngine {
         let sessionID = UUID().uuidString
         let days = Self.healthDays(
             today: Date(), backfill: Settings.backfillDays, sent: state.healthDays, queued: state.healthQueue, calendar: calendar)
+        log(.health, days.isEmpty ? "No day to send" : "Sending \(days.count) days, \(Formats.day(days.first!, in: zone)) to \(Formats.day(days.last!, in: zone))")
         var posts = 0
         var sentDays = 0
+        var skippedDays = 0
         for (i, day) in days.enumerated() {
             try Task.checkCancellation()
-            await progress(.health, "Sending \(Formats.day(day, in: zone)), day \(i + 1) of \(days.count)")
+            let name = Formats.day(day, in: zone)
+            await progress(.health, "Reading and sending \(name)", i, days.count)
             let span = day ..< calendar.date(byAdding: .day, value: 1, to: day)!
             var accepted = 0
+            var rows = 0
+            var skipped: [String] = []
             for grouping in Grouping.allCases {
                 let delivery = grouping == .minutes
-                    ? try await reader.minutes(span, zone: zone)
-                    : try await reader.seconds(span, zone: zone)
+                    ? await reader.minutes(span, zone: zone)
+                    : await reader.seconds(span, zone: zone)
+                skipped += delivery.skipped
+                rows += delivery.metrics.map(\.rows.count).reduce(0, +) + delivery.workouts.count
                 let headers = HealthDelivery.headers(
                     grouping: grouping, key: key, account: state.healthAccount,
                     automationID: state.automation(grouping)!, sessionID: sessionID)
                 // One at a time: the door takes eight in flight across every
                 // sender, and a day's order is the order its rows replace.
                 for body in delivery.bodies() {
-                    try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers)
+                    do {
+                        try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers)
+                    } catch {
+                        throw ContextError(context: "Sending \(name) (\(grouping.rawValue))", underlying: error)
+                    }
                     posts += 1
                     accepted += 1
                 }
             }
+            for line in skipped {
+                log(.health, "\(name): could not read \(line)", .warning)
+            }
+            log(.health, "\(name): \(rows) rows in \(accepted) deliveries" + (skipped.isEmpty ? "" : ", \(skipped.count) skipped"))
             // A day HealthKit answered empty (no data yet, or no read access,
-            // which HealthKit does not tell apart) stays unsent, so it is read
-            // again by the next sync rather than marked done.
-            let name = Formats.day(day, in: zone)
-            if accepted > 0 {
+            // which HealthKit does not tell apart) stays unsent, and so does
+            // one with a part it could not read: the next sync reads it again
+            // and sends it whole.
+            if accepted > 0 && skipped.isEmpty {
                 state.healthDays.insert(name)
                 sentDays += 1
+            } else if !skipped.isEmpty {
+                skippedDays += 1
             }
             state.healthQueue.remove(name)
             commit(&state)
             if let onChange { await onChange(state) }
         }
+        await progress(.health, "Done", days.count, days.count)
         return "\(sentDays) of \(days.count) days sent · \(posts) deliveries"
+            + (skippedDays > 0 ? " · \(skippedDays) days with parts skipped, see Activity" : "")
     }
 }

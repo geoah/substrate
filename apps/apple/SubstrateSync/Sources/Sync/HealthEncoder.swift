@@ -26,6 +26,8 @@ struct HealthDelivery: Sendable {
     let grouping: Grouping
     var metrics: [HealthMetric]
     var workouts: [JSON]
+    /// What could not be read, as `name: reason`; never sent.
+    var skipped: [String] = []
 
     var isEmpty: Bool { metrics.allSatisfy { $0.rows.isEmpty } && workouts.isEmpty }
 
