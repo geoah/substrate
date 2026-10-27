@@ -40,9 +40,10 @@ final class EndToEndTests: XCTestCase {
             app.buttons["Sign In"].tap()
         }
 
-        let setUp = app.buttons["Set Up"]
+        let setUp = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Set Up'")).firstMatch
         let syncNow = app.buttons["Sync Now"]
         if setUp.waitForExistence(timeout: 30), !syncNow.exists {
+            scrollTo(setUp, in: app, up: true)
             setUp.tap()
         }
         XCTAssertTrue(syncNow.waitForExistence(timeout: 180), "set up did not finish: \(app.debugDescription)")
@@ -60,14 +61,24 @@ final class EndToEndTests: XCTestCase {
 
         scrollTo(syncNow, in: app, up: true)
         syncNow.tap()
-        // Each source writes its last run when it finishes.
-        let runs = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written' OR label CONTAINS ' deliveries'"))
-        let deadline = Date().addingTimeInterval(240)
-        while Date() < deadline, runs.count < 2 { sleep(2) }
-        let errors = app.staticTexts.matching(NSPredicate(format: "label == 'Last error'"))
+        // The status line says when the run ended, and how.
+        let ended = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Everything synced' OR label == 'The last sync did not finish'")).firstMatch
+        XCTAssertTrue(ended.waitForExistence(timeout: 240), "the sync did not end: \(app.debugDescription)")
+        XCTAssertTrue(ended.label.hasPrefix("Everything synced"), app.debugDescription)
+        // Each source writes its last run when it finishes; the list builds
+        // only the rows on screen, so the page is walked to find them.
+        var runs = Set<String>()
+        var failures = Set<String>()
+        for _ in 0 ..< 8 {
+            for label in app.staticTexts.allElementsBoundByIndex.map(\.label) {
+                if label.contains(" written") || label.contains(" deliveries") { runs.insert(label) }
+                if label.hasPrefix("Last sync of ") { failures.insert(label) }
+            }
+            app.swipeUp()
+        }
         let screen = app.debugDescription
-        XCTAssertEqual(errors.count, 0, screen)
-        XCTAssertGreaterThanOrEqual(runs.count, 2, screen)
+        XCTAssertEqual(failures, [], screen)
+        XCTAssertGreaterThanOrEqual(runs.count, 2, "\(runs)")
         print("E2E home: \(screen)")
     }
 

@@ -39,8 +39,12 @@ final class Activity: @unchecked Sendable {
     private let lock = NSLock()
     private var entries: [ActivityEntry]
     private let logger = Logger(subsystem: "dev.reamde.substrate.sync", category: "sync")
+    private var listener: (@MainActor @Sendable (ActivityEntry) -> Void)?
     /// Called on the main actor with every new entry.
-    var onEntry: (@MainActor @Sendable (ActivityEntry) -> Void)?
+    var onEntry: (@MainActor @Sendable (ActivityEntry) -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return listener }
+        set { lock.lock(); listener = newValue; lock.unlock() }
+    }
 
     private static var url: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -62,14 +66,18 @@ final class Activity: @unchecked Sendable {
     func log(_ source: Source?, _ message: String, level: ActivityEntry.Level = .info) {
         let entry = ActivityEntry(source: source, level: level, message: message)
         switch level {
-        case .info: logger.notice("\(source?.rawValue ?? "sync", privacy: .public): \(message, privacy: .public)")
-        case .warning: logger.warning("\(source?.rawValue ?? "sync", privacy: .public): \(message, privacy: .public)")
-        case .error: logger.error("\(source?.rawValue ?? "sync", privacy: .public): \(message, privacy: .public)")
+        // The message can name a contact or an event: private in the system
+        // log, which a diagnostics report carries off the phone. The in-app
+        // log keeps it, and leaves the phone only when the owner shares it.
+        case .info: logger.notice("\(source?.rawValue ?? "sync", privacy: .public): \(message, privacy: .private)")
+        case .warning: logger.warning("\(source?.rawValue ?? "sync", privacy: .public): \(message, privacy: .private)")
+        case .error: logger.error("\(source?.rawValue ?? "sync", privacy: .public): \(message, privacy: .private)")
         }
         lock.lock()
         entries.append(entry)
         if entries.count > Self.limit { entries.removeFirst(entries.count - Self.limit) }
         let snapshot = entries
+        let onEntry = listener
         lock.unlock()
         if let data = try? JSONEncoder().encode(snapshot) {
             try? data.write(to: Self.url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])

@@ -162,16 +162,17 @@ final class HealthNoDataTests: XCTestCase {
 }
 
 final class HealthScheduleTests: XCTestCase {
-    func testFirstSyncBackfillsThenResendsTheLastTwoDays() throws {
+    func testFirstSyncSendsTheRangeThenResendsTheLastThreeDays() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Athens")!
         let today = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-20T10:00:00Z"))
+        let start = try XCTUnwrap(calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: today)))
         let names = { (days: [Date]) in days.map { Formats.day($0, in: calendar.timeZone) } }
 
-        let first = names(SyncEngine.healthDays(today: today, backfill: 7, sent: [], calendar: calendar))
+        let first = names(SyncEngine.healthDays(today: today, from: start, sent: [], calendar: calendar))
         XCTAssertEqual(first, ["2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20"])
 
-        let later = names(SyncEngine.healthDays(today: today, backfill: 7, sent: Set(first).subtracting(["2026-10-16"]), calendar: calendar))
+        let later = names(SyncEngine.healthDays(today: today, from: start, sent: Set(first).subtracting(["2026-10-16"]), calendar: calendar))
         XCTAssertEqual(later, ["2026-10-16", "2026-10-18", "2026-10-19", "2026-10-20"])
     }
 
@@ -179,13 +180,72 @@ final class HealthScheduleTests: XCTestCase {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Athens")!
         let today = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-20T10:00:00Z"))
+        let start = try XCTUnwrap(calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: today)))
         let sent: Set<String> = ["2026-10-18", "2026-10-17", "2026-10-16", "2026-10-15", "2026-10-14"]
         let days = SyncEngine.healthDays(
-            today: today, backfill: 7, sent: sent, queued: ["2024-03-02", "2024-03-01", "2026-10-19", "2026-10-25"],
+            today: today, from: start, sent: sent, queued: ["2024-03-02", "2024-03-01", "2026-10-19", "2026-10-25"],
             calendar: calendar
         ).map { Formats.day($0, in: calendar.timeZone) }
         // A queued day already due is not sent twice, and one in the future never.
         XCTAssertEqual(days, ["2024-03-01", "2024-03-02", "2026-10-18", "2026-10-19", "2026-10-20"])
+    }
+
+    /// Over a long range only the days that hold data are read, and the last
+    /// three days always are, data or not; everything, with no start, begins
+    /// at the first day that holds data.
+    func testALongRangeReadsOnlyDaysWithData() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Athens")!
+        let today = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-20T10:00:00Z"))
+        let available: Set<String> = ["2023-03-01", "2024-06-15", "2026-10-10"]
+        let names = { (days: [Date]) in days.map { Formats.day($0, in: calendar.timeZone) } }
+
+        let year = names(SyncEngine.healthDays(
+            today: today, from: Settings.History.year1.start(today: today, calendar: calendar),
+            sent: [], available: available, calendar: calendar))
+        XCTAssertEqual(year, ["2026-10-10", "2026-10-18", "2026-10-19", "2026-10-20"])
+
+        let all = names(SyncEngine.healthDays(today: today, from: nil, sent: ["2024-06-15"], available: available, calendar: calendar))
+        XCTAssertEqual(all, ["2023-03-01", "2026-10-10", "2026-10-18", "2026-10-19", "2026-10-20"])
+    }
+
+    func testHistoryRangesStartWhereTheyNameAndEverythingHasNoStart() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let today = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-20T10:00:00Z"))
+        let day = { (h: Settings.History) in h.start(today: today, calendar: calendar).map { Formats.day($0, in: calendar.timeZone) } }
+        XCTAssertEqual(day(.days14), "2026-10-07")
+        XCTAssertEqual(day(.days30), "2026-09-21")
+        XCTAssertEqual(day(.months3), "2026-07-20")
+        XCTAssertEqual(day(.months6), "2026-04-20")
+        XCTAssertEqual(day(.year1), "2025-10-20")
+        XCTAssertNil(day(.all))
+    }
+
+    /// A stop is not a failure, and a refused token is the end of the
+    /// session, however deep in a context error either arrives.
+    func testStopsAndRefusedTokensAreToldApart() {
+        XCTAssertTrue(isCancellation(CancellationError()))
+        XCTAssertTrue(isCancellation(URLError(.cancelled)))
+        XCTAssertTrue(isCancellation(ContextError(context: "Sending", underlying: URLError(.cancelled))))
+        XCTAssertFalse(isCancellation(URLError(.timedOut)))
+        let refused = ServerError(status: 401, data: Data(#"{"error":{"message":"invalid token"}}"#.utf8))
+        XCTAssertTrue(isSignedOut(refused))
+        XCTAssertTrue(isSignedOut(ContextError(context: "Sending", underlying: refused)))
+        XCTAssertFalse(isSignedOut(ServerError(status: 403, data: Data())))
+        XCTAssertEqual(refused.text, "invalid token")
+    }
+
+    /// A workout paused for a quarter of an hour lasts what HealthKit says,
+    /// not its end minus its start.
+    func testAPausedWorkoutKeepsHealthKitsDuration() throws {
+        let start = Date(timeIntervalSince1970: 1_791_331_200)
+        var w = WorkoutSummary(id: UUID(), name: "Outdoor Run", start: start, end: start.addingTimeInterval(3600), isIndoor: false)
+        w.duration = 2700
+        let json = w.json(HealthRows(zone: TimeZone(identifier: "UTC")!))
+        XCTAssertEqual(json.objectValue("duration"), .double(2700))
+        w.duration = nil
+        XCTAssertEqual(w.json(HealthRows(zone: TimeZone(identifier: "UTC")!)).objectValue("duration"), .double(3600))
     }
 
     func testCoverageBucketsCountSyncedAgainstAvailable() {

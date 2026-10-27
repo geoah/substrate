@@ -104,9 +104,16 @@ extension HealthReader {
     /// heart rate or sleep: one daily statistics query per type, so a decade
     /// is a few thousand buckets and not a scan of every sample.
     func availableDays(years: Int, calendar: Calendar) async throws -> Set<String> {
+        let floor = calendar.date(byAdding: .year, value: -years, to: calendar.startOfDay(for: Date()))!
+        return try await availableDays(since: floor, calendar: calendar)
+    }
+
+    /// The days from `since` (everything HealthKit keeps, when nil) that
+    /// hold steps, heart rate or sleep.
+    func availableDays(since: Date?, calendar: Calendar) async throws -> Set<String> {
         let now = Date()
-        let floor = calendar.date(byAdding: .year, value: -years, to: calendar.startOfDay(for: now))!
-        let start = max(floor, calendar.startOfDay(for: store.earliestPermittedSampleDate()))
+        let earliest = calendar.startOfDay(for: store.earliestPermittedSampleDate())
+        let start = since.map { max(calendar.startOfDay(for: $0), earliest) } ?? earliest
         let predicate = HKQuery.predicateForSamples(withStart: start, end: now)
         var days: Set<String> = []
         for (id, options) in [(HKQuantityTypeIdentifier.stepCount, HKStatisticsOptions.cumulativeSum),

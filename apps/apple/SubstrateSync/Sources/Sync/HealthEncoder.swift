@@ -207,6 +207,9 @@ struct WorkoutSummary: Sendable {
     let start: Date
     let end: Date
     let isIndoor: Bool
+    /// HealthKit's own duration, which leaves out paused time; nil reads the
+    /// span from start to end.
+    var duration: TimeInterval?
     var activeKcal: Double?
     var distanceKm: Double?
     var heartRate: (min: Double, avg: Double, max: Double)?
@@ -223,7 +226,7 @@ struct WorkoutSummary: Sendable {
         f.set("name", name)
         f.set("start", r.date(start))
         f.set("end", r.date(end))
-        f.set("duration", end.timeIntervalSince(start).rounded(.down))
+        f.set("duration", (duration ?? end.timeIntervalSince(start)).rounded(.down))
         f.set("isIndoor", isIndoor)
         f.set("location", isIndoor ? "Indoor" : "Outdoor")
         if let activeKcal { f.set("activeEnergyBurned", qty(activeKcal, "kcal")) }

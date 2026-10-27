@@ -13,11 +13,13 @@ enum Background {
     /// At launch, before the app finishes launching: the scheduler refuses a
     /// handler registered later.
     static func register() {
+        // A refresh task has seconds: the short budget. A processing task
+        // runs on power and the network for minutes: the whole sync.
         BGTaskScheduler.shared.register(forTaskWithIdentifier: refresh, using: nil) { task in
-            run(task)
+            run(task, budget: .background)
         }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: processing, using: nil) { task in
-            run(task)
+            run(task, budget: .full)
         }
     }
 
@@ -37,7 +39,7 @@ enum Background {
         try? BGTaskScheduler.shared.submit(processingRequest)
     }
 
-    private static func run(_ task: BGTask) {
+    private static func run(_ task: BGTask, budget: RunBudget) {
         schedule()
         let done = Once()
         // On expiry the running sync is stopped where it can stop cleanly, and
@@ -47,7 +49,7 @@ enum Background {
             done.run { task.setTaskCompleted(success: false) }
         }
         Task {
-            await SyncEngine.shared.syncIfDue()
+            await SyncEngine.shared.syncIfDue(budget: budget)
             done.run { task.setTaskCompleted(success: true) }
         }
     }
@@ -68,10 +70,25 @@ enum Background {
                     completion()
                     return
                 }
-                // HealthKit wants the answer promptly and backs off an app that
-                // keeps it waiting; the sync goes on without it.
-                completion()
-                Task { await SyncEngine.shared.syncIfDue([.health]) }
+                // HealthKit's wake is the work: the last days are sent before it
+                // is told the notification is handled, inside a background
+                // task so the app is not suspended halfway, with the short
+                // budget so it ends well inside the time either allows.
+                Task { @MainActor in
+                    let done = Once()
+                    let ended = Once()
+                    var id = UIBackgroundTaskIdentifier.invalid
+                    let finish = {
+                        done.run { completion() }
+                        ended.run { UIApplication.shared.endBackgroundTask(id) }
+                    }
+                    id = UIApplication.shared.beginBackgroundTask(withName: "Substrate Sync Health") {
+                        Task { await SyncEngine.shared.cancel() }
+                        finish()
+                    }
+                    await SyncEngine.shared.syncIfDue([.health], budget: .background)
+                    finish()
+                }
             }
             store.execute(query)
         }

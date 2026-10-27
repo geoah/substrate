@@ -28,6 +28,32 @@ struct SubstrateSyncApp: App {
     }
 }
 
+/// The server refused the token: what happened, and the one way out.
+struct SessionExpiredView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Form {
+            Section {
+                ErrorBox(
+                    title: "Signed out by the server",
+                    message: "\(model.session?.server.absoluteString ?? "The server") no longer accepts this phone's sign-in. The token was revoked, or the repository was reset. Sign in again to carry on; what this phone pushed is checked against the server and sent again where it is missing.")
+            }
+            Section {
+                Button {
+                    model.signOut()
+                } label: {
+                    WideLabel(title: "Sign In Again", systemImage: "person.badge.key")
+                }
+                .primaryAction()
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+        }
+        .navigationTitle("Substrate Sync")
+    }
+}
+
 /// Signed out, set up, or syncing: one screen at a time, the same layout on
 /// iPhone and iPad.
 struct RootView: View {
@@ -38,6 +64,8 @@ struct RootView: View {
             Group {
                 if model.session == nil {
                     SignInView()
+                } else if model.sessionExpired {
+                    SessionExpiredView()
                 } else if !model.setupChecked || !model.setupComplete {
                     SetupView()
                 } else {

@@ -1,13 +1,12 @@
 import Charts
 import SwiftUI
 
-/// The one page: each source's state and progress, what the device holds
-/// against what was synced over time, the recent runs, and the settings.
+/// The one page: what is running, each source's state, what the device holds
+/// against what was synced, what the runs did, and the settings.
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
-    @AppStorage(Settings.backfillKey) private var backfill = 14
+    @AppStorage(Settings.historyKey) private var history = Settings.history.rawValue
     @AppStorage(Settings.frequencyKey) private var frequency = Settings.Frequency.hourly.rawValue
-    @State private var signOutProblem: String?
     @State private var sampleNote: String?
 
     var body: some View {
@@ -25,20 +24,21 @@ struct HomeView: View {
             HistorySection()
 
             Section {
+                Picker("Health history", selection: $history) {
+                    ForEach(Settings.History.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .onChange(of: history) { _, _ in Task { await model.loadCoverage() } }
                 Picker("Sync in the background", selection: $frequency) {
                     ForEach(Settings.Frequency.allCases) { Text($0.title).tag($0.rawValue) }
                 }
                 .onChange(of: frequency) { _, raw in
                     if let f = Settings.Frequency(rawValue: raw) { model.setFrequency(f) }
                 }
-                Picker("Health backfill", selection: $backfill) {
-                    ForEach(Settings.backfillChoices, id: \.self) { Text("\($0) days").tag($0) }
-                }
                 LabeledContent("Calendar window", value: "\(Settings.windowBack) days back, \(Settings.windowAhead) ahead")
             } header: {
                 Text("Settings")
             } footer: {
-                Text("iOS decides when a background sync runs; the frequency is the soonest it may. Every sync sends yesterday and today; older days go out through the backfill or from Coverage.")
+                Text("Health history is how far back Health is sent. Every sync sends the last three days again; older days in the range go once, and only days that hold data are read. iOS decides when a background sync runs; the frequency is the soonest it may.")
             }
 
             if let session = model.session {
@@ -46,10 +46,17 @@ struct HomeView: View {
                     LabeledContent("Repository", value: session.repository)
                     LabeledContent("Server", value: session.server.absoluteString)
                     LabeledContent("Health account", value: model.state.healthAccount)
-                    Button("Sign Out", role: .destructive) {
-                        Task { signOutProblem = await model.signOut() }
-                    }
                 }
+                Section {
+                    Button(role: .destructive) {
+                        model.signOut()
+                    } label: {
+                        WideLabel(title: "Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                    .secondaryAction()
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
 
             if SampleData.available {
@@ -64,6 +71,7 @@ struct HomeView: View {
                             await model.loadCoverage()
                         }
                     }
+                    .buttonStyle(.bordered)
                     if let sampleNote { Text(sampleNote).font(.footnote).foregroundStyle(.secondary) }
                 } header: {
                     Text("Debug")
@@ -79,10 +87,88 @@ struct HomeView: View {
         .navigationTitle("Substrate Sync")
         .refreshable { await model.syncNow() }
         .task { await model.loadCoverage() }
-        .alert("Signed out", isPresented: Binding(get: { signOutProblem != nil }, set: { if !$0 { signOutProblem = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(signOutProblem ?? "")
+    }
+}
+
+/// What the app is doing right now, at the top of the page: the source and
+/// step a sync is on, how far it has got, and a way to stop it; when idle,
+/// the button that starts one and how the last one ended.
+private struct StatusSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Section {
+            if model.syncing {
+                let running = Source.allCases.filter { model.progress[$0] != nil }
+                if running.isEmpty {
+                    HStack(spacing: 10) { ProgressView(); Text("Starting…").foregroundStyle(.secondary) }
+                }
+                ForEach(running) { source in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(source.title, systemImage: source.symbol).font(.headline)
+                        if let p = model.progress[source] { ProgressRow(progress: p) }
+                    }
+                }
+                Button(role: .destructive) {
+                    model.cancelSync()
+                } label: {
+                    WideLabel(title: "Stop", systemImage: "stop.fill")
+                }
+                .secondaryAction()
+            } else {
+                Button {
+                    Task { await model.syncNow() }
+                } label: {
+                    WideLabel(title: "Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .primaryAction()
+                if let summary {
+                    if summary.failed {
+                        ErrorBox(title: "The last sync did not finish", message: summary.text)
+                    } else {
+                        Label(summary.text, systemImage: "checkmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.green)
+                    }
+                }
+            }
+        } header: {
+            Text(model.syncing ? "Syncing" : "Status")
+        }
+    }
+
+    /// How the last run of each source ended, in one line.
+    private var summary: (text: String, failed: Bool)? {
+        let statuses = Source.allCases.filter(Settings.enabled).compactMap { s in model.state.status[s].map { (s, $0) } }
+        guard !statuses.isEmpty else { return nil }
+        let failed = statuses.filter { $0.1.lastError != nil }.map(\.0.title)
+        if !failed.isEmpty {
+            return ("\(failed.joined(separator: ", ")): see the error under each, and Activity below.", true)
+        }
+        guard let last = statuses.compactMap(\.1.lastSync).max() else { return nil }
+        return ("Everything synced \(last.formatted(.relative(presentation: .named))).", false)
+    }
+}
+
+/// One source's step, with a bar and counts where the step can count.
+private struct ProgressRow: View {
+    let progress: SyncProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(progress.step).font(.callout)
+                Spacer()
+                if progress.total > 0 {
+                    Text("\(progress.done.formatted()) of \(progress.total.formatted())")
+                        .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            if let fraction = progress.fraction {
+                ProgressView(value: fraction)
+            } else {
+                ProgressView().progressViewStyle(.linear)
+            }
         }
     }
 }
@@ -114,10 +200,12 @@ private struct SourceSection: View {
                 ProgressRow(progress: now)
             }
             LabeledContent("Access") {
-                HStack {
-                    Text(model.access[source] ?? "…")
+                HStack(spacing: 8) {
+                    Text(model.access[source] ?? "…").foregroundStyle(.secondary)
                     if model.access[source] == "Not asked yet" {
-                        Button("Ask") { Task { await model.requestAccess(source) } }.buttonStyle(.borderless)
+                        Button("Ask") { Task { await model.requestAccess(source) } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                     }
                 }
             }
@@ -132,10 +220,7 @@ private struct SourceSection: View {
                 LabeledContent("Last run", value: counts)
             }
             if let error = status.lastError {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Last error").font(.footnote).foregroundStyle(.secondary)
-                    Text(error).font(.footnote).foregroundStyle(.red).textSelection(.enabled)
-                }
+                ErrorBox(title: "Last sync of \(source.title) failed", message: error)
             }
         }
         .onAppear { enabled = Settings.enabled(source) }
@@ -146,8 +231,8 @@ private struct SourceSection: View {
         let state = model.state
         switch source {
         case .health:
-            guard let available = model.healthAvailable else { return nil }
-            return (available.intersection(state.healthDays).count, available.count, "days with data")
+            guard let inRange = model.healthInRange else { return nil }
+            return (inRange.intersection(state.healthDays).count, inRange.count, "days with data in your history")
         case .contacts:
             guard let total = state.device.contacts else { return nil }
             return (state.contacts.count, total, "contacts")
@@ -165,15 +250,18 @@ private struct SourceSection: View {
     }
 }
 
-/// What the device holds against what was synced, week by week, month by
-/// month or year by year, and the gaps one tap queues.
+/// What the device holds against what was synced, inside the range synced:
+/// a summary with one action, a chart of the latest periods, the few most
+/// recent, and every period on a page of its own.
 private struct CoverageSection: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("coverage.source") private var sourceRaw = Source.health.rawValue
     @AppStorage("coverage.granularity") private var granularityRaw = Granularity.month.rawValue
+    @AppStorage(Settings.historyKey) private var history = Settings.history.rawValue
 
     private var source: Source { Source(rawValue: sourceRaw) == .calendars ? .calendars : .health }
     private var granularity: Granularity { Granularity(rawValue: granularityRaw) ?? .month }
+    private var unit: String { source == .health ? "days" : "events" }
 
     var body: some View {
         Section {
@@ -182,25 +270,33 @@ private struct CoverageSection: View {
                 Text("Calendars").tag(Source.calendars.rawValue)
             }
             .pickerStyle(.segmented)
-            Picker("Group by", selection: $granularityRaw) {
-                ForEach(Granularity.allCases) { Text($0.title).tag($0.rawValue) }
-            }
-            .pickerStyle(.segmented)
 
             let buckets = self.buckets
             if model.coverageLoading, buckets.isEmpty {
-                HStack { ProgressView(); Text("Reading what the device holds…").foregroundStyle(.secondary) }
+                HStack(spacing: 10) { ProgressView(); Text("Reading what the device holds…").foregroundStyle(.secondary) }
             } else if buckets.isEmpty {
                 Text(emptyText).font(.callout).foregroundStyle(.secondary)
             } else {
                 summary(buckets)
+                Picker("Group by", selection: $granularityRaw) {
+                    ForEach(Granularity.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
                 chart(buckets)
-                ForEach(buckets.reversed()) { bucket in
+                ForEach(buckets.suffix(4).reversed()) { bucket in
                     BucketRow(bucket: bucket, unit: unit, canSend: source == .health)
                 }
+                if buckets.count > 4 {
+                    NavigationLink("All \(buckets.count) \(granularity.title.lowercased())") {
+                        CoverageListView(buckets: buckets, unit: unit, canSend: source == .health)
+                    }
+                }
+            }
+            if source == .health, let older = model.healthOutsideRange, !older.isEmpty {
+                Text(olderText(older)).font(.footnote).foregroundStyle(.secondary)
             }
             if let error = model.coverageError {
-                Text(error).font(.footnote).foregroundStyle(.red)
+                ErrorBox(title: "Could not read what the device holds", message: error)
             }
         } header: {
             HStack {
@@ -208,18 +304,12 @@ private struct CoverageSection: View {
                 Spacer()
                 if model.coverageLoading { ProgressView().controlSize(.mini) }
             }
-        } footer: {
-            Text(source == .health
-                ? "A day is available when Health holds steps, heart rate or sleep for it, looking back \(AppModel.coverageYears) years; it is synced once both of its deliveries were accepted."
-                : "Occurrences in the calendar window on this device, and how many of them were pushed.")
         }
     }
 
-    private var unit: String { source == .health ? "days" : "events" }
-
     private var emptyText: String {
         switch source {
-        case .health: model.healthAvailable == nil ? "Allow Health access to see what the device holds." : "Health holds no steps, heart rate or sleep here."
+        case .health: model.healthAvailable == nil ? "Allow Health access to see what the device holds." : "Health holds no steps, heart rate or sleep in your history range."
         case .calendars: model.eventsAvailable == nil ? "Allow Calendars access to see what the device holds." : "No events in the window."
         default: ""
         }
@@ -230,7 +320,7 @@ private struct CoverageSection: View {
         calendar.timeZone = .current
         switch source {
         case .health:
-            guard let available = model.healthAvailable else { return [] }
+            guard let available = model.healthInRange else { return [] }
             return Coverage.days(available: available, synced: model.state.healthDays, by: granularity, calendar: calendar)
         default:
             guard let available = model.eventsAvailable else { return [] }
@@ -239,26 +329,38 @@ private struct CoverageSection: View {
         }
     }
 
+    private func olderText(_ older: Set<String>) -> String {
+        let first = older.min() ?? ""
+        return "The phone also holds \(older.count.formatted()) days of Health data from before your history range, back to \(first). Choose a longer Health history in Settings to sync them."
+    }
+
     @ViewBuilder
     private func summary(_ buckets: [CoverageBucket]) -> some View {
         let available = buckets.map(\.available).reduce(0, +)
         let synced = buckets.map(\.synced).reduce(0, +)
         let missing = buckets.flatMap(\.missing)
-        VStack(alignment: .leading, spacing: 6) {
-            LabeledContent("Synced", value: "\(synced.formatted()) of \(available.formatted()) \(unit)")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("\(synced.formatted()) of \(available.formatted()) \(unit) synced").font(.callout.weight(.medium))
+                Spacer()
+                StatusBadge(text: synced >= available ? "Complete" : "\(Int((Double(synced) / Double(max(available, 1)) * 100).rounded()))%",
+                            color: synced >= available ? .green : .orange)
+            }
             ProgressView(value: Double(synced), total: Double(max(available, 1)))
             if source == .health, !missing.isEmpty {
-                Button("Send all \(missing.count.formatted()) missing days") {
+                Button {
                     Task { await model.send(days: missing) }
+                } label: {
+                    WideLabel(title: "Send the \(missing.count.formatted()) missing days", systemImage: "arrow.up.circle")
                 }
+                .buttonStyle(.bordered)
                 .disabled(model.syncing)
             }
         }
     }
 
     private func chart(_ buckets: [CoverageBucket]) -> some View {
-        // The newest stretches, enough to read on a phone.
-        let shown = Array(buckets.suffix(granularity == .week ? 26 : granularity == .month ? 24 : 15))
+        let shown = Array(buckets.suffix(granularity == .week ? 12 : granularity == .month ? 12 : 10))
         return Chart {
             ForEach(shown) { b in
                 BarMark(x: .value("Period", b.start, unit: granularity.component), y: .value(unit, b.synced))
@@ -269,8 +371,29 @@ private struct CoverageSection: View {
         }
         .chartForegroundStyleScale(["Synced": Color.green, "Not synced": Color.gray.opacity(0.4)])
         .chartLegend(position: .bottom)
-        .frame(height: 180)
+        .frame(height: 160)
         .padding(.vertical, 4)
+    }
+}
+
+/// Every period, newest first, a section per year.
+private struct CoverageListView: View {
+    let buckets: [CoverageBucket]
+    let unit: String
+    let canSend: Bool
+
+    var body: some View {
+        let years = Dictionary(grouping: buckets) { Calendar.current.component(.year, from: $0.start) }
+        List {
+            ForEach(years.keys.sorted(by: >), id: \.self) { year in
+                Section(String(year)) {
+                    ForEach(years[year]!.sorted { $0.start > $1.start }) { bucket in
+                        BucketRow(bucket: bucket, unit: unit, canSend: canSend)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Coverage")
     }
 }
 
@@ -294,7 +417,8 @@ private struct BucketRow: View {
                     Task { await model.send(days: bucket.missing) }
                 }
                 .font(.footnote)
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(model.syncing)
             }
         }
@@ -304,104 +428,42 @@ private struct BucketRow: View {
 /// The recent runs, newest first.
 private struct HistorySection: View {
     @EnvironmentObject private var model: AppModel
-    @State private var all = false
 
     var body: some View {
         let runs = model.state.runs
-        Section("History") {
+        Section("Recent runs") {
             if runs.isEmpty {
                 Text("No sync has run yet.").foregroundStyle(.secondary)
             }
-            ForEach(all ? runs : Array(runs.prefix(8))) { run in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Label(run.source.title, systemImage: run.error == nil ? run.source.symbol : "exclamationmark.triangle.fill")
-                            .foregroundStyle(run.error == nil ? Color.primary : Color.red)
-                        Spacer()
-                        Text(run.finished, format: .dateTime.day().month().hour().minute())
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    Text(run.error ?? run.summary ?? "")
-                        .font(.footnote)
-                        .foregroundStyle(run.error == nil ? Color.secondary : Color.red)
-                    Text("Took \(Duration.seconds(run.finished.timeIntervalSince(run.started)).formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)))")
-                        .font(.caption).foregroundStyle(.tertiary)
-                }
+            ForEach(Array(runs.prefix(5))) { run in
+                RunRow(run: run)
             }
-            if runs.count > 8 {
-                Button(all ? "Show fewer" : "Show all \(runs.count)") { all.toggle() }
+            if runs.count > 5 {
+                NavigationLink("All \(runs.count) runs") {
+                    List(runs) { RunRow(run: $0) }.navigationTitle("Recent runs")
+                }
             }
         }
     }
 }
 
-/// What the app is doing right now, at the top of the page: the source and
-/// step a sync is on, how far it has got, and a way to stop it; when idle,
-/// the button that starts one and how the last one ended.
-private struct StatusSection: View {
-    @EnvironmentObject private var model: AppModel
+private struct RunRow: View {
+    let run: SyncRun
 
     var body: some View {
-        Section {
-            if model.syncing {
-                let running = Source.allCases.filter { model.progress[$0] != nil }
-                if running.isEmpty {
-                    HStack { ProgressView(); Text("Starting…").foregroundStyle(.secondary) }
-                }
-                ForEach(running) { source in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label(source.title, systemImage: source.symbol).font(.headline)
-                        if let p = model.progress[source] { ProgressRow(progress: p) }
-                    }
-                }
-                Button("Stop", role: .destructive) { model.cancelSync() }
-            } else {
-                Button {
-                    Task { await model.syncNow() }
-                } label: {
-                    Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-                }
-                if let summary {
-                    Text(summary.text).font(.footnote).foregroundStyle(summary.failed ? .red : .secondary)
-                }
-            }
-        } header: {
-            Text(model.syncing ? "Syncing" : "Status")
-        }
-    }
-
-    /// How the last run of each source ended, in one line.
-    private var summary: (text: String, failed: Bool)? {
-        let statuses = Source.allCases.compactMap { s in model.state.status[s].map { (s, $0) } }
-        guard !statuses.isEmpty else { return nil }
-        let failed = statuses.filter { $0.1.lastError != nil }.map(\.0.title)
-        if !failed.isEmpty {
-            return ("Last sync failed for \(failed.joined(separator: ", ")). See Activity below.", true)
-        }
-        guard let last = statuses.compactMap(\.1.lastSync).max() else { return nil }
-        return ("Everything synced \(last.formatted(.relative(presentation: .named))).", false)
-    }
-}
-
-/// One source's step, with a bar and counts where the step can count.
-private struct ProgressRow: View {
-    let progress: SyncProgress
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(progress.step).font(.callout)
+                Label(run.source.title, systemImage: run.error == nil ? run.source.symbol : "exclamationmark.triangle.fill")
+                    .foregroundStyle(run.error == nil ? Color.primary : Color.red)
                 Spacer()
-                if progress.total > 0 {
-                    Text("\(progress.done.formatted()) of \(progress.total.formatted())")
-                        .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
-                }
+                Text(run.finished, format: .dateTime.day().month().hour().minute())
+                    .font(.footnote).foregroundStyle(.secondary)
             }
-            if let fraction = progress.fraction {
-                ProgressView(value: fraction)
-            } else {
-                ProgressView().progressViewStyle(.linear)
-            }
+            Text(run.error ?? run.summary ?? "")
+                .font(.footnote)
+                .foregroundStyle(run.error == nil ? Color.secondary : Color.red)
+            Text("Took \(Duration.seconds(run.finished.timeIntervalSince(run.started)).formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)))")
+                .font(.caption).foregroundStyle(.tertiary)
         }
     }
 }
@@ -416,7 +478,7 @@ private struct ActivitySection: View {
             if model.activity.isEmpty {
                 Text("Nothing has run yet.").foregroundStyle(.secondary)
             }
-            ForEach(model.activity.prefix(12)) { entry in
+            ForEach(model.activity.prefix(8)) { entry in
                 ActivityRow(entry: entry)
             }
             if !model.activity.isEmpty {

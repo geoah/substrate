@@ -24,10 +24,6 @@ struct SignInView: View {
                     .autocorrectionDisabled()
                     .onSubmit(check)
                     .onChange(of: address) { _, _ in server = nil }
-                if server == nil {
-                    Button("Continue", action: check)
-                        .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
             } header: {
                 Text("Server")
             } footer: {
@@ -63,18 +59,28 @@ struct SignInView: View {
                 }
                 Section {
                     Button(action: signIn) {
-                        HStack {
-                            Text("Sign In")
-                            if busy { Spacer(); ProgressView() }
-                        }
+                        WideLabel(title: "Sign In", systemImage: "person.badge.key", busy: busy)
                     }
+                    .primaryAction()
                     .disabled(busy || repository.isEmpty || password.isEmpty || (totpRequired && code.isEmpty))
                 }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+            } else {
+                Section {
+                    Button(action: check) {
+                        WideLabel(title: "Continue", systemImage: "arrow.right", busy: busy)
+                    }
+                    .primaryAction()
+                    .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
 
             if let problem {
-                Section("The server said") {
-                    Text(problem).foregroundStyle(.red).textSelection(.enabled)
+                Section {
+                    ErrorBox(title: "Could not sign in", message: problem)
                 }
             }
 

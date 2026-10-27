@@ -10,6 +10,9 @@ struct Session: Codable, Equatable, Sendable {
     var repository: String
     var secret: String
     var tokenID: String
+
+    /// Which repository on which server: what the local state is bound to.
+    var identity: String { server.absoluteString + "|" + repository }
 }
 
 enum Keychain {
@@ -42,6 +45,30 @@ enum Keychain {
             kSecValueData as String: data,
         ]
         SecItemAdd(item as CFDictionary, nil)
+    }
+
+    enum Read {
+        case found(Data)
+        case missing
+        case failed(OSStatus)
+    }
+
+    /// One item, saying whether it is absent or could not be read.
+    static func read(account: String) -> Read {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess: return (item as? Data).map(Read.found) ?? .failed(status)
+        case errSecItemNotFound: return .missing
+        default: return .failed(status)
+        }
     }
 
     /// A plain string item of this app's, beside the session.

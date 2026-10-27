@@ -166,7 +166,14 @@ go test -count=1 -run TestSubstrateSync ./internal/providertest/
 
 **Signing in** checks the address's discovery document, asks for a code only
 when `registration.totpRequired` says so, and keeps the token's secret, its
-id and the repository in the Keychain. Sign Out revokes the token.
+id and the repository in the Keychain. Sign Out forgets them on the phone at
+once and revokes the token in the background, so it works with the server
+unreachable or the token already refused. A token the server refuses (the
+repository was wiped, or the token revoked) stops every sync and shows one
+screen whose button signs in again. What the phone remembers is bound to the
+repository it was pushed to: signing in to another one, or finding the
+contacts' address book, the calendar store or the Health account gone from
+the server, sends everything again.
 
 **Set up** lists what the repository lacks and does it with one button:
 installs (or upgrades to version 2) `providers.substrate.reamde.dev/apple`
@@ -179,21 +186,27 @@ refusal is shown in the server's own words.
 
 **Health** goes as two deliveries per local day, oldest day first: every
 metric at one row per minute (`automation-aggregation: minutes`), and the
-sleep segments and workouts (`seconds`). The first sync sends the backfill
-(14 days unless Settings says 7, 30 or 90); each later one sends yesterday,
-today and any day not yet accepted. A delivery replaces a metric's rows
-across its span, so a day is always sent whole, and a day larger than 4 MiB
-is split by metric.
+sleep segments and workouts (`seconds`). The first sync sends the history
+Settings → Health history names (14 days unless it says 30 days, 3 or 6
+months, a year, or everything the phone holds); each later one sends the last
+three days again and any day not yet accepted. A day counts as sent only once
+the server has filed it (its `applehealth/export/<fire id>` receipt); one the
+server parked stays queued and is sent again. Days go seven at a time, and a
+range longer than a month first asks HealthKit which days hold data, so years
+of history are not read one empty day at a time. A background run sends only
+the last three days. A delivery replaces a metric's rows across its span, so
+a day is always sent whole, and a day larger than 4 MiB is split by metric.
 
 **Home is one page of statistics and settings.** Each source shows its
 switch, access, how much of what the device holds has been synced (Health:
 days with steps, heart rate or sleep over the last ten years; Contacts: every
 contact; Calendars: the occurrences in the window), what it is doing now,
-its last sync and its last error. Coverage charts synced against available by
-week, month or year, lists every stretch with its progress, and for Health
-queues a stretch's missing days (or all of them) for the next sync, so a
-history older than the backfill goes out on request. History lists the last
-sixty runs with what each wrote and how long it took.
+its last sync and its last error. Coverage counts the days inside the chosen
+history, charts synced against available for the last twelve months, shows
+the four most recent, and keeps every month in a list of its own, by year;
+days older than the history are counted separately and go out from there on
+request. History shows the last five runs with what each wrote and how long
+it took, and keeps sixty.
 
 **In the background** a refresh task syncs when the system allows, and
 HealthKit's observer queries (heart rate, steps, sleep, workouts) wake the

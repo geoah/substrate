@@ -44,6 +44,9 @@ final class AppModel: ObservableObject {
     /// A key someone else set on the trigger, waiting on the owner's choice.
     @Published var foreignKey = false
     @Published private(set) var syncing = false
+    /// The server refused the token (it was revoked, or the repository was
+    /// reset): nothing works until the owner signs in again.
+    @Published var sessionExpired = false
     @Published private(set) var access: [Source: String] = [:]
     /// What each running source is doing now.
     @Published private(set) var progress: [Source: SyncProgress] = [:]
@@ -59,6 +62,21 @@ final class AppModel: ObservableObject {
     /// How far back the coverage scan looks for Health data.
     static let coverageYears = 10
 
+    /// The Health days with data inside the history range synced, and those
+    /// before it, from the last coverage scan.
+    var healthInRange: Set<String>? { healthSplit?.inRange }
+    var healthOutsideRange: Set<String>? { healthSplit?.older }
+
+    private var healthSplit: (inRange: Set<String>, older: Set<String>)? {
+        guard let available = healthAvailable else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        guard let start = Settings.history.start(today: Date(), calendar: calendar) else { return (available, []) }
+        let first = Formats.day(start, in: calendar.timeZone)
+        let inRange = available.filter { $0 >= first }
+        return (inRange, available.subtracting(inRange))
+    }
+
     private static let generatedKeyDefaults = "trigger.generatedKeyHash"
 
     init() {
@@ -67,6 +85,7 @@ final class AppModel: ObservableObject {
             // The model lives as long as the app, so the engine holds it.
             await SyncEngine.shared.setOnChange { state in self.state = state }
             await SyncEngine.shared.setOnProgress { source, step in self.progress[source] = step }
+            await SyncEngine.shared.setOnSignedOut { self.sessionExpired = true }
         }
         refreshAccess()
         Activity.shared.onEntry = { [weak self] entry in
@@ -86,40 +105,48 @@ final class AppModel: ObservableObject {
         let result = try await Client(server: server).login(
             repository: repository, password: password, totp: totp, label: label)
         let session = Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id)
-        if let previous = Keychain.load(), previous.server != server || previous.repository != result.repository {
-            // Another repository holds none of these rows: stop a run that is
-            // still pushing to the old one, and forget what it pushed.
-            await SyncEngine.shared.cancel()
-            state = await SyncEngine.shared.update { $0.forgetPushed() }
+        // The state answers for one repository: signed in to any other, or
+        // to this one again, what was pushed before is checked against the
+        // server rather than trusted (the run forgets it where the identity
+        // differs, and each source asks the server what it still holds).
+        await SyncEngine.shared.cancel()
+        let identity = session.identity
+        state = await SyncEngine.shared.update { s in
+            if s.repository != identity {
+                s.forgetPushed()
+                s.repository = identity
+            }
         }
         Keychain.save(session)
         self.session = session
+        sessionExpired = false
         setupChecked = false
         await checkSetup()
     }
 
-    /// Revokes the token, then forgets it. A revocation that fails still
-    /// signs out here, and says so.
-    func signOut() async -> String? {
-        var problem: String?
-        if let session, let client {
-            do { try await client.revoke(token: session.tokenID) } catch {
-                problem = "The token was not revoked: \(error.localizedDescription)"
-            }
-        }
-        await SyncEngine.shared.cancel()
+    /// Signs out here at once; the token is revoked on the server as a best
+    /// effort afterwards, so a server that is gone, or that already refuses
+    /// the token, never holds the owner on this screen.
+    func signOut() {
+        let old = session
+        Task { await SyncEngine.shared.cancel() }
         Keychain.clear()
         session = nil
         steps = []
         setupChecked = false
-        return problem
+        setupError = nil
+        sessionExpired = false
+        if let old {
+            Task.detached { try? await Client(server: old.server, secret: old.secret).revoke(token: old.tokenID) }
+        }
     }
 
     // MARK: - set up
 
-    func checkSetup() async {
+    /// `keepError` keeps the error the step that ran before it reported.
+    func checkSetup(keepError: Bool = false) async {
         guard let client else { return }
-        setupError = nil
+        if !keepError { setupError = nil }
         do {
             let catalog = Dictionary(try await client.catalog().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var steps: [SetupStep] = []
@@ -156,6 +183,7 @@ final class AppModel: ObservableObject {
             self.steps = steps
             setupChecked = true
         } catch {
+            if isSignedOut(error) { sessionExpired = true }
             setupError = error.localizedDescription
         }
     }
@@ -177,17 +205,24 @@ final class AppModel: ObservableObject {
                         "displayName": UIDevice.current.name, "timezone": TimeZone.current.identifier,
                     ])
                 case .trigger:
-                    guard try await armTrigger(client, replaceKey: replaceKey) else {
-                        foreignKey = true
-                        await checkSetup()
-                        return
-                    }
+                    break
+                }
+            }
+            // The trigger is read after the installs, never from the steps
+            // computed before them: installing a provider writes its shipped
+            // trigger again, which can disarm one that was armed.
+            if !Self.armed(try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)) {
+                guard try await armTrigger(client, replaceKey: replaceKey) else {
+                    foreignKey = true
+                    await checkSetup(keepError: true)
+                    return
                 }
             }
         } catch {
+            if isSignedOut(error) { sessionExpired = true }
             setupError = error.localizedDescription
         }
-        await checkSetup()
+        await checkSetup(keepError: true)
     }
 
     /// Reads the trigger, keeps or sets its key, enables it, and writes the
@@ -209,7 +244,9 @@ final class AppModel: ObservableObject {
         } else if Self.keyHash(existing) != ours, replaceKey == nil {
             return false
         }
-        if key != existing { UserDefaults.standard.set(Self.keyHash(key), forKey: Self.generatedKeyDefaults) }
+        // Remembered either way: a key this app set, or one the owner chose
+        // to keep, is not asked about again.
+        UserDefaults.standard.set(Self.keyHash(key), forKey: Self.generatedKeyDefaults)
         webhook["key"] = key
         source["webhook"] = webhook
         try await client.put(SyncEngine.triggerKind, SyncEngine.trigger, ["enabled": true, "source": source])
@@ -337,7 +374,7 @@ final class AppModel: ObservableObject {
         for source in Source.allCases where Settings.enabled(source) && (only?.contains(source) ?? true) {
             if access[source] == "Not asked yet" { await requestAccess(source) }
         }
-        await SyncEngine.shared.sync(only)
+        await SyncEngine.shared.sync(only, budget: .full)
         state = LocalState.load()
         await loadCoverage()
     }

@@ -94,6 +94,9 @@ struct LocalState: Codable, Sendable {
     /// One stable automation id per grouping.
     var automations: [String: String] = [:]
     var status: [Source: SourceStatus] = [:]
+    /// The server and repository the pushed rows went to (`Session.identity`):
+    /// signed in anywhere else, they are forgotten.
+    var repository: String?
     /// Days the owner asked for beyond the backfill, sent oldest first by
     /// the next Health sync and dropped once accepted.
     var healthQueue: Set<String> = []
@@ -121,6 +124,7 @@ struct LocalState: Codable, Sendable {
         healthQueue = try c.decodeIfPresent(Set<String>.self, forKey: .healthQueue) ?? []
         runs = try c.decodeIfPresent([SyncRun].self, forKey: .runs) ?? []
         device = try c.decodeIfPresent(DeviceCounts.self, forKey: .device) ?? DeviceCounts()
+        repository = try c.decodeIfPresent(String.self, forKey: .repository)
     }
 
     var ids: AppleIDs { AppleIDs(install: install) }
@@ -195,14 +199,41 @@ func eachLimited<T: Sendable, R: Sendable>(
     }
 }
 
-/// The install's one id, made once and kept in the Keychain. Read once per
-/// process (a `static let` initializes exactly once, under the runtime's
-/// lock), taken over from an older build's state file where there is one.
+/// The install's one id, made once and kept in the Keychain, and taken over
+/// from an older build's state file where there is one. It is minted only
+/// when the Keychain answers that there is none: any other failure (a phone
+/// still locked since it started) refuses the sync instead, because a second
+/// id would fork the address book, the event store and the Health account.
 enum InstallID {
-    static let current: String = {
-        if let id = Keychain.string(account: "install"), !id.isEmpty { return id }
-        let id = LocalState.storedInstall() ?? UUID().uuidString.lowercased()
-        Keychain.setString(id, account: "install")
-        return id
-    }()
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var cached: String?
+
+    struct Unavailable: LocalizedError {
+        let status: OSStatus
+        var errorDescription: String? {
+            "The install id could not be read from the Keychain (status \(status)); unlock the phone and try again."
+        }
+    }
+
+    static func get() throws -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        switch Keychain.read(account: "install") {
+        case let .found(data):
+            let id = String(decoding: data, as: UTF8.self)
+            cached = id
+            return id
+        case .missing:
+            let id = LocalState.storedInstall() ?? UUID().uuidString.lowercased()
+            Keychain.setString(id, account: "install")
+            cached = id
+            return id
+        case let .failed(status):
+            throw Unavailable(status: status)
+        }
+    }
+
+    /// For display and ids once a run has passed `get()`.
+    static var current: String { (try? get()) ?? "unavailable" }
 }

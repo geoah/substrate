@@ -207,7 +207,7 @@ struct HealthReader: Sendable {
             == HKWorkoutSwimmingLocationType.openWater.rawValue
         var s = WorkoutSummary(
             id: w.uuid, name: WorkoutNames.name(w.workoutActivityType, indoor: indoor, openWater: openWater),
-            start: w.startDate, end: w.endDate, isIndoor: indoor)
+            start: w.startDate, end: w.endDate, isIndoor: indoor, duration: w.duration)
         s.activeKcal = w.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie())
         for id in [HKQuantityTypeIdentifier.distanceWalkingRunning, .distanceCycling, .distanceSwimming] {
             if let d = w.statistics(for: HKQuantityType(id))?.sumQuantity() {

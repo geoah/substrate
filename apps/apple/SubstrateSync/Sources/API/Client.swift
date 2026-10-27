@@ -109,8 +109,10 @@ struct Client: Sendable {
         return try JSONDecoder().decode(LoginResult.self, from: data)
     }
 
+    /// Best effort and quick: a sign-out never waits on a server that is
+    /// gone or refuses the token anyway.
     func revoke(token id: String) async throws {
-        let (data, status) = try await send("DELETE", path: "tokens/\(escape(id))")
+        let (data, status) = try await send("DELETE", path: "tokens/\(escape(id))", retries: 0, timeout: 10)
         guard (200 ..< 300).contains(status) || status == 404 else { throw ServerError(status: status, data: data) }
     }
 
@@ -127,12 +129,14 @@ struct Client: Sendable {
         guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: data) }
     }
 
-    /// One record's properties, or nil when there is no such record.
+    /// One live record's properties, or nil when there is none: a deleted
+    /// record answers 200 with `deletedAt`, and reads as absent here.
     func get(_ kind: String, _ id: String) async throws -> [String: Any]? {
         let (data, status) = try await send("GET", path: recordPath(kind, id))
         if status == 404 { return nil }
         guard status == 200 else { throw ServerError(status: status, data: data) }
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let deleted = object?["deletedAt"], !(deleted is NSNull) { return nil }
         return object?["properties"] as? [String: Any] ?? [:]
     }
 
@@ -196,7 +200,9 @@ struct Client: Sendable {
         return segment.addingPercentEncoding(withAllowedCharacters: allowed) ?? segment
     }
 
-    private func send(_ method: String, path: String, json: Any? = nil, authorized: Bool = true) async throws -> (Data, Int) {
+    private func send(
+        _ method: String, path: String, json: Any? = nil, authorized: Bool = true, retries: Int = 3, timeout: TimeInterval = 60
+    ) async throws -> (Data, Int) {
         // The path may carry a percent-encoded segment, so it is joined as
         // text rather than through appendingPathComponent, which re-encodes.
         guard let url = URL(string: server.absoluteString.trimmingSuffix("/") + "/" + path) else {
@@ -204,25 +210,26 @@ struct Client: Sendable {
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if authorized, let secret { request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization") }
         if let json {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes])
         }
-        return try await perform(request)
+        return try await perform(request, retries: retries)
     }
 
     /// Sends a request, waiting out a busy server: the webhook door answers
     /// 503 with more than eight deliveries in flight across every sender.
-    private func perform(_ request: URLRequest) async throws -> (Data, Int) {
+    private func perform(_ request: URLRequest, retries: Int = 3) async throws -> (Data, Int) {
         var attempt = 0
         while true {
             let (data, response) = try await Self.session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             // A busy server says when to come back; three tries, then the
             // refusal stands.
-            if status == 503 || status == 429, attempt < 3 {
+            if status == 503 || status == 429, attempt < retries {
                 attempt += 1
                 let after = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 2
                 try await Task.sleep(for: .seconds(min(after, 30)))
