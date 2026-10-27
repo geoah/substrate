@@ -91,6 +91,15 @@ console's Settings → Signed in shows the app's version with a Check for
 updates button, which asks the shell (`checkForUpdates` in
 `web/console/src/lib/shell.ts`) to check now.
 
+Provisioning goes through the Apple ID signed in to Xcode, a session that
+expires and can only be renewed in Xcode's window. An App Store Connect API
+key replaces it for a shell: set `SUBSTRATE_APPLE_ASC_KEY_PATH` (the
+`AuthKey_….p8`), `SUBSTRATE_APPLE_ASC_KEY_ID` and
+`SUBSTRATE_APPLE_ASC_ISSUER_ID`, and every build and export passes them to
+`xcodebuild`. The key needs the Admin role, because registering an app id's
+capabilities (Substrate Sync's HealthKit) is an admin's act. Like the release
+address, it lives in the environment and never in the tree.
+
 Both are signed with the team's Apple Development identity, so the IPA
 installs on the devices in the team's development profile (with Developer
 Mode on) and the Mac app opens after Privacy & Security → Open Anyway once.

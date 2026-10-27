@@ -22,6 +22,17 @@ readonly SIMULATOR="${SUBSTRATE_APPLE_SIMULATOR:-}"
 readonly SPARKLE="$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin"
 # The login keychain item Sparkle's tools keep the update-signing key under.
 readonly SPARKLE_ACCOUNT="${SUBSTRATE_APPLE_SPARKLE_ACCOUNT:-substrate}"
+# An App Store Connect API key stands in for an Apple ID signed in to Xcode,
+# whose session expires and cannot be renewed from a shell: with one,
+# -allowProvisioningUpdates registers app ids, capabilities and profiles on
+# its own. Unset, the account signed in to Xcode is used, as before. The key
+# needs the Admin role to register an app id's capabilities (HealthKit).
+AUTH=()
+if [ -n "${SUBSTRATE_APPLE_ASC_KEY_PATH:-}" ]; then
+	AUTH=(-authenticationKeyPath "$SUBSTRATE_APPLE_ASC_KEY_PATH"
+		-authenticationKeyID "${SUBSTRATE_APPLE_ASC_KEY_ID:?set SUBSTRATE_APPLE_ASC_KEY_ID beside the key path}"
+		-authenticationKeyIssuerID "${SUBSTRATE_APPLE_ASC_ISSUER_ID:?set SUBSTRATE_APPLE_ASC_ISSUER_ID beside the key path}")
+fi
 
 project() {
 	mise x "$XCODEGEN" -- xcodegen generate --quiet
@@ -29,7 +40,7 @@ project() {
 
 xcb() {
 	xcodebuild -project "$PROJECT" -scheme "$SCHEME" -derivedDataPath "$DERIVED" \
-		-allowProvisioningUpdates -quiet "$@"
+		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet "$@"
 }
 
 build_macos() {
@@ -44,7 +55,7 @@ build_sim() {
 
 build_sync() {
 	xcodebuild -project "$PROJECT" -scheme SubstrateSync -derivedDataPath "$DERIVED" \
-		-allowProvisioningUpdates -quiet -destination 'generic/platform=iOS Simulator' -configuration Debug build
+		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet -destination 'generic/platform=iOS Simulator' -configuration Debug build
 	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateSync.app"
 }
 
@@ -226,7 +237,7 @@ release_sync() {
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
 	xcodebuild -project "$PROJECT" -scheme SubstrateSync -derivedDataPath "$DERIVED" \
-		-allowProvisioningUpdates -quiet -destination 'generic/platform=iOS' -configuration Release archive \
+		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet -destination 'generic/platform=iOS' -configuration Release archive \
 		-archivePath "$out/iOS.xcarchive" \
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build" \
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit" \
@@ -293,7 +304,7 @@ export_archive() {
 	plutil -insert method -string "$method" "$out/$platform-export.plist"
 	plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
 	xcodebuild -exportArchive -archivePath "$out/$platform.xcarchive" -exportPath "$out/$platform" \
-		-exportOptionsPlist "$out/$platform-export.plist" -allowProvisioningUpdates -quiet
+		-exportOptionsPlist "$out/$platform-export.plist" -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet
 }
 
 # curl, signed for S3 with the key in the environment, which reaches curl on
