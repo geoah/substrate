@@ -146,7 +146,7 @@ mise run apple:release:sync   # archived, signed and published under sync/
 | --------- | -------- | --- |
 | Contacts  | `providers.substrate.reamde.dev/apple/addressbook` and `…/contact` | `PUT` per changed contact, `PATCH` to null for a vanished key, `DELETE` for a vanished contact, then the address book row |
 | Calendars | `…/apple/eventstore`, `…/calendar` and `…/event` | every event calendar and every occurrence from 90 days back to 180 ahead; an event that ages out of the window keeps its row |
-| Health    | `providers.substrate.reamde.dev/applehealth` mirror rows, then observations, sleep and workouts through `samples.substrate.reamde.dev/healthapple` | Health Auto Export's JSON to `/webhooks/<authority>/applehealth-webhook`, two deliveries per local day |
+| Health    | `providers.substrate.reamde.dev/applehealth` mirror rows, then observations, sleep and workouts through the provider's own adapter, under `substrate.reamde.dev` | Health Auto Export's JSON to `/webhooks/<authority>/applehealth-webhook`, two deliveries per local day |
 
 The ids and the field rules are the apple package's
 [README](../../kinds/providers.substrate.reamde.dev/apple/README.md); the
@@ -177,8 +177,9 @@ the server, sends everything again.
 
 **Set up** lists what the repository lacks and does it with one button:
 installs (or upgrades to version 2) `providers.substrate.reamde.dev/apple`
-and installs `…/applehealth`, imports the `observations`, `health` and
-`healthapple` samples in that order, creates the Health account
+and installs (or upgrades to version 4) `…/applehealth`, which ships the
+adapter and installs the `substrate.reamde.dev/health` catalogue it
+requires; then it creates the Health account
 `substrate-sync-<first 8 characters of the install id>`, and arms the
 `applehealth-webhook` trigger. It keeps a key already on the trigger unless
 the owner says to replace it, and otherwise sets a new 32-character one. A

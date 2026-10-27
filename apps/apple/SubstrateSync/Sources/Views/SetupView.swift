@@ -60,7 +60,7 @@ struct SetupView: View {
             } header: {
                 Text(missing == 0 || !model.setupChecked ? "What this phone needs on the server" : "\(model.steps.count - missing) of \(model.steps.count) in place")
             } footer: {
-                Text("Set Up does every missing step, in order: installs the providers, creates this phone's Health account and arms the webhook it posts to.")
+                Text("Set Up does every missing step, in order: installs the Apple and Apple Health providers (which brings the health catalogue), creates this phone's Health account and arms the webhook it posts to.")
             }
 
             Section {
@@ -118,7 +118,6 @@ private struct StepRow: View {
             if detail.hasPrefix("This server ships") { return "Server too old" }
             if detail.hasPrefix("This server does not") { return "Not shipped" }
             return "Missing"
-        case .importSample: return "Missing"
         case .account: return "Missing"
         case .trigger: return "Not armed"
         }
