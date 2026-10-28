@@ -130,12 +130,15 @@ final class ContinuedSync {
     /// The permitted identifier is this followed by `*`. Every sync takes a
     /// new one: registering an identifier a second time kills the app.
     static let prefix = "dev.reamde.substrate.sync.continued."
-    /// The bar's resolution.
-    private static let units: Int64 = 1000
+    /// The bar's resolution, fine enough that one receipt in a run of years
+    /// still moves it: iOS judges a stall by the count, not by the work.
+    private static let units: Int64 = 1_000_000
 
     private var task: BGContinuedProcessingTask?
     private var shown: Shown
     private var ended: Bool?
+    /// When the bar last moved: a stop by iOS says how long it had stood.
+    private var moved = Date()
 
     private init(_ shown: Shown) {
         self.shown = shown
@@ -179,7 +182,8 @@ final class ContinuedSync {
         // back: the sync stops where it can stop cleanly, as Stop does.
         task.expirationHandler = {
             Task { @MainActor in
-                Activity.shared.log(nil, "Sync stopped in the background", level: .warning)
+                let still = Int(Date().timeIntervalSince(self.moved))
+                Activity.shared.log(nil, "iOS stopped the sync at \"\(self.shown.subtitle)\", \(still) seconds after its progress last moved", level: .warning)
                 await SyncEngine.shared.cancel()
             }
         }
@@ -194,7 +198,11 @@ final class ContinuedSync {
         if task.title != shown.title || task.subtitle != shown.subtitle {
             task.updateTitle(shown.title, subtitle: shown.subtitle)
         }
-        task.progress.completedUnitCount = Int64((min(1, max(0, shown.fraction)) * Double(Self.units)).rounded())
+        let done = Int64((min(1, max(0, shown.fraction)) * Double(Self.units)).rounded())
+        if done != task.progress.completedUnitCount {
+            task.progress.completedUnitCount = done
+            moved = Date()
+        }
     }
 
     func finish(success: Bool) {

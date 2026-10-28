@@ -296,7 +296,11 @@ asks iOS for a continued processing task (`ContinuedSync` in
 `Background.swift`, iOS 26's `BGContinuedProcessingTask`). iOS keeps the app
 running and draws the progress itself as a Live Activity on the Lock Screen
 and in the Dynamic Island: the status card's headline and line, and a bar over
-every source in the run. Its stop button stops the sync as Stop does. The app
+every source in the run. Its stop button stops the sync as Stop does. iOS
+also stops a task whose progress stands still, so Health's bar runs over the
+whole run, each day half read and sent and half filed, and moves with every
+receipt while the phone waits on the server; a stop by iOS is logged in
+Activity with the step and how long the bar had stood. The app
 ships no widget extension, and a small sync asks for nothing. Where iOS will
 not run one now, the sync runs as before, while the app is on screen. The debug build's Home has Add Sample
 Data, which writes yesterday's Health samples, three contacts and a sample

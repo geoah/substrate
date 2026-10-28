@@ -526,7 +526,7 @@ final class AppModel: ObservableObject {
             return .init(title: "Syncing", subtitle: "Starting…", fraction: Double(ran) / Double(sources))
         }
         return .init(title: "Syncing \(source.title)", subtitle: p.detail,
-                     fraction: (Double(ran) + (p.fraction ?? 0)) / Double(sources))
+                     fraction: (Double(ran) + (p.overall ?? p.fraction ?? 0)) / Double(sources))
     }
 
     /// How many of a source's rows a sync of it would still send, where the
