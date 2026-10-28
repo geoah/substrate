@@ -1,12 +1,13 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-four bundles, in the two tiers
+The catalog in the binary serves twenty-five bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: thirteen in the provider tier (ten providers and three well-known
+draws: fourteen in the provider tier (ten providers and four well-known
 catalogues) and eleven samples. This page covers the ten providers and five
-of the samples; the catalogues (`health`, `labs` and `environment`, under
-`substrate.reamde.dev`,
-[0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md))
+of the samples; the catalogues (`health`, `labs`, `environment` and
+`clinical`, under `substrate.reamde.dev`,
+[0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md),
+[0193](decisions/0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md))
 and the vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
 `scheduling`) are in [built-in kinds](builtin-kinds.md).
 

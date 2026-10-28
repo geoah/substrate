@@ -21,15 +21,15 @@ data:
   traits:
     - substrate.reamde.dev/core/temporal(point)
     - substrate.reamde.dev/core/revised
-  displayTemplate: "{subject|sender}"
+  displayTemplate: "{topic|sender}"
   properties:
     sender:
       type: string
       required: true
       description: who sent it, as the message names them
-    subject:
+    topic:
       type: string
-      description: the message's subject line, where it has one
+      description: what the message is about, such as its subject line
     body:
       type: markdown
       embed: true

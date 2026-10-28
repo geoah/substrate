@@ -79,9 +79,10 @@ data:
         country:
           type: string
           description: the country
+    # not the `phone` type, which is E.164-only
     phone:
-      type: phone
-      description: its phone number
+      type: string
+      description: its phone number, as written
     url:
       type: url
       description: its website

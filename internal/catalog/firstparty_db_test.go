@@ -133,9 +133,10 @@ func TestClinicalRecordsLand(t *testing.T) {
 			"system": "https://fhir.nhs.uk/Id/ods-organization-code", "value": "A12345", "label": "ODS code",
 		}},
 		"address": map[string]any{"lines": []any{"1 River Road"}, "city": "London", "postalCode": "N1 1AA"},
+		"phone":   "(020) 7946 0958",
 	})
 	put(kind("patient"), "nhs", map[string]any{
-		"name": "NHS England", "fullName": "Ada Example", "birthDate": "1990-01-01",
+		"service": "NHS England", "name": "Ada Example", "birthDate": "1990-01-01", "gender": "female",
 		"identifiers": []any{map[string]any{"system": "https://fhir.nhs.uk/Id/nhs-number", "value": "9990000000", "label": "NHS number"}},
 		"practice":    practice, "pharmacy": practice, "registeredAt": "2024-01-10",
 	})
@@ -146,15 +147,20 @@ func TestClinicalRecordsLand(t *testing.T) {
 		"participants": []any{map[string]any{"name": "Dr Example", "role": "Dr"}},
 		"entries": []any{map[string]any{
 			"section": "Examination", "term": "O/E - blood pressure reading", "text": "128/82", "upstreamId": "e1",
-			"coding": map[string]any{"system": "http://snomed.info/sct", "code": "163020007", "display": "O/E - blood pressure reading"},
+			"coding": map[string]any{
+				"system": "http://snomed.info/sct", "code": "163020007", "descriptionId": "254063019",
+				"display": "O/E - blood pressure reading",
+			},
 		}},
-		"text":     "**Examination**\n\nO/E - blood pressure reading: 128/82",
-		"reports":  []any{labsID + "/labreport/gp/r1"},
-		"revision": 1,
+		"text":        "**Examination**\n\nO/E - blood pressure reading: 128/82",
+		"reports":     []any{labsID + "/labreport/gp/r1"},
+		"appointment": kind("appointment") + "/gp/ap1",
+		"revision":    1,
 	})
 	put(kind("condition"), "gp/p1", map[string]any{
 		"name": "Essential hypertension", "at": "2026-03-02T00:00:00Z", "precision": "day", "clinicalStatus": "active",
-		"category": "problem", "significance": "major", "encounter": consultation, "organization": practice,
+		"category": "problemlistitem", "verificationStatus": "confirmed", "significance": "major",
+		"encounter": consultation, "organization": practice,
 	})
 	put(kind("allergy"), "gp/a1", map[string]any{
 		"name": "Allergy to penicillin", "substance": "penicillin", "type": "allergy", "category": "medication",
@@ -166,16 +172,17 @@ func TestClinicalRecordsLand(t *testing.T) {
 	})
 	put(kind("medicationrequest"), "gp/m1", map[string]any{
 		"medication": "Amlodipine 5mg tablets", "dosage": "One tablet once a day", "quantity": "28 tablets",
-		"course": "repeat", "status": "active", "at": "2026-03-02T09:40:00Z", "organization": practice,
+		"course": "continuous", "intent": "plan", "status": "active", "at": "2026-03-02T09:40:00Z",
+		"organization": practice,
 	})
 	put(kind("medicationdispense"), "eps/X1/1", map[string]any{
 		"medication": "Amlodipine 5mg tablets", "quantity": "28 tablets", "status": "completed", "sourceStatus": "Dispensed",
 		"prescription": "X1", "request": kind("medicationrequest") + "/gp/m1", "pharmacy": practice,
-		"at": "2026-03-03T10:00:00Z", "statusAt": "2026-03-04T12:00:00Z",
+		"at": "2026-03-04T12:00:00Z", "issuedAt": "2026-03-03T10:00:00Z", "statusAt": "2026-03-04T12:00:00Z",
 	})
 	put(kind("appointment"), "gp/ap1", map[string]any{
 		"name": "Telephone appointment", "status": "fulfilled", "channel": "telephone",
-		"at": "2026-03-02T09:30:00Z", "endsAt": "2026-03-02T09:40:00Z", "encounter": consultation,
+		"at": "2026-03-02T09:30:00Z", "endsAt": "2026-03-02T09:40:00Z", "phone": "07700 900123",
 	})
 	put(kind("referral"), "ers/1", map[string]any{
 		"specialty": "Cardiology", "status": "active", "priority": "routine", "at": "2026-03-02T10:00:00Z",
@@ -186,7 +193,8 @@ func TestClinicalRecordsLand(t *testing.T) {
 		"text": "Discharged home.", "status": "current", "encounter": consultation,
 	})
 	put(kind("communication"), "app/1", map[string]any{
-		"sender": "Riverside Medical Practice", "body": "Your blood test results are back.", "at": "2026-03-05T08:00:00Z",
+		"sender": "Riverside Medical Practice", "topic": "Blood test results",
+		"body": "Your blood test results are back.", "at": "2026-03-05T08:00:00Z",
 	})
 
 	row, err := ds.Get(ctx, kind("encounter"), "gp/c1")

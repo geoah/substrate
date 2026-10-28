@@ -1,7 +1,8 @@
 # one item of an issued prescription, as the pharmacy handles it: FHIR's
 # MedicationDispense. A prescription with three items is three records
-# sharing `prescription`. `at` is when the prescription was issued;
-# `statusAt` is when the item reached its current status, such as collected.
+# sharing `prescription`. `at` is when the pharmacy handed the item over or
+# prepared it (FHIR's whenHandedOver and whenPrepared); an item not yet
+# dispensed sits at `issuedAt`, when the prescription was issued.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/clinical/medicationdispense
@@ -45,12 +46,19 @@ data:
           label: Cancelled
         - value: declined
           label: Not dispensed
+        - value: stopped
+          label: Stopped
+        - value: enteredinerror
+          label: Entered in error
         - value: unknown
           label: Unknown
     sourceStatus:
       type: string
       description: the status as the prescription service worded it, such
         as With dispenser
+    issuedAt:
+      type: datetime
+      description: when the prescription was issued
     statusAt:
       type: datetime
       description: when the item reached its status
@@ -61,7 +69,8 @@ data:
     request:
       type: reference
       kind: substrate.reamde.dev/clinical/medicationrequest
-      description: the prescribed medicine this issues
+      description: the prescribed medicine this dispenses, its issue or the
+        authorisation it was issued from
     pharmacy:
       type: reference
       kind: substrate.reamde.dev/clinical/organization

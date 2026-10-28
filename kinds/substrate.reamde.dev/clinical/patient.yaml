@@ -22,13 +22,14 @@ data:
     plural: Patient registrations
   traits:
     - substrate.reamde.dev/core/revised
-  displayTemplate: "{name}"
+  displayTemplate: "{service}"
   properties:
-    name:
+    service:
       type: string
       required: true
-      description: the registration's heading, such as NHS England
-    fullName:
+      description: the health service, which titles the registration, such
+        as NHS England
+    name:
       type: string
       description: your name as the service holds it
     identifiers:
@@ -49,6 +50,14 @@ data:
     birthDate:
       type: date
       description: your date of birth as the service holds it
+    gender:
+      type: enum
+      description: the administrative gender the service holds, FHIR's AdministrativeGender
+      values:
+        - male
+        - female
+        - other
+        - unknown
     address:
       type: object
       description: your home address as the service holds it
@@ -66,8 +75,10 @@ data:
         country:
           type: string
           description: the country
+    # not the `phone` type: that one is E.164-only, and a health service
+    # writes a number as its own staff typed it
     phone:
-      type: phone
+      type: string
       description: your phone number as the service holds it
     email:
       type: email

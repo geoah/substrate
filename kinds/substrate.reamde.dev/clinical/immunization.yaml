@@ -1,6 +1,6 @@
 # one vaccination: FHIR's Immunization. `at` is when it was given, or when
-# the provider recorded it where the record holds a plan or a need rather
-# than a dose given, which `status` then says.
+# the provider recorded it; an entry that records no dose, such as a course
+# a trip needs, leaves `status` unset.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/clinical/immunization
@@ -38,7 +38,14 @@ data:
           description: the code system, such as http://snomed.info/sct
         code:
           type: string
-          description: the code
+          description: the code; for SNOMED CT, the concept id
+        version:
+          type: string
+          description: the code system's version, such as a SNOMED CT edition
+        descriptionId:
+          type: string
+          description: the SNOMED CT description id the provider recorded
+            the term under, where it sends one
         display:
           type: string
           description: the code's term as the provider recorded it

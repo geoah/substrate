@@ -48,6 +48,8 @@ data:
           label: Completed
         - value: revoked
           label: Withdrawn
+        - value: enteredinerror
+          label: Entered in error
         - value: unknown
           label: Unknown
     priority:

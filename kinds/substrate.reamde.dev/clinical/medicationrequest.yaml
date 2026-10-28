@@ -1,9 +1,11 @@
-# one prescribed medicine: FHIR's MedicationRequest. A repeat prescription is
-# one record for the whole course, and each issue of it a
-# `medicationdispense` pointing here. `at` is when it was first prescribed,
-# `endsAt` when it was stopped or the course ended. `product` points at the
-# record of the product itself where the repository keeps one, such as a
-# medication whose doses its owner logs.
+# one prescribed medicine: FHIR's MedicationRequest. The authorisation is
+# intent `plan`, one record for a repeat's whole course; an issue of it,
+# where a source records issues, is intent `order` with `basedOn` naming the
+# plan, as GP Connect and the electronic prescription service model them.
+# What the pharmacy does with an issue is a `medicationdispense`. `at` is
+# when it was first prescribed, `endsAt` when it was stopped or the course
+# ended. `product` points at the record of the product itself where the
+# repository keeps one, such as a medication whose doses its owner logs.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/clinical/medicationrequest
@@ -38,7 +40,14 @@ data:
           description: the code system, such as https://dmd.nhs.uk
         code:
           type: string
-          description: the code
+          description: the code; for SNOMED CT, the concept id
+        version:
+          type: string
+          description: the code system's version, such as a SNOMED CT edition
+        descriptionId:
+          type: string
+          description: the SNOMED CT description id the provider recorded
+            the term under, where it sends one
         display:
           type: string
           description: the product as the code system names it
@@ -55,10 +64,12 @@ data:
       values:
         - value: acute
           label: One-off
-        - value: repeat
+        - value: continuous
           label: Repeat
-        - value: repeatdispensing
+        - value: continuousrepeatingdispensing
           label: Repeat dispensing
+        - value: seasonal
+          label: Seasonal
     status:
       type: enum
       description: where the prescription stands
@@ -73,8 +84,37 @@ data:
           label: Stopped
         - value: cancelled
           label: Cancelled
+        - value: draft
+          label: Draft
+        - value: enteredinerror
+          label: Entered in error
         - value: unknown
           label: Unknown
+    intent:
+      type: enum
+      description: whether it is the authorisation to prescribe or one issue
+        of it
+      values:
+        - value: proposal
+          label: Proposal
+        - value: plan
+          label: Authorised
+        - value: order
+          label: Issued
+        - value: originalorder
+          label: Original order
+        - value: reflexorder
+          label: Reflex order
+        - value: fillerorder
+          label: Filler order
+        - value: instanceorder
+          label: Instance order
+        - value: option
+          label: Option
+    basedOn:
+      type: reference
+      kind: substrate.reamde.dev/clinical/medicationrequest
+      description: the authorised medicine an issue was made from
     lastIssuedAt:
       type: datetime
       description: when it was last issued
@@ -96,6 +136,15 @@ data:
       type: enum
       description: how much of `at` the provider recorded, so a reader shows
         2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    endPrecision:
+      type: enum
+      description: how much of `endsAt` the provider recorded; absent reads
+        as time
       values:
         - year
         - month
