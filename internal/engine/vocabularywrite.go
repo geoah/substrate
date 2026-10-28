@@ -405,13 +405,13 @@ func (t *txn) refuseTakenTrigger(in substrate.PutInput, shipper substrate.Actor)
 	return nil
 }
 
-// keepTriggerSettings carries what an owner set on a shipped trigger over a
-// re-install or an upgrade of the same package: whether it is enabled, and a
-// webhook's key. The shipped document is the trigger's shape (its source,
-// headers, callable); those two are the owner's, and writing the shipped ones
-// back would disable a trigger the owner armed and drop the key every sender
-// was given (record 0192). The shipped maps are copied, never changed: they
-// are the catalog's.
+// keepTriggerSettings carries an armed webhook over a re-install or an
+// upgrade of the same package: the key the owner set and whether they
+// enabled it. A shipped webhook trigger has no key and so ships disabled;
+// writing it back would disarm the trigger and drop the key every sender was
+// given (record 0192). Any other trigger takes the shipped document whole, so
+// a release that turns one off lands. The shipped maps are copied, never
+// changed: they are the catalog's.
 func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, error) {
 	cur, err := t.loadRow(eref{Kind: typeTrigger, ID: in.ID}, false)
 	if err != nil || cur == nil || cur.DeletedAt != nil {
@@ -420,21 +420,21 @@ func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, er
 	if callablePackage(storedReferencePath(cur.Props["callable"])) != callablePackage(storedReferencePath(in.Properties["callable"])) {
 		return in, nil
 	}
+	key := webhookKey(cur.Props)
+	source, _ := in.Properties["source"].(map[string]any)
+	webhook, _ := source["webhook"].(map[string]any)
+	if key == "" || webhook == nil {
+		return in, nil
+	}
 	props := maps.Clone(in.Properties)
 	if enabled, ok := cur.Props["enabled"].(bool); ok {
 		props["enabled"] = enabled
 	}
-	if key := webhookKey(cur.Props); key != "" {
-		source, _ := props["source"].(map[string]any)
-		webhook, _ := source["webhook"].(map[string]any)
-		if webhook != nil {
-			source = maps.Clone(source)
-			webhook = maps.Clone(webhook)
-			webhook["key"] = key
-			source["webhook"] = webhook
-			props["source"] = source
-		}
-	}
+	source = maps.Clone(source)
+	webhook = maps.Clone(webhook)
+	webhook["key"] = key
+	source["webhook"] = webhook
+	props["source"] = source
 	in.Properties = props
 	return in, nil
 }
