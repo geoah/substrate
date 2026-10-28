@@ -54,6 +54,7 @@
 	<array>
 		<string>dev.reamde.substrate.sync.refresh</string>
 		<string>dev.reamde.substrate.sync.processing</string>
+		<string>dev.reamde.substrate.sync.continued.*</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

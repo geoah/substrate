@@ -114,6 +114,97 @@ enum Background {
     }
 }
 
+/// A large sync the owner started, run on as a continued processing task:
+/// iOS keeps the app running when it leaves the screen, and draws the
+/// progress itself, as a Live Activity on the Lock Screen and in the Dynamic
+/// Island, with a button that stops it. The app ships no widget for it.
+@MainActor
+final class ContinuedSync {
+    /// What the system shows: a title, a line under it, and a bar.
+    struct Shown: Equatable {
+        var title: String
+        var subtitle: String
+        var fraction: Double
+    }
+
+    /// The permitted identifier is this followed by `*`. Every sync takes a
+    /// new one: registering an identifier a second time kills the app.
+    static let prefix = "dev.reamde.substrate.sync.continued."
+    /// The bar's resolution.
+    private static let units: Int64 = 1000
+
+    private var task: BGContinuedProcessingTask?
+    private var shown: Shown
+    private var ended: Bool?
+
+    private init(_ shown: Shown) {
+        self.shown = shown
+    }
+
+    /// Nil when iOS will not run one now; the sync then runs as before, for
+    /// as long as the app is on screen.
+    static func start(_ shown: Shown) -> ContinuedSync? {
+        let sync = ContinuedSync(shown)
+        let id = prefix + UUID().uuidString
+        // Held by the handler, never weakly: a task that begins after its
+        // sync ended still has to be completed.
+        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: .main) { task in
+            MainActor.assumeIsolated { sync.began(task) }
+        }
+        guard registered else { return nil }
+        let request = BGContinuedProcessingTaskRequest(identifier: id, title: shown.title, subtitle: shown.subtitle)
+        // Now or never: a queued task could start after the sync it was for.
+        request.strategy = .fail
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            Activity.shared.log(nil, "iOS would not keep this sync running in the background: \(explain(error))", level: .warning)
+            return nil
+        }
+        return sync
+    }
+
+    private func began(_ task: BGTask) {
+        guard let task = task as? BGContinuedProcessingTask else {
+            task.setTaskCompleted(success: false)
+            return
+        }
+        if let ended {
+            task.setTaskCompleted(success: ended)
+            return
+        }
+        self.task = task
+        task.progress.totalUnitCount = Self.units
+        // The stop button in the system's progress, or iOS taking the time
+        // back: the sync stops where it can stop cleanly, as Stop does.
+        task.expirationHandler = {
+            Task { @MainActor in
+                Activity.shared.log(nil, "Sync stopped in the background", level: .warning)
+                await SyncEngine.shared.cancel()
+            }
+        }
+        show(shown)
+    }
+
+    /// Tasks whose progress does not move are expired as stalled, so every
+    /// step the engine reports is passed on.
+    func show(_ shown: Shown) {
+        self.shown = shown
+        guard let task else { return }
+        if task.title != shown.title || task.subtitle != shown.subtitle {
+            task.updateTitle(shown.title, subtitle: shown.subtitle)
+        }
+        task.progress.completedUnitCount = Int64((min(1, max(0, shown.fraction)) * Double(Self.units)).rounded())
+    }
+
+    func finish(success: Bool) {
+        guard ended == nil else { return }
+        ended = success
+        task?.setTaskCompleted(success: success)
+        task = nil
+    }
+}
+
 /// Runs its block once, from whichever thread gets there first.
 final class Once: @unchecked Sendable {
     private let lock = NSLock()

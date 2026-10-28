@@ -27,6 +27,10 @@ struct SyncProgress: Equatable, Sendable {
     var total: Int = 0
 
     var fraction: Double? { total > 0 ? min(1, Double(done) / Double(total)) : nil }
+
+    /// The step and its counts in one line: the status card, a source's row
+    /// and the system's progress for a continued sync all say it this way.
+    var detail: String { total > 0 ? "\(step) · \(done.formatted()) of \(total.formatted())" : step }
 }
 
 /// The activity log: the newest entries in memory, the last `limit` kept in

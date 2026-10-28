@@ -490,6 +490,20 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(SyncEngine.changes(0, 2), "2 removed")
     }
 
+    /// Only a sync that would outlast the app on screen asks iOS to keep it
+    /// running: more than a chunk of Health days, more than `bulkRows` of
+    /// anything else, or a first sync whose size the phone has not counted.
+    func testOnlyALargeSyncRunsOnInTheBackground() {
+        XCTAssertFalse(AppModel.large(.health, behind: SyncEngine.chunk, synced: false))
+        XCTAssertTrue(AppModel.large(.health, behind: SyncEngine.chunk + 1, synced: true))
+        XCTAssertFalse(AppModel.large(.contacts, behind: AppModel.bulkRows, synced: true))
+        XCTAssertTrue(AppModel.large(.calendars, behind: AppModel.bulkRows + 1, synced: true))
+        XCTAssertTrue(AppModel.large(.contacts, behind: nil, synced: false))
+        XCTAssertFalse(AppModel.large(.health, behind: nil, synced: true))
+        XCTAssertEqual(SyncProgress(step: "Writing events", done: 1200, total: 4500).detail, "Writing events · 1,200 of 4,500")
+        XCTAssertEqual(SyncProgress(step: "Reading reminders").detail, "Reading reminders")
+    }
+
     func testTheTimelineFoldsEachRunsLinesIntoIt() {
         let t0 = Date(timeIntervalSince1970: 1_800_000_000)
         let contacts = SyncRun(source: .contacts, started: t0, finished: t0 + 10, summary: "15 written", error: nil)

@@ -116,11 +116,10 @@ private struct StatusCard: View {
 
     private var state: Shown {
         if model.syncing {
-            guard let source = Source.allCases.first(where: { model.progress[$0] != nil }), let p = model.progress[source] else {
+            guard let (source, p) = model.current else {
                 return Shown(symbol: "arrow.triangle.2.circlepath", color: .blue, headline: "Starting…", detail: "")
             }
-            let counts = p.total > 0 ? " · \(p.done.formatted()) of \(p.total.formatted())" : ""
-            return Shown(symbol: source.symbol, color: .blue, headline: "Syncing \(source.title)", detail: p.step + counts, fraction: p.fraction)
+            return Shown(symbol: source.symbol, color: .blue, headline: "Syncing \(source.title)", detail: p.detail, fraction: p.fraction)
         }
         if model.serverUnreachable != nil {
             let host = model.session?.server.host() ?? "Your server"
@@ -216,9 +215,7 @@ private struct SourceRow: View {
     /// One line: what it is doing, what went wrong, or what it holds and
     /// when it last ran; what it syncs where it is off or new.
     private func line(_ overview: SourceOverview) -> String {
-        if let p = model.progress[source] {
-            return p.total > 0 ? "\(p.step) · \(p.done.formatted()) of \(p.total.formatted())" : p.step
-        }
+        if let p = model.progress[source] { return p.detail }
         if overview.tone == .off { return source.summary }
         // The badge says it failed and the card above says why: the row says
         // what is still there.

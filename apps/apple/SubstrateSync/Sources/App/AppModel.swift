@@ -69,6 +69,9 @@ final class AppModel: ObservableObject {
     /// source in it that has not run since is queued.
     @Published private(set) var syncSources: Set<Source> = []
     @Published private(set) var syncStarted: Date?
+    /// The system's progress for a large sync, which keeps it running once
+    /// the app leaves the screen.
+    private var continued: ContinuedSync?
     /// The server could not be reached when the app last asked it what Set
     /// Up needs, though it was set up before: Home says so, in these words.
     @Published private(set) var serverUnreachable: String?
@@ -114,8 +117,16 @@ final class AppModel: ObservableObject {
         session = Keychain.load()
         Task {
             // The model lives as long as the app, so the engine holds it.
-            await SyncEngine.shared.setOnChange { state in self.state = state }
-            await SyncEngine.shared.setOnProgress { source, step in self.progress[source] = step }
+            // A source's progress ends before its run is recorded: the
+            // system's bar moves on the record, so it never steps back.
+            await SyncEngine.shared.setOnChange { state in
+                self.state = state
+                self.continued?.show(self.continuedShown)
+            }
+            await SyncEngine.shared.setOnProgress { source, step in
+                self.progress[source] = step
+                if step != nil { self.continued?.show(self.continuedShown) }
+            }
             await SyncEngine.shared.setOnSignedOut { self.sessionExpired = true }
         }
         refreshAccess()
@@ -463,10 +474,7 @@ final class AppModel: ObservableObject {
     /// Where one source stands, for the overview and its page.
     func overview(_ source: Source) -> SourceOverview {
         let running = progress[source] != nil
-        var queued = false
-        if syncing, !running, syncSources.contains(source), let started = syncStarted {
-            queued = !(state.runs.first { $0.source == source }.map { $0.finished >= started } ?? false)
-        }
+        let queued = syncing && !running && syncSources.contains(source) && !ranThisSync(source)
         return SourceOverview.of(
             enabled: Settings.enabled(source), access: access[source], running: running, queued: queued,
             status: state.status[source], waiting: source == .health ? healthWaiting.count : 0)
@@ -495,6 +503,53 @@ final class AppModel: ObservableObject {
             let total = PlaceLog.shared.all.count
             return (min(state.visits.count, total), total, "visits")
         }
+    }
+
+    /// Whether the source has finished a run since the running syncs began.
+    private func ranThisSync(_ source: Source) -> Bool {
+        guard let started = syncStarted else { return false }
+        return state.runs.first { $0.source == source }.map { $0.finished >= started } ?? false
+    }
+
+    /// The source running now and how far it has got.
+    var current: (source: Source, progress: SyncProgress)? {
+        Source.allCases.lazy.compactMap { s in self.progress[s].map { (s, $0) } }.first
+    }
+
+    /// The running syncs as the system shows a continued one: the status
+    /// card's headline and detail, and a fraction over every source they
+    /// cover, so the bar never runs back when the next source starts.
+    private var continuedShown: ContinuedSync.Shown {
+        let sources = max(1, syncSources.count)
+        let ran = syncSources.filter(ranThisSync).count
+        guard let (source, p) = current else {
+            return .init(title: "Syncing", subtitle: "Starting…", fraction: Double(ran) / Double(sources))
+        }
+        return .init(title: "Syncing \(source.title)", subtitle: p.detail,
+                     fraction: (Double(ran) + (p.fraction ?? 0)) / Double(sources))
+    }
+
+    /// How many of a source's rows a sync of it would still send, where the
+    /// phone has counted them: Health's days with data inside the history and
+    /// those queued, the other sources' rows on the phone and not synced.
+    func behind(_ source: Source) -> Int? {
+        if source == .health {
+            return healthInRange.map { $0.union(state.healthQueue).subtracting(state.healthDays).count }
+        }
+        return figures(source).map { max(0, $0.total - $0.synced) }
+    }
+
+    /// Rows past which a source other than Health is a large sync: its writes
+    /// go in parallel batches, and this many outlast the seconds iOS leaves an
+    /// app that has left the screen.
+    nonisolated static let bulkRows = 500
+
+    /// Whether a sync of one source is large enough to run on as a continued
+    /// task: more than one chunk of Health days, more than `bulkRows` of
+    /// anything else, or a first sync of a source the phone has not counted.
+    nonisolated static func large(_ source: Source, behind: Int?, synced: Bool) -> Bool {
+        guard let behind else { return !synced }
+        return behind > (source == .health ? SyncEngine.chunk : bulkRows)
     }
 
     /// The figures in a few words, for the overview.
@@ -614,11 +669,20 @@ final class AppModel: ObservableObject {
         for source in Source.allCases where Settings.enabled(source) && (only?.contains(source) ?? true) {
             if access[source] == "Not asked yet" { await requestAccess(source) }
         }
+        // Asked for while the owner is looking, which iOS requires, and only
+        // for a large sync: a small one ends before the app is suspended, and
+        // would flash the system's progress for nothing.
+        if continued == nil, syncSources.contains(where: { Self.large($0, behind: behind($0), synced: state.status[$0]?.lastSync != nil) }) {
+            continued = ContinuedSync.start(continuedShown)
+        }
         await SyncEngine.shared.sync(only, budget: .full)
         // The sync is over when the engine returns: what follows is reading,
         // and Home stops saying it syncs.
         runningSyncs -= 1
         if runningSyncs == 0 {
+            let failed = syncSources.contains { state.status[$0]?.lastError != nil }
+            continued?.finish(success: !failed)
+            continued = nil
             syncSources = []
             syncStarted = nil
         }
