@@ -28,9 +28,9 @@ struct SignInView: View {
                 Text("Server")
             } footer: {
                 if let server {
-                    Label("\(server.absoluteString) is a substrate.", systemImage: "checkmark.circle")
+                    Label("Server found.", systemImage: "checkmark.circle")
                 } else {
-                    Text("A bare host is HTTPS; localhost is plain HTTP.")
+                    Text("Your Substrate server's address. A name alone is read as https://.")
                 }
             }
 
@@ -63,9 +63,8 @@ struct SignInView: View {
                     }
                     .primaryAction()
                     .disabled(busy || repository.isEmpty || password.isEmpty || (totpRequired && code.isEmpty))
+                    .buttonRow()
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             } else {
                 Section {
                     Button(action: check) {
@@ -73,14 +72,13 @@ struct SignInView: View {
                     }
                     .primaryAction()
                     .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .buttonRow()
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
 
             if let problem {
                 Section {
-                    ErrorBox(title: "Could not sign in", message: problem)
+                    ErrorBox(title: server == nil ? "Couldn't reach that server" : "Couldn't sign in", message: problem)
                 }
             }
 
@@ -107,7 +105,7 @@ struct SignInView: View {
                 address = origin.absoluteString
                 server = origin
             } catch {
-                problem = "\(origin.absoluteString) did not answer as a substrate: \(error.localizedDescription)"
+                problem = "\(origin.absoluteString) did not answer as a Substrate server: \(error.localizedDescription)"
             }
         }
     }

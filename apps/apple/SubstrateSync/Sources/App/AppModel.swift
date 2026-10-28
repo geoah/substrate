@@ -16,7 +16,10 @@ struct SetupStep: Identifiable, Equatable {
 
     let id: String
     let kind: Kind
+    /// What the step is, in words.
     let title: String
+    /// The server's name for it: a package, a record id, a trigger.
+    var code: String?
     var done: Bool
     var detail: String?
 }
@@ -37,6 +40,8 @@ final class AppModel: ObservableObject {
     @Published var steps: [SetupStep] = []
     @Published var setupChecked = false
     @Published var setupBusy = false
+    /// Asking the server what Set Up needs, which a second tap would repeat.
+    @Published private(set) var setupChecking = false
     @Published var setupError: String?
     /// A key someone else set on the trigger, waiting on the owner's choice.
     @Published var foreignKey = false
@@ -48,6 +53,9 @@ final class AppModel: ObservableObject {
     /// source in it that has not run since is queued.
     @Published private(set) var syncSources: Set<Source> = []
     @Published private(set) var syncStarted: Date?
+    /// The server could not be reached when the app last asked it what Set
+    /// Up needs, though it was set up before: Home says so, in these words.
+    @Published private(set) var serverUnreachable: String?
     /// The phone's event calendars, for the picker.
     @Published private(set) var calendarChoices: [CalendarChoice] = []
     /// The server refused the token (it was revoked, or the repository was
@@ -151,7 +159,9 @@ final class AppModel: ObservableObject {
 
     /// `keepError` keeps the error the step that ran before it reported.
     func checkSetup(keepError: Bool = false) async {
-        guard let client else { return }
+        guard let client, !setupChecking else { return }
+        setupChecking = true
+        defer { setupChecking = false }
         if !keepError { setupError = nil }
         do {
             let catalog = Dictionary(try await client.catalog().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -173,24 +183,37 @@ final class AppModel: ObservableObject {
                     done = false
                     detail = "This server ships version \(v); mindful minutes, water and nutrients need version \(Self.healthVersion)."
                 }
-                steps.append(SetupStep(id: id, kind: .install(id), title: "Install \(id)", done: done, detail: detail))
+                let name = id == Self.appleProvider ? "Apple provider" : "Apple Health provider"
+                steps.append(SetupStep(id: id, kind: .install(id), title: name, code: id, done: done, detail: detail))
             }
             let account = try await client.get(SyncEngine.healthAccountKind, state.healthAccount)
             steps.append(SetupStep(
-                id: "account", kind: .account, title: "Create the Health account \(state.healthAccount)",
+                id: "account", kind: .account, title: "This phone's Health account", code: state.healthAccount,
                 done: account != nil))
             let trigger = try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)
             steps.append(SetupStep(
-                id: "trigger", kind: .trigger, title: "Arm the trigger \(SyncEngine.trigger)",
+                id: "trigger", kind: .trigger, title: "The webhook Health is sent to", code: SyncEngine.trigger,
                 done: Self.armed(trigger),
                 detail: trigger == nil ? "Appears once the Apple Health provider is installed." : nil))
             self.steps = steps
             setupChecked = true
+            serverUnreachable = nil
+            if let session { UserDefaults.standard.set(steps.allSatisfy(\.done), forKey: Self.setupDoneKey(session)) }
         } catch {
             if isSignedOut(error) { sessionExpired = true }
             setupError = error.localizedDescription
+            // Set up before, and only out of reach now: Home, saying so,
+            // rather than a Set Up screen that can do nothing.
+            if let session, error is URLError, UserDefaults.standard.bool(forKey: Self.setupDoneKey(session)) {
+                serverUnreachable = error.localizedDescription
+                setupChecked = true
+            }
         }
     }
+
+    /// Whether this phone finished Set Up for a repository, the last time it
+    /// could ask.
+    private static func setupDoneKey(_ session: Session) -> String { "setup.done." + session.identity }
 
     /// Does every missing step, in order, and stops at the first refusal.
     /// `replaceKey` answers the question a foreign key raises.
@@ -375,7 +398,7 @@ final class AppModel: ObservableObject {
     /// The figures in a few words, for the overview.
     func coverageLine(_ source: Source) -> String? {
         guard let f = figures(source), f.total > 0 else { return nil }
-        return f.synced >= f.total ? "All \(f.total.formatted()) \(f.noun) synced" : "\(f.synced.formatted()) of \(f.total.formatted()) \(f.noun) synced"
+        return f.synced >= f.total ? "\(f.total.formatted()) \(f.noun)" : "\(f.synced.formatted()) of \(f.total.formatted()) \(f.noun)"
     }
 
     /// The calendar window, from today.
@@ -487,6 +510,8 @@ final class AppModel: ObservableObject {
         }
         await SyncEngine.shared.sync(only, budget: .full)
         state = LocalState.load()
+        // Out of reach at launch: a sync is the next look at the server.
+        if serverUnreachable != nil { await checkSetup(keepError: true) }
         await loadCoverage()
     }
 }

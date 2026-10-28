@@ -42,6 +42,9 @@ final class ShareModel: ObservableObject {
     @Published var text: String?
     @Published var images: [Image] = []
     @Published var note = ""
+    /// What the sheet was given and cannot send: images past four, and
+    /// attachments that could not be read or are not a link, text or image.
+    @Published var leftOut: [String] = []
     @Published var loading = true
     @Published var saving = false
     @Published var error: String?
@@ -63,21 +66,44 @@ final class ShareModel: ObservableObject {
     /// text. A file that is not an image is left out: its path means nothing
     /// off this phone.
     func load() async {
-        defer { loading = false }
+        var extraImages = 0
+        var unreadable = 0
+        var unsupported = 0
+        defer {
+            leftOut = [
+                extraImages > 0 ? "\(extraImages) more \(extraImages == 1 ? "image" : "images") (four at most)" : nil,
+                unreadable > 0 ? "\(unreadable) \(unreadable == 1 ? "item" : "items") that could not be read" : nil,
+                unsupported > 0 ? "\(unsupported) \(unsupported == 1 ? "item" : "items") that is not a link, text or image" : nil,
+            ].compactMap { $0 }
+            loading = false
+        }
         for item in items {
             if title == nil, let t = item.attributedTitle?.string, !t.isEmpty { title = t }
             if let t = item.attributedContentText?.string, !t.isEmpty, text == nil { text = t }
             for provider in item.attachments ?? [] {
                 if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                    if images.count < 4, let image = await Self.image(provider) { images.append(image) }
+                    if images.count >= 4 {
+                        extraImages += 1
+                    } else if let image = await Self.image(provider) {
+                        images.append(image)
+                    } else {
+                        unreadable += 1
+                    }
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                    if let u = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL, !u.isFileURL, url == nil {
-                        url = u
+                    let u = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL
+                    if let u, !u.isFileURL {
+                        if url == nil { url = u } else { unsupported += 1 }
+                    } else {
+                        unsupported += 1
                     }
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
                     if let t = try? await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String, !t.isEmpty {
                         text = text.map { $0 == t ? $0 : $0 + "\n\n" + t } ?? t
+                    } else {
+                        unreadable += 1
                     }
+                } else {
+                    unsupported += 1
                 }
             }
         }
@@ -163,6 +189,13 @@ struct ShareView: View {
                             }
                         }
                     }
+                    if !model.leftOut.isEmpty {
+                        Section {
+                            Label("Not sent: " + model.leftOut.formatted(.list(type: .and)) + ".", systemImage: "info.circle")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Section("Note") {
                         TextField("Why you saved it (optional)", text: $model.note, axis: .vertical)
                             .lineLimit(3 ... 8)
@@ -175,19 +208,27 @@ struct ShareView: View {
                     Section { ErrorBox(title: "Not saved", message: error) }
                 }
             }
+            .interactiveDismissDisabled(model.saving)
             .navigationTitle("Send to Substrate")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Cancel waits while a save is under way: closing the sheet
+                // then would not stop what the server already took.
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: model.cancel)
+                        .disabled(model.saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if model.saving {
-                        ProgressView()
-                    } else {
-                        Button("Save") { Task { await model.save() } }
-                            .disabled(model.session == nil || model.loading || model.isEmpty)
+                    Button {
+                        Task { await model.save() }
+                    } label: {
+                        ZStack {
+                            Text("Save").opacity(model.saving ? 0 : 1)
+                            if model.saving { ProgressView() }
+                        }
                     }
+                    .disabled(model.session == nil || model.loading || model.isEmpty || model.saving)
+                    .accessibilityLabel(model.saving ? "Saving" : "Save")
                 }
             }
         }

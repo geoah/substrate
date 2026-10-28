@@ -23,6 +23,13 @@ final class EndToEndTests: XCTestCase {
         else { throw XCTSkip("SYNC_E2E_SERVER, SYNC_E2E_REPOSITORY and SYNC_E2E_PASSWORD name the server") }
 
         let app = XCUIApplication()
+        // SYNC_E2E_SHOTS names a directory to keep a screenshot of each page in.
+        let shots = env["SYNC_E2E_SHOTS"].map { URL(fileURLWithPath: $0) }
+        func shot(_ name: String) {
+            guard let shots else { return }
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: shots.appendingPathComponent("\(name).png"))
+        }
+        let back = { app.navigationBars.buttons.element(boundBy: 0).tap() }
         // Health is checked by posting its deliveries, not through the app:
         // the simulator's HealthKit sheet does not reliably answer a test.
         app.launchEnvironment["SUBSTRATE_SYNC_E2E_NO_HEALTH"] = "1"
@@ -30,11 +37,13 @@ final class EndToEndTests: XCTestCase {
 
         let address = app.textFields["https://substrate.example.com"]
         if address.waitForExistence(timeout: 10) {
+            shot("signin")
             address.tap()
             address.typeText(server)
             app.buttons["Continue"].tap()
             let repo = app.textFields["you.example.com"]
             XCTAssertTrue(repo.waitForExistence(timeout: 20), "the server was not accepted")
+            shot("signin-repository")
             repo.tap()
             repo.typeText(repository)
             let secure = app.secureTextFields["Required"]
@@ -52,7 +61,10 @@ final class EndToEndTests: XCTestCase {
         let syncNow = app.buttons["Sync Now"]
         if setUp.waitForExistence(timeout: 30), !syncNow.exists {
             scrollTo(setUp, in: app, up: true)
+            shot("setup")
             setUp.tap()
+            sleep(1)
+            shot("setup-busy")
         }
         XCTAssertTrue(syncNow.waitForExistence(timeout: 180), "set up did not finish: \(app.debugDescription)")
         if notNow.waitForExistence(timeout: 3) { notNow.tap() }
@@ -70,19 +82,14 @@ final class EndToEndTests: XCTestCase {
 
         XCTAssertTrue(syncNow.waitForExistence(timeout: 10), app.debugDescription)
         syncNow.tap()
+        sleep(1)
+        shot("syncing")
         // The status card says when the run ended, and how.
-        let ended = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Everything synced' OR label == 'The last sync did not finish'")).firstMatch
+        let ended = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Everything synced' OR label CONTAINS \"didn't sync\"")).firstMatch
         XCTAssertTrue(ended.waitForExistence(timeout: 240), "the sync did not end: \(app.debugDescription)")
-        XCTAssertTrue(ended.label.hasPrefix("Everything synced"), app.debugDescription)
+        XCTAssertTrue(ended.label.contains("Everything synced"), app.debugDescription)
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == 'Failed'")).count, 0, app.debugDescription)
 
-        // SYNC_E2E_SHOTS names a directory to keep a screenshot of each page in.
-        let shots = env["SYNC_E2E_SHOTS"].map { URL(fileURLWithPath: $0) }
-        func shot(_ name: String) {
-            guard let shots else { return }
-            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: shots.appendingPathComponent("\(name).png"))
-        }
-        let back = { app.navigationBars.buttons.element(boundBy: 0).tap() }
         shot("home")
 
         // Each source's page says what its last run wrote.
@@ -108,10 +115,10 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(syncNow.waitForExistence(timeout: 240), "the second sync did not end: \(app.debugDescription)")
         for source in ["contacts", "calendars", "reminders"] {
             app.buttons["source.\(source)"].tap()
-            let lastRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written'")).firstMatch
+            let lastRun = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' written' OR label CONTAINS 'no changes'")).firstMatch
             XCTAssertTrue(lastRun.waitForExistence(timeout: 10), app.debugDescription)
             print("E2E \(source) again: \(lastRun.label)")
-            XCTAssertTrue(lastRun.label.contains(" 0 written"), "the second sync wrote \(source) again: \(lastRun.label)")
+            XCTAssertTrue(lastRun.label.contains("no changes"), "the second sync wrote \(source) again: \(lastRun.label)")
             back()
         }
 
@@ -141,6 +148,9 @@ final class EndToEndTests: XCTestCase {
             back()
             app.navigationBars.buttons["Settings"].tap()
             shot("settings")
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Server Set Up'")).firstMatch.tap()
+            shot("settings-setup")
+            back()
             back()
         }
         let screen = app.debugDescription

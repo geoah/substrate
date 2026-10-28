@@ -55,6 +55,17 @@ enum Source: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// What the source sends, in a few words, for where it is off or new.
+    var summary: String {
+        switch self {
+        case .health: "Heart rate, activity, sleep, workouts and more"
+        case .contacts: "Every contact on this phone"
+        case .calendars: "Events from 90 days back to 180 ahead"
+        case .reminders: "Every list and every reminder"
+        case .places: "Where you stay, named by Apple Maps"
+        }
+    }
+
     var symbol: String {
         switch self {
         case .health: "heart.fill"
@@ -74,6 +85,9 @@ struct SyncRun: Codable, Equatable, Identifiable, Sendable {
     var finished: Date
     var summary: String?
     var error: String?
+    /// Stopped by hand or by the system rather than failed: `error` says
+    /// which, and nothing went wrong.
+    var stopped: Bool?
 }
 
 /// What the device held at the last scan, beside what was pushed: the
@@ -92,6 +106,8 @@ struct SourceStatus: Codable, Equatable, Sendable {
     /// "412 contacts, 3 written".
     var counts: String?
     var lastError: String?
+    /// The last run was stopped, not failed (SyncRun.stopped).
+    var stopped: Bool?
 }
 
 /// The device's side of every sync, in Application Support. Losing it is

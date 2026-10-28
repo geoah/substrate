@@ -21,8 +21,11 @@ struct SourceOverview: Equatable {
         if let access, Self.blocked.contains(where: access.hasPrefix) {
             return SourceOverview(badge: "No access", tone: .attention, error: status?.lastError)
         }
+        if status?.stopped == true, let reason = status?.lastError {
+            return SourceOverview(badge: "Stopped", tone: .attention, error: reason)
+        }
         if let error = status?.lastError { return SourceOverview(badge: "Failed", tone: .failed, error: error) }
-        if waiting > 0 { return SourceOverview(badge: "Being filed", tone: .busy) }
+        if waiting > 0 { return SourceOverview(badge: "Processing", tone: .busy) }
         if status?.lastSync == nil { return SourceOverview(badge: "Not synced yet", tone: .attention) }
         return SourceOverview(badge: "Up to date", tone: .good)
     }

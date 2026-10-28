@@ -46,9 +46,8 @@ struct SessionExpiredView: View {
                     WideLabel(title: "Sign In Again", systemImage: "person.badge.key")
                 }
                 .primaryAction()
+                .buttonRow()
             }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
         }
         .navigationTitle("Substrate Sync")
     }
@@ -72,8 +71,7 @@ struct RootView: View {
                     HomeView()
                 }
             }
-            .frame(maxWidth: 640)
-            .frame(maxWidth: .infinity)
+            .readableWidth()
         }
         .task(id: model.session?.tokenID) {
             if model.session != nil, !model.setupChecked { await model.checkSetup() }

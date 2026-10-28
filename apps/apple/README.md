@@ -231,8 +231,8 @@ unreferenced blob. A link shared again updates its record.
 **Home is an overview.** A status card says what is syncing (the source,
 its step and how far it has got, and Stop) or how the last sync ended, above
 Sync Now. Each source is one row: what it has synced of what the phone holds,
-when, and its state as a badge (Up to date, Syncing, Queued, Being filed,
-Failed, No access, Off). A source that is running or waiting its turn shows
+when, and its state as a badge (Up to date, Syncing, Queued, Processing,
+Stopped, Failed, No access, Off). A stop is not a failure. A source that is running or waiting its turn shows
 that, never the error of the run it is replacing. Tapping a source opens its
 page: the state with the last run or its error and a button that syncs that
 source alone, its coverage once (Health: the days with data inside the

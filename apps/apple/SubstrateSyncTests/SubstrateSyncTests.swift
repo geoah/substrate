@@ -399,9 +399,20 @@ final class OverviewTests: XCTestCase {
         let ok = SourceStatus(lastSync: Date(), counts: "15 contacts", lastError: nil)
         XCTAssertEqual(SourceOverview.of(enabled: false, access: "Allowed", running: true, queued: false, status: failed, waiting: 3).badge, "Off")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Not allowed", running: false, queued: false, status: ok, waiting: 0).badge, "No access")
-        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 7).badge, "Being filed")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 7).badge, "Processing")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: nil, waiting: 0).badge, "Not synced yet")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: ok, waiting: 0).badge, "Up to date")
+    }
+
+    /// A run stopped by hand is a stop, said plainly, and no failure.
+    func testAStoppedRunIsNotAFailure() {
+        let stopped = SourceStatus(lastSync: Date(), counts: nil, lastError: "Stopped before it finished. Sync again to carry on.", stopped: true)
+        let o = SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: stopped, waiting: 0)
+        XCTAssertEqual(o.badge, "Stopped")
+        XCTAssertEqual(o.tone, .attention)
+        XCTAssertEqual(SyncEngine.changes(0, 0), "no changes")
+        XCTAssertEqual(SyncEngine.changes(3, 1), "3 written · 1 removed")
+        XCTAssertEqual(SyncEngine.changes(0, 2), "2 removed")
     }
 
     func testTheTimelineFoldsEachRunsLinesIntoIt() {
