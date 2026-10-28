@@ -1,0 +1,100 @@
+# one document on the record: FHIR's DocumentReference. A letter, a scanned
+# form or a discharge summary, with its file. A file's bytes stay out of
+# search, so `text` holds the document's words where the file is text or a
+# reader extracted them.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/document
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One document on your record, such as a hospital letter, a discharge summary
+    or a scanned form: what it is, who wrote it, and the file.
+  purpose: primary
+  names:
+    singular: document
+  label:
+    singular: Medical document
+    plural: Medical documents
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the document's heading, such as Discharge summary
+    type:
+      type: string
+      description: what kind of document it is, as the provider files it,
+        such as Letter or Attachment
+    coding:
+      type: object
+      description: the code it was filed under
+      fields:
+        system:
+          type: string
+          description: the code system, such as http://snomed.info/sct
+        code:
+          type: string
+          description: the code
+        display:
+          type: string
+          description: the code's term as the provider recorded it
+    file:
+      type: blobref
+      description: the document itself, such as the PDF
+    text:
+      type: markdown
+      embed: true
+      description: the document's words, where the file is text or a reader
+        extracted them
+    author:
+      type: string
+      description: who wrote it
+    status:
+      type: enum
+      description: whether it is the current version
+      values:
+        - value: current
+          label: Current
+        - value: superseded
+          label: Superseded
+        - value: enteredinerror
+          label: Entered in error
+    precision:
+      type: enum
+      description: how much of `at` the provider recorded, so a reader shows
+        2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    encounter:
+      type: reference
+      kind: substrate.reamde.dev/clinical/encounter
+      description: the consultation it was filed at
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that holds it
+    notes:
+      type: text
+      embed: true
+      description: the provider's comment on it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

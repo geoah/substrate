@@ -1,0 +1,161 @@
+# one consultation or other contact with a care provider: FHIR's Encounter,
+# with what the provider coded during it. A GP record files a consultation as
+# sections (History, Examination, Comment) of coded entries; `entries` keeps
+# that shape. An object stays out of search and embeddings, so `text` carries
+# the same consultation as one markdown body, written by whoever writes the
+# entries, and a reader finds the consultation by its words.
+#
+# `at` is when it took place; `endsAt` is set only where it ran over a span,
+# such as a hospital stay. A record a provider files without seeing you, such
+# as a scanned letter or a text message sent, is an encounter of class
+# `admin`, because that is how the record itself files it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/encounter
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One consultation or other contact with a care provider, such as a GP appointment,
+    a phone call or a hospital stay: when and where it was, who you saw, and
+    what they recorded.
+  purpose: primary
+  names:
+    singular: encounter
+  label:
+    singular: Consultation
+    plural: Consultations
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{summary|type}"
+  properties:
+    summary:
+      type: string
+      description: a one-line account of it, such as its first coded entry
+    type:
+      type: string
+      description: the kind of contact as the provider names it, such as Telephone
+        consultation
+    class:
+      type: enum
+      description: how the contact happened
+      values:
+        - value: inperson
+          label: In person
+        - value: telephone
+          label: Telephone
+        - value: video
+          label: Video
+        - value: online
+          label: Online
+        - value: home
+          label: Home visit
+        - value: inpatient
+          label: Inpatient stay
+        - value: emergency
+          label: Emergency
+        - value: admin
+          label: Administrative
+    status:
+      type: enum
+      description: where the contact stands
+      values:
+        - value: planned
+          label: Planned
+        - value: inprogress
+          label: In progress
+        - value: finished
+          label: Finished
+        - value: cancelled
+          label: Cancelled
+        - value: enteredinerror
+          label: Entered in error
+    precision:
+      type: enum
+      description: how much of `at` the provider recorded, so a reader shows
+        March 2024 rather than 1 March 2024; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider the contact was with
+    location:
+      type: string
+      description: where it took place, as the provider names the place
+    participants:
+      type: object
+      repeated: true
+      description: who took part on the provider's side, such as the clinician
+        who saw you
+      fields:
+        name:
+          type: string
+          description: the person's name as the provider records it
+        role:
+          type: string
+          description: their role or title, such as Dr or Practice nurse
+    reason:
+      type: string
+      description: why the contact happened, as the provider records it
+    entries:
+      type: object
+      repeated: true
+      description: what the provider recorded, entry by entry, in the order
+        the record lists them
+      fields:
+        section:
+          type: string
+          description: the heading it was filed under, such as History, Examination
+            or Comment
+        term:
+          type: string
+          description: the entry as the provider coded it, such as Blood pressure
+            reading
+        coding:
+          type: object
+          description: the code it was recorded under
+          fields:
+            system:
+              type: string
+              description: the code system, such as http://snomed.info/sct
+            code:
+              type: string
+              description: the code
+            display:
+              type: string
+              description: the code's term as the provider recorded it
+        text:
+          type: string
+          description: the free text written against it
+        upstreamId:
+          type: string
+          description: the provider's own id for the entry, which a document
+            or a result filed with it may name
+    text:
+      type: markdown
+      embed: true
+      description: the consultation as one markdown body, every section and
+        entry with its free text
+    reports:
+      type: reference
+      kind: substrate.reamde.dev/labs/labreport
+      repeated: true
+      description: the lab reports filed at it
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

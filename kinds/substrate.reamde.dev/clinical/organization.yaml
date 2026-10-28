@@ -1,0 +1,96 @@
+# a care provider: FHIR's Organization. A GP practice, a hospital, a pharmacy
+# or a lab, carrying the identifiers its health service gives it (in England
+# an ODS code), so a provider that names the same practice twice lands on one
+# record by keeping that code in the id.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/organization
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    A care provider, such as a GP practice, a hospital, a pharmacy or a lab:
+    its name, what kind of provider it is, where it is and how to reach it.
+  purpose: supporting
+  names:
+    singular: organization
+  label:
+    singular: Care provider
+    plural: Care providers
+  traits:
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the provider's name, such as Riverside Medical Practice
+    type:
+      type: enum
+      description: what kind of care provider it is
+      values:
+        - value: gppractice
+          label: GP practice
+        - value: hospital
+          label: Hospital
+        - value: pharmacy
+          label: Pharmacy
+        - value: laboratory
+          label: Laboratory
+        - value: clinic
+          label: Clinic
+        - value: dental
+          label: Dental practice
+        - value: optical
+          label: Optician
+        - value: community
+          label: Community service
+        - value: other
+          label: Other
+    identifiers:
+      type: object
+      repeated: true
+      description: the identifiers its health service gives it, such as an
+        ODS code
+      fields:
+        system:
+          type: string
+          description: the identifier's namespace, such as https://fhir.nhs.uk/Id/ods-organization-code
+        value:
+          type: string
+          description: the identifier
+        label:
+          type: string
+          description: what the service calls it, such as ODS code
+    address:
+      type: object
+      description: where it is
+      fields:
+        lines:
+          type: string
+          repeated: true
+          description: the street lines, in order
+        city:
+          type: string
+          description: the town or city
+        postalCode:
+          type: string
+          description: the postcode
+        country:
+          type: string
+          description: the country
+    phone:
+      type: phone
+      description: its phone number
+    url:
+      type: url
+      description: its website
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the upstream; a lower one
+        is refused

@@ -1,0 +1,58 @@
+# one message a care provider sent you: FHIR's Communication. A practice's
+# text message, a health app's inbox message, a vaccination invitation. Your
+# own messages to a provider are records of the messaging app that carried
+# them, not this.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/communication
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One message a care provider sent you, such as a reminder from your GP
+    practice or an invitation to book a vaccination: who sent it, when, and
+    what it says.
+  purpose: primary
+  names:
+    singular: communication
+  label:
+    singular: Care message
+    plural: Care messages
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{subject|sender}"
+  properties:
+    sender:
+      type: string
+      required: true
+      description: who sent it, as the message names them
+    subject:
+      type: string
+      description: the message's subject line, where it has one
+    body:
+      type: markdown
+      embed: true
+      description: the message, as markdown
+    attachments:
+      type: blobref
+      repeated: true
+      description: the files sent with it
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that sent it, where the repository keeps
+        one for the sender
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

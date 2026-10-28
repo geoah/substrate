@@ -22,6 +22,7 @@ import (
 const (
 	applehealthID = "providers.substrate.reamde.dev/applehealth"
 	environmentID = "substrate.reamde.dev/environment"
+	clinicalID    = "substrate.reamde.dev/clinical"
 )
 
 // requirePublishedInstall fails unless pkg is installed in ds as a published
@@ -91,6 +92,118 @@ func TestAnInstallBringsThePublishedPackagesItRequires(t *testing.T) {
 			t.Errorf("re-installing labs moved the head %d -> %d (%v)", head.Seq, after.Seq, err)
 		}
 	})
+
+	// clinical requires labs, which requires health: one install brings all
+	// three (decision record 0193).
+	t.Run("clinical", func(t *testing.T) {
+		ds := newDataset(t)
+		if _, _, err := c.Install(ctx, substrate.ActorAPI, clinicalID, ds); err != nil {
+			t.Fatalf("install %s without labs or health: %v", clinicalID, err)
+		}
+		requirePublishedInstall(t, c, ds, healthID, healthID+"/workout")
+		requirePublishedInstall(t, c, ds, labsID, labsID+"/labreport")
+		requirePublishedInstall(t, c, ds, clinicalID, clinicalID+"/encounter")
+	})
+}
+
+// A CLINICAL RECORD LANDS IN EVERY SHAPE A PROVIDER WRITES (decision record
+// 0193): a practice, a consultation whose coded entries keep their codes and
+// which names the lab report filed at it, a condition recorded at it, a
+// prescribed medicine and one issue of it, and a document, a message, an
+// allergy, a vaccination, an appointment, a referral and a registration.
+func TestClinicalRecordsLand(t *testing.T) {
+	ctx := context.Background()
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, clinicalID, ds); err != nil {
+		t.Fatalf("install %s: %v", clinicalID, err)
+	}
+	kind := func(name string) string { return clinicalID + "/" + name }
+	put := func(k, id string, props map[string]any) {
+		t.Helper()
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: k, ID: id, Properties: props}); err != nil {
+			t.Fatalf("put %s/%s: %v", k, id, err)
+		}
+	}
+	practice := kind("organization") + "/ods/A12345"
+	consultation := kind("encounter") + "/gp/c1"
+	put(kind("organization"), "ods/A12345", map[string]any{
+		"name": "Riverside Medical Practice", "type": "gppractice",
+		"identifiers": []any{map[string]any{
+			"system": "https://fhir.nhs.uk/Id/ods-organization-code", "value": "A12345", "label": "ODS code",
+		}},
+		"address": map[string]any{"lines": []any{"1 River Road"}, "city": "London", "postalCode": "N1 1AA"},
+	})
+	put(kind("patient"), "nhs", map[string]any{
+		"name": "NHS England", "fullName": "Ada Example", "birthDate": "1990-01-01",
+		"identifiers": []any{map[string]any{"system": "https://fhir.nhs.uk/Id/nhs-number", "value": "9990000000", "label": "NHS number"}},
+		"practice":    practice, "pharmacy": practice, "registeredAt": "2024-01-10",
+	})
+	put(labsID+"/labreport", "gp/r1", map[string]any{"lab": "Riverside Medical Practice", "at": "2026-03-02T09:30:00Z"})
+	put(kind("encounter"), "gp/c1", map[string]any{
+		"at": "2026-03-02T09:30:00Z", "summary": "Blood pressure review", "type": "Face to face consultation",
+		"class": "inperson", "status": "finished", "precision": "time", "organization": practice,
+		"participants": []any{map[string]any{"name": "Dr Example", "role": "Dr"}},
+		"entries": []any{map[string]any{
+			"section": "Examination", "term": "O/E - blood pressure reading", "text": "128/82", "upstreamId": "e1",
+			"coding": map[string]any{"system": "http://snomed.info/sct", "code": "163020007", "display": "O/E - blood pressure reading"},
+		}},
+		"text":     "**Examination**\n\nO/E - blood pressure reading: 128/82",
+		"reports":  []any{labsID + "/labreport/gp/r1"},
+		"revision": 1,
+	})
+	put(kind("condition"), "gp/p1", map[string]any{
+		"name": "Essential hypertension", "at": "2026-03-02T00:00:00Z", "precision": "day", "clinicalStatus": "active",
+		"category": "problem", "significance": "major", "encounter": consultation, "organization": practice,
+	})
+	put(kind("allergy"), "gp/a1", map[string]any{
+		"name": "Allergy to penicillin", "substance": "penicillin", "type": "allergy", "category": "medication",
+		"criticality": "high", "clinicalStatus": "active", "at": "2015-06-01T00:00:00Z", "precision": "year",
+		"reactions": []any{map[string]any{"manifestation": "Hives", "severity": "moderate"}},
+	})
+	put(kind("immunization"), "gp/i1", map[string]any{
+		"name": "Influenza vaccination", "status": "completed", "doseNumber": "1", "at": "2025-10-01T10:00:00Z",
+	})
+	put(kind("medicationrequest"), "gp/m1", map[string]any{
+		"medication": "Amlodipine 5mg tablets", "dosage": "One tablet once a day", "quantity": "28 tablets",
+		"course": "repeat", "status": "active", "at": "2026-03-02T09:40:00Z", "organization": practice,
+	})
+	put(kind("medicationdispense"), "eps/X1/1", map[string]any{
+		"medication": "Amlodipine 5mg tablets", "quantity": "28 tablets", "status": "completed", "sourceStatus": "Dispensed",
+		"prescription": "X1", "request": kind("medicationrequest") + "/gp/m1", "pharmacy": practice,
+		"at": "2026-03-03T10:00:00Z", "statusAt": "2026-03-04T12:00:00Z",
+	})
+	put(kind("appointment"), "gp/ap1", map[string]any{
+		"name": "Telephone appointment", "status": "fulfilled", "channel": "telephone",
+		"at": "2026-03-02T09:30:00Z", "endsAt": "2026-03-02T09:40:00Z", "encounter": consultation,
+	})
+	put(kind("referral"), "ers/1", map[string]any{
+		"specialty": "Cardiology", "status": "active", "priority": "routine", "at": "2026-03-02T10:00:00Z",
+		"plannedWait": "P18W", "typicalWait": "P20W", "estimatedTreatmentAt": "2026-07-01", "waitsAsOf": "2026-03-01",
+	})
+	put(kind("document"), "gp/d1", map[string]any{
+		"name": "Discharge summary", "type": "Letter", "at": "2026-02-20T00:00:00Z", "precision": "day",
+		"text": "Discharged home.", "status": "current", "encounter": consultation,
+	})
+	put(kind("communication"), "app/1", map[string]any{
+		"sender": "Riverside Medical Practice", "body": "Your blood test results are back.", "at": "2026-03-05T08:00:00Z",
+	})
+
+	row, err := ds.Get(ctx, kind("encounter"), "gp/c1")
+	if err != nil {
+		t.Fatalf("read the consultation back: %v", err)
+	}
+	entries, _ := row.Properties["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("the consultation holds %d entries, want 1: %v", len(entries), row.Properties["entries"])
+	}
+	coding, _ := entries[0].(map[string]any)["coding"].(map[string]any)
+	if coding["code"] != "163020007" {
+		t.Errorf("the entry's code did not survive the write: %v", entries[0])
+	}
+	if row.Title != "Blood pressure review" {
+		t.Errorf("the consultation titles itself %q, want its summary", row.Title)
+	}
 }
 
 // A catalogue that declares no kinds, only metric records, installs with an

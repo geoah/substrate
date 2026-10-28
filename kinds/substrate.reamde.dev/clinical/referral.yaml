@@ -1,0 +1,100 @@
+# one referral to another service: FHIR's ServiceRequest, as a referral,
+# with the waiting-time estimates a health service publishes for it. `at` is
+# when you were referred. The waits are durations because services publish
+# them in weeks, and `waitsAsOf` dates them, since they move as lists do.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/referral
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One referral to another care provider, such as to a hospital specialty:
+    where you were sent, why, where it stands, and how long the wait is expected
+    to be.
+  purpose: primary
+  names:
+    singular: referral
+  label:
+    singular: Referral
+    plural: Referrals
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name|specialty}"
+  properties:
+    name:
+      type: string
+      description: the referral's heading, such as Dermatology at Riverside
+        Hospital
+    specialty:
+      type: string
+      description: the specialty you were referred to, such as Dermatology
+    provider:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider you were referred to
+    status:
+      type: enum
+      description: where the referral stands
+      values:
+        - value: draft
+          label: Draft
+        - value: active
+          label: Active
+        - value: onhold
+          label: On hold
+        - value: completed
+          label: Completed
+        - value: revoked
+          label: Withdrawn
+        - value: unknown
+          label: Unknown
+    priority:
+      type: enum
+      description: how urgent it is
+      values:
+        - routine
+        - urgent
+        - asap
+        - stat
+    reason:
+      type: string
+      description: why you were referred
+    referredBy:
+      type: string
+      description: who referred you
+    plannedWait:
+      type: duration
+      description: the wait the provider plans for, such as P18W
+    typicalWait:
+      type: duration
+      description: the wait most patients see, such as the time within which
+        80 in 100 are treated
+    estimatedTreatmentAt:
+      type: date
+      description: when treatment is expected
+    waitsAsOf:
+      type: date
+      description: the date the waiting-time figures were published for
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that referred you
+    notes:
+      type: text
+      embed: true
+      description: the provider's free text about it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

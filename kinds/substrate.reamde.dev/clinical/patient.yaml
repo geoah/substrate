@@ -1,0 +1,99 @@
+# you as a patient of one health service: FHIR's Patient. One record per
+# service that keeps a record about you, holding the identifiers it files you
+# under and where it sends you. The other clinical kinds name their subject
+# with `about` and never point here, so a single-person repository's rows read
+# without one; this is where the service's numbers, the registered practice
+# and the chosen pharmacy live.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/patient
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    You as a patient of one health service, such as the NHS: the numbers it
+    files you under, the GP practice you are registered with and the pharmacy
+    your prescriptions go to.
+  purpose: primary
+  names:
+    singular: patient
+  label:
+    singular: Patient registration
+    plural: Patient registrations
+  traits:
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the registration's heading, such as NHS England
+    fullName:
+      type: string
+      description: your name as the service holds it
+    identifiers:
+      type: object
+      repeated: true
+      description: the identifiers the service files you under, such as an
+        NHS number
+      fields:
+        system:
+          type: string
+          description: the identifier's namespace, such as https://fhir.nhs.uk/Id/nhs-number
+        value:
+          type: string
+          description: the identifier
+        label:
+          type: string
+          description: what the service calls it, such as NHS number
+    birthDate:
+      type: date
+      description: your date of birth as the service holds it
+    address:
+      type: object
+      description: your home address as the service holds it
+      fields:
+        lines:
+          type: string
+          repeated: true
+          description: the street lines, in order
+        city:
+          type: string
+          description: the town or city
+        postalCode:
+          type: string
+          description: the postcode
+        country:
+          type: string
+          description: the country
+    phone:
+      type: phone
+      description: your phone number as the service holds it
+    email:
+      type: email
+      description: your email address as the service holds it
+    practice:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the GP practice you are registered with
+    registeredAt:
+      type: date
+      description: when you registered with that practice
+    pharmacy:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the pharmacy your prescriptions go to
+    about:
+      type: reference
+      kind: any
+      description: who the registration is for; absent means the repository's
+        owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the service; a lower one is
+        refused

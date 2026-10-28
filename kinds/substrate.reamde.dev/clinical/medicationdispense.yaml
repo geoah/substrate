@@ -1,0 +1,88 @@
+# one item of an issued prescription, as the pharmacy handles it: FHIR's
+# MedicationDispense. A prescription with three items is three records
+# sharing `prescription`. `at` is when the prescription was issued;
+# `statusAt` is when the item reached its current status, such as collected.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/medicationdispense
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One medicine issued on a prescription: the item, how much, which pharmacy
+    has it, and how far it has got, from waiting at the pharmacy to collected.
+  purpose: primary
+  names:
+    singular: medicationdispense
+  label:
+    singular: Dispensed medicine
+    plural: Dispensed medicines
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{medication}"
+  properties:
+    medication:
+      type: string
+      required: true
+      description: the item as prescribed, such as Amoxicillin 500mg capsules
+    quantity:
+      type: string
+      description: how much, as written, such as 21 capsules
+    status:
+      type: enum
+      description: how far the item has got
+      values:
+        - value: preparation
+          label: With the pharmacy
+        - value: inprogress
+          label: Being dispensed
+        - value: completed
+          label: Dispensed
+        - value: onhold
+          label: On hold
+        - value: cancelled
+          label: Cancelled
+        - value: declined
+          label: Not dispensed
+        - value: unknown
+          label: Unknown
+    sourceStatus:
+      type: string
+      description: the status as the prescription service worded it, such
+        as With dispenser
+    statusAt:
+      type: datetime
+      description: when the item reached its status
+    prescription:
+      type: string
+      description: the prescription's own id, such as the barcode an electronic
+        prescription carries
+    request:
+      type: reference
+      kind: substrate.reamde.dev/clinical/medicationrequest
+      description: the prescribed medicine this issues
+    pharmacy:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the pharmacy dispensing it
+    prescriber:
+      type: string
+      description: who prescribed it
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that issued the prescription
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

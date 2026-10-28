@@ -22,15 +22,24 @@ import (
 	"github.com/geoah/substrate/samples"
 )
 
-// The first-party catalogues the tree ships beside the seed (record 0192),
-// and the kinds of the seeded observations package their records are.
+// The first-party catalogues the tree ships beside the seed (records 0192
+// and 0193), and the kinds of the seeded observations package their records
+// are.
 const (
 	healthPackage      = kinds.SeedAuthority + "/health"
 	labsPackage        = kinds.SeedAuthority + "/labs"
 	environmentPackage = kinds.SeedAuthority + "/environment"
+	clinicalPackage    = kinds.SeedAuthority + "/clinical"
 	metricKind         = kinds.SeedObservationsPackage + "/metric"
 	analyteKind        = labsPackage + "/analyte"
 )
+
+// clinicalKinds is every kind the clinical catalogue ships, one per FHIR
+// resource it carries (record 0193).
+var clinicalKinds = []string{
+	"patient", "organization", "encounter", "condition", "allergy", "immunization",
+	"medicationrequest", "medicationdispense", "appointment", "referral", "document", "communication",
+}
 
 func shippedCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
@@ -116,6 +125,7 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 			triggers:  map[string]string{"labs-on-labresult": vocabulary.CoreKind(vocabulary.DocFunction) + "/" + labsPackage + "/convertlab"},
 		},
 		{id: environmentPackage},
+		{id: clinicalPackage, kinds: clinicalKindRefs(), requires: []string{labsPackage}},
 	} {
 		b := shippedBundle(t, cat, c.id)
 		if b.Tier != substrate.TierProvider || b.Authority != kinds.SeedAuthority {
@@ -165,6 +175,25 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 	if _, err := reg.ResolveFunction(labsPackage + "/convertlab"); err != nil {
 		t.Errorf("convertlab did not install: %v", err)
 	}
+	// clinical installs onto the seed with labs and health, so a consultation
+	// can point at a lab report.
+	clinical := loadSeed(t)
+	if err := installClosure(clinical, bundlesByID(cat), shippedBundle(t, cat, clinicalPackage), map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range append(clinicalKindRefs(), labsPackage+"/labreport", healthPackage+"/workout") {
+		if _, ok := clinical.ByIdentity(k); !ok {
+			t.Errorf("installing clinical did not declare %s", k)
+		}
+	}
+}
+
+func clinicalKindRefs() []string {
+	refs := make([]string, len(clinicalKinds))
+	for i, k := range clinicalKinds {
+		refs[i] = clinicalPackage + "/" + k
+	}
+	return refs
 }
 
 // A PROVIDER'S ADAPTER LANDS WITH THE PROVIDER AND WRITES THE HEALTH
@@ -533,19 +562,22 @@ func article(form string) string {
 	return "a"
 }
 
-// A KIND AN ADAPTER REWRITES HOLDS ITS REVISION. Every observations, health
-// and labs kind that declares `revision` binds `observed` or `revised`, so
-// the write path refuses a stale delivery of it (decision 0162) rather than
-// reverting a night, a workout or a report to an older upstream version.
+// A KIND AN ADAPTER REWRITES HOLDS ITS REVISION. Every observations, health,
+// labs and clinical kind that declares `revision` binds `observed` or
+// `revised`, so the write path refuses a stale delivery of it (decision 0162)
+// rather than reverting a night, a workout, a report or a consultation to an
+// older upstream version.
 func TestRevisionKindsBindTheRuleThatHoldsIt(t *testing.T) {
 	reg := loadSeed(t)
 	cat := shippedCatalog(t)
-	if err := installClosure(reg, bundlesByID(cat), shippedBundle(t, cat, labsPackage), map[string]bool{}); err != nil {
+	if err := installClosure(reg, bundlesByID(cat), shippedBundle(t, cat, clinicalPackage), map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
 	checked := 0
 	for _, k := range reg.Kinds() {
-		if k.Package != kinds.SeedObservationsPackage && k.Package != healthPackage && k.Package != labsPackage {
+		switch k.Package {
+		case kinds.SeedObservationsPackage, healthPackage, labsPackage, clinicalPackage:
+		default:
 			continue
 		}
 		if _, declares := k.Prop(vocabulary.ObservedRevision); !declares {

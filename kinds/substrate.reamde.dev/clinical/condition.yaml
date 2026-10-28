@@ -1,0 +1,111 @@
+# one health condition on the record: FHIR's Condition. A GP record's problem
+# list and the diagnoses filed at consultations are both conditions, told
+# apart by `category`. `at` is the onset and `endsAt` when it resolved, so a
+# condition that is still open has no end. `significance` is the UK Core
+# problem significance: a GP record leads its summary with the major ones.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/condition
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One health condition on your record, such as asthma or a fractured wrist:
+    when it began and ended, whether it is still active, and how significant
+    your care provider rated it.
+  purpose: primary
+  names:
+    singular: condition
+  label:
+    singular: Health condition
+    plural: Health conditions
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the condition as the provider recorded it, such as Asthma
+    coding:
+      type: object
+      description: the code it was recorded under
+      fields:
+        system:
+          type: string
+          description: the code system, such as http://snomed.info/sct
+        code:
+          type: string
+          description: the code
+        display:
+          type: string
+          description: the code's term as the provider recorded it
+    clinicalStatus:
+      type: enum
+      description: whether the condition is still with you
+      values:
+        - active
+        - recurrence
+        - relapse
+        - inactive
+        - remission
+        - resolved
+    category:
+      type: enum
+      description: where the record files it
+      values:
+        - value: problem
+          label: Problem list
+        - value: diagnosis
+          label: Consultation diagnosis
+        - value: concern
+          label: Health concern
+    significance:
+      type: enum
+      description: how significant the provider rated it
+      values:
+        - major
+        - minor
+    sourceStatus:
+      type: string
+      description: the status as the provider worded it, kept where it maps
+        onto no clinical status
+    precision:
+      type: enum
+      description: how much of `at` the provider recorded, so a reader shows
+        2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    recordedAt:
+      type: datetime
+      description: when the provider recorded it, where that differs from
+        the onset
+    encounter:
+      type: reference
+      kind: substrate.reamde.dev/clinical/encounter
+      description: the consultation it was recorded at
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that recorded it
+    notes:
+      type: text
+      embed: true
+      description: the provider's free text about it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

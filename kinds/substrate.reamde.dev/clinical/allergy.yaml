@@ -1,0 +1,119 @@
+# one allergy or intolerance: FHIR's AllergyIntolerance. `at` is the onset
+# where the provider knows it, else when it was first recorded.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/allergy
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One allergy or intolerance on your record, such as an allergy to penicillin:
+    what it is to, how serious it is, and what it does to you.
+  purpose: primary
+  names:
+    singular: allergy
+  label:
+    singular: Allergy
+    plural: Allergies
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the allergy as the provider recorded it, such as Allergy
+        to penicillin
+    substance:
+      type: string
+      description: what it is to, such as penicillin
+    coding:
+      type: object
+      description: the code it was recorded under
+      fields:
+        system:
+          type: string
+          description: the code system, such as http://snomed.info/sct
+        code:
+          type: string
+          description: the code
+        display:
+          type: string
+          description: the code's term as the provider recorded it
+    type:
+      type: enum
+      description: whether it is an allergy or an intolerance
+      values:
+        - allergy
+        - intolerance
+    category:
+      type: enum
+      description: what kind of substance it is to
+      values:
+        - food
+        - medication
+        - environment
+        - biologic
+    criticality:
+      type: enum
+      description: how dangerous a future reaction could be
+      values:
+        - low
+        - high
+        - unknown
+    clinicalStatus:
+      type: enum
+      description: whether it still applies
+      values:
+        - active
+        - inactive
+        - resolved
+    reactions:
+      type: object
+      repeated: true
+      description: the reactions it has caused
+      fields:
+        manifestation:
+          type: string
+          description: what happened, such as Hives
+        severity:
+          type: enum
+          description: how severe the reaction was
+          values:
+            - mild
+            - moderate
+            - severe
+        description:
+          type: string
+          description: the reaction in the provider's words
+    precision:
+      type: enum
+      description: how much of `at` the provider recorded, so a reader shows
+        2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that recorded it
+    notes:
+      type: text
+      embed: true
+      description: the provider's free text about it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

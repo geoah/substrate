@@ -132,6 +132,30 @@ pair ([lab results in both unit systems](observations.md#lab-results-in-both-uni
 It ships three [record views](console.md#record-views): the record pages of
 a lab report and a lab result, and a lab trend on the seeded `metric` kind.
 
+## substrate.reamde.dev/clinical (a well-known catalogue)
+
+The medical record a care provider keeps about you, one kind per HL7 FHIR R4
+resource ([clinical records](clinical.md)). It requires `labs`, whose
+reports and results are its test results, and installing it installs `labs`
+and `health` first.
+
+| Kind                 | What it is                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `patient`            | Your registration with one health service: its identifiers, your GP practice and your pharmacy. |
+| `organization`       | One care provider, such as a GP practice, a hospital, a pharmacy or a lab.                       |
+| `encounter`          | One consultation or other contact, with its coded entries and the lab reports filed at it.      |
+| `condition`          | One health condition, its onset, resolution, clinical status and significance.                  |
+| `allergy`            | One allergy or intolerance, its substance, criticality and reactions.                           |
+| `immunization`       | One vaccination, its status, dose and next due date.                                             |
+| `medicationrequest`  | One prescribed medicine, a repeat for its whole course.                                          |
+| `medicationdispense` | One item of an issued prescription, as the pharmacy handles it.                                  |
+| `appointment`        | One appointment, past or upcoming, its slot, status and channel.                                 |
+| `referral`           | One referral to another provider, its status, priority and published waits.                      |
+| `document`           | One document, such as a letter or a scanned form, its file and its words.                        |
+| `communication`      | One message a care provider sent you.                                                            |
+
+It ships no metrics, functions or record views.
+
 ## substrate.reamde.dev/environment (a well-known catalogue)
 
 No kinds: six metric records for a home, a weather station or an energy
