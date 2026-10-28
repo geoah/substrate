@@ -196,11 +196,17 @@ enum SampleData {
     private static func addEvents(day: Date, calendar: Calendar) async throws -> Int {
         let store = EKEventStore()
         guard try await store.requestFullAccessToEvents() else { return 0 }
-        let cal = EKCalendar(for: .event, eventStore: store)
-        cal.title = "Substrate Sync samples"
-        cal.cgColor = CGColor(srgbRed: 0.18, green: 0.54, blue: 0.37, alpha: 1)
-        cal.source = store.sources.first { $0.sourceType == .local } ?? store.defaultCalendarForNewEvents?.source
-        try store.saveCalendar(cal, commit: true)
+        // One sample calendar, however often the samples are added.
+        let cal: EKCalendar
+        if let existing = store.calendars(for: .event).first(where: { $0.title == "Substrate Sync samples" }) {
+            cal = existing
+        } else {
+            cal = EKCalendar(for: .event, eventStore: store)
+            cal.title = "Substrate Sync samples"
+            cal.cgColor = CGColor(srgbRed: 0.18, green: 0.54, blue: 0.37, alpha: 1)
+            cal.source = store.sources.first { $0.sourceType == .local } ?? store.defaultCalendarForNewEvents?.source
+            try store.saveCalendar(cal, commit: true)
+        }
         func at(_ dayOffset: Int, _ h: Int, _ m: Int = 0) -> Date {
             calendar.date(byAdding: DateComponents(day: dayOffset, hour: h, minute: m), to: day)!
         }
@@ -243,11 +249,16 @@ enum SampleData {
     private static func addReminders(day: Date, calendar: Calendar) async throws -> Int {
         let store = EKEventStore()
         guard try await store.requestFullAccessToReminders() else { return 0 }
-        let list = EKCalendar(for: .reminder, eventStore: store)
-        list.title = "Substrate Sync samples"
-        list.cgColor = CGColor(srgbRed: 0.95, green: 0.55, blue: 0.1, alpha: 1)
-        list.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first { $0.sourceType == .local }
-        try store.saveCalendar(list, commit: true)
+        let list: EKCalendar
+        if let existing = store.calendars(for: .reminder).first(where: { $0.title == "Substrate Sync samples" }) {
+            list = existing
+        } else {
+            list = EKCalendar(for: .reminder, eventStore: store)
+            list.title = "Substrate Sync samples"
+            list.cgColor = CGColor(srgbRed: 0.95, green: 0.55, blue: 0.1, alpha: 1)
+            list.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first { $0.sourceType == .local }
+            try store.saveCalendar(list, commit: true)
+        }
         let groceries = EKReminder(eventStore: store)
         groceries.calendar = list
         groceries.title = "Buy oat milk"

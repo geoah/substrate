@@ -319,21 +319,26 @@ actor SyncEngine {
                 }
                 status.lastSync = Date()
                 status.lastError = nil
+                status.stopped = nil
             } catch where isCancellation(error) {
-                status.lastError = budget == .full ? "Stopped before it finished." : "The system ended the background time before it finished; the next sync carries on."
+                status.lastError = budget == .full ? "Stopped before it finished. Sync again to carry on." : "iOS ended the background time before it finished; the next sync carries on."
+                status.stopped = true
             } catch where isSignedOut(error) {
+                status.stopped = nil
                 status.lastError = SyncError.signedOut.localizedDescription
                 signedOut = true
             } catch {
                 status.lastError = error.localizedDescription
+                status.stopped = nil
             }
             if let error = status.lastError {
-                log(source, "Sync did not finish: \(error)", status.lastError == SyncError.signedOut.localizedDescription ? .error : (error.hasPrefix("Stopped") || error.hasPrefix("The system ended") ? .warning : .error))
+                log(source, "Sync did not finish: \(error)", status.stopped == true ? .warning : .error)
             } else {
                 log(source, "Sync finished: \(status.counts ?? "")")
             }
             state.status[source] = status
-            state.record(SyncRun(source: source, started: started, finished: Date(), summary: status.lastError == nil ? status.counts : nil, error: status.lastError))
+            state.record(SyncRun(source: source, started: started, finished: Date(), summary: status.lastError == nil ? status.counts : nil,
+                                 error: status.lastError, stopped: status.stopped))
             commit(&state)
             await progress(source, nil)
             if let onChange { await onChange(state) }
@@ -510,7 +515,14 @@ actor SyncEngine {
         try await client.put(book, addressbook, [
             "deviceName": name, "contactCount": contacts.count, "lastSyncedAt": Formats.utc(Date()),
         ])
-        return "\(contacts.count) contacts · \(written) written · \(removed) removed"
+        return "\(contacts.count) contacts · " + Self.changes(written, removed)
+    }
+
+    /// What a run changed, without the zeros: "3 written · 1 removed", or
+    /// "no changes".
+    static func changes(_ written: Int, _ removed: Int) -> String {
+        let parts = [written > 0 ? "\(written) written" : nil, removed > 0 ? "\(removed) removed" : nil].compactMap { $0 }
+        return parts.isEmpty ? "no changes" : parts.joined(separator: " · ")
     }
 
     /// Rows to write, a hundred at a time, each batch with how many came
@@ -670,7 +682,7 @@ actor SyncEngine {
             "windowStart": Formats.utc(windowStart), "windowEnd": Formats.utc(windowEnd),
             "lastSyncedAt": Formats.utc(Date()),
         ])
-        return "\(calendars.count) calendars · \(occurrences.count) events · \(written) written · \(removed) removed"
+        return "\(calendars.count) calendars · \(occurrences.count) events · " + Self.changes(written, removed)
     }
 
     // MARK: - Rows
@@ -804,7 +816,7 @@ actor SyncEngine {
             "deviceName": name, "reminderListCount": lists.count, "reminderCount": fetched.count,
             "lastSyncedAt": Formats.utc(Date()),
         ])
-        return "\(lists.count) lists · \(fetched.count) reminders · \(pushes.written) written · \(pushes.removed) removed"
+        return "\(lists.count) lists · \(fetched.count) reminders · " + Self.changes(pushes.written, pushes.removed)
     }
 
     // MARK: - Places
@@ -850,7 +862,7 @@ actor SyncEngine {
         try await client.put(VisitMapping.storeKind, visitstore, [
             "deviceName": name, "visitCount": visits.count, "lastSyncedAt": Formats.utc(Date()),
         ])
-        return "\(visits.count) visits · \(pushes.written) written"
+        return "\(visits.count) visits · " + Self.changes(pushes.written, 0)
     }
 
     // MARK: - Health

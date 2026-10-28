@@ -9,16 +9,23 @@ struct CalendarPickerView: View {
     var body: some View {
         let accounts = Dictionary(grouping: model.calendarChoices, by: \.account)
         List {
-            if model.calendarChoices.isEmpty {
-                Text("Allow Calendars access to choose which calendars to sync.").foregroundStyle(.secondary)
+            Section {
+                if model.calendarChoices.isEmpty {
+                    Text(model.access[.calendars] == "Allowed" ? "This phone has no calendars." : "Allow Calendars access to choose which calendars to sync.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("A calendar turned off is not sent, and its copy on your server is removed at the next sync. The calendar on this phone stays as it is.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
             }
             ForEach(accounts.keys.sorted(), id: \.self) { account in
                 let calendars = accounts[account]!
-                Section {
+                let allOn = calendars.allSatisfy { !excluded.contains($0.id) }
+                Section(account) {
                     ForEach(calendars) { calendar in
                         Toggle(isOn: binding(calendar.id)) {
                             HStack(spacing: 10) {
-                                Circle().fill(calendar.color).frame(width: 12, height: 12)
+                                Circle().fill(calendar.color).frame(width: 12, height: 12).accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(calendar.title)
                                     if let note = calendar.note {
@@ -28,28 +35,17 @@ struct CalendarPickerView: View {
                             }
                         }
                     }
-                } header: {
-                    HStack {
-                        Text(account)
-                        Spacer()
-                        let allOn = calendars.allSatisfy { !excluded.contains($0.id) }
-                        Button(allOn ? "Turn All Off" : "Turn All On") {
+                    if calendars.count > 1 {
+                        Button(allOn ? "Turn All \(account) Calendars Off" : "Turn All \(account) Calendars On") {
                             for c in calendars { set(c.id, included: !allOn) }
                         }
-                        .font(.caption)
-                        .textCase(nil)
                     }
                 }
             }
         }
-        .navigationTitle("Calendars")
-        .safeAreaInset(edge: .bottom) {
-            Text("A calendar turned off is not sent, and the next sync removes it and its events from your repository. A calendar added on the phone later is sent until you turn it off.")
-                .font(.footnote).foregroundStyle(.secondary)
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.bar)
-        }
+        .readableWidth()
+        .navigationTitle("Calendars to Sync")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { model.loadCalendars() }
         .onDisappear { Task { await model.loadCoverage() } }
     }
