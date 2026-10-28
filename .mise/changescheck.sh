@@ -96,7 +96,7 @@ inert() {
   kinds/* | samples/* | .github/workflows/ci.yml) return 1 ;;
   Dockerfile | .goreleaser.yaml) return 1 ;;
   web/console/src/lib/api/wire.golden.json | web/console/src/lib/record-schema.ts) return 1 ;;
-  docs/* | web/console/* | .github/* | *.md) return 0 ;;
+  docs/* | web/console/* | web/identity/* | .github/* | *.md) return 0 ;;
   LICENSE | .gitignore | .gitattributes | .editorconfig | .dockerignore) return 0 ;;
   .yamlfmt | .yamllint | .lychee.toml | .ruff.toml | .golangci.yml) return 0 ;;
   compose.yaml) return 0 ;;
