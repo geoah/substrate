@@ -45,6 +45,9 @@ API call that completes a task.
 - [Building health apps](health-apps.md): the requests behind each screen of
   a health app (a day, a night, a workout, trends, labs, sync), each run
   against a demo repository
+- [Clinical records](clinical.md): the `clinical` catalogue, the medical
+  record a care provider keeps as FHIR-shaped kinds, and how an importer
+  writes it
 - [Vocabulary as records](vocabulary.md) — the declarable kinds, admission,
   and how the vocabulary evolves
 - [Projection](projection.md) — record mappings, managed properties, and merges

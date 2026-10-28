@@ -502,6 +502,10 @@ installing `labs`, or the Apple Health or WHOOP provider, installs `health`.
 | `substrate.reamde.dev/labs` | requires `health`; the `analyte`, `labreport` and `labresult` kinds; 22 lab metrics, `labs/<name>`, and 17 `analyte` records; the function `convertlab` and its trigger `labs-on-labresult`; three record views |
 | `substrate.reamde.dev/environment` | no kinds; six climate and energy metrics, `environment/air_temperature`, `environment/relative_humidity`, `environment/illuminance`, `environment/atmospheric_pressure`, `environment/energy` and `environment/power` |
 
+A fourth, `substrate.reamde.dev/clinical`, ships no metrics: it is the
+medical record a care provider keeps, requires `labs` for its test results,
+and has a page of its own ([clinical records](clinical.md)).
+
 `sleep`, `workout` and `labreport` carry `origin` and `revision` as the base
 kinds do, and `sleep` and `workout` carry `adapter`, because an adapter
 writes them too. The three bind core's `revised` trait, so a rewrite with a

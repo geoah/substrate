@@ -1,0 +1,54 @@
+# The `clinical` catalogue: the record a care provider keeps about a person,
+# shaped on HL7 FHIR R4 (decision record 0193). One kind for each resource a
+# patient-facing record carries, each keeping the resource's meaning and its
+# value sets where the grammar allows: an enum value is one lowercase word, so
+# FHIR's `entered-in-error` is `enteredinerror`, labelled.
+#
+# Test results are not here. A lab report and its results are `labs` kinds,
+# so this requires `labs`, which brings `health`: a consultation points at the
+# lab reports filed at it, and a measurement taken at one, such as a blood
+# pressure, is an observation of a `health` metric.
+#
+# Every kind binds `revised` and a provider keeps the upstream's own id as
+# the record id, so exporting the record again rewrites each row in place.
+# A kind names its subject with `about`, absent meaning the repository's
+# owner, as `labs` does.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/clinical
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  # 1: the patient, care providers, consultations, health conditions,
+  # allergies, vaccinations, prescribed and dispensed medicines,
+  # appointments, referrals, documents and messages.
+  version: 1
+---
+# ---- the bundle document: the install unit ------------------------------------
+# Twelve kinds and nothing else: no metrics (a clinical measurement is a
+# `health` or `labs` metric), no functions and no record views yet.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: substrate.reamde.dev/clinical
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    Your medical record as your care providers keep it: health conditions,
+    allergies, vaccinations, prescribed and dispensed medicines, consultations,
+    appointments, referrals, documents and messages.
+  requires:
+    - substrate.reamde.dev/labs
+  installs:
+    - substrate.reamde.dev/clinical/patient
+    - substrate.reamde.dev/clinical/organization
+    - substrate.reamde.dev/clinical/encounter
+    - substrate.reamde.dev/clinical/condition
+    - substrate.reamde.dev/clinical/allergy
+    - substrate.reamde.dev/clinical/immunization
+    - substrate.reamde.dev/clinical/medicationrequest
+    - substrate.reamde.dev/clinical/medicationdispense
+    - substrate.reamde.dev/clinical/appointment
+    - substrate.reamde.dev/clinical/referral
+    - substrate.reamde.dev/clinical/document
+    - substrate.reamde.dev/clinical/communication

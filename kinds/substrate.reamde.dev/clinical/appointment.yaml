@@ -1,0 +1,124 @@
+# one booked appointment: FHIR's Appointment. `at` and `endsAt` are its slot.
+# A past appointment stays, with the status it ended in; the consultation it
+# led to is an `encounter`, which `encounter` names where the provider links
+# them.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/appointment
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One appointment with a care provider, past or upcoming: when, where or
+    how, with whom, and whether it was kept.
+  purpose: primary
+  names:
+    singular: appointment
+  label:
+    singular: Appointment
+    plural: Appointments
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name|type}"
+  properties:
+    name:
+      type: string
+      description: the appointment's heading, such as Telephone appointment
+        with the practice nurse
+    type:
+      type: string
+      description: the kind of appointment as the provider names it
+    status:
+      type: enum
+      description: where the appointment stands
+      values:
+        - value: proposed
+          label: Proposed
+        - value: pending
+          label: Pending
+        - value: booked
+          label: Booked
+        - value: arrived
+          label: Arrived
+        - value: checkedin
+          label: Checked in
+        - value: fulfilled
+          label: Attended
+        - value: cancelled
+          label: Cancelled
+        - value: noshow
+          label: Did not attend
+        - value: waitlist
+          label: On the waiting list
+        - value: enteredinerror
+          label: Entered in error
+    channel:
+      type: enum
+      description: how the appointment happens
+      values:
+        - value: inperson
+          label: In person
+        - value: telephone
+          label: Telephone
+        - value: video
+          label: Video
+        - value: online
+          label: Online
+        - value: home
+          label: Home visit
+    service:
+      type: string
+      description: the clinic or session, such as Practice nurse clinic
+    specialty:
+      type: string
+      description: the specialty, such as Dermatology
+    location:
+      type: string
+      description: where it is, as the provider names the place
+    phone:
+      type: phone
+      description: the number the provider will call, for a telephone appointment
+    participants:
+      type: object
+      repeated: true
+      description: who you are seeing
+      fields:
+        name:
+          type: string
+          description: the person's name as the provider records it
+        role:
+          type: string
+          description: their role or title, such as Dr or Practice nurse
+    reason:
+      type: string
+      description: what the appointment is for
+    encounter:
+      type: reference
+      kind: substrate.reamde.dev/clinical/encounter
+      description: the consultation it led to
+    referral:
+      type: reference
+      kind: substrate.reamde.dev/clinical/referral
+      description: the referral it was booked from
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider the appointment is with
+    notes:
+      type: text
+      embed: true
+      description: the provider's free text about it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

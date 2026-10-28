@@ -1,0 +1,124 @@
+# one prescribed medicine: FHIR's MedicationRequest. A repeat prescription is
+# one record for the whole course, and each issue of it a
+# `medicationdispense` pointing here. `at` is when it was first prescribed,
+# `endsAt` when it was stopped or the course ended. `product` points at the
+# record of the product itself where the repository keeps one, such as a
+# medication whose doses its owner logs.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/medicationrequest
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One medicine a care provider prescribed you: the product, how to take
+    it, how much each issue supplies, and whether it is a one-off or a repeat.
+  purpose: primary
+  names:
+    singular: medicationrequest
+  label:
+    singular: Prescribed medicine
+    plural: Prescribed medicines
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{medication}"
+  properties:
+    medication:
+      type: string
+      required: true
+      description: the product as prescribed, with its strength and form,
+        such as Amoxicillin 500mg capsules
+    coding:
+      type: object
+      description: the product's code, such as a dm+d code
+      fields:
+        system:
+          type: string
+          description: the code system, such as https://dmd.nhs.uk
+        code:
+          type: string
+          description: the code
+        display:
+          type: string
+          description: the product as the code system names it
+    dosage:
+      type: string
+      description: how to take it, as written, such as One capsule three times
+        a day
+    quantity:
+      type: string
+      description: how much each issue supplies, as written, such as 21 capsules
+    course:
+      type: enum
+      description: whether it is a one-off or a repeat
+      values:
+        - value: acute
+          label: One-off
+        - value: repeat
+          label: Repeat
+        - value: repeatdispensing
+          label: Repeat dispensing
+    status:
+      type: enum
+      description: where the prescription stands
+      values:
+        - value: active
+          label: Active
+        - value: onhold
+          label: On hold
+        - value: completed
+          label: Completed
+        - value: stopped
+          label: Stopped
+        - value: cancelled
+          label: Cancelled
+        - value: unknown
+          label: Unknown
+    lastIssuedAt:
+      type: datetime
+      description: when it was last issued
+    nextIssueAt:
+      type: datetime
+      description: when the next issue is due
+    prescriber:
+      type: string
+      description: who prescribed it
+    reason:
+      type: string
+      description: what it was prescribed for
+    product:
+      type: reference
+      kind: any
+      description: the record of the product itself, such as a medication
+        whose doses you log
+    precision:
+      type: enum
+      description: how much of `at` the provider recorded, so a reader shows
+        2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that prescribed it
+    notes:
+      type: text
+      embed: true
+      description: the provider's free text about it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused

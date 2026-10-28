@@ -1,0 +1,102 @@
+# one vaccination: FHIR's Immunization. `at` is when it was given, or when
+# the provider recorded it where the record holds a plan or a need rather
+# than a dose given, which `status` then says.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/clinical/immunization
+data:
+  authority: substrate.reamde.dev
+  package: clinical
+  description: >-
+    One vaccination on your record: the vaccine, when it was given, which
+    dose of the course it was, and when the next one is due.
+  purpose: primary
+  names:
+    singular: immunization
+  label:
+    singular: Vaccination
+    plural: Vaccinations
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the vaccination as the provider recorded it, such as Second
+        COVID-19 vaccination
+    vaccine:
+      type: string
+      description: the vaccine product, where the record names it
+    coding:
+      type: object
+      description: the code it was recorded under
+      fields:
+        system:
+          type: string
+          description: the code system, such as http://snomed.info/sct
+        code:
+          type: string
+          description: the code
+        display:
+          type: string
+          description: the code's term as the provider recorded it
+    status:
+      type: enum
+      description: whether the dose was given
+      values:
+        - value: completed
+          label: Given
+        - value: notdone
+          label: Not given
+        - value: enteredinerror
+          label: Entered in error
+    doseNumber:
+      type: string
+      description: which dose of the course it was, such as 2 of 3
+    site:
+      type: string
+      description: where on the body it was given, such as Left upper arm
+    route:
+      type: string
+      description: how it was given, such as Intramuscular
+    lotNumber:
+      type: string
+      description: the vaccine's batch number
+    performer:
+      type: string
+      description: who gave it
+    nextDueAt:
+      type: date
+      description: when the next dose is due
+    precision:
+      type: enum
+      description: how much of `at` the provider recorded, so a reader shows
+        2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    organization:
+      type: reference
+      kind: substrate.reamde.dev/clinical/organization
+      description: the care provider that gave or recorded it
+    notes:
+      type: text
+      embed: true
+      description: the provider's free text about it, as written
+    about:
+      type: reference
+      kind: any
+      description: whose record it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the provider; a lower one
+        is refused
