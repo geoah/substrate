@@ -226,7 +226,34 @@ keeps no history of its own, so Places starts when it is turned on.
 images from any app's share sheet, with a note, saved as one `share` record.
 It reads the app's sign-in from the Keychain group the two share, uploads the
 images as blobs and writes the record within the minute the server keeps an
-unreferenced blob. A link shared again updates its record.
+unreferenced blob, writing it again part way through when a slow uplink would
+outlast that minute. A link shared again updates its record; a share without
+one keeps one id per sheet, so a Save tried again updates the first try.
+Cancel stops a save under way, and deletes what it wrote of a share without a
+link.
+
+**Errors and waiting.** Every request has a time limit sized to its work:
+discovery and sign-in 20 seconds, a read 30, a Health delivery or an image
+two minutes, an install five. An install is never sent twice, and one that
+outlasts its limit says so ("taking long") rather than "failed", because the
+server goes on; the check after it finds the install done. Set Up's and Check
+Again's spinners end with the work, never after the error. A batch of writes
+that all fail for the network stops the run at the first batch, and a
+refused token stops it at the first refusal; a refused Health webhook key
+asks for Set Up and never signs the owner out. A read that fails (Reminders,
+the events of a calendar that held some, a Health day) deletes nothing and
+marks nothing sent. Errors are said in sentences that name the server and
+what to do, with the server's own words where it gave some.
+`SubstrateSyncUITests/SetupTimeoutTests.swift` holds the Set Up case against
+`scripts/slowserver.py`, a proxy that holds each install longer than the app
+waits:
+
+```bash
+python3 apps/apple/scripts/slowserver.py http://localhost:8080 8 8093 &
+TEST_RUNNER_SYNC_SLOW_SERVER=http://localhost:8093 TEST_RUNNER_SYNC_E2E_REPOSITORY=<fresh> \
+  TEST_RUNNER_SYNC_E2E_PASSWORD=… xcodebuild -project apps/apple/Substrate.xcodeproj -scheme SubstrateSync \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test -only-testing:SubstrateSyncUITests/SetupTimeoutTests
+```
 
 **Home is an overview.** A status card says what is syncing (the source,
 its step and how far it has got, and Stop) or how the last sync ended, above

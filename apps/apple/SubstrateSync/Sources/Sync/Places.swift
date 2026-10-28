@@ -128,7 +128,8 @@ final class PlaceMonitor: NSObject, CLLocationManagerDelegate {
     static let shared = PlaceMonitor()
 
     private let manager = CLLocationManager()
-    private var asking: CheckedContinuation<Void, Never>?
+    /// Called on every change of the access, the owner's answer included.
+    var onAuthorizationChange: (() -> Void)?
 
     override private init() {
         super.init()
@@ -146,14 +147,13 @@ final class PlaceMonitor: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// Asks for Always access. iOS asks for While Using first and offers the
-    /// upgrade to Always later, on its own schedule; both answers end here.
-    func requestAccess() async {
+    /// Asks for Always access, and returns at once. iOS asks for While
+    /// Using first and offers the upgrade to Always later, on its own
+    /// schedule, or not at all: nothing waits on an answer that may never
+    /// come, and `onAuthorizationChange` reports it when it does.
+    func requestAccess() {
         guard manager.authorizationStatus == .notDetermined || manager.authorizationStatus == .authorizedWhenInUse else { return }
-        await withCheckedContinuation { continuation in
-            asking = continuation
-            manager.requestAlwaysAuthorization()
-        }
+        manager.requestAlwaysAuthorization()
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
@@ -179,10 +179,7 @@ final class PlaceMonitor: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
             self.start()
-            if manager.authorizationStatus != .notDetermined, let asking = self.asking {
-                self.asking = nil
-                asking.resume()
-            }
+            self.onAuthorizationChange?()
         }
     }
 }

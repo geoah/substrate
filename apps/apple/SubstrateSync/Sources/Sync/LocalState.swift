@@ -275,7 +275,9 @@ enum InstallID {
             return id
         case .missing:
             let id = LocalState.storedInstall() ?? UUID().uuidString.lowercased()
-            Keychain.setString(id, account: "install")
+            // An id the Keychain did not keep would be minted again next
+            // launch, and fork the address book and the Health account.
+            do { try Keychain.setString(id, account: "install") } catch let e as Keychain.NotSaved { throw Unavailable(status: e.status) }
             cached = id
             return id
         case let .failed(status):

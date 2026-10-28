@@ -117,6 +117,7 @@ enum SyncError: LocalizedError {
     case noAccess(String)
     case notArmed
     case emptyScan(String)
+    case unreadable(String)
     case signedOut
 
     var errorDescription: String? {
@@ -125,6 +126,7 @@ enum SyncError: LocalizedError {
         case .notArmed: "The Apple Health webhook is not armed. Open Set Up and run it again."
         case let .emptyScan(what):
             "The device returned no \(what), though earlier syncs pushed some. Nothing was deleted; sync again once they are back."
+        case let .unreadable(what): "The device could not read your \(what) just now. Nothing was deleted; sync again in a moment."
         case .signedOut: "Your sign-in is no longer valid. Sign in again."
         }
     }
@@ -238,7 +240,7 @@ actor SyncEngine {
     /// thousand do not bury the log.
     private func logFailures(_ source: Source, _ what: String, _ failures: [(String, Error)]) {
         for (name, error) in failures.prefix(5) {
-            log(source, "\(what) \(name) failed: \(error.localizedDescription)", .error)
+            log(source, "\(what) \(name) failed: \(explain(error))", .error)
         }
         if failures.count > 5 { log(source, "\(failures.count - 5) more \(what) writes failed", .error) }
     }
@@ -328,7 +330,7 @@ actor SyncEngine {
                 status.lastError = SyncError.signedOut.localizedDescription
                 signedOut = true
             } catch {
-                status.lastError = error.localizedDescription
+                status.lastError = explain(error, server: session.server)
                 status.stopped = nil
             }
             if let error = status.lastError {
@@ -396,10 +398,15 @@ actor SyncEngine {
             try Task.checkCancellation()
             let open = all.subtracting(filed).subtracting(parked.keys)
             await progress(.health, "Waiting for the server to file \(label)", all.count - open.count, all.count)
-            for fire in open where try await client.get(Self.healthExportKind, fire) != nil {
-                filed.insert(fire)
+            // The deadline holds per request, so a server that hangs on
+            // each read does not stretch one pass over every delivery.
+            for fire in open {
+                if seconds > 0, Date() > deadline { break }
+                // A receipt is a small read: one that takes longer is a
+                // server busy filing, asked again on the next pass.
+                if try await client.get(Self.healthExportKind, fire, retries: 0, timeout: 10) != nil { filed.insert(fire) }
             }
-            parked.merge(Self.refusals(try await client.parked(trigger: Self.trigger), among: open)) { a, _ in a }
+            parked.merge(Self.refusals(try await client.parked(trigger: Self.trigger, timeout: 15), among: open)) { a, _ in a }
             if all.subtracting(filed).subtracting(parked.keys).isEmpty || Date() > deadline { break }
             try await Task.sleep(for: .seconds(2))
         }
@@ -476,6 +483,7 @@ actor SyncEngine {
         var written = 0
         for (offset, batch) in Self.batches(Array(changed)) {
             if Task.isCancelled { break }
+            let before = failures.count
             for ((id, props), result) in await eachLimited(batch, progress: { n in await self.progress(.contacts, "Writing contacts", offset + n, toWrite) }, { pair in
                 let (id, props) = pair
                 try await client.put(kind, id, props.foundation)
@@ -492,6 +500,7 @@ actor SyncEngine {
                 }
             }
             commit(&state)
+            if let lost = Self.unreachable(Array(failures[before...]), of: batch.count) { throw lost }
         }
         if !vanished.isEmpty { await progress(.contacts, "Removing contacts gone from the device", 0, vanished.count) }
         var removed = 0
@@ -516,6 +525,18 @@ actor SyncEngine {
             "deviceName": name, "contactCount": contacts.count, "lastSyncedAt": Formats.utc(Date()),
         ])
         return "\(contacts.count) contacts · " + Self.changes(written, removed)
+    }
+
+    /// The network's error, when every write of a batch failed for the
+    /// network rather than a refusal: the server is out of reach, and the
+    /// run stops there instead of trying every row in turn, each waiting out
+    /// its own timeout.
+    /// A refused token stops the run at its first sight: every other row
+    /// would be refused the same.
+    static func unreachable(_ errors: [Error], of count: Int) -> Error? {
+        if let signedOut = errors.first(where: isSignedOut) { return signedOut }
+        guard count > 0, errors.count == count, errors.allSatisfy(isUnreachable) else { return nil }
+        return errors.first
     }
 
     /// What a run changed, without the zeros: "3 written · 1 removed", or
@@ -580,6 +601,13 @@ actor SyncEngine {
         state.device.events = occurrences.count
         let off = everything.count - calendars.count
         log(.calendars, "Read \(calendars.count) calendars" + (off > 0 ? " (\(off) turned off)" : "") + " and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
+        // No event at all, from calendars that held some in this window, is
+        // a store still loading (EventKit answers empty while it syncs an
+        // account), never every event deleted.
+        let chosenIDs = Set(chosen.map(ids.calendar))
+        if occurrences.isEmpty, state.events.values.contains(where: {
+            chosenIDs.contains($0.calendar ?? "") && ($0.start.map(window.contains) ?? false)
+        }) { throw SyncError.emptyScan("events") }
         let name = await deviceName
         try await client.put(storeKind, eventstore, ["deviceName": name])
         var failures: [Error] = []
@@ -637,6 +665,7 @@ actor SyncEngine {
         var written = 0
         for (offset, batch) in Self.batches(Array(changed)) {
             if Task.isCancelled { break }
+            let before = failures.count
             for ((id, o), result) in await eachLimited(batch, progress: { n in await self.progress(.calendars, "Writing events", offset + n, toWrite) }, { pair in
                 let (id, o) = pair
                 try await client.put(eventKind, id, o.props.foundation)
@@ -652,6 +681,7 @@ actor SyncEngine {
                 }
             }
             commit(&state)
+            if let lost = Self.unreachable(Array(failures[before...]), of: batch.count) { throw lost }
         }
         // Absent from the scan: deleted when its start is inside the window,
         // kept when it aged out of it.
@@ -704,7 +734,7 @@ actor SyncEngine {
     private func pushRows(
         _ client: Client, _ state: inout LocalState, _ path: WritableKeyPath<LocalState, [String: Pushed]>,
         kind: String, _ current: [String: Pushed.Row], deleting: Bool, source: Source, noun: String
-    ) async -> Pushes {
+    ) async throws -> Pushes {
         let previous = state[keyPath: path]
         let changed = current.filter { previous[$0.key]?.hash != $0.value.pushed.hash }
         let new = changed.keys.filter { previous[$0] == nil }.count
@@ -715,6 +745,7 @@ actor SyncEngine {
         if toWrite > 0 { await progress(source, "Writing \(noun)", 0, toWrite) }
         for (offset, batch) in Self.batches(Array(changed)) {
             if Task.isCancelled { break }
+            let before = out.failures.count
             for ((id, row), result) in await eachLimited(batch, progress: { n in await self.progress(source, "Writing \(noun)", offset + n, toWrite) }, { pair in
                 let (id, row) = pair
                 try await client.put(kind, id, row.props.foundation)
@@ -730,6 +761,7 @@ actor SyncEngine {
                 }
             }
             commit(&state)
+            if let lost = Self.unreachable(Array(out.failures[before...]), of: batch.count) { throw lost }
         }
         if !vanished.isEmpty, !Task.isCancelled {
             await progress(source, "Removing \(noun) gone from the device", 0, vanished.count)
@@ -777,21 +809,27 @@ actor SyncEngine {
         await progress(.reminders, "Reading reminders")
         // Mapped inside EventKit's callback: a reminder is not sendable, its
         // properties are.
-        let fetched: [(id: String, row: Pushed.Row)] = await withCheckedContinuation { continuation in
+        // EventKit answers nil when it could not read the store: that is a
+        // failure, never an empty store whose reminders the server forgets.
+        let read: [(id: String, row: Pushed.Row)]? = await withCheckedContinuation { continuation in
             store.fetchReminders(matching: store.predicateForReminders(in: nil)) { reminders in
-                continuation.resume(returning: (reminders ?? []).compactMap { r in
-                    guard let list = r.calendar else { return nil }
-                    let listID = ids.calendar(list.calendarIdentifier)
-                    let props = ReminderMapping.reminder(r, list: listID)
-                    return (ids.reminder(r.calendarItemIdentifier), Pushed.Row(props, Pushed(props, calendar: listID)))
+                continuation.resume(returning: reminders.map { all in
+                    all.compactMap { r in
+                        guard let list = r.calendar else { return nil }
+                        let listID = ids.calendar(list.calendarIdentifier)
+                        let props = ReminderMapping.reminder(r, list: listID)
+                        return (ids.reminder(r.calendarItemIdentifier), Pushed.Row(props, Pushed(props, calendar: listID)))
+                    }
                 })
             }
         }
+        guard let fetched = read else { throw SyncError.unreadable("reminders") }
         state.device.reminders = fetched.count
         log(.reminders, "Read \(lists.count) lists and \(fetched.count) reminders")
         // An empty answer is more often a store that is not ready than an
         // owner who deleted every list; it never empties the repository.
         if lists.isEmpty, !state.reminderLists.isEmpty { throw SyncError.emptyScan("reminder lists") }
+        if fetched.isEmpty, !state.reminders.isEmpty { throw SyncError.emptyScan("reminders") }
 
         let name = await deviceName
         try await client.put(storeKind, eventstore, ["deviceName": name])
@@ -800,7 +838,7 @@ actor SyncEngine {
             let props = ReminderMapping.list(l, eventstore: eventstore)
             currentLists[ids.calendar(l.calendarIdentifier)] = Pushed.Row(props, Pushed(props))
         }
-        let listPushes = await pushRows(client, &state, \.reminderLists, kind: ReminderMapping.listKind, currentLists,
+        let listPushes = try await pushRows(client, &state, \.reminderLists, kind: ReminderMapping.listKind, currentLists,
                                         deleting: true, source: .reminders, noun: "lists")
         // A deleted list takes its reminders with it on the server.
         let goneLists = Set(state.reminders.values.compactMap(\.calendar)).subtracting(state.reminderLists.keys)
@@ -808,7 +846,7 @@ actor SyncEngine {
         try settlePushes(.reminders, "list", [listPushes])
 
         let current = Dictionary(fetched.map { ($0.id, $0.row) }, uniquingKeysWith: { a, _ in a })
-        let pushes = await pushRows(client, &state, \.reminders, kind: ReminderMapping.kind, current,
+        let pushes = try await pushRows(client, &state, \.reminders, kind: ReminderMapping.kind, current,
                                     deleting: true, source: .reminders, noun: "reminders")
         try settlePushes(.reminders, "reminder", [pushes])
 
@@ -840,7 +878,7 @@ actor SyncEngine {
             if Task.isCancelled { break }
             await progress(.places, "Naming places", i, unnamed.count)
             do {
-                PlaceLog.shared.named(visit.key, try await PlaceNamer.name(visit))
+                PlaceLog.shared.named(visit.key, try await withTimeout(15) { try await PlaceNamer.name(visit) })
             } catch {
                 log(.places, "Apple Maps did not name a place: \(error.localizedDescription); it is tried again next sync", .warning)
                 break
@@ -856,7 +894,7 @@ actor SyncEngine {
             current[ids.visit(v.key)] = Pushed.Row(props, Pushed(props, start: v.arrival ?? v.departure))
         }
         // A visit aged out of the year kept here stays in the repository.
-        let pushes = await pushRows(client, &state, \.visits, kind: VisitMapping.kind, current,
+        let pushes = try await pushRows(client, &state, \.visits, kind: VisitMapping.kind, current,
                                     deleting: false, source: .places, noun: "visits")
         try settlePushes(.places, "visit", [pushes])
         try await client.put(VisitMapping.storeKind, visitstore, [
@@ -962,7 +1000,13 @@ actor SyncEngine {
             let span = start.map { today.timeIntervalSince($0) } ?? .infinity
             if span > 31 * 86400 {
                 await progress(.health, "Finding the days that hold Health data")
-                available = try? await reader.availableDays(since: start, calendar: calendar)
+                // Without the answer every day of the history would be read
+                // one at a time: a failure stops the run instead.
+                do {
+                    available = try await reader.availableDays(since: start, calendar: calendar)
+                } catch {
+                    throw ContextError(context: "Finding the days that hold Health data", underlying: error)
+                }
             }
             days = Self.healthDays(today: today, from: start, sent: state.healthDays, queued: state.healthQueue,
                                    available: available, calendar: calendar)
@@ -996,6 +1040,8 @@ actor SyncEngine {
                     let delivery = grouping == .minutes
                         ? await reader.minutes(span, zone: zone)
                         : await reader.seconds(span, zone: zone)
+                    // The reads take seconds and do not stop for a Stop.
+                    try Task.checkCancellation()
                     skipped += delivery.skipped
                     rows += delivery.metrics.map(\.rows.count).reduce(0, +) + delivery.workouts.count
                     let headers = HealthDelivery.headers(
@@ -1020,16 +1066,22 @@ actor SyncEngine {
                 // rescan that fails can never leave an older success standing.
                 state.healthDays.remove(name)
                 state.healthPending[name] = nil
-                if made.isEmpty {
+                if made.isEmpty, skipped.isEmpty {
                     // Nothing on the phone for the day: nothing to retry.
                     state.healthQueue.remove(name)
-                    if skipped.isEmpty { empty += 1 }
+                    empty += 1
                 } else if !skipped.isEmpty {
-                    // Sent in part: queued, so the next sync sends it whole.
+                    // Read in part, or not at all: queued, so the next sync
+                    // sends it whole. A day whose every read failed is not a
+                    // day without data.
                     state.healthQueue.insert(name)
                     skippedDays += 1
                 } else {
+                    // Kept as pending at once: a run stopped before the
+                    // receipts are read asks for them next time rather than
+                    // sending the day again.
                     fires[name] = made
+                    state.healthPending[name] = made
                     state.healthQueue.insert(name)
                 }
                 if !made.isEmpty { log(.health, "\(name): \(rows) rows in \(made.count) deliveries" + (skipped.isEmpty ? "" : ", \(skipped.count) parts skipped")) }
@@ -1040,8 +1092,9 @@ actor SyncEngine {
             for day in outcome.sent {
                 state.healthDays.insert(day)
                 state.healthQueue.remove(day)
+                state.healthPending[day] = nil
             }
-            for day in outcome.pending { state.healthPending[day] = fires[day] }
+            for day in outcome.failed.keys { state.healthPending[day] = nil }
             for (day, reason) in outcome.failed.sorted(by: { $0.key < $1.key }) {
                 log(.health, "\(day) was refused by the server and will be sent again: \(reason)", .error)
                 if firstRefusal == nil { firstRefusal = (day, reason) }
@@ -1059,7 +1112,7 @@ actor SyncEngine {
         var summary = "\(sent) days sent · \(posts) deliveries"
         if empty > 0 { summary += " · \(empty) days with no data" }
         if waiting > 0 { summary += " · \(waiting) still being filed" }
-        if skippedDays > 0 { summary += " · \(skippedDays) days in part, see Activity" }
+        if skippedDays > 0 { summary += " · \(skippedDays) days to read again, see Activity" }
         // The server's own reason, for the first day it refused: the error
         // the owner reads is the one to act on, not a count.
         if let first = firstRefusal {

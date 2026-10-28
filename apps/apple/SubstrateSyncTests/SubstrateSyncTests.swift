@@ -379,6 +379,81 @@ final class WorkoutRouteTests: XCTestCase {
     }
 }
 
+/// Errors in sentences a person can act on, and the rule that stops a run
+/// once a batch shows the server is out of reach.
+final class ErrorTests: XCTestCase {
+    let server = URL(string: "https://substrate.example.com")!
+
+    func testTheNetworksErrorsAreSaidPlainly() {
+        XCTAssertEqual(explain(URLError(.timedOut), server: server), "Substrate.example.com took too long to answer.")
+        XCTAssertEqual(explain(URLError(.notConnectedToInternet), server: server), "This phone is offline.")
+        XCTAssertEqual(explain(URLError(.cannotConnectToHost), server: server), "Substrate.example.com isn't answering.")
+        XCTAssertEqual(explain(URLError(.cannotFindHost), server: server), "Couldn't find substrate.example.com. Check the address.")
+        XCTAssertEqual(explain(URLError(.timedOut)), "The server took too long to answer.")
+    }
+
+    func testTheServersOwnWordsAreKept() {
+        let refusal = ServerError(status: 409, data: Data(#"{"error":{"message":"the trigger is taken"}}"#.utf8))
+        XCTAssertEqual(explain(refusal, server: server), "the trigger is taken")
+        let signedOut = ServerError(status: 401, data: Data())
+        XCTAssertEqual(explain(signedOut, server: server), "Your sign-in is no longer valid. Sign in again.")
+        let broken = ServerError(status: 502, data: Data("Bad Gateway".utf8))
+        XCTAssertTrue(explain(broken, server: server).hasPrefix("Substrate.example.com ran into a problem (502)"))
+        XCTAssertTrue(timedOut(URLError(.timedOut)))
+        XCTAssertFalse(timedOut(refusal))
+    }
+
+    func testABatchLostToTheNetworkStopsTheRunAndARefusalDoesNot() {
+        let lost: [Error] = [URLError(.timedOut), URLError(.cannotConnectToHost)]
+        XCTAssertNotNil(SyncEngine.unreachable(lost, of: 2))
+        // Some rows went through: the server answers.
+        XCTAssertNil(SyncEngine.unreachable(lost, of: 3))
+        // The server refused: it answers, and the refusal is the row's.
+        XCTAssertNil(SyncEngine.unreachable([URLError(.timedOut), ServerError(status: 400, data: Data())], of: 2))
+        XCTAssertNil(SyncEngine.unreachable([], of: 0))
+        // A refused token stops the run at once, however the rest fared.
+        let signedOut = ServerError(status: 401, data: Data())
+        XCTAssertNotNil(SyncEngine.unreachable([signedOut], of: 50))
+        XCTAssertFalse(isUnreachable(URLError(.cancelled)))
+        XCTAssertFalse(isUnreachable(signedOut))
+    }
+
+    func testAWebhookRefusalIsNotASignOutAndALoginRefusalIsNotAnExpiry() {
+        XCTAssertFalse(isSignedOut(WebhookRefused(text: "bad key")))
+        XCTAssertFalse(isSignedOut(ContextError(context: "Sending 2026-10-20", underlying: WebhookRefused(text: "bad key"))))
+        XCTAssertEqual(LoginRefused(server: ServerError(status: 401, data: Data())).localizedDescription,
+                       "The repository name, password or code was not accepted.")
+        let worded = ServerError(status: 401, data: Data(#"{"error":{"message":"invalid credentials"}}"#.utf8))
+        XCTAssertEqual(LoginRefused(server: worded).localizedDescription, "invalid credentials")
+        XCTAssertEqual(explain(CancellationError()), "Stopped.")
+    }
+
+    func testAProxysHTMLPageIsNotShown() {
+        let page = ServerError(status: 502, data: Data("<html><body><h1>502 Bad Gateway</h1></body></html>".utf8))
+        XCTAssertEqual(page.text, "The server answered 502.")
+    }
+
+    func testAWebhookKeyIsThirtyTwoCharactersOfItsAlphabet() {
+        let key = AppModel.newKey()
+        XCTAssertEqual(key.count, 32)
+        XCTAssertTrue(key.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" })
+        XCTAssertNotEqual(key, AppModel.newKey())
+    }
+
+    func testAGiveUpComesWhenTheWorkDoesNot() async throws {
+        let started = Date()
+        do {
+            _ = try await withTimeout(0.2) { try await Task.sleep(for: .seconds(30)); return 1 }
+            XCTFail("the work outlived its timeout")
+        } catch {
+            XCTAssertTrue(timedOut(error), "\(error)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        let quick = try await withTimeout(5) { 7 }
+        XCTAssertEqual(quick, 7)
+    }
+}
+
 /// What the overview shows for a source, and the activity timeline.
 final class OverviewTests: XCTestCase {
     private let failed = SourceStatus(lastSync: Date(), counts: nil, lastError: "Sending 2026-10-20: refused")

@@ -40,7 +40,7 @@ struct SetupView: View {
                                               systemImage: "wand.and.stars", busy: model.setupBusy)
                                 }
                                 .primaryAction()
-                                .disabled(model.setupBusy)
+                                .disabled(model.setupBusy || model.setupChecking)
                             }
                             Button {
                                 Task { await model.checkSetup() }
@@ -57,14 +57,14 @@ struct SetupView: View {
 
             if let error = model.setupError {
                 Section {
-                    ErrorBox(title: "Set Up stopped", message: error)
+                    ErrorBox(title: error.title, message: error.message)
                 }
             }
 
             if !model.steps.isEmpty {
                 Section {
                     ForEach(model.steps) { step in
-                        StepRow(step: step)
+                        StepRow(step: step, running: model.setupStepRunning == step.id)
                     }
                 } header: {
                     Text(missing == 0 ? "Everything is in place" : "\(model.steps.count - missing) of \(model.steps.count) in place")
@@ -115,24 +115,34 @@ struct SetupView: View {
 /// and why when it needs work.
 private struct StepRow: View {
     let step: SetupStep
+    var running = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: step.done ? "checkmark.circle.fill" : "circle.dashed")
-                .foregroundStyle(step.done ? .green : .orange)
-                .font(.title3)
-                .accessibilityHidden(true)
+            Group {
+                if running {
+                    ProgressView()
+                } else {
+                    Image(systemName: step.done ? "checkmark.circle.fill" : "circle.dashed")
+                        .foregroundStyle(step.done ? .green : .orange)
+                        .font(.title3)
+                }
+            }
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(step.title)
                 if let code = step.code {
                     Text(code).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                if let detail = step.detail {
+                if running, case .install = step.kind {
+                    Text("Installing. This can take a minute or two.").font(.footnote).foregroundStyle(.secondary).padding(.top, 2)
+                } else if let detail = step.detail {
                     Text(detail).font(.footnote).foregroundStyle(.secondary).padding(.top, 2)
                 }
             }
             Spacer(minLength: 8)
-            StatusBadge(text: status, color: step.done ? .green : .orange)
+            StatusBadge(text: running ? "Working…" : status, color: running ? .blue : step.done ? .green : .orange)
         }
         .padding(.vertical, 2)
     }

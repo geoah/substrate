@@ -105,7 +105,7 @@ struct SignInView: View {
                 address = origin.absoluteString
                 server = origin
             } catch {
-                problem = "\(origin.absoluteString) did not answer as a Substrate server: \(error.localizedDescription)"
+                problem = "\(origin.absoluteString) did not answer as a Substrate server. \(explain(error, server: origin))"
             }
         }
     }
@@ -123,7 +123,7 @@ struct SignInView: View {
                 password = ""
                 code = ""
             } catch {
-                problem = error.localizedDescription
+                problem = explain(error, server: server)
             }
         }
     }

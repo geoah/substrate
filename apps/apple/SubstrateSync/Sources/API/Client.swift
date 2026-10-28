@@ -16,7 +16,8 @@ struct ServerError: LocalizedError, Sendable {
             lines += (error["problems"] as? [String]) ?? []
             text = lines.joined(separator: "\n")
         } else if let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !body.isEmpty, body.count < 500 {
+                  !body.isEmpty, body.count < 500, !body.hasPrefix("<") {
+            // A proxy's HTML error page says nothing a person can use.
             text = "The server answered \(status): \(body)"
         } else {
             text = "The server answered \(status)."
@@ -93,7 +94,7 @@ struct Client: Sendable {
     }
 
     func discover() async throws -> Discovery {
-        let (data, status) = try await send("GET", path: ".well-known/substrate/server.json", authorized: false)
+        let (data, status) = try await send("GET", path: ".well-known/substrate/server.json", authorized: false, timeout: Timeout.quick)
         guard status == 200 else { throw ServerError(status: status, data: data) }
         guard (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
             throw URLError(.cannotParseResponse)
@@ -104,7 +105,10 @@ struct Client: Sendable {
     func login(repository: String, password: String, totp: String?, label: String) async throws -> LoginResult {
         var body: [String: Any] = ["repository": repository, "password": password, "label": label]
         if let totp, !totp.isEmpty { body["totpCode"] = totp }
-        let (data, status) = try await send("POST", path: "login", json: body, authorized: false)
+        let (data, status) = try await send("POST", path: "login", json: body, authorized: false, retries: 0, timeout: Timeout.quick)
+        // At the door a 401 is the name, password or code, not a sign-in
+        // that ended.
+        if status == 401 { throw LoginRefused(server: ServerError(status: status, data: data)) }
         guard status == 201 || status == 200 else { throw ServerError(status: status, data: data) }
         return try JSONDecoder().decode(LoginResult.self, from: data)
     }
@@ -124,20 +128,28 @@ struct Client: Sendable {
     }
 
     /// `install` for a provider (also its upgrade), `import` for a sample.
+    /// The server installs what the bundle requires first and builds its
+    /// indexes in the same request, so it is given minutes, not seconds, and
+    /// never sent twice: a second install while the first still runs only
+    /// queues behind it.
     func catalog(_ verb: String, _ id: String) async throws {
-        let (data, status) = try await send("POST", path: "api/v1/catalog/\(escape(id))/\(verb)", json: [String: Any]())
+        let (data, status) = try await send("POST", path: "api/v1/catalog/\(escape(id))/\(verb)", json: [String: Any](),
+                                            retries: 0, timeout: Timeout.serverWork)
         guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: data) }
     }
 
     /// One live record's properties, or nil when there is none: a deleted
     /// record answers 200 with `deletedAt`, and reads as absent here.
-    func get(_ kind: String, _ id: String) async throws -> [String: Any]? {
-        let (data, status) = try await send("GET", path: recordPath(kind, id))
+    /// A reply that is not a record is an error, never an empty record: a
+    /// receipt read as present when it is not would mark a Health day filed.
+    func get(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws -> [String: Any]? {
+        let (data, status) = try await send("GET", path: recordPath(kind, id), retries: retries, timeout: timeout)
         if status == 404 { return nil }
         guard status == 200 else { throw ServerError(status: status, data: data) }
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if let deleted = object?["deletedAt"], !(deleted is NSNull) { return nil }
-        return object?["properties"] as? [String: Any] ?? [:]
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["id"] != nil
+        else { throw URLError(.cannotParseResponse) }
+        if let deleted = object["deletedAt"], !(deleted is NSNull) { return nil }
+        return object["properties"] as? [String: Any] ?? [:]
     }
 
     /// PUT merges per property and never prunes.
@@ -154,8 +166,8 @@ struct Client: Sendable {
         guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: data) }
     }
 
-    func delete(_ kind: String, _ id: String) async throws {
-        let (data, status) = try await send("DELETE", path: recordPath(kind, id))
+    func delete(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws {
+        let (data, status) = try await send("DELETE", path: recordPath(kind, id), retries: retries, timeout: timeout)
         guard (200 ..< 300).contains(status) || status == 404 else { throw ServerError(status: status, data: data) }
     }
 
@@ -167,13 +179,20 @@ struct Client: Sendable {
     func deliver(authority: String, trigger: String, body: Data, headers: [(String, String)]) async throws -> String {
         var request = URLRequest(url: server.appendingPathComponent("webhooks/\(authority)/\(trigger)"))
         request.httpMethod = "POST"
-        request.timeoutInterval = 60
+        // A day of Health is up to 4 MiB over a phone's uplink.
+        request.timeoutInterval = Timeout.upload
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         request.httpBody = body
         let (data, status) = try await perform(request)
+        // The webhook's own key was refused, not the sign-in: the session
+        // stands, and Set Up arms the webhook again.
+        if status == 401 || status == 403 { throw WebhookRefused(text: ServerError(status: status, data: data).text) }
         guard status == 202 || status == 200 else { throw ServerError(status: status, data: data) }
         struct Accepted: Decodable { let fire: String }
-        return (try? JSONDecoder().decode(Accepted.self, from: data))?.fire ?? ""
+        guard let fire = (try? JSONDecoder().decode(Accepted.self, from: data))?.fire, !fire.isEmpty else {
+            throw URLError(.cannotParseResponse)
+        }
+        return fire
     }
 
     /// Stores bytes as a blob and answers its digest, the value a `blobref`
@@ -185,7 +204,7 @@ struct Client: Sendable {
         guard let url = URL(string: server.absoluteString.trimmingSuffix("/") + "/" + path) else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.timeoutInterval = 300
+        request.timeoutInterval = Timeout.upload
         request.setValue(mediaType, forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let secret { request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization") }
@@ -212,9 +231,10 @@ struct Client: Sendable {
         var refused: Bool { running != true && !lastError.hasPrefix(Self.pendingPrefix) }
     }
 
-    func parked(trigger: String) async throws -> [Parked] {
+    func parked(trigger: String, timeout: TimeInterval = Timeout.read) async throws -> [Parked] {
         struct Page: Decodable { let items: [Parked] }
-        let (data, status) = try await send("GET", path: "api/v1/substrate.reamde.dev/core/trigger/\(escape(trigger))/parked")
+        let (data, status) = try await send("GET", path: "api/v1/substrate.reamde.dev/core/trigger/\(escape(trigger))/parked",
+                                            retries: 0, timeout: timeout)
         guard status == 200 else { throw ServerError(status: status, data: data) }
         return try JSONDecoder().decode(Page.self, from: data).items
     }
@@ -230,7 +250,7 @@ struct Client: Sendable {
     }
 
     private func send(
-        _ method: String, path: String, json: Any? = nil, authorized: Bool = true, retries: Int = 3, timeout: TimeInterval = 60
+        _ method: String, path: String, json: Any? = nil, authorized: Bool = true, retries: Int = 3, timeout: TimeInterval = Timeout.read
     ) async throws -> (Data, Int) {
         // The path may carry a percent-encoded segment, so it is joined as
         // text rather than through appendingPathComponent, which re-encodes.
@@ -261,7 +281,7 @@ struct Client: Sendable {
             if status == 503 || status == 429, attempt < retries {
                 attempt += 1
                 let after = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 2
-                try await Task.sleep(for: .seconds(min(after, 30)))
+                try await Task.sleep(for: .seconds(min(after, 10)))
                 continue
             }
             return (data, status)
@@ -269,7 +289,132 @@ struct Client: Sendable {
     }
 }
 
+/// How long a call may take, by what it asks of the server. A read the
+/// server answers from its index is quick or something is wrong; an install
+/// does real work; an upload is bounded by the phone's uplink.
+enum Timeout {
+    static let quick: TimeInterval = 20
+    static let read: TimeInterval = 30
+    static let upload: TimeInterval = 120
+
+    /// An install. A debug build reads SUBSTRATE_SYNC_SERVER_WORK_SECONDS,
+    /// so a test stands in for a slow server without waiting minutes.
+    static var serverWork: TimeInterval {
+        #if DEBUG
+        if let seconds = ProcessInfo.processInfo.environment["SUBSTRATE_SYNC_SERVER_WORK_SECONDS"].flatMap(Double.init) {
+            return seconds
+        }
+        #endif
+        return 300
+    }
+}
+
+/// An error in a sentence a person can act on. The system's own words
+/// ("The request timed out", "The network connection was lost") say what
+/// failed but not what it means; the server's refusals are its own words
+/// and are kept.
+func explain(_ error: Error, server: URL? = nil) -> String {
+    let host = server?.host() ?? "the server"
+    if let error = error as? URLError {
+        switch error.code {
+        case .timedOut: return "\(host.capitalizedFirst) took too long to answer."
+        case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff:
+            return "This phone is offline."
+        case .networkConnectionLost: return "The connection dropped before \(host) answered."
+        case .cannotFindHost, .dnsLookupFailed: return "Couldn't find \(host). Check the address."
+        case .cannotConnectToHost: return "\(host.capitalizedFirst) isn't answering."
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected:
+            return "Couldn't make a secure connection to \(host)."
+        case .appTransportSecurityRequiresSecureConnection:
+            return "\(host.capitalizedFirst) needs https:// for this phone to reach it."
+        case .cancelled: return "Stopped."
+        case .badServerResponse, .cannotParseResponse, .cannotDecodeContentData, .cannotDecodeRawData:
+            return "\(host.capitalizedFirst) answered with something this app can't read."
+        default: return error.localizedDescription
+        }
+    }
+    if let error = error as? ServerError {
+        switch error.status {
+        case 401: return "Your sign-in is no longer valid. Sign in again."
+        case 500...: return "\(host.capitalizedFirst) ran into a problem (\(error.status)): \(error.text)"
+        default: return error.text
+        }
+    }
+    if error is DecodingError { return "\(host.capitalizedFirst) answered with something this app can't read." }
+    if error is CancellationError { return "Stopped." }
+    return error.localizedDescription
+}
+
+/// The server refused a sign-in: its own words where it gave some.
+struct LoginRefused: LocalizedError {
+    let server: ServerError
+    var errorDescription: String? {
+        server.text == "The server answered 401." ? "The repository name, password or code was not accepted." : server.text
+    }
+}
+
+/// The webhook refused the key a Health delivery carried.
+struct WebhookRefused: LocalizedError {
+    let text: String
+    var errorDescription: String? {
+        "The server refused this phone's Health key (\(text)). Open Set Up and run it to arm the webhook again."
+    }
+}
+
+/// Runs `work`, and gives up on it after `seconds` with a timeout, whether
+/// or not it answers its cancellation: MapKit's geocoder and an item
+/// provider carry no timeout of their own.
+func withTimeout<T: Sendable>(_ seconds: TimeInterval, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+    let gate = ResumeOnce<T>()
+    return try await withCheckedThrowingContinuation { continuation in
+        gate.set(continuation)
+        let worker = Task {
+            do { gate.resume(.success(try await work())) } catch { gate.resume(.failure(error)) }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            worker.cancel()
+            gate.resume(.failure(URLError(.timedOut)))
+        }
+    }
+}
+
+/// A continuation resumed by whichever of its racers gets there first.
+private final class ResumeOnce<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+
+    func set(_ c: CheckedContinuation<T, Error>) {
+        lock.lock()
+        continuation = c
+        lock.unlock()
+    }
+
+    func resume(_ result: Result<T, Error>) {
+        lock.lock()
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        c?.resume(with: result)
+    }
+}
+
+/// The network's errors that mean the server could not be reached, as
+/// against one it answered, refused or that was stopped.
+func isUnreachable(_ error: Error) -> Bool {
+    let codes: Set<URLError.Code> = [.timedOut, .cannotConnectToHost, .notConnectedToInternet, .networkConnectionLost,
+                                     .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
+    return (error as? URLError).map { codes.contains($0.code) } ?? false
+}
+
+/// A call that ran out of time may have finished on the server all the
+/// same: an install, for one, goes on after the phone stops waiting.
+func timedOut(_ error: Error) -> Bool { (error as? URLError)?.code == .timedOut }
+
 extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+
     func trimmingSuffix(_ suffix: String) -> String {
         var s = self
         while s.hasSuffix(suffix) { s.removeLast(suffix.count) }

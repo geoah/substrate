@@ -129,14 +129,25 @@ private struct HealthCoverage: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             if let older = model.healthOutsideRange, !older.isEmpty {
+                // Offered for the days neither sent nor already waiting for
+                // the next sync, so a second tap never queues them twice.
+                let unsent = older.subtracting(model.state.healthDays)
+                let toQueue = unsent.subtracting(model.state.healthQueue)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("The phone holds \(older.count.formatted()) more days from before your history, back to \(older.min() ?? "").")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("Send These \(older.count.formatted()) Days Too") {
-                        Task { await model.send(days: older.sorted()) }
+                    if unsent.isEmpty {
+                        Text("All of them are sent.").font(.footnote).foregroundStyle(.secondary)
+                    } else if toQueue.isEmpty {
+                        Text("\(unsent.count.formatted()) of them go with the next Health sync.").font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Button("Send These \(toQueue.count.formatted()) Days Too") {
+                            Task { await model.send(days: toQueue.sorted()) }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(model.syncing)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
                 .padding(.vertical, 2)
             }

@@ -6,6 +6,13 @@ import HealthKit
 import SwiftUI
 import UIKit
 
+/// Why Set Up, or the check before it, did not finish: a title for what
+/// stopped and a sentence for why.
+struct SetupProblem: Equatable {
+    let title: String
+    let message: String
+}
+
 /// One thing Set up installs, imports, creates or arms.
 struct SetupStep: Identifiable, Equatable {
     enum Kind: Equatable {
@@ -42,13 +49,22 @@ final class AppModel: ObservableObject {
     @Published var setupBusy = false
     /// Asking the server what Set Up needs, which a second tap would repeat.
     @Published private(set) var setupChecking = false
-    @Published var setupError: String?
+    @Published var setupError: SetupProblem?
+    /// The step Set Up is doing now, by id.
+    @Published private(set) var setupStepRunning: String?
+    /// The check under way, and the session it reads: a second ask for the
+    /// same session waits for it rather than racing it.
+    private var checking: (identity: String, task: Task<Void, Never>)?
+    /// Set Up has finished its steps and the check after them has not: Home
+    /// waits for the server to agree.
+    @Published private(set) var setupSettling = false
     /// A key someone else set on the trigger, waiting on the owner's choice.
     @Published var foreignKey = false
     /// Syncs the owner started that have not finished: they chain, so a
     /// second Sync Now (or a Send) waits its turn.
     @Published private(set) var runningSyncs = 0
-    var syncing: Bool { runningSyncs > 0 }
+    /// A sync the owner started, or one iOS started in the background.
+    var syncing: Bool { runningSyncs > 0 || !progress.isEmpty }
     /// The sources the running syncs cover, and when the first began: a
     /// source in it that has not run since is queued.
     @Published private(set) var syncSources: Set<Source> = []
@@ -73,6 +89,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var eventsAvailable: [Date]?
     @Published private(set) var coverageLoading = false
     @Published private(set) var coverageError: String?
+    private var coverageStale = false
     /// How far back the coverage scan looks for Health data.
     static let coverageYears = 10
 
@@ -102,6 +119,7 @@ final class AppModel: ObservableObject {
             await SyncEngine.shared.setOnSignedOut { self.sessionExpired = true }
         }
         refreshAccess()
+        PlaceMonitor.shared.onAuthorizationChange = { [weak self] in self?.refreshAccess() }
         Activity.shared.onEntry = { [weak self] entry in
             guard let self else { return }
             self.activity.insert(entry, at: 0)
@@ -110,7 +128,7 @@ final class AppModel: ObservableObject {
     }
 
     var client: Client? { session.map { Client(server: $0.server, secret: $0.secret) } }
-    var setupComplete: Bool { setupChecked && steps.allSatisfy(\.done) }
+    var setupComplete: Bool { setupChecked && !setupBusy && !setupSettling && steps.allSatisfy(\.done) }
 
     // MARK: - sign in and out
 
@@ -123,6 +141,14 @@ final class AppModel: ObservableObject {
         // to this one again, what was pushed before is checked against the
         // server rather than trusted (the run forgets it where the identity
         // differs, and each source asks the server what it still holds).
+        // Kept first: a sign-in the Keychain would not hold is refused here,
+        // with the token it minted revoked, rather than lost at next launch.
+        do {
+            try Keychain.save(session)
+        } catch {
+            Task.detached { try? await Client(server: server, secret: session.secret).revoke(token: session.tokenID) }
+            throw error
+        }
         await SyncEngine.shared.cancel()
         let identity = session.identity
         state = await SyncEngine.shared.update { s in
@@ -131,10 +157,8 @@ final class AppModel: ObservableObject {
                 s.repository = identity
             }
         }
-        Keychain.save(session)
         self.session = session
-        sessionExpired = false
-        setupChecked = false
+        resetSetup()
         await checkSetup()
     }
 
@@ -146,23 +170,49 @@ final class AppModel: ObservableObject {
         Task { await SyncEngine.shared.cancel() }
         Keychain.clear()
         session = nil
-        steps = []
-        setupChecked = false
-        setupError = nil
-        sessionExpired = false
+        resetSetup()
         if let old {
             Task.detached { try? await Client(server: old.server, secret: old.secret).revoke(token: old.tokenID) }
         }
     }
 
+    /// What one session's Set Up showed, forgotten when the session changes.
+    private func resetSetup() {
+        steps = []
+        setupChecked = false
+        setupError = nil
+        setupStepRunning = nil
+        foreignKey = false
+        sessionExpired = false
+        serverUnreachable = nil
+    }
+
     // MARK: - set up
 
-    /// `keepError` keeps the error the step that ran before it reported.
+    /// Reads what the server holds and what Set Up still has to do.
+    /// `keepError` keeps what the Set Up before it reported, unless the check
+    /// finds everything in place: then whatever stopped it finished after
+    /// all. A check already under way answers for this one.
     func checkSetup(keepError: Bool = false) async {
-        guard let client, !setupChecking else { return }
+        guard let identity = session?.identity else { return }
+        if let checking, checking.identity == identity {
+            await checking.task.value
+            return
+        }
+        let task = Task { await self.readSetup(keepError: keepError) }
+        checking = (identity, task)
+        await task.value
+        if checking?.identity == identity { checking = nil }
+    }
+
+    private func readSetup(keepError: Bool) async {
+        guard let client, let identity = session?.identity else { return }
         setupChecking = true
         defer { setupChecking = false }
         if !keepError { setupError = nil }
+        // A check that outlives its session answers for none: what it read
+        // is another repository's.
+        var current: Bool { session?.identity == identity }
         do {
             let catalog = Dictionary(try await client.catalog().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var steps: [SetupStep] = []
@@ -195,17 +245,25 @@ final class AppModel: ObservableObject {
                 id: "trigger", kind: .trigger, title: "The webhook Health is sent to", code: SyncEngine.trigger,
                 done: Self.armed(trigger),
                 detail: trigger == nil ? "Appears once the Apple Health provider is installed." : nil))
+            guard current else { return }
             self.steps = steps
             setupChecked = true
             serverUnreachable = nil
+            if steps.allSatisfy(\.done) { setupError = nil }
             if let session { UserDefaults.standard.set(steps.allSatisfy(\.done), forKey: Self.setupDoneKey(session)) }
         } catch {
+            guard current else { return }
             if isSignedOut(error) { sessionExpired = true }
-            setupError = error.localizedDescription
+            let problem = explain(error, server: client.server)
+            // The Set Up before it said why it stopped; the check's own
+            // failure says only that the server could not be read now.
+            if !keepError || setupError == nil {
+                setupError = SetupProblem(title: "Couldn't check your server", message: problem)
+            }
             // Set up before, and only out of reach now: Home, saying so,
             // rather than a Set Up screen that can do nothing.
-            if let session, error is URLError, UserDefaults.standard.bool(forKey: Self.setupDoneKey(session)) {
-                serverUnreachable = error.localizedDescription
+            if let session, isUnreachable(error), UserDefaults.standard.bool(forKey: Self.setupDoneKey(session)) {
+                serverUnreachable = problem
                 setupChecked = true
             }
         }
@@ -216,14 +274,26 @@ final class AppModel: ObservableObject {
     private static func setupDoneKey(_ session: Session) -> String { "setup.done." + session.identity }
 
     /// Does every missing step, in order, and stops at the first refusal.
-    /// `replaceKey` answers the question a foreign key raises.
+    /// `replaceKey` answers the question a foreign key raises. Each step is
+    /// marked done as it finishes, so a stop shows what did happen; the busy
+    /// state ends with the work, before the check that follows it.
     func runSetup(replaceKey: Bool? = nil) async {
-        guard let client else { return }
+        guard !setupBusy else { return }
+        // The answer to the key question can come while the check after the
+        // run that asked it still reads: it waits for that check, never
+        // drops the answer.
+        if let checking { await checking.task.value }
+        guard let client, let identity = session?.identity, !setupBusy else { return }
         setupBusy = true
+        setupSettling = true
+        defer { setupSettling = false }
         setupError = nil
-        defer { setupBusy = false }
+        var problem: SetupProblem?
+        var current: SetupStep?
         do {
-            for step in steps where !step.done {
+            for step in steps where !step.done && step.kind != .trigger {
+                current = step
+                setupStepRunning = step.id
                 switch step.kind {
                 case let .install(id): try await client.catalog("install", id)
                 case .account:
@@ -233,22 +303,48 @@ final class AppModel: ObservableObject {
                 case .trigger:
                     break
                 }
+                markDone(step.id)
             }
             // The trigger is read after the installs, never from the steps
             // computed before them: installing a provider writes its shipped
             // trigger again, which can disarm one that was armed.
+            current = steps.first { $0.kind == .trigger }
+            setupStepRunning = current?.id
             if !Self.armed(try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)) {
-                guard try await armTrigger(client, replaceKey: replaceKey) else {
+                if try await armTrigger(client, replaceKey: replaceKey) {
+                    if let id = current?.id { markDone(id) }
+                } else {
                     foreignKey = true
-                    await checkSetup(keepError: true)
-                    return
                 }
             }
         } catch {
             if isSignedOut(error) { sessionExpired = true }
-            setupError = error.localizedDescription
+            problem = Self.problem(error, at: current, server: client.server)
         }
-        await checkSetup(keepError: true)
+        setupStepRunning = nil
+        setupBusy = false
+        guard session?.identity == identity else { return }
+        setupError = problem
+        await checkSetup(keepError: problem != nil)
+    }
+
+    private func markDone(_ id: String) {
+        guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+        steps[i].done = true
+        steps[i].detail = nil
+    }
+
+    /// What stopped Set Up, in words. An install that ran out of time is
+    /// not known to have failed: the server goes on after the phone stops
+    /// waiting, and the next check tells.
+    private static func problem(_ error: Error, at step: SetupStep?, server: URL) -> SetupProblem {
+        let what = step?.title ?? "Set Up"
+        if timedOut(error), case .install? = step?.kind {
+            return SetupProblem(
+                title: "The \(what) is taking long",
+                message: "The server did not finish installing it within \(Duration.seconds(Timeout.serverWork).formatted(.units(allowed: [.minutes, .seconds], width: .wide))). It may still be at it: Check Again in a minute.")
+        }
+        return SetupProblem(title: "Set Up stopped", message: "\(what): \(explain(error, server: server))")
     }
 
     /// Reads the trigger, keeps or sets its key, enables it, and writes the
@@ -290,12 +386,12 @@ final class AppModel: ObservableObject {
         return !(key ?? "").isEmpty
     }
 
-    /// 32 characters of [A-Za-z0-9_-], from the system's random source.
-    static func newKey() -> String {
+    /// 32 characters of [A-Za-z0-9_-], from the system's random source,
+    /// which never fails silently into a key of zeroes.
+    nonisolated static func newKey() -> String {
         let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return String(bytes.map { alphabet[Int($0) % alphabet.count] })
+        var random = SystemRandomNumberGenerator()
+        return String((0 ..< 32).map { _ in alphabet.randomElement(using: &random)! })
     }
 
     // MARK: - access
@@ -344,12 +440,18 @@ final class AppModel: ObservableObject {
         case .reminders:
             _ = try? await EKEventStore().requestFullAccessToReminders()
         case .places:
-            await PlaceMonitor.shared.requestAccess()
+            // iOS answers when it answers, and may never ask again: the
+            // monitor refreshes the access it shows on the change.
+            PlaceMonitor.shared.requestAccess()
         case .health:
             guard HealthReader.isAvailable else { break }
-            try? await SyncEngine.shared.health.requestAuthorization(toShare: SampleData.shareTypes, read: HealthReader.readTypes)
-            UserDefaults.standard.set(true, forKey: "health.asked")
-            Background.observeHealth()
+            do {
+                try await SyncEngine.shared.health.requestAuthorization(toShare: SampleData.shareTypes, read: HealthReader.readTypes)
+                UserDefaults.standard.set(true, forKey: "health.asked")
+                Background.observeHealth()
+            } catch {
+                Activity.shared.log(.health, "Couldn't ask for Health access: \(explain(error))", level: .error)
+            }
         }
         refreshAccess()
     }
@@ -439,10 +541,21 @@ final class AppModel: ObservableObject {
 
     /// Reads what the device holds, to set beside what was synced.
     func loadCoverage() async {
-        guard !coverageLoading else { return }
+        // A change made while a scan runs (a calendar turned off, a longer
+        // history) is read again once it ends, not dropped.
+        guard !coverageLoading else {
+            coverageStale = true
+            return
+        }
         coverageLoading = true
         coverageError = nil
-        defer { coverageLoading = false }
+        defer {
+            coverageLoading = false
+            if coverageStale {
+                coverageStale = false
+                Task { await loadCoverage() }
+            }
+        }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         if HealthReader.isAvailable, UserDefaults.standard.bool(forKey: "health.asked") {
@@ -450,7 +563,7 @@ final class AppModel: ObservableObject {
                 healthAvailable = try await HealthReader(store: SyncEngine.shared.health)
                     .availableDays(years: Self.coverageYears, calendar: calendar)
             } catch {
-                coverageError = error.localizedDescription
+                coverageError = explain(error)
             }
         }
         if EKEventStore.authorizationStatus(for: .event) == .fullAccess {
@@ -498,17 +611,17 @@ final class AppModel: ObservableObject {
         }
         runningSyncs += 1
         syncSources.formUnion(Source.allCases.filter { Settings.enabled($0) && (only?.contains($0) ?? true) })
-        defer {
-            runningSyncs -= 1
-            if runningSyncs == 0 {
-                syncSources = []
-                syncStarted = nil
-            }
-        }
         for source in Source.allCases where Settings.enabled(source) && (only?.contains(source) ?? true) {
             if access[source] == "Not asked yet" { await requestAccess(source) }
         }
         await SyncEngine.shared.sync(only, budget: .full)
+        // The sync is over when the engine returns: what follows is reading,
+        // and Home stops saying it syncs.
+        runningSyncs -= 1
+        if runningSyncs == 0 {
+            syncSources = []
+            syncStarted = nil
+        }
         state = LocalState.load()
         // Out of reach at launch: a sync is the next look at the server.
         if serverUnreachable != nil { await checkSetup(keepError: true) }

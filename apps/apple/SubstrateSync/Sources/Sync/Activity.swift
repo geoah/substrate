@@ -113,5 +113,5 @@ struct ContextError: LocalizedError {
     let context: String
     let underlying: Error
 
-    var errorDescription: String? { "\(context): \(underlying.localizedDescription)" }
+    var errorDescription: String? { "\(context): \(explain(underlying))" }
 }

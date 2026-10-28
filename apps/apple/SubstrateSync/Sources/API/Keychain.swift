@@ -34,17 +34,34 @@ enum Keychain {
         return try? JSONDecoder().decode(Session.self, from: data)
     }
 
-    static func save(_ session: Session) {
-        guard let data = try? JSONEncoder().encode(session) else { return }
-        clear()
-        let item: [String: Any] = [
+    /// A sign-in the Keychain did not keep is not a sign-in: the next
+    /// launch, or a background sync, would find none.
+    struct NotSaved: LocalizedError {
+        let status: OSStatus
+        var errorDescription: String? { "This phone could not keep your sign-in (Keychain status \(status)). Unlock the phone and sign in again." }
+    }
+
+    static func save(_ session: Session) throws {
+        try write(try JSONEncoder().encode(session), account: account)
+    }
+
+    /// Replaces the item in place, so a write that fails leaves the one
+    /// before it rather than none.
+    private static func write(_ data: Data, account: String) throws {
+        let match: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+        ]
+        let attributes: [String: Any] = [
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data,
         ]
-        SecItemAdd(item as CFDictionary, nil)
+        var status = SecItemUpdate(match as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            status = SecItemAdd(match.merging(attributes) { a, _ in a } as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw NotSaved(status: status) }
     }
 
     enum Read {
@@ -87,17 +104,8 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func setString(_ value: String, account: String) {
-        let match: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(match as CFDictionary)
-        var item = match
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        item[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(item as CFDictionary, nil)
+    static func setString(_ value: String, account: String) throws {
+        try write(Data(value.utf8), account: account)
     }
 
     /// Forgets the session only; the install id stays, so signing in again
