@@ -27,6 +27,8 @@ final class EndToEndTests: XCTestCase {
         let shots = env["SYNC_E2E_SHOTS"].map { URL(fileURLWithPath: $0) }
         func shot(_ name: String) {
             guard let shots else { return }
+            // A pushed page slides in; the picture is of where it settles.
+            sleep(1)
             try? XCUIScreen.main.screenshot().pngRepresentation.write(to: shots.appendingPathComponent("\(name).png"))
         }
         let back = { app.navigationBars.buttons.element(boundBy: 0).tap() }
