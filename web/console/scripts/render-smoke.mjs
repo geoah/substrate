@@ -461,12 +461,12 @@ const routes = [
   {
     // Three metrics of three units: two overlay on one chart, the left and
     // the right axis, and the third splits into a chart of its own. The
-    // repository is seeded first, so the charts have points to draw and an
-    // empty state fails the check.
+    // repository is seeded before the page opens, so the charts have points
+    // to draw and an empty state fails the check; opened first, the page
+    // would read metrics no installed package declares yet.
     path: "/observations/timeline?metric=health/heart_rate,health/hrv_rmssd,health/steps",
+    before: seedObservations,
     async check(page) {
-      await seedObservations(page)
-      await page.reload({ waitUntil: "load" })
       await shows(page, '"Timeline" heading', pageTitle(page, "Timeline"))
       const lanes = page.locator('[data-slot="timeline-lane"]')
       await loaded(
@@ -588,6 +588,8 @@ async function render(base) {
     const started = Date.now()
     let result = ""
     try {
+      // A route's seed runs on the page before it, signed in on this origin.
+      if (route.before) await route.before(page)
       await page.goto(origin + route.path, { waitUntil: "load" })
       result = await route.check(page, origin)
       await page.waitForTimeout(SETTLE_MS)

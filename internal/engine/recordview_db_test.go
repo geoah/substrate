@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -47,6 +49,25 @@ func authorityRowVersion(t *testing.T, ds substrate.Dataset) int64 {
 	}
 	v, _ := vocabulary.VersionValue(row.Properties["version"])
 	return v
+}
+
+// shippedAuthorityVersion is the version the tree ships the seed authority
+// row at.
+func shippedAuthorityVersion(t *testing.T) int64 {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(shippedTree(t), vocabulary.AuthorityPublisher, "authority.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Data struct {
+			Version int64 `yaml:"version"`
+		} `yaml:"data"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil || doc.Data.Version == 0 {
+		t.Fatalf("read the shipped authority row: %v", err)
+	}
+	return doc.Data.Version
 }
 
 // aRecordView is a view every block of which is well formed, over a kind the
@@ -181,12 +202,13 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 	if !sawPackage {
 		t.Fatal("the upgrade entries do not include the console package row")
 	}
-	// The authority row names the package now, and moved from 2 to 3.
+	// The authority row names the package now, and moved from 2 to the
+	// version the tree ships.
 	if !sawAuthority {
 		t.Fatal("the upgrade entries do not include the authority row")
 	}
-	if v := authorityRowVersion(t, ds2); v != 3 {
-		t.Fatalf("the upgraded authority row is at version %d, want 3", v)
+	if v, want := authorityRowVersion(t, ds2), shippedAuthorityVersion(t); v != want {
+		t.Fatalf("the upgraded authority row is at version %d, want %d", v, want)
 	}
 	// The upgraded repository takes a view like a fresh one does.
 	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
