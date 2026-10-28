@@ -317,6 +317,167 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 	answers("nothing owed again", "m0,m1,m2,m3", 4, "user:hello,assistant:hi")
 }
 
+// planScan matches a plan's table scan lines, planNode every node line, and
+// planFiltered the rows a node read and threw away; EXPLAIN reports both row
+// counts per loop.
+var (
+	planScan     = regexp.MustCompile(`(?:Seq|Index|Index Only|Bitmap Heap) Scan .*\(actual rows=(\d+) loops=(\d+)\)`)
+	planNode     = regexp.MustCompile(`\(actual rows=\d+ loops=\d+\)|\(never executed\)`)
+	planFiltered = regexp.MustCompile(`Rows Removed by Filter: (\d+)`)
+)
+
+// tableRowsRead totals the table rows a plan's scans read over every loop,
+// kept or filtered out, so a scan repeated once per outer row counts as often
+// as it ran. A bitmap index scan's rows are its heap scan's.
+func tableRowsRead(plan string) int {
+	total, loops, inScan := 0, 0, false
+	for _, line := range strings.Split(plan, "\n") {
+		if m := planScan.FindStringSubmatch(line); m != nil && !strings.Contains(line, "Bitmap Index Scan") {
+			rows, _ := strconv.Atoi(m[1])
+			loops, _ = strconv.Atoi(m[2])
+			total += rows * loops
+			inScan = true
+			continue
+		}
+		if planNode.MatchString(line) {
+			inScan = false
+			continue
+		}
+		if m := planFiltered.FindStringSubmatch(line); m != nil && inScan {
+			n, _ := strconv.Atoi(m[1])
+			total += n * loops
+		}
+	}
+	return total
+}
+
+// The resolution sweep reads each message of the kind at most once, never
+// once per settled thread. Under row level security no index reaches the
+// thread pointer on a message's `props`, and the probe of it per thread this
+// replaced ran for a quarter of an hour on a repository of 23k threads,
+// holding back every concurrent index build behind its snapshot.
+func TestReadPlanResolutionSweepReadsEachMessageOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	log := &queryLog{}
+	ds := openCoreDataset(t, WithTestQueryTracer(log))
+
+	now := nowUTC()
+	settledAgo, settlesLater := now.Add(-time.Hour), now.Add(time.Hour)
+	putThread := func(tx *txn, id, status string, finished time.Time) error {
+		_, err := tx.put(substrate.PutInput{Kind: typeThread, ID: id, Properties: map[string]any{
+			"agent": "sweep.test.dev/crew/agent", "provider": "fake", "model": "fake", "mode": "call",
+			"agentDepth": 0, "status": status, "startedAt": settledAgo.Add(-time.Hour).Format(time.RFC3339Nano),
+			"finishedAt": finished.Format(time.RFC3339Nano),
+		}})
+		return err
+	}
+	putMessage := func(tx *txn, id, thread, role string, turn int) error {
+		_, err := tx.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: map[string]any{
+			"role": role, "content": "x", "turn": turn, msgRelThread: thread,
+		}})
+		return err
+	}
+	// Threads that settle after every row they hold, a system row among
+	// them: the sweep owes none of them anything.
+	const quiet, perThread = 12, 20
+	messages := 0
+	for th := range quiet {
+		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+			id := fmt.Sprintf("quiet-%02d", th)
+			if err := putThread(tx, id, threadOK, settlesLater); err != nil {
+				return err
+			}
+			for i := range perThread {
+				role := "user"
+				if i == perThread/2 {
+					role = msgRoleSystem
+				}
+				if err := putMessage(tx, fmt.Sprintf("%s-%03d", id, i), id, role, i); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("plant thread %d: %v", th, err)
+		}
+		messages += perThread
+	}
+	// Threads that settled before their last row. Only a live system row
+	// on a live thread that settled ok or over budget is owed a resume.
+	late := []struct{ id, status, role string }{
+		{"owed-ok", threadOK, msgRoleSystem},
+		{"owed-overbudget", threadOverBudget, msgRoleSystem},
+		{"still-running", threadRunning, msgRoleSystem},
+		{"errored", threadError, msgRoleSystem},
+		{"only-prose", threadOK, "assistant"},
+		{"row-deleted", threadOK, msgRoleSystem},
+		{"thread-deleted", threadOK, msgRoleSystem},
+	}
+	for _, th := range late {
+		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+			if err := putThread(tx, th.id, th.status, settledAgo); err != nil {
+				return err
+			}
+			if err := putMessage(tx, th.id+"-000", th.id, "assistant", 0); err != nil {
+				return err
+			}
+			return putMessage(tx, th.id+"-001", th.id, th.role, 1)
+		}); err != nil {
+			t.Fatalf("plant thread %s: %v", th.id, err)
+		}
+		messages += 2
+	}
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeMessage, "row-deleted-001", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the row: %v", err)
+	}
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, "thread-deleted", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the thread: %v", err)
+	}
+	analyzeTables(t, ds)
+
+	owed := func(when, want string) {
+		t.Helper()
+		ids, err := ds.unconsumedResolutions(ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", when, err)
+		}
+		if got := strings.Join(ids, ","); got != want {
+			t.Fatalf("%s: the sweep owes %q, want %q", when, got, want)
+		}
+	}
+	// What the sweep may read: each message's refs row and the message
+	// itself, and each thread, once.
+	budget := 2*messages + quiet + len(late)
+	sweep := func(when, marker, want string) (loggedQuery, string) {
+		t.Helper()
+		q := log.sent(t, marker, func() { owed(when, want) })
+		plan := analyzedPlan(t, ds, q)
+		if n := tableRowsRead(plan); n > budget {
+			t.Fatalf("%s: the sweep read %d rows, more than the %d it may:\n%s", when, n, budget, plan)
+		}
+		return q, plan
+	}
+
+	q, plan := sweep("read through refs", "WITH settled", "owed-ok,owed-overbudget")
+	if !strings.Contains(q.sql, "FROM refs r") || !strings.Contains(plan, "refs_dst_idx") {
+		t.Fatalf("the sweep does not seek the messages through refs:\n%s\n%s", q.sql, plan)
+	}
+
+	// The owed row's refs rows gone, a read through refs no longer finds it.
+	dropRefs(t, ds, typeMessage, "owed-ok-001")
+	sweep("refs rows dropped", "WITH settled", "owed-overbudget")
+
+	// While the kind's `thread` refs rows are owed, the rows' own properties
+	// decide, and the thread is owed again.
+	undo := oweRefs(t, ds, typeMessage, msgRelThread)
+	if q, _ := sweep("refs owed", "WITH resolved", "owed-ok,owed-overbudget"); strings.Contains(q.sql, "FROM refs r") {
+		t.Fatalf("with refs owed the sweep still reads refs:\n%s", q.sql)
+	}
+	undo()
+	sweep("nothing owed again", "WITH settled", "owed-overbudget")
+}
+
 // A list filtered by a repeated reference reads refs at the property's own
 // site, every item's row, where it read every row of the kind with one
 // containment probe per value.
