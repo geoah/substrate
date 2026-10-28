@@ -260,7 +260,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		t.Fatalf("spoil the stored wrap: %v", err)
 	}
 	_, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
@@ -276,7 +276,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		t.Fatalf("restore the stored wrap: %v", err)
 	}
 	svc2, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {

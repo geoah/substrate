@@ -79,7 +79,7 @@ id **is** a kind reference, so it always holds two, and most ids the
 
 ```http
 GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
-GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19
+GET /api/v1/substrate.reamde.dev/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19
 ```
 
 An adapter's `record_id` ([the SDK](functions.md#the-sdk)) hashes an id that
@@ -1178,8 +1178,8 @@ pass is re-deriving is a `503 unavailable` with `Retry-After`, checked in the
 read's own snapshot before anything is read ([readiness](#readiness)).
 
 ```http
-GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
-  &aggregate={"metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/observations/trace"]}
+  &aggregate={"metric": {"ref": "substrate.reamde.dev/observations/metric/health/heart_rate"},
               "range": {"gte": "2026-07-20T00:00:00+03:00", "lt": "2026-07-27T00:00:00+03:00"},
               "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
               "reducers": [{"durationIn": [95, 114]}, {"durationIn": [114, 133]}, "avg"],
@@ -1187,19 +1187,19 @@ GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
               "sources": {"policy": "priority", "order": ["applehealth/iphone/apple-watch", "whoop/e2e"]},
               "durationUnit": "min"}
 
-→ {"metric": "ada.example.com/observations/metric/health/heart_rate",
+→ {"metric": "substrate.reamde.dev/observations/metric/health/heart_rate",
    "unit": "1/min",
    "bucket": {"calendar": "week", "timezone": "Europe/Athens", "weekStart": "monday"},
    "from": "raw", "exact": false,
    "rows": [{"start": "2026-07-20T00:00:00+03:00", "end": "2026-07-27T00:00:00+03:00",
              "form": "gauge", "from": "raw",
-             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"],
+             "sources": ["substrate.reamde.dev/observations/source/applehealth/iphone/apple-watch"],
              "coverage": "P5DT3H33M",
              "values": [{"reducer": {"durationIn": [95, 114]}, "value": "19", "unit": "min"},
                         {"reducer": {"durationIn": [114, 133]}, "value": "35", "unit": "min"},
                         {"reducer": "avg", "value": "65.0605308112775", "unit": "1/min"}],
              "count": 1933}],
-   "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"],
+   "sources": ["substrate.reamde.dev/observations/source/applehealth/iphone/apple-watch"],
    "head": {"changelog": 72469, "generation": "pn2vgcqd6wfg"}}
 ```
 
@@ -1256,7 +1256,7 @@ read takes the whole [filter grammar](#the-filter-grammar).
 
 A `source`, `about` or `metric` value is a record path, `{ref}`, or a bare id
 the read completes with the kind the selected kinds' reference pins, as the
-list's filter does: `manual` is `<authority>/observations/source/manual` and
+list's filter does: `manual` is `substrate.reamde.dev/observations/source/manual` and
 never `.../source/whoop/e2e/manual`. A bare id is a `422` where those kinds
 pin no kind, any kind (`about`) or two. A path no stream holds answers no
 rows.
@@ -1408,43 +1408,43 @@ screen is one request. Sleep, resting heart rate, HRV and steps for
 
 ```http
 GET /api/v1/records?aggregate=
-  {"metrics": [{"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
-               {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
-               {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "vendor"},
-               {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"]}],
+  {"metrics": [{"ref": "substrate.reamde.dev/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
+               {"ref": "substrate.reamde.dev/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
+               {"ref": "substrate.reamde.dev/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "vendor"},
+               {"ref": "substrate.reamde.dev/observations/metric/health/steps", "reducers": ["sum"]}],
    "range": {"gte": "2026-08-12T00:00:00+03:00", "lt": "2026-08-13T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "groupBy": ["code"],
    "sources": {"policy": "priority"},
    "reducers": ["last"]}
 
-→ {"units": {"ada.example.com/observations/metric/health/hrv_rmssd": "ms",
-             "ada.example.com/observations/metric/health/resting_heart_rate": "1/min",
-             "ada.example.com/observations/metric/health/sleep_stage": "h",
-             "ada.example.com/observations/metric/health/steps": "steps"},
+→ {"units": {"substrate.reamde.dev/observations/metric/health/hrv_rmssd": "ms",
+             "substrate.reamde.dev/observations/metric/health/resting_heart_rate": "1/min",
+             "substrate.reamde.dev/observations/metric/health/sleep_stage": "h",
+             "substrate.reamde.dev/observations/metric/health/steps": "steps"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "exact": false,
    "rows": [{"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
-             "group": {"metric": "ada.example.com/observations/metric/health/hrv_rmssd"}, "from": "summaries",
-             "sources": ["ada.example.com/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
+             "group": {"metric": "substrate.reamde.dev/observations/metric/health/hrv_rmssd"}, "from": "summaries",
+             "sources": ["substrate.reamde.dev/observations/source/whoop/e2e"], "coverage": "PT7H52M0.438S",
              "values": [{"reducer": "last", "value": "59.692649", "unit": "ms"}], "count": 1},
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
-             "group": {"metric": "ada.example.com/observations/metric/health/resting_heart_rate"}, "from": "summaries",
-             "sources": ["ada.example.com/observations/source/applehealth/iphone/health"], "coverage": "P1D",
+             "group": {"metric": "substrate.reamde.dev/observations/metric/health/resting_heart_rate"}, "from": "summaries",
+             "sources": ["substrate.reamde.dev/observations/source/applehealth/iphone/health"], "coverage": "P1D",
              "values": [{"reducer": "last", "value": "54", "unit": "1/min"}], "count": 1},
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
-             "group": {"code": "deep", "metric": "ada.example.com/observations/metric/health/sleep_stage"}, "from": "raw",
-             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"], "coverage": "PT7H45M",
+             "group": {"code": "deep", "metric": "substrate.reamde.dev/observations/metric/health/sleep_stage"}, "from": "raw",
+             "sources": ["substrate.reamde.dev/observations/source/applehealth/iphone/apple-watch"], "coverage": "PT7H45M",
              "values": [{"reducer": "sum", "value": "1.73916666666667", "unit": "h"}], "count": 1},
             {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
-             "group": {"metric": "ada.example.com/observations/metric/health/steps"}, "from": "raw",
-             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
-                         "ada.example.com/observations/source/applehealth/iphone/iphone"], "coverage": "PT2H56M",
+             "group": {"metric": "substrate.reamde.dev/observations/metric/health/steps"}, "from": "raw",
+             "sources": ["substrate.reamde.dev/observations/source/applehealth/iphone/apple-watch",
+                         "substrate.reamde.dev/observations/source/applehealth/iphone/iphone"], "coverage": "PT2H56M",
              "values": [{"reducer": "sum", "value": "7465.4839260528", "unit": "steps"}], "count": 176}],
-   "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
-               "ada.example.com/observations/source/applehealth/iphone/health",
-               "ada.example.com/observations/source/applehealth/iphone/iphone",
-               "ada.example.com/observations/source/whoop/e2e"],
+   "sources": ["substrate.reamde.dev/observations/source/applehealth/iphone/apple-watch",
+               "substrate.reamde.dev/observations/source/applehealth/iphone/health",
+               "substrate.reamde.dev/observations/source/applehealth/iphone/iphone",
+               "substrate.reamde.dev/observations/source/whoop/e2e"],
    "head": {"changelog": 72469, "generation": "pn2vgcqd6wfg"}}
 ```
 
@@ -1877,7 +1877,7 @@ Average sleep per wake day, by week, each night on the local day it ended
 and one device's night where several recorded it:
 
 ```json
-{"filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+{"filter": {"kinds": ["substrate.reamde.dev/health/sleep"], "properties": {"isNap": {"eq": false}}},
  "aggregate": {"property": {"name": "timeAsleep", "anchor": "endsAt", "utcOffset": "utcOffsetEnd",
                             "sources": {"policy": "priority", "property": "source",
                                         "order": ["whoop/e2e", "applehealth/iphone/apple-watch"]}},

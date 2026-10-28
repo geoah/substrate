@@ -114,17 +114,17 @@ func TestProposeCardOpsMatchTheDispatcher(t *testing.T) {
 func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	openWith := func(dir string) substrate.Service {
-		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(dir))
+	openWith := func(tree Option) substrate.Service {
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), tree)
 		if err != nil {
-			t.Fatalf("open with %s: %v", dir, err)
+			t.Fatalf("open: %v", err)
 		}
 		t.Cleanup(func() { _ = svc.Close() })
 		return svc
 	}
 
 	// The tree as it stood before host functions existed.
-	svc := openWith(preHostKindsDir(t))
+	svc := openWith(WithKindsDir(preHostKindsDir(t)))
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	_ = svc.Close()
 
 	// This binary's tree: the open runs the upgrade.
-	svc2 := openWith(SeedKindsDir)
+	svc2 := openWith(WithKindsFS(SeedKinds))
 	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("the boot upgrade could not deliver the host functions: %v", err)
@@ -167,20 +167,20 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 
 // preHostKindsDir writes the seed tree as the binary before this one shipped
 // it: no host function declarations, and a function kind whose runtime enum
-// has no `host` value and whose `source` is required. The WHOLE seed authority
-// is copied, both packages, because core declares against llm (record 0077)
-// and a tree holding one of them resolves nothing.
+// has no `host` value and whose `source` is required. The WHOLE seed is
+// copied, every seeded package, because core declares against llm (record
+// 0077) and a tree holding one of them resolves nothing.
 func preHostKindsDir(t *testing.T) string {
 	t.Helper()
-	const src = SeedKindsDir
 	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+	if err := os.CopyFS(dir, SeedKinds); err != nil {
 		t.Fatalf("copy the seed tree: %v", err)
 	}
-	if err := os.Remove(filepath.Join(dir, "core", "hostfunctions.yaml")); err != nil {
+	core := filepath.Join(dir, vocabulary.PackageCore)
+	if err := os.Remove(filepath.Join(core, "hostfunctions.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	fn := filepath.Join(dir, "core", "function.yaml")
+	fn := filepath.Join(core, "function.yaml")
 	raw, err := os.ReadFile(fn)
 	if err != nil {
 		t.Fatal(err)

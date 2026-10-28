@@ -61,8 +61,8 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 }
 
 // newDataset provisions a repository, imports the TASKS sample package and
-// returns its dataset. Creation seeds core, llm and console (and three keyless
-// provider rows), so a test that reads any
+// returns its dataset. Creation seeds core, llm, console and observations (and
+// three keyless provider rows), so a test that reads any
 // sample kind imports one; tasks `requires:` people and scheduling, so the
 // three arrive together and cover task, project, tasklog, person, team,
 // organization and the recurrence traits. That is what nearly every test in
@@ -91,7 +91,8 @@ func newVocabularyDataset(t *testing.T, names ...string) (substrate.Service, sub
 }
 
 // newCoreDataset provisions a repository and stops there: the seeded
-// vocabulary (core, llm and console) and the three keyless provider rows. OpenForTest
+// vocabulary (core, llm, console and observations) and the three keyless
+// provider rows. OpenForTest
 // does not import the LLM sample; production Open does.
 func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, substrate.Dataset) {
 	t.Helper()
@@ -130,6 +131,16 @@ func putSampleUnits(t *testing.T, ds substrate.Dataset, names ...string) {
 	t.Helper()
 	if err := enginetest.PutSampleUnits(context.Background(), ds, names...); err != nil {
 		t.Fatalf("put the shipped units: %v", err)
+	}
+}
+
+// installCatalogues installs the named first-party catalogues ("health",
+// "labs", "environment") through the catalog's provider door, with the
+// shipped units they name (enginetest.InstallCatalogues, record 0192).
+func installCatalogues(t *testing.T, ds substrate.Dataset, names ...string) {
+	t.Helper()
+	if err := enginetest.InstallCatalogues(context.Background(), ds, names...); err != nil {
+		t.Fatalf("install the first-party catalogues: %v", err)
 	}
 }
 

@@ -280,12 +280,12 @@ func TestAggregateRollingKeepsACensoredValuesBound(t *testing.T) {
 			value["comparator"] = x.comparator
 		}
 		f.mustPut(t, f.labresult, fmt.Sprintf("lab/tsh/%d", i), map[string]any{
-			"metric": f.metricRef("health/tsh"), "form": "gauge", "hold": "PT0S", "value": value,
+			"metric": f.metricRef("labs/tsh"), "form": "gauge", "hold": "PT0S", "value": value,
 			"at": day.AddDate(0, 0, i).Add(8 * time.Hour).Format(time.RFC3339), "utcOffset": 0,
 		})
 	}
 	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/tsh")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("labs/tsh")},
 		Range:    rng(day.AddDate(0, 0, 1), day.AddDate(0, 0, 3)),
 		Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC"},
 		Reducers: reducers("min"),

@@ -453,7 +453,7 @@ func whoopRowWrite(t *testing.T, effects []engine.StepEffect, kind, id string) m
 	return nil
 }
 
-// whoopLive is live under the name healthwhoop_test.go and
+// whoopLive is live under the name whoop_adapter_test.go and
 // synth_whoop_test.go call it by.
 func whoopLive(t *testing.T, ds substrate.Dataset, kind, id string) bool {
 	t.Helper()

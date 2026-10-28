@@ -1,0 +1,290 @@
+# one analyte's result from one report: FHIR's Observation. Binds core's
+# `observed(single)` beside its own properties, so the observed index reads
+# it like any observation and the write path holds it to the trait's rules.
+#
+# A lab result takes shapes a plain number cannot hold, and EXACTLY ONE of
+# them is set on every write, a patch that switches shapes included: `value`
+# (a quantity, with a comparator for `<0.01`), the coded result (`codedValue`
+# as received, with `code` as the index's categorical key), `ratio` (a
+# titre), `text`, or `absentReason` (a cancelled test). A unit the
+# repository has no unit record for keeps the reading in `sourceValue` and
+# `sourceUnit` with none of the five set. The engine holds the rule for any kind that binds core's `result`
+# beside `observed(single)` (docs/observations.md).
+#
+# `code` is the trait's: the categorical value the index keys on, such as
+# not-detected. The analyte's code as the lab sent it is `coding`, an object,
+# because the trait contracts `code` as a string.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/labs/labresult
+data:
+  authority: substrate.reamde.dev
+  package: labs
+  description: >-
+    One result from a lab report, such as your LDL cholesterol on one blood
+    test. The value or finding, the lab's reference range and flag, the specimen
+    and the result's status.
+  purpose: supporting
+  names:
+    singular: labresult
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/observed(single)
+    - substrate.reamde.dev/core/result
+  displayTemplate: "{metric} {value|codedValue.display|text|absentReason}"
+  indices:
+    - properties:
+        - metric
+        - at
+  # `measure` was the measure the engine's unit table read the unit as,
+  # which the unit graph does not have (decision record 0186)
+  retired:
+    properties:
+      - measure
+  properties:
+    # ---- the observed(single) contract ----
+    metric:
+      type: reference
+      kind: substrate.reamde.dev/observations/metric
+      required: true
+      mustExist: true
+      description: the analyte measured, as a metric
+    source:
+      type: reference
+      kind: substrate.reamde.dev/observations/source
+      description: the lab, as a source of values
+    about:
+      type: reference
+      kind: any
+      description: whose result it is; absent means the repository's owner
+    channel:
+      type: string
+      description: the body region of a regional body composition result,
+        such as trunk or left_arm; absent for a blood test
+    form:
+      type: string
+      required: true
+      default: gauge
+      description: gauge for a lab value, which is a point and never held
+        forward
+      values:
+        - gauge
+        - amount
+        - counter
+        - summary
+    value:
+      type: quantity
+      comparator: true
+      description: the number and its unit, with a comparator such as < when
+        the lab reports a bound
+    code:
+      type: string
+      description: the categorical result the index keys on, such as not-detected
+    statistic:
+      type: string
+      description: unused by labs; part of the observed contract
+    period:
+      type: string
+      description: unused by labs; part of the observed contract
+    hold:
+      type: duration
+      description: how long the value stands; PT0S for a lab value, which
+        is a point
+    resetRule:
+      type: string
+      description: unused by labs; part of the observed contract
+    resetAt:
+      type: datetime
+      description: unused by labs; part of the observed contract
+    delta:
+      type: bool
+      description: unused by labs; part of the observed contract
+    circular:
+      type: bool
+      description: unused by labs; part of the observed contract
+    wrapAt:
+      type: decimal
+      description: unused by labs; part of the observed contract
+    utcOffset:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC where the specimen was collected
+    # FHIR's data-absent-reason list is the guide; the lab's own word, such
+    # as cancelled, is kept as sent.
+    absentReason:
+      type: string
+      description: why there is no result, such as cancelled or not-performed
+    sourceValue:
+      type: string
+      description: the result as received, kept when it could not be normalized
+    sourceUnit:
+      type: string
+      description: the unit as received
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the lab; a lower one is refused
+    # ---- the result contract ----
+    codedValue:
+      type: object
+      description: a coded result as received, such as Not detected
+      fields:
+        system:
+          type: string
+          description: the code system, such as http://snomed.info/sct
+        code:
+          type: string
+          description: the code
+        display:
+          type: string
+          description: the result as the lab wrote it
+    ratio:
+      type: object
+      description: a result that is a ratio, such as a titre of 1 to 80
+      fields:
+        numerator:
+          type: decimal
+          description: the first number
+        denominator:
+          type: decimal
+          description: the second number
+    text:
+      type: text
+      description: a result that is free text
+    # each bound a quantity, its unit a unit record of the repository, so a
+    # reader converts a range to the result's unit before it compares them
+    referenceRanges:
+      type: object
+      repeated: true
+      description: the reference ranges the lab reported with this result
+      fields:
+        low:
+          type: quantity
+          description: the lower bound, with its unit
+        high:
+          type: quantity
+          description: the upper bound, with its unit
+        text:
+          type: string
+          description: the range as the lab wrote it, such as optimal
+        appliesTo:
+          type: string
+          description: who the range applies to, such as female
+        age:
+          type: string
+          description: the age band the range applies to
+        tone:
+          type: enum
+          values:
+            - good
+            - fair
+            - poor
+            - none
+          description: how a reader draws and words the band; absent reads
+            as good, the lab's normal range, and poor marks a cut-off past
+            which a value is abnormal, such as a high band with a low bound
+            alone
+    interpretation:
+      type: object
+      repeated: true
+      description: the lab's flags as received, such as H for high
+      fields:
+        system:
+          type: string
+          description: the code system
+        code:
+          type: string
+          description: the flag
+        display:
+          type: string
+          description: the flag as the lab wrote it
+    # ---- this kind's own ----
+    report:
+      type: reference
+      kind: substrate.reamde.dev/labs/labreport
+      onDelete: cascade
+      description: the report this result is part of
+    coding:
+      type: object
+      description: the analyte's code as the lab sent it, such as a LOINC
+        code
+      fields:
+        system:
+          type: string
+          description: the code system, such as http://loinc.org
+        code:
+          type: string
+          description: the code
+        version:
+          type: string
+          description: the code system's version
+        display:
+          type: string
+          description: the lab's name for it
+    upstreamId:
+      type: string
+      description: the lab's or the system's own id for this result
+    normalizationFailure:
+      type: string
+      description: why the result could not be normalized, such as unknown-unit
+    specimen:
+      type: object
+      description: the sample the result came from
+      fields:
+        material:
+          type: string
+          description: what was sampled, such as serum or whole blood
+        collectedAt:
+          type: datetime
+          description: when it was collected
+        fasting:
+          type: bool
+          description: true when the person had fasted
+        condition:
+          type: string
+          description: anything the lab noted about it, such as haemolysed
+    method:
+      type: string
+      description: the method the lab used, where it says
+    status:
+      type: string
+      description: the result's status as the lab sent it, such as preliminary
+        or final
+    provenance:
+      type: object
+      description: where in a read document the result was found
+      fields:
+        page:
+          type: int
+          description: the page
+        row:
+          type: int
+          description: the row on the page
+        confidence:
+          type: decimal
+          description: how sure the reading is, from 0 to 1
+    derivedFrom:
+      type: reference
+      kind: any
+      repeated: true
+      description: the results this one was computed from
+    conversion:
+      type: object
+      description: how a derived result was computed from the one it came
+        from
+      fields:
+        formula:
+          type: string
+          description: the formula's id, such as molar-mass
+        parameters:
+          type: decimal
+          keyed: true
+          description: the formula's inputs by name
+        version:
+          type: string
+          description: the formula's version

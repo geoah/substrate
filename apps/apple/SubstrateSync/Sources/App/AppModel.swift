@@ -10,7 +10,6 @@ import UIKit
 struct SetupStep: Identifiable, Equatable {
     enum Kind: Equatable {
         case install(String)
-        case importSample(String)
         case account
         case trigger
     }
@@ -27,13 +26,11 @@ struct SetupStep: Identifiable, Equatable {
 final class AppModel: ObservableObject {
     static let appleProvider = "providers.substrate.reamde.dev/apple"
     static let healthProvider = "providers.substrate.reamde.dev/applehealth"
-    static let samples = [
-        "samples.substrate.reamde.dev/observations",
-        "samples.substrate.reamde.dev/health",
-        "samples.substrate.reamde.dev/healthapple",
-    ]
     /// The apple package version that declares the calendar kinds.
     static let appleVersion = 2
+    /// The applehealth version that carries its adapter into the health
+    /// catalogue (decision record 0192).
+    static let healthVersion = 4
 
     @Published private(set) var session: Session?
     @Published private(set) var state = LocalState.load()
@@ -172,13 +169,11 @@ final class AppModel: ObservableObject {
                     done = false
                     detail = "This server ships version \(v); calendars need version \(Self.appleVersion)."
                 }
+                if id == Self.healthProvider, let v = item?.version, v < Self.healthVersion {
+                    done = false
+                    detail = "This server ships version \(v); turning deliveries into health records needs version \(Self.healthVersion)."
+                }
                 steps.append(SetupStep(id: id, kind: .install(id), title: "Install \(id)", done: done, detail: detail))
-            }
-            for id in Self.samples {
-                let item = catalog[id]
-                steps.append(SetupStep(
-                    id: id, kind: .importSample(id), title: "Import \(id)", done: item?.installed == true,
-                    detail: item == nil ? "This server does not ship it." : nil))
             }
             let account = try await client.get(SyncEngine.healthAccountKind, state.healthAccount)
             steps.append(SetupStep(
@@ -208,7 +203,6 @@ final class AppModel: ObservableObject {
             for step in steps where !step.done {
                 switch step.kind {
                 case let .install(id): try await client.catalog("install", id)
-                case let .importSample(id): try await client.catalog("import", id)
                 case .account:
                     try await client.put(SyncEngine.healthAccountKind, state.healthAccount, [
                         "displayName": UIDevice.current.name, "timezone": TimeZone.current.identifier,

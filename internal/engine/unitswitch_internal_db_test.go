@@ -30,10 +30,9 @@ import (
 const (
 	thingsPackage = "units.test.dev/things"
 	thingKind     = thingsPackage + "/thing"
-	obsAuthority  = "samples.substrate.reamde.dev"
-	obsKind       = obsAuthority + "/observations/observation"
-	traceKind     = obsAuthority + "/observations/trace"
-	metricKind    = obsAuthority + "/observations/metric"
+	obsKind       = vocabulary.PackageObservations + "/observation"
+	traceKind     = vocabulary.PackageObservations + "/trace"
+	metricKind    = vocabulary.PackageObservations + "/metric"
 )
 
 // openSwitched opens a service, a repository
@@ -42,7 +41,7 @@ const (
 func openSwitched(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	all := append([]Option{WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir)}, opts...)
+	all := append([]Option{WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds)}, opts...)
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), all...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
@@ -64,7 +63,7 @@ func openSwitched(t *testing.T, opts ...Option) *dataset {
 
 // switchedGraph writes the fixture graph: mass (kg, g, lb), temperature (K,
 // Cel, degF), angle (deg, arcmin, with turns), fuel economy (mpg and L/100km,
-// joined by an expression), and the six units the observations sample's
+// joined by an expression), and the six units the environment catalogue's
 // metrics name.
 func switchedGraph(t *testing.T, ds *dataset) {
 	t.Helper()
@@ -374,15 +373,12 @@ func TestTitlePrintsTheSymbolAndSearchTheID(t *testing.T) {
 
 // --- the metric rules ---------------------------------------------------------
 
-// openSwitchedObserved is openSwitched with the observations sample imported:
-// its six metrics resolve through the fixture graph.
+// openSwitchedObserved is openSwitched for the observed kinds, which the
+// seeded observations package declares (record 0192): the metrics a test
+// writes resolve through the fixture graph.
 func openSwitchedObserved(t *testing.T) *dataset {
 	t.Helper()
-	ds := openSwitched(t)
-	if err := enginetest.ImportVocabulary(context.Background(), ds, "observations"); err != nil {
-		t.Fatalf("import observations: %v", err)
-	}
-	return ds
+	return openSwitched(t)
 }
 
 // putInOneTx writes every input in one transaction, in order.
@@ -399,7 +395,7 @@ func putInOneTx(ds *dataset, ins ...substrate.PutInput) error {
 
 func metricPath(id string) string { return metricKind + "/" + id }
 
-// putMetricErr puts a metric of the observations sample, a unit id written
+// putMetricErr puts a metric of the observations package, a unit id written
 // as `unit` or in `units` turned into the reference the metric declares.
 func putMetricErr(ds *dataset, id string, props map[string]any) error {
 	base := map[string]any{"name": id, "form": "gauge"}
@@ -798,7 +794,7 @@ func openParity(t *testing.T, repo string) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir), WithUnitSeed(true))
+		WithKindsFS(SeedKinds), WithUnitSeed(true))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -1051,7 +1047,7 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	open := func() (substrate.Service, *dataset) {
-		svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1061,7 +1057,7 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 		}
 		return svc, d.(*dataset)
 	}
-	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1075,9 +1071,6 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 	ds := d.(*dataset)
 	switchedGraph(t, ds)
 	putUnit(t, ds, "arcmin", map[string]any{"name": "minute of arc", "code": "'", "symbol": "′", "turn": nil})
-	if err := enginetest.ImportVocabulary(ctx, ds, "observations"); err != nil {
-		t.Fatal(err)
-	}
 	if err := putMetricErr(ds, "wind", map[string]any{"unit": "deg"}); err != nil {
 		t.Fatal(err)
 	}
@@ -1150,9 +1143,6 @@ func circularMeanDeg(turn float64, values ...float64) string {
 // match (TestOverflowingAnswerIsRefused holds it).
 func parityObserve(t *testing.T, ds *dataset) {
 	t.Helper()
-	if err := enginetest.ImportVocabulary(context.Background(), ds, "observations"); err != nil {
-		t.Fatalf("import observations: %v", err)
-	}
 	for id, props := range map[string]map[string]any{
 		"mass":   {"unit": "kg", "form": "amount"},
 		"temp":   {"unit": "Cel"},

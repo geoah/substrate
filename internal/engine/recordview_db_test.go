@@ -16,11 +16,13 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
+	"github.com/geoah/substrate/kinds"
 )
 
 const recordViewKind = "substrate.reamde.dev/console/recordview"
@@ -47,6 +49,25 @@ func authorityRowVersion(t *testing.T, ds substrate.Dataset) int64 {
 	}
 	v, _ := vocabulary.VersionValue(row.Properties["version"])
 	return v
+}
+
+// shippedAuthorityVersion is the version the tree ships the seed authority
+// row at.
+func shippedAuthorityVersion(t *testing.T) int64 {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(shippedTree(t), vocabulary.AuthorityPublisher, "authority.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Data struct {
+			Version int64 `yaml:"version"`
+		} `yaml:"data"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil || doc.Data.Version == 0 {
+		t.Fatalf("read the shipped authority row: %v", err)
+	}
+	return doc.Data.Version
 }
 
 // aRecordView is a view every block of which is well formed, over a kind the
@@ -181,12 +202,13 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 	if !sawPackage {
 		t.Fatal("the upgrade entries do not include the console package row")
 	}
-	// The authority row names the package now, and moved from 2 to 3.
+	// The authority row names the package now, and moved from 2 to the
+	// version the tree ships.
 	if !sawAuthority {
 		t.Fatal("the upgrade entries do not include the authority row")
 	}
-	if v := authorityRowVersion(t, ds2); v != 3 {
-		t.Fatalf("the upgraded authority row is at version %d, want 3", v)
+	if v, want := authorityRowVersion(t, ds2), shippedAuthorityVersion(t); v != want {
+		t.Fatalf("the upgraded authority row is at version %d, want %d", v, want)
 	}
 	// The upgraded repository takes a view like a fresh one does.
 	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
@@ -243,26 +265,60 @@ func treeAtConsole(t *testing.T, fixture string) string {
 	return tree
 }
 
-// samplesAtConsole is the shipped sample catalog with the health sample's
-// views put back to the ones a fixture directory holds.
-func samplesAtConsole(t *testing.T, fixture string) *catalog.Catalog {
+// cataloguesAtConsole is the shipped catalog with the health and labs
+// catalogues' views put back to the ones a fixture directory holds. The
+// fixtures are the health sample's views as that binary shipped them, under
+// the sample's authority, before the sample became the first-party health
+// and labs catalogues (record 0192): each view is rewritten to the
+// catalogue's names and filed with the package whose kind it applies to.
+func cataloguesAtConsole(t *testing.T, fixture string) *catalog.Catalog {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.CopyFS(dir, samples.Samples()); err != nil {
+	if err := os.CopyFS(dir, kinds.Bundles()); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(fixture, "health-views.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "health", "views.yaml"), raw, 0o600); err != nil {
-		t.Fatal(err)
+	rehome := strings.NewReplacer(
+		"samples.substrate.reamde.dev/observations/", vocabulary.PackageObservations+"/",
+		"samples.substrate.reamde.dev/health/labreport", kindLabreport,
+		"samples.substrate.reamde.dev/health/labresult", kindLabresult,
+		"samples.substrate.reamde.dev/health/metric", vocabulary.AuthorityPublisher+"/labs/metric",
+		"samples.substrate.reamde.dev/health/", vocabulary.AuthorityPublisher+"/health/",
+	)
+	views := map[string][]string{}
+	for _, doc := range strings.Split(rehome.Replace(string(raw)), "\n---\n") {
+		if strings.Contains(doc, "samples.substrate.reamde.dev") {
+			t.Fatalf("%s: a view still names the sample after the rewrite:\n%s", fixture, doc)
+		}
+		pkg := "health"
+		if strings.Contains(doc, "\n  id: "+vocabulary.AuthorityPublisher+"/labs/") {
+			pkg = "labs"
+		}
+		views[pkg] = append(views[pkg], doc)
 	}
-	c, err := catalog.Load(catalog.SampleRoot(os.DirFS(dir)))
+	for pkg, docs := range views {
+		file := filepath.Join(dir, vocabulary.AuthorityPublisher, pkg, "views.yaml")
+		if err := os.WriteFile(file, []byte(strings.Join(docs, "\n---\n")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := catalog.Load(catalog.ProviderRoot(os.DirFS(dir)))
 	if err != nil {
-		t.Fatalf("load the sample catalog: %v", err)
+		t.Fatalf("load the catalog: %v", err)
 	}
 	return c
+}
+
+// installAtConsole installs one first-party catalogue, its requirements
+// first, from a catalog cataloguesAtConsole built.
+func installAtConsole(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, name string) {
+	t.Helper()
+	if _, _, err := c.Install(context.Background(), substrate.ActorAPI, vocabulary.AuthorityPublisher+"/"+name, ds); err != nil {
+		t.Fatalf("install %s on binary N: %v", name, err)
+	}
 }
 
 func packageRowVersion(t *testing.T, ds substrate.Dataset, pkg string) int64 {
@@ -285,11 +341,11 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 	const name = "console1.example.com"
-	metric := name + "/observations/metric"
+	metric := kindMetric
 
-	// --- binary N: console package 1, the health sample imported with its
-	// version 1 views, an owner's edit and an owner's own view.
-	// The shipped units: the samples' metrics and quantities name them.
+	// --- binary N: console package 1, the health catalogue installed with
+	// the version 1 views, an owner's edit and an owner's own view.
+	// The shipped units: the catalogue's metrics and quantities name them.
 	svc1 := openTree(t, dsn, treeAtConsole(t, console1), engine.WithUnitSeed(true))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
@@ -301,13 +357,8 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	if v := packageRowVersion(t, ds1, vocabulary.PackageConsole); v != 1 {
 		t.Fatalf("binary N seeded the console package at version %d, want 1", v)
 	}
-	c := samplesAtConsole(t, console1)
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds1); err != nil {
-			t.Fatalf("import %s on binary N: %v", id, err)
-		}
-	}
-	sleep, workout := name+"/health/sleep", name+"/health/workout"
+	installAtConsole(t, cataloguesAtConsole(t, console1), ds1, "health")
+	sleep, workout := kindSleep, kindWorkout
 	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, workout, substrate.PatchInput{
 		Properties: map[string]any{"name": "My runs"},
 	}); err != nil {
@@ -316,7 +367,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	// The owner's own view, the shape Mneme forked from the sample: a
 	// three-metric chart, a whole-window zones chart and a spans block.
 	own := map[string]any{
-		"appliesTo": "substrate.reamde.dev/core/kind/" + name + "/health/sleep",
+		"appliesTo": "substrate.reamde.dev/core/kind/" + kindSleep,
 		"name":      "My night",
 		"window":    map[string]any{"start": "at", "end": "endsAt", "about": "about", "source": "source"},
 		"sections": []any{
@@ -446,12 +497,13 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 	const name = "console2.example.com"
-	metric := name + "/observations/metric"
-	labresult := "substrate.reamde.dev/core/kind/" + name + "/health/labresult"
+	metric := kindMetric
+	labresult := "substrate.reamde.dev/core/kind/" + kindLabresult
 
-	// --- binary N: console package 2, the health sample imported with its
-	// version 4 views, an owner's edit and an owner's own view.
-	// The shipped units: the samples' metrics and quantities name them.
+	// --- binary N: console package 2, the labs and health catalogues
+	// installed with the health sample's version 4 views, an owner's edit and
+	// an owner's own view.
+	// The shipped units: the catalogues' metrics and quantities name them.
 	svc1 := openTree(t, dsn, treeAtConsole(t, console2), engine.WithUnitSeed(true))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
@@ -463,13 +515,8 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 	if v := packageRowVersion(t, ds1, vocabulary.PackageConsole); v != 2 {
 		t.Fatalf("binary N seeded the console package at version %d, want 2", v)
 	}
-	c := samplesAtConsole(t, console2)
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds1); err != nil {
-			t.Fatalf("import %s on binary N: %v", id, err)
-		}
-	}
-	lab, sleep := name+"/health/labresult", name+"/health/sleep"
+	installAtConsole(t, cataloguesAtConsole(t, console2), ds1, "labs")
+	lab, sleep := kindLabresult, kindSleep
 	if got, err := ds1.Get(ctx, recordViewKind, lab); err != nil {
 		t.Fatalf("read the lab result view on binary N: %v", err)
 	} else if table := got.Properties["sections"].([]any)[0].(map[string]any)["table"].(map[string]any); table["sameAs"] != "metric" {
@@ -572,12 +619,13 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 	const name = "console3.example.com"
-	labresult := "substrate.reamde.dev/core/kind/" + name + "/health/labresult"
-	labreport := "substrate.reamde.dev/core/kind/" + name + "/health/labreport"
+	labresult := "substrate.reamde.dev/core/kind/" + kindLabresult
+	labreport := "substrate.reamde.dev/core/kind/" + kindLabreport
 
-	// --- binary N: console package 3, the health sample imported with its
-	// views, an owner's edit and an owner's own view.
-	// The shipped units: the samples' metrics and quantities name them.
+	// --- binary N: console package 3, the labs and health catalogues
+	// installed with the health sample's views, an owner's edit and an
+	// owner's own view.
+	// The shipped units: the catalogues' metrics and quantities name them.
 	svc1 := openTree(t, dsn, treeAtConsole(t, console3), engine.WithUnitSeed(true))
 	if _, err := svc1.CreateRepository(ctx, name); err != nil {
 		t.Fatalf("create: %v", err)
@@ -589,13 +637,8 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 	if v := packageRowVersion(t, ds1, vocabulary.PackageConsole); v != 3 {
 		t.Fatalf("binary N seeded the console package at version %d, want 3", v)
 	}
-	c := samplesAtConsole(t, console3)
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds1); err != nil {
-			t.Fatalf("import %s on binary N: %v", id, err)
-		}
-	}
-	report := name + "/health/labreport"
+	installAtConsole(t, cataloguesAtConsole(t, console3), ds1, "labs")
+	report := kindLabreport
 	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, report, substrate.PatchInput{
 		Properties: map[string]any{"name": "My report"},
 	}); err != nil {
@@ -625,7 +668,7 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 		t.Fatalf("binary N admitted the version 4 view: %v", err)
 	}
 	stored := map[string]map[string]any{}
-	for _, id := range []string{report, name + "/health/labresult", "mine"} {
+	for _, id := range []string{report, kindLabresult, "mine"} {
 		rec, err := ds1.Get(ctx, recordViewKind, id)
 		if err != nil {
 			t.Fatalf("read %s on binary N: %v", id, err)

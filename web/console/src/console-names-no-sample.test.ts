@@ -1,11 +1,12 @@
 /** The console gives no kind outside the seeded packages special treatment
- * (decision record 0166): how a sample's kinds are presented comes from
- * record views, which are data. This holds the console's own source to it,
- * tests and fixtures aside: no string in it names a sample package, a
- * provider, a shipped metric id or a sample's kind by its bare name. The
- * names are read from the tree at test time (`samples/`, the providers under
- * `kinds/`, every metric record a sample ships), so a new sample is held to
- * the rule the day it lands. */
+ * (decision record 0166): how a sample's or a catalogue's kinds are
+ * presented comes from record views, which are data. This holds the
+ * console's own source to it, tests and fixtures aside: no string in it names
+ * a sample package, a first-party catalogue (decision record 0192), a
+ * provider, a shipped metric id or a sample's or a catalogue's kind by its
+ * bare name. The names are read from the tree at test time (`samples/`, the
+ * packages under `kinds/`, every metric record either tree ships), so a new
+ * package is held to the rule the day it lands. */
 
 import { describe, expect, it } from "vitest"
 import { parseAllDocuments } from "yaml"
@@ -22,12 +23,12 @@ const sampleFiles = import.meta.glob<string>("../../../samples/*/*.yaml", {
   eager: true,
 })
 
-const providerBundles = import.meta.glob<string>(
-  "../../../kinds/providers.substrate.reamde.dev/*/bundle.yaml",
+const providerFiles = import.meta.glob<string>(
+  "../../../kinds/providers.substrate.reamde.dev/*/*.yaml",
   { query: "?raw", import: "default", eager: true }
 )
 
-const seededPackages = import.meta.glob<string>(
+const seedAuthorityFiles = import.meta.glob<string>(
   "../../../kinds/substrate.reamde.dev/*/*.yaml",
   { query: "?raw", import: "default", eager: true }
 )
@@ -38,43 +39,84 @@ function dirOf(path: string, parent: string): string {
   return rest.slice(0, rest.indexOf("/"))
 }
 
-/** The seeded packages (`core`, `llm`, `console`): the console may name
- * them, and a sample sharing one's word (the `llm` sample) is held to the
- * other patterns only. */
-const SEEDED = new Set(
-  Object.keys(seededPackages).map((p) => dirOf(p, "substrate.reamde.dev"))
-)
+interface Doc {
+  kind?: string
+  metadata?: { id?: string }
+}
+
+function docsOf(raw: string): (Doc | null)[] {
+  return parseAllDocuments(raw).map((doc) => doc.toJS() as Doc | null)
+}
+
+const BUNDLE_KIND = "substrate.reamde.dev/core/bundle"
+
+/** The packages under the substrate's own authority, by directory: a
+ * first-party catalogue carries a bundle document (kinds_test.go holds the
+ * split), and every other one is seeded (`core`, `llm`, `console`,
+ * `observations`). The console may name a seeded package, and a sample
+ * sharing one's word (the `llm` sample) is held to the other patterns
+ * only. */
+const { SEEDED, CATALOGUES } = (() => {
+  const all = new Set<string>()
+  const catalogues = new Set<string>()
+  for (const [path, raw] of Object.entries(seedAuthorityFiles)) {
+    const dir = dirOf(path, "substrate.reamde.dev")
+    all.add(dir)
+    if (docsOf(raw).some((d) => d?.kind === BUNDLE_KIND)) catalogues.add(dir)
+  }
+  return {
+    SEEDED: new Set([...all].filter((d) => !catalogues.has(d))),
+    CATALOGUES: [...catalogues],
+  }
+})()
 
 const SAMPLES = [
   ...new Set(Object.keys(sampleFiles).map((p) => dirOf(p, "samples"))),
 ].filter((s) => !SEEDED.has(s))
 
-const PROVIDERS = Object.keys(providerBundles).map((p) =>
-  dirOf(p, "providers.substrate.reamde.dev")
-)
+const PROVIDERS = [
+  ...new Set(
+    Object.keys(providerFiles).map((p) =>
+      dirOf(p, "providers.substrate.reamde.dev")
+    )
+  ),
+]
 
-/** Every metric id a sample ships (`health/heart_rate`), and every kind a
- * sample declares by its bare name (`sleep`, `workout`). */
-const { METRIC_IDS, SAMPLE_KINDS } = (() => {
+/** The files of the samples and the first-party catalogues: the domain
+ * vocabulary the console reads only as data. */
+const domainFiles = [
+  ...Object.values(sampleFiles),
+  ...Object.entries(seedAuthorityFiles)
+    .filter(([path]) => !SEEDED.has(dirOf(path, "substrate.reamde.dev")))
+    .map(([, raw]) => raw),
+]
+
+/** Every metric id the tree ships (`health/heart_rate`, `whoop/recovery`),
+ * and every kind a sample or a catalogue declares by its bare name
+ * (`sleep`, `workout`). */
+const { METRIC_IDS, DOMAIN_KINDS } = (() => {
   const metrics = new Set<string>()
   const kinds = new Set<string>()
-  for (const raw of Object.values(sampleFiles)) {
-    for (const doc of parseAllDocuments(raw)) {
-      const d = doc.toJS() as {
-        kind?: string
-        metadata?: { id?: string }
-      } | null
+  for (const raw of domainFiles) {
+    for (const d of docsOf(raw)) {
       const id = d?.metadata?.id
       if (!d?.kind || !id) continue
       if (d.kind.endsWith("/metric")) metrics.add(id)
       if (d.kind.endsWith("/core/kind")) kinds.add(id.split("/").pop()!)
     }
   }
-  return { METRIC_IDS: [...metrics], SAMPLE_KINDS: [...kinds] }
+  for (const raw of Object.values(providerFiles)) {
+    for (const d of docsOf(raw)) {
+      const id = d?.metadata?.id
+      if (d?.kind?.endsWith("/metric") && id) metrics.add(id)
+    }
+  }
+  return { METRIC_IDS: [...metrics], DOMAIN_KINDS: [...kinds] }
 })()
 
 /** Every kind and property name the seeded packages declare: the console
- * names those freely, whatever sample declares a kind of the same word. */
+ * names those freely, whatever sample or catalogue declares a kind of the
+ * same word. */
 const CORE_WORDS = (() => {
   const words = new Set<string>()
   const walk = (value: unknown, underProperties: boolean) => {
@@ -84,9 +126,9 @@ const CORE_WORDS = (() => {
       walk(inner, key === "properties")
     }
   }
-  for (const raw of Object.values(seededPackages)) {
-    for (const doc of parseAllDocuments(raw)) {
-      const d = doc.toJS() as { metadata?: { id?: string } } | null
+  for (const [path, raw] of Object.entries(seedAuthorityFiles)) {
+    if (!SEEDED.has(dirOf(path, "substrate.reamde.dev"))) continue
+    for (const d of docsOf(raw)) {
       const id = d?.metadata?.id
       if (id) words.add(id.split("/").pop()!)
       walk(d, false)
@@ -154,6 +196,7 @@ function packagePatterns(word: string, what: string) {
 
 const NAMES: { name: string; pattern: RegExp }[] = [
   ...SAMPLES.flatMap((s) => packagePatterns(s, "the sample package")),
+  ...CATALOGUES.flatMap((c) => packagePatterns(c, "the catalogue")),
   ...PROVIDERS.flatMap((p) => packagePatterns(p, "the provider")),
   ...METRIC_IDS.flatMap((id) => {
     const last = id.slice(id.lastIndexOf("/") + 1)
@@ -174,11 +217,12 @@ const NAMES: { name: string; pattern: RegExp }[] = [
         : []),
     ]
   }),
-  // A sample's kind by its bare name, where code branches on it: compared
-  // to, or a case of a switch. Its name as a word (a "note" on a row, a
-  // "page" of a table) is no branch. A word core declares as a kind or a
-  // property (`metric`, `source`) is core's to name.
-  ...SAMPLE_KINDS.filter((k) => !CORE_WORDS.has(k)).map((k) => ({
+  // A sample's or a catalogue's kind by its bare name, where code branches
+  // on it: compared to, or a case of a switch. Its name as a word (a "note"
+  // on a row, a "page" of a table) is no branch. A word a seeded package
+  // declares as a kind or a property (`metric`, `source`) is the seed's to
+  // name.
+  ...DOMAIN_KINDS.filter((k) => !CORE_WORDS.has(k)).map((k) => ({
     name: `a branch on the sample kind ${k}`,
     pattern: new RegExp(`(?:[!=]==?\\s*|\\bcase\\s+)["'\`]${escape(k)}["'\`]`),
   })),
@@ -202,12 +246,6 @@ const NAMES: { name: string; pattern: RegExp }[] = [
  * console's own in one file, by the pattern they meet there. Each is
  * allowed in that file alone, so the same word anywhere else still fails. */
 const OWN_WORDS: Record<string, readonly string[]> = {
-  // The Observations pages, named for the core `observed` trait's records.
-  "./components/app-shell.tsx": ["the sample package observations"],
-  "./pages/observations.tsx": ["the sample package observations"],
-  "./lib/stream-table.ts": [
-    "the sample package observations as a path's first segment",
-  ],
   // An icon's name.
   "./lib/kind-glyph.ts": ["the sample package calendar"],
   "./lib/tools.ts": ["the sample package calendar"],
@@ -226,11 +264,28 @@ describe("the console's source", () => {
   it("is read, and so are the names it is held to", () => {
     expect(files.length).toBeGreaterThan(100)
     expect(files.map(([path]) => path)).toContain("./pages/record.tsx")
-    expect(SAMPLES).toEqual(expect.arrayContaining(["health", "tasks"]))
+    expect(SAMPLES).toEqual(expect.arrayContaining(["people", "tasks"]))
     expect(SAMPLES).not.toContain("llm")
+    expect([...SEEDED].sort()).toEqual(
+      ["console", "core", "llm", "observations"].sort()
+    )
+    expect(CATALOGUES).toEqual(
+      expect.arrayContaining(["health", "labs", "environment"])
+    )
     expect(PROVIDERS).toEqual(expect.arrayContaining(["whoop", "google"]))
-    expect(METRIC_IDS).toEqual(expect.arrayContaining(["health/heart_rate"]))
-    expect(SAMPLE_KINDS).toEqual(expect.arrayContaining(["sleep", "workout"]))
+    expect(METRIC_IDS).toEqual(
+      expect.arrayContaining([
+        "health/heart_rate",
+        "labs/ldl_cholesterol",
+        "environment/air_temperature",
+        "whoop/recovery",
+      ])
+    )
+    expect(DOMAIN_KINDS).toEqual(
+      expect.arrayContaining(["sleep", "workout", "labresult", "task"])
+    )
+    expect(CORE_WORDS.has("observation")).toBe(true)
+    expect(CORE_WORDS.has("labresult")).toBe(false)
   })
 
   it("names no sample, provider or shipped metric", () => {
@@ -257,7 +312,12 @@ describe("the console's source", () => {
   it("catches a name it is meant to", () => {
     const hits = (body: string) =>
       NAMES.filter(({ pattern }) => pattern.test(body)).map((n) => n.name)
-    expect(hits('const k = "healthwhoop"')).not.toEqual([])
+    expect(hits('const k = "tasks"')).not.toEqual([])
+    expect(hits('const k = "labs"')).not.toEqual([])
+    expect(hits('const m = "whoop/recovery"')).not.toEqual([])
+    expect(hits('const k = "substrate.reamde.dev/health/sleep"')).not.toEqual(
+      []
+    )
     expect(hits("const m = `${pkg}/heart_rate`")).not.toEqual([])
     expect(hits('if (provider === "whoop") {}')).not.toEqual([])
     expect(hits('const ref = "ada.example.com/people/person"')).not.toEqual([])

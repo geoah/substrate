@@ -9,13 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
 )
 
 // The query tool's aggregate argument reaches the aggregate read: it answers
@@ -25,15 +22,15 @@ import (
 func TestAgentQueryToolAggregates(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, home := aggregateToolFixture(t)
-	observation := home + "/observations/observation"
+	ds := aggregateToolFixture(t)
+	observation := obsPackage + "/observation"
 	aggregate := map[string]any{
-		"metric":   map[string]any{"ref": home + "/observations/metric/health/body_mass"},
+		"metric":   map[string]any{"ref": obsPackage + "/metric/health/body_mass"},
 		"range":    map[string]any{"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-04T00:00:00Z"},
 		"bucket":   map[string]any{"calendar": "day", "timezone": "UTC"},
 		"reducers": []any{"avg", "count"},
 	}
-	scope := queryScope{kinds: []string{home + "/observations/*"}, rows: 50}
+	scope := queryScope{kinds: []string{obsPackage + "/*"}, rows: 50}
 	out, ok, rows := ds.runQueryTool(ctx, scope, map[string]any{"aggregate": aggregate})
 	if !ok || rows != 3 {
 		t.Fatalf("aggregate: ok %v rows %d: %s", ok, rows, out)
@@ -56,17 +53,17 @@ func TestAgentQueryToolAggregates(t *testing.T) {
 		want  string
 	}{
 		"no observed kind granted": {
-			queryScope{kinds: []string{home + "/health/sleep"}, rows: 50},
+			queryScope{kinds: []string{healthPackage + "/sleep"}, rows: 50},
 			map[string]any{"aggregate": aggregate},
 			"no kind in the reads allowlist binds",
 		},
 		"a kind outside the allowlist": {
-			queryScope{kinds: []string{home + "/health/sleep"}, rows: 50},
+			queryScope{kinds: []string{healthPackage + "/sleep"}, rows: 50},
 			map[string]any{"aggregate": aggregate, "filter": map[string]any{"kinds": []any{observation}}},
 			"not in the reads allowlist",
 		},
 		"over the row budget": {
-			queryScope{kinds: []string{home + "/observations/*"}, rows: 2},
+			queryScope{kinds: []string{obsPackage + "/*"}, rows: 2},
 			map[string]any{"aggregate": aggregate},
 			"the 2 left of the read budget",
 		},
@@ -82,42 +79,39 @@ func TestAgentQueryToolAggregates(t *testing.T) {
 	}
 }
 
-// aggregateToolFixture is a repository with the observations and health
-// samples and three daily body mass values from one scale.
-func aggregateToolFixture(t *testing.T) (*dataset, string) {
+// The seeded observations package and the health catalogue (record 0192),
+// whose kinds the aggregate tool reads: the same names in every repository.
+const (
+	obsPackage    = vocabulary.PackageObservations
+	healthPackage = vocabulary.AuthorityPublisher + "/health"
+)
+
+// aggregateToolFixture is a repository with the health catalogue installed
+// and three daily body mass values from one scale.
+func aggregateToolFixture(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatalf("load the sample catalog: %v", err)
+	if err := enginetest.InstallCatalogues(ctx, ds, "health"); err != nil {
+		t.Fatalf("install the health catalogue: %v", err)
 	}
-	if err := enginetest.PutSampleUnits(ctx, ds, "observations", "health"); err != nil {
-		t.Fatalf("put the shipped units: %v", err)
-	}
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
-			t.Fatalf("import %s: %v", id, err)
-		}
-	}
-	home := testdb.Repository(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: home + "/observations/source", ID: "scale",
+		Kind: obsPackage + "/source", ID: "scale",
 		Properties: map[string]any{"name": "Scale"},
 	}); err != nil {
 		t.Fatalf("put the source: %v", err)
 	}
 	day := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
 	for d := range 3 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: home + "/observations/observation", ID: fmt.Sprintf("w/%d", d), Properties: map[string]any{
-			"metric": map[string]any{"ref": home + "/observations/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
-			"source": map[string]any{"ref": home + "/observations/source/scale"},
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: obsPackage + "/observation", ID: fmt.Sprintf("w/%d", d), Properties: map[string]any{
+			"metric": map[string]any{"ref": obsPackage + "/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
+			"source": map[string]any{"ref": obsPackage + "/source/scale"},
 			"value":  map[string]any{"value": fmt.Sprintf("7%d.5", d), "unit": "kg"}, "at": day.AddDate(0, 0, d).Format(time.RFC3339),
 		}}); err != nil {
 			t.Fatalf("put: %v", err)
 		}
 	}
-	return ds, home
+	return ds
 }
 
 // Every argument of the query tool's aggregate arm is read as the records
@@ -129,18 +123,18 @@ func aggregateToolFixture(t *testing.T) (*dataset, string) {
 func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, home := aggregateToolFixture(t)
-	observation := home + "/observations/observation"
-	bodyMass := home + "/observations/metric/health/body_mass"
-	scale := home + "/observations/source/scale"
+	ds := aggregateToolFixture(t)
+	observation := obsPackage + "/observation"
+	bodyMass := obsPackage + "/metric/health/body_mass"
+	scale := obsPackage + "/source/scale"
 	days := map[string]any{"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-04T00:00:00Z"}
 	daily := map[string]any{
 		"metric": map[string]any{"ref": bodyMass}, "range": days,
 		"bucket": map[string]any{"calendar": "day", "timezone": "UTC"}, "reducers": []any{"avg"},
 	}
-	wide := queryScope{kinds: []string{home + "/observations/*"}, rows: 50}
+	wide := queryScope{kinds: []string{obsPackage + "/*"}, rows: 50}
 	// The observations and the metrics, not the sources.
-	narrow := queryScope{kinds: []string{observation, home + "/observations/metric"}, rows: 50}
+	narrow := queryScope{kinds: []string{observation, obsPackage + "/metric"}, rows: 50}
 	result := func(t *testing.T, out string) substrate.AggregateResult {
 		t.Helper()
 		var res substrate.AggregateResult
@@ -153,7 +147,7 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 	// A filter sent as a JSON string narrows the read: heart rate has no
 	// values, so the latest read answers none, never body mass's.
 	latest := map[string]any{"latest": true, "groupBy": []any{"metric", "source"}}
-	heartRate := `{"properties":{"metric":{"eq":"` + home + `/observations/metric/health/heart_rate"}}}`
+	heartRate := `{"properties":{"metric":{"eq":"` + obsPackage + `/metric/health/heart_rate"}}}`
 	out, ok, _ := ds.runQueryTool(ctx, wide, map[string]any{"aggregate": latest, "filter": heartRate})
 	if !ok || len(result(t, out).Rows) != 0 {
 		t.Fatalf("a string filter on heart rate: ok %v, %s; want no rows", ok, out)
@@ -235,7 +229,7 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 			"property": map[string]any{"name": "value"}, "range": days, "reducers": []any{"count"},
 		}}, "a property read names the kinds whose property it reduces"},
 		"no observed kind granted": {
-			queryScope{kinds: []string{home + "/health/sleep"}, rows: 50},
+			queryScope{kinds: []string{healthPackage + "/sleep"}, rows: 50},
 			map[string]any{"aggregate": daily},
 			"no kind in the reads allowlist binds",
 		},
@@ -284,18 +278,18 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, home := aggregateToolFixture(t)
-	observation := home + "/observations/observation"
-	source := home + "/observations/source"
+	ds := aggregateToolFixture(t)
+	observation := obsPackage + "/observation"
+	source := obsPackage + "/source"
 	for id, rank := range map[string]int{"scale": 1, "watch": 2} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: source, ID: id, Properties: map[string]any{
-			"name": id, "priorities": map[string]any{home + "/observations/metric/health/body_mass": rank},
+			"name": id, "priorities": map[string]any{obsPackage + "/metric/health/body_mass": rank},
 		}}); err != nil {
 			t.Fatalf("put the %s: %v", id, err)
 		}
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: "w/watch", Properties: map[string]any{
-		"metric": map[string]any{"ref": home + "/observations/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
+		"metric": map[string]any{"ref": obsPackage + "/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
 		"source": map[string]any{"ref": source + "/watch"},
 		"value":  map[string]any{"value": "80.5", "unit": "kg"}, "at": "2026-09-01T07:00:00Z",
 	}}); err != nil {
@@ -307,12 +301,12 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 			sources["order"] = order
 		}
 		return map[string]any{
-			"metric":   map[string]any{"ref": home + "/observations/metric/health/body_mass"},
+			"metric":   map[string]any{"ref": obsPackage + "/metric/health/body_mass"},
 			"range":    map[string]any{"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-02T00:00:00Z"},
 			"reducers": []any{"max"}, "sources": sources,
 		}
 	}
-	narrow := queryScope{kinds: []string{observation, home + "/observations/metric"}, rows: 50}
+	narrow := queryScope{kinds: []string{observation, obsPackage + "/metric"}, rows: 50}
 	out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read(nil)})
 	if ok || !strings.Contains(out, "observations/source is not in the reads allowlist") || !strings.Contains(out, "order") {
 		t.Errorf("a priority read with no order, sources not granted: ok %v, %s; want a refusal naming the source kind and the order", ok, out)
@@ -320,11 +314,11 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	if out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read([]any{"watch", "scale"})}); ok || !strings.Contains(out, "observations/sourcelink is not in the reads allowlist") {
 		t.Errorf("a priority read naming its order, links not granted: ok %v, %s; want a refusal naming the sourcelink kind", ok, out)
 	}
-	linked := queryScope{kinds: []string{observation, home + "/observations/metric", home + "/observations/sourcelink"}, rows: 50}
+	linked := queryScope{kinds: []string{observation, obsPackage + "/metric", obsPackage + "/sourcelink"}, rows: 50}
 	if out, ok, _ := ds.runQueryTool(ctx, linked, map[string]any{"aggregate": read([]any{"watch", "scale"})}); !ok || !strings.Contains(out, `"80.5"`) {
 		t.Errorf("a priority read naming its order: ok %v, %s; want the watch's 80.5", ok, out)
 	}
-	wide := queryScope{kinds: []string{home + "/observations/*"}, rows: 50}
+	wide := queryScope{kinds: []string{obsPackage + "/*"}, rows: 50}
 	if out, ok, _ := ds.runQueryTool(ctx, wide, map[string]any{"aggregate": read(nil)}); !ok || !strings.Contains(out, `"70.5"`) {
 		t.Errorf("a priority read with the sources granted: ok %v, %s; want the scale's 70.5, ranked first", ok, out)
 	}
@@ -340,16 +334,16 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	backend := func(kinds ...string) *callBackend {
 		return &callBackend{inv: &invocation{ds: ds}, fn: &vocabulary.Function{Caps: vocabulary.FunctionCaps{Reads: &vocabulary.FunctionReads{Kinds: kinds}}}}
 	}
-	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q(nil)); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), source) {
+	if _, err := backend(observation, obsPackage+"/metric").Aggregate(ctx, q(nil)); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), source) {
 		t.Errorf("a function's priority read with no order, sources not granted: %v, want a read trip naming %s", err, source)
 	}
-	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q([]any{"scale"})); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), home+"/observations/sourcelink") {
+	if _, err := backend(observation, obsPackage+"/metric").Aggregate(ctx, q([]any{"scale"})); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), obsPackage+"/sourcelink") {
 		t.Errorf("a function's priority read naming its order, links not granted: %v, want a read trip naming the sourcelink kind", err)
 	}
-	if _, err := backend(observation, home+"/observations/metric", home+"/observations/sourcelink").Aggregate(ctx, q([]any{"scale"})); err != nil {
+	if _, err := backend(observation, obsPackage+"/metric", obsPackage+"/sourcelink").Aggregate(ctx, q([]any{"scale"})); err != nil {
 		t.Errorf("a function's priority read naming its order: %v", err)
 	}
-	if _, err := backend(home+"/observations/*").Aggregate(ctx, q(nil)); err != nil {
+	if _, err := backend(obsPackage+"/*").Aggregate(ctx, q(nil)); err != nil {
 		t.Errorf("a function's priority read with the sources granted: %v", err)
 	}
 }

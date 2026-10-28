@@ -1,0 +1,296 @@
+# The record pages of a WHOOP cycle and of a sleep WHOOP scored, as DATA:
+# records of the seeded console package's `recordview` kind (decision
+# records 0166 and 0175), which the console renders above the generic
+# property sheet. WHOOP sends scored summaries, never raw samples, so these
+# views read one value over the record's window (`statistic: vendor` keeps
+# WHOOP's own score) or a trend across many records, never a line inside
+# the night.
+#
+# The ids carry the provider's authority, so they never meet an owner's own
+# view; `appliesTo` names the WHOOP provider's own cycle and the `health`
+# catalogue's sleep.
+#
+# The bands are WHOOP's published ones (recovery 0 to 33 red, 34 to 66
+# yellow, 67 to 100 green; the strain levels; sleep performance under 70
+# poor, under 85 sufficient), as data here and never in the console. An
+# owner edits them in place.
+#
+# A WHOOP cycle is the day: one sleep onset to the next. Its page shows the
+# recovery, strain and sleep scores WHOOP computed for it, the night's vitals
+# against the last 30 nights, the stages, the scores' last 30 days and the
+# workouts inside it. The current cycle has no end, and `open` reads it up to
+# now.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: providers.substrate.reamde.dev/whoop/cycle
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/whoop/cycle
+    name: This cycle
+    intro: What WHOOP scored for the day, from one sleep onset to the next.
+    window:
+      start: at
+      end: endsAt
+      open: true
+    sections:
+      # The cycle names no source and no subject, so the reads take the
+      # owner's observations by source priority; `channel: none` keeps the
+      # workouts' heart rate summaries out of the cycle's.
+      - stats:
+          label: Recovery, strain and sleep
+          baseline: 30
+          channel: none
+          bands:
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              high: 34
+              label: Red
+              tone: poor
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              low: 34
+              high: 67
+              label: Yellow
+              tone: fair
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              low: 67
+              label: Green
+              tone: good
+            - metric: substrate.reamde.dev/observations/metric/whoop/strain
+              high: 10
+              label: Light
+            - metric: substrate.reamde.dev/observations/metric/whoop/strain
+              low: 10
+              high: 14
+              label: Moderate
+            - metric: substrate.reamde.dev/observations/metric/whoop/strain
+              low: 14
+              high: 18
+              label: High
+            - metric: substrate.reamde.dev/observations/metric/whoop/strain
+              low: 18
+              label: All out
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              high: 70
+              label: Poor
+              tone: poor
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              low: 70
+              high: 85
+              label: Sufficient
+              tone: fair
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              low: 85
+              label: Optimal
+              tone: good
+          items:
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              from: summaries
+              statistic: vendor
+              label: Recovery
+              show: dial
+              min: 0
+              max: 100
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/whoop/strain
+              from: summaries
+              statistic: vendor
+              label: Strain
+              show: dial
+              min: 0
+              max: 21
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              from: summaries
+              statistic: vendor
+              label: Sleep performance
+              show: dial
+              min: 0
+              max: 100
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/health/energy_expended
+              reducer: sum
+              unit: kcal
+              label: Calories
+            - metric: substrate.reamde.dev/observations/metric/health/heart_rate
+              from: summaries
+              statistic: avg
+              label: Average heart rate
+            - metric: substrate.reamde.dev/observations/metric/health/heart_rate
+              from: summaries
+              statistic: max
+              label: Max heart rate
+      - stats:
+          label: Last night against the last 30 nights
+          baseline: 30
+          items:
+            - metric: substrate.reamde.dev/observations/metric/health/hrv_rmssd
+              from: summaries
+              statistic: vendor
+              label: HRV
+              show: bar
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/health/resting_heart_rate
+              from: summaries
+              statistic: vendor
+              label: Resting heart rate
+              show: bar
+              better: lower
+            - metric: substrate.reamde.dev/observations/metric/health/respiratory_rate
+              from: summaries
+              statistic: vendor
+              label: Respiratory rate
+              show: bar
+            - metric: substrate.reamde.dev/observations/metric/health/spo2
+              from: summaries
+              statistic: vendor
+              label: Blood oxygen
+              show: bar
+            - metric: substrate.reamde.dev/observations/metric/health/skin_temperature
+              from: summaries
+              statistic: vendor
+              label: Skin temperature
+              show: bar
+      # WHOOP writes stage totals, not a hypnogram, so this block draws the
+      # totals alone for a WHOOP night.
+      - spans:
+          label: Sleep stages
+          metric: substrate.reamde.dev/observations/metric/health/sleep_stage
+          codes:
+            - code: awake
+              label: Awake
+            - code: rem
+              label: REM
+            - code: light
+              label: Light
+            - code: deep
+              label: Deep
+          totals: true
+          sources: priority
+      - trend:
+          label: The last 30 days
+          span: 30
+          bucket: day
+          rolling: 7
+          channel: none
+          items:
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              from: summaries
+              statistic: vendor
+              label: Recovery
+              show: bars
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/whoop/strain
+              from: summaries
+              statistic: vendor
+              label: Strain
+              show: bars
+      - table:
+          label: Workouts in this cycle
+          kind: substrate.reamde.dev/core/kind/substrate.reamde.dev/health/workout
+          inWindow: true
+          columns:
+            - sport
+            - duration
+            - strain
+            - averageHeartRate
+            - maxHeartRate
+          orderBy: at:asc
+          empty: hide
+---
+# A second view on the health catalogue's sleep, drawn before the catalogue's
+# own (ids sort `providers.…` before `substrate.…`): the scores WHOOP gave
+# the night. `statistic: vendor` keeps the cycle's heart
+# rate average and maximum, which start at the same sleep onset, out of the
+# night's window.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: providers.substrate.reamde.dev/whoop/sleep
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep
+    name: WHOOP's scores for this sleep
+    window:
+      start: at
+      end: endsAt
+      about: about
+      source: source
+    sections:
+      - stats:
+          label: Scores
+          baseline: 30
+          sources: only
+          empty: hide
+          bands:
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              high: 70
+              label: Poor
+              tone: poor
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              low: 70
+              high: 85
+              label: Sufficient
+              tone: fair
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              low: 85
+              label: Optimal
+              tone: good
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              high: 34
+              label: Red
+              tone: poor
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              low: 34
+              high: 67
+              label: Yellow
+              tone: fair
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              low: 67
+              label: Green
+              tone: good
+          items:
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              from: summaries
+              statistic: vendor
+              label: Sleep performance
+              show: dial
+              min: 0
+              max: 100
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/whoop/recovery
+              from: summaries
+              statistic: vendor
+              label: Recovery it scored
+              show: dial
+              min: 0
+              max: 100
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/health/hrv_rmssd
+              from: summaries
+              statistic: vendor
+              label: HRV
+              show: bar
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/health/resting_heart_rate
+              from: summaries
+              statistic: vendor
+              label: Resting heart rate
+              show: bar
+              better: lower
+            - property: scores.sleepConsistency
+              label: Sleep consistency
+      - trend:
+          label: The last 30 nights
+          span: 30
+          rolling: 7
+          sources: only
+          empty: hide
+          items:
+            - metric: substrate.reamde.dev/observations/metric/whoop/sleep_performance
+              from: summaries
+              statistic: vendor
+              label: Sleep performance
+              show: bars
+              better: higher
+            - metric: substrate.reamde.dev/observations/metric/health/hrv_rmssd
+              from: summaries
+              statistic: vendor
+              label: HRV
+              better: higher

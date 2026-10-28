@@ -123,7 +123,9 @@ enable and uninstall work as they do on any bundle, and the upgrade offer is
 the same preview and the same button
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 Applying the same closure by hand from the shipped files lands `installed`
-instead, and stays editable.
+instead, and stays editable. The three well-known catalogues under
+`substrate.reamde.dev` (`health`, `labs` and `environment`) take the same
+door and land published the same way ([the catalog](#the-catalog)).
 
 The upgrade has a read-only **preview** beside it: the catalog compares the
 shipped closure's declaration versions against the stored ones (the same diff
@@ -709,13 +711,19 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the ten **providers** under `kinds/providers.substrate.reamde.dev`, and the
-fourteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
-`calendar`, `scheduling`, `observations`, `health`, and the worked examples
-`llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`,
-`healthapple`). A repository takes a sample
+the ten **providers** under `kinds/providers.substrate.reamde.dev`, the
+three well-known **catalogues** under `kinds/substrate.reamde.dev`
+(`health`, `labs` and `environment`), which take the provider door, and the
+eleven **samples** under `samples/` (`people`, `tasks`, `messaging`,
+`calendar`, `scheduling`, `ink`, and the worked examples `llm`, `notes`,
+`readinglist`, `pebble`, `firecrawl`). A catalogue is a first-party package:
+it installs under `substrate.reamde.dev`, published, and upgrades from the
+catalog as a provider does, but no seed writes it
+([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+A repository takes a sample
 itself: registration seeds
-`substrate.reamde.dev/core`, imports the `llm` sample onto the repository's
+`substrate.reamde.dev/core`, `llm`, `console` and `observations`, imports
+the `llm` sample onto the repository's
 own authority with its three keyless `provider` rows (`openai`, `anthropic`,
 `gemini`), and nothing else.
 
@@ -736,10 +744,21 @@ malformed one is dropped with a logged warning rather than failing the whole
 catalog.
 
 `requires` is the entry's declared vocabulary dependency: the packages its
-mappings, references and trigger subscriptions point at. Installing `google` into a
-repository that has not imported `people` is **refused** by the ordinary
-admission, before anything is touched, with a problem naming what to import
-first. Nothing resolves the dependency for you — the order is yours.
+mappings, references and trigger subscriptions point at. The install door
+resolves a requirement the catalog PUBLISHES (a provider or a catalogue):
+one the repository lacks, or holds under its `requiresAtLeast` floor, is
+installed first, through the same door and its own requirements first, so installing
+`whoop` installs `health` and installing `slacklive` installs `slack`
+([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+Each requirement commits on its own, before the bundle that needs it, so a
+bundle refused after its requirements landed leaves them installed, as
+installing them one by one would have. The upgrade preview stages the same
+requirements ahead of the closure, so an upgrade that brings one is offered
+unblocked and lists what the requirement adds.
+A required SAMPLE is never taken for you, because a copy is the owner's to
+take: importing `tasks` into a repository that has not imported `people` is
+**refused** by the ordinary admission, before anything is touched, with a
+problem naming what to import first, and that order is yours.
 
 `requiresAtLeast` is the floor under a requirement
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
@@ -800,32 +819,36 @@ and a deletion stay as they were left through every re-import and upgrade,
 whoever made them: the owner at any door they name, an agent, a function or
 another bundle. A record only the closure and the engine wrote takes the
 newer shipped one. Triggers are the exception: they name the callables the
-same closure ships, so the door always writes them. To take a newer shipped
+same closure ships, so the door writes them, unless a live trigger with the
+same id delivers to another package's callable, which the door refuses with a
+409 naming both rather than repoint someone else's delivery
+([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)). To take a newer shipped
 record over an edited one, apply the shipped document by hand
 ([0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md),
 [0191](decisions/0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md)).
-An imported record carries the repository's authority, while the shipped
-file still names `samples.substrate.reamde.dev` in its ids and references.
-Applied unchanged, the file writes records of a copy the repository may not
-hold and leaves the imported record alone. `--as-mine` does not help: it
-rehomes from the authority a declaration names, and a views file holds none.
-Rewrite the authority with `sed`, and purge the record first: `apply` never
-prunes, and a put at a tombstone restores the old properties, so a property
-you added survives anything short of a purge. For the health sample's sleep
-view in a repository named `alice.example.com`:
+Purge the record first: `apply` never prunes, and a put at a tombstone
+restores the old properties, so a property you added survives anything
+short of a purge. A provider's or a catalogue's record keeps the ids and
+references it ships with, so its file applies as it stands. For the
+`health` catalogue's sleep view:
 
 ```bash
-bin/substratectl delete --purge substrate.reamde.dev/console/recordview alice.example.com/health/sleep
-sed 's/samples\.substrate\.reamde\.dev/alice.example.com/g' samples/health/views.yaml \
-  | bin/substratectl apply -f -
+bin/substratectl delete --purge substrate.reamde.dev/console/recordview substrate.reamde.dev/health/sleep
+bin/substratectl apply -f kinds/substrate.reamde.dev/health/views.yaml
 ```
 
-The file holds four other views (the workout, lab report, lab result and lab
-metric views), and the apply writes each of them back to the shipped view's
-properties, undoing any edit you made there. To take one view alone, write the
-`sed` output to a file, delete every other document from it, and apply that
-file. The healthwhoop sample's `views.yaml` holds two views, its cycle and its
-sleep view, the same way.
+The file holds one other view, the workout's, and the apply writes it back
+to the shipped view's properties, undoing any edit you made there. To take
+one view alone, copy the file, delete every other document from it, and
+apply the copy. A sample's record is different: the import gave it the
+repository's authority, while the shipped file still names
+`samples.substrate.reamde.dev` in its ids and references. Applied unchanged,
+that file writes records of a copy the repository may not hold and leaves
+the imported record alone, and `--as-mine` does not help, because it
+rehomes from the authority a declaration names and a data file holds none.
+Rewrite the authority with `sed` first (`sed
+'s/samples\.substrate\.reamde\.dev/alice.example.com/g'` for a repository
+named `alice.example.com`).
 
 `POST …/catalog/{id}/install` is the **provider** door. The closure lands
 verbatim, under the authority that publishes it, with the shipped version it
@@ -900,15 +923,17 @@ as an imported copy (`ada.example.com/scheduling`) is refused, and the refusal
 names the copy: a package under another authority is another package, and
 importing the bundle instead rehomes its requirements with it.
 
-**No provider requires a sample package, and every provider but one installs
-on a bare repository.** A provider ships mirror kinds in its own shape and
-writes nothing else: no reference pinned at a sample kind, no core row. So the
+**No provider requires a sample package, so every provider installs on a
+bare repository.** A provider ships mirror kinds in its own shape and writes
+nothing else: no reference pinned at a sample kind, no core row. So the
 console can install any of them from a repository that has imported nothing,
 and the console's Add button is never disabled for a missing requirement. The
-one exception is `slacklive`, which `requires:` the Slack provider and writes
-its rows
-([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)):
-its Add takes the Slack bundle first.
+three that require anything require a published package, which their Add
+takes first: `slacklive` requires the Slack provider and writes its rows
+([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)),
+and `whoop` and `applehealth` require the `health` catalogue their adapters
+write
+([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the
 repository declares, from a mirror onto a kind of its own. A mapping onto a

@@ -30,7 +30,7 @@ func TestAWriteAppendsTheRowsAnotherProcessCommitted(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "first"}})
 	dir := repoDirOf(t, svc, ds)
 
-	other, err := engine.OpenForTest(t, ctx, dsn, engine.WithKindsDir(engine.SeedKindsDir),
+	other, err := engine.OpenForTest(t, ctx, dsn, engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestSkipWriterLease())
 	if err != nil {

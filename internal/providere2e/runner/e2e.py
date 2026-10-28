@@ -405,6 +405,15 @@ def trigger_ids(files: list[pathlib.Path]) -> list[str]:
     return out
 
 
+def bundle_requires(files: list[pathlib.Path]) -> list[str]:
+    """The packages the closure's bundle record requires."""
+    for f in files:
+        for doc in documents(f.read_text()):
+            if re.search(r"(?m)^kind:\s*substrate\.reamde\.dev/core/bundle\s*$", doc):
+                return key_entries(doc, "requires")
+    return []
+
+
 def package_of(files: list[pathlib.Path]) -> str:
     for f in files:
         for doc in documents(f.read_text()):
@@ -1783,6 +1792,16 @@ def run(a) -> int:
 
         if not a.skip_apply:
             pkg = package_of(files)
+            # The apply door installs nothing a bundle requires, and a fresh
+            # repository holds only the seed: a requirement the catalog
+            # publishes (the health catalogue) goes in first, as the install
+            # door would put it.
+            for req in bundle_requires(files):
+                r = ctl(a, "install", req)
+                if r.returncode != 0:
+                    die("could not install %s, which %s requires:\n%s"
+                        % (req, pkg, r.stderr or r.stdout))
+                say("installed %s, which %s requires" % (req, pkg))
             held = unpublish(api, a, pkg)
             r = ctl(a, "apply", *sum(([("-f"), str(f)] for f in rewired), []))
             if (r.returncode != 0 and getattr(a, "replace", False) and held == []

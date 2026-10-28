@@ -25,9 +25,10 @@ import (
 // A test repository skips the unit seed (engine.WithUnitSeed, off in
 // OpenForTest), because the seed is several hundred records. A repository
 // holds the seed in production, and every quantity converts through it
-// (decision 0186), so a test that imports a sample naming units first puts
-// the shipped records those units need: PutShippedUnits, which
-// ImportVocabulary calls for each sample it imports.
+// (decision 0186), so a test that imports a sample or installs a first-party
+// catalogue naming units first puts the shipped records those units need:
+// PutShippedUnits, which ImportVocabulary and InstallCatalogues call for each
+// package they take.
 
 // PutShippedUnits writes, as the owner, the shipped unit records of every
 // linear component that holds one of ids, and the shipped conversions inside
@@ -92,7 +93,18 @@ var sampleUnitPattern = regexp.MustCompile(`(?m)(?:` + regexp.QuoteMeta(vocabula
 
 // SampleUnits is every unit a shipped sample's documents name, by id.
 func SampleUnits(name string) ([]string, error) {
-	raw, err := readSampleText(name)
+	return dirUnits(filepath.Join(SamplesDir, name))
+}
+
+// CatalogueUnits is every unit a first-party catalogue's documents name, by
+// id: the package `name` under the seed authority (record 0192).
+func CatalogueUnits(name string) ([]string, error) {
+	return dirUnits(filepath.Join(SeedDir, name))
+}
+
+// dirUnits is every unit the documents in one package directory name, by id.
+func dirUnits(dir string) ([]string, error) {
+	raw, err := readDirText(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -116,9 +128,19 @@ func SampleUnits(name string) ([]string, error) {
 
 // PutSampleUnits is PutShippedUnits for every unit the named samples name.
 func PutSampleUnits(ctx context.Context, ds substrate.Dataset, names ...string) error {
+	return putUnitsOf(ctx, ds, SampleUnits, names)
+}
+
+// PutCatalogueUnits is PutShippedUnits for every unit the named first-party
+// catalogues name.
+func PutCatalogueUnits(ctx context.Context, ds substrate.Dataset, names ...string) error {
+	return putUnitsOf(ctx, ds, CatalogueUnits, names)
+}
+
+func putUnitsOf(ctx context.Context, ds substrate.Dataset, unitsOf func(string) ([]string, error), names []string) error {
 	var ids []string
 	for _, name := range names {
-		got, err := SampleUnits(name)
+		got, err := unitsOf(name)
 		if err != nil {
 			return err
 		}
@@ -174,9 +196,10 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// readSampleText is every YAML document of one shipped sample, as text.
-func readSampleText(name string) (string, error) {
-	entries, err := os.ReadDir(filepath.Join(SamplesDir, name))
+// readDirText is every YAML document of one shipped package directory, as
+// text.
+func readDirText(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("enginetest: %w", err)
 	}
@@ -185,7 +208,7 @@ func readSampleText(name string) (string, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(SamplesDir, name, e.Name()))
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			return "", fmt.Errorf("enginetest: %w", err)
 		}

@@ -1,0 +1,99 @@
+# Three record views, as DATA: the record pages of a lab report and a lab
+# result, and a lab trend on the seeded observations package's `metric` kind,
+# records of the seeded console package's `recordview` kind (decision records
+# 0166 and 0175). An install or upgrade replaces a view its owner never wrote.
+# A lab report carries no window of its own, so its page reads no
+# observation: it lists the report's results, a converted twin (one whose
+# `derivedFrom` is set) under the lab's own row.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: substrate.reamde.dev/labs/labreport
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/substrate.reamde.dev/labs/labreport
+    name: This report
+    window:
+      about: about
+    fold:
+      - lab
+      - accession
+      - issuedAt
+      - status
+      - review
+    sections:
+      - properties:
+          list:
+            - property: lab
+              label: Lab
+            - property: accession
+              label: Accession
+            - property: issuedAt
+              label: Issued
+            - property: status
+              label: Status
+            - property: review
+              label: Review
+      - table:
+          label: Results
+          kind: substrate.reamde.dev/core/kind/substrate.reamde.dev/labs/labresult
+          via: report
+          columns:
+            - metric
+            - value
+            - interpretation
+            - referenceRanges
+          orderBy: at:asc
+          limit: 100
+          nest: derivedFrom
+---
+# A lab result's page is every result of the same analyte over time, each
+# drawn against the reference range its own lab printed, the page's own
+# result ringed and a converted twin hollow. A regional body composition
+# result (a DXA scan's trunk, a scale's left arm) lists the results of its
+# own region alone: `sharing` names the channel beside the metric.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: substrate.reamde.dev/labs/labresult
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/substrate.reamde.dev/labs/labresult
+    name: This analyte over time
+    intro: Every result of the same analyte, each against the range its own
+      lab printed.
+    window:
+      about: about
+    sections:
+      - table:
+          kind: substrate.reamde.dev/core/kind/substrate.reamde.dev/labs/labresult
+          sharing:
+            - metric
+            - channel
+          chart: true
+          limit: 50
+          nest: derivedFrom
+          columns:
+            - at
+            - value
+            - interpretation
+            - referenceRanges
+            - source
+---
+# A view on the observations package's metric kind: only this package knows
+# which kind holds lab results, so the lab trend of a metric page is its
+# data. A metric no lab result names lists no rows, and `empty: hide` keeps
+# the view out, so every other metric page is unchanged.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: substrate.reamde.dev/labs/metric
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/substrate.reamde.dev/observations/metric
+    name: Lab results
+    sections:
+      - table:
+          kind: substrate.reamde.dev/core/kind/substrate.reamde.dev/labs/labresult
+          via: metric
+          chart: true
+          limit: 100
+          nest: derivedFrom
+          empty: hide

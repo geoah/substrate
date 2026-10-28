@@ -1,0 +1,92 @@
+# what a lab measures, beyond what the base metric says: the LOINC parts, the
+# molar mass the `convertlab` function converts a mass concentration
+# with, the conversions it writes, and a fallback reference range. One analyte
+# per lab metric, pointing at it, because a domain never adds a property to a
+# base kind (decision record 0192). The package ships one per metric of each
+# lab pair (metrics_analytes.yaml).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/labs/analyte
+data:
+  authority: substrate.reamde.dev
+  package: labs
+  description: >-
+    The lab facts about one blood test metric, such as LDL cholesterol. How
+    LOINC describes it, its molar mass, the conversions between its units
+    and a fallback reference range.
+  purpose: supporting
+  names:
+    singular: analyte
+  displayTemplate: "{metric}"
+  properties:
+    metric:
+      type: reference
+      kind: substrate.reamde.dev/observations/metric
+      required: true
+      mustExist: true
+      description: the metric these facts are about
+    # LOINC's six axes, as LOINC names them.
+    loincParts:
+      type: object
+      description: the LOINC code's parts
+      fields:
+        component:
+          type: string
+          description: what is measured, such as Cholesterol.in LDL
+        property:
+          type: string
+          description: the kind of quantity, such as MCnc for a mass concentration
+        timing:
+          type: string
+          description: when, such as Pt for a point in time
+        system:
+          type: string
+          description: the specimen, such as Ser/Plas
+        scale:
+          type: string
+          description: Qn for a quantity, Ord for an ordinal
+        method:
+          type: string
+          description: the method, where LOINC names one
+    # grams per mole, exact digits: 386.65 for cholesterol, 180.156 for
+    # glucose.
+    molarMass:
+      type: decimal
+      description: grams per mole, which converts a mass concentration to
+        an amount concentration
+    conversions:
+      type: object
+      repeated: true
+      description: the conversions a function may write from this metric's
+        values
+      fields:
+        target:
+          type: reference
+          kind: substrate.reamde.dev/observations/metric
+          description: the metric a converted value is written under
+        formula:
+          type: string
+          description: the formula's id, such as molar-mass or ngsp-to-ifcc
+        parameters:
+          type: decimal
+          keyed: true
+          description: the formula's inputs by name
+        version:
+          type: string
+          description: the formula's version
+    # a labelled fallback only: a result's own ranges are what its lab
+    # reported, per result, and win wherever they exist.
+    fallbackRange:
+      type: object
+      description: a reference range to show when a result carries none of
+        its own
+      fields:
+        low:
+          type: quantity
+          description: the lower bound, with its unit
+        high:
+          type: quantity
+          description: the upper bound, with its unit
+        text:
+          type: string
+          description: where the range comes from, such as a guideline

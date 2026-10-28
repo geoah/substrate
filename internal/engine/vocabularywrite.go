@@ -41,6 +41,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -318,6 +319,14 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 					if err := t.ds.validateTriggerRow(t.declarations(), in.ID, in.Properties, true); err != nil {
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
+					if err := t.refuseTakenTrigger(in, actor); err != nil {
+						return err
+					}
+					kept, err := t.keepTriggerSettings(in)
+					if err != nil {
+						return err
+					}
+					in = kept
 				}
 				if in.Kind != typeTrigger {
 					held, err := t.anotherHandWrote(eref{Kind: in.Kind, ID: in.ID}, actor)
@@ -367,6 +376,95 @@ func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) 
 	err = t.row(`SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`,
 		at.ID, at.Kind, shippedHands(shipper)).Scan(&wrote)
 	return wrote, err
+}
+
+// refuseTakenTrigger refuses a shipped trigger whose id a live trigger
+// already holds for ANOTHER package's callable (record 0192). Trigger ids are
+// one namespace, and a put merges, so without this an install repoints
+// someone else's delivery at its own function: the other package stops
+// receiving its records and its uninstall no longer finds the trigger. The
+// same package re-installing passes, and so does a deleted trigger; a live
+// one whose callable record was removed by hand still names its package, and
+// is refused like any other.
+func (t *txn) refuseTakenTrigger(in substrate.PutInput, shipper substrate.Actor) error {
+	cur, err := t.loadRow(eref{Kind: typeTrigger, ID: in.ID}, false)
+	if err != nil || cur == nil || cur.DeletedAt != nil {
+		return err
+	}
+	// A callable is a reference: stored as `{ref: …}`, shipped either way.
+	held := storedReferencePath(cur.Props["callable"])
+	shipped := storedReferencePath(in.Properties["callable"])
+	if held == "" || held == shipped {
+		return nil
+	}
+	if owner := callablePackage(held); owner != "" && owner != callablePackage(shipped) &&
+		string(shipper) != string(substrate.BundleActor(splitPackage(owner))) {
+		return fmt.Errorf("%w: trigger %s already delivers to %s, which belongs to %s; uninstall that package or rename its trigger first",
+			substrate.ErrConflict, in.ID, held, owner)
+	}
+	return nil
+}
+
+// keepTriggerSettings carries an armed webhook over a re-install or an
+// upgrade of the same package: the key the owner set and whether they
+// enabled it. A shipped webhook trigger has no key and so ships disabled;
+// writing it back would disarm the trigger and drop the key every sender was
+// given (record 0192). Any other trigger takes the shipped document whole, so
+// a release that turns one off lands. The shipped maps are copied, never
+// changed: they are the catalog's.
+func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, error) {
+	cur, err := t.loadRow(eref{Kind: typeTrigger, ID: in.ID}, false)
+	if err != nil || cur == nil || cur.DeletedAt != nil {
+		return in, err
+	}
+	if callablePackage(storedReferencePath(cur.Props["callable"])) != callablePackage(storedReferencePath(in.Properties["callable"])) {
+		return in, nil
+	}
+	key := webhookKey(cur.Props)
+	source, _ := in.Properties["source"].(map[string]any)
+	webhook, _ := source["webhook"].(map[string]any)
+	if key == "" || webhook == nil {
+		return in, nil
+	}
+	props := maps.Clone(in.Properties)
+	if enabled, ok := cur.Props["enabled"].(bool); ok {
+		props["enabled"] = enabled
+	}
+	source = maps.Clone(source)
+	webhook = maps.Clone(webhook)
+	webhook["key"] = key
+	source["webhook"] = webhook
+	props["source"] = source
+	in.Properties = props
+	return in, nil
+}
+
+// webhookKey is a trigger's webhook key, or empty.
+func webhookKey(props map[string]any) string {
+	source, _ := props["source"].(map[string]any)
+	webhook, _ := source["webhook"].(map[string]any)
+	key, _ := webhook["key"].(string)
+	return key
+}
+
+// callablePackage is the package a trigger's callable belongs to:
+// `substrate.reamde.dev/core/function/<authority>/<package>/<name>` names
+// `<authority>/<package>`. Empty for anything else.
+func callablePackage(callable string) string {
+	for _, kind := range []string{"substrate.reamde.dev/core/function/", "substrate.reamde.dev/core/agent/"} {
+		if rest, ok := strings.CutPrefix(callable, kind); ok {
+			parts := strings.SplitN(rest, "/", 3)
+			if len(parts) == 3 {
+				return parts[0] + "/" + parts[1]
+			}
+		}
+	}
+	return ""
+}
+
+func splitPackage(pkg string) (string, string) {
+	authority, name, _ := strings.Cut(pkg, "/")
+	return authority, name
 }
 
 // shippedHands are the actors whose writes leave a shipped record the
@@ -2514,10 +2612,9 @@ func admissionUnits(built []*vocabulary.Package) [][]*vocabulary.Package {
 }
 
 // seededPackageName reports whether a declaration group is one the binary
-// seeds: the three packages, and the authority row that owns them.
+// seeds: the seeded packages, and the authority row that owns them.
 func seededPackageName(name string) bool {
-	return name == vocabulary.PackageCore || name == vocabulary.PackageLLM ||
-		name == vocabulary.PackageConsole || name == vocabulary.AuthorityPublisher
+	return vocabulary.SeededPackage(name) || name == vocabulary.AuthorityPublisher
 }
 
 // markGroupQuarantined records the quarantine state on the package's own row,

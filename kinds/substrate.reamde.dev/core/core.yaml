@@ -74,7 +74,9 @@ data:
   # version 45: the `sourcelink` trait, a record naming the sources that are
   # one device, which the aggregate read's priority policy reads (decision
   # record 0187).
-  version: 45
+  # version 46: a bundle's `installs` is no longer required, so a catalogue
+  # that ships records and declares nothing installs (decision record 0192).
+  version: 46
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

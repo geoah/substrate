@@ -1,0 +1,90 @@
+# WHOOP's own scores, as DATA: records of the seeded observations package's
+# `metric` kind, ids prefixed `whoop/`. Each is WHOOP's method and no other
+# vendor reports it, so the provider owns them (decision record 0192): a
+# repository without WHOOP holds none of them. Everything WHOOP measures that
+# others do too (resting heart rate, HRV, sleep stages) is written to the
+# `health` catalogue's metrics instead.
+#
+# They were `healthwhoop/*` in the healthwhoop sample, and before its version
+# 10 `health/whoop_*` in the health sample.
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: whoop/recovery
+data:
+  properties:
+    name: WHOOP recovery
+    description: >-
+      WHOOP's recovery score for one physiological cycle, from 0 to 100 percent.
+      WHOOP's own method, never mapped onto another vendor's.
+    codes:
+      - system: whoop
+        code: recovery_score
+        display: Recovery score
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: summary
+    reducers:
+      - last
+      - avg
+    displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
+    category: scores
+    algorithm:
+      vendor: WHOOP
+      name: recovery
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: whoop/strain
+data:
+  properties:
+    name: WHOOP strain
+    description: >-
+      WHOOP's day strain for one physiological cycle, a dimensionless score
+      from 0 to 21. WHOOP's own method, never mapped onto another vendor's.
+    codes:
+      - system: whoop
+        code: strain
+        display: Cycle strain
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: summary
+    reducers:
+      - last
+      - avg
+      - max
+    displayPrecision: 1
+    category: scores
+    algorithm:
+      vendor: WHOOP
+      name: strain
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: whoop/sleep_performance
+data:
+  properties:
+    name: WHOOP sleep performance
+    description: >-
+      The sleep WHOOP measured as a share of the sleep it judged needed, for
+      one sleep. WHOOP's own method.
+    codes:
+      - system: whoop
+        code: sleep_performance_percentage
+        display: Sleep performance
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: summary
+    reducers:
+      - last
+      - avg
+    displayPrecision: 0
+    # A nightly summary lands on the day the night ends, as WHOOP scores it;
+    # a raw reading is an instant, which places the same either way.
+    bucketPlace: end
+    category: scores
+    algorithm:
+      vendor: WHOOP
+      name: sleep performance

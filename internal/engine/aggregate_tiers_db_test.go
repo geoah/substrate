@@ -70,9 +70,9 @@ func TestAggregateTiersServeTheCoarsestRowsThatFit(t *testing.T) {
 		_, off := at.In(berlin).Zone()
 		return off / 60
 	}
-	f.tierHours("attic", "air_temperature", "gauge", "Cel", from, to, offsetOf)
+	f.tierHours("attic", "environment/air_temperature", "gauge", "Cel", from, to, offsetOf)
 	f.tierHours("phone", "health/steps", "amount", "{steps}", from, to, offsetOf)
-	f.tierHours("meter", "energy", "counter", "kW.h", from, to, offsetOf)
+	f.tierHours("meter", "environment/energy", "counter", "kW.h", from, to, offsetOf)
 	reads := []struct {
 		name     string
 		metric   string
@@ -82,13 +82,13 @@ func TestAggregateTiersServeTheCoarsestRowsThatFit(t *testing.T) {
 		least, most int64
 	}{
 		{
-			"Berlin days of a gauge", "air_temperature",
+			"Berlin days of a gauge", "environment/air_temperature",
 			[]string{"avg", "min", "max", "count", "first", "last"},
 			substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Berlin"},
 			10, 7 + 3*24,
 		},
 		{
-			"local days of a gauge", "air_temperature",
+			"local days of a gauge", "environment/air_temperature",
 			[]string{"avg", "min", "max"},
 			substrate.AggregateBucket{Calendar: "day"},
 			10, 7 + 3*24,
@@ -100,13 +100,13 @@ func TestAggregateTiersServeTheCoarsestRowsThatFit(t *testing.T) {
 			24, 11 * 24,
 		},
 		{
-			"Berlin days of a counter", "energy",
+			"Berlin days of a counter", "environment/energy",
 			[]string{"increase", "rate"},
 			substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Berlin"},
 			10, 7 + 3*24,
 		},
 		{
-			"quarter hours of a gauge", "air_temperature",
+			"quarter hours of a gauge", "environment/air_temperature",
 			[]string{"avg", "max"},
 			substrate.AggregateBucket{Every: "PT15M"},
 			4 * 24, 10 * 25 * 4,
@@ -140,12 +140,12 @@ func TestAggregateTiersNamedByTheMetric(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	f.rollups("health/steps", "1h")
-	f.rollups("air_temperature")
+	f.rollups("environment/air_temperature")
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	to := from.Add(30 * time.Hour)
 	utc := func(time.Time) int { return 0 }
 	f.tierHours("phone", "health/steps", "amount", "{steps}", from, to, utc)
-	f.tierHours("attic", "air_temperature", "gauge", "Cel", from, to, utc)
+	f.tierHours("attic", "environment/air_temperature", "gauge", "Cel", from, to, utc)
 	for _, x := range []struct {
 		metric string
 		bucket substrate.AggregateBucket
@@ -154,10 +154,10 @@ func TestAggregateTiersNamedByTheMetric(t *testing.T) {
 	}{
 		{"health/steps", substrate.AggregateBucket{Every: "PT15M"}, rng(from, to), 0},
 		{"health/steps", substrate.AggregateBucket{Every: "PT2H"}, rng(from.Add(15*time.Minute), to), 29},
-		{"air_temperature", substrate.AggregateBucket{Every: "PT1H"}, rng(from, to), 0},
+		{"environment/air_temperature", substrate.AggregateBucket{Every: "PT1H"}, rng(from, to), 0},
 	} {
 		red := "sum"
-		if x.metric == "air_temperature" {
+		if x.metric == "environment/air_temperature" {
 			red = "avg"
 		}
 		_, _, rows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{

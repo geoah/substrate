@@ -441,7 +441,7 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 	again, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithDataRoot(root),
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen on the same root: %v", err)

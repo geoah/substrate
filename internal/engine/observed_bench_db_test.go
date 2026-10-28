@@ -32,10 +32,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/samples"
 )
 
 // benchRepository is the repository the benchmark writes.
@@ -195,25 +193,15 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	putSampleUnits(t, ds, "observations", "health")
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := cat.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
-			t.Fatalf("import %s: %v", id, err)
-		}
-	}
+	installCatalogues(t, ds, "health", "environment")
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	home := benchRepository
-	trace, observation := home+"/observations/trace", home+"/observations/observation"
-	metricRef := func(id string) map[string]any { return map[string]any{"ref": home + "/observations/metric/" + id} }
-	sourceRef := func(id string) map[string]any { return map[string]any{"ref": home + "/observations/source/" + id} }
+	trace, observation := kindTrace, kindObservation
+	metricRef := func(id string) map[string]any { return map[string]any{"ref": kindMetric + "/" + id} }
+	sourceRef := func(id string) map[string]any { return map[string]any{"ref": kindSource + "/" + id} }
 	put := func(kind, id string, props map[string]any) time.Duration {
 		started := time.Now()
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
@@ -239,10 +227,10 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	}
 	var home20 []sensor
 	kinds := []sensor{
-		{"temp", "air_temperature", "gauge", "Cel"},
-		{"humidity", "relative_humidity", "gauge", "%"},
-		{"power", "power", "gauge", "W"},
-		{"energy", "energy", "counter", "kW.h"},
+		{"temp", "environment/air_temperature", "gauge", "Cel"},
+		{"humidity", "environment/relative_humidity", "gauge", "%"},
+		{"power", "environment/power", "gauge", "W"},
+		{"energy", "environment/energy", "counter", "kW.h"},
 	}
 	for i := range sensors {
 		k := kinds[i%len(kinds)]
@@ -440,9 +428,9 @@ func TestObservedIndexBenchmark(t *testing.T) {
 		}
 		logf("| %s | %d | %d | %s | %s |", name, n, rowsOut, l.pct(0.5), l.pct(0.95))
 	}
-	metricOf := func(s sensor) string { return home + "/observations/metric/" + s.metric }
+	metricOf := func(s sensor) string { return kindMetric + "/" + s.metric }
 	bySource := func(s sensor) substrate.Filter {
-		return substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: home + "/observations/source/" + s.id}}}
+		return substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: kindSource + "/" + s.id}}}
 	}
 	gauges := slices.DeleteFunc(slices.Clone(home20), func(s sensor) bool { return s.form != "gauge" })
 	monthAgo, weekAgo := end.AddDate(0, 0, -30), end.AddDate(0, 0, -7)
@@ -481,16 +469,16 @@ func TestObservedIndexBenchmark(t *testing.T) {
 		}, false)
 		read("daily steps across sources by priority, last 30 days", 5, func(int) substrate.AggregateQuery {
 			return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
-				Metric: &substrate.AggregateMetric{Ref: home + "/observations/metric/health/steps"}, Range: rng(monthAgo, end),
+				Metric: &substrate.AggregateMetric{Ref: kindMetric + "/health/steps"}, Range: rng(monthAgo, end),
 				Bucket: &substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Berlin"}, Reducers: reducers("sum"),
-				Sources: &substrate.AggregateSources{Policy: substrate.SourcesPriority, Order: []string{home + "/observations/source/watch", home + "/observations/source/ring"}},
+				Sources: &substrate.AggregateSources{Policy: substrate.SourcesPriority, Order: []string{kindSource + "/watch", kindSource + "/ring"}},
 			}}
 		}, false)
 		read("daily heart rate p90 of one source, last 30 days", 5, func(int) substrate.AggregateQuery {
 			return substrate.AggregateQuery{
-				Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: home + "/observations/source/watch"}}},
+				Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: kindSource + "/watch"}}},
 				Aggregate: &substrate.Aggregate{
-					Metric: &substrate.AggregateMetric{Ref: home + "/observations/metric/health/heart_rate"}, Range: rng(monthAgo, end),
+					Metric: &substrate.AggregateMetric{Ref: kindMetric + "/health/heart_rate"}, Range: rng(monthAgo, end),
 					Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Berlin"},
 					Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerPercentile, Percentile: new(0.9)}},
 				},

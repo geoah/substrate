@@ -213,8 +213,10 @@ bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds `core`, `llm` and `console` (record views,
-[0166](docs/decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)),
+**Registration seeds `core`, `llm`, `console` (record views,
+[0166](docs/decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md))
+and `observations` (measured values,
+[0192](docs/decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)),
 three keyless provider rows, the LLM sample, and the shipped units.** The agent runtime's
 four data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `thread`, `message`, `interaction`), out of core so core is not
@@ -248,6 +250,21 @@ other door, `…/install`, and lands under the authority that publishes it. A
 snippet that opens with `get <authority>/people/person` on a fresh substrate
 is wrong, and one that names a kind by a bare word is refused everywhere
 ([0101](docs/decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
+
+`substrate.reamde.dev/observations` (`metric`, `observation`, `trace`,
+`source`, `sourcelink`) ships no metrics. The metrics, and the domain kinds,
+come from the well-known CATALOGUES, first-party packages under the same
+authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
+`health/*` metrics), `…/labs` (lab reports and results, `labs/*` metrics,
+`convertlab`; requires `health`) and `…/environment` (`environment/*`
+metrics). The catalog serves them through the provider door
+(`bin/substratectl install substrate.reamde.dev/labs`), they land published
+and never rehomed, and an install first installs every published package
+it requires, so installing `providers.substrate.reamde.dev/applehealth` or
+`…/whoop` (each shipping its own adapter) brings `health`. A metric id
+starts with the package that ships it (`health/heart_rate`,
+`labs/ldl_cholesterol`, `whoop/strain`); an owner's own metrics use another
+prefix.
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,
@@ -321,8 +338,9 @@ under a server-assigned id is `POST /api/v1/records` with `kind` in the body
 The **package** is the unit. A kind may pin its own `version`, else it takes
 its package's; a stored closure the loader refuses parks its package; and
 `authorizeDeclarationWrite` reads the package row's `source`, so a
-repository's token may not write a `builtin` package (the seeded `core` and
-`llm`) or a `published` one (an installed provider); its own packages and the
+repository's token may not write a `builtin` package (the seeded `core`,
+`llm`, `console` and `observations`) or a `published` one (an installed
+provider or catalogue); its own packages and the
 samples it imported are `installed` and writable. A bundle owns one package
 and its id IS that package.
 
@@ -362,8 +380,9 @@ first label.
   fake (`internal/api/fake_test.go`).
 - **The top level stays empty.** Every Go package is under `internal/` (or
   `cmd/`), and four directories are the exceptions. Two are the vocabulary as
-  files: `kinds/` (the seeded `core`, `llm` and `console` packages and the
-  shipped providers) and `samples/` (the sample packages a repository copies), each
+  files: `kinds/` (the seeded `core`, `llm`, `console` and `observations`
+  packages, the well-known catalogues and the shipped providers) and
+  `samples/` (the sample packages a repository copies), each
   with the one Go file that embeds it. Two are for people building on a
   substrate: `skills/`, the agent skills they install (the upgrade runbook),
   and `.claude-plugin/`, the marketplace manifest Claude Code installs them
@@ -424,8 +443,9 @@ first label.
   (`primary`, `supporting` or `internal`; absent reads as `primary`) is
   validated and stored, read by clients to decide what they list, by search
   to rank machinery lower, and by the engine to leave `internal` kinds out
-  of an agent's kinds list unless its grant names them; every seeded kind is
-  `internal`
+  of an agent's kinds list unless its grant names them; every kind of
+  `core`, `llm` and `console` is `internal`, while the seeded `observations`
+  kinds are the owner's data and keep their own
   ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md),
   [0136](docs/decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md),
   [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). `renamedFrom` is live, on a

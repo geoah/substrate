@@ -33,7 +33,7 @@ other week), weighs in four mornings a week, takes her blood pressure on
 Sundays, checks her fasting glucose on a home meter on Wednesday and Saturday
 mornings, and has three lab panels: two from an Athens lab in SI units and
 one from a US lab in mg/dL, ng/mL and %, on the metrics' mass twins and the
-NGSP HbA1c (`health/hba1c`).
+NGSP HbA1c (`labs/hba1c`).
 
 `Persona.Day(d)` is the ground truth for one local day: the night that ended
 that morning with its stages, the workouts with their heart-rate curves, the
@@ -67,8 +67,8 @@ build one per goroutine.
 | Emitter | Writes | How it reaches a substrate |
 | --- | --- | --- |
 | `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
-| `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, writes the `iphone` account, imports `healthapple`, arms the trigger and posts them one at a time |
-| `manual` | `labs.yaml`: three `labreport` records, 30 `labresult` records, the two labs' and the hand-entry `source` records, and one weigh-in typed in on a hotel scale on the trip's third day, when the range holds it | `synth load` writes them through `PUT /api/v1/...` after importing the samples; `substratectl apply -f` does the same |
+| `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, which ships the adapter and brings `health`, writes the `iphone` account, arms the trigger and posts them one at a time |
+| `manual` | `labs.yaml`: three `labreport` records, 30 `labresult` records, the two labs' and the hand-entry `source` records, and one weigh-in typed in on a hotel scale on the trip's third day, when the range holds it | `synth load` writes them through `PUT /api/v1/...` after installing the `labs` catalogue; `substratectl apply -f` does the same |
 
 `applehealth` writes what the Health Auto Export app POSTs at the end of
 each local day. Heart rate comes from "Ada's Apple Watch" about every 5
@@ -106,13 +106,13 @@ sport name (`sport_id` is not written: WHOOP stopped sending it after
 2025-09-01 and the adapter ignores it). Cycle heart rate samples the
 persona's curve every 5 minutes, and the workout zone durations come from
 each workout's 30-second series. The 90-day default is 17 recordings and
-`e2e.json` (0.2 MB); the `healthwhoop` adapter writes one source,
+`e2e.json` (0.2 MB); the WHOOP provider's adapter writes one source,
 `whoop/<account id>`, and no traces.
 
 `manual` writes the hand-entered records. Each lab result names the metric
 it lands on and a LOINC code that metric lists, with reference range bounds
 as quantities. The US lab's results land on the mass twins (for example
-`health/ldl_cholesterol_mass` in mg/dL), and the health sample's
+`labs/ldl_cholesterol_mass` in mg/dL), and the `labs` catalogue's
 `convertlab` function writes each paired result once more in the other unit
 system. The hotel weigh-in is held for the day, as the catalogue's body
 gauges are.
@@ -158,14 +158,15 @@ that holds a client config (`configKind`) whose `clientId` is not the
 `e2e-client-id` the runner writes. An `e2e` account is reused only beside
 such a config: its id alone does not show synth connected it. Then
 `setup.json`, which the emitter declared (`synth.Setup`): a push provider is
-installed from the catalog, the `observations` and `health` samples and the
-adapter sample are imported, and the records the deliveries name (the
-account) are written. The catalog says whether the repository holds each
-package: one held at the version the server ships is skipped, an older one is
-upgraded, and an adapter imported or upgraded after the runner landed rows is
-replayed from the start of the changelog. Then every YAML document file
-(`labs.yaml`) is applied; a file generated for another authority is refused
-before anything is written, naming the `-authority` to generate it with.
+installed from the catalog, the `labs` catalogue is installed (bringing
+`health`), any sample the emitter names is imported, and the records the
+deliveries name (the account) are written. The catalog says whether the
+repository holds each package: one held at the version the server ships is
+skipped, an older one is upgraded, and a sample imported or upgraded after
+the runner landed rows is replayed from the start of the changelog. Then every YAML document file
+(`labs.yaml`) is applied; a document naming a kind under any authority but
+the substrate's own or the repository's is refused before anything is
+written.
 Last, a `deliveries/` directory is posted to
 `/webhooks/<authority>/<trigger>` one request at a time, waiting for the
 trigger's status to show nothing pending or in flight before the next. The
@@ -213,5 +214,5 @@ holds the token.
   functions over the real engine: a delivery through `applehealthingest`, a
   sync through the loopback fake over the
   generated recordings, the hand-entered records through `convertlab`, then
-  the adapter samples by their own triggers. Those run under
+  the providers' adapters by their own triggers. Those run under
   `mise run test:db:rest`.

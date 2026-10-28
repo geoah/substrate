@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest"
 import { parseAllDocuments } from "yaml"
 
-import catalogue from "../../../../samples/health/metrics.yaml?raw"
+import catalogue from "../../../../kinds/substrate.reamde.dev/health/metrics.yaml?raw"
 
 import {
   channelKey,

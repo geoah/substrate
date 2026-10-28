@@ -33,8 +33,8 @@ the note for the release wins.
 | --- | --- | --- |
 | Postgres tables | the new binary's schema migrations, at its first boot | no: an older binary refuses a database holding a migration it does not carry |
 | Each repository's data, the user's own declarations included | repository migrations, at the repository's first open under the new binary, as ordinary changelog writes | no: the repository's ledger and dialect stamps refuse an older binary |
-| The seeded packages (`substrate.reamde.dev/core`, `substrate.reamde.dev/llm`) | the boot upgrade, at each repository's first open, unless a guard refuses it | no |
-| Installed providers (`providers.substrate.reamde.dev/<name>`) | the user: the catalog offers the upgrade, and `substratectl install` takes it | no |
+| The seeded packages (`substrate.reamde.dev/core`, `…/llm`, `…/console`, `…/observations`) | the boot upgrade, at each repository's first open, unless a guard refuses it | no |
+| Installed providers and catalogues (`providers.substrate.reamde.dev/<name>`, `substrate.reamde.dev/health`, `…/labs`, `…/environment`) | the user: the catalog offers the upgrade, and `substratectl install` takes it | no |
 | Imported samples (rehomed to `<authority>/<package>`) | the user: the catalog offers the upgrade, and `substratectl import` takes it | no |
 | Kinds the user declared | the user; a binary that tightens a contract quarantines the package instead of refusing the repository | yes, by fixing and re-applying the package |
 | API clients, scripts, agents, `substratectl` | the user, following each note's `What to do` | yes |

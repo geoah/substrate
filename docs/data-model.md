@@ -198,12 +198,17 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
 `samples.substrate.reamde.dev/scheduling` (the `occurrencelog` trait that
 `calendar` and `tasks` require; `recurring` is core's now), and the function
-and agent examples `notes`, `llm`, `readinglist`, `firecrawl`, `pebble` and `healthapple`
-under the same authority (each a bundle you **import**), and the substrate's
+and agent examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble`
+under the same authority (each a bundle you **import**); the substrate's
 own machinery in `substrate.reamde.dev/core`, the agent runtime's data in
-`substrate.reamde.dev/llm` and the console's record views in
-`substrate.reamde.dev/console`, which are the three packages a new repository
-is seeded with. An import lands the closure under your repository's own
+`substrate.reamde.dev/llm`, the console's record views in
+`substrate.reamde.dev/console` and measured values in
+`substrate.reamde.dev/observations`, which are the four packages a new
+repository is seeded with; and the well-known catalogues
+`substrate.reamde.dev/health`, `labs` and `environment`, which a repository
+**installs** when it wants them
+([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+An import lands the closure under your repository's own
 authority, so `samples.substrate.reamde.dev/tasks/task` becomes
 `ada.example.com/tasks/task` in a repository whose authority is
 `ada.example.com`. Registration also imports the `llm` sample and writes three
@@ -213,9 +218,9 @@ reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
-seeded with those three packages and the `llm` sample when it was created, and
-everything else (the vocabulary above included) arrived as an import you
-asked for; either way the declarations are rows in your repository, not a file
+seeded with those four packages and the `llm` sample when it was created, and
+everything else (the vocabulary above included) arrived as an import or an
+install you asked for; either way the declarations are rows in your repository, not a file
 the server reads at query time. [Vocabulary as records](vocabulary.md) is that whole story.
 
 The to-do list needs two kinds. **`samples.substrate.reamde.dev/people/person`
@@ -843,7 +848,7 @@ your own, and every query surface binding unlocks.
 measured values, one per record (`observed(single)`) or many over a fixed
 period (`observed(packed)`). The substrate holds every write of such a kind to
 the rules its property list cannot state and computes a packed record's
-`stats`; [observations](observations.md) has the rules and the sample kinds
+`stats`; [observations](observations.md) has the rules and the seeded kinds
 that bind it.
 
 ## Validation and state machines

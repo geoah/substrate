@@ -36,14 +36,14 @@ func TestObservedIndexIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		datasets[name] = ds
-		importVocabulary(t, ds, "observations")
+		installCatalogues(t, ds, "environment")
 		for h := range 3 {
 			values := []any{}
 			for j := range 6 {
 				values = append(values, fmt.Sprintf("%d.%d", 20+10*i+h, j))
 			}
-			mustPut(t, ds, owner, substrate.PutInput{Kind: obsSampleTrace, ID: fmt.Sprintf("shared/%d", h), Properties: map[string]any{
-				"metric": map[string]any{"ref": obsSampleMetric + "/air_temperature"}, "form": "gauge", "unit": "Cel",
+			mustPut(t, ds, owner, substrate.PutInput{Kind: kindTrace, ID: fmt.Sprintf("shared/%d", h), Properties: map[string]any{
+				"metric": map[string]any{"ref": kindMetric + "/environment/air_temperature"}, "form": "gauge", "unit": "Cel",
 				"at": fmt.Sprintf("2026-10-07T%02d:00:00Z", 6+h), "endsAt": fmt.Sprintf("2026-10-07T%02d:00:00Z", 7+h),
 				"every": "PT10M", "values": values, "utcOffset": 180,
 			}})
@@ -52,7 +52,7 @@ func TestObservedIndexIsolation(t *testing.T) {
 	latest := func(name string) string {
 		t.Helper()
 		res, err := datasets[name].Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
-			Metric: &substrate.AggregateMetric{Ref: obsSampleMetric + "/air_temperature"}, Latest: true,
+			Metric: &substrate.AggregateMetric{Ref: kindMetric + "/environment/air_temperature"}, Latest: true,
 		}})
 		if err != nil {
 			t.Fatalf("%s latest: %v", name, err)

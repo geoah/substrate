@@ -425,6 +425,18 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	if err != nil {
 		return nil, nil, err
 	}
+	// Each requirement commits on its own, before b: a refusal of b leaves
+	// the ones already installed in place, which is what installing them
+	// alone would have left too.
+	requirements, err := c.requirementsToInstall(ctx, b, ds)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, dep := range requirements {
+		if _, err := c.installed(ctx, dep, ds, nil); err != nil {
+			return nil, nil, fmt.Errorf("install %s, which %s requires: %w", dep.ID, b.ID, err)
+		}
+	}
 	// INSTALL IS A COPY: the catalog's manifests are written
 	// into the repository's own changelog under the BUNDLE's actor, not the
 	// requester's. Installing is an owner action, which is the check above,
@@ -450,6 +462,14 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	// verbatim sample stays editable, and a stamp that kept offering it the
 	// next shipped closure would offer to replace edits nothing records
 	// (there is no digest to tell an edited copy by).
+	report, err := c.installed(ctx, b, ds, confirm)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b, report, nil
+}
+
+func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) ([]substrate.SuggestedMapping, error) {
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider, Confirm: confirm}
 	if b.Tier == substrate.TierProvider {
 		opts.ShippedVersion = b.Version
@@ -460,12 +480,12 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	// report is SHIPPED-spelled, because that is what this door applies.
 	vocabularyDocs, report, err := b.admitted(ctx, ds, viewShipped)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), vocabularyDocs, b.dataDocs, opts); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return b, report, nil
+	return report, nil
 }
 
 // Import is the SAMPLE door (decision record 0048): the same atomic admission
@@ -563,6 +583,63 @@ func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Data
 	return b, report, nil
 }
 
+// requirementsToInstall is what installing b installs first, in order:
+// every package b requires, transitively, that the repository lacks or holds
+// below the requiring bundle's floor and that the catalog PUBLISHES (a
+// first-party catalogue or a provider, record 0192), each after its own
+// requirements, so installing a provider brings the catalogue its adapter
+// writes. A required SAMPLE is left out, for the admission to refuse as
+// before: a copy is the owner's to take. A requirement on the path being
+// walked is a cycle, which the closure at its head installs. Install runs the
+// list and the upgrade preview stages it, so the two cannot disagree on what
+// a click brings.
+func (c *Catalog) requirementsToInstall(ctx context.Context, b *Bundle, ds substrate.Dataset) ([]*Bundle, error) {
+	held, err := heldVersions(ctx, ds)
+	if err != nil {
+		return nil, err
+	}
+	var order []*Bundle
+	placed := map[string]bool{}
+	visiting := map[string]bool{b.ID: true}
+	var walk func(*Bundle)
+	walk = func(b *Bundle) {
+		for _, req := range b.Requires {
+			dep, ok := c.byID[req]
+			if !ok || dep.Tier != substrate.TierProvider || visiting[req] || placed[req] {
+				continue
+			}
+			if v, has := held[req]; has && v >= b.RequiresAtLeast[req] {
+				continue
+			}
+			visiting[req] = true
+			walk(dep)
+			delete(visiting, req)
+			// Placed once: a later floor above the version it ships is the
+			// admission's to refuse, and installing it twice would not raise it.
+			placed[req] = true
+			held[req] = dep.Version
+			order = append(order, dep)
+		}
+	}
+	walk(b)
+	return order, nil
+}
+
+// heldVersions is the stored version of every installed bundle.
+func heldVersions(ctx context.Context, ds substrate.Dataset) (map[string]int64, error) {
+	statuses, err := ds.BundleStatuses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	held := map[string]int64{}
+	for _, st := range statuses {
+		if st.Installed {
+			held[st.ID] = st.Version
+		}
+	}
+	return held, nil
+}
+
 // installable is the gate both doors share: the owner check and the lookup.
 func (c *Catalog) installable(actor substrate.Actor, id string) (*Bundle, error) {
 	if !substrate.HumanActors[actor] {
@@ -628,12 +705,12 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, 
 		return nil, nil
 	}
 	return c.plans.plan(ctx, ds, b.ID, func() (*substrate.BundleUpgrade, error) {
-		return b.planUpgrade(ctx, ds)
+		return c.planUpgrade(ctx, b, ds)
 	})
 }
 
 // planUpgrade counts the preview Upgrade answers, uncached.
-func (b *Bundle) planUpgrade(ctx context.Context, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
+func (c *Catalog) planUpgrade(ctx context.Context, b *Bundle, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
 	var vocabularyDocs []map[string]any
 	if b.Tier == substrate.TierSample {
 		home := ds.Repository().Authority
@@ -664,9 +741,21 @@ func (b *Bundle) planUpgrade(ctx context.Context, ds substrate.Dataset) (*substr
 	// general, and the version-motion fixtures that load a sample closure as
 	// a provider root are where the difference shows: previewing a dropped
 	// mapping reports it as a blocker and hides the real ones.
-	vocabularyDocs, _, err := b.admitted(ctx, ds, viewShipped)
+	//
+	// The requirements the install would bring first are staged ahead of the
+	// closure, so a catalogue the click installs is not reported as a missing
+	// requirement, and what bringing it would break is. The closure's own
+	// bundle document comes last, which is the one the plan previews.
+	requirements, err := c.requirementsToInstall(ctx, b, ds)
 	if err != nil {
 		return nil, err
+	}
+	for _, dep := range append(requirements, b) {
+		docs, _, err := dep.admitted(ctx, ds, viewShipped)
+		if err != nil {
+			return nil, err
+		}
+		vocabularyDocs = append(vocabularyDocs, docs...)
 	}
 	plan, err := ds.PlanBundleUpgrade(ctx, vocabularyDocs)
 	if err != nil {

@@ -94,7 +94,7 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 	}
 	for id, props := range map[string]map[string]any{
 		"lab/hba1c": {
-			"metric": r.metricRef("health/hba1c"), "form": "gauge", "value": quantity("5.2", "%"),
+			"metric": r.metricRef("labs/hba1c"), "form": "gauge", "value": quantity("5.2", "%"),
 			"at": "2026-10-07T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 		},
 		"vendor/strain": {
@@ -117,17 +117,17 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 		}})
 		return err
 	}
-	if err := read("health/hba1c", "%", ""); err != nil {
+	if err := read("labs/hba1c", "%", ""); err != nil {
 		t.Fatalf("hba1c in %%: %v", err)
 	}
 	for _, c := range []struct{ metric, unit, from string }{
-		{"health/hba1c", "mmol/mol", ""},
+		{"labs/hba1c", "mmol/mol", ""},
 		{"vendor/strain", "percent", "summaries"},
 	} {
 		refused(t, c.metric+" in "+c.unit, read(c.metric, c.unit, c.from), c.unit)
 	}
 	_, err := r.put(t, r.observation, "lab/hba1c-ifcc", map[string]any{
-		"metric": r.metricRef("health/hba1c"), "form": "gauge", "value": quantity("48", "mmol/mol"),
+		"metric": r.metricRef("labs/hba1c"), "form": "gauge", "value": quantity("48", "mmol/mol"),
 		"at": "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 	})
 	refused(t, "an IFCC result under the NGSP metric", err, "mmol/mol does not convert to the metric's unit percent")
@@ -150,7 +150,7 @@ func TestATracePointPastTheDigitBoundIsRefused(t *testing.T) {
 }
 
 // A meter's glucose in mg/dL and one in mmol/L are one series: the health
-// sample's analyte-annotated units convert through glucose's molar mass, so
+// catalogue's analyte-annotated units convert through glucose's molar mass, so
 // `health/blood_glucose` admits both and an aggregate reads both, in the
 // metric's mmol/L or in the unit the read names. Each value keeps the digits
 // it was written with, and plain mg/dL, which no conversion joins to mmol/L,

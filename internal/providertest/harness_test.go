@@ -34,6 +34,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -43,21 +44,29 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
 )
 
-// The trees a suite reads, relative to this package: the seed authority (core
-// and llm), the shipped providers, the samples. Same depth as internal/engine, so the
+// The trees a suite reads, relative to this package: the shipped kinds, the
+// seed authority's directory inside it (the seeded packages and, beside them,
+// the first-party catalogues a repository installs, decision record 0192),
+// the shipped providers, the samples. Same depth as internal/engine, so the
 // paths inside enginetest resolve here too.
 const (
-	seedKindsDir = "../../kinds/substrate.reamde.dev"
-	providersDir = "../../kinds/providers.substrate.reamde.dev"
+	kindsDir     = "../../kinds"
+	publisherDir = kindsDir + "/" + vocabulary.AuthorityPublisher
+	providersDir = kindsDir + "/" + providersAuthority
 	samplesDir   = "../../samples"
 )
+
+// providersAuthority publishes the shipped providers.
+const providersAuthority = "providers.substrate.reamde.dev"
 
 // The core kinds a provider closure's install lands beside.
 const (
@@ -182,7 +191,7 @@ var migratedTemplate = testdb.NewTemplate("providertest", func(ctx context.Conte
 	}
 	defer func() { _ = os.RemoveAll(root) }()
 	svc, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir(seedKindsDir),
+		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(credentialKey))
 	if err != nil {
@@ -195,7 +204,7 @@ var migratedTemplate = testdb.NewTemplate("providertest", func(ctx context.Conte
 func newService(t *testing.T, opts ...engine.Option) substrate.Service {
 	t.Helper()
 	all := append([]engine.Option{
-		engine.WithKindsDir(seedKindsDir),
+		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(credentialKey),
 	}, opts...)
@@ -207,10 +216,12 @@ func newService(t *testing.T, opts ...engine.Option) substrate.Service {
 	return svc
 }
 
-// newCoreDataset provisions a repository and stops there: the core package
-// and nothing else, exactly as creation leaves it. A provider closure
-// installs on it, because it names no kind outside its own package
-// (decision record 0049).
+// newCoreDataset provisions a repository and stops there: the seeded
+// packages (kinds.Seed(): core, llm, console and observations) and nothing
+// else, exactly as creation leaves it. A provider closure installs on it,
+// because it names no kind outside its own package and the first-party
+// catalogues it requires, which install brings (decision records 0049 and
+// 0192).
 func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, substrate.Dataset) {
 	t.Helper()
 	svc := newService(t, opts...)
@@ -312,19 +323,41 @@ func loadDocs(t *testing.T, path string) []map[string]any {
 	return out
 }
 
-// bundleRegistry loads the seeded tree plus the shipped samples and installs
-// one shipped closure on top of it through the ordinary loader/resolver — the
-// same admission the batch apply runs, minus the function-body warm. It is
-// what every admission test starts from: no database, no uv.
-func bundleRegistry(t *testing.T, dir string) *vocabulary.Registry {
+// seededRegistry is the registry a repository holds right after creation
+// with the shipped sample vocabulary imported on top (enginetest.Vocabulary).
+// The seed is kinds.Seed(), the binary's own list, copied into a directory
+// because enginetest.SeededRegistry loads one: the seed authority's directory
+// on disk also holds the first-party catalogues, whose metric records the
+// declaration loader refuses.
+func seededRegistry(t *testing.T) *vocabulary.Registry {
 	t.Helper()
-	reg, err := enginetest.SeededRegistry(seedKindsDir)
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, kinds.Seed()); err != nil {
+		t.Fatalf("copy the seed: %v", err)
+	}
+	reg, err := enginetest.SeededRegistry(dir)
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
+	return reg
+}
+
+// bundleRegistry loads the seeded tree plus the shipped samples and installs
+// one shipped closure on top of it through the ordinary loader/resolver — the
+// same admission the batch apply runs, minus the function-body warm — after
+// the first-party packages it requires (admitShipped). It is what every
+// admission test starts from: no database, no uv.
+func bundleRegistry(t *testing.T, dir string) *vocabulary.Registry {
+	t.Helper()
+	reg := seededRegistry(t)
 	data, err := os.ReadFile(dir + "/bundle.yaml")
 	if err != nil {
 		t.Fatalf("read bundle.yaml: %v", err)
+	}
+	for _, req := range closureRequires(loadDocs(t, dir+"/bundle.yaml")) {
+		if _, err := os.Stat(kindsDir + "/" + req); err == nil {
+			admitShipped(t, reg, req)
+		}
 	}
 	docs, err := vocabulary.ParseStream(data)
 	if err != nil {
@@ -340,10 +373,128 @@ func bundleRegistry(t *testing.T, dir string) *vocabulary.Registry {
 	return reg
 }
 
+// admitShipped installs one shipped package's declarations into an admission
+// registry, published and its own requirements first: the registry half of
+// installShipped. Its data records (metrics, units, views, triggers) are
+// records, which a registry does not hold.
+func admitShipped(t *testing.T, reg *vocabulary.Registry, pkg string) {
+	t.Helper()
+	if _, held := reg.PackageByName(pkg); held {
+		return
+	}
+	files, err := filepath.Glob(kindsDir + "/" + pkg + "/*.yaml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("%s is no package the binary ships (%v)", pkg, err)
+	}
+	var raws []map[string]any
+	for _, f := range files {
+		raws = append(raws, loadDocs(t, f)...)
+	}
+	for _, req := range closureRequires(raws) {
+		admitShipped(t, reg, req)
+	}
+	var docs []vocabulary.Document
+	for _, raw := range raws {
+		kind, _ := raw["kind"].(string)
+		if vocabulary.KindPackage(kind) != vocabulary.PackageCore || !vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
+			continue
+		}
+		d, err := vocabulary.DocumentFromMap(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", pkg, err)
+		}
+		docs = append(docs, d)
+	}
+	packages, err := vocabulary.BuildPackages(docs, vocabulary.SourcePublished)
+	if err != nil {
+		t.Fatalf("build %s: %v", pkg, err)
+	}
+	if err := reg.InstallAll(packages); err != nil {
+		t.Fatalf("%s did not admit: %v", pkg, err)
+	}
+}
+
+// closureRequires is the packages a closure's bundle document requires.
+func closureRequires(docs []map[string]any) []string {
+	var out []string
+	for _, d := range docs {
+		if d["kind"] != vocabulary.CoreKind(vocabulary.DocBundle) {
+			continue
+		}
+		data, _ := d["data"].(map[string]any)
+		reqs, _ := data["requires"].([]any)
+		for _, r := range reqs {
+			out = append(out, fmt.Sprint(r))
+		}
+	}
+	return out
+}
+
+// shippedCatalog is the catalog the binary serves (kinds.Bundles()): the
+// providers and the first-party catalogues, each installed verbatim and
+// published (decision records 0048 and 0192). Loaded once per test binary.
+var shippedCatalog = sync.OnceValues(func() (*catalog.Catalog, error) {
+	return catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+})
+
+// installShipped installs one shipped package through the catalog's install
+// door, as an owner does: the published packages it requires and the
+// repository lacks first, then its closure with every data record it ships
+// (metrics, units, views and its delivery wiring), under its bundle's actor.
+func installShipped(t *testing.T, ds substrate.Dataset, id string) {
+	t.Helper()
+	cat, err := shippedCatalog()
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	if _, ok := cat.ByID(id); !ok {
+		t.Fatalf("the catalog serves no %s (dropped: %v)", id, cat.Warnings())
+	}
+	if _, _, err := cat.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+		if uvProvisionFailed(err) {
+			skipOrFailf(t, "uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
+		}
+		t.Fatalf("install %s: %v", id, err)
+	}
+}
+
+// installRequired installs, through the catalog door, every package a
+// closure requires that the repository does not hold and the catalog
+// serves, which is what the catalog's own install does first (decision
+// record 0192): installing applehealth or whoop brings
+// substrate.reamde.dev/health. A requirement the catalog does not serve is
+// left for the admission to refuse.
+func installRequired(t *testing.T, ds substrate.Dataset, docs []map[string]any) {
+	t.Helper()
+	reqs := closureRequires(docs)
+	if len(reqs) == 0 {
+		return
+	}
+	statuses, err := ds.BundleStatuses(context.Background())
+	if err != nil {
+		t.Fatalf("bundle statuses: %v", err)
+	}
+	held := map[string]bool{}
+	for _, st := range statuses {
+		held[st.ID] = true
+	}
+	cat, err := shippedCatalog()
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	for _, req := range reqs {
+		if _, served := cat.ByID(req); served && !held[req] {
+			installShipped(t, ds, req)
+		}
+	}
+}
+
 // install applies one shipped closure into a live repository through the
-// batch vocabulary verb, the ONE install path. rewire, when non-nil, edits
-// the documents first: a static manifest cannot bake a dynamic httptest URL,
-// so the loopback substitutions happen here.
+// batch vocabulary verb, the ONE install path, after the packages it requires
+// (installRequired). rewire, when non-nil, edits the documents first: a
+// static manifest cannot bake a dynamic httptest URL, so the loopback
+// substitutions happen here. The closure's data records, its delivery wiring
+// among them, are the test's to write (installTriggers, putDataDoc).
 //
 // A uv resolve that cannot reach the network skips (uvProvisionFailed); every
 // other apply error FAILS, including a body that will not register, because
@@ -351,6 +502,7 @@ func bundleRegistry(t *testing.T, dir string) *vocabulary.Registry {
 func install(t *testing.T, ds substrate.Dataset, dir string, rewire func([]map[string]any)) {
 	t.Helper()
 	docs := loadDocs(t, dir+"/bundle.yaml")
+	installRequired(t, ds, docs)
 	if rewire != nil {
 		rewire(docs)
 	}

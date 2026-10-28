@@ -205,7 +205,7 @@ func (f *fakeSubstrate) serve(w http.ResponseWriter, r *http.Request) {
 
 // generated writes the named emitters' output for two days under a temporary
 // directory, as `synth generate` does.
-func generated(t *testing.T, authority string, ems ...synth.Emitter) string {
+func generated(t *testing.T, ems ...synth.Emitter) string {
 	t.Helper()
 	p, err := synth.NewPersona(synth.Options{Start: synth.NewDate(2026, time.September, 12), End: synth.NewDate(2026, time.September, 13)})
 	if err != nil {
@@ -213,10 +213,6 @@ func generated(t *testing.T, authority string, ems ...synth.Emitter) string {
 	}
 	dir := t.TempDir()
 	for _, e := range ems {
-		if m, ok := e.(synth.Manual); ok {
-			m.Authority = authority
-			e = m
-		}
 		out, err := e.Emit(p)
 		if err != nil {
 			t.Fatal(err)
@@ -246,11 +242,13 @@ func indexOf(list []string, want string) int {
 	return -1
 }
 
-// The hand-entered records need the observations and health samples, so a
-// load of `manual` alone imports them before its first write.
-func TestLoadImportsTheSamplesBeforeTheManualRecords(t *testing.T) {
+// The hand-entered records are the labs catalogue's kinds, so a load of
+// `manual` alone installs it (which brings health) before its first write,
+// and writes them under the first-party names whatever the repository is
+// called (decision record 0192).
+func TestLoadInstallsLabsBeforeTheManualRecords(t *testing.T) {
 	f := newFakeSubstrate(t)
-	dir := generated(t, testAuthority, synth.Manual{})
+	dir := generated(t, synth.Manual{})
 	if out, err := f.runLoad(t, "-dir", dir, "-providers", "manual"); err != nil {
 		t.Fatalf("load: %v\n%s", err, out)
 	}
@@ -262,26 +260,21 @@ func TestLoadImportsTheSamplesBeforeTheManualRecords(t *testing.T) {
 			break
 		}
 	}
-	for _, s := range []string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"} {
-		i := indexOf(seen, "POST /api/v1/catalog/"+s+"/import")
-		if i < 0 || firstPut < 0 || i > firstPut {
-			t.Errorf("%s imported at request %d, the first record written at %d", s, i, firstPut)
+	i := indexOf(seen, "POST /api/v1/catalog/substrate.reamde.dev/labs/install")
+	if i < 0 || firstPut < 0 || i > firstPut {
+		t.Errorf("substrate.reamde.dev/labs installed at request %d, the first record written at %d", i, firstPut)
+	}
+	if len(f.records) == 0 {
+		t.Error("the load wrote no record")
+	}
+	for path := range f.records {
+		if !strings.HasPrefix(path, "substrate.reamde.dev/labs/") && !strings.HasPrefix(path, "substrate.reamde.dev/observations/") {
+			t.Errorf("the load wrote %s, outside the first-party kinds", path)
 		}
 	}
-}
-
-// labs.yaml names the authority generate was given; a load into another
-// repository is refused before it writes anything, and says how to fix it.
-func TestLoadRefusesRecordsGeneratedForAnotherAuthority(t *testing.T) {
-	f := newFakeSubstrate(t)
-	dir := generated(t, "other.example.com", synth.Manual{})
-	out, err := f.runLoad(t, "-dir", dir, "-providers", "manual")
-	if err == nil || !strings.Contains(err.Error(), "other.example.com") || !strings.Contains(err.Error(), "-authority "+testAuthority) {
-		t.Fatalf("load = %v, want a refusal naming both authorities\n%s", err, out)
-	}
-	for _, r := range f.seen() {
-		if strings.HasPrefix(r, "PUT ") {
-			t.Fatalf("the refused load wrote %s", r)
+	for _, r := range seen {
+		if strings.HasSuffix(r, "/import") {
+			t.Errorf("the load imported a sample: %s", r)
 		}
 	}
 }
@@ -291,11 +284,11 @@ func TestLoadRefusesRecordsGeneratedForAnotherAuthority(t *testing.T) {
 // it imported: those are the ones replayed over rows that landed first.
 func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 	f := newFakeSubstrate(t)
-	const adapter = "samples.substrate.reamde.dev/healthwhoop"
-	for _, s := range []string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health", adapter} {
+	listed := []string{"samples.substrate.reamde.dev/people", "samples.substrate.reamde.dev/tasks"}
+	for _, s := range listed {
 		f.installed[s] = true
 	}
-	imported, err := f.client().importSamples(t.Context(), []string{adapter}, io.Discard)
+	imported, err := f.client().importSamples(t.Context(), listed, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,12 +302,12 @@ func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 	}
 
 	f = newFakeSubstrate(t)
-	imported, err = f.client().importSamples(t.Context(), []string{adapter}, io.Discard)
+	imported, err = f.client().importSamples(t.Context(), listed, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(imported, " ") != "samples.substrate.reamde.dev/observations samples.substrate.reamde.dev/health "+adapter {
-		t.Errorf("a fresh repository imported %v", imported)
+	if !slices.Equal(imported, listed) {
+		t.Errorf("a fresh repository imported %v, want %v in order", imported, listed)
 	}
 }
 
@@ -322,7 +315,7 @@ func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 // never from the source, so a load with neither posts nothing.
 func TestLoadTakesTheWebhookKeyFromTheOwner(t *testing.T) {
 	f := newFakeSubstrate(t)
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	t.Setenv("SYNTH_WEBHOOK_KEY", "")
 	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err == nil ||
 		!strings.Contains(err.Error(), "-key") || !strings.Contains(err.Error(), "SYNTH_WEBHOOK_KEY") {
@@ -352,7 +345,7 @@ func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
 	const owners = "the-owners-own-key-0123456789"
 	f := newFakeSubstrate(t)
 	f.triggers["applehealth-webhook"]["source"] = map[string]any{"webhook": map[string]any{"key": owners}}
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	t.Setenv("SYNTH_WEBHOOK_KEY", "")
 
 	out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", testKey)
@@ -383,7 +376,7 @@ func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
 // own bearer, or a post with the key in its path.
 func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
 	f := newFakeSubstrate(t)
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
 	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
 		t.Fatalf("load: %v\n%s", err, out)
@@ -432,7 +425,7 @@ func TestAwaitSettledPollsAgainSoon(t *testing.T) {
 func TestAFailedPostNamesNoWebhookKey(t *testing.T) {
 	f := newFakeSubstrate(t)
 	f.drop = true
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	c := f.client()
 	c.pause = func(context.Context, time.Duration) error { return nil }
 	p := &poster{c: c, key: testKey, settle: time.Minute, stdout: io.Discard}
@@ -454,7 +447,7 @@ func TestAFailedPostNamesNoWebhookKey(t *testing.T) {
 func TestLoadRetriesABusyDoor(t *testing.T) {
 	f := newFakeSubstrate(t)
 	f.busy = 1
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
 	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
 		t.Fatalf("load: %v\n%s", err, out)
@@ -469,7 +462,7 @@ func TestLoadRetriesABusyDoor(t *testing.T) {
 func TestLoadStopsOnTheParkItCaused(t *testing.T) {
 	f := newFakeSubstrate(t)
 	f.parked["applehealth-webhook"] = 1
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
 	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
 		t.Fatalf("a load beside an earlier park: %v\n%s", err, out)
@@ -490,7 +483,7 @@ func TestLoadStopsOnTheParkItCaused(t *testing.T) {
 // providers before it and its own setup ran already.
 func TestLoadResumesAtADelivery(t *testing.T) {
 	f := newFakeSubstrate(t)
-	dir := generated(t, testAuthority, synth.AppleHealth{})
+	dir := generated(t, synth.AppleHealth{})
 	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
 	if out, err := f.runLoad(t, "-dir", dir, "-resume", "applehealth/0002"); err != nil {
 		t.Fatalf("load: %v\n%s", err, out)

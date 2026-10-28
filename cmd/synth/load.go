@@ -309,7 +309,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 	// runner is stopped and the config holding the token is removed.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ems, err := emitters(*providers, *authority)
+	ems, err := emitters(*providers)
 	if err != nil {
 		return err
 	}
@@ -357,9 +357,10 @@ func load(args []string, stdout, stderr io.Writer) error {
 		// A provider with recordings connects and syncs through the e2e
 		// runner first (WHOOP), which
 		// installs it rewired; a push provider is installed from the
-		// catalog. The samples come after the provider they require, and
-		// the records (the account) before the first delivery. A sample
-		// imported after the runner landed rows is replayed from the start.
+		// catalog, its adapter and the health catalogue with it. Any samples
+		// come after the provider they require, and the records (the
+		// account) before the first delivery. A sample imported after the
+		// runner landed rows is replayed from the start.
 		// The documents generate wrote (`labs.yaml`) need the samples too,
 		// so they are applied after the import.
 		_, hasRecordings := statOK(filepath.Join(base, "recordings"))
@@ -368,7 +369,10 @@ func load(args []string, stdout, stderr io.Writer) error {
 			if err := runSync(ctx, c, e.Name(), base, *repo, *ctl, *python, stdout, stderr); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
-		} else if setup.Provider != "" {
+		} else if err := c.installCatalogues(ctx); err != nil {
+			return fmt.Errorf("%s: %w", e.Name(), err)
+		}
+		if !hasRecordings && setup.Provider != "" {
 			if err := c.install(ctx, setup.Provider); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
@@ -464,8 +468,16 @@ func (c *client) install(ctx context.Context, pkg string) error {
 	return nil
 }
 
-// importSamples imports the observations and health samples, then the
-// listed ones in order. A sample the repository holds at the version this
+// installCatalogues installs the first-party catalogues every persona writes
+// into, before any provider: `labs` brings `health`, which the providers'
+// adapters require, and the runner applies a mocked provider by hand, which
+// installs no requirement for it (decision record 0192). It runs after a
+// provider's guard, so a refused load writes nothing.
+func (c *client) installCatalogues(ctx context.Context) error {
+	return c.install(ctx, "substrate.reamde.dev/labs")
+}
+
+// importSamples imports the listed samples in order. A sample the repository holds at the version this
 // server ships is skipped and one it holds at an older version is upgraded;
 // a re-import answers 200 like a first one, so the catalog says which is
 // which. It answers the samples it imported or upgraded: a new record
@@ -474,7 +486,7 @@ func (c *client) install(ctx context.Context, pkg string) error {
 func (c *client) importSamples(ctx context.Context, samples []string, stdout io.Writer) ([]string, error) {
 	var imported []string
 	seen := map[string]bool{}
-	for _, s := range append([]string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"}, samples...) {
+	for _, s := range samples {
 		if seen[s] {
 			continue
 		}
@@ -609,6 +621,9 @@ func runSync(ctx context.Context, c *client, provider, base, repo, ctl, python s
 		e2e = filepath.Join(suite, "providers", provider, "e2e.json")
 	}
 	if err := c.guardProvider(ctx, e2e); err != nil {
+		return err
+	}
+	if err := c.installCatalogues(ctx); err != nil {
 		return err
 	}
 	tmp, err := os.MkdirTemp("", "synth-"+provider+"-")
@@ -847,9 +862,15 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// applyYAML writes every document of one file generate wrote. Each names
-// the authority generate was given, in its kind and in its references, so a
-// file for another repository is refused before anything is written.
+// firstParty is the substrate's own authority, whose seeded and installed
+// packages every repository names the same way.
+const firstParty = "substrate.reamde.dev"
+
+// applyYAML writes every document of one file generate wrote. Each names a
+// first-party kind (the observations and labs packages every repository
+// holds under the substrate's authority, decision record 0192) or one of this
+// repository's own, so a file naming any other authority is refused before
+// anything is written.
 func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -866,8 +887,8 @@ func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) er
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		kind, _ := doc["kind"].(string)
-		if authority, _, _ := strings.Cut(kind, "/"); authority != c.authority {
-			return fmt.Errorf("%s was generated for %s; generate it again with -authority %s", path, authority, c.authority)
+		if authority, _, _ := strings.Cut(kind, "/"); authority != c.authority && authority != firstParty {
+			return fmt.Errorf("%s names a kind under %s, neither %s nor this repository's %s", path, authority, firstParty, c.authority)
 		}
 		docs = append(docs, doc)
 	}

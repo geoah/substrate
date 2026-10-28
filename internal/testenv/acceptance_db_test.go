@@ -75,10 +75,9 @@ const (
 	pollInterval   = 10 * time.Millisecond
 	settleDeadline = 20 * time.Second
 
-	// seedAuthorityDir is the shipped seed authority, relative to this
-	// package: the tree kinds.Seed() embeds, which the boot upgrade is patched
-	// against.
-	seedAuthorityDir = "../../kinds/substrate.reamde.dev"
+	// seedAuthorityDir is the shipped seed authority's directory in
+	// kinds.Seed(), which the boot upgrade is patched against.
+	seedAuthorityDir = "substrate.reamde.dev"
 
 	// sealedValues is how many sealed files the source repository holds: the
 	// login credential's two (password hash, TOTP seed), the embeddings
@@ -2305,18 +2304,18 @@ func copyRoot(t testing.TB, srcRoot, authority string) string {
 	return root
 }
 
-// patchedSeedTree copies the shipped seed authority whole (its authority
-// document and its core package, the tree kinds.Seed() embeds) and pins one
-// core kind one version behind, so a repository seeded from it is one a
+// patchedSeedTree copies the shipped seed (its authority document and its
+// seeded packages, kinds.Seed(); the catalogues beside them on disk are not
+// seeded) and pins one core kind one version behind, so a repository seeded from it is one a
 // substrated-seeded repository could be, and the next boot under the shipped
 // tree upgrades that kind alone. It returns the copy and the shipped version.
 func patchedSeedTree(t testing.TB, file string) (string, int64) {
 	t.Helper()
 	root := t.TempDir()
-	dst := filepath.Join(root, filepath.Base(seedAuthorityDir))
-	if err := os.CopyFS(dst, os.DirFS(seedAuthorityDir)); err != nil {
+	if err := os.CopyFS(root, kinds.Seed()); err != nil {
 		t.Fatalf("copy the shipped seed: %v", err)
 	}
+	dst := filepath.Join(root, seedAuthorityDir)
 	path := filepath.Join(dst, "core", file)
 	raw, err := os.ReadFile(path)
 	if err != nil {

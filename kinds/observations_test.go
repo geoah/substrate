@@ -22,156 +22,326 @@ import (
 	"github.com/geoah/substrate/samples"
 )
 
-func shippedSample(t *testing.T, pkg string) *catalog.Bundle {
+// The first-party catalogues the tree ships beside the seed (record 0192),
+// and the kinds of the seeded observations package their records are.
+const (
+	healthPackage      = kinds.SeedAuthority + "/health"
+	labsPackage        = kinds.SeedAuthority + "/labs"
+	environmentPackage = kinds.SeedAuthority + "/environment"
+	metricKind         = kinds.SeedObservationsPackage + "/metric"
+	analyteKind        = labsPackage + "/analyte"
+)
+
+func shippedCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
-	b, ok := cat.ByID(samples.Authority + "/" + pkg)
+	return cat
+}
+
+func shippedBundle(t *testing.T, cat *catalog.Catalog, id string) *catalog.Bundle {
+	t.Helper()
+	b, ok := cat.ByID(id)
 	if !ok {
-		t.Fatalf("no shipped sample %s", pkg)
+		t.Fatalf("the shipped catalog serves no %s", id)
 	}
 	return b
 }
 
-// THE BASE KIND NAMES ARE FROZEN (decision 0159). A sample's kind cannot be
-// moved by the catalog's upgrade: renaming one after the first import is a
-// repository migration in every repository that took it. A new kind is an
-// addition, which this pin lets through; a rename or a removal fails here.
-func TestObservationsSampleKindNamesAreFrozen(t *testing.T) {
-	b := shippedSample(t, "observations")
-	for _, name := range []string{"metric", "observation", "trace", "source", "sourcelink"} {
-		if !slices.Contains(b.Closure.Kinds, samples.Authority+"/observations/"+name) {
-			t.Errorf("observations/%s is gone: the base kind names are frozen before the first import", name)
-		}
-	}
-	reg, err := vocabulary.LoadFS(kinds.Seed())
-	if err != nil {
-		t.Fatalf("load the seed: %v", err)
-	}
-	if err := installClosure(reg, map[string]*catalog.Bundle{b.ID: b}, b, map[string]bool{}); err != nil {
-		t.Fatal(err)
-	}
-	for name, variant := range map[string]string{"observation": vocabulary.ObservedSingle, "trace": vocabulary.ObservedPacked} {
-		k, ok := reg.ByIdentity(samples.Authority + "/observations/" + name)
-		if !ok {
-			t.Fatalf("observations/%s did not install", name)
-		}
-		if bind, ok := k.Binding(vocabulary.TraitObservedCore); !ok || bind.Variant != variant {
-			t.Errorf("observations/%s binds %+v, want %s(%s)", name, bind, vocabulary.TraitObservedCore, variant)
-		}
-	}
-}
-
-// Every domain sample requires the base with a floor (decisions 0070 and
-// 0159), so an import of health into a repository holding an older base is
-// refused rather than landing kinds that point at properties it lacks.
-func TestHealthRequiresObservations(t *testing.T) {
-	base := shippedSample(t, "observations")
-	health := shippedSample(t, "health")
-	if !slices.Contains(health.Requires, base.ID) {
-		t.Fatalf("health requires %v, not %s", health.Requires, base.ID)
-	}
-	floor, ok := health.RequiresAtLeast[base.ID]
-	switch {
-	case !ok:
-		t.Errorf("health requires %s with no requiresAtLeast floor", base.ID)
-	case floor < 1 || floor > base.Version:
-		t.Errorf("health's floor on %s is %d; the shipped base is version %d", base.ID, floor, base.Version)
-	}
-}
-
-// The Apple Health adapter writes the observations and health samples' kinds
-// from the Apple Health provider's mirrors, so it requires all three with a
-// floor, as the other adapters do: an import into a repository missing one,
-// or holding an older one, is refused rather than landing a function whose
-// trigger and writes name kinds that are not there. The install follows its
-// requires: provider, observations, health, then the adapter.
-func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
-	adapter := shippedSample(t, "healthapple")
-	base := shippedSample(t, "observations")
-	health := shippedSample(t, "health")
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatalf("load the shipped catalog: %v", err)
-	}
-	provider, ok := cat.ByID("providers.substrate.reamde.dev/applehealth")
-	if !ok {
-		t.Fatal("no shipped applehealth provider")
-	}
-	for _, req := range []*catalog.Bundle{base, health, provider} {
-		if !slices.Contains(adapter.Requires, req.ID) {
-			t.Errorf("healthapple requires %v, not %s", adapter.Requires, req.ID)
-		}
-		if floor, ok := adapter.RequiresAtLeast[req.ID]; !ok || floor < 1 || floor > req.Version {
-			t.Errorf("healthapple's floor on %s is %d (set %v); the shipped one is version %d", req.ID, floor, ok, req.Version)
-		}
-	}
-	byPackage := map[string]*catalog.Bundle{}
+func bundlesByID(cat *catalog.Catalog) map[string]*catalog.Bundle {
+	out := map[string]*catalog.Bundle{}
 	for _, b := range cat.Bundles() {
-		byPackage[b.ID] = b
-	}
-	reg, err := vocabulary.LoadFS(kinds.Seed())
-	if err != nil {
-		t.Fatalf("load the seed: %v", err)
-	}
-	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := reg.ResolveFunction(adapter.ID + "/adaptapplehealth"); err != nil {
-		t.Fatalf("the adapter's function did not install: %v", err)
-	}
-}
-
-// healthRecords reads the health sample's data records of one kind (a kind
-// reference under the samples authority, such as observations/metric), by id.
-func healthRecords(t *testing.T, kind string) map[string]map[string]any {
-	t.Helper()
-	entries, err := fs.ReadDir(samples.Samples(), "health")
-	if err != nil {
-		t.Fatalf("read the health sample: %v", err)
-	}
-	out := map[string]map[string]any{}
-	for _, e := range entries {
-		if e.IsDir() || path.Ext(e.Name()) != ".yaml" {
-			continue
-		}
-		raw, err := fs.ReadFile(samples.Samples(), "health/"+e.Name())
-		if err != nil {
-			t.Fatalf("read %s: %v", e.Name(), err)
-		}
-		dec := yaml.NewDecoder(bytes.NewReader(raw))
-		for {
-			var doc struct {
-				Kind     string `yaml:"kind"`
-				Metadata struct {
-					ID string `yaml:"id"`
-				} `yaml:"metadata"`
-				Data struct {
-					Properties map[string]any `yaml:"properties"`
-				} `yaml:"data"`
-			}
-			if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
-				break
-			} else if err != nil {
-				t.Fatalf("%s: %v", e.Name(), err)
-			}
-			if doc.Kind == samples.Authority+"/"+kind {
-				out[doc.Metadata.ID] = doc.Data.Properties
-			}
-		}
-	}
-	if len(out) == 0 {
-		t.Fatalf("the health sample ships no %s records", kind)
+		out[b.ID] = b
 	}
 	return out
 }
 
-// loincAxes are the LOINC parts of the lab codes the health catalogue lists,
-// as the LOINC terminology publishes them (a FHIR CodeSystem $lookup against
-// http://loinc.org, 2026-10-13): what is measured, the kind of quantity, and
-// the specimen.
+func loadSeed(t *testing.T) *vocabulary.Registry {
+	t.Helper()
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	return reg
+}
+
+// THE BASE KIND NAMES ARE FROZEN (records 0159 and 0192). The observations
+// package is seeded into every repository and every provider writes its
+// kinds by name, so renaming one is a `movedFrom` upgrade of every repository
+// and a new release of every provider that writes it. A new kind is an
+// addition, which this pin lets through; a rename or a removal fails here.
+func TestObservationsKindNamesAreFrozen(t *testing.T) {
+	if !slices.Contains(kinds.SeedPackages, kinds.SeedObservationsPackage) {
+		t.Fatalf("%s is not seeded: kinds.SeedPackages is %v", kinds.SeedObservationsPackage, kinds.SeedPackages)
+	}
+	reg := loadSeed(t)
+	for _, name := range []string{"metric", "observation", "trace", "source", "sourcelink"} {
+		if _, ok := reg.ByIdentity(kinds.SeedObservationsPackage + "/" + name); !ok {
+			t.Errorf("%s/%s is not seeded: the base kind names are frozen", kinds.SeedObservationsPackage, name)
+		}
+	}
+	for name, variant := range map[string]string{"observation": vocabulary.ObservedSingle, "trace": vocabulary.ObservedPacked} {
+		k, ok := reg.ByIdentity(kinds.SeedObservationsPackage + "/" + name)
+		if !ok {
+			continue
+		}
+		if bind, ok := k.Binding(vocabulary.TraitObservedCore); !ok || bind.Variant != variant {
+			t.Errorf("%s/%s binds %+v, want %s(%s)", kinds.SeedObservationsPackage, name, bind, vocabulary.TraitObservedCore, variant)
+		}
+	}
+}
+
+// THE WELL-KNOWN CATALOGUES ARE FIRST-PARTY PACKAGES (record 0192): the
+// catalog serves each one PUBLISHED under the seed authority, so it lands
+// under the name it ships with and every provider can name its kinds. A
+// catalogue that rode the sample door would be rehomed, and the kinds a
+// provider's adapter writes would not exist under the names it writes.
+func TestFirstPartyCataloguesArePublished(t *testing.T) {
+	cat := shippedCatalog(t)
+	for _, c := range []struct {
+		id        string
+		kinds     []string
+		functions []string
+		requires  []string
+		triggers  map[string]string
+	}{
+		{id: healthPackage, kinds: []string{healthPackage + "/sleep", healthPackage + "/workout"}},
+		{
+			id:        labsPackage,
+			kinds:     []string{analyteKind, labsPackage + "/labreport", labsPackage + "/labresult"},
+			functions: []string{labsPackage + "/convertlab"},
+			requires:  []string{healthPackage},
+			triggers:  map[string]string{"labs-on-labresult": vocabulary.CoreKind(vocabulary.DocFunction) + "/" + labsPackage + "/convertlab"},
+		},
+		{id: environmentPackage},
+	} {
+		b := shippedBundle(t, cat, c.id)
+		if b.Tier != substrate.TierProvider || b.Authority != kinds.SeedAuthority {
+			t.Errorf("%s is served as a %s under %s, want a published package under %s", c.id, b.Tier, b.Authority, kinds.SeedAuthority)
+		}
+		if landed := b.LandedID("ada.example.com"); landed != c.id {
+			t.Errorf("%s lands as %s in the repository ada.example.com, want the name it ships with", c.id, landed)
+		}
+		for _, k := range c.kinds {
+			if !slices.Contains(b.Closure.Kinds, k) {
+				t.Errorf("%s does not ship %s: its kinds are %v", c.id, k, b.Closure.Kinds)
+			}
+		}
+		if len(c.kinds) == 0 && len(b.Closure.Kinds) != 0 {
+			t.Errorf("%s is a catalogue of records and declares kinds %v", c.id, b.Closure.Kinds)
+		}
+		for _, fn := range c.functions {
+			if !slices.Contains(b.Closure.Functions, fn) {
+				t.Errorf("%s does not ship %s: its functions are %v", c.id, fn, b.Closure.Functions)
+			}
+		}
+		for _, req := range c.requires {
+			if !slices.Contains(b.Requires, req) {
+				t.Errorf("%s requires %v, not %s", c.id, b.Requires, req)
+			}
+		}
+		for id, callable := range c.triggers {
+			if got := b.Closure.TriggerCallables[id]; got != callable {
+				t.Errorf("%s's trigger %s calls %q, want %s", c.id, id, got, callable)
+			}
+		}
+		for _, req := range b.Requires {
+			if vocabulary.SeededPackage(req) {
+				t.Errorf("%s requires the seeded %s, which every repository already holds", c.id, req)
+			}
+		}
+	}
+	// labs installs onto the seed with health, the order the catalog's
+	// install brings them in.
+	reg := loadSeed(t)
+	if err := installClosure(reg, bundlesByID(cat), shippedBundle(t, cat, labsPackage), map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := installClosure(reg, bundlesByID(cat), shippedBundle(t, cat, environmentPackage), map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.ResolveFunction(labsPackage + "/convertlab"); err != nil {
+		t.Errorf("convertlab did not install: %v", err)
+	}
+}
+
+// A PROVIDER'S ADAPTER LANDS WITH THE PROVIDER AND WRITES THE HEALTH
+// CATALOGUE (record 0192). Each health provider requires `health`, so the
+// install brings it, and the adapter reads and writes only kinds the
+// install guarantees: the provider's own, the seed's, and the packages the
+// provider requires. A trigger calling the adapter on the provider's mirror
+// rows ships beside it. A floor on health, where one is set, is a version
+// the tree ships.
+func TestProviderAdaptersRequireHealth(t *testing.T) {
+	cat := shippedCatalog(t)
+	health := shippedBundle(t, cat, healthPackage)
+	for _, c := range []struct{ provider, adapter, trigger string }{
+		{"providers.substrate.reamde.dev/applehealth", "adaptapplehealth", "applehealth-to-health"},
+		{"providers.substrate.reamde.dev/whoop", "adaptwhoop", "whoop-to-health"},
+	} {
+		b := shippedBundle(t, cat, c.provider)
+		if !slices.Contains(b.Requires, healthPackage) {
+			t.Errorf("%s requires %v, not %s", c.provider, b.Requires, healthPackage)
+		}
+		if floor, ok := b.RequiresAtLeast[healthPackage]; ok && (floor < 1 || floor > health.Version) {
+			t.Errorf("%s's floor on %s is %d; the shipped one is version %d", c.provider, healthPackage, floor, health.Version)
+		}
+		fnID := c.provider + "/" + c.adapter
+		if !slices.Contains(b.Closure.Functions, fnID) {
+			t.Errorf("%s does not ship %s: its functions are %v", c.provider, fnID, b.Closure.Functions)
+		}
+		if got, want := b.Closure.TriggerCallables[c.trigger], vocabulary.CoreKind(vocabulary.DocFunction)+"/"+fnID; got != want {
+			t.Errorf("%s's trigger %s calls %q, want %s", c.provider, c.trigger, got, want)
+		}
+		reg := loadSeed(t)
+		if err := installClosure(reg, bundlesByID(cat), b, map[string]bool{}); err != nil {
+			t.Fatal(err)
+		}
+		fn, err := reg.ResolveFunction(fnID)
+		if err != nil {
+			t.Errorf("%s did not install: %v", fnID, err)
+			continue
+		}
+		if !slices.Contains(fn.Caps.Emit, kinds.SeedObservationsPackage+"/observation") ||
+			!slices.Contains(fn.Caps.Emit, healthPackage+"/sleep") {
+			t.Errorf("%s writes %v, want observations and health nights", fnID, fn.Caps.Emit)
+		}
+		touched := slices.Clone(fn.Caps.Emit)
+		if fn.Caps.Reads != nil {
+			touched = append(touched, fn.Caps.Reads.Kinds...)
+		}
+		for _, k := range touched {
+			pkg := vocabulary.KindPackage(k)
+			if pkg != c.provider && !vocabulary.SeededPackage(pkg) && !slices.Contains(b.Requires, pkg) {
+				t.Errorf("%s names %s, whose package %s neither ships with nor is required by %s", fnID, k, pkg, c.provider)
+			}
+		}
+	}
+}
+
+// A METRIC'S ID STARTS WITH THE PACKAGE THAT SHIPS IT (record 0192). A metric
+// is a record, and an install writes it by id: two packages shipping one id
+// would overwrite each other's row, and an owner's own metrics take another
+// prefix. The seeded observations package ships none, because a seed holds
+// declarations alone.
+func TestEveryShippedMetricIsPrefixedByItsPackage(t *testing.T) {
+	shippedBy := map[string]string{}
+	err := fs.WalkDir(kinds.All(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".yaml" {
+			return err
+		}
+		pkg := path.Dir(p)
+		for id := range decodeRecords(t, kinds.All(), p, metricKind) {
+			if pkg == kinds.SeedObservationsPackage {
+				t.Errorf("%s ships metric %s; the seeded base ships no metrics", p, id)
+			}
+			if !strings.HasPrefix(id, path.Base(pkg)+"/") {
+				t.Errorf("%s ships metric %s, which does not start with %s/", p, id, path.Base(pkg))
+			}
+			if prev, dup := shippedBy[id]; dup {
+				t.Errorf("metric %s is shipped by %s and %s", id, prev, p)
+			}
+			shippedBy[id] = p
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the tree: %v", err)
+	}
+	// The lab metrics are `labs/*` and the climate ones `environment/*`
+	// (record 0192): a writer that maps a lab result names the id, so the
+	// old spellings are gone and the new ones are where the writers look.
+	labs := []string{
+		"ldl_cholesterol", "ldl_cholesterol_mass", "hdl_cholesterol", "hdl_cholesterol_mass",
+		"total_cholesterol", "total_cholesterol_mass", "triglycerides", "triglycerides_mass",
+		"fasting_glucose", "fasting_glucose_mass", "hba1c", "hba1c_ifcc", "tsh",
+		"vitamin_d", "vitamin_d_mass", "ferritin", "crp", "haemoglobin",
+		"creatinine", "creatinine_mass", "alt", "ast",
+	}
+	for _, name := range labs {
+		if _, ok := shippedBy["labs/"+name]; !ok {
+			t.Errorf("labs/%s is not shipped", name)
+		}
+		if p, ok := shippedBy["health/"+name]; ok {
+			t.Errorf("%s still ships health/%s, which is labs/%s", p, name, name)
+		}
+	}
+	for _, name := range []string{"air_temperature", "relative_humidity", "illuminance", "atmospheric_pressure", "energy", "power"} {
+		if _, ok := shippedBy["environment/"+name]; !ok {
+			t.Errorf("environment/%s is not shipped", name)
+		}
+	}
+	for _, name := range []string{"recovery", "strain", "sleep_performance"} {
+		if p := shippedBy["whoop/"+name]; path.Dir(p) != "providers.substrate.reamde.dev/whoop" {
+			t.Errorf("whoop/%s is shipped by %q, want the WHOOP provider", name, p)
+		}
+	}
+	if len(shippedBy) == 0 {
+		t.Fatal("no shipped metric found; the walk reads the wrong place")
+	}
+}
+
+// decodeRecords reads the data records of one kind in one file of fsys, by id.
+func decodeRecords(t *testing.T, fsys fs.FS, file, kind string) map[string]map[string]any {
+	t.Helper()
+	raw, err := fs.ReadFile(fsys, file)
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+	out := map[string]map[string]any{}
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	for {
+		var doc struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				ID string `yaml:"id"`
+			} `yaml:"metadata"`
+			Data struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"data"`
+		}
+		if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+			return out
+		} else if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		if doc.Kind == kind {
+			out[doc.Metadata.ID] = doc.Data.Properties
+		}
+	}
+}
+
+// shippedRecords reads the data records of one kind the named packages ship,
+// by id, from each package's directory in the tree.
+func shippedRecords(t *testing.T, kind string, packages ...string) map[string]map[string]any {
+	t.Helper()
+	out := map[string]map[string]any{}
+	for _, pkg := range packages {
+		entries, err := fs.ReadDir(kinds.All(), pkg)
+		if err != nil {
+			t.Fatalf("read %s: %v", pkg, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() || path.Ext(e.Name()) != ".yaml" {
+				continue
+			}
+			for id, props := range decodeRecords(t, kinds.All(), pkg+"/"+e.Name(), kind) {
+				out[id] = props
+			}
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("%v ship no %s records", packages, kind)
+	}
+	return out
+}
+
+// loincAxes are the LOINC parts of the lab codes the health and labs
+// catalogues list, as the LOINC terminology publishes them (a FHIR CodeSystem
+// $lookup against http://loinc.org, 2026-10-13): what is measured, the kind
+// of quantity, and the specimen.
 var loincAxes = map[string]struct{ component, property, system string }{
 	"22748-8": {"Cholesterol.in LDL", "SCnc", "Ser/Plas"},
 	"2089-1":  {"Cholesterol.in LDL", "MCnc", "Ser/Plas"},
@@ -234,8 +404,8 @@ func concentrationOf(t *testing.T) func(props map[string]any) string {
 // a concentration metric is held to the axes LOINC publishes: its property to
 // the metric's measure, and the unsuffixed and `_mass` twins of one analyte to
 // one component and one specimen.
-func TestHealthLabMetricCodesMatchTheirMeasure(t *testing.T) {
-	metrics := healthRecords(t, "observations/metric")
+func TestLabMetricCodesMatchTheirMeasure(t *testing.T) {
+	metrics := shippedRecords(t, metricKind, healthPackage, labsPackage)
 	type axes struct{ component, system string }
 	byMetric := map[string]axes{}
 	concentration := concentrationOf(t)
@@ -290,7 +460,7 @@ func TestHealthLabMetricCodesMatchTheirMeasure(t *testing.T) {
 // skin temperature, an estimate) holds PT0S: it is a point in time, so an
 // average of it is the mean of the readings rather than a mean weighted by
 // the gaps between them.
-func TestHealthGaugesCarryAHold(t *testing.T) {
+func TestHealthAndLabGaugesCarryAHold(t *testing.T) {
 	spot := map[string]bool{
 		"health/body_mass": true, "health/body_fat_fraction": true, "health/fat_mass": true,
 		"health/muscle_mass": true, "health/body_water_fraction": true, "health/bone_mass": true,
@@ -299,7 +469,7 @@ func TestHealthGaugesCarryAHold(t *testing.T) {
 		"health/systolic_blood_pressure": true, "health/diastolic_blood_pressure": true,
 	}
 	gauges := 0
-	for id, props := range healthRecords(t, "observations/metric") {
+	for id, props := range shippedRecords(t, metricKind, healthPackage, labsPackage) {
 		if props["form"] != vocabulary.FormGauge {
 			continue
 		}
@@ -320,24 +490,39 @@ func TestHealthGaugesCarryAHold(t *testing.T) {
 // A METRIC'S REDUCERS ARE ONES ITS FORM TAKES. `reducers` is the catalogue's
 // advice on what answers something useful, and a reader builds its choices
 // from it: one the aggregate read refuses for the form is a 422 offered as a
-// choice. The table is the read's own (substrate.FormReducers).
-func TestHealthMetricReducersAreOnesTheirFormTakes(t *testing.T) {
-	for id, props := range healthRecords(t, "observations/metric") {
-		form, _ := props["form"].(string)
-		if _, coded := props["codeSet"]; coded {
-			form = "coded " + form
+// choice. The table is the read's own (substrate.FormReducers). Every metric
+// the tree ships is held, a provider's own included.
+func TestShippedMetricReducersAreOnesTheirFormTakes(t *testing.T) {
+	metrics := 0
+	err := fs.WalkDir(kinds.All(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".yaml" {
+			return err
 		}
-		takes, ok := substrate.FormReducers[form]
-		if !ok {
-			t.Errorf("%s has form %q", id, form)
-			continue
-		}
-		reducers, _ := props["reducers"].([]any)
-		for _, r := range reducers {
-			if !slices.Contains(takes, r.(string)) {
-				t.Errorf("%s lists %s, which the aggregate read refuses for %s %s", id, r, article(form), form)
+		for id, props := range decodeRecords(t, kinds.All(), p, metricKind) {
+			metrics++
+			form, _ := props["form"].(string)
+			if _, coded := props["codeSet"]; coded {
+				form = "coded " + form
+			}
+			takes, ok := substrate.FormReducers[form]
+			if !ok {
+				t.Errorf("%s has form %q", id, form)
+				continue
+			}
+			reducers, _ := props["reducers"].([]any)
+			for _, r := range reducers {
+				if !slices.Contains(takes, r.(string)) {
+					t.Errorf("%s lists %s, which the aggregate read refuses for %s %s", id, r, article(form), form)
+				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the tree: %v", err)
+	}
+	if metrics == 0 {
+		t.Fatal("no shipped metric found; the walk reads the wrong place")
 	}
 }
 
@@ -348,44 +533,30 @@ func article(form string) string {
 	return "a"
 }
 
-// A KIND AN ADAPTER REWRITES HOLDS ITS REVISION. Every observations and health
-// kind that declares `revision` binds `observed` or `revised`, so the write
-// path refuses a stale delivery of it (decision 0162) rather than reverting a
-// night, a workout or a report to an older upstream version.
+// A KIND AN ADAPTER REWRITES HOLDS ITS REVISION. Every observations, health
+// and labs kind that declares `revision` binds `observed` or `revised`, so
+// the write path refuses a stale delivery of it (decision 0162) rather than
+// reverting a night, a workout or a report to an older upstream version.
 func TestRevisionKindsBindTheRuleThatHoldsIt(t *testing.T) {
-	reg, err := vocabulary.LoadFS(kinds.Seed())
-	if err != nil {
-		t.Fatalf("load the seed: %v", err)
-	}
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatalf("load the shipped catalog: %v", err)
-	}
-	health := shippedSample(t, "health")
-	byPackage := map[string]*catalog.Bundle{}
-	for _, b := range cat.Bundles() {
-		byPackage[b.ID] = b
-	}
-	if err := installClosure(reg, byPackage, health, map[string]bool{}); err != nil {
+	reg := loadSeed(t)
+	cat := shippedCatalog(t)
+	if err := installClosure(reg, bundlesByID(cat), shippedBundle(t, cat, labsPackage), map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
 	checked := 0
-	for _, pkg := range []string{"observations", "health"} {
-		for _, id := range shippedSample(t, pkg).Closure.Kinds {
-			k, ok := reg.ByIdentity(id)
-			if !ok {
-				t.Fatalf("%s did not install", id)
-			}
-			if _, declares := k.Prop(vocabulary.ObservedRevision); !declares {
-				continue
-			}
-			checked++
-			_, observed := k.Binding(vocabulary.TraitObservedCore)
-			_, revised := k.Binding(vocabulary.TraitRevisedCore)
-			if !observed && !revised {
-				t.Errorf("%s declares revision and binds neither %s nor %s: a stale delivery would revert it",
-					id, vocabulary.TraitObservedCore, vocabulary.TraitRevisedCore)
-			}
+	for _, k := range reg.Kinds() {
+		if k.Package != kinds.SeedObservationsPackage && k.Package != healthPackage && k.Package != labsPackage {
+			continue
+		}
+		if _, declares := k.Prop(vocabulary.ObservedRevision); !declares {
+			continue
+		}
+		checked++
+		_, observed := k.Binding(vocabulary.TraitObservedCore)
+		_, revised := k.Binding(vocabulary.TraitRevisedCore)
+		if !observed && !revised {
+			t.Errorf("%s declares revision and binds neither %s nor %s: a stale delivery would revert it",
+				k.Identity, vocabulary.TraitObservedCore, vocabulary.TraitRevisedCore)
 		}
 	}
 	if checked == 0 {
@@ -394,17 +565,17 @@ func TestRevisionKindsBindTheRuleThatHoldsIt(t *testing.T) {
 }
 
 // EVERY LAB TWIN HAS ITS ANALYTES. A lab analyte the catalogue lists in both
-// unit systems is two metrics (`ldl_cholesterol` in mmol/L and
-// `ldl_cholesterol_mass` in mg/dL), and the health sample's `convertlab`
+// unit systems is two metrics (`labs/ldl_cholesterol` in mmol/L and
+// `labs/ldl_cholesterol_mass` in mg/dL), and the labs package's `convertlab`
 // function writes a result of one in the other from the `analyte` records:
 // one per metric of a pair, its LOINC parts the ones LOINC publishes for the
 // metric's code, one molar mass on both and a conversion onto the twin.
 // HbA1c's two units convert by a formula, not a molar mass. Blood glucose is
 // no pair: its units convert (TestHealthGlucoseIsOneMetricInTwoUnits).
-func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
-	metrics := healthRecords(t, "observations/metric")
-	analytes := healthRecords(t, "health/analyte")
-	metricPath := samples.Authority + "/observations/metric/"
+func TestLabAnalytesPairEveryLabTwin(t *testing.T) {
+	metrics := shippedRecords(t, metricKind, healthPackage, labsPackage)
+	analytes := shippedRecords(t, analyteKind, labsPackage)
+	metricPath := metricKind + "/"
 	conversion := func(id string) (target, formula string) {
 		a := analytes[id]
 		if a == nil {
@@ -444,6 +615,9 @@ func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
 			continue
 		}
 		pairs++
+		if !strings.HasPrefix(id, "labs/") {
+			t.Errorf("%s and %s are a lab twin outside the labs catalogue", id, twin)
+		}
 		for _, side := range [][2]string{{id, twin}, {twin, id}} {
 			target, formula := conversion(side[0])
 			if target != side[1] || formula != "molar-mass" {
@@ -458,17 +632,20 @@ func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
 		t.Errorf("%d lab twins, want the seven the catalogue lists", pairs)
 	}
 	for id, a := range analytes {
+		if metrics[id] == nil {
+			t.Errorf("analyte %s names a metric neither health nor labs ships", id)
+		}
 		parts, _ := a["loincParts"].(map[string]any)
 		ax, known := loincAxes[loincOf(id)]
 		if !known || parts["component"] != ax.component || parts["property"] != ax.property || parts["system"] != ax.system {
 			t.Errorf("analyte %s has LOINC parts %v; its metric's code %s is %+v", id, parts, loincOf(id), ax)
 		}
 	}
-	if target, formula := conversion("health/hba1c"); target != "health/hba1c_ifcc" || formula != "ngsp-to-ifcc" {
-		t.Errorf("hba1c converts onto %q by %q", target, formula)
+	if target, formula := conversion("labs/hba1c"); target != "labs/hba1c_ifcc" || formula != "ngsp-to-ifcc" {
+		t.Errorf("labs/hba1c converts onto %q by %q", target, formula)
 	}
-	if target, formula := conversion("health/hba1c_ifcc"); target != "health/hba1c" || formula != "ifcc-to-ngsp" {
-		t.Errorf("hba1c_ifcc converts onto %q by %q", target, formula)
+	if target, formula := conversion("labs/hba1c_ifcc"); target != "labs/hba1c" || formula != "ifcc-to-ngsp" {
+		t.Errorf("labs/hba1c_ifcc converts onto %q by %q", target, formula)
 	}
 }
 
@@ -513,18 +690,18 @@ func unitDocs(t *testing.T, raw []byte) ([]vocabulary.UnitRecord, []vocabulary.C
 
 // BLOOD GLUCOSE IS ONE METRIC IN TWO UNITS. A meter reports mg/dL or
 // mmol/L, and the plain units never convert, because the factor is the
-// analyte's molar mass. The health sample ships `mmol/L{glucose}` and
+// analyte's molar mass. The health catalogue ships `mmol/L{glucose}` and
 // `mg/dL{glucose}` and one conversion between them, and
 // `health/blood_glucose` anchors to the first, so a mixed history is one
-// series. Over the seeded graph with the sample's units added: the two
-// annotated units convert at the analyte record's molar mass, the plain
-// units still convert to nothing across, and no annotated unit joins a
-// plain one.
+// series; the labs catalogue's analyte for it carries the molar mass. Over
+// the seeded graph with health's units added: the two annotated units
+// convert at the analyte record's molar mass, the plain units still convert
+// to nothing across, and no annotated unit joins a plain one.
 func TestHealthGlucoseIsOneMetricInTwoUnits(t *testing.T) {
 	us, cs := unitDocs(t, unitseed.Units())
 	more, moreCs := unitDocs(t, unitseed.Conversions())
 	us, cs = append(us, more...), append(cs, moreCs...)
-	raw, err := fs.ReadFile(samples.Samples(), "health/analyte_units.yaml")
+	raw, err := fs.ReadFile(kinds.All(), healthPackage+"/analyte_units.yaml")
 	if err != nil {
 		t.Fatalf("read the glucose units: %v", err)
 	}
@@ -541,7 +718,7 @@ func TestHealthGlucoseIsOneMetricInTwoUnits(t *testing.T) {
 			t.Errorf("%s resolves to %q, want %s", code, id, want)
 		}
 	}
-	analyte := healthRecords(t, "health/analyte")["health/blood_glucose"]
+	analyte := shippedRecords(t, analyteKind, labsPackage)["health/blood_glucose"]
 	molar, ok := new(big.Rat).SetString(fmt.Sprint(analyte["molarMass"]))
 	if !ok {
 		t.Fatalf("health/blood_glucose's analyte carries molar mass %v", analyte["molarMass"])
@@ -557,12 +734,12 @@ func TestHealthGlucoseIsOneMetricInTwoUnits(t *testing.T) {
 			t.Errorf("%s converts to %s; a plain and an analyte-annotated concentration must stay apart", pair[0], pair[1])
 		}
 	}
-	metric := healthRecords(t, "observations/metric")["health/blood_glucose"]
-	ref, _ := metric["unit"].(map[string]any)
+	metrics := shippedRecords(t, metricKind, healthPackage, labsPackage)
+	ref, _ := metrics["health/blood_glucose"]["unit"].(map[string]any)
 	if ref["ref"] != vocabulary.KindUnit+"/mmol/L_glucose" {
-		t.Errorf("health/blood_glucose's unit is %v, want mmol/L_glucose", metric["unit"])
+		t.Errorf("health/blood_glucose's unit is %v, want mmol/L_glucose", metrics["health/blood_glucose"]["unit"])
 	}
-	if _, kept := healthRecords(t, "observations/metric")["health/blood_glucose_mass"]; kept {
+	if _, kept := metrics["health/blood_glucose_mass"]; kept {
 		t.Error("health/blood_glucose_mass is still shipped: a mass reading is health/blood_glucose in mg/dL{glucose}")
 	}
 }

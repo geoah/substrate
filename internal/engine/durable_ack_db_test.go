@@ -35,7 +35,7 @@ func openDurabilityService(t *testing.T, opts ...Option) (*service, Repository, 
 	dsn := MigratedDSN(t)
 	svcIface, err := OpenForTest(t, ctx, dsn, append([]Option{
 		WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir),
+		WithKindsFS(SeedKinds),
 	}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
@@ -106,7 +106,7 @@ func importCopy(t *testing.T, root, repoID string) (*service, Repository) {
 		t.Fatal(err)
 	}
 	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir))
+		WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestACrashBetweenTheSealedStageAndTheCommitRestoresTheOldPayload(t *testing
 	noPending(t, ds2.dir, "after the import opened the repository")
 
 	// The original database.
-	svc3, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+	svc3, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("reboot: %v", err)
 	}
@@ -506,7 +506,7 @@ func TestAReadOnlyServiceRefusesToSpendATOTPStep(t *testing.T) {
 	_ = s.Close()
 
 	roIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir), WithDirectoryReadOnly())
+		WithKindsFS(SeedKinds), WithDirectoryReadOnly())
 	if err != nil {
 		t.Fatalf("open read-only: %v", err)
 	}
@@ -596,7 +596,7 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		}
 		_ = s.Close()
 
-		svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 		if err != nil {
 			t.Fatalf("reboot: %v", err)
 		}
@@ -655,7 +655,7 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		}
 		_ = s.Close()
 
-		svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 		if err != nil {
 			t.Fatalf("reboot: %v", err)
 		}

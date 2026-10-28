@@ -1,12 +1,13 @@
 package engine_test
 
-// The observed trait on the write path, against Postgres and the shipped
-// samples imported the way a repository imports them (rehomed onto its own
-// authority): the rules every write of an observation, a trace and a lab
-// result is held to, a patch included; a revision that never falls; the
-// managed stats a trace's values produce; and the null a packed list admits.
-// The rules themselves are vocabulary.CheckObserved, tested there case by
-// case; these tests prove the write path holds a real record to them.
+// The observed trait on the write path, against Postgres, the seeded
+// observations kinds and the first-party catalogues installed the way a
+// repository installs them (record 0192): the rules every write of an
+// observation, a trace and a lab result is held to, a patch included; a
+// revision that never falls; the managed stats a trace's values produce; and
+// the null a packed list admits. The rules themselves are
+// vocabulary.CheckObserved, tested there case by case; these tests prove the
+// write path holds a real record to them.
 
 import (
 	"context"
@@ -17,15 +18,27 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
-	"github.com/geoah/substrate/samples"
 )
 
-// observedRepo is a repository holding the shipped units and the
-// observations and health samples, imported through the catalog's door.
+// The seeded observations kinds and the first-party catalogues' kinds
+// (record 0192): the same names in every repository, never rehomed.
+const (
+	kindObservation = vocabulary.PackageObservations + "/observation"
+	kindTrace       = vocabulary.PackageObservations + "/trace"
+	kindMetric      = vocabulary.PackageObservations + "/metric"
+	kindSource      = vocabulary.PackageObservations + "/source"
+	kindSourcelink  = vocabulary.PackageObservations + "/sourcelink"
+	kindSleep       = vocabulary.AuthorityPublisher + "/health/sleep"
+	kindWorkout     = vocabulary.AuthorityPublisher + "/health/workout"
+	kindLabreport   = vocabulary.AuthorityPublisher + "/labs/labreport"
+	kindLabresult   = vocabulary.AuthorityPublisher + "/labs/labresult"
+)
+
+// observedRepo is a repository holding the shipped units and the health,
+// labs and environment catalogues beside the seeded observations kinds,
+// installed through the catalog's door.
 type observedRepo struct {
 	ds          substrate.Dataset
 	observation string
@@ -38,27 +51,23 @@ type observedRepo struct {
 
 func openObserved(t *testing.T) observedRepo {
 	t.Helper()
-	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatalf("load the sample catalog: %v", err)
-	}
-	putSampleUnits(t, ds, "observations", "health")
-	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
-			t.Fatalf("import %s: %v", id, err)
-		}
-	}
-	home := testdb.Repository(t)
+	return installObserved(t, ds)
+}
+
+// installObserved installs the first-party catalogues the observed tests
+// read into ds: labs, which brings health, and environment.
+func installObserved(t *testing.T, ds substrate.Dataset) observedRepo {
+	t.Helper()
+	installCatalogues(t, ds, "labs", "environment")
 	return observedRepo{
 		ds:          ds,
-		observation: home + "/observations/observation",
-		trace:       home + "/observations/trace",
-		metric:      home + "/observations/metric",
-		source:      home + "/observations/source",
-		labreport:   home + "/health/labreport",
-		labresult:   home + "/health/labresult",
+		observation: kindObservation,
+		trace:       kindTrace,
+		metric:      kindMetric,
+		source:      kindSource,
+		labreport:   kindLabreport,
+		labresult:   kindLabresult,
 	}
 }
 
@@ -107,10 +116,11 @@ func weighing(r observedRepo) map[string]any {
 	}
 }
 
-// The import lands the four base kinds, the health kinds and both catalogues,
-// none of the catalogue a vendor's adapter ships, and an observation titles
-// itself from its metric and its value.
-func TestObservedSamplesImportWithTheirCatalogues(t *testing.T) {
+// The install lands the health, labs and environment kinds and metric
+// catalogues beside the seeded base kinds, none of the catalogue a vendor's
+// provider ships, and an observation titles itself from its metric and its
+// value.
+func TestObservedCataloguesInstallWithTheirMetrics(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
 	ctx := context.Background()
@@ -123,18 +133,18 @@ func TestObservedSamplesImportWithTheirCatalogues(t *testing.T) {
 		ids[rec.ID] = true
 	}
 	for _, id := range []string{
-		"air_temperature", "atmospheric_pressure", "health/heart_rate", "health/sleep_stage",
-		"health/ldl_cholesterol", "health/hba1c_ifcc",
+		"environment/air_temperature", "environment/atmospheric_pressure", "health/heart_rate", "health/sleep_stage",
+		"labs/ldl_cholesterol", "labs/hba1c_ifcc",
 	} {
 		if !ids[id] {
 			t.Errorf("metric %s did not land; landed %d", id, len(ids))
 		}
 	}
-	// A vendor's own score ships with its adapter sample (healthwhoop), so a
-	// repository that imports health without WHOOP holds no WHOOP metric.
+	// A vendor's own score ships with its provider (whoop), so a repository
+	// that installs health without WHOOP holds no WHOOP metric.
 	for id := range ids {
 		if strings.Contains(id, "whoop") {
-			t.Errorf("the health import landed the WHOOP metric %s", id)
+			t.Errorf("the health install landed the WHOOP metric %s", id)
 		}
 	}
 	rec, err := r.put(t, r.observation, "withings/george/5f3a91/weight", weighing(r))
@@ -156,7 +166,7 @@ func TestObservedAboutAdmitsAnyKind(t *testing.T) {
 		"about-nobody":   nil,
 	} {
 		props := map[string]any{
-			"metric": r.metricRef("air_temperature"), "form": "gauge",
+			"metric": r.metricRef("environment/air_temperature"), "form": "gauge",
 			"value": quantity("21.5", "Cel"), "at": "2026-10-07T14:00:00Z",
 		}
 		if about != nil {
@@ -179,7 +189,7 @@ func TestObservedValueAndCodeAreExclusive(t *testing.T) {
 	refused(t, "a create with both", err, "props.value: an observed value is a number or a code, never both")
 
 	if _, err := r.put(t, r.observation, "door", map[string]any{
-		"metric": r.metricRef("air_temperature"), "form": "gauge", "code": "open", "at": "2026-10-07T17:42:05Z",
+		"metric": r.metricRef("environment/air_temperature"), "form": "gauge", "code": "open", "at": "2026-10-07T17:42:05Z",
 	}); err != nil {
 		t.Fatalf("a coded value: %v", err)
 	}
@@ -360,7 +370,7 @@ func TestObservedLabResultHoldsExactlyOneShape(t *testing.T) {
 	r := openObserved(t)
 	id := "medichecks/george/MC-2026-091422/tsh"
 	if _, err := r.put(t, r.labresult, id, map[string]any{
-		"metric": r.metricRef("health/tsh"), "hold": "PT0S",
+		"metric": r.metricRef("labs/tsh"), "hold": "PT0S",
 		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},
 		"at":    "2026-09-14T08:05:00+01:00", "status": "final", "revision": 1,
 	}); err != nil {

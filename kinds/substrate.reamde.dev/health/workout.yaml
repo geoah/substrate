@@ -1,0 +1,138 @@
+# one executed training session, as the device summarized it. Its sample
+# streams (heart rate, power, cadence) are traces of their own over the same
+# span; the summary numbers here are the device's, so a reader lists
+# workouts without aggregating anything.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/health/workout
+data:
+  authority: substrate.reamde.dev
+  package: health
+  description: >-
+    One workout, such as a run or a ride. The sport, when it began and ended,
+    how long and how far, the active and total energy it took, the heart rate
+    during it and the time spent in each heart rate zone.
+  purpose: primary
+  names:
+    singular: workout
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name|sport}"
+  properties:
+    # written by the adapter: a template renders an instant in UTC and an
+    # enum as its code, so it cannot spell a local start or a sport's label
+    name:
+      type: string
+      description: the workout's heading, the sport and when it began on the
+        clock it was recorded on, such as Running, Sat 11 Oct 08:43
+    # one code set for every source, so a reader counts a WHOOP
+    # weightlifting session and a Garmin strength session as one sport. An
+    # adapter maps the provider's word onto it, writes other for a word it
+    # cannot map, and keeps the word itself in sportSource. A new value is
+    # an additive upgrade.
+    sport:
+      type: enum
+      description: the sport, from one code set every source maps onto; other
+        where the source's sport has no value of its own
+      values:
+        - running
+        - walking
+        - hiking
+        - cycling
+        - swimming
+        - strength
+        - yoga
+        - pilates
+        - rowing
+        - elliptical
+        - stairs
+        - hiit
+        - dance
+        - boxing
+        - climbing
+        - tennis
+        - golf
+        - skiing
+        - other
+    sportSource:
+      type: string
+      description: the sport as the source named it, before mapping, such
+        as weightlifting or TRAIL_RUNNING
+    source:
+      type: reference
+      kind: substrate.reamde.dev/observations/source
+      description: the device or app that recorded it
+    about:
+      type: reference
+      kind: any
+      description: who trained; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the upstream; a lower one
+        is refused
+    adapter:
+      type: string
+      description: the function and version that wrote this row from its origin,
+        `<package>@<version>`
+    utcOffsetStart:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC when it began
+    utcOffsetEnd:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC when it ended
+    duration:
+      type: duration
+      description: the time spent moving or timed, which may be less than
+        the span
+    distance:
+      type: quantity
+      unit: m
+      description: how far
+    # the split the metric catalogue keeps (health/active_energy and
+    # health/energy_expended): WHOOP reports the total, Apple and Garmin the
+    # active part, and the two never add
+    activeEnergy:
+      type: quantity
+      unit: kJ
+      description: the energy spent above the resting rate during it
+    totalEnergy:
+      type: quantity
+      unit: kJ
+      description: all the energy spent during it, resting and active together
+    averageHeartRate:
+      type: quantity
+      unit: 1/min
+      description: the average heart rate
+    maxHeartRate:
+      type: quantity
+      unit: 1/min
+      description: the highest heart rate
+    elevationGain:
+      type: quantity
+      unit: m
+      description: the height climbed
+    strain:
+      type: decimal
+      description: the device's own effort score, such as WHOOP strain
+    # keyed by zone, zone1 to zone5, or the vendor's own zone names
+    zoneDurations:
+      type: duration
+      keyed: true
+      description: the time in each heart rate zone, by zone name such as
+        zone1
+    notes:
+      type: text
+      description: anything worth saying about it
+    file:
+      type: blobref
+      description: the device's original file, such as a FIT file

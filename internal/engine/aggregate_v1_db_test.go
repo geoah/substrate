@@ -37,12 +37,12 @@ func TestAggregateGaugeAvgIsTimeWeighted(t *testing.T) {
 		value string
 	}{{0, "20"}, {6 * time.Hour, "22"}, {18 * time.Hour, "18"}} {
 		f.mustPut(t, f.observation, fmt.Sprintf("room/%d", i), map[string]any{
-			"metric": f.metricRef("air_temperature"), "source": f.sourceRef("thermometer"), "form": "gauge",
+			"metric": f.metricRef("environment/air_temperature"), "source": f.sourceRef("thermometer"), "form": "gauge",
 			"value": quantity(x.value, "Cel"), "at": at(day.Add(x.at)), "utcOffset": 0,
 		})
 	}
 	room, _, rows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")},
 		Range:    rng(day, day.AddDate(0, 0, 1)),
 		Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC"},
 		Reducers: reducers("avg", "count"),
@@ -120,12 +120,12 @@ func TestAggregateGaugeAvgIsTimeWeighted(t *testing.T) {
 	mixed := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
 	for i, x := range []struct{ value, hold string }{{"10", "PT1H"}, {"100", "PT0S"}} {
 		f.mustPut(t, f.observation, fmt.Sprintf("mixed/%d", i), map[string]any{
-			"metric": f.metricRef("air_temperature"), "source": f.sourceRef("mixed"), "form": "gauge",
+			"metric": f.metricRef("environment/air_temperature"), "source": f.sourceRef("mixed"), "form": "gauge",
 			"value": quantity(x.value, "Cel"), "at": at(mixed.Add(time.Duration(i) * 10 * time.Minute)), "hold": x.hold, "utcOffset": 0,
 		})
 	}
 	both, _, _ := f.bothPaths(substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: f.sourcePath("mixed")}}}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")},
 		Range:    rng(mixed, mixed.Add(time.Hour)),
 		Reducers: reducers("avg", "count"),
 	})
@@ -155,12 +155,12 @@ func TestAggregateCensoredValuesKeepTheirComparator(t *testing.T) {
 			value["comparator"] = x.comparator
 		}
 		f.mustPut(t, f.labresult, fmt.Sprintf("lab/tsh/%d", i), map[string]any{
-			"metric": f.metricRef("health/tsh"), "form": "gauge", "hold": "PT0S", "value": value,
+			"metric": f.metricRef("labs/tsh"), "form": "gauge", "hold": "PT0S", "value": value,
 			"at": at(month.AddDate(0, 0, 7*i+2)), "utcOffset": 0,
 		})
 	}
 	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/tsh")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("labs/tsh")},
 		Range:    rng(month, month.AddDate(0, 1, 0)),
 		Bucket:   &substrate.AggregateBucket{Calendar: "month", Timezone: "UTC"},
 		Reducers: reducers("count", "avg", "stddev", "min", "max", "first", "last"),
@@ -189,7 +189,7 @@ func TestAggregateCensoredValuesKeepTheirComparator(t *testing.T) {
 	}
 	// A row without the censored value answers as any other.
 	later := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/tsh")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("labs/tsh")},
 		Range:    rng(month.AddDate(0, 0, 5), month.AddDate(0, 1, 0)),
 		Reducers: reducers("avg"),
 	})
@@ -220,14 +220,14 @@ func TestAggregateCensoredCarryNullsTheHeldReducers(t *testing.T) {
 			value["comparator"] = x.comparator
 		}
 		f.mustPut(t, f.labresult, fmt.Sprintf("lab/tsh/held/%d", i), map[string]any{
-			"metric": f.metricRef("health/tsh"), "form": "gauge", "hold": "PT3H", "value": value,
+			"metric": f.metricRef("labs/tsh"), "form": "gauge", "hold": "PT3H", "value": value,
 			"at": at(x.at), "utcOffset": 0,
 		})
 	}
 	read := func(from time.Time, reds ...substrate.AggregateReducer) (substrate.AggregateRow, int64) {
 		t.Helper()
 		res, _, rows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
-			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/tsh")},
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("labs/tsh")},
 			Range:    rng(from, from.Add(time.Hour)),
 			Bucket:   &substrate.AggregateBucket{Every: "PT1H"},
 			Reducers: reds,
@@ -293,7 +293,7 @@ func TestAggregatePlaceDefaultsToTheMetricsBucketPlace(t *testing.T) {
 
 // WHOOP stamps a night's recovery at the sleep's onset, so a night that
 // starts at 00:20 shared a day with the night after it when that one
-// started at 23:50 the same evening. The shipped health sample's nightly
+// started at 23:50 the same evening. The shipped health catalogue's nightly
 // metrics declare bucketPlace end: a day read naming no place puts each
 // night on the day it ends, and one naming start still files them by
 // onset, the 00:20 and the 23:50 nights both on 09-03.
@@ -447,17 +447,17 @@ func TestAggregateCarryLookupsCountAgainstMaxSamples(t *testing.T) {
 		"hold": "PT4M", "utcOffset": 0,
 	}, eight, eight.Add(time.Hour), offsets, hr)
 	f.series("meter/morning", map[string]any{
-		"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
+		"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
 		"resetRule": "monotonic", "utcOffset": 0,
 	}, eight, eight.Add(time.Hour), offsets, meter)
 	noon := eight.Add(4 * time.Hour)
 	f.series("meter/noon", map[string]any{
-		"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
+		"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
 		"resetRule": "monotonic", "utcOffset": 0,
 	}, noon.Add(30*time.Minute), noon.Add(31*time.Minute), []int64{0}, []any{"200"})
 	for _, x := range []struct {
 		metric, reducer string
-	}{{"health/heart_rate", "avg"}, {"energy", "increase"}} {
+	}{{"health/heart_rate", "avg"}, {"environment/energy", "increase"}} {
 		read := func(maxSamples int64) (*substrate.AggregateResult, error) {
 			return f.ds.Aggregate(engine.AggregateRaw(context.Background()), substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
 				Metric:   &substrate.AggregateMetric{Ref: f.metricPath(x.metric)},

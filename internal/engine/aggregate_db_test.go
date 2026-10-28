@@ -24,7 +24,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// aggFix is a repository holding the observations and health samples, with
+// aggFix is a repository holding the first-party catalogues, with
 // the helpers the aggregate tests write and read through.
 type aggFix struct {
 	obsIndex
@@ -614,7 +614,7 @@ func TestAggregateLatestRead(t *testing.T) {
 		})
 	}
 	f.mustPut(t, f.labresult, "lab/tsh", map[string]any{
-		"metric": f.metricRef("health/tsh"), "form": "gauge", "hold": "PT0S",
+		"metric": f.metricRef("labs/tsh"), "form": "gauge", "hold": "PT0S",
 		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},
 		"at":    "2026-09-14T08:05:00+01:00", "utcOffset": 60,
 	})
@@ -632,7 +632,7 @@ func TestAggregateLatestRead(t *testing.T) {
 		weight.Start.Format(time.RFC3339) != "2026-10-05T07:00:00+03:00" || weight.Group.Source != f.sourcePath("withings") {
 		t.Errorf("the weight row = %+v", weight)
 	}
-	if tsh := byMetric[f.metricPath("health/tsh")]; tsh.Bounded != 1 || tsh.Group.Source != "" || tsh.Values[0].Comparator != "<" {
+	if tsh := byMetric[f.metricPath("labs/tsh")]; tsh.Bounded != 1 || tsh.Group.Source != "" || tsh.Values[0].Comparator != "<" {
 		t.Errorf("the lab row = %+v", tsh)
 	}
 	lb := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
@@ -647,7 +647,7 @@ func TestAggregateLatestRead(t *testing.T) {
 	}
 	// A read over the lab metric counts the bounded value as bounded.
 	labs := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/tsh")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("labs/tsh")},
 		Range:    rng(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
 		Reducers: reducers("count"),
 	})
@@ -662,8 +662,7 @@ func TestAggregateLatestRead(t *testing.T) {
 func TestAggregateSleepStagesByRecordWindows(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	home := strings.TrimSuffix(f.observation, "/observations/observation")
-	sleepKind := home + "/health/sleep"
+	sleepKind := kindSleep
 	night := time.Date(2026, 9, 1, 23, 0, 0, 0, time.FixedZone("", 3*3600))
 	stages := []struct {
 		code string
@@ -739,13 +738,13 @@ func TestAggregateCounterIncreaseAndRateAcrossAReset(t *testing.T) {
 		offsets = append(offsets, int64(i)*int64(6*time.Hour/time.Millisecond))
 	}
 	f.series("meter/1", map[string]any{
-		"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
+		"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
 		"resetRule": "monotonic", "utcOffset": 180,
 	}, start, start.Add(48*time.Hour), offsets, vals)
-	points := f.stream("energy", "meter")
+	points := f.stream("environment/energy", "meter")
 	for _, unit := range []string{"kW.h", "W.h"} {
 		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/energy")},
 			Range:    rng(start, start.AddDate(0, 0, 2)),
 			Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Athens"},
 			Reducers: reducers("increase", "rate", "first", "last"),
@@ -773,7 +772,7 @@ func TestAggregateCounterIncreaseAndRateAcrossAReset(t *testing.T) {
 	// Decision 0156: a running total is read by its increase; its mean is a
 	// 422 naming the form.
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
-		Metric: &substrate.AggregateMetric{Ref: f.metricPath("energy")}, Range: rng(start, start.AddDate(0, 0, 2)),
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("environment/energy")}, Range: rng(start, start.AddDate(0, 0, 2)),
 		Reducers: reducers("avg"),
 	}}, "avg does not apply to a counter")
 }
@@ -807,15 +806,15 @@ func TestAggregateTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 	}
 	for i, p := range points {
 		f.mustPut(t, f.observation, fmt.Sprintf("door/%d", i), map[string]any{
-			"metric": f.metricRef("air_temperature"), "about": map[string]any{"ref": f.sourcePath("front-door")},
+			"metric": f.metricRef("environment/air_temperature"), "about": map[string]any{"ref": f.sourcePath("front-door")},
 			"source": f.sourceRef("contact"), "form": "gauge", "code": p.code,
 			"at": p.at.Format(time.RFC3339), "utcOffset": 180,
 		})
 	}
-	stream := f.stream("air_temperature", "contact")
+	stream := f.stream("environment/air_temperature", "contact")
 	for _, filter := range []substrate.Filter{{}, {Properties: map[string]substrate.Cond{"code": {Eq: "open"}}}} {
 		res := f.agg(context.Background(), filter, substrate.Aggregate{
-			Metric:       &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+			Metric:       &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")},
 			Range:        rng(monday, monday.AddDate(0, 0, 14)),
 			Bucket:       &substrate.AggregateBucket{Calendar: "week", WeekStart: "monday", Timezone: "Europe/Athens"},
 			Reducers:     []substrate.AggregateReducer{{Name: "timeInState", States: []string{"open"}}, {Name: "count"}},
@@ -837,7 +836,7 @@ func TestAggregateTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 	}
 	// Every state the stream holds, one value each, from the bare word.
 	all := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")},
 		Range:    rng(monday, monday.AddDate(0, 0, 7)),
 		Bucket:   &substrate.AggregateBucket{Calendar: "week", Timezone: "Europe/Athens"},
 		Reducers: reducers("timeInState"), MaxGap: "P1D", DurationUnit: "min",

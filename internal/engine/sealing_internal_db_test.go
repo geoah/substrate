@@ -126,7 +126,7 @@ func TestWrongHostKeyIsNamedById(t *testing.T) {
 	}
 	_, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir(SeedKindsDir),
+		WithKindsFS(SeedKinds),
 		WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
 	if err == nil {
 		t.Fatal("a host with the wrong key booted over the database")
@@ -159,7 +159,7 @@ func TestBootNamesADamagedWrapUnderTheSameKey(t *testing.T) {
 
 	_, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir(SeedKindsDir),
+		WithKindsFS(SeedKinds),
 		WithCredentialKey(TestCredentialKey))
 	if err == nil {
 		t.Fatal("a damaged wrap booted")
@@ -374,7 +374,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svcIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+	svcIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

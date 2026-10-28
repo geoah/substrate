@@ -44,9 +44,10 @@ type Setup struct {
 	// providers.substrate.reamde.dev/applehealth; empty for a mock-driven
 	// provider, which the e2e runner installs rewired.
 	Provider string `json:"provider,omitempty"`
-	// Samples are the sample packages to import, in order, such as
-	// samples.substrate.reamde.dev/healthapple. The observations and health
-	// samples are imported first whatever the list says.
+	// Samples are sample packages to import, in order, after the provider.
+	// The first-party catalogues are installed, never imported: the loader
+	// installs labs (which brings health), and a provider brings what it
+	// requires.
 	Samples []string `json:"samples,omitempty"`
 	// Records are documents (kind, metadata.id, data.properties) to write
 	// before the deliveries post, such as the account record.

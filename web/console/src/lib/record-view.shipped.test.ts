@@ -1,10 +1,11 @@
-/** The record views the samples ship (each sample's `views.yaml`), read the way
- * the console reads every view: none holds a section the console would
- * draw as a notice, every metric a block names is the full path of one a
- * sample ships, every kind a table or a lanes row lists is one a sample
- * declares or a provider's, and a view binds a window wherever one of its
- * blocks reads one. The engine holds the views to their declared shape on
- * write; the rules only the console checks are held here. */
+/** The record views the tree ships (the `views.yaml` of a sample, a
+ * first-party catalogue or a provider), read the way the console reads every
+ * view: none holds a section the console would draw as a notice, every
+ * metric a block names is the full path of one the tree ships, every kind a
+ * table or a lanes row lists is one the tree declares, and a view binds a
+ * window wherever one of its blocks reads one. The engine holds the views to
+ * their declared shape on write; the rules only the console checks are held
+ * here. */
 
 import { describe, expect, it } from "vitest"
 import { parseAllDocuments } from "yaml"
@@ -18,17 +19,15 @@ import {
   viewNeedsWindow,
 } from "@/lib/record-view"
 
-const viewFiles = import.meta.glob<string>("../../../../samples/*/views.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})
+const viewFiles = import.meta.glob<string>(
+  ["../../../../samples/*/views.yaml", "../../../../kinds/*/*/views.yaml"],
+  { query: "?raw", import: "default", eager: true }
+)
 
-const sampleFiles = import.meta.glob<string>("../../../../samples/*/*.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})
+const shippedFiles = import.meta.glob<string>(
+  ["../../../../samples/*/*.yaml", "../../../../kinds/*/*/*.yaml"],
+  { query: "?raw", import: "default", eager: true }
+)
 
 interface Doc {
   kind?: string
@@ -40,9 +39,9 @@ function docs(raw: string): Doc[] {
   return parseAllDocuments(raw).map((d) => d.toJS() as Doc)
 }
 
-// Every metric record a sample ships, by its full record path.
+// Every metric record the tree ships, by its full record path.
 const METRIC_PATHS = new Set(
-  Object.values(sampleFiles)
+  Object.values(shippedFiles)
     .flatMap(docs)
     .filter((d) => d?.kind?.endsWith("/metric") && d.metadata?.id)
     .map((d) => `${d.kind}/${d.metadata!.id!}`)
@@ -51,9 +50,9 @@ const METRIC_PATHS = new Set(
 const KIND_DECLARATION = "substrate.reamde.dev/core/kind"
 const KIND_PREFIX = `${KIND_DECLARATION}/`
 
-// Every kind a sample declares, by its reference.
-const SAMPLE_KINDS = new Set(
-  Object.values(sampleFiles)
+// Every kind the tree declares, by its reference.
+const SHIPPED_KINDS = new Set(
+  Object.values(shippedFiles)
     .flatMap(docs)
     .filter((d) => d?.kind === KIND_DECLARATION && d.metadata?.id)
     .map((d) => d.metadata!.id!)
@@ -96,9 +95,7 @@ function shippedKind(path: string): boolean {
   const ref = path.startsWith(KIND_PREFIX)
     ? path.slice(KIND_PREFIX.length)
     : path
-  return (
-    SAMPLE_KINDS.has(ref) || ref.startsWith("providers.substrate.reamde.dev/")
-  )
+  return SHIPPED_KINDS.has(ref)
 }
 
 const VIEWS: SubstrateRecord[] = Object.values(viewFiles)
@@ -118,7 +115,7 @@ describe("the shipped record views", () => {
   it("are read", () => {
     expect(VIEWS.length).toBeGreaterThan(0)
     expect(METRIC_PATHS.size).toBeGreaterThan(0)
-    expect(SAMPLE_KINDS.size).toBeGreaterThan(0)
+    expect(SHIPPED_KINDS.size).toBeGreaterThan(0)
   })
 
   it.each(VIEWS.map((v) => [v.id, v] as const))(

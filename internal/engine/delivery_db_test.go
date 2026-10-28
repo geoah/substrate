@@ -370,7 +370,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir))
+		WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}
@@ -939,7 +939,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
-		WithKindsDir(SeedKindsDir))
+		WithKindsFS(SeedKinds))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}

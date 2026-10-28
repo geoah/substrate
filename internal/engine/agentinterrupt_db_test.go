@@ -28,7 +28,7 @@ func restartableAgentDataset(t *testing.T, extra ...Option) (*dataset, *fakeLLM,
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	opts := append([]Option{WithDataRoot(t.TempDir()), WithKindsDir(SeedKindsDir), WithCredentialKey(TestCredentialKey)}, extra...)
+	opts := append([]Option{WithDataRoot(t.TempDir()), WithKindsFS(SeedKinds), WithCredentialKey(TestCredentialKey)}, extra...)
 	svc, err := OpenForTest(t, ctx, dsn, opts...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

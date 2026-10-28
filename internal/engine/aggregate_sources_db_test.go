@@ -481,7 +481,7 @@ func TestAggregatePriorityReachesAnOlderLongerSpan(t *testing.T) {
 // ranked 1) and through Apple Health (apple, ranked 2) is two sources, and
 // Apple Health stamps the 07:00 weigh-in two seconds early, outside the
 // higher source's hold, so the priority policy alone counts it twice. A
-// record of the observations sample's `sourcelink` kind, binding core's
+// record of the seeded observations package's `sourcelink` kind, binding core's
 // `sourcelink`, says the two are one device (decision 0187): under priority
 // the device answers from its highest-ranked source alone, so the weigh-in
 // counts once, and an order naming apple first makes apple that source. A

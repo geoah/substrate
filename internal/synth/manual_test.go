@@ -13,36 +13,47 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// catalogueCodes is every code each health metric lists, by metric id, from
-// the health sample's catalogue.
+// The kinds the manual records are, the first-party ones every repository
+// names the same way (decision record 0192).
+const (
+	labResultKind   = "substrate.reamde.dev/labs/labresult"
+	observationKind = "substrate.reamde.dev/observations/observation"
+	sourceKind      = "substrate.reamde.dev/observations/source"
+	metricPath      = "substrate.reamde.dev/observations/metric/"
+)
+
+// catalogueCodes is every code each shipped metric lists, by metric id, from
+// the health and labs catalogues.
 func catalogueCodes(t *testing.T) map[string]map[string]bool {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "samples", "health", "metrics.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	out := map[string]map[string]bool{}
-	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	for {
-		var doc struct {
-			Metadata struct{ ID string } `yaml:"metadata"`
-			Data     struct {
-				Properties struct {
-					Codes []struct{ Code string } `yaml:"codes"`
-				} `yaml:"properties"`
-			} `yaml:"data"`
-		}
-		if err := dec.Decode(&doc); err != nil {
-			if errors.Is(err, io.EOF) {
-				return out
-			}
+	for _, pkg := range []string{"health", "labs"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "kinds", "substrate.reamde.dev", pkg, "metrics.yaml"))
+		if err != nil {
 			t.Fatal(err)
 		}
-		out[doc.Metadata.ID] = map[string]bool{}
-		for _, c := range doc.Data.Properties.Codes {
-			out[doc.Metadata.ID][c.Code] = true
+		dec := yaml.NewDecoder(bytes.NewReader(raw))
+		for {
+			var doc struct {
+				Metadata struct{ ID string } `yaml:"metadata"`
+				Data     struct {
+					Properties struct {
+						Codes []struct{ Code string } `yaml:"codes"`
+					} `yaml:"properties"`
+				} `yaml:"data"`
+			}
+			if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			out[doc.Metadata.ID] = map[string]bool{}
+			for _, c := range doc.Data.Properties.Codes {
+				out[doc.Metadata.ID][c.Code] = true
+			}
 		}
 	}
+	return out
 }
 
 // manualDocs decodes the manual emitter's labs.yaml for the range o names.
@@ -70,11 +81,11 @@ func manualDocs(t *testing.T, o Options) []map[string]any {
 	}
 }
 
-// The hand-entered records in the shapes the health sample declares: a lab
+// The hand-entered records in the shapes the labs catalogue declares: a lab
 // result's code is one its metric lists, each reference range bound a
 // quantity, a US panel in mg/dL on the mass twins for convertlab to bridge,
 // and the hotel weigh-in held for the day like the catalogue's body gauges.
-func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
+func TestManualWritesTheLabsCataloguesShapes(t *testing.T) {
 	t.Parallel()
 	codes := catalogueCodes(t)
 	var results, mass, weighIns int
@@ -82,10 +93,13 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 		kind, _ := doc["kind"].(string)
 		props := doc["data"].(map[string]any)["properties"].(map[string]any)
 		id := doc["metadata"].(map[string]any)["id"]
-		switch {
-		case strings.HasSuffix(kind, "/health/labresult"):
+		switch kind {
+		case labResultKind:
 			results++
-			metric := strings.TrimPrefix(props["metric"].(map[string]any)["ref"].(string), "ada.example.com/observations/metric/")
+			metric := strings.TrimPrefix(props["metric"].(map[string]any)["ref"].(string), metricPath)
+			if !strings.HasPrefix(metric, "labs/") {
+				t.Errorf("%s is a lab result on %s, outside the labs catalogue", id, metric)
+			}
 			code := props["coding"].(map[string]any)["code"].(string)
 			if !codes[metric][code] {
 				t.Errorf("%s codes %s, which %s does not list", id, code, metric)
@@ -107,10 +121,17 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 			if v := props["value"].(map[string]any); strings.HasSuffix(metric, "_mass") && v["unit"] == "mg/dL" {
 				mass++
 			}
-		case strings.HasSuffix(kind, "/observations/observation"):
+		case observationKind:
 			weighIns++
 			if props["hold"] != "PT0S" {
 				t.Errorf("the hotel weigh-in %s holds %v, want PT0S", id, props["hold"])
+			}
+			if ref := props["metric"].(map[string]any)["ref"]; ref != metricPath+"health/body_mass" {
+				t.Errorf("the hotel weigh-in %s is on %v, want health/body_mass", id, ref)
+			}
+		default:
+			if kind != sourceKind && kind != "substrate.reamde.dev/labs/labreport" {
+				t.Errorf("%s is a %s, which the manual records never are", id, kind)
 			}
 		}
 	}
@@ -126,7 +147,7 @@ func TestManualSourcesCarryTheirClass(t *testing.T) {
 	t.Parallel()
 	classes := map[string]string{}
 	for _, doc := range manualDocs(t, Options{}) {
-		if !strings.HasSuffix(doc["kind"].(string), "/observations/source") {
+		if doc["kind"] != sourceKind {
 			continue
 		}
 		id := doc["metadata"].(map[string]any)["id"].(string)

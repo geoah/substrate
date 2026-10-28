@@ -157,7 +157,7 @@ func TestAFailedImportReleasesTheLease(t *testing.T) {
 	diskFull := errors.New("test: the import failed part way")
 	heldDuring := false
 	_, err := engine.OpenForTest(t, context.Background(), dsn2,
-		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(string) error {

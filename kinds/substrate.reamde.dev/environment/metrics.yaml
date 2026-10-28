@@ -1,0 +1,164 @@
+# The climate and energy metrics a home, a weather station or a meter reports,
+# as DATA: ordinary metric records the install puts after the bundle lands.
+# Their ids start with the package that ships them (`environment/`), as every
+# well-known catalogue's do (decision record 0192).
+#
+# Code systems: `homeassistant` is a Home Assistant sensor device class, `cf`
+# a CF standard name.
+#
+# Each keeps the `1h` and `1d` rollup tiers and no `15m`: a home sensor
+# reports about once a minute, and at that rate a `15m` tier is four rows an
+# hour per stream, most of the index (docs/plans/observations/benchmark.md).
+# A read in 15-minute buckets takes the raw points.
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: environment/air_temperature
+data:
+  properties:
+    name: Air temperature
+    description: The temperature of the air where the sensor is, indoors or
+      out.
+    codes:
+      - system: homeassistant
+        code: temperature
+      - system: cf
+        code: air_temperature
+    unit:
+      ref: substrate.reamde.dev/core/unit/Cel
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    rollups:
+      - 1h
+      - 1d
+    displayPrecision: 1
+    category: climate
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: environment/relative_humidity
+data:
+  properties:
+    name: Relative humidity
+    description: How much water vapour the air holds, as a part of what it
+      could hold at its temperature.
+    codes:
+      - system: homeassistant
+        code: humidity
+      - system: cf
+        code: relative_humidity
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    rollups:
+      - 1h
+      - 1d
+    displayPrecision: 0
+    category: climate
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: environment/energy
+data:
+  properties:
+    name: Energy
+    description: >-
+      Electrical or thermal energy, most often a meter's running total. A
+      meter reading is a counter; energy used over a span is an amount.
+    codes:
+      - system: homeassistant
+        code: energy
+    unit:
+      ref: substrate.reamde.dev/core/unit/kW.h
+    form: counter
+    reducers:
+      - increase
+      - rate
+      - last
+    rollups:
+      - 1h
+      - 1d
+    displayPrecision: 3
+    category: energy
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: environment/power
+data:
+  properties:
+    name: Power
+    description: The rate at which energy is used or produced at an instant.
+    codes:
+      - system: homeassistant
+        code: power
+    unit:
+      ref: substrate.reamde.dev/core/unit/W
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    rollups:
+      - 1h
+      - 1d
+    displayPrecision: 0
+    category: energy
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: environment/illuminance
+data:
+  properties:
+    name: Illuminance
+    description: How much light falls on the sensor.
+    codes:
+      - system: homeassistant
+        code: illuminance
+    unit:
+      ref: substrate.reamde.dev/core/unit/lx
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    rollups:
+      - 1h
+      - 1d
+    displayPrecision: 0
+    category: climate
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: environment/atmospheric_pressure
+data:
+  properties:
+    name: Atmospheric pressure
+    description: The pressure of the air, as a barometer reads it.
+    codes:
+      - system: homeassistant
+        code: atmospheric_pressure
+      - system: cf
+        code: air_pressure
+    unit:
+      ref: substrate.reamde.dev/core/unit/hPa
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    rollups:
+      - 1h
+      - 1d
+    displayPrecision: 1
+    category: climate

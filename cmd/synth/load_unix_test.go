@@ -28,7 +28,7 @@ func TestInterruptLetsTheRunnerCleanUp(t *testing.T) {
 		t.Skip("ps is not on PATH")
 	}
 	tmp := t.TempDir()
-	dir := generated(t, testAuthority, synth.Whoop{})
+	dir := generated(t, synth.Whoop{})
 	bin := t.TempDir()
 	at := func(name string) string { return filepath.Join(bin, name) }
 	python := at("python")
@@ -97,7 +97,7 @@ func TestRunSyncHandsTheRunnerAnAbsoluteCtl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := generated(t, testAuthority, synth.Whoop{})
+	dir := generated(t, synth.Whoop{})
 	work := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(work, "bin"), 0o755); err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestLoadRefusesACatalogInstalledProvider(t *testing.T) {
 	f.kinds[whoopAccount] = true
 	f.accounts[whoopAccount] = []string{"owner-whoop"}
 	python, ctl, ran := standInRunner(t, "exit 0\n")
-	dir := generated(t, testAuthority, synth.Whoop{})
+	dir := generated(t, synth.Whoop{})
 	out, err := f.runLoad(t, "-dir", dir, "-providers", "whoop", "-python", python, "-ctl", ctl, "-repo", checkoutRoot(t))
 	if err == nil || !strings.Contains(err.Error(), "installed from the catalog") {
 		t.Fatalf("a load over a catalog-installed WHOOP = %v, want a refusal\n%s", err, out)
@@ -207,7 +207,7 @@ func TestLoadRefusesAccountsItDidNotConnect(t *testing.T) {
 	f.accounts[whoopAccount] = []string{"e2e", "owner-whoop"}
 	f.configs[whoopConfig] = map[string]string{"default": synthClient}
 	python, ctl, ran := standInRunner(t, "exit 0\n")
-	dir := generated(t, testAuthority, synth.Whoop{})
+	dir := generated(t, synth.Whoop{})
 	args := []string{"-dir", dir, "-providers", "whoop", "-python", python, "-ctl", ctl, "-repo", checkoutRoot(t)}
 	out, err := f.runLoad(t, args...)
 	if err == nil || !strings.Contains(err.Error(), "owner-whoop") || strings.Contains(err.Error(), "e2e,") {
@@ -237,7 +237,7 @@ func TestLoadRefusesARunnerAccountWithoutSynthsClient(t *testing.T) {
 	f.accounts[whoopAccount] = []string{"e2e"}
 	f.configs[whoopConfig] = map[string]string{"default": "the-owners-whoop-app"}
 	python, ctl, ran := standInRunner(t, "exit 0\n")
-	dir := generated(t, testAuthority, synth.Whoop{})
+	dir := generated(t, synth.Whoop{})
 	args := []string{"-dir", dir, "-providers", "whoop", "-python", python, "-ctl", ctl, "-repo", checkoutRoot(t)}
 	refused := func(why string) {
 		t.Helper()
@@ -284,7 +284,7 @@ echo "no --recordings" >&2
 exit 4
 `)
 	root := checkoutRoot(t)
-	dir := generated(t, testAuthority, synth.Whoop{})
+	dir := generated(t, synth.Whoop{})
 	t.Chdir(filepath.Dir(dir))
 	out, err := f.runLoad(t, "-dir", filepath.Base(dir), "-providers", "whoop", "-python", python, "-ctl", ctl, "-repo", root)
 	if err != nil {

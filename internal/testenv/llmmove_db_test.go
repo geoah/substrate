@@ -23,8 +23,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -377,7 +379,7 @@ func TestThePreMoveTreeStillHoldsTheOldKinds(t *testing.T) {
 // the file: the number the boot upgrade must reach, rather than "not zero".
 func shippedKindVersion(t *testing.T, pkg, file string) int64 {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(seedAuthorityDir, pkg, file))
+	raw, err := fs.ReadFile(kinds.Seed(), path.Join(seedAuthorityDir, pkg, file))
 	if err != nil {
 		t.Fatalf("read the shipped %s/%s: %v", pkg, file, err)
 	}

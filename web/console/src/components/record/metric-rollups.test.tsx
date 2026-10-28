@@ -15,7 +15,7 @@ afterEach(cleanup)
 
 const metric = (properties: Record<string, unknown>): SubstrateRecord => ({
   id: "health/heart_rate",
-  kind: "ada.example.com/observations/metric",
+  kind: "substrate.reamde.dev/observations/metric",
   properties,
   labels: {},
   version: 1,

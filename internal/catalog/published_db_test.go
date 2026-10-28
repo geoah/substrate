@@ -21,11 +21,13 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
 )
 
-// whoop is the provider these tests install: it declares against nothing, so
-// `requires:` brings no sample vocabulary along and what lands is the
-// provider's closure alone.
+// whoop is the provider these tests install. It requires the first-party
+// health catalogue (record 0192), which a catalog install brings first and a
+// hand apply of the closure does not: a test that applies the closure by hand
+// installs health ahead of it.
 const (
 	whoopAuthority = "providers.substrate.reamde.dev"
 	whoopPackage   = "whoop"
@@ -79,7 +81,7 @@ func newReopenableDataset(t *testing.T) *reopenableDataset {
 func (r *reopenableDataset) open(t *testing.T) {
 	t.Helper()
 	svc, err := engine.Open(context.Background(), r.dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev"),
+		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(r.dataRoot),
 		engine.WithCredentialKey(credKey),
 	)
@@ -115,6 +117,14 @@ func sourceOf(t *testing.T, ds substrate.Dataset, kind, id string) string {
 	}
 	source, _ := rec.Properties["source"].(string)
 	return source
+}
+
+// installHealth installs the first-party health catalogue whoop requires
+// (record 0192): a hand apply of the whoop closure, or an install from a
+// catalog that does not serve health, is refused without it.
+func installHealth(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	importVocabulary(t, loadCatalog(t), ds, healthID)
 }
 
 // whoopClosure is the provider's vocabulary documents as they sit in the tree:
@@ -388,6 +398,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 
 	// The hand door: the closure's own files, applied by the repository's
 	// token. What lands is the repository's, and it stays writable.
+	installHealth(t, ds)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
@@ -471,6 +482,7 @@ func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
 
+	installHealth(t, ds)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
@@ -530,6 +542,7 @@ func TestAChangedDurationOrReferenceMovesThePackage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ds := newDataset(t)
 			ctx := context.Background()
+			installHealth(t, ds)
 			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 				t.Fatalf("apply the whoop closure: %v", err)
 			}

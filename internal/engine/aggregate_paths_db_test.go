@@ -605,14 +605,14 @@ func TestAggregateCounterInAnotherUnit(t *testing.T) {
 		at              time.Duration
 	}{{"first", "1", "kW.h", 0}, {"second", "2000", "W.h", 30 * time.Minute}} {
 		f.mustPut(t, f.observation, "meter/"+x.id, map[string]any{
-			"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
+			"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
 			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
 		})
 	}
 	read := func(to time.Duration) substrate.AggregateRow {
 		t.Helper()
 		res, _, rollupRows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
-			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/energy")},
 			Range:    rng(start, start.Add(to)),
 			Reducers: reducers("min", "max", "increase"),
 			Unit:     "W.h",
@@ -835,12 +835,12 @@ func TestAggregateFirstAndLastBreakTiesByRecord(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for _, x := range []struct{ id, value, unit string }{{"a-reversed", "2000", "W.h"}, {"z-reversed", "1", "kW.h"}} {
 		f.mustPut(t, f.observation, x.id, map[string]any{
-			"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "gauge",
+			"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "gauge",
 			"value": quantity(x.value, x.unit), "at": at(start.Add(5 * time.Minute)),
 		})
 	}
 	res, _, rollupRows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/energy")},
 		Range:    rng(start, start.Add(time.Hour)),
 		Reducers: reducers("first", "last"),
 		Unit:     "W.h",
@@ -867,7 +867,7 @@ func TestAggregateFilterConditionsIntersect(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i, src := range []string{"a", "b"} {
 		f.mustPut(t, f.observation, "door/"+src, map[string]any{
-			"metric": f.metricRef("air_temperature"), "source": f.sourceRef(src), "form": "gauge",
+			"metric": f.metricRef("environment/air_temperature"), "source": f.sourceRef(src), "form": "gauge",
 			"code": []string{"open", "closed"}[i], "at": at(start.Add(time.Duration(i) * time.Minute)),
 		})
 	}
@@ -875,7 +875,7 @@ func TestAggregateFilterConditionsIntersect(t *testing.T) {
 		t.Helper()
 		filter := substrate.Filter{Kinds: []string{f.observation}, Properties: map[string]substrate.Cond{name: c}}
 		res, _, _ := f.bothPaths(filter, substrate.Aggregate{
-			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")},
 			Range:    rng(start, start.Add(time.Hour)),
 			Reducers: reducers("count"),
 		})
@@ -1054,12 +1054,12 @@ func TestAggregateConvertedExtremesCompareTheirDigits(t *testing.T) {
 		at              time.Duration
 	}{{"celsius", "-273.14999999999999", "Cel", time.Minute}, {"kelvin", "0.000000000000001", "K", 20 * time.Minute}} {
 		f.mustPut(t, f.observation, "cold/"+x.id, map[string]any{
-			"metric": f.metricRef("air_temperature"), "source": f.sourceRef("cryostat"), "form": "gauge",
+			"metric": f.metricRef("environment/air_temperature"), "source": f.sourceRef("cryostat"), "form": "gauge",
 			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
 		})
 	}
 	a := substrate.Aggregate{
-		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("environment/air_temperature")},
 		Range:    rng(start, start.Add(time.Hour)),
 		Reducers: reducers("min", "max"),
 		Unit:     "K",
@@ -1132,7 +1132,7 @@ func TestAggregateDownsampleKeepsItsColumnCount(t *testing.T) {
 func TestAggregateMaxRecordsCountsEveryMatch(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	sleep := strings.TrimSuffix(f.observation, "/observations/observation") + "/health/sleep"
+	sleep := kindSleep
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	f.mustPut(t, sleep, "a-instant", map[string]any{"at": at(start)})
 	f.mustPut(t, sleep, "b-instant", map[string]any{"at": at(start.Add(time.Minute))})
@@ -1160,7 +1160,7 @@ func TestAggregateMaxRecordsCountsEveryMatch(t *testing.T) {
 func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	sleep := strings.TrimSuffix(f.observation, "/observations/observation") + "/health/sleep"
+	sleep := kindSleep
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	f.mustPut(t, sleep, "night", map[string]any{"at": at(start), "endsAt": at(start.Add(2 * time.Hour))})
 	f.mustPut(t, sleep, "late", map[string]any{"at": at(start.Add(45 * time.Minute)), "endsAt": at(start.Add(105 * time.Minute))})
