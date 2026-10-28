@@ -15,12 +15,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/engine/unitseed"
 	"github.com/geoah/substrate/internal/substrate"
@@ -188,18 +194,84 @@ func mapping(t *testing.T, tables map[string]any, name string) map[string]any {
 	return m
 }
 
-// sameComponent reports whether a unit spelling is the id of a shipped unit
-// a linear conversion joins to the metric's unit, which is what the metric
-// rules admit and the aggregate read converts (decision 0186). A spelling
-// other than the id would be stored as the id, so an adapter's reconcile
-// would find every value it compares changed. A metric naming no unit
-// admits any.
+// catalogueUnitGraph is the unit graph a repository holds once it imported
+// the health sample: the seeded units and conversions, and the glucose units
+// the sample adds (samples/health/analyte_units.yaml). It is built once.
+func catalogueUnitGraph(t *testing.T) *vocabulary.UnitGraph {
+	t.Helper()
+	g, err := catalogueUnits()
+	if err != nil {
+		t.Fatalf("the unit graph with the health sample's units: %v", err)
+	}
+	return g
+}
+
+var catalogueUnits = sync.OnceValues(func() (*vocabulary.UnitGraph, error) {
+	var us []vocabulary.UnitRecord
+	var cs []vocabulary.ConversionRecord
+	sample, err := os.ReadFile(samplesDir + "/health/analyte_units.yaml")
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range [][]byte{unitseed.Units(), unitseed.Conversions(), sample} {
+		docs, err := decodeDocs(file)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range docs {
+			meta, _ := d["metadata"].(map[string]any)
+			data, _ := d["data"].(map[string]any)
+			props, _ := data["properties"].(map[string]any)
+			id, _ := meta["id"].(string)
+			switch d["kind"] {
+			case vocabulary.KindUnit:
+				u, err := vocabulary.CheckUnitRecord(id, props)
+				if err != nil {
+					return nil, fmt.Errorf("unit %s: %w", id, err)
+				}
+				us = append(us, u)
+			case vocabulary.KindConversion:
+				c, err := vocabulary.CheckConversionRecord(id, props)
+				if err != nil {
+					return nil, fmt.Errorf("conversion %s: %w", id, err)
+				}
+				cs = append(cs, c)
+			}
+		}
+	}
+	g, problems := vocabulary.BuildUnitGraph(us, cs)
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("%v", problems)
+	}
+	return g, nil
+})
+
+// decodeDocs reads a multi-document YAML file's documents.
+func decodeDocs(data []byte) ([]map[string]any, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var out []map[string]any
+	for {
+		var m map[string]any
+		err := dec.Decode(&m)
+		if errors.Is(err, io.EOF) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+}
+
+// sameComponent reports whether a unit spelling is the id of a unit a
+// repository holding the health sample has, joined by a linear conversion
+// to the metric's unit, which is what the metric rules admit and the
+// aggregate read converts (decision 0186). A spelling other than the id
+// would be stored as the id, so an adapter's reconcile would find every
+// value it compares changed. A metric naming no unit admits any.
 func sameComponent(t *testing.T, unit string, m catalogueMetric) bool {
 	t.Helper()
-	g, problems, err := unitseed.Graph()
-	if err != nil || len(problems) > 0 {
-		t.Fatalf("the shipped unit graph: %v %v", err, problems)
-	}
+	g := catalogueUnitGraph(t)
 	id, ok := g.Resolve(unit)
 	if !ok || id != unit {
 		return false
@@ -208,7 +280,7 @@ func sameComponent(t *testing.T, unit string, m catalogueMetric) bool {
 		// A metric naming no unit (a categorical one) admits every unit.
 		return true
 	}
-	_, _, err = g.Linear(id, m.Unit, false)
+	_, _, err := g.Linear(id, m.Unit, false)
 	return err == nil
 }
 
@@ -233,6 +305,7 @@ var healthMetricLiteral = regexp.MustCompile(`^health(whoop)?/[a-z0-9_]+$`)
 // TestAdapterTablesMatchTheCatalogue: every metric an adapter's tables or
 // literals name is in the catalogue, in the id of a unit that converts to
 // the metric's unit;
+// Apple Health's raw readings are in the metric's own unit, form and hold;
 // WHOOP's mapped fields are the `whoop` codes the metric lists; every sleep
 // stage code is in `health/sleep_stage`'s code set and every sport code in
 // the workout kind's.
@@ -285,6 +358,84 @@ func TestAdapterTablesMatchTheCatalogue(t *testing.T) {
 		for _, row := range rows(t, got.Tables, "STAGES") {
 			if !slices.Contains(stages, row[1]) {
 				t.Errorf("STAGES: %s maps to %q, not a health/sleep_stage code %v", row[0], row[1], stages)
+			}
+		}
+		for name, code := range mapping(t, got.Tables, "SPORTS") {
+			if !slices.Contains(sports, fmt.Sprint(code)) {
+				t.Errorf("SPORTS: %s maps to %v, not a workout sport", name, code)
+			}
+		}
+	})
+
+	t.Run("applehealth", func(t *testing.T) {
+		got := readAdapterTables(t, samplesDir+"/healthapple/bundle.yaml", "adaptapplehealth")
+		for _, name := range got.MetricRefs {
+			metric(t, "health/"+name)
+		}
+		// A raw reading is written in the metric's own unit, form and hold;
+		// a daily value is a summary of a summary metric.
+		for name, spec := range mapping(t, got.Tables, "METRICS") {
+			row := asList(spec)
+			text := func(i int) string {
+				if row[i] == nil {
+					return ""
+				}
+				return fmt.Sprint(row[i])
+			}
+			id, form, unit, hold := "health/"+text(0), text(2), text(3), text(4)
+			m := metric(t, id)
+			if unit != m.Unit || form != m.Form || hold != m.Hold {
+				t.Errorf("METRICS[%s]: %s is written as %s in %s holding %q; the catalogue says %s in %s holding %q",
+					name, id, form, unit, hold, m.Form, m.Unit, m.Hold)
+			}
+		}
+		pressure := rows(t, map[string]any{"PRESSURE": []any{got.Tables["PRESSURE"]}}, "PRESSURE")[0]
+		for _, id := range pressure[:2] {
+			if m := metric(t, "health/"+id); pressure[2] != m.Unit || pressure[3] != m.Hold || m.Form != "gauge" {
+				t.Errorf("PRESSURE: %s is a gauge in %s holding %s; the catalogue says %s in %s holding %q", id, pressure[2], pressure[3], m.Form, m.Unit, m.Hold)
+			}
+		}
+		// A glucose reading is written in a glucose unit the health sample
+		// ships (analyte_units.yaml), the metric's own among them, each
+		// paired with the plain unit of its scale.
+		hold, _ := got.Tables["GLUCOSE_HOLD"].(string)
+		glucoseID, _ := got.Tables["GLUCOSE_METRIC"].(string)
+		glucose := metric(t, "health/"+glucoseID)
+		if hold != glucose.Hold || glucose.Form != "gauge" {
+			t.Errorf("GLUCOSE_HOLD: health/%s is a gauge holding %s; the catalogue says %s holding %q", glucoseID, hold, glucose.Form, glucose.Hold)
+		}
+		shipped := map[string]string{}
+		for _, d := range loadDocs(t, samplesDir+"/health/analyte_units.yaml") {
+			meta, _ := d["metadata"].(map[string]any)
+			data, _ := d["data"].(map[string]any)
+			props, _ := data["properties"].(map[string]any)
+			if d["kind"] == "substrate.reamde.dev/core/unit" {
+				shipped[fmt.Sprint(meta["id"])] = fmt.Sprint(props["code"])
+			}
+		}
+		var anchored bool
+		for _, row := range rows(t, got.Tables, "GLUCOSE") {
+			plain, unit := row[0], row[1]
+			code, ok := shipped[unit]
+			if !ok {
+				t.Errorf("GLUCOSE: %s is not a unit the health sample ships (%v)", unit, shipped)
+			}
+			if want := plain + "{glucose}"; code != want {
+				t.Errorf("GLUCOSE: %s is written for plain %s, but its code is %s, not %s", unit, plain, code, want)
+			}
+			anchored = anchored || unit == glucose.Unit
+		}
+		if !anchored {
+			t.Errorf("GLUCOSE: no row writes health/%s's own unit %s", glucoseID, glucose.Unit)
+		}
+		for value, code := range mapping(t, got.Tables, "STAGES") {
+			if !slices.Contains(stages, fmt.Sprint(code)) {
+				t.Errorf("STAGES: %q maps to %v, not a health/sleep_stage code %v", value, code, stages)
+			}
+		}
+		for _, row := range rows(t, got.Tables, "NIGHT") {
+			if !slices.Contains(stages, row[1]) {
+				t.Errorf("NIGHT: %s maps to %q, not a health/sleep_stage code", row[0], row[1])
 			}
 		}
 		for name, code := range mapping(t, got.Tables, "SPORTS") {

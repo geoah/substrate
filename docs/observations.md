@@ -679,15 +679,16 @@ still standing ([decision 0158](decisions/0158-a-gauge-carries-a-hold-a-null-end
 A `PT0S` value holds no time, so under `priority` it covers only its own
 instant: a blood pressure two apps deliver at one instant is the higher
 source's alone, and one stamped seconds apart is kept twice
-(G-31 in the observations requirements).
+([G-31](plans/observations/requirements.md#g-31-one-device-under-several-sources)).
 
 ## The adapters
 
 An adapter is a sample whose function turns one provider's mirror rows into
 these records, each naming the mirror row it came from in `origin` and
-rewritten or deleted with it. One ships, with its mapping and rules in the
-catalog: [WHOOP to health](bundles-catalog.md#whoop-to-health-sample)
-(`healthwhoop`).
+rewritten or deleted with it. Two ship, each with its mapping and rules in
+the catalog: [WHOOP to health](bundles-catalog.md#whoop-to-health-sample)
+(`healthwhoop`) and [Apple Health to
+health](bundles-catalog.md#apple-health-to-health-sample) (`healthapple`).
 Garmin and Google Fit adapters are planned.
 Every adapter that writes traces composes their ids as
 [a trace's](#the-base-kinds) are,
@@ -695,7 +696,7 @@ Every adapter that writes traces composes their ids as
 the period being the UTC hour, because one account delivers several
 devices' data.
 
-Every adapter holds to one set of rules:
+The two hold to one set of rules:
 
 - **One reconcile.** Each hands what a mirror row implies to
   `host.observed.reconcile`, which writes each output in one put, leaves one
@@ -719,7 +720,12 @@ Every adapter holds to one set of rules:
   ([glucose in either unit](#glucose-in-either-unit)).
 - **A night's own figures.** A sleep carries `efficiency` (time asleep over
   time in bed) and `latency` where the provider sends what they are
-  computed from, and `isNap`, which WHOOP sends.
+  computed from, and `isNap`: WHOOP sends the flag, and the Apple Health
+  adapter calls a sleep shorter than three hours that begins between 09:00
+  and 21:00 local time a nap.
+- **What the provider cannot tell them.** Apple Health pushes no deletion,
+  so a record built from a summary deleted upstream stays until its mirror
+  row is deleted by hand; the adapter's delete trigger then removes it.
 
 Every output also names the code that wrote it, in `adapter`:
 `<package>@<version>` (`healthwhoop@3`), a constant at the top of the
@@ -1137,12 +1143,15 @@ reducers checked against the form, and a source policy, answered from the
 rollup rows where they answer exactly and from the points otherwise. The
 requests below are the proposal's screens
 ([reading the data](plans/observations/proposal/03-reading-the-data.md)),
-each one request. A source is named as the WHOOP adapter writes it
-(`whoop/e2e`, the demo repository's account) or as a hand-entered one
-(`manual`).
+each one request. They name source ids from the demo repository
+[synthetic data](synthetic-data.md) loaded while it carried a Garmin adapter
+too (`garmin/ada/forerunner265`, `whoop/e2e`); Garmin is planned and not
+shipped. [Building health apps](health-apps.md) has more, a section for
+each screen of a health app, each with the answer a demo repository gave.
 
-Heart rate zones per week for six months is a raw read of a source's heart
-rate by the week over 26 weeks, with one `durationIn` reducer per zone (95
+Heart rate zones per week for six months is
+[the aggregate read's first example](api.md#the-aggregate-read) with its
+range widened from one week to 26 and one `durationIn` reducer per zone (95
 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute).
 `durationIn` reads raw points, and `maxSamples` counts every selected
 source's points, not only the ones the policy keeps. A source sampling
@@ -1155,7 +1164,10 @@ Daily steps for a year on each sample's own local day. Under the default
 `separate` policy each source is a row of its own, and `prefer-raw` serves
 each source's day from its step amounts where they cover 90 percent of it
 and from its daily total (a `sum` summary) otherwise; each row's `from` says
-which. A day of a source with no total is served from
+which. Apple Health writes a `sum` summary only from an export grouped by hour, day,
+week, month or year, under the device the export's row names, or under the
+Health app's own source (`applehealth/<account>/health`) where the row names
+no device or joins several. A day of a source with no total is served from
 its amounts whatever they cover. Four step sources times 365 days is 1,460
 series times buckets, over the default
 `maxBuckets` of 1,440 ([budgets](api.md#budgets)), so the read raises it:
@@ -1184,15 +1196,15 @@ rows alone:
    "unit": "kg"}}
 ```
 
-WHOOP's nightly heart rate variability per wake day, with the 30-night
+Garmin's nightly heart rate variability per wake day, with the 30-night
 baseline before it: `place` `end` puts a night on the day it ends, however
-late it starts; the statistic filter keeps WHOOP's own value (`vendor`), a
-summary over the night; and the rolling window ending at the previous day
+late it starts; the statistic filter keeps Garmin's nightly average and
+leaves out its maximum; and the rolling window ending at the previous day
 leaves the night out of its own baseline (its `n` says how many nights the
 window held):
 
 ```json
-{"filter": {"properties": {"source": {"eq": "whoop/e2e"}, "statistic": {"eq": "vendor"}}},
+{"filter": {"properties": {"source": {"eq": "garmin/ada/account"}, "statistic": {"eq": "avg"}}},
  "aggregate": {
    "metric": {"ref": "ada.example.com/observations/metric/health/hrv_rmssd"},
    "from": "summaries",
@@ -1203,12 +1215,16 @@ window held):
    "unit": "ms"}}
 ```
 
+WHOOP writes a night's heart rate variability (its `vendor` value) as a
+summary over the night, as Garmin does, so the same read of `whoop/e2e` with
+`statistic` `vendor` keeps `place` `end` and lands each night on its wake
+day.
+
 Sleep stages per night: the coded stage amounts summed by code inside each
 `health/sleep` record that is not a nap, one row per night and code, each
 carrying the night's `record`. Every device writes the night as a sleep
 record of its own, so `bucket.records.sources` keeps one per night, the
-WHOOP's where it has one and a hand-entered one (`manual`) otherwise, and
-the request's
+WHOOP's where it has one and the Garmin's otherwise, and the request's
 `sources` keeps one device's stages inside it. `utcOffsets` writes each
 row's start and end at the night's own offsets, so a night slept abroad
 reads in the time it happened:
@@ -1220,11 +1236,11 @@ reads in the time it happened:
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
      "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
-     "sources": {"policy": "priority", "order": ["whoop/e2e", "manual"], "property": "source"},
+     "sources": {"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"], "property": "source"},
      "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
    "groupBy": ["code"],
    "reducers": ["sum"],
-   "sources": {"policy": "priority", "order": ["whoop/e2e", "manual"]},
+   "sources": {"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"]},
    "unit": "min"}}
 ```
 
@@ -1252,7 +1268,7 @@ the day it ends, `calendar` with `place` `end`.
 
 Training time and distance per sport per week, from the workout records
 themselves (a property read): each session once where several devices
-recorded it, WHOOP's first, and each week on the local days the
+recorded it, the Garmin's first, and each week on the local days the
 sessions began:
 
 ```json
@@ -1260,7 +1276,7 @@ sessions began:
  "aggregate": {
    "property": {"name": "duration", "utcOffset": "utcOffsetStart", "groupBy": ["sport"],
                 "sources": {"policy": "priority", "property": "source", "match": ["sport"],
-                            "order": ["whoop/e2e", "manual"]}},
+                            "order": ["garmin/ada/forerunner265", "whoop/e2e"]}},
    "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "week"},
    "reducers": ["sum", "count"],

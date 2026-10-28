@@ -28,7 +28,7 @@ ignore: |
   node_modules/
   web/console/pnpm-lock.yaml
   web/console/dist/
-  web/apple/build/
+  apps/apple/build/
   .dev/
   bin/
   .claude/worktrees/

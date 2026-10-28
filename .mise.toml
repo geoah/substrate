@@ -194,7 +194,7 @@ description = "Every database package but the engine and the provider suite: cat
 run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
 
 [tasks."test:db:providers"]
-description = "The provider suite: seven closures synced end to end against a substrated the test starts, over recorded upstreams"
+description = "The provider suite: seven of the eight closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
 # Its own task and its own CI job (`providers e2e`), not a line in
 # test:db:rest: one run is three to five minutes on a laptop (the seven cases
 # run side by side, so the slowest one is the wall time) and longer on a
@@ -791,16 +791,18 @@ usage = 'arg "<base>" help="The URL the substrate serves the console at, such as
 run = 'node scripts/render-smoke.mjs "$usage_base"'
 
 # =============================================================================
-# Apple apps (web/apple)
+# Apple apps (apps/apple)
 # =============================================================================
 #
-# The console, bundled, in a native shell for macOS, iPadOS and iOS. Every
-# task is a subcommand of .mise/apple.sh; macOS only, and nothing in CI runs
-# them. The console build is a dependency because the bundle copies
-# web/console/dist as it is.
+# The console, bundled, in a native shell for macOS, iPadOS and iOS, and
+# Substrate Sync, the iPhone and iPad app that pushes Health, Contacts and
+# Calendar. Every task is a subcommand of .mise/apple.sh; macOS only, and
+# nothing in CI runs them. The console build is a dependency of the console
+# app's tasks because the bundle copies web/console/dist as it is; Substrate
+# Sync carries no console.
 
 [tasks."apple:project"]
-description = "Generate web/apple/Substrate.xcodeproj from project.yml"
+description = "Generate apps/apple/Substrate.xcodeproj from project.yml"
 run = ".mise/apple.sh project"
 
 [tasks."apple:build"]
@@ -812,6 +814,10 @@ run = ".mise/apple.sh build"
 description = "Build the console and the iOS app for a device"
 depends = ["console:build"]
 run = ".mise/apple.sh build:device"
+
+[tasks."apple:build:sync"]
+description = "Build Substrate Sync for the simulator"
+run = ".mise/apple.sh build:sync"
 
 [tasks."apple:install"]
 description = "Build the console and the macOS app, install it in /Applications and open it"
@@ -829,6 +835,10 @@ run = ".mise/apple.sh sim"
 description = "Build, sign and publish both apps as a release (prerelease, or stable), with the feeds that update them"
 depends = ["console:build"]
 run = ".mise/apple.sh release"
+
+[tasks."apple:release:sync"]
+description = "Build, sign and publish Substrate Sync as a release (prerelease, or stable) under sync/, with its own feeds"
+run = ".mise/apple.sh release:sync"
 
 # =============================================================================
 # Image

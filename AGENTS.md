@@ -2,9 +2,9 @@
 
 How to work this repo: the substrate server (`cmd/substrated`), the console
 (`web/console`, built into the server image and served by it at `/`), the
-CLI (`cmd/substratectl`) and the Apple apps (`web/apple`, the console bundled
+CLI (`cmd/substratectl`) and the Apple apps (`apps/apple`, the console bundled
 in a native shell that only speaks the API; see
-[its README](web/apple/README.md)). Provider auth and sync live IN the server — the OAuth
+[its README](apps/apple/README.md)). Provider auth and sync live IN the server — the OAuth
 facility plus bundle functions.
 
 **The model, in one paragraph.** One invite code gates who registers, where

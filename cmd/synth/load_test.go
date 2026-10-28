@@ -64,7 +64,7 @@ func newFakeSubstrate(t *testing.T) *fakeSubstrate {
 		packages: map[string]map[string]any{}, kinds: map[string]bool{}, accounts: map[string][]string{},
 		configs: map[string]map[string]string{},
 		triggers: map[string]map[string]any{
-			"pushdemo-webhook": {"enabled": false, "source": map[string]any{"webhook": map[string]any{"headers": []any{"session-id"}}}},
+			"applehealth-webhook": {"enabled": false, "source": map[string]any{"webhook": map[string]any{"headers": []any{"session-id"}}}},
 		},
 	}
 	f.ts = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -318,154 +318,91 @@ func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 	}
 }
 
-// pushDemo stands in for a provider that receives pushes: one webhook
-// request a day to its trigger, the delivery carrying the key as its bearer
-// where the trigger is keyed. The tests below post its output through the
-// loader's poster, so the push path is held without a shipped push provider.
-type pushDemo struct{}
-
-func (pushDemo) Name() string { return "pushdemo" }
-
-func (pushDemo) Emit(p *synth.Persona) (*synth.Output, error) {
-	out := &synth.Output{Setup: synth.Setup{Provider: "providers.substrate.reamde.dev/pushdemo"}}
-	for _, d := range p.Days() {
-		out.Deliveries = append(out.Deliveries, synth.Delivery{
-			Name:    d.String(),
-			Trigger: "pushdemo-webhook",
-			Headers: map[string]string{"content-type": "application/json", "authorization": "Bearer <key>"},
-			Body:    []byte(`{"day": "` + d.String() + `"}`),
-		})
-	}
-	return out, nil
-}
-
-// pushed writes pushDemo's output for two days and answers its directory.
-func pushed(t *testing.T) string {
-	t.Helper()
-	p, err := synth.NewPersona(synth.Options{Start: synth.NewDate(2026, time.September, 12), End: synth.NewDate(2026, time.September, 13)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := pushDemo{}.Emit(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	if _, err := synth.WriteOutput(dir, pushDemo{}, out); err != nil {
-		t.Fatal(err)
-	}
-	return filepath.Join(dir, "pushdemo")
-}
-
-// poster is a poster over the fake that does not sleep between retries.
-func (f *fakeSubstrate) poster(key string, replace bool) *poster {
-	c := f.client()
-	c.pause = func(context.Context, time.Duration) error { return nil }
-	return &poster{c: c, key: key, replaceKey: replace, settle: time.Minute, stdout: io.Discard}
-}
-
-// The poster arms the trigger with the owner's key, posts each delivery in
-// order with that key as its bearer and never the repository token, waits
-// for each run, and disables again a trigger it found disabled.
-func TestPosterPostsEachDeliveryWithTheOwnersKey(t *testing.T) {
+// The webhook key is the owner's: it comes from -key or SYNTH_WEBHOOK_KEY,
+// never from the source, so a load with neither posts nothing.
+func TestLoadTakesTheWebhookKeyFromTheOwner(t *testing.T) {
 	f := newFakeSubstrate(t)
-	if err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", pushed(t), 1); err != nil {
-		t.Fatal(err)
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", "")
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err == nil ||
+		!strings.Contains(err.Error(), "-key") || !strings.Contains(err.Error(), "SYNTH_WEBHOOK_KEY") {
+		t.Fatalf("a load with no key = %v, want a refusal naming -key and SYNTH_WEBHOOK_KEY\n%s", err, out)
+	}
+	if seen := f.seen(); len(seen) != 0 {
+		t.Fatalf("a load with no key made %d requests: %v", len(seen), seen)
+	}
+
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	webhook := f.triggers["applehealth-webhook"]["source"].(map[string]any)["webhook"].(map[string]any)
+	if webhook["key"] != testKey {
+		t.Errorf("the trigger was armed with %v, want the environment's key", webhook["key"])
 	}
 	if len(f.webhooks) != 2 {
-		t.Fatalf("%d deliveries posted, want 2", len(f.webhooks))
+		t.Errorf("%d deliveries posted, want 2", len(f.webhooks))
 	}
-	for _, r := range f.webhooks {
-		if got := r.Header.Get("Authorization"); got != "Bearer "+testKey {
-			t.Errorf("%s carried Authorization %q, want the webhook key alone", r.URL.Path, got)
-		}
+}
+
+// A key the trigger already has is the owner's: the loader posts with it
+// when -key names it, refuses another unless -replace-key says so, and
+// leaves a trigger it found disabled disabled.
+func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
+	const owners = "the-owners-own-key-0123456789"
+	f := newFakeSubstrate(t)
+	f.triggers["applehealth-webhook"]["source"] = map[string]any{"webhook": map[string]any{"key": owners}}
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", "")
+
+	out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", testKey)
+	if err == nil || !strings.Contains(err.Error(), "-replace-key") || !strings.Contains(err.Error(), "-resume applehealth/0001") {
+		t.Fatalf("a load with another key = %v, want a refusal naming -replace-key and the -resume that skips the setup\n%s", err, out)
 	}
-	trig := f.triggers["pushdemo-webhook"]
+	if key := f.triggers["applehealth-webhook"]["source"].(map[string]any)["webhook"].(map[string]any)["key"]; key != owners || len(f.webhooks) != 0 {
+		t.Fatalf("the refused load left key %v and posted %d deliveries", key, len(f.webhooks))
+	}
+
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", owners); err != nil {
+		t.Fatalf("a load with the trigger's own key: %v\n%s", err, out)
+	}
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", testKey, "-replace-key"); err != nil {
+		t.Fatalf("a load asked to replace the key: %v\n%s", err, out)
+	}
+	trig := f.triggers["applehealth-webhook"]
 	if key := trig["source"].(map[string]any)["webhook"].(map[string]any)["key"]; key != testKey {
-		t.Errorf("the trigger was armed with %v, want the owner's key", key)
+		t.Errorf("-replace-key left key %v", key)
 	}
 	if trig["enabled"] != false {
 		t.Errorf("the trigger was found disabled and left enabled %v", trig["enabled"])
 	}
 }
 
-// A key the trigger already has is the owner's: the poster refuses another
-// unless told to replace it, names where to resume, and posts nothing.
-func TestPosterKeepsAKeyTheTriggerHas(t *testing.T) {
-	const owners = "the-owners-own-key-0123456789"
+// The repository token is for the API. A webhook post carries the key the
+// trigger was armed with and nothing else: an Apple Health delivery as its
+// own bearer, or a post with the key in its path.
+func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
 	f := newFakeSubstrate(t)
-	f.triggers["pushdemo-webhook"]["source"] = map[string]any{"webhook": map[string]any{"key": owners}}
-	dir := pushed(t)
-	err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", dir, 1)
-	if err == nil || !strings.Contains(err.Error(), "-replace-key") || !strings.Contains(err.Error(), "-resume pushdemo/0001") {
-		t.Fatalf("a post with another key = %v, want a refusal naming -replace-key and -resume pushdemo/0001", err)
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
 	}
-	if len(f.webhooks) != 0 {
-		t.Fatalf("the refused load posted %d deliveries", len(f.webhooks))
+	if len(f.webhooks) == 0 {
+		t.Fatal("nothing was posted")
 	}
-	if err := f.poster(testKey, true).deliveries(t.Context(), "pushdemo", dir, 1); err != nil {
-		t.Fatalf("a post asked to replace the key: %v", err)
+	for _, r := range f.webhooks {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+testKey {
+			t.Errorf("%s carried Authorization %q, want the webhook key alone", r.URL.Path, got)
+		}
 	}
-	if key := f.triggers["pushdemo-webhook"]["source"].(map[string]any)["webhook"].(map[string]any)["key"]; key != testKey {
-		t.Errorf("replacing the key left %v", key)
-	}
-}
-
-// A busy door answers 503 with Retry-After; the poster posts the same
-// delivery again instead of abandoning the load.
-func TestPosterRetriesABusyDoor(t *testing.T) {
-	f := newFakeSubstrate(t)
-	f.busy = 1
-	if err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", pushed(t), 1); err != nil {
+	c := f.client()
+	if _, _, err := c.do(t.Context(), http.MethodPost, "/webhooks/"+testAuthority+"/applehealth-webhook/"+testKey, []byte("{}"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if f.posts != 2 || len(f.webhooks) != 3 {
-		t.Errorf("%d deliveries taken over %d posts, want 2 over 3", f.posts, len(f.webhooks))
-	}
-}
-
-// A delivery an earlier run parked is not this run's failure: the poster
-// stops on a park its own post caused and names where to resume, and a
-// resume posts from that delivery on.
-func TestPosterStopsOnTheParkItCausedAndResumes(t *testing.T) {
-	f := newFakeSubstrate(t)
-	f.parked["pushdemo-webhook"] = 1
-	dir := pushed(t)
-	if err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", dir, 1); err != nil {
-		t.Fatalf("a post beside an earlier park: %v", err)
-	}
-	f = newFakeSubstrate(t)
-	f.parkAt = 1
-	err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", dir, 1)
-	if err == nil || !strings.Contains(err.Error(), "-resume pushdemo/0002") || f.posts != 1 {
-		t.Fatalf("a load whose first delivery parked = %v after %d posts, want a stop naming -resume pushdemo/0002", err, f.posts)
-	}
-	f = newFakeSubstrate(t)
-	if err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", dir, 2); err != nil {
-		t.Fatal(err)
-	}
-	if len(f.webhooks) != 1 {
-		t.Errorf("a resume at the second delivery posted %d", len(f.webhooks))
-	}
-	if provider, n, err := parseResume("pushdemo/0002"); err != nil || provider != "pushdemo" || n != 2 {
-		t.Errorf("parseResume(pushdemo/0002) = %q, %d, %v", provider, n, err)
-	}
-}
-
-// A post that fails in transport is reported with its delivery and where to
-// resume, never with the key, the only credential on that door.
-func TestAFailedPostNamesNoWebhookKey(t *testing.T) {
-	f := newFakeSubstrate(t)
-	f.drop = true
-	err := f.poster(testKey, false).deliveries(t.Context(), "pushdemo", pushed(t), 1)
-	if err == nil || !strings.Contains(err.Error(), "-resume pushdemo/0001") {
-		t.Fatalf("a load whose posts all fail = %v, want a stop naming -resume pushdemo/0001", err)
-	}
-	if strings.Contains(err.Error(), testKey) {
-		t.Errorf("the error prints the webhook key: %v", err)
-	}
-	if len(f.webhooks) != postTries {
-		t.Errorf("%d posts, want %d", len(f.webhooks), postTries)
+	last := f.webhooks[len(f.webhooks)-1]
+	if got := last.Header.Get("Authorization"); got != "" {
+		t.Errorf("a post with its key in the path carried Authorization %q", got)
 	}
 }
 
@@ -480,11 +417,94 @@ func TestAwaitSettledPollsAgainSoon(t *testing.T) {
 		waits = append(waits, d)
 		return nil
 	}
-	if _, err := c.awaitSettled(t.Context(), "pushdemo-webhook", time.Minute); err != nil {
+	if _, err := c.awaitSettled(t.Context(), "applehealth-webhook", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if want := []time.Duration{20 * time.Millisecond, 40 * time.Millisecond}; !slices.Equal(waits, want) {
 		t.Errorf("settling after two pending reads waited %v, want %v", waits, want)
+	}
+}
+
+// A post that fails in transport is reported with its URL, and an Apple
+// Health delivery carries the trigger's key as its bearer. The key is the
+// only credential on that door, so the error the loader prints names the
+// delivery and where to resume, never the key.
+func TestAFailedPostNamesNoWebhookKey(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.drop = true
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	c := f.client()
+	c.pause = func(context.Context, time.Duration) error { return nil }
+	p := &poster{c: c, key: testKey, settle: time.Minute, stdout: io.Discard}
+	err := p.deliveries(t.Context(), "applehealth", filepath.Join(dir, "applehealth"), 1)
+	if err == nil || !strings.Contains(err.Error(), "-resume applehealth/0001") {
+		t.Fatalf("a load whose posts all fail = %v, want a stop naming -resume applehealth/0001", err)
+	}
+	if strings.Contains(err.Error(), testKey) {
+		t.Errorf("the error prints the webhook key: %v", err)
+	}
+	if len(f.webhooks) != postTries || f.webhooks[0].Header.Get("Authorization") != "Bearer "+testKey {
+		t.Errorf("%d posts, the first with Authorization %q; want %d, each with the key as its bearer",
+			len(f.webhooks), f.webhooks[0].Header.Get("Authorization"), postTries)
+	}
+}
+
+// A busy door answers 503 with Retry-After; the loader waits and posts the
+// same delivery again instead of abandoning the load.
+func TestLoadRetriesABusyDoor(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.busy = 1
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	if f.posts != 2 || len(f.webhooks) != 3 {
+		t.Errorf("%d deliveries taken over %d posts, want 2 over 3", f.posts, len(f.webhooks))
+	}
+}
+
+// A delivery an earlier run parked is not this run's failure: the loader
+// stops on a park its own post caused, and names where to resume.
+func TestLoadStopsOnTheParkItCaused(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.parked["applehealth-webhook"] = 1
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("a load beside an earlier park: %v\n%s", err, out)
+	}
+
+	f = newFakeSubstrate(t)
+	f.parkAt = 1
+	out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth")
+	if err == nil || !strings.Contains(err.Error(), "-resume applehealth/0002") {
+		t.Fatalf("a load whose first delivery parked = %v, want a stop naming -resume applehealth/0002\n%s", err, out)
+	}
+	if f.posts != 1 {
+		t.Errorf("the load posted %d deliveries after a park", f.posts)
+	}
+}
+
+// -resume takes up an interrupted load at one provider's delivery: the
+// providers before it and its own setup ran already.
+func TestLoadResumesAtADelivery(t *testing.T) {
+	f := newFakeSubstrate(t)
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-resume", "applehealth/0002"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	if len(f.webhooks) != 1 || !strings.HasSuffix(f.webhooks[0].URL.Path, "/applehealth-webhook") {
+		t.Errorf("a resume at the second delivery posted %d", len(f.webhooks))
+	}
+	for _, r := range f.seen() {
+		if strings.Contains(r, "/catalog/") || strings.HasPrefix(r, "PUT ") {
+			t.Errorf("a resume ran setup again: %s", r)
+		}
+	}
+	if _, err := f.runLoad(t, "-dir", dir, "-resume", "whoop/0001"); err == nil {
+		t.Error("a resume at a provider with nothing generated was taken")
 	}
 }
 
