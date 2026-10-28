@@ -19,34 +19,39 @@ struct SetupView: View {
             }
 
             // The action first: the steps below can run past the screen,
-            // and the one thing to press must not be under them.
-            Section {
-                if !model.setupChecked, model.setupError == nil {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("Reading what your server holds…").foregroundStyle(.secondary)
+            // and the one thing to press must not be under them. With
+            // everything in place there is none, and the check is a toolbar
+            // action.
+            if !model.setupChecked || missing > 0 || model.setupError != nil {
+                Section {
+                    if !model.setupChecked, model.setupError == nil {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Reading what your server holds…").foregroundStyle(.secondary)
+                        }
+                    } else {
+                        // Both buttons in one row, with no separator between them.
+                        VStack(spacing: 10) {
+                            if missing > 0 {
+                                Button {
+                                    Task { await model.runSetup() }
+                                } label: {
+                                    WideLabel(title: missing == 1 ? "Set Up the Missing Step" : "Set Up \(missing) Missing Steps",
+                                              systemImage: "wand.and.stars", busy: model.setupBusy)
+                                }
+                                .primaryAction()
+                                .disabled(model.setupBusy)
+                            }
+                            Button {
+                                Task { await model.checkSetup() }
+                            } label: {
+                                WideLabel(title: "Check Again", systemImage: "arrow.clockwise", busy: model.setupChecking)
+                            }
+                            .secondaryAction()
+                            .disabled(model.setupBusy || model.setupChecking)
+                        }
+                        .buttonRow()
                     }
-                } else if missing > 0 {
-                    Button {
-                        Task { await model.runSetup() }
-                    } label: {
-                        WideLabel(title: missing == 1 ? "Set Up the Missing Step" : "Set Up \(missing) Missing Steps",
-                                  systemImage: "wand.and.stars", busy: model.setupBusy)
-                    }
-                    .primaryAction()
-                    .disabled(model.setupBusy)
-                    .buttonRow()
-                }
-                // In place, the check is a toolbar action, not the page's.
-                if missing > 0 || model.setupError != nil || !model.setupChecked {
-                    Button {
-                        Task { await model.checkSetup() }
-                    } label: {
-                        WideLabel(title: "Check Again", systemImage: "arrow.clockwise", busy: model.setupChecking)
-                    }
-                    .secondaryAction()
-                    .disabled(model.setupBusy || model.setupChecking)
-                    .buttonRow()
                 }
             }
 

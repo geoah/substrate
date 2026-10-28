@@ -46,9 +46,9 @@ struct StatusBadge: View {
     }
 }
 
-/// The app's buttons, one height whatever their label holds. iOS's own glass
-/// buttons swell while pressed, and a spinner is taller than a symbol; these
-/// dim instead, so nothing around them moves.
+/// The app's buttons, one height whatever their label holds, and capsules,
+/// as iOS's own are. iOS's glass buttons swell while pressed, and a spinner
+/// is taller than a symbol; these dim instead, so nothing around them moves.
 struct ActionButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, destructive }
 
@@ -64,9 +64,9 @@ struct ActionButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 50)
             .foregroundStyle(foreground)
             .tint(foreground)
-            .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(background, in: Capsule())
             .opacity(configuration.isPressed ? 0.6 : (isEnabled ? 1 : 0.4))
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Capsule())
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 
@@ -105,8 +105,11 @@ extension View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 
-    /// A card row that holds only a button: no row background, no separator,
-    /// the button's own width.
+    /// A row that holds only buttons: no background, no separator, the
+    /// section's full width. A list clips each section to its card's rounded
+    /// corners, whose curve is longer than a capsule's end; 4 points above
+    /// and below keep that clip off the buttons, so every end of every button
+    /// is the same capsule.
     func buttonRow() -> some View {
         listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
