@@ -384,10 +384,10 @@ func (ds *dataset) continueThread(ctx context.Context, threadID string) {
 
 // SweepResolutions resumes settled threads whose newest resolution row
 // postdates their settlement — the resumes a restart or a lost lease
-// dropped. Both facts are already records, so the sweep is one query; it
-// runs on the same background cadence the trigger dispatcher does
-// (cmd/substrated). N unconsumed resolutions on one thread coalesce into the
-// one continuation, which replays them all.
+// dropped. Both facts are already records, so the sweep is one query
+// (unconsumedResolutions); it runs on its own background cadence
+// (cmd/substrated resumeInterval). N unconsumed resolutions on one thread
+// coalesce into the one continuation, which replays them all.
 //
 // It settles the threads a lost run left `running` first
 // (settleLostThreads), so the sweep is the one recovery pass for both.
@@ -396,31 +396,8 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		// A failed settle must not hold back the resumes below.
 		ds.svc.log.Error("substrate: settling lost agent threads failed", "error", err)
 	}
-	rows, err := ds.db.QueryContext(ctx, `
-		SELECT t.id FROM records t
-		WHERE t.kind = $1 AND t.deleted_at IS NULL
-		  AND t.props->>'status' IN ('ok', 'overbudget')
-		  AND EXISTS (
-		    SELECT 1 FROM records m
-		    WHERE m.kind = $2 AND m.deleted_at IS NULL
-		      AND m.props->>'role' = 'system'
-		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'substrate.reamde.dev/llm/thread/' || t.id
-		      AND m.created_at > (t.props->>'finishedAt')::timestamptz
-		  )`,
-		typeThread, typeMessage)
+	threads, err := ds.unconsumedResolutions(ctx)
 	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = rows.Close() }()
-	var threads []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return 0, err
-		}
-		threads = append(threads, id)
-	}
-	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 	resumed := 0
@@ -432,4 +409,83 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		resumed++
 	}
 	return resumed, nil
+}
+
+// unconsumedResolutions lists, in id order, the settled threads holding a
+// live system row written after they settled.
+//
+// It must stay linear in the rows. Under row level security no index reaches
+// the thread pointer on a message's `props`, because `->` and `->>` are not
+// leakproof (refs.go refsAtSiteSQL), so matching messages to threads on it
+// leaves the planner a nested loop that reads every message once per thread,
+// which it takes whenever it underestimates the two sides: on a repository of
+// 23k threads and 118k messages that was a quarter of an hour per pass, and
+// every concurrent index build (indices.go) waited out its snapshot. The
+// threads are matched to their messages through refs instead, whose columns
+// are plain text with exact statistics, and each message is read by primary
+// key. The message is a scalar subquery because Postgres never flattens one:
+// as a join, the created_at comparison becomes an index condition on
+// records_created_at_idx and the planner drives each thread from every record
+// written after it settled. The settle time is cast once per thread in the
+// CTE, and a message whose created_at fails the comparison never has its
+// properties read.
+//
+// While a re-derivation of the messages' `thread` refs rows is owed, only
+// the rows' own properties say where they point: the kind's system rows are
+// read once, grouped by thread, and each thread is looked up by primary key.
+func (ds *dataset) unconsumedResolutions(ctx context.Context) ([]string, error) {
+	pending, err := refsPending(ctx, ds.db, []string{typeMessage}, msgRelThread)
+	if err != nil {
+		return nil, err
+	}
+	query, args := `
+		WITH settled AS MATERIALIZED (
+		  SELECT id, (props->>'finishedAt')::timestamptz AS finished_at
+		  FROM records
+		  WHERE kind = $1 AND deleted_at IS NULL AND props->>'status' IN ($3, $4)
+		)
+		SELECT s.id FROM settled s
+		WHERE EXISTS (
+		  SELECT 1 FROM refs r
+		  WHERE r.dst_kind = $1 AND r.dst = s.id AND r.src_kind = $2
+		    AND r.property = $6 AND r.path = '' AND r.ord = 0
+		    AND (SELECT true FROM records m
+		         WHERE m.kind = $2 AND m.id = r.src AND m.deleted_at IS NULL
+		           AND m.created_at > s.finished_at AND m.props->>'role' = $5)
+		)
+		ORDER BY s.id`,
+		[]any{typeThread, typeMessage, threadOK, threadOverBudget, msgRoleSystem, msgRelThread}
+	if pending {
+		query, args = `
+		WITH resolved AS MATERIALIZED (
+		  SELECT substr(m.thread, length($6::text) + 1) AS id, max(m.created_at) AS newest
+		  FROM (
+		    SELECT `+referencePathSQL("props", msgRelThread)+` AS thread, created_at
+		    FROM records
+		    WHERE kind = $2 AND deleted_at IS NULL AND props->>'role' = $5
+		  ) m
+		  WHERE starts_with(m.thread, $6::text)
+		  GROUP BY 1
+		)
+		SELECT t.id FROM resolved r
+		JOIN records t ON t.kind = $1 AND t.id = r.id
+		WHERE t.deleted_at IS NULL AND t.props->>'status' IN ($3, $4)
+		  AND r.newest > (t.props->>'finishedAt')::timestamptz
+		ORDER BY t.id`,
+			[]any{typeThread, typeMessage, threadOK, threadOverBudget, msgRoleSystem, vocabulary.RecordPath(typeThread, "")}
+	}
+	rows, err := ds.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var threads []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		threads = append(threads, id)
+	}
+	return threads, rows.Err()
 }
