@@ -31,7 +31,7 @@ struct SettingsView: View {
 
             Section {
                 NavigationLink {
-                    SetupView()
+                    SetupView(fromSettings: true)
                 } label: {
                     HStack {
                         Text("Server Set Up")
@@ -74,11 +74,11 @@ struct SettingsView: View {
                 } label: {
                     WideLabel(title: "Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                 }
-                .secondaryAction()
+                .destructiveAction()
+                .buttonRow()
             }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
         }
+        .readableWidth()
         .navigationTitle("Settings")
     }
 }

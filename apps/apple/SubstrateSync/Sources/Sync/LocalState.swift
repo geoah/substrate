@@ -20,6 +20,17 @@ struct Pushed: Codable, Equatable, Sendable {
         self.calendar = calendar
     }
 
+    /// A row to write: its properties, and what to remember once it is.
+    struct Row: Sendable {
+        let props: JSON
+        let pushed: Pushed
+
+        init(_ props: JSON, _ pushed: Pushed) {
+            self.props = props
+            self.pushed = pushed
+        }
+    }
+
     static func hash(_ json: JSON) -> String {
         SHA256.hash(data: json.encoded).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
@@ -29,6 +40,8 @@ enum Source: String, Codable, CaseIterable, Identifiable, Sendable {
     case health
     case contacts
     case calendars
+    case reminders
+    case places
 
     var id: String { rawValue }
 
@@ -37,6 +50,19 @@ enum Source: String, Codable, CaseIterable, Identifiable, Sendable {
         case .health: "Health"
         case .contacts: "Contacts"
         case .calendars: "Calendars"
+        case .reminders: "Reminders"
+        case .places: "Places"
+        }
+    }
+
+    /// What the source sends, in a few words, for where it is off or new.
+    var summary: String {
+        switch self {
+        case .health: "Heart rate, activity, sleep, workouts and more"
+        case .contacts: "Every contact on this phone"
+        case .calendars: "Events from 90 days back to 180 ahead"
+        case .reminders: "Every list and every reminder"
+        case .places: "Where you stay, named by Apple Maps"
         }
     }
 
@@ -45,6 +71,8 @@ enum Source: String, Codable, CaseIterable, Identifiable, Sendable {
         case .health: "heart.fill"
         case .contacts: "person.crop.circle"
         case .calendars: "calendar"
+        case .reminders: "checklist"
+        case .places: "mappin.and.ellipse"
         }
     }
 }
@@ -57,6 +85,9 @@ struct SyncRun: Codable, Equatable, Identifiable, Sendable {
     var finished: Date
     var summary: String?
     var error: String?
+    /// Stopped by hand or by the system rather than failed: `error` says
+    /// which, and nothing went wrong.
+    var stopped: Bool?
 }
 
 /// What the device held at the last scan, beside what was pushed: the
@@ -65,6 +96,7 @@ struct DeviceCounts: Codable, Equatable, Sendable {
     var contacts: Int?
     var calendars: Int?
     var events: Int?
+    var reminders: Int?
 }
 
 /// One source's last outcome, as Home shows it.
@@ -74,6 +106,8 @@ struct SourceStatus: Codable, Equatable, Sendable {
     /// "412 contacts, 3 written".
     var counts: String?
     var lastError: String?
+    /// The last run was stopped, not failed (SyncRun.stopped).
+    var stopped: Bool?
 }
 
 /// The device's side of every sync, in Application Support. Losing it is
@@ -89,6 +123,10 @@ struct LocalState: Codable, Sendable {
     var contacts: [String: Pushed] = [:]
     var calendars: [String: Pushed] = [:]
     var events: [String: Pushed] = [:]
+    var reminderLists: [String: Pushed] = [:]
+    var reminders: [String: Pushed] = [:]
+    /// The visits pushed, by their PlaceLog key.
+    var visits: [String: Pushed] = [:]
     /// The local days whose Health deliveries were both accepted.
     var healthDays: Set<String> = []
     /// Days delivered and not yet filed, with their fire ids: the next run
@@ -129,6 +167,9 @@ struct LocalState: Codable, Sendable {
         device = try c.decodeIfPresent(DeviceCounts.self, forKey: .device) ?? DeviceCounts()
         repository = try c.decodeIfPresent(String.self, forKey: .repository)
         healthPending = try c.decodeIfPresent([String: [String]].self, forKey: .healthPending) ?? [:]
+        reminderLists = try c.decodeIfPresent([String: Pushed].self, forKey: .reminderLists) ?? [:]
+        reminders = try c.decodeIfPresent([String: Pushed].self, forKey: .reminders) ?? [:]
+        visits = try c.decodeIfPresent([String: Pushed].self, forKey: .visits) ?? [:]
     }
 
     var ids: AppleIDs { AppleIDs(install: install) }
@@ -168,6 +209,9 @@ struct LocalState: Codable, Sendable {
         contacts = [:]
         calendars = [:]
         events = [:]
+        reminderLists = [:]
+        reminders = [:]
+        visits = [:]
         healthDays = []
         healthQueue = []
         healthPending = [:]
@@ -231,7 +275,9 @@ enum InstallID {
             return id
         case .missing:
             let id = LocalState.storedInstall() ?? UUID().uuidString.lowercased()
-            Keychain.setString(id, account: "install")
+            // An id the Keychain did not keep would be minted again next
+            // launch, and fork the address book and the Health account.
+            do { try Keychain.setString(id, account: "install") } catch let e as Keychain.NotSaved { throw Unavailable(status: e.status) }
             cached = id
             return id
         case let .failed(status):

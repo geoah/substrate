@@ -64,6 +64,20 @@ struct AppleIDs: Sendable {
         ExternalID.make("apple", eventstore, key)
     }
 
+    /// A reminder is its item identifier in the event store, as a single
+    /// event is: EventKit keeps reminders and events in one store.
+    func reminder(_ calendarItemIdentifier: String) -> String {
+        ExternalID.make("apple", eventstore, calendarItemIdentifier)
+    }
+
+    var visitstore: String { ExternalID.make("apple", "visitstore", install) }
+
+    /// A visit is its arrival, or its departure when the arrival is unknown
+    /// (Visit.key): the two reports of one visit land on one row.
+    func visit(_ key: String) -> String {
+        ExternalID.make("apple", visitstore, key)
+    }
+
     /// A single event is its item identifier; an occurrence of a series is
     /// that and its original start in UTC, because every occurrence shares
     /// the item identifier.

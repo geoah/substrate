@@ -95,6 +95,8 @@ targets:
     sources:
       - SubstrateSync
       - Substrate/Sources/App/Updater.swift
+    dependencies:
+      - target: SubstrateShare
     scheme:
       testTargets:
         - SubstrateSyncTests
@@ -111,6 +113,28 @@ targets:
         SUPPORTS_MACCATALYST: "NO"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+  SubstrateShare:
+    # "Send to Substrate" in every app's share sheet: a link, text or images
+    # saved as one record, with the app's sign-in, read from the Keychain
+    # group the app and the extension share. It compiles the app's client,
+    # Keychain and ids rather than a framework of its own.
+    type: app-extension
+    platform: iOS
+    sources:
+      - SubstrateShare
+      - SubstrateSync/Sources/API/Client.swift
+      - SubstrateSync/Sources/API/Keychain.swift
+      - SubstrateSync/Sources/Sync/Identity.swift
+      - SubstrateSync/Sources/Views/Components.swift
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateShare
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.share
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Support/Info-Share.plist
+        CODE_SIGN_ENTITLEMENTS: Support/SubstrateShare.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: "NO"
   SubstrateSyncTests:
     # The goldens these tests compare against live in the Go suite's
     # testdata, read from the checkout, so one file holds the app and the

@@ -26,7 +26,9 @@ data:
   # (`metricSpans`), and every write is guarded by the version it read.
   # 4: the adapter that was the healthapple sample (version 8) ships here,
   # writing the first-party observations and health kinds (record 0192).
-  version: 4
+  # 5: the adapter maps mindful minutes, water, eleven nutrients and basal
+  # body temperature, into the metrics health version 2 adds.
+  version: 5
 ---
 # No inputs and no OAuth: the app authenticates with the key the owner sets
 # on the webhook trigger, and the accounts are records the owner writes.
@@ -41,6 +43,8 @@ data:
     cycle tracking and ECGs, and turns it into health records."
   requires:
     - substrate.reamde.dev/health
+  requiresAtLeast:
+    substrate.reamde.dev/health: 2
   installs:
     - providers.substrate.reamde.dev/applehealth/account
     - providers.substrate.reamde.dev/applehealth/export
@@ -2925,7 +2929,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `applehealth-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "applehealth@4"
+    ADAPTER = "applehealth@5"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"
@@ -2984,6 +2988,21 @@ data:
         "body_mass_index": ("bmi", "sparse", "gauge", "kg/m2", "PT0S"),
         "height": ("height", "sparse", "gauge", "m", "PT0S"),
         "resting_heart_rate": ("resting_heart_rate", "daily", "summary", "1/min", None),
+        "basal_body_temperature": ("basal_body_temperature", "sparse", "gauge", "Cel", "PT0S"),
+        # What is logged rather than measured: a session's minutes, a drink, a
+        # meal's nutrients. Each row is an amount at its own minute.
+        "mindful_minutes": ("mindful_minutes", "dense", "amount", "min", None),
+        "dietary_water": ("water", "dense", "amount", "mL", None),
+        "dietary_energy": ("dietary_energy", "dense", "amount", "kcal", None),
+        "protein": ("protein", "dense", "amount", "g", None),
+        "carbohydrates": ("carbohydrates", "dense", "amount", "g", None),
+        "total_fat": ("fat", "dense", "amount", "g", None),
+        "saturated_fat": ("saturated_fat", "dense", "amount", "g", None),
+        "dietary_sugar": ("sugar", "dense", "amount", "g", None),
+        "fiber": ("fiber", "dense", "amount", "g", None),
+        "sodium": ("sodium", "dense", "amount", "mg", None),
+        "cholesterol": ("cholesterol", "dense", "amount", "mg", None),
+        "caffeine": ("caffeine", "dense", "amount", "mg", None),
     }
     # Spellings the app's help pages and the vendor's own receiver use for the
     # same metrics.

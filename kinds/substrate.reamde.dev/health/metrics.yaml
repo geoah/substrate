@@ -1058,3 +1058,282 @@ data:
     # A night lands on the day it ends, so each day holds one night.
     bucketPlace: end
     category: sleep
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/mindful_minutes
+data:
+  properties:
+    name: Mindful minutes
+    description: >-
+      Time spent in mindfulness sessions, such as Breathe, Reflect or a meditation
+      app, in minutes. Each value covers its own span, so a day is the sum
+      of its spans.
+    codes:
+      - system: healthkit
+        code: HKCategoryTypeIdentifierMindfulSession
+    unit:
+      ref: substrate.reamde.dev/core/unit/min
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: mindfulness
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/water
+data:
+  properties:
+    name: Water
+    description: >-
+      Water drunk, as logged on the phone or by an app. Each value covers
+      its own span, so a day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryWater
+    unit:
+      ref: substrate.reamde.dev/core/unit/mL
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/dietary_energy
+data:
+  properties:
+    name: Energy consumed
+    description: >-
+      The energy in the food and drink logged, in kilocalories. Each value
+      covers its own span, so a day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryEnergyConsumed
+    unit:
+      ref: substrate.reamde.dev/core/unit/kcal
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/protein
+data:
+  properties:
+    name: Protein
+    description: >-
+      Protein in the food logged. Each value covers its own span, so a day
+      is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryProtein
+    unit:
+      ref: substrate.reamde.dev/core/unit/g
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 1
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/carbohydrates
+data:
+  properties:
+    name: Carbohydrates
+    description: >-
+      Carbohydrates in the food logged. Each value covers its own span, so
+      a day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryCarbohydrates
+    unit:
+      ref: substrate.reamde.dev/core/unit/g
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 1
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/fat
+data:
+  properties:
+    name: Total fat
+    description: >-
+      All fat in the food logged. Each value covers its own span, so a day
+      is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryFatTotal
+    unit:
+      ref: substrate.reamde.dev/core/unit/g
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 1
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/saturated_fat
+data:
+  properties:
+    name: Saturated fat
+    description: >-
+      Saturated fat in the food logged. Each value covers its own span, so
+      a day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryFatSaturated
+    unit:
+      ref: substrate.reamde.dev/core/unit/g
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 1
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/sugar
+data:
+  properties:
+    name: Sugar
+    description: >-
+      Sugar in the food logged. Each value covers its own span, so a day is
+      the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietarySugar
+    unit:
+      ref: substrate.reamde.dev/core/unit/g
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 1
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/fiber
+data:
+  properties:
+    name: Fiber
+    description: >-
+      Dietary fiber in the food logged. Each value covers its own span, so
+      a day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryFiber
+    unit:
+      ref: substrate.reamde.dev/core/unit/g
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 1
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/sodium
+data:
+  properties:
+    name: Sodium
+    description: >-
+      Sodium in the food logged. Each value covers its own span, so a day
+      is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietarySodium
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/cholesterol
+data:
+  properties:
+    name: Cholesterol
+    description: >-
+      Cholesterol in the food logged. Each value covers its own span, so a
+      day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryCholesterol
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/caffeine
+data:
+  properties:
+    name: Caffeine
+    description: >-
+      Caffeine in the food and drink logged. Each value covers its own span,
+      so a day is the sum of its spans.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDietaryCaffeine
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: nutrition
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/basal_body_temperature
+data:
+  properties:
+    name: Basal body temperature
+    description: >-
+      The body's temperature at rest, taken on waking, as cycle tracking logs
+      it. A writer copies the hold, PT0S, onto each value: a reading is a
+      point in time, so an average is the mean of the readings it covers.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBasalBodyTemperature
+    unit:
+      ref: substrate.reamde.dev/core/unit/Cel
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+      - count
+    displayPrecision: 2
+    category: temperature

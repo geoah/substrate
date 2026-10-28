@@ -39,6 +39,12 @@
 	<string>Substrate Sync copies your contacts into your substrate repository. Nothing is written back.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Substrate Sync copies your calendar events into your substrate repository. Nothing is written back.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Substrate Sync copies your reminders into your substrate repository. Nothing is written back.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Substrate Sync records the places you stay at, when Places is on, and copies them into your substrate repository.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Places records where you stay, even when the app is closed, using iOS's low-power visit monitoring, and copies each visit into your substrate repository.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

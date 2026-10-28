@@ -498,7 +498,7 @@ installing `labs`, or the Apple Health or WHOOP provider, installs `health`.
 
 | Package | Ships |
 | --- | --- |
-| `substrate.reamde.dev/health` | the `sleep` and `workout` kinds; 33 metrics, `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose and fitness metrics wearables, scales and meters report; two glucose units; the sleep and workout record views |
+| `substrate.reamde.dev/health` | the `sleep` and `workout` kinds; 46 metrics, `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose and fitness metrics wearables, scales and meters report, and what a phone logs: mindful minutes, water, eleven nutrients and basal body temperature; two glucose units; the sleep and workout record views |
 | `substrate.reamde.dev/labs` | requires `health`; the `analyte`, `labreport` and `labresult` kinds; 22 lab metrics, `labs/<name>`, and 17 `analyte` records; the function `convertlab` and its trigger `labs-on-labresult`; three record views |
 | `substrate.reamde.dev/environment` | no kinds; six climate and energy metrics, `environment/air_temperature`, `environment/relative_humidity`, `environment/illuminance`, `environment/atmospheric_pressure`, `environment/energy` and `environment/power` |
 

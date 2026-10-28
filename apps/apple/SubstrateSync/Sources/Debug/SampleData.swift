@@ -43,13 +43,16 @@ enum SampleData {
         let contacts = try addContacts()
         log.notice("events: start")
         let events = try await addEvents(day: day, calendar: calendar)
+        log.notice("reminders: start")
+        let reminders = try await addReminders(day: day, calendar: calendar)
+        let visits = addVisits(day: day, calendar: calendar)
         var health = 0
         if !withoutHealth {
             log.notice("health: start")
             health = try await addHealth(day: day, calendar: calendar)
         }
         log.notice("done")
-        return "\(health) Health samples, \(contacts) contacts, \(events) events"
+        return "\(health) Health samples, \(contacts) contacts, \(events) events, \(reminders) reminders, \(visits) visits"
     }
 
     private static func q(_ id: HKQuantityTypeIdentifier, _ value: Double, _ unit: HKUnit, _ start: Date, _ end: Date? = nil,
@@ -193,11 +196,17 @@ enum SampleData {
     private static func addEvents(day: Date, calendar: Calendar) async throws -> Int {
         let store = EKEventStore()
         guard try await store.requestFullAccessToEvents() else { return 0 }
-        let cal = EKCalendar(for: .event, eventStore: store)
-        cal.title = "Substrate Sync samples"
-        cal.cgColor = CGColor(srgbRed: 0.18, green: 0.54, blue: 0.37, alpha: 1)
-        cal.source = store.sources.first { $0.sourceType == .local } ?? store.defaultCalendarForNewEvents?.source
-        try store.saveCalendar(cal, commit: true)
+        // One sample calendar, however often the samples are added.
+        let cal: EKCalendar
+        if let existing = store.calendars(for: .event).first(where: { $0.title == "Substrate Sync samples" }) {
+            cal = existing
+        } else {
+            cal = EKCalendar(for: .event, eventStore: store)
+            cal.title = "Substrate Sync samples"
+            cal.cgColor = CGColor(srgbRed: 0.18, green: 0.54, blue: 0.37, alpha: 1)
+            cal.source = store.sources.first { $0.sourceType == .local } ?? store.defaultCalendarForNewEvents?.source
+            try store.saveCalendar(cal, commit: true)
+        }
         func at(_ dayOffset: Int, _ h: Int, _ m: Int = 0) -> Date {
             calendar.date(byAdding: DateComponents(day: dayOffset, hour: h, minute: m), to: day)!
         }
@@ -223,6 +232,53 @@ enum SampleData {
         trip.startDate = at(7, 0)
         trip.endDate = at(9, 0)
         for e in [lunch, standup, trip] { try store.save(e, span: .futureEvents, commit: false) }
+        try store.commit()
+        return 3
+    }
+
+    /// Two visits in the place log, as CoreLocation would report them: a
+    /// morning's stay, over, and an evening's that has not ended. A simulator
+    /// never reports a visit, so this is how Places has something to send.
+    private static func addVisits(day: Date, calendar: Calendar) -> Int {
+        func at(_ h: Int, _ m: Int = 0) -> Date { calendar.date(byAdding: DateComponents(hour: h, minute: m), to: day)! }
+        PlaceLog.shared.record(Visit(arrival: at(9), departure: at(10, 30), latitude: 37.97553, longitude: 23.73483, accuracy: 35))
+        PlaceLog.shared.record(Visit(arrival: at(18, 15), departure: nil, latitude: 37.97153, longitude: 23.72575, accuracy: 50))
+        return 2
+    }
+
+    private static func addReminders(day: Date, calendar: Calendar) async throws -> Int {
+        let store = EKEventStore()
+        guard try await store.requestFullAccessToReminders() else { return 0 }
+        let list: EKCalendar
+        if let existing = store.calendars(for: .reminder).first(where: { $0.title == "Substrate Sync samples" }) {
+            list = existing
+        } else {
+            list = EKCalendar(for: .reminder, eventStore: store)
+            list.title = "Substrate Sync samples"
+            list.cgColor = CGColor(srgbRed: 0.95, green: 0.55, blue: 0.1, alpha: 1)
+            list.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first { $0.sourceType == .local }
+            try store.saveCalendar(list, commit: true)
+        }
+        let groceries = EKReminder(eventStore: store)
+        groceries.calendar = list
+        groceries.title = "Buy oat milk"
+        groceries.notes = "The barista one."
+        groceries.dueDateComponents = calendar.dateComponents([.year, .month, .day], from: calendar.date(byAdding: .day, value: 1, to: day)!)
+        let call = EKReminder(eventStore: store)
+        call.calendar = list
+        call.title = "Call the dentist"
+        call.priority = 1
+        call.dueDateComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute],
+                                                         from: calendar.date(byAdding: DateComponents(day: 1, hour: 10), to: day)!)
+        call.addAlarm(EKAlarm(relativeOffset: -900))
+        let done = EKReminder(eventStore: store)
+        done.calendar = list
+        done.title = "Water the plants"
+        // EventKit refuses a repeating reminder without a due date.
+        done.dueDateComponents = calendar.dateComponents([.year, .month, .day], from: day)
+        done.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: nil))
+        done.isCompleted = true
+        for r in [groceries, call, done] { try store.save(r, commit: false) }
         try store.commit()
         return 3
     }

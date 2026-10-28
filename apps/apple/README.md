@@ -133,9 +133,11 @@ Release builds carry none of it.
 
 A second app in the same project: `SubstrateSync` (bundle id
 `dev.reamde.substrate.sync`), iPhone and iPad only, iOS 26. It carries no
-console and no Sparkle. It reads the device's Health, Contacts and Calendar
-and pushes them into one repository, signed in with the owner's password,
-over the API alone. Nothing is written back to the device.
+console and no Sparkle. It reads the device's Health, Contacts, Calendar,
+Reminders and the places it stays at, and pushes them into one repository,
+signed in with the owner's password, over the API alone. Nothing is written
+back to the device. Its share extension, Send to Substrate, saves what any
+app shares.
 
 ```bash
 mise run apple:build:sync     # the app for the simulator
@@ -146,7 +148,10 @@ mise run apple:release:sync   # archived, signed and published under sync/
 | --------- | -------- | --- |
 | Contacts  | `providers.substrate.reamde.dev/apple/addressbook` and `…/contact` | `PUT` per changed contact, `PATCH` to null for a vanished key, `DELETE` for a vanished contact, then the address book row |
 | Calendars | `…/apple/eventstore`, `…/calendar` and `…/event` | every event calendar and every occurrence from 90 days back to 180 ahead; an event that ages out of the window keeps its row |
+| Reminders | `…/apple/reminderlist` and `…/reminder`, under the event store | every list and every reminder, completed ones too; a deleted one is removed |
+| Places    | `…/apple/visitstore` and `…/visit` | the visits iOS reported while Places was on, kept a year on the phone, named by Apple Maps |
 | Health    | `providers.substrate.reamde.dev/applehealth` mirror rows, then observations, sleep and workouts through the provider's own adapter, under `substrate.reamde.dev` | Health Auto Export's JSON to `/webhooks/<authority>/applehealth-webhook`, two deliveries per local day |
+| Shares    | `…/apple/share`, the images as blobs | the share extension, once per share |
 
 The ids and the field rules are the apple package's
 [README](../../kinds/providers.substrate.reamde.dev/apple/README.md); the
@@ -176,8 +181,8 @@ contacts' address book, the calendar store or the Health account gone from
 the server, sends everything again.
 
 **Set up** lists what the repository lacks and does it with one button:
-installs (or upgrades to version 2) `providers.substrate.reamde.dev/apple`
-and installs (or upgrades to version 4) `…/applehealth`, which ships the
+installs (or upgrades to version 3) `providers.substrate.reamde.dev/apple`
+and installs (or upgrades to version 5) `…/applehealth`, which ships the
 adapter and installs the `substrate.reamde.dev/health` catalogue it
 requires; then it creates the Health account
 `substrate-sync-<first 8 characters of the install id>`, and arms the
@@ -197,12 +202,64 @@ range longer than a month first asks HealthKit which days hold data, so years
 of history are not read one empty day at a time. A background run sends only
 the last three days. A delivery replaces a metric's rows across its span, so
 a day is always sent whole, and a day larger than 4 MiB is split by metric.
+Besides the measured metrics, a day carries what is logged: mindful minutes
+(each session at the minute it starts), water and eleven nutrients, and basal
+body temperature, which the adapter maps to the `health/*` metrics of those
+names; cycle tracking, as the `cycleTracking` section (`cycleevent` rows); and
+each workout's GPS route, thinned to 15,000 points, which stays on the
+workout's mirror row.
+
+**Reminders** are read whole each sync: every list (an `EKCalendar` for
+reminders) and every reminder, with its due day, and its due moment where it
+has a time. A list or a reminder gone from the phone is deleted, and an empty
+answer from EventKit deletes nothing.
+
+**Places** is off until it is turned on, because it asks for Always location
+access. It uses iOS's visit monitoring, which reports a stay when the phone
+arrives and again when it leaves, at little cost to the battery, and relaunches
+the app in the background to do it. Each report is kept in a log on the phone
+for a year; a sync names up to 25 new visits a run through MapKit's reverse
+geocoder and sends them all, so a reset repository gets the year back. iOS
+keeps no history of its own, so Places starts when it is turned on.
+
+**Send to Substrate** is a share extension: a link, text and up to four
+images from any app's share sheet, with a note, saved as one `share` record.
+It reads the app's sign-in from the Keychain group the two share, uploads the
+images as blobs and writes the record within the minute the server keeps an
+unreferenced blob, writing it again part way through when a slow uplink would
+outlast that minute. A link shared again updates its record; a share without
+one keeps one id per sheet, so a Save tried again updates the first try.
+Cancel stops a save under way, and deletes what it wrote of a share without a
+link.
+
+**Errors and waiting.** Every request has a time limit sized to its work:
+discovery and sign-in 20 seconds, a read 30, a Health delivery or an image
+two minutes, an install five. An install is never sent twice, and one that
+outlasts its limit says so ("taking long") rather than "failed", because the
+server goes on; the check after it finds the install done. Set Up's and Check
+Again's spinners end with the work, never after the error. A batch of writes
+that all fail for the network stops the run at the first batch, and a
+refused token stops it at the first refusal; a refused Health webhook key
+asks for Set Up and never signs the owner out. A read that fails (Reminders,
+the events of a calendar that held some, a Health day) deletes nothing and
+marks nothing sent. Errors are said in sentences that name the server and
+what to do, with the server's own words where it gave some.
+`SubstrateSyncUITests/SetupTimeoutTests.swift` holds the Set Up case against
+`scripts/slowserver.py`, a proxy that holds each install longer than the app
+waits:
+
+```bash
+python3 apps/apple/scripts/slowserver.py http://localhost:8080 8 8093 &
+TEST_RUNNER_SYNC_SLOW_SERVER=http://localhost:8093 TEST_RUNNER_SYNC_E2E_REPOSITORY=<fresh> \
+  TEST_RUNNER_SYNC_E2E_PASSWORD=… xcodebuild -project apps/apple/Substrate.xcodeproj -scheme SubstrateSync \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test -only-testing:SubstrateSyncUITests/SetupTimeoutTests
+```
 
 **Home is an overview.** A status card says what is syncing (the source,
 its step and how far it has got, and Stop) or how the last sync ended, above
 Sync Now. Each source is one row: what it has synced of what the phone holds,
-when, and its state as a badge (Up to date, Syncing, Queued, Being filed,
-Failed, No access, Off). A source that is running or waiting its turn shows
+when, and its state as a badge (Up to date, Syncing, Queued, Processing,
+Stopped, Failed, No access, Off). A stop is not a failure. A source that is running or waiting its turn shows
 that, never the error of the run it is replacing. Tapping a source opens its
 page: the state with the last run or its error and a button that syncs that
 source alone, its coverage once (Health: the days with data inside the

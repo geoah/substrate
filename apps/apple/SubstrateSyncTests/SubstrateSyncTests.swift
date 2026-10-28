@@ -7,6 +7,17 @@ import XCTest
 /// The apple README's vectors and the calendar ones beside them, minted by
 /// `ExternalID` in internal/runner/ids.go.
 final class ExternalIDTests: XCTestCase {
+    /// The apple README's reminder, visit and share vectors.
+    func testReminderVisitAndShareVectors() {
+        let ids = AppleIDs(install: "6f1c2e9a-3b4d-4e5f-8a7b-9c0d1e2f3a4b")
+        XCTAssertEqual(ids.calendar("4C9E1B2A-7D3F-4E50-8A61-B2C3D4E5F607"), "apple-22767140db30b90972f627ba203de320")
+        XCTAssertEqual(ids.reminder("8F2A6C1D-3E4B-4F5A-9B6C-7D8E9F0A1B2C"), "apple-a45e5e9da9e98130ec4d269d8a1aba19")
+        XCTAssertEqual(ids.visitstore, "apple-4e3738eb0c9436e7b08bdd1a8b68ef08")
+        XCTAssertEqual(ids.visit("arrival:2026-10-27T08:15:00Z"), "apple-847ec3b8965f9037b5a6e52ae28acb5c")
+        XCTAssertEqual(ids.visit("departure:2026-10-27T18:40:00Z"), "apple-f22ab5f3787cd3f9a3076e3a0332c710")
+        XCTAssertEqual(ExternalID.make("apple", "share", "https://example.com/article"), "apple-31a4b492dfd8bc6e77aea4fa0e31eb7e")
+    }
+
     func testContactVectors() {
         let vectors: [(String, String, String)] = [
             ("addressbook", "6f1c2e9a-3b4d-4e5f-8a7b-9c0d1e2f3a4b", "apple-85bb44b13b0b7c81a18d0533e773a814"),
@@ -337,6 +348,112 @@ final class HealthScheduleTests: XCTestCase {
     }
 }
 
+/// A reminder due on a day names the day alone; one due at a time names the
+/// day and the moment, in the zone its components carry.
+final class ReminderMappingTests: XCTestCase {
+    func testADueDayAndADueMoment() {
+        let day = DateComponents(year: 2026, month: 10, day: 28)
+        XCTAssertEqual(ReminderMapping.moments(day, zone: nil).day, "2026-10-28")
+        XCTAssertNil(ReminderMapping.moments(day, zone: nil).moment)
+        // Athens is UTC+2 by then: summer time ended on 25 October.
+        var timed = DateComponents(year: 2026, month: 10, day: 28, hour: 10, minute: 30)
+        timed.timeZone = TimeZone(identifier: "Europe/Athens")
+        XCTAssertEqual(ReminderMapping.moments(timed, zone: nil).day, "2026-10-28")
+        XCTAssertEqual(ReminderMapping.moments(timed, zone: nil).moment, "2026-10-28T08:30:00Z")
+        XCTAssertNil(ReminderMapping.moments(nil, zone: nil).day)
+    }
+}
+
+/// A workout's track is thinned to what the provider stores, keeping its
+/// ends; a short one goes whole.
+final class WorkoutRouteTests: XCTestCase {
+    func testALongTrackIsThinnedAndKeepsItsEnds() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let points = (0 ..< 40_000).map { RoutePoint(at: t0 + Double($0), latitude: 37 + Double($0) * 1e-6, longitude: 23) }
+        let thinned = WorkoutRoute.thinned(points)
+        XCTAssertLessThanOrEqual(thinned.count, WorkoutRoute.limit)
+        XCTAssertGreaterThan(thinned.count, WorkoutRoute.limit / 2)
+        XCTAssertEqual(thinned.first?.at, points.first?.at)
+        XCTAssertEqual(thinned.last?.at, points.last?.at)
+        XCTAssertEqual(WorkoutRoute.thinned(Array(points.prefix(100))).count, 100)
+    }
+}
+
+/// Errors in sentences a person can act on, and the rule that stops a run
+/// once a batch shows the server is out of reach.
+final class ErrorTests: XCTestCase {
+    let server = URL(string: "https://substrate.example.com")!
+
+    func testTheNetworksErrorsAreSaidPlainly() {
+        XCTAssertEqual(explain(URLError(.timedOut), server: server), "Substrate.example.com took too long to answer.")
+        XCTAssertEqual(explain(URLError(.notConnectedToInternet), server: server), "This phone is offline.")
+        XCTAssertEqual(explain(URLError(.cannotConnectToHost), server: server), "Substrate.example.com isn't answering.")
+        XCTAssertEqual(explain(URLError(.cannotFindHost), server: server), "Couldn't find substrate.example.com. Check the address.")
+        XCTAssertEqual(explain(URLError(.timedOut)), "The server took too long to answer.")
+    }
+
+    func testTheServersOwnWordsAreKept() {
+        let refusal = ServerError(status: 409, data: Data(#"{"error":{"message":"the trigger is taken"}}"#.utf8))
+        XCTAssertEqual(explain(refusal, server: server), "the trigger is taken")
+        let signedOut = ServerError(status: 401, data: Data())
+        XCTAssertEqual(explain(signedOut, server: server), "Your sign-in is no longer valid. Sign in again.")
+        let broken = ServerError(status: 502, data: Data("Bad Gateway".utf8))
+        XCTAssertTrue(explain(broken, server: server).hasPrefix("Substrate.example.com ran into a problem (502)"))
+        XCTAssertTrue(timedOut(URLError(.timedOut)))
+        XCTAssertFalse(timedOut(refusal))
+    }
+
+    func testABatchLostToTheNetworkStopsTheRunAndARefusalDoesNot() {
+        let lost: [Error] = [URLError(.timedOut), URLError(.cannotConnectToHost)]
+        XCTAssertNotNil(SyncEngine.unreachable(lost, of: 2))
+        // Some rows went through: the server answers.
+        XCTAssertNil(SyncEngine.unreachable(lost, of: 3))
+        // The server refused: it answers, and the refusal is the row's.
+        XCTAssertNil(SyncEngine.unreachable([URLError(.timedOut), ServerError(status: 400, data: Data())], of: 2))
+        XCTAssertNil(SyncEngine.unreachable([], of: 0))
+        // A refused token stops the run at once, however the rest fared.
+        let signedOut = ServerError(status: 401, data: Data())
+        XCTAssertNotNil(SyncEngine.unreachable([signedOut], of: 50))
+        XCTAssertFalse(isUnreachable(URLError(.cancelled)))
+        XCTAssertFalse(isUnreachable(signedOut))
+    }
+
+    func testAWebhookRefusalIsNotASignOutAndALoginRefusalIsNotAnExpiry() {
+        XCTAssertFalse(isSignedOut(WebhookRefused(text: "bad key")))
+        XCTAssertFalse(isSignedOut(ContextError(context: "Sending 2026-10-20", underlying: WebhookRefused(text: "bad key"))))
+        XCTAssertEqual(LoginRefused(server: ServerError(status: 401, data: Data())).localizedDescription,
+                       "The repository name, password or code was not accepted.")
+        let worded = ServerError(status: 401, data: Data(#"{"error":{"message":"invalid credentials"}}"#.utf8))
+        XCTAssertEqual(LoginRefused(server: worded).localizedDescription, "invalid credentials")
+        XCTAssertEqual(explain(CancellationError()), "Stopped.")
+    }
+
+    func testAProxysHTMLPageIsNotShown() {
+        let page = ServerError(status: 502, data: Data("<html><body><h1>502 Bad Gateway</h1></body></html>".utf8))
+        XCTAssertEqual(page.text, "The server answered 502.")
+    }
+
+    func testAWebhookKeyIsThirtyTwoCharactersOfItsAlphabet() {
+        let key = AppModel.newKey()
+        XCTAssertEqual(key.count, 32)
+        XCTAssertTrue(key.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" })
+        XCTAssertNotEqual(key, AppModel.newKey())
+    }
+
+    func testAGiveUpComesWhenTheWorkDoesNot() async throws {
+        let started = Date()
+        do {
+            _ = try await withTimeout(0.2) { try await Task.sleep(for: .seconds(30)); return 1 }
+            XCTFail("the work outlived its timeout")
+        } catch {
+            XCTAssertTrue(timedOut(error), "\(error)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        let quick = try await withTimeout(5) { 7 }
+        XCTAssertEqual(quick, 7)
+    }
+}
+
 /// What the overview shows for a source, and the activity timeline.
 final class OverviewTests: XCTestCase {
     private let failed = SourceStatus(lastSync: Date(), counts: nil, lastError: "Sending 2026-10-20: refused")
@@ -357,9 +474,20 @@ final class OverviewTests: XCTestCase {
         let ok = SourceStatus(lastSync: Date(), counts: "15 contacts", lastError: nil)
         XCTAssertEqual(SourceOverview.of(enabled: false, access: "Allowed", running: true, queued: false, status: failed, waiting: 3).badge, "Off")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Not allowed", running: false, queued: false, status: ok, waiting: 0).badge, "No access")
-        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 7).badge, "Being filed")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 7).badge, "Processing")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: nil, waiting: 0).badge, "Not synced yet")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: ok, waiting: 0).badge, "Up to date")
+    }
+
+    /// A run stopped by hand is a stop, said plainly, and no failure.
+    func testAStoppedRunIsNotAFailure() {
+        let stopped = SourceStatus(lastSync: Date(), counts: nil, lastError: "Stopped before it finished. Sync again to carry on.", stopped: true)
+        let o = SourceOverview.of(enabled: true, access: "Allowed", running: false, queued: false, status: stopped, waiting: 0)
+        XCTAssertEqual(o.badge, "Stopped")
+        XCTAssertEqual(o.tone, .attention)
+        XCTAssertEqual(SyncEngine.changes(0, 0), "no changes")
+        XCTAssertEqual(SyncEngine.changes(3, 1), "3 written · 1 removed")
+        XCTAssertEqual(SyncEngine.changes(0, 2), "2 removed")
     }
 
     func testTheTimelineFoldsEachRunsLinesIntoIt() {
@@ -457,6 +585,19 @@ final class HealthGoldenTests: XCTestCase {
             HealthMetric(name: "blood_pressure", units: "mmHg", rows: [
                 r.pressure(at: at("2026-10-07 07:15:00"), systolic: 118, diastolic: 76, sources: ["Withings"]),
             ]),
+            q("basal_body_temperature", "degC", [("2026-10-07 06:45:00", 36.42, [phone])]),
+            q("mindful_minutes", "min", [("2026-10-07 07:40:00", 10, [watch]), ("2026-10-07 22:15:00", 3.5, [phone])]),
+            q("dietary_water", "mL", [("2026-10-07 08:00:00", 250, [phone]), ("2026-10-07 13:10:00", 500, [phone])]),
+            q("dietary_energy", "kcal", [("2026-10-07 08:05:00", 420, ["MyFitnessPal"]), ("2026-10-07 13:20:00", 655, ["MyFitnessPal"])]),
+            q("protein", "g", [("2026-10-07 08:05:00", 22.5, ["MyFitnessPal"])]),
+            q("carbohydrates", "g", [("2026-10-07 08:05:00", 48, ["MyFitnessPal"])]),
+            q("total_fat", "g", [("2026-10-07 08:05:00", 14.2, ["MyFitnessPal"])]),
+            q("saturated_fat", "g", [("2026-10-07 08:05:00", 4.1, ["MyFitnessPal"])]),
+            q("dietary_sugar", "g", [("2026-10-07 08:05:00", 12, ["MyFitnessPal"])]),
+            q("fiber", "g", [("2026-10-07 08:05:00", 6.5, ["MyFitnessPal"])]),
+            q("sodium", "mg", [("2026-10-07 08:05:00", 540, ["MyFitnessPal"])]),
+            q("cholesterol", "mg", [("2026-10-07 08:05:00", 185, ["MyFitnessPal"])]),
+            q("caffeine", "mg", [("2026-10-07 08:00:00", 95, [phone])]),
         ], workouts: [])
     }
 
@@ -485,6 +626,18 @@ final class HealthGoldenTests: XCTestCase {
             return WorkoutSummary.Minute(
                 at: runStart.addingTimeInterval(Double(m) * 60), min: base, avg: base + 3.5, max: base + 6, sources: [watch])
         }
+        run.route = (0 ..< 3).map { (i: Int) -> RoutePoint in
+            var p = RoutePoint(at: runStart.addingTimeInterval(Double(i) * 15), latitude: 37.972587 + Double(i) * 0.00012,
+                               longitude: 23.736912 + Double(i) * 0.00009)
+            p.altitude = 87.47 + Double(i)
+            p.course = 31.5
+            p.courseAccuracy = 11.43
+            p.horizontalAccuracy = 5.9
+            p.verticalAccuracy = 2.7
+            p.speed = 2.95
+            p.speedAccuracy = 0.56
+            return p
+        }
         var lift = WorkoutSummary(
             id: UUID(uuidString: "9E8D7C6B-5A49-4382-9170-6F5E4D3C2B1A")!, name: "Traditional Strength Training",
             start: at("2026-10-07 19:30:00"), end: at("2026-10-07 20:15:00"), isIndoor: true)
@@ -494,10 +647,17 @@ final class HealthGoldenTests: XCTestCase {
         lift.heartRateData = (0 ..< 3).map { (m: Int) -> WorkoutSummary.Minute in
             WorkoutSummary.Minute(at: liftStart.addingTimeInterval(Double(m) * 60), min: 88, avg: 95, max: 101, sources: [watch])
         }
-        return HealthDelivery(
+        var delivery = HealthDelivery(
             grouping: .seconds,
             metrics: [HealthMetric(name: "sleep_analysis", units: "hr", rows: SleepNights.rows(all: segments, day: day, rows: r))],
             workouts: [run.json(r), lift.json(r)])
+        delivery.cycle = [
+            CycleTracking.entry(name: "Menstrual Flow", value: "Medium", start: at("2026-10-07 00:00:00"), end: at("2026-10-08 00:00:00"),
+                                cycleStart: true, source: phone, rows: r),
+            CycleTracking.entry(name: "Ovulation Test Result", value: "Negative", start: at("2026-10-07 08:30:00"),
+                                end: at("2026-10-07 08:30:00"), cycleStart: nil, source: phone, rows: r),
+        ]
+        return delivery
     }
 
     /// The request as the webhook door hands it to the function: the
@@ -549,6 +709,6 @@ final class HealthGoldenTests: XCTestCase {
     func testSecondsDelivery() throws {
         try check("app_seconds.json", Self.envelope(
             Self.seconds, automation: "7D2E9F41-8A3B-4C5D-B6E7-F80912A3B4C5", session: "C3A1F5E7-2B4D-4F6A-8C0E-1D3B5F7A9C2E",
-            note: "Substrate Sync's seconds delivery for one day, from its encoder (apps/apple/SubstrateSyncTests). Sleep segments with their night's fields, and two workouts."))
+            note: "Substrate Sync's seconds delivery for one day, from its encoder (apps/apple/SubstrateSyncTests). Sleep segments with their night's fields, two workouts (the run with a route) and two cycle tracking entries."))
     }
 }

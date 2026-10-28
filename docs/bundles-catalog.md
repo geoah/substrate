@@ -82,7 +82,7 @@ thing, and the Records column counts them.
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
-| Apple         | Provider | Owner token    | 2     | 0         | 0       | 0      |
+| Apple         | Provider | Owner token    | 10    | 0         | 0       | 0      |
 | Apple Health  | Provider | Webhook key    | 10    | 2         | 2       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
@@ -1642,22 +1642,30 @@ ignored.
 
 Package `providers.substrate.reamde.dev/apple`. Apple data that an app on
 the owner's device pushes into the repository, in Apple's own shape: the
-Contacts framework (`CNContactStore`) and EventKit's calendars
-(`EKEventStore`). Apple Health is its own package, below, because it arrives
+Contacts framework (`CNContactStore`), EventKit's calendars and reminders
+(`EKEventStore`), CoreLocation's visits (`CLVisit`), and what the owner sends
+from another app's share sheet. Apple Health is its own package, below, because it arrives
 through a webhook. It is the one provider with no server side. The
 closure declares kinds and nothing else: no config, no account, no OAuth, no
 function and no triggers, because Apple's on-device frameworks have no API a
 sync could call.
 
-- **Kinds (5)**: `addressbook` (one device's contact store, as one install
+- **Kinds (10)**: `addressbook` (one device's contact store, as one install
   of the pushing app sees it: `deviceName`, `lastSyncedAt` and
   `contactCount`), `contact` (one `CNContact`, field for field under
   Apple's key names, plus `addressbook` and `displayName`), `eventstore`
   (one device's calendar store: `deviceName`, `calendarCount`, `eventCount`,
   `lastSyncedAt`, and `windowStart`/`windowEnd`, the span the last push
-  covered), `calendar` (one `EKCalendar` that holds events) and `event` (one
-  `EKEvent` occurrence, a repeating event being one row per occurrence in the
-  window).
+  covered, and `reminderListCount`/`reminderCount`), `calendar` (one
+  `EKCalendar` that holds events), `event` (one `EKEvent` occurrence, a
+  repeating event being one row per occurrence in the window),
+  `reminderlist` (one `EKCalendar` that holds reminders), `reminder` (one
+  `EKReminder`, completed or not, a repeating one being one row), `visitstore`
+  (one device's recorded visits: `deviceName`, `visitCount`, `lastSyncedAt`),
+  `visit` (one `CLVisit`: arrival, departure, coordinate and accuracy, with the
+  place name and address Apple Maps gave on the device) and `share` (a link,
+  text or up to four images sent from a share sheet, with a note; the images
+  are blobs).
 - **Functions, triggers**: none.
 - **Mappings**: none shipped. A person mapping can match on
   `emailAddresses[].value` and copy `displayName` and `phoneNumbers[].value`,
@@ -1685,7 +1693,13 @@ UUID>)`, a calendar `ExternalID("apple", <event store id>,
 <key>)`, where the key is `calendarItemIdentifier`, followed for an
 occurrence of a series by `@` and its `occurrenceDate` in UTC
 (`…@2026-10-27T09:00:00Z`). Scoping an event by the store keeps its id when
-it moves between calendars. The bundle's README has test vectors for a port.
+it moves between calendars. A reminders list and a reminder hash under the
+event store too, by `calendarIdentifier` and `calendarItemIdentifier`. A
+visit is `ExternalID("apple", <visit store id>, <key>)`, the key its arrival
+in UTC (`arrival:…`), or its departure where the arrival is unknown, so its
+departure report completes the row its arrival wrote. A share with a link is
+`ExternalID("apple", "share", <link>)`, so sharing it again updates the row.
+The bundle's README has test vectors for a port.
 
 **The calendar window.** A series repeats without end, so the device pushes
 the occurrences between 90 days back and 180 ahead and records the span on
@@ -1702,15 +1716,17 @@ output. `birthday` and each `dates[]` entry carry `month` and `day` with
 an address that does not parse refuses the write and the app leaves it out.
 Phone numbers are `CNPhoneNumber.stringValue` as typed, and URLs are strings.
 Every record carries a derived `title`, so Apple's `title` is spelled
-`calendarTitle`, `eventTitle` and `structuredLocation.locationTitle`. Enum
+`calendarTitle`, `eventTitle`, `listTitle`, `reminderTitle` and
+`structuredLocation.locationTitle`. Enum
 values are EventKit's case names as one lowercase word (`caldav`,
 `notsupported`, `inprocess`).
 
 **What it does not do.** Nothing is read back or written to the device. The
 contact omits `note` (it needs an Apple entitlement), the image (it arrives
 later as a blob reference) and `nonGregorianBirthday`. The event omits
-alarms, attachments and its recurrence rules' day rules, and reminders are
-not read. No event kind implements the temporal trait, whose `at` and
+alarms, attachments and its recurrence rules' day rules; the reminder keeps
+its alarms but not a location alarm's place. A visit is only what the device
+recorded while Places was on: CoreLocation keeps no history to read. No event kind implements the temporal trait, whose `at` and
 `endsAt` would copy `startDate` and `endDate`. No property is
 search-indexed, the same as Google's contact: a mapping's match probe reads
 the person side, not the contact.
@@ -1894,9 +1910,18 @@ a date without an offset is on the account's `timezone`, else UTC.
 | `blood_glucose` | `blood_glucose` | gauge observation, hold `PT15M`, `mealTime` as a qualifier; a reading keeps its digits, in `mg/dL_glucose` where the app sent mg/dL and `mmol/L_glucose` where it sent mmol/L; another unit is skipped | `mg/dL_glucose`, `mmol/L_glucose` |
 | `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `1/min` |
 | `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value`; see Sleep below | `min` |
+| `basal_body_temperature` | `basal_body_temperature` | gauge observation, hold `PT0S` | `Cel` |
+| `mindful_minutes` | `mindful_minutes` | amount trace | `min` |
+| `dietary_water` | `water` | amount trace | `mL` |
+| `dietary_energy` | `dietary_energy` | amount trace | `kcal` |
+| `protein`, `carbohydrates`, `total_fat`, `saturated_fat`, `dietary_sugar`, `fiber` | `protein`, `carbohydrates`, `fat`, `saturated_fat`, `sugar`, `fiber` | amount traces | `g` |
+| `sodium`, `cholesterol`, `caffeine` | `sodium`, `cholesterol`, `caffeine` | amount traces | `mg` |
 
 Everything else the app sends (`apple_exercise_time`, `physical_effort`,
 `walking_asymmetry_percentage`, `lean_body_mass` and the rest) is skipped.
+Cycle tracking stays in its `cycleevent` mirror rows and a workout's route on
+its `workout` mirror row: neither is a quantity the catalogue has a metric
+for (decision record 0163 keeps positions out of observations).
 
 **Raw values come from the Seconds and Minutes groupings only.** A batch at
 Hours, Days or a coarser grouping holds the app's own aggregates, so each row

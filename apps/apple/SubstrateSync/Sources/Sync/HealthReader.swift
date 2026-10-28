@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import HealthKit
 
@@ -35,6 +36,18 @@ struct HealthReader: Sendable {
         .init(id: .flightsClimbed, name: "flights_climbed", units: "count", unit: .count()),
         .init(id: .activeEnergyBurned, name: "active_energy", units: "kcal", unit: .kilocalorie()),
         .init(id: .basalEnergyBurned, name: "basal_energy_burned", units: "kcal", unit: .kilocalorie()),
+        // What is logged: a drink, a meal's nutrients.
+        .init(id: .dietaryWater, name: "dietary_water", units: "mL", unit: .literUnit(with: .milli)),
+        .init(id: .dietaryEnergyConsumed, name: "dietary_energy", units: "kcal", unit: .kilocalorie()),
+        .init(id: .dietaryProtein, name: "protein", units: "g", unit: .gram()),
+        .init(id: .dietaryCarbohydrates, name: "carbohydrates", units: "g", unit: .gram()),
+        .init(id: .dietaryFatTotal, name: "total_fat", units: "g", unit: .gram()),
+        .init(id: .dietaryFatSaturated, name: "saturated_fat", units: "g", unit: .gram()),
+        .init(id: .dietarySugar, name: "dietary_sugar", units: "g", unit: .gram()),
+        .init(id: .dietaryFiber, name: "fiber", units: "g", unit: .gram()),
+        .init(id: .dietarySodium, name: "sodium", units: "mg", unit: .gramUnit(with: .milli)),
+        .init(id: .dietaryCholesterol, name: "cholesterol", units: "mg", unit: .gramUnit(with: .milli)),
+        .init(id: .dietaryCaffeine, name: "caffeine", units: "mg", unit: .gramUnit(with: .milli)),
     ]
 
     private static let discrete: [Discrete] = [
@@ -48,6 +61,7 @@ struct HealthReader: Sendable {
         .init(id: .bodyMassIndex, name: "body_mass_index", units: "count", unit: .count()),
         .init(id: .height, name: "height", units: "cm", unit: .meterUnit(with: .centi)),
         .init(id: .appleSleepingWristTemperature, name: "apple_sleeping_wrist_temperature", units: "degC", unit: .degreeCelsius()),
+        .init(id: .basalBodyTemperature, name: "basal_body_temperature", units: "degC", unit: .degreeCelsius()),
     ]
 
     /// Everything the app reads.
@@ -57,7 +71,9 @@ struct HealthReader: Sendable {
             HKQuantityType(.bloodPressureSystolic), HKQuantityType(.bloodPressureDiastolic),
             HKCategoryType(.sleepAnalysis), HKObjectType.workoutType(),
             HKQuantityType(.distanceCycling), HKQuantityType(.distanceSwimming),
+            HKCategoryType(.mindfulSession), HKSeriesType.workoutRoute(),
         ]
+        for (id, _) in CycleTracking.types { types.insert(HKCategoryType(id)) }
         for m in cumulative { types.insert(HKQuantityType(m.id)) }
         for m in discrete { types.insert(HKQuantityType(m.id)) }
         return types
@@ -110,6 +126,19 @@ struct HealthReader: Sendable {
                     return rows.quantity(at: minute, qty: avg * m.scale, sources: group.map(\.sourceRevision.source.name))
                 }
             }
+        }
+
+        // A session's minutes at the minute it starts, the part inside the day.
+        await add("mindful_minutes", "min") {
+            var minutes: [Date: (qty: Double, sources: [String])] = [:]
+            for s in try await categorySamples(.mindfulSession, overlapping: day) {
+                let start = max(s.startDate, day.lowerBound), end = min(s.endDate, day.upperBound)
+                guard end > start else { continue }
+                let minute = Date(timeIntervalSinceReferenceDate: (start.timeIntervalSinceReferenceDate / 60).rounded(.down) * 60)
+                minutes[minute, default: (0, [])].qty += end.timeIntervalSince(start) / 60
+                minutes[minute, default: (0, [])].sources.append(s.sourceRevision.source.name)
+            }
+            return minutes.keys.sorted().map { rows.quantity(at: $0, qty: minutes[$0]!.qty, sources: minutes[$0]!.sources) }
         }
 
         let mgdl = HKUnit(from: "mg/dL")
@@ -185,6 +214,21 @@ struct HealthReader: Sendable {
         } catch {
             delivery.skipped.append("workouts: \(error.localizedDescription)")
         }
+
+        // Cycle tracking: each entry that starts in the day, by its Health
+        // name and its value's.
+        for (id, name) in CycleTracking.types {
+            do {
+                for s in try await categorySamples(id, startingIn: day) {
+                    delivery.cycle.append(CycleTracking.entry(
+                        name: name, value: CycleTracking.value(id, s.value, s.metadata), start: s.startDate, end: s.endDate,
+                        cycleStart: id == .menstrualFlow ? (s.metadata?[HKMetadataKeyMenstrualCycleStart] as? NSNumber)?.boolValue : nil,
+                        source: s.sourceRevision.source.name, rows: rows))
+                }
+            } catch {
+                delivery.skipped.append("\(name): \(error.localizedDescription)")
+            }
+        }
         return delivery
     }
 
@@ -229,7 +273,25 @@ struct HealthReader: Sendable {
             return .init(at: b.startDate, min: mn.doubleValue(for: Self.perMinute), avg: avg.doubleValue(for: Self.perMinute),
                          max: mx.doubleValue(for: Self.perMinute), sources: names(b.sources))
         }
+        s.route = WorkoutRoute.thinned(try await route(w))
         return s
+    }
+
+    /// The workout's GPS track, every point of every route sample.
+    private func route(_ w: HKWorkout) async throws -> [CLLocation] {
+        let routes = try await noDataIsEmpty {
+            try await HKSampleQueryDescriptor(
+                predicates: [.workoutRoute(HKQuery.predicateForObjects(from: w))],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            ).result(for: store)
+        } ?? []
+        var points: [CLLocation] = []
+        for r in routes {
+            for try await location in HKWorkoutRouteQueryDescriptor(r).results(for: store) {
+                points.append(location)
+            }
+        }
+        return points
     }
 
     // MARK: - queries
@@ -263,6 +325,24 @@ struct HealthReader: Sendable {
         return try await noDataIsEmpty {
             try await HKSampleQueryDescriptor(
                 predicates: [.quantitySample(type: HKQuantityType(id), predicate: predicate)],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            ).result(for: store)
+        } ?? []
+    }
+
+    private func categorySamples(_ id: HKCategoryTypeIdentifier, startingIn day: Range<Date>) async throws -> [HKCategorySample] {
+        let predicate = HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound, options: .strictStartDate)
+        return try await categorySamples(id, predicate)
+    }
+
+    private func categorySamples(_ id: HKCategoryTypeIdentifier, overlapping day: Range<Date>) async throws -> [HKCategorySample] {
+        try await categorySamples(id, HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound))
+    }
+
+    private func categorySamples(_ id: HKCategoryTypeIdentifier, _ predicate: NSPredicate) async throws -> [HKCategorySample] {
+        try await noDataIsEmpty {
+            try await HKSampleQueryDescriptor(
+                predicates: [.categorySample(type: HKCategoryType(id), predicate: predicate)],
                 sortDescriptors: [SortDescriptor(\.startDate)]
             ).result(for: store)
         } ?? []

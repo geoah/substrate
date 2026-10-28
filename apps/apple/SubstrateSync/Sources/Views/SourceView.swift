@@ -17,7 +17,7 @@ struct SourceView: View {
             if enabled {
                 switch source {
                 case .health: HealthCoverage()
-                case .contacts, .calendars: CountCoverage(source: source)
+                case .contacts, .calendars, .reminders, .places: CountCoverage(source: source)
                 }
             }
 
@@ -25,6 +25,7 @@ struct SourceView: View {
 
             RecentRuns(source: source)
         }
+        .readableWidth()
         .navigationTitle(source.title)
         .onAppear { enabled = Settings.enabled(source) }
     }
@@ -47,7 +48,7 @@ private struct StateCard: View {
                 Spacer()
                 Group {
                     if let last = model.lastRun(source) {
-                        Text("Last run \(last.formatted(.relative(presentation: .named)))")
+                        Text("Last run \(last.shortAgo)")
                     } else {
                         Text("Never run")
                     }
@@ -56,25 +57,38 @@ private struct StateCard: View {
             }
             if let p = model.progress[source] {
                 ProgressRow(progress: p)
-            }
-            if let error = overview.error {
-                ErrorBox(title: "The last sync failed", message: error)
+            } else if overview.badge == "Stopped", let reason = overview.error {
+                Label(reason, systemImage: "stop.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary, .orange)
+            } else if let error = overview.error {
+                ErrorBox(title: "The last sync didn't finish", message: error)
                 if let last = status?.lastSync {
                     Text("Last complete sync \(last.formatted(.relative(presentation: .named))).")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-            }
-            if source == .health, model.progress[.health] == nil, !model.healthWaiting.isEmpty {
+            } else if source == .health, !model.healthWaiting.isEmpty {
                 Text("\(model.healthWaiting.count) days were delivered and are waiting for the server to file them. The next sync checks them before it sends anything.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            Button {
-                Task { await model.syncNow([source]) }
-            } label: {
-                WideLabel(title: "Sync \(source.title) Now", systemImage: "arrow.triangle.2.circlepath")
+            if enabled {
+                // One button, the same size in every state: what it would do,
+                // or what is happening instead.
+                Button {
+                    Task { await model.syncNow([source]) }
+                } label: {
+                    switch overview.badge {
+                    case "Syncing": WideLabel(title: "Syncing…", busy: true)
+                    case "Queued": WideLabel(title: "Waiting Its Turn…", systemImage: "clock")
+                    default: WideLabel(title: "Sync \(source.title) Now", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .primaryAction()
+                .disabled(overview.badge == "Syncing" || overview.badge == "Queued")
+            } else {
+                Text("\(source.title) is off. Turn it on below to sync it.")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
-            .secondaryAction()
-            .disabled(!enabled || overview.badge == "Syncing" || overview.badge == "Queued")
         }
         .padding(.vertical, 4)
     }
@@ -88,7 +102,7 @@ private struct HealthCoverage: View {
 
     var body: some View {
         Section {
-            if let inRange = model.healthInRange {
+            if let inRange = model.healthInRange, !inRange.isEmpty {
                 let synced = inRange.intersection(model.state.healthDays).count
                 let waiting = model.healthWaiting.intersection(inRange).count
                 let toSend = inRange.count - synced - waiting
@@ -115,14 +129,25 @@ private struct HealthCoverage: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             if let older = model.healthOutsideRange, !older.isEmpty {
+                // Offered for the days neither sent nor already waiting for
+                // the next sync, so a second tap never queues them twice.
+                let unsent = older.subtracting(model.state.healthDays)
+                let toQueue = unsent.subtracting(model.state.healthQueue)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("The phone holds \(older.count.formatted()) more days from before your history, back to \(older.min() ?? "").")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Button("Send These \(older.count.formatted()) Days Too") {
-                        Task { await model.send(days: older.sorted()) }
+                    if unsent.isEmpty {
+                        Text("All of them are sent.").font(.footnote).foregroundStyle(.secondary)
+                    } else if toQueue.isEmpty {
+                        Text("\(unsent.count.formatted()) of them go with the next Health sync.").font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Button("Send These \(toQueue.count.formatted()) Days Too") {
+                            Task { await model.send(days: toQueue.sorted()) }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(model.syncing)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
                 .padding(.vertical, 2)
             }
@@ -186,9 +211,22 @@ private struct CountCoverage: View {
                     }
                 }
                 .padding(.vertical, 4)
+            } else if model.lastRun(source) != nil {
+                Text(empty).font(.callout).foregroundStyle(.secondary)
             } else {
                 Text("Sync once to see what the phone holds.").font(.callout).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// What a sync found nothing of, in the source's words.
+    private var empty: String {
+        switch source {
+        case .contacts: "No contacts on this phone."
+        case .calendars: "No events in the calendars turned on, from \(Settings.windowBack) days back to \(Settings.windowAhead) ahead."
+        case .reminders: "No reminders on this phone."
+        case .places: "No visits recorded yet. They appear as you arrive at places and leave them."
+        case .health: "No Health data in your history."
         }
     }
 }
@@ -199,16 +237,24 @@ private struct Figures: View {
     let total: Int
     let noun: String
 
+    /// Complete is one line; a bar and a share only while something is
+    /// missing, where they say how much.
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("\(synced.formatted()) of \(total.formatted()) \(noun)").font(.callout.weight(.medium))
-                Spacer()
-                StatusBadge(text: synced >= total ? "Complete" : "\(Int((Double(synced) / Double(max(total, 1)) * 100).rounded()))%",
-                            color: synced >= total ? .green : .orange)
+        if synced >= total {
+            Label("All \(total.formatted()) \(noun)", systemImage: "checkmark.circle.fill")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.primary, .green)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("\(synced.formatted()) of \(total.formatted()) \(noun)").font(.callout.weight(.medium))
+                    Spacer()
+                    Text("\(Int((Double(synced) / Double(max(total, 1)) * 100).rounded()))%")
+                        .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                ProgressView(value: Double(min(synced, total)), total: Double(max(total, 1)))
             }
-            ProgressView(value: Double(min(synced, total)), total: Double(max(total, 1)))
-                .tint(synced >= total ? .green : .accentColor)
+            .accessibilityElement(children: .combine)
         }
     }
 }
@@ -273,6 +319,12 @@ private struct SourceSettings: View {
                 .onChange(of: enabled) { _, on in
                     Settings.setEnabled(source, on)
                     if on, source == .health { Background.observeHealth() }
+                    if source == .places {
+                        Task {
+                            if on { await model.requestAccess(.places) }
+                            PlaceMonitor.shared.start()
+                        }
+                    }
                 }
             LabeledContent("Access") {
                 HStack(spacing: 8) {
@@ -280,7 +332,7 @@ private struct SourceSettings: View {
                     if access == "Not asked yet" {
                         Button("Allow") { Task { await model.requestAccess(source) } }
                             .buttonStyle(.bordered).controlSize(.small)
-                    } else if access.hasPrefix("Not allowed") || access.hasPrefix("Add only") {
+                    } else if access.hasPrefix("Not allowed") || access.hasPrefix("Add only") || access.hasPrefix("While using") {
                         Button("Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                         }
@@ -300,7 +352,7 @@ private struct SourceSettings: View {
                 } label: {
                     LabeledContent("Calendars", value: calendarsValue)
                 }
-            case .contacts:
+            case .contacts, .reminders, .places:
                 EmptyView()
             }
         } header: {
@@ -315,6 +367,10 @@ private struct SourceSettings: View {
                 if access == "Allowed for some contacts" {
                     Text("Only the contacts you chose to share are sent, and none is removed from your repository.")
                 }
+            case .reminders:
+                Text("Every list and every reminder, completed ones included. A reminder deleted on the phone is removed from your repository.")
+            case .places:
+                Text("Records the places you stay at while it is on, named by Apple Maps. Needs Always location access; iOS reports only arrivals and departures, so it costs little battery. Keeps a year of visits on this phone.")
             }
         }
         .onAppear { if source == .calendars { model.loadCalendars() } }
@@ -338,15 +394,14 @@ private struct RecentRuns: View {
 
     var body: some View {
         let runs = model.state.runs.filter { $0.source == source }
-        Section("Recent runs") {
-            if runs.isEmpty {
-                Text("No sync has run yet.").foregroundStyle(.secondary)
-            }
-            ForEach(Array(runs.prefix(3))) { run in
-                RunRow(run: run, showsSource: false)
-            }
-            NavigationLink("All \(source.title) activity") {
-                ActivityView(only: source)
+        if !runs.isEmpty {
+            Section("Recent runs") {
+                ForEach(Array(runs.prefix(3))) { run in
+                    RunRow(run: run, showsSource: false)
+                }
+                NavigationLink("All \(source.title) activity") {
+                    ActivityView(only: source)
+                }
             }
         }
     }
