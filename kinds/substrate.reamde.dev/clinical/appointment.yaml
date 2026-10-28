@@ -1,7 +1,7 @@
 # one booked appointment: FHIR's Appointment. `at` and `endsAt` are its slot.
 # A past appointment stays, with the status it ended in; the consultation it
-# led to is an `encounter`, which `encounter` names where the provider links
-# them.
+# led to is an `encounter`, which names it in `appointment`, as FHIR links
+# the two.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/clinical/appointment
@@ -76,9 +76,11 @@ data:
     location:
       type: string
       description: where it is, as the provider names the place
+    # not the `phone` type, which is E.164-only
     phone:
-      type: phone
-      description: the number the provider will call, for a telephone appointment
+      type: string
+      description: the number the provider will call, for a telephone appointment,
+        as written
     participants:
       type: object
       repeated: true
@@ -93,10 +95,6 @@ data:
     reason:
       type: string
       description: what the appointment is for
-    encounter:
-      type: reference
-      kind: substrate.reamde.dev/clinical/encounter
-      description: the consultation it led to
     referral:
       type: reference
       kind: substrate.reamde.dev/clinical/referral

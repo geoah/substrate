@@ -256,8 +256,9 @@ is wrong, and one that names a kind by a bare word is refused everywhere
 come from the well-known CATALOGUES, first-party packages under the same
 authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
 `health/*` metrics), `…/labs` (lab reports and results, `labs/*` metrics,
-`convertlab`; requires `health`) and `…/environment` (`environment/*`
-metrics). The catalog serves them through the provider door
+`convertlab`; requires `health`), `…/environment` (`environment/*`
+metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
+`labs`, decision 0193). The catalog serves them through the provider door
 (`bin/substratectl install substrate.reamde.dev/labs`), they land published
 and never rehomed, and an install first installs every published package
 it requires, so installing `providers.substrate.reamde.dev/applehealth` or

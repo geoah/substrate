@@ -37,7 +37,14 @@ data:
           description: the code system, such as http://snomed.info/sct
         code:
           type: string
-          description: the code
+          description: the code; for SNOMED CT, the concept id
+        version:
+          type: string
+          description: the code system's version, such as a SNOMED CT edition
+        descriptionId:
+          type: string
+          description: the SNOMED CT description id the provider recorded
+            the term under, where it sends one
         display:
           type: string
           description: the code's term as the provider recorded it
@@ -55,12 +62,23 @@ data:
       type: enum
       description: where the record files it
       values:
-        - value: problem
+        - value: problemlistitem
           label: Problem list
-        - value: diagnosis
+        - value: encounterdiagnosis
           label: Consultation diagnosis
-        - value: concern
+        - value: healthconcern
           label: Health concern
+    verificationStatus:
+      type: enum
+      description: how sure the provider is of it
+      values:
+        - unconfirmed
+        - provisional
+        - differential
+        - confirmed
+        - refuted
+        - value: enteredinerror
+          label: Entered in error
     significance:
       type: enum
       description: how significant the provider rated it
@@ -75,6 +93,15 @@ data:
       type: enum
       description: how much of `at` the provider recorded, so a reader shows
         2017 rather than 1 January 2017; absent reads as time
+      values:
+        - year
+        - month
+        - day
+        - time
+    endPrecision:
+      type: enum
+      description: how much of `endsAt` the provider recorded; absent reads
+        as time
       values:
         - year
         - month

@@ -123,9 +123,9 @@ enable and uninstall work as they do on any bundle, and the upgrade offer is
 the same preview and the same button
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 Applying the same closure by hand from the shipped files lands `installed`
-instead, and stays editable. The three well-known catalogues under
-`substrate.reamde.dev` (`health`, `labs` and `environment`) take the same
-door and land published the same way ([the catalog](#the-catalog)).
+instead, and stays editable. The four well-known catalogues under
+`substrate.reamde.dev` (`health`, `labs`, `environment` and `clinical`) take
+the same door and land published the same way ([the catalog](#the-catalog)).
 
 The upgrade has a read-only **preview** beside it: the catalog compares the
 shipped closure's declaration versions against the stored ones (the same diff
@@ -712,8 +712,9 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the ten **providers** under `kinds/providers.substrate.reamde.dev`, the
-three well-known **catalogues** under `kinds/substrate.reamde.dev`
-(`health`, `labs` and `environment`), which take the provider door, and the
+four well-known **catalogues** under `kinds/substrate.reamde.dev`
+(`health`, `labs`, `environment` and `clinical`), which take the provider
+door, and the
 eleven **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `ink`, and the worked examples `llm`, `notes`,
 `readinglist`, `pebble`, `firecrawl`). A catalogue is a first-party package:

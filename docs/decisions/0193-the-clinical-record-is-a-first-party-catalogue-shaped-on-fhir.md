@@ -38,8 +38,12 @@ already holds.
 - **Twelve kinds**: `patient`, `organization`, `encounter`, `condition`,
   `allergy`, `immunization`, `medicationrequest`, `medicationdispense`,
   `appointment`, `referral`, `document` and `communication`. Each keeps its
-  resource's meaning and value sets; an enum value is one lowercase word, so
-  `entered-in-error` is `enteredinerror`, labelled.
+  resource's meaning, property names a FHIR mapper expects (`name` is the
+  patient's, `subject` is never a subject line) and value sets: an enum value
+  is one lowercase word, so FHIR's code loses its hyphens
+  (`entered-in-error` is `enteredinerror`) and keeps a label. An encounter's
+  `class`, an appointment's `channel` and an organization's `type` are the
+  catalogue's own sets.
 - **Test results stay in `labs`.** A lab report and its results are FHIR's
   DiagnosticReport and Observation already, and an `encounter` names the
   reports filed at it. A measurement taken at a consultation is a `health`
@@ -49,8 +53,18 @@ already holds.
   and is never the target of the other kinds.
 - **Every kind binds `revised`**, and a writer keeps the upstream's id as
   the record id, so a second export rewrites in place.
-- **A code is one `coding` object** (system, code, display), the shape a lab
-  result's analyte already has, not FHIR's list of codings.
+- **A code is one `coding` object** (system, version, code, display), the
+  shape a lab result's analyte already has, not FHIR's list of codings, plus
+  `descriptionId` for a SNOMED CT description id, FHIR's `coding-sctdescid`
+  extension, because UK GP systems record terms by description id and `code`
+  must stay the concept id.
+- **Medicines follow GP Connect.** A `medicationrequest` is the
+  authorisation (intent `plan`) or an issue of it (intent `order`, `basedOn`
+  the plan); a `medicationdispense` is the pharmacy's action, timed when the
+  item was handed over.
+- **Phone numbers are strings.** The `phone` type is E.164 only, and a
+  health service writes a number as its staff typed it, as the people sample
+  already found.
 
 Rejected: per-importer kinds, for the reason 0192 gave about observations; a
 JSON kind, because nothing in it is a property a filter, a reference or a

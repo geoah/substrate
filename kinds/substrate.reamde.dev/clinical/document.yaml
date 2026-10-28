@@ -39,7 +39,14 @@ data:
           description: the code system, such as http://snomed.info/sct
         code:
           type: string
-          description: the code
+          description: the code; for SNOMED CT, the concept id
+        version:
+          type: string
+          description: the code system's version, such as a SNOMED CT edition
+        descriptionId:
+          type: string
+          description: the SNOMED CT description id the provider recorded
+            the term under, where it sends one
         display:
           type: string
           description: the code's term as the provider recorded it
