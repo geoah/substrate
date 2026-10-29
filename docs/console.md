@@ -50,12 +50,18 @@ The collections are sorted by where they come from, and every surface that
 lists collections (the sidebar, ⌘K, All data, Home) uses the same sections:
 
 - **Your data**: the repository's own authority first, then every other
-  authority that is neither a provider nor the substrate's own. This is what
-  you create and change.
+  authority that is neither a provider nor the substrate's, and the
+  substrate's packages that hold your records: `observations` and the
+  well-known catalogues (`health`, `labs`, `clinical`,
+  [0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
+  This is what you create and change, and what your providers' adapters
+  write for you.
 - **From _Provider_**: one section per provider (**From Google**, **From
   GitHub**), holding the copies that provider keeps up to date.
-- **Substrate**: the kinds under `substrate.reamde.dev`, the substrate's own
-  machinery, listed only with Technical details on.
+- **Substrate**: the substrate's own machinery, the `core`, `llm` and
+  `console` packages under `substrate.reamde.dev`, listed only with
+  Technical details on. Every kind in them reads as `internal`, whatever it
+  declares.
 
 What a section lists is decided by each kind's declared
 [`purpose`](vocabulary.md#the-reserved-keys)
@@ -63,8 +69,8 @@ What a section lists is decided by each kind's declared
 you browse and open directly, `supporting` is a detail of another kind,
 reached from the records it belongs to, and `internal` is machinery. A kind
 that declares none reads as `primary`, so a kind you or an agent declares is
-listed without anyone classifying it, and every kind under
-`substrate.reamde.dev` reads as `internal`. In everyday mode a section lists
+listed without anyone classifying it, and every kind of the substrate's
+machinery reads as `internal`. In everyday mode a section lists
 its primary collections only. A section heading folds its section away and
 remembers it; provider sections start folded, the others open. Resting on a
 collection opens its card beside the sidebar: what it holds, where it comes

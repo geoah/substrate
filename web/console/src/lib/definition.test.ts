@@ -403,11 +403,27 @@ describe("kindPurpose", () => {
     )
   })
 
-  it("treats every kind of the substrate's own authority as internal", () => {
-    expect(kindPurpose(withPurpose("primary", "substrate.reamde.dev"))).toBe(
+  it("treats the substrate's machinery as internal and its catalogues as declared", () => {
+    expect(
+      kindPurpose({
+        ...withPurpose("primary", "substrate.reamde.dev"),
+        identity: "substrate.reamde.dev/core/thing",
+        package: "core",
+      })
+    ).toBe("internal")
+    expect(kindPurpose("substrate.reamde.dev/llm/thread")).toBe("internal")
+    expect(kindPurpose("substrate.reamde.dev/console/recordview")).toBe(
       "internal"
     )
-    expect(kindPurpose("substrate.reamde.dev/llm/thread")).toBe("internal")
+    expect(kindPurpose("substrate.reamde.dev/labs/labreport")).toBe("primary")
+    expect(
+      kindPurpose({
+        ...withPurpose("supporting", "substrate.reamde.dev"),
+        identity: "substrate.reamde.dev/labs/labresult",
+        package: "labs",
+        name: "labresult",
+      })
+    ).toBe("supporting")
     expect(kindPurpose("samples.substrate.reamde.dev/tasks/task")).toBe(
       "primary"
     )

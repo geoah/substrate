@@ -4,7 +4,8 @@
  * that feed every hover. Key order in `definition` is lost to jsonb, so
  * declared names sort alphabetically — stable and honest. */
 
-import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
+import { splitKind } from "@/lib/api/http"
+import { isMachinery } from "@/lib/core-kinds"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 import { withFormWords } from "@/lib/observed-form"
 
@@ -31,14 +32,18 @@ const PURPOSES: readonly KindPurpose[] = ["primary", "supporting", "internal"]
 /** The declaration's `purpose`, absent reading `primary`. `shipped` is the
  * purpose the catalog says the shipped declaration carries: it stands in for
  * a kind not held here, and for one held from a copy taken before it declared
- * any. Every kind the substrate's own authority publishes is machinery
- * whatever it declares. */
+ * any. A kind of the substrate's machinery (core, llm, console) is internal
+ * whatever it declares; the substrate's other packages, observations and the
+ * well-known catalogues, hold the owner's data and keep their own. */
 export function kindPurpose(
   k: KindInfo | string,
   shipped?: string
 ): KindPurpose {
-  const authority = typeof k === "string" ? splitKind(k).authority : k.authority
-  if (authority === CORE_AUTHORITY) return "internal"
+  const { authority, pkg } =
+    typeof k === "string"
+      ? splitKind(k)
+      : { authority: k.authority, pkg: k.package }
+  if (isMachinery(authority, pkg)) return "internal"
   const declared = typeof k === "string" ? undefined : k.definition?.purpose
   return asPurpose(declared) ?? asPurpose(shipped) ?? "primary"
 }

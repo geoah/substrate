@@ -35,7 +35,12 @@ const KINDS = [
   kind("providers.substrate.reamde.dev/google/gmaillabel", "supporting"),
   kind("providers.substrate.reamde.dev/google/account", "internal"),
   kind("providers.substrate.reamde.dev/linear/issue"),
-  kind("substrate.reamde.dev/core/kind"),
+  kind("substrate.reamde.dev/core/kind", "internal"),
+  kind("substrate.reamde.dev/llm/thread", "internal"),
+  kind("substrate.reamde.dev/console/recordview", "internal"),
+  kind("substrate.reamde.dev/labs/labreport", "primary"),
+  kind("substrate.reamde.dev/labs/labresult", "supporting"),
+  kind("substrate.reamde.dev/observations/observation", "supporting"),
 ]
 
 describe("collectionGroups", () => {
@@ -50,19 +55,31 @@ describe("collectionGroups", () => {
     ])
   })
 
-  it("keeps every non-provider, non-core authority in Your data, home first", () => {
+  it("keeps every authority but the providers and the substrate's machinery in Your data, home first", () => {
     const yours = groups[0]
     expect(yours.authorities.map((a) => a.authority)).toEqual([
       "ada.example.com",
       "other.example.com",
+      "substrate.reamde.dev",
     ])
-    expect(yours.primary.map((k) => k.identity)).toEqual([
-      "other.example.com/notes/note",
+    expect(yours.primary.map((k) => k.identity).sort()).toEqual([
       "ada.example.com/people/person",
       "ada.example.com/tasks/task",
+      "other.example.com/notes/note",
+      "substrate.reamde.dev/labs/labreport",
     ])
-    expect(yours.hidden.map((k) => k.identity)).toEqual([
+    expect(yours.hidden.map((k) => k.identity).sort()).toEqual([
       "ada.example.com/tasks/tasklog",
+      "substrate.reamde.dev/labs/labresult",
+      "substrate.reamde.dev/observations/observation",
+    ])
+  })
+
+  it("files only the core, llm and console packages under Substrate", () => {
+    expect(groups[3].kinds.map((k) => k.identity).sort()).toEqual([
+      "substrate.reamde.dev/console/recordview",
+      "substrate.reamde.dev/core/kind",
+      "substrate.reamde.dev/llm/thread",
     ])
   })
 
@@ -117,5 +134,14 @@ describe("collectionSource", () => {
       collectionSource("providers.substrate.reamde.dev/google/contact")
     ).toBe("From Google")
     expect(collectionSource("substrate.reamde.dev/core/kind")).toBe("Substrate")
+    expect(collectionSource("substrate.reamde.dev/llm/thread")).toBe(
+      "Substrate"
+    )
+    expect(collectionSource("substrate.reamde.dev/labs/labreport")).toBe(
+      "Your data"
+    )
+    expect(collectionSource("substrate.reamde.dev/clinical/encounter")).toBe(
+      "Your data"
+    )
   })
 })
