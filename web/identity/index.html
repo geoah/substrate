@@ -1,0 +1,1752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>substrate · identity field</title>
+<style>
+:root{
+  --bg:#050506;--panel:#0a0a0c;--raise:#111114;--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.13);
+  --fg:#e8e8ea;--dim:#9a9aa1;--faint:#5f5f66;--warm:#e9a764;
+  --sans:"Avenir Next","Avenir","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:12px/1.45 var(--sans);-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+input,textarea{-webkit-user-select:text;user-select:text}
+body{display:grid;grid-template-rows:52px minmax(0,1fr);overflow:hidden}
+input,select,button,textarea{font:inherit;color:inherit}
+button{background:var(--raise);border:1px solid var(--line2);border-radius:6px;padding:6px 11px;cursor:pointer;white-space:nowrap;line-height:1.2}
+button:hover{border-color:rgba(255,255,255,.3)}
+button.primary{background:#ececec;color:#0a0a0a;border-color:#ececec}
+button.primary:hover{background:#fff}
+button[aria-pressed=true]{background:#e8e8ea;color:#0a0a0a;border-color:#e8e8ea}
+button:disabled{opacity:.35;cursor:default}
+header{display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}
+.brand{font-weight:600;letter-spacing:.34em;font-size:11px;white-space:nowrap}
+.brand span{color:var(--faint);font-weight:400;letter-spacing:.2em;margin-left:10px}
+.spacer{flex:1}
+#name{background:transparent;border:1px solid var(--line2);border-radius:6px;padding:6px 10px;width:230px;outline:none}
+#name:focus{border-color:rgba(255,255,255,.4)}
+main{display:grid;grid-template-columns:272px minmax(0,1fr) 344px;min-height:0}
+aside,#center{overflow:auto;min-height:0;scrollbar-width:thin;scrollbar-color:#2a2a2e transparent}
+#left{border-right:1px solid var(--line);padding:16px 14px}
+#right{border-left:1px solid var(--line)}
+h3{margin:0 0 10px;font-size:10px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+h3 small{font-family:var(--mono);letter-spacing:0;color:var(--faint);font-size:10px;text-transform:none}
+.note{color:var(--faint);font-size:11px;margin:-4px 0 12px;line-height:1.5}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px}
+.card{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:pointer;background:#000;transition:border-color .15s}
+.card:hover{border-color:rgba(255,255,255,.25)}
+.card.active{border-color:rgba(255,255,255,.7)}
+.card canvas{display:block;width:100%;aspect-ratio:16/10}
+.card .cap{display:flex;gap:7px;align-items:baseline;padding:5px 8px 6px;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .cap b{font-weight:400;color:var(--faint);font-family:var(--mono);letter-spacing:0;font-size:9.5px}
+.card .del,.card .add{position:absolute;top:5px;right:5px;padding:2px 7px;border-radius:4px;background:rgba(0,0,0,.72);display:none;font-size:10.5px}
+.card:hover .del,.card:hover .add{display:block}
+.empty{color:var(--faint);font-size:11px;grid-column:1/-1;margin:0;line-height:1.5}
+#center{padding:14px;display:flex;flex-direction:column;gap:14px;overflow-x:hidden}
+#stageWrap{position:relative;flex:none;height:min(62vh,760px);min-height:340px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000}
+#stage{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage-label{position:absolute;left:20px;top:16px;display:flex;gap:16px;align-items:baseline;pointer-events:none;color:rgba(255,255,255,.72)}
+.stage-label .num{font-size:17px;font-weight:300;letter-spacing:.04em;color:#fff}
+.stage-label .ttl{font-size:9.5px;letter-spacing:.26em;text-transform:uppercase}
+#stageWrap.paper{background:#f2f1ee}
+#stageWrap.paper .stage-label{color:rgba(0,0,0,.6)}
+#stageWrap.paper .stage-label .num{color:#000}
+.stage-bar{position:absolute;left:12px;right:12px;bottom:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.stage-bar button{background:rgba(12,12,14,.78);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.stage-bar button[aria-pressed=true]{background:#e8e8ea}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-radius:0}
+.rec{color:#ff8a7a}
+#variations{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px}
+#variations[hidden]{display:none}
+.var-head{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.var-head h3{margin:0;flex:1}
+.var-head select{background:var(--raise);border:1px solid var(--line2);border-radius:6px;padding:5px 8px}
+.var-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+#outputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr));gap:14px}
+.out{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px 12px 14px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.out h3{margin:0}
+.out h3 button{font-size:10px;padding:3px 8px;letter-spacing:.1em}
+.out canvas{display:block;width:100%;border-radius:6px}
+#outStill{aspect-ratio:16/10;background:#000}
+.icons{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:end}
+.icons figure,.ladder figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+.icons canvas{aspect-ratio:1;border-radius:0}
+figcaption{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);font-family:var(--sans)}
+.ladder{display:flex;flex-wrap:wrap;gap:14px 16px;align-items:flex-end;padding:12px 6px 0;border-top:1px solid var(--line)}
+.ladder canvas{border-radius:0;image-rendering:auto}
+.monos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.monos canvas{aspect-ratio:16/10}
+#outLockup{aspect-ratio:3.4/1;background:#000}
+#outWords{aspect-ratio:3.4/1;background:#000}
+#controls{padding-bottom:24px}
+.dial-note{color:var(--faint);font-size:11px;line-height:1.5;margin:14px 16px 4px}
+#controls .dial-group{margin:18px 16px 2px}
+.dial{padding:9px 16px 10px;cursor:default;user-select:none}
+.dial .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1px}
+.dial .name{font-size:12.5px;color:var(--fg);letter-spacing:.02em}
+.dial .fam{font-family:var(--mono);font-weight:400;font-size:9.5px;color:var(--faint);margin-left:8px;letter-spacing:0}
+.info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:8px;padding:0;border-radius:50%;border:1px solid var(--line2);background:transparent;color:var(--dim);font:italic 600 9.5px/1 Georgia,serif;cursor:pointer;vertical-align:1px}
+.info:hover,.dial.open .info{border-color:rgba(255,255,255,.5);color:var(--fg)}
+.info.inline{cursor:default;margin:0 1px}
+.info[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:-8px;top:21px;z-index:20;width:220px;padding:7px 9px;border-radius:6px;background:#ececec;color:#0a0a0a;font:400 11px/1.4 var(--sans);font-style:normal;text-align:left;white-space:normal;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.dial.open .info[data-tip]:hover::after{display:none}
+.dial .more{display:none;margin:8px 0 2px;padding:9px 10px;border-radius:6px;background:var(--raise);border:1px solid var(--line);color:var(--dim);font-size:11px;line-height:1.55}
+.dial .more .reset{color:var(--faint)}
+.dial.open .more{display:block}
+.dial.mod .name::after{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--warm);margin-left:8px;vertical-align:middle}
+.dial output{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.dial .ends{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.dial.seed .seedbox{display:flex;gap:6px;margin-top:6px}
+.dial.seed input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:6px;padding:5px 8px;font-family:var(--mono);font-size:11px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;margin:0;--p:0%}
+input[type=range]:focus{outline:none}
+input[type=range]::-webkit-slider-runnable-track{height:2px;border-radius:2px;background:linear-gradient(90deg,rgba(255,255,255,.6) var(--p),rgba(255,255,255,.12) var(--p))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#ededee;margin-top:-4.5px;border:0;box-shadow:0 0 0 3px #0a0a0c}
+input[type=range]::-moz-range-track{height:2px;background:rgba(255,255,255,.12)}
+input[type=range]::-moz-range-progress{height:2px;background:rgba(255,255,255,.6)}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:#ededee;border:0}
+dialog{background:#0c0c0e;color:var(--fg);border:1px solid var(--line2);border-radius:12px;padding:18px;width:min(640px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog h3{margin-bottom:12px}
+dialog textarea{width:100%;height:150px;background:#050506;border:1px solid var(--line2);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11px;resize:vertical;outline:none}
+dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+dialog p{color:var(--dim);margin:0 0 10px;font-size:11.5px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#ececec;color:#0a0a0a;padding:8px 14px;border-radius:8px;font-size:12px;opacity:0;transition:all .2s;pointer-events:none;z-index:10}
+#toast.on{opacity:1;transform:translateX(-50%)}
+@media (max-width:1180px){
+  body{display:block;overflow:auto;height:auto}
+  main{display:flex;flex-direction:column}
+  #left,#right{border:0;overflow:visible}
+  #left .cards{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+  #center{overflow:visible}
+  header{flex-wrap:wrap;padding:10px 14px;height:auto}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">SUBSTRATE<span>IDENTITY FIELD</span></div>
+  <div class="spacer"></div>
+  <input id="name" placeholder="Name this state" spellcheck="false" autocomplete="off">
+  <button id="btnSave" class="primary" title="Store in this browser (localStorage)">Save</button>
+  <button id="btnLink" title="The address bar always holds the current state; this copies it">Copy link</button>
+  <button id="btnCode" title="A paste-able code for this state">Copy code</button>
+  <button id="btnImport" title="Paste a link, a code or JSON">Import</button>
+</header>
+<main>
+  <aside id="left">
+    <h3>Family <small>13</small></h3>
+    <p class="note">One topology, many treatments. Click a family to load it; “+ Blend” adds it to what is on the stage. 00 is 01 + 06 + 10.</p>
+    <div id="presets" class="cards"></div>
+    <h3>Saved <small id="savedCount">0</small></h3>
+    <div id="saved" class="cards"></div>
+  </aside>
+  <section id="center">
+    <div id="stageWrap">
+      <canvas id="stage"></canvas>
+      <div class="stage-label"><span class="num" id="lblNum">00</span><span class="ttl" id="lblName">Signature</span></div>
+      <div class="stage-bar">
+        <div class="seg"><button id="btnAnim" aria-pressed="true" title="Show the mark in motion">Animated</button><button id="btnStill" aria-pressed="false" title="Show the single frame used for the still, the icons and the thumbnails">Still</button></div>
+        <button id="btnPlay" title="Pause or resume the motion (Space)">Pause</button>
+        <button id="btnWm" aria-pressed="true" title="Show the wordmark under the mark">Wordmark</button>
+        <button id="btnPaper" aria-pressed="false" title="Dark mark on paper">Paper</button>
+        <button id="btnReseed" title="New seed, same rules">Reseed</button>
+        <button id="btnVar" title="Eight nearby variations of the current mark, or blends toward a family">Variations</button>
+        <div class="spacer"></div>
+        <button id="btnPng" title="Download a 2400×1500 still">PNG</button>
+        <button id="btnRec" title="Record eight seconds of the stage as video">Record 8s</button>
+      </div>
+    </div>
+    <div id="variations" hidden>
+      <div class="var-head">
+        <h3>Variations</h3>
+        <button id="btnMutate">Mutate</button>
+        <select id="blendWith"></select>
+        <button id="btnBlend">Blend toward</button>
+        <button id="btnVarClose">Close</button>
+      </div>
+      <div class="var-grid" id="varGrid"></div>
+    </div>
+    <div id="outputs">
+      <div class="out">
+        <h3>Still <button id="dlStill">PNG</button></h3>
+        <canvas id="outStill"></canvas>
+      </div>
+      <div class="out">
+        <h3>App icon <span><button id="dlIconDark">Dark PNG</button> <button id="dlIconLight">Light PNG</button></span></h3>
+        <div class="icons">
+          <figure><canvas id="icDark"></canvas><figcaption>Dark</figcaption></figure>
+          <figure><canvas id="icLight"></canvas><figcaption>Light</figcaption></figure>
+          <figure><canvas id="icLine"></canvas><figcaption>Outline</figcaption></figure>
+        </div>
+        <div class="ladder" id="ladder"></div>
+      </div>
+      <div class="out">
+        <h3>Monochrome</h3>
+        <div class="monos"><canvas id="monoDark"></canvas><canvas id="monoLight"></canvas></div>
+      </div>
+      <div class="out">
+        <h3>Lockup &amp; wordmark</h3>
+        <canvas id="outLockup"></canvas>
+        <canvas id="outWords"></canvas>
+      </div>
+    </div>
+  </section>
+  <aside id="right"><div id="controls"></div></aside>
+</main>
+<dialog id="dlgImport">
+  <h3>Import</h3>
+  <p>Paste a shared link, a code (<code>sbst3.…</code>), a URL fragment, or JSON.</p>
+  <textarea id="importText" spellcheck="false"></textarea>
+  <div class="actions"><button id="importCancel">Cancel</button><button id="importGo" class="primary">Load</button></div>
+</dialog>
+<dialog id="dlgShare">
+  <h3 id="shareTitle">Share</h3>
+  <p>Copying is blocked in this context; select and copy it by hand.</p>
+  <textarea id="shareText" spellcheck="false" readonly></textarea>
+  <div class="actions"><button id="shareClose" class="primary">Done</button></div>
+</dialog>
+<div id="toast"></div>
+<script>
+(() => {
+'use strict';
+
+/* ---------------------------------------------------------------- math */
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+function rng(seed) {
+  let a = (seed >>> 0) || 1;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * r()); }
+const focusMap = (a, f) => (f <= 0 ? a : Math.sign(a) * Math.pow(Math.abs(a), 1 + 3 * f));
+function hsl(h, s, l) {
+  const k = (n) => (n + h * 12) % 12, a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return [f(0), f(8), f(4)];
+}
+
+/* -------------------------------------------------------------- engine */
+// The renderer's own parameters. Nothing sets these by hand: `expand` derives
+// every one of them from the dials.
+const ENGINE = {
+  seed: 7, rotX: 16, rotY: -10, rotZ: 0, persp: 0.35, zoom: 1,
+  width: 0.2, lift: 0, waist: 0, thick: 0, rollAmp: 0, focus: 0.2, shapeC: 0, balance: 0,
+  count: 0, pSize: 1.2, sizeVar: 0.3, pAlpha: 0.7, order: 0, rows: 14, scatter: 0.2, drift: 0.03, crossDens: 0.3, lobeBias: 0, soft: 1, orbs: 0, ride: 0,
+  lines: 0, lAlpha: 0.35, lWidth: 0.6, lineVar: 0, lLen: 1, membrane: 0, solid: 0, trail: 0, stagger: 0, lineJitter: 0, gap: 0, gapAt: 0, shade: 0.3, core: 0, coreGap: 0.6, blend: 'light',
+  crossGlow: 0.3, crossSize: 1, accentCross: 0,
+  disperse: 0, dSide: 'right', dReach: 0.5, dSize: 0.6, lineFade: 1,
+  nodes: 0, nodeSize: 2, traces: 0, traceLen: 0.4, traceSide: 0.7,
+  bg: 'void', hue: 210, tint: 0, accentHue: 28, accentSat: 0.85, accentSplit: 0, nodeAccent: 0, spectral: 0, specScale: 1.2,
+  exposure: 1, glow: 0.12, depthFade: 0.35,
+  energy: 1, flow: 0.15, sway: 6, turb: 0.2, breathe: 0, period: 12, phase: 0.25,
+  wm: 1, wmCase: 'lower', wmTrack: 0.55, wmWeight: 200, iconScale: 0.82, iconCore: 0, iconGain: 1.4, iconReduce: 0.6,
+};
+
+/* --------------------------------------------------------------- dials */
+// Ten dials, one per family (07+09 and 10+11 share theirs). Each is an ingredient
+// that acts on whatever else is present, so families combine instead of trading
+// off: any number of dials can be up at once. A dial's short key is what links and
+// codes carry, so a key, once shipped, is never renamed or reused. `mix` is how a
+// dial combines when families are blended: ingredients keep the stronger, shapes
+// average.
+const DIALS = [
+  { id: 'particles', k: 'p', fam: '01', label: 'Particles', ends: ['None', 'Dense cloud'], def: 0, mix: 'max', info: 'A cloud of bright points spread along the figure-eight. 0 is none; 1 is a dense field. Points follow the other dials: Order lines them up into a lattice, Accumulation varies their size, Disintegration scatters them, Volume lifts them into the twisted ribbon, Spectrum colours them, and when Filaments is high most of them ride the filaments. From 01 Particle Eight. When families are blended, the stronger value wins.', hint: 'A field of bright points.' },
+  { id: 'filaments', k: 'f', fam: '02', label: 'Filaments', ends: ['None', 'Dense flow'], def: 0, mix: 'max', info: 'Continuous lines flowing around the loop, all passing through the crossing. 0 is none; 1 is a dense flow. Order spaces them into evenly nested contours, Volume lifts them into a twisted ribbon, Reduction gathers them onto one trace, and Disintegration breaks one lobe of them into points. New lines fade in between the existing ones, so the flow never re-shuffles. From 02 Flow Field. When blended, the stronger value wins.', hint: 'Coherent trajectories sweeping through both lobes.' },
+  { id: 'accumulation', k: 'a', fam: '03', label: 'Accumulation', ends: ['Even', 'Accreted'], def: 0, mix: 'max', info: 'Matter gathers into grains of different sizes: a few large orbs among many small points, beads forming on the filaments, some filaments heavier than others. The total light stays the same, so it coarsens rather than brightens. From 03 Accumulation. When blended, the stronger value wins.', hint: 'Matter gathers into grains of many sizes: orbs among the points, beads and heavier strands on the filaments.' },
+  { id: 'singularity', k: 'x', fam: '04', label: 'Singularity', ends: ['Even', 'Luminous'], def: 0, mix: 'max', info: 'Makes the crossing the event: it brightens, closes toward a single point and runs warm. The glow sits exactly where the lines cross on screen, wherever the view puts that. From 04 Singularity. When blended, the stronger value wins.', hint: 'The crossing becomes the event: it tightens, brightens and runs warm.' },
+  { id: 'spectrum', k: 'i', fam: '05', label: 'Spectrum', ends: ['Mono', 'Iridescent'], def: 0, mix: 'max', info: 'Thin-film colour that shifts along the loop and toward the edges of the band, plus a faint iridescent membrane over the form. 0 is strictly white. From 05 Iridescent; the brief asks for it rarely. When blended, the stronger value wins.', hint: 'Thin-film colour, strongest at the edges of the band.' },
+  { id: 'disintegration', k: 'd', fam: '06', label: 'Disintegration', ends: ['Intact', 'Dispersed'], def: 0, mix: 'max', info: 'One lobe lets go while the other keeps its structure: its points drift apart and its filaments break into points, and the whole field slowly dissolves and re-forms over time. From 06 Disintegration. When blended, the stronger value wins.', hint: 'One lobe lets go: its points scatter and its filaments break into points.' },
+  { id: 'volume', k: 'vo', fam: '07 · 09', label: 'Volume', ends: ['Flat', 'Twisted', 'Manifold', 'Solid'], def: 0.2, mix: 'mean', info: 'Depth, in four stages along the dial. Flat: a planar figure whose band closes at the crossing. Twisted: the band lifts out of the plane into a ribbon with exactly one full twist, turning at a constant rate, half a turn through each crossing, so both lobes face you and the outer edge stays outer all the way round. Manifold: a translucent sheet spans that ribbon, its silhouettes and rims glowing (07 Topological). Solid: the ribbon gains thickness and becomes an opaque, lit band (09 Volumetric). When blended, positions are averaged.', hint: 'Flat, a ribbon with one full twist, a translucent manifold (07), a solid band (09).' },
+  { id: 'traces', k: 't', fam: '08', label: 'Traces', ends: ['None', 'Streaming'], def: 0, mix: 'max', info: 'Trajectories leave the field horizontally and end in nodes, and bright events travel along the filaments. Most leave from the right lobe, which turns warm. Works on points as well as filaments. From 08 Data Trace. When blended, the stronger value wins.', hint: 'Trajectories leave the field and end in nodes; the signals and the lobe they leave from run warm.' },
+  { id: 'order', k: 'o', fam: '10 · 11', label: 'Order', ends: ['Organic', 'Computed'], def: 0.5, mix: 'mean', info: 'From organic to computed. At 0, points scatter and filaments wander irregularly; at 1, points settle into an exact lattice (10 Point Cloud) and filaments into evenly nested contours (11 Cross Section). Moving it slides everything continuously toward its place. When blended, positions are averaged.', hint: 'Points settle into a lattice (10), filaments into evenly nested contours (11).' },
+  { id: 'reduction', k: 'r', fam: '12', label: 'Reduction', ends: ['Field', 'One trace'], def: 0.3, mix: 'mean', info: 'Draws everything in toward the centre line until only a single crossing trace remains: the quietest form of the mark, and the one the small icons fall back on. From 12 Minimal. When blended, positions are averaged.', hint: 'Everything gathers onto a single crossing trace.' },
+];
+// Form is the topology every family shares, so it sits outside the ten: loading or
+// blending a family keeps it. Old links without these keys get the defaults, which
+// are the shape every earlier version drew.
+const FORM = [
+  { id: 'shape', k: 'sh', fam: '', label: 'Shape', ends: ['Slender', 'Round'], def: 0.44, info: 'The outline of the loops. Toward Slender the lobes narrow into tear-drops and the crossing flattens to about 65°; toward Round they fill out toward circles and the crossing opens up. Every setting is the same kind of curve, one whose curvature rises and falls smoothly once per loop, so the lines stay smooth and nothing folds; the band narrows a little on slender shapes to keep that true. Kept when you load or blend a family.', hint: 'Slender tear-drop lobes to full, round ones.' },
+  { id: 'balance', k: 'ba', fam: '', label: 'Balance', ends: ['Left', 'Even', 'Right'], def: 0.5, info: 'Grows one loop and shrinks the other, up to twice the size at either end, so the mark can lean toward one side (the brief\u2019s symmetry versus imbalance). Both loops still meet at one crossing, the band scales with its loop, and the join stays smooth. Kept when you load or blend a family.', hint: 'Makes one loop larger than the other.' },
+  { id: 'scale', k: 'sc', fam: '', label: 'Scale', ends: ['Small', 'Large'], def: 0.5, info: 'The size of the mark in its frame: on the stage, the still, the monochrome and the lockup. The app icons keep their own fit, so they always fill the tile. Kept when you load or blend a family.', hint: 'The size of the mark in its frame.' },
+];
+const CONTROLS = [...DIALS, ...FORM];
+const formOfState = (c) => Object.fromEntries(FORM.map((d) => [d.id, c[d.id]]));
+const DEFAULT_STATE = { name: '', seed: 7, wm: 1, paper: 0, ...Object.fromEntries(CONTROLS.map((d) => [d.id, d.def])) };
+if (new Set(CONTROLS.map((d) => d.k).concat(['v', 'n', 'sd', 'wm', 'pp'])).size !== CONTROLS.length + 5) throw new Error('duplicate short key');
+function sanitize(c) {
+  const o = { name: String(c.name || '').slice(0, 80) };
+  for (const d of CONTROLS) { const v = parseFloat(c[d.id]); o[d.id] = Number.isFinite(v) ? Math.round(clamp(v, 0, 1) * 100) / 100 : d.def; }
+  const sd = parseInt(c.seed, 10);
+  o.seed = Number.isFinite(sd) ? clamp(sd, 1, 99999) : 7;
+  o.wm = c.wm === 0 || c.wm === '0' || c.wm === false ? 0 : 1;
+  o.paper = c.paper === 1 || c.paper === '1' || c.paper === true ? 1 : 0;
+  return o;
+}
+const fmt2 = (v) => v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+
+// One dial position → every renderer parameter.
+function expand(d) {
+  const sm = smoothstep;
+  const P = d.particles, F = d.filaments, A = d.accumulation, X = d.singularity, Sp = d.spectrum, Dg = d.disintegration,
+    V = d.volume, T = d.traces, O = d.order, R = d.reduction;
+  // Volume: flat → the ribbon lifts into its one full twist (by 0.35) → a sheet
+  // over it (07) → a solid band (09). Width is the ribbon's half-width, kept below
+  // the radius of curvature at the tips so nothing ever folds.
+  const lift = sm(0.04, 0.35, V), solid = sm(0.72, 0.95, V);
+  // Slender ↔ round is the third-harmonic weight of the curvature wave; balance
+  // is the log of the size ratio between the loops (up to 2× at either end).
+  const shapeC = lerp(-0.25, 0.32, d.shape), balance = (d.balance - 0.5) * 0.7;
+  const scale = d.scale < 0.5 ? lerp(0.55, 1, d.scale / 0.5) : lerp(1, 1.3, (d.scale - 0.5) / 0.5);
+  const E8 = eightOf(shapeC), width = 0.82 * E8.bandMax * (1 - R);
+  // Round shapes are taller: shrink them until they clear the wordmark.
+  const fitH = Math.min(1, 0.66 / (E8.top + 0.8 * width));
+  const pSize = 0.85 * (1 + 1.6 * Math.pow(A, 1.3)) * (1 + 0.6 * O);
+  // Ink is free points plus the points filaments shed as they accrete or break up.
+  // Constant ink across sizes: accreting coarsens the grain without brightening it.
+  const free = Math.pow(P, 1.2), shed = F * (0.5 * Dg + 0.3 * A), ink = free + shed;
+  // Counts stay fractional: the renderer fades the newest points and filaments in,
+  // so turning a dial never re-deals the field.
+  const count = Math.min(40000, 15000 * ink / (pSize * pSize));
+  const lines = F < 0.02 ? 0 : Math.min(127, 70 * F * (1 - 0.65 * O) * (1 - 0.9 * sm(0.5, 1, R)));
+  // Shed points sit on the filaments; free points join them in proportion to how
+  // much of the field the filaments are.
+  const share = F * F / (F * F + P * P + 1e-3), ride = ink > 0 ? (shed + free * share) / ink : 0;
+  return {
+    ...ENGINE,
+    seed: d.seed,
+    rotX: lerp(12, 26, V), rotY: lerp(-6, -12, V), zoom: (1.05 - 0.5 * width) * scale * fitH, shapeC, balance,
+    // Only the singularity closes the lifted ribbon at the crossings.
+    width, lift, waist: 0.85 * X, thick: 0.42 * sm(0.7, 1, V), rollAmp: 0.14 * lift, focus: 0.15 * (1 - O),
+    count, pSize, sizeVar: 0.15 * (1 - O) + 0.85 * A * (1 - 0.5 * O), pAlpha: lerp(0.7, 1, O), order: O, rows: 16,
+    scatter: (1 - O) * 0.24, drift: (1 - O) * (0.01 + 0.03 * P) + 0.03 * Dg, crossDens: 0.35 * (1 - O) * (0.5 + X),
+    soft: (1 - O) * 0.85, orbs: sm(0.4, 0.85, A), ride,
+    // Lines are drawn after the surface without depth, so a solid band hides them
+    // outright; a band too thin to be a surface leaves them as they are.
+    lines, lAlpha: Math.min(1, Math.pow(F, 1.3) * 2.6 / Math.sqrt(Math.max(1, lines))) * (1 - solid * sm(0.05, 0.2, width)),
+    lWidth: lerp(0.45, 1.7, Math.pow(R, 3)), lineVar: A,
+    membrane: Math.min(1, (0.9 * sm(0.35, 0.7, V) + 0.45 * Sp) * (1 - solid)), solid,
+    trail: 0.5 * sm(0.7, 1, R), stagger: (1 - O) * 0.7, lineJitter: (1 - O) * 0.9,
+    gap: 0.1 * sm(0.35, 0.85, T), shade: lerp(0.3, 1, V),
+    crossGlow: 0.2 + 0.8 * X, crossSize: lerp(1.1, 0.65, X), accentCross: 0.85 * sm(0.4, 0.9, X),
+    disperse: Dg, dReach: lerp(0.4, 0.65, Dg),
+    nodes: Math.round(30 * T * (1 - 0.7 * solid) + 10 * F * (1 - R) * (1 - solid)), nodeSize: 1.6 + A,
+    traces: Math.round(110 * T), traceLen: 0.25 + 0.35 * T,
+    // Paper is drawn by inverting the light, so the accent is pre-rotated to come out warm.
+    bg: d.paper ? 'paper' : 'void', accentHue: d.paper ? 208 : 28,
+    accentSplit: 0.95 * sm(0.35, 0.9, T), nodeAccent: 0.5 * sm(0.35, 0.9, T), spectral: 0.9 * Sp,
+    ...(d.mono ? { accentCross: 0, accentSplit: 0, nodeAccent: 0, spectral: 0 } : {}),
+    exposure: 1 + 0.35 * X + 0.1 * R, glow: 0.08 + 0.18 * X + 0.06 * Sp, depthFade: lerp(0.25, 0.45, V),
+    turb: 0.05 + 0.25 * (1 - O) + 0.1 * Dg, breathe: 0.25 * Dg,
+    wm: d.wm,
+  };
+}
+const ENG = new Map();
+function eng(d) {
+  const key = encodeParams(d) + (d.mono ? '&mono' : '');
+  let e = ENG.get(key);
+  if (!e) { if (ENG.size > 64) ENG.clear(); e = expand(d); ENG.set(key, e); }
+  return e;
+}
+
+/* ------------------------------------------------------------ presets */
+const V = (particles, filaments, accumulation, singularity, spectrum, disintegration, volume, traces, order, reduction) =>
+  ({ particles, filaments, accumulation, singularity, spectrum, disintegration, volume, traces, order, reduction });
+const PRESETS = [
+  { id: 'signature', num: '00', name: 'Signature', seed: 4127, d: V(0.8, 0, 0.15, 0.45, 0, 0.7, 0, 0, 0.85, 0.3) },
+  { id: 'particle-eight', num: '01', name: 'Particle Eight', seed: 101, d: V(0.85, 0.12, 0.1, 0.45, 0, 0.05, 0.3, 0, 0, 0.45) },
+  { id: 'flow-field', num: '02', name: 'Flow Field', seed: 202, d: V(0.05, 0.85, 0, 0.3, 0, 0, 0.35, 0, 0.5, 0.2) },
+  { id: 'accumulation', num: '03', name: 'Accumulation', seed: 303, d: V(0.65, 0.25, 0.9, 0.25, 0, 0.05, 0.45, 0, 0.1, 0.45) },
+  { id: 'singularity', num: '04', name: 'Singularity', seed: 404, d: V(0.3, 0.6, 0, 1, 0, 0, 0.05, 0, 0.3, 0.95) },
+  { id: 'iridescent', num: '05', name: 'Iridescent', seed: 505, d: V(0.2, 0.8, 0, 0.3, 0.9, 0, 0.4, 0, 0.45, 0.2) },
+  { id: 'disintegration', num: '06', name: 'Disintegration', seed: 606, d: V(0.6, 0, 0.3, 0.4, 0, 0.85, 0.05, 0, 0.5, 0.5) },
+  { id: 'topological', num: '07', name: 'Topological', seed: 707, d: V(0, 0.9, 0, 0.15, 0, 0, 0.7, 0, 0.6, 0.2) },
+  { id: 'data-trace', num: '08', name: 'Data Trace', seed: 808, d: V(0.1, 0.7, 0, 0.35, 0, 0, 0, 0.8, 0.85, 0.15) },
+  { id: 'volumetric', num: '09', name: 'Volumetric', seed: 909, d: V(0, 0.9, 0, 0.1, 0, 0, 1, 0, 0.7, 0.25) },
+  { id: 'point-cloud', num: '10', name: 'Point Cloud', seed: 1010, d: V(0.5, 0, 0, 0.35, 0, 0, 0, 0, 1, 0.05) },
+  { id: 'cross-section', num: '11', name: 'Cross Section', seed: 1111, d: V(0, 0.8, 0, 0.25, 0, 0, 0.1, 0, 1, 0) },
+  { id: 'minimal', num: '12', name: 'Minimal', seed: 1212, d: V(0, 0.6, 0, 0.7, 0, 0, 0.05, 0, 0.7, 1) },
+];
+const presetCfg = (pr) => sanitize({ ...DEFAULT_STATE, ...pr.d, seed: pr.seed, name: pr.name });
+
+/* ------------------------------------------------------------ encoding */
+function encodeParams(c) {
+  const q = new URLSearchParams();
+  q.set('v', '3');
+  if (c.name) q.set('n', c.name);
+  q.set('sd', String(c.seed));
+  for (const d of CONTROLS) q.set(d.k, fmt2(c[d.id]));
+  q.set('wm', String(c.wm)); q.set('pp', String(c.paper));
+  return q.toString();
+}
+function decodeParams(str) {
+  const q = new URLSearchParams(String(str).replace(/^#/, ''));
+  if (q.get('v') !== '3') return null;
+  const c = { ...DEFAULT_STATE, name: q.get('n') || '' };
+  if (q.has('sd')) c.seed = q.get('sd');
+  for (const d of CONTROLS) if (q.has(d.k)) c[d.id] = q.get(d.k);
+  if (q.has('wm')) c.wm = q.get('wm');
+  if (q.has('pp')) c.paper = q.get('pp');
+  return sanitize(c);
+}
+const b64e = (s) => { let bin = ''; for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const b64d = (s) => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return new TextDecoder().decode(Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0))); };
+const toCode = (c) => 'sbst3.' + b64e(encodeParams(c));
+function parseAny(text) {
+  text = String(text || '').trim();
+  if (!text) return null;
+  const m = text.match(/sbst3\.([A-Za-z0-9_-]+)/);
+  if (m) return decodeParams(b64d(m[1]));
+  if (text[0] === '{') {
+    const o = JSON.parse(text), c = { ...DEFAULT_STATE, name: o.name || o.n || '', seed: o.seed ?? o.sd ?? 7 };
+    let hits = 0;
+    for (const d of CONTROLS) { if (d.id in o) { c[d.id] = o[d.id]; hits++; } else if (d.k in o) { c[d.id] = o[d.k]; hits++; } }
+    return hits ? sanitize(c) : null;
+  }
+  const h = text.indexOf('#');
+  return decodeParams(h >= 0 ? text.slice(h + 1) : text);
+}
+
+/* ------------------------------------------------------------ geometry */
+// The figure-eight whose curvature is one sine wave along its length,
+// κ(s) = A·sin s for s ∈ [0, 2π). It closes exactly when J0(A) = 0, so A is the
+// first zero of the Bessel function. Curvature is zero at both crossings (s = 0,
+// π) and largest at the tips (s = π/2 right, 3π/2 left), so the curve has no
+// tight shoulders: a band whose in-plane offset grows like sin s, as curvature
+// does, is fold-free everywhere up to the curve's bandMax.
+// Shape adds a third harmonic, κ(s) = A·(sin s + c·sin 3s), with A chosen so the
+// curve closes (∫cos(A·cos s + A·c/3·cos 3s) ds = 0; c = 0 is the Bessel zero).
+// Over c ∈ [-0.25, 0.32] curvature keeps one sign per lobe and stays zero at the
+// crossings, so the same guarantees hold for every shape.
+const EIGHTS = new Map();
+function eightOf(cc) {
+  const key = cc.toFixed(4);
+  let E = EIGHTS.get(key);
+  if (E) return E;
+  if (EIGHTS.size > 32) EIGHTS.clear();
+  const Mc = 2048, clo = (a) => { let t = 0; for (let i = 0; i < Mc; i++) { const s = TAU * (i + 0.5) / Mc; t += Math.cos(a * (Math.cos(s) + cc / 3 * Math.cos(3 * s))); } return t; };
+  let lo = 1, hi = 4, flo = clo(lo);
+  for (let k = 0; k < 48; k++) { const mid = (lo + hi) / 2, fm = clo(mid); if ((fm > 0) === (flo > 0)) { lo = mid; flo = fm; } else hi = mid; }
+  const A = (lo + hi) / 2, M = 16384, xs = new Float64Array(M + 1), ys = new Float64Array(M + 1);
+  for (let i = 0; i < M; i++) {
+    const s = TAU * (i + 0.5) / M, th = Math.PI / 2 - A * (Math.cos(s) + cc / 3 * Math.cos(3 * s)), d = TAU / M;
+    xs[i + 1] = xs[i] + Math.cos(th) * d; ys[i + 1] = ys[i] + Math.sin(th) * d;
+  }
+  const half = xs[M / 4];
+  let top = 0;
+  for (let i = 0; i <= M; i++) { xs[i] /= half; ys[i] /= half; if (ys[i] > top) top = ys[i]; }
+  // The widest band that cannot fold: its in-plane offset is at most h·(|sin s| + roll)
+  // against a radius of curvature 1/κ.
+  let worst = 0;
+  for (let i = 1; i < 2000; i++) {
+    const s = Math.PI * i / 2000, k = Math.abs(A * (Math.sin(s) + cc * Math.sin(3 * s)) * half);
+    worst = Math.max(worst, k * Math.min(1, Math.abs(Math.sin(s)) + 0.14));
+  }
+  E = { A, c: cc, M, xs, ys, top, bandMax: 1 / worst };
+  EIGHTS.set(key, E);
+  return E;
+}
+// Balance scales each loop about the crossing by λ(s) = exp(b·g(s)), g = ±1 over
+// each lobe and smooth through the crossings. The crossing is the scaling centre and
+// curvature is zero there, so the loops still meet at one point and the join stays
+// smooth; the band's width scales with λ, so its fold limit is unchanged.
+const FORMS = new Map();
+function formOf(c, n) {
+  const key = n + '|' + c.shapeC.toFixed(4) + '|' + c.balance.toFixed(4);
+  let F = FORMS.get(key);
+  if (F) return F;
+  if (FORMS.size > 32) FORMS.clear();
+  const E = eightOf(c.shapeC), b = c.balance, gk = 2.5, gt = Math.tanh(gk);
+  const A = () => new Float32Array(n + 1);
+  F = { n, x: A(), y: A(), nx: A(), ny: A(), sn: A(), cs: A(), rh: A(), sx: A(), hs: A(), c1: 0, c2: n / 2, bandMax: E.bandMax };
+  let minX = 1e9, maxX = -1e9;
+  for (let j = 0; j <= n; j++) {
+    const s = TAU * j / n, fi = (j / n) * E.M, i0 = Math.min(E.M - 1, fi | 0), fr = fi - i0;
+    const cx = E.xs[i0] + (E.xs[i0 + 1] - E.xs[i0]) * fr, cy = E.ys[i0] + (E.ys[i0 + 1] - E.ys[i0]) * fr;
+    const th = Math.PI / 2 - E.A * (Math.cos(s) + E.c / 3 * Math.cos(3 * s));
+    const sn = Math.sin(s), tz = Math.tanh(gk * sn), g = tz / gt, gp = gk * Math.cos(s) * (1 - tz * tz) / gt;
+    const lam = Math.exp(b * g), lp = lam * b * gp;
+    const px = lam * cx, py = lam * cy;
+    let tx = lp * cx + lam * Math.cos(th), ty = lp * cy + lam * Math.sin(th);
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    F.x[j] = px; F.y[j] = py; F.nx[j] = -ty; F.ny[j] = tx; F.hs[j] = lam;
+    F.sn[j] = sn; F.cs[j] = Math.cos(s);
+    F.sx[j] = cx;
+    if (px < minX) minX = px; if (px > maxX) maxX = px;
+  }
+  // Centre the figure and scale its full width back to 2.
+  const x0 = (maxX + minX) / 2, half = (maxX - minX) / 2;
+  let maxR = 1e-6;
+  for (let j = 0; j <= n; j++) {
+    F.x[j] = (F.x[j] - x0) / half; F.y[j] /= half; F.hs[j] /= half;
+    const r = Math.hypot(F.x[j], F.y[j]); F.rh[j] = r; if (r > maxR) maxR = r;
+  }
+  for (let j = 0; j <= n; j++) F.rh[j] /= maxR;
+  FORMS.set(key, F);
+  return F;
+}
+function rotation(ax, ay, az) {
+  const a = ax * D2R, b = ay * D2R, g = az * D2R;
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cg = Math.cos(g), sg = Math.sin(g);
+  const m00 = cb, m01 = 0, m02 = sb, m10 = sa * sb, m11 = ca, m12 = -sa * cb, m20 = -ca * sb, m21 = sa, m22 = ca * cb;
+  return [cg * m00 - sg * m10, cg * m01 - sg * m11, cg * m02 - sg * m12,
+    sg * m00 + cg * m10, sg * m01 + cg * m11, sg * m02 + cg * m12, m20, m21, m22];
+}
+const VIEWS = new Map();
+function viewBuf(n) {
+  let v = VIEWS.get(n);
+  if (!v) { const A = () => new Float32Array(n + 1); v = { cx: A(), cy: A(), cz: A(), dz: A(), nx: A(), ny: A(), nz: A(), bx: A(), by: A(), bz: A(), h: A() }; VIEWS.set(n, v); }
+  return v;
+}
+// The band is a ribbon with exactly one full twist. Its width direction is
+//   W(s) = cos ψ·N + lift·sin ψ·B,   ψ = s + π/2 + roll,
+// turning at a constant rate, half a turn through each crossing. That is the only
+// twist that keeps the outer edge outer in both lobes (as every reference does)
+// while the crossing stays open; a Möbius band (half a turn) swaps the edges and
+// leaves one lobe edge-on. With lift 0 the same rule gives the flat figure, whose
+// width ∝ sin s closes at the crossings. The second section axis is the ribbon's
+// normal, -sin ψ·N + cos ψ·B.
+function fillView(F, c, roll, R, V) {
+  const n = F.n, h0 = Math.min(c.width, F.bandMax * 0.85), t = c.lift, waist = c.waist;
+  const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = R;
+  // The passes are separated in depth only (never on screen), enough for a solid
+  // band to clear itself; cos³ keeps it near the crossings.
+  const over = 0.1 + 1.35 * h0 * t * F.hs[0];
+  for (let j = 0; j <= n; j++) {
+    const ps = TAU * j / n + Math.PI / 2 + roll, cp = Math.cos(ps), sp = Math.sin(ps), cs = F.cs[j];
+    const Nx = F.nx[j], Ny = F.ny[j];
+    const ax = cp * Nx, ay = cp * Ny, az = t * sp;
+    const bx = -sp * Nx, by = -sp * Ny, bz = cp;
+    const x = F.x[j], y = F.y[j];
+    V.cx[j] = r00 * x + r01 * y; V.cy[j] = r10 * x + r11 * y; V.cz[j] = r20 * x + r21 * y;
+    V.dz[j] = over * cs * cs * cs;
+    V.nx[j] = r00 * ax + r01 * ay + r02 * az; V.ny[j] = r10 * ax + r11 * ay + r12 * az; V.nz[j] = r20 * ax + r21 * ay + r22 * az;
+    V.bx[j] = r00 * bx + r01 * by + r02 * bz; V.by[j] = r10 * bx + r11 * by + r12 * bz; V.bz[j] = r20 * bx + r21 * by + r22 * bz;
+    V.h[j] = h0 * F.hs[j] * (1 - waist * cs * cs);
+  }
+}
+
+// Filament slots across the band, filled level by level (the centre, then the
+// quarters, then the eighths...), so adding filaments never moves the existing ones
+// and the newest level fades in between them.
+const SLOTS = (() => {
+  const out = [];
+  for (let L = 1; L <= 7; L++) {
+    const den = 1 << L, lv = [];
+    for (let i = 1; i < den; i += 2) lv.push(i / den);
+    lv.sort((a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5) || a - b);
+    out.push(...lv);
+  }
+  return out;
+})();
+const snapSlot = (u, L) => { const d = 1 << L; return clamp(Math.round(u * d), 1, d - 1) / d; };
+// Radical inverse in base 2: every prefix of the sequence is evenly spread, so
+// particle columns placed by it never move as the count changes.
+function vdc(i) { let x = 0, f = 0.5; while (i) { if (i & 1) x += f; i >>= 1; f *= 0.5; } return x; }
+// Where the drawn centre line crosses itself on screen. The two passes sit at
+// different depths, so this is not the projection of the crossing in space.
+function screenCrossing(F, V, n, cam, S, OX, OY) {
+  const XS = scratch('XS', n + 1), YS = scratch('YS', n + 1);
+  for (let j = 0; j <= n; j++) { const f = cam / Math.max(0.3, cam - V.cz[j]); XS[j] = OX + V.cx[j] * f * S; YS[j] = OY - V.cy[j] * f * S; }
+  const w = Math.round(n * 0.14), st = 2;
+  let bx = 0, by = 0, bd = Infinity;
+  for (let a = F.c1 - w; a < F.c1 + w; a += st) {
+    const a0 = (a + n) % n, a1 = (a0 + st) % n;
+    const ax = XS[a0], ay = YS[a0], adx = XS[a1] - ax, ady = YS[a1] - ay;
+    for (let b = F.c2 - w; b < F.c2 + w; b += st) {
+      const b0 = (b + n) % n, b1 = (b0 + st) % n;
+      const cx = XS[b0], cy = YS[b0], cdx = XS[b1] - cx, cdy = YS[b1] - cy;
+      const den = adx * cdy - ady * cdx;
+      if (den !== 0) {
+        const t = ((cx - ax) * cdy - (cy - ay) * cdx) / den, u = ((cx - ax) * ady - (cy - ay) * adx) / den;
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return [ax + adx * t, ay + ady * t];
+      }
+      const d = (ax - cx) ** 2 + (ay - cy) ** 2;
+      if (d < bd) { bd = d; bx = (ax + cx) / 2; by = (ay + cy) / 2; }
+    }
+  }
+  return [bx, by];
+}
+
+/* ------------------------------------------------------------- genome */
+// Particles are drawn from one sequential stream per seed, so particle i is
+// the same particle at any count: raising the count adds, it never reshuffles.
+const UST = 14;
+class Field {
+  constructor() { this.seed = -1; this.N = 0; }
+  ensure(c) {
+    const want = Math.ceil(c.count);
+    if (c.seed !== this.seed) {
+      this.seed = c.seed; this.N = 0; this.U = this.G = this.D = null;
+      const r = rng((c.seed * 2654435761) ^ 0x5bd1e995);
+      this.lineR = Float32Array.from({ length: 200 }, r);
+      this.nodeR = Float32Array.from({ length: 200 * 6 }, r);
+      this.traceR = Float32Array.from({ length: 200 * 8 }, r);
+      this.r = rng((c.seed * 374761393) ^ 0x27d4eb2f);
+    }
+    if (want > this.N) this.grow(Math.min(40000, Math.max(want, Math.ceil(this.N * 1.5), 2048)));
+  }
+  // Appends to the stream instead of regenerating it, so raising the count costs
+  // only the new particles and never stalls a frame on the old ones.
+  grow(N) {
+    const r = this.r, N0 = this.N;
+    const U = new Float32Array(N * UST), G = new Float32Array(N * 3), D = new Float32Array(N * 3);
+    if (N0) { U.set(this.U); G.set(this.G); D.set(this.D); }
+    for (let i = N0; i < N; i++) {
+      for (let k = 0; k < UST; k++) U[i * UST + k] = r();
+      G[i * 3] = gauss(r); G[i * 3 + 1] = gauss(r); G[i * 3 + 2] = gauss(r);
+      let dx = gauss(r), dy = gauss(r), dz = gauss(r); const l = Math.hypot(dx, dy, dz) || 1;
+      D[i * 3] = dx / l; D[i * 3 + 1] = dy / l; D[i * 3 + 2] = dz / l;
+    }
+    this.U = U; this.G = G; this.D = D; this.N = N;
+  }
+}
+
+/* ------------------------------------------------------------ sprites */
+const SPR = new Map(), CSTR = new Map();
+const qk = (r, g, b) => ((clamp(r, 0, 1) * 31 + 0.5) << 10) | ((clamp(g, 0, 1) * 31 + 0.5) << 5) | (clamp(b, 0, 1) * 31 + 0.5);
+const kr = (k) => Math.round(((k >> 10) & 31) * 255 / 31), kg = (k) => Math.round(((k >> 5) & 31) * 255 / 31), kb = (k) => Math.round((k & 31) * 255 / 31);
+function cstr(k) { let s = CSTR.get(k); if (!s) { s = `rgb(${kr(k)},${kg(k)},${kb(k)})`; CSTR.set(k, s); } return s; }
+function sprite(style, k) {
+  const id = style * 32768 + k;
+  let cv = SPR.get(id);
+  if (cv) return cv;
+  const r = kr(k), g = kg(k), b = kb(k), size = style === 2 ? 64 : 32, h = size / 2;
+  cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const x = cv.getContext('2d');
+  if (style === 0) {
+    const gr = x.createRadialGradient(h, h, 0, h, h, h);
+    gr.addColorStop(0, `rgba(${r},${g},${b},1)`); gr.addColorStop(0.14, `rgba(${r},${g},${b},.85)`);
+    gr.addColorStop(0.38, `rgba(${r},${g},${b},.2)`); gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    x.fillStyle = gr; x.fillRect(0, 0, size, size);
+  } else if (style === 1) {
+    x.fillStyle = `rgb(${r},${g},${b})`; x.beginPath(); x.arc(h, h, h - 1, 0, TAU); x.fill();
+  } else {
+    const gr = x.createRadialGradient(h * 0.68, h * 0.6, h * 0.04, h, h, h);
+    const m = (f, a = 0) => `rgb(${Math.min(255, r * f + a) | 0},${Math.min(255, g * f + a) | 0},${Math.min(255, b * f + a) | 0})`;
+    gr.addColorStop(0, m(1, 30)); gr.addColorStop(0.3, m(0.82)); gr.addColorStop(0.78, m(0.24)); gr.addColorStop(1, m(0.08));
+    x.fillStyle = gr; x.beginPath(); x.arc(h, h, h - 1, 0, TAU); x.fill();
+    x.strokeStyle = `rgba(${r},${g},${b},.4)`; x.lineWidth = 1.5; x.beginPath(); x.arc(h, h, h - 2.5, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke();
+  }
+  SPR.set(id, cv);
+  return cv;
+}
+const SCR = {};
+function scratch(name, size, T = Float32Array) {
+  let a = SCR[name];
+  if (!a || a.length < size) a = SCR[name] = new T(Math.ceil(size * 1.25) + 16);
+  return a;
+}
+function sortedBy(Z, n) {
+  const idx = scratch('sortIdx', n, Uint32Array).subarray(0, n);
+  for (let i = 0; i < n; i++) idx[i] = i;
+  idx.sort((a, b) => Z[a] - Z[b]);
+  return idx;
+}
+
+/* -------------------------------------------------------- surface (GL) */
+// Surfaces are a mesh: Canvas 2D can only shade it in flat patches, which band,
+// so when WebGL is there it shades them per pixel and resolves their depth.
+const GLS = { tried: false };
+function glSurface() {
+  if (GLS.tried) return GLS.gl ? GLS : null;
+  GLS.tried = true;
+  const cv = document.createElement('canvas');
+  const gl = cv.getContext('webgl', { antialias: true, premultipliedAlpha: true, alpha: true, depth: true, preserveDrawingBuffer: false });
+  if (!gl) return null;
+  const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); return gl.getShaderParameter(o, gl.COMPILE_STATUS) ? o : null; };
+  const vs = sh(gl.VERTEX_SHADER, `
+    attribute vec2 aP; attribute float aZ; attribute vec3 aN; attribute vec4 aC;
+    uniform vec2 uRes; uniform float uZr;
+    varying vec3 vN; varying vec4 vC;
+    void main() {
+      vN = aN; vC = aC;
+      gl_Position = vec4(aP.x / uRes.x * 2.0 - 1.0, 1.0 - aP.y / uRes.y * 2.0, clamp(-aZ / uZr, -0.999, 0.999), 1.0);
+    }`);
+  const fs = sh(gl.FRAGMENT_SHADER, `
+    precision mediump float;
+    varying vec3 vN; varying vec4 vC;
+    uniform float uSolid, uMem;
+    void main() {
+      vec3 n = normalize(vN);
+      float fres = 1.0 - abs(n.z);
+      if (uSolid > 0.5) {
+        if (n.z < 0.0) n = -n;
+        vec3 L = normalize(vec3(-0.45, 0.62, 0.64)), H = normalize(L + vec3(0.0, 0.0, 1.0));
+        float lam = max(dot(n, L), 0.0), spec = pow(max(dot(n, H), 0.0), 28.0);
+        float v = (0.03 + 0.72 * lam + 0.22 * fres * fres * fres) * vC.a;
+        gl_FragColor = vec4(min(vC.rgb * v + spec * 0.35, 1.0), 1.0);
+      } else {
+        float a = uMem * (0.015 + 0.5 * pow(fres, 2.2)) * vC.a;
+        gl_FragColor = vec4(vC.rgb * a, a);
+      }
+    }`);
+  if (!vs || !fs) return null;
+  const pr = gl.createProgram(); gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr);
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return null;
+  Object.assign(GLS, {
+    gl, cv, pr, buf: gl.createBuffer(), ibuf: gl.createBuffer(), ikey: '',
+    aP: gl.getAttribLocation(pr, 'aP'), aZ: gl.getAttribLocation(pr, 'aZ'), aN: gl.getAttribLocation(pr, 'aN'), aC: gl.getAttribLocation(pr, 'aC'),
+    uRes: gl.getUniformLocation(pr, 'uRes'), uZr: gl.getUniformLocation(pr, 'uZr'), uSolid: gl.getUniformLocation(pr, 'uSolid'), uMem: gl.getUniformLocation(pr, 'uMem'),
+  });
+  return GLS;
+}
+// verts: 10 floats each (x, y, z, nx, ny, nz, r, g, b, a) on a rows × cols grid.
+// Surfaces are smooth, so they render at reduced resolution and are scaled up:
+// copying a full-size WebGL frame into a 2D canvas is the expensive part.
+function glDraw(G, W, H, verts, rows, cols, solid, mem, zr) {
+  const gl = G.gl, k = clamp(1100 / Math.max(W, H), 0.45, 1), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+  if (G.cv.width !== w || G.cv.height !== h) { G.cv.width = w; G.cv.height = h; }
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(G.pr);
+  const ikey = rows + 'x' + cols;
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, G.ibuf);
+  if (G.ikey !== ikey) {
+    const idx = new Uint16Array((rows - 1) * (cols - 1) * 6);
+    let k = 0;
+    for (let r = 0; r < rows - 1; r++) for (let q = 0; q < cols - 1; q++) {
+      const a = r * cols + q, b = a + 1, c = a + cols, d = c + 1;
+      idx[k++] = a; idx[k++] = b; idx[k++] = c; idx[k++] = b; idx[k++] = d; idx[k++] = c;
+    }
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW); G.ikey = ikey; G.icount = k;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, G.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STREAM_DRAW);
+  const st = 40;
+  gl.enableVertexAttribArray(G.aP); gl.vertexAttribPointer(G.aP, 2, gl.FLOAT, false, st, 0);
+  gl.enableVertexAttribArray(G.aZ); gl.vertexAttribPointer(G.aZ, 1, gl.FLOAT, false, st, 8);
+  gl.enableVertexAttribArray(G.aN); gl.vertexAttribPointer(G.aN, 3, gl.FLOAT, false, st, 12);
+  gl.enableVertexAttribArray(G.aC); gl.vertexAttribPointer(G.aC, 4, gl.FLOAT, false, st, 24);
+  gl.uniform2f(G.uRes, W, H); gl.uniform1f(G.uZr, zr * 1.6); gl.uniform1f(G.uSolid, solid ? 1 : 0); gl.uniform1f(G.uMem, mem);
+  if (solid) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.disable(gl.BLEND); }
+  else { gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+  gl.drawElements(gl.TRIANGLES, G.icount, gl.UNSIGNED_SHORT, 0);
+  return G.cv;
+}
+
+/* ------------------------------------------------------------- render */
+function makeBuffers(W, H) {
+  const mk = (w, h) => { const cv = document.createElement('canvas'); cv.width = Math.max(1, w); cv.height = Math.max(1, h); return cv; };
+  const L = mk(W, H), B = { W, H, L, x: L.getContext('2d'), blur: [] };
+  let w = W, h = H;
+  for (let i = 0; i < 4; i++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); const cv = mk(w, h); B.blur.push({ cv, x: cv.getContext('2d'), w, h }); }
+  return B;
+}
+const BUF = new Map();
+function buffersFor(W, H) {
+  const key = W + 'x' + H;
+  let b = BUF.get(key);
+  if (!b) { if (BUF.size > 10) BUF.clear(); b = makeBuffers(W, H); BUF.set(key, b); }
+  return b;
+}
+function bloom(B, amt) {
+  let src = B.L, sw = B.W, sh = B.H;
+  // Bilinear on purpose: the 'high' resampling path costs ~100ms a frame at stage size.
+  for (const b of B.blur) {
+    b.x.globalCompositeOperation = 'copy'; b.x.imageSmoothingEnabled = true; b.x.imageSmoothingQuality = 'low';
+    b.x.drawImage(src, 0, 0, sw, sh, 0, 0, b.w, b.h);
+    src = b.cv; sw = b.w; sh = b.h;
+  }
+  // The wider levels are summed at quarter size first: one full-size scaled draw
+  // costs as much as a dozen small ones.
+  const q = B.blur[1];
+  q.x.globalCompositeOperation = 'lighter';
+  q.x.globalAlpha = 0.9; q.x.drawImage(B.blur[2].cv, 0, 0, q.w, q.h);
+  q.x.globalAlpha = 0.8; q.x.drawImage(B.blur[3].cv, 0, 0, q.w, q.h);
+  q.x.globalAlpha = 1;
+  const x = B.x;
+  x.globalCompositeOperation = 'lighter'; x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'low';
+  x.globalAlpha = Math.min(1, amt * 0.45); x.drawImage(q.cv, 0, 0, B.W, B.H);
+  x.globalAlpha = 1;
+}
+const stillState = (c) => { const clock = c.phase * c.period; return { clock, flowPos: c.flow * 0.12 * clock }; };
+
+// Draws the mark as light onto an opaque black buffer. Everything visible is a
+// function of (config, clock, flowPos), so a still is reproducible.
+function renderLight(B, c, field, o) {
+  const ctx = B.x, W = B.W, H = B.H;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const n = o.n, F = formOf(c, n), V = viewBuf(n), clock = o.clock;
+  const R = rotation(c.rotX + c.sway * 0.35 * Math.sin(clock * 0.13 + 1.1), c.rotY + c.sway * Math.sin(clock * 0.19), c.rotZ);
+  // The ribbon rocks gently about its centre line; it never re-twists.
+  fillView(F, c, c.rollAmp * Math.sin(clock * 0.17), R, V);
+  const [r00, r01, r02, r10, r11, r12, r20, r21, r22] = R;
+  const S = o.S, OX = o.ox, OY = o.oy, unit = S / 500;
+  const cam = lerp(14, 2.4, c.persp);
+  const expo = c.exposure * (o.gain || 1);
+  let zr = 0.15;
+  for (let j = 0; j <= n; j += 6) { const z = Math.abs(V.cz[j] + V.dz[j]) + V.h[j]; if (z > zr) zr = z; }
+  const dF = c.depthFade;
+  const sigC2 = (0.16 * c.crossSize) ** 2, xgk = c.crossGlow >= 0 ? c.crossGlow * 2.4 : c.crossGlow * 0.85;
+  const side = c.dSide === 'left' ? -1 : 1, dStart = 1 - 2 * c.dReach;
+  const dispAt = (sx) => {
+    if (c.disperse <= 0) return 0;
+    const t = (sx * side - dStart) / (1 - dStart + 1e-4);
+    return t <= 0 ? 0 : Math.pow(Math.min(1, t), 1.3) * c.disperse;
+  };
+  const breath = c.breathe * Math.pow(0.5 - 0.5 * Math.cos(TAU * clock / c.period), 3);
+  const fadeG = Math.min(0.9, breath * 0.6);
+
+  const base = lerp3([1, 1, 1], hsl(c.hue / 360, 0.9, 0.62), c.tint * 0.8);
+  const acc = lerp3([1, 1, 1], hsl(c.accentHue / 360, 1, 0.6), c.accentSat);
+  const plain = c.accentCross <= 0 && c.accentSplit <= 0 && c.spectral <= 0;
+  const baseKey = qk(base[0], base[1], base[2]);
+  const sigA2 = (0.22 * c.crossSize) ** 2;
+  const crgb = [0, 0, 0];
+  const colorKey = (rh, sx, a, s, nz) => { if (plain) return baseKey; colorOf(rh, sx, a, s, nz, crgb); return qk(crgb[0], crgb[1], crgb[2]); };
+  function colorOf(rh, sx, a, s, nz, out) {
+    let r = base[0], g = base[1], b = base[2], am = 0;
+    if (c.accentCross > 0) am += c.accentCross * Math.exp(-(rh * rh) / sigA2);
+    if (c.accentSplit > 0) am += c.accentSplit * smoothstep(-0.2, 0.6, sx);
+    if (am > 0) { am = Math.min(1, am); r += (acc[0] - r) * am; g += (acc[1] - g) * am; b += (acc[2] - b) * am; }
+    if (c.spectral > 0) {
+      // Hue follows position along the loop, so neighbours agree and the colour reads
+      // as a film over the form rather than confetti on the points.
+      const hh = s * 1.5 * c.specScale + a * 0.2 + nz * 0.3 + clock * 0.015;
+      let sr = 0.5 + 0.5 * Math.cos(TAU * hh), sg = 0.5 + 0.5 * Math.cos(TAU * (hh - 0.333)), sb = 0.5 + 0.5 * Math.cos(TAU * (hh - 0.667));
+      const mx = Math.max(sr, sg, sb) || 1; sr /= mx; sg /= mx; sb /= mx;
+      const k = c.spectral * (0.3 + 0.7 * Math.min(1, Math.abs(a)));
+      r += (sr - r) * k; g += (sg - g) * k; b += (sb - b) * k;
+    }
+    out[0] = r; out[1] = g; out[2] = b;
+  }
+  const xb = (rh) => 1 + xgk * Math.exp(-(rh * rh) / sigC2);
+  const [CXP, CYP] = screenCrossing(F, V, n, cam, S, OX, OY);
+  const xd = (X, Y) => Math.hypot(X - CXP, Y - CYP) / S;
+  const dfac = (z) => 1 - dF * 0.5 * (1 - clamp(z / zr, -1, 1));
+  // Filaments occupy SLOTS level by level; the partial level fades in. Disorder is
+  // a fixed smooth warp of the slot positions (monotone, so strands never cross),
+  // shared by everything that rides them.
+  const nsF = Math.min(127, Math.max(0, c.lines)), lvF = nsF > 0 ? Math.log2(nsF + 1) : 0;
+  const lvFull = Math.floor(lvF), lvFrac = lvF - lvFull, nsFull = (1 << lvFull) - 1;
+  const ns = lvFrac > 1e-3 ? (1 << (lvFull + 1)) - 1 : nsFull;
+  const wAmp = c.lineJitter * 0.018, wp1 = field.lineR[0] * TAU, wp2 = field.lineR[1] * TAU;
+  const warp = (u) => u + wAmp * (Math.sin(TAU * 3 * u + wp1) + 0.6 * Math.sin(TAU * 7 * u + wp2));
+  const slotAB = (u, out) => {
+    out[0] = focusMap(clamp(2 * warp(u) - 1, -1, 1), c.focus); out[1] = 0;
+    return out;
+  };
+  // A rider's place across the band: the nearest filament, eased between the full
+  // levels and the one fading in, so it slides rather than jumps as filaments grow.
+  const rideU = (u) => (lvFull < 1 ? 0.5 : lerp(snapSlot(u, lvFull), snapSlot(u, lvFull + 1), lvFrac));
+  const ab = [0, 0];
+  const SA = scratch('SA', ns + 1), SL = scratch('SL', ns + 1), SW = scratch('SW', ns + 1);
+  for (let k = 0; k < ns; k++) {
+    slotAB(SLOTS[k], ab);
+    SA[k] = ab[0];
+    SL[k] = (1 + (field.lineR[(k + 101) % 200] - 0.5) * c.lineJitter * 1.4) * (k < nsFull ? 1 : lvFrac);
+    SW[k] = 1 + c.lineVar * 5 * Math.pow(field.lineR[(k + 57) % 200], 4);
+  }
+  // Position on the body at arc position s (0..1) and section coords (A across the
+  // ribbon, Bq along its normal), in view space; out[4] is the depth-only offset.
+  const at = (s, A, Bq, out) => {
+    const jf = s * n; let j0 = jf | 0; if (j0 >= n) j0 = n - 1; const fr = jf - j0, j1 = j0 + 1;
+    const ip = (a) => a[j0] + (a[j1] - a[j0]) * fr;
+    const h = ip(V.h), ah = A * h, bh = Bq * h;
+    out[0] = ip(V.cx) + ah * ip(V.nx) + bh * ip(V.bx);
+    out[1] = ip(V.cy) + ah * ip(V.ny) + bh * ip(V.by);
+    out[2] = ip(V.cz) + ah * ip(V.nz) + bh * ip(V.bz);
+    out[3] = j0; out[4] = ip(V.dz);
+    return out;
+  };
+  const pv = [0, 0, 0, 0, 0];
+
+  /* core trace: back half, an erasing stroke under the front pass, front half */
+  if (c.core > 0) {
+    // Indexed from the right tip, so each half holds exactly one crossing pass.
+    const step = n > 400 ? 2 : 1, m = (n / step) | 0, j0 = n / 4, half = m >> 1;
+    const CX = scratch('coreX', m + 1), CY = scratch('coreY', m + 1);
+    for (let q = 0; q <= m; q++) {
+      const j = (j0 + q * step) % n, f = cam / Math.max(0.3, cam - V.cz[j]);
+      CX[q] = OX + V.cx[j] * f * S; CY[q] = OY - V.cy[j] * f * S;
+    }
+    const firstFront = V.cz[F.c2] + V.dz[F.c2] > V.cz[F.c1] + V.dz[F.c1];
+    const back = firstFront ? [half, m] : [0, half], front = firstFront ? [0, half] : [half, m];
+    const cq = Math.round((firstFront ? n / 2 - j0 : n - j0) / step);
+    const run = (a, b) => { ctx.beginPath(); ctx.moveTo(CX[a], CY[a]); for (let q = a + 1; q <= b; q++) ctx.lineTo(CX[q], CY[q]); ctx.stroke(); };
+    const lw = c.core * unit * 1.1;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = cstr(baseKey); ctx.globalAlpha = Math.min(1, expo); ctx.lineWidth = lw;
+    run(back[0], back[1]);
+    if (c.coreGap > 0) {
+      const span = Math.max(2, Math.round(m * 0.035 * (0.6 + c.coreGap)));
+      ctx.globalAlpha = 1; ctx.strokeStyle = '#000'; ctx.lineCap = 'butt';
+      ctx.lineWidth = lw * (1 + 2.6 * c.coreGap) + 2 * unit;
+      run(Math.max(front[0], cq - span), Math.min(front[1], cq + span));
+      ctx.lineCap = 'round'; ctx.strokeStyle = cstr(baseKey); ctx.globalAlpha = Math.min(1, expo);
+    }
+    ctx.lineWidth = lw;
+    run(front[0], front[1]);
+  }
+
+  /* surface: a translucent sheet whose silhouettes and rims glow, and a lit solid band */
+  // Both can be present at once, so moving between them is a crossfade, not a switch.
+  if (c.width > 0.01 && c.membrane > 0.005) drawSurface(false, c.membrane);
+  if (c.width > 0.01 && c.solid > 0.005) drawSurface(true, c.solid);
+  function drawSurface(solid, strength) {
+    const G = glSurface(), th = Math.max(c.thick, 0.12);
+    const RU = solid ? 40 : 24, sj = n > 400 ? 3 : 2, m = (n / sj) | 0, cols = m + 1;
+    const VT = scratch('VT', (RU + 1) * cols * 10);
+    for (let r = 0; r <= RU; r++) {
+      // Solid: a closed band of elliptical section (half-width 1, half-thickness th),
+      // outward normal ∝ th·cosθ·W + sinθ·Wn. Sheet: the open ribbon, normal Wn.
+      const ang = TAU * r / RU, A = solid ? Math.cos(ang) : 2 * r / RU - 1, Bq = solid ? th * Math.sin(ang) : 0;
+      const ea = solid ? th * Math.cos(ang) : 0, eb = solid ? Math.sin(ang) : 1;
+      const rim = solid ? 1 : 1 + 1.6 * smoothstep(0.75, 1, Math.abs(A));
+      for (let q = 0; q <= m; q++) {
+        const j = q * sj, h = V.h[j], o10 = (r * cols + q) * 10;
+        const x = V.cx[j] + h * (A * V.nx[j] + Bq * V.bx[j]), y = V.cy[j] + h * (A * V.ny[j] + Bq * V.by[j]), z = V.cz[j] + h * (A * V.nz[j] + Bq * V.bz[j]);
+        const f = cam / Math.max(0.3, cam - z), X = OX + x * f * S, Y = OY - y * f * S, zd = z + V.dz[j];
+        let nx = ea * V.nx[j] + eb * V.bx[j], ny = ea * V.ny[j] + eb * V.by[j], nz = ea * V.nz[j] + eb * V.bz[j];
+        const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+        VT[o10] = X; VT[o10 + 1] = Y; VT[o10 + 2] = zd; VT[o10 + 3] = nx; VT[o10 + 4] = ny; VT[o10 + 5] = nz;
+        if (solid) { VT[o10 + 6] = base[0]; VT[o10 + 7] = base[1]; VT[o10 + 8] = base[2]; VT[o10 + 9] = dfac(zd); }
+        else {
+          colorOf(xd(X, Y), F.sx[j], A, j / n, nz, crgb);
+          VT[o10 + 6] = crgb[0]; VT[o10 + 7] = crgb[1]; VT[o10 + 8] = crgb[2]; VT[o10 + 9] = dfac(zd) * expo * rim;
+        }
+      }
+    }
+    const mem = solid ? 1 : strength;
+    if (G) {
+      const out = glDraw(G, W, H, VT.subarray(0, (RU + 1) * cols * 10), RU + 1, cols, solid, mem, zr);
+      ctx.globalCompositeOperation = solid ? 'source-over' : 'lighter'; ctx.globalAlpha = solid ? Math.min(1, strength) : 1;
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';
+      ctx.drawImage(out, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    } else {
+      // Without WebGL: flat-shaded patches, the same shading, depth-sorted for a solid.
+      const CQ = 2, nk = RU * Math.ceil(m / CQ) + RU;
+      const KR = scratch('KR', nk, Int32Array), KQ = scratch('KQ', nk, Int32Array), KN = scratch('KN', nk, Int32Array), KZ = scratch('KZ', nk), KA = scratch('KA', nk);
+      const KC = scratch('KC', nk * 3);
+      const Lx = -0.45, Ly = 0.62, Lz = 0.64, hl = Math.hypot(Lx, Ly, Lz + 1), Hx = Lx / hl, Hy = Ly / hl, Hz = (Lz + 1) / hl;
+      let kc = 0;
+      for (let r = 0; r < RU; r++) for (let q0 = 0; q0 < m; q0 += CQ) {
+        const q1 = Math.min(m, q0 + CQ), qm = (q0 + q1) >> 1, ia = (r * cols + qm) * 10, ib = ia + cols * 10;
+        let nx = VT[ia + 3] + VT[ib + 3], ny = VT[ia + 4] + VT[ib + 4], nz = VT[ia + 5] + VT[ib + 5];
+        const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+        const fres = 1 - Math.abs(nz), va = (VT[ia + 9] + VT[ib + 9]) / 2;
+        let a, cr = (VT[ia + 6] + VT[ib + 6]) / 2, cg = (VT[ia + 7] + VT[ib + 7]) / 2, cb = (VT[ia + 8] + VT[ib + 8]) / 2;
+        if (solid) {
+          if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+          const lam = Math.max(0, nx * Lx + ny * Ly + nz * Lz), spec = Math.pow(Math.max(0, nx * Hx + ny * Hy + nz * Hz), 28);
+          const v = (0.03 + 0.72 * lam + 0.22 * fres * fres * fres) * va;
+          cr = Math.min(1, cr * v + spec * 0.35); cg = Math.min(1, cg * v + spec * 0.35); cb = Math.min(1, cb * v + spec * 0.35); a = strength;
+        } else {
+          a = mem * (0.015 + 0.5 * Math.pow(fres, 2.2)) * va;
+          if (a < 0.003) continue;
+        }
+        KR[kc] = r; KQ[kc] = q0; KN[kc] = q1; KZ[kc] = (VT[ia + 2] + VT[ib + 2]) / 2; KA[kc] = a;
+        KC[kc * 3] = cr; KC[kc * 3 + 1] = cg; KC[kc * 3 + 2] = cb; kc++;
+      }
+      const order = solid ? sortedBy(KZ, kc) : null;
+      ctx.globalCompositeOperation = solid ? 'source-over' : 'lighter';
+      ctx.lineJoin = 'round'; ctx.lineWidth = 0.9;
+      for (let ii = 0; ii < kc; ii++) {
+        const i = order ? order[ii] : ii, ra = KR[i] * cols, rb = ra + cols, q0 = KQ[i], q1 = KN[i];
+        const cs = `rgb(${KC[i * 3] * 255 | 0},${KC[i * 3 + 1] * 255 | 0},${KC[i * 3 + 2] * 255 | 0})`;
+        ctx.fillStyle = cs; if (solid) ctx.strokeStyle = cs;
+        ctx.globalAlpha = Math.min(1, KA[i]);
+        ctx.beginPath(); ctx.moveTo(VT[(ra + q0) * 10], VT[(ra + q0) * 10 + 1]);
+        for (let q = q0 + 1; q <= q1; q++) ctx.lineTo(VT[(ra + q) * 10], VT[(ra + q) * 10 + 1]);
+        for (let q = q1; q >= q0; q--) ctx.lineTo(VT[(rb + q) * 10], VT[(rb + q) * 10 + 1]);
+        ctx.closePath(); ctx.fill();
+        // Opaque neighbours leave hairline gaps where their antialiased edges meet;
+        // stroking each patch in its own colour closes them.
+        if (solid) ctx.stroke();
+      }
+    }
+  }
+
+  /* filaments */
+  if (ns > 0 && c.lAlpha > 0) {
+    const step = n > 400 ? 2 : 1, m = (n / step) | 0, pts = m + 1;
+    const CL = ns > 96 ? 6 : ns > 40 ? 4 : 3, maxC = ns * Math.ceil(m / CL) + ns;
+    const PX = scratch('PX', ns * pts), PY = scratch('PY', ns * pts), PZ = scratch('PZ', ns * pts), PB = scratch('PB', ns * pts);
+    const CS = scratch('CS', maxC, Int32Array), CN = scratch('CN', maxC, Int32Array), CB = scratch('CB', maxC), CZ = scratch('CZ', maxC), CW = scratch('CW', maxC), CK = scratch('CK', maxC, Int32Array);
+    const lA = c.lAlpha * expo, lw0 = Math.max(0.35, c.lWidth * unit * 0.9);
+    const Lx = -0.45, Ly = 0.62, Lz = 0.64;
+    // Gaps open at the lobe tips (s = ¼, ¾) and move to the crossings (0, ½) with gapAt.
+    const gapOn = c.gap > 0, gH = c.gap * 0.5, g0 = 0.25 - 0.25 * c.gapAt, g1 = 0.75 - 0.25 * c.gapAt;
+    const partial = c.trail > 0 || c.lLen < 1;
+    let pc = 0, cc = 0;
+    for (let k = 0; k < ns; k++) {
+      const A = SA[k], sl = SL[k];
+      const head = o.flowPos + c.stagger * field.lineR[k % 200];
+      const b0 = pc;
+      if (sl <= 0) continue;
+      for (let q = 0; q <= m; q++, pc++) {
+        const j = q * step, s = j / n, ah = A * V.h[j];
+        const x = V.cx[j] + ah * V.nx[j], y = V.cy[j] + ah * V.ny[j], z = V.cz[j] + ah * V.nz[j], zd = z + V.dz[j];
+        const f = cam / Math.max(0.3, cam - z);
+        PX[pc] = OX + x * f * S; PY[pc] = OY - y * f * S; PZ[pc] = zd;
+        let br = lA * sl * xb(xd(PX[pc], PY[pc])) * dfac(zd);
+        if (partial) {
+          let d = head - s; d -= Math.floor(d);
+          br = d > c.lLen ? 0 : br * Math.pow(1 - c.trail * d / c.lLen, 1.6) * (c.lLen < 1 ? smoothstep(c.lLen, c.lLen * 0.8, d) : 1);
+        }
+        if (gapOn && br > 0) {
+          let d0 = Math.abs(s - g0); d0 = Math.min(d0, 1 - d0);
+          let d1 = Math.abs(s - g1); d1 = Math.min(d1, 1 - d1);
+          br *= smoothstep(gH * 0.6, gH, Math.min(d0, d1));
+        }
+        const fd = dispAt(F.sx[j]);
+        if (fd > 0 || fadeG > 0) br *= 1 - Math.min(0.95, fd * 0.9 * c.lineFade + fadeG);
+        if (c.shade > 0 && br > 0) {
+          const nx = V.bx[j], ny = V.by[j], nz = V.bz[j];
+          const lam = Math.abs(nx * Lx + ny * Ly + nz * Lz), rim = 1 - Math.abs(nz);
+          br *= 1 + (0.12 + 0.88 * lam + 0.45 * rim * rim - 1) * c.shade;
+        }
+        PB[pc] = br;
+      }
+      for (let q0 = 0; q0 < m; q0 += CL) {
+        const q1 = Math.min(m, q0 + CL);
+        let sum = 0, zs = 0;
+        for (let q = q0; q <= q1; q++) { sum += PB[b0 + q]; zs += PZ[b0 + q]; }
+        const cnt = q1 - q0 + 1, br = sum / cnt;
+        if (br < 0.003) continue;
+        const jm = ((q0 + q1) >> 1) * step;
+        CS[cc] = b0 + q0; CN[cc] = q1 - q0; CB[cc] = br; CZ[cc] = zs / cnt;
+        const pm = b0 + ((q0 + q1) >> 1);
+        CK[cc] = colorKey(xd(PX[pm], PY[pm]), F.sx[jm], A, jm / n, V.bz[jm]);
+        CW[cc] = lw0 * SW[k] * cam / Math.max(0.3, cam - CZ[cc]);
+        cc++;
+      }
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+    let last = -1;
+    for (let i = 0; i < cc; i++) {
+      const key = CK[i], a = CB[i];
+      if (key !== last) { ctx.strokeStyle = cstr(key); last = key; }
+      ctx.globalAlpha = a > 1 ? 1 : a;
+      ctx.lineWidth = CW[i] * (a > 1 ? Math.min(2, 1 + (a - 1) * 0.35) : 1);
+      const s0 = CS[i], len = CN[i];
+      ctx.beginPath(); ctx.moveTo(PX[s0], PY[s0]);
+      for (let q = 1; q <= len; q++) ctx.lineTo(PX[s0 + q], PY[s0 + q]);
+      ctx.stroke();
+    }
+  }
+
+  /* particles */
+  const N = Math.min(Math.ceil(c.count), field.N);
+  if (N > 0 && c.pAlpha > 0) {
+    // Columns along the loop come from the radical-inverse sequence: the first 2^L
+    // form an even grid and the rest fill its gaps, faded in by how full their level
+    // is. Raising the count adds particles without moving any.
+    const rows = Math.max(1, c.rows | 0), K = Math.max(1, c.count / rows), lvC = Math.floor(Math.log2(K)), fullC = 1 << lvC, fracC = (K - fullC) / fullC;
+    const jit = 1 - c.order, sp = 1 / K, jamp = jit * (sp + (1 - sp) * jit * jit), cd = c.crossDens, lb = c.lobeBias, lbA = Math.abs(lb);
+    const ride = ns > 0 ? c.ride : 0;
+    const pA = c.pAlpha * expo, rB = c.pSize * unit, orbs = c.orbs, soft = c.soft * (1 - orbs);
+    const U = field.U, G = field.G, D = field.D;
+    const QX = scratch('QX', N), QY = scratch('QY', N), QR = scratch('QR', N), QA = scratch('QA', N), QZ = scratch('QZ', N), QK = scratch('QK', N, Int32Array), QS = scratch('QS', N, Uint8Array);
+    let qn = 0;
+    for (let i = 0; i < N; i++) {
+      const u = i * UST, row = i % rows, ci = (i / rows) | 0;
+      // Each particle is an orb, a soft glow or a dot; the mix, not a switch, is what
+      // the material and order dials move, so they turn continuously.
+      const sel = U[u + 12], styl = sel < orbs ? 2 : sel < orbs + soft ? 0 : 1, sf = styl === 0 ? 2.4 : 1;
+      let s = vdc(ci) + (U[u] - 0.5) * jamp;
+      const v = (row + 0.5 + (U[u + 1] - 0.5) * jit) / rows - 0.5;
+      s += o.flowPos * (1 + (U[u + 4] - 0.5) * 0.7 * jit);
+      const lap = Math.floor(s); s -= lap;
+      if (cd > 0) s += cd / (4 * Math.PI) * Math.sin(4 * Math.PI * s);
+      if (lbA > 0 && U[u + 5] < lbA) { const right = F.sx[(s * n) | 0] > 0; if (lb > 0 ? !right : right) { s += 0.5; if (s >= 1) s -= 1; } }
+      let A = focusMap(2 * v, c.focus), Bq = G[i * 3 + 1] * 0.28 * jit;
+      const pull = clamp((ride - U[u + 13]) / 0.12 + 0.5, 0, 1);
+      if (pull > 0) { slotAB(rideU(v + 0.5), ab); A += (ab[0] - A) * pull; Bq += (ab[1] - Bq) * pull; }
+      at(s, A, Bq, pv);
+      let x = pv[0], y = pv[1], z = pv[2];
+      const dzp = pv[4];
+      const j0 = pv[3], rh = F.rh[j0], sx = F.sx[j0], h = V.h[j0];
+      let mx = 0, my = 0, mz = 0;
+      let alpha = pA * (0.45 + 0.55 * U[u + 9]) * (ci < fullC ? 1 : fracC);
+      let size = rB * sf * (1 + c.sizeVar * 7 * Math.pow(U[u + 3], 6));
+      if (c.scatter > 0) { const sc = c.scatter * (0.025 + h * 0.8); mx += G[i * 3] * sc; my += G[i * 3 + 1] * sc; mz += G[i * 3 + 2] * sc; }
+      if (U[u + 6] < c.drift) {
+        const mg = (0.1 + 0.6 * U[u + 7] * U[u + 7]) * (1 + 0.12 * Math.sin(clock * 0.31 + U[u + 8] * TAU));
+        mx += D[i * 3] * mg; my += D[i * 3 + 1] * mg; mz += D[i * 3 + 2] * mg * 0.6; alpha *= 0.55; size *= 0.85;
+      }
+      const dd = dispAt(sx) + breath * 0.9;
+      if (dd > 0) {
+        const mg = (0.05 + 0.55 * U[u + 7]) * dd;
+        mx += D[i * 3] * mg + Math.sin(clock * 0.33 + U[u + 8] * TAU) * 0.05 * dd;
+        my += D[i * 3 + 1] * mg + Math.cos(clock * 0.27 + U[u + 10] * TAU) * 0.05 * dd;
+        mz += D[i * 3 + 2] * mg * 0.5;
+        size *= 1 + c.dSize * Math.min(1, dd); alpha *= 1 - 0.25 * Math.min(1, dd);
+      }
+      if (c.turb > 0) {
+        const ta = c.turb * (0.012 + 0.03 * h + 0.05 * dd);
+        mx += Math.sin(clock * 0.9 + U[u + 8] * TAU + s * 11) * ta;
+        my += Math.sin(clock * 0.74 + U[u + 10] * TAU + s * 7) * ta;
+        mz += Math.sin(clock * 0.61 + U[u + 11] * TAU) * ta;
+      }
+      x += r00 * mx + r01 * my + r02 * mz; y += r10 * mx + r11 * my + r12 * mz; z += r20 * mx + r21 * my + r22 * mz;
+      const f = cam / Math.max(0.3, cam - z);
+      const X = OX + x * f * S, Y = OY - y * f * S;
+      const xdist = xd(X, Y);
+      alpha *= xb(xdist) * (dd > 0 ? 1 - 0.5 * Math.min(1, dd) : 1) + (dd > 0 ? 0.5 * Math.min(1, dd) : 0);
+      alpha *= dfac(z + dzp);
+      let r = size * f;
+      const eff = r / sf;
+      if (eff < 0.45) { alpha *= (eff / 0.45) ** 2; r = 0.45 * sf; }
+      if (alpha < 0.004) continue;
+      QX[qn] = X; QY[qn] = Y; QR[qn] = r; QA[qn] = alpha; QZ[qn] = z + dzp;
+      QK[qn] = plain ? baseKey : colorKey(xdist, sx, A, s, 0); QS[qn] = styl;
+      qn++;
+    }
+    // Light first, additively; then the orbs, depth-sorted, occluding what they cover.
+    // Below ~1.3px a sprite and a square of the same energy look identical, and the
+    // square is half the cost: side √π·r for a dot, ~0.61·r for the soft glow.
+    ctx.globalCompositeOperation = 'lighter';
+    const OI = scratch('OI', qn + 1, Uint32Array);
+    let no = 0, lastK = -1, lastS = -1, lastF = -1, spr = null;
+    for (let i = 0; i < qn; i++) {
+      const st = QS[i];
+      if (st === 2) { OI[no++] = i; continue; }
+      const k = QK[i], a = QA[i], r = QR[i] * (a > 1 ? Math.min(1.7, Math.sqrt(a)) : 1);
+      ctx.globalAlpha = a > 1 ? 1 : a;
+      if (r < (st === 1 ? 1.3 : 3.1)) {
+        if (k !== lastF) { ctx.fillStyle = cstr(k); lastF = k; }
+        const d = r * (st === 1 ? 1.772 : 0.61);
+        ctx.fillRect(QX[i] - d / 2, QY[i] - d / 2, d, d);
+      } else {
+        if (k !== lastK || st !== lastS) { spr = sprite(st, k); lastK = k; lastS = st; }
+        ctx.drawImage(spr, QX[i] - r, QY[i] - r, 2 * r, 2 * r);
+      }
+    }
+    if (no) {
+      const idx = OI.subarray(0, no).sort((a, b) => QZ[a] - QZ[b]);
+      ctx.globalCompositeOperation = 'source-over';
+      lastK = -1;
+      for (const i of idx) {
+        const k = QK[i];
+        if (k !== lastK) { spr = sprite(2, k); lastK = k; }
+        ctx.globalAlpha = Math.min(1, QA[i]);
+        ctx.drawImage(spr, QX[i] - QR[i], QY[i] - QR[i], 2 * QR[i], 2 * QR[i]);
+      }
+    }
+  }
+
+  ctx.globalCompositeOperation = 'lighter';
+  const nodeKey = (rh, sx, A, s) => {
+    const k = colorKey(rh, sx, A, s, 0);
+    if (c.nodeAccent <= 0) return k;
+    const t = c.nodeAccent, kk = qk(acc[0], acc[1], acc[2]);
+    return qk(lerp(kr(k), kr(kk), t) / 255, lerp(kg(k), kg(kk), t) / 255, lerp(kb(k), kb(kk), t) / 255);
+  };
+
+  /* nodes riding the filaments */
+  const nn = c.nodes | 0;
+  if (nn > 0) {
+    const g = field.nodeR;
+    for (let i = 0; i < nn; i++) {
+      const u = i * 6;
+      let A, Bq;
+      if (ns > 0) { slotAB(rideU(g[u]), ab); A = ab[0]; Bq = ab[1]; } else { A = focusMap(2 * (g[u] - 0.5), c.focus); Bq = 0; }
+      let s = g[u + 1] + o.flowPos * (0.6 + 0.9 * g[u + 2]) * 1.4;
+      s -= Math.floor(s);
+      at(s, A, Bq, pv);
+      const j0 = pv[3], f = cam / Math.max(0.3, cam - pv[2]);
+      const X = OX + pv[0] * f * S, Y = OY - pv[1] * f * S;
+      let a = expo * (0.55 + 0.45 * g[u + 3]) * dfac(pv[2] + pv[4]) * (1 - Math.min(0.95, dispAt(F.sx[j0]) * 0.9 * c.lineFade + fadeG));
+      if (c.gap > 0) {
+        const gH = c.gap * 0.5, g0 = 0.25 - 0.25 * c.gapAt, g1 = 0.75 - 0.25 * c.gapAt;
+        let d0 = Math.abs(s - g0); d0 = Math.min(d0, 1 - d0); let d1 = Math.abs(s - g1); d1 = Math.min(d1, 1 - d1);
+        a *= smoothstep(gH * 0.6, gH, Math.min(d0, d1));
+      }
+      if (a < 0.01) continue;
+      const key = nodeKey(xd(X, Y), F.sx[j0], A, s), r = c.nodeSize * unit * (0.6 + 0.8 * g[u + 4]) * f;
+      ctx.globalAlpha = Math.min(1, a * 0.45); ctx.drawImage(sprite(0, key), X - r * 3, Y - r * 3, r * 6, r * 6);
+      ctx.globalAlpha = Math.min(1, a); ctx.drawImage(sprite(1, key), X - r * 0.7, Y - r * 0.7, r * 1.4, r * 1.4);
+    }
+  }
+
+  /* traces leaving the field */
+  const nt = c.traces | 0;
+  if (nt > 0 && c.traceLen > 0) {
+    const g = field.traceR;
+    ctx.lineCap = 'butt';
+    for (let i = 0; i < nt; i++) {
+      // Most traces leave from the released lobe.
+      const u = i * 8, sideT = g[u] < c.traceSide ? side : -side;
+      let s = (sideT > 0 ? 0.25 : 0.75) + (g[u + 1] - 0.5) * 0.44;
+      s -= Math.floor(s);
+      let A, Bq;
+      if (ns > 0) { slotAB(rideU(g[u + 2]), ab); A = ab[0]; Bq = ab[1]; } else { A = focusMap(2 * (g[u + 2] - 0.5), c.focus); Bq = 0; }
+      at(s, A, Bq, pv);
+      const j0 = pv[3], f = cam / Math.max(0.3, cam - pv[2]);
+      const X = OX + pv[0] * f * S, Y = OY - pv[1] * f * S;
+      const dir = Math.sign(X - OX) || sideT;
+      const E = X + dir * c.traceLen * S * (0.12 + 0.88 * g[u + 3]) * 0.9;
+      const a = expo * dfac(pv[2] + pv[4]) * (1 - fadeG);
+      if (a < 0.01) continue;
+      const key = nodeKey(xd(X, Y), F.sx[j0], A, s), rr = c.nodeSize * unit;
+      ctx.strokeStyle = cstr(key); ctx.globalAlpha = Math.min(1, a * 0.4); ctx.lineWidth = Math.max(0.4, c.lWidth * unit * 0.75);
+      ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(E, Y); ctx.stroke();
+      const end = rr * (0.5 + 0.8 * g[u + 4]);
+      ctx.globalAlpha = Math.min(1, a * 0.95); ctx.drawImage(sprite(1, key), E - end, Y - end, 2 * end, 2 * end);
+      ctx.globalAlpha = Math.min(1, a * 0.3); ctx.drawImage(sprite(0, key), E - end * 4, Y - end * 4, end * 8, end * 8);
+      ctx.globalAlpha = Math.min(1, a * 0.7); ctx.drawImage(sprite(1, key), X - rr * 0.35, Y - rr * 0.35, rr * 0.7, rr * 0.7);
+      const p = (clock * 0.12 * (0.5 + g[u + 5]) + g[u + 6]) % 1, px = X + (E - X) * p;
+      ctx.globalAlpha = Math.min(1, a * Math.sin(Math.PI * p) * 0.9); ctx.drawImage(sprite(0, key), px - rr * 1.6, Y - rr * 1.6, rr * 3.2, rr * 3.2);
+    }
+  }
+
+  /* the crossing */
+  if (c.crossGlow > 0) {
+    const mx = CXP, my = CYP, rad = S * 0.42 * c.crossSize;
+    const col = lerp3(base, acc, c.accentCross), cs = `${col[0] * 255 | 0},${col[1] * 255 | 0},${col[2] * 255 | 0}`;
+    const gr = ctx.createRadialGradient(mx, my, 0, mx, my, rad);
+    gr.addColorStop(0, `rgba(${cs},.55)`); gr.addColorStop(0.1, `rgba(${cs},.2)`); gr.addColorStop(0.35, `rgba(${cs},.045)`); gr.addColorStop(1, `rgba(${cs},0)`);
+    ctx.globalAlpha = Math.min(1, c.crossGlow * 0.75 * expo * (1 - fadeG * 0.5)); ctx.fillStyle = gr;
+    ctx.fillRect(mx - rad, my - rad, rad * 2, rad * 2);
+  }
+  ctx.globalAlpha = 1;
+  if (c.glow > 0) bloom(B, c.glow);
+  ctx.globalCompositeOperation = 'source-over';
+}
+function lerp3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+
+/* -------------------------------------------------------- composition */
+const GROUNDS = { void: '#000000', ink: '#07080a', graphite: '#111113', paper: '#f2f1ee' };
+const WM_FONT = '"Avenir Next","Avenir","Futura","Century Gothic","Helvetica Neue",Helvetica,Arial,sans-serif';
+function composite(ctx, W, H, B, c, dx = 0, dy = 0) {
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = GROUNDS[c.bg] || '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = c.bg === 'paper' ? 'difference' : 'lighter';
+  ctx.drawImage(B.L, dx, dy);
+  ctx.restore();
+}
+// Drawn letter by letter so tracking does not depend on canvas letterSpacing support.
+function wordmarkRun(ctx, c, size) {
+  const upper = c.wmCase === 'upper', text = upper ? 'SUBSTRATE' : 'substrate', sz = upper ? size * 0.6 : size;
+  ctx.font = `${c.wmWeight} ${sz}px ${WM_FONT}`;
+  const track = sz * c.wmTrack * (upper ? 1.3 : 1), chars = [...text], ws = chars.map((ch) => ctx.measureText(ch).width);
+  return { upper, sz, track, chars, ws, total: ws.reduce((a, b) => a + b, 0) + track * (chars.length - 1) };
+}
+function drawWordmark(ctx, c, x0, baseline, size, align = 'center') {
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  const r = wordmarkRun(ctx, c, size);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = c.bg === 'paper' ? 'rgba(16,16,16,.92)' : 'rgba(236,236,238,.9)';
+  let x = align === 'center' ? x0 - r.total / 2 : x0;
+  r.chars.forEach((ch, i) => { ctx.fillText(ch, x, r.upper ? baseline - (size - r.sz) * 0.35 : baseline); x += r.ws[i] + r.track; });
+  ctx.restore();
+  return r.total;
+}
+function wordmarkWidth(ctx, c, size) { ctx.save(); const w = wordmarkRun(ctx, c, size).total; ctx.restore(); return w; }
+function layout(W, H, c, wm) {
+  const S = c.zoom * Math.min(W * 0.34, H * (wm ? 0.5 : 0.6));
+  return { S, ox: W / 2, oy: wm ? H * 0.43 : H * 0.5, wmSize: Math.min(W * 0.052, H * 0.085), wmY: H * 0.88 };
+}
+const staticField = new Field(false);
+function drawStill(ctx, W, H, c, opts = {}) {
+  const B = buffersFor(W, H), L = layout(W, H, c, opts.wordmark);
+  staticField.ensure(c);
+  renderLight(B, c, staticField, { ...stillState(c), n: opts.n || 360, S: L.S, ox: L.ox, oy: L.oy });
+  composite(ctx, W, H, B, c);
+  if (opts.wordmark) drawWordmark(ctx, c, W / 2, L.wmY, L.wmSize);
+}
+// `px` is the size the icon is finally shown at, in device pixels. Below ~100px the
+// field alone averages into haze, so a solid trace is added whose drawn width stays
+// near 1.5px however small the icon gets: the same topology, distilled.
+function iconMark(c, size, px = size) {
+  const B = makeBuffers(size, size), S = size * 0.41 * c.iconScale, unit = S / 500;
+  const traceUnits = c.iconReduce * smoothstep(110, 50, px) * Math.max(1.3, 0.045 * px) * (size / px) / (unit * 1.1);
+  const ic = { ...c, core: Math.max(c.core, c.iconCore, traceUnits) };
+  staticField.ensure(ic);
+  renderLight(B, ic, staticField, { ...stillState(c), n: 540, S, ox: size / 2, oy: size / 2, gain: c.iconGain });
+  return B.L;
+}
+function tilePath(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function drawTile(ctx, S, style, mark) {
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, S, S);
+  const r = S * 0.225;
+  tilePath(ctx, 0, 0, S, S, r); ctx.clip();
+  const g = ctx.createLinearGradient(0, 0, 0, S);
+  if (style === 'light') { g.addColorStop(0, '#f9f9f7'); g.addColorStop(1, '#e1e1de'); }
+  else if (style === 'dark') { g.addColorStop(0, '#1c1c1f'); g.addColorStop(1, '#050506'); }
+  else { g.addColorStop(0, '#050505'); g.addColorStop(1, '#000'); }
+  ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+  ctx.globalCompositeOperation = style === 'light' ? 'difference' : 'lighter';
+  ctx.drawImage(mark, 0, 0, S, S);
+  ctx.restore();
+  if (style !== 'light') {
+    ctx.save(); tilePath(ctx, 0.5, 0.5, S - 1, S - 1, r);
+    ctx.strokeStyle = style === 'outline' ? 'rgba(255,255,255,.3)' : 'rgba(255,255,255,.08)';
+    ctx.lineWidth = Math.max(1, S / 200); ctx.stroke(); ctx.restore();
+  }
+}
+function downscaleInto(dst, src) {
+  let cur = src;
+  while (cur.width / 2 >= dst.width) {
+    const h = document.createElement('canvas'); h.width = Math.round(cur.width / 2); h.height = Math.round(cur.height / 2);
+    const x = h.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(cur, 0, 0, h.width, h.height); cur = h;
+  }
+  const x = dst.getContext('2d'); x.clearRect(0, 0, dst.width, dst.height); x.imageSmoothingQuality = 'high';
+  x.drawImage(cur, 0, 0, dst.width, dst.height);
+}
+
+/* --------------------------------------------------------------- state */
+const $ = (s) => document.querySelector(s);
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids) if (kid != null) e.append(kid);
+  return e;
+}
+const DPR = () => Math.min(2, window.devicePixelRatio || 1);
+const LIB_KEY = 'substrate.identity.library.v3', SESSION_KEY = 'substrate.identity.session.v3';
+const state = { cfg: presetCfg(PRESETS[0]), baseline: null, presetId: 'signature' };
+state.baseline = { ...state.cfg };
+
+const stage = {
+  cv: $('#stage'), ctx: $('#stage').getContext('2d'), W: 0, H: 0, field: new Field(), B: null,
+  clock: 0, flowPos: 0, playing: true, animated: true, dirty: true, q: 1, times: [], recording: false,
+};
+function resetClock() { Object.assign(stage, stillState(eng(state.cfg))); }
+function resizeStage() {
+  const r = stage.cv.getBoundingClientRect(), d = DPR() * stage.q;
+  const W = Math.max(2, Math.round(r.width * d)), H = Math.max(2, Math.round(r.height * d));
+  if (W !== stage.W || H !== stage.H) { stage.W = stage.cv.width = W; stage.H = stage.cv.height = H; stage.B = makeBuffers(W, H); stage.dirty = true; }
+}
+function renderStage() {
+  const c = eng(state.cfg);
+  if (!stage.B) return;
+  stage.field.ensure(c);
+  const L = layout(stage.W, stage.H, c, !!c.wm);
+  const live = stage.animated;
+  const st = live ? stage : stillState(c);
+  renderLight(stage.B, c, stage.field, {
+    clock: st.clock, flowPos: st.flowPos, n: 720, S: L.S, ox: L.ox, oy: L.oy,
+  });
+  composite(stage.ctx, stage.W, stage.H, stage.B, c);
+  if (c.wm) drawWordmark(stage.ctx, c, stage.W / 2, L.wmY, L.wmSize);
+}
+let lastT = performance.now();
+function tick(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  const c = eng(state.cfg);
+  if (stage.animated) {
+    if (stage.playing) {
+      const e = c.energy * dt;
+      stage.clock += e; stage.flowPos += e * c.flow * 0.12;
+    }
+    const t0 = performance.now();
+    renderStage();
+    governor(performance.now() - t0);
+  } else if (stage.dirty) {
+    renderStage();
+  }
+  stage.dirty = false;
+  requestAnimationFrame(tick);
+}
+// Keeps the stage interactive on slow machines by trading resolution for frame time.
+function governor(ms) {
+  const t = stage.times; t.push(ms);
+  if (t.length < 40) return;
+  const avg = t.reduce((a, b) => a + b, 0) / t.length; t.length = 0;
+  const q0 = stage.q;
+  if (avg > 24 && stage.q > 0.5) stage.q = Math.max(0.5, stage.q - 0.15);
+  else if (avg < 9 && stage.q < 1) stage.q = Math.min(1, stage.q + 0.1);
+  if (stage.q !== q0) resizeStage();
+}
+
+/* ------------------------------------------------------------ controls */
+const ctl = {};
+function buildControls() {
+  const root = $('#controls');
+  root.append(el('h3', { class: 'dial-group' }, 'Ten dials', el('small', {}, 'family')),
+    el('p', { class: 'dial-note' }, 'One dial per family; 07 and 09 share Volume, 10 and 11 share Order. Each one acts on whatever else is on, so any number can be up at once. Hover ', el('b', { class: 'info inline' }, 'i'), ' for a summary, click it for the full explanation.'));
+  for (const d of DIALS) root.append(dialRow(d));
+  root.append(el('h3', { class: 'dial-group' }, 'Form', el('small', {}, 'all families')),
+    el('p', { class: 'dial-note' }, 'The topology every family shares. Loading or blending a family keeps it.'));
+  for (const d of FORM) root.append(dialRow(d));
+  const input = el('input', { type: 'number', min: 1, max: 99999, step: 1 });
+  input.addEventListener('change', () => setParam('seed', +input.value));
+  const row = el('div', { class: 'dial seed' });
+  row.append(el('div', { class: 'top' }, el('span', { class: 'name' }, 'Seed', infoButton(row, 'A new instance of the same design.'))),
+    el('div', { class: 'seedbox' }, input, el('button', { onclick: reseed }, 'Reseed')),
+    el('p', { class: 'more' }, 'Every random choice (where each point sits, how each filament wanders, which nodes travel where) derives from this number. Changing it gives a new instance of the same design; the ten dials are the design. It is part of the link, so a shared link reproduces the exact instance.'));
+  ctl.seed = { row, input };
+  root.append(el('h3', { class: 'dial-group' }, 'Instance'), row);
+}
+function infoButton(row, tip) {
+  const b = el('button', { class: 'info', 'data-tip': tip, 'aria-label': 'About this dial', 'aria-expanded': 'false' }, 'i');
+  b.addEventListener('click', (e) => { e.stopPropagation(); const open = row.classList.toggle('open'); b.setAttribute('aria-expanded', open); });
+  b.addEventListener('dblclick', (e) => e.stopPropagation());
+  return b;
+}
+function dialRow(d) {
+  const input = el('input', { type: 'range', min: 0, max: 1, step: 0.01 }), out = el('output');
+  input.addEventListener('input', () => setParam(d.id, +input.value));
+  const row = el('div', { class: 'dial' });
+  row.append(
+    el('div', { class: 'top' }, el('span', { class: 'name' }, d.label, el('b', { class: 'fam' }, d.fam), infoButton(row, d.hint)), out), input,
+    el('div', { class: 'ends' }, ...d.ends.map((t) => el('span', {}, t))),
+    el('p', { class: 'more' }, d.info, el('span', { class: 'reset' }, ' Double-click the dial to put it back where it was loaded.')));
+  row.addEventListener('dblclick', (e) => { if (!e.target.closest('.more')) setParam(d.id, state.baseline[d.id]); });
+  ctl[d.id] = { row, input, out };
+  return row;
+}
+function syncControl(id) {
+  const k = ctl[id];
+  if (!k) return;
+  const v = state.cfg[id];
+  if (+k.input.value !== v) k.input.value = v;
+  if (k.out) { k.out.textContent = Math.round(v * 100); k.input.style.setProperty('--p', (v * 100).toFixed(1) + '%'); }
+  k.row.classList.toggle('mod', state.baseline[id] !== v);
+}
+const syncAll = () => { for (const id in ctl) syncControl(id); syncButtons(); };
+function setParam(id, v) {
+  const next = sanitize({ ...state.cfg, [id]: v });
+  if (next[id] === state.cfg[id]) { syncControl(id); return; }
+  state.cfg = next;
+  syncControl(id);
+  if (id === 'wm' || id === 'paper') syncButtons();
+  changed();
+}
+function loadConfig(cfg, preset = null, mix = null) {
+  state.mix = mix;
+  state.cfg = sanitize(cfg);
+  state.baseline = { ...state.cfg };
+  state.presetId = preset;
+  $('#name').value = state.cfg.name || '';
+  resetClock();
+  syncAll(); updateLabel(); markActive();
+  changed();
+}
+
+// Blending a family in keeps the stronger of each ingredient and averages the
+// shapes (volume, order, reduction), so every family in the mix stays visible.
+function blendIn(pr) {
+  const f = presetCfg(pr), c = state.cfg, mix = state.mix || [state.presetId ? PRESETS.find((p) => p.id === state.presetId).name : c.name || 'Untitled'];
+  if (mix.includes(pr.name)) { toast(`${pr.name} is already in the blend`); return; }
+  const n = mix.length, o = { ...c };
+  for (const d of DIALS) o[d.id] = d.mix === 'max' ? Math.max(c[d.id], f[d.id]) : (c[d.id] * n + f[d.id]) / (n + 1);
+  const next = mix.concat(pr.name);
+  o.name = next.join(' + ');
+  loadConfig(o, null, next);
+}
+
+/* ------------------------------------------------- persistence & sharing */
+let hashTimer = 0, outTimer = 0, famTimer = 0, lastHash = '';
+let formKey = '';
+function changed() {
+  stage.dirty = true;
+  $('#stageWrap').classList.toggle('paper', !!state.cfg.paper);
+  // The family cards show each family in the current form.
+  const fk = FORM.map((d) => state.cfg[d.id]).join(',');
+  if (fk !== formKey) { formKey = fk; clearTimeout(famTimer); famTimer = setTimeout(() => { renderPresets(); markActive(); }, 350); }
+  clearTimeout(hashTimer); hashTimer = setTimeout(writeHash, 120);
+  clearTimeout(outTimer); outTimer = setTimeout(renderOutputs, 260);
+}
+function writeHash() {
+  clearTimeout(hashTimer);
+  const frag = encodeParams(state.cfg);
+  if (frag !== lastHash) { lastHash = frag; history.replaceState(null, '', '#' + frag); }
+  try { localStorage.setItem(SESSION_KEY, frag); } catch {}
+}
+window.addEventListener('hashchange', () => {
+  const frag = location.hash.slice(1);
+  if (!frag || frag === lastHash) return;
+  const c = decodeParams(frag);
+  if (c) { lastHash = frag; loadConfig(c, matchPreset(c)); toast('Loaded from link'); }
+});
+function matchPreset(c) { const pr = PRESETS.find((p) => p.name === c.name); return pr ? pr.id : null; }
+function libLoad() { try { const a = JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); return Array.isArray(a) ? a.filter((x) => x && x.name && x.frag) : []; } catch { return []; } }
+function libStore(items) { try { localStorage.setItem(LIB_KEY, JSON.stringify(items)); return true; } catch { toast('Browser storage is full or blocked'); return false; } }
+function saveCurrent() {
+  const name = ($('#name').value || '').trim() || state.cfg.name || 'Untitled';
+  state.cfg.name = name; $('#name').value = name;
+  const items = libLoad(), frag = encodeParams(state.cfg), i = items.findIndex((x) => x.name === name);
+  const item = { name, frag, saved: new Date().toISOString() };
+  if (i >= 0) items.splice(i, 1);
+  items.unshift(item);
+  if (!libStore(items)) return;
+  state.baseline = { ...state.cfg }; syncAll();
+  renderSaved(); writeHash(); updateLabel();
+  toast(i >= 0 ? `Updated “${name}”` : `Saved “${name}”`);
+}
+async function copyText(text, what) {
+  try { await navigator.clipboard.writeText(text); toast(`${what} copied`); return; } catch {}
+  const ta = el('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0';
+  document.body.append(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch {}
+  ta.remove();
+  if (ok) { toast(`${what} copied`); return; }
+  $('#shareTitle').textContent = what; $('#shareText').value = text; $('#dlgShare').showModal(); $('#shareText').select();
+}
+function download(blob, name) {
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const slug = () => (state.cfg.name || 'substrate').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'substrate';
+let toastTimer = 0;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 1800); }
+
+/* ------------------------------------------------------- thumbnails */
+const thumbQ = [];
+let pumping = false;
+function queueThumb(canvas, cfg) {
+  const i = thumbQ.findIndex((j) => j.canvas === canvas);
+  if (i >= 0) thumbQ.splice(i, 1);
+  thumbQ.push({ canvas, cfg });
+  if (!pumping) { pumping = true; setTimeout(pump, 30); }
+}
+function pump() {
+  const t0 = performance.now();
+  while (thumbQ.length && performance.now() - t0 < 14) {
+    const { canvas, cfg } = thumbQ.shift(), r = canvas.getBoundingClientRect(), d = DPR();
+    canvas.width = Math.max(64, Math.round((r.width || 160) * d)); canvas.height = Math.max(40, Math.round((r.height || 100) * d));
+    drawStill(canvas.getContext('2d'), canvas.width, canvas.height, eng(cfg), { n: 360 });
+  }
+  if (thumbQ.length) setTimeout(pump, 16); else pumping = false;
+}
+function card(cfg, num, title, onclick, ondelete, onadd) {
+  const cv = el('canvas');
+  const c = el('div', { class: 'card', onclick }, cv, el('div', { class: 'cap' }, num ? el('b', {}, num) : null, title));
+  if (ondelete) c.append(el('button', { class: 'del', title: 'Delete', onclick: (e) => { e.stopPropagation(); ondelete(); } }, '×'));
+  if (onadd) c.append(el('button', { class: 'add', title: 'Blend into the current mark', onclick: (e) => { e.stopPropagation(); onadd(); } }, '+ Blend'));
+  requestAnimationFrame(() => queueThumb(cv, cfg));
+  return c;
+}
+function renderPresets() {
+  const root = $('#presets'); root.textContent = '';
+  for (const pr of PRESETS) {
+    const inForm = () => ({ ...presetCfg(pr), ...formOfState(state.cfg) });
+    const c = card(inForm(), pr.num, pr.name, () => loadConfig(inForm(), pr.id), null, () => blendIn(pr));
+    c.dataset.preset = pr.id; root.append(c);
+  }
+}
+function renderSaved() {
+  const root = $('#saved'), items = libLoad();
+  root.textContent = ''; $('#savedCount').textContent = items.length;
+  if (!items.length) { root.append(el('p', { class: 'empty' }, 'Nothing saved yet. Name a state above and press Save; it stays in this browser. Opening a shared link and pressing Save keeps it here too.')); return; }
+  for (const it of items) {
+    const cfg = decodeParams(it.frag);
+    if (!cfg) continue;
+    const c = card(cfg, null, it.name, () => loadConfig(cfg, null), () => {
+      if (!confirm(`Delete “${it.name}” from this browser?`)) return;
+      libStore(libLoad().filter((x) => x.name !== it.name)); renderSaved();
+    });
+    c.dataset.saved = it.name; root.append(c);
+  }
+  markActive();
+}
+function markActive() {
+  for (const c of document.querySelectorAll('#presets .card')) c.classList.toggle('active', c.dataset.preset === state.presetId);
+  for (const c of document.querySelectorAll('#saved .card')) c.classList.toggle('active', !state.presetId && c.dataset.saved === state.cfg.name);
+}
+function updateLabel() {
+  const pr = PRESETS.find((p) => p.id === state.presetId);
+  $('#lblNum').textContent = pr ? pr.num : state.mix ? '+' : '··';
+  $('#lblName').textContent = state.cfg.name || 'Untitled';
+}
+
+/* ---------------------------------------------------------- outputs */
+function fit(cv) {
+  const r = cv.getBoundingClientRect(), d = DPR();
+  const w = Math.max(16, Math.round(r.width * d)), h = Math.max(16, Math.round(r.height * d));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  return cv;
+}
+const LADDER = [128, 64, 40, 32, 24, 16];
+function buildLadder() {
+  const root = $('#ladder');
+  for (const s of LADDER) {
+    const cv = el('canvas', { width: s * 2, height: s * 2, style: `width:${s}px;height:${s}px` });
+    cv.dataset.size = s;
+    root.append(el('figure', {}, cv, el('figcaption', {}, s + '')));
+  }
+}
+function renderOutputs() {
+  clearTimeout(outTimer);
+  const c = eng(state.cfg);
+  const st = fit($('#outStill'));
+  drawStill(st.getContext('2d'), st.width, st.height, c, { wordmark: true, n: 540 });
+  const mark = iconMark(c, 512), inkMark = iconMark(eng({ ...state.cfg, paper: 1 }), 512);
+  for (const [id, style] of [['#icDark', 'dark'], ['#icLight', 'light'], ['#icLine', 'outline']]) {
+    const cv = $(id), r = cv.getBoundingClientRect(), s = Math.max(32, Math.round(r.width * DPR()));
+    cv.width = cv.height = s; drawTile(cv.getContext('2d'), s, style, style === 'light' ? inkMark : mark);
+  }
+  for (const cv of document.querySelectorAll('#ladder canvas')) {
+    const s = Math.round(+cv.dataset.size * DPR()), big = el('canvas', { width: 512, height: 512 });
+    drawTile(big.getContext('2d'), 512, 'dark', iconMark(c, 512, s));
+    cv.width = cv.height = s; downscaleInto(cv, big);
+  }
+  const md = fit($('#monoDark')), ml = fit($('#monoLight'));
+  drawStill(md.getContext('2d'), md.width, md.height, eng({ ...state.cfg, mono: 1, paper: 0 }), { n: 360 });
+  drawStill(ml.getContext('2d'), ml.width, ml.height, eng({ ...state.cfg, mono: 1, paper: 1 }), { n: 360 });
+  drawLockup(fit($('#outLockup')), c);
+  drawWords(fit($('#outWords')), c);
+}
+function drawLockup(cv, c) {
+  const W = cv.width, H = cv.height, ctx = cv.getContext('2d'), lc = { ...c, sway: 0, wmCase: 'lower' };
+  let S = H * 0.3, size = H * 0.22;
+  const box = () => 2.7 * S, gap = () => 0.45 * S;
+  const total = box() + gap() + wordmarkWidth(ctx, lc, size), k = Math.min(1, (W * 0.9) / total);
+  S *= k; size *= k;
+  const bw = Math.round(box()), x0 = Math.round((W - (bw + gap() + wordmarkWidth(ctx, lc, size))) / 2);
+  const B = buffersFor(bw, H);
+  staticField.ensure(lc);
+  renderLight(B, lc, staticField, { ...stillState(c), n: 360, S, ox: bw / 2, oy: H / 2 });
+  ctx.save(); ctx.fillStyle = GROUNDS[c.bg] || '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = c.bg === 'paper' ? 'difference' : 'lighter'; ctx.drawImage(B.L, x0, 0); ctx.restore();
+  drawWordmark(ctx, lc, x0 + bw + gap(), H / 2 + size * 0.3, size, 'left');
+}
+function drawWords(cv, c) {
+  const W = cv.width, H = cv.height, ctx = cv.getContext('2d');
+  ctx.fillStyle = GROUNDS[c.bg] || '#000'; ctx.fillRect(0, 0, W, H);
+  const lo = { ...c, wmCase: 'lower' }, up = { ...c, wmCase: 'upper' };
+  const fitSize = (cc) => { const s0 = H * 0.2; return s0 * Math.min(1, (W * 0.34) / wordmarkWidth(ctx, cc, s0)); };
+  drawWordmark(ctx, lo, W * 0.28, H * 0.55, fitSize(lo));
+  ctx.fillStyle = c.bg === 'paper' ? 'rgba(0,0,0,.15)' : 'rgba(255,255,255,.12)'; ctx.fillRect(Math.round(W * 0.58), H * 0.3, Math.max(1, DPR()), H * 0.4);
+  drawWordmark(ctx, up, W * 0.79, H * 0.55, fitSize(up));
+}
+function exportStill() {
+  const cv = el('canvas', { width: 2400, height: 1500 }), c = eng(state.cfg);
+  drawStill(cv.getContext('2d'), 2400, 1500, c, { wordmark: !!c.wm, n: 1080 });
+  cv.toBlob((b) => download(b, `${slug()}-still.png`), 'image/png');
+}
+function exportIcon(style) {
+  const mark = iconMark(eng({ ...state.cfg, paper: style === 'light' ? 1 : 0 }), 1024), cv = el('canvas', { width: 1024, height: 1024 });
+  drawTile(cv.getContext('2d'), 1024, style, mark);
+  cv.toBlob((b) => download(b, `${slug()}-icon-${style}.png`), 'image/png');
+}
+async function record() {
+  if (stage.recording) return;
+  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  const mime = window.MediaRecorder && types.find((t) => MediaRecorder.isTypeSupported(t));
+  if (!mime) { toast('Recording is not supported in this browser'); return; }
+  if (!stage.animated) setAnimated(true);
+  const rec = new MediaRecorder(stage.cv.captureStream(60), { mimeType: mime, videoBitsPerSecond: 20e6 }), chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  rec.onstop = () => {
+    stage.recording = false; $('#btnRec').textContent = 'Record 8s'; $('#btnRec').classList.remove('rec');
+    download(new Blob(chunks, { type: mime }), `${slug()}.${mime.includes('mp4') ? 'mp4' : 'webm'}`);
+  };
+  stage.recording = true; $('#btnRec').textContent = '● Recording'; $('#btnRec').classList.add('rec');
+  rec.start(); setTimeout(() => rec.stop(), 8000);
+}
+
+/* -------------------------------------------------------- variations */
+function mutate(c, amt, r) {
+  const o = { ...c };
+  for (const d of DIALS) {
+    if (r() > 0.6) continue;
+    // An absent ingredient mostly stays absent, so a variation reads as the same family.
+    if (d.mix === 'max' && c[d.id] < 0.02) { if (r() < 0.8) continue; o[d.id] = 0.15 + r() * 0.3; continue; }
+    o[d.id] = c[d.id] + gauss(r) * amt;
+  }
+  o.seed = 1 + Math.floor(r() * 99998);
+  return sanitize(o);
+}
+function blendCfg(a, b, t) {
+  const o = { ...a };
+  for (const d of DIALS) o[d.id] = lerp(a[d.id], b[d.id], t);
+  o.seed = t < 0.5 ? a.seed : b.seed;
+  return sanitize(o);
+}
+function showVariations(list) {
+  $('#variations').hidden = false;
+  const grid = $('#varGrid'); grid.textContent = '';
+  list.forEach((v, i) => grid.append(card(v, String(i + 1).padStart(2, '0'), v.name, () => loadConfig(v, null))));
+}
+function mutateSet() {
+  const r = rng((Date.now() & 0xffffff) ^ state.cfg.seed), base = state.cfg.name || 'Untitled';
+  showVariations(Array.from({ length: 8 }, (_, i) => ({ ...mutate(state.cfg, i < 4 ? 0.08 : 0.16, r), name: `${base} · v${i + 1}` })));
+}
+function blendSet() {
+  const pr = PRESETS.find((p) => p.id === $('#blendWith').value);
+  if (!pr) return;
+  const b = presetCfg(pr), base = state.cfg.name || 'Untitled';
+  showVariations([0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map((t) => ({ ...blendCfg(state.cfg, b, t), name: `${base} × ${pr.name} ${Math.round(t * 100)}%` })));
+}
+
+/* ------------------------------------------------------------- wiring */
+function syncButtons() {
+  $('#btnAnim').setAttribute('aria-pressed', stage.animated); $('#btnStill').setAttribute('aria-pressed', !stage.animated);
+  $('#btnPlay').disabled = !stage.animated; $('#btnPlay').textContent = stage.playing ? 'Pause' : 'Play';
+  $('#btnWm').setAttribute('aria-pressed', !!state.cfg.wm);
+  $('#btnPaper').setAttribute('aria-pressed', !!state.cfg.paper);
+}
+function setAnimated(on) { stage.animated = on; if (!on) resetClock(); stage.dirty = true; syncButtons(); }
+function reseed() { setParam('seed', 1 + Math.floor(Math.random() * 99998)); }
+
+$('#btnAnim').onclick = () => setAnimated(true);
+$('#btnStill').onclick = () => setAnimated(false);
+$('#btnPlay').onclick = () => { stage.playing = !stage.playing; syncButtons(); };
+$('#btnWm').onclick = () => setParam('wm', state.cfg.wm ? 0 : 1);
+$('#btnPaper').onclick = () => setParam('paper', state.cfg.paper ? 0 : 1);
+$('#btnReseed').onclick = reseed;
+$('#btnVar').onclick = mutateSet;
+$('#btnMutate').onclick = mutateSet;
+$('#btnBlend').onclick = blendSet;
+$('#btnVarClose').onclick = () => { $('#variations').hidden = true; };
+$('#btnPng').onclick = exportStill;
+$('#dlStill').onclick = exportStill;
+$('#dlIconDark').onclick = () => exportIcon('dark');
+$('#dlIconLight').onclick = () => exportIcon('light');
+$('#btnRec').onclick = record;
+$('#btnSave').onclick = saveCurrent;
+$('#btnLink').onclick = () => { writeHash(); copyText(location.href, 'Link'); };
+$('#btnCode').onclick = () => copyText(toCode(state.cfg), 'Code');
+$('#btnImport').onclick = () => { $('#importText').value = ''; $('#dlgImport').showModal(); $('#importText').focus(); };
+$('#importCancel').onclick = () => $('#dlgImport').close();
+$('#shareClose').onclick = () => $('#dlgShare').close();
+$('#importGo').onclick = () => {
+  let c = null;
+  try { c = parseAny($('#importText').value); } catch {}
+  if (!c) { toast('Nothing recognisable in that'); return; }
+  $('#dlgImport').close(); loadConfig(c, matchPreset(c)); toast(`Imported “${c.name || 'Untitled'}”`);
+};
+$('#name').addEventListener('input', (e) => { state.cfg.name = e.target.value.slice(0, 80); state.presetId = matchPreset(state.cfg); updateLabel(); markActive(); clearTimeout(hashTimer); hashTimer = setTimeout(writeHash, 200); });
+$('#name').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveCurrent(); });
+$('#blendWith').append(...PRESETS.map((p) => el('option', { value: p.id }, `${p.num} ${p.name}`)));
+$('#blendWith').value = 'point-cloud';
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input,textarea,select,dialog')) return;
+  if (e.code === 'Space') { e.preventDefault(); if (stage.animated) { stage.playing = !stage.playing; syncButtons(); } }
+});
+new ResizeObserver(() => { resizeStage(); clearTimeout(outTimer); outTimer = setTimeout(renderOutputs, 200); }).observe($('#stageWrap'));
+
+buildControls();
+buildLadder();
+renderPresets();
+renderSaved();
+let initial = null, initialPreset = 'signature';
+if (location.hash.length > 1) { initial = decodeParams(location.hash.slice(1)); initialPreset = initial && matchPreset(initial); }
+if (!initial) { try { const s = localStorage.getItem(SESSION_KEY); if (s) { initial = decodeParams(s); initialPreset = initial && matchPreset(initial); } } catch {} }
+loadConfig(initial || presetCfg(PRESETS[0]), initial ? initialPreset : 'signature');
+resizeStage();
+requestAnimationFrame(tick);
+window.__substrate = { state, stage, DIALS, PRESETS, presetCfg, loadConfig, encodeParams, decodeParams, toCode, parseAny, eng, drawStill, iconMark, drawTile };
+})();
+</script>
+</body>
+</html>
