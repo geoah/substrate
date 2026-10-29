@@ -529,8 +529,8 @@ func TestFilterAssembles(t *testing.T) {
 func TestRulesetScopesSignalsFromABI6(t *testing.T) {
 	for abi := 1; abi <= SignalScopeABI+1; abi++ {
 		attr, size := rulesetFor(abi)
-		if attr.Access_fs != handledFor(abi) || attr.Access_net != 0 {
-			t.Fatalf("ABI %d: handled fs %#x net %#x, want fs %#x and no net", abi, attr.Access_fs, attr.Access_net, handledFor(abi))
+		if attr.Handled_access_fs != handledFor(abi) || attr.Handled_access_net != 0 {
+			t.Fatalf("ABI %d: handled fs %#x net %#x, want fs %#x and no net", abi, attr.Handled_access_fs, attr.Handled_access_net, handledFor(abi))
 		}
 		wantScoped, wantSize := uint64(0), uintptr(8)
 		if abi >= SignalScopeABI {
