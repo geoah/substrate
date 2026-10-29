@@ -287,7 +287,22 @@ HealthKit's observer queries (heart rate, steps, sleep, workouts) wake the
 app to send Health. Settings → Sync in the background picks hourly, every
 six hours, daily, or only on Sync Now: it is the soonest a background run
 may sync a source again, the refresh task's earliest start, and HealthKit's
-delivery frequency (none when syncing by hand). iOS decides the moment. The debug build's Home has Add Sample
+delivery frequency (none when syncing by hand). iOS decides the moment.
+
+**A large sync runs on when the app leaves the screen.** When the owner starts a
+sync with more than a week of Health days to send, more than 500 rows of any
+other source, or a first sync of a source the phone has not counted, the app
+asks iOS for a continued processing task (`ContinuedSync` in
+`Background.swift`, iOS 26's `BGContinuedProcessingTask`). iOS keeps the app
+running and draws the progress itself as a Live Activity on the Lock Screen
+and in the Dynamic Island: the status card's headline and line, and a bar over
+every source in the run. Its stop button stops the sync as Stop does. iOS
+also stops a task whose progress stands still, so Health's bar runs over the
+whole run, each day half read and sent and half filed, and moves with every
+receipt while the phone waits on the server; a stop by iOS is logged in
+Activity with the step and how long the bar had stood. The app
+ships no widget extension, and a small sync asks for nothing. Where iOS will
+not run one now, the sync runs as before, while the app is on screen. The debug build's Home has Add Sample
 Data, which writes yesterday's Health samples, three contacts and a sample
 calendar for a simulator to sync.
 

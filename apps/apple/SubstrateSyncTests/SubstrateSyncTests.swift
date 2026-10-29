@@ -490,6 +490,40 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(SyncEngine.changes(0, 2), "2 removed")
     }
 
+    /// Only a sync that would outlast the app on screen asks iOS to keep it
+    /// running: more than a chunk of Health days, more than `bulkRows` of
+    /// anything else, or a first sync whose size the phone has not counted.
+    func testOnlyALargeSyncRunsOnInTheBackground() {
+        XCTAssertFalse(AppModel.large(.health, behind: SyncEngine.chunk, synced: false))
+        XCTAssertTrue(AppModel.large(.health, behind: SyncEngine.chunk + 1, synced: true))
+        XCTAssertFalse(AppModel.large(.contacts, behind: AppModel.bulkRows, synced: true))
+        XCTAssertTrue(AppModel.large(.calendars, behind: AppModel.bulkRows + 1, synced: true))
+        XCTAssertTrue(AppModel.large(.contacts, behind: nil, synced: false))
+        XCTAssertFalse(AppModel.large(.health, behind: nil, synced: true))
+        XCTAssertEqual(SyncProgress(step: "Writing events", done: 1200, total: 4500).detail, "Writing events · 1,200 of 4,500")
+        XCTAssertEqual(SyncProgress(step: "Reading reminders").detail, "Reading reminders")
+    }
+
+    /// A Health run's measure walks every chunk's reads and then its
+    /// receipts without ever stepping back, so the bar iOS judges a stall by
+    /// keeps moving while the phone waits on the server.
+    func testAHealthRunsMeasureOnlyRisesThroughItsWaits() {
+        let days = 17
+        var last = -1.0
+        for before in stride(from: 0, to: days, by: SyncEngine.chunk) {
+            let width = min(SyncEngine.chunk, days - before)
+            let reads = (0 ..< width).map { Double($0) / Double(width) / 2 }
+            let receipts = stride(from: 0.0, through: 1.0, by: 0.25).map { 0.5 + $0 / 2 }
+            for part in reads + receipts {
+                let now = SyncEngine.healthOverall(before: before, width: width, part: part, days: days)
+                XCTAssertGreaterThanOrEqual(now, last, "chunk at \(before), part \(part)")
+                last = now
+            }
+        }
+        XCTAssertEqual(last, 1)
+        XCTAssertEqual(SyncEngine.healthOverall(before: 0, width: 0, part: 1, days: 0), 1)
+    }
+
     func testTheTimelineFoldsEachRunsLinesIntoIt() {
         let t0 = Date(timeIntervalSince1970: 1_800_000_000)
         let contacts = SyncRun(source: .contacts, started: t0, finished: t0 + 10, summary: "15 written", error: nil)

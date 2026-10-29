@@ -227,8 +227,18 @@ actor SyncEngine {
         onSignedOut = f
     }
 
-    private func progress(_ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0) async {
-        if let onProgress { await onProgress(source, step.map { SyncProgress(step: $0, done: done, total: total) }) }
+    private func progress(_ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0, overall: Double? = nil) async {
+        if let onProgress { await onProgress(source, step.map { SyncProgress(step: $0, done: done, total: total, overall: overall) }) }
+    }
+
+    /// How far a Health run over `days` has got, with each day half read and
+    /// sent and half filed by the server: `before` days are done, and the
+    /// chunk of `width` after them has got `part` of the way, where reading
+    /// it is the first half and the receipts the second. It only rises, and
+    /// it moves while the phone waits on the server.
+    static func healthOverall(before: Int, width: Int, part: Double, days: Int) -> Double {
+        guard days > 0 else { return 1 }
+        return min(1, (Double(before) + Double(width) * min(1, max(0, part))) / Double(days))
     }
 
     private func log(_ source: Source?, _ message: String, _ level: ActivityEntry.Level = .info) {
@@ -387,7 +397,10 @@ actor SyncEngine {
 
     /// Waits for the provider to file or park every delivery of a chunk, up
     /// to the budget's deadline, and says what became of each day.
-    private func confirm(_ fires: [String: [String]], _ client: Client, deadline seconds: TimeInterval, label: String) async throws -> Outcome {
+    private func confirm(
+        _ fires: [String: [String]], _ client: Client, deadline seconds: TimeInterval, label: String,
+        overall: (@Sendable (Double) -> Double)? = nil
+    ) async throws -> Outcome {
         let all = Set(fires.values.joined())
         var filed = Set<String>()
         var parked: [String: String] = [:]
@@ -397,7 +410,9 @@ actor SyncEngine {
         while true {
             try Task.checkCancellation()
             let open = all.subtracting(filed).subtracting(parked.keys)
-            await progress(.health, "Waiting for the server to file \(label)", all.count - open.count, all.count)
+            let settled = all.isEmpty ? 1 : Double(all.count - open.count) / Double(all.count)
+            await progress(.health, "Waiting for the server to file \(label)", all.count - open.count, all.count,
+                           overall: overall?(0.5 + settled / 2))
             // The deadline holds per request, so a server that hangs on
             // each read does not stretch one pass over every delivery.
             for fire in open {
@@ -1031,7 +1046,9 @@ actor SyncEngine {
             for (i, day) in chunk.enumerated() {
                 try Task.checkCancellation()
                 let name = Formats.day(day, in: zone)
-                await progress(.health, "Reading and sending \(name)", c * Self.chunk + i, days.count)
+                await progress(.health, "Reading and sending \(name)", c * Self.chunk + i, days.count,
+                               overall: Self.healthOverall(before: c * Self.chunk, width: chunk.count,
+                                                           part: Double(i) / Double(chunk.count) / 2, days: days.count))
                 let span = day ..< calendar.date(byAdding: .day, value: 1, to: day)!
                 var made: [String] = []
                 var rows = 0
@@ -1088,7 +1105,11 @@ actor SyncEngine {
             }
             commit(&state)
 
-            let outcome = try await confirm(fires, client, deadline: budget.confirmDeadline, label: "\(Formats.day(chunk.first!, in: zone)) to \(Formats.day(chunk.last!, in: zone))")
+            let before = c * Self.chunk, width = chunk.count, total = days.count
+            let outcome = try await confirm(
+                fires, client, deadline: budget.confirmDeadline,
+                label: "\(Formats.day(chunk.first!, in: zone)) to \(Formats.day(chunk.last!, in: zone))",
+                overall: { Self.healthOverall(before: before, width: width, part: $0, days: total) })
             for day in outcome.sent {
                 state.healthDays.insert(day)
                 state.healthQueue.remove(day)
