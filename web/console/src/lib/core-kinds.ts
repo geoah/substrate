@@ -28,6 +28,29 @@ export const LLM_PACKAGE_NAME = "llm"
  * these collections are always present. */
 export const LLM_PACKAGE = `${CORE_AUTHORITY}/${LLM_PACKAGE_NAME}`
 
+/** The console package's own word: the record views and preferences the
+ * console itself reads, seeded like core and llm (decision record 0166). */
+export const CONSOLE_PACKAGE_NAME = "console"
+
+/** The packages under CORE_AUTHORITY that hold the substrate's own state:
+ * every kind in them is `internal`. The rest of the authority is the owner's
+ * data: the seeded `observations` package and the well-known catalogues
+ * (`health`, `labs`, `clinical`, …), whose kinds keep their own purpose
+ * (decision records 0192 and 0193). */
+export const MACHINERY_PACKAGES: readonly string[] = [
+  CORE_PACKAGE_NAME,
+  LLM_PACKAGE_NAME,
+  CONSOLE_PACKAGE_NAME,
+]
+
+/** Whether `<authority>/<package>` is the substrate's own machinery. A kind
+ * of `observations` or of a well-known catalogue
+ * (`substrate.reamde.dev/labs/labreport`) is the owner's data: it is listed
+ * with theirs, under the purpose it declares. */
+export function isMachinery(authority: string, pkg: string): boolean {
+  return authority === CORE_AUTHORITY && MACHINERY_PACKAGES.includes(pkg)
+}
+
 /** The id of the repository's daily spend cap: a core `setting` record the
  * engine reads over every agent's runs. Nothing seeds it. */
 export const REPOSITORY_SPEND_CAP_ID = `${LLM_PACKAGE}/spendCentsPerDay`

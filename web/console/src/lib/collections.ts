@@ -1,9 +1,10 @@
 /** The collections as a person meets them: "Your data" (the repository's own
- * authority and every other authority that is neither a provider nor the
- * substrate's own), one "From <Provider>" group per provider package, and the
- * substrate's own machinery last. The sidebar, the command menu, All data and
- * Home all read this one grouping, so a kind sits in the same place on every
- * surface. */
+ * authority, every other authority that is neither a provider nor the
+ * substrate's, and the substrate's packages that hold the owner's records:
+ * observations and the well-known catalogues), one "From <Provider>" group
+ * per provider package, and the substrate's own machinery (core, llm,
+ * console) last. The sidebar, the command menu, All data and Home all read
+ * this one grouping, so a kind sits in the same place on every surface. */
 
 import {
   PROVIDERS_AUTHORITY,
@@ -12,6 +13,7 @@ import {
   type ProviderInfo,
 } from "@/lib/actor-identity"
 import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
+import { isMachinery } from "@/lib/core-kinds"
 import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
 import { displayPlural, lowerFirst, packageDisplayName } from "@/lib/kind-names"
@@ -117,7 +119,7 @@ export function collectionGroups(
       const entry = providers.get(provider.key) ?? { info: provider, kinds: [] }
       providers.set(provider.key, entry)
       entry.kinds.push(k)
-    } else if (k.authority === CORE_AUTHORITY) system.push(k)
+    } else if (isMachinery(k.authority, k.package)) system.push(k)
     else yours.push(k)
   }
   const out: CollectionGroup[] = []
@@ -154,9 +156,8 @@ export function collectionGroups(
 export function collectionSource(kind: string): string {
   const provider = providerOfKind(kind)
   if (provider) return `From ${provider.name}`
-  return splitKind(kind).authority === CORE_AUTHORITY
-    ? "Substrate"
-    : "Your data"
+  const { authority, pkg } = splitKind(kind)
+  return isMachinery(authority, pkg) ? "Substrate" : "Your data"
 }
 
 /** An authority as its page and crumb name it, in `collectionSource`'s

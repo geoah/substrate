@@ -31,6 +31,7 @@ import {
 import { downloadExport } from "@/lib/api/export"
 import { discoveryQueryOptions } from "@/lib/api/discovery"
 import { CORE_AUTHORITY, olderServerMessage } from "@/lib/api/http"
+import { isMachinery } from "@/lib/core-kinds"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   CONSOLE_PREFERENCE_KIND,
@@ -249,15 +250,15 @@ function ShellAppRow() {
 
 function DeveloperRows() {
   const kinds = useQuery(kindsQueryOptions)
-  const system = (kinds.data ?? []).filter(
-    (k) => k.authority === CORE_AUTHORITY
+  const system = (kinds.data ?? []).filter((k) =>
+    isMachinery(k.authority, k.package)
   ).length
   const [tokens, setTokens] = useState(false)
   return (
     <>
       <SettingRow
         title="System kinds"
-        description={`The ${system || "built-in"} kinds under ${CORE_AUTHORITY}: the substrate's own machinery.`}
+        description={`The ${system || "built-in"} kinds of ${CORE_AUTHORITY}'s core, llm and console packages: the substrate's own machinery.`}
         control={
           <Button
             variant="outline"
