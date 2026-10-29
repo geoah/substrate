@@ -43,7 +43,7 @@ ARG ARTIFACTS=source
 # The version here is held to .mise.toml's node pin by `lint:toolchain`,
 # exactly, because this stage must build the console on the node the console
 # is TESTED on.
-FROM --platform=$BUILDPLATFORM node:26.11.1-alpine3.24@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS web
+FROM --platform=$BUILDPLATFORM node:26.12.0-alpine3.24@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS web
 WORKDIR /web/console
 RUN npm install --global corepack@0.34.0
 RUN corepack enable
