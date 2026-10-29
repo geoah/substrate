@@ -65,12 +65,14 @@ const llCreateRulesetVersion = 1
 // so another body and the substrate are both outside it, and the body's own
 // children are inside.
 func rulesetFor(abi int) (unix.LandlockRulesetAttr, uintptr) {
-	attr := unix.LandlockRulesetAttr{Access_fs: handledFor(abi)}
+	attr := unix.LandlockRulesetAttr{Handled_access_fs: handledFor(abi)}
 	if abi < SignalScopeABI {
-		return attr, unsafe.Offsetof(attr.Access_net)
+		return attr, unsafe.Offsetof(attr.Handled_access_net)
 	}
 	attr.Scoped = unix.LANDLOCK_SCOPE_SIGNAL | unix.LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET
-	return attr, unsafe.Sizeof(attr)
+	// The quiet_* fields x/sys declares after `scoped` belong to a later ABI,
+	// so the struct still ends at `scoped` rather than at unsafe.Sizeof.
+	return attr, unsafe.Offsetof(attr.Quiet_access_fs)
 }
 
 // pathBeneathAttr is struct landlock_path_beneath_attr, which is PACKED: the
@@ -147,7 +149,7 @@ func applyLandlock(p Policy) error {
 		return nil
 	}
 	attr, size := rulesetFor(abi)
-	handled := attr.Access_fs
+	handled := attr.Handled_access_fs
 	fd, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET,
 		uintptr(unsafe.Pointer(&attr)), size, 0)
 	if errno != 0 {
