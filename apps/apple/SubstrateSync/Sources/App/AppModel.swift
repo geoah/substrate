@@ -85,15 +85,22 @@ final class AppModel: ObservableObject {
     @Published private(set) var progress: [Source: SyncProgress] = [:]
     /// The activity log, newest first.
     @Published private(set) var activity: [ActivityEntry] = Activity.shared.all
-    /// The device's Health days with data, from the last coverage scan.
-    @Published private(set) var healthAvailable: Set<String>?
+    /// The device's Health days with data, as far as the scans have read:
+    /// the stored scan at launch, then each read as it lands.
+    @Published private(set) var healthAvailable: Set<String>? = {
+        let stored = HealthScan.load()
+        return stored.from == nil ? nil : stored.days
+    }()
+    /// How far a scan of the phone's Health history has got, while one runs.
+    @Published private(set) var healthScanning: SyncProgress?
     /// The start of every occurrence in the calendar window, from the last
     /// coverage scan.
     @Published private(set) var eventsAvailable: [Date]?
     @Published private(set) var coverageLoading = false
     @Published private(set) var coverageError: String?
     private var coverageStale = false
-    /// How far back the coverage scan looks for Health data.
+    /// How far back the coverage scan looks for Health data, unless the
+    /// history is everything.
     static let coverageYears = 10
 
     /// The Health days with data inside the history range synced, and those
@@ -477,7 +484,8 @@ final class AppModel: ObservableObject {
         let queued = syncing && !running && syncSources.contains(source) && !ranThisSync(source)
         return SourceOverview.of(
             enabled: Settings.enabled(source), access: access[source], running: running, queued: queued,
-            status: state.status[source], waiting: source == .health ? healthWaiting.count : 0)
+            status: state.status[source], waiting: source == .health ? healthWaiting.count : 0,
+            unsent: source == .health ? healthUnsent ?? 0 : 0)
     }
 
     /// What a source has synced of what the phone holds: Health's days with
@@ -572,6 +580,12 @@ final class AppModel: ObservableObject {
         state.runs.first { $0.source == source }?.finished ?? state.status[source]?.lastSync
     }
 
+    /// Health days with data inside the history that were never delivered:
+    /// what keeps Health from being up to date, whatever its last run said.
+    var healthUnsent: Int? {
+        healthInRange.map { $0.subtracting(state.healthDays).subtracting(state.healthPending.keys).count }
+    }
+
     /// Health days delivered and not yet filed by the server.
     var healthWaiting: Set<String> { Set(state.healthPending.keys).subtracting(state.healthDays) }
 
@@ -614,12 +628,19 @@ final class AppModel: ObservableObject {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         if HealthReader.isAvailable, UserDefaults.standard.bool(forKey: "health.asked") {
+            let since = Settings.history == .all ? nil : calendar.date(byAdding: .year, value: -Self.coverageYears, to: Date())
             do {
-                healthAvailable = try await HealthReader(store: SyncEngine.shared.health)
-                    .availableDays(years: Self.coverageYears, calendar: calendar)
+                healthAvailable = try await HealthScan.shared.days(since: since, store: SyncEngine.shared.health, calendar: calendar) { done, total, days in
+                    await MainActor.run {
+                        self.healthAvailable = days
+                        self.healthScanning = done < total ? SyncProgress(step: "Reading what the phone holds", done: done, total: total) : nil
+                    }
+                }
+            } catch where isCancellation(error) {
             } catch {
                 coverageError = explain(error)
             }
+            healthScanning = nil
         }
         if EKEventStore.authorizationStatus(for: .event) == .fullAccess {
             let now = Date()
@@ -634,6 +655,13 @@ final class AppModel: ObservableObject {
                     .compactMap(\.startDate)
             }.value
         }
+    }
+
+    /// Reads the phone's whole Health history again, for data an app wrote
+    /// into days already read.
+    func rescanHealth() async {
+        await HealthScan.shared.reset()
+        await loadCoverage()
     }
 
     /// Queues days for the next Health sync and starts it.

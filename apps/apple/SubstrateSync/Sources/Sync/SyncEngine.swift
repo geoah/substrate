@@ -1005,8 +1005,9 @@ actor SyncEngine {
         let start = history.start(today: today, calendar: calendar)
 
         // A background wake has seconds: the last few days only. A run over
-        // more than a month reads which days hold data first, so years of
-        // history are not read one empty day at a time.
+        // more than a month asks which days hold data first, so years of
+        // history are not read one empty day at a time; the scan is kept, so
+        // only its first run reads the whole history.
         var days: [Date]
         if budget == .background {
             days = Self.healthDays(today: today, from: calendar.date(byAdding: .day, value: -2, to: today), sent: [], calendar: calendar)
@@ -1014,13 +1015,15 @@ actor SyncEngine {
             var available: Set<String>?
             let span = start.map { today.timeIntervalSince($0) } ?? .infinity
             if span > 31 * 86400 {
-                await progress(.health, "Finding the days that hold Health data")
+                await progress(.health, "Reading what the phone holds")
                 // Without the answer every day of the history would be read
                 // one at a time: a failure stops the run instead.
                 do {
-                    available = try await reader.availableDays(since: start, calendar: calendar)
-                } catch {
-                    throw ContextError(context: "Finding the days that hold Health data", underlying: error)
+                    available = try await HealthScan.shared.days(since: start, store: health, calendar: calendar) { done, total, _ in
+                        await self.progress(.health, "Reading what the phone holds", done, total)
+                    }
+                } catch where !isCancellation(error) {
+                    throw ContextError(context: "Reading what the phone holds", underlying: error)
                 }
             }
             days = Self.healthDays(today: today, from: start, sent: state.healthDays, queued: state.healthQueue,
@@ -1084,8 +1087,10 @@ actor SyncEngine {
                 state.healthDays.remove(name)
                 state.healthPending[name] = nil
                 if made.isEmpty, skipped.isEmpty {
-                    // Nothing on the phone for the day: nothing to retry.
+                    // Nothing on the phone for the day: nothing to retry,
+                    // and nothing for Coverage to count as unsent.
                     state.healthQueue.remove(name)
+                    await HealthScan.shared.forget(name)
                     empty += 1
                 } else if !skipped.isEmpty {
                     // Read in part, or not at all: queued, so the next sync
