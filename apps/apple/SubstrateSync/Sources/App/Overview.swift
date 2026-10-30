@@ -12,8 +12,10 @@ struct SourceOverview: Equatable {
     /// The last run's error, when it is still the news.
     var error: String?
 
+    /// `unsent` counts what the source holds and never sent: a run that ended
+    /// well is not up to date while history is left behind it.
     static func of(
-        enabled: Bool, access: String?, running: Bool, queued: Bool, status: SourceStatus?, waiting: Int
+        enabled: Bool, access: String?, running: Bool, queued: Bool, status: SourceStatus?, waiting: Int, unsent: Int = 0
     ) -> SourceOverview {
         if !enabled { return SourceOverview(badge: "Off", tone: .off) }
         if running { return SourceOverview(badge: "Syncing", tone: .busy) }
@@ -25,8 +27,9 @@ struct SourceOverview: Equatable {
             return SourceOverview(badge: "Stopped", tone: .attention, error: reason)
         }
         if let error = status?.lastError { return SourceOverview(badge: "Failed", tone: .failed, error: error) }
-        if waiting > 0 { return SourceOverview(badge: "Processing", tone: .busy) }
         if status?.lastSync == nil { return SourceOverview(badge: "Not synced yet", tone: .attention) }
+        if unsent > 0 { return SourceOverview(badge: "Behind", tone: .attention) }
+        if waiting > 0 { return SourceOverview(badge: "Processing", tone: .busy) }
         return SourceOverview(badge: "Up to date", tone: .good)
     }
 

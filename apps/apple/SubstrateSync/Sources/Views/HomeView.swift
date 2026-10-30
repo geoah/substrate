@@ -148,6 +148,10 @@ private struct StatusCard: View {
         if overviews.contains(where: { $0.1.badge == "Stopped" }) {
             return Shown(symbol: "stop.circle.fill", color: .orange, headline: "Sync stopped", detail: "Sync again to carry on where it left off.")
         }
+        if overviews.contains(where: { $0.1.badge == "Behind" }), let unsent = model.healthUnsent {
+            return Shown(symbol: "clock.arrow.circlepath", color: .orange, headline: "Health is behind",
+                         detail: "\(unsent.formatted()) \(unsent == 1 ? "day" : "days") of your Health history \(unsent == 1 ? "is" : "are") not on the server yet. Sync Now carries on.")
+        }
         let never = overviews.filter { model.state.status[$0.0]?.lastSync == nil }.map(\.0)
         if never.count == enabled.count {
             return Shown(symbol: "arrow.triangle.2.circlepath", color: .secondary, headline: "Not synced yet",
