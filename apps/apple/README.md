@@ -199,7 +199,13 @@ three days again and any day not yet accepted. A day counts as sent only once
 the server has filed it (its `applehealth/export/<fire id>` receipt); one the
 server parked stays queued and is sent again. Days go seven at a time, and a
 range longer than a month first asks HealthKit which days hold data, so years
-of history are not read one empty day at a time. A background run sends only
+of history are not read one empty day at a time. That answer is kept in
+`health-scan.json` (`HealthScan` in `Coverage.swift`), which Home, Coverage
+and a sync share: the first scan reads the history 90 days at a time, saving
+after each and saying how far it has got, and every later one reads only the
+last week and any stretch further back than it has read. A day the sync finds
+empty is dropped from it, and Coverage's Read the Whole History Again starts
+it over, for data an app wrote into days already read. A background run sends only
 the last three days. A delivery replaces a metric's rows across its span, so
 a day is always sent whole, and a day larger than 4 MiB is split by metric.
 Besides the measured metrics, a day carries what is logged: mindful minutes
@@ -258,8 +264,10 @@ TEST_RUNNER_SYNC_SLOW_SERVER=http://localhost:8093 TEST_RUNNER_SYNC_E2E_REPOSITO
 **Home is an overview.** A status card says what is syncing (the source,
 its step and how far it has got, and Stop) or how the last sync ended, above
 Sync Now. Each source is one row: what it has synced of what the phone holds,
-when, and its state as a badge (Up to date, Syncing, Queued, Processing,
-Stopped, Failed, No access, Off). A stop is not a failure. A source that is running or waiting its turn shows
+when, and its state as a badge (Up to date, Syncing, Queued, Behind,
+Processing, Stopped, Failed, No access, Off). A stop is not a failure. Health
+is Behind, never Up to date, while days with data inside its history were
+never delivered, whatever its last run said, and the card says how many. A source that is running or waiting its turn shows
 that, never the error of the run it is replacing. Tapping a source opens its
 page: the state with the last run or its error and a button that syncs that
 source alone, its coverage once (Health: the days with data inside the

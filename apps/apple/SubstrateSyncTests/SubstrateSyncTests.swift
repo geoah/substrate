@@ -245,6 +245,38 @@ final class HealthScheduleTests: XCTestCase {
         XCTAssertEqual(all, ["2023-03-01", "2026-10-10", "2026-10-18", "2026-10-19", "2026-10-20"])
     }
 
+    /// The first scan reads the whole range in steps; a later one only the
+    /// last week; one stopped part way resumes where it stopped; and a
+    /// longer history reads back from what was read, newest first.
+    func testAScanReadsOnlyWhatItHasNotRead() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Athens")!
+        let parse = Coverage.dayParser(calendar)
+        func day(_ s: String) -> Date { parse.date(from: s)! }
+        func spans(_ reads: [HealthScan.Read]) -> [String] {
+            reads.map { r in
+                let last = calendar.date(byAdding: .day, value: -1, to: r.days.upperBound)!
+                return "\(Formats.day(r.days.lowerBound, in: calendar.timeZone))..\(Formats.day(last, in: calendar.timeZone)) \(r.moves == .from ? "back" : "on")"
+            }
+        }
+        let today = day("2026-10-30")
+
+        let first = HealthScan.plan(target: day("2026-01-01"), today: today, from: nil, through: nil, calendar: calendar)
+        XCTAssertEqual(spans(first), ["2026-01-01..2026-03-31 on", "2026-04-01..2026-06-29 on", "2026-06-30..2026-09-27 on", "2026-09-28..2026-10-30 on"])
+
+        let later = HealthScan.plan(target: day("2026-01-01"), today: today, from: day("2026-01-01"), through: day("2026-10-29"), calendar: calendar)
+        XCTAssertEqual(spans(later), ["2026-10-24..2026-10-30 on"])
+
+        let resumed = HealthScan.plan(target: day("2026-01-01"), today: today, from: day("2026-01-01"), through: day("2026-06-29"), calendar: calendar)
+        XCTAssertEqual(spans(resumed), ["2026-06-30..2026-09-27 on", "2026-09-28..2026-10-30 on"])
+
+        let longer = HealthScan.plan(target: day("2025-09-01"), today: today, from: day("2026-01-01"), through: day("2026-10-30"), calendar: calendar)
+        XCTAssertEqual(spans(longer), ["2025-10-03..2025-12-31 back", "2025-09-01..2025-10-02 back", "2026-10-24..2026-10-30 on"])
+
+        let shorter = HealthScan.plan(target: day("2026-10-17"), today: today, from: day("2026-01-01"), through: day("2026-10-30"), calendar: calendar)
+        XCTAssertEqual(spans(shorter), ["2026-10-24..2026-10-30 on"])
+    }
+
     func testHistoryRangesStartWhereTheyNameAndEverythingHasNoStart() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -522,6 +554,17 @@ final class OverviewTests: XCTestCase {
         }
         XCTAssertEqual(last, 1)
         XCTAssertEqual(SyncEngine.healthOverall(before: 0, width: 0, part: 1, days: 0), 1)
+    }
+
+    /// Health with history never delivered is behind, whatever its last run
+    /// said, and says so before the days the server is still filing.
+    func testHealthWithHistoryLeftBehindIsNotUpToDate() {
+        let ok = SourceStatus(lastSync: Date(), counts: "3 days sent", lastError: nil)
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 0, unsent: 2711).badge, "Behind")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 4, unsent: 2711).badge, "Behind")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 4, unsent: 0).badge, "Processing")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: true, queued: false, status: ok, waiting: 0, unsent: 2711).badge, "Syncing")
+        XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 0, unsent: 0).badge, "Up to date")
     }
 
     func testTheTimelineFoldsEachRunsLinesIntoIt() {

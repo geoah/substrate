@@ -122,11 +122,21 @@ private struct HealthCoverage: View {
                         CoverageListView(buckets: all, unit: "days")
                     }
                 }
-            } else if model.coverageLoading {
+            } else if model.coverageLoading, model.healthScanning == nil {
                 HStack(spacing: 10) { ProgressView(); Text("Reading what the phone holds…").foregroundStyle(.secondary) }
-            } else {
+            } else if model.healthScanning == nil {
                 Text(model.healthAvailable == nil ? "Allow Health access to see what the phone holds." : "No steps, heart rate or sleep in your history.")
                     .font(.callout).foregroundStyle(.secondary)
+            }
+            // The figures above are what was read so far; the first read of
+            // a long history takes minutes, and says how far it has got.
+            if let scanning = model.healthScanning {
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressRow(progress: scanning)
+                    Text("The first read of a long history takes a few minutes; it is kept, so later ones read only the last week.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
             }
             if let older = model.healthOutsideRange, !older.isEmpty {
                 // Offered for the days neither sent nor already waiting for
@@ -153,6 +163,13 @@ private struct HealthCoverage: View {
             }
             if let error = model.coverageError {
                 ErrorBox(title: "Could not read what the phone holds", message: error)
+            }
+            if model.healthAvailable != nil {
+                Button("Read the Whole History Again") {
+                    Task { await model.rescanHealth() }
+                }
+                .font(.footnote)
+                .disabled(model.coverageLoading || model.syncing)
             }
         } header: {
             HStack {
