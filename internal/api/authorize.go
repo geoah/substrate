@@ -118,9 +118,9 @@ type protectedResourceMetadata struct {
 	ResourceName           string   `json:"resource_name"`
 }
 
-// scopesSupported names the two widest scopes: every other scope is a
-// narrower pattern of one of them, which no list could enumerate.
-var scopesSupported = []string{"read:*", "write:*"}
+// scopesSupported names the widest scope of each verb: every other scope is
+// a narrower pattern of one of them, which no list could enumerate.
+var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*"}
 
 func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	iss := h.issuerOf(r)
@@ -336,6 +336,13 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		DefaultLifetimeDays: defaultLifetimeDays,
 		ExpiresAt:           req.Expires,
 	}
+	var agents []*substrate.Record
+	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
+		if agents, err = agentRows(ctx, ds); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+	}
 	seen := map[string]bool{}
 	for _, s := range req.Scopes {
 		resolved := s.Resolve(authority)
@@ -345,11 +352,18 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[resolved.String()] = true
-		view.Scopes = append(view.Scopes, substrate.AuthorizationScope{
-			Scope: resolved.String(), Requested: s.String(), Write: resolved.Write,
-			Pattern: resolved.Pattern, Glob: strings.HasSuffix(resolved.Pattern, "*"),
-			Kinds: reachedKinds(resolved, kinds),
-		})
+		row := substrate.AuthorizationScope{
+			Scope: resolved.String(), Requested: s.String(), Verb: string(resolved.Verb),
+			Write: resolved.Verb == scope.Write, Pattern: resolved.Pattern,
+			Glob: strings.HasSuffix(resolved.Pattern, "*"), Kinds: []substrate.AuthorizationKind{},
+			Agents: []*substrate.Record{},
+		}
+		if resolved.OverAgents() {
+			row.Agents = matchedAgents(resolved, agents)
+		} else {
+			row.Kinds = reachedKinds(resolved, kinds)
+		}
+		view.Scopes = append(view.Scopes, row)
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -376,7 +390,7 @@ func reachedKinds(s scope.Scope, kinds []substrate.KindInfo) []substrate.Authori
 	}
 	for _, k := range kinds {
 		ok := g.Reads(k.Identity, internalKind(k))
-		if s.Write {
+		if s.Verb == scope.Write {
 			ok = g.Writes(k.Identity, internalKind(k))
 		}
 		if ok {
@@ -384,6 +398,41 @@ func reachedKinds(s scope.Scope, kinds []substrate.KindInfo) []substrate.Authori
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
+	return out
+}
+
+// agentRows is every agent row of the repository, sorted by id.
+func agentRows(ctx context.Context, ds substrate.Dataset) ([]*substrate.Record, error) {
+	var out []*substrate.Record
+	q := substrate.Query{Filter: substrate.Filter{Kinds: []string{kindAgent}}, First: agentListPage}
+	for {
+		page, err := ds.List(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.Records...)
+		if page.Cursor == "" || len(page.Records) == 0 {
+			break
+		}
+		q.After = page.Cursor
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// matchedAgents lists the agents one resolved agents or decide scope matches
+// today.
+func matchedAgents(s scope.Scope, agents []*substrate.Record) []*substrate.Record {
+	out := []*substrate.Record{}
+	g, err := scope.NewGrant([]string{s.String()})
+	if err != nil {
+		return out
+	}
+	for _, a := range agents {
+		if g.TalksTo(a.ID) || g.Decides(a.ID) {
+			out = append(out, a)
+		}
+	}
 	return out
 }
 

@@ -325,6 +325,16 @@ func (h *handler) mountResources(r chi.Router) {
 			// (units.go).
 			r.Get(unitsRoute, h.getUnits)
 			r.Get(unitsConvertRoute, h.getUnitsConvert)
+			// The change feed: an app's token reaches its live tail alone,
+			// held to the records it reads (watch.go, decision 0195).
+			r.Get("/changes", h.getChanges)
+			// Chat with an agent and reach its running turn: an app's token
+			// reaches them for the agents its `agents:` scopes name, and
+			// never the call API beside them (decision 0195). Five segments,
+			// so the record path below never shadows them.
+			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
+			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
+			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
 
 			// THE RECORD PATH. It IS the record's reference: the kind's three
 			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
@@ -373,7 +383,6 @@ func (h *handler) mountResources(r chi.Router) {
 			// actions, not the recordmerge/recordsplit collections.
 			r.Post("/merge", h.postMerges)
 			r.Post("/split", h.postSplits)
-			r.Get("/changes", h.getChanges)
 			// The catalog: the bundle closures shipped in the binary. List and
 			// detail are repository reads (installed reflects this
 			// repository); the two writes are the two TIERS' doors (decision
@@ -423,15 +432,10 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get(trait+"/implementors", h.getTraitImplementors)
 			// The callable invocation API: manual invoke with arbitrary input.
 			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
-			// Agents: the same call API, plus chat — the one loop streaming.
+			// Agents: the same call API. Chat, the one loop streaming, and
+			// the thread routes that reach a detached turn again (decision
+			// 0169) sit on the scoped surface above.
 			r.Post("/"+corePackage+"/agent/{name}/call", h.postAgentCall)
-			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
-			// A chat turn runs detached from its request (decision 0169), so
-			// a client reaches it again by the thread it runs on: attach to
-			// its stream, or stop it. Five segments, so the record path
-			// below never shadows them.
-			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
-			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
 		})
 	}
 }

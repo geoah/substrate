@@ -212,11 +212,13 @@
     "scopes": true
   },
   "AuthorizationScope": {
+    "agents": true,
     "glob": true,
     "kinds": true,
     "pattern": true,
     "requested": true,
     "scope": true,
+    "verb": true,
     "write": true
   },
   "BlobInfo": {

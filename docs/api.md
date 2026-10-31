@@ -16,8 +16,8 @@ own, [users and tokens](auth.md).
 Any origin may call the server: a web application on another host reads and
 writes the API with a bearer token. An application that is not the owner's own
 should get that token through [app authorization](apps.md), which asks the
-owner and limits the token to the kinds they approve, rather than by asking
-for the password. Every response to a request carrying `Origin` names
+owner and limits the token to the kinds and agents they approve, rather than
+by asking for the password. Every response to a request carrying `Origin` names
 `Access-Control-Allow-Origin: *` and exposes `ETag`, `Location`,
 `Retry-After`, `Content-Disposition`, `WWW-Authenticate` and `X-Request-Id`;
 the one exception is `GET /oauth/authorize`, a page the browser navigates to,
@@ -65,6 +65,9 @@ two ([agents](agents.md#calling-an-agent)):
 GET  /api/v1/substrate.reamde.dev/llm/thread/{id}/events  # attach to the running chat turn: replay, then live ndjson
 POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop    # stop it; answers the settled result
 ```
+
+An app's token reaches both, the chat and the change feed's live tail only
+under the scopes [app authorization](apps.md#talk-to-agents) describes.
 
 **There is no repository segment anywhere.** The bearer token names the
 repository, so an address never has to, and there is nothing to get wrong.

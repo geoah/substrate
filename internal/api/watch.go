@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,6 +91,10 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	if scoped, ok := ds.(*scopedDataset); ok {
+		h.watchScoped(w, r, scoped, f)
+		return
+	}
 	if q.Has("runs") {
 		// Run summaries are a history read: they walk backward from `before`
 		// and have no forward or streaming form.
@@ -138,12 +143,30 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// watchScoped is the change feed for an app's token (decision 0195): the
+// live tail alone, held to the records the grant reads, each row carrying
+// names alone. History pages, run summaries and the forward read stay the
+// owner's; so do `q` and `values=1`, which read across kinds and into
+// payloads. Everything is refused before the stream opens.
+func (h *handler) watchScoped(w http.ResponseWriter, r *http.Request, ds *scopedDataset, f substrate.ChangeFilter) {
+	q := r.URL.Query()
+	if q.Get("watch") != "1" || q.Has("runs") || q.Has("before") || q.Has("first") {
+		writeSubstrateError(w, r, errScope("the change feed's history: its live tail is watch=1"))
+		return
+	}
+	if _, _, err := ds.changeFilter(r.Context(), f); err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	h.streamChanges(w, r, ds, f, false)
+}
+
 // streamChanges writes the ndjson watch stream: a bookmark line, then every
 // matching change from that cursor on, then heartbeats while idle. annotate
 // attaches per-function delivery states to each row — the cross-collection
 // feed's contract; per-collection watches stay plain rows. Every row the
-// filter matches is emitted: a token reads its whole repository, so there is
-// no per-row gate left to apply.
+// filter matches is emitted for a full-access token, which reads its whole
+// repository; an app's token gets the rows its grant reads (readChanges).
 //
 // The stream ends cleanly, after a flush, when the server starts to shut
 // down (Config.Draining): every row written is a row the client holds, so it
@@ -190,7 +213,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	// one to frame to), or nil when the batch is exhausted cleanly.
 	drain := func() error {
 		for {
-			changes, err := ds.Changes(ctx, cursor, f, changeBatch)
+			changes, scanned, last, err := readChanges(ctx, ds, cursor, f, changeBatch)
 			if err != nil {
 				return err
 			}
@@ -211,9 +234,10 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 				}
 			}
 			flusher.Flush()
+			cursor = last
 			// A backlog stops between batches once the server is
 			// shutting down; the loop below then ends the stream.
-			if len(changes) < changeBatch || h.isDraining() {
+			if scanned < changeBatch || h.isDraining() {
 				return nil
 			}
 		}
@@ -254,6 +278,21 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			flusher.Flush()
 		}
 	}
+}
+
+// readChanges is one batch of the tail: the rows to write, how many rows the
+// batch read and the highest seq among them. An app's batch writes fewer rows
+// than it reads (heldChanges), and the cursor moves past the ones it held
+// back, or every signal would read them again.
+func readChanges(ctx context.Context, ds substrate.Dataset, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, int, int64, error) {
+	if scoped, ok := ds.(*scopedDataset); ok {
+		return scoped.heldChanges(ctx, after, f, limit)
+	}
+	changes, err := ds.Changes(ctx, after, f, limit)
+	if err != nil || len(changes) == 0 {
+		return changes, 0, after, err
+	}
+	return changes, len(changes), changes[len(changes)-1].Seq, nil
 }
 
 // bookmarkFrame opens every stream and every forward page: the seq the rows

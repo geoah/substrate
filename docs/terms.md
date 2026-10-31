@@ -121,7 +121,7 @@ unit's linear component, which a declaration names with `unit:` (decision
 | Term | What it is |
 | ---- | ---------- |
 | **token** | A bearer credential, itself a record. Without `scopes` it has full access to its repository; an app's token carries the scopes the owner approved. |
-| **scope** | One entry of an app's token: `read:<pattern>` or `write:<pattern>` over kind references, `~` standing for the repository's authority ([apps](apps.md)). Not a provider's OAuth scopes, which an account's `grantedScopes` lists. |
+| **scope** | One entry of an app's token: `read:<pattern>` or `write:<pattern>` over kind references, `agents:<pattern>` or `decide:<pattern>` over agent ids, `~` standing for the repository's authority ([apps](apps.md)). Not a provider's OAuth scopes, which an account's `grantedScopes` lists. |
 | **app** | A program that asked for access through the authorization flow, named by its client id URL ([apps](apps.md)); its writes are the actor `app:<host>`. Not a provider, and not a bundle. |
 | **blob** | Content-addressed bytes whose digest is its id and whose manifest is an ordinary record. |
 | **records route** | `GET /api/v1/records`: the one read of many records, in four modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `offset`, `expand`), the ranked read (`q`), the tail (`watch=1`) and the aggregate read (`aggregate`, decision record 0161). `POST` there creates one record under a server-assigned id. Decision record 0079. |
