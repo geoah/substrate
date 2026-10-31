@@ -406,7 +406,7 @@ func (l *writerLease) lock(ctx context.Context, conn *sql.Conn, repository strin
 		}
 		if got {
 			l.log.Warn("substrate: this process's previous writer lease session was still holding the lease after its connection dropped; it was ended and the lease retaken",
-				"repository", repository, "orphan", h.String())
+				"repository", logSafeID(repository), "orphan", h.String())
 			return true, nil, nil
 		}
 		select {
@@ -535,13 +535,13 @@ func (l *writerLease) retake(shutdown, ctx context.Context) {
 		got, foreign, err := l.lock(ctx, conn, id)
 		if err != nil {
 			if shutdown.Err() == nil {
-				l.log.Error("substrate: the writer lease could not be retaken", "repository", id, "error", err)
+				l.log.Error("substrate: the writer lease could not be retaken", "repository", logSafeID(id), "error", err)
 			}
 			return
 		}
 		if !got {
 			l.log.Error("substrate: another process took this repository's writer lease while this one's connection was down; every write stays refused. Run one server per database and restart this one",
-				"repository", id, "holder", foreign.String())
+				"repository", logSafeID(id), "holder", foreign.String())
 			return
 		}
 	}
