@@ -189,7 +189,7 @@ struct ExpiredView: View {
             Text("\(model.session?.server.host() ?? "The server") no longer accepts this sign-in: the token was revoked, or the repository was reset. Sign in again to carry on.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            Button("Sign In Again") { model.signOut() }
+            Button("Sign In Again") { model.signInAgain() }
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
         }

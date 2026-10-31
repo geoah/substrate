@@ -489,19 +489,22 @@ A token the server refuses shows one screen with Sign In Again.
 
 ## Testing
 
-- Unit tests (macOS): the transcript fold and the live overlay against the
-  console's cases (pairing by id, orphans, compaction, reasoning, a higher
-  ordinal landing before a lower one), ndjson and watch lines (heartbeats,
-  garbage, terminal frames), replay dropping by set membership, the Markdown
-  parser on every prefix of a document, titles and day groups, the tool
-  words, path encoding, and the store's rules driven by a scripted transport:
-  a prefetch landing after a handover, a late handover of an earlier run, a
-  thread row on the feed before the `thread` event, sign-out with reads in
-  flight.
-- A run against the dev substrate (`mise run dev`): sign in, the seeded
-  agents, a chat with a keyed provider, Stop, attach after relaunch, a
-  refused send, offline.
-- Screenshots on an iPhone, an iPad and the Mac, light and dark.
+- Unit tests (`mise run apple:test:chat`, on the Mac): the transcript fold
+  and the live overlay against the console's cases (pairing by id, orphans,
+  compaction, reasoning), ndjson and watch lines (heartbeats, garbage,
+  terminal frames), replay dropping by set membership, the Markdown parser on
+  every prefix of a document, previews, titles and day groups, the tool words
+  and path encoding.
+- The store's rules against a scripted server (`ScriptedServer`, a
+  `URLProtocol` the API's sessions take in tests): a send streams and hands
+  over without doubling; no read publishes under a live overlay; a refusal
+  gives the text back and nothing runs; a gateway's answer is unknown
+  delivery, never a refusal, and nothing is sent again; older rows never
+  replace newer ones; a closed session publishes nothing; a window leaving
+  keeps a conversation another window shows.
+- A run against the dev substrate (`mise run dev`) with a model stub: sign
+  in, the list, Markdown, streaming, a tool call, a question answered and the
+  agent resumed, Stop, a new chat, Settings.
 
 ## What the reviews changed
 
@@ -523,3 +526,30 @@ A token the server refuses shows one screen with Sign In Again.
 - Glass only on the control layer; keyboard specifics; voice pitfalls;
   accessibility for streaming text; file protection and backup exclusion;
   the pending-card reads; the provider key's handling.
+
+## What the code reviews changed
+
+Both reviewers read the first implementation against this design, the
+console and the server.
+
+- A conversation owns its rows while a handover read it is waiting on has
+  failed, and the next move of the thread retries it, so no other read lands
+  under its overlay.
+- The feed's batches apply one at a time; a new row restarts only the wait,
+  what failed to re-read is kept, and the saved cursor moves only past rows
+  whose re-reads landed.
+- A conversation stays registered while any window shows it; a route
+  (a shortcut, a notification, ⌘N) is taken by one window.
+- Delivery checks, background polls and Stop's answers carry their run, and
+  every read routes a refused token to the signed-out screen; an older thread
+  row or transcript never replaces a newer one.
+- A bound chat takes its agent from its thread row, read when the list does
+  not hold it; a chat opened from a notification is never stuck on "Choose an
+  assistant".
+- The continued processing task is asked for while the app is still in
+  front (inactive), as iOS requires.
+- Typing dots between Send and the first event; Shift-Return at the cursor;
+  New Window on the Mac; one binding per shortcut; Sign In Again after a
+  refused token keeps the saved chats; a turn that ended in an error notifies
+  as one; large transcripts decode off the main actor; previews lose the
+  Markdown the server's one-line `lastReply` keeps.

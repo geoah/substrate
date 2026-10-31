@@ -12,6 +12,7 @@ struct ComposerBar: View {
     let onJump: () -> Void
     let onKey: (Provider) -> Void
     @FocusState private var focused: Bool
+    @State private var selection: TextSelection?
     @Namespace private var glass
     @State private var sent = 0
 
@@ -91,7 +92,7 @@ struct ComposerBar: View {
             if dictation.active {
                 listening
             } else {
-                TextField(placeholder, text: $conversation.draft, axis: .vertical)
+                TextField(placeholder, text: $conversation.draft, selection: $selection, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1 ... 8)
                     .focused($focused)
@@ -100,7 +101,7 @@ struct ComposerBar: View {
                     .onKeyPress(.return, phases: .down) { press in
                         if press.modifiers.contains(.option) { return .ignored }
                         if press.modifiers.contains(.shift) {
-                            conversation.draft += "\n"
+                            insertNewline()
                             return .handled
                         }
                         send()
@@ -179,9 +180,10 @@ struct ComposerBar: View {
             round("mic.fill", tint: nil, label: "Dictate") { Task { await toggleListening() } }
                 .disabled(conversation.agentID == nil)
         } else {
+            // Return on the Mac and ⌘Return on an iPad keyboard are the
+            // field's own key handling.
             round("arrow.up", tint: .accentColor, label: "Send") { send() }
                 .disabled(conversation.blockedReason != nil)
-                .keyboardShortcut(.return, modifiers: .command)
         }
     }
 
@@ -200,6 +202,24 @@ struct ComposerBar: View {
     }
 
     // MARK: Actions
+
+    /// Shift-Return: a new line where the cursor is, over any selection.
+    private func insertNewline() {
+        var text = conversation.draft
+        var lower = text.count
+        var upper = text.count
+        if case let .selection(range)? = selection?.indices,
+           range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex
+        {
+            lower = text.distance(from: text.startIndex, to: range.lowerBound)
+            upper = text.distance(from: text.startIndex, to: range.upperBound)
+        }
+        let start = text.index(text.startIndex, offsetBy: lower)
+        let end = text.index(text.startIndex, offsetBy: upper)
+        text.replaceSubrange(start ..< end, with: "\n")
+        conversation.draft = text
+        selection = TextSelection(insertionPoint: text.index(text.startIndex, offsetBy: lower + 1))
+    }
 
     private func send() {
         Task {

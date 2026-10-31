@@ -49,7 +49,6 @@ enum Background {
     /// The app is leaving the screen: every turn still streaming is kept
     /// running, if iOS allows, until it settles.
     static func leaving(_ store: ChatStore) {
-        schedule()
         for conversation in store.conversations.values where conversation.streaming {
             ContinuedRun.start(conversation, title: store.thread(conversation.threadID).map(store.title) ?? "New chat")
         }

@@ -34,6 +34,9 @@ final class ChatStore {
     private(set) var providers: [String: Provider] = [:]
     private(set) var chats: [Record] = []
     private(set) var automated: [Record] = []
+    /// Threads read one at a time that no list read holds: an old chat, or an
+    /// automated run while those are hidden.
+    private(set) var others: [String: Record] = [:]
     private(set) var openings: [String: String] = [:]
     private(set) var interactions: [Record] = []
     private(set) var requests: [Record] = []
@@ -50,11 +53,15 @@ final class ChatStore {
     @ObservationIgnored private var meta: [String: (version: Int, full: Bool)] = [:]
     @ObservationIgnored private var readEpochs: [String: Int] = [:]
     @ObservationIgnored private var reads: [String: Task<Void, Never>] = [:]
+    /// The thread version each read in flight started under.
+    @ObservationIgnored private var readVersions: [String: Int] = [:]
 
     // MARK: State
 
     private(set) var conversations: [UUID: Conversation] = [:]
     @ObservationIgnored private var byThread: [String: UUID] = [:]
+    /// The windows showing each conversation.
+    @ObservationIgnored private var viewers: [UUID: Set<UUID>] = [:]
     @ObservationIgnored private(set) var drafts: [String: String] = [:]
     /// The store has something to draw: the cache, or a first read.
     private(set) var loaded = false
@@ -68,6 +75,11 @@ final class ChatStore {
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var feedBatch: Set<String> = []
     @ObservationIgnored private var feedFlush: Task<Void, Never>?
+    @ObservationIgnored private var feedApplying: Task<Void, Never>?
+    /// The newest seq in the batch waiting to be applied.
+    @ObservationIgnored private var feedBatchSeq: Int?
+    /// The newest seq whose re-reads landed: what a relaunch resumes from.
+    @ObservationIgnored private var appliedSeq: Int?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var draftTask: Task<Void, Never>?
     @ObservationIgnored private var prefetchTask: Task<Void, Never>?
@@ -91,6 +103,7 @@ final class ChatStore {
             baselined = state.baselined
             lastAgent = state.lastAgent
             feedSeq = state.feedSeq
+            appliedSeq = state.feedSeq
             feedGeneration = state.feedGeneration
             loaded = true
         }
@@ -128,10 +141,24 @@ final class ChatStore {
 
     func thread(_ id: String?) -> ChatThread? {
         guard let id else { return nil }
-        if let r = chats.first(where: { $0.id == id }) ?? automated.first(where: { $0.id == id }) {
+        if let r = chats.first(where: { $0.id == id }) ?? automated.first(where: { $0.id == id }) ?? others[id] {
             return ChatThread(record: r)
         }
         return nil
+    }
+
+    /// Reads one thread the list does not hold, and keeps it beside the list.
+    func fetchThread(_ id: String) {
+        Task {
+            do {
+                if let record = try await api.get(Kinds.thread, id) {
+                    upsert(record)
+                    conversation(existing: id)?.threadMoved(ChatThread(record: record))
+                }
+            } catch {
+                _ = handle(error)
+            }
+        }
     }
 
     func title(_ thread: ChatThread) -> String { thread.title(opening: openings[thread.id]) }
@@ -186,6 +213,7 @@ final class ChatStore {
         monitor?.cancel()
         feedTask?.cancel()
         feedFlush?.cancel()
+        feedApplying?.cancel()
         prefetchTask?.cancel()
         refreshTask?.cancel()
         saveTask?.cancel()
@@ -253,11 +281,25 @@ final class ChatStore {
         return conversation
     }
 
+    /// A new chat. It takes over an unsent draft a new chat left behind (one
+    /// whose conversation is gone, from this launch or an earlier one), so
+    /// what was typed into a new chat is there again.
     func newConversation(agent: String? = nil) -> Conversation {
-        let conversation = Conversation(store: self, thread: nil, agent: agent ?? defaultAgent?.id,
-                                        draft: drafts["new"] ?? "")
+        let orphan = drafts.keys.first { key in
+            key.hasPrefix(Self.newDraftPrefix)
+                && UUID(uuidString: String(key.dropFirst(Self.newDraftPrefix.count))).map { conversations[$0] == nil } ?? true
+        }
+        let draft = orphan.flatMap { drafts.removeValue(forKey: $0) } ?? ""
+        let conversation = Conversation(store: self, thread: nil, agent: agent ?? defaultAgent?.id, draft: draft)
         conversations[conversation.id] = conversation
+        if !draft.isEmpty { setDraft(draft, for: conversation) }
         return conversation
+    }
+
+    private static let newDraftPrefix = "new:"
+
+    private func draftKey(_ conversation: Conversation) -> String {
+        conversation.threadID ?? Self.newDraftPrefix + conversation.id.uuidString
     }
 
     /// The `thread` event named a new chat's thread: from now the store finds
@@ -272,22 +314,31 @@ final class ChatStore {
             lastAgent = agent
         }
         bumpReadEpoch(thread)
-        if drafts["new"] != nil {
-            drafts["new"] = nil
-            scheduleDraftSave()
-        }
+        // What was typed while the first message went moves with the chat.
+        drafts[Self.newDraftPrefix + conversation.id.uuidString] = nil
+        setDraft(conversation.draft, for: conversation)
         scheduleSave()
     }
 
-    /// Drops conversations nobody shows and nothing runs on.
-    func forget(_ conversation: Conversation) {
-        guard !conversation.active, conversation.outcomes.isEmpty else { return }
+    /// A window shows a conversation: it stays registered while any does.
+    func retain(_ conversation: Conversation, scene: UUID) {
+        viewers[conversation.id, default: []].insert(scene)
+    }
+
+    /// A window stopped showing it. Dropped once no window shows it, nothing
+    /// runs on it, no overlay waits for its rows and no outcome waits to be read.
+    func release(_ conversation: Conversation, scene: UUID) {
+        viewers[conversation.id]?.remove(scene)
+        guard viewers[conversation.id]?.isEmpty ?? true, !conversation.ownsTranscript,
+              conversation.outcomes.isEmpty
+        else { return }
+        viewers[conversation.id] = nil
         if let thread = conversation.threadID, byThread[thread] == conversation.id { byThread[thread] = nil }
         conversations[conversation.id] = nil
     }
 
     func setDraft(_ text: String, for conversation: Conversation) {
-        let key = conversation.threadID ?? "new"
+        let key = draftKey(conversation)
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { drafts[key] = nil } else { drafts[key] = text }
         scheduleDraftSave()
@@ -295,12 +346,34 @@ final class ChatStore {
 
     // MARK: Transcripts
 
-    /// The rows a thread's view draws, loaded from disk the first time.
+    /// The rows a thread's view draws, loaded from disk the first time: at
+    /// once when small, so the chat opens drawn; off the main actor when
+    /// large, so opening never drops frames.
     func ensureLoaded(_ thread: String) {
-        guard rows[thread] == nil, let cached = cache.loadTranscript(thread) else { return }
+        let cache = cache
+        Task.detached(priority: .utility) { await cache.touch(thread) }
+        guard rows[thread] == nil, let size = cache.transcriptSize(thread) else { return }
+        if size < 256 * 1024 {
+            if let cached = cache.loadTranscript(thread) { adopt(cached, for: thread) }
+            return
+        }
+        Task {
+            let cached = await Task.detached(priority: .userInitiated) { cache.loadTranscript(thread) }.value
+            if let cached, rows[thread] == nil, !closed { adopt(cached, for: thread) }
+        }
+    }
+
+    private func adopt(_ cached: CachedTranscript, for thread: String) {
         rows[thread] = cached.records
         turns[thread] = transcript(of: cached.records)
         meta[thread] = (cached.threadVersion, cached.full)
+    }
+
+    /// Rows read under the thread's current version, a whole transcript or a
+    /// prefetch's window: the prefetch has nothing to add.
+    private func isPrefetched(_ thread: String) -> Bool {
+        guard let t = self.thread(thread), let m = meta[thread] else { return false }
+        return !t.running && m.version == t.record.version
     }
 
     func hasRows(_ thread: String) -> Bool { rows[thread] != nil }
@@ -315,22 +388,34 @@ final class ChatStore {
         readEpochs[thread, default: 0] += 1
         reads[thread]?.cancel()
         reads[thread] = nil
+        readVersions[thread] = nil
     }
 
-    /// Reads a thread's rows unless they are current or a run owns the
-    /// thread (rules 3, 4, 7). `first` below 500 is a prefetch.
+    /// Reads a thread's rows unless they are current or a conversation owns
+    /// the thread (rules 3, 4, 7). `first` below 500 is a prefetch. A read
+    /// under an older thread version than the list now holds is replaced.
     func load(_ thread: String, force: Bool = false, first: Int = 500) {
-        guard !closed, reads[thread] == nil else { return }
-        if let c = conversation(existing: thread), c.active { return }
+        guard !closed else { return }
+        if conversation(existing: thread)?.ownsTranscript == true { return }
+        let version = self.thread(thread)?.record.version ?? 0
+        if reads[thread] != nil {
+            if (readVersions[thread] ?? 0) >= version { return }
+            bumpReadEpoch(thread)
+        }
         if !force, isCurrent(thread) { return }
         let epoch = readEpochs[thread, default: 0]
-        let version = self.thread(thread)?.record.version ?? 0
+        readVersions[thread] = version
         reads[thread] = Task {
-            defer { if readEpochs[thread, default: 0] == epoch { reads[thread] = nil } }
+            defer {
+                if readEpochs[thread, default: 0] == epoch {
+                    reads[thread] = nil
+                    readVersions[thread] = nil
+                }
+            }
             do {
                 let page = try await api.list(Self.transcriptQuery(thread, first: first))
                 guard !closed, readEpochs[thread, default: 0] == epoch,
-                      conversation(existing: thread)?.active != true
+                      conversation(existing: thread)?.ownsTranscript != true
                 else { return }
                 publish(thread, records: page.records.reversed(), version: version, full: page.records.count >= first)
             } catch {
@@ -358,9 +443,11 @@ final class ChatStore {
         return (record, page.records.reversed())
     }
 
-    /// Puts rows on screen and on disk.
+    /// Puts rows on screen and on disk; rows read under an older thread
+    /// version than those held are stale and dropped.
     func publish(_ thread: String, records: [Record], version: Int, full: Bool) {
         guard !closed else { return }
+        if let held = meta[thread], held.version > version { return }
         rows[thread] = records
         turns[thread] = transcript(of: records)
         meta[thread] = (version, full)
@@ -391,13 +478,14 @@ final class ChatStore {
             let (a, p, t) = try await (agentPage, providerPage, threadPages)
             try await cards
             guard !closed else { return }
-            agents = a.records.map(Agent.init(record:))
+            setAgents(a.records)
             providers = Dictionary(p.records.map { ($0.id, Provider(record: $0)) }) { x, _ in x }
             // The feed resumes from the earliest read's head, so nothing
             // written between the reads is missed.
             if feedSeq == nil || feedGeneration != a.generation {
                 let heads = [a, p].filter { $0.generation == a.generation }.map(\.head) + [t.head]
                 feedSeq = heads.min()
+                appliedSeq = feedSeq
                 feedGeneration = a.generation
             }
             apply(chats: t.chats, automated: t.automated)
@@ -435,24 +523,35 @@ final class ChatStore {
         return ThreadPages(chats: chatPage.records, automated: automated, head: chatPage.head)
     }
 
-    func refreshThreads() async {
-        guard !closed else { return }
+    @discardableResult
+    func refreshThreads() async -> Bool {
+        guard !closed else { return true }
         do {
             let pages = try await readThreads()
-            guard !closed else { return }
+            guard !closed else { return true }
             apply(chats: pages.chats, automated: pages.automated)
             scheduleSave()
             await readOpenings()
             prefetch()
+            return true
         } catch {
             _ = handle(error)
+            return false
         }
     }
 
     /// A new list: what settled since notifies, open chats learn their
     /// thread moved, and on the first sign-in all of it is history.
-    private func apply(chats new: [Record], automated: [Record]) {
+    private func apply(chats fresh: [Record], automated freshAutomated: [Record]) {
         let before = Dictionary((chats + self.automated).map { ($0.id, $0) }) { a, _ in a }
+        // A list read that started before a single read landed carries an
+        // older row: the newer one stays.
+        let newer: (Record) -> Record = { r in
+            if let held = before[r.id], held.version > r.version { return held }
+            return r
+        }
+        let new = fresh.map(newer)
+        let automated = freshAutomated.map(newer)
         chats = new
         self.automated = automated
         if !baselined {
@@ -471,11 +570,17 @@ final class ChatStore {
     /// One thread row, read on its own (a handover, a background poll).
     func upsert(_ record: Record) {
         guard !closed else { return }
+        if let held = (chats + automated).first(where: { $0.id == record.id }) ?? others[record.id],
+           held.version > record.version { return }
         let mode = record["mode"]?.string
         if mode == "chat" {
             if let i = chats.firstIndex(where: { $0.id == record.id }) { chats[i] = record } else { chats.insert(record, at: 0) }
+            others[record.id] = nil
         } else if conversationModes.contains(mode ?? ""), prefs.showAutomated {
             if let i = automated.firstIndex(where: { $0.id == record.id }) { automated[i] = record } else { automated.insert(record, at: 0) }
+            others[record.id] = nil
+        } else {
+            others[record.id] = record
         }
         threadMoved(record)
         scheduleSave()
@@ -488,7 +593,11 @@ final class ChatStore {
             let key = "reply|\(thread.id)|\(finished)"
             if !notified.contains(key) {
                 notified.insert(key)
-                if baselined, prefs.notifyReplies, !thread.automated, !isVisible(thread.id), record["lastReply"]?.text != nil {
+                // A stop is the owner's own act; an error says so rather than
+                // offering the turn before it as the answer.
+                if baselined, prefs.notifyReplies, !thread.automated, !isVisible(thread.id), thread.status != "stopped",
+                   thread.status == "error" || record["lastReply"]?.text != nil
+                {
                     Notifier.reply(thread: thread, agent: agentName(thread.agentID ?? ""), title: title(thread))
                 }
             }
@@ -549,7 +658,7 @@ final class ChatStore {
                 guard !Task.isCancelled, !closed, online else { return }
                 if conversations.values.contains(where: \.streaming) { return }
                 ensureLoaded(thread.id)
-                if isCurrent(thread.id) || conversation(existing: thread.id)?.active == true { continue }
+                if isPrefetched(thread.id) || conversation(existing: thread.id)?.ownsTranscript == true { continue }
                 budget -= 1
                 load(thread.id, first: 100)
                 while reads[thread.id] != nil, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }
@@ -594,6 +703,7 @@ final class ChatStore {
                 // The cursor addresses no history this server holds: read
                 // everything again and follow from the new head.
                 feedSeq = nil
+                appliedSeq = nil
                 feedGeneration = nil
                 feedTask = nil
                 refresh()
@@ -606,36 +716,88 @@ final class ChatStore {
     }
 
     /// A batch of rows re-reads what they touched, once, 300 ms after the
-    /// last of them.
+    /// last of them. Only the wait is restarted by a new row, never a batch
+    /// being applied; batches apply one at a time, and what failed to
+    /// re-read is kept for the next one. The saved cursor moves only past
+    /// rows whose re-reads landed, so a relaunch never skips one.
     private func feed(_ row: ChangeRow) {
         feedBatch.insert(row.kind == Kinds.thread ? "thread:\(row.recordID)" : row.kind)
+        feedBatchSeq = max(feedBatchSeq ?? 0, row.seq)
         feedFlush?.cancel()
         feedFlush = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            let batch = feedBatch
-            feedBatch = []
-            if batch.contains(where: { $0.hasPrefix("thread:") }) { await refreshThreads() }
-            if batch.contains(Kinds.message) {
-                for c in conversations.values where c.phase == .background { c.poll() }
-            }
-            if batch.contains(Kinds.agent) || batch.contains(Kinds.provider) { await refreshAgents() }
-            if batch.contains(Kinds.interaction) || batch.contains(Kinds.request) { try? await refreshCards() }
-            scheduleSave()
+            feedFlush = nil
+            drainFeed()
         }
     }
 
-    func refreshAgents() async {
+    private func drainFeed() {
+        guard feedApplying == nil, !feedBatch.isEmpty, !closed else { return }
+        let batch = feedBatch
+        let through = feedBatchSeq
+        feedBatch = []
+        feedBatchSeq = nil
+        feedApplying = Task {
+            var failed: Set<String> = []
+            if batch.contains(where: { $0.hasPrefix("thread:") }), !(await refreshThreads()) {
+                failed.formUnion(batch.filter { $0.hasPrefix("thread:") })
+            }
+            if batch.contains(Kinds.message) {
+                for c in conversations.values where c.phase == .background { c.poll() }
+            }
+            if batch.contains(Kinds.agent) || batch.contains(Kinds.provider), !(await refreshAgents()) {
+                failed.formUnion(batch.filter { $0 == Kinds.agent || $0 == Kinds.provider })
+            }
+            if batch.contains(Kinds.interaction) || batch.contains(Kinds.request) {
+                do { try await refreshCards() } catch {
+                    _ = handle(error)
+                    failed.formUnion(batch.filter { $0 == Kinds.interaction || $0 == Kinds.request })
+                }
+            }
+            feedApplying = nil
+            guard !closed else { return }
+            if failed.isEmpty {
+                if let through { appliedSeq = max(appliedSeq ?? 0, through) }
+            } else {
+                feedBatch.formUnion(failed)
+                feedBatchSeq = max(feedBatchSeq ?? 0, through ?? 0)
+            }
+            scheduleSave()
+            if !feedBatch.isEmpty {
+                // Again shortly: what failed waits out a moment, and what
+                // arrived meanwhile goes with it.
+                feedFlush = Task {
+                    try? await Task.sleep(for: .seconds(failed.isEmpty ? 0.3 : 3))
+                    guard !Task.isCancelled else { return }
+                    feedFlush = nil
+                    drainFeed()
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    func refreshAgents() async -> Bool {
         do {
             async let a = api.listAll(ListQuery(kinds: [Kinds.agent], first: 200, orderBy: "createdAt:desc"))
             async let p = api.listAll(ListQuery(kinds: [Kinds.provider], first: 100))
             let (ap, pp) = try await (a, p)
-            guard !closed else { return }
-            agents = ap.records.map(Agent.init(record:))
+            guard !closed else { return true }
+            setAgents(ap.records)
             providers = Dictionary(pp.records.map { ($0.id, Provider(record: $0)) }) { x, _ in x }
+            return true
         } catch {
             _ = handle(error)
+            return false
         }
+    }
+
+    /// New agents: Siri's phrases that name an assistant learn them.
+    private func setAgents(_ records: [Record]) {
+        let changed = Set(records.map(\.id)) != Set(agents.map(\.id))
+        agents = records.map(Agent.init(record:))
+        if changed { ChatShortcuts.updateAppShortcutParameters() }
     }
 
     // MARK: Writes a chat makes
@@ -644,14 +806,20 @@ final class ChatStore {
     /// the server refuses.
     func rename(_ id: String, to subject: String) async throws {
         let text = subject.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let i = chats.firstIndex(where: { $0.id == id }) else { return }
-        let before = chats[i]
-        chats[i].properties["subject"] = .string(text)
+        guard !text.isEmpty else { return }
+        let inChats = chats.firstIndex(where: { $0.id == id })
+        let inAutomated = automated.firstIndex(where: { $0.id == id })
+        let before = inChats.map { chats[$0] } ?? inAutomated.map { automated[$0] }
+        if let i = inChats { chats[i].properties["subject"] = .string(text) }
+        if let i = inAutomated { automated[i].properties["subject"] = .string(text) }
         do {
             let record = try await api.patch(Kinds.thread, id, properties: ["subject": text])
             upsert(record)
         } catch {
-            if let j = chats.firstIndex(where: { $0.id == id }) { chats[j] = before }
+            if let before {
+                if let j = chats.firstIndex(where: { $0.id == id }) { chats[j] = before }
+                if let j = automated.firstIndex(where: { $0.id == id }) { automated[j] = before }
+            }
             _ = handle(error)
             throw error
         }
@@ -674,7 +842,7 @@ final class ChatStore {
                 agents: agents.map(\.record), providers: providers.values.map(\.record),
                 threads: chats, automated: automated, openings: openings,
                 interactions: interactions, requests: requests, seen: seen, notified: notified,
-                baselined: baselined, lastAgent: lastAgent, feedSeq: feedSeq, feedGeneration: feedGeneration)
+                baselined: baselined, lastAgent: lastAgent, feedSeq: appliedSeq, feedGeneration: feedGeneration)
             let cache = cache
             await Task.detached(priority: .utility) { await cache.save(state) }.value
         }
@@ -695,12 +863,24 @@ final class ChatStore {
     func cacheSize() -> Int { cache.size() }
 
     func clearSavedChats() async {
-        for thread in Array(rows.keys) where conversation(existing: thread)?.active != true {
+        for thread in Array(rows.keys) where conversation(existing: thread)?.ownsTranscript != true {
             rows[thread] = nil
             turns[thread] = nil
             meta[thread] = nil
         }
         await cache.clearTranscripts()
+        // What is on screen is read again rather than left empty.
+        for thread in Set(visible.values) { load(thread, force: true) }
+    }
+
+    // MARK: Cards
+
+    /// The questions and suggestions as last read, by id, so a card draws its
+    /// state at once when it scrolls back into view.
+    private(set) var cardRecords: [String: Record] = [:]
+
+    func remember(card record: Record) {
+        cardRecords[record.id] = record
     }
 
     // MARK: Background (iOS)

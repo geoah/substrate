@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 enum MarkdownCache {
     private static var blocks: [String: [MarkdownBlock]] = [:]
+    static var inlines: [String: AttributedString] = [:]
     private static var order: [String] = []
 
     static func parse(_ text: String) -> [MarkdownBlock] {
@@ -34,8 +35,18 @@ struct MarkdownView: View {
     }
 }
 
-/// Inline Markdown, with links limited to http, https and mailto.
+/// Inline Markdown, with links limited to http, https and mailto; memoized,
+/// since every visible paragraph asks again on each redraw.
+@MainActor
 func inline(_ text: String) -> AttributedString {
+    if let hit = MarkdownCache.inlines[text] { return hit }
+    let out = parseInline(text)
+    MarkdownCache.inlines[text] = out
+    if MarkdownCache.inlines.count > 2000 { MarkdownCache.inlines.removeAll(keepingCapacity: true) }
+    return out
+}
+
+private func parseInline(_ text: String) -> AttributedString {
     var out = (try? AttributedString(
         markdown: text,
         options: .init(allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace,

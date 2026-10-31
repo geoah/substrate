@@ -99,6 +99,16 @@ actor DiskCache {
         return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }
 
+    /// A transcript's size on disk, so a large one is decoded off the main actor.
+    nonisolated func transcriptSize(_ thread: String) -> Int? {
+        (try? transcriptURL(thread).resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
+
+    /// A chat was opened: its transcript is the last to be pruned.
+    func touch(_ thread: String) {
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: transcriptURL(thread).path)
+    }
+
     nonisolated private func transcriptURL(_ thread: String) -> URL {
         root.appending(path: "messages").appending(path: Self.hash(thread) + ".json")
     }
@@ -113,6 +123,9 @@ actor DiskCache {
 
     private func write(_ value: some Encodable, to url: URL) {
         guard !closed, let data = try? JSONEncoder().encode(value) else { return }
+        // An earlier session's late close may have removed the folder this
+        // session signed back in to.
+        Self.prepare(root)
         #if os(iOS)
         try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         #else
@@ -134,16 +147,17 @@ actor DiskCache {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
-    /// Drops transcripts not opened in `age`, then the oldest past `budget`.
+    /// Drops transcripts not opened or written in `age`, then the oldest past
+    /// `budget`. Opening a chat touches its file (`touch`).
     func prune(age: TimeInterval = 60 * 86400, budget: Int = 100 * 1024 * 1024) {
         let dir = root.appending(path: "messages")
-        let keys: [URLResourceKey] = [.contentAccessDateKey, .contentModificationDateKey, .fileSizeKey]
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
         let now = Date()
         var kept: [(URL, Date, Int)] = []
         for file in files {
             let values = try? file.resourceValues(forKeys: Set(keys))
-            let used = values?.contentAccessDate ?? values?.contentModificationDate ?? .distantPast
+            let used = values?.contentModificationDate ?? .distantPast
             if now.timeIntervalSince(used) > age {
                 try? FileManager.default.removeItem(at: file)
             } else {

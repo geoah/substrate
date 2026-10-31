@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// One turn of the transcript, by role.
-struct TurnView: View {
+/// One turn of the transcript, by role. Equatable, so a flush of the live
+/// turn redraws that turn and not every one above it.
+struct TurnView: View, Equatable {
     let turn: Turn
     let agent: Agent?
     /// The assistant turn the stream is writing.

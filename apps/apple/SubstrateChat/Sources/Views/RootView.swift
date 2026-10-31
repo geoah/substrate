@@ -41,6 +41,10 @@ struct ChatSplitView: View {
     @EnvironmentObject private var updates: Updater
     @Environment(ChatStore.self) private var store
     @Environment(\.scenePhase) private var phase
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #if os(macOS)
+    @Environment(\.controlActiveState) private var keyState
+    #endif
     @State private var scene = SceneModel()
     @SceneStorage("chat.thread") private var restored = ""
     @State private var columns = NavigationSplitViewVisibility.automatic
@@ -63,15 +67,23 @@ struct ChatSplitView: View {
             if !restored.isEmpty, scene.current == nil, store.thread(restored) != nil {
                 scene.open(store.conversation(thread: restored))
             }
-            take(model.pendingRoute)
+            take()
         }
-        .onChange(of: model.pendingRoute) { _, route in take(route) }
+        .onChange(of: model.pendingRoute) { _, _ in take() }
+        .onChange(of: scene.compactColumn) { _, column in
+            // Back to the list on an iPhone: nothing is selected, so the same
+            // row opens again when tapped.
+            if column == .sidebar, sizeClass == .compact { scene.current = nil }
+        }
         .onChange(of: scene.current?.threadID) { _, thread in restored = thread ?? "" }
         .onChange(of: phase) { _, phase in
             store.setActive(phase == .active)
             #if os(iOS)
+            // Asked for while the app is still in front, as iOS requires of a
+            // continued processing task: inactive comes before background.
+            if phase == .inactive { Background.leaving(store) }
             if phase == .background {
-                Background.leaving(store)
+                Background.schedule()
                 Notifier.badge(store.unreadCount)
             }
             #endif
@@ -84,9 +96,23 @@ struct ChatSplitView: View {
         #endif
     }
 
-    private func take(_ route: Route?) {
-        guard let route else { return }
-        model.pendingRoute = nil
+    /// One window takes a route: the key one on a Mac, else the first to
+    /// claim it.
+    private func take() {
+        guard model.pendingRoute != nil else { return }
+        #if os(macOS)
+        if keyState != .key {
+            Task {
+                try? await Task.sleep(for: .milliseconds(80))
+                if let route = model.claimRoute() { open(route) }
+            }
+            return
+        }
+        #endif
+        if let route = model.claimRoute() { open(route) }
+    }
+
+    private func open(_ route: Route) {
         switch route {
         case let .thread(id):
             scene.open(store.conversation(thread: id))

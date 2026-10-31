@@ -38,6 +38,19 @@ final class AppModel {
         begin(session)
     }
 
+    /// After the server refused the token: back to sign-in, keeping the saved
+    /// chats and choices, which the same repository signing in again reuses.
+    func signInAgain() {
+        guard let session else {
+            expired = false
+            return
+        }
+        end(forget: false)
+        Keychain.clear()
+        expired = false
+        Task.detached { try? await API(session).revoke(token: session.tokenID) }
+    }
+
     /// Forgets the session on this device at once, and revokes the token in
     /// the background, so it works with the server gone or the token refused.
     func signOut() {
@@ -71,6 +84,12 @@ final class AppModel {
 
     func route(_ route: Route) {
         pendingRoute = route
+    }
+
+    /// The pending route, for the one window that takes it.
+    func claimRoute() -> Route? {
+        defer { pendingRoute = nil }
+        return pendingRoute
     }
 
     static var tokenLabel: String {

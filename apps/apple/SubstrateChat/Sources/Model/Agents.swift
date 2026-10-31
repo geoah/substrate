@@ -228,14 +228,23 @@ func plainText(markdown: String) -> String {
     for raw in markdown.split(separator: "\n", omittingEmptySubsequences: true) {
         var line = raw.trimmingCharacters(in: .whitespaces)
         if line.hasPrefix("```") || line.hasPrefix("~~~") { continue }
-        if line.allSatisfy({ "|:- ".contains($0) }) { continue }
-        while let first = line.first, "#>".contains(first) { line = String(line.dropFirst()).trimmingCharacters(in: .whitespaces) }
-        for marker in ["- [ ] ", "- [x] ", "- [X] ", "- ", "* ", "+ "] where line.hasPrefix(marker) {
-            line = String(line.dropFirst(marker.count))
-            break
-        }
-        if line.hasPrefix("|") {
-            line = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: ", ")
+        // The server keeps `lastReply` on one line, so block markers arrive
+        // mid-line too: fences, table rules and pipes, heading hashes,
+        // bullets, quotes. They go before the inline parse, which would read
+        // a fence's backticks as code.
+        for (pattern, replacement) in [
+            (#"```[A-Za-z0-9_+-]*"#, " "),
+            (#"\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?"#, " "),
+            (#"^\s*\|\s*|\s*\|\s*$"#, ""),
+            (#"\s*\|\s*"#, ", "),
+            (#"(,\s*){2,}"#, ", "),
+            (#"(^|\s)#{1,6}\s"#, "$1"),
+            (#"(^|\s)[-*+]\s\[[ xX]\]\s"#, "$1"),
+            (#"(^|\s)[*+]\s"#, "$1"),
+            (#"^[-]\s"#, ""),
+            (#"(^|\s)>\s"#, "$1"),
+        ] {
+            line = line.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
         }
         let inline = (try? AttributedString(markdown: line, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             .map { String($0.characters) } ?? line

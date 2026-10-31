@@ -39,11 +39,15 @@ struct InteractionCard: View {
     }
 
     var body: some View {
+        let record = record ?? store.cardRecords[id]
         let state = record?["state"]?.string ?? "pending"
-        let pending = state == "pending"
+        // Until the record is read the card claims no state: a resolved one
+        // must not flash as waiting.
+        let pending = record != nil && state == "pending"
         VStack(alignment: .leading, spacing: 12) {
-            Label(pending ? "A few questions before it goes on" : (state == "answered" ? "You answered" : "You dismissed these"),
-                  systemImage: "questionmark.bubble")
+            Label(record == nil ? "Questions" : pending ? "A few questions before it goes on"
+                : (state == "answered" ? "You answered" : "You dismissed these"),
+                systemImage: "questionmark.bubble")
                 .font(.subheadline.weight(.semibold))
             if record == nil {
                 ProgressView().controlSize(.small)
@@ -80,7 +84,8 @@ struct InteractionCard: View {
             if let problem {
                 Text("That didn't go through: \(problem)").font(.footnote).foregroundStyle(.red)
             }
-            if pending, record != nil {
+            // Answering needs the version just read, never a cached one.
+            if pending, self.record != nil {
                 HStack {
                     Button {
                         resolve(answer: true)
@@ -100,7 +105,12 @@ struct InteractionCard: View {
     }
 
     private func load() async {
-        record = try? await store.api.get(Kinds.interaction, id)
+        do {
+            record = try await store.api.get(Kinds.interaction, id)
+            if let record { store.remember(card: record) }
+        } catch {
+            if !store.handle(error) { problem = explain(error, server: store.session.server) }
+        }
     }
 
     private func toggle(_ q: Question, _ value: String) {
@@ -147,17 +157,18 @@ struct ProposalCard: View {
     @State private var busy: String?
     @State private var problem: String?
 
-    private var op: String { request?["op"]?.string ?? "patch" }
-    private var decision: String { request?["decision"]?.string ?? "proposed" }
+    private var held: Record? { request ?? store.cardRecords[id] }
+    private var op: String { held?["op"]?.string ?? "patch" }
+    private var decision: String { held?["decision"]?.string ?? "proposed" }
 
     private var targetKind: String? {
-        request?["targetKind"]?.text ?? request?["target"]?.referencePath.map { path in
+        held?["targetKind"]?.text ?? held?["target"]?.referencePath.map { path in
             path.split(separator: "/").dropLast().joined(separator: "/")
         }
     }
 
-    private var targetID: String? { request?["targetId"]?.text ?? request?["target"]?.referenceID }
-    private var proposed: [String: JSONValue] { request?["diff"]?["properties"]?.object ?? [:] }
+    private var targetID: String? { held?["targetId"]?.text ?? held?["target"]?.referenceID }
+    private var proposed: [String: JSONValue] { held?["diff"]?["properties"]?.object ?? [:] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -172,10 +183,10 @@ struct ProposalCard: View {
                         .background((decision == "accepted" ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
                 }
             }
-            if let rationale = request?["rationale"]?.text {
+            if let rationale = held?["rationale"]?.text {
                 Text(rationale).font(.footnote).foregroundStyle(.secondary)
             }
-            if request == nil { ProgressView().controlSize(.small) }
+            if held == nil { ProgressView().controlSize(.small) }
             ForEach(proposed.keys.sorted(), id: \.self) { key in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -221,8 +232,15 @@ struct ProposalCard: View {
     }
 
     private func load() async {
-        request = try? await store.api.get(Kinds.request, id)
+        do {
+            request = try await store.api.get(Kinds.request, id)
+            if let request { store.remember(card: request) }
+        } catch {
+            if !store.handle(error) { problem = explain(error, server: store.session.server) }
+            return
+        }
         if op != "create", let kind = targetKind, let tid = targetID {
+            // The target is context: a card without it still decides.
             target = try? await store.api.get(kind, tid)
         }
     }

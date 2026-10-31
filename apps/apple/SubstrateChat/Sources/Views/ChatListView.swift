@@ -112,8 +112,8 @@ struct ChatListView: View {
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
+                // ⌘N is the File menu's.
                 Button("New Chat", systemImage: "square.and.pencil") { scene.open(store.newConversation()) }
-                    .keyboardShortcut("n")
             }
         }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
