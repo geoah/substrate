@@ -1,9 +1,9 @@
 /** An app's approval page (`/authorize/$request`, decision 0194). An app sent
  * the owner here through `GET /oauth/authorize`; the server parked its request
  * under the id in the path. The page shows who is asking, where the code goes,
- * the repository the token opens and each scope with the kinds it reaches
- * today, and the owner approves some of the scopes for one lifetime or denies
- * the lot.
+ * the repository the token opens and each scope with the kinds or the agents
+ * it reaches today (decision 0195), and the owner approves some of the scopes
+ * for one lifetime or denies the lot.
  *
  * Either answer carries the URL to go to (the app's redirect URI with the code
  * or with the refusal), and the page navigates there with
@@ -35,7 +35,10 @@ import {
   type AuthorizationKind,
   type AuthorizationRequest,
   type AuthorizationScope,
+  type SubstrateRecord,
 } from "@/lib/api/types"
+import { agentName, canChange, canSee, joinWords } from "@/lib/agent-chat"
+import { overAgents } from "@/lib/app-scopes"
 import { relativeTime, shortDateTime } from "@/lib/format"
 import { authorizeRoute } from "@/router"
 
@@ -196,6 +199,56 @@ function KindList({ kinds }: { kinds: AuthorizationKind[] }) {
   )
 }
 
+/** The agents an agents or decide scope matches today. Talking to an agent
+ * reaches whatever it may do, so each says what it can see and change in the
+ * chat surface's words. */
+function AgentList({
+  agents,
+  talk,
+}: {
+  agents: SubstrateRecord[]
+  talk: boolean
+}) {
+  if (agents.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Nothing yet: no agent in your repository matches.
+      </p>
+    )
+  }
+  return (
+    <ul className="flex w-full flex-col gap-2">
+      {agents.map((a) => (
+        <li key={a.id} className="flex flex-col gap-0.5">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="text-[13px]">{agentName(a.id)}</span>
+            <span className="min-w-0 font-mono text-xs [overflow-wrap:anywhere] text-muted-foreground">
+              {a.id}
+            </span>
+          </div>
+          {talk && (
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+              <dt className="text-muted-foreground">Can see</dt>
+              <dd>{canSee(a) ?? "Nothing"}</dd>
+              <dt className="text-muted-foreground">Can change</dt>
+              <dd>{canChange(a)}</dd>
+            </dl>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** An agents or decide row's heading: what the app may do, with the agents
+ * it matches by name. */
+function agentsHeading(scope: AuthorizationScope): string {
+  const names = joinWords(scope.agents.map((a) => agentName(a.id))) || "agents"
+  if (scope.verb === "agents") return `Talk to ${names}`
+  const verb = scope.agents.length === 1 ? "suggests" : "suggest"
+  return `Apply or dismiss changes ${names} ${verb}, with your authority`
+}
+
 function ScopeRow({
   scope,
   repository,
@@ -210,6 +263,7 @@ function ScopeRow({
   onChange: (checked: boolean) => void
 }) {
   const id = useId()
+  const agentsScope = overAgents(scope.verb)
   return (
     <li className="flex gap-3 px-3 py-3">
       <input
@@ -221,15 +275,43 @@ function ScopeRow({
         onChange={(e) => onChange(e.target.checked)}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <label htmlFor={id} className="cursor-pointer font-medium">
-          {scope.write ? "Read and write records of " : "Read records of "}
-          <span className="font-mono text-[13px] [overflow-wrap:anywhere]">
-            {scope.pattern}
-          </span>
-        </label>
+        {agentsScope ? (
+          <>
+            <label htmlFor={id} className="cursor-pointer font-medium">
+              {agentsHeading(scope)}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Agents matching{" "}
+              <span className="font-mono [overflow-wrap:anywhere] text-foreground">
+                {scope.pattern}
+              </span>
+            </p>
+          </>
+        ) : (
+          <label htmlFor={id} className="cursor-pointer font-medium">
+            {scope.write ? "Read and write records of " : "Read records of "}
+            <span className="font-mono text-[13px] [overflow-wrap:anywhere]">
+              {scope.pattern}
+            </span>
+          </label>
+        )}
         {scope.glob && (
           <p className="text-xs text-muted-foreground">
-            Also covers matching kinds you add later.
+            {agentsScope
+              ? "Also covers matching agents you add later."
+              : "Also covers matching kinds you add later."}
+          </p>
+        )}
+        {scope.verb === "agents" && (
+          <p className="text-xs text-muted-foreground">
+            A chat reaches whatever these agents may do. Its messages are the
+            app’s; the agents work with their own permissions.
+          </p>
+        )}
+        {scope.verb === "decide" && (
+          <p className="text-xs text-muted-foreground">
+            A change the app accepts is applied as if you accepted it, and your
+            history shows the decision as the app’s.
           </p>
         )}
         {scope.requested !== scope.scope && (
@@ -250,7 +332,11 @@ function ScopeRow({
           <p className="text-xs font-medium text-muted-foreground">
             Covers today
           </p>
-          <KindList kinds={scope.kinds} />
+          {agentsScope ? (
+            <AgentList agents={scope.agents} talk={scope.verb === "agents"} />
+          ) : (
+            <KindList kinds={scope.kinds} />
+          )}
         </div>
       </div>
     </li>
@@ -299,7 +385,9 @@ function Approval({
   // After an answer the page is on its way out; nothing may be sent twice.
   const settled = answer.isPending || answer.isSuccess || gone
   const pendingVerdict = answer.isPending ? answer.variables.verdict : undefined
-  const writes = request.scopes.some((s) => s.write)
+  // Talking to an agent writes the app's messages, and deciding writes the
+  // decision, both under the app's name.
+  const writes = request.scopes.some((s) => s.verb !== "read")
 
   function toggle(scope: string, checked: boolean) {
     setUnchecked((prev) => {
