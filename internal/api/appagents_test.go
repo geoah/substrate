@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -183,14 +184,25 @@ func TestAnAgentsScopeReadsTheRowsOfItsAgentsAlone(t *testing.T) {
 
 	// Messages and interactions narrow by thread, a bare id or a path; a
 	// thread the token cannot read is answered as missing.
-	for _, cond := range []string{`{"thread":{"eq":"tA"}}`, `{"thread":{"in":["` + kindThread + `/tA"]},"role":{"eq":"user"}}`, ``} {
+	for _, cond := range []string{`{"thread":{"eq":"tA"}}`, `{"thread":{"in":["` + kindThread + `/tA"]},"role":{"eq":"user"}}`} {
 		if got := recordIDs(t, e.do(http.MethodGet, listOf(kindMessage, cond), app, nil, "")); got != "mA" {
 			t.Fatalf("messages under %s = %q, want the matching thread's alone", cond, got)
 		}
 	}
 	wantStatus(t, e.do(http.MethodGet, listOf(kindMessage, `{"thread":{"in":["tA","tB"]}}`), app, nil, ""), http.StatusNotFound)
-	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindInteraction, `{"state":{"eq":"pending"}}`), app, nil, "")); got != "iA" {
+	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindInteraction, `{"state":{"eq":"pending"},"thread":{"eq":"tA"}}`), app, nil, "")); got != "iA" {
 		t.Fatalf("pending interactions = %q, want the matching thread's alone", got)
+	}
+	// A list that names no thread is refused before the engine pages: its
+	// cursor would carry the last scanned row, another agent's included.
+	for _, kind := range []string{kindMessage, kindInteraction} {
+		wantStatus(t, e.do(http.MethodGet, listOf(kind, ``), app, nil, ""), http.StatusForbidden)
+		wantStatus(t, e.do(http.MethodGet, listOf(kind, `{"state":{"eq":"pending"}}`), app, nil, ""), http.StatusForbidden)
+	}
+	// A read scope that reaches the whole kind lists it without a thread.
+	whole := e.grant("agents:~/chat/assistant read:"+kindMessage, []string{"agents:" + talkedAgent, "read:" + kindMessage})
+	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindMessage, ``), whole, nil, "")); got != "mA,mB" && got != "mB,mA" {
+		t.Fatalf("messages under a whole-kind read = %q, want every one", got)
 	}
 	wantStatus(t, e.do(http.MethodGet, recordPath(kindMessage, "mB"), app, nil, ""), http.StatusNotFound)
 
@@ -310,9 +322,10 @@ func TestADecideScopeDecidesWhatItsAgentsPropose(t *testing.T) {
 
 	wantStatus(t, e.do(http.MethodGet, recordPath(kindRequest, "rA"), app, nil, ""), http.StatusOK)
 	wantStatus(t, e.do(http.MethodGet, recordPath(kindRequest, "rB"), app, nil, ""), http.StatusNotFound)
-	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindRequest, `{"decision":{"eq":"proposed"}}`), app, nil, "")); got != "rA" {
+	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindRequest, `{"decision":{"eq":"proposed"},"thread":{"eq":"tA"}}`), app, nil, "")); got != "rA" {
 		t.Fatalf("proposed requests = %q, want the matching agent's alone", got)
 	}
+	wantStatus(t, e.do(http.MethodGet, listOf(kindRequest, `{"decision":{"eq":"proposed"}}`), app, nil, ""), http.StatusForbidden)
 
 	body := `{"properties":{"decision":"accepted","adjustedDiff":{"properties":{"name":"x"}}},"annotations":{"` + appActor + `/note":"ok"},"ifVersion":1}`
 	wantStatus(t, e.do(http.MethodPatch, recordPath(kindRequest, "rA"), app, []byte(body), "application/json"), http.StatusOK)
@@ -422,5 +435,73 @@ func TestAnAppTailsTheChangeFeedHeldToWhatItReads(t *testing.T) {
 				t.Fatalf("affected = %v", a)
 			}
 		}
+	}
+}
+
+// A watch an app's token opened ends once the token is revoked: the next
+// row it would carry is a terminal auth frame instead, never the row.
+func TestARevokedAppTokensWatchEndsBeforeItsNextRow(t *testing.T) {
+	e, _ := newAgentEnv(t)
+	app := e.grant("agents:~/chat/*", []string{"agents:" + fakeRepository + "/chat/*"})
+	ds := e.svc.datasets[fakeRepository]
+	srv := httptest.NewServer(e.h)
+	defer srv.Close()
+	br, stop := startWatch(t, srv, "/api/v1/changes?watch=1", app)
+	defer stop()
+	if line := readLine(t, br); line["bookmark"] == nil {
+		t.Fatalf("the first line = %v, want the bookmark", line)
+	}
+
+	form := url.Values{"token": {app}}
+	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
+	ds.commit(substrate.Change{TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut, Kind: kindThread, RecordID: "tA"})
+
+	line := readLine(t, br)
+	if line["recordId"] != nil {
+		t.Fatalf("a revoked token's watch carried a row: %v", line)
+	}
+	problem, _ := line["error"].(map[string]any)
+	if problem["code"] != codeAuth {
+		t.Fatalf("the line after the revoke = %v, want the terminal auth frame", line)
+	}
+}
+
+func TestATokenLeaseEndsAtItsExpiryAndOnARefusedRead(t *testing.T) {
+	now := time.Unix(1000, 0)
+	clock := func() time.Time { return now }
+	expires := now.Add(time.Minute)
+	reads := 0
+	refuse := false
+	lease := &tokenLease{expires: &expires, now: clock, checked: now, recheck: func(context.Context) error {
+		reads++
+		if refuse {
+			return substrate.ErrAuth
+		}
+		return nil
+	}}
+	ctx := context.Background()
+
+	if err := lease.alive(ctx, 2*time.Second); err != nil || reads != 0 {
+		t.Fatalf("a fresh lease = %v after %d reads, want standing without a read", err, reads)
+	}
+	now = now.Add(3 * time.Second)
+	if err := lease.alive(ctx, 2*time.Second); err != nil || reads != 1 {
+		t.Fatalf("a stale lease = %v after %d reads, want one read", err, reads)
+	}
+	if err := lease.alive(ctx, 0); err != nil || reads != 2 {
+		t.Fatalf("every=0 = %v after %d reads, want a read every call", err, reads)
+	}
+	refuse = true
+	if err := lease.alive(ctx, 0); !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("a refused read = %v, want ErrAuth", err)
+	}
+	refuse = false
+	now = expires
+	if err := lease.alive(ctx, time.Hour); !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("at its expiry the lease = %v, want ErrAuth without waiting for a read", err)
+	}
+	var none *tokenLease
+	if err := none.alive(ctx, 0); err != nil {
+		t.Fatalf("a full-access token's absent lease = %v", err)
 	}
 }

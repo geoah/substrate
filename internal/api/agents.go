@@ -164,6 +164,9 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 				started, draining = true, h.draining
 				setStreamHeaders(w)
 				w.WriteHeader(http.StatusOK)
+			} else if leaseEnded(ctx, enc, flusher, frame) {
+				// The turn runs on; the token that watched it no longer stands.
+				return true, nil
 			}
 			frame()
 			if err := enc.Encode(ev); err != nil {
@@ -194,6 +197,9 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 			if !started {
 				continue
 			}
+			if leaseEnded(ctx, enc, flusher, frame) {
+				return true, nil
+			}
 			frame()
 			if _, err := w.Write([]byte("{}\n")); err != nil {
 				return true, nil
@@ -209,4 +215,19 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 			return true, nil
 		}
 	}
+}
+
+// leaseEnded ends an app token's agent stream once the token no longer
+// stands (tokenlease.go), with an error event a client reads as the sign-in
+// ending. The record is read at most every leaseAgentEvery.
+func leaseEnded(ctx context.Context, enc *json.Encoder, flusher http.Flusher, frame func()) bool {
+	err := leaseFrom(ctx).alive(ctx, leaseAgentEvery)
+	if err == nil {
+		return false
+	}
+	frame()
+	if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Error: err.Error()}) == nil {
+		flusher.Flush()
+	}
+	return true
 }

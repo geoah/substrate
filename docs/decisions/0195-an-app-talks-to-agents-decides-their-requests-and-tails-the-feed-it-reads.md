@@ -87,9 +87,14 @@ The rules this binds:
 - Bad, because the feed's seqs and its bookmark count the whole
   repository's writes, which 0194 kept off an app's lists, and every row
   names the actor that wrote it.
-- Bad, because a list of messages, interactions or requests that names no
-  thread is checked row by row: a page may hold fewer rows than it asked
-  for, and it cannot be counted.
+- Bad, because a list of messages, interactions or requests must name its
+  threads (unless a read scope reaches the whole kind): filtering such a
+  list after the engine paged it would let its cursor, which carries the
+  last scanned row's sort values, read past the scope.
+- Bad, because a stream outlives the token check at its start, so an app's
+  watch and agent streams read the token again as they run (before each
+  batch and at each heartbeat; on an agent stream at most every two
+  seconds), and end on a revoked or expired token.
 
 ### Confirmation
 

@@ -221,6 +221,13 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			for i := range changes {
 				rows[i].Change = changes[i]
 			}
+			// An app's token is read again before its rows leave: one
+			// revoked or past its time since the stream opened gets none.
+			if len(rows) > 0 {
+				if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+					return err
+				}
+			}
 			if annotate {
 				if rows, err = annotateChanges(ctx, ds, changes); err != nil {
 					return err
@@ -271,6 +278,13 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 				return
 			}
 		case <-ticker.C:
+			// An idle stream is read again too, so a revoked token's stream
+			// ends within a heartbeat rather than at its next row.
+			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+				frame()
+				writeWatchError(enc, flusher, err)
+				return
+			}
 			frame()
 			if _, err := w.Write([]byte("{}\n")); err != nil {
 				return

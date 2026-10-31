@@ -239,11 +239,12 @@ A list of one of these kinds names that kind alone in `filter.kinds`. A
 thread list is narrowed to the matching agents' threads, and an `agent`
 condition must name only those. A message, interaction or request list is
 narrowed by `filter.properties.thread` (`eq` or `in`, bare thread ids or
-paths); naming a thread the token cannot read answers `404`. Without a
-thread condition every row is checked as it is read, so a page may hold
-fewer rows than `first` and continue by its cursor, and the list cannot
-carry `count`. Any other property in a patch, a label, a create or a
-delete answers `403`. A search never reaches these kinds.
+paths), and it must name its threads: without a thread condition it
+answers `403`, unless a `read:` scope reaches the whole kind. The engine
+then filters before it pages, so no page and no cursor passes over a row
+the token cannot read. Naming a thread the token cannot read answers `404`.
+Any other property in a patch, a label, a create or a delete answers `403`.
+A search never reaches these kinds.
 
 ### Follow changes
 
@@ -261,6 +262,14 @@ token reads, through its read and write scopes and the rows `agents:` and
 An app's lists carry no head, so it opens the watch first, keeps the
 bookmark, then reads its lists: every write after the bookmark arrives on
 the watch.
+
+A stream outlives the check at its start, so an app's token is read again
+while it runs: before every batch of rows and at every heartbeat on the
+watch, and at least every two seconds on an agent's stream (`chat` and
+`events`). Once the token is revoked or past its approved time, the watch
+ends with a terminal error frame whose code is `auth`, and an agent's
+stream with an `error` event, before anything more is written. The turn
+itself runs on; the app signs in again to follow it.
 
 ### Revoke
 

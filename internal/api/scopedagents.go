@@ -342,7 +342,23 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 		props["agent"] = substrate.Cond{In: in}
 	case kindMessage, kindInteraction, kindRequest:
 		narrowed = "thread"
-		if c, named := props["thread"]; named {
+		c, named := props["thread"]
+		if !named {
+			// Unnamed threads would be filtered here, after the engine paged
+			// and wrote its cursor, and the cursor carries the last scanned
+			// row's sort values: another agent's message read through a
+			// cursor. The threads are named, so the engine filters before it
+			// pages, unless a read scope reaches the whole kind.
+			whole, err := s.reads(ctx, kind)
+			if err != nil {
+				return nil, err
+			}
+			if !whole {
+				return nil, fmt.Errorf("%w: an app's token lists %s under filter.properties.thread (eq or in), naming the threads it reads",
+					substrate.ErrForbidden, kind)
+			}
+			exact = true
+		} else {
 			threads, err := condRecordIDs("thread", c, kindThread)
 			if err != nil {
 				return nil, err
