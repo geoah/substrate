@@ -548,26 +548,6 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(SyncProgress(step: "Reading reminders").detail, "Reading reminders")
     }
 
-    /// A Health run's measure walks every chunk's reads and then its
-    /// receipts without ever stepping back, so the bar iOS judges a stall by
-    /// keeps moving while the phone waits on the server.
-    func testAHealthRunsMeasureOnlyRisesThroughItsWaits() {
-        let days = 17
-        var last = -1.0
-        for before in stride(from: 0, to: days, by: SyncEngine.chunk) {
-            let width = min(SyncEngine.chunk, days - before)
-            let reads = (0 ..< width).map { Double($0) / Double(width) / 2 }
-            let receipts = stride(from: 0.0, through: 1.0, by: 0.25).map { 0.5 + $0 / 2 }
-            for part in reads + receipts {
-                let now = SyncEngine.healthOverall(before: before, width: width, part: part, days: days)
-                XCTAssertGreaterThanOrEqual(now, last, "chunk at \(before), part \(part)")
-                last = now
-            }
-        }
-        XCTAssertEqual(last, 1)
-        XCTAssertEqual(SyncEngine.healthOverall(before: 0, width: 0, part: 1, days: 0), 1)
-    }
-
     /// Health with history never delivered is behind, whatever its last run
     /// said, and says so before the days the server is still filing.
     func testHealthWithHistoryLeftBehindIsNotUpToDate() {
@@ -577,6 +557,44 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 4, unsent: 0).badge, "Processing")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: true, queued: false, status: ok, waiting: 0, unsent: 2711).badge, "Syncing")
         XCTAssertEqual(SourceOverview.of(enabled: true, access: "Asked", running: false, queued: false, status: ok, waiting: 0, unsent: 0).badge, "Up to date")
+    }
+
+    /// A long Health run shows one calendar month at a time: the month at
+    /// the position, its days behind it, and a bar across that month alone,
+    /// which a half day read or filed moves, where one across years stood
+    /// still long enough for iOS to end the task.
+    func testAHealthRunShowsOneMonthAtATime() {
+        let days = ["2019-02-27", "2019-02-28", "2019-03-01", "2019-03-02", "2019-03-03", "2019-03-04", "2019-04-01"]
+        let start = SyncEngine.monthProgress(position: 0, days: days)
+        XCTAssertEqual(start.month, "February 2019")
+        XCTAssertEqual(start.total, 2)
+        XCTAssertEqual(start.bar, 0)
+        let march = SyncEngine.monthProgress(position: 3.5, days: days)
+        XCTAssertEqual(march.month, "March 2019")
+        XCTAssertEqual(march.done, 1)
+        XCTAssertEqual(march.total, 4)
+        XCTAssertEqual(march.bar, 0.375, accuracy: 1e-9)
+        XCTAssertEqual(SyncEngine.monthProgress(position: 4, days: days).bar - march.bar, 0.125, accuracy: 1e-9)
+        let end = SyncEngine.monthProgress(position: 7, days: days)
+        XCTAssertEqual(end.month, "April 2019")
+        XCTAssertEqual(end.done, 1)
+        XCTAssertEqual(end.bar, 1)
+        XCTAssertEqual(SyncProgress(step: "March 2019", done: 1, total: 4, bar: 0.375).detail, "March 2019 · 1 of 4")
+        XCTAssertEqual(SyncProgress(step: "March 2019", done: 1, total: 4, bar: 0.375).fraction, 0.375)
+    }
+
+    /// The system's bar for a continued sync: the steps before a run fill
+    /// only its first two percent, even when one completes, and a run counts
+    /// its own growing share; nothing reaches the whole before the end.
+    func testAContinuedBarGivesTheStepsBeforeARunOnlyItsStart() {
+        func at(_ step: Double, _ run: Double? = nil) -> Int64 {
+            ContinuedSync.units(for: .init(title: "Syncing Health", subtitle: "", step: step, run: run))
+        }
+        XCTAssertEqual(at(0), 0)
+        XCTAssertEqual(at(1), 19)
+        XCTAssertEqual(at(0.4, 0), 20)
+        XCTAssertGreaterThan(at(0, 0.001), at(1))
+        XCTAssertEqual(at(0, 1), 998)
     }
 
     func testTheTimelineFoldsEachRunsLinesIntoIt() {

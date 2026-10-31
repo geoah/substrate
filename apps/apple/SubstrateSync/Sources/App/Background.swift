@@ -124,15 +124,21 @@ final class ContinuedSync {
     struct Shown: Equatable {
         var title: String
         var subtitle: String
-        var fraction: Double
+        /// The running step's share done.
+        var step: Double
+        /// The whole run's share done, where a source counts one that only
+        /// grows.
+        var run: Double?
     }
 
     /// The permitted identifier is this followed by `*`. Every sync takes a
     /// new one: registering an identifier a second time kills the app.
-    static let prefix = "dev.reamde.substrate.sync.continued."
-    /// The bar's resolution, fine enough that one receipt in a run of years
-    /// still moves it: iOS judges a stall by the count, not by the work.
-    private static let units: Int64 = 1_000_000
+    nonisolated static let prefix = "dev.reamde.substrate.sync.continued."
+    /// The bar's resolution: a share of a run of years still moves it.
+    nonisolated private static let units: Int64 = 1000
+    /// The start of the bar the steps before a run counts (receipts of
+    /// earlier days, a scan) may fill.
+    nonisolated private static let preamble: Int64 = 20
 
     private var task: BGContinuedProcessingTask?
     private var shown: Shown
@@ -190,19 +196,33 @@ final class ContinuedSync {
         show(shown)
     }
 
-    /// Tasks whose progress does not move are expired as stalled, so every
-    /// step the engine reports is passed on.
+    /// iOS ends a continued task as stalled unless its bar climbs past its
+    /// highest point within the first thirty seconds, and counts nothing
+    /// after a bar that reached the whole: so the bar only ever rises, never
+    /// reaches the whole before the end, gives the steps before a run only
+    /// its first `preamble` units (each of them completes, and the next
+    /// starts over), and counts a run by the units it reports, which only
+    /// grow, never by a step that starts over each month.
     func show(_ shown: Shown) {
         self.shown = shown
         guard let task else { return }
         if task.title != shown.title || task.subtitle != shown.subtitle {
             task.updateTitle(shown.title, subtitle: shown.subtitle)
         }
-        let done = Int64((min(1, max(0, shown.fraction)) * Double(Self.units)).rounded())
+        let done = max(task.progress.completedUnitCount, Self.units(for: shown))
         if done != task.progress.completedUnitCount {
             task.progress.completedUnitCount = done
             moved = Date()
         }
+    }
+
+    /// Where `shown` puts the bar, before it is held to only rising.
+    nonisolated static func units(for shown: Shown) -> Int64 {
+        func clamped(_ x: Double) -> Double { min(1, max(0, x)) }
+        if let run = shown.run {
+            return preamble + Int64((clamped(run) * Double(units - preamble - 2)).rounded(.down))
+        }
+        return Int64((clamped(shown.step) * Double(preamble - 1)).rounded(.down))
     }
 
     func finish(success: Bool) {
@@ -237,6 +257,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // A visit relaunches the app in the background; its report reaches
         // the monitor only once the delegate is set again.
         PlaceMonitor.shared.start()
+        #if DEBUG
+        ContinuedProbe.startIfAsked()
+        #endif
         return true
     }
 }

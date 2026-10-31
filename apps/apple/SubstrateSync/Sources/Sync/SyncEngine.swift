@@ -119,6 +119,9 @@ enum SyncError: LocalizedError {
     case emptyScan(String)
     case unreadable(String)
     case signedOut
+    /// Health is encrypted while the phone is locked, and every read of it
+    /// fails until it is unlocked.
+    case locked
 
     var errorDescription: String? {
         switch self {
@@ -128,6 +131,7 @@ enum SyncError: LocalizedError {
             "The device returned no \(what), though earlier syncs pushed some. Nothing was deleted; sync again once they are back."
         case let .unreadable(what): "The device could not read your \(what) just now. Nothing was deleted; sync again in a moment."
         case .signedOut: "Your sign-in is no longer valid. Sign in again."
+        case .locked: "Health can't be read while the phone is locked. Unlock it and sync again to carry on."
         }
     }
 }
@@ -170,6 +174,11 @@ actor SyncEngine {
     static let trigger = "applehealth-webhook"
     /// Days a Health run sends and confirms together.
     static let chunk = 7
+    /// Days a Health run may have delivered and not yet seen filed. Waiting
+    /// for each chunk stood the progress still while the server filed, long
+    /// enough for iOS to end a continued task; never waiting filled the
+    /// server's spool.
+    static let ahead = 14
 
     /// The newest run, which waits for the one before it: chaining rather
     /// than polling, so a finished run never leaves a waiter spinning on the
@@ -227,19 +236,19 @@ actor SyncEngine {
         onSignedOut = f
     }
 
-    private func progress(_ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0, overall: Double? = nil) async {
-        if let onProgress { await onProgress(source, step.map { SyncProgress(step: $0, done: done, total: total, overall: overall) }) }
+    private func progress(
+        _ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0, bar: Double? = nil, run: (done: Int, total: Int)? = nil
+    ) async {
+        if let onProgress {
+            await onProgress(source, step.map {
+                SyncProgress(step: $0, done: done, total: total, bar: bar, runDone: run?.done, runTotal: run?.total)
+            })
+        }
     }
 
-    /// How far a Health run over `days` has got, with each day half read and
-    /// sent and half filed by the server: `before` days are done, and the
-    /// chunk of `width` after them has got `part` of the way, where reading
-    /// it is the first half and the receipts the second. It only rises, and
-    /// it moves while the phone waits on the server.
-    static func healthOverall(before: Int, width: Int, part: Double, days: Int) -> Double {
-        guard days > 0 else { return 1 }
-        return min(1, (Double(before) + Double(width) * min(1, max(0, part))) / Double(days))
-    }
+    /// Whether Health can be read: it is encrypted while the phone is locked.
+    @MainActor static var healthReadable: Bool { UIApplication.shared.isProtectedDataAvailable }
+
 
     private func log(_ source: Source?, _ message: String, _ level: ActivityEntry.Level = .info) {
         Activity.shared.log(source, message, level: level)
@@ -335,6 +344,9 @@ actor SyncEngine {
             } catch where isCancellation(error) {
                 status.lastError = budget == .full ? "Stopped before it finished. Sync again to carry on." : "iOS ended the background time before it finished; the next sync carries on."
                 status.stopped = true
+            } catch SyncError.locked {
+                status.lastError = SyncError.locked.localizedDescription
+                status.stopped = true
             } catch where isSignedOut(error) {
                 status.stopped = nil
                 status.lastError = SyncError.signedOut.localizedDescription
@@ -359,6 +371,116 @@ actor SyncEngine {
                 return
             }
         }
+    }
+
+    /// A Health run's days in flight: delivered, read in part, filed.
+    struct HealthRun {
+        let names: [String]
+        /// Delivered and not yet settled, oldest first.
+        var open: [(day: String, fires: [String])] = []
+        var filed = Set<String>()
+        /// Read in part: filed or not, never counted sent.
+        var partial = Set<String>()
+        var read = 0
+        var settled = 0
+        var sent = 0
+        var refused = 0
+        var firstRefusal: (day: String, reason: String)?
+
+        /// Each day counts half when read and sent and half when settled, so
+        /// the position moves while the phone waits on the server.
+        var position: Double { Double(read + settled) / 2 }
+    }
+
+    private func showHealth(_ run: HealthRun) async {
+        let m = Self.monthProgress(position: run.position, days: run.names)
+        await progress(.health, m.month, m.done, m.total, bar: m.bar, run: (run.read + run.settled, 2 * run.names.count))
+    }
+
+    /// Reads the receipts of the oldest open days, in the order the server
+    /// files them, and settles every day they decide; at `below` days open
+    /// or more it also reads the trigger's refusals, and waits while the
+    /// server files. False when nothing settled for `patience` seconds.
+    private func settle(
+        _ run: inout HealthRun, _ state: inout LocalState, _ client: Client, below: Int, patience: TimeInterval
+    ) async throws -> Bool {
+        var lastMove = Date()
+        while true {
+            try Task.checkCancellation()
+            outer: for entry in run.open {
+                for fire in entry.fires where !run.filed.contains(fire) {
+                    // A receipt is a small read: one that takes longer is a
+                    // server busy filing, asked again on the next pass.
+                    guard try await client.get(Self.healthExportKind, fire, retries: 0, timeout: 10) != nil else { break outer }
+                    run.filed.insert(fire)
+                }
+            }
+            var refusals: [String: String] = [:]
+            let unfiled = Set(run.open.flatMap { $0.fires }).subtracting(run.filed)
+            if run.open.count >= below, !unfiled.isEmpty {
+                refusals = Self.refusals(try await client.parked(trigger: Self.trigger, timeout: 15), among: unfiled)
+            }
+            var moved = false
+            var remaining: [(day: String, fires: [String])] = []
+            for entry in run.open {
+                if let reason = entry.fires.lazy.compactMap({ refusals[$0] }).first {
+                    state.healthPending[entry.day] = nil
+                    log(.health, "\(entry.day) was refused by the server and will be sent again: \(reason)", .error)
+                    if run.firstRefusal == nil { run.firstRefusal = (entry.day, reason) }
+                    run.refused += 1
+                } else if entry.fires.allSatisfy(run.filed.contains) {
+                    state.healthPending[entry.day] = nil
+                    if !run.partial.contains(entry.day) {
+                        state.healthDays.insert(entry.day)
+                        state.healthQueue.remove(entry.day)
+                        run.sent += 1
+                    }
+                } else {
+                    remaining.append(entry)
+                    continue
+                }
+                run.settled += 1
+                moved = true
+            }
+            run.open = remaining
+            if moved {
+                lastMove = Date()
+                commit(&state)
+                await showHealth(run)
+                if let onChange { await onChange(state) }
+            }
+            if run.open.count < below { return true }
+            if Date().timeIntervalSince(lastMove) > patience { return false }
+            try await Task.sleep(for: .seconds(2))
+        }
+    }
+
+    /// Where a Health run stands by calendar month: `position` over `days`
+    /// (sorted, `yyyy-MM-dd`) gives the month at it, the days of that month
+    /// behind it, the month's days in the run, and how far across the month
+    /// it is. A bar across one month moves a day at a time, where one across
+    /// years would stand still for minutes.
+    static func monthProgress(position: Double, days: [String]) -> (month: String, done: Int, total: Int, bar: Double) {
+        guard !days.isEmpty else { return ("", 0, 0, 1) }
+        let p = min(max(position, 0), Double(days.count))
+        let at = min(Int(p), days.count - 1)
+        let key = days[at].prefix(7)
+        let first = days[...at].lastIndex { $0.prefix(7) != key }.map { $0 + 1 } ?? 0
+        let last = days[at...].firstIndex { $0.prefix(7) != key } ?? days.count
+        let total = last - first
+        let behind = p - Double(first)
+        return (monthTitle(String(key)), min(total, Int(behind)), total, min(1, behind / Double(total)))
+    }
+
+    /// "2019-03" as "March 2019".
+    static func monthTitle(_ key: String) -> String {
+        let parse = DateFormatter()
+        parse.locale = Locale(identifier: "en_US_POSIX")
+        parse.timeZone = TimeZone(identifier: "UTC")
+        parse.dateFormat = "yyyy-MM"
+        guard let date = parse.date(from: key) else { return key }
+        parse.dateFormat = "MMMM yyyy"
+        return parse.string(from: date)
     }
 
     /// What became of one run's deliveries, by day.
@@ -397,10 +519,7 @@ actor SyncEngine {
 
     /// Waits for the provider to file or park every delivery of a chunk, up
     /// to the budget's deadline, and says what became of each day.
-    private func confirm(
-        _ fires: [String: [String]], _ client: Client, deadline seconds: TimeInterval, label: String,
-        overall: (@Sendable (Double) -> Double)? = nil
-    ) async throws -> Outcome {
+    private func confirm(_ fires: [String: [String]], _ client: Client, deadline seconds: TimeInterval, label: String) async throws -> Outcome {
         let all = Set(fires.values.joined())
         var filed = Set<String>()
         var parked: [String: String] = [:]
@@ -410,9 +529,7 @@ actor SyncEngine {
         while true {
             try Task.checkCancellation()
             let open = all.subtracting(filed).subtracting(parked.keys)
-            let settled = all.isEmpty ? 1 : Double(all.count - open.count) / Double(all.count)
-            await progress(.health, "Waiting for the server to file \(label)", all.count - open.count, all.count,
-                           overall: overall?(0.5 + settled / 2))
+            await progress(.health, "Waiting for the server to file \(label)", all.count - open.count, all.count)
             // The deadline holds per request, so a server that hangs on
             // each read does not stretch one pass over every delivery.
             for fire in open {
@@ -1023,6 +1140,7 @@ actor SyncEngine {
                         await self.progress(.health, "Reading what the phone holds", done, total)
                     }
                 } catch where !isCancellation(error) {
+                    if await !Self.healthReadable { throw SyncError.locked }
                     throw ContextError(context: "Reading what the phone holds", underlying: error)
                 }
             }
@@ -1035,112 +1153,93 @@ actor SyncEngine {
         log(.health, "Sending \(days.count) days, \(Formats.day(days.first!, in: zone)) to \(Formats.day(days.last!, in: zone)) (history: \(history.title))")
 
         var posts = 0
-        var sent = 0
         var empty = 0
-        var refused = 0
-        var firstRefusal: (day: String, reason: String)?
-        var waiting = 0
         var skippedDays = 0
-        /// Days read in part this run: filed or not, never counted sent.
-        var partial = Set<String>()
-        for (c, chunk) in stride(from: 0, to: days.count, by: Self.chunk).map({ Array(days[$0 ..< min($0 + Self.chunk, days.count)]) }).enumerated() {
+        var run = HealthRun(names: days.map { Formats.day($0, in: zone) })
+        var stalled = false
+        for (i, day) in days.enumerated() {
             try Task.checkCancellation()
-            // Each day's fire ids, settled after the chunk: the door's 202 is
-            // "stored", and only the provider's receipt is "filed".
-            var fires: [String: [String]] = [:]
-            for (i, day) in chunk.enumerated() {
+            let name = run.names[i]
+            await showHealth(run)
+            let span = day ..< calendar.date(byAdding: .day, value: 1, to: day)!
+            var made: [String] = []
+            var rows = 0
+            var skipped: [String] = []
+            for grouping in Grouping.allCases {
+                let delivery = grouping == .minutes
+                    ? await reader.minutes(span, zone: zone)
+                    : await reader.seconds(span, zone: zone)
+                // The reads take seconds and do not stop for a Stop.
                 try Task.checkCancellation()
-                let name = Formats.day(day, in: zone)
-                await progress(.health, "Reading and sending \(name)", c * Self.chunk + i, days.count,
-                               overall: Self.healthOverall(before: c * Self.chunk, width: chunk.count,
-                                                           part: Double(i) / Double(chunk.count) / 2, days: days.count))
-                let span = day ..< calendar.date(byAdding: .day, value: 1, to: day)!
-                var made: [String] = []
-                var rows = 0
-                var skipped: [String] = []
-                for grouping in Grouping.allCases {
-                    let delivery = grouping == .minutes
-                        ? await reader.minutes(span, zone: zone)
-                        : await reader.seconds(span, zone: zone)
-                    // The reads take seconds and do not stop for a Stop.
-                    try Task.checkCancellation()
-                    skipped += delivery.skipped
-                    rows += delivery.metrics.map(\.rows.count).reduce(0, +) + delivery.workouts.count
-                    let headers = HealthDelivery.headers(
-                        grouping: grouping, key: key, account: state.healthAccount,
-                        automationID: state.automation(grouping)!, sessionID: sessionID)
-                    // One at a time: the door takes eight in flight across
-                    // every sender, and a day's order is the order its rows
-                    // replace.
-                    for body in delivery.bodies() {
-                        do {
-                            made.append(try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers))
-                        } catch {
-                            throw ContextError(context: "Sending \(name) (\(grouping.rawValue))", underlying: error)
-                        }
-                        posts += 1
+                // A phone locked mid-run fails every read of every day
+                // after it: the run stops before sending a day it could
+                // not read, rather than queue the rest of the history.
+                if !delivery.skipped.isEmpty, await !Self.healthReadable { throw SyncError.locked }
+                skipped += delivery.skipped
+                rows += delivery.metrics.map(\.rows.count).reduce(0, +) + delivery.workouts.count
+                let headers = HealthDelivery.headers(
+                    grouping: grouping, key: key, account: state.healthAccount,
+                    automationID: state.automation(grouping)!, sessionID: sessionID)
+                // One at a time: the door takes eight in flight across
+                // every sender, and a day's order is the order its rows
+                // replace.
+                for body in delivery.bodies() {
+                    do {
+                        made.append(try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers))
+                    } catch {
+                        throw ContextError(context: "Sending \(name) (\(grouping.rawValue))", underlying: error)
                     }
+                    posts += 1
                 }
-                for line in skipped {
-                    log(.health, "\(name): could not read \(line)", .warning)
-                }
-                // A day read again is not sent until it is filed again, so a
-                // rescan that fails can never leave an older success standing.
-                state.healthDays.remove(name)
-                state.healthPending[name] = nil
-                if made.isEmpty, skipped.isEmpty {
-                    // Nothing on the phone for the day: nothing to retry,
-                    // and nothing for Coverage to count as unsent.
-                    state.healthQueue.remove(name)
-                    await HealthScan.shared.forget(name)
-                    empty += 1
+            }
+            for line in skipped {
+                log(.health, "\(name): could not read \(line)", .warning)
+            }
+            // A day read again is not sent until it is filed again, so a
+            // rescan that fails can never leave an older success standing.
+            state.healthDays.remove(name)
+            state.healthPending[name] = nil
+            run.read += 1
+            if made.isEmpty, skipped.isEmpty {
+                // Nothing on the phone for the day: nothing to retry, and
+                // nothing for Coverage to count as unsent.
+                state.healthQueue.remove(name)
+                await HealthScan.shared.forget(name)
+                empty += 1
+                run.settled += 1
+            } else {
+                state.healthQueue.insert(name)
+                if skipped.isEmpty {
+                    // Kept as pending at once: a run stopped before the
+                    // receipts are read asks for them next time rather than
+                    // sending the day again.
+                    state.healthPending[name] = made
                 } else {
-                    // Every delivery is confirmed, a day read in part too, so
-                    // the phone never runs ahead of the server's filing: one
-                    // that did ran minutes ahead, and the spool holding what
-                    // the server has not filed answers 503 once full.
-                    if !made.isEmpty { fires[name] = made }
-                    state.healthQueue.insert(name)
-                    if skipped.isEmpty {
-                        // Kept as pending at once: a run stopped before the
-                        // receipts are read asks for them next time rather
-                        // than sending the day again.
-                        state.healthPending[name] = made
-                    } else {
-                        // Read in part, or not at all: queued, so the next
-                        // sync sends it whole, and never pending, which would
-                        // let a later run count it sent. A day whose every
-                        // read failed is not a day without data.
-                        partial.insert(name)
-                        skippedDays += 1
-                    }
+                    // Read in part, or not at all: queued, so the next sync
+                    // sends it whole, and never pending, which would let a
+                    // later run count it sent. A day whose every read failed
+                    // is not a day without data.
+                    run.partial.insert(name)
+                    skippedDays += 1
                 }
-                if !made.isEmpty { log(.health, "\(name): \(rows) rows in \(made.count) deliveries" + (skipped.isEmpty ? "" : ", \(skipped.count) parts skipped")) }
+                // Every delivery is waited for, a partial day's too, so the
+                // phone never runs more than `ahead` days ahead of the
+                // server's filing.
+                if made.isEmpty { run.settled += 1 } else { run.open.append((name, made)) }
             }
+            if !made.isEmpty { log(.health, "\(name): \(rows) rows in \(made.count) deliveries" + (skipped.isEmpty ? "" : ", \(skipped.count) parts skipped")) }
             commit(&state)
-
-            let before = c * Self.chunk, width = chunk.count, total = days.count
-            let outcome = try await confirm(
-                fires, client, deadline: budget.confirmDeadline,
-                label: "\(Formats.day(chunk.first!, in: zone)) to \(Formats.day(chunk.last!, in: zone))",
-                overall: { Self.healthOverall(before: before, width: width, part: $0, days: total) })
-            let whole = outcome.sent.filter { !partial.contains($0) }
-            for day in whole {
-                state.healthDays.insert(day)
-                state.healthQueue.remove(day)
-                state.healthPending[day] = nil
+            if !(try await settle(&run, &state, client, below: Self.ahead, patience: budget.confirmDeadline)) {
+                log(.health, "The server filed nothing for \(Int(budget.confirmDeadline)) seconds; the rest goes at the next sync", .warning)
+                stalled = true
+                break
             }
-            for day in outcome.failed.keys { state.healthPending[day] = nil }
-            for (day, reason) in outcome.failed.sorted(by: { $0.key < $1.key }) {
-                log(.health, "\(day) was refused by the server and will be sent again: \(reason)", .error)
-                if firstRefusal == nil { firstRefusal = (day, reason) }
-            }
-            sent += whole.count
-            refused += outcome.failed.count
-            waiting += outcome.pending.count
-            commit(&state)
-            if let onChange { await onChange(state) }
         }
+        if !stalled { _ = try await settle(&run, &state, client, below: 1, patience: budget.confirmDeadline) }
+        let waiting = run.open.count
+        let sent = run.sent
+        let refused = run.refused
+        let firstRefusal = run.firstRefusal
         await progress(.health, "Done", days.count, days.count)
         if waiting > 0 {
             log(.health, "\(waiting) days were stored but not yet filed by the server; the next sync checks them again", .warning)

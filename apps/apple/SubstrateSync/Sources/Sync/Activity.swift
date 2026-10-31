@@ -25,11 +25,15 @@ struct SyncProgress: Equatable, Sendable {
     var step: String
     var done: Int = 0
     var total: Int = 0
-    /// How far the source's whole run has got, where its steps' counts each
-    /// cover only a part of it and would set a bar over the run back.
-    var overall: Double?
+    /// How far the step's bar has got, where its counts are too coarse to
+    /// draw it: a month of Health moves by half days.
+    var bar: Double?
+    /// The source's whole run in units that only grow, where its steps start
+    /// over: what the system's bar for a continued sync counts.
+    var runDone: Int?
+    var runTotal: Int?
 
-    var fraction: Double? { total > 0 ? min(1, Double(done) / Double(total)) : nil }
+    var fraction: Double? { bar ?? (total > 0 ? min(1, Double(done) / Double(total)) : nil) }
 
     /// The step and its counts in one line: the status card, a source's row
     /// and the system's progress for a continued sync all say it this way.
