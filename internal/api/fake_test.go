@@ -256,7 +256,11 @@ func (s *fakeService) Authenticate(_ context.Context, secret string) (substrate.
 	if s.authErr != nil {
 		return nil, substrate.TokenInfo{}, s.authErr
 	}
+	// Under the lock: a flow's mint and revoke write the map from another
+	// goroutine (the replay revocation retries in the background).
+	s.mu.Lock()
 	t, ok := s.tokens[secret]
+	s.mu.Unlock()
 	if !ok {
 		return nil, substrate.TokenInfo{}, substrate.ErrAuth
 	}
