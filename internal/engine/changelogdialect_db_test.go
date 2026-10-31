@@ -161,7 +161,7 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 		t.Fatalf("the open stamped a dialect it had not written to: %d rows", n)
 	}
 	// The first append is the claim, and it commits with the entry.
-	if _, _, err := ds.MintToken(ctx, "test", nil); err != nil {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}
 	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {

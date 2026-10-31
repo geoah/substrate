@@ -41,6 +41,7 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -451,7 +452,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 			return err
 		}
 		var terr error
-		out.Token, out.Secret, terr = t.mintToken(label, nil)
+		out.Token, out.Secret, terr = t.mintToken(substrate.MintTokenInput{Label: label})
 		return terr
 	})
 	if err != nil {
@@ -592,7 +593,7 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 	if label == "" {
 		label = "login"
 	}
-	return ds.MintToken(ctx, label, nil)
+	return ds.MintToken(ctx, substrate.MintTokenInput{Label: label})
 }
 
 // ChangePassword rewrites the password hash. It takes the CURRENT password
@@ -859,12 +860,12 @@ const tokenPrefix = "substrate_tok_"
 // MintToken writes one token record and returns its secret, shown exactly
 // once. The record holds the SHA-256 and never the secret; the secret is 20
 // random bytes, so no KDF is needed to make guessing hopeless.
-func (ds *dataset) MintToken(ctx context.Context, label string, expiresAt *time.Time) (substrate.TokenInfo, string, error) {
+func (ds *dataset) MintToken(ctx context.Context, in substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
 	var info substrate.TokenInfo
 	var secret string
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		var err error
-		info, secret, err = t.mintToken(label, expiresAt)
+		info, secret, err = t.mintToken(in)
 		return err
 	})
 	if err != nil {
@@ -875,26 +876,48 @@ func (ds *dataset) MintToken(ctx context.Context, label string, expiresAt *time.
 
 // mintToken is the transaction half, so a registration can mint its first
 // token in the same commit that creates the repository.
-func (t *txn) mintToken(label string, expiresAt *time.Time) (substrate.TokenInfo, string, error) {
+func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
 	var zero substrate.TokenInfo
-	if label == "" {
+	if in.Label == "" {
 		return zero, "", fmt.Errorf("%w: a token needs a label", substrate.ErrValidation)
+	}
+	// An empty non-nil list would read back as absent, which is full access:
+	// the one spelling of full access is no `scopes` at all.
+	if in.Scopes != nil && len(in.Scopes) == 0 {
+		return zero, "", fmt.Errorf("%w: a scoped token needs at least one scope", substrate.ErrValidation)
+	}
+	if err := scope.CheckStored(in.Scopes); err != nil {
+		return zero, "", fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	raw := make([]byte, 20)
 	if _, err := rand.Read(raw); err != nil {
 		return zero, "", err
 	}
 	secret := tokenPrefix + hex.EncodeToString(raw)
-	props := map[string]any{"label": label, "hash": hashToken(secret)}
-	if expiresAt != nil {
-		props["expiresAt"] = expiresAt.UTC().Format(time.RFC3339)
+	props := map[string]any{"label": in.Label, "hash": hashToken(secret)}
+	if in.ExpiresAt != nil {
+		props["expiresAt"] = in.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if in.Scopes != nil {
+		scopes := make([]any, len(in.Scopes))
+		for i, s := range in.Scopes {
+			scopes[i] = s
+		}
+		props["scopes"] = scopes
+	}
+	if in.ClientID != "" {
+		props["clientId"] = in.ClientID
+	}
+	if in.ClientName != "" {
+		props["clientName"] = in.ClientName
 	}
 	ent, err := t.put(substrate.PutInput{Kind: kindToken, Properties: props})
 	if err != nil {
 		return zero, "", err
 	}
 	return substrate.TokenInfo{
-		ID: ent.ID, Label: label, Created: ent.CreatedAt, ExpiresAt: expiresAt,
+		ID: ent.ID, Label: in.Label, Created: ent.CreatedAt, ExpiresAt: in.ExpiresAt,
+		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
 	}, secret, nil
 }
 
@@ -902,7 +925,8 @@ func (t *txn) mintToken(label string, expiresAt *time.Time) (substrate.TokenInfo
 // only: the hash is a secret-typed property and never leaves the store.
 func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT id, props->>'label', props->>'expiresAt', created_at
+		SELECT id, props->>'label', props->>'expiresAt', props->'scopes',
+		       props->>'clientId', props->>'clientName', created_at
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC, id`, kindToken)
@@ -913,15 +937,56 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	var out []substrate.TokenInfo
 	for rows.Next() {
 		var info substrate.TokenInfo
-		var label, expires sql.NullString
-		if err := rows.Scan(&info.ID, &label, &expires, &info.Created); err != nil {
+		var label, expires, clientID, clientName sql.NullString
+		var scopes []byte
+		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &info.Created); err != nil {
 			return nil, err
 		}
 		info.Label = label.String
 		info.ExpiresAt = parseStamp(expires)
+		// A damaged grant is refused here as at Authenticate: listing it
+		// without scopes would show an app's token as a full-access one. The
+		// refusal names the token, which the owner can still revoke by id.
+		var derr error
+		if info.Scopes, derr = decodeScopes(scopes); derr != nil {
+			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
+		}
+		info.ClientID, info.ClientName = clientID.String, clientName.String
 		out = append(out, info)
 	}
 	return out, rows.Err()
+}
+
+// decodeScopes reads a token record's `scopes` column: nil when the
+// property is absent (full access), an error when it is present and not a
+// non-empty list of strings, which Authenticate turns into a refusal rather
+// than reading a damaged grant as no grant at all.
+func decodeScopes(raw []byte) ([]string, error) {
+	// Only an ABSENT property is full access: SQL NULL from `props->'scopes'`
+	// when the key is missing. A JSON null is a property that is present and
+	// says nothing, and is refused like any other damage.
+	if raw == nil {
+		return nil, nil
+	}
+	var list []any
+	if err := json.Unmarshal(raw, &list); err != nil || list == nil {
+		return nil, errors.New("token scopes are not a list")
+	}
+	scopes := make([]string, len(list))
+	for i, v := range list {
+		s, ok := v.(string)
+		if !ok {
+			return nil, errors.New("token scopes hold an entry that is not a string")
+		}
+		scopes[i] = s
+	}
+	if len(scopes) == 0 {
+		return nil, errors.New("token scopes are empty")
+	}
+	if err := scope.CheckStored(scopes); err != nil {
+		return nil, fmt.Errorf("token scopes unreadable: %w", err)
+	}
+	return scopes, nil
 }
 
 func parseStamp(s sql.NullString) *time.Time {
@@ -983,15 +1048,17 @@ var tokenRepositoryColumns = "p." + strings.ReplaceAll(repositoryColumns, ", ", 
 func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, substrate.TokenInfo, error) {
 	var zero substrate.TokenInfo
 	var info substrate.TokenInfo
-	var label, got, expires sql.NullString
+	var label, got, expires, clientID, clientName sql.NullString
+	var scopes []byte
 	row := s.maint.QueryRowContext(ctx, `
 		SELECT `+tokenRepositoryColumns+`,
-		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt', r.created_at
+		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt',
+		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.created_at
 		FROM records r JOIN repositories p ON p.id = r.repository
 		WHERE r.kind = $1 AND r.deleted_at IS NULL AND r.props @> jsonb_build_object('hash', $2::text)`,
 		kindToken, hash)
 	repo, err := scanRepositoryRow(func(dest ...any) error {
-		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &info.Created)...)
+		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &info.Created)...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
@@ -1003,6 +1070,12 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
 	}
 	info.Label = label.String
+	info.ClientID, info.ClientName = clientID.String, clientName.String
+	// A grant that cannot be read fails closed: reading it as absent would
+	// hand an app's token full access.
+	if info.Scopes, err = decodeScopes(scopes); err != nil {
+		return Repository{}, zero, fmt.Errorf("%w: %w", substrate.ErrAuth, err)
+	}
 	// Expiry is SERVER-ENFORCED here: a token past its stamp authenticates as
 	// a spent credential, so no dataset is ever handed out for it. An
 	// unreadable stamp fails closed for the same reason.

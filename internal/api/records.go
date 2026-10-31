@@ -59,7 +59,14 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := r.URL.Query()
+	_, scoped := substrate.ScopesFrom(ctx)
 	switch {
+	case scoped && (v.Has("aggregate") || v.Has("downsample") || v.Get("watch") == "1"):
+		// The aggregate read reaches source kinds beside the ones it names,
+		// and the tail streams the whole changelog's activity: both stay the
+		// owner's until each has a design of its own (decision 0194).
+		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
+		writeError(w, http.StatusForbidden, codeForbidden, "an app's token does not reach aggregate reads or the watch")
 	case v.Has("aggregate") || v.Has("downsample"):
 		h.aggregateRecords(w, r, ds)
 	case v.Get("watch") == "1":
@@ -145,6 +152,14 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if bounded {
+			// A window read computes occurrences from series and overrides of
+			// several kinds at once, which an app's scopes may split: it stays
+			// the owner's until it has a design of its own (decision 0194).
+			if scoped {
+				w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
+				writeError(w, http.StatusForbidden, codeForbidden, "an app's token does not reach window reads")
+				return
+			}
 			page, err = window.Read(ctx, ds, q, from, to)
 		} else {
 			page, err = ds.List(ctx, q)
@@ -152,6 +167,12 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 		var qerr window.QueryError
 		if errors.As(err, &qerr) {
 			writeError(w, http.StatusBadRequest, codeBadRequest, qerr.Error())
+			return
+		}
+		if errors.Is(err, substrate.ErrStaleHistory) && scoped {
+			// An app's token reaches no head, so its 410 carries none: the
+			// app lists again from the first page.
+			writeError(w, http.StatusGone, codeCompacted, err.Error()+": list again from the first page")
 			return
 		}
 		if errors.Is(err, substrate.ErrStaleHistory) {

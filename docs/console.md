@@ -1425,6 +1425,9 @@ how many values are pending.
 - **Signed in**: this browser first, then every other browser and script
   holding a token, newest first, each one **Sign out…** away. A session is a
   token record, and signing one out deletes it.
+- **Apps**: each app you approved through [app authorization](apps.md), with
+  its client id, the name it claims, its scopes, when you approved it and
+  when it expires, each **Revoke…** away.
 - **Your data**: **Download everything**, the recovery export of the
   repository as of now ([backups](operations.md#backups)).
 - **Developer**, with Technical details on: the system kinds under

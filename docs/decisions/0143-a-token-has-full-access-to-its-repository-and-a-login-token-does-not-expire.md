@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-29
 decision-makers: George Antoniadis
+amended-by: 0194
 ---
 
 # 0143. A token has full access to its repository, and a login token does not expire

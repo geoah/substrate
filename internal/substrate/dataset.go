@@ -1,9 +1,6 @@
 package substrate
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // Dataset is one repository's fully isolated dataset: every operation the
 // HTTP layer, the console and the background loops reach for, from the five
@@ -101,10 +98,12 @@ type Dataset interface {
 
 	// --- tokens (RECORDS in this repository; the secret is hashed) ---
 	// MintToken writes one token record and returns its secret, shown
-	// exactly once. expiresAt is optional; nil lives until the record is
-	// deleted. Revoking is deleting the record — through these endpoints or
-	// the ordinary record delete, which is the same write either way.
-	MintToken(ctx context.Context, label string, expiresAt *time.Time) (TokenInfo, string, error)
+	// exactly once. ExpiresAt is optional; nil lives until the record is
+	// deleted. Scopes nil is a full-access token, the only kind every door
+	// but the app authorization flow mints. Revoking is deleting the
+	// record — through these endpoints or the ordinary record delete, which
+	// is the same write either way.
+	MintToken(ctx context.Context, in MintTokenInput) (TokenInfo, string, error)
 	Tokens(ctx context.Context) ([]TokenInfo, error)
 
 	// --- background loops and the operator's re-embed ---

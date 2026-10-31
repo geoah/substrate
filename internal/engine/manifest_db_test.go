@@ -119,7 +119,7 @@ func TestManifestFollowsTheChangelogStampBeforeARestart(t *testing.T) {
 	}
 	// The first write claims the dialect, and the manifest says so before
 	// any restart.
-	if _, _, err := ds.MintToken(ctx, "test", nil); err != nil {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}
 	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {
@@ -215,7 +215,7 @@ func TestManifestCarriesTheDialectBeforeTheFirstStampedAppend(t *testing.T) {
 		t.Fatalf("manifest before the first write = %+v", m)
 	}
 	fail.Store(true)
-	if _, _, err := ds.MintToken(ctx, "test", nil); !errors.Is(err, injected) {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); !errors.Is(err, injected) {
 		t.Fatalf("the stamping write with the fault after the manifest: err = %v", err)
 	}
 	// Manifest first: the claim is on disk while nothing in the file or the
@@ -234,7 +234,7 @@ func TestManifestCarriesTheDialectBeforeTheFirstStampedAppend(t *testing.T) {
 	}
 	// The next write claims again, and this time the entries follow.
 	fail.Store(false)
-	if _, _, err := ds.MintToken(ctx, "test", nil); err != nil {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); err != nil {
 		t.Fatalf("the write after the fault: %v", err)
 	}
 	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {
@@ -269,7 +269,7 @@ func TestAFailedManifestWriteRefusesTheStampingWrite(t *testing.T) {
 	}
 	tableHead, fHead := changelogHead(t, db), fileHead(t, dir)
 	fail.Store(true)
-	if _, _, err := ds.MintToken(ctx, "test", nil); !errors.Is(err, injected) || !errors.Is(err, engine.ErrDirectoryWrite) || !errors.Is(err, substrate.ErrUnavailable) {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); !errors.Is(err, injected) || !errors.Is(err, engine.ErrDirectoryWrite) || !errors.Is(err, substrate.ErrUnavailable) {
 		t.Fatalf("the stamping write with the manifest unwritable: err = %v, want the injected error as ErrDirectoryWrite, an ErrUnavailable", err)
 	}
 	if m := readManifest(t, dir); m.ChangelogDialect != 0 {
@@ -281,7 +281,7 @@ func TestAFailedManifestWriteRefusesTheStampingWrite(t *testing.T) {
 	}
 	// Not latched: the next write is admitted and does the whole claim.
 	fail.Store(false)
-	if _, _, err := ds.MintToken(ctx, "test", nil); err != nil {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); err != nil {
 		t.Fatalf("the write after the manifest became writable: %v", err)
 	}
 	if m := readManifest(t, dir); m.ChangelogDialect != engine.MaxChangelogDialect() || storedChangelogDialect(t, db) != engine.MaxChangelogDialect() {

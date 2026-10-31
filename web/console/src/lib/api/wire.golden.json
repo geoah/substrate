@@ -176,6 +176,48 @@
     "unit": false,
     "value": true
   },
+  "AuthorizationAnswer": {
+    "redirect": true
+  },
+  "AuthorizationApp": {
+    "clientId": true,
+    "host": true,
+    "local": true,
+    "name": false,
+    "uri": false,
+    "uriHostDiffers": false
+  },
+  "AuthorizationApproval": {
+    "lifetimeDays": true,
+    "scopes": true
+  },
+  "AuthorizationKind": {
+    "identity": true,
+    "label": false
+  },
+  "AuthorizationRedirectTo": {
+    "host": true,
+    "hostDiffers": false,
+    "uri": true
+  },
+  "AuthorizationRequest": {
+    "app": true,
+    "defaultLifetimeDays": true,
+    "expiresAt": true,
+    "id": true,
+    "lifetimeDays": true,
+    "redirect": true,
+    "repository": true,
+    "scopes": true
+  },
+  "AuthorizationScope": {
+    "glob": true,
+    "kinds": true,
+    "pattern": true,
+    "requested": true,
+    "scope": true,
+    "write": true
+  },
   "BlobInfo": {
     "digest": true,
     "mediaType": false,
@@ -651,10 +693,13 @@
     "totpSecret": true
   },
   "TokenInfo": {
+    "clientId": false,
+    "clientName": false,
     "createdAt": true,
     "expiresAt": false,
     "id": true,
-    "label": true
+    "label": true,
+    "scopes": false
   },
   "TriggerFailure": {
     "attempts": true,

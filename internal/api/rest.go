@@ -47,9 +47,9 @@ func addressed(r *http.Request) address {
 }
 
 // record resolves the addressed record's kind, refusing an unknown kind as a
-// 404. There is no scope gate here: a token has FULL ACCESS to its
-// repository, so authentication is the whole authorization story on this
-// path. What a token cannot do is written into the kinds themselves: the auth
+// 404. There is no scope gate here: a full-access token has its whole
+// repository, and an app's token reaches this path through the
+// scopedDataset, which answers a kind it cannot read as unknown. What a token cannot do is written into the kinds themselves: the auth
 // kinds refuse generic writes at the engine's one chokepoint, not with a
 // per-request capability check.
 func (h *handler) record(w http.ResponseWriter, r *http.Request) (substrate.Dataset, substrate.KindInfo, address, bool) {

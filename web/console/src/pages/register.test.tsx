@@ -19,9 +19,33 @@ const navigate = vi.fn().mockResolvedValue(undefined)
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
-    <a href={to}>{children}</a>
+  Link: ({
+    to,
+    search,
+    children,
+  }: {
+    to: string
+    search?: { redirect?: string }
+    children: React.ReactNode
+  }) => (
+    <a
+      href={
+        search?.redirect
+          ? `${to}?redirect=${encodeURIComponent(search.redirect)}`
+          : to
+      }
+    >
+      {children}
+    </a>
   ),
+}))
+
+/** The page's `?redirect=`, as the route validated it. */
+const registerSearch = vi.hoisted(() => ({
+  redirect: undefined as string | undefined,
+}))
+vi.mock("@/router", () => ({
+  registerRoute: { useSearch: () => registerSearch },
 }))
 
 /** What GET /.well-known/substrate/server.json said about the door;
@@ -97,6 +121,7 @@ describe("RegisterPage", () => {
     policy.inviteRequired = true
     policy.totpRequired = true
     policy.live = false
+    registerSearch.redirect = undefined
   })
 
   afterEach(() => {
@@ -171,6 +196,50 @@ describe("RegisterPage", () => {
       totpCode: "123456",
       label: "console",
     })
+  })
+
+  it("returns to an app's approval page once registered, and the sign-in link carries it", async () => {
+    registerSearch.redirect = "/authorize/AbC123"
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
+    render(<RegisterPage />)
+    expect(
+      screen.getByRole("link", { name: "Sign in" }).getAttribute("href")
+    ).toBe("/login?redirect=%2Fauthorize%2FAbC123")
+    await enroll()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, MINT))
+    fireEvent.change(screen.getByLabelText("One-time code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create my repository" })
+    )
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/authorize/AbC123",
+        replace: true,
+      })
+    )
+  })
+
+  it("lands on Home when the return path leaves the console", async () => {
+    registerSearch.redirect = "//evil.example"
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
+    render(<RegisterPage />)
+    expect(
+      screen.getByRole("link", { name: "Sign in" }).getAttribute("href")
+    ).toBe("/login")
+    await enroll()
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, MINT))
+    fireEvent.change(screen.getByLabelText("One-time code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create my repository" })
+    )
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
+    )
   })
 
   it("holds the reader on the recovery key", async () => {
