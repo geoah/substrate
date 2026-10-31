@@ -334,7 +334,9 @@ Developer Mode on.
 ```text
 project.yml                 the xcodegen spec, the only project source
 Support/                    Info.plist per platform and Substrate Sync's, the entitlements
-Substrate/Assets.xcassets   the icon (scripts/icon.swift draws it)
+Substrate/Assets.xcassets   the icon: light, dark and tinted for iOS, and the macOS sizes
+scripts/icons.mjs           draws every icon in the family: Substrate, Sync and Chat
+Icons/                      icons drawn ahead of their app: SubstrateChat.appiconset for the chat agent
 Substrate/Sources/App/      the app, its macOS menus, ServerStore, the updater
 scripts/feed.swift          a release's index.json, appcast.xml, install page and manifest
 Substrate/Sources/Shell/    the scheme handler, the web view's controller, the picker, the debug driver
