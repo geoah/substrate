@@ -27,10 +27,34 @@ func PrincipalFrom(ctx context.Context) string {
 	return id
 }
 
+// The SCOPES of an app's token ride the context beside the principal, for the
+// same reason: the engine's owner-only gates (revoking a token, creating or
+// deleting an account, starting a provider connect) must refuse a request
+// whose token an app holds, and the actor alone cannot tell, because every
+// HTTP actor resolves to the owner tier. The only writer is `withRequestAuth`.
+type scopesKey struct{}
+
+// WithScopes marks ctx as serving a scoped token (decision 0194). A nil
+// scopes leaves ctx unmarked: a full-access token is the owner's own hand.
+func WithScopes(ctx context.Context, scopes []string) context.Context {
+	if scopes == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, scopesKey{}, scopes)
+}
+
+// ScopesFrom returns the scopes of the token behind ctx and whether there is
+// one: false means no scoped token stands behind the request.
+func ScopesFrom(ctx context.Context) ([]string, bool) {
+	s, ok := ctx.Value(scopesKey{}).([]string)
+	return s, ok
+}
+
 // TokenInfo is a token RECORD's metadata — never the secret, which is shown
-// exactly once at mint and stored only as a SHA-256. A token has full access
-// to its repository: there are no scopes, no actors set and no roles on it, so
-// this is the whole of what a token is.
+// exactly once at mint and stored only as a SHA-256. A token without Scopes
+// has full access to its repository (decision 0143); a token an app received
+// through the authorization flow carries the scopes the owner approved and
+// the app it was minted for (decision 0194).
 type TokenInfo struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
@@ -39,6 +63,29 @@ type TokenInfo struct {
 	// no revoke step needed. Nil = lives until the record is deleted.
 	Created   time.Time  `json:"createdAt"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	// Scopes is nil for a full-access token and never empty otherwise: the
+	// mint refuses an empty list, so absence stays the one spelling of full
+	// access on the record and on the wire.
+	Scopes []string `json:"scopes,omitempty"`
+	// ClientID is the app's client_id URL and ClientName the name it claimed
+	// when the owner approved it; both are empty on a token nobody minted
+	// for an app.
+	ClientID   string `json:"clientId,omitempty"`
+	ClientName string `json:"clientName,omitempty"`
+}
+
+// Scoped reports whether the token reaches less than its whole repository.
+func (t TokenInfo) Scoped() bool { return t.Scopes != nil }
+
+// MintTokenInput is one token mint. Label is required; the rest is optional.
+// Scopes, when non-nil, must be non-empty and already resolved: no `~` in an
+// authority, which only the authorization flow knows how to complete.
+type MintTokenInput struct {
+	Label      string
+	ExpiresAt  *time.Time
+	Scopes     []string
+	ClientID   string
+	ClientName string
 }
 
 // MintedToken is what a login and a `POST /tokens` answer with: the token

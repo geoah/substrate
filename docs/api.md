@@ -14,10 +14,14 @@ own, [users and tokens](auth.md).
 ## Calling it from a browser
 
 Any origin may call the server: a web application on another host reads and
-writes the API, registers and logs in the same way the console does. Every
-response to a request carrying `Origin` names `Access-Control-Allow-Origin: *`
-and exposes `ETag`, `Location`, `Retry-After`, `Content-Disposition` and
-`X-Request-Id`. A preflight is answered with `204` before routing, allowing
+writes the API with a bearer token. An application that is not the owner's own
+should get that token through [app authorization](apps.md), which asks the
+owner and limits the token to the kinds they approve, rather than by asking
+for the password. Every response to a request carrying `Origin` names
+`Access-Control-Allow-Origin: *` and exposes `ETag`, `Location`,
+`Retry-After`, `Content-Disposition`, `WWW-Authenticate` and `X-Request-Id`;
+the one exception is `GET /oauth/authorize`, a page the browser navigates to,
+which answers no CORS headers. A preflight is answered with `204` before routing, allowing
 every method the server serves and echoing the headers it asks for.
 
 The wildcard is safe because nothing authenticates by ambient credential: a
@@ -906,7 +910,8 @@ serve it:
                         "agent:<authority>:<package>:<name>",
                         "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
-               "password": "/password", "totp": "/totp"},
+               "password": "/password", "totp": "/totp",
+               "authorize": "/oauth/authorize", "token": "/oauth/token"},
  "registration": {"inviteRequired": true, "totpRequired": true}}
 ```
 
@@ -2122,8 +2127,9 @@ preimage.
 
 A request names its actor with the optional `X-Substrate-Actor` header, and a
 request that names none is `api`, which is exactly what the substrate knows
-about it. This is **attribution, not authorization**: a token has full access
-to its repository either way, so there is nothing an actor name could unlock.
+about it. This is **attribution, not authorization**: a full-access token has
+its whole repository either way, so there is nothing an actor name could
+unlock, and an app's token writes as `api` whatever it names.
 What the header cannot do is claim one of the substrate's own writing hands —
 `substrate`, anything under `substrate.`, a `bundle:`/`function:`/`agent:`
 name, or the retired `connector:` spelling — because those write past checks a

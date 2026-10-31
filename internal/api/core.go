@@ -18,9 +18,9 @@ import (
 // vocabulary apply batch.
 
 // The token endpoints sit beside `/api/…` rather than inside the versioned
-// resource tree, and live in auth_endpoints.go. There is no least-privilege
-// apparatus (no scopes, no actor delegation check, no narrowing rules): a
-// token has full access to its repository and nothing else. Repository
+// resource tree, and live in auth_endpoints.go. A token without scopes has
+// full access to its repository; an app's token is held to its scopes by the
+// route groups and the scopedDataset (scoped.go, decision 0194). Repository
 // management is the operator's DSN door, not an endpoint.
 
 // idempotencyHeader is the request header a client names one attempt with.

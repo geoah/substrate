@@ -11,6 +11,7 @@ import {
   setUnauthorizedHandler,
 } from "@/lib/api/session"
 import { retryDelay, retryRead } from "@/lib/api/retry"
+import { returnAfterExpiry } from "@/lib/return-path"
 import { reloadOnStaleChunk } from "@/lib/stale-chunks"
 import { router } from "@/router"
 
@@ -19,9 +20,14 @@ import { router } from "@/router"
 reloadOnStaleChunk(window)
 
 // A 401 anywhere drops the session (session.ts does that part); this routes
-// what's left of the page to the login door.
+// what's left of the page to the login door. An app's approval page is
+// carried along, so signing in again resumes the app's request.
 setUnauthorizedHandler(() => {
-  void router.navigate({ to: "/login", replace: true })
+  void router.navigate({
+    to: "/login",
+    search: { redirect: returnAfterExpiry(window.location.pathname) },
+    replace: true,
+  })
 })
 
 const queryClient = new QueryClient({

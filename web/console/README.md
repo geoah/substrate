@@ -46,6 +46,7 @@ The live routes in `src/router.tsx`, each with the page it renders:
 | Route                                      | Page                                                                                                  |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `/login`, `/register`                      | the door; everything else needs a session                                                             |
+| `/authorize/$request`                      | an app's request for a scoped token: approve some of its scopes for a lifetime, or deny it            |
 | `/`                                        | Home: what the repository holds and what just happened                                                |
 | `/data`                                    | All data: every collection, and Add a collection                                                      |
 | `/data/$authority`                         | one authority's packages                                                                              |

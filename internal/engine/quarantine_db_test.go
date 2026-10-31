@@ -352,7 +352,7 @@ func TestAStoredTokenGrantQuarantinesItsPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, secret, err := ds.MintToken(ctx, "laptop", nil)
+	_, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "laptop"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}

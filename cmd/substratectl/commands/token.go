@@ -11,8 +11,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// A token is a RECORD in the repository and has FULL ACCESS to
-// it: no scopes, no actor set, no roles. So the whole of a token is a label,
+// A token is a RECORD in the repository, and the ones these commands mint
+// have FULL ACCESS to it: no scopes, no actor set, no roles (an app's token,
+// which carries scopes, comes from the authorization flow, never from here).
+// So the whole of a token is a label,
 // an optional expiry, and the secret shown once at mint — and these three
 // commands are the whole of managing one.
 
@@ -37,8 +39,8 @@ func (a *app) tokenCreateCommand() *cobra.Command {
 		Long: `Mint a token with the token already in the context.
 
 The secret is printed exactly once — the substrate stores only its SHA-256 and
-cannot show it again. A token has full access to the repository; the only thing
-that limits one is deleting it.
+cannot show it again. A token minted here has full access to the repository;
+the only thing that limits one is deleting it.
 
 --expires takes a duration (720h) or an RFC3339 instant; without it the token
 lives until it is revoked.`,

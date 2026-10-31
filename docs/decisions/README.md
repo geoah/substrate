@@ -352,3 +352,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0191](0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md) | A shipped record is held by any hand but the one that ships it | accepted |
 | [0192](0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md) | Observations is seeded, and the well-known catalogues are first-party packages | accepted |
 | [0193](0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md) | The clinical record is a first-party catalogue shaped on FHIR | proposed |
+| [0194](0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md) | An app gets a scoped token through a registration-free authorization flow | accepted |

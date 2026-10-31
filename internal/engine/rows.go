@@ -564,8 +564,9 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // facility like `substrate.oauth`, or a dispatch mid-uninstall, and none of
 // those is the owner's edit, so it holds at the machine tier and recompute
 // may replace it. Anything else is a name a REQUEST asserted at the door, and
-// a token has full access to its repository: that write stands exactly where
-// the token stands, the owner tier, whatever door name it chose. Nothing here
+// a token writes at the owner tier: that write stands exactly where the token
+// stands, whatever door name it chose (an app's token writes as `api`, and
+// the owner-only gates read txn.scoped beside the tier). Nothing here
 // escalates — the same caller can send `api` — and the entry's principal
 // records which token it was. The split is FORWARD-ONLY: a manager row an
 // undeclared reserved actor already holds at the owner tier keeps it, here

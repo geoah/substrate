@@ -264,6 +264,7 @@ func run() error {
 		WebDir:       cfg.WebDir,
 		Catalog:      cat,
 		ConsoleURL:   cfg.ConsoleURL,
+		PublicURL:    cfg.PublicURL,
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
 		Metrics:      cfg.Metrics,

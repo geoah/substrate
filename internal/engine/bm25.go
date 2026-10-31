@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // THE LEXICAL ARM'S RANKING: BM25F over the weighted bands.
@@ -531,6 +533,14 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	// back never paid for it.
 	terms := plan.terms()
 	idf, err := ds.idfFor(ctx, terms, st)
+	if _, scoped := substrate.ScopesFrom(ctx); scoped {
+		// A term's document frequency counts every kind of the repository,
+		// the ones an app's token cannot read included, so an IDF read from
+		// it would rank the app's hits by what it cannot see. An app's search
+		// weighs every term alike, as a repository without statistics does
+		// (decision 0194).
+		idf, err = ds.idfFor(ctx, terms, searchStats{})
+	}
 	if err != nil {
 		return preRanked(err)
 	}

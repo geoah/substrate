@@ -152,6 +152,11 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 // nobody. A 503 is logged by writeUnavailableCause.
 func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	status, p := problemFor(err)
+	if status == http.StatusForbidden {
+		if _, scoped := substrate.ScopesFrom(r.Context()); scoped {
+			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
+		}
+	}
 	if status == http.StatusServiceUnavailable {
 		writeUnavailableCause(w, r, err, p)
 		return

@@ -695,7 +695,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 func TestSecretsRedacted(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
-	info, secret, err := ds.MintToken(context.Background(), "cli", nil)
+	info, secret, err := ds.MintToken(context.Background(), substrate.MintTokenInput{Label: "cli"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrValidation, "schema write without an identity")
 	}
-	info, _, err := ds.MintToken(ctx, "cli", nil)
+	info, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "cli"})
 	if err != nil {
 		t.Fatal(err)
 	}

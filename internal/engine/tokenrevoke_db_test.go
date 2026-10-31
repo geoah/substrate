@@ -43,7 +43,7 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 	ctx := context.Background()
 	ds := openCoreDataset(t)
 
-	tok, secret, err := ds.MintToken(ctx, "laptop", nil)
+	tok, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "laptop"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 	// The owner revokes from every door: the generic DELETE (`api`), the
 	// console's sign-out and `substratectl logout`.
 	for _, door := range []substrate.Actor{substrate.ActorAPI, substrate.ActorConsole, substrate.ActorCLI} {
-		tok, secret, err := ds.MintToken(ctx, "door "+string(door), nil)
+		tok, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "door " + string(door)})
 		if err != nil {
 			t.Fatalf("mint for %s: %v", door, err)
 		}
@@ -120,7 +120,7 @@ func TestAJudgedProposalCannotRevokeAToken(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	tok, secret, err := ds.MintToken(ctx, "laptop", nil)
+	tok, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "laptop"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
