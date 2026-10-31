@@ -11,7 +11,7 @@ data:
     owner approved and the app's client id. A token without scopes has full
     access to its repository; sessions are these records, login mints one,
     and revoking one is an ordinary record delete.
-  version: 8
+  version: 9
   purpose: internal
   names:
     singular: token
@@ -19,8 +19,8 @@ data:
   # record 0143), which is every session, script and device token. A token an
   # app received through the authorization flow carries the scopes the owner
   # approved on the approval page, and the API and the engine hold it to them
-  # (decision record 0194). The secret itself is never stored: the record
-  # holds its SHA-256.
+  # (decision records 0194 and 0195). The secret itself is never stored:
+  # the record holds its SHA-256.
   #
   # Minting is the auth endpoints' (attributed to the substrate) and the
   # generic surface refuses writes to this kind, but REVOKING is an ordinary
@@ -43,8 +43,9 @@ data:
     scopes:
       type: string
       repeated: true
-      description: what an app's token reaches, as `read:<pattern>` and `write:<pattern>`
-        entries over kind references; absent = full access, never empty
+      description: what an app's token reaches, as `read:` and `write:` entries
+        over kinds and `agents:` and `decide:` entries over agents; absent
+        = full access, never empty
     clientId:
       type: url
       description: the client id URL of the app the token was minted for

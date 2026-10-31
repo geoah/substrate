@@ -595,10 +595,12 @@ const authorizationRedirectTo: Shape<AuthorizationRedirectTo> = {
 const authorizationScope: Shape<AuthorizationScope> = {
   scope: true,
   requested: true,
+  verb: true,
   write: true,
   pattern: true,
   glob: true,
   kinds: true,
+  agents: true,
 }
 
 const authorizationKind: Shape<AuthorizationKind> = {
