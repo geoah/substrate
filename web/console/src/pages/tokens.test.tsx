@@ -34,7 +34,12 @@ const APP_TOKEN = {
   label: "notes.example.com",
   createdAt: "2026-08-11T00:00:00Z",
   expiresAt: "2026-09-10T00:00:00Z",
-  scopes: ["read:ada.example.com/tasks/*", "write:ada.example.com/notes/note"],
+  scopes: [
+    "read:ada.example.com/tasks/*",
+    "write:ada.example.com/notes/note",
+    "agents:ada.example.com/llm/*",
+    "decide:ada.example.com/llm/substrate",
+  ],
   clientId: "https://notes.example.com/oauth/client.json",
   clientName: "Notes for Ada",
 }
@@ -121,9 +126,20 @@ describe("Signed in and API tokens", () => {
     const facts = screen.getByLabelText("What notes.example.com can do")
     expect(within(facts).getByText("Calls itself")).toBeTruthy()
     expect(within(facts).getByText("Notes for Ada")).toBeTruthy()
-    expect(within(facts).getByText("read:ada.example.com/tasks/*")).toBeTruthy()
+    expect(within(facts).getByText("ada.example.com/tasks/*")).toBeTruthy()
+    expect(within(facts).getByText("Read records of")).toBeTruthy()
+    expect(within(facts).getByText("ada.example.com/notes/note")).toBeTruthy()
+    expect(within(facts).getByText("Read and write records of")).toBeTruthy()
     expect(
-      within(facts).getByText("write:ada.example.com/notes/note")
+      within(facts).getByText(
+        "Talk to, and read the chats of, the agents matching"
+      )
+    ).toBeTruthy()
+    expect(within(facts).getByText("ada.example.com/llm/*")).toBeTruthy()
+    expect(
+      within(facts).getByText(
+        "Apply, edit or dismiss changes suggested by the agents matching"
+      )
     ).toBeTruthy()
     expect(within(facts).getByText("Approved")).toBeTruthy()
     expect(within(facts).getByText("Expires")).toBeTruthy()

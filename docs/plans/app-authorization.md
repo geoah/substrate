@@ -349,8 +349,11 @@ changelog entry is the token, which names the exact app.
 ## Out of scope for this version
 
 Refresh tokens; remembered approvals; narrowing a glob on the approval page;
-aggregate and window reads, the change feed, blobs, function and agent calls
-for apps; fetching and serving an app's logo (the console's `img-src 'self'`
+aggregate and window reads, the change feed's history, blobs, function calls
+and the agent call API for apps (chat, decisions and the feed's live tail
+have their design in
+[0195](../decisions/0195-an-app-talks-to-agents-decides-their-requests-and-tails-the-feed-it-reads.md));
+fetching and serving an app's logo (the console's `img-src 'self'`
 blocks a remote one, and CIMD §8.8 asks the server to proxy it);
 `substratectl` as an app; an MCP endpoint.
 

@@ -50,6 +50,37 @@ func ScopesFrom(ctx context.Context) ([]string, bool) {
 	return s, ok
 }
 
+// WithoutScopes clears the scoped-token mark: the work ctx goes on to is not
+// the app's own request. A chat turn an app opens runs the agent under the
+// agent's permissions (decision 0195), and the agent's writes must meet the
+// gates an owner's chat meets, not the ones the app's token does. The
+// principal stays, so the changelog still names the token behind the turn.
+func WithoutScopes(ctx context.Context) context.Context {
+	if _, ok := ScopesFrom(ctx); !ok {
+		return ctx
+	}
+	return context.WithValue(ctx, scopesKey{}, nil)
+}
+
+// A DECISION mark names the one change request an app's token may decide
+// under a `decide:` scope (decision 0195). The API sets it after it has held
+// the request to the grant, and the engine's owner-only gates on accepting a
+// change request open for that record alone: everything else the write
+// touches is still held to the scoped mark.
+type decisionKey struct{}
+
+// WithDecision marks ctx as deciding the change request at path,
+// `<kind>/<id>`.
+func WithDecision(ctx context.Context, path string) context.Context {
+	return context.WithValue(ctx, decisionKey{}, path)
+}
+
+// DecisionFrom returns the record path WithDecision named, "" when none.
+func DecisionFrom(ctx context.Context) string {
+	p, _ := ctx.Value(decisionKey{}).(string)
+	return p
+}
+
 // TokenInfo is a token RECORD's metadata — never the secret, which is shown
 // exactly once at mint and stored only as a SHA-256. A token without Scopes
 // has full access to its repository (decision 0143); a token an app received

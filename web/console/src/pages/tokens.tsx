@@ -46,6 +46,7 @@ import { toast } from "@/components/ui/toast"
 import { listTokens, mintToken, revokeToken } from "@/lib/api/auth"
 import { clearSession, getTokenId } from "@/lib/api/session"
 import { ApiError, type MintedToken, type TokenInfo } from "@/lib/api/types"
+import { scopeWords } from "@/lib/app-scopes"
 import { relativeTime, shortDateTime } from "@/lib/format"
 
 const TOKENS_KEY = ["tokens"] as const
@@ -483,14 +484,17 @@ export function AppTokenRows() {
               <dt className="text-faint">Access</dt>
               <dd>
                 <ul className="flex flex-col gap-0.5">
-                  {(t.scopes ?? []).map((scope) => (
-                    <li
-                      key={scope}
-                      className="font-mono [overflow-wrap:anywhere]"
-                    >
-                      {scope}
-                    </li>
-                  ))}
+                  {(t.scopes ?? []).map((scope) => {
+                    const words = scopeWords(scope)
+                    return (
+                      <li key={scope} className="flex flex-col">
+                        {words.action && <span>{words.action}</span>}
+                        <span className="font-mono [overflow-wrap:anywhere] text-muted-foreground">
+                          {words.pattern}
+                        </span>
+                      </li>
+                    )
+                  })}
                 </ul>
               </dd>
               <dt className="text-faint">Approved</dt>

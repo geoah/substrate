@@ -904,13 +904,25 @@ export interface AuthorizationRedirectTo {
 export interface AuthorizationScope {
   scope: string
   requested: string
+  /** `read` and `write` name kinds; `agents` and `decide` name agents
+   * (decision 0195). */
+  verb: ScopeVerb
   write: boolean
   pattern: string
-  /** The pattern covers more than one kind, and so kinds added later. */
+  /** The pattern covers more than one kind or agent, and so ones added
+   * later. */
   glob: boolean
-  /** The kinds it reaches today; empty when it reaches none yet. */
+  /** The kinds a read or write scope reaches today; empty when it reaches
+   * none yet, and for an agents or decide scope. */
   kinds: AuthorizationKind[]
+  /** The agent rows an agents or decide scope matches today, so the page
+   * names each and says what it may read and change; empty for a read or
+   * write scope. */
+  agents: SubstrateRecord[]
 }
+
+/** What one scope of an app's token does with its pattern. */
+export type ScopeVerb = "read" | "write" | "agents" | "decide"
 
 /** One kind a scope reaches today. */
 export interface AuthorizationKind {

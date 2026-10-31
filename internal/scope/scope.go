@@ -3,12 +3,18 @@
 // approval page, what the token record stores, and what the API holds every
 // request made with that token to.
 //
-// A scope is `read:<pattern>` or `write:<pattern>`, and write includes read
-// of the same pattern. The pattern is the kind grant grammar of decision
-// 0080 (`*`, `<authority>/*`, `<authority>/<package>/*` or one kind
+// A scope is `read:<pattern>` or `write:<pattern>` over kinds, and write
+// includes read of the same pattern. The pattern is the kind grant grammar of
+// decision 0080 (`*`, `<authority>/*`, `<authority>/<package>/*` or one kind
 // reference) with one addition: `~` in the authority position stands for the
 // repository's own authority, which an app cannot know before the owner signs
 // in. The token stores the resolved form, never `~`.
+//
+// `agents:<pattern>` and `decide:<pattern>` (decision 0195) take the same
+// grammar over agent ids, which are `<authority>/<package>/<name>` like a kind
+// reference: the first talks to the matching agents and reads their threads,
+// the second decides the change requests their threads proposed. Neither
+// reads or writes a kind through the rules of read and write.
 package scope
 
 import (
@@ -20,9 +26,21 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
+// Verb is what a scope does with its pattern.
+type Verb string
+
 const (
-	verbRead  = "read"
-	verbWrite = "write"
+	Read  Verb = "read"
+	Write Verb = "write"
+	// Agents talks to the agents whose ids match: chat, their threads,
+	// messages and interactions, and their own rows.
+	Agents Verb = "agents"
+	// Decide accepts or rejects the change requests the matching agents'
+	// threads proposed, and reads them.
+	Decide Verb = "decide"
+)
+
+const (
 	// Home is the authority placeholder: `read:~/tasks/*` asks for the tasks
 	// package under whatever authority the owner's repository has.
 	Home = "~"
@@ -48,17 +66,15 @@ var unwritable = []string{vocabulary.PackageCore, vocabulary.PackageLLM}
 
 // Scope is one parsed entry.
 type Scope struct {
-	Write   bool
+	Verb    Verb
 	Pattern string
 }
 
 // String is the scope's canonical spelling, the one the token stores.
-func (s Scope) String() string {
-	if s.Write {
-		return verbWrite + ":" + s.Pattern
-	}
-	return verbRead + ":" + s.Pattern
-}
+func (s Scope) String() string { return string(s.Verb) + ":" + s.Pattern }
+
+// OverAgents reports whether the pattern names agent ids rather than kinds.
+func (s Scope) OverAgents() bool { return s.Verb == Agents || s.Verb == Decide }
 
 // HomeRelative reports whether the pattern still names `~` as its authority.
 func (s Scope) HomeRelative() bool {
@@ -78,18 +94,21 @@ func (s Scope) Resolve(authority string) Scope {
 func Parse(raw string) (Scope, error) {
 	verb, pattern, ok := strings.Cut(raw, ":")
 	if !ok {
-		return Scope{}, fmt.Errorf("scope %q is not `read:<pattern>` or `write:<pattern>`", raw)
+		return Scope{}, fmt.Errorf("scope %q is not `<verb>:<pattern>`, the verb one of read, write, agents or decide", raw)
 	}
-	var s Scope
-	switch verb {
-	case verbRead:
-	case verbWrite:
-		s.Write = true
+	s := Scope{Verb: Verb(verb), Pattern: pattern}
+	switch s.Verb {
+	case Read, Write, Agents, Decide:
 	default:
-		return Scope{}, fmt.Errorf("scope %q: %q is not read or write", raw, verb)
+		return Scope{}, fmt.Errorf("scope %q: %q is not read, write, agents or decide", raw, verb)
 	}
-	s.Pattern = pattern
-	if problem := patternProblem(s); problem != "" {
+	problem := ""
+	if s.OverAgents() {
+		problem = agentPatternProblem(s)
+	} else {
+		problem = patternProblem(s)
+	}
+	if problem != "" {
 		return Scope{}, fmt.Errorf("scope %q %s", raw, problem)
 	}
 	return s, nil
@@ -119,8 +138,34 @@ func patternProblem(s Scope) string {
 			return "names the repository's own auth material, which no scope reaches"
 		}
 	}
-	if s.Write && writesUnwritable(p) {
+	if s.Verb == Write && writesUnwritable(p) {
 		return "writes the core or llm package, which no scope writes"
+	}
+	return ""
+}
+
+// agentPatternProblem holds an agents or decide pattern to the grammar over
+// agent ids: `*`, `<authority>/*`, `<authority>/<package>/*` or one id, whose
+// last segment is an agent's camelCase name rather than a kind's word.
+func agentPatternProblem(s Scope) string {
+	p := s.Pattern
+	if s.HomeRelative() {
+		p = homeStandIn + p[len(Home):]
+	}
+	if strings.Contains(p, Home) {
+		return "puts `~` somewhere other than the authority"
+	}
+	const shape = "is not an agent pattern: `*`, `<authority>/*`, `<authority>/<package>/*` or `<authority>/<package>/<name>`"
+	if vocabulary.IsTypeGlob(p) {
+		if !vocabulary.ValidTypeGlob(p) {
+			return shape
+		}
+		return ""
+	}
+	authority, pkg, name := vocabulary.SplitKindRef(p)
+	if authority == "" || strings.Contains(name, "/") || strings.Contains(name, "*") ||
+		!vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(pkg) || !vocabulary.ValidCamel(name) {
+		return shape
 	}
 	return ""
 }
@@ -238,9 +283,12 @@ func (g Grant) Scopes() []string {
 
 // Reads reports whether the grant reads records of kind. internal is the
 // kind's declared purpose being `internal`: a glob never reaches one, an
-// exact scope may.
+// exact scope may. Only read and write scopes read a kind whole; what agents
+// and decide make readable is decided record by record (TalksTo, Decides).
 func (g Grant) Reads(kind string, internal bool) bool {
-	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return matches(s.Pattern, kind, internal) })
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		return !s.OverAgents() && matches(s.Pattern, kind, internal)
+	})
 }
 
 // Writes reports whether the grant writes records of kind.
@@ -248,7 +296,31 @@ func (g Grant) Writes(kind string, internal bool) bool {
 	if inUnwritable(kind) {
 		return false
 	}
-	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Write && matches(s.Pattern, kind, internal) })
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == Write && matches(s.Pattern, kind, internal) })
+}
+
+// TalksTo reports whether the grant talks to the agent whose record id is
+// agent. A glob covers an agent declared after the approval.
+func (g Grant) TalksTo(agent string) bool { return g.matchesAgent(Agents, agent) }
+
+// Decides reports whether the grant decides what the agent whose record id is
+// agent proposes.
+func (g Grant) Decides(agent string) bool { return g.matchesAgent(Decide, agent) }
+
+// Talks reports whether the grant holds any agents scope.
+func (g Grant) Talks() bool { return g.has(Agents) }
+
+// DecidesAny reports whether the grant holds any decide scope.
+func (g Grant) DecidesAny() bool { return g.has(Decide) }
+
+func (g Grant) has(v Verb) bool {
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == v })
+}
+
+func (g Grant) matchesAgent(v Verb, agent string) bool {
+	return agent != "" && slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		return s.Verb == v && vocabulary.MatchTypeGlob(s.Pattern, agent)
+	})
 }
 
 // matches is one pattern against one kind, under the rules every scope

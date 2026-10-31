@@ -66,14 +66,24 @@ type AuthorizationRedirectTo struct {
 type AuthorizationScope struct {
 	Scope     string `json:"scope"`
 	Requested string `json:"requested"`
-	Write     bool   `json:"write"`
-	Pattern   string `json:"pattern"`
-	// Glob is true when Pattern covers more than one kind, and so also
-	// covers kinds the repository gains later.
+	// Verb is what the scope does: `read` or `write` over kinds, `agents`
+	// or `decide` over agents (decision 0195). Write is Verb == `write`,
+	// kept on the wire for the approval pages written before Verb.
+	Verb    string `json:"verb"`
+	Write   bool   `json:"write"`
+	Pattern string `json:"pattern"`
+	// Glob is true when Pattern covers more than one kind or agent, and so
+	// also covers the ones the repository gains later.
 	Glob bool `json:"glob"`
-	// Kinds are the kinds the scope reaches in the repository today, sorted
-	// by reference; empty when it reaches none yet.
+	// Kinds are the kinds a read or write scope reaches in the repository
+	// today, sorted by reference; empty when it reaches none yet, and always
+	// empty for an agents or decide scope.
 	Kinds []AuthorizationKind `json:"kinds"`
+	// Agents are the agent rows an agents or decide scope matches today,
+	// sorted by id, so the page names each and says what it may read and
+	// change; empty when it matches none yet, and always empty for a read
+	// or write scope.
+	Agents []*Record `json:"agents"`
 }
 
 // AuthorizationKind is one kind a scope reaches today.

@@ -18,6 +18,8 @@ const (
 	ctxKeyActor
 	ctxKeyPeer
 	ctxKeyRequestID
+	// ctxKeyLease is an app token's standing for a stream (tokenlease.go).
+	ctxKeyLease
 )
 
 // actorHeader names the door the caller writes as. A full-access token
@@ -114,6 +116,21 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
 		}
 		ctx = substrate.WithScopes(ctx, tok.Scopes)
+		// A stream outlives this check: the lease reads the token again
+		// before the stream writes on, so a revoked or expired app token
+		// stops a watch or an agent stream it opened.
+		tokenID := tok.ID
+		lease := &tokenLease{expires: tok.ExpiresAt, now: h.now, checked: h.now(), recheck: func(ctx context.Context) error {
+			_, again, err := h.svc.Authenticate(ctx, secret)
+			if err != nil {
+				return err
+			}
+			if again.ID != tokenID {
+				return substrate.ErrAuth
+			}
+			return nil
+		}}
+		ctx = withTokenLease(ctx, lease)
 		actor := appActorOf(tok)
 		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), 0, "", "", nil
 	}
