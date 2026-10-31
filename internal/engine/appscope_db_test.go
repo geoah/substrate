@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -250,5 +251,85 @@ func TestAnAppsListCursorCarriesNoHead(t *testing.T) {
 	}
 	if h := headOf(substrate.WithScopes(ctx, []string{"read:" + kind})); h != 0 {
 		t.Fatalf("an app's cursor carries head %v", h)
+	}
+}
+
+// A `decide:` scope (decision 0195) opens the accept for the one change
+// request the API named after holding it to the grant: the decision is the
+// app's, it may adjust what it accepts as the owner may, and the accept
+// applies the diff. A mark naming another request opens nothing, and the
+// accept's own write still meets the owner-only gates.
+func TestAnAppsDecisionAcceptsTheOneRequestItNames(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const taskKind = "samples.substrate.reamde.dev/tasks/task"
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
+	request := func(id string, props map[string]any) *substrate.Record {
+		return mustPut(t, ds, owner, substrate.PutInput{Kind: vocabulary.KindRecordPatchRequest, ID: id, Properties: props})
+	}
+	patchProps := map[string]any{
+		"diff":   map[string]any{"properties": map[string]any{"name": "after"}},
+		"target": vocabulary.RecordPath(task.Kind, task.ID),
+	}
+	accepted := request("req-accept", patchProps)
+	other := request("req-other", patchProps)
+	app := substrate.WithScopes(ctx, []string{"decide:*"})
+	actor := substrate.AppActor("notes.example.org")
+	path := func(id string) string { return vocabulary.RecordPath(vocabulary.KindRecordPatchRequest, id) }
+	decide := func(mark, id, decision string, version int64, extra, notes map[string]any) (*substrate.Record, error) {
+		props := map[string]any{"decision": decision}
+		for k, v := range extra {
+			props[k] = v
+		}
+		return ds.Patch(substrate.WithDecision(app, path(mark)), actor, vocabulary.KindRecordPatchRequest, id,
+			substrate.PatchInput{Properties: props, Annotations: notes, IfVersion: &version})
+	}
+
+	if _, err := decide("req-other", "req-accept", "accepted", accepted.Version, nil, nil); !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("an accept under a mark naming another request = %v, want forbidden", err)
+	}
+	adjusted := map[string]any{"adjustedDiff": map[string]any{"properties": map[string]any{"name": "adjusted"}}}
+	note := map[string]any{"app:notes.example.org/note": "looks right"}
+	if _, err := decide("req-accept", "req-accept", "accepted", accepted.Version, adjusted, note); err != nil {
+		t.Fatalf("the app's accept of the request it decides: %v", err)
+	}
+	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["name"] != "adjusted" {
+		t.Fatalf("the accept applied %v, want the adjusted diff", got.Properties)
+	}
+	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{Kinds: []string{vocabulary.KindRecordPatchRequest}, RecordID: "req-accept"}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(changes); n == 0 || changes[n-1].Actor != actor {
+		t.Fatalf("the decision's changelog rows = %+v, want the last under %s", changes, actor)
+	}
+	// Rejecting needs no gate, and the app's own namespace is the only one
+	// its notes may use.
+	if _, err := decide("req-other", "req-other", "rejected", other.Version, nil, map[string]any{"owner/note": "x"}); !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("an app's note in the owner's namespace = %v, want forbidden", err)
+	}
+	if _, err := decide("req-other", "req-other", "rejected", other.Version, nil, nil); err != nil {
+		t.Fatalf("the app's rejection: %v", err)
+	}
+
+	// The accept writes the target with the app's token behind it, so a
+	// change only the owner may make stays the owner's to accept.
+	tok, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "laptop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoke := request("req-revoke", map[string]any{
+		"op": "delete", "target": vocabulary.RecordPath("substrate.reamde.dev/core/token", tok.ID),
+	})
+	if _, err := decide("req-revoke", "req-revoke", "accepted", revoke.Version, nil, nil); err == nil {
+		t.Fatal("an app's accept revoked a token")
+	}
+	list, err := ds.Tokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(list, func(tk substrate.TokenInfo) bool { return tk.ID == tok.ID }) {
+		t.Fatal("the refused accept revoked the token")
 	}
 }

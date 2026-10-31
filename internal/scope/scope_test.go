@@ -186,3 +186,103 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 		t.Error("write:* wrote a core kind")
 	}
 }
+
+func TestTheAgentVerbsTakeTheGrammarOverAgentIDs(t *testing.T) {
+	admitted := []string{
+		"agents:*",
+		"decide:*",
+		"agents:~/*",
+		"agents:~/llm/*",
+		"agents:~/llm/substrateEditor",
+		"decide:ada.example.com/chat/assistant",
+		"agents:samples.substrate.reamde.dev/llm/*",
+		// An agent of a built-in package is named like any other.
+		"agents:substrate.reamde.dev/core/judge",
+	}
+	for _, raw := range admitted {
+		s, err := Parse(raw)
+		if err != nil {
+			t.Errorf("Parse(%q) = %v, want admitted", raw, err)
+			continue
+		}
+		if !s.OverAgents() || s.String() != raw {
+			t.Errorf("Parse(%q) = %+v, want an agent scope in its own spelling", raw, s)
+		}
+	}
+	refused := []string{
+		"agents:",
+		"agents:assistant",
+		"agents:chat/assistant",
+		"agents:ada.example.com/chat/assist*",
+		"agents:ada.example.com/Chat/assistant",
+		"agents:ada.example.com/chat/assistant/extra",
+		"agents:ada.example.com/chat/Assistant",
+		"agents:~x/*",
+		"decide:ada.example.com/~/x",
+		"agents:*/chat/assistant",
+		"Agents:*",
+	}
+	for _, raw := range refused {
+		if _, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) admitted, want refused", raw)
+		}
+	}
+	s, err := Parse("decide:~/chat/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Resolve("ada.example.com").String(); got != "decide:ada.example.com/chat/*" {
+		t.Errorf("Resolve = %q", got)
+	}
+	if err := CheckStored([]string{"agents:~/chat/*"}); err == nil {
+		t.Error("a stored agents scope still naming ~ was admitted")
+	}
+}
+
+func TestAnAgentScopeReachesItsAgentsAndNoKindWhole(t *testing.T) {
+	g, err := NewGrant([]string{
+		"agents:ada.example.com/chat/*",
+		"decide:ada.example.com/chat/assistant",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		agent         string
+		talks, decide bool
+	}{
+		{"ada.example.com/chat/assistant", true, true},
+		{"ada.example.com/chat/writer", true, false},
+		{"ada.example.com/other/assistant", false, false},
+		{"ada.example.com.evil/chat/assistant", false, false},
+	} {
+		if got := g.TalksTo(c.agent); got != c.talks {
+			t.Errorf("TalksTo(%s) = %v, want %v", c.agent, got, c.talks)
+		}
+		if got := g.Decides(c.agent); got != c.decide {
+			t.Errorf("Decides(%s) = %v, want %v", c.agent, got, c.decide)
+		}
+	}
+	if !g.Talks() || !g.DecidesAny() {
+		t.Error("the grant does not report the verbs it holds")
+	}
+	// The agent verbs read no kind through the rules of read and write: what
+	// they make readable is decided row by row.
+	for _, kind := range []string{
+		"substrate.reamde.dev/core/agent",
+		"substrate.reamde.dev/llm/thread",
+		"substrate.reamde.dev/llm/message",
+		"substrate.reamde.dev/core/recordpatchrequest",
+	} {
+		if g.Reads(kind, true) || g.Writes(kind, true) {
+			t.Errorf("an agent scope reached the kind %s whole", kind)
+		}
+	}
+	reads, err := NewGrant([]string{"read:*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads.Talks() || reads.TalksTo("ada.example.com/chat/assistant") || reads.DecidesAny() {
+		t.Error("a read scope talked to an agent")
+	}
+}
