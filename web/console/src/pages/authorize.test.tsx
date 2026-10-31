@@ -29,6 +29,7 @@ const PATH = "/api/v1/authorizations/req-1"
 const TASKS = {
   scope: "read:ada.example.com/tasks/*",
   requested: "read:~/tasks/*",
+  verb: "read",
   write: false,
   pattern: "ada.example.com/tasks/*",
   glob: true,
@@ -39,22 +40,27 @@ const TASKS = {
     },
     { identity: "ada.example.com/tasks/project" },
   ],
+  agents: [],
 }
 const NOTES = {
   scope: "write:ada.example.com/notes/note",
   requested: "write:ada.example.com/notes/note",
+  verb: "write",
   write: true,
   pattern: "ada.example.com/notes/note",
   glob: false,
   kinds: [],
+  agents: [],
 }
 const UNITS = {
   scope: "read:substrate.reamde.dev/core/unit",
   requested: "read:substrate.reamde.dev/core/unit",
+  verb: "read",
   write: false,
   pattern: "substrate.reamde.dev/core/unit",
   glob: false,
   kinds: [{ identity: "substrate.reamde.dev/core/unit" }],
+  agents: [],
 }
 
 const REQUEST = {
@@ -264,6 +270,73 @@ describe("AuthorizePage", () => {
     ).toBe("true")
     expect(
       within(lasts).getByRole("radio", { name: "Until you revoke it" })
+    ).toBeTruthy()
+  })
+
+  it("names the agents an agents or decide scope matches, and what each may do", async () => {
+    const agent = {
+      id: "ada.example.com/llm/substrateEditor",
+      kind: "substrate.reamde.dev/core/agent",
+      properties: {
+        permissions: { reads: { kinds: ["ada.example.com/tasks/task"] } },
+      },
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-01T00:00:00Z",
+      updatedAt: "2026-10-01T00:00:00Z",
+    }
+    const agents = {
+      scope: "agents:ada.example.com/llm/*",
+      requested: "agents:~/llm/*",
+      verb: "agents",
+      write: false,
+      pattern: "ada.example.com/llm/*",
+      glob: true,
+      kinds: [],
+      agents: [agent],
+    }
+    const decide = {
+      ...agents,
+      scope: "decide:ada.example.com/llm/substrateEditor",
+      requested: "decide:ada.example.com/llm/substrateEditor",
+      verb: "decide",
+      pattern: "ada.example.com/llm/substrateEditor",
+      glob: false,
+    }
+    const nobody = {
+      ...decide,
+      scope: "decide:b.example.com/x/*",
+      glob: true,
+      agents: [],
+    }
+    answers.GET = () =>
+      jsonResponse(200, { ...REQUEST, scopes: [agents, decide, nobody] })
+    renderPage()
+    const talk = await screen.findByText("Talk to Substrate editor")
+    const row = talk.closest("li") as HTMLElement
+    expect(
+      within(row).getByText("Also covers matching agents you add later.")
+    ).toBeTruthy()
+    expect(within(row).getByText("Can see")).toBeTruthy()
+    expect(within(row).getByText("Tasks")).toBeTruthy()
+    expect(within(row).getByText("Can change")).toBeTruthy()
+    expect(within(row).getByText("Nothing")).toBeTruthy()
+    expect(
+      screen.getByText(
+        "Apply or dismiss changes Substrate editor suggests, with your authority"
+      )
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        "Apply or dismiss changes agents suggest, with your authority"
+      )
+    ).toBeTruthy()
+    expect(
+      screen.getByText("Nothing yet: no agent in your repository matches.")
+    ).toBeTruthy()
+    // Both verbs write under the app's name.
+    expect(
+      screen.getByRole("region", { name: "Its changes appear as" })
     ).toBeTruthy()
   })
 
