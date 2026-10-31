@@ -367,12 +367,12 @@ func (s *scopedDataset) checkReferenceFilters(ctx context.Context, kinds []strin
 			if !isRef {
 				continue
 			}
+			if declared == "any" {
+				declared = ""
+			}
 			for _, v := range condValues(c) {
 				str, ok := v.(string)
-				target := declared
-				if ok && strings.Contains(str, "/") {
-					target = kindOfPath(str)
-				}
+				target := targetKind(str, declared)
 				if !ok || target == "" {
 					return fmt.Errorf("%w: an app's token filters %s only by a record of a kind it reads", substrate.ErrForbidden, name)
 				}
@@ -390,8 +390,11 @@ func (s *scopedDataset) checkReferenceFilters(ctx context.Context, kinds []strin
 // checkReferenceValues refuses a write whose reference values name a record
 // of a kind the grant does not read. The engine loads the referent to check
 // it exists and to render a title from it, so a reference into a hidden kind
-// would answer whether that record exists and what it is called. The refusal
-// is decided by the grant and the value the app sent, never by what the
+// would answer whether that record exists and what it is called. It walks the
+// declaration the way the engine's normalizeReferencesIn does (a keyed map's
+// values, a list's items, an object's declared fields, to any depth), so a
+// reference nested in an object is held like a top-level one. The refusal is
+// decided by the grant and the value the app sent, never by what the
 // repository holds.
 func (s *scopedDataset) checkReferenceValues(ctx context.Context, kind string, props map[string]any) error {
 	if len(props) == 0 {
@@ -401,49 +404,129 @@ func (s *scopedDataset) checkReferenceValues(ctx context.Context, kind string, p
 	if err != nil {
 		return err
 	}
+	defs, _ := reg[kind].Definition["properties"].(map[string]any)
 	for name, v := range props {
-		declared, isRef := referenceProperty(reg[kind], name)
-		if !isRef || v == nil {
+		decl, _ := defs[name].(map[string]any)
+		if v == nil || decl == nil || !declHoldsReference(decl) {
 			continue
 		}
-		for _, target := range referenceTargets(v) {
-			k := declared
-			if strings.Contains(target, "/") {
-				k = kindOfPath(target)
-			}
+		var sites []referenceSite
+		collectReferences(decl, v, &sites)
+		for _, site := range sites {
+			k := targetKind(site.value, site.pin)
 			read := false
-			if k != "" {
+			if site.value != "" && k != "" {
 				if read, err = s.reads(ctx, k); err != nil {
 					return err
 				}
 			}
 			if !read {
-				return fmt.Errorf("%w: an app's token writes %s only as a reference to a kind it reads", substrate.ErrForbidden, name)
+				return fmt.Errorf("%w: an app's token writes %s only with references to kinds it reads", substrate.ErrForbidden, name)
 			}
 		}
 	}
 	return nil
 }
 
-// referenceTargets is every record a reference value names: a path or an id,
-// a `{ref: …}` object carrying link properties, or a list of either. A value
-// of any other shape names a target nobody can check, and is answered as one
-// the grant does not read.
-func referenceTargets(v any) []string {
-	switch x := v.(type) {
-	case string:
-		return []string{x}
-	case map[string]any:
-		ref, _ := x["ref"].(string)
-		return []string{ref}
-	case []any:
-		var out []string
-		for _, e := range x {
-			out = append(out, referenceTargets(e)...)
-		}
-		return out
+// referenceSite is one reference value a write carries, beside the kind its
+// declaration pins ("" for none). A value of a shape nobody can read is a
+// site with no value, which the check refuses.
+type referenceSite struct{ value, pin string }
+
+// targetKind is the kind one reference value names: a full record path
+// carries its own (`<authority>/<package>/<name>/<id>`, and an id may hold a
+// slash of its own, `health/heart_rate`), anything else is a bare id under the
+// declaration's pin. "" when neither says.
+func targetKind(value, pin string) string {
+	if kind, _, ok := vocabulary.SplitRecordPath(value); ok {
+		return kind
 	}
-	return []string{""}
+	return pin
+}
+
+// declHoldsReference reports whether an authored declaration carries a
+// reference anywhere inside it, as the engine's holdsReference does.
+func declHoldsReference(decl map[string]any) bool {
+	if t, _ := decl["type"].(string); t == "reference" {
+		return true
+	}
+	fields, _ := decl["fields"].(map[string]any)
+	for _, f := range fields {
+		if fd, ok := f.(map[string]any); ok && declHoldsReference(fd) {
+			return true
+		}
+	}
+	return false
+}
+
+// collectReferences gathers the reference sites in one value of a
+// declaration, descending its container first: a keyed map's values, or a
+// list's items.
+func collectReferences(decl map[string]any, v any, out *[]referenceSite) {
+	if v == nil {
+		return
+	}
+	keyed, _ := decl["keyed"].(bool)
+	repeated, _ := decl["repeated"].(bool)
+	switch {
+	case keyed:
+		m, ok := v.(map[string]any)
+		if !ok {
+			*out = append(*out, referenceSite{})
+			return
+		}
+		for _, e := range m {
+			collectReferenceValue(decl, e, out)
+		}
+	case repeated:
+		list, ok := v.([]any)
+		if !ok {
+			*out = append(*out, referenceSite{})
+			return
+		}
+		for _, e := range list {
+			collectReferenceValue(decl, e, out)
+		}
+	default:
+		collectReferenceValue(decl, v, out)
+	}
+}
+
+// collectReferenceValue handles one value: the reference itself (a path or
+// an id, or the `{ref: …}` object carrying link properties), or an object
+// whose declared fields are walked in turn.
+func collectReferenceValue(decl map[string]any, v any, out *[]referenceSite) {
+	if v == nil {
+		return
+	}
+	if t, _ := decl["type"].(string); t == "reference" {
+		pin, _ := decl["kind"].(string)
+		if pin == "any" {
+			pin = ""
+		}
+		switch x := v.(type) {
+		case string:
+			*out = append(*out, referenceSite{value: x, pin: pin})
+		case map[string]any:
+			ref, _ := x["ref"].(string)
+			*out = append(*out, referenceSite{value: ref, pin: pin})
+		default:
+			*out = append(*out, referenceSite{})
+		}
+		return
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	fields, _ := decl["fields"].(map[string]any)
+	for fname, fv := range m {
+		fd, _ := fields[fname].(map[string]any)
+		if fv == nil || fd == nil || !declHoldsReference(fd) {
+			continue
+		}
+		collectReferences(fd, fv, out)
+	}
 }
 
 // referenceProperty reports whether a kind declares name as a reference, and

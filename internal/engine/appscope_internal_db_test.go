@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -67,5 +69,46 @@ func TestAnAppsActorHoldsAtTheOwnerTierAndWritesInTheForeground(t *testing.T) {
 	}
 	if ds.ownerFirst(ctx, substrate.Actor("function:x.example.com:p:f"), false) {
 		t.Fatal("installed code went ahead of background writers: the test proves nothing")
+	}
+}
+
+// An app's search scores a hit by that record alone: records of kinds it
+// cannot read move the owner's score (their words change a term's weight and
+// the average length) and leave the app's where it was.
+func TestAnAppsSearchScoresAHitByItselfAlone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	putScoreTask(t, ds, "a", "flight plan", "")
+	app := substrate.WithScopes(ctx, []string{"read:" + scoreTaskKind})
+	score := func(ctx context.Context) float64 {
+		t.Helper()
+		res, err := ds.Search(ctx, substrate.SearchInput{Q: "flight", Mode: substrate.SearchLexical, Kinds: []string{scoreTaskKind}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range res.Hits {
+			if h.Record != nil && h.Record.ID == "a" {
+				return h.Lexical
+			}
+		}
+		t.Fatalf("the search found no hit a: %+v", res.Hits)
+		return 0
+	}
+	ownerBefore, appBefore := score(ctx), score(app)
+	const hidden = "samples.substrate.reamde.dev/tasks/project"
+	for i := range 40 {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: hidden, ID: fmt.Sprintf("p%d", i),
+			Properties: map[string]any{"name": "flight flight " + strings.Repeat("long hidden words ", 30)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if score(ctx) == ownerBefore {
+		t.Fatal("the hidden records left the owner's score where it was: the test proves nothing")
+	}
+	if got := score(app); got != appBefore {
+		t.Fatalf("an app's score moved from %v to %v with records it cannot read", appBefore, got)
 	}
 }

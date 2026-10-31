@@ -532,15 +532,18 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	// The IDF is read here, not before the passes, so a search that falls
 	// back never paid for it.
 	terms := plan.terms()
-	idf, err := ds.idfFor(ctx, terms, st)
+	// The statistics count every kind of the repository, the ones an app's
+	// token cannot read included: a term's document frequency weighs it, and
+	// the band averages normalize a hit's length. An app's search scores
+	// with none, as a repository without statistics does: every term weighs
+	// alike and no length is normalized, so a hit's score is a function of
+	// that record alone and nothing hidden can reorder the app's hits
+	// (decision 0194). The frequencies are then never read.
+	scoring := st
 	if _, scoped := substrate.ScopesFrom(ctx); scoped {
-		// A term's document frequency counts every kind of the repository,
-		// the ones an app's token cannot read included, so an IDF read from
-		// it would rank the app's hits by what it cannot see. An app's search
-		// weighs every term alike, as a repository without statistics does
-		// (decision 0194).
-		idf, err = ds.idfFor(ctx, terms, searchStats{})
+		scoring = searchStats{}
 	}
+	idf, err := ds.idfFor(ctx, terms, scoring)
 	if err != nil {
 		return preRanked(err)
 	}
@@ -549,7 +552,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 		return preRanked(err)
 	}
 	for id, d := range docs {
-		out[id] = arm{score: bm25Score(*d, idf, st), demoted: d.demoted, whole: d.whole}
+		out[id] = arm{score: bm25Score(*d, idf, scoring), demoted: d.demoted, whole: d.whole}
 	}
 	return out, capped, nil
 }
