@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The app in these tests serves its document from memory: the real fetcher
@@ -185,7 +187,7 @@ func (e *appEnv) approve(id string, scopes []string, days int) *httptest.Respons
 }
 
 func (e *appEnv) approveShown(id string, scopes []string, days int) *httptest.ResponseRecorder {
-	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: scopes, LifetimeDays: days})
+	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: scopes, LifetimeDays: &days})
 	return e.do(http.MethodPost, "/api/v1/authorizations/"+id, e.owner, body, "application/json")
 }
 
@@ -232,7 +234,8 @@ func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
 	view := e.do(http.MethodGet, "/api/v1/authorizations/"+id, e.owner, nil, "")
 	wantStatus(t, view, http.StatusOK)
 	got := decodeJSON[substrate.AuthorizationRequest](t, view)
-	if got.App.Host != "notes.example.org" || got.App.Name != "Notes" || got.App.Local {
+	if got.App.Host != "notes.example.org" || got.App.Name != "Notes" || got.App.Local ||
+		got.App.Actor != "app:notes.example.org" {
 		t.Fatalf("app = %+v", got.App)
 	}
 	if got.Repository != fakeRepository || got.DefaultLifetimeDays != 30 {
@@ -263,7 +266,7 @@ func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
 	}
 	res := decodeJSON[tokenResponse](t, tok)
 	if res.TokenType != "Bearer" || res.Repository != fakeRepository ||
-		res.Scope != "read:"+personKind+" write:"+taskKind || res.ExpiresIn != 30*24*3600 {
+		res.Scope != "read:"+personKind+" write:"+taskKind || res.ExpiresIn == nil || *res.ExpiresIn != 30*24*3600 {
 		t.Fatalf("token response = %+v", res)
 	}
 	minted := e.svc.tokens[res.AccessToken].info
@@ -326,7 +329,7 @@ func TestAListWithNoKindsNamesEveryReadableKindAndNoOther(t *testing.T) {
 	}
 }
 
-func TestAnAppsTokenWritesAsTheAPIDoorWhateverActorItNames(t *testing.T) {
+func TestAnAppsTokenWritesAsItsOwnActorWhateverActorItNames(t *testing.T) {
 	e := newAppEnv(t)
 	app := e.grant("write:"+taskKind, []string{"write:" + taskKind})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/"+taskKind+"/t1", strings.NewReader(`{"properties":{}}`))
@@ -336,8 +339,8 @@ func TestAnAppsTokenWritesAsTheAPIDoorWhateverActorItNames(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.h.ServeHTTP(rec, req)
 	wantStatus(t, rec, http.StatusCreated)
-	if got := e.svc.datasets[fakeRepository].lastActor; got != substrate.ActorAPI {
-		t.Fatalf("an app's write was attributed to %q, want api", got)
+	if got := e.svc.datasets[fakeRepository].lastActor; got != "app:notes.example.org" {
+		t.Fatalf("an app's write was attributed to %q, want app:notes.example.org", got)
 	}
 }
 
@@ -470,7 +473,8 @@ func TestARequestIsAnsweredOnlyByTheRepositoryThatClaimedIt(t *testing.T) {
 	stranger := e.svc.token(other)
 	id := e.park(appRequest("read:" + personKind))
 	wantStatus(t, e.show(id), http.StatusOK)
-	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"read:" + personKind}, LifetimeDays: 30})
+	days := 30
+	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"read:" + personKind}, LifetimeDays: &days})
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/authorizations/"+id, stranger, nil, ""), http.StatusNotFound)
 	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/"+id, stranger, body, "application/json"), http.StatusNotFound)
 	wantStatus(t, e.do(http.MethodDelete, "/api/v1/authorizations/"+id, stranger, nil, ""), http.StatusNotFound)
@@ -500,7 +504,8 @@ func TestAnAppsTokenNeverApprovesAnAuthorization(t *testing.T) {
 	app := e.grant("read:"+personKind, []string{"read:" + personKind})
 	id := e.park(appRequest("write:" + taskKind))
 	wantStatus(t, e.show(id), http.StatusOK)
-	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"write:" + taskKind}, LifetimeDays: 30})
+	days := 30
+	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"write:" + taskKind}, LifetimeDays: &days})
 	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/"+id, app, body, "application/json"), http.StatusForbidden)
 }
 
@@ -953,5 +958,61 @@ func TestOneSourceCannotParkEveryRequest(t *testing.T) {
 	}
 	if code := park("[2001:db8:9:9::1]:443"); code != http.StatusSeeOther {
 		t.Fatalf("another source was refused %d", code)
+	}
+}
+
+func TestAnOwnerMayApproveAnAppUntilTheyRevokeIt(t *testing.T) {
+	e := newAppEnv(t)
+	id := e.park(appRequest("read:" + personKind))
+	view := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
+	if !slices.Contains(view.LifetimeDays, 0) {
+		t.Fatalf("lifetimes offered %v, want until revoked (0) among them", view.LifetimeDays)
+	}
+	rec := e.approveShown(id, []string{"read:" + personKind}, 0)
+	wantStatus(t, rec, http.StatusOK)
+	tok := e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))
+	wantStatus(t, tok, http.StatusOK)
+	if strings.Contains(tok.Body.String(), "expires_in") {
+		t.Fatalf("a token approved until revoked answered %s, want no expires_in", tok.Body.String())
+	}
+	if exp := e.svc.tokens[decodeJSON[tokenResponse](t, tok).AccessToken].info.ExpiresAt; exp != nil {
+		t.Fatalf("a token approved until revoked expires at %v", exp)
+	}
+}
+
+func TestNoRequestClaimsAnAppsActor(t *testing.T) {
+	e := newAppEnv(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/"+taskKind+"/t1", strings.NewReader(`{"properties":{}}`))
+	req.Header.Set("Authorization", "Bearer "+e.owner)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(actorHeader, "app:notes.example.org")
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	wantStatus(t, rec, http.StatusForbidden)
+}
+
+// Until revoked is 0, so an approval that names no lifetime is refused, never
+// read as 0: forgetting the field must not grant the longest access.
+func TestAnApprovalNamesItsLifetime(t *testing.T) {
+	e := newAppEnv(t)
+	id := e.park(appRequest("read:" + personKind))
+	wantStatus(t, e.show(id), http.StatusOK)
+	post := func(body string) *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, "/api/v1/authorizations/"+id, e.owner, []byte(body), "application/json")
+	}
+	scopes := `"scopes":["read:` + personKind + `"]`
+	wantStatus(t, post(`{`+scopes+`}`), http.StatusUnprocessableEntity)
+	wantStatus(t, post(`{`+scopes+`,"lifetimeDays":null}`), http.StatusUnprocessableEntity)
+	wantStatus(t, post(`{`+scopes+`,"lifetimeDays":7}`), http.StatusOK)
+}
+
+// An IPv6 app's actor is also its label namespace, so it carries no bracket.
+func TestAnIPv6AppsActorIsAValidLabelNamespace(t *testing.T) {
+	actor := appActorOf(substrate.TokenInfo{ClientID: "http://[::1]:8080/client"})
+	if actor != "app:::1:8080" {
+		t.Fatalf("actor = %q", actor)
+	}
+	if problem := vocabulary.MetaKeyProblem(string(actor) + "/tag"); problem != "" {
+		t.Fatalf("the app's label namespace is refused: %s", problem)
 	}
 }

@@ -583,6 +583,7 @@ const authorizationApp: Shape<AuthorizationApp> = {
   name: false,
   uri: false,
   uriHostDiffers: false,
+  actor: true,
 }
 
 const authorizationRedirectTo: Shape<AuthorizationRedirectTo> = {

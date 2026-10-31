@@ -383,6 +383,9 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 			strings.HasPrefix(d.ID, substrate.AgentActorPrefix):
 			l.errf("%s: a function's and an agent's actor is minted at dispatch from its identity — it is never declared", where)
 			continue
+		case strings.HasPrefix(d.ID, substrate.AppActorPrefix):
+			l.errf("%s: an app's actor is derived from the token the owner approved, so it is never declared", where)
+			continue
 		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != PackageActor(identity):
 			l.errf("%s: a bundle actor belongs to the package it names — %s may declare %q and no other",
 				where, identity, PackageActor(identity))

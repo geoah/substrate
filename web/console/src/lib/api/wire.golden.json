@@ -180,6 +180,7 @@
     "redirect": true
   },
   "AuthorizationApp": {
+    "actor": true,
     "clientId": true,
     "host": true,
     "local": true,

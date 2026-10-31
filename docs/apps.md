@@ -20,18 +20,22 @@ The approval page shows, from top to bottom:
   URL proves, and the full client id beneath it. The name and site the app
   gives for itself are shown as its claim, with a warning when that site is
   on another host.
-- **Where the access goes**: the redirect URI the code is sent to, with a
-  warning when it is on another host than the client id.
+- **After you answer, you go to**: the address your browser returns to,
+  which receives the access. A warning shows when it is on another host
+  than the client id.
 - **The repository** the token opens.
-- **The requested access**: one row per scope, with the kinds it reaches
+- **The requested access**: one row per scope, with the kinds it covers
   today. Uncheck a row to leave it out. A pattern ending in `*` also covers
-  kinds you add later.
-- **What a write also does**: a write by the app counts as a write by you.
-  It can start your triggers, which may run code you installed and call
-  services that charge you, and it can change or delete records outside the
-  approved kinds through a mapping or a cascading reference.
-- **How long the access lasts**: 7, 30 or 90 days. There is no refresh: when
-  it ends, the app asks again.
+  matching kinds you add later.
+- **Its changes appear as**: when the app asks to write, the name its
+  changes are recorded under, `app:` and its host. History shows them as the
+  app's, never as yours. Your triggers and mappings respond to its changes
+  like any other, so they may run code you installed, call services that
+  charge you, or change records the app cannot reach itself.
+- **How long the access lasts**: 7, 30 or 90 days, or until you revoke it.
+  There is no refresh: when it ends, the app asks again. A token approved
+  until revoked works for whoever holds it until you revoke it, a leaked one
+  included.
 
 An app on your own computer (a command-line tool, a desktop app) has a
 `client_id` on `127.0.0.1` or `localhost`. Nothing about it can be verified,
@@ -125,7 +129,9 @@ redirect URI and verifier is refused and spends nothing; a second
 presentation of a code that already worked revokes the token it minted (a
 revoke the database refuses is logged and retried for several minutes).
 `scope` lists what the owner approved, which may be less than the app asked
-for. `repository` is the authority the token opens.
+for. `repository` is the authority the token opens. `expires_in` is absent
+when the owner approved the app until they revoke it: the token has no
+expiry.
 
 ### Use the token
 
@@ -150,9 +156,12 @@ and the unit reads, held to its scopes:
 
 Everything else answers `403`: the change feed and its watch, aggregate and
 window reads, blobs, the vocabulary, the catalog, functions, agents, the
-export and the token endpoints. Writes are attributed to `api` whatever
-`X-Substrate-Actor` says; the changelog's principal names the token, and the
-token names the app.
+export and the token endpoints. Writes are attributed to the app's own actor,
+`app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
+request can claim that name. Two apps on one host share it, and the
+changelog's principal (the token, which names the exact client id) tells
+them apart. Labels and annotations an app writes go in its own namespace,
+`app:<host>/…`, like an agent's or a function's.
 
 ### Revoke
 

@@ -139,7 +139,9 @@ function Refusal({
   )
 }
 
+/** A lifetime as the owner picks it; 0 is a token with no expiry. */
 function lifetimeWords(days: number): string {
+  if (days === 0) return "Until you revoke it"
   return days === 1 ? "1 day" : `${days} days`
 }
 
@@ -160,7 +162,7 @@ function KindList({ kinds }: { kinds: AuthorizationKind[] }) {
   if (kinds.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        None yet: it reaches no kind in your repository today.
+        Nothing yet: no kind in your repository matches.
       </p>
     )
   }
@@ -227,17 +229,17 @@ function ScopeRow({
         </label>
         {scope.glob && (
           <p className="text-xs text-muted-foreground">
-            This is a pattern: it also covers kinds you add later that match it.
+            Also covers matching kinds you add later.
           </p>
         )}
         {scope.requested !== scope.scope && (
           <p className="text-xs text-muted-foreground">
-            The app asked for{" "}
+            Asked for as{" "}
             <span className="font-mono [overflow-wrap:anywhere] text-foreground">
               {scope.requested}
             </span>
-            . The <span className="font-mono text-foreground">~</span> stands
-            for your repository, so it was completed as{" "}
+            , where <span className="font-mono text-foreground">~</span> means
+            your repository,{" "}
             <span className="font-mono [overflow-wrap:anywhere] text-foreground">
               {repository}
             </span>
@@ -246,7 +248,7 @@ function ScopeRow({
         )}
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium text-muted-foreground">
-            Kinds it reaches today
+            Covers today
           </p>
           <KindList kinds={scope.kinds} />
         </div>
@@ -312,7 +314,7 @@ function Approval({
     <Card>
       <CardHeader className="gap-1.5">
         <p className="text-xs text-muted-foreground">
-          An app asks to reach your repository
+          An app is asking for access
         </p>
         <h1 className="font-heading text-xl leading-snug font-semibold [overflow-wrap:anywhere]">
           {app.host}
@@ -362,14 +364,14 @@ function Approval({
           </Fact>
         )}
 
-        <Fact label="Sends the access to">
+        <Fact label="After you answer, you go to">
           <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
             {request.redirect.uri}
           </p>
           {request.redirect.hostDiffers && (
             <Warning>
-              The approval code goes to {request.redirect.host}, a different
-              host than the app’s client id ({app.host}).
+              That address is on {request.redirect.host}, not on {app.host}.
+              Whatever runs there receives the access.
             </Warning>
           )}
         </Fact>
@@ -378,13 +380,12 @@ function Approval({
           <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
             {request.repository}
           </p>
-          <p className="text-xs text-muted-foreground">
-            The token opens this repository and reaches only what you check
-            below.
-          </p>
         </Fact>
 
         <Fact label="Requested access">
+          <p className="text-xs text-muted-foreground">
+            Uncheck anything you don’t want to allow.
+          </p>
           <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
             {request.scopes.map((s) => (
               <ScopeRow
@@ -397,15 +398,24 @@ function Approval({
               />
             ))}
           </ul>
-          {writes && (
-            <Warning title="A write by this app counts as a write by you">
-              It can start your triggers, which may run code you installed and
-              call outside services that charge you. It can also change or
-              delete records outside these scopes, through a mapping or a
-              reference that cascades.
-            </Warning>
-          )}
         </Fact>
+
+        {writes && (
+          <Fact label="Its changes appear as">
+            <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
+              {app.actor}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Your history shows what this app changed under this name, never as
+              yours.
+            </p>
+            <Warning title="Your automations run on its changes">
+              Your triggers and mappings respond to its changes like any other.
+              They may run code you installed, call services that charge you, or
+              change records this app cannot reach itself.
+            </Warning>
+          </Fact>
+        )}
 
         <Fact label="Access lasts">
           <Segmented
@@ -420,8 +430,9 @@ function Approval({
             className="self-start"
           />
           <p className="text-xs text-muted-foreground">
-            After this the app has to ask you again. You can revoke it sooner in
-            Settings, under Apps.
+            {lifetime === 0
+              ? "It lasts until you revoke it in Settings, under Apps."
+              : "After that, the app has to ask you again. You can revoke it sooner in Settings, under Apps."}
           </p>
         </Fact>
 

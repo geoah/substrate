@@ -865,7 +865,7 @@ export interface AuthorizationRequest {
   /** The repository authority the token would open. */
   repository: string
   scopes: AuthorizationScope[]
-  /** The lifetimes the owner may pick, in days. */
+  /** The lifetimes the owner may pick, in days; 0 is until revoked. */
   lifetimeDays: number[]
   defaultLifetimeDays: number
   /** When the parked request lapses unanswered. */
@@ -884,6 +884,8 @@ export interface AuthorizationApp {
   uri?: string
   /** The claimed `uri` is on another host than the client id. */
   uriHostDiffers?: boolean
+  /** What the app's changes are recorded as, `app:<host>`. */
+  actor: string
 }
 
 /** Where the code goes on approval. */
@@ -915,7 +917,7 @@ export interface AuthorizationKind {
 }
 
 /** The approval body: the checked subset of the request's resolved scopes,
- * at least one, and one of the offered lifetimes. */
+ * at least one, and one of the offered lifetimes (0 for until revoked). */
 export interface AuthorizationApproval {
   scopes: string[]
   lifetimeDays: number

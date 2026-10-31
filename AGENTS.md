@@ -360,9 +360,11 @@ package segment is the third job for `/`
 ([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)), and the rest of
 0014 stands, first-label reservation included. The
 actors are `bundle:<authority>:<package>`,
-`function:<authority>:<package>:<name>` and
-`agent:<authority>:<package>:<name>`, derived by the engine and never declared
-([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). There
+`function:<authority>:<package>:<name>`,
+`agent:<authority>:<package>:<name>` and `app:<host>` (an app's token, from
+the client id the owner approved), derived by the substrate and never declared
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md),
+[0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)). There
 is no second spelling of a kind anywhere: no generated type name, no folded
 authority. The reference is the name on every surface, and nothing keys on a
 first label.

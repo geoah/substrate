@@ -86,3 +86,19 @@ func TestReservedActorHoldsTheRetiredConnectorPrefix(t *testing.T) {
 		}
 	}
 }
+
+// An app's actor is derived by the server from the token, so a request may
+// never claim one; a name that merely resembles it is ordinary.
+func TestAnAppActorIsReservedAndDerived(t *testing.T) {
+	if a := substrate.AppActor("Notes.Example.org:8443"); a != "app:notes.example.org:8443" || !substrate.IsAppActor(a) {
+		t.Fatalf("AppActor = %q", a)
+	}
+	if !substrate.ReservedActor("app:notes.example.org") {
+		t.Fatal("app:notes.example.org is claimable")
+	}
+	for _, a := range []substrate.Actor{"app", "apps", "application:x", "app:"} {
+		if substrate.IsAppActor(a) {
+			t.Errorf("IsAppActor(%q) = true", a)
+		}
+	}
+}
