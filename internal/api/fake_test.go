@@ -1320,6 +1320,10 @@ func (d *fakeDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus,
 	return nil, nil
 }
 
+func (d *fakeDataset) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, nil
+}
+
 func (d *fakeDataset) BundleStatus(_ context.Context, id string) (substrate.BundleStatus, error) {
 	return substrate.BundleStatus{}, noSuch("bundle", id)
 }

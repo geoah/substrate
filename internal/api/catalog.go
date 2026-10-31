@@ -244,10 +244,12 @@ type bundleTaken struct {
 // installedBundles is every bundle installed in this repository. A status
 // READ that fails is a fault (repository/database), returned as an error so
 // the caller fails with the normal substrate error shape instead of silently
-// reporting installed providers as available.
+// reporting installed providers as available. The statuses are the uncounted
+// ones: an entry carries no live-row count, and counting them scans every
+// live row of every installed kind on each read (issue #1086).
 func (h *handler) installedBundles(ctx context.Context) (installedSet, error) {
 	out := installedSet{byID: map[string]*substrate.BundleStatus{}, held: map[string]bool{}}
-	statuses, err := DatasetFrom(ctx).BundleStatuses(ctx)
+	statuses, err := DatasetFrom(ctx).BundleStatusesUncounted(ctx)
 	if err != nil {
 		return installedSet{}, err
 	}
