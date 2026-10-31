@@ -1,0 +1,9 @@
+{
+  "client_id": "https://raw.githubusercontent.com/geoah/substrate/screenshots/app-authorization/notes-client.json",
+  "client_name": "Notes (a demo app)",
+  "client_uri": "https://github.com/geoah/substrate",
+  "redirect_uris": ["http://127.0.0.1/callback"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code"],
+  "response_types": ["code"]
+}
