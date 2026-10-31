@@ -99,7 +99,7 @@ let uid = 0;
  */
 export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {}) {
   const a = APPS[app], id = 'i' + uid++;
-  let hi = a.hi, lo = a.lo, bg0 = a.bg[0], bg1 = a.bg[1], glow = a.hi;
+  let bg0 = a.bg[0], bg1 = a.bg[1], glow = a.hi;
   // The band is a deeper shade of the background, the infinity in the app's colour.
   let band0 = mix(a.bg[1], a.hi, 0.35), band1 = mix(a.bg[1], a.hi, 0.55), ink0 = a.lo, ink1 = mix(a.lo, '#000000', 0.25), edge = 0.7;
   if (mode === 'dark' || mode === 'tinted') {
@@ -107,10 +107,9 @@ export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {})
     band0 = mix('#1d1d22', a.lo, 0.22); band1 = mix('#101013', a.lo, 0.18); ink0 = a.hi; ink1 = a.lo; edge = 0.12;
   }
   if (mode === 'tinted') {
-    glow = '#ffffff'; hi = '#f2f2f2'; lo = '#9a9a9a';
+    glow = '#ffffff';
     band0 = '#2b2b2f'; band1 = '#1c1c1f'; ink0 = '#f2f2f2'; ink1 = '#9a9a9a';
   }
-  const p = { hi, lo };
   const defs = [
     `<linearGradient id="${id}bg" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="${bg0}"/><stop offset="1" stop-color="${bg1}"/></linearGradient>`,
     `<radialGradient id="${id}gw" cx=".5" cy=".3" r=".62"><stop offset="0" stop-color="${glow}" stop-opacity="${mode === 'light' ? 0.35 : 0.22}"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>`,
@@ -142,12 +141,13 @@ function chrome() {
 }
 
 export function renderPNG(svg, px, out, { transparent = false } = {}) {
-  const html = path.join(os.tmpdir(), `icon-${process.pid}-${uid++}.html`);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-'));
+  const html = path.join(dir, 'icon.html');
   fs.writeFileSync(html, `<html><body style="margin:0;background:${transparent ? 'transparent' : '#000'}">${svg.replace(/width="\d+" height="\d+"/, `width="${px}" height="${px}"`)}</body></html>`);
   const args = ['--headless', '--no-sandbox', '--hide-scrollbars', `--screenshot=${path.resolve(out)}`, `--window-size=${px},${px}`, `file://${html}`];
   if (transparent) args.splice(3, 0, '--default-background-color=00000000');
   execFileSync(chrome(), args, { stdio: 'ignore' });
-  fs.rmSync(html);
+  fs.rmSync(dir, { recursive: true });
 }
 
 /** Writes an Xcode AppIcon set: light, dark and tinted iOS icons, and with mac the macOS sizes. */
