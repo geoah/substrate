@@ -16,7 +16,7 @@ struct SubstrateChatApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "chats") {
             RootView()
                 .environment(model)
                 .environmentObject(updates)
@@ -59,12 +59,16 @@ struct SubstrateChatApp: App {
 struct ChatCommands: Commands {
     let model: AppModel
     @FocusedValue(\.conversation) private var conversation
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        // New Chat takes ⌘N, so the window SwiftUI's own item opened moves to ⌥⌘N.
         CommandGroup(replacing: .newItem) {
             Button("New Chat") { model.route(.newChat(agent: nil, listen: false)) }
                 .keyboardShortcut("n")
                 .disabled(model.store == nil)
+            Button("New Window") { openWindow(id: "chats") }
+                .keyboardShortcut("n", modifiers: [.command, .option])
             Button("New Chat with Voice") { model.route(.newChat(agent: nil, listen: true)) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model.store == nil)

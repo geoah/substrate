@@ -32,6 +32,7 @@ final class Dictation {
     @ObservationIgnored private var input: AsyncStream<AnalyzerInput>.Continuation?
     @ObservationIgnored private var results: Task<Void, Never>?
     @ObservationIgnored private var interruption: NSObjectProtocol?
+    @ObservationIgnored private var routeChange: NSObjectProtocol?
     @ObservationIgnored private var generation = 0
 
     var active: Bool { state != .idle }
@@ -68,7 +69,15 @@ final class Dictation {
             let node = engine.inputNode
             let natural = node.outputFormat(forBus: 0)
             guard natural.sampleRate > 0 else { throw Problem(text: "No microphone is available.") }
-            let converter = natural == format ? nil : AVAudioConverter(from: natural, to: format)
+            var converter: AVAudioConverter?
+            if natural != format {
+                // A pair the converter cannot bridge would feed the model
+                // audio in a format it never asked for.
+                guard let bridge = AVAudioConverter(from: natural, to: format) else {
+                    throw Problem(text: "This microphone's audio can't be turned into what the speech model reads.")
+                }
+                converter = bridge
+            }
             node.installTap(onBus: 0, bufferSize: 2048, format: natural) { [weak self] buffer, _ in
                 let level = Self.level(buffer)
                 if let converted = Self.convert(buffer, with: converter, to: format) {
@@ -87,10 +96,10 @@ final class Dictation {
                     for try await (text, final) in module.results {
                         guard let self else { return }
                         if final {
-                            self.finalized += text
+                            self.finalized = Self.join(self.finalized, text)
                             self.volatile = ""
                         } else {
-                            self.volatile = text
+                            self.volatile = self.finalized.isEmpty ? text : Self.join(" ", text)
                         }
                     }
                 } catch {}
@@ -117,7 +126,7 @@ final class Dictation {
         if let analyzer {
             let finishing = Task { try? await analyzer.finalizeAndFinishThroughEndOfInput() }
             let deadline = Task {
-                try? await Task.sleep(for: .milliseconds(1500))
+                try? await Task.sleep(for: .seconds(1))
                 await analyzer.cancelAndFinishNow()
             }
             await finishing.value
@@ -156,7 +165,9 @@ final class Dictation {
         analyzer = nil
         level = 0
         if let interruption { NotificationCenter.default.removeObserver(interruption) }
+        if let routeChange { NotificationCenter.default.removeObserver(routeChange) }
         interruption = nil
+        routeChange = nil
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
@@ -170,19 +181,30 @@ final class Dictation {
         #endif
     }
 
-    /// A call, Siri or another app taking the input stops listening and
-    /// keeps what was heard.
+    /// A call, Siri or another app taking the input, or the input changing
+    /// under the engine (headphones in or out, whose format the tap no longer
+    /// matches), stops listening and keeps what was heard.
     private func observeInterruptions() {
         #if os(iOS)
-        interruption = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
-        ) { [weak self] _ in
+        let stop: @Sendable (Notification) -> Void = { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.state == .listening else { return }
                 await self.stop()
             }
         }
+        interruption = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main, using: stop)
+        routeChange = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main, using: stop)
         #endif
+    }
+
+    /// Two runs of heard words, a space between them unless one is there or
+    /// the second opens with punctuation.
+    static func join(_ head: String, _ tail: String) -> String {
+        guard let last = head.last, let first = tail.first else { return head + tail }
+        if last.isWhitespace || first.isWhitespace || ",.;:!?)".contains(first) { return head + tail }
+        return head + " " + tail
     }
 
     // MARK: The model

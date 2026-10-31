@@ -44,7 +44,13 @@ final class Conversation: Identifiable {
     /// thread's: a new chat has none until its `thread` event.
     let id = UUID()
     private(set) var threadID: String?
-    var agentID: String?
+    /// Who the chat is with: a bound chat's thread names it; a new chat
+    /// holds the one chosen.
+    var agentID: String? {
+        get { threadID.flatMap { store?.thread($0)?.agentID } ?? chosenAgent }
+        set { chosenAgent = newValue }
+    }
+    private var chosenAgent: String?
     var draft: String { didSet { if draft != oldValue { store?.setDraft(draft, for: self) } } }
 
     private(set) var overlay = LiveOverlay.empty
@@ -70,6 +76,8 @@ final class Conversation: Identifiable {
     @ObservationIgnored private var handoverTask: Task<Void, Never>?
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var checkTask: Task<Void, Never>?
+    @ObservationIgnored private var pollRead: Task<Void, Never>?
+    @ObservationIgnored private var pollAgain = false
     /// The last failure an attach saw, shown if the turn ended on it.
     @ObservationIgnored private var lastError: String?
     /// The overlay as the stream left it, published every 50 ms.
@@ -82,13 +90,17 @@ final class Conversation: Identifiable {
     init(store: ChatStore, thread: String?, agent: String?, draft: String) {
         self.store = store
         threadID = thread
-        agentID = agent
+        chosenAgent = agent
         self.draft = draft
     }
 
     // MARK: What the view reads
 
     var active: Bool { phase != .idle }
+    /// The conversation owns its thread's rows: a run is under way, or its
+    /// overlay waits for a handover read that failed. No other read may
+    /// publish under it, or the overlay and the rows would both show a turn.
+    var ownsTranscript: Bool { phase != .idle || reloadFailed != nil }
     var streaming: Bool { phase == .streaming }
 
     var agent: Agent? { store?.agent(agentID) }
@@ -99,6 +111,11 @@ final class Conversation: Identifiable {
     var turns: [Turn] {
         let stored = threadID.flatMap { store?.turns[$0] } ?? []
         return overlay.turns.isEmpty ? stored : stored + overlay.turns
+    }
+
+    /// A send is out and nothing has come back yet: the model is starting.
+    var awaitingFirstEvent: Bool {
+        streaming && overlay.turns.last?.role == .user
     }
 
     /// The key of the assistant turn the stream is writing.
@@ -129,9 +146,16 @@ final class Conversation: Identifiable {
     func open() {
         guard let store, let thread = threadID else { return }
         store.ensureLoaded(thread)
-        if let t = store.thread(thread), t.running, !active {
+        // A chat the list does not hold (a notification, a shortcut, a
+        // restore before the first read, an old chat): its row names the
+        // agent, so it is read.
+        if store.thread(thread) == nil { store.fetchThread(thread) }
+        if active { return }
+        if reloadFailed != nil {
+            retryReload()
+        } else if let t = store.thread(thread), t.running {
             attach()
-        } else if !active {
+        } else {
             store.load(thread)
         }
     }
@@ -139,6 +163,9 @@ final class Conversation: Identifiable {
     /// The thread's row moved (the feed, a list read).
     func threadMoved(_ thread: ChatThread) {
         switch phase {
+        case .idle where reloadFailed != nil:
+            // The handover's own read completes it, atomically.
+            retryReload()
         case .idle where thread.running:
             if store?.isVisible(thread.id) == true { attach() }
         case .idle:
@@ -158,6 +185,7 @@ final class Conversation: Identifiable {
 
     func close() {
         run += 1
+        pollRead?.cancel()
         streamTask?.cancel()
         retryTask?.cancel()
         handoverTask?.cancel()
@@ -410,19 +438,38 @@ final class Conversation: Identifiable {
     }
 
     /// One read of a background-running thread: its rows as they grow, and
-    /// the handover once it settles.
+    /// the handover once it settles. One read at a time, so an older answer
+    /// never lands after a newer one; a poll asked for meanwhile follows it.
     func poll() {
         guard phase == .background, let store, let thread = threadID else { return }
+        if pollRead != nil {
+            pollAgain = true
+            return
+        }
         let run = run
-        Task {
-            guard let now = try? await store.readNow(thread), run == self.run, phase == .background else { return }
-            guard let record = now.thread else { return gone(run) }
-            store.upsert(record)
-            store.publish(thread, records: now.rows, version: record.version, full: now.rows.count >= 500)
-            if record["status"]?.string != "running" {
-                pollTask?.cancel()
-                phase = .idle
-                settles += 1
+        pollRead = Task {
+            defer {
+                pollRead = nil
+                if pollAgain, run == self.run {
+                    pollAgain = false
+                    poll()
+                }
+            }
+            do {
+                let now = try await store.readNow(thread)
+                guard !Task.isCancelled, run == self.run, phase == .background else { return }
+                guard let record = now.thread else { return gone(run) }
+                store.upsert(record)
+                store.publish(thread, records: now.rows, version: record.version, full: now.rows.count >= 500)
+                if record["status"]?.string != "running" {
+                    pollTask?.cancel()
+                    pollAgain = false
+                    phase = .idle
+                    settles += 1
+                }
+            } catch {
+                if store.handle(error) { return }
+                if let refusal = error as? ServerError, refusal.status == 404, run == self.run { gone(run) }
             }
         }
     }
@@ -488,16 +535,23 @@ final class Conversation: Identifiable {
     func stop() {
         guard let store, let thread = threadID, phase == .streaming, !stopping else { return }
         stopping = true
+        let run = run
         Task {
             do {
                 _ = try await store.api.stop(thread: thread)
                 // The stream's own `done` settles the overlay.
             } catch {
-                stopping = false
                 if store.handle(error) { return }
-                // Nothing streamable runs: the turn settled first, or another
-                // process owns it. The thread says which.
-                if let refusal = error as? ServerError, refusal.status == 409 { return }
+                guard run == self.run else { return }
+                stopping = false
+                // Nothing this process streams runs: the turn settled first,
+                // or another process owns it. An attach reads which, and
+                // settles, streams or waits in the background accordingly.
+                if let refusal = error as? ServerError, refusal.status == 409 {
+                    try? await Task.sleep(for: .seconds(1))
+                    if run == self.run, phase == .streaming { attach() }
+                    return
+                }
                 self.error = explain(error, server: store.session.server)
             }
         }
@@ -515,55 +569,75 @@ final class Conversation: Identifiable {
         let id = outcome.id
         let run = run
         checkTask = Task {
-            try? await Task.sleep(for: .seconds(1))
-            var found: String?
-            var running = false
-            if let thread, let baseline {
-                if let now = try? await store.readNow(thread),
-                   now.rows.contains(where: { $0["role"]?.string == "user" && ($0["turn"]?.int ?? -1) > baseline
-                       && $0["content"]?.string == message })
-                {
-                    found = thread
-                    running = now.thread?["status"]?.string == "running"
-                    if let record = now.thread {
-                        store.publish(thread, records: now.rows, version: record.version, full: now.rows.count >= 500)
-                        store.upsert(record)
-                    }
-                }
-            } else if thread == nil, let agent = agentID {
-                // A new chat: the agent's newest chats, one started after the
-                // send whose first message is this one.
-                found = await adopt(agent: agent, message: message, after: sentAt.addingTimeInterval(-5))
-                if let found, let record = try? await store.api.get(Kinds.thread, found) {
-                    running = record["status"]?.string == "running"
-                    store.upsert(record)
-                }
-            }
-            outcomes.removeAll { $0.id == id }
-            guard let found else {
+            // Whether this check still speaks for the conversation: nothing
+            // it read may land once a run has started since, or the
+            // conversation closed. It then ends as unknown, as the console's.
+            @MainActor func current() -> Bool { !Task.isCancelled && run == self.run && !store.closed }
+            @MainActor func unknown() {
+                outcomes.removeAll { $0.id == id }
                 outcome.kind = .unknown
                 outcomes.append(outcome)
-                return
             }
-            guard run == self.run else { return }
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return unknown()
+            }
+            var found: String?
+            var running = false
+            var read: (thread: Record?, rows: [Record])?
+            do {
+                if let thread {
+                    // Past the newest turn held before the send; with none held
+                    // (the rows were never read), written since the send.
+                    let now = try await store.readNow(thread)
+                    let since = sentAt.addingTimeInterval(-5)
+                    if now.rows.contains(where: { row in
+                        row["role"]?.string == "user" && row["content"]?.string == message
+                            && (baseline.map { (row["turn"]?.int ?? -1) > $0 } ?? (row.createdDate >= since))
+                    }) {
+                        found = thread
+                        read = now
+                        running = now.thread?["status"]?.string == "running"
+                    }
+                } else if thread == nil, let agent = agentID {
+                    // A new chat: the agent's newest chats, one started after
+                    // the send whose first message is this one.
+                    found = try await adopt(agent: agent, message: message, after: sentAt.addingTimeInterval(-5))
+                    if let found, let record = try await store.api.get(Kinds.thread, found) {
+                        running = record["status"]?.string == "running"
+                        read = (record, [])
+                    }
+                }
+            } catch {
+                if store.handle(error) { return }
+                // A read that failed proves nothing either way.
+            }
+            guard current() else { return unknown() }
+            outcomes.removeAll { $0.id == id }
+            guard let found else { return unknown() }
+            if let record = read?.thread {
+                store.upsert(record)
+                if let rows = read?.rows, !rows.isEmpty {
+                    store.publish(found, records: rows, version: record.version, full: rows.count >= 500)
+                }
+            }
             if threadID == nil { bind(found) }
             if running { attach() } else { store.load(found, force: true) }
         }
     }
 
-    private func adopt(agent: String, message: String, after: Date) async -> String? {
-        guard let store,
-              let page = try? await store.api.list(ListQuery(
-                  kinds: [Kinds.thread],
-                  properties: ["mode": ["eq": "chat"], "agent": ["eq": .string("\(Kinds.agent)/\(agent)")]],
-                  first: 5, orderBy: "startedAt:desc"))
-        else { return nil }
+    private func adopt(agent: String, message: String, after: Date) async throws -> String? {
+        guard let store else { return nil }
+        let page = try await store.api.list(ListQuery(
+            kinds: [Kinds.thread],
+            properties: ["mode": ["eq": "chat"], "agent": ["eq": .string("\(Kinds.agent)/\(agent)")]],
+            first: 5, orderBy: "startedAt:desc"))
         for thread in page.records where ChatThread(record: thread).startedAt >= after {
-            guard let first = try? await store.api.list(ListQuery(
+            let first = try await store.api.list(ListQuery(
                 kinds: [Kinds.message], properties: ["thread": ["eq": .string(thread.id)], "role": ["eq": "user"]],
                 first: 1, orderBy: "turn:asc,createdAt:asc")).records.first
-            else { continue }
-            if first["content"]?.string == message { return thread.id }
+            if first?["content"]?.string == message { return thread.id }
         }
         return nil
     }

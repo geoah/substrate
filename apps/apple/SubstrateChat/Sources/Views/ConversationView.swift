@@ -41,6 +41,10 @@ struct ConversationView: View {
                 }
                 ForEach(turns) { turn in
                     TurnView(turn: turn, agent: conversation.agent, live: turn.id == conversation.liveKey)
+                        .equatable()
+                }
+                if conversation.awaitingFirstEvent {
+                    TypingDots()
                 }
                 ConversationStatus(conversation: conversation)
                 if store.prefs.technicalDetails, let thread {
@@ -86,20 +90,26 @@ struct ConversationView: View {
         .toolbar { toolbar }
         .focusedSceneValue(\.conversation, conversation)
         .onAppear {
+            store.retain(conversation, scene: scene.id)
             conversation.open()
             showing()
         }
         .onDisappear {
             store.setVisible(scene: scene.id, thread: nil)
             if dictation.active { dictation.cancel() }
-            store.forget(conversation)
+            store.release(conversation, scene: scene.id)
         }
         .onChange(of: conversation.threadID) { _, _ in showing() }
         .onChange(of: phase) { _, phase in
             showing()
             if phase != .active, dictation.active { Task { await stopListening() } }
         }
-        .onChange(of: conversation.settles) { _, _ in showing() }
+        .onChange(of: conversation.settles) { _, _ in
+            showing()
+            if phase == .active {
+                AccessibilityNotification.Announcement("\(conversation.name) answered").post()
+            }
+        }
         .sensoryFeedback(.success, trigger: conversation.settles)
         .sensoryFeedback(.error, trigger: conversation.error)
         .sheet(item: $keySheet) { ProviderKeySheet(provider: $0) }
@@ -118,9 +128,9 @@ struct ConversationView: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if conversation.streaming {
             ToolbarItem(placement: .primaryAction) {
+                // ⌘. is the Chat menu's.
                 Button("Stop", systemImage: "stop.fill") { conversation.stop() }
                     .disabled(conversation.stopping)
-                    .keyboardShortcut(".")
             }
         }
         if let id = conversation.threadID {

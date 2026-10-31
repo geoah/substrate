@@ -77,4 +77,9 @@ import Testing
         let text = "Here is **bold**:\n\n## Head\n\n- one\n- [x] two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```swift\nlet x = 1\n```\n> quoted `code`"
         #expect(plainText(markdown: text) == "Here is bold: Head one two a, b 1, 2 let x = 1 quoted code")
     }
+
+    @Test func aReplyAlreadyOnOneLineLosesItsMarkersToo() {
+        let line = "Here is what I found, **in Markdown**: ## A heading - First point * Second - [x] done | Name | Value | |:--|--:| | a | 1 | ```swift let x = 1 ``` > quoted"
+        #expect(plainText(markdown: line) == "Here is what I found, in Markdown: A heading - First point Second done, Name, Value, a, 1, let x = 1 quoted")
+    }
 }

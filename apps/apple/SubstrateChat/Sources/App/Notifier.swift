@@ -21,7 +21,9 @@ enum Notifier {
         let content = UNMutableNotificationContent()
         content.title = agent
         content.subtitle = title
-        content.body = thread.preview ?? "Answered."
+        content.body = thread.status == "error"
+            ? "Couldn't answer\(thread.reason.map { ": \($0)" } ?? ".")"
+            : thread.preview ?? "Answered."
         content.sound = .default
         content.threadIdentifier = thread.id
         content.userInfo = [threadKey: thread.id]

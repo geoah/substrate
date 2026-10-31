@@ -61,29 +61,28 @@ struct API: Sendable {
         secret = session.secret
     }
 
-    static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.httpMaximumConnectionsPerHost = 6
-        config.waitsForConnectivity = false
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.urlCache = nil
-        return URLSession(configuration: config)
-    }()
+    nonisolated(unsafe) static var session = makeSession(timeout: 30)
 
     /// The streams never end on their own while a turn runs or the feed is
     /// idle; the server writes a `{}` heartbeat every 30 seconds, so a stream
     /// silent for longer than this is dead.
-    static let streaming: URLSession = {
+    nonisolated(unsafe) static var streaming = makeSession(timeout: 75, resource: 7 * 24 * 3600)
+
+    /// The sessions are replaceable for the tests' scripted transport, which
+    /// a `URLProtocol` in `protocolClasses` stands in for the server with.
+    static func makeSession(timeout: TimeInterval, resource: TimeInterval? = nil,
+                            protocolClasses: [AnyClass]? = nil) -> URLSession
+    {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 75
-        config.timeoutIntervalForResource = 7 * 24 * 3600
+        config.timeoutIntervalForRequest = timeout
+        if let resource { config.timeoutIntervalForResource = resource }
         config.httpMaximumConnectionsPerHost = 6
         config.waitsForConnectivity = false
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
+        if let protocolClasses { config.protocolClasses = protocolClasses }
         return URLSession(configuration: config)
-    }()
+    }
 
     /// A server address as typed: a bare host is HTTPS, a local one plain
     /// HTTP, and only the origin is kept.
