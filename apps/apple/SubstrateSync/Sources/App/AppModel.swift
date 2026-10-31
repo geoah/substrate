@@ -124,12 +124,9 @@ final class AppModel: ObservableObject {
         session = Keychain.load()
         Task {
             // The model lives as long as the app, so the engine holds it.
-            // A source's progress ends before its run is recorded: the
-            // system's bar moves on the record, so it never steps back.
-            await SyncEngine.shared.setOnChange { state in
-                self.state = state
-                self.continued?.show(self.continuedShown)
-            }
+            await SyncEngine.shared.setOnChange { state in self.state = state }
+            // A source's progress ends before the next one starts: the
+            // system's bar keeps the last step until there is a new one.
             await SyncEngine.shared.setOnProgress { source, step in
                 self.progress[source] = step
                 if step != nil { self.continued?.show(self.continuedShown) }
@@ -531,16 +528,12 @@ final class AppModel: ObservableObject {
     }
 
     /// The running syncs as the system shows a continued one: the status
-    /// card's headline and detail, and a fraction over every source they
-    /// cover, so the bar never runs back when the next source starts.
+    /// card's headline and detail, and the running step's bar.
     private var continuedShown: ContinuedSync.Shown {
-        let sources = max(1, syncSources.count)
-        let ran = syncSources.filter(ranThisSync).count
         guard let (source, p) = current else {
-            return .init(title: "Syncing", subtitle: "Starting…", fraction: Double(ran) / Double(sources))
+            return .init(title: "Syncing", subtitle: "Starting…", fraction: 0)
         }
-        return .init(title: "Syncing \(source.title)", subtitle: p.detail,
-                     fraction: (Double(ran) + (p.overall ?? p.fraction ?? 0)) / Double(sources))
+        return .init(title: "Syncing \(source.title)", subtitle: p.detail, fraction: p.fraction ?? 0)
     }
 
     /// How many of a source's rows a sync of it would still send, where the

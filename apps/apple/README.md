@@ -197,7 +197,10 @@ Health → History names (14 days unless it says 30 days, 3 or 6
 months, a year, or everything the phone holds); each later one sends the last
 three days again and any day not yet accepted. A day counts as sent only once
 the server has filed it (its `applehealth/export/<fire id>` receipt); one the
-server parked stays queued and is sent again. Days go seven at a time, and a
+server parked stays queued and is sent again. Days go one after another
+while the server files behind them, at most fourteen days ahead of its
+filing: waiting for each batch stood the progress still long enough for iOS
+to end a continued sync, and never waiting filled the server's spool. A
 range longer than a month first asks HealthKit which days hold data, so years
 of history are not read one empty day at a time. That answer is kept in
 `health-scan.json` (`HealthScan` in `Coverage.swift`), which Home, Coverage
@@ -309,12 +312,16 @@ other source, or a first sync of a source the phone has not counted, the app
 asks iOS for a continued processing task (`ContinuedSync` in
 `Background.swift`, iOS 26's `BGContinuedProcessingTask`). iOS keeps the app
 running and draws the progress itself as a Live Activity on the Lock Screen
-and in the Dynamic Island: the status card's headline and line, and a bar over
-every source in the run. Its stop button stops the sync as Stop does. iOS
-also stops a task whose progress stands still, so Health's bar runs over the
-whole run, each day half read and sent and half filed, and moves with every
-receipt while the phone waits on the server; a stop by iOS is logged in
-Activity with the step and how long the bar had stood. The app
+and in the Dynamic Island: the status card's headline and line, and a bar for
+the running step. Its stop button stops the sync as Stop does. iOS also ends
+a task whose bar has not visibly moved within about thirty seconds (its log
+says `Task has not reported progress within expected cadence`), so the bar
+counts whole percents and Health shows one calendar month at a time ("March
+2019 · 12 of 31"), each day half read and sent and half filed, moving while
+the phone waits on the server. A stop by iOS is logged in Activity with the step
+and how long the bar had stood. Health is encrypted while the phone is
+locked, so a lock stops the Health part of a sync, says so, and sends nothing
+it could not read. The app
 ships no widget extension, and a small sync asks for nothing. Where iOS will
 not run one now, the sync runs as before, while the app is on screen. The debug build's Home has Add Sample
 Data, which writes yesterday's Health samples, three contacts and a sample

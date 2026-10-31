@@ -130,9 +130,9 @@ final class ContinuedSync {
     /// The permitted identifier is this followed by `*`. Every sync takes a
     /// new one: registering an identifier a second time kills the app.
     static let prefix = "dev.reamde.substrate.sync.continued."
-    /// The bar's resolution, fine enough that one receipt in a run of years
-    /// still moves it: iOS judges a stall by the count, not by the work.
-    private static let units: Int64 = 1_000_000
+    /// Whole percents, as Apple's own examples count: the system's stall
+    /// check ignores a bar moving by less.
+    private static let units: Int64 = 100
 
     private var task: BGContinuedProcessingTask?
     private var shown: Shown
@@ -198,7 +198,7 @@ final class ContinuedSync {
         if task.title != shown.title || task.subtitle != shown.subtitle {
             task.updateTitle(shown.title, subtitle: shown.subtitle)
         }
-        let done = Int64((min(1, max(0, shown.fraction)) * Double(Self.units)).rounded())
+        let done = Int64((min(1, max(0, shown.fraction)) * Double(Self.units)).rounded(.down))
         if done != task.progress.completedUnitCount {
             task.progress.completedUnitCount = done
             moved = Date()
