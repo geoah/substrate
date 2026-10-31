@@ -69,3 +69,39 @@ func TestAnAppsActorHoldsAtTheOwnerTierAndWritesInTheForeground(t *testing.T) {
 		t.Fatal("installed code went ahead of background writers: the test proves nothing")
 	}
 }
+
+// A chat an app opens under an `agents:` scope (decision 0195) is the app's
+// message and the agent's turn: the API clears the scoped mark before the
+// engine, the user message is written under the app's actor, and the app
+// renames the thread under its mark as the owner would.
+func TestAChatAnAppOpensIsItsMessageAndItsThreadToRename(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("chat", fakeTurn{content: "hello"})
+	app := substrate.WithScopes(ctx, []string{"agents:*"})
+	actor := substrate.AppActor("notes.example.org")
+
+	res, err := ds.ChatAgent(substrate.WithoutScopes(app), actor, crewPackage+"/chatter", "", "hi", nil)
+	if err != nil {
+		t.Fatalf("the app's chat: %v", err)
+	}
+	if res.Status != threadOK {
+		t.Fatalf("the turn settled %+v", res)
+	}
+	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{Kinds: []string{typeMessage}}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) == 0 || changes[0].Actor != actor {
+		t.Fatalf("the first message row = %+v, want the user message under %s", changes, actor)
+	}
+	if _, err := ds.Patch(app, actor, typeThread, res.Thread, substrate.PatchInput{
+		Properties: map[string]any{"subject": "Renamed"},
+	}); err != nil {
+		t.Fatalf("the app's rename: %v", err)
+	}
+	if got := threadProps(t, ds, res.Thread)["subject"]; got != "Renamed" {
+		t.Fatalf("the thread's subject = %v", got)
+	}
+}
