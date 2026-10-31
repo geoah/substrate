@@ -960,8 +960,12 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				// The diff or the merge names its own target, which no scope
 				// bounds: an app's token choosing both the target and the
 				// change is not a write its scopes cover, whatever kind
-				// declares the transition (decision 0194).
-				if t.scoped && !t.internal {
+				// declares the transition (decision 0194). The one exception
+				// is the change request a `decide:` scope reaches, which the
+				// app did not write and decides as the owner would (0195).
+				if t.scoped && !t.internal && tr.OnEnter == onEnterApplyDiff && t.decidesOn(sp) {
+					t.deciding = true
+				} else if t.scoped && !t.internal {
 					return nil, fmt.Errorf("%w: an app's token does not move %s into %q, which applies a change to another record",
 						substrate.ErrForbidden, name, target)
 				}
@@ -1632,6 +1636,15 @@ func (t *txn) ownerHand() bool {
 	return t.tier == substrate.TierOwner && !t.scoped
 }
 
+// decidesOn reports whether this write is an app's decision on the change
+// request its `decide:` scope reaches: a patch of exactly the record the API
+// named after holding it to the grant (decision 0195).
+func (t *txn) decidesOn(sp *applySpec) bool {
+	return t.scoped && t.decides != "" && sp.op == substrate.OpPatch &&
+		sp.ty.Identity == vocabulary.KindRecordPatchRequest &&
+		t.decides == vocabulary.RecordPath(sp.ty.Identity, sp.id)
+}
+
 // isBundleOwnerGated reports whether a type is a bundle input's kind or an
 // account record — the records whose external create/delete is owner-only.
 func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
@@ -2043,7 +2056,7 @@ func (t *txn) admitAdjustedDiff(sp *applySpec) (bool, error) {
 		return false, fmt.Errorf("%w: adjustedDiff is written only with the accept: the same write moves decision from proposed to accepted",
 			substrate.ErrValidation)
 	}
-	if !t.ownerHand() || t.policyDecision {
+	if !(t.ownerHand() || t.decidesOn(sp)) || t.policyDecision {
 		return false, fmt.Errorf("%w: only the owner adjusts a change request; installed code and the policy judge decide what was proposed",
 			substrate.ErrForbidden)
 	}
@@ -2464,7 +2477,7 @@ func (t *txn) setEffectEmit(emit []string) {
 // or delete. An bundle actor with no ceiling carried (a generic-API write
 // under a function/agent actor) is refused outright: fail closed.
 func (t *txn) authorizeRequestOp(op, targetKind string) error {
-	if t.scoped && !t.internal {
+	if t.scoped && !t.internal && !t.deciding {
 		return fmt.Errorf("%w: an app's token does not accept a change request", substrate.ErrForbidden)
 	}
 	if t.tier != substrate.TierBundle {

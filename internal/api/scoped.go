@@ -22,11 +22,14 @@ import (
 //
 // What it allows: reading the kinds the grant reads (Get, List, Search,
 // Kinds, KindByRef, TypesImplementing), writing the kinds it writes (Put,
-// Patch, Delete), the unit table and conversions. A kind the grant cannot
-// read is answered exactly as a kind the repository never declared, so a
-// refusal does not tell an app which kinds exist. Every record handed back,
-// a write's answer included, is cut to what the grant reads. Everything else
-// is ErrForbidden.
+// Patch, Delete), the unit table and conversions. Under `agents:` and
+// `decide:` (decision 0195) it also reads the rows those reach, chats with
+// and stops the matching agents, makes the few writes those verbs carry and
+// tails the change feed held to the same rows (scopedagents.go). A kind the
+// grant cannot read is answered exactly as a kind the repository never
+// declared, so a refusal does not tell an app which kinds exist. Every record
+// handed back, a write's answer included, is cut to what the grant reads.
+// Everything else is ErrForbidden.
 type scopedDataset struct {
 	inner substrate.Dataset
 	grant scope.Grant
@@ -39,6 +42,12 @@ type scopedDataset struct {
 	once     sync.Once
 	registry map[string]substrate.KindInfo
 	regErr   error
+
+	// mu guards the memos of the row rules: each thread's agent and the feed
+	// rows found readable, which a watch consults for as long as it runs.
+	mu           sync.Mutex
+	threadAgents map[string]string
+	seen         map[string]bool
 }
 
 var _ substrate.Dataset = (*scopedDataset)(nil)
@@ -172,6 +181,11 @@ func (s *scopedDataset) requireRead(ctx context.Context, kind string) error {
 // requireWrite answers the refusal for a kind the grant cannot write: as
 // unknown when it cannot read it either, else forbidden.
 func (s *scopedDataset) requireWrite(ctx context.Context, kind string) error {
+	if gated, err := s.rowGated(ctx, kind); err != nil {
+		return err
+	} else if gated {
+		return fmt.Errorf("%w: an app's token does not write %s", substrate.ErrForbidden, kind)
+	}
 	if err := s.requireRead(ctx, kind); err != nil {
 		return err
 	}
@@ -220,7 +234,7 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 	}
 	out := make([]substrate.KindInfo, 0, len(all))
 	for _, k := range all {
-		if r, ok := reg[k.Identity]; ok && s.grant.Reads(k.Identity, internalKind(r)) {
+		if r, ok := reg[k.Identity]; ok && (s.grant.Reads(k.Identity, internalKind(r)) || s.rowKind(k.Identity)) {
 			out = append(out, k)
 		}
 	}
@@ -228,8 +242,10 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 }
 
 func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
-	if err := s.requireRead(ctx, ref); err != nil {
+	if ok, err := s.reaches(ctx, ref); err != nil {
 		return substrate.KindInfo{}, err
+	} else if !ok {
+		return substrate.KindInfo{}, errUnknownKind(ref)
 	}
 	return s.inner.KindByRef(ctx, ref)
 }
@@ -241,7 +257,7 @@ func (s *scopedDataset) TypesImplementing(ctx context.Context, trait string) ([]
 	}
 	out := make([]substrate.KindInfo, 0, len(all))
 	for _, k := range all {
-		if ok, err := s.reads(ctx, k.Identity); err != nil {
+		if ok, err := s.reaches(ctx, k.Identity); err != nil {
 			return nil, err
 		} else if ok {
 			out = append(out, k)
@@ -259,17 +275,35 @@ func (s *scopedDataset) ConvertUnit(ctx context.Context, in substrate.UnitConver
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
-	if err := s.requireRead(ctx, typ); err != nil {
+	gated, err := s.rowGated(ctx, typ)
+	if err != nil {
 		return nil, err
+	}
+	if !gated {
+		if err := s.requireRead(ctx, typ); err != nil {
+			return nil, err
+		}
 	}
 	rec, err := s.inner.Get(ctx, typ, id)
 	if err != nil {
 		return nil, err
 	}
+	if gated {
+		if ok, err := s.rowVisible(ctx, rec); err != nil {
+			return nil, err
+		} else if !ok {
+			return nil, fmt.Errorf("%w: %s", substrate.ErrNotFound, vocabulary.RecordPath(typ, id))
+		}
+	}
 	return s.cut(ctx, rec)
 }
 
 func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	if gated, err := s.anyRowGated(ctx, q.Filter.Kinds); err != nil {
+		return nil, err
+	} else if gated {
+		return s.listRows(ctx, q)
+	}
 	kinds, any, err := s.narrow(ctx, q.Filter.Kinds)
 	if err != nil {
 		return nil, err
@@ -564,7 +598,7 @@ func (s *scopedDataset) cutPage(ctx context.Context, page *substrate.Page) (*sub
 	out.Head, out.Generation = 0, ""
 	out.Records = make([]*substrate.Record, 0, len(page.Records))
 	for _, rec := range page.Records {
-		if ok, err := s.reads(ctx, rec.Kind); err != nil {
+		if ok, err := s.visible(ctx, rec); err != nil {
 			return nil, err
 		} else if !ok {
 			continue
@@ -578,9 +612,12 @@ func (s *scopedDataset) cutPage(ctx context.Context, page *substrate.Page) (*sub
 	if page.Included != nil {
 		out.Included = make(map[string]*substrate.Record, len(page.Included))
 		for path, rec := range page.Included {
-			if ok, err := s.reads(ctx, kindOfPath(path)); err != nil {
+			if rec == nil {
+				continue
+			}
+			if ok, err := s.visible(ctx, rec); err != nil {
 				return nil, err
-			} else if !ok || rec == nil {
+			} else if !ok {
 				continue
 			}
 			c, err := s.cut(ctx, rec)
@@ -601,6 +638,14 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 		in.Mode = substrate.SearchLexical
 	default:
 		return substrate.SearchResult{}, errScope("semantic search, which spends the owner's embedding budget")
+	}
+	for _, k := range in.Kinds {
+		if gated, err := s.rowGated(ctx, k); err != nil {
+			return substrate.SearchResult{}, err
+		} else if gated {
+			return substrate.SearchResult{}, fmt.Errorf("%w: an app's token reads %s through a list, which its agent scopes narrow record by record",
+				substrate.ErrForbidden, k)
+		}
 	}
 	kinds, any, err := s.narrow(ctx, in.Kinds)
 	if err != nil {
@@ -659,6 +704,12 @@ func (s *scopedDataset) Put(ctx context.Context, _ substrate.Actor, in substrate
 }
 
 func (s *scopedDataset) Patch(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+	// No scope writes a kind the agent verbs reach (they are core's and
+	// llm's), so their few writes are the agent verbs' even where a read
+	// scope reads the kind whole.
+	if s.rowKind(typ) {
+		return s.patchRow(ctx, typ, id, in)
+	}
 	if err := s.requireWrite(ctx, typ); err != nil {
 		return nil, err
 	}
@@ -701,20 +752,21 @@ func (s *scopedDataset) Aggregate(context.Context, substrate.AggregateQuery) (*s
 	return nil, errScope("aggregate reads")
 }
 
-func (s *scopedDataset) Changes(context.Context, int64, substrate.ChangeFilter, int) ([]substrate.Change, error) {
-	return nil, errScope("the change feed")
+// Changes is the feed held to the grant, every row carrying names alone
+// (heldChanges). The API opens only its live tail to an app (decision 0195).
+func (s *scopedDataset) Changes(ctx context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
+	kept, _, _, err := s.heldChanges(ctx, after, f, limit)
+	return kept, err
 }
 
-func (s *scopedDataset) Head(context.Context) (substrate.ChangelogHead, error) {
-	return substrate.ChangelogHead{}, errScope("the change feed")
+// Head is the tail's bookmark: a seq counts the whole repository's writes,
+// which the feed's own row seqs disclose anyway (decision 0195).
+func (s *scopedDataset) Head(ctx context.Context) (substrate.ChangelogHead, error) {
+	return s.inner.Head(ctx)
 }
 
-// WatchSignal answers a closed channel: the tail is refused before it is
-// reached, and a closed channel ends any loop that waits on it.
-func (s *scopedDataset) WatchSignal(context.Context) <-chan int64 {
-	ch := make(chan int64)
-	close(ch)
-	return ch
+func (s *scopedDataset) WatchSignal(ctx context.Context) <-chan int64 {
+	return s.inner.WatchSignal(ctx)
 }
 
 func (s *scopedDataset) MintToken(context.Context, substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
@@ -807,16 +859,41 @@ func (s *scopedDataset) CallAgent(context.Context, string, any) (*substrate.Agen
 	return nil, errScope("agents")
 }
 
-func (s *scopedDataset) ChatAgent(context.Context, substrate.Actor, string, string, string, func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
-	return nil, errScope("agents")
+// ChatAgent opens or continues a chat with an agent the grant talks to. The
+// user message is the app's, under its own actor; the turn runs the agent
+// under the agent's permissions, so the scoped mark stops here and the
+// agent's writes meet the gates an owner's chat meets (decision 0195).
+func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	if !s.grant.Talks() {
+		return nil, errScope("agents")
+	}
+	if authority, _, _ := vocabulary.SplitKindRef(name); authority == "" {
+		return nil, fmt.Errorf("%w: an app's token names an agent in full, <authority>/<package>/<name>, not %q",
+			substrate.ErrValidation, name)
+	}
+	if !s.grant.TalksTo(name) {
+		return nil, fmt.Errorf("%w: agent %s", substrate.ErrNotFound, name)
+	}
+	if threadID != "" {
+		if err := s.requireThread(ctx, threadID); err != nil {
+			return nil, err
+		}
+	}
+	return s.inner.ChatAgent(substrate.WithoutScopes(ctx), s.actor, name, threadID, message, emit)
 }
 
-func (s *scopedDataset) AttachAgentTurn(context.Context, string, func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
-	return nil, errScope("agents")
+func (s *scopedDataset) AttachAgentTurn(ctx context.Context, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	if err := s.requireThread(ctx, threadID); err != nil {
+		return nil, err
+	}
+	return s.inner.AttachAgentTurn(ctx, threadID, emit)
 }
 
-func (s *scopedDataset) StopAgentTurn(context.Context, substrate.Actor, string) (*substrate.AgentResult, error) {
-	return nil, errScope("agents")
+func (s *scopedDataset) StopAgentTurn(ctx context.Context, _ substrate.Actor, threadID string) (*substrate.AgentResult, error) {
+	if err := s.requireThread(ctx, threadID); err != nil {
+		return nil, err
+	}
+	return s.inner.StopAgentTurn(ctx, s.actor, threadID)
 }
 
 func (s *scopedDataset) SweepResolutions(context.Context) (int, error) {

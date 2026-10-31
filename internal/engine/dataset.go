@@ -552,8 +552,14 @@ type txn struct {
 	// (substrate.ScopesFrom): its actor still resolves to the owner tier, so
 	// the owner-only gates read ownerHand, never the tier alone.
 	scoped bool
-	now    time.Time
-	maxSeq int64
+	// decides is the change request an app's token may decide under a
+	// `decide:` scope (substrate.DecisionFrom), "" otherwise; deciding is
+	// set once the decided transition is admitted, for the accept's own
+	// materialization (decision 0195).
+	decides  string
+	deciding bool
+	now      time.Time
+	maxSeq   int64
 	// bulk queues the effects and entries of a bulk run of creating puts
 	// (bulkwrite.go), nil outside one.
 	bulk *bulkWrite
@@ -747,6 +753,7 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	t := &txn{
 		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor, tier: ds.actorTier(actor),
 		principal: substrate.PrincipalFrom(ctx), scoped: scoped, now: nowUTC(), internal: internal,
+		decides: substrate.DecisionFrom(ctx),
 	}
 	// The changelog lock before anything else the transaction locks: the
 	// first key of the global order (rows.go changelogLockKey). The cost is
