@@ -1,11 +1,13 @@
 // Draws the Substrate family's app icons: Substrate, Substrate Sync and
 // Substrate Chat. Apps built on a substrate elsewhere copy this file and add
-// their own entry to APPS and GLYPHS, so their icons share the frame.
+// their own entry to APPS (and a glyph to GLYPHS), so their icons share the
+// frame.
 //
 // Every icon shares one frame: the app's glyph on a pale gradient, and a band
 // across the bottom, a deeper shade of the background, that carries the
-// substrate infinity mark in the app's colour. Each app has three iOS
-// appearances: light, dark and tinted (greyscale, which iOS colours).
+// substrate infinity mark in the app's colour. Glyphs are close shades of the
+// app's colour with a light frosting. Each app has three iOS appearances:
+// light, dark and tinted (greyscale, which iOS colours).
 //
 // PNGs come from headless Chrome: set CHROME to a Chrome or
 // chrome-headless-shell binary, or have Chrome or Playwright's headless shell
@@ -17,6 +19,10 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const r = (n) => +(+n).toFixed(1);
+const mix = (h1, h2, t) => {
+  const x = parseInt(h1.slice(1), 16), y = parseInt(h2.slice(1), 16);
+  return '#' + [16, 8, 0].map((sh) => Math.round(((x >> sh) & 255) * (1 - t) + ((y >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
+};
 
 // Bernoulli lemniscate with taller lobes, unit half-width.
 function infinityPath(k = 1.5, n = 160) {
@@ -36,44 +42,54 @@ export const APPS = {
   chat: { name: 'Substrate Chat', bg: ['#f8f5ff', '#e4dcfd'], hi: '#bba2ff', lo: '#6a3fe0', glyph: 'chat' },
 };
 
-function lg(id, c0, c1, x1 = 0, y1 = 0, x2 = 0, y2 = 1) {
-  return `<linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"><stop offset="0" stop-color="${c0}"/><stop offset="1" stop-color="${c1}"/></linearGradient>`;
-}
-
-// Glyphs are drawn around (512, 470), about 560 units across. p = {hi, lo}.
+// Glyphs are drawn around (512, 470), about 560 units across. Each part has a
+// level: front, mid or back. Levels are close shades of the app's colour,
+// drawn as frosted glass: a soft top-to-bottom tint, a thin light rim, and
+// one soft shadow under the whole glyph.
+const rhombus = (y, hw = 250, hh = 125) => `M${512 - hw},${y} L512,${y - hh} L${512 + hw},${y} L512,${y + hh} Z`;
+const rect = (x, y, w, h, rr) => `M${x + rr},${y} H${x + w - rr} A${rr},${rr} 0 0 1 ${x + w},${y + rr} V${y + h - rr} A${rr},${rr} 0 0 1 ${x + w - rr},${y + h} H${x + rr} A${rr},${rr} 0 0 1 ${x},${y + h - rr} V${y + rr} A${rr},${rr} 0 0 1 ${x + rr},${y} Z`;
+const circle = (cx, cy, rr) => `M${cx - rr},${cy} A${rr},${rr} 0 1 0 ${cx + rr},${cy} A${rr},${rr} 0 1 0 ${cx - rr},${cy} Z`;
+const spark = (cx, cy, s) => `M${cx},${cy - s} C${cx + s * 0.12},${cy - s * 0.12} ${cx + s * 0.12},${cy - s * 0.12} ${cx + s},${cy} C${cx + s * 0.12},${cy + s * 0.12} ${cx + s * 0.12},${cy + s * 0.12} ${cx},${cy + s} C${cx - s * 0.12},${cy + s * 0.12} ${cx - s * 0.12},${cy + s * 0.12} ${cx - s},${cy} C${cx - s * 0.12},${cy - s * 0.12} ${cx - s * 0.12},${cy - s * 0.12} ${cx},${cy - s} Z`;
+// Parts: [level, path] fills, or [level, path, strokeWidth] strokes. Level
+// "spark" is a small mark drawn on top in a contrasting colour.
 const GLYPHS = {
-  // Three glass slabs: the substrate's layers.
-  strata(id, p) {
-    const slab = (y, op) => {
-      const hw = 250, hh = 122, t = 44;
-      const top = `M${512 - hw},${y} L512,${y - hh} L${512 + hw},${y} L512,${y + hh} Z`;
-      const left = `M${512 - hw},${y} L512,${y + hh} L512,${y + hh + t} L${512 - hw},${y + t} Z`;
-      const right = `M${512 + hw},${y} L512,${y + hh} L512,${y + hh + t} L${512 + hw},${y + t} Z`;
-      return `<g opacity="${op}"><path d="${left}" fill="${p.lo}" opacity=".85"/><path d="${right}" fill="${p.lo}" opacity=".65"/><path d="${top}" fill="url(#${id}t)" stroke="url(#${id}t)" stroke-width="18" stroke-linejoin="round"/></g>`;
-    };
-    return `<defs>${lg(id + 't', p.hi, p.lo, 0, 0, 1, 1)}</defs>` + slab(560, 0.42) + slab(440, 0.7) + slab(320, 1);
-  },
+  // Three layers: the substrate.
+  strata: () => [['back', rhombus(560)], ['mid', rhombus(440)], ['front', rhombus(320)]],
   // Two arrows chasing round a core: records carried in.
-  cycle(id, p) {
-    const cx = 512, cy = 470, R = 215;
-    const at = (a, rr = R) => [cx + rr * Math.cos((a * Math.PI) / 180), cy + rr * Math.sin((a * Math.PI) / 180)];
-    const seg = (a0, a1, g) => {
-      const [x0, y0] = at(a0), [x1, y1] = at(a1), [hx, hy] = at(a1 + 16), n0 = at(a1, R - 72), n1 = at(a1, R + 72);
-      return `<path d="M${r(x0)},${r(y0)} A${R},${R} 0 0 1 ${r(x1)},${r(y1)}" fill="none" stroke="url(#${g})" stroke-width="78" stroke-linecap="round"/>` +
-        `<path d="M${r(n0[0])},${r(n0[1])} L${r(hx)},${r(hy)} L${r(n1[0])},${r(n1[1])} Z" fill="url(#${g})" stroke="url(#${g})" stroke-width="16" stroke-linejoin="round"/>`;
-    };
-    return `<defs>${lg(id + 'a', p.hi, p.lo, 0, 0, 1, 1)}${lg(id + 'b', p.lo, p.hi, 0, 0, 1, 1)}<radialGradient id="${id}c" cx=".38" cy=".32" r=".8"><stop offset="0" stop-color="${p.hi}"/><stop offset="1" stop-color="${p.lo}"/></radialGradient></defs>` +
-      seg(196, 318, id + 'a') + seg(16, 138, id + 'b') + `<circle cx="${cx}" cy="${cy}" r="92" fill="url(#${id}c)"/>`;
+  cycle() {
+    const cx = 512, cy = 470, R = 210, at = (a, rr = R) => [cx + rr * Math.cos((a * Math.PI) / 180), cy + rr * Math.sin((a * Math.PI) / 180)];
+    const parts = [['back', circle(cx, cy, 88)]];
+    for (const [a0, a1] of [[200, 318], [20, 138]]) {
+      const [x0, y0] = at(a0), [x1, y1] = at(a1), [hx, hy] = at(a1 + 18), n0 = at(a1, R - 74), n1 = at(a1, R + 74);
+      parts.push(['front', `M${r(x0)},${r(y0)} A${R},${R} 0 0 1 ${r(x1)},${r(y1)}`, 72]);
+      parts.push(['front', `M${r(n0[0])},${r(n0[1])} L${r(hx)},${r(hy)} L${r(n1[0])},${r(n1[1])} Z`]);
+    }
+    return parts;
   },
   // A speech bubble with a spark: the agent you talk to.
-  chat(id, p) {
-    const spark = (cx, cy, s) => `M${cx},${cy - s} C${cx + s * 0.12},${cy - s * 0.12} ${cx + s * 0.12},${cy - s * 0.12} ${cx + s},${cy} C${cx + s * 0.12},${cy + s * 0.12} ${cx + s * 0.12},${cy + s * 0.12} ${cx},${cy + s} C${cx - s * 0.12},${cy + s * 0.12} ${cx - s * 0.12},${cy + s * 0.12} ${cx - s},${cy} C${cx - s * 0.12},${cy - s * 0.12} ${cx - s * 0.12},${cy - s * 0.12} ${cx},${cy - s} Z`;
-    return `<defs>${lg(id + 'f', p.hi, p.lo, 0, 0, 1, 1)}</defs>` +
-      `<rect x="372" y="236" width="400" height="290" rx="120" fill="url(#${id}f)" opacity=".42"/>` +
-      `<path d="M372,318 L652,318 C724,318 772,366 772,438 L772,558 C772,630 724,678 652,678 L470,678 L366,752 L388,678 L372,678 C300,678 252,630 252,558 L252,438 C252,366 300,318 372,318 Z" fill="url(#${id}f)" transform="translate(-14 -40)"/>` +
-      `<path d="${spark(498, 458, 104)}" fill="#fff"/><path d="${spark(618, 382, 42)}" fill="#fff" opacity=".85"/>`;
-  },
+  chat: () => [['back', rect(392, 236, 370, 260, 110)],
+    ['front', 'M358,278 L638,278 C710,278 758,326 758,398 L758,518 C758,590 710,638 638,638 L456,638 L352,712 L374,638 L358,638 C286,638 238,590 238,518 L238,398 C238,326 286,278 358,278 Z'],
+    ['spark', spark(484, 458, 104)], ['spark', spark(604, 382, 42)]],
 };
+
+function drawGlyph(name, mode, p, id) {
+  const shades = mode === 'light'
+    ? { front: [mix(p.lo, '#ffffff', 0.1), p.lo], mid: [mix(p.lo, p.hi, 0.36), mix(p.lo, p.hi, 0.24)], back: [mix(p.lo, p.hi, 0.6), mix(p.lo, p.hi, 0.48)], rim: 0.35, spark: '#ffffff' }
+    : mode === 'dark'
+      ? { front: [mix(p.hi, '#ffffff', 0.1), mix(p.hi, p.lo, 0.35)], mid: [mix(p.hi, p.lo, 0.4), mix(p.hi, p.lo, 0.55)], back: [mix(p.hi, p.lo, 0.62), mix(p.hi, p.lo, 0.78)], rim: 0.3, spark: p.lo }
+      : { front: ['#f0f0f0', '#cfcfcf'], mid: ['#bdbdbd', '#a6a6a6'], back: ['#999999', '#828282'], rim: 0.35, spark: '#3a3a3e' };
+  let defs = '', body = '';
+  for (const lv of ['front', 'mid', 'back']) defs += `<linearGradient id="${id}${lv}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${shades[lv][0]}"/><stop offset="1" stop-color="${shades[lv][1]}"/></linearGradient>`;
+  defs += `<filter id="${id}sh" x="-30%" y="-30%" width="160%" height="170%"><feGaussianBlur in="SourceAlpha" stdDeviation="24"/><feOffset dy="20" result="b"/><feFlood flood-color="${mode === 'light' ? p.lo : '#000000'}" flood-opacity="${mode === 'light' ? 0.13 : 0.4}"/><feComposite in2="b" operator="in" result="s"/><feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+  for (const [lv, d, w] of GLYPHS[name]()) {
+    if (lv === 'spark') { body += `<path d="${d}" fill="${shades.spark}"/>`; continue; }
+    const op = 1;
+    if (w) { body += `<path d="${d}" fill="none" stroke="url(#${id}${lv})" stroke-width="${w}" stroke-linecap="round" opacity="${op}"/>`; continue; }
+    body += `<path d="${d}" fill="url(#${id}${lv})" stroke="url(#${id}${lv})" stroke-width="10" stroke-linejoin="round" opacity="${op}"/>` +
+      `<path d="${d}" fill="none" stroke="#ffffff" stroke-opacity="${shades.rim}" stroke-width="3" stroke-linejoin="round"/>`;
+  }
+  return `<defs>${defs}</defs><g filter="url(#${id}sh)">${body}</g>`;
+}
 
 let uid = 0;
 
@@ -84,10 +100,6 @@ let uid = 0;
 export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {}) {
   const a = APPS[app], id = 'i' + uid++;
   let hi = a.hi, lo = a.lo, bg0 = a.bg[0], bg1 = a.bg[1], glow = a.hi;
-  const mix = (h1, h2, t) => {
-    const x = parseInt(h1.slice(1), 16), y = parseInt(h2.slice(1), 16);
-    return '#' + [16, 8, 0].map((sh) => Math.round(((x >> sh) & 255) * (1 - t) + ((y >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
-  };
   // The band is a deeper shade of the background, the infinity in the app's colour.
   let band0 = mix(a.bg[1], a.hi, 0.35), band1 = mix(a.bg[1], a.hi, 0.55), ink0 = a.lo, ink1 = mix(a.lo, '#000000', 0.25), edge = 0.7;
   if (mode === 'dark' || mode === 'tinted') {
@@ -104,11 +116,9 @@ export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {})
     `<radialGradient id="${id}gw" cx=".5" cy=".3" r=".62"><stop offset="0" stop-color="${glow}" stop-opacity="${mode === 'light' ? 0.35 : 0.22}"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>`,
     `<linearGradient id="${id}bd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${band0}"/><stop offset="1" stop-color="${band1}"/></linearGradient>`,
     `<linearGradient id="${id}in" gradientUnits="userSpaceOnUse" x1="0" y1="800" x2="0" y2="890"><stop offset="0" stop-color="${ink0}"/><stop offset="1" stop-color="${ink1}"/></linearGradient>`,
-    // Glass: a bright top edge and a soft shadow under the glyph.
-    `<filter id="${id}gl" x="-20%" y="-30%" width="140%" height="170%"><feOffset in="SourceAlpha" dy="8" result="o"/><feComposite in="SourceAlpha" in2="o" operator="out" result="top"/><feGaussianBlur in="top" stdDeviation="2.5" result="topb"/><feFlood flood-color="#fff" flood-opacity=".75"/><feComposite in2="topb" operator="in" result="hl"/><feGaussianBlur in="SourceAlpha" stdDeviation="20" result="sb"/><feOffset in="sb" dy="18" result="sbo"/><feFlood flood-color="${mode === 'light' ? lo : '#000'}" flood-opacity="${mode === 'light' ? 0.28 : 0.55}"/><feComposite in2="sbo" operator="in" result="sh"/><feMerge><feMergeNode in="sh"/><feMergeNode in="SourceGraphic"/><feMergeNode in="hl"/></feMerge></filter>`,
   ];
   if (mask) defs.push(`<clipPath id="${id}m"><rect width="1024" height="1024" rx="230"/></clipPath>`);
-  const glyph = `<g filter="url(#${id}gl)"><g transform="translate(512 356) scale(0.86) translate(-512 -470)">${GLYPHS[a.glyph](id + 'g', p)}</g></g>`;
+  const glyph = `<g transform="translate(512 352) scale(0.86) translate(-512 -470)">${drawGlyph(a.glyph, mode, { hi: a.hi, lo: a.lo }, id + 'g')}</g>`;
   const band = `<rect x="-20" y="690" width="1064" height="400" fill="url(#${id}bd)"/><rect x="-20" y="690" width="1064" height="3" fill="#fff" opacity="${edge}"/>`;
   const inf = `<path d="${INF}" transform="translate(512 845) scale(72)" fill="none" stroke="url(#${id}in)" stroke-width="0.30" stroke-linejoin="round"/>`;
   const body = `<rect width="1024" height="1024" fill="url(#${id}bg)"/><rect width="1024" height="1024" fill="url(#${id}gw)"/>${glyph}${band}${inf}`;
