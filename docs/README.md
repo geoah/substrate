@@ -74,6 +74,8 @@ API call that completes a task.
   [design guide](console/design-guide.md), the
   [element catalogue](console/elements.md), the two design reviews and the
   approved prototype
+- [App icons](app-icons.md): the frame every app's icon shares, the glyph
+  rules, and how to add an app
 - [Running one locally](running-locally.md)
 - [Running a substrate](operations.md)
 - [Releasing](releasing.md): how a version is cut from the release pull
