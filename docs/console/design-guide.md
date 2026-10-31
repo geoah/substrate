@@ -17,7 +17,8 @@ The direction is **Paper**, chosen over a denser Workbench direction on
 2026-09-25 from the [approved prototype](prototype/console-prototype.html).
 [The first review](reviews/2026-09-24-first-review.md) says why the console
 was redesigned and [the second](reviews/2026-09-26-design-review.md) measured
-the build.
+the build. The console's favicon follows the
+[app icon rules](../app-icons.md) every app shares.
 
 ## Principles
 

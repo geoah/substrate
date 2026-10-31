@@ -334,7 +334,7 @@ Developer Mode on.
 ```text
 project.yml                 the xcodegen spec, the only project source
 Support/                    Info.plist per platform and Substrate Sync's, the entitlements
-Substrate/Assets.xcassets   the icon: light, dark and tinted for iOS, and the macOS sizes
+Substrate/Assets.xcassets   the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../../docs/app-icons.md))
 scripts/icons.mjs           draws every icon in the family: Substrate, Sync and Chat
 Icons/                      icons drawn ahead of their app: SubstrateChat.appiconset for the chat agent
 Substrate/Sources/App/      the app, its macOS menus, ServerStore, the updater
