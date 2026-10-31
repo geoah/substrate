@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -61,6 +63,25 @@ const writerLeaseHeartbeat = 5 * time.Second
 // next one.
 const writerLeaseBeatTimeout = 3 * time.Second
 
+// writerLeaseKeepalives are the pinned session's own server-side keepalives.
+// A client that gave up on its socket leaves a backend Postgres still thinks
+// is alive, and that backend keeps every lease on it: with the OS defaults
+// (two hours idle, then nine probes) a one-minute network blip refused every
+// write for two hours. These reap such a session in about thirty seconds.
+// They are user-settable and per session, so the pool's other connections
+// keep the server's defaults.
+var writerLeaseKeepalives = [...]struct{ name, value string }{
+	{"tcp_keepalives_idle", "10"},
+	{"tcp_keepalives_interval", "5"},
+	{"tcp_keepalives_count", "3"},
+	{"tcp_user_timeout", "30000"},
+}
+
+// writerLeaseOrphanPoll is how often a retake asks for a lock again after
+// ending this process's orphaned session: the lock is released only once that
+// backend has exited, which pg_terminate_backend does not wait for.
+const writerLeaseOrphanPoll = 25 * time.Millisecond
+
 // ErrRepositoryHasAnotherWriter is the refusal a second server meets when it
 // opens a repository this database already has a writer for. It is a boot
 // refusal: the process does not open the repository and does not serve.
@@ -78,6 +99,12 @@ var ErrWriterLeaseLost = fmt.Errorf("%w: this process lost the repository's writ
 type writerLease struct {
 	db  *sql.DB
 	log *slog.Logger
+
+	// name is the pinned session's application_name, minted once per process.
+	// It is how a refused lock tells this process's own orphaned session from
+	// another process: only a holder carrying it is ever terminated, so it must
+	// not be guessable and must not be shared by two processes.
+	name string
 
 	// lost is read on every write path, so it is an atomic and not the mutex
 	// below: a refusal must not queue behind a heartbeat's round trip.
@@ -101,9 +128,17 @@ type writerLease struct {
 // connection it pins carries no repository setting.
 func newWriterLease(db *sql.DB, log *slog.Logger) *writerLease {
 	ctx, cancel := context.WithCancel(context.Background())
-	l := &writerLease{db: db, log: log, stop: cancel, stopped: make(chan struct{})}
+	l := &writerLease{db: db, log: log, name: newWriterLeaseName(), stop: cancel, stopped: make(chan struct{})}
 	go l.heartbeat(ctx)
 	return l
+}
+
+// newWriterLeaseName mints the per-process application_name. It fits
+// Postgres's 63-byte limit, which would otherwise truncate it silently.
+func newWriterLeaseName() string {
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	return "substrate-writer-" + hex.EncodeToString(b)
 }
 
 // acquire takes the lease on one repository, or refuses with
@@ -144,7 +179,10 @@ func (l *writerLease) acquireNew(parent context.Context, repository string) (boo
 	// not), so the deadline is this file's, not the caller's.
 	ctx, cancel := context.WithTimeout(parent, writerLeaseBeatTimeout)
 	defer cancel()
-	var got bool
+	var (
+		got     bool
+		foreign *leaseHolder
+	)
 	// TWICE, because the pinned connection may have died while the lease held
 	// nothing — a Postgres restart between one registration and the next, with
 	// no beat to notice because there was nothing to prove. The first failure
@@ -155,7 +193,7 @@ func (l *writerLease) acquireNew(parent context.Context, repository string) (boo
 		if err != nil {
 			return false, err
 		}
-		err = conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got)
+		got, foreign, err = l.lock(ctx, conn, repository)
 		if err == nil {
 			break
 		}
@@ -169,8 +207,8 @@ func (l *writerLease) acquireNew(parent context.Context, repository string) (boo
 	if !got {
 		return false, fmt.Errorf("%w: repository %s. One server per database: this one refuses to open the repository rather than write it from a directory of its own. "+
 			"If no server is running, the holder is a connection that has not gone away yet; the lease is the advisory lock "+
-			"hashtext(current_schema() || '|writer|' || '%s')::bigint, visible in pg_locks",
-			ErrRepositoryHasAnotherWriter, repository, repository)
+			"hashtext(current_schema() || '|writer|' || '%s')::bigint, visible in pg_locks. Held by %s",
+			ErrRepositoryHasAnotherWriter, repository, repository, foreign)
 	}
 	l.held = append(l.held, repository)
 	// A lease taken on a connection that replaced a dead one is this
@@ -291,8 +329,117 @@ func (l *writerLease) pinned(ctx context.Context) (*sql.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: the writer lease needs a connection of its own: %w", err)
 	}
+	if l.name == "" {
+		l.name = newWriterLeaseName()
+	}
+	// Set BEFORE any lock is taken, so no session ever holds a lease without
+	// the name that lets this process end it, nor with the OS keepalives that
+	// would keep it alive for hours after its client is gone. A failure is
+	// logged and not fatal: a platform that ignores a keepalive still has a
+	// working lease, and one without the name only loses the orphan retake.
+	// The session is never handed back to the pool (closeConn), so none of
+	// this outlives it.
+	if _, err := conn.ExecContext(ctx, `SELECT set_config('application_name', $1, false)`, l.name); err != nil {
+		l.log.Warn("substrate: could not name the writer lease's session; an orphaned session of this process will not be recognized as its own",
+			"error", err)
+	}
+	for _, k := range writerLeaseKeepalives {
+		if _, err := conn.ExecContext(ctx, `SELECT set_config($1, $2, false)`, k.name, k.value); err != nil {
+			l.log.Warn("substrate: could not set a keepalive on the writer lease's session; an orphaned session may hold the lease until the server's own keepalive reaps it",
+				"setting", k.name, "value", k.value, "error", err)
+		}
+	}
 	l.conn = conn
 	return conn, nil
+}
+
+// leaseHolder is the session holding a lease this process was refused: what
+// an operator needs to find it, and what tells this process's own orphan from
+// another process.
+type leaseHolder struct {
+	pid             int
+	applicationName string
+	clientAddr      sql.NullString
+	backendStart    sql.NullTime
+}
+
+func (h *leaseHolder) String() string {
+	if h == nil {
+		return "a session that released it before it could be read"
+	}
+	addr := "local"
+	if h.clientAddr.Valid {
+		addr = h.clientAddr.String
+	}
+	start := "unknown"
+	if h.backendStart.Valid {
+		start = h.backendStart.Time.UTC().Format(time.RFC3339)
+	}
+	return fmt.Sprintf("pid %d, application_name %q, client_addr %s, backend_start %s", h.pid, h.applicationName, addr, start)
+}
+
+// lock takes one repository's lease on the pinned session. A refusal whose
+// holder carries this process's name is this process's own earlier session —
+// a connection the client gave up on and the server has not reaped — and not
+// a second writer: it is ended and the lock taken again, inside ctx. Any other
+// holder is returned, untouched, with the refusal. Called with mu held.
+func (l *writerLease) lock(ctx context.Context, conn *sql.Conn, repository string) (bool, *leaseHolder, error) {
+	var got bool
+	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got); err != nil || got {
+		return got, nil, err
+	}
+	h, err := readLeaseHolder(ctx, conn, repository)
+	if err != nil {
+		return false, nil, err
+	}
+	// An empty name matches every session that set none, so it never
+	// identifies this process.
+	if h == nil || l.name == "" || h.applicationName != l.name {
+		return false, h, nil
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_terminate_backend($1)`, h.pid); err != nil {
+		return false, h, fmt.Errorf("substrate/engine: end this process's orphaned writer lease session (%s): %w", h, err)
+	}
+	for {
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got); err != nil {
+			return false, h, err
+		}
+		if got {
+			l.log.Warn("substrate: this process's previous writer lease session was still holding the lease after its connection dropped; it was ended and the lease retaken",
+				"repository", logSafeID(repository), "orphan", h.String())
+			return true, nil, nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, h, fmt.Errorf("substrate/engine: this process's orphaned writer lease session (%s) did not exit: %w", h, ctx.Err())
+		case <-time.After(writerLeaseOrphanPoll):
+		}
+	}
+}
+
+// readLeaseHolder reads who holds one repository's lease, or nil when nobody
+// does. Advisory locks are per database, so the lock is matched in this one;
+// the key's split across classid and objid is the one docs/operations.md
+// prints for an operator.
+func readLeaseHolder(ctx context.Context, conn *sql.Conn, repository string) (*leaseHolder, error) {
+	var h leaseHolder
+	err := conn.QueryRowContext(ctx, `
+WITH k AS (SELECT `+writerLeaseKeySQL+` AS key)
+SELECT a.pid, coalesce(a.application_name, ''), host(a.client_addr), a.backend_start
+  FROM pg_locks l JOIN pg_stat_activity a USING (pid), k
+ WHERE l.locktype = 'advisory' AND l.objsubid = 1 AND l.granted
+   AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+   AND l.classid = ((k.key >> 32) & 4294967295)::oid
+   AND l.objid = (k.key & 4294967295)::oid
+   AND a.pid <> pg_backend_pid()
+ LIMIT 1`, repository).Scan(&h.pid, &h.applicationName, &h.clientAddr, &h.backendStart)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: read the writer lease's holder: %w", err)
+	}
+	return &h, nil
 }
 
 // heartbeat proves the pinned connection alive and retakes the lease when it
@@ -385,16 +532,16 @@ func (l *writerLease) retake(shutdown, ctx context.Context) {
 		return
 	}
 	for _, id := range l.held {
-		var got bool
-		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, id).Scan(&got); err != nil {
+		got, foreign, err := l.lock(ctx, conn, id)
+		if err != nil {
 			if shutdown.Err() == nil {
-				l.log.Error("substrate: the writer lease could not be retaken", "repository", id, "error", err)
+				l.log.Error("substrate: the writer lease could not be retaken", "repository", logSafeID(id), "error", err)
 			}
 			return
 		}
 		if !got {
 			l.log.Error("substrate: another process took this repository's writer lease while this one's connection was down; every write stays refused. Run one server per database and restart this one",
-				"repository", id)
+				"repository", logSafeID(id), "holder", foreign.String())
 			return
 		}
 	}

@@ -850,7 +850,9 @@ process is this repository's writer: repository ada.example.com. One server per
 database: this one refuses to open the repository rather than write it from a
 directory of its own. If no server is running, the holder is a connection that has
 not gone away yet; the lease is the advisory lock hashtext(current_schema() ||
-'|writer|' || 'ada.example.com')::bigint, visible in pg_locks
+'|writer|' || 'ada.example.com')::bigint, visible in pg_locks. Held by pid 4242,
+application_name "substrate-writer-…", client_addr 192.0.2.10, backend_start
+2026-01-01T00:00:00Z
 ```
 
 **To see who holds one**, compute the key and ask `pg_locks`. The key is
@@ -877,6 +879,16 @@ still held with no server running is a connection that has not gone away yet —
 a pooler in front of Postgres will do that — and `pg_terminate_backend(pid)`
 on the pid above ends it.
 
+**The lease's session is named and reaped fast.** The pinned connection sets
+its own `application_name`, `substrate-writer-` and a token minted once per
+process, and its own server-side keepalives (`tcp_keepalives_idle` 10 s,
+`tcp_keepalives_interval` 5 s, `tcp_keepalives_count` 3, `tcp_user_timeout`
+30 s), so Postgres ends a lease session whose client vanished in about thirty
+seconds rather than the two hours the OS defaults allow. A platform that
+refuses one of those settings gets a `WARN` naming it, and the lease works
+without it. The name is what the holder query above shows in
+`application_name`.
+
 **A dropped connection fails closed.** A heartbeat proves the pinned
 connection alive every five seconds, and every round trip the lease makes —
 the heartbeat's and an acquisition's alike — is bounded at three: a host that
@@ -889,9 +901,19 @@ A write is held to that refusal at its door, again once it holds the changelog
 lock, and again immediately before it commits, so a write that queued behind
 another one cannot land under a lease that went away while it waited. Every
 later beat tries again, so a Postgres that restarted is recovered from without
-restarting the server, and the recovery is logged at `WARN`. It keeps refusing while
-another process holds one of its leases, which is the honest answer: stop the
-other one, and run one server.
+restarting the server, and the recovery is logged at `WARN`.
+
+A connection the server gave up on is not always one Postgres has noticed is
+gone: after a network blip the old backend can live on, still holding every
+lease. When a retake or an acquisition is refused, the server reads the
+holder; if it carries THIS process's `application_name`, it is the process's
+own orphaned session, so the server ends it with `pg_terminate_backend`, takes
+the lease again inside the same beat and logs at `WARN` that its previous
+session was ended. A holder under any other name is never touched. The server
+keeps refusing while another process holds one of its leases, which is the
+honest answer, and logs at `ERROR` that another process took the lease,
+naming the holder's `application_name`, `client_addr` and `backend_start`:
+stop that one, and run one server.
 
 **A repository is leased before it is published.** The control-plane row is
 what another process sees, so the lease is taken before it, on both paths that
