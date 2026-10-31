@@ -770,10 +770,20 @@ func (ds *dataset) liveIDsOf(ctx context.Context, typeIdent string, limit int) (
 // so it is listed separately from its stored rows — the console needs to show
 // it needs a re-install.
 func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
+	return ds.bundleStatuses(ctx, true)
+}
+
+// BundleStatusesUncounted is BundleStatuses with Accounts and LiveRecords
+// left zero: what the catalog reads, whose cost must not grow with the data.
+func (ds *dataset) BundleStatusesUncounted(ctx context.Context) ([]substrate.BundleStatus, error) {
+	return ds.bundleStatuses(ctx, false)
+}
+
+func (ds *dataset) bundleStatuses(ctx context.Context, counted bool) ([]substrate.BundleStatus, error) {
 	bundles := ds.registry().Bundles()
 	out := make([]substrate.BundleStatus, 0, len(bundles))
 	for _, b := range bundles {
-		st, err := ds.bundleStatus(ctx, b)
+		st, err := ds.bundleStatus(ctx, b, counted)
 		if err != nil {
 			return nil, err
 		}
@@ -961,7 +971,7 @@ func stampedVersionOf(pkg, prop string, raw []byte) (int64, error) {
 func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.BundleStatus, error) {
 	b, err := ds.bundleByID(id)
 	if err == nil {
-		return ds.bundleStatus(ctx, b)
+		return ds.bundleStatus(ctx, b, true)
 	}
 	if !errors.Is(err, substrate.ErrNotFound) {
 		return substrate.BundleStatus{}, err
@@ -976,7 +986,11 @@ func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.Bundl
 	return quarantined[0], nil
 }
 
-func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (substrate.BundleStatus, error) {
+// bundleStatus computes one bundle's status. counted reads Accounts and
+// LiveRecords: an exact count of every live row of each of its kinds, which
+// for a large kind is a scan of the table, so a read that does not show them
+// passes false.
+func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, counted bool) (substrate.BundleStatus, error) {
 	authority, _ := vocabulary.SplitPackageRef(b.Package)
 	st := substrate.BundleStatus{
 		ID: b.Identity(), Name: b.Name, Authority: authority, Package: b.Name,
@@ -1001,16 +1015,18 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 	if err := ds.packageOrigin(ctx, b.Package, &st); err != nil {
 		return st, err
 	}
-	for _, tn := range g.KindOrder {
-		t := g.Kinds[tn]
-		var n int64
-		if err := ds.db.QueryRowContext(ctx,
-			`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`, t.Identity).Scan(&n); err != nil {
-			return st, err
-		}
-		st.LiveRecords += n
-		if t.Implements(vocabulary.TraitAccountConfigCore) {
-			st.Accounts += int(n)
+	if counted {
+		for _, tn := range g.KindOrder {
+			t := g.Kinds[tn]
+			var n int64
+			if err := ds.db.QueryRowContext(ctx,
+				`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`, t.Identity).Scan(&n); err != nil {
+				return st, err
+			}
+			st.LiveRecords += n
+			if t.Implements(vocabulary.TraitAccountConfigCore) {
+				st.Accounts += int(n)
+			}
 		}
 	}
 	// Setup mirrors what dispatch would refuse, and nothing else: each

@@ -212,6 +212,13 @@ type Dataset interface {
 	// one account record, named by its record path
 	// `<authority>/<package>/<kind>/<id>` and by nothing shorter (record 0102).
 	BundleStatuses(ctx context.Context) ([]BundleStatus, error)
+	// BundleStatusesUncounted is BundleStatuses without the two fields read
+	// off the live data rows: Accounts and LiveRecords are zero. Counting
+	// them reads every live row of every installed kind, so the catalog,
+	// which needs only what is installed, at which version and from where,
+	// reads this instead and costs the same at any record count (issue
+	// #1086).
+	BundleStatusesUncounted(ctx context.Context) ([]BundleStatus, error)
 	BundleStatus(ctx context.Context, id string) (BundleStatus, error)
 	// BundlePackage resolves the package a bundle owns (from the live registry
 	// or stored rows) for the lifecycle scope gate.

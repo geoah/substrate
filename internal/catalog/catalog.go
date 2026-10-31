@@ -594,6 +594,11 @@ func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Data
 // list and the upgrade preview stages it, so the two cannot disagree on what
 // a click brings.
 func (c *Catalog) requirementsToInstall(ctx context.Context, b *Bundle, ds substrate.Dataset) ([]*Bundle, error) {
+	// Nothing to walk, so nothing to read: the preview asks this for every
+	// provider entry on every listing, and most require nothing.
+	if len(b.Requires) == 0 {
+		return nil, nil
+	}
 	held, err := heldVersions(ctx, ds)
 	if err != nil {
 		return nil, err
@@ -625,9 +630,12 @@ func (c *Catalog) requirementsToInstall(ctx context.Context, b *Bundle, ds subst
 	return order, nil
 }
 
-// heldVersions is the stored version of every installed bundle.
+// heldVersions is the stored version of every installed bundle. It reads the
+// uncounted statuses: the upgrade preview asks this once per provider entry
+// on every catalog listing, and the counted read scans every live row of
+// every installed kind (issue #1086).
 func heldVersions(ctx context.Context, ds substrate.Dataset) (map[string]int64, error) {
-	statuses, err := ds.BundleStatuses(ctx)
+	statuses, err := ds.BundleStatusesUncounted(ctx)
 	if err != nil {
 		return nil, err
 	}

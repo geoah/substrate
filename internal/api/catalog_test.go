@@ -33,6 +33,10 @@ func (d statusErrDataset) BundleStatuses(context.Context) ([]substrate.BundleSta
 	return nil, d.err
 }
 
+func (d statusErrDataset) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, d.err
+}
+
 func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
 	return substrate.BundleStatus{}, d.err
 }
@@ -108,6 +112,10 @@ func (d upgradeErrDataset) BundleStatuses(context.Context) ([]substrate.BundleSt
 		ID: googleBundleID, Name: "google", Authority: "providers.substrate.reamde.dev", Package: "google",
 		Installed: true, Enabled: true,
 	}}, nil
+}
+
+func (d upgradeErrDataset) BundleStatusesUncounted(ctx context.Context) ([]substrate.BundleStatus, error) {
+	return d.BundleStatuses(ctx)
 }
 
 func (d upgradeErrDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
@@ -391,6 +399,10 @@ func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, 
 		st.Origin, st.OriginVersion, st.Modified = d.origin, 8, true
 	}
 	return []substrate.BundleStatus{st}, nil
+}
+
+func (d heldDataset) BundleStatusesUncounted(ctx context.Context) ([]substrate.BundleStatus, error) {
+	return d.BundleStatuses(ctx)
 }
 
 func (d heldDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
@@ -933,4 +945,64 @@ func TestCatalogReadsReuseTheUpgradePreviewUntilTheHeadMoves(t *testing.T) {
 	}
 	wg.Wait()
 	want(other, listed(other), 1, "listings read concurrently")
+}
+
+// countedStatusesDataset holds the google PROVIDER, whose upgrade preview
+// walks the requirements an install would bring, and counts the COUNTED
+// bundle status reads anything asks of it.
+type countedStatusesDataset struct {
+	heldDataset
+	counted *atomic.Int64
+}
+
+func (d countedStatusesDataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
+	d.counted.Add(1)
+	return d.heldDataset.BundleStatuses(ctx)
+}
+
+// A catalog read never asks for the live-row counts, in the listing, the
+// entry, or the provider preview's requirement walk (issue #1086). Each count
+// is an exact count of every live row of an installed kind, and the preview
+// asked for all of them once per provider entry, so the listing grew with the
+// data: about 30 s over a million live records.
+func TestCatalogReadsNeverCountLiveRecords(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	counted := new(atomic.Int64)
+	base := newFakeService()
+	base.wrap = func(d *fakeDataset) substrate.Dataset {
+		return countedStatusesDataset{
+			heldDataset: heldDataset{fakeDataset: d, id: googleBundleID, plan: &substrate.BundleUpgrade{Available: true, From: 1, To: 2}},
+			counted:     counted,
+		}
+	}
+	clock := &testClock{}
+	env := &testEnv{svc: base, h: New(Config{Service: base, Now: clock.now, Catalog: cat}), clock: clock}
+	type entry struct {
+		ID        string                   `json:"id"`
+		Installed bool                     `json:"installed"`
+		Upgrade   *substrate.BundleUpgrade `json:"upgrade"`
+	}
+	tok := env.svc.token(fakeRepository)
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	offered := false
+	for _, item := range decodeJSON[struct{ Items []entry }](t, rec).Items {
+		if item.ID == googleBundleID {
+			offered = item.Installed && item.Upgrade != nil && item.Upgrade.Available
+		}
+	}
+	if !offered {
+		t.Fatalf("the listing does not offer the held %s its upgrade, so its preview never ran", googleBundleID)
+	}
+	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(googleBundleID), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if item := decodeJSON[entry](t, rec); item.Upgrade == nil || !item.Upgrade.Available {
+		t.Fatalf("the entry read does not offer the upgrade: %+v", item.Upgrade)
+	}
+	if n := counted.Load(); n != 0 {
+		t.Errorf("the catalog reads asked for the counted bundle statuses %d times, want none", n)
+	}
 }
