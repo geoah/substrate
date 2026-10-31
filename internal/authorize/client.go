@@ -150,6 +150,50 @@ func RedirectListed(listed []string, redirect string) bool {
 	return false
 }
 
+// RedirectAllowed holds a redirect to the app it is for, before any document
+// is read. A local app's goes to a loopback address. A web app's goes to its
+// client id's own origin (https, the same host and the same port, 443 when
+// unnamed), so the host the approval page heads with and the app's actor
+// names is the host the access goes to: a document on a shared host (a raw
+// file on GitHub, a paste) can name only a callback on that origin or a
+// loopback one. A loopback address is where a program on the owner's own
+// computer receives it, which the page marks as unverified.
+func RedirectAllowed(c Client, redirect string) error {
+	if LocalRedirect(redirect) {
+		return nil
+	}
+	if c.Local {
+		return errors.New("a local app's redirect_uri is a loopback http URL")
+	}
+	u, err := ParseRedirect(redirect)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" || !sameHTTPSOrigin(u, c.ID) {
+		return fmt.Errorf("redirect_uri must be on the client_id's own origin, https://%s, or a loopback address", c.Host)
+	}
+	return nil
+}
+
+// sameHTTPSOrigin compares an https redirect with a client id's origin: the
+// hostname case-insensitively and the port with 443 for an unnamed one, so
+// `notes.example.org` and `notes.example.org:443` are one origin. The
+// redirect's exact match against the document's list is separate and stays
+// exact.
+func sameHTTPSOrigin(redirect *url.URL, clientID string) bool {
+	c, err := url.Parse(clientID)
+	if err != nil || c.Scheme != "https" {
+		return false
+	}
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
+		}
+		return "443"
+	}
+	return strings.EqualFold(redirect.Hostname(), c.Hostname()) && port(redirect) == port(c)
+}
+
 // LocalRedirect reports whether a local app's redirect is acceptable: a
 // loopback http URL, any port, since a local app has no document to list it.
 func LocalRedirect(redirect string) bool {

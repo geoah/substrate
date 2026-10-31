@@ -176,8 +176,8 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if client.Local && !authorize.LocalRedirect(redirect) {
-		writeAuthorizePage(w, http.StatusBadRequest, "a local app's redirect_uri is a loopback http URL")
+	if err := authorize.RedirectAllowed(client, redirect); err != nil {
+		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if rt := q.Get("response_type"); rt != "code" {
@@ -329,7 +329,7 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		},
 		Redirect: substrate.AuthorizationRedirectTo{
 			URI: req.RedirectURI, Host: authorize.HostOf(req.RedirectURI),
-			HostDiffers: hostname(req.RedirectURI) != hostname(req.Client.ID),
+			Loopback: authorize.LocalRedirect(req.RedirectURI),
 		},
 		Repository:          authority,
 		LifetimeDays:        lifetimeDays,
@@ -666,7 +666,11 @@ var revokeBackoff = []time.Duration{time.Second, 5 * time.Second, 30 * time.Seco
 func (h *handler) revokeMinted(ctx context.Context, ds substrate.Dataset, id string) {
 	ctx = context.WithoutCancel(ctx)
 	attempt := func() bool {
-		_, err := ds.Delete(ctx, substrate.ActorAPI, tokenType, id, substrate.DeleteInput{})
+		// Each attempt is bounded, so a database that hangs costs one
+		// attempt and the next one still runs.
+		actx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		_, err := ds.Delete(actx, substrate.ActorAPI, tokenType, id, substrate.DeleteInput{})
 		if err == nil || errors.Is(err, substrate.ErrNotFound) {
 			return true
 		}

@@ -46,6 +46,11 @@ repository's authority an app cannot know in advance.
 
 The rules this binds:
 
+- **A web app's access goes back to its own origin.** Its `redirect_uri` is
+  on the `client_id`'s origin, or on a loopback address the page marks as
+  unverified, so the host the owner approves is the host that receives the
+  access. A mobile app uses a claimed `https` link on its domain; a custom
+  URL scheme is refused, because any app may claim one.
 - **A scope is `read:<pattern>` or `write:<pattern>`** over the 0080
   grammar; `write` includes `read`. The auth kinds are never reached, a glob
   never reaches an `internal` kind, no scope writes the `core` or `llm`
