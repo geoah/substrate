@@ -206,6 +206,31 @@ private func routes(chat: ScriptedServer.Answer, version: Int = 3) -> [ScriptedS
         #expect(store.rows["t1"] == nil)
     }
 
+    @Test func anAppTokenListsTheCardsUnderTheThreadsItKnows() async {
+        let empty = #"{"head":10,"generation":"g","records":[]}"#
+        let interaction = #"{"head":10,"generation":"g","records":[{"id":"i1","kind":"substrate.reamde.dev/llm/interaction","version":1,"createdAt":"2026-10-31T10:00:02Z","updatedAt":"2026-10-31T10:00:02Z","properties":{"state":"pending","thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}}]}"#
+        let named = #"llm/interaction"],"properties":{"state":{"eq":"pending"},"thread":{"in":["t1"]}}"#
+        let forbidden = #"{"error":{"code":"forbidden","message":"an app's token lists it under filter.properties.thread"}}"#
+        ScriptedServer.reset([
+            .init(method: "GET", path: "/api/v1/records", query: "llm/thread", answer: .json(200, #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#)),
+            .init(method: "GET", path: "/api/v1/records", query: named, answer: .json(200, interaction)),
+            .init(method: "GET", path: "/api/v1/records", query: "llm/interaction", answer: .json(403, forbidden)),
+            .init(method: "GET", path: "/api/v1/records", query: "llm/message", answer: .json(200, rowsJSON)),
+            .init(method: "GET", path: "/api/v1/records", query: nil, answer: .json(200, empty)),
+        ])
+        let id = UUID().uuidString.lowercased()
+        let app = ChatStore(session: Session(server: URL(string: "https://\(id).example.com")!, repository: "\(id).example.com",
+                                             secret: "secret", tokenID: "token", grants: Grants(scopes: ["agents:*"])))
+        defer { app.close(forget: true) }
+        await app.refreshAll()
+        #expect(app.refreshError == nil)
+        #expect(app.interactions.map(\.id) == ["i1"])
+        #expect(ScriptedServer.count("/api/v1/records", query: "llm/interaction")
+            == ScriptedServer.count("/api/v1/records", query: named))
+        // Without `decide:` the suggestions are not asked for at all.
+        #expect(ScriptedServer.count("/api/v1/records", query: "recordpatchrequest") == 0)
+    }
+
     @Test func aWindowLeavingKeepsAConversationAnotherShows() {
         defer { store.close(forget: true) }
         let c = store.conversation(thread: "t1")

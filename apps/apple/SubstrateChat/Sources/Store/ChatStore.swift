@@ -493,7 +493,10 @@ final class ChatStore {
             async let agentPage = api.listAll(ListQuery(kinds: [Kinds.agent], first: 200, orderBy: "createdAt:desc"))
             async let providerPage = readProviders()
             async let threadPages = readThreads()
-            async let cards: Void = refreshCards()
+            // An app's token lists the cards under the threads it names, so
+            // there they wait for the threads; a full token reads both at once.
+            let early = grants == nil
+            async let cards: Void = early ? refreshCards() : ()
             let (a, p, t) = try await (agentPage, providerPage, threadPages)
             try await cards
             guard !closed else { return }
@@ -510,6 +513,7 @@ final class ChatStore {
                 feedGeneration = a.generation
             }
             apply(chats: t.chats, automated: t.automated)
+            if !early { try await refreshCards() }
             // Everything the first read found is history: from here on, what
             // settles or asks is news.
             baselined = true
@@ -654,16 +658,14 @@ final class ChatStore {
     /// notifies once.
     func refreshCards() async throws {
         guard canChat else { return }
-        async let i = api.list(ListQuery(kinds: [Kinds.interaction], properties: ["state": ["eq": "pending"]], first: 100))
+        async let i = cards(Kinds.interaction, ["state": ["eq": "pending"]])
         // The suggestions are readable only with `decide:`.
-        async let r: Page? = canDecide
-            ? api.list(ListQuery(kinds: [Kinds.request], properties: ["decision": ["eq": "proposed"]], first: 100))
-            : nil
+        async let r: [Record] = canDecide ? cards(Kinds.request, ["decision": ["eq": "proposed"]]) : []
         let (ip, rp) = try await (i, r)
         guard !closed else { return }
-        interactions = ip.records
-        requests = rp?.records ?? []
-        for record in ip.records + (rp?.records ?? []) {
+        interactions = ip
+        requests = rp
+        for record in ip + rp {
             let key = "card|\(record.kind)/\(record.id)"
             guard !notified.contains(key) else { continue }
             notified.insert(key)
@@ -674,6 +676,24 @@ final class ChatStore {
             Notifier.attention(record: record, thread: threadID, agent: who,
                                title: thread.map(title) ?? "A chat")
         }
+    }
+
+    /// The waiting cards of one kind. An app's token lists them only under
+    /// the threads it names (the server pages before it could filter
+    /// otherwise), so it names the chats it knows, a batch at a time.
+    private func cards(_ kind: String, _ condition: [String: JSONValue]) async throws -> [Record] {
+        guard grants != nil else {
+            return try await api.list(ListQuery(kinds: [kind], properties: condition, first: 100)).records
+        }
+        let ids = (chats + automated).map(\.id)
+        var out: [Record] = []
+        for start in stride(from: 0, to: ids.count, by: 50) {
+            let batch = ids[start ..< min(start + 50, ids.count)].map(JSONValue.string)
+            var properties = condition
+            properties["thread"] = ["in": .array(Array(batch))]
+            out += try await api.list(ListQuery(kinds: [kind], properties: properties, first: 100)).records
+        }
+        return out
     }
 
     // MARK: Prefetch
