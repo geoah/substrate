@@ -186,11 +186,31 @@ func (s *scopedDataset) talkedAgents(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+// referenceValues reads a reference value's targets: the stored `{ref: …}`
+// object, the written path or bare id, or a list of either. Anything else
+// reads as one empty target, so a caller expecting exactly one names none.
+func referenceValues(v any) []string {
+	switch x := v.(type) {
+	case string:
+		return []string{x}
+	case map[string]any:
+		ref, _ := x["ref"].(string)
+		return []string{ref}
+	case []any:
+		var out []string
+		for _, e := range x {
+			out = append(out, referenceValues(e)...)
+		}
+		return out
+	}
+	return []string{""}
+}
+
 // referencedID is the id a reference value names on a kind, "" when it
 // names none or one of another kind. It reads the stored object and the
 // written shorthands alike: a path, or a bare id the declaration completes.
 func referencedID(v any, kind string) string {
-	targets := referenceTargets(v)
+	targets := referenceValues(v)
 	if len(targets) != 1 || targets[0] == "" {
 		return ""
 	}
