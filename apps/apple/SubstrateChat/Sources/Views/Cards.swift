@@ -1,0 +1,330 @@
+import SwiftUI
+
+/// The agent's questions, inline in the thread that asked them. Answering is
+/// one patch with the version the owner read; the engine checks every
+/// selection against the stored option values. Prompts and labels are the
+/// model's and render as plain text; what is sent is the stored values.
+struct InteractionCard: View {
+    @Environment(ChatStore.self) private var store
+    let id: String
+    @State private var record: Record?
+    @State private var picked: [String: Set<String>] = [:]
+    @State private var busy: String?
+    @State private var problem: String?
+
+    private struct Question: Identifiable {
+        let id: String
+        let prompt: String
+        let options: [(value: String, label: String, description: String?)]
+        let multi: Bool
+    }
+
+    private var questions: [Question] {
+        (record?["questions"]?.array ?? []).compactMap { q in
+            guard let id = q["id"]?.text, let prompt = q["prompt"]?.text else { return nil }
+            let options = (q["options"]?.array ?? []).compactMap { o -> (String, String, String?)? in
+                guard let value = o["value"]?.text else { return nil }
+                return (value, o["label"]?.text ?? value, o["description"]?.text)
+            }
+            return Question(id: id, prompt: prompt, options: options, multi: q["multi"]?.bool == true)
+        }
+    }
+
+    private var answered: [String: Set<String>] {
+        var out: [String: Set<String>] = [:]
+        for a in record?["answers"]?.array ?? [] {
+            if let q = a["question"]?.string { out[q] = Set(a["selected"]?.array?.compactMap(\.string) ?? []) }
+        }
+        return out
+    }
+
+    var body: some View {
+        let state = record?["state"]?.string ?? "pending"
+        let pending = state == "pending"
+        VStack(alignment: .leading, spacing: 12) {
+            Label(pending ? "A few questions before it goes on" : (state == "answered" ? "You answered" : "You dismissed these"),
+                  systemImage: "questionmark.bubble")
+                .font(.subheadline.weight(.semibold))
+            if record == nil {
+                ProgressView().controlSize(.small)
+            }
+            ForEach(questions) { q in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(q.prompt).font(.subheadline)
+                    ForEach(q.options, id: \.value) { option in
+                        let chosen = pending ? picked[q.id, default: []].contains(option.value)
+                            : answered[q.id, default: []].contains(option.value)
+                        Button {
+                            toggle(q, option.value)
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Image(systemName: q.multi ? (chosen ? "checkmark.square.fill" : "square")
+                                    : (chosen ? "largecircle.fill.circle" : "circle"))
+                                    .foregroundStyle(chosen ? Color.accentColor : .secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(option.label)
+                                    if let d = option.description {
+                                        Text(d).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 4)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!pending || busy != nil)
+                    }
+                }
+            }
+            if let problem {
+                Text("That didn't go through: \(problem)").font(.footnote).foregroundStyle(.red)
+            }
+            if pending, record != nil {
+                HStack {
+                    Button {
+                        resolve(answer: true)
+                    } label: {
+                        if busy == "answer" { ProgressView().controlSize(.small) } else { Text("Answer") }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(busy != nil || !questions.allSatisfy { !(picked[$0.id]?.isEmpty ?? true) })
+                    Button("Dismiss") { resolve(answer: false) }
+                        .buttonStyle(.bordered)
+                        .disabled(busy != nil)
+                }
+            }
+        }
+        .card(tint: pending ? .orange : nil)
+        .task(id: id) { await load() }
+    }
+
+    private func load() async {
+        record = try? await store.api.get(Kinds.interaction, id)
+    }
+
+    private func toggle(_ q: Question, _ value: String) {
+        if q.multi {
+            picked[q.id, default: []].formSymmetricDifference([value])
+        } else {
+            picked[q.id] = [value]
+        }
+    }
+
+    private func resolve(answer: Bool) {
+        guard let record else { return }
+        busy = answer ? "answer" : "dismiss"
+        problem = nil
+        let properties: [String: Any] = answer
+            ? ["state": "answered", "answers": questions.map { ["question": $0.id, "selected": Array(picked[$0.id] ?? [])] }]
+            : ["state": "dismissed"]
+        Task {
+            defer { busy = nil }
+            do {
+                self.record = try await store.api.patch(Kinds.interaction, id, properties: properties, ifVersion: record.version)
+                // The resolution wrote into the thread and resumed the agent.
+                try? await store.refreshCards()
+                await store.refreshThreads()
+            } catch {
+                if store.handle(error) { return }
+                problem = (error as? ServerError)?.status == 409
+                    ? "The questions changed since you read them. Check them again."
+                    : explain(error, server: store.session.server)
+                await load()
+            }
+        }
+    }
+}
+
+/// A suggested change: the record, each property before and after, Apply and
+/// Dismiss. The decision carries the request's version, so a change slipped
+/// under it is refused, and a refusal means read again, never retry.
+struct ProposalCard: View {
+    @Environment(ChatStore.self) private var store
+    let id: String
+    @State private var request: Record?
+    @State private var target: Record?
+    @State private var busy: String?
+    @State private var problem: String?
+
+    private var op: String { request?["op"]?.string ?? "patch" }
+    private var decision: String { request?["decision"]?.string ?? "proposed" }
+
+    private var targetKind: String? {
+        request?["targetKind"]?.text ?? request?["target"]?.referencePath.map { path in
+            path.split(separator: "/").dropLast().joined(separator: "/")
+        }
+    }
+
+    private var targetID: String? { request?["targetId"]?.text ?? request?["target"]?.referenceID }
+    private var proposed: [String: JSONValue] { request?["diff"]?["properties"]?.object ?? [:] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(heading, systemImage: op == "delete" ? "trash" : op == "create" ? "plus.square" : "square.and.pencil")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if decision != "proposed" {
+                    Text(decision == "accepted" ? "Applied" : "Dismissed")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background((decision == "accepted" ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
+                }
+            }
+            if let rationale = request?["rationale"]?.text {
+                Text(rationale).font(.footnote).foregroundStyle(.secondary)
+            }
+            if request == nil { ProgressView().controlSize(.small) }
+            ForEach(proposed.keys.sorted(), id: \.self) { key in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    if op == "patch", let before = target?[key] {
+                        Text(words(before)).font(.footnote).strikethrough().foregroundStyle(.secondary)
+                    }
+                    Text(words(proposed[key] ?? .null)).font(.footnote)
+                }
+            }
+            if let problem {
+                Text("That didn't go through: \(problem)").font(.footnote).foregroundStyle(.red)
+            }
+            if decision == "proposed", request != nil {
+                HStack {
+                    Button {
+                        decide(accept: true)
+                    } label: {
+                        if busy == "accept" { ProgressView().controlSize(.small) } else {
+                            Text(op == "create" ? "Add It" : op == "delete" ? "Delete It" : "Apply")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(op == "delete" ? .red : .accentColor)
+                    Button("Dismiss") { decide(accept: false) }
+                        .buttonStyle(.bordered)
+                }
+                .disabled(busy != nil)
+            }
+        }
+        .card(tint: decision == "proposed" ? .blue : nil)
+        .task(id: id) { await load() }
+    }
+
+    private var heading: String {
+        let what = targetKind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
+        switch op {
+        case "create": return "Suggests adding a \(what)"
+        case "delete": return "Suggests deleting a \(what)"
+        default:
+            let name = target?["name"]?.text ?? target?["title"]?.text ?? target?["summary"]?.text
+            return name.map { "Suggests changing “\($0)”" } ?? "Suggests changing a \(what)"
+        }
+    }
+
+    private func load() async {
+        request = try? await store.api.get(Kinds.request, id)
+        if op != "create", let kind = targetKind, let tid = targetID {
+            target = try? await store.api.get(kind, tid)
+        }
+    }
+
+    private func decide(accept: Bool) {
+        guard let request else { return }
+        busy = accept ? "accept" : "reject"
+        problem = nil
+        Task {
+            defer { busy = nil }
+            do {
+                self.request = try await store.api.patch(Kinds.request, id, properties: ["decision": accept ? "accepted" : "rejected"],
+                                                         ifVersion: request.version)
+                try? await store.refreshCards()
+                await store.refreshThreads()
+            } catch {
+                if store.handle(error) { return }
+                problem = (error as? ServerError)?.status == 409
+                    ? "It changed since you read it. Check it again."
+                    : explain(error, server: store.session.server)
+                await load()
+            }
+        }
+    }
+
+    private func words(_ value: JSONValue) -> String {
+        switch value {
+        case .null: "Empty"
+        case let .string(s): s
+        case let .bool(b): b ? "Yes" : "No"
+        case let .number(n): n.rounded() == n ? String(Int(n)) : String(n)
+        default: value.referencePath ?? value.jsonText
+        }
+    }
+}
+
+/// `dueAt` → "Due", `assignee` → "Assignee".
+func propertyLabel(_ key: String) -> String {
+    var words = key.splittingWords().map { $0.lowercased() }
+    if words.count > 1, words.last == "at" { words.removeLast() }
+    return words.joined(separator: " ").capitalizedFirst
+}
+
+/// Writes a provider's API key. The key lives in the field until it is sent:
+/// never cached, never logged.
+struct ProviderKeySheet: View {
+    @Environment(ChatStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let provider: Provider
+    @State private var key = ""
+    @State private var busy = false
+    @State private var problem: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField("API key", text: $key)
+                        .textContentType(.password)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("\(provider.name) API key")
+                } footer: {
+                    Text("Agents run on your own key. It is sealed on the provider's record on \(store.session.server.host() ?? "your server") and sent to \(provider.endpoint).")
+                }
+                if let problem {
+                    Section { ProblemLine(message: problem) }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Add API Key")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                }
+            }
+        }
+        .frame(minWidth: 380, minHeight: 260)
+    }
+
+    private func save() {
+        busy = true
+        problem = nil
+        let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            defer { busy = false }
+            do {
+                try await store.setKey(value, provider: provider.id)
+                key = ""
+                dismiss()
+            } catch {
+                if store.handle(error) { return }
+                problem = explain(error, server: store.session.server)
+            }
+        }
+    }
+}

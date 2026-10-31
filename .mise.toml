@@ -794,12 +794,13 @@ run = 'node scripts/render-smoke.mjs "$usage_base"'
 # Apple apps (apps/apple)
 # =============================================================================
 #
-# The console, bundled, in a native shell for macOS, iPadOS and iOS, and
+# The console, bundled, in a native shell for macOS, iPadOS and iOS;
+# Substrate Chat, the agent chat as a native app on the same three; and
 # Substrate Sync, the iPhone and iPad app that pushes Health, Contacts and
 # Calendar. Every task is a subcommand of .mise/apple.sh; macOS only, and
 # nothing in CI runs them. The console build is a dependency of the console
 # app's tasks because the bundle copies web/console/dist as it is; Substrate
-# Sync carries no console.
+# Chat and Substrate Sync carry no console.
 
 [tasks."apple:project"]
 description = "Generate apps/apple/Substrate.xcodeproj from project.yml"
@@ -818,6 +819,18 @@ run = ".mise/apple.sh build:device"
 [tasks."apple:build:sync"]
 description = "Build Substrate Sync for the simulator"
 run = ".mise/apple.sh build:sync"
+
+[tasks."apple:build:chat"]
+description = "Build Substrate Chat for the Mac and the iOS simulator"
+run = ".mise/apple.sh build:chat"
+
+[tasks."apple:sim:chat"]
+description = "Build Substrate Chat and run it on a simulator"
+run = ".mise/apple.sh sim:chat"
+
+[tasks."apple:test:chat"]
+description = "Run Substrate Chat's unit tests on the Mac"
+run = ".mise/apple.sh test:chat"
 
 [tasks."apple:install"]
 description = "Build the console and the macOS app, install it in /Applications and open it"
@@ -839,6 +852,10 @@ run = ".mise/apple.sh release"
 [tasks."apple:release:sync"]
 description = "Build, sign and publish Substrate Sync as a release (prerelease, or stable) under sync/, with its own feeds"
 run = ".mise/apple.sh release:sync"
+
+[tasks."apple:release:chat"]
+description = "Build, sign and publish Substrate Chat for iPhone, iPad and Mac as a release (prerelease, or stable) under chat/, with its own feeds"
+run = ".mise/apple.sh release:chat"
 
 # =============================================================================
 # Image
