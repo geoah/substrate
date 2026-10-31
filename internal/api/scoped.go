@@ -827,6 +827,10 @@ func (s *scopedDataset) BundleStatuses(context.Context) ([]substrate.BundleStatu
 	return nil, errScope("bundles")
 }
 
+func (s *scopedDataset) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, errScope("bundles")
+}
+
 func (s *scopedDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
 	return substrate.BundleStatus{}, errScope("bundles")
 }
