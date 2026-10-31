@@ -1,7 +1,7 @@
 # Authorizing apps
 
-An app can get a token that reaches only the kinds the owner approves,
-without registering anywhere first. The app sends the owner to their
+An app can get a token that reaches only the kinds and agents the owner
+approves, without registering anywhere first. The app sends the owner to their
 substrate, the owner signs in and approves the request on the console's
 approval page, and the app exchanges the code it receives for a token. The
 protocol is OAuth 2.1's authorization code flow with PKCE, for public clients
@@ -26,7 +26,11 @@ The approval page shows, from top to bottom:
 - **The repository** the token opens.
 - **The requested access**: one row per scope, with the kinds it covers
   today. Uncheck a row to leave it out. A pattern ending in `*` also covers
-  matching kinds you add later.
+  matching kinds you add later. A row that asks to talk to agents names
+  each agent and what it can read and change, since a chat reaches whatever
+  the agent may do; a row that asks to apply or dismiss what agents suggest
+  names the agents and says the app decides with your authority. A pattern
+  ending in `*` also covers matching agents you add later.
 - **Its changes appear as**: when the app asks to write, the name its
   changes are recorded under, `app:` and its host. History shows them as the
   app's, never as yours. Your triggers and mappings respond to its changes
@@ -137,8 +141,9 @@ expiry.
 
 Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
 the records route (`GET /api/v1/records` for lists and lexical search,
-`POST /api/v1/records`), the record path (`/api/v1/{authority}/{package}/{kind}/{id}`)
-and the unit reads, held to its scopes:
+`POST /api/v1/records`), the record path (`/api/v1/{authority}/{package}/{kind}/{id}`),
+the unit reads, the change feed's live tail and, under an `agents:` scope,
+the chat and the thread routes, held to its scopes:
 
 - a kind the token cannot read answers `404`, as an unknown kind does;
 - a write to a kind it reads but cannot write answers `403` with
@@ -154,14 +159,71 @@ and the unit reads, held to its scopes:
 - inbound links, property provenance and expanded referents of other kinds
   are left out of every record it receives.
 
-Everything else answers `403`: the change feed and its watch, aggregate and
-window reads, blobs, the vocabulary, the catalog, functions, agents, the
-export and the token endpoints. Writes are attributed to the app's own actor,
+Everything else answers `403`: the change feed's history, aggregate and
+window reads, blobs, the vocabulary, the catalog, functions, the agent call
+API, the export and the token endpoints. Writes are attributed to the app's own actor,
 `app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
 request can claim that name. Two apps on one host share it, and the
 changelog's principal (the token, which names the exact client id) tells
 them apart. Labels and annotations an app writes go in its own namespace,
 `app:<host>/…`, like an agent's or a function's.
+
+### Talk to agents
+
+An `agents:<pattern>` scope reaches the agents whose ids match, and the
+records their chats are made of:
+
+- the agent rows (`substrate.reamde.dev/core/agent`), to read; an agent
+  hidden from chat is listed but refuses a chat;
+- `POST /api/v1/substrate.reamde.dev/core/agent/{id}/chat`, the id one
+  path segment (`%2F` for its slashes), streaming as it does for the owner.
+  The message is written as the app's, `app:<host>`; the agent runs under
+  its own permissions, so it reads and writes what it would in the
+  owner's chat;
+- the threads (`substrate.reamde.dev/llm/thread`) whose `agent` matches: list,
+  read, and `PATCH` of `subject` alone, to rename one;
+- their messages (`…/llm/message`) and interactions (`…/llm/interaction`):
+  list and read, and an interaction's `PATCH` of `state` (`answered` with
+  `answers`, or `dismissed`) with `ifVersion`, as the console sends it;
+- `GET …/llm/thread/{id}/events` and `POST …/llm/thread/{id}/stop` for
+  those threads.
+
+A `decide:<pattern>` scope reaches the change requests
+(`substrate.reamde.dev/core/recordpatchrequest`) whose `thread` is a thread
+of a matching agent: list and read, and a `PATCH` of `decision` to
+`accepted` or `rejected` with the request's `ifVersion`, optionally an
+`adjustedDiff` on an accept and a note under the app's own namespace
+(`app:<host>/note`). The accept applies the change as the owner's would,
+and the decision is recorded as the app's. An accept that would revoke a
+token or write an account is refused. `decide:` without `agents:` decides
+but does not chat.
+
+A list of one of these kinds names that kind alone in `filter.kinds`. A
+thread list is narrowed to the matching agents' threads, and an `agent`
+condition must name only those. A message, interaction or request list is
+narrowed by `filter.properties.thread` (`eq` or `in`, bare thread ids or
+paths); naming a thread the token cannot read answers `404`. Without a
+thread condition every row is checked as it is read, so a page may hold
+fewer rows than `first` and continue by its cursor, and the list cannot
+carry `count`. Any other property in a patch, a label, a create or a
+delete answers `403`. A search never reaches these kinds.
+
+### Follow changes
+
+`GET /api/v1/changes?watch=1` is open to an app's token: the ndjson tail,
+with its bookmark and generation, heartbeats, terminal error frame, `from`
+and `generation` resume and `410` as for the owner
+([the change feed](changelog.md)). It carries only the rows of records the
+token reads, through its read and write scopes and the rows `agents:` and
+`decide:` reach, and each row names alone: `seq`, `ts`, `op`, `kind`,
+`recordId`, `actor`, and `affected` cut to records the token reads. No
+`payload`, `hash` or trigger states. `values=1`, `q`, the history pages
+(`before`, `first`, `runs=1`) and the forward read without `watch=1` answer
+`403`; a `kinds` entry the token cannot read answers `404`.
+
+An app's lists carry no head, so it opens the watch first, keeps the
+bookmark, then reads its lists: every write after the bookmark arrives on
+the watch.
 
 ### Revoke
 
@@ -170,26 +232,36 @@ them apart. Labels and annotations an app writes go in its own namespace,
 
 ## Scopes
 
-A scope is `read:<pattern>` or `write:<pattern>`, and write includes read.
+A scope is a verb and a pattern:
+
+| Verb | Pattern over | Reaches |
+| --- | --- | --- |
+| `read` | kind references | records of the matching kinds |
+| `write` | kind references | the same, and writes them |
+| `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
+| `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
 
 | Pattern | Reaches |
 | --- | --- |
-| `<authority>/<package>/<name>` | one kind |
-| `<authority>/<package>/*` | every kind of one package |
-| `<authority>/*` | every kind of one authority |
-| `*` | every kind the owner has |
+| `<authority>/<package>/<name>` | one kind, or one agent |
+| `<authority>/<package>/*` | every kind or agent of one package |
+| `<authority>/*` | every kind or agent of one authority |
+| `*` | every kind or agent the owner has |
 
+An agent's id is its package and its name, `ada.example.com/llm/substrate`.
 `~` in place of the authority is the repository's own authority, the one an
 imported sample lives under: `read:~/tasks/*` becomes
-`read:ada.example.com/tasks/*` on the approval page and in the token. Some
-things no scope reaches:
+`read:ada.example.com/tasks/*` on the approval page and in the token, and
+`agents:~/llm/*` the agents imported with the LLM sample. Some things no
+scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,
   `…/secret`, `…/recoverykey`), read or write;
 - an `internal` kind through a pattern ending in `*`; an exact scope such as
   `read:substrate.reamde.dev/core/kind` may read one;
 - a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which
-  hold the functions, triggers, agents, providers and policies;
+  hold the functions, triggers, agents, providers and policies, beyond the
+  few writes `agents:` and `decide:` carry;
 - a write to an account or a bundle input, the connections the owner manages.
 
 ## Running it
