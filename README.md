@@ -20,9 +20,13 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
 ## Features
 
 - **One user, one repository.** Registering creates a user and their one
-  repository, and everything they own lives in it. No roles, no scopes, no
-  sharing to configure. Isolation between repositories is Postgres row level
+  repository, and everything they own lives in it. No roles and no sharing
+  to configure. Isolation between repositories is Postgres row level
   security, not query-layer discipline.
+- **Apps without registration.** Any app can ask for access through an
+  OAuth 2.1 flow with no client registration: the owner approves the kinds it
+  may read or write, and the app gets a token that reaches only those
+  ([apps](docs/apps.md)).
 - **Kinds declared in YAML.** A kind names its properties, including the
   references that point at other records; validation runs on every write, and a vocabulary evolves by integer
   versions without breaking the records underneath it.

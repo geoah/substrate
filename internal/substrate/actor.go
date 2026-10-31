@@ -14,11 +14,12 @@ import "strings"
 //	bundle:<authority>:<package>            an install, and the package's own hand
 //	function:<authority>:<package>:<name>   a function's effect
 //	agent:<authority>:<package>:<name>      an agent's effect
+//	app:<host>                              a write by an app's token
 //	substrate                               the engine's own hand
 //
 // The three human doors are attribution the CALLER declares
-// (`X-Substrate-Actor`); the last four are the substrate's own writing hands
-// and a request may never claim one (ReservedActor).
+// (`X-Substrate-Actor`); the rest are derived by the substrate, and a request
+// may never claim one (ReservedActor).
 //
 // A machine hand carries the FULL AUTHORITY and the PACKAGE, never a first
 // label, and the separator is a colon because `<actor>/<name>` label and
@@ -71,6 +72,29 @@ const (
 	AgentActorPrefix    = "agent:"
 )
 
+// AppActorPrefix opens the actor an app's token writes under (decision 0194):
+// `app:<host>`, the host of the client id the owner approved, so a change an
+// app made reads as the app's and never as the owner's. The server derives it
+// from the token record, so a request may never claim one, and no package may
+// declare one: its tier is the engine's to decide, not data an install
+// writes. The token behind each write is the changelog's principal, which
+// tells two apps on one host apart.
+const AppActorPrefix = "app:"
+
+// AppActor renders the actor of an app whose client id is on host, a
+// `host[:port]` as a URL carries it. An IPv6 literal loses its brackets
+// (`[::1]:8080` is `app:::1:8080`), since the actor is also the namespace of
+// the app's label and annotation keys, which take no bracket.
+func AppActor(host string) Actor {
+	host = strings.NewReplacer("[", "", "]", "").Replace(strings.ToLower(host))
+	return Actor(AppActorPrefix + host)
+}
+
+// IsAppActor reports whether an actor is an app's.
+func IsAppActor(a Actor) bool {
+	return strings.HasPrefix(string(a), AppActorPrefix) && len(a) > len(AppActorPrefix)
+}
+
 // retiredConnectorPrefix was a second spelling of BundleActorPrefix, minted
 // from an authority's FIRST LABEL until record 0025 retired it. Nothing mints
 // it now, and no changelog entry that carries it can be rewritten (the actor
@@ -115,11 +139,11 @@ func IsBundleActor(a Actor) bool {
 // the whole of what a human write can say about itself.
 var HumanActors = map[Actor]bool{ActorAPI: true, ActorConsole: true, ActorCLI: true}
 
-// ReservedActor reports whether an actor name is one of the host's own
-// writing hands and therefore may never be claimed by a request: the
-// `substrate` namespace, the `bundle:` / `function:` / `agent:` paths
-// installed code and shipped declarations write under, and the retired
-// `connector:` spelling of the first of them. A name that merely RESEMBLES
+// ReservedActor reports whether an actor name is one the substrate derives and
+// therefore may never be claimed by a request: the `substrate` namespace, the
+// `bundle:` / `function:` / `agent:` paths installed code and shipped
+// declarations write under, the `app:` path an app's token writes under, and
+// the retired `connector:` spelling of the first of them. A name that merely RESEMBLES
 // one ("substrateish.example.com") is ordinary.
 func ReservedActor(a Actor) bool {
 	s := string(a)
@@ -127,5 +151,6 @@ func ReservedActor(a Actor) bool {
 		strings.HasPrefix(s, BundleActorPrefix) ||
 		strings.HasPrefix(s, FunctionActorPrefix) ||
 		strings.HasPrefix(s, AgentActorPrefix) ||
+		strings.HasPrefix(s, AppActorPrefix) ||
 		strings.HasPrefix(s, retiredConnectorPrefix)
 }

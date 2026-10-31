@@ -32,7 +32,9 @@ import {
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
+import { safeReturnPath } from "@/lib/return-path"
 import { substrateHostname } from "@/lib/shell"
+import { registerRoute } from "@/router"
 
 /** Long enough that argon2id is not the only thing between a guess and the
  * repository; the server has no opinion beyond non-empty. */
@@ -149,6 +151,9 @@ export function RegisterPage() {
   useDocumentTitle("Register")
   const { inviteRequired, totpRequired } = useAuthPolicy()
   const navigate = useNavigate()
+  // Where registering returns to, as signing in does: only a path on this
+  // console is followed.
+  const returnTo = safeReturnPath(registerRoute.useSearch().redirect)
   const [inviteCode, setInviteCode] = useState("")
   const [repository, setRepository] = useState("")
   // The name the repository will actually get. Sending the resolved value
@@ -245,7 +250,7 @@ export function RegisterPage() {
         minted.token.id
       )
       if (holdKeys) return
-      await navigate({ to: "/", replace: true })
+      await navigate({ to: returnTo ?? "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
         // Which factor was wrong is whichever this door reads: a substrate
@@ -290,7 +295,7 @@ export function RegisterPage() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
-                  void navigate({ to: "/", replace: true })
+                  void navigate({ to: returnTo ?? "/", replace: true })
                 }}
               >
                 <FieldGroup>
@@ -518,6 +523,7 @@ export function RegisterPage() {
           Already registered?{" "}
           <Link
             to="/login"
+            search={{ redirect: returnTo }}
             className="underline underline-offset-4 hover:text-foreground"
           >
             Sign in

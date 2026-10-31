@@ -498,9 +498,9 @@ func resolveKindIn(reg *vocabulary.Registry, name string) (*vocabulary.Kind, err
 
 // Tokens and the credential are RECORDS, and everything about them —
 // minting, the hash lookup, the sealed material behind the credential — lives
-// in auth.go. There is no scope list and no actor set on a token any more: a
-// token has full access to its repository, so there is nothing
-// left here to configure.
+// in auth.go. There is no actor set on a token: a token without scopes has
+// full access to its repository, and an app's token is held to its scopes at
+// the API, with the owner-only gates here reading txn.scoped.
 
 // jsonSafe round-trips a YAML-decoded definition through JSON so it stores
 // as jsonb and compares byte-identically on re-reconcile.
@@ -548,8 +548,12 @@ type txn struct {
 	// ticker context (ProcessTriggers) and carries none. The changelog's
 	// caused_by is what links that entry back to the write behind it.
 	principal string
-	now       time.Time
-	maxSeq    int64
+	// scoped is true when an app's token stands behind the request
+	// (substrate.ScopesFrom): its actor still resolves to the owner tier, so
+	// the owner-only gates read ownerHand, never the tier alone.
+	scoped bool
+	now    time.Time
+	maxSeq int64
 	// bulk queues the effects and entries of a bulk run of creating puts
 	// (bulkwrite.go), nil outside one.
 	bulk *bulkWrite
@@ -739,9 +743,10 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	// sql.ErrTxDone and changes nothing. It runs before wc.release, so the
 	// transaction ends here and not in database/sql's answer to the cancel.
 	defer func() { _ = tx.Rollback() }()
+	_, scoped := substrate.ScopesFrom(ctx)
 	t := &txn{
 		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor, tier: ds.actorTier(actor),
-		principal: substrate.PrincipalFrom(ctx), now: nowUTC(), internal: internal,
+		principal: substrate.PrincipalFrom(ctx), scoped: scoped, now: nowUTC(), internal: internal,
 	}
 	// The changelog lock before anything else the transaction locks: the
 	// first key of the global order (rows.go changelogLockKey). The cost is

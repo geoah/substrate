@@ -53,7 +53,8 @@ export function providerOfKind(kind: string): ProviderInfo | undefined {
     : undefined
 }
 
-export type ActorClass = "you" | "agent" | "function" | "bundle" | "engine"
+export type ActorClass =
+  "you" | "agent" | "function" | "bundle" | "app" | "engine"
 
 export interface ActorIdentity {
   /** The actor string as stored. */
@@ -110,6 +111,16 @@ export function actorIdentity(actor: string): ActorIdentity {
       cls: "engine",
       name: "Substrate",
       description: "The substrate itself: merges, schedules and housekeeping.",
+    }
+  }
+  // An app the owner approved writes as `app:<host>` (decision 0194): it is
+  // the app, never the owner, even though its token is one of theirs.
+  if (actor.startsWith("app:") && actor.length > "app:".length) {
+    return {
+      actor,
+      cls: "app",
+      name: actor.slice("app:".length),
+      description: "An app you approved. Settings, under Apps, lists it.",
     }
   }
   const parts = actor.split(":")

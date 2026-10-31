@@ -136,12 +136,18 @@ DELETE /tokens/{id}   # revoke
 
 Five things follow from a token being a record:
 
-- **A token has full access to its repository.** There are no scopes, no
-  roles, no ACLs, and no actor set on the token. Authentication is a hash
+- **A token without `scopes` has full access to its repository.** There are
+  no roles, no ACLs, and no actor set on the token. Authentication is a hash
   lookup that finds the token record, and the repository holding that record
-  _is_ the request's scope. A later `scopes` property would be optional, and
-  a token without it keeps full access
+  _is_ the request's repository
   ([0143](decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)).
+  Every session, script and device token is one of these. A token an app got
+  through the authorization flow carries the `scopes` the owner approved and
+  reaches only those kinds, on the records route, the record path and the
+  unit reads (`/api/v1/units`, `/api/v1/units/convert`), which no scope
+  limits
+  ([apps](apps.md),
+  [0194](decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)).
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from

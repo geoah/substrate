@@ -141,6 +141,12 @@ type Config struct {
 	// target. Empty posts to the return-page's own origin, where this server
 	// serves the console, and renders no redirect.
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
+	// PublicURL is this server's origin as apps reach it, the issuer of the
+	// app authorization flow (decision 0194): `https://` and a host, no path.
+	// Empty derives the issuer from each request's Host, https unless the
+	// host is loopback; set it on a deployment reachable under more than one
+	// name, so every app sees one issuer.
+	PublicURL string `envconfig:"SUBSTRATE_PUBLIC_URL" default:""`
 
 	// Metrics serves the Prometheus exposition at GET /metrics, unauthenticated
 	// and DB-free like /healthz: request latency by route, requests in
@@ -216,6 +222,9 @@ func (c Config) Validate() error {
 	if err := httpURL("SUBSTRATE_OAUTH_CALLBACK_URL", c.OAuthCallbackURL, "https://substrate.example.com/api/v1/oauth/callback"); err != nil {
 		return err
 	}
+	if err := originURL("SUBSTRATE_PUBLIC_URL", c.PublicURL); err != nil {
+		return err
+	}
 	return ValidateCredentialKey(c.CredentialKey)
 }
 
@@ -252,6 +261,35 @@ func httpURL(name, raw, example string) error {
 		}
 	}
 	return fmt.Errorf("%s is %q: it must be an absolute http or https URL with a host, such as %s", name, raw, example)
+}
+
+// originURL refuses a set value that is not an origin an issuer may be
+// (RFC 8414 §2): https with a host and nothing after it, or http on a
+// loopback host for a dev box.
+func originURL(name, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(strings.TrimRight(raw, "/"))
+	ok := err == nil && u.Hostname() != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" &&
+		(u.Scheme == "https" || (u.Scheme == "http" && (loopbackIP(u.Hostname()) || strings.EqualFold(u.Hostname(), "localhost"))))
+	if ok {
+		if port := u.Port(); port != "" {
+			if p, perr := strconv.ParseUint(port, 10, 16); perr != nil || p == 0 {
+				ok = false
+			}
+		}
+	}
+	// The issuer is the string as set (RFC 8414 §3.3 compares it as a
+	// string), so it is refused unless it is already its own canonical
+	// spelling: a lowercase scheme and host, nothing after the port.
+	if ok && strings.TrimRight(raw, "/") != u.Scheme+"://"+strings.ToLower(u.Host) {
+		ok = false
+	}
+	if !ok || u.ForceQuery || strings.HasSuffix(u.Host, ":") {
+		return fmt.Errorf("%s is %q: it must be an https origin with no path, such as https://substrate.example.com (http only on a loopback host)", name, raw)
+	}
+	return nil
 }
 
 // ListenAddress is the host:port the server binds, or a refusal naming the

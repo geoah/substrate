@@ -22,8 +22,12 @@ Everything the user has lives in it: an append-only,
 strictly sequential **changelog**, checksummed segment files in the
 repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
 is the truth and the **records** table is its fold. Tokens and the login credential are themselves records, and a token
-has full access to its repository. There are no tenants, no identities, no
-user-managed keys, no sharing, no scopes and no roles.
+has full access to its repository unless it is an app's: a token an app got
+through the authorization flow carries the **scopes** the owner approved and
+reaches only those kinds
+([0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
+[apps](docs/apps.md)). There are no tenants, no identities, no user-managed
+keys, no sharing and no roles.
 
 There is no written contract document. **The code is the contract**; the tests
 are what it promises. One will be written from the code, small, when someone
@@ -356,9 +360,11 @@ package segment is the third job for `/`
 ([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)), and the rest of
 0014 stands, first-label reservation included. The
 actors are `bundle:<authority>:<package>`,
-`function:<authority>:<package>:<name>` and
-`agent:<authority>:<package>:<name>`, derived by the engine and never declared
-([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). There
+`function:<authority>:<package>:<name>`,
+`agent:<authority>:<package>:<name>` and `app:<host>` (an app's token, from
+the client id the owner approved), derived by the substrate and never declared
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md),
+[0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)). There
 is no second spelling of a kind anywhere: no generated type name, no folded
 authority. The reference is the name on every surface, and nothing keys on a
 first label.

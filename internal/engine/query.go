@@ -690,7 +690,14 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	_ = rows.Close()
 	if hasMore && len(got) > 0 {
-		page.Cursor = encodeKeyset(signature, got[len(got)-1].keys, page.Head, page.Generation)
+		head := page.Head
+		if _, scoped := substrate.ScopesFrom(ctx); scoped {
+			// The head counts every write of the repository, the kinds an
+			// app's token cannot read included, so its cursor carries none
+			// (decision 0194); the page it hands off to drops it too.
+			head = 0
+		}
+		page.Cursor = encodeKeyset(signature, got[len(got)-1].keys, head, page.Generation)
 	}
 	pageRows := make([]*erow, len(got))
 	for i, s := range got {

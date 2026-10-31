@@ -1,11 +1,16 @@
-/** Tokens, which are also the sessions: Settings' "Signed in" rows and, for
- * developers, the full token table with the mint form.
+/** Tokens, which are also the sessions: Settings' "Signed in" rows, the apps
+ * the owner approved and, for developers, the full-access token table with
+ * the mint form.
  *
  * A session IS a token record: signing in mints one, and there is no session
  * table beside it. So this one list is every way into the repository (this
- * browser, a script, a phone), and signing one out deletes the record, the
- * same write `substratectl` performs. The token whose id matches
+ * browser, a script, a phone, an app), and signing one out deletes the record,
+ * the same write `substratectl` performs. The token whose id matches
  * getTokenId() is THIS browser; signing it out signs this browser out.
+ *
+ * A token with `scopes` is an app's (decision 0194): it reaches only what the
+ * owner approved, and it is listed under Apps, never beside the full-access
+ * tokens.
  *
  * A minted secret is shown ONCE. Nothing can show it again, which is why the
  * panel that carries it stays until it is dismissed. */
@@ -47,6 +52,23 @@ const TOKENS_KEY = ["tokens"] as const
 
 function useTokens() {
   return useQuery({ queryKey: TOKENS_KEY, queryFn: listTokens })
+}
+
+/** An app's token: it carries the scopes the owner approved. A token without
+ * them has full access. */
+function isAppToken(t: TokenInfo): boolean {
+  return t.scopes !== undefined
+}
+
+/** The host of an app's client id URL, the one fact about the app its URL
+ * proves; the label where the token names no client id. */
+function appHost(t: TokenInfo): string {
+  if (!t.clientId) return t.label
+  try {
+    return new URL(t.clientId).host || t.clientId
+  } catch {
+    return t.clientId
+  }
 }
 
 /** A token as a person knows it: this browser, the command line, a browser,
@@ -104,14 +126,18 @@ function useSignOut() {
       }
       toast.add({
         type: "success",
-        title: `Signed out ${signedInAs(t)}.`,
+        title: isAppToken(t)
+          ? `Revoked ${appHost(t)}’s access.`
+          : `Signed out ${signedInAs(t)}.`,
       })
       void queryClient.invalidateQueries({ queryKey: TOKENS_KEY })
     },
-    onError: (error) => {
+    onError: (error, t) => {
       toast.add({
         type: "error",
-        title: "Signing out didn’t work",
+        title: isAppToken(t)
+          ? "Revoking didn’t work"
+          : "Signing out didn’t work",
         description: error.message,
       })
     },
@@ -120,6 +146,16 @@ function useSignOut() {
     pending &&
     (pending.id === currentId ? (
       <SignOutDialog
+        pending={revoke.isPending}
+        onConfirm={() => revoke.mutate(pending)}
+        onClose={() => setPending(null)}
+      />
+    ) : isAppToken(pending) ? (
+      <ConfirmDialog
+        title={`Revoke ${appHost(pending)}’s access?`}
+        consequence="The app stops reaching your repository straight away. To use it again, approve it again."
+        confirm="Revoke"
+        destructive
         pending={revoke.isPending}
         onConfirm={() => revoke.mutate(pending)}
         onClose={() => setPending(null)}
@@ -138,10 +174,18 @@ function useSignOut() {
   return { ask: setPending, busy: revoke.isPending, dialog, currentId }
 }
 
-function TokensError({ error, retry }: { error: Error; retry: () => void }) {
+function TokensError({
+  error,
+  retry,
+  title = "Your sign-ins didn’t load",
+}: {
+  error: Error
+  retry: () => void
+  title?: string
+}) {
   return (
     <SettingRow
-      title="Your sign-ins didn’t load"
+      title={title}
       description={
         error instanceof ApiError ? error.message : "Something went wrong."
       }
@@ -172,11 +216,13 @@ export function SignedInRows() {
       <TokensError error={tokens.error} retry={() => void tokens.refetch()} />
     )
   }
-  const rows = [...tokens.data].sort(
-    (a, b) =>
-      Number(b.id === currentId) - Number(a.id === currentId) ||
-      b.createdAt.localeCompare(a.createdAt)
-  )
+  const rows = tokens.data
+    .filter((t) => !isAppToken(t))
+    .sort(
+      (a, b) =>
+        Number(b.id === currentId) - Number(a.id === currentId) ||
+        b.createdAt.localeCompare(a.createdAt)
+    )
   return (
     <>
       {rows.map((t) => {
@@ -363,13 +409,114 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
   )
 }
 
-/** Developer: every token record, raw, and the form that mints one for a
- * script or a device. Every token has full access. */
+/** Settings' Apps rows: every app token, newest first, each with what the
+ * app claimed to be, the scopes the owner approved, when and until when, and
+ * "Revoke…". */
+export function AppTokenRows() {
+  const tokens = useTokens()
+  const { ask, busy, dialog } = useSignOut()
+  if (tokens.isPending) {
+    return (
+      <div className="flex flex-col gap-2 p-4">
+        <Skeleton className="h-9 w-full" />
+      </div>
+    )
+  }
+  if (tokens.isError) {
+    return (
+      <TokensError
+        error={tokens.error}
+        retry={() => void tokens.refetch()}
+        title="Your apps didn’t load"
+      />
+    )
+  }
+  const apps = tokens.data
+    .filter(isAppToken)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  if (apps.length === 0) {
+    return (
+      <SettingRow
+        title="No apps"
+        description="An app you approve is listed here, with what it can reach and until when."
+      />
+    )
+  }
+  return (
+    <>
+      {apps.map((t) => {
+        const host = appHost(t)
+        return (
+          <SettingRow
+            key={t.id}
+            title={host}
+            control={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                aria-label={`Revoke ${host}`}
+                onClick={() => ask(t)}
+              >
+                Revoke…
+              </Button>
+            }
+          >
+            <dl
+              aria-label={`What ${host} can do`}
+              className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[12.5px]"
+            >
+              {t.clientId && (
+                <>
+                  <dt className="text-faint">Client id</dt>
+                  <dd className="font-mono [overflow-wrap:anywhere]">
+                    {t.clientId}
+                  </dd>
+                </>
+              )}
+              {t.clientName && (
+                <>
+                  <dt className="text-faint">Calls itself</dt>
+                  <dd className="[overflow-wrap:anywhere]">{t.clientName}</dd>
+                </>
+              )}
+              <dt className="text-faint">Access</dt>
+              <dd>
+                <ul className="flex flex-col gap-0.5">
+                  {(t.scopes ?? []).map((scope) => (
+                    <li
+                      key={scope}
+                      className="font-mono [overflow-wrap:anywhere]"
+                    >
+                      {scope}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+              <dt className="text-faint">Approved</dt>
+              <dd title={shortDateTime(t.createdAt)}>
+                {relativeTime(t.createdAt)}
+              </dd>
+              <dt className="text-faint">Expires</dt>
+              <dd title={t.expiresAt ? shortDateTime(t.expiresAt) : undefined}>
+                {t.expiresAt ? relativeTime(t.expiresAt) : "never"}
+              </dd>
+            </dl>
+          </SettingRow>
+        )
+      })}
+      {dialog}
+    </>
+  )
+}
+
+/** Developer: every full-access token record, raw, and the form that mints
+ * one for a script or a device. App tokens are listed under Apps. */
 export function ApiTokens() {
   const [minted, setMinted] = useState<MintedToken | null>(null)
   const tokens = useTokens()
   const { ask, busy, dialog, currentId } = useSignOut()
-  const rows = tokens.data ?? []
+  const rows = (tokens.data ?? []).filter((t) => !isAppToken(t))
   return (
     <div className="flex flex-col gap-4">
       {minted && (

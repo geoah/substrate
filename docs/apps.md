@@ -1,0 +1,246 @@
+# Authorizing apps
+
+An app can get a token that reaches only the kinds the owner approves,
+without registering anywhere first. The app sends the owner to their
+substrate, the owner signs in and approves the request on the console's
+approval page, and the app exchanges the code it receives for a token. The
+protocol is OAuth 2.1's authorization code flow with PKCE, for public clients
+whose `client_id` is a URL
+([0194](decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)).
+
+Every other token, the console's session, a `substratectl` login, a token
+minted with `POST /tokens`, has full access to its repository and is
+unchanged ([tokens](auth.md)).
+
+## For the owner
+
+The approval page shows, from top to bottom:
+
+- **The app**: the host of its client id, which is the one fact the app's
+  URL proves, and the full client id beneath it. The name and site the app
+  gives for itself are shown as its claim, with a warning when that site is
+  on another host.
+- **After you answer, you go to**: the address your browser returns to,
+  which receives the access. It is always on the app's own host, or on
+  this computer (a loopback address), which the page warns nothing verifies.
+- **The repository** the token opens.
+- **The requested access**: one row per scope, with the kinds it covers
+  today. Uncheck a row to leave it out. A pattern ending in `*` also covers
+  matching kinds you add later.
+- **Its changes appear as**: when the app asks to write, the name its
+  changes are recorded under, `app:` and its host. History shows them as the
+  app's, never as yours. Your triggers and mappings respond to its changes
+  like any other, so they may run code you installed, call services that
+  charge you, or change records the app cannot reach itself.
+- **How long the access lasts**: 7, 30 or 90 days, or until you revoke it.
+  There is no refresh: when it ends, the app asks again. A token approved
+  until revoked works for whoever holds it until you revoke it, a leaked one
+  included.
+
+An app on your own computer (a command-line tool, a desktop app) has a
+`client_id` on `127.0.0.1` or `localhost`. Nothing about it can be verified,
+not even its name, so the page says it only claims to run on your computer.
+Approve one only if you started it yourself.
+
+App tokens are listed under **Apps** in Settings, with the app, its scopes,
+when you approved it and when it expires. **Revoke** deletes the token, like
+any other.
+
+## For an app
+
+### Publish a client ID metadata document
+
+A web app's `client_id` is an `https` URL that serves a JSON document
+describing the app. Serving it is the whole of registration:
+
+```json
+{
+  "client_id": "https://notes.example.org/oauth/client.json",
+  "client_name": "Notes",
+  "client_uri": "https://notes.example.org",
+  "redirect_uris": ["https://notes.example.org/oauth/callback"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+`client_id` must equal the URL the document is served at, and
+`redirect_uris` must list every redirect URI the app uses. Each one is on the
+`client_id`'s own origin (`https`, the same host and port), or `http` on a
+loopback address (a loopback entry matches any port). Serve the document
+from the host that receives the access: a document on a shared host (a raw
+file on GitHub, a paste) can name only a callback on that origin or a
+loopback one, and the approval page would be headed with the shared host's
+name. A document
+that carries a `client_secret`, a `jwks` or `jwks_uri`, or another
+`token_endpoint_auth_method` is refused: an app here is a public client. A
+host is named in ASCII: an internationalized name is written as its
+punycode (`xn--…`), because the server dials that form and the approval page
+must show the host it dials. The
+server fetches the document after the owner signs in, from public addresses
+only, without following redirects, within 5 seconds and 5 KB, and caches it
+for 10 minutes.
+
+A local app uses a loopback `client_id` instead, such as
+`http://127.0.0.1/my-tool`, which is never fetched. Its `redirect_uri` must be
+a loopback `http` URL, on any port.
+
+### Native apps
+
+- **A mobile app** uses a claimed `https` callback on its own domain. It
+  serves its document at, say, `https://notes.example.org/oauth/client.json`
+  and lists `https://notes.example.org/oauth/callback`. The owner signs in
+  and approves in the system's browser sheet, the app receives the callback,
+  and it exchanges the code with its PKCE verifier and keeps the token in
+  the Keychain or the Keystore:
+  - on iOS 17.4 or later, the app opens `ASWebAuthenticationSession` with
+    `callback: .https(host:path:)` for that host and path, and the domain is
+    one of the app's associated domains. An older iOS has no `https`
+    callback for the session, so it cannot take part;
+  - on Android, the callback path is a verified App Link (`autoVerify`, and
+    the domain's `assetlinks.json` names the app), opened from a Custom Tab.
+    A link that fails verification opens in the browser instead, on the
+    app's own site.
+
+  When the platform has verified the domain, only the app the domain names
+  receives the callback, so the host on the approval page stands for the
+  app.
+- **A desktop app or a CLI** listens on a loopback port: either a document
+  on its website listing `http://127.0.0.1/callback`, or a loopback
+  `client_id` with no document. The page warns that a program on this
+  computer receives the access.
+- **A custom URL scheme** (`com.example.notes:/callback`) is not accepted:
+  any app on the device may claim one, so nothing would tie the callback to
+  the app the page names.
+
+A native app asks the owner for their substrate's address, the way an app
+for a federated service asks for an instance, and reads
+`/.well-known/oauth-authorization-server` there.
+
+### Discover the server
+
+`GET /.well-known/oauth-authorization-server` (RFC 8414) names the issuer and
+the endpoints. `GET /.well-known/oauth-protected-resource` (RFC 9728) names
+the resource, and a `401` from the API carries
+`WWW-Authenticate: Bearer resource_metadata="…"` pointing at it.
+
+### Ask for access
+
+Send the browser to the authorization endpoint:
+
+```
+GET /oauth/authorize?response_type=code
+  &client_id=https://notes.example.org/oauth/client.json
+  &redirect_uri=https://notes.example.org/oauth/callback
+  &scope=read:~/tasks/* write:~/tasks/task
+  &code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
+  &code_challenge_method=S256
+  &state=af0ifjsldkj
+```
+
+PKCE with `S256` is required, and `scope` is required. A malformed request is
+answered with an error page, never a redirect, because the redirect URI is
+not verified yet. The owner's answer comes back to the redirect URI as
+`code`, `state` and `iss` (RFC 9207), or as `error=access_denied`.
+
+### Exchange the code
+
+```
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=…&client_id=…&redirect_uri=…&code_verifier=…
+```
+
+```json
+{
+  "access_token": "substrate_tok_…",
+  "token_type": "Bearer",
+  "scope": "read:ada.example.com/tasks/* write:ada.example.com/tasks/task",
+  "expires_in": 2592000,
+  "repository": "ada.example.com"
+}
+```
+
+The code lasts 60 seconds. A presentation that does not match its client,
+redirect URI and verifier is refused and spends nothing; a second
+presentation of a code that already worked revokes the token it minted (a
+revoke the database refuses is logged and retried for several minutes).
+`scope` lists what the owner approved, which may be less than the app asked
+for. `repository` is the authority the token opens. `expires_in` is absent
+when the owner approved the app until they revoke it: the token has no
+expiry.
+
+### Use the token
+
+Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
+the records route (`GET /api/v1/records` for lists and lexical search,
+`POST /api/v1/records`), the record path (`/api/v1/{authority}/{package}/{kind}/{id}`)
+and the unit reads, held to its scopes:
+
+- a kind the token cannot read answers `404`, as an unknown kind does;
+- a write to a kind it reads but cannot write answers `403` with
+  `WWW-Authenticate: Bearer error="insufficient_scope"`;
+- a list with no `filter.kinds` lists every kind it reads, and `implements`
+  and `purposes` narrow those alone;
+- a property condition on a reference, and a reference value in a write,
+  must name a kind the token reads, or the request answers `403`;
+- a search is lexical (a `semantic` one answers `403`), weighs every word
+  alike and carries no scores, since a word's frequency is counted over the
+  whole repository;
+- a list carries no changelog head, in its body or in its cursor;
+- inbound links, property provenance and expanded referents of other kinds
+  are left out of every record it receives.
+
+Everything else answers `403`: the change feed and its watch, aggregate and
+window reads, blobs, the vocabulary, the catalog, functions, agents, the
+export and the token endpoints. Writes are attributed to the app's own actor,
+`app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
+request can claim that name. Two apps on one host share it, and the
+changelog's principal (the token, which names the exact client id) tells
+them apart. Labels and annotations an app writes go in its own namespace,
+`app:<host>/…`, like an agent's or a function's.
+
+### Revoke
+
+`POST /oauth/revoke` with `token=…` (form-encoded) revokes that token
+(RFC 7009). It answers `200` whether or not the token existed.
+
+## Scopes
+
+A scope is `read:<pattern>` or `write:<pattern>`, and write includes read.
+
+| Pattern | Reaches |
+| --- | --- |
+| `<authority>/<package>/<name>` | one kind |
+| `<authority>/<package>/*` | every kind of one package |
+| `<authority>/*` | every kind of one authority |
+| `*` | every kind the owner has |
+
+`~` in place of the authority is the repository's own authority, the one an
+imported sample lives under: `read:~/tasks/*` becomes
+`read:ada.example.com/tasks/*` on the approval page and in the token. Some
+things no scope reaches:
+
+- the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,
+  `…/secret`, `…/recoverykey`), read or write;
+- an `internal` kind through a pattern ending in `*`; an exact scope such as
+  `read:substrate.reamde.dev/core/kind` may read one;
+- a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which
+  hold the functions, triggers, agents, providers and policies;
+- a write to an account or a bundle input, the connections the owner manages.
+
+## Running it
+
+The issuer is `https://` and the request's `Host`, or `http://` on a loopback
+host. Set `SUBSTRATE_PUBLIC_URL` when the server answers under more than one
+name, so every app sees one issuer ([configuration](operations.md)). A flow
+is bound to the issuer it began on.
+
+Parked requests and codes live in the server's memory: a restart forgets
+them, and an app that was mid-flow starts over. One address (or one IPv6
+/64) holds at most 32 parked requests. The tokens are records like any
+other.
+
+A binary from before app authorization reads an app's token as a
+full-access one, since it does not know `scopes`. Before rolling back past
+this change, revoke every app token under Settings > Apps.

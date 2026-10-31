@@ -5,7 +5,7 @@
  * and, in technical mode, inline. */
 
 import { Link } from "@tanstack/react-router"
-import { Bot, Box, ShieldCheck, UserRound, Zap } from "lucide-react"
+import { AppWindow, Bot, Box, ShieldCheck, UserRound, Zap } from "lucide-react"
 
 import { IdentityCard, IdentityHoverCard } from "./identity-hover-card"
 import { ProviderBadge } from "./provider-badge"
@@ -19,6 +19,7 @@ const DISCS = {
   agent: { icon: Bot, tone: "bg-kind-purple-bg text-kind-purple-fg" },
   function: { icon: Zap, tone: "bg-kind-orange-bg text-kind-orange-fg" },
   bundle: { icon: Box, tone: "bg-kind-gray-bg text-kind-gray-fg" },
+  app: { icon: AppWindow, tone: "bg-kind-blue-bg text-kind-blue-fg" },
   engine: { icon: ShieldCheck, tone: "bg-kind-gray-bg text-kind-gray-fg" },
 } as const
 

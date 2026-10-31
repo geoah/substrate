@@ -230,7 +230,7 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, _, err := ds.MintToken(ctx, "cli", nil); err != nil {
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "cli"}); err != nil {
 		t.Fatalf("mint: %v", err)
 	}
 

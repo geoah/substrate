@@ -19,13 +19,33 @@ const navigate = vi.fn().mockResolvedValue(undefined)
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
-    <a href={to}>{children}</a>
+  Link: ({
+    to,
+    search,
+    children,
+  }: {
+    to: string
+    search?: { redirect?: string }
+    children: React.ReactNode
+  }) => (
+    <a
+      href={
+        search?.redirect
+          ? `${to}?redirect=${encodeURIComponent(search.redirect)}`
+          : to
+      }
+    >
+      {children}
+    </a>
   ),
 }))
 
+/** The page's `?redirect=`, as the route validated it. */
+const loginSearch = vi.hoisted(() => ({
+  redirect: undefined as string | undefined,
+}))
 vi.mock("@/router", () => ({
-  loginRoute: { useSearch: () => ({ redirect: undefined }) },
+  loginRoute: { useSearch: () => loginSearch },
 }))
 
 /** What GET /.well-known/substrate/server.json said about the door. A settled
@@ -90,6 +110,7 @@ describe("LoginPage", () => {
     navigate.mockClear()
     policy.totpRequired = true
     policy.live = false
+    loginSearch.redirect = undefined
   })
 
   afterEach(() => {
@@ -126,6 +147,46 @@ describe("LoginPage", () => {
     expect(
       ((init as RequestInit).headers as Record<string, string>).Authorization
     ).toBeUndefined()
+  })
+
+  it("returns to an app's approval page after signing in", async () => {
+    loginSearch.redirect = "/authorize/AbC123"
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    render(<LoginPage />)
+    signIn()
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/authorize/AbC123",
+        replace: true,
+      })
+    )
+  })
+
+  it.each(["//evil.example/authorize/x", "https://evil.example", "/\\evil"])(
+    "lands on Home instead of the return path %s",
+    async (redirect) => {
+      loginSearch.redirect = redirect
+      fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+      render(<LoginPage />)
+      signIn()
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
+      )
+    }
+  )
+
+  it("carries the return path to registration, and only a local one", () => {
+    loginSearch.redirect = "/authorize/AbC123"
+    render(<LoginPage />)
+    expect(
+      screen.getByRole("link", { name: "Register" }).getAttribute("href")
+    ).toBe("/register?redirect=%2Fauthorize%2FAbC123")
+    cleanup()
+    loginSearch.redirect = "//evil.example"
+    render(<LoginPage />)
+    expect(
+      screen.getByRole("link", { name: "Register" }).getAttribute("href")
+    ).toBe("/register")
   })
 
   it("shows the factor/lockout message on a refused sign-in", async () => {

@@ -838,15 +838,97 @@ export interface KindInfo {
   definition: Record<string, unknown>
 }
 
-/** One token record's metadata — never the hash, never the secret. A token has
- * FULL ACCESS to its repository: no scopes, no actors, no roles. Sessions ARE
- * these records. */
+/** One token record's metadata — never the hash, never the secret. A token
+ * without `scopes` has FULL ACCESS to its repository; sessions ARE these
+ * records. A token an app received through the authorization flow carries the
+ * scopes the owner approved and the app it was minted for (decision 0194). */
 export interface TokenInfo {
   id: string
   label: string
   createdAt: string
   /** Absent = the token lives until it is deleted. */
   expiresAt?: string
+  /** Absent on a full-access token, never empty otherwise. */
+  scopes?: string[]
+  /** The app's client id URL, on a token minted for an app. */
+  clientId?: string
+  /** The name the app claimed when the owner approved it; unverified. */
+  clientName?: string
+}
+
+/** One parked app authorization request as the approval page reads it
+ * (`GET /api/v1/authorizations/{id}`, `substrate.AuthorizationRequest`). */
+export interface AuthorizationRequest {
+  id: string
+  app: AuthorizationApp
+  redirect: AuthorizationRedirectTo
+  /** The repository authority the token would open. */
+  repository: string
+  scopes: AuthorizationScope[]
+  /** The lifetimes the owner may pick, in days; 0 is until revoked. */
+  lifetimeDays: number[]
+  defaultLifetimeDays: number
+  /** When the parked request lapses unanswered. */
+  expiresAt: string
+}
+
+/** The app asking. `host` is the one fact its client id URL proves; `name` and
+ * `uri` are what its own document claims, never present for a local app. */
+export interface AuthorizationApp {
+  clientId: string
+  host: string
+  /** A client id on a loopback address: an app on the owner's own computer,
+   * which nothing can verify. */
+  local: boolean
+  name?: string
+  uri?: string
+  /** The claimed `uri` is on another host than the client id. */
+  uriHostDiffers?: boolean
+  /** What the app's changes are recorded as, `app:<host>`. */
+  actor: string
+}
+
+/** Where the code goes on approval. */
+export interface AuthorizationRedirectTo {
+  uri: string
+  host: string
+  /** The access goes to a loopback address, a program on the owner's own
+   * computer that nothing verifies is the app. Any other redirect is on the
+   * app's own origin. */
+  loopback?: boolean
+}
+
+/** One requested scope, resolved against the repository: `scope` is the
+ * canonical spelling an approval names, `requested` how the app wrote it
+ * (they differ where it used `~`). */
+export interface AuthorizationScope {
+  scope: string
+  requested: string
+  write: boolean
+  pattern: string
+  /** The pattern covers more than one kind, and so kinds added later. */
+  glob: boolean
+  /** The kinds it reaches today; empty when it reaches none yet. */
+  kinds: AuthorizationKind[]
+}
+
+/** One kind a scope reaches today. */
+export interface AuthorizationKind {
+  identity: string
+  label?: KindLabel
+}
+
+/** The approval body: the checked subset of the request's resolved scopes,
+ * at least one, and one of the offered lifetimes (0 for until revoked). */
+export interface AuthorizationApproval {
+  scopes: string[]
+  lifetimeDays: number
+}
+
+/** What an approval or a denial answers: the app's redirect URI carrying the
+ * code or the refusal, for the page to navigate to. */
+export interface AuthorizationAnswer {
+  redirect: string
 }
 
 /** What a credential change answers (`POST /password`, `POST /totp`): the

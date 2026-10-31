@@ -115,10 +115,11 @@ func (e *apiError) hint() string {
 	case e.Code == "lossy":
 		return lossyHint(e.Path)
 	case e.Status == 403 || e.Code == "forbidden":
-		// A token has FULL access to its repository — there are no scopes and
-		// no ACLs — so a forbidden is never about the token's reach. It is the
-		// substrate refusing the write itself: a reserved actor, or one of the
-		// two auth kinds, which change only through their own endpoints.
+		// The tokens substratectl mints have full access (only an app's token
+		// carries scopes, and substratectl never holds one), so a forbidden is
+		// the substrate refusing the write itself: a reserved actor, or one
+		// of the two auth kinds, which change only through their own
+		// endpoints.
 		return "this write is refused on principle, not for lack of access: a password or second factor changes only on the console's account page, a token only through `substratectl login` and `substratectl token`, and the substrate's own actors cannot be claimed"
 	}
 	return ""

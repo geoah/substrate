@@ -256,7 +256,11 @@ func (s *fakeService) Authenticate(_ context.Context, secret string) (substrate.
 	if s.authErr != nil {
 		return nil, substrate.TokenInfo{}, s.authErr
 	}
+	// Under the lock: a flow's mint and revoke write the map from another
+	// goroutine (the replay revocation retries in the background).
+	s.mu.Lock()
 	t, ok := s.tokens[secret]
+	s.mu.Unlock()
 	if !ok {
 		return nil, substrate.TokenInfo{}, substrate.ErrAuth
 	}
@@ -1163,12 +1167,13 @@ func (d *fakeDataset) restore(keep int) {
 	d.generation += "-restored"
 }
 
-func (d *fakeDataset) MintToken(_ context.Context, label string, expiresAt *time.Time) (substrate.TokenInfo, string, error) {
+func (d *fakeDataset) MintToken(_ context.Context, in substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
 	if err := d.fail("MintToken"); err != nil {
 		return substrate.TokenInfo{}, "", err
 	}
 	return substrate.TokenInfo{
-		ID: "minted", Label: label, Created: time.Unix(0, 0).UTC(), ExpiresAt: expiresAt,
+		ID: "minted", Label: in.Label, Created: time.Unix(0, 0).UTC(), ExpiresAt: in.ExpiresAt,
+		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
 	}, "substrate_tok_minted", nil
 }
 

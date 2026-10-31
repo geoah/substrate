@@ -134,6 +134,15 @@ var wireTypes = map[string]any{
 	"LoginRequest": LoginRequest{},
 	// A credential change's answer: the repository the factors proved.
 	"SessionCredential": SessionCredential{},
+	// The approval page (authorize.ts): the parked request it renders, the
+	// approval it posts and the redirect either answer carries.
+	"AuthorizationRequest":    AuthorizationRequest{},
+	"AuthorizationApp":        AuthorizationApp{},
+	"AuthorizationRedirectTo": AuthorizationRedirectTo{},
+	"AuthorizationScope":      AuthorizationScope{},
+	"AuthorizationKind":       AuthorizationKind{},
+	"AuthorizationApproval":   AuthorizationApproval{},
+	"AuthorizationAnswer":     AuthorizationAnswer{},
 
 	// The agent chat stream (agents.ts): one ndjson event, and the settled
 	// result the done event carries.

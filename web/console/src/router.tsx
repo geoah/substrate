@@ -1,5 +1,7 @@
-/** Code-based route tree. Everything except /login sits under the shell
- * route, whose beforeLoad is the session gate: no token, no console. */
+/** Code-based route tree. Everything except the doors (/login, /register)
+ * and an app's approval page (/authorize/$request) sits under the shell
+ * route, whose beforeLoad is the session gate: no token, no console. The
+ * approval page keeps a gate of its own, outside the shell. */
 
 import {
   createRootRoute,
@@ -16,6 +18,7 @@ import { ActorPage } from "@/pages/actor"
 import { AgentPage } from "@/pages/agent"
 import { AgentsPage } from "@/pages/agents"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
+import { AuthorizePage } from "@/pages/authorize"
 import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
 import { HomePage } from "@/pages/home"
 import { LoginPage } from "@/pages/login"
@@ -37,6 +40,7 @@ import {
   oauthReturnSearch,
   type OAuthReturnSearch,
 } from "@/lib/oauth-return"
+import { safeReturnPath } from "@/lib/return-path"
 import { searchText } from "@/lib/search-params"
 import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
@@ -54,18 +58,27 @@ function bundleTarget(id: string): { authority: string; pkg: string } | null {
   return { authority: id.slice(0, at), pkg: id.slice(at + 1) }
 }
 
-export const loginRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/login",
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+/** The doors' `?redirect=`: where to go once signed in. Kept as written here;
+ * every reader passes it through `safeReturnPath` before following it. */
+function doorSearch(search: Record<string, unknown>): { redirect?: string } {
+  return {
     redirect:
       typeof search.redirect === "string" && search.redirect
         ? search.redirect
         : undefined,
-  }),
-  beforeLoad: () => {
-    // A live session has no business on the login page.
-    if (hasSession()) throw redirect({ to: "/" })
+  }
+}
+
+export const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  validateSearch: doorSearch,
+  beforeLoad: ({ search }) => {
+    // A live session has no business on the login page: it goes where the
+    // sign-in would have sent it.
+    if (hasSession()) {
+      throw redirect({ to: safeReturnPath(search.redirect) ?? "/" })
+    }
   },
   component: LoginPage,
 })
@@ -73,11 +86,34 @@ export const loginRoute = createRoute({
 export const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/register",
-  beforeLoad: () => {
+  validateSearch: doorSearch,
+  beforeLoad: ({ search }) => {
     // A live session has no business on the registration page.
-    if (hasSession()) throw redirect({ to: "/" })
+    if (hasSession()) {
+      throw redirect({ to: safeReturnPath(search.redirect) ?? "/" })
+    }
   },
   component: RegisterPage,
+})
+
+// An app's approval page (decision 0194). The server parks the app's request
+// and sends the browser here with only its id in the path, so the router never
+// parses an OAuth parameter. It renders outside the shell, like the doors, and
+// a signed-out owner goes through /login and comes back by its plain path.
+export const authorizeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/authorize/$request",
+  beforeLoad: ({ params }) => {
+    if (!hasSession()) {
+      throw redirect({
+        to: "/login",
+        search: {
+          redirect: `/authorize/${encodeURIComponent(params.request)}`,
+        },
+      })
+    }
+  },
+  component: AuthorizePage,
 })
 
 const shellRoute = createRoute({
@@ -378,6 +414,7 @@ export const providerRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
+  authorizeRoute,
   shellRoute.addChildren([
     homeRoute,
     changelogRoute,

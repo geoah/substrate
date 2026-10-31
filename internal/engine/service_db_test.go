@@ -126,7 +126,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 
 	// Tokens: mint once, authenticate, revoke. The secret carries NO username
 	// segment — the hash lookup is what finds the repository.
-	tok, secret, err := ds2.MintToken(ctx, "cli", nil)
+	tok, secret, err := ds2.MintToken(ctx, substrate.MintTokenInput{Label: "cli"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}

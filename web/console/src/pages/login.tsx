@@ -28,6 +28,7 @@ import { CODE_DIGITS, login, normalizeCode } from "@/lib/api/auth"
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
+import { safeReturnPath } from "@/lib/return-path"
 import { loginRoute } from "@/router"
 
 /** The door refuses to say WHICH factor was wrong — repository, password and
@@ -72,6 +73,9 @@ export function LoginPage() {
   useDocumentTitle("Sign in")
   const navigate = useNavigate()
   const search = loginRoute.useSearch()
+  // Where the sign-in returns to: an app's approval page, or the page whose
+  // session ran out. Only a path on this console is followed.
+  const returnTo = safeReturnPath(search.redirect)
   const { inviteRequired, totpRequired } = useAuthPolicy()
   const [apiError, setApiError] = useState<string | null>(null)
   // The policy lands one render AFTER the first paint, so the resolver has to
@@ -103,7 +107,7 @@ export function LoginPage() {
     // The door answers with the repository it RESOLVED, so a bare label is
     // stored as the authority it named.
     saveSession(minted.secret, minted.repository ?? repository, minted.token.id)
-    await navigate({ to: search.redirect ?? "/", replace: true })
+    await navigate({ to: returnTo ?? "/", replace: true })
   }
 
   const { errors, isSubmitting } = form.formState
@@ -197,6 +201,7 @@ export function LoginPage() {
           {inviteRequired ? "Have an invite code?" : "New here?"}{" "}
           <Link
             to="/register"
+            search={{ redirect: returnTo }}
             className="underline underline-offset-4 hover:text-foreground"
           >
             Register

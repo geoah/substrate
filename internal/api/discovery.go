@@ -106,6 +106,10 @@ type endpointsInfo struct {
 	Tokens   string `json:"tokens"`
 	Password string `json:"password"`
 	TOTP     string `json:"totp"`
+	// Authorize and Token are the app authorization flow's two endpoints
+	// (decision 0194); its OAuth metadata document says the rest.
+	Authorize string `json:"authorize"`
+	Token     string `json:"token"`
 }
 
 type apiVersionInfo struct {
@@ -197,6 +201,11 @@ var features = []featureInfo{
 	// that declares no row is told so by its first query, naming the property.
 	{Name: "embeddings", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 	{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
+	// App authorization (decision 0194): an app that registered nowhere gets
+	// a scoped token through /oauth/authorize and /oauth/token. Alpha while
+	// the scoped surface is the records route, the record path and the unit
+	// reads alone.
+	{Name: "apps", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 }
 
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
@@ -219,12 +228,14 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 				substrate.BundleActorPrefix + "<authority>:<package>",
 				substrate.FunctionActorPrefix + "<authority>:<package>:<name>",
 				substrate.AgentActorPrefix + "<authority>:<package>:<name>",
+				substrate.AppActorPrefix + "<host>",
 				string(substrate.ActorSystem),
 			},
 		},
 		Endpoints: endpointsInfo{
 			Register: "/register", Login: "/login", Tokens: "/tokens",
 			Password: "/password", TOTP: "/totp",
+			Authorize: "/oauth/authorize", Token: "/oauth/token",
 		},
 		Registration: registrationInfo{
 			InviteRequired: h.inviteCode != "",
