@@ -1041,6 +1041,8 @@ actor SyncEngine {
         var firstRefusal: (day: String, reason: String)?
         var waiting = 0
         var skippedDays = 0
+        /// Days read in part this run: filed or not, never counted sent.
+        var partial = Set<String>()
         for (c, chunk) in stride(from: 0, to: days.count, by: Self.chunk).map({ Array(days[$0 ..< min($0 + Self.chunk, days.count)]) }).enumerated() {
             try Task.checkCancellation()
             // Each day's fire ids, settled after the chunk: the door's 202 is
@@ -1092,19 +1094,25 @@ actor SyncEngine {
                     state.healthQueue.remove(name)
                     await HealthScan.shared.forget(name)
                     empty += 1
-                } else if !skipped.isEmpty {
-                    // Read in part, or not at all: queued, so the next sync
-                    // sends it whole. A day whose every read failed is not a
-                    // day without data.
-                    state.healthQueue.insert(name)
-                    skippedDays += 1
                 } else {
-                    // Kept as pending at once: a run stopped before the
-                    // receipts are read asks for them next time rather than
-                    // sending the day again.
-                    fires[name] = made
-                    state.healthPending[name] = made
+                    // Every delivery is confirmed, a day read in part too, so
+                    // the phone never runs ahead of the server's filing: one
+                    // that did filled its spool, and the door answered 503.
+                    if !made.isEmpty { fires[name] = made }
                     state.healthQueue.insert(name)
+                    if skipped.isEmpty {
+                        // Kept as pending at once: a run stopped before the
+                        // receipts are read asks for them next time rather
+                        // than sending the day again.
+                        state.healthPending[name] = made
+                    } else {
+                        // Read in part, or not at all: queued, so the next
+                        // sync sends it whole, and never pending, which would
+                        // let a later run count it sent. A day whose every
+                        // read failed is not a day without data.
+                        partial.insert(name)
+                        skippedDays += 1
+                    }
                 }
                 if !made.isEmpty { log(.health, "\(name): \(rows) rows in \(made.count) deliveries" + (skipped.isEmpty ? "" : ", \(skipped.count) parts skipped")) }
             }
@@ -1115,7 +1123,8 @@ actor SyncEngine {
                 fires, client, deadline: budget.confirmDeadline,
                 label: "\(Formats.day(chunk.first!, in: zone)) to \(Formats.day(chunk.last!, in: zone))",
                 overall: { Self.healthOverall(before: before, width: width, part: $0, days: total) })
-            for day in outcome.sent {
+            let whole = outcome.sent.filter { !partial.contains($0) }
+            for day in whole {
                 state.healthDays.insert(day)
                 state.healthQueue.remove(day)
                 state.healthPending[day] = nil
@@ -1125,7 +1134,7 @@ actor SyncEngine {
                 log(.health, "\(day) was refused by the server and will be sent again: \(reason)", .error)
                 if firstRefusal == nil { firstRefusal = (day, reason) }
             }
-            sent += outcome.sent.count
+            sent += whole.count
             refused += outcome.failed.count
             waiting += outcome.pending.count
             commit(&state)
