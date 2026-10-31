@@ -3,10 +3,9 @@
 // their own entry to APPS and GLYPHS, so their icons share the frame.
 //
 // Every icon shares one frame: the app's glyph on a pale gradient, and a band
-// across the bottom that carries the substrate infinity mark. The band is the
-// same on every app, so the family reads as one across a home screen. Each app
-// has three iOS appearances: light, dark (the band flips to light so it stays
-// visible on a dark background) and tinted (greyscale, which iOS colours).
+// across the bottom, a deeper shade of the background, that carries the
+// substrate infinity mark in the app's colour. Each app has three iOS
+// appearances: light, dark and tinted (greyscale, which iOS colours).
 //
 // PNGs come from headless Chrome: set CHROME to a Chrome or
 // chrome-headless-shell binary, or have Chrome or Playwright's headless shell
@@ -35,11 +34,6 @@ export const APPS = {
   substrate: { name: 'Substrate', bg: ['#f5f9ff', '#d9e7ff'], hi: '#86bbff', lo: '#2d5fe6', glyph: 'strata' },
   sync: { name: 'Substrate Sync', bg: ['#f2fcf8', '#d3f2e5'], hi: '#72e2bb', lo: '#0f936d', glyph: 'cycle' },
   chat: { name: 'Substrate Chat', bg: ['#f8f5ff', '#e4dcfd'], hi: '#bba2ff', lo: '#6a3fe0', glyph: 'chat' },
-};
-
-const grey = (hex) => {
-  const v = parseInt(hex.slice(1), 16), y = Math.round(0.3 * (v >> 16) + 0.59 * ((v >> 8) & 255) + 0.11 * (v & 255));
-  return '#' + y.toString(16).padStart(2, '0').repeat(3);
 };
 
 function lg(id, c0, c1, x1 = 0, y1 = 0, x2 = 0, y2 = 1) {
@@ -90,12 +84,20 @@ let uid = 0;
 export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {}) {
   const a = APPS[app], id = 'i' + uid++;
   let hi = a.hi, lo = a.lo, bg0 = a.bg[0], bg1 = a.bg[1], glow = a.hi;
-  let band0 = '#2c2c32', band1 = '#121215', ink0 = '#ffffff', ink1 = '#cdd0d8', edge = 0.22;
+  const mix = (h1, h2, t) => {
+    const x = parseInt(h1.slice(1), 16), y = parseInt(h2.slice(1), 16);
+    return '#' + [16, 8, 0].map((sh) => Math.round(((x >> sh) & 255) * (1 - t) + ((y >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
+  };
+  // The band is a deeper shade of the background, the infinity in the app's colour.
+  let band0 = mix(a.bg[1], a.hi, 0.35), band1 = mix(a.bg[1], a.hi, 0.55), ink0 = a.lo, ink1 = mix(a.lo, '#000000', 0.25), edge = 0.7;
   if (mode === 'dark' || mode === 'tinted') {
     bg0 = '#2a2a30'; bg1 = '#0b0b0d';
-    band0 = '#f6f6f8'; band1 = '#d8d9df'; ink0 = '#3a3a42'; ink1 = '#0d0d10'; edge = 0.9;
+    band0 = mix('#1d1d22', a.lo, 0.22); band1 = mix('#101013', a.lo, 0.18); ink0 = a.hi; ink1 = a.lo; edge = 0.12;
   }
-  if (mode === 'tinted') { hi = grey(a.hi); lo = grey(a.lo); glow = '#ffffff'; hi = '#f2f2f2'; lo = '#9a9a9a'; }
+  if (mode === 'tinted') {
+    glow = '#ffffff'; hi = '#f2f2f2'; lo = '#9a9a9a';
+    band0 = '#2b2b2f'; band1 = '#1c1c1f'; ink0 = '#f2f2f2'; ink1 = '#9a9a9a';
+  }
   const p = { hi, lo };
   const defs = [
     `<linearGradient id="${id}bg" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="${bg0}"/><stop offset="1" stop-color="${bg1}"/></linearGradient>`,
