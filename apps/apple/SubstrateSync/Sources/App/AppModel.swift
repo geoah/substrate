@@ -531,9 +531,10 @@ final class AppModel: ObservableObject {
     /// card's headline and detail, and the running step's bar.
     private var continuedShown: ContinuedSync.Shown {
         guard let (source, p) = current else {
-            return .init(title: "Syncing", subtitle: "Starting…", fraction: 0)
+            return .init(title: "Syncing", subtitle: "Starting…", step: 0)
         }
-        return .init(title: "Syncing \(source.title)", subtitle: p.detail, fraction: p.fraction ?? 0)
+        let run = p.runTotal.map { Double(p.runDone ?? 0) / Double(max(1, $0)) }
+        return .init(title: "Syncing \(source.title)", subtitle: p.detail, step: p.fraction ?? 0, run: run)
     }
 
     /// How many of a source's rows a sync of it would still send, where the

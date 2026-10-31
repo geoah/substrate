@@ -583,6 +583,20 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(SyncProgress(step: "March 2019", done: 1, total: 4, bar: 0.375).fraction, 0.375)
     }
 
+    /// The system's bar for a continued sync: the steps before a run fill
+    /// only its first two percent, even when one completes, and a run counts
+    /// its own growing share; nothing reaches the whole before the end.
+    func testAContinuedBarGivesTheStepsBeforeARunOnlyItsStart() {
+        func at(_ step: Double, _ run: Double? = nil) -> Int64 {
+            ContinuedSync.units(for: .init(title: "Syncing Health", subtitle: "", step: step, run: run))
+        }
+        XCTAssertEqual(at(0), 0)
+        XCTAssertEqual(at(1), 19)
+        XCTAssertEqual(at(0.4, 0), 20)
+        XCTAssertGreaterThan(at(0, 0.001), at(1))
+        XCTAssertEqual(at(0, 1), 998)
+    }
+
     func testTheTimelineFoldsEachRunsLinesIntoIt() {
         let t0 = Date(timeIntervalSince1970: 1_800_000_000)
         let contacts = SyncRun(source: .contacts, started: t0, finished: t0 + 10, summary: "15 written", error: nil)

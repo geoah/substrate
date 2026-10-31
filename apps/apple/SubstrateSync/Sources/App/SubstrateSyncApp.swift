@@ -76,5 +76,15 @@ struct RootView: View {
         .task(id: model.session?.tokenID) {
             if model.session != nil, !model.setupChecked { await model.checkSetup() }
         }
+        #if DEBUG
+        .task {
+            // ContinuedProbe's `sync`: Sync Now without a tap, so a real
+            // sync's continued task can be tried from a terminal.
+            if ProcessInfo.processInfo.environment["SUBSTRATE_SYNC_PROBE"] == "sync" {
+                try? await Task.sleep(for: .seconds(3))
+                await model.syncNow()
+            }
+        }
+        #endif
     }
 }

@@ -28,6 +28,10 @@ struct SyncProgress: Equatable, Sendable {
     /// How far the step's bar has got, where its counts are too coarse to
     /// draw it: a month of Health moves by half days.
     var bar: Double?
+    /// The source's whole run in units that only grow, where its steps start
+    /// over: what the system's bar for a continued sync counts.
+    var runDone: Int?
+    var runTotal: Int?
 
     var fraction: Double? { bar ?? (total > 0 ? min(1, Double(done) / Double(total)) : nil) }
 

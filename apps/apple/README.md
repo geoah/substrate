@@ -312,13 +312,21 @@ other source, or a first sync of a source the phone has not counted, the app
 asks iOS for a continued processing task (`ContinuedSync` in
 `Background.swift`, iOS 26's `BGContinuedProcessingTask`). iOS keeps the app
 running and draws the progress itself as a Live Activity on the Lock Screen
-and in the Dynamic Island: the status card's headline and line, and a bar for
-the running step. Its stop button stops the sync as Stop does. iOS also ends
-a task whose bar has not visibly moved within about thirty seconds (its log
-says `Task has not reported progress within expected cadence`), so the bar
-counts whole percents and Health shows one calendar month at a time ("March
-2019 · 12 of 31"), each day half read and sent and half filed, moving while
-the phone waits on the server. A stop by iOS is logged in Activity with the step
+and in the Dynamic Island: the status card's headline, the running step or
+Health's month ("March 2019 · 12 of 31"). Its stop button stops the sync as
+Stop does. iOS ends a task as stalled (its log says `Task has not reported
+progress within expected cadence`) unless the bar climbs past its highest
+point within about thirty seconds, and counts nothing after a bar that
+reached the whole. So the system's bar only ever rises and never reaches the
+whole before the end: the quick steps before a run (receipts of earlier days,
+the scan) fill only its first two percent, and Health then counts its whole
+run, each day half read and sent and half filed, while the app's own screens
+show the month. A debug build carries `ContinuedProbe`, which tries iOS's
+rules apart from any sync: `SUBSTRATE_SYNC_PROBE` in the launch environment
+(`xcrun devicectl device process launch --environment-variables`) runs a
+probe that counts to a hundred (`apple`, `main`, `reset`, `fine`, `burst`,
+`retitle`, `full`, `dip`), or a real Sync Now (`sync`), and logs what iOS did
+with it to Activity. A stop by iOS is logged in Activity with the step
 and how long the bar had stood. Health is encrypted while the phone is
 locked, so a lock stops the Health part of a sync, says so, and sends nothing
 it could not read. The app

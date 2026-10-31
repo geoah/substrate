@@ -236,8 +236,14 @@ actor SyncEngine {
         onSignedOut = f
     }
 
-    private func progress(_ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0, bar: Double? = nil) async {
-        if let onProgress { await onProgress(source, step.map { SyncProgress(step: $0, done: done, total: total, bar: bar) }) }
+    private func progress(
+        _ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0, bar: Double? = nil, run: (done: Int, total: Int)? = nil
+    ) async {
+        if let onProgress {
+            await onProgress(source, step.map {
+                SyncProgress(step: $0, done: done, total: total, bar: bar, runDone: run?.done, runTotal: run?.total)
+            })
+        }
     }
 
     /// Whether Health can be read: it is encrypted while the phone is locked.
@@ -388,7 +394,7 @@ actor SyncEngine {
 
     private func showHealth(_ run: HealthRun) async {
         let m = Self.monthProgress(position: run.position, days: run.names)
-        await progress(.health, m.month, m.done, m.total, bar: m.bar)
+        await progress(.health, m.month, m.done, m.total, bar: m.bar, run: (run.read + run.settled, 2 * run.names.count))
     }
 
     /// Reads the receipts of the oldest open days, in the order the server
