@@ -892,8 +892,10 @@ export interface AuthorizationApp {
 export interface AuthorizationRedirectTo {
   uri: string
   host: string
-  /** `host` is not the app's client id host. */
-  hostDiffers?: boolean
+  /** The access goes to a loopback address, a program on the owner's own
+   * computer that nothing verifies is the app. Any other redirect is on the
+   * app's own origin. */
+  loopback?: boolean
 }
 
 /** One requested scope, resolved against the repository: `scope` is the

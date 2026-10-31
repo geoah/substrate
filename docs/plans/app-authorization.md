@@ -115,9 +115,16 @@ considerations), so the page never calls such an app by a name.
 ### Redirect URIs
 
 A redirect URI is `https`, or `http` on a loopback host; it has no
-userinfo and no fragment. A web app's `redirect_uri` must equal an entry of
-its document's `redirect_uris` exactly, except that a loopback `http` entry
-matches on any port (RFC 8252 §7.3). The same rules hold at the request,
+userinfo and no fragment. A web app's `redirect_uri` is on its `client_id`'s
+own origin (`https`, the same host and port) or on a loopback address (CIMD
+§8.1 lets a server require the first; IndieAuth does by default), so the
+host the page heads with is the host the access goes to, and a document on
+a shared host (a raw GitHub file, a paste) can name only a callback on that
+origin or a loopback one. It must also equal an entry of the document's
+`redirect_uris` exactly, except that a loopback `http` entry matches on any
+port (RFC 8252 §7.3). A mobile app uses a claimed `https` link on its own
+domain (a Universal Link or an App Link); a custom URL scheme is refused,
+since any app may claim one. The same rules hold at the request,
 at approval, at denial and at the exchange, so the server never navigates
 anywhere a document did not list.
 
@@ -407,3 +414,9 @@ approval page's copy says where you go next and drops the line about what
 the token opens; an app writes as its own `app:<host>` actor instead of
 `api`, so History shows the app and never the owner; and "until you revoke
 it" is a lifetime the owner may pick.
+
+The owner then pointed out that a document on a shared host makes the host
+meaningless (`raw.githubusercontent.com`, `pastebin.com`), so a web app's
+redirect now has to be on its `client_id`'s origin or a loopback address,
+and the page marks a loopback redirect as a program on this computer that
+nothing verifies.

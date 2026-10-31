@@ -332,3 +332,30 @@ func TestACodeIsSpentOnlyByAPresentationThatProvesItsBindings(t *testing.T) {
 		t.Fatalf("a lapsed code = %v", err)
 	}
 }
+
+func TestAWebAppsRedirectStaysOnItsOrigin(t *testing.T) {
+	web := Client{ID: "https://notes.example.org/client.json", Host: "notes.example.org"}
+	local := Client{ID: "http://127.0.0.1/cli", Host: "127.0.0.1", Local: true}
+	for _, c := range []struct {
+		client   Client
+		redirect string
+		ok       bool
+	}{
+		{web, "https://notes.example.org/callback", true},
+		{web, "https://NOTES.example.org/callback", true},
+		{web, "https://notes.example.org:443/callback", true},
+		{Client{ID: "https://notes.example.org:443/client.json", Host: "notes.example.org:443"}, "https://notes.example.org/callback", true},
+		{web, "http://127.0.0.1:5000/callback", true},
+		{web, "http://[::1]/callback", true},
+		{web, "https://evil.example.com/callback", false},
+		{web, "https://notes.example.org:8443/callback", false},
+		{web, "https://app.notes.example.org/callback", false},
+		{web, "http://notes.example.org/callback", false},
+		{local, "http://127.0.0.1:9000/callback", true},
+		{local, "https://notes.example.org/callback", false},
+	} {
+		if err := RedirectAllowed(c.client, c.redirect); (err == nil) != c.ok {
+			t.Errorf("RedirectAllowed(%s, %s) = %v, want ok=%v", c.client.ID, c.redirect, err, c.ok)
+		}
+	}
+}

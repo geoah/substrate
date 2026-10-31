@@ -21,8 +21,8 @@ The approval page shows, from top to bottom:
   gives for itself are shown as its claim, with a warning when that site is
   on another host.
 - **After you answer, you go to**: the address your browser returns to,
-  which receives the access. A warning shows when it is on another host
-  than the client id.
+  which receives the access. It is always on the app's own host, or on
+  this computer (a loopback address), which the page warns nothing verifies.
 - **The repository** the token opens.
 - **The requested access**: one row per scope, with the kinds it covers
   today. Uncheck a row to leave it out. A pattern ending in `*` also covers
@@ -64,8 +64,13 @@ describing the app. Serving it is the whole of registration:
 ```
 
 `client_id` must equal the URL the document is served at, and
-`redirect_uris` must list every redirect URI the app uses, each `https` or
-`http` on a loopback host (a loopback entry matches any port). A document
+`redirect_uris` must list every redirect URI the app uses. Each one is on the
+`client_id`'s own origin (`https`, the same host and port), or `http` on a
+loopback address (a loopback entry matches any port). Serve the document
+from the host that receives the access: a document on a shared host (a raw
+file on GitHub, a paste) can name only a callback on that origin or a
+loopback one, and the approval page would be headed with the shared host's
+name. A document
 that carries a `client_secret`, a `jwks` or `jwks_uri`, or another
 `token_endpoint_auth_method` is refused: an app here is a public client. A
 host is named in ASCII: an internationalized name is written as its
@@ -78,6 +83,38 @@ for 10 minutes.
 A local app uses a loopback `client_id` instead, such as
 `http://127.0.0.1/my-tool`, which is never fetched. Its `redirect_uri` must be
 a loopback `http` URL, on any port.
+
+### Native apps
+
+- **A mobile app** uses a claimed `https` callback on its own domain. It
+  serves its document at, say, `https://notes.example.org/oauth/client.json`
+  and lists `https://notes.example.org/oauth/callback`. The owner signs in
+  and approves in the system's browser sheet, the app receives the callback,
+  and it exchanges the code with its PKCE verifier and keeps the token in
+  the Keychain or the Keystore:
+  - on iOS 17.4 or later, the app opens `ASWebAuthenticationSession` with
+    `callback: .https(host:path:)` for that host and path, and the domain is
+    one of the app's associated domains. An older iOS has no `https`
+    callback for the session, so it cannot take part;
+  - on Android, the callback path is a verified App Link (`autoVerify`, and
+    the domain's `assetlinks.json` names the app), opened from a Custom Tab.
+    A link that fails verification opens in the browser instead, on the
+    app's own site.
+
+  When the platform has verified the domain, only the app the domain names
+  receives the callback, so the host on the approval page stands for the
+  app.
+- **A desktop app or a CLI** listens on a loopback port: either a document
+  on its website listing `http://127.0.0.1/callback`, or a loopback
+  `client_id` with no document. The page warns that a program on this
+  computer receives the access.
+- **A custom URL scheme** (`com.example.notes:/callback`) is not accepted:
+  any app on the device may claim one, so nothing would tie the callback to
+  the app the page names.
+
+A native app asks the owner for their substrate's address, the way an app
+for a federated service asks for an instance, and reads
+`/.well-known/oauth-authorization-server` there.
 
 ### Discover the server
 

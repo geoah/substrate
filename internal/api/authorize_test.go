@@ -428,6 +428,11 @@ func TestTheAuthorizationEndpointRefusesWithAPageNeverARedirect(t *testing.T) {
 		"bare kind":         func(p map[string]string) { p["scope"] = "read:task" },
 		"other resource":    func(p map[string]string) { p["resource"] = "https://elsewhere.example.com" },
 		"local, web return": func(p map[string]string) { p["client_id"] = "http://127.0.0.1/app" },
+		// A web app's access goes back to its own origin: a document on a
+		// shared host could otherwise send it anywhere it listed.
+		"other host": func(p map[string]string) { p["redirect_uri"] = "https://elsewhere.example.com/callback" },
+		"other port": func(p map[string]string) { p["redirect_uri"] = "https://notes.example.org:8443/callback" },
+		"sub-domain": func(p map[string]string) { p["redirect_uri"] = "https://app.notes.example.org/callback" },
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -524,6 +529,7 @@ func TestAnUnlistedRedirectOrAnUnfetchableDocumentIsRefusedToTheOwner(t *testing
 
 	p = appRequest("read:" + personKind)
 	p["client_id"] = "https://unknown.example.org/client.json"
+	p["redirect_uri"] = "https://unknown.example.org/callback"
 	id = e.park(p)
 	rec = e.do(http.MethodGet, "/api/v1/authorizations/"+id, e.owner, nil, "")
 	wantStatus(t, rec, http.StatusUnprocessableEntity)
@@ -1014,5 +1020,26 @@ func TestAnIPv6AppsActorIsAValidLabelNamespace(t *testing.T) {
 	}
 	if problem := vocabulary.MetaKeyProblem(string(actor) + "/tag"); problem != "" {
 		t.Fatalf("the app's label namespace is refused: %s", problem)
+	}
+}
+
+// A web app may send the access to a program on the owner's own computer,
+// which the page marks as unverified; anything else stays on its origin.
+func TestAWebAppsLoopbackRedirectIsMarked(t *testing.T) {
+	e := newAppEnv(t)
+	e.docs.mu.Lock()
+	e.docs.docs[appClientID] = authorize.Document{
+		ClientID: appClientID, RedirectURIs: []string{appRedirect, "http://127.0.0.1/callback"}, Name: "Notes",
+	}
+	e.docs.mu.Unlock()
+	p := appRequest("read:" + personKind)
+	p["redirect_uri"] = "http://127.0.0.1:51234/callback"
+	got := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(p)))
+	if !got.Redirect.Loopback {
+		t.Fatalf("redirect = %+v, want it marked loopback", got.Redirect)
+	}
+	same := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("read:"+personKind))))
+	if same.Redirect.Loopback {
+		t.Fatalf("a same-origin redirect = %+v, want it unmarked", same.Redirect)
 	}
 }

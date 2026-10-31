@@ -52,8 +52,11 @@ type AuthorizationApp struct {
 type AuthorizationRedirectTo struct {
 	URI  string `json:"uri"`
 	Host string `json:"host"`
-	// HostDiffers is true when Host is not the app's client id host.
-	HostDiffers bool `json:"hostDiffers,omitempty"`
+	// Loopback is true when the access goes to a loopback address: a program
+	// on the owner's own computer, which nothing verifies is the app. Any
+	// other redirect is on the app's own origin, the one its client id
+	// proves.
+	Loopback bool `json:"loopback,omitempty"`
 }
 
 // AuthorizationScope is one requested scope, resolved against the

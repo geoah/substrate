@@ -198,7 +198,7 @@
   },
   "AuthorizationRedirectTo": {
     "host": true,
-    "hostDiffers": false,
+    "loopback": false,
     "uri": true
   },
   "AuthorizationRequest": {

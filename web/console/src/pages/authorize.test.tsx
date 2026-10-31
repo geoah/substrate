@@ -69,9 +69,9 @@ const REQUEST = {
     actor: "app:notes.example.com",
   },
   redirect: {
-    uri: "https://callback.example.net/oauth/callback",
-    host: "callback.example.net",
-    hostDiffers: true,
+    uri: "http://127.0.0.1:53021/oauth/callback",
+    host: "127.0.0.1:53021",
+    loopback: true,
   },
   repository: "ada.example.com",
   scopes: [TASKS, NOTES, UNITS],
@@ -91,6 +91,7 @@ const LOCAL_REQUEST = {
   redirect: {
     uri: "http://127.0.0.1:8765/callback",
     host: "127.0.0.1:8765",
+    loopback: true,
   },
   scopes: [TASKS],
 }
@@ -203,10 +204,10 @@ describe("AuthorizePage", () => {
       name: "After you answer, you go to",
     })
     expect(
-      within(sends).getByText("https://callback.example.net/oauth/callback")
+      within(sends).getByText("http://127.0.0.1:53021/oauth/callback")
     ).toBeTruthy()
     expect(within(sends).getByRole("note").textContent).toMatch(
-      /on callback\.example\.net, not on notes\.example\.com/
+      /A program on this computer receives the access.*Nothing confirms that program is notes\.example\.com/
     )
 
     const repository = screen.getByRole("region", { name: "Repository" })
@@ -277,6 +278,10 @@ describe("AuthorizePage", () => {
     expect(
       screen.getByText(/Approve only if you started it yourself/)
     ).toBeTruthy()
+    // The local-app warning already says it; the loopback one is not repeated.
+    expect(
+      screen.queryByText("A program on this computer receives the access")
+    ).toBeNull()
     // Its one scope reads, so nothing is said about what a write sets off.
     expect(
       screen.queryByRole("region", { name: "Its changes appear as" })

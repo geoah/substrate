@@ -589,7 +589,7 @@ const authorizationApp: Shape<AuthorizationApp> = {
 const authorizationRedirectTo: Shape<AuthorizationRedirectTo> = {
   uri: true,
   host: true,
-  hostDiffers: false,
+  loopback: false,
 }
 
 const authorizationScope: Shape<AuthorizationScope> = {

@@ -368,10 +368,10 @@ function Approval({
           <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
             {request.redirect.uri}
           </p>
-          {request.redirect.hostDiffers && (
-            <Warning>
-              That address is on {request.redirect.host}, not on {app.host}.
-              Whatever runs there receives the access.
+          {request.redirect.loopback && !app.local && (
+            <Warning title="A program on this computer receives the access">
+              Nothing confirms that program is {app.host}. Approve only if you
+              started the app yourself.
             </Warning>
           )}
         </Fact>
