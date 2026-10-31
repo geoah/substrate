@@ -205,7 +205,13 @@ and a sync share: the first scan reads the history 90 days at a time, saving
 after each and saying how far it has got, and every later one reads only the
 last week and any stretch further back than it has read. A day the sync finds
 empty is dropped from it, and Coverage's Read the Whole History Again starts
-it over, for data an app wrote into days already read. A background run sends only
+it over, for data an app wrote into days already read. Health access is
+asked again, before a sync the owner starts, whenever the build reads a type
+the phone was never asked about; until it is allowed, such a type reads as
+nothing, as a refused one does, rather than failing every day. A day read in
+part is sent, waited for like any other, and queued to be sent whole, so the
+phone never runs ahead of the server's filing, whose spool answers 503 when
+it is full; a delivery waits out a 503 for up to four minutes. A background run sends only
 the last three days. A delivery replaces a metric's rows across its span, so
 a day is always sent whole, and a day larger than 4 MiB is split by metric.
 Besides the measured metrics, a day carries what is logged: mindful minutes
