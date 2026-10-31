@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -169,6 +171,8 @@ func TestTheFetcherDialsPublicAddressesAlone(t *testing.T) {
 		"2001:db8::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "64:ff9b::a9fe:a9fe", "100::1", "2001:2::1",
 		// The special ranges, reached through a NAT64 or 6to4 gateway.
 		"64:ff9b::c612:1", "2002:c612:1::1", "64:ff9b::c000:8",
+		// The deprecated site-local block, which Go calls global unicast.
+		"fec0::1",
 	} {
 		if Public(netip.MustParseAddr(s)) {
 			t.Errorf("Public(%s) = true, want refused", s)
@@ -181,15 +185,28 @@ func TestTheFetcherDialsPublicAddressesAlone(t *testing.T) {
 	}
 
 	// A document served on loopback is never reached, whatever the URL says.
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		t.Error("the fetcher reached a loopback server")
+	// The transport trusts the test server's certificate, so the dial guard
+	// is what refuses, and the same transport without the guard is the
+	// control that reaches it.
+	var reached atomic.Bool
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached.Store(true)
+		_, _ = w.Write([]byte(`{"client_id":"` + srv.URL + `/client.json","redirect_uris":["https://x.example/cb"]}`))
 	}))
 	defer srv.Close()
-	f := NewFetcher(nil)
-	_, err := f.Fetch(context.Background(), Client{ID: srv.URL + "/client.json", Host: "x"})
+	guarded := confinedTransport()
+	guarded.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	c := Client{ID: srv.URL + "/client.json", Host: "x"}
+	_, err := newFetcher(&http.Client{Transport: guarded, Timeout: fetchTimeout}, time.Now).Fetch(context.Background(), c)
 	var fe *FetchError
-	if !errors.As(err, &fe) || strings.Contains(err.Error(), "127.0.0.1") {
-		t.Fatalf("fetch of a loopback document = %v, want a refusal that names no address", err)
+	if !errors.As(err, &fe) || reached.Load() || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("fetch of a loopback document = %v (reached %v), want a refusal that names no address", err, reached.Load())
+	}
+	unguarded := guarded.Clone()
+	unguarded.DialContext = (&net.Dialer{Timeout: fetchTimeout}).DialContext
+	if _, err := newFetcher(&http.Client{Transport: unguarded, Timeout: fetchTimeout}, time.Now).Fetch(context.Background(), c); err != nil || !reached.Load() {
+		t.Fatalf("without the dial guard the same fetch = %v (reached %v): the test proves nothing", err, reached.Load())
 	}
 }
 

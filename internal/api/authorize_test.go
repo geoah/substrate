@@ -1043,3 +1043,94 @@ func TestAWebAppsLoopbackRedirectIsMarked(t *testing.T) {
 		t.Fatalf("a same-origin redirect = %+v, want it unmarked", same.Redirect)
 	}
 }
+
+const (
+	holderKind = "test.example.com/nest/holder"
+	metricKind = "substrate.reamde.dev/observations/metric"
+)
+
+// withHolder adds a kind whose references sit in an object's field, in a
+// keyed map, and under a pin whose ids carry a slash, and the metric kind it
+// pins.
+func (e *appEnv) withHolder() {
+	ds := e.svc.datasets[fakeRepository]
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.types = append(ds.types,
+		substrate.KindInfo{
+			Identity: holderKind, Name: "holder", Authority: "test.example.com", Package: "nest", Version: 1, Source: "installed",
+			Definition: map[string]any{"properties": map[string]any{
+				"box": map[string]any{"type": "object", "fields": map[string]any{
+					"who": map[string]any{"type": "reference", "kind": personKind},
+					"inner": map[string]any{"type": "object", "repeated": true, "fields": map[string]any{
+						"who": map[string]any{"type": "reference", "kind": personKind},
+					}},
+				}},
+				"byRole": map[string]any{"type": "reference", "kind": personKind, "keyed": true},
+				"metric": map[string]any{"type": "reference", "kind": metricKind},
+				"about":  map[string]any{"type": "reference", "kind": "any"},
+			}},
+		},
+		substrate.KindInfo{
+			Identity: metricKind, Name: "metric", Authority: "substrate.reamde.dev", Package: "observations", Version: 1, Source: "builtin",
+			Definition: map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}},
+		},
+	)
+}
+
+func TestAnAppsNestedReferencesAreHeldToItsGrant(t *testing.T) {
+	e := newAppEnv(t)
+	e.withHolder()
+	put := func(app, body string) int {
+		return e.do(http.MethodPut, "/api/v1/"+holderKind+"/h1", app, []byte(body), "application/json").Code
+	}
+	writer := e.grant("write:"+holderKind, []string{"write:" + holderKind})
+	reader := e.grant("write:"+holderKind+" read:"+personKind, []string{"write:" + holderKind, "read:" + personKind})
+	for name, body := range map[string]string{
+		"object field": `{"properties":{"box":{"who":"p1"}}}`,
+		"nested list":  `{"properties":{"box":{"inner":[{"who":"` + personKind + `/p1"}]}}}`,
+		"keyed map":    `{"properties":{"byRole":{"lead":"p1"}}}`,
+		"keyed ref":    `{"properties":{"byRole":{"lead":{"ref":"` + personKind + `/p1"}}}}`,
+		"unpinned":     `{"properties":{"about":"` + personKind + `/p1"}}`,
+	} {
+		if got := put(writer, body); got != http.StatusForbidden {
+			t.Errorf("%s: a reference to a kind the grant does not read answered %d, want 403", name, got)
+		}
+		if got := put(reader, body); got != http.StatusOK && got != http.StatusCreated {
+			t.Errorf("%s: the same write by a grant that reads the kind answered %d", name, got)
+		}
+	}
+	// An unpinned reference names its kind in full, or it names none the
+	// check could hold.
+	if got := put(reader, `{"properties":{"about":"p1"}}`); got != http.StatusForbidden {
+		t.Errorf("a bare id under an unpinned reference answered %d, want 403", got)
+	}
+}
+
+// An id may carry a slash (`health/heart_rate`): a bare one completes under
+// the pin, as the engine completes it, in a write and in a filter alike.
+func TestASlashBearingIDCompletesUnderItsPin(t *testing.T) {
+	e := newAppEnv(t)
+	e.withHolder()
+	app := e.grant("write:"+holderKind+" read:"+metricKind, []string{"write:" + holderKind, "read:" + metricKind})
+	rec := e.do(http.MethodPut, "/api/v1/"+holderKind+"/h1", app, []byte(`{"properties":{"metric":"health/heart_rate"}}`), "application/json")
+	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
+		t.Fatalf("a bare slash-bearing id under a readable pin answered %d %s", rec.Code, rec.Body.String())
+	}
+	filter := `{"kinds":["` + holderKind + `"],"properties":{"metric":{"eq":"health/heart_rate"}}}`
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(filter), app, nil, ""), http.StatusOK)
+
+	blind := e.grant("write:"+holderKind, []string{"write:" + holderKind})
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(filter), blind, nil, ""), http.StatusForbidden)
+}
+
+// A reverse read names its target: one of a kind the grant cannot read is
+// answered as the unknown kind it is to this token.
+func TestAReverseReadNamesOnlyAReadableTarget(t *testing.T) {
+	e := newAppEnv(t)
+	app := e.grant("read:"+messageKind, []string{"read:" + messageKind})
+	hidden := `{"kinds":["` + messageKind + `"],"referencing":{"ref":"` + personKind + `/p1"}}`
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(hidden), app, nil, ""), http.StatusNotFound)
+	both := e.grant("read:"+messageKind+" read:"+personKind, []string{"read:" + messageKind, "read:" + personKind})
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(hidden), both, nil, ""), http.StatusOK)
+}

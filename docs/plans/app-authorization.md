@@ -1,6 +1,7 @@
 # Authorizing apps with scoped tokens
 
-Status: proposal, 2026-10-31, revised after three review rounds. It supersedes
+Status: implemented, 2026-10-31, in PR 1084, after the review rounds the
+review record below lists. It supersedes
 the full-access rule of
 [0143](../decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)
 for the tokens apps receive; every existing token keeps full access. The
@@ -420,3 +421,13 @@ meaningless (`raw.githubusercontent.com`, `pastebin.com`), so a web app's
 redirect now has to be on its `client_id`'s origin or a loopback address,
 and the page marks a loopback redirect as a program on this computer that
 nothing verifies.
+
+Before the merge, Claude Fable 5.1 and Codex (gpt-6-astra) each reviewed the
+whole PR. Both found no route or scope bypass. Fixed from their findings: a
+reference nested in an object or a keyed map is now held to the grant like a
+top-level one (the engine walks those too); a bare id that carries a slash
+completes under its pin; an app's search scores with no repository-wide
+statistics at all, so neither a term's weight nor the average length moves
+with hidden records; the fetcher's loopback test now proves its dial guard;
+`fec0::/10` is refused; and the change carries a `BREAKING CHANGE` footer,
+since `app:` became a reserved actor prefix.

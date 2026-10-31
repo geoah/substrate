@@ -116,13 +116,16 @@ func confinedTransport() *http.Transport {
 // special is every RFC 6890 special-use range the standard library calls
 // global unicast, which egress.Blocked therefore lets through: documentation,
 // benchmarking, the IETF protocol block, the reserved class E, and the IPv6
-// protocol, documentation and discard blocks.
+// protocol, documentation, discard and deprecated site-local blocks.
 var special = func() []netip.Prefix {
 	var out []netip.Prefix
 	for _, s := range []string{
 		"192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24",
 		"203.0.113.0/24", "240.0.0.0/4",
 		"2001::/23", "2001:db8::/32", "3fff::/20", "100::/64", "5f00::/16",
+		// Site-local, deprecated (RFC 3879) and still routed on some
+		// networks; the standard library calls it global unicast.
+		"fec0::/10",
 	} {
 		out = append(out, netip.MustParsePrefix(s))
 	}
