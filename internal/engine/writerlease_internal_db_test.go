@@ -462,3 +462,199 @@ func TestAWriteThatOutlivesItsLeaseIsRefusedBeforeItCommits(t *testing.T) {
 	lease.lost.Store(false)
 	racePut(t, ds, map[string]any{"name": "after the lease came back"})
 }
+
+// holdLeaseAs takes one repository's lease from a session of its own named
+// `name`: with this process's name it stands in for the process's own earlier
+// session that the client gave up on and the server has not reaped, and with
+// any other it is a second process.
+func holdLeaseAs(t *testing.T, dsn, name, repository string) (*sql.Conn, int) {
+	t.Helper()
+	ctx := context.Background()
+	conn := leaseProbe(t, dsn)
+	if _, err := conn.ExecContext(ctx, `SELECT set_config('application_name', $1, false)`, name); err != nil {
+		t.Fatalf("name the holding session: %v", err)
+	}
+	var got bool
+	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got); err != nil || !got {
+		t.Fatalf("the holding session could not take the key (got %v): %v", got, err)
+	}
+	var pid int
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	return conn, pid
+}
+
+func backendAlive(t *testing.T, conn *sql.Conn, pid int) bool {
+	t.Helper()
+	var n int
+	if err := conn.QueryRowContext(context.Background(), `SELECT count(*) FROM pg_stat_activity WHERE pid = $1`, pid).Scan(&n); err != nil {
+		t.Fatalf("read pg_stat_activity: %v", err)
+	}
+	return n > 0
+}
+
+// newTestLease is a lease with no heartbeat of its own, so each test drives
+// its beats.
+func newTestLease(t *testing.T, dsn string, logs *bytes.Buffer) *writerLease {
+	t.Helper()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return &writerLease{
+		db:      db,
+		log:     slog.New(slog.NewTextHandler(logs, nil)),
+		name:    newWriterLeaseName(),
+		stop:    func() {},
+		stopped: make(chan struct{}),
+	}
+}
+
+// A pinned session ended from outside releases its leases with it, and the
+// next beat takes them back on a session of its own.
+func TestWriterLeaseIsRetakenAfterItsSessionIsTerminated(t *testing.T) {
+	t.Parallel()
+	dsn := MigratedDSN(t)
+	ctx := context.Background()
+	const repository = "terminated.example.com"
+	var logs bytes.Buffer
+	l := newTestLease(t, dsn, &logs)
+	if err := l.acquire(ctx, repository); err != nil {
+		t.Fatalf("take the lease: %v", err)
+	}
+	other := leaseProbe(t, dsn)
+	if _, err := other.ExecContext(ctx, `SELECT pg_terminate_backend($1)`, backendPID(t, l)); err != nil {
+		t.Fatalf("terminate the lease's backend: %v", err)
+	}
+
+	l.beat(ctx)
+	if l.err() == nil {
+		// The ping can race the backend's exit; the next beat sees it.
+		l.beat(ctx)
+	}
+	if l.err() != nil {
+		t.Fatalf("the lease was not retaken after its session was terminated: %v\n%s", l.err(), logs.String())
+	}
+	if !strings.Contains(logs.String(), "retaken after its connection dropped") {
+		t.Fatalf("the session's loss and recovery were not logged:\n%s", logs.String())
+	}
+	if leaseKeyFree(t, other, repository) {
+		t.Fatal("another session took the lease the retake claims to hold")
+	}
+}
+
+// THE ORPHAN: the client gave up on its pinned connection but the server has
+// not noticed, so the old backend still holds the lease under this process's
+// own name. Before, the retake was refused and logged as another process, and
+// every write stayed refused until the server reaped the backend — two hours
+// on OS-default keepalives. The orphan is ended and the lease retaken within
+// the one beat.
+func TestWriterLeaseEndsItsOwnOrphanedSessionAndRetakesTheLease(t *testing.T) {
+	t.Parallel()
+	dsn := MigratedDSN(t)
+	ctx := context.Background()
+	const repository = "orphaned.example.com"
+	var logs bytes.Buffer
+	l := newTestLease(t, dsn, &logs)
+	_, orphan := holdLeaseAs(t, dsn, l.name, repository)
+	l.held = []string{repository}
+	l.lost.Store(true)
+
+	l.beat(ctx)
+
+	if l.err() != nil {
+		t.Fatalf("one beat did not retake a lease held by this process's own orphan: %v\n%s", l.err(), logs.String())
+	}
+	if strings.Contains(logs.String(), "another process") {
+		t.Fatalf("this process's own orphan was blamed on another process:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "level=WARN") || !strings.Contains(logs.String(), "it was ended and the lease retaken") {
+		t.Fatalf("ending the orphan was not logged as a warning that says so:\n%s", logs.String())
+	}
+	probe := leaseProbe(t, dsn)
+	if backendAlive(t, probe, orphan) {
+		t.Fatal("the orphaned session is still alive")
+	}
+	if leaseKeyFree(t, probe, repository) {
+		t.Fatal("another session took the lease the retake claims to hold")
+	}
+}
+
+// A holder under ANY other name is another process, and is never ended: the
+// refusal stands and the log names who holds it.
+func TestWriterLeaseNeverEndsASessionOfAnotherProcess(t *testing.T) {
+	t.Parallel()
+	dsn := MigratedDSN(t)
+	ctx := context.Background()
+	const repository = "foreign.example.com"
+	var logs bytes.Buffer
+	l := newTestLease(t, dsn, &logs)
+	const foreignName = "substrate-writer-another-process"
+	holder, pid := holdLeaseAs(t, dsn, foreignName, repository)
+	l.held = []string{repository}
+	l.lost.Store(true)
+
+	l.beat(ctx)
+
+	if l.err() == nil {
+		t.Fatal("a lease another process holds was reported retaken")
+	}
+	if !strings.Contains(logs.String(), "another process took this repository's writer lease") {
+		t.Fatalf("the refusal was not logged as another process:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), foreignName) || !strings.Contains(logs.String(), "backend_start") {
+		t.Fatalf("the refusal does not name the holder:\n%s", logs.String())
+	}
+	if !backendAlive(t, leaseProbe(t, dsn), pid) {
+		t.Fatal("another process's session was terminated")
+	}
+	if err := holder.PingContext(ctx); err != nil {
+		t.Fatalf("another process's session stopped answering: %v", err)
+	}
+
+	// A booting process says the same, naming the holder in its refusal.
+	err := newTestLease(t, dsn, &logs).acquire(ctx, repository)
+	if !errors.Is(err, ErrRepositoryHasAnotherWriter) {
+		t.Fatalf("the refusal must be the lease's: %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), foreignName) {
+		t.Fatalf("the boot refusal does not name the holder: %v", err)
+	}
+	if !backendAlive(t, leaseProbe(t, dsn), pid) {
+		t.Fatal("an acquisition terminated another process's session")
+	}
+}
+
+// The pinned session carries the keepalives that reap it in seconds once its
+// client is gone, and the name that lets this process recognize it.
+func TestWriterLeaseSessionCarriesItsKeepalivesAndName(t *testing.T) {
+	t.Parallel()
+	dsn := MigratedDSN(t)
+	ctx := context.Background()
+	var logs bytes.Buffer
+	l := newTestLease(t, dsn, &logs)
+	if err := l.acquire(ctx, "keepalive.example.com"); err != nil {
+		t.Fatalf("take the lease: %v", err)
+	}
+	for _, k := range writerLeaseKeepalives {
+		var got string
+		if err := l.conn.QueryRowContext(ctx, `SELECT setting FROM pg_settings WHERE name = $1`, k.name).Scan(&got); err != nil {
+			t.Fatalf("read %s: %v", k.name, err)
+		}
+		if got != k.value {
+			t.Errorf("%s is %q on the lease's session, want %q", k.name, got, k.value)
+		}
+	}
+	var name string
+	if err := l.conn.QueryRowContext(ctx, `SHOW application_name`).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != l.name {
+		t.Errorf("the lease's session is named %q, want this process's %q", name, l.name)
+	}
+	if strings.Contains(logs.String(), "could not") {
+		t.Fatalf("setting up the session logged a failure:\n%s", logs.String())
+	}
+}
