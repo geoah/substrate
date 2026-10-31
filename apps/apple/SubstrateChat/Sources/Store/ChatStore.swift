@@ -110,6 +110,25 @@ final class ChatStore {
         drafts = cache.loadDrafts()
     }
 
+    // MARK: What the token may do
+
+    /// What the owner approved, for an app token; a password login's token
+    /// reaches everything.
+    var grants: Grants? { session.grants }
+    var canChat: Bool { grants?.chat ?? true }
+    var canDecide: Bool { grants?.decide ?? true }
+    var canReadProviders: Bool { grants?.providers ?? true }
+    /// An app never writes a provider's key: the console does.
+    var canWriteKeys: Bool { grants == nil }
+
+    /// A page of the console, on this server: where the app sends the owner
+    /// for what it may not do itself.
+    func console(_ path: String) -> URL {
+        var base = session.server.absoluteString
+        while base.hasSuffix("/") { base.removeLast() }
+        return URL(string: base + "/" + path) ?? session.server
+    }
+
     // MARK: Derived
 
     var offered: [Agent] {
@@ -472,18 +491,20 @@ final class ChatStore {
         defer { refreshing = false }
         do {
             async let agentPage = api.listAll(ListQuery(kinds: [Kinds.agent], first: 200, orderBy: "createdAt:desc"))
-            async let providerPage = api.listAll(ListQuery(kinds: [Kinds.provider], first: 100))
+            async let providerPage = readProviders()
             async let threadPages = readThreads()
             async let cards: Void = refreshCards()
             let (a, p, t) = try await (agentPage, providerPage, threadPages)
             try await cards
             guard !closed else { return }
             setAgents(a.records)
-            providers = Dictionary(p.records.map { ($0.id, Provider(record: $0)) }) { x, _ in x }
+            if let p { providers = Dictionary(p.records.map { ($0.id, Provider(record: $0)) }) { x, _ in x } }
             // The feed resumes from the earliest read's head, so nothing
-            // written between the reads is missed.
-            if feedSeq == nil || feedGeneration != a.generation {
-                let heads = [a, p].filter { $0.generation == a.generation }.map(\.head) + [t.head]
+            // written between the reads is missed. An app token's pages carry
+            // no head: its feed opens at the live head and the lists are read
+            // again after the bookmark (`runFeed`).
+            if !a.generation.isEmpty, feedSeq == nil || feedGeneration != a.generation {
+                let heads = [a, p].compactMap { $0 }.filter { $0.generation == a.generation }.map(\.head) + [t.head]
                 feedSeq = heads.min()
                 appliedSeq = feedSeq
                 feedGeneration = a.generation
@@ -502,6 +523,12 @@ final class ChatStore {
             if handle(error) { return }
             refreshError = explain(error, server: session.server)
         }
+    }
+
+    /// The provider rows, where the token may read them.
+    private func readProviders() async throws -> Page? {
+        guard canReadProviders else { return nil }
+        return try await api.listAll(ListQuery(kinds: [Kinds.provider], first: 100))
     }
 
     private struct ThreadPages {
@@ -626,13 +653,17 @@ final class ChatStore {
     /// The questions and suggestions waiting on the owner. A new one
     /// notifies once.
     func refreshCards() async throws {
+        guard canChat else { return }
         async let i = api.list(ListQuery(kinds: [Kinds.interaction], properties: ["state": ["eq": "pending"]], first: 100))
-        async let r = api.list(ListQuery(kinds: [Kinds.request], properties: ["decision": ["eq": "proposed"]], first: 100))
+        // The suggestions are readable only with `decide:`.
+        async let r: Page? = canDecide
+            ? api.list(ListQuery(kinds: [Kinds.request], properties: ["decision": ["eq": "proposed"]], first: 100))
+            : nil
         let (ip, rp) = try await (i, r)
         guard !closed else { return }
         interactions = ip.records
-        requests = rp.records
-        for record in ip.records + rp.records {
+        requests = rp?.records ?? []
+        for record in ip.records + (rp?.records ?? []) {
             let key = "card|\(record.kind)/\(record.id)"
             guard !notified.contains(key) else { continue }
             notified.insert(key)
@@ -671,7 +702,7 @@ final class ChatStore {
     private static let feedKinds = [Kinds.thread, Kinds.message, Kinds.agent, Kinds.provider, Kinds.interaction, Kinds.request]
 
     private func startFeed() {
-        guard !closed, feedTask == nil, online, feedGeneration != nil else { return }
+        guard !closed, feedTask == nil, online, loaded else { return }
         feedTask = Task { await runFeed() }
     }
 
@@ -687,9 +718,20 @@ final class ChatStore {
                 for try await line in api.watch(kinds: Self.feedKinds, from: feedSeq, generation: feedGeneration) {
                     switch line {
                     case let .bookmark(seq, generation):
-                        if feedSeq == nil { feedSeq = seq }
                         if !generation.isEmpty { feedGeneration = generation }
                         feedProblem = nil
+                        if feedSeq == nil {
+                            // Opened at the live head with no list read under
+                            // it (an app token's lists carry none): what was
+                            // written before the bookmark is read again now.
+                            feedSeq = seq
+                            appliedSeq = seq
+                            Task {
+                                await refreshThreads()
+                                _ = await refreshAgents()
+                                try? await refreshCards()
+                            }
+                        }
                     case let .row(row):
                         feedSeq = row.seq
                         feed(row)
@@ -781,11 +823,11 @@ final class ChatStore {
     func refreshAgents() async -> Bool {
         do {
             async let a = api.listAll(ListQuery(kinds: [Kinds.agent], first: 200, orderBy: "createdAt:desc"))
-            async let p = api.listAll(ListQuery(kinds: [Kinds.provider], first: 100))
+            async let p = readProviders()
             let (ap, pp) = try await (a, p)
             guard !closed else { return true }
             setAgents(ap.records)
-            providers = Dictionary(pp.records.map { ($0.id, Provider(record: $0)) }) { x, _ in x }
+            if let pp { providers = Dictionary(pp.records.map { ($0.id, Provider(record: $0)) }) { x, _ in x } }
             return true
         } catch {
             _ = handle(error)

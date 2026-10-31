@@ -171,6 +171,27 @@ struct ProposalCard: View {
     private var proposed: [String: JSONValue] { held?["diff"]?["properties"]?.object ?? [:] }
 
     var body: some View {
+        if store.canDecide {
+            card
+        } else {
+            // Without `decide:` the request is not the app's to read: the
+            // console decides it.
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Suggested a change", systemImage: "square.and.pencil")
+                    .font(.subheadline.weight(.semibold))
+                Text("Substrate Chat wasn't approved to apply suggestions. Decide this one in the console.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Link(destination: store.console("change-requests/\(API.segment(id))")) {
+                    Label("Open in the Console", systemImage: "arrow.up.right.square")
+                }
+                .font(.footnote.weight(.semibold))
+            }
+            .card(tint: .blue)
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label(heading, systemImage: op == "delete" ? "trash" : op == "create" ? "plus.square" : "square.and.pencil")
@@ -296,6 +317,37 @@ struct ProviderKeySheet: View {
 
     var body: some View {
         NavigationStack {
+            if store.canWriteKeys { form } else { console }
+        }
+        .frame(minWidth: 380, minHeight: 260)
+    }
+
+    /// An app never writes a provider's key: the owner adds it in the console,
+    /// on the provider's own record.
+    private var console: some View {
+        Form {
+            Section {
+                Text("Agents run on your own key, sealed on the provider's record. Add it in the console, where only you can write it.")
+                Link(destination: store.console("data/\(Kinds.provider)/\(API.segment(provider.id))")) {
+                    Label("Open \(provider.name) in the Console", systemImage: "arrow.up.right.square")
+                }
+            } header: {
+                Text("\(provider.name) API key")
+            } footer: {
+                Text("Its completions go to \(provider.endpoint).")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Add API Key")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        }
+    }
+
+    private var form: some View {
             Form {
                 Section {
                     SecureField("API key", text: $key)
@@ -325,8 +377,6 @@ struct ProviderKeySheet: View {
                         .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || busy)
                 }
             }
-        }
-        .frame(minWidth: 380, minHeight: 260)
     }
 
     private func save() {

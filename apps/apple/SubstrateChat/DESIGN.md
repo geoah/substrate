@@ -86,8 +86,10 @@ one segment, encoded exactly once: an agent's id
 | Need | Request |
 | ---- | ------- |
 | Server check | `GET /.well-known/substrate/server.json` (`registration.totpRequired`) |
-| Sign in | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}` |
-| Sign out | `DELETE /tokens/{id}` (best effort, 10 s) |
+| Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization) |
+| Sign in | the browser on `GET /oauth/authorize` (code, PKCE S256, `scope`, `state`), the redirect on `http://127.0.0.1:<port>/oauth/callback`, then `POST /oauth/token` (form) → `{access_token, scope, expires_in?, repository}` |
+| Sign out | `POST /oauth/revoke` (form `token`), best effort |
+| Sign in, older server | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}`; out with `DELETE /tokens/{id}` |
 | Agents | `{"kinds":["substrate.reamde.dev/core/agent"]}`, every page |
 | Providers | `{"kinds":["substrate.reamde.dev/llm/provider"]}`, every page |
 | Chats | `{"kinds":["…/llm/thread"],"properties":{"mode":{"eq":"chat"}}}`, `updatedAt:desc`, first 100 |
@@ -416,9 +418,36 @@ them without a Shortcuts workflow:
 
 ### Sign in
 
-The Sync app's flow: the server checked against its discovery document, then
-the repository and password, and a code only when `totpRequired` says so.
-A token the server refuses shows one screen with Sign In Again.
+Through the substrate's app authorization (decision 0194 and its follow-up
+that opens agents, decisions and the feed to apps): the server is checked
+against its discovery document and its OAuth metadata, then the system's
+sign-in sheet (`ASWebAuthenticationSession`, sharing Safari's cookies) opens
+the server's own sign-in and approval page. The owner chooses what the app
+may do and for how long; the app never sees the password.
+
+- **Scopes asked for**: `agents:*` (talk to the agents: chats, questions,
+  turns, renames), `decide:*` (apply or dismiss what they suggest) and
+  `read:substrate.reamde.dev/llm/provider` (whether an agent has a key). The
+  owner may leave any out. Without `agents:` the app says it cannot talk to
+  the assistants and offers to sign in again; without `decide:` a suggestion
+  card links to the console; without the providers it shows no key callout.
+  An app never writes a provider's key: the callout links to the provider's
+  record in the console.
+- **Client**: a released build's `client_id` is the URL of a client ID
+  metadata document the release publishes beside itself
+  (`<release folder>/client.json`), so the approval page names the host that
+  serves it; any other build is a local app with a loopback id.
+- **Redirect**: a native app cannot claim an `https` redirect without a web
+  host, so it listens on a loopback port for the sheet's redirect (RFC 8252
+  §7.3), which the server admits on any port; the sheet is closed once the
+  code arrives. PKCE `S256`, the `state`, and the `iss` of RFC 9207 are
+  checked before the code is exchanged.
+- **The token** is an app token: writes are recorded as `app:<host>`, it may
+  expire (the approved lifetime) and has no refresh. A refusal (401) shows
+  "Your approval ended" with Sign In Again, which keeps the saved chats.
+  Sign Out revokes it at the revocation endpoint.
+- **A server without app authorization** (no OAuth metadata) gets the
+  password form, as before, so a deployment that predates it still works.
 
 ### Feel and access
 

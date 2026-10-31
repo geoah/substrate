@@ -73,6 +73,23 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Server", value: store.session.server.host() ?? store.session.server.absoluteString)
                     LabeledContent("Repository", value: store.session.repository)
+                    if let grants = store.grants {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Approved access")
+                            ForEach(grants.words, id: \.self) { line in
+                                Label(line, systemImage: "checkmark")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        LabeledContent("Until", value: store.session.expiresAt.map {
+                            $0.formatted(date: .abbreviated, time: .shortened)
+                        } ?? "You revoke it")
+                        Button("Change What It May Do…") {
+                            dismiss()
+                            model.signInAgain()
+                        }
+                    }
                     if let serverVersion { LabeledContent("Server version", value: serverVersion) }
                     LabeledContent("App version") {
                         Text(updates.build.version).monospaced().textSelection(.enabled)
@@ -101,7 +118,9 @@ struct SettingsView: View {
                     model.signOut()
                 }
             } message: {
-                Text("This device forgets its saved chats and the sign-in. Your chats stay on the server.")
+                Text(store.grants == nil
+                    ? "This device forgets its saved chats and the sign-in. Your chats stay on the server."
+                    : "This device forgets its saved chats, and Substrate Chat's access is revoked. Your chats stay on the server.")
             }
             .sheet(item: $keySheet) { ProviderKeySheet(provider: $0).environment(store) }
             .task {

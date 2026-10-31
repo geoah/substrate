@@ -371,8 +371,18 @@ land in once the turn settles, so nothing blinks. A chat that is running when
 it is opened is attached to (`…/llm/thread/{id}/events`), a dropped stream is
 attached again with backoff, Stop posts `…/stop`, and a send the server
 refused, or whose delivery is unknown, says so with the message to copy and
-is never sent again on its own. Requests name no actor, so they are `api`'s,
-as Sync's are.
+is never sent again on its own.
+
+**Signing in** is the substrate's app authorization: the system's sign-in
+sheet opens the server's own sign-in and approval page, where the owner
+chooses what the app may do (talk to the agents, `agents:*`; apply what they
+suggest, `decide:*`; read the provider rows) and for how long. The redirect
+comes back to a loopback port the app listens on (RFC 8252), and the code is
+exchanged with its PKCE verifier; the app never sees the password, and its
+writes are recorded as `app:<host>`. A release publishes the app's client ID
+metadata document as `client.json` in its folder and stamps that URL into the
+build; any other build signs in as a local app. A server that predates app
+authorization gets the password form.
 
 **Instant.** Agents, providers, the chat list and each chat's rows are kept in
 Application Support, one folder per server and repository (excluded from
@@ -386,8 +396,9 @@ the folder and revokes the token in the background.
 
 **Assistants.** Settings → Assistants lists every agent with a switch that
 offers it for new chats and to the Action Button, the default for new chats,
-and an Add Key for an agent whose provider has none (written to the provider
-row's `apiKey` and never kept). The agents whose purpose is primary are
+and an Add Key for an agent whose provider has none: the console's provider
+record for an app token, which never writes a key, or the provider row's
+`apiKey` for a password sign-in (never kept). The agents whose purpose is primary are
 offered until the owner says otherwise; one hidden from chat is listed apart.
 
 **Voice typing.** The microphone runs `SpeechAnalyzer` with a

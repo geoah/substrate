@@ -8,6 +8,8 @@ struct RootView: View {
         Group {
             if model.expired {
                 ExpiredView()
+            } else if let store = model.store, !store.canChat {
+                NoChatAccessView()
             } else if let store = model.store {
                 ChatSplitView()
                     .environment(store)

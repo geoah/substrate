@@ -319,10 +319,19 @@ release_chat() {
 	local stage="$out/stage"
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
+	# The app's OAuth client id is its client ID metadata document, published
+	# at the root of its release folder, so the approval page names the host
+	# that serves it. The redirect is a loopback one (RFC 8252), which a native
+	# app can listen on; the server admits it on any port.
+	local client="$base/client.json"
+	jq -n --arg id "$client" --arg uri "$base/index.html" '{
+		client_id: $id, client_name: "Substrate Chat", client_uri: $uri,
+		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
+	}' >"$out/client.json"
 	local settings=(
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
-		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SPARKLE_KEY="$key"
+		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SPARKLE_KEY="$key" SUBSTRATE_CHAT_CLIENT_ID="$client"
 	)
 	local platform
 	for platform in macOS iOS; do
@@ -362,6 +371,7 @@ release_chat() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
+	upload "$out/client.json" "$client" "no-cache"
 	publish "$base" "$out" "$stage" "$rel"
 	echo "apple: released Substrate Chat $version ($channel)"
 	echo "apple: $base/index.html"

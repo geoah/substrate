@@ -73,5 +73,7 @@
 	<string>$(SUBSTRATE_COMMIT)</string>
 	<key>SubstrateUpdates</key>
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstrateChatClientID</key>
+	<string>$(SUBSTRATE_CHAT_CLIENT_ID)</string>
 </dict>
 </plist>

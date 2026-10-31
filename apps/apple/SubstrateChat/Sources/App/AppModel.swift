@@ -29,6 +29,32 @@ final class AppModel {
 
     var session: Session? { store?.session }
 
+    /// The OAuth door: the browser sheet on the substrate's own sign-in and
+    /// approval page, the redirect on a loopback port, the code exchanged with
+    /// its PKCE verifier. The app never sees the password.
+    func signIn(server: URL, metadata: OAuth.Metadata) async throws {
+        let receiver = try await LoopbackReceiver.start()
+        defer { receiver.stop() }
+        let pkce = OAuth.PKCE()
+        let state = OAuth.state()
+        let redirect = receiver.redirect
+        guard let url = OAuth.authorizeURL(metadata, redirect: redirect, pkce: pkce, state: state) else {
+            throw URLError(.badURL)
+        }
+        let query = try await WebSignIn().run(url, receiver: receiver)
+        let code = try OAuth.callback(query, state: state, issuer: metadata.issuer)
+        let grant = try await OAuth.exchange(metadata, code: code, redirect: redirect, pkce: pkce)
+        let session = Session(
+            server: server, repository: grant.repository, secret: grant.accessToken, tokenID: "",
+            grants: Grants(scopes: grant.scopes),
+            expiresAt: grant.expiresIn.map { Date().addingTimeInterval(TimeInterval($0)) },
+            revocation: metadata.revocationEndpoint)
+        try Keychain.save(session)
+        end(forget: false)
+        begin(session)
+    }
+
+    /// The password door, for a server that predates app authorization.
     func signIn(server: URL, repository: String, password: String, totp: String?) async throws {
         let api = API(server: server)
         let result = try await api.login(repository: repository, password: password, totp: totp, label: Self.tokenLabel)
@@ -48,7 +74,18 @@ final class AppModel {
         end(forget: false)
         Keychain.clear()
         expired = false
-        Task.detached { try? await API(session).revoke(token: session.tokenID) }
+        Task.detached { await Self.revoke(session) }
+    }
+
+    /// Best effort and quick: the token goes whether or not the server can be
+    /// reached, and a server that already refuses it has nothing to revoke.
+    private static func revoke(_ session: Session) async {
+        if session.grants != nil {
+            let endpoint = session.revocation ?? session.server.appending(path: "oauth/revoke")
+            try? await OAuth.revoke(session.secret, at: endpoint)
+        } else {
+            try? await API(session).revoke(token: session.tokenID)
+        }
     }
 
     /// Forgets the session on this device at once, and revokes the token in
@@ -61,7 +98,7 @@ final class AppModel {
         end(forget: true)
         Keychain.clear()
         Notifier.removeAll()
-        Task.detached { try? await API(session).revoke(token: session.tokenID) }
+        Task.detached { await Self.revoke(session) }
     }
 
     private func begin(_ session: Session) {

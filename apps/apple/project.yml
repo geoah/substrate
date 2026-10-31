@@ -30,6 +30,10 @@ settings:
     SUBSTRATE_COMMIT: ""
     SUBSTRATE_UPDATES_URL: ""
     SUBSTRATE_SPARKLE_KEY: ""
+    # Substrate Chat's OAuth client id: the URL of the client ID metadata
+    # document a release publishes beside itself. Empty is a local app's
+    # loopback id (OAuth.clientID).
+    SUBSTRATE_CHAT_CLIENT_ID: ""
 targets:
   Substrate:
     # One native target for iPhone, iPad and Mac: not Mac Catalyst and not
@@ -121,6 +125,7 @@ targets:
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   SubstrateChatTests:
     # The chat's rules, which are platform-free: run on the Mac, no
     # simulator needed (`mise run apple:test:chat`).

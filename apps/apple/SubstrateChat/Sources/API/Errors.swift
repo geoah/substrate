@@ -84,6 +84,9 @@ func explain(_ error: Error, server: URL? = nil) -> String {
         default: return error.localizedDescription
         }
     }
+    if let error = error as? ServerError, error.status == 403 {
+        return "Substrate Chat isn't allowed to do that on \(host): \(error.text) Sign in again to approve more."
+    }
     if let error = error as? ServerError, error.status >= 500 {
         return "\(Host) ran into a problem (\(error.status)): \(error.text)"
     }

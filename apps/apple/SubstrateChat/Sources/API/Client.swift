@@ -1,12 +1,19 @@
 import Foundation
 
-/// The signed-in session: the server, the repository's authority, the bearer
-/// secret and the token's id, so Sign Out revokes the very token it forgets.
+/// The signed-in session: the server, the repository's authority and the
+/// bearer secret. An app token (the OAuth door) carries what the owner
+/// approved, when it ends and where it is revoked; a password login carries
+/// the token's id, so Sign Out revokes the very token it forgets.
 struct Session: Codable, Equatable, Sendable {
     var server: URL
     var repository: String
     var secret: String
     var tokenID: String
+    /// The approved scopes; nil is a full-access token (a password login).
+    var grants: Grants?
+    /// Absent when the owner approved the app until they revoke it.
+    var expiresAt: Date?
+    var revocation: URL?
 
     /// Which repository on which server: what every cached byte is bound to.
     var identity: String { server.absoluteString.lowercased() + "|" + repository.lowercased() }

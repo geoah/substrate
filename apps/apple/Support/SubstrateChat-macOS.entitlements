@@ -6,6 +6,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Signing in: the browser returns to a loopback port the app listens on
+	     (RFC 8252), as a native app has no web host of its own. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<!-- Voice typing: the microphone, while it is on. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
