@@ -313,7 +313,9 @@ describe("AuthorizePage", () => {
     answers.GET = () =>
       jsonResponse(200, { ...REQUEST, scopes: [agents, decide, nobody] })
     renderPage()
-    const talk = await screen.findByText("Talk to Substrate editor")
+    const talk = await screen.findByText(
+      "Talk to Substrate editor and read your chats"
+    )
     const row = talk.closest("li") as HTMLElement
     expect(
       within(row).getByText("Also covers matching agents you add later.")
@@ -324,12 +326,12 @@ describe("AuthorizePage", () => {
     expect(within(row).getByText("Nothing")).toBeTruthy()
     expect(
       screen.getByText(
-        "Apply or dismiss changes Substrate editor suggests, with your authority"
+        "Apply, edit or dismiss changes Substrate editor suggests, with your authority"
       )
     ).toBeTruthy()
     expect(
       screen.getByText(
-        "Apply or dismiss changes agents suggest, with your authority"
+        "Apply, edit or dismiss changes agents suggest, with your authority"
       )
     ).toBeTruthy()
     expect(

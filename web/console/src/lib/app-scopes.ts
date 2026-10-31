@@ -15,8 +15,8 @@ export interface ScopeWords {
 const ACTIONS: Record<ScopeVerb, string> = {
   read: "Read records of",
   write: "Read and write records of",
-  agents: "Talk to the agents matching",
-  decide: "Apply or dismiss changes suggested by the agents matching",
+  agents: "Talk to, and read the chats of, the agents matching",
+  decide: "Apply, edit or dismiss changes suggested by the agents matching",
 }
 
 function isVerb(word: string): word is ScopeVerb {

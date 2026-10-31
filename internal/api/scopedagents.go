@@ -297,9 +297,10 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 		props[name] = c
 	}
 	// narrowed names the property this kind is narrowed by, which the
-	// generic reference check below leaves to the rule here; exact is
-	// whether the narrowing alone admits only rows the grant reads.
-	narrowed, exact := "", false
+	// generic reference check below leaves to the rule here. Every branch
+	// narrows the engine's query to rows the grant reads, so a page, its
+	// cursor and a count pass over nothing else.
+	narrowed := ""
 	switch kind {
 	case kindAgent:
 		talked, err := s.talkedAgents(ctx)
@@ -313,9 +314,9 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 		if len(ids) == 0 {
 			return empty, nil
 		}
-		q.Filter.IDs, exact = ids, true
+		q.Filter.IDs = ids
 	case kindThread:
-		narrowed, exact = "agent", true
+		narrowed = "agent"
 		if c, named := props["agent"]; named {
 			agents, err := condRecordIDs("agent", c, kindAgent)
 			if err != nil {
@@ -357,7 +358,6 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 				return nil, fmt.Errorf("%w: an app's token lists %s under filter.properties.thread (eq or in), naming the threads it reads",
 					substrate.ErrForbidden, kind)
 			}
-			exact = true
 		} else {
 			threads, err := condRecordIDs("thread", c, kindThread)
 			if err != nil {
@@ -372,7 +372,6 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 					return nil, fmt.Errorf("%w: thread %s", substrate.ErrNotFound, th)
 				}
 			}
-			exact = true
 		}
 	}
 	rest := make(map[string]substrate.Cond, len(props))
@@ -383,10 +382,6 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 	}
 	if err := s.checkReferenceFilters(ctx, q.Filter.Kinds, rest); err != nil {
 		return nil, err
-	}
-	if q.Count && !exact {
-		return nil, fmt.Errorf("%w: an app's token counts %s only under filter.properties.thread, which names the rows it reads",
-			substrate.ErrForbidden, kind)
 	}
 	if len(props) > 0 {
 		q.Filter.Properties = props

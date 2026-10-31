@@ -194,10 +194,16 @@ func TestAnAgentsScopeReadsTheRowsOfItsAgentsAlone(t *testing.T) {
 		t.Fatalf("pending interactions = %q, want the matching thread's alone", got)
 	}
 	// A list that names no thread is refused before the engine pages: its
-	// cursor would carry the last scanned row, another agent's included.
+	// cursor would carry the last scanned row, another agent's included,
+	// and its count every agent's rows.
 	for _, kind := range []string{kindMessage, kindInteraction} {
 		wantStatus(t, e.do(http.MethodGet, listOf(kind, ``), app, nil, ""), http.StatusForbidden)
 		wantStatus(t, e.do(http.MethodGet, listOf(kind, `{"state":{"eq":"pending"}}`), app, nil, ""), http.StatusForbidden)
+		wantStatus(t, e.do(http.MethodGet, listOf(kind, ``)+"&count=1", app, nil, ""), http.StatusForbidden)
+	}
+	wantStatus(t, e.do(http.MethodGet, listOf(kindMessage, `{"thread":{"eq":"tA"}}`)+"&count=1", app, nil, ""), http.StatusOK)
+	if !ds.lastQuery.Count || ds.lastQuery.Filter.Properties["thread"].Eq != "tA" {
+		t.Fatalf("a named count reached the engine as %+v, want the count under the thread", ds.lastQuery)
 	}
 	// A read scope that reaches the whole kind lists it without a thread.
 	whole := e.grant("agents:~/chat/assistant read:"+kindMessage, []string{"agents:" + talkedAgent, "read:" + kindMessage})

@@ -592,7 +592,8 @@ func condValues(c substrate.Cond) []any {
 // cutPage cuts every record of a page and drops what the grant cannot read:
 // an expanded referent, a row of another kind. The changelog head and
 // generation are dropped too, since they count the whole repository's writes
-// and the tail they hand off to is not open to an app.
+// (decision 0194); an app's tail discloses them on its bookmark instead
+// (0195), so it opens the watch before it reads its lists.
 func (s *scopedDataset) cutPage(ctx context.Context, page *substrate.Page) (*substrate.Page, error) {
 	out := *page
 	out.Head, out.Generation = 0, ""

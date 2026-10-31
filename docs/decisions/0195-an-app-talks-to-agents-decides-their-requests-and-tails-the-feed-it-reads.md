@@ -81,9 +81,13 @@ The rules this binds:
 - Good, because the reach of each verb is fixed in code: an app cannot widen
   it by naming more properties or kinds.
 - Bad, because chatting reaches whatever the agents may do: an agent with
-  write grants writes on the app's message, which the page discloses.
+  write grants writes on the app's message, which the page discloses. The
+  app also reads every chat with those agents, the owner's included, which
+  the page's heading says.
 - Bad, because `decide:` accepts with the owner's authority, a policy-gated
-  request included; only the owner-only actions stay shut.
+  request included, and may send an `adjustedDiff`, so the app can rewrite a
+  proposed change before applying it; only the owner-only actions stay
+  shut, and the approval page says the app may edit a change.
 - Bad, because the feed's seqs and its bookmark count the whole
   repository's writes, which 0194 kept off an app's lists, and every row
   names the actor that wrote it.

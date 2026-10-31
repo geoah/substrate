@@ -62,11 +62,12 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 	_, scoped := substrate.ScopesFrom(ctx)
 	switch {
 	case scoped && (v.Has("aggregate") || v.Has("downsample") || v.Get("watch") == "1"):
-		// The aggregate read reaches source kinds beside the ones it names,
-		// and the tail streams the whole changelog's activity: both stay the
-		// owner's until each has a design of its own (decision 0194).
+		// The aggregate read reaches source kinds beside the ones it names
+		// (decision 0194). An app's tail is the change feed's, which cuts
+		// each row to what the token reads (0195); this one does not.
 		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
-		writeError(w, http.StatusForbidden, codeForbidden, "an app's token does not reach aggregate reads or the watch")
+		writeError(w, http.StatusForbidden, codeForbidden,
+			"an app's token does not reach aggregate reads, and it follows changes on /api/v1/changes?watch=1")
 	case v.Has("aggregate") || v.Has("downsample"):
 		h.aggregateRecords(w, r, ds)
 	case v.Get("watch") == "1":

@@ -14,7 +14,7 @@ describe("scopeWords", () => {
     )
     expect(scopeWords("agents:ada.example.com/llm/*")).toEqual({
       verb: "agents",
-      action: "Talk to the agents matching",
+      action: "Talk to, and read the chats of, the agents matching",
       pattern: "ada.example.com/llm/*",
     })
     expect(scopeWords("decide:*").pattern).toBe("*")

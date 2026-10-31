@@ -211,7 +211,8 @@ An `agents:<pattern>` scope reaches the agents whose ids match, and the
 records their chats are made of:
 
 - the agent rows (`substrate.reamde.dev/core/agent`), to read; an agent
-  hidden from chat is listed but refuses a chat;
+  hidden from chat is listed but refuses a chat with `422`, as a chat
+  naming a thread of another agent does;
 - `POST /api/v1/substrate.reamde.dev/core/agent/{id}/chat`, the id one
   path segment (`%2F` for its slashes), streaming as it does for the owner.
   The message is written as the app's, `app:<host>`; the agent runs under
@@ -237,7 +238,7 @@ but does not chat.
 
 A list of one of these kinds names that kind alone in `filter.kinds`. A
 thread list is narrowed to the matching agents' threads, and an `agent`
-condition must name only those. A message, interaction or request list is
+condition must name only those: naming another agent answers `404`. A message, interaction or request list is
 narrowed by `filter.properties.thread` (`eq` or `in`, bare thread ids or
 paths), and it must name its threads: without a thread condition it
 answers `403`, unless a `read:` scope reaches the whole kind. The engine
@@ -294,7 +295,8 @@ A scope is a verb and a pattern:
 | `<authority>/*` | every kind or agent of one authority |
 | `*` | every kind or agent the owner has |
 
-An agent's id is its package and its name, `ada.example.com/llm/substrate`.
+An agent's id is its authority, package and name,
+`ada.example.com/llm/substrate`.
 `~` in place of the authority is the repository's own authority, the one an
 imported sample lives under: `read:~/tasks/*` becomes
 `read:ada.example.com/tasks/*` on the approval page and in the token, and

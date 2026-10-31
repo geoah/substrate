@@ -130,11 +130,15 @@ describe("Signed in and API tokens", () => {
     expect(within(facts).getByText("Read records of")).toBeTruthy()
     expect(within(facts).getByText("ada.example.com/notes/note")).toBeTruthy()
     expect(within(facts).getByText("Read and write records of")).toBeTruthy()
-    expect(within(facts).getByText("Talk to the agents matching")).toBeTruthy()
+    expect(
+      within(facts).getByText(
+        "Talk to, and read the chats of, the agents matching"
+      )
+    ).toBeTruthy()
     expect(within(facts).getByText("ada.example.com/llm/*")).toBeTruthy()
     expect(
       within(facts).getByText(
-        "Apply or dismiss changes suggested by the agents matching"
+        "Apply, edit or dismiss changes suggested by the agents matching"
       )
     ).toBeTruthy()
     expect(within(facts).getByText("Approved")).toBeTruthy()

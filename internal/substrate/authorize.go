@@ -67,7 +67,8 @@ type AuthorizationScope struct {
 	Scope     string `json:"scope"`
 	Requested string `json:"requested"`
 	// Verb is what the scope does: `read` or `write` over kinds, `agents`
-	// or `decide` over agents (decision 0195). Write is Verb == `write`.
+	// or `decide` over agents (decision 0195). Write is Verb == `write`,
+	// kept on the wire for the approval pages written before Verb.
 	Verb    string `json:"verb"`
 	Write   bool   `json:"write"`
 	Pattern string `json:"pattern"`

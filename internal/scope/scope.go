@@ -102,9 +102,11 @@ func Parse(raw string) (Scope, error) {
 	default:
 		return Scope{}, fmt.Errorf("scope %q: %q is not read, write, agents or decide", raw, verb)
 	}
-	problem := patternProblem(s)
+	problem := ""
 	if s.OverAgents() {
 		problem = agentPatternProblem(s)
+	} else {
+		problem = patternProblem(s)
 	}
 	if problem != "" {
 		return Scope{}, fmt.Errorf("scope %q %s", raw, problem)

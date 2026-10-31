@@ -244,9 +244,9 @@ function AgentList({
  * it matches by name. */
 function agentsHeading(scope: AuthorizationScope): string {
   const names = joinWords(scope.agents.map((a) => agentName(a.id))) || "agents"
-  if (scope.verb === "agents") return `Talk to ${names}`
+  if (scope.verb === "agents") return `Talk to ${names} and read your chats`
   const verb = scope.agents.length === 1 ? "suggests" : "suggest"
-  return `Apply or dismiss changes ${names} ${verb}, with your authority`
+  return `Apply, edit or dismiss changes ${names} ${verb}, with your authority`
 }
 
 function ScopeRow({
@@ -304,14 +304,17 @@ function ScopeRow({
         )}
         {scope.verb === "agents" && (
           <p className="text-xs text-muted-foreground">
-            A chat reaches whatever these agents may do. Its messages are the
-            app’s; the agents work with their own permissions.
+            The app reads every chat with these agents, yours included, answers
+            their questions, and may rename or stop a chat. A chat reaches
+            whatever these agents may do. Its messages are the app’s; the agents
+            work with their own permissions.
           </p>
         )}
         {scope.verb === "decide" && (
           <p className="text-xs text-muted-foreground">
-            A change the app accepts is applied as if you accepted it, and your
-            history shows the decision as the app’s.
+            The app may edit a change before it applies it. A change the app
+            accepts is applied as if you accepted it, and your history shows the
+            decision as the app’s.
           </p>
         )}
         {scope.requested !== scope.scope && (
