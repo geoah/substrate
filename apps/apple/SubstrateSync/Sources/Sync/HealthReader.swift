@@ -365,13 +365,30 @@ struct HealthReader: Sendable {
 
 /// Runs a HealthKit read, answering nil for HealthKit's "no data" error,
 /// which it raises for a type the device has no source of (heart rate on a
-/// phone with no watch) instead of answering empty.
+/// phone with no watch) instead of answering empty, and for a type the owner
+/// was never asked about, which reads as a refused one does: as nothing.
+/// Failing it instead failed every day of a phone that allowed an earlier
+/// build's types, so no day was ever counted sent.
 func noDataIsEmpty<T>(_ read: () async throws -> T) async throws -> T? {
     do {
         return try await read()
-    } catch let error as HKError where error.code == .errorNoData {
+    } catch let error as HKError where HealthReader.readsAsEmpty.contains(error.code) {
         return nil
-    } catch let error as NSError where error.domain == HKErrorDomain && error.code == HKError.Code.errorNoData.rawValue {
+    } catch let error as NSError where error.domain == HKErrorDomain
+        && HealthReader.readsAsEmpty.map(\.rawValue).contains(error.code) {
         return nil
+    }
+}
+
+extension HealthReader {
+    /// The HealthKit errors a read answers as nothing.
+    static let readsAsEmpty: [HKError.Code] = [.errorNoData, .errorAuthorizationNotDetermined]
+
+    /// Whether HealthKit would ask the owner about a type the app reads: a
+    /// type a later build added was never asked about, and reads as nothing
+    /// until it is.
+    static func shouldRequestAccess(_ store: HKHealthStore) async -> Bool {
+        guard isAvailable else { return false }
+        return (try? await store.statusForAuthorizationRequest(toShare: SampleData.shareTypes, read: readTypes)) == .shouldRequest
     }
 }

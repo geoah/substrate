@@ -447,6 +447,12 @@ final class AppModel: ObservableObject {
             health = UserDefaults.standard.bool(forKey: "health.asked") ? "Asked" : "Not asked yet"
         }
         access = [.contacts: contacts, .calendars: calendars, .health: health, .reminders: reminders, .places: places]
+        // Asked once is not asked for every type a later build reads.
+        if health == "Asked" {
+            Task {
+                if await HealthReader.shouldRequestAccess(SyncEngine.shared.health) { access[.health] = "Not asked yet" }
+            }
+        }
     }
 
     func requestAccess(_ source: Source) async {
@@ -695,7 +701,8 @@ final class AppModel: ObservableObject {
         runningSyncs += 1
         syncSources.formUnion(Source.allCases.filter { Settings.enabled($0) && (only?.contains($0) ?? true) })
         for source in Source.allCases where Settings.enabled(source) && (only?.contains(source) ?? true) {
-            if access[source] == "Not asked yet" { await requestAccess(source) }
+            let unasked = source == .health ? await HealthReader.shouldRequestAccess(SyncEngine.shared.health) : false
+            if unasked || access[source] == "Not asked yet" { await requestAccess(source) }
         }
         // Asked for while the owner is looking, which iOS requires, and only
         // for a large sync: a small one ends before the app is suspended, and

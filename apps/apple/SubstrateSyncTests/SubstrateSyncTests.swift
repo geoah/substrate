@@ -195,6 +195,18 @@ final class HealthNoDataTests: XCTestCase {
             XCTFail("an authorization error read as no data")
         } catch {}
     }
+
+    /// A type a later build reads, on a phone that allowed an earlier
+    /// build's: nothing, never a failed read, which left every day unsent.
+    func testATypeNeverAskedAboutReadsAsNothing() async throws {
+        let unasked: Int? = try await noDataIsEmpty { throw HKError(.errorAuthorizationNotDetermined) }
+        XCTAssertNil(unasked)
+        let bridged: Int? = try await noDataIsEmpty {
+            throw NSError(domain: HKErrorDomain, code: HKError.Code.errorAuthorizationNotDetermined.rawValue,
+                          userInfo: [NSLocalizedDescriptionKey: "Authorization not determined"])
+        }
+        XCTAssertNil(bridged)
+    }
 }
 
 final class HealthScheduleTests: XCTestCase {

@@ -183,7 +183,8 @@ struct Client: Sendable {
         request.timeoutInterval = Timeout.upload
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         request.httpBody = body
-        let (data, status) = try await perform(request)
+        // A full spool drains as the server files: minutes, not seconds.
+        let (data, status) = try await perform(request, retries: 8, longest: 30)
         // The webhook's own key was refused, not the sign-in: the session
         // stands, and Set Up arms the webhook again.
         if status == 401 || status == 403 { throw WebhookRefused(text: ServerError(status: status, data: data).text) }
@@ -271,17 +272,17 @@ struct Client: Sendable {
 
     /// Sends a request, waiting out a busy server: the webhook door answers
     /// 503 with more than eight deliveries in flight across every sender.
-    private func perform(_ request: URLRequest, retries: Int = 3) async throws -> (Data, Int) {
+    private func perform(_ request: URLRequest, retries: Int = 3, longest: Double = 10) async throws -> (Data, Int) {
         var attempt = 0
         while true {
             let (data, response) = try await Self.session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            // A busy server says when to come back; three tries, then the
-            // refusal stands.
+            // A busy server says when to come back; `retries` tries, then
+            // the refusal stands.
             if status == 503 || status == 429, attempt < retries {
                 attempt += 1
                 let after = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 2
-                try await Task.sleep(for: .seconds(min(after, 10)))
+                try await Task.sleep(for: .seconds(min(after, longest)))
                 continue
             }
             return (data, status)
