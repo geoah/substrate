@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-16
 decision-makers: George Antoniadis
+amended-by: 0194
 ---
 
 # 0088. A single-record read carries its inbound mapping-owned links

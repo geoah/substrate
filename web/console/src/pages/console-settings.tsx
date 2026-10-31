@@ -1,8 +1,8 @@
 /** Settings (`/settings`): how the console looks (saved on the repository's
  * console preference record, so every browser signed in looks the same),
  * what every agent may spend in a day, the account, where you are signed in,
- * a download of everything, and for developers the system kinds, the raw
- * tokens and what this server says about itself. */
+ * the apps you approved, a download of everything, and for developers the
+ * system kinds, the raw tokens and what this server says about itself. */
 
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -39,7 +39,7 @@ import {
 } from "@/lib/console-preferences"
 import { changeServer, checkForUpdates, nativeShell } from "@/lib/shell"
 import { AccountRows } from "@/pages/account"
-import { ApiTokens, SignedInRows } from "@/pages/tokens"
+import { ApiTokens, AppTokenRows, SignedInRows } from "@/pages/tokens"
 
 const RECORD_WIDTHS = [
   { value: "narrow", label: "Narrow", fill: "40%" },
@@ -277,7 +277,7 @@ function DeveloperRows() {
       />
       <SettingRow
         title="API tokens"
-        description="Every signed-in browser and script is a token record. Mint one for a script or a device; each has full access."
+        description="Every signed-in browser and script is a token record with full access to your repository. Mint one for a script or a device. Apps you approved hold narrower tokens, listed under Apps."
         control={
           <Button
             variant="outline"
@@ -335,6 +335,12 @@ export function ConsoleSettingsPage() {
         <ShellServerRow />
         <ShellAppRow />
         <SignedInRows />
+      </SettingsSection>
+      <SettingsSection
+        title="Apps"
+        hint="apps you approved; each reaches only the records you let it"
+      >
+        <AppTokenRows />
       </SettingsSection>
       <SettingsSection title="Your data">
         <DownloadRow />

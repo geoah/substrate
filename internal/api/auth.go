@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -18,10 +20,11 @@ const (
 	ctxKeyRequestID
 )
 
-// actorHeader names the door the caller writes as. A token carries no actor
-// set — it has full access to its repository — so the header is checked
-// against one rule only: the substrate's own writing hands are refused
-// (substrate.ReservedActor, authenticate below).
+// actorHeader names the door the caller writes as. A full-access token
+// carries no actor set, so the header is checked against one rule only: the
+// substrate's own writing hands are refused (substrate.ReservedActor,
+// authenticate below). An app's token ignores it and writes as its derived
+// `app:<host>` actor (appActorOf), or as `api` when it names no client id.
 const actorHeader = "X-Substrate-Actor"
 
 // withRequestAuth binds the request's authenticated write context. The actor
@@ -54,10 +57,11 @@ func bearerSecret(r *http.Request) string {
 	return strings.TrimSpace(h[7:])
 }
 
-// authenticate resolves the bearer token and the acting actor. A token has
-// full access to its repository, so this is the whole check:
-// the hash lookup finds the token record, and the repository holding it is
-// the repository the request runs in.
+// authenticate resolves the bearer token and the acting actor. A token
+// without scopes has full access to its repository, so for it this is the
+// whole check: the hash lookup finds the token record, and the repository
+// holding it is the repository the request runs in. A token an app received
+// gets the scoped dataset instead (decision 0194).
 //
 // The actor is ATTRIBUTION, not authorization: the caller names which door it
 // came through (`X-Substrate-Actor` — the console sends `console`, substratectl sends
@@ -97,21 +101,63 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 	if exp := tok.ExpiresAt; exp != nil && h.now().After(*exp) {
 		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
+	ctx = r.Context()
+	if tok.Scoped() {
+		// An app's token: the dataset it gets is held to its scopes, the
+		// engine's owner-only gates see the mark, and its writes are its own
+		// derived `app:<host>` actor whatever actor it names, since an actor
+		// resolves a tier and a manager hand and an app picks neither. A
+		// grant that does not parse fails closed: read as absent it would be
+		// full access.
+		grant, gerr := scope.NewGrant(tok.Scopes)
+		if gerr != nil {
+			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
+		}
+		ctx = substrate.WithScopes(ctx, tok.Scopes)
+		actor := appActorOf(tok)
+		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), 0, "", "", nil
+	}
 	actor := substrate.ActorAPI
 	if want := strings.TrimSpace(r.Header.Get(actorHeader)); want != "" {
 		if substrate.ReservedActor(substrate.Actor(want)) {
 			return nil, http.StatusForbidden, codeForbidden,
 				"actor " + want + " is reserved: the " + substrate.HostActorNamespace +
 					" namespace, the " + substrate.BundleActorPrefix + ", " +
-					substrate.FunctionActorPrefix + " and " + substrate.AgentActorPrefix +
-					" paths, and the retired connector: spelling, are the substrate's own writing hands", nil
+					substrate.FunctionActorPrefix + ", " + substrate.AgentActorPrefix + " and " +
+					substrate.AppActorPrefix + " paths, and the retired connector: spelling, are names the substrate derives", nil
 		}
 		actor = substrate.Actor(want)
 	}
-	return withRequestAuth(r.Context(), ds, tok, actor), 0, "", "", nil
+	return withRequestAuth(ctx, ds, tok, actor), 0, "", "", nil
 }
 
+// appActorOf is the actor an app's token writes under: `app:` and the host of
+// the client id the owner approved. A scoped token with no client id (none
+// the authorization flow mints) writes as `api`.
+func appActorOf(tok substrate.TokenInfo) substrate.Actor {
+	u, err := url.Parse(tok.ClientID)
+	if err != nil || u.Host == "" {
+		return substrate.ActorAPI
+	}
+	return substrate.AppActor(u.Host)
+}
+
+// requireAuth admits a full-access token and refuses an app's: every route
+// behind it is the owner's unless it is registered behind
+// requireAuthAllowingApps instead, so a route added later is the owner's by
+// default (decision 0194).
 func (h *handler) requireAuth(next http.Handler) http.Handler {
+	return h.bearer(next, false)
+}
+
+// requireAuthAllowingApps admits an app's token too, for the scoped surface
+// alone: the records route, the record path and the unit reads. Each is held
+// to the token's scopes by the scopedDataset the bearer check hands it.
+func (h *handler) requireAuthAllowingApps(next http.Handler) http.Handler {
+	return h.bearer(next, true)
+}
+
+func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, status, code, msg, cause := h.authenticate(r)
 		if ctx == nil {
@@ -121,7 +167,23 @@ func (h *handler) requireAuth(next http.Handler) http.Handler {
 				writeUnavailableCause(w, r, cause, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
 				return
 			}
+			if status == http.StatusUnauthorized {
+				// RFC 9728 §5.1: a client that holds no token, or a dead one,
+				// learns where to get one from the refusal itself.
+				meta := `resource_metadata="` + h.issuerOf(r) + prMetadataPath + `"`
+				challenge := "Bearer " + meta
+				if bearerSecret(r) != "" {
+					challenge = `Bearer error="invalid_token", ` + meta
+				}
+				w.Header().Set("WWW-Authenticate", challenge)
+			}
 			writeError(w, status, code, msg)
+			return
+		}
+		if _, scoped := substrate.ScopesFrom(ctx); scoped && !apps {
+			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
+			writeError(w, http.StatusForbidden, codeForbidden,
+				"an app's token does not reach "+r.Method+" "+r.URL.Path+": it is the owner's alone")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))

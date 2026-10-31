@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/substrate"
@@ -97,6 +98,14 @@ type Config struct {
 	// flushing what it has (its client resumes from its cursor), an export
 	// cut short. Nil never closes.
 	Draining <-chan struct{}
+	// ClientDocuments reads an app's client ID metadata document for the
+	// authorization flow (decision 0194). Nil is the real fetcher, which
+	// dials public addresses alone; a test supplies documents from memory.
+	ClientDocuments clientDocuments
+	// PublicURL is this server's origin as apps reach it
+	// (SUBSTRATE_PUBLIC_URL): the issuer of the authorization flow whatever
+	// Host a request names. Empty derives the issuer from the Host.
+	PublicURL string
 }
 
 type handler struct {
@@ -108,6 +117,14 @@ type handler struct {
 	catalog      *catalog.Catalog
 	consoleURL   string
 	draining     <-chan struct{}
+	// The authorization flow's state, all of it in memory: the parked
+	// requests and codes, the document fetcher, and the per-address pace on
+	// the three bearer-less endpoints, kept apart from the door's limiter so
+	// a flood here costs no owner a login.
+	authz     *authorize.Store
+	fetcher   clientDocuments
+	parkRate  *rateLimiter
+	publicURL string
 }
 
 // New builds the router.
@@ -129,6 +146,13 @@ func New(cfg Config) http.Handler {
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		draining:     cfg.Draining,
+		authz:        authorize.NewStore(now),
+		fetcher:      cfg.ClientDocuments,
+		parkRate:     newRateLimiter(interval, now),
+		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
+	}
+	if h.fetcher == nil {
+		h.fetcher = authorize.NewFetcher(now)
 	}
 
 	r := chi.NewRouter()
@@ -167,6 +191,19 @@ func New(cfg Config) http.Handler {
 	// lets a caller ask "is this domain a substrate at all" before it knows
 	// anything else.
 	r.Get("/.well-known/substrate/server.json", h.getDiscovery)
+	// App authorization (decision 0194), beside the door: the two metadata
+	// documents a standard OAuth client reads (RFC 8414, RFC 9728), the
+	// authorization endpoint the browser is sent to, and the two endpoints
+	// the app itself calls. None takes a bearer; every answer carries a
+	// credential or the way to one, so none may be stored.
+	r.Get(asMetadataPath, h.getAuthorizationServerMetadata)
+	r.Get(prMetadataPath, h.getProtectedResourceMetadata)
+	r.Group(func(r chi.Router) {
+		r.Use(noStore)
+		r.Get("/oauth/authorize", h.getAuthorize)
+		r.Post("/oauth/token", h.postOAuthToken)
+		r.Post("/oauth/revoke", h.postOAuthRevoke)
+	})
 
 	// The door, BESIDE the API and outside every version prefix. No repository
 	// segment: registration has none yet, and everything after it takes one
@@ -274,7 +311,42 @@ func (h *handler) mountResources(r chi.Router) {
 		})
 
 		r.Group(func(r chi.Router) {
+			r.Use(h.requireAuthAllowingApps)
+			// THE SCOPED SURFACE (decision 0194): the only routes an app's
+			// token reaches, each held to its scopes by the scopedDataset the
+			// bearer check hands it. Every other route sits behind
+			// requireAuth, which refuses that token before its handler runs.
+			//
+			// THE RECORDS ROUTE: every list, the ranked read and the tail, one
+			// grammar (records.go); and the body-addressed create.
+			r.Get(recordsRoute, h.getRecords)
+			r.Post(recordsRoute, h.postRecords)
+			// The repository's unit graph, and one conversion through it
+			// (units.go).
+			r.Get(unitsRoute, h.getUnits)
+			r.Get(unitsConvertRoute, h.getUnitsConvert)
+
+			// THE RECORD PATH. It IS the record's reference: the kind's three
+			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
+			// the id. Nothing binds a shorter path: there is no collection
+			// route (every list is /records), so an unknown word answers the
+			// router's JSON 404 and a wrong method on a reserved word its JSON
+			// 405, never the console's index.html.
+			r.Get("/{a1}/{a2}/{a3}/{a4}", h.getResource)
+			r.Put("/{a1}/{a2}/{a3}/{a4}", h.putResource)
+			r.Patch("/{a1}/{a2}/{a3}/{a4}", h.patchResource)
+			r.Delete("/{a1}/{a2}/{a3}/{a4}", h.deleteResource)
+		})
+
+		r.Group(func(r chi.Router) {
 			r.Use(h.requireAuth)
+			// The approval page's three calls: an app's token never
+			// approves scopes, its own or another app's (authorize.go).
+			// An approval's answer carries a code, so none of the three may be
+			// stored.
+			r.With(noStore).Get("/authorizations/{request}", h.getAuthorization)
+			r.With(noStore).Post("/authorizations/{request}", h.postAuthorization)
+			r.With(noStore).Delete("/authorizations/{request}", h.deleteAuthorization)
 
 			// NON-RECORD ENDPOINTS, at the version root. Each is repository-wide
 			// and names no kind, so it leaves the kind namespace entirely: a
@@ -283,11 +355,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// without a separator, and it keeps the
 			// `substrate.reamde.dev/core/recordmerge` and `/recordsplit`
 			// kinds reachable while merge and split sit here (#202).
-			//
-			// THE RECORDS ROUTE: every list, the ranked read and the tail, one
-			// grammar (records.go); and the body-addressed create.
-			r.Get(recordsRoute, h.getRecords)
-			r.Post(recordsRoute, h.postRecords)
+
 			// The batch vocabulary verb (a declaration is a record): every
 			// document admitted or none, one transaction, activation on commit.
 			// It stays distinct because a batch of declarations is not record
@@ -340,10 +408,6 @@ func (h *handler) mountResources(r chi.Router) {
 			// Cross-kind, so at the version root like /records: one row per
 			// record of any kind binding the core `sync` trait.
 			r.Get("/sync/status", h.getSyncStatus)
-			// The repository's unit graph, and one conversion through it
-			// (units.go).
-			r.Get(unitsRoute, h.getUnits)
-			r.Get(unitsConvertRoute, h.getUnitsConvert)
 			// Bundle status is computed; enable/disable, uninstall and purge are
 			// runtime STATE the substrate owns, reached by a PATCH of the bundle
 			// record (patchBundleLifecycle) rather than verbs. `bind` resolves
@@ -368,17 +432,6 @@ func (h *handler) mountResources(r chi.Router) {
 			// below never shadows them.
 			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
 			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
-
-			// THE RECORD PATH. It IS the record's reference: the kind's three
-			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
-			// the id. Nothing binds a shorter path: there is no collection
-			// route (every list is /records), so an unknown word answers the
-			// router's JSON 404 and a wrong method on a reserved word its JSON
-			// 405, never the console's index.html.
-			r.Get("/{a1}/{a2}/{a3}/{a4}", h.getResource)
-			r.Put("/{a1}/{a2}/{a3}/{a4}", h.putResource)
-			r.Patch("/{a1}/{a2}/{a3}/{a4}", h.patchResource)
-			r.Delete("/{a1}/{a2}/{a3}/{a4}", h.deleteResource)
 		})
 	}
 }

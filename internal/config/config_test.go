@@ -338,6 +338,14 @@ func TestValidateRefusesAPortLogLevelOrURLTheServerCannotUse(t *testing.T) {
 		refused["SUBSTRATE_CONSOLE_URL"] = append(refused["SUBSTRATE_CONSOLE_URL"], func(c *Config) { c.ConsoleURL = raw })
 		refused["SUBSTRATE_OAUTH_CALLBACK_URL"] = append(refused["SUBSTRATE_OAUTH_CALLBACK_URL"], func(c *Config) { c.OAuthCallbackURL = raw })
 	}
+	// The issuer is an origin: https, or http on loopback alone, and nothing
+	// after the host.
+	for _, raw := range append(badURLs, "http://substrate.example.com", "http://10.0.0.7:8080",
+		"https://substrate.example.com/console", "https://substrate.example.com?x=1", "https://user@substrate.example.com",
+		"https://substrate.example.com?", "https://substrate.example.com#", "https://substrate.example.com:",
+		"HTTPS://substrate.example.com", "https://Substrate.Example.com") {
+		refused["SUBSTRATE_PUBLIC_URL"] = append(refused["SUBSTRATE_PUBLIC_URL"], func(c *Config) { c.PublicURL = raw })
+	}
 	for name, edits := range refused {
 		for _, edit := range edits {
 			c := base
@@ -357,6 +365,10 @@ func TestValidateRefusesAPortLogLevelOrURLTheServerCannotUse(t *testing.T) {
 		func(c *Config) { c.ConsoleURL = "https://substrate.example.com/console/" },
 		func(c *Config) { c.OAuthCallbackURL = "https://substrate.example.com/api/v1/oauth/callback" },
 		func(c *Config) { c.OAuthCallbackURL = "HTTP://127.0.0.1:8080/api/v1/oauth/callback" },
+		func(c *Config) { c.PublicURL = "https://substrate.example.com" },
+		func(c *Config) { c.PublicURL = "https://substrate.example.com/" },
+		func(c *Config) { c.PublicURL = "http://127.0.0.1:8080" },
+		func(c *Config) { c.PublicURL = "http://localhost:8080" },
 	}
 	for _, edit := range admitted {
 		c := base

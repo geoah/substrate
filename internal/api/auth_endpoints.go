@@ -332,7 +332,7 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 		req.Label = "token"
 	}
 	ctx := r.Context()
-	info, secret, err := DatasetFrom(ctx).MintToken(ctx, req.Label, req.ExpiresAt)
+	info, secret, err := DatasetFrom(ctx).MintToken(ctx, substrate.MintTokenInput{Label: req.Label, ExpiresAt: req.ExpiresAt})
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return

@@ -81,7 +81,9 @@ func (ds *dataset) ownerFirst(ctx context.Context, actor substrate.Actor, intern
 	if foreground, _ := ctx.Value(foregroundWritesKey{}).(bool); foreground {
 		return true
 	}
-	if internal || substrate.ReservedActor(actor) {
+	// An app's write is a request somebody waits on, like the owner's own,
+	// though its actor is reserved.
+	if internal || (substrate.ReservedActor(actor) && !substrate.IsAppActor(actor)) {
 		return false
 	}
 	return ds.actorTier(actor) == substrate.TierOwner

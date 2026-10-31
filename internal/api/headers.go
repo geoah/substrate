@@ -61,7 +61,7 @@ const corsMaxAge = "86400"
 
 // corsExposed are the response headers a cross-origin script may read beyond
 // the CORS-safelisted ones: the ones this API sets for a client to act on.
-const corsExposed = "ETag, Location, Retry-After, Content-Disposition, " + requestIDHeader
+const corsExposed = "ETag, Location, Retry-After, Content-Disposition, WWW-Authenticate, " + requestIDHeader
 
 // cors lets a script on any origin call this server. The wildcard is safe
 // only because nothing here authenticates by ambient credential: every
@@ -77,7 +77,9 @@ const corsExposed = "ETag, Location, Retry-After, Content-Disposition, " + reque
 // a change here.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Origin") == "" {
+		// The authorization endpoint is a page the browser navigates to,
+		// never a script's call, and RFC 9700 §2.6 keeps CORS off it.
+		if r.Header.Get("Origin") == "" || r.URL.Path == "/oauth/authorize" {
 			next.ServeHTTP(w, r)
 			return
 		}

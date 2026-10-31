@@ -561,7 +561,7 @@ func TestAuthenticationWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, secret, err := ds.MintToken(ctx, "scripted", nil)
+	_, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "scripted"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestTokenExpiryIsServerEnforced(t *testing.T) {
 	svc, ds := newDataset(t)
 
 	future := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
-	info, secret, err := ds.MintToken(ctx, "scripted", &future)
+	info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "scripted", ExpiresAt: &future})
 	if err != nil {
 		t.Fatalf("mint with an expiry: %v", err)
 	}
@@ -729,7 +729,7 @@ func TestTokenExpiryIsServerEnforced(t *testing.T) {
 	}
 
 	past := time.Now().Add(-time.Hour).UTC()
-	_, expiredSecret, err := ds.MintToken(ctx, "stale", &past)
+	_, expiredSecret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "stale", ExpiresAt: &past})
 	if err != nil {
 		t.Fatalf("mint expired token: %v", err)
 	}

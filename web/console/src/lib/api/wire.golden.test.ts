@@ -58,6 +58,13 @@ import type {
   AggregateRow,
   AggregateSources,
   AggregateValue,
+  AuthorizationAnswer,
+  AuthorizationApp,
+  AuthorizationApproval,
+  AuthorizationKind,
+  AuthorizationRedirectTo,
+  AuthorizationRequest,
+  AuthorizationScope,
   BlobInfo,
   BundleClosure,
   BundlePurged,
@@ -551,7 +558,60 @@ const tokenInfo: Shape<TokenInfo> = {
   label: true,
   createdAt: true,
   expiresAt: false,
+  scopes: false,
+  clientId: false,
+  clientName: false,
 }
+
+/** An app's authorization request as the approval page reads it, and the
+ * approval and answer it trades (decision 0194). */
+const authorizationRequest: Shape<AuthorizationRequest> = {
+  id: true,
+  app: true,
+  redirect: true,
+  repository: true,
+  scopes: true,
+  lifetimeDays: true,
+  defaultLifetimeDays: true,
+  expiresAt: true,
+}
+
+const authorizationApp: Shape<AuthorizationApp> = {
+  clientId: true,
+  host: true,
+  local: true,
+  name: false,
+  uri: false,
+  uriHostDiffers: false,
+  actor: true,
+}
+
+const authorizationRedirectTo: Shape<AuthorizationRedirectTo> = {
+  uri: true,
+  host: true,
+  loopback: false,
+}
+
+const authorizationScope: Shape<AuthorizationScope> = {
+  scope: true,
+  requested: true,
+  write: true,
+  pattern: true,
+  glob: true,
+  kinds: true,
+}
+
+const authorizationKind: Shape<AuthorizationKind> = {
+  identity: true,
+  label: false,
+}
+
+const authorizationApproval: Shape<AuthorizationApproval> = {
+  scopes: true,
+  lifetimeDays: true,
+}
+
+const authorizationAnswer: Shape<AuthorizationAnswer> = { redirect: true }
 
 const mintedToken: Shape<MintedToken> = {
   token: true,
@@ -957,6 +1017,13 @@ const mirrors: Record<string, Record<string, boolean>> = {
   OperationalList: operationalList,
   OccurrenceProblem: occurrenceProblem,
   TokenInfo: tokenInfo,
+  AuthorizationRequest: authorizationRequest,
+  AuthorizationApp: authorizationApp,
+  AuthorizationRedirectTo: authorizationRedirectTo,
+  AuthorizationScope: authorizationScope,
+  AuthorizationKind: authorizationKind,
+  AuthorizationApproval: authorizationApproval,
+  AuthorizationAnswer: authorizationAnswer,
   MintedToken: mintedToken,
   TOTPEnrollment: totpEnrollment,
   RegisterInput: registerInput,

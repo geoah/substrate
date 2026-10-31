@@ -16,6 +16,13 @@ describe("actorIdentity", () => {
     })
   })
 
+  it("names an app by its host, never as You", () => {
+    const id = actorIdentity("app:notes.example.org")
+    expect(id.cls).toBe("app")
+    expect(id.name).toBe("notes.example.org")
+    expect(actorIdentity("app:").cls).toBe("you")
+  })
+
   it("names the engine", () => {
     expect(actorIdentity("substrate")).toMatchObject({
       cls: "engine",

@@ -7,24 +7,25 @@ data:
   package: core
   description: >-
     One bearer credential: a label, the SHA-256 of a secret shown once at
-    mint, and an optional expiry. A token has full access to its repository
-    — sessions are these records, login mints one, and revoking one is an
-    ordinary record delete.
-  version: 7
+    mint, an optional expiry and, on a token an app received, the scopes the
+    owner approved and the app's client id. A token without scopes has full
+    access to its repository; sessions are these records, login mints one,
+    and revoking one is an ordinary record delete.
+  version: 8
   purpose: internal
   names:
     singular: token
-  # A token has FULL ACCESS to its repository: no scopes, no actor set, no
-  # roles. What it carries is what it is — a label, the SHA-256
-  # of a high-entropy secret shown once at mint, and an optional expiry.
-  # Sessions ARE these records: login mints one, with no expiresAt. A later
-  # `scopes` property is optional and its absence keeps full access
-  # (decision record 0143).
+  # A token WITHOUT `scopes` has full access to its repository (decision
+  # record 0143), which is every session, script and device token. A token an
+  # app received through the authorization flow carries the scopes the owner
+  # approved on the approval page, and the API and the engine hold it to them
+  # (decision record 0194). The secret itself is never stored: the record
+  # holds its SHA-256.
   #
   # Minting is the auth endpoints' (attributed to the substrate) and the
-  # generic surface refuses writes to this kind — but REVOKING is an ordinary
-  # record delete, so the tokens page, substratectl and the DELETE endpoint are all
-  # the same write.
+  # generic surface refuses writes to this kind, but REVOKING is an ordinary
+  # record delete, so the tokens page, substratectl and the DELETE endpoint
+  # are all the same write.
   displayTemplate: "{label}"
   properties:
     label:
@@ -39,3 +40,15 @@ data:
     expiresAt:
       type: datetime
       description: when the token stops authenticating; absent = until deleted
+    scopes:
+      type: string
+      repeated: true
+      description: what an app's token reaches, as `read:<pattern>` and `write:<pattern>`
+        entries over kind references; absent = full access, never empty
+    clientId:
+      type: url
+      description: the client id URL of the app the token was minted for
+    clientName:
+      type: string
+      description: the name the app claimed for itself when the owner approved
+        it

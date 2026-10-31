@@ -68,8 +68,9 @@ unless you ask it not to.
   checksum together
   ([the checksum](docs/changelog.md#the-checksum-and-the-segment-files)).
   Operator commands run on the box, over the DSN, by design.
-- **A token doing what a token may.** A token has full access to its own
-  repository: there are no scopes and no roles, every authenticated request
+- **A token doing what a token may.** A token without scopes has full access
+  to its own repository (an app's token reaches only the scopes its owner
+  approved, [apps](docs/apps.md)): there are no roles, every authenticated request
   presents the token and neither factor, `POST /tokens` mints another token from
   an existing one with no password and no code (the authenticated twin of
   login), and function bodies a user installs run with the user's data in reach.

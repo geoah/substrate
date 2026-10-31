@@ -3116,6 +3116,29 @@ data:
 	if err == nil || !strings.Contains(err.Error(), "minted at dispatch") {
 		t.Fatalf("a declared function actor must refuse: %v", err)
 	}
+
+	// An app's actor is derived from the token the owner approved: a package
+	// that declared one could move the tier its writes hold at.
+	_, err = vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
+		`kind: substrate.reamde.dev/core/package
+metadata:
+  id: ` + authority + `
+data:
+  authority: fn.example.com
+  package: fn
+  version: 1
+---
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: app:notes.example.org
+data:
+  authority: fn.example.com
+  package: fn
+  tier: machine
+`)}})
+	if err == nil || !strings.Contains(err.Error(), "never declared") {
+		t.Fatalf("a declared app actor must refuse: %v", err)
+	}
 }
 
 // actorDeclaration renders one package declaring one actor at one tier — the

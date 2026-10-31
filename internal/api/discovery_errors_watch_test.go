@@ -31,6 +31,7 @@ var wantFeatureSurfaces = map[string][]string{
 	"units":      {surfaceREST},
 	"embeddings": {surfaceREST},
 	"agents":     {surfaceREST},
+	"apps":       {surfaceREST},
 }
 
 func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
@@ -207,6 +208,7 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 		"units":                 substrate.StabilityAlpha,
 		"embeddings":            substrate.StabilityAlpha,
 		substrate.FeatureAgents: substrate.AgentStability,
+		"apps":                  substrate.StabilityAlpha,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("features = %+v, want %d entries", got, len(want))

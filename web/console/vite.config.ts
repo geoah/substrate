@@ -55,6 +55,10 @@ export default defineConfig({
       "/api": proxyTarget,
       "/healthz": proxyTarget,
       "/.well-known": proxyTarget,
+      // App authorization's endpoints (decision 0194): the browser is sent
+      // to /oauth/authorize and the app calls /oauth/token; neither is a
+      // console page, while /authorize/{request} is.
+      "/oauth": proxyTarget,
       "/login": authTarget,
       "/register": authTarget,
       "/password": authTarget,

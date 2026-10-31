@@ -56,6 +56,7 @@ API call that completes a task.
 
 - [The API](api.md): the records route and the record path, filters, mutations, search, errors
 - [Users, tokens, and actors](auth.md)
+- [Authorizing apps](apps.md): how an app gets a token limited to the kinds the owner approves, with no registration
 - [The changelog and watch](changelog.md)
 
 ## Bundles

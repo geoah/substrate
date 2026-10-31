@@ -67,8 +67,8 @@ func MintCredentialKey() string {
 // to the same user shares one Session by pointer, so a login through a
 // subtest's copy is seen by every other copy.
 type Session struct {
-	// Token is the bearer secret of the user's current token. A token has
-	// full access to its repository, so there is nothing else to hold.
+	// Token is the bearer secret of the user's current token, a full-access
+	// one, so there is nothing else to hold.
 	Token string
 	// Repository is the repository the user owns and logs in with: its
 	// authority, as registration returned it, or as the option named it when

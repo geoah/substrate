@@ -956,10 +956,20 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				accepted = append(accepted, stamp)
 			}
 			switch tr.OnEnter {
-			case onEnterApplyDiff:
-				pendingDiff = true
-			case onEnterApplyMerge:
-				pendingMerge = true
+			case onEnterApplyDiff, onEnterApplyMerge:
+				// The diff or the merge names its own target, which no scope
+				// bounds: an app's token choosing both the target and the
+				// change is not a write its scopes cover, whatever kind
+				// declares the transition (decision 0194).
+				if t.scoped && !t.internal {
+					return nil, fmt.Errorf("%w: an app's token does not move %s into %q, which applies a change to another record",
+						substrate.ErrForbidden, name, target)
+				}
+				if tr.OnEnter == onEnterApplyDiff {
+					pendingDiff = true
+				} else {
+					pendingMerge = true
+				}
 			}
 			if tr.Notifies != "" {
 				notify = &resolutionNote{prop: tr.Notifies, machine: name, state: target}
@@ -1587,18 +1597,39 @@ func hotColumnOf(row *erow, name string) *time.Time {
 }
 
 // checkBundleOwnerGate refuses an EXTERNAL create/resurrect of a bundle's
-// config or account record by a non-owner actor. Internal
-// writes (facility teardown, purge, mirrors) bypass; patches are governed by
-// per-property ownership below, not this coarse gate.
+// config or account record by a non-owner actor, and every write of one by an
+// app's token. Internal writes (facility teardown, purge, mirrors) bypass;
+// the owner's and installed code's patches are governed by per-property
+// ownership below, not this coarse gate.
 func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
-	if t.internal || !creating || !t.isBundleOwnerGated(ty) {
+	if t.internal || !t.isBundleOwnerGated(ty) {
 		return nil
 	}
-	if t.tier != substrate.TierOwner {
+	// An app's token writes none of them, a patch included: their owner
+	// properties are the connection's settings, which the owner alone
+	// changes.
+	if t.scoped {
+		return fmt.Errorf("%w: an app's token does not write a %s: connections are owner-managed",
+			substrate.ErrForbidden, ty.Name)
+	}
+	if !creating {
+		return nil
+	}
+	if !t.ownerHand() {
 		return fmt.Errorf("%w: only the owner may create a %s — connections are owner-managed",
 			substrate.ErrForbidden, ty.Name)
 	}
 	return nil
+}
+
+// ownerHand reports whether this write is the owner's own: an owner-tier
+// actor with no app's token behind it. An app's token writes the kinds its
+// scopes reach at the owner tier, so property ownership treats it as the
+// owner, but the actions only the owner takes (revoking a token, creating or
+// deleting an account or a bundle input, adjusting a change request) refuse
+// it (decision 0194).
+func (t *txn) ownerHand() bool {
+	return t.tier == substrate.TierOwner && !t.scoped
 }
 
 // isBundleOwnerGated reports whether a type is a bundle input's kind or an
@@ -1680,7 +1711,7 @@ func (t *txn) mayWriteProp(writer string, tier substrate.Tier) bool {
 	case vocabulary.WriterConnector:
 		return tier == substrate.TierBundle
 	case vocabulary.WriterOwner:
-		return tier == substrate.TierOwner
+		return tier == substrate.TierOwner && !t.scoped
 	}
 	return true
 }
@@ -2012,7 +2043,7 @@ func (t *txn) admitAdjustedDiff(sp *applySpec) (bool, error) {
 		return false, fmt.Errorf("%w: adjustedDiff is written only with the accept: the same write moves decision from proposed to accepted",
 			substrate.ErrValidation)
 	}
-	if t.tier != substrate.TierOwner || t.policyDecision {
+	if !t.ownerHand() || t.policyDecision {
 		return false, fmt.Errorf("%w: only the owner adjusts a change request; installed code and the policy judge decide what was proposed",
 			substrate.ErrForbidden)
 	}
@@ -2433,6 +2464,9 @@ func (t *txn) setEffectEmit(emit []string) {
 // or delete. An bundle actor with no ceiling carried (a generic-API write
 // under a function/agent actor) is refused outright: fail closed.
 func (t *txn) authorizeRequestOp(op, targetKind string) error {
+	if t.scoped && !t.internal {
+		return fmt.Errorf("%w: an app's token does not accept a change request", substrate.ErrForbidden)
+	}
 	if t.tier != substrate.TierBundle {
 		return nil
 	}
@@ -2903,7 +2937,11 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	// the token kind in `permissions.writes`, and this holds a declaration that
 	// predates that refusal, and every other bundle-tier hand (a policy judge's
 	// accept, the agent write built-in), to the same answer.
-	if !t.internal && ty.Identity == kindToken && t.tier != substrate.TierOwner {
+	if !t.internal && ty.Identity == kindToken && !t.ownerHand() {
+		if t.scoped {
+			return nil, fmt.Errorf("%w: only the owner may revoke a %s: an app's token revokes itself at /oauth/revoke",
+				substrate.ErrForbidden, ty.Identity)
+		}
 		return nil, fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
 			substrate.ErrForbidden, ty.Identity, t.actor, t.tier)
 	}
@@ -2915,7 +2953,7 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	// External delete of a bundle's config/account record is owner-only: the
 	// facility's finalizer teardown and purge run internally and bypass; a
 	// non-owner API actor may not tear down a connection.
-	if !t.internal && t.isBundleOwnerGated(ty) && t.tier != substrate.TierOwner {
+	if !t.internal && t.isBundleOwnerGated(ty) && !t.ownerHand() {
 		return nil, fmt.Errorf("%w: only the owner may delete a %s — connections are owner-managed",
 			substrate.ErrForbidden, ty.Name)
 	}
