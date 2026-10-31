@@ -30,6 +30,9 @@ import (
 type scopedDataset struct {
 	inner substrate.Dataset
 	grant scope.Grant
+	// actor is the app's own derived actor, `app:<host>`: every write goes
+	// out under it whatever actor the handler passes.
+	actor substrate.Actor
 
 	// The registry snapshot, read once per request (a scopedDataset lives for
 	// one request), so a kind's purpose is known without a lookup per record.
@@ -40,8 +43,8 @@ type scopedDataset struct {
 
 var _ substrate.Dataset = (*scopedDataset)(nil)
 
-func newScopedDataset(inner substrate.Dataset, grant scope.Grant) *scopedDataset {
-	return &scopedDataset{inner: inner, grant: grant}
+func newScopedDataset(inner substrate.Dataset, grant scope.Grant, actor substrate.Actor) *scopedDataset {
+	return &scopedDataset{inner: inner, grant: grant, actor: actor}
 }
 
 // errScope is the refusal of everything outside the scoped surface.
@@ -565,7 +568,7 @@ func (s *scopedDataset) Put(ctx context.Context, _ substrate.Actor, in substrate
 	if err := s.checkReferenceValues(ctx, in.Kind, in.Properties); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Put(ctx, substrate.ActorAPI, in)
+	rec, err := s.inner.Put(ctx, s.actor, in)
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +582,7 @@ func (s *scopedDataset) Patch(ctx context.Context, _ substrate.Actor, typ, id st
 	if err := s.checkReferenceValues(ctx, typ, in.Properties); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Patch(ctx, substrate.ActorAPI, typ, id, in)
+	rec, err := s.inner.Patch(ctx, s.actor, typ, id, in)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +593,7 @@ func (s *scopedDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id s
 	if err := s.requireWrite(ctx, typ); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Delete(ctx, substrate.ActorAPI, typ, id, in)
+	rec, err := s.inner.Delete(ctx, s.actor, typ, id, in)
 	if err != nil {
 		return nil, err
 	}

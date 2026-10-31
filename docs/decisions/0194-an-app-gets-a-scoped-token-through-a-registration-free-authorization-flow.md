@@ -61,6 +61,11 @@ The rules this binds:
   records route, the record path and the unit reads admit an app's token),
   a dataset wrapper that implements every method explicitly, and the
   engine's owner-only gates, which read the scope mark on the context.
+- **An app writes as its own actor**, `app:<host>`, derived from the client
+  id the owner approved, reserved so no request claims it and never
+  declared. It holds properties at the owner tier, as any client of the
+  owner's does, and the owner-only actions stay shut through the scope mark,
+  not the tier.
 - **The flow's state lives in memory**: parked requests and codes are
   forgotten by a restart, and the token itself is a record like any other.
 
@@ -82,7 +87,11 @@ The rules this binds:
 - Bad, because a binary from before this change reads an app's token as a
   full-access one: a rollback past it needs every app token revoked first.
 - Bad, because there are no refresh tokens: an app's access ends with its
-  lifetime (7, 30 or 90 days) and the owner approves again.
+  lifetime (7, 30 or 90 days) and the owner approves again, or never ends
+  when the owner picked "until you revoke it", which leaves a leaked token
+  live until the owner revokes it.
+- Bad, because two apps on one host share an actor; the principal, the
+  token, is what tells them apart.
 - Bad, because the scoped surface is narrow: the change feed, aggregate and
   window reads, blobs, functions and agents stay the owner's until each gets
   a design of its own.

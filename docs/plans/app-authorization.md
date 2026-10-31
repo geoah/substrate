@@ -156,10 +156,10 @@ server fetches the app's document, and shows:
 - the repository the token will open;
 - each requested scope as a sentence, with a checkbox, and the kinds it
   reaches today; a glob says that it also covers kinds added later;
-- what an approved write also does: a write runs the owner's own
-  automation (triggers, mappings, a reference's cascade) and indexing, as
-  any write does;
-- the lifetime: 7 days, 30 days (the default) or 90 days;
+- when a write is asked for, the actor its changes are recorded as
+  (`app:<host>`) and what they set off: the owner's triggers and mappings
+  respond to them like any other change;
+- the lifetime: 7 days, 30 days (the default), 90 days or until revoked;
 - Approve and Deny.
 
 ### The lifecycle
@@ -322,8 +322,12 @@ retrofit 0143 wrote down, so no existing token changes. The mint refuses an
 empty list and anything that is not a canonical, resolved scope, and
 `Authenticate` refuses a token whose stored `scopes` does not parse, so a
 damaged grant never reads as full access. A scoped token writes as the
-actor `api` whatever `X-Substrate-Actor` says; the principal on every
-changelog entry is the token, and the token names the app.
+app's own actor, `app:<host>`, whatever `X-Substrate-Actor` says: the
+`app:` prefix is reserved like `function:` and `agent:`, a package may not
+declare one, and the engine resolves it to the owner tier ahead of the
+registry, so it holds a property as the owner's own client does while the
+owner-only actions stay shut through the scope mark. The principal on every
+changelog entry is the token, which names the exact app.
 
 ## Console
 
@@ -367,7 +371,8 @@ Resolved here:
   wrapper.
 - Metadata, errors, CORS, `WWW-Authenticate` and revocation specified.
 - Lifetimes shortened and capped at 90 days; a scoped token's actor pinned to
-  `api`.
+  `api`. (The owner later asked for "until revoked" as an option and for the
+  app's own actor; see the last round.)
 
 Round 2 (Codex) moved the binding checks before a code is spent, made `http`
 an issuer only on a loopback host with `SUBSTRATE_PUBLIC_URL` for a fixed
@@ -396,3 +401,9 @@ ranges are checked through NAT64 and 6to4; one source holds at most 32
 parked requests; the token and revocation endpoints lost their per-address
 pace; record paths split on their first three segments, since an id may
 carry a slash.
+
+The owner's review of the screenshots asked for three changes, all made: the
+approval page's copy says where you go next and drops the line about what
+the token opens; an app writes as its own `app:<host>` actor instead of
+`api`, so History shows the app and never the owner; and "until you revoke
+it" is a lifetime the owner may pick.

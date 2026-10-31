@@ -44,10 +44,11 @@ const (
 	defaultLifetimeDays = 30
 )
 
-// lifetimeDays are the lifetimes an owner may give an app's token. There is
-// no refresh token, so the longest is the longest an app keeps access
-// without the owner seeing the approval page again.
-var lifetimeDays = []int{7, 30, 90}
+// lifetimeDays are the lifetimes an owner may give an app's token, 0 for
+// until the owner revokes it. There is no refresh token, so a lifetime is
+// how long an app keeps access without the owner seeing the approval page
+// again.
+var lifetimeDays = []int{7, 30, 90, 0}
 
 // issuerOf is the issuer a request reached. A configured public URL
 // (SUBSTRATE_PUBLIC_URL) is the issuer whatever host the request named.
@@ -323,7 +324,7 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		ID: req.ID,
 		App: substrate.AuthorizationApp{
 			ClientID: req.Client.ID, Host: req.Client.Host, Local: req.Client.Local,
-			Name: doc.Name, URI: doc.URI,
+			Name: doc.Name, URI: doc.URI, Actor: string(substrate.AppActor(req.Client.Host)),
 			URIHostDiffers: doc.URI != "" && hostname(doc.URI) != hostname(req.Client.ID),
 		},
 		Redirect: substrate.AuthorizationRedirectTo{
@@ -412,12 +413,15 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return authorize.Approval{}, err
 		}
-		if !slices.Contains(lifetimeDays, in.LifetimeDays) {
-			return authorize.Approval{}, validation("lifetimeDays must be one of 7, 30 or 90")
+		if in.LifetimeDays == nil {
+			return authorize.Approval{}, validation("an approval names its lifetimeDays: 7, 30 or 90, or 0 for until revoked")
+		}
+		if !slices.Contains(lifetimeDays, *in.LifetimeDays) {
+			return authorize.Approval{}, validation("lifetimeDays must be one of 7, 30 or 90, or 0 for until revoked")
 		}
 		return authorize.Approval{
 			Repository: authority, Dataset: ds, Scopes: scopes,
-			Lifetime: time.Duration(in.LifetimeDays) * 24 * time.Hour, ClientName: doc.Name,
+			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: doc.Name,
 		}, nil
 	})
 	if errors.Is(err, authorize.ErrNotPending) {
@@ -528,7 +532,8 @@ type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	Scope       string `json:"scope"`
-	ExpiresIn   int64  `json:"expires_in"`
+	// ExpiresIn is absent on a token the owner approved until revoked.
+	ExpiresIn *int64 `json:"expires_in,omitempty"`
 	// Repository is the authority the token opens, as IndieAuth's `me`
 	// tells an app whom it signed in as.
 	Repository string `json:"repository"`
@@ -614,9 +619,13 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "the code was already used")
 		return
 	}
-	expires := h.now().Add(c.Approval.Lifetime).UTC().Truncate(time.Second)
+	var expiresAt *time.Time
+	if c.Approval.Lifetime > 0 {
+		at := h.now().Add(c.Approval.Lifetime).UTC().Truncate(time.Second)
+		expiresAt = &at
+	}
 	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
-		Label: c.Request.Client.Host, ExpiresAt: &expires, Scopes: c.Approval.Scopes,
+		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: c.Approval.Scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
 	})
 	if err != nil {
@@ -632,10 +641,15 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "the code was already used")
 		return
 	}
-	writeJSON(w, http.StatusOK, tokenResponse{
+	res := tokenResponse{
 		AccessToken: secret, TokenType: "Bearer", Scope: strings.Join(c.Approval.Scopes, " "),
-		ExpiresIn: int64(c.Approval.Lifetime / time.Second), Repository: c.Approval.Repository,
-	})
+		Repository: c.Approval.Repository,
+	}
+	if c.Approval.Lifetime > 0 {
+		secs := int64(c.Approval.Lifetime / time.Second)
+		res.ExpiresIn = &secs
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // revokeBackoff is how long revokeMinted waits before each retry of a revoke

@@ -66,6 +66,7 @@ const REQUEST = {
     name: "Notes for Ada",
     uri: "https://notes-app.example.org",
     uriHostDiffers: true,
+    actor: "app:notes.example.com",
   },
   redirect: {
     uri: "https://callback.example.net/oauth/callback",
@@ -74,7 +75,7 @@ const REQUEST = {
   },
   repository: "ada.example.com",
   scopes: [TASKS, NOTES, UNITS],
-  lifetimeDays: [7, 30, 90],
+  lifetimeDays: [7, 30, 90, 0],
   defaultLifetimeDays: 30,
   expiresAt: "2026-10-31T12:10:00Z",
 }
@@ -85,6 +86,7 @@ const LOCAL_REQUEST = {
     clientId: "http://127.0.0.1:8765/client",
     host: "127.0.0.1:8765",
     local: true,
+    actor: "app:127.0.0.1:8765",
   },
   redirect: {
     uri: "http://127.0.0.1:8765/callback",
@@ -197,12 +199,14 @@ describe("AuthorizePage", () => {
       /not on notes\.example\.com/
     )
 
-    const sends = screen.getByRole("region", { name: "Sends the access to" })
+    const sends = screen.getByRole("region", {
+      name: "After you answer, you go to",
+    })
     expect(
       within(sends).getByText("https://callback.example.net/oauth/callback")
     ).toBeTruthy()
     expect(within(sends).getByRole("note").textContent).toMatch(
-      /goes to callback\.example\.net, a different host/
+      /on callback\.example\.net, not on notes\.example\.com/
     )
 
     const repository = screen.getByRole("region", { name: "Repository" })
@@ -229,23 +233,27 @@ describe("AuthorizePage", () => {
       within(access).getByText("ada.example.com/tasks/project")
     ).toBeTruthy()
     expect(
-      within(access).getByText(/reaches no kind in your repository today/)
+      within(access).getByText(/no kind in your repository matches/)
     ).toBeTruthy()
     // A glob says it covers kinds added later; a `~` says what it became.
     expect(
-      within(access).getByText(/also covers kinds you add later/)
+      within(access).getByText(/Also covers matching kinds you add later/)
     ).toBeTruthy()
     expect(within(access).getByText("read:~/tasks/*")).toBeTruthy()
-    // A write scope is asked for, so the page says what a write sets off.
-    const writes = within(access)
-      .getByText("A write by this app counts as a write by you")
+    // A write scope is asked for, so the page names what its changes are
+    // recorded as, and what they set off.
+    const changes = screen.getByRole("region", {
+      name: "Its changes appear as",
+    })
+    expect(within(changes).getByText("app:notes.example.com")).toBeTruthy()
+    expect(within(changes).getByText(/never as yours/)).toBeTruthy()
+    const automations = within(changes)
+      .getByText("Your automations run on its changes")
       .closest("[role=note]") as HTMLElement
-    expect(writes.textContent).toContain("It can start your triggers")
-    expect(writes.textContent).toContain(
-      "call outside services that charge you"
-    )
-    expect(writes.textContent).toContain(
-      "change or delete records outside these scopes, through a mapping or a reference that cascades"
+    expect(automations.textContent).toContain("run code you installed")
+    expect(automations.textContent).toContain("call services that charge you")
+    expect(automations.textContent).toContain(
+      "change records this app cannot reach itself"
     )
 
     const lasts = screen.getByRole("radiogroup", { name: "Access lasts" })
@@ -254,6 +262,9 @@ describe("AuthorizePage", () => {
         .getByRole("radio", { name: "30 days" })
         .getAttribute("aria-checked")
     ).toBe("true")
+    expect(
+      within(lasts).getByRole("radio", { name: "Until you revoke it" })
+    ).toBeTruthy()
   })
 
   it("warns that a local app cannot be verified", async () => {
@@ -268,7 +279,7 @@ describe("AuthorizePage", () => {
     ).toBeTruthy()
     // Its one scope reads, so nothing is said about what a write sets off.
     expect(
-      screen.queryByText("A write by this app counts as a write by you")
+      screen.queryByRole("region", { name: "Its changes appear as" })
     ).toBeNull()
     // A local app's document is never fetched, so it claims nothing.
     expect(
@@ -289,6 +300,22 @@ describe("AuthorizePage", () => {
     ).toBeTruthy()
     fireEvent.click(approve)
     expect(calls("POST")).toHaveLength(0)
+  })
+
+  it("approves until revoked as lifetime 0, and says the access lasts until then", async () => {
+    renderPage()
+    fireEvent.click(
+      await screen.findByRole("radio", { name: "Until you revoke it" })
+    )
+    expect(
+      screen.getByText("It lasts until you revoke it in Settings, under Apps.")
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    const [, init] = calls("POST")[0]
+    expect(JSON.parse((init as RequestInit).body as string).lifetimeDays).toBe(
+      0
+    )
   })
 
   it("approves exactly the checked scopes for the chosen lifetime, then goes to the app", async () => {

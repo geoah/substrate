@@ -565,8 +565,9 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // those is the owner's edit, so it holds at the machine tier and recompute
 // may replace it. Anything else is a name a REQUEST asserted at the door, and
 // a token writes at the owner tier: that write stands exactly where the token
-// stands, whatever door name it chose (an app's token writes as `api`, and
-// the owner-only gates read txn.scoped beside the tier). Nothing here
+// stands, whatever door name it chose. An app's token writes as its derived
+// `app:<host>` actor, which resolves to the owner tier above the registry,
+// and the owner-only gates read txn.scoped beside the tier. Nothing here
 // escalates — the same caller can send `api` — and the entry's principal
 // records which token it was. The split is FORWARD-ONLY: a manager row an
 // undeclared reserved actor already holds at the owner tier keeps it, here
@@ -598,6 +599,12 @@ func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier
 	// cannot move it: `tier:` is data an installed bundle writes.
 	case actor == substrate.ActorSystem:
 		return substrate.TierMachine
+	// An app's token holds a property the way the owner's own client does
+	// (a stranger's client holds like the user, never like the machinery),
+	// and no declaration may move it either. What the owner alone may do is
+	// held apart by txn.scoped, not by the tier (decision 0194).
+	case substrate.IsAppActor(actor):
+		return substrate.TierOwner
 	}
 	if tier, ok := reg.ActorTier(string(actor)); ok {
 		return tier

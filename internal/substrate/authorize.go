@@ -20,7 +20,8 @@ type AuthorizationRequest struct {
 	Repository string                  `json:"repository"`
 	Scopes     []AuthorizationScope    `json:"scopes"`
 	// LifetimeDays are the lifetimes the owner may pick, in days, and
-	// DefaultLifetimeDays the one the page selects first.
+	// DefaultLifetimeDays the one the page selects first. 0 is "until the
+	// owner revokes it": a token with no expiry.
 	LifetimeDays        []int `json:"lifetimeDays"`
 	DefaultLifetimeDays int   `json:"defaultLifetimeDays"`
 	// ExpiresAt is when the parked request lapses unanswered.
@@ -43,6 +44,8 @@ type AuthorizationApp struct {
 	// the page warns about: the app is naming a site its client id does not
 	// prove it runs.
 	URIHostDiffers bool `json:"uriHostDiffers,omitempty"`
+	// Actor is what the app's changes are recorded as, `app:<host>`.
+	Actor string `json:"actor"`
 }
 
 // AuthorizationRedirectTo is where the code goes on approval.
@@ -77,10 +80,13 @@ type AuthorizationKind struct {
 }
 
 // AuthorizationApproval is the approval: the subset of the request's
-// resolved scopes the owner checked, at least one, and the lifetime picked.
+// resolved scopes the owner checked, at least one, and the lifetime picked,
+// one of the request's LifetimeDays (0 for until revoked).
 type AuthorizationApproval struct {
-	Scopes       []string `json:"scopes"`
-	LifetimeDays int      `json:"lifetimeDays"`
+	Scopes []string `json:"scopes"`
+	// LifetimeDays is required: a pointer, so an approval that names none
+	// is refused rather than read as 0, which is until revoked.
+	LifetimeDays *int `json:"lifetimeDays"`
 }
 
 // AuthorizationAnswer is an approval's or a denial's answer: the URL the

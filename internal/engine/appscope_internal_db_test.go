@@ -50,3 +50,22 @@ func TestADamagedGrantNeverReadsAsFullAccess(t *testing.T) {
 		})
 	}
 }
+
+// An app's actor holds at the owner tier, however the registry reads, and
+// its request goes ahead of background writers at the write gate like the
+// owner's own; the owner-only actions stay shut through txn.scoped.
+func TestAnAppsActorHoldsAtTheOwnerTierAndWritesInTheForeground(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openCoreDataset(t)
+	app := substrate.AppActor("notes.example.org")
+	if got := ds.actorTier(app); got != substrate.TierOwner {
+		t.Fatalf("an app's actor resolves to the %s tier, want owner", got)
+	}
+	if !ds.ownerFirst(ctx, app, false) {
+		t.Fatal("an app's write waits behind background writers")
+	}
+	if ds.ownerFirst(ctx, substrate.Actor("function:x.example.com:p:f"), false) {
+		t.Fatal("installed code went ahead of background writers: the test proves nothing")
+	}
+}
