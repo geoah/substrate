@@ -353,6 +353,62 @@ release_sync() {
 	echo "apple: $base/index.html"
 }
 
+# Substrate Workouts: the iPhone app and its Live Activity extension,
+# archived, exported and published as Substrate Sync is, to its own folder,
+# `workouts/`, with a client ID metadata document of its own.
+build_workouts() {
+	xcodebuild -project "$PROJECT" -scheme SubstrateWorkouts -derivedDataPath "$DERIVED" \
+		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet -destination 'generic/platform=iOS Simulator' -configuration Debug build
+	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateWorkouts.app"
+}
+
+release_workouts() {
+	local channel="${1:-prerelease}" short build commit version client
+	stamp "$channel"
+	client="$(client_url workouts)" || return 1
+	local base="${SUBSTRATE_APPLE_RELEASE_URL%/}/workouts"
+	local out="build/release-workouts/$build" rel="releases/$build"
+	local stage="$out/stage"
+	rm -rf "$out"
+	mkdir -p "$stage/$rel"
+	jq -n --arg id "$client" --arg uri "$base/index.html" '{
+		client_id: $id, client_name: "Substrate Workouts", client_uri: $uri,
+		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
+	}' >"$out/client.json"
+	xcodebuild -project "$PROJECT" -scheme SubstrateWorkouts -derivedDataPath "$DERIVED" \
+		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet -destination 'generic/platform=iOS' -configuration Release archive \
+		-archivePath "$out/iOS.xcarchive" \
+		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build" \
+		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit" \
+		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_WORKOUTS_CLIENT_ID="$client"
+	export_archive iOS "${SUBSTRATE_APPLE_EXPORT_IOS:-debugging}" "$out"
+
+	local ipa="$rel/SubstrateWorkouts-${version%%+*}-iOS.ipa"
+	local exported=("$out/iOS"/*.ipa)
+	cp "${exported[0]}" "$stage/$ipa"
+	local icon="SubstrateWorkouts/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
+	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
+
+	jq -n --arg version "$version" --arg short "$short" --arg build "$build" \
+		--arg channel "$channel" --arg commit "$commit" \
+		--arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		--arg ipa "$ipa" --argjson ipaLength "$(stat -f %z "$stage/$ipa")" \
+		--arg ipaSum "$(shasum -a 256 "$stage/$ipa" | cut -d' ' -f1)" \
+		--arg rel "$rel" '{
+			name: "Substrate Workouts", version: $version, shortVersion: $short, build: $build,
+			channel: $channel, commit: $commit, date: $date, bundleIdentifier: "dev.reamde.substrate.workouts",
+			ios: {path: $ipa, length: $ipaLength, sha256: $ipaSum, minimumSystemVersion: "27.0",
+				manifest: "\($rel)/manifest.plist", icon: "\($rel)/icon-512.png",
+				smallIcon: "\($rel)/icon-57.png"}
+		}' >"$stage/$rel/release.json"
+
+	upload "$out/client.json" "$client" "no-cache"
+	publish "$base" "$out" "$stage" "$rel"
+	echo "apple: released Substrate Workouts $version ($channel)"
+	echo "apple: $base/index.html"
+}
+
 # Substrate Chat: both platforms, archived and exported the way the console
 # app's are, the Mac build signed for Sparkle with the same key, published to
 # its own folder, `chat/` under the console app's.
@@ -521,6 +577,16 @@ sim:chat)
 	project
 	sim_chat
 	;;
+build:workouts)
+	project
+	build_workouts
+	;;
+test:workouts)
+	# WorkoutsKit is a Swift package too: the model, both engines and the
+	# sync, on the Mac. The package's manifests and their JSON must agree.
+	uv run --quiet --with pyyaml scripts/workouts-package.py --check
+	swift test --package-path WorkoutsKit
+	;;
 test:kit)
 	# SubstrateKit is a Swift package: its tests run on the Mac with swift
 	# test, no project or simulator.
@@ -550,8 +616,12 @@ release:chat)
 	project
 	release_chat "${2:-}"
 	;;
+release:workouts)
+	project
+	release_workouts "${2:-}"
+	;;
 *)
-	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|sim:chat|test:chat|test:kit|install|sim|release|release:sync|release:chat [prerelease|stable]" >&2
+	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|sim:chat|test:chat|test:kit|test:workouts|install|sim|release|release:sync|release:chat|release:workouts [prerelease|stable]" >&2
 	exit 2
 	;;
 esac

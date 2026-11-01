@@ -1,0 +1,813 @@
+{
+  "source": "research/workouts/substrate/examples/exercises.yaml",
+  "records": [
+    {
+      "kind": "~/training/exercise",
+      "id": "leg-press-machine",
+      "properties": {
+        "name": "Leg Press (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "quadriceps"
+        ],
+        "secondaryMuscles": [
+          "glutes",
+          "hamstrings"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Leg_Press",
+            "display": "Leg Press"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_LEG_PRESS"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "calf-press-machine",
+      "properties": {
+        "name": "Calf Press (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "calves"
+        ],
+        "restClass": "highrep",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        },
+        "defaultRepsMin": 12,
+        "defaultRepsMax": 20,
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Calf_Press",
+            "display": "Calf Press"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "seated-leg-curl-machine",
+      "properties": {
+        "name": "Seated Leg Curl (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "hamstrings"
+        ],
+        "restClass": "isolation",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Seated_Leg_Curl",
+            "display": "Seated Leg Curl"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_LEG_CURL"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "leg-extension-machine",
+      "properties": {
+        "name": "Leg Extension (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "quadriceps"
+        ],
+        "restClass": "isolation",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Leg_Extensions",
+            "display": "Leg Extensions"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_LEG_EXTENSION"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "hip-thrust-barbell",
+      "properties": {
+        "name": "Hip Thrust (Barbell)",
+        "measurement": "weightreps",
+        "equipment": "barbell",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "glutes"
+        ],
+        "secondaryMuscles": [
+          "hamstrings"
+        ],
+        "restClass": "compound",
+        "loadBase": {
+          "value": "20",
+          "unit": "kg"
+        },
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Barbell_Hip_Thrust",
+            "display": "Barbell Hip Thrust"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_HIP_THRUST"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "goblet-squat",
+      "properties": {
+        "name": "Goblet Squat",
+        "measurement": "weightreps",
+        "equipment": "kettlebell",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "quadriceps"
+        ],
+        "secondaryMuscles": [
+          "glutes",
+          "adductors"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "4",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Goblet_Squat",
+            "display": "Goblet Squat"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "chest-press-machine",
+      "properties": {
+        "name": "Chest Press (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "shoulders",
+          "triceps"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "iso-lateral-chest-press-machine",
+      "properties": {
+        "name": "Iso-Lateral Chest Press (Machine)",
+        "measurement": "weightreps",
+        "equipment": "plateloaded",
+        "laterality": "bilateral",
+        "loadBasis": "perside",
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "shoulders",
+          "triceps"
+        ],
+        "restClass": "compound",
+        "variationOf": "~/training/exercise/chest-press-machine",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "seated-row-machine",
+      "properties": {
+        "name": "Seated Row (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "upperback"
+        ],
+        "secondaryMuscles": [
+          "lats",
+          "biceps"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "lateral-raise-dumbbell",
+      "properties": {
+        "name": "Lateral Raise (Dumbbell)",
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "bilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "shoulders"
+        ],
+        "restClass": "isolation",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        },
+        "myoStopRule": "repdrop",
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Side_Lateral_Raise",
+            "display": "Side Lateral Raise"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "romanian-deadlift-dumbbell",
+      "properties": {
+        "name": "Romanian Deadlift (Dumbbell)",
+        "aliases": [
+          "RDL",
+          "DB RDL"
+        ],
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "bilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "hamstrings"
+        ],
+        "secondaryMuscles": [
+          "glutes",
+          "lowerback"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "incline-bench-press-dumbbell",
+      "properties": {
+        "name": "Incline Bench Press (Dumbbell)",
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "bilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "shoulders",
+          "triceps"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Incline_Dumbbell_Press",
+            "display": "Incline Dumbbell Press"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "vertical-traction-machine",
+      "properties": {
+        "name": "Vertical Traction (Machine)",
+        "aliases": [
+          "Lat pulldown machine"
+        ],
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "lats"
+        ],
+        "secondaryMuscles": [
+          "biceps",
+          "upperback"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "triceps-pushdown",
+      "properties": {
+        "name": "Triceps Pushdown",
+        "measurement": "weightreps",
+        "equipment": "cable",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "triceps"
+        ],
+        "restClass": "isolation",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Triceps_Pushdown",
+            "display": "Triceps Pushdown"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "triceps-rope-pushdown",
+      "properties": {
+        "name": "Triceps Rope Pushdown",
+        "measurement": "weightreps",
+        "equipment": "cable",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "triceps"
+        ],
+        "restClass": "isolation",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        },
+        "variationOf": "~/training/exercise/triceps-pushdown",
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Triceps_Pushdown_-_Rope_Attachment",
+            "display": "Triceps Pushdown - Rope Attachment"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "calf-extension-machine",
+      "properties": {
+        "name": "Calf Extension (Machine)",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "calves"
+        ],
+        "restClass": "highrep",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        },
+        "defaultRepsMin": 12,
+        "defaultRepsMax": 20
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "chest-fly-dumbbell",
+      "properties": {
+        "name": "Chest Fly (Dumbbell)",
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "bilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "shoulders"
+        ],
+        "restClass": "isolation",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Dumbbell_Flyes",
+            "display": "Dumbbell Flyes"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "overhead-press-dumbbell",
+      "properties": {
+        "name": "Overhead Press (Dumbbell)",
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "bilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "shoulders"
+        ],
+        "secondaryMuscles": [
+          "triceps"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "shoulder-press-machine-plates",
+      "properties": {
+        "name": "Shoulder Press (Machine Plates)",
+        "measurement": "weightreps",
+        "equipment": "plateloaded",
+        "laterality": "bilateral",
+        "loadBasis": "perside",
+        "primaryMuscles": [
+          "shoulders"
+        ],
+        "secondaryMuscles": [
+          "triceps"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Leverage_Shoulder_Press",
+            "display": "Leverage Shoulder Press"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "torso-rotation",
+      "properties": {
+        "name": "Torso Rotation",
+        "measurement": "weightreps",
+        "equipment": "machine",
+        "laterality": "unilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "highrep",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "bulgarian-split-squat-dumbbell",
+      "properties": {
+        "name": "Bulgarian Split Squat (Dumbbell)",
+        "aliases": [
+          "BSS",
+          "Rear-foot-elevated split squat"
+        ],
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "unilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "quadriceps"
+        ],
+        "secondaryMuscles": [
+          "glutes",
+          "hamstrings"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Split_Squat_with_Dumbbells",
+            "display": "Split Squat with Dumbbells"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "single-leg-romanian-deadlift-dumbbell",
+      "properties": {
+        "name": "Single Leg Romanian Deadlift (Dumbbell)",
+        "aliases": [
+          "SL RDL"
+        ],
+        "measurement": "weightreps",
+        "equipment": "dumbbell",
+        "laterality": "unilateral",
+        "loadBasis": "perimplement",
+        "implements": 1,
+        "primaryMuscles": [
+          "hamstrings"
+        ],
+        "secondaryMuscles": [
+          "glutes",
+          "lowerback"
+        ],
+        "restClass": "compound",
+        "variationOf": "~/training/exercise/romanian-deadlift-dumbbell",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "plank",
+      "properties": {
+        "name": "Plank",
+        "measurement": "duration",
+        "equipment": "none",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "timed",
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Plank",
+            "display": "Plank"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_PLANK"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "crunch",
+      "properties": {
+        "name": "Crunch",
+        "measurement": "repsonly",
+        "equipment": "none",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "highrep",
+        "defaultRepsMin": 15,
+        "defaultRepsMax": 20,
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Crunches",
+            "display": "Crunches"
+          },
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_CRUNCH"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "lumbar-extension-stretch",
+      "properties": {
+        "name": "Lumbar Extension Stretch",
+        "aliases": [
+          "Lumbar Extention Stretch",
+          "Prone press-up"
+        ],
+        "measurement": "repsonly",
+        "equipment": "none",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "lowerback"
+        ],
+        "restClass": "highrep",
+        "defaultRepsMin": 10,
+        "defaultRepsMax": 10
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "glute-bridge",
+      "properties": {
+        "name": "Glute Bridge",
+        "measurement": "repsonly",
+        "equipment": "none",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "glutes"
+        ],
+        "secondaryMuscles": [
+          "hamstrings"
+        ],
+        "restClass": "highrep",
+        "defaultRepsMin": 12,
+        "defaultRepsMax": 20,
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Butt_Lift_Bridge",
+            "display": "Butt Lift (Bridge)"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "bird-dog",
+      "properties": {
+        "name": "Bird Dog",
+        "measurement": "repsonly",
+        "equipment": "none",
+        "laterality": "alternating",
+        "primaryMuscles": [
+          "lowerback"
+        ],
+        "secondaryMuscles": [
+          "abdominals",
+          "glutes"
+        ],
+        "restClass": "highrep",
+        "defaultRepsMin": 8,
+        "defaultRepsMax": 12
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "cable-core-pallof-press",
+      "properties": {
+        "name": "Cable Core Pallof Press",
+        "aliases": [
+          "Pallof press"
+        ],
+        "measurement": "weightreps",
+        "equipment": "cable",
+        "laterality": "unilateral",
+        "loadBasis": "total",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "highrep",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Pallof_Press",
+            "display": "Pallof Press"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "glute-focused-step-down",
+      "properties": {
+        "name": "Glute Focused Step Down",
+        "measurement": "repsonly",
+        "equipment": "none",
+        "laterality": "unilateral",
+        "primaryMuscles": [
+          "glutes"
+        ],
+        "secondaryMuscles": [
+          "quadriceps"
+        ],
+        "restClass": "highrep"
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "push-up",
+      "properties": {
+        "name": "Push Up",
+        "aliases": [
+          "Push-up",
+          "Press-up"
+        ],
+        "measurement": "bodyweightreps",
+        "equipment": "none",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "shoulders",
+          "triceps"
+        ],
+        "restClass": "compound",
+        "bodyShare": "0.65",
+        "codes": [
+          {
+            "system": "free-exercise-db",
+            "code": "Pushups",
+            "display": "Pushups"
+          }
+        ]
+      }
+    }
+  ]
+}

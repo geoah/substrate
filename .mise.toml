@@ -860,6 +860,18 @@ run = ".mise/apple.sh release"
 description = "Build, sign and publish Substrate Sync as a release (prerelease, or stable) under sync/, with its own feeds"
 run = ".mise/apple.sh release:sync"
 
+[tasks."apple:build:workouts"]
+description = "Build Substrate Workouts for the simulator"
+run = ".mise/apple.sh build:workouts"
+
+[tasks."apple:test:workouts"]
+description = "Run WorkoutsKit's tests (Substrate Workouts' model, session and suggestion engines, and its sync) on the Mac"
+run = ".mise/apple.sh test:workouts"
+
+[tasks."apple:release:workouts"]
+description = "Build, sign and publish Substrate Workouts as a release (prerelease, or stable) under workouts/, with its own feeds"
+run = ".mise/apple.sh release:workouts"
+
 [tasks."apple:release:chat"]
 description = "Build, sign and publish Substrate Chat for iPhone, iPad and Mac as a release (prerelease, or stable) under chat/, with its own feeds"
 run = ".mise/apple.sh release:chat"
