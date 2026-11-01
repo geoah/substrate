@@ -63,13 +63,26 @@ import type {
   AggregateRow,
   AggregateSources,
   AggregateValue,
+  AuthorizationAccount,
   AuthorizationAnswer,
   AuthorizationApp,
   AuthorizationApproval,
+  AuthorizationCheck,
+  AuthorizationCheckResult,
+  AuthorizationCheckScopes,
+  AuthorizationDetail,
+  AuthorizationFailure,
+  AuthorizationFunction,
   AuthorizationKind,
+  AuthorizationPackage,
+  AuthorizationPackageStep,
+  AuthorizationPrevious,
   AuthorizationRedirectTo,
   AuthorizationRequest,
   AuthorizationScope,
+  AuthorizationSetup,
+  AuthorizationTrigger,
+  AuthorizationWebhookPlan,
   BlobInfo,
   BundleClosure,
   BundlePurged,
@@ -569,7 +582,8 @@ const tokenInfo: Shape<TokenInfo> = {
 }
 
 /** An app's authorization request as the approval page reads it, and the
- * approval and answer it trades (decision 0194). */
+ * approval and answer it trades (decision 0194), with the setup it runs
+ * (docs/plans/app-setup.md). */
 const authorizationRequest: Shape<AuthorizationRequest> = {
   id: true,
   app: true,
@@ -579,6 +593,14 @@ const authorizationRequest: Shape<AuthorizationRequest> = {
   lifetimeDays: true,
   defaultLifetimeDays: true,
   expiresAt: true,
+  details: true,
+  setup: true,
+  planHash: false,
+  previous: false,
+  state: true,
+  progress: false,
+  failure: false,
+  next: false,
 }
 
 const authorizationApp: Shape<AuthorizationApp> = {
@@ -611,14 +633,115 @@ const authorizationScope: Shape<AuthorizationScope> = {
 const authorizationKind: Shape<AuthorizationKind> = {
   identity: true,
   label: false,
+  purpose: false,
+  added: false,
+}
+
+const authorizationDetail: Shape<AuthorizationDetail> = {
+  type: true,
+  package: false,
+  version: false,
+  kind: false,
+  id: false,
+  properties: false,
+  trigger: false,
+  url: false,
+}
+
+const authorizationSetup: Shape<AuthorizationSetup> = {
+  type: true,
+  action: true,
+  problem: false,
+  fix: false,
+  package: false,
+  account: false,
+  webhook: false,
+}
+
+const authorizationPackage: Shape<AuthorizationPackage> = {
+  id: true,
+  name: false,
+  description: false,
+  tier: false,
+  required: true,
+  held: true,
+  shipped: true,
+  requires: false,
+  kinds: false,
+  functions: false,
+  triggers: false,
+}
+
+const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
+  id: true,
+  name: false,
+  action: true,
+  held: true,
+  shipped: true,
+}
+
+const authorizationFunction: Shape<AuthorizationFunction> = {
+  id: true,
+  writes: false,
+}
+
+const authorizationTrigger: Shape<AuthorizationTrigger> = {
+  id: true,
+  callable: false,
+  webhook: false,
+  enabled: true,
+}
+
+const authorizationAccount: Shape<AuthorizationAccount> = {
+  kind: true,
+  label: false,
+  id: true,
+  properties: false,
+}
+
+const authorizationWebhookPlan: Shape<AuthorizationWebhookPlan> = {
+  trigger: true,
+  package: false,
+  enabled: true,
+  keyed: true,
+}
+
+const authorizationPrevious: Shape<AuthorizationPrevious> = {
+  approvedAt: true,
+  expiresAt: false,
+  scopes: true,
+}
+
+const authorizationFailure: Shape<AuthorizationFailure> = {
+  row: true,
+  message: true,
+}
+
+const authorizationCheck: Shape<AuthorizationCheck> = {
+  scope: true,
+  authorization_details: true,
+}
+
+const authorizationCheckResult: Shape<AuthorizationCheckResult> = {
+  scopes: true,
+  setup: true,
+  expiresAt: false,
+}
+
+const authorizationCheckScopes: Shape<AuthorizationCheckScopes> = {
+  missing: true,
 }
 
 const authorizationApproval: Shape<AuthorizationApproval> = {
   scopes: true,
   lifetimeDays: true,
+  planHash: false,
 }
 
-const authorizationAnswer: Shape<AuthorizationAnswer> = { redirect: true }
+const authorizationAnswer: Shape<AuthorizationAnswer> = {
+  redirect: false,
+  state: false,
+}
 
 const mintedToken: Shape<MintedToken> = {
   token: true,
@@ -1046,6 +1169,19 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationRedirectTo: authorizationRedirectTo,
   AuthorizationScope: authorizationScope,
   AuthorizationKind: authorizationKind,
+  AuthorizationDetail: authorizationDetail,
+  AuthorizationSetup: authorizationSetup,
+  AuthorizationPackage: authorizationPackage,
+  AuthorizationPackageStep: authorizationPackageStep,
+  AuthorizationFunction: authorizationFunction,
+  AuthorizationTrigger: authorizationTrigger,
+  AuthorizationAccount: authorizationAccount,
+  AuthorizationWebhookPlan: authorizationWebhookPlan,
+  AuthorizationPrevious: authorizationPrevious,
+  AuthorizationFailure: authorizationFailure,
+  AuthorizationCheck: authorizationCheck,
+  AuthorizationCheckResult: authorizationCheckResult,
+  AuthorizationCheckScopes: authorizationCheckScopes,
   AuthorizationApproval: authorizationApproval,
   AuthorizationAnswer: authorizationAnswer,
   MintedToken: mintedToken,
