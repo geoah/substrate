@@ -356,3 +356,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0195](0195-an-app-talks-to-agents-decides-their-requests-and-tails-the-feed-it-reads.md) | An app talks to agents, decides their requests and tails the feed it reads | accepted |
 | [0197](0197-an-agent-pins-standing-context-into-its-prompt-once-per-thread.md) | An agent pins standing context into its prompt once per thread | accepted |
 | [0198](0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md) | A bundle offers its functions, and an agent takes them by pattern | accepted |
+| [0200](0200-a-background-tool-returns-a-handle-and-its-result-resumes-the-thread.md) | A background tool returns a handle, and its result resumes the thread | accepted |
