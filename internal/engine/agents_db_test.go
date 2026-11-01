@@ -1416,6 +1416,36 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	}
 }
 
+// A row's cache block reaches the adapter config: the ttl word as the wire
+// spells it, and the two openai-wire opt-ins as flags.
+func TestProviderRowCacheBlockResolves(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "gateway",
+		Properties: map[string]any{
+			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "k",
+			"cache": map[string]any{"ttl": "onehour", "key": true, "breakpoints": true},
+		},
+	}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	pc, err := ds.resolveProvider(ctx, "gateway")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if pc.cacheTTL != "1h" || !pc.cfg.CacheKey || !pc.cfg.CacheBreakpoints {
+		t.Fatalf("cache = ttl %q key %v breakpoints %v", pc.cacheTTL, pc.cfg.CacheKey, pc.cfg.CacheBreakpoints)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "gateway",
+		Properties: map[string]any{"cache": map[string]any{"ttl": "1h"}},
+	}); err == nil {
+		t.Fatal("a ttl outside the declared words was admitted")
+	}
+}
+
 func TestAgentChatRoundTrip(t *testing.T) {
 	t.Parallel()
 	// Chat is the same loop with a live client attached: the first message

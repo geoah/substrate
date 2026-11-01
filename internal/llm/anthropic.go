@@ -208,8 +208,30 @@ type anthropicOutputConfig struct {
 type anthropicTool struct {
 	Name string `json:"name"`
 	// Description is sent even when empty.
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"input_schema"`
+	Description  string                 `json:"description"`
+	InputSchema  map[string]any         `json:"input_schema"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+// anthropicCacheControl is one cache breakpoint. TTL is empty for the wire's
+// five-minute default, so a request asking for that sends no ttl at all.
+type anthropicCacheControl struct {
+	Type string `json:"type"`
+	TTL  string `json:"ttl,omitempty"`
+}
+
+// newCacheControl is the breakpoint a Cache asks for, nil when it asks for
+// none. Every breakpoint of one request carries the same TTL: the wire refuses
+// a longer-lived entry after a shorter one.
+func newCacheControl(c *Cache) *anthropicCacheControl {
+	if c == nil {
+		return nil
+	}
+	cc := &anthropicCacheControl{Type: "ephemeral"}
+	if c.TTL != CacheTTL5m {
+		cc.TTL = c.TTL
+	}
+	return cc
 }
 
 // anthropicTurn is one wire message. Content holds anthropicText,
@@ -220,26 +242,58 @@ type anthropicTurn struct {
 }
 
 type anthropicText struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 type anthropicToolUse struct {
-	Type  string          `json:"type"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type         string                 `json:"type"`
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Input        json.RawMessage        `json:"input"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 type anthropicToolResult struct {
-	Type      string          `json:"type"`
-	ToolUseID string          `json:"tool_use_id"`
-	Content   []anthropicText `json:"content"`
-	IsError   bool            `json:"is_error"`
+	Type         string                 `json:"type"`
+	ToolUseID    string                 `json:"tool_use_id"`
+	Content      []anthropicText        `json:"content"`
+	IsError      bool                   `json:"is_error"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 func newAnthropicText(text string) anthropicText {
 	return anthropicText{Type: "text", Text: text}
+}
+
+// markTail puts the breakpoint on the last block of the last turn that can
+// carry one, so the next call of the run reads the whole conversation so far
+// back from the cache. A breakpoint finds an earlier entry only within twenty
+// blocks of itself, and one turn of the loop adds a handful, so the previous
+// call's tail is always in reach. Signed thinking cannot carry a breakpoint,
+// so a turn ending in one is marked on the block before it.
+func markTail(turns []anthropicTurn, cc *anthropicCacheControl) {
+	if cc == nil || len(turns) == 0 {
+		return
+	}
+	content := turns[len(turns)-1].Content
+	for i := len(content) - 1; i >= 0; i-- {
+		switch b := content[i].(type) {
+		case anthropicText:
+			b.CacheControl = cc
+			content[i] = b
+		case anthropicToolResult:
+			b.CacheControl = cc
+			content[i] = b
+		case anthropicToolUse:
+			b.CacheControl = cc
+			content[i] = b
+		default:
+			continue
+		}
+		return
+	}
 }
 
 func anthropicParams(req Request) anthropicRequest {
@@ -251,9 +305,18 @@ func anthropicParams(req Request) anthropicRequest {
 	if req.Params.MaxTokens > 0 {
 		params.MaxTokens = req.Params.MaxTokens
 	}
+	// Three breakpoints of the wire's four, in the order it renders the
+	// prompt: the last tool (the tool cards), the system prompt (cards and
+	// prompt together), and the conversation's tail. The first two are the
+	// prefix every call of a run repeats; the tail is what the next call
+	// repeats of this one.
+	cc := newCacheControl(req.Cache)
 	if req.System != "" {
-		params.System = []anthropicText{newAnthropicText(req.System)}
+		system := newAnthropicText(req.System)
+		system.CacheControl = cc
+		params.System = []anthropicText{system}
 	}
+	markTail(params.Messages, cc)
 	// Only when the caller asked for one: current models refuse a sampling
 	// param they do not accept, and that refusal must reach the loop as an
 	// error rather than be papered over with a default.
@@ -279,6 +342,9 @@ func anthropicParams(req Request) anthropicRequest {
 			Description: t.Description,
 			InputSchema: anthropicSchema(t.Parameters),
 		})
+	}
+	if n := len(params.Tools); n > 0 {
+		params.Tools[n-1].CacheControl = cc
 	}
 	return params
 }

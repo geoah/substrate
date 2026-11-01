@@ -98,6 +98,14 @@ type Config struct {
 	BaseURL string
 	APIKey  string
 	Headers map[string]string
+	// CacheKey sends a request's Cache.Key as prompt_cache_key on the openai
+	// and azure wires. It is the row's to opt into, never sent by default: a
+	// gateway on this wire may refuse a key it does not know.
+	CacheKey bool
+	// CacheBreakpoints marks the prefix with Anthropic's cache_control on the
+	// openai and azure wires, for a gateway (LiteLLM) that hands the marks to
+	// an Anthropic model. The row says so; nothing infers it from a model id.
+	CacheBreakpoints bool
 }
 
 // Message is one turn. An assistant turn may carry ToolCalls; a tool turn
@@ -271,6 +279,24 @@ func thinkingSummarized() map[string]any {
 	return map[string]any{"type": "adaptive", "display": "summarized"}
 }
 
+// The cache lifetimes a request may ask for, as Anthropic spells them.
+const (
+	CacheTTL5m = "5m"
+	CacheTTL1h = "1h"
+)
+
+// Cache asks the endpoint to keep the request's prefix for the next call that
+// repeats it. A prefix is matched byte for byte, so a caller that sets it
+// keeps the tools and the system prompt identical across the calls of a run.
+type Cache struct {
+	// Key groups the requests that share a prefix (a thread id): the openai
+	// wire's prompt_cache_key, sent only where the row opts in.
+	Key string
+	// TTL is one of the CacheTTL constants; empty is the wire's default, five
+	// minutes. Only Anthropic-style breakpoints carry it.
+	TTL string
+}
+
 // Request is one completion.
 type Request struct {
 	Model    string
@@ -278,6 +304,9 @@ type Request struct {
 	Messages []Message
 	Tools    []Tool
 	Params   Params
+	// Cache nil asks for no caching: a one-off call (a title, a summary)
+	// would pay a cache write for a prefix nothing reads back.
+	Cache *Cache
 }
 
 // Result is one settled completion. Usage is nil when the wire returned none.

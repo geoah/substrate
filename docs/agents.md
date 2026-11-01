@@ -1040,8 +1040,8 @@ the runs going at that moment spend before they finish.
 
 An `llm/provider` row is one place completions are bought, as pure data:
 `label`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
-(request params the agent's own `params` merge over), `pricing`, and
-`titleModel`.
+(request params the agent's own `params` merge over), `pricing`,
+`titleModel`, and `cache`.
 
 **`titleModel` names the model that titles chat threads** on this row
 ([threads](#threads-messages-and-cost)). Absent, a thread is titled by the
@@ -1072,9 +1072,10 @@ A thread's `costUSD` is, per 1M tokens, the uncached prompt times
 `cacheWritePer1M`, and the completion times `outputPer1M`
 ([decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)).
 Both cache rates are optional: absent, a read costs a tenth of `inputPer1M`
-and a write 1.25 times it, Anthropic's list ratios for a 5-minute cache. A
+and a write 1.25 times it, Anthropic's list ratios for a 5-minute cache, or
+twice it on a call that asked for a 1-hour cache (see `cache` below). A
 model whose ratio differs states its rate: Claude Opus 5.5 reads at a
-twentieth of its input price, a 1-hour cache writes at twice it, and OpenAI
+twentieth of its input price, and OpenAI
 reads at 0.25x on gpt-4.1 and o3 and 0.5x on gpt-4o and bills no write
 (state `cacheWritePer1M: "0"` there). A stated `"0"` is a free cache.
 
@@ -1082,6 +1083,35 @@ reads at 0.25x on gpt-4.1 and o3 and 0.5x on gpt-4o and bills no write
 pricing:
   - {model: claude-opus-5-5, inputPer1M: "4", outputPer1M: "20", cacheReadPer1M: "0.20", contextWindow: 200000}
 ```
+
+**`cache` asks the endpoint to keep a run's prompt prefix** between the
+calls of one run: the tool cards, the system prompt and the conversation so
+far, which every turn repeats. The loop sends the first two as the same bytes
+on every call, so a turn pays the cache-read rate for them and the full input
+rate only for what is new. A title or compaction call asks for nothing, since
+nothing reads its prompt back.
+
+- On the `anthropic` wire the prefix is always marked: `cache_control` on
+  the last tool, on the system prompt and on the last block of the
+  conversation, three of the wire's four breakpoints.
+- `ttl` is how long an entry lives, `fiveminutes` or `onehour`. Absent, a chat thread asks
+  for an hour, because it waits on a person between turns, and every other
+  run for five minutes, because it calls again as soon as a tool answers. An
+  hour-long entry costs twice the input rate to write, five minutes 1.25
+  times it.
+- `key: true` sends the thread id as `prompt_cache_key` on the `openai` and
+  `azure` wires, OpenAI's hint for routing a thread's calls to the cache that
+  holds its prefix. The seeded `openai` row sets it. It is off by default
+  because an endpoint on that wire may refuse a field it does not know.
+- `breakpoints: true` marks the same three places with Anthropic's
+  `cache_control` on the `openai` and `azure` wires, for a gateway that hands
+  them to an Anthropic model: LiteLLM reads a message's and a tool's own
+  `cache_control`, and `ttl` rides inside it. The row says so; nothing infers
+  it from a model id, because the row cannot know which models a gateway
+  sends to Anthropic.
+
+OpenAI caches a long prefix on its own without either key, and the thread's
+`cacheReadTokens` and `cacheWriteTokens` say what any wire actually cached.
 
 The rates are `decimal` properties, so they are written as quoted strings:
 a bare YAML number rides a float and is refused
@@ -1145,7 +1175,8 @@ list providers: an agent names one by id, and its panel shows which. All four be
 
 ```yaml
 # OpenRouter — the OpenAI wire at its own endpoint. So is LiteLLM, Together,
-# Groq or a local Ollama: same wire, different baseURL.
+# Groq or a local Ollama: same wire, different baseURL. A LiteLLM row in front
+# of Anthropic models adds `cache: {breakpoints: true}`.
 kind: substrate.reamde.dev/llm/provider
 metadata: {id: openrouter}
 data:

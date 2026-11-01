@@ -28,6 +28,9 @@ type openaiClient struct {
 	// providersecret.Scrub so the key cannot reach the agent loop's thread
 	// record or the sweep log.
 	apiKey string
+	// cacheKey and cacheBreakpoints are the row's Config.CacheKey and
+	// Config.CacheBreakpoints.
+	cacheKey, cacheBreakpoints bool
 }
 
 func newOpenAI(cfg Config, azure bool) *openaiClient {
@@ -48,7 +51,10 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}
 	oc.HTTPClient = &bodyDoer{inner: oc.HTTPClient}
-	return &openaiClient{client: openai.NewClientWithConfig(oc), apiKey: cfg.APIKey}
+	return &openaiClient{
+		client: openai.NewClientWithConfig(oc), apiKey: cfg.APIKey,
+		cacheKey: cfg.CacheKey, cacheBreakpoints: cfg.CacheBreakpoints,
+	}
 }
 
 // scrubbed rebuilds a provider error with the row's bearer taken back out. The
@@ -120,8 +126,10 @@ func (r *lineLimitReader) Read(p []byte) (int, error) {
 type bodyPatch struct {
 	// extra are top-level request keys; a key the SDK wrote stays as written.
 	extra map[string]any
-	// messages are keys added to the request message at each index.
+	// messages are keys added to the request message at each index, and
+	// tools the keys added to the tool definition at each index.
 	messages map[int]map[string]json.RawMessage
+	tools    map[int]map[string]json.RawMessage
 	// response, when non-nil, receives a one-shot reply's body, read whole
 	// up to maxResponseBytes; a stream's body is left to the SDK.
 	response *[]byte
@@ -139,7 +147,7 @@ func (d *bodyDoer) Do(req *http.Request) (*http.Response, error) {
 	if patch == nil {
 		patch = &bodyPatch{}
 	}
-	if (len(patch.extra) > 0 || len(patch.messages) > 0) && req.Body != nil {
+	if (len(patch.extra) > 0 || len(patch.messages) > 0 || len(patch.tools) > 0) && req.Body != nil {
 		if err := patchRequest(req, patch); err != nil {
 			return nil, err
 		}
@@ -188,20 +196,26 @@ func patchRequest(req *http.Request, patch *bodyPatch) error {
 			return err
 		}
 	}
-	if len(patch.messages) > 0 {
-		var messages []map[string]json.RawMessage
-		if err := json.Unmarshal(body["messages"], &messages); err != nil {
-			return fmt.Errorf("openai: request messages: %w", err)
+	for _, list := range []struct {
+		key   string
+		patch map[int]map[string]json.RawMessage
+	}{{"messages", patch.messages}, {"tools", patch.tools}} {
+		if len(list.patch) == 0 {
+			continue
 		}
-		for i, keys := range patch.messages {
-			if i < 0 || i >= len(messages) {
+		var items []map[string]json.RawMessage
+		if err := json.Unmarshal(body[list.key], &items); err != nil {
+			return fmt.Errorf("openai: request %s: %w", list.key, err)
+		}
+		for i, keys := range list.patch {
+			if i < 0 || i >= len(items) {
 				continue
 			}
 			for k, v := range keys {
-				messages[i][k] = v
+				items[i][k] = v
 			}
 		}
-		if body["messages"], err = json.Marshal(messages); err != nil {
+		if body[list.key], err = json.Marshal(items); err != nil {
 			return err
 		}
 	}
@@ -295,6 +309,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 			},
 		})
 	}
+	c.patchCache(patch, req, len(messages), len(oreq.Tools))
 	if onDelta == nil {
 		var body []byte
 		patch.response = &body
@@ -308,6 +323,48 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(D
 		return res, err
 	}
 	return c.stream(context.WithValue(ctx, bodyPatchKey{}, patch), oreq, onDelta)
+}
+
+// patchCache adds what the row opted into for a request that asks for a
+// cache. prompt_cache_key is OpenAI's routing hint: requests carrying one key
+// land where that prefix is already cached. The breakpoints are Anthropic's
+// cache_control at the keys LiteLLM reads: on the last tool, and on the
+// system message and the last message as a whole, which LiteLLM moves onto
+// the message's content (litellm_core_utils/prompt_templates/factory.py,
+// llms/anthropic/chat/transformation.py). Nothing here reaches a row that did
+// not opt in, so an endpoint that refuses unknown keys never sees one.
+func (c *openaiClient) patchCache(patch *bodyPatch, req Request, messages, tools int) {
+	if req.Cache == nil {
+		return
+	}
+	if c.cacheKey && req.Cache.Key != "" {
+		if patch.extra == nil {
+			patch.extra = map[string]any{}
+		}
+		patch.extra["prompt_cache_key"] = req.Cache.Key
+	}
+	if !c.cacheBreakpoints {
+		return
+	}
+	cc, _ := json.Marshal(newCacheControl(req.Cache))
+	if tools > 0 {
+		patch.tools = map[int]map[string]json.RawMessage{tools - 1: {"cache_control": cc}}
+	}
+	mark := func(i int) {
+		if patch.messages == nil {
+			patch.messages = map[int]map[string]json.RawMessage{}
+		}
+		if patch.messages[i] == nil {
+			patch.messages[i] = map[string]json.RawMessage{}
+		}
+		patch.messages[i]["cache_control"] = cc
+	}
+	if req.System != "" {
+		mark(0)
+	}
+	if messages > 0 {
+		mark(messages - 1)
+	}
 }
 
 // oneShot reads body, the reply the bodyDoer captured, for the cache counts

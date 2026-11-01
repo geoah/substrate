@@ -488,8 +488,9 @@ ones skip, and the chain — which needs both — skips too.
 
 The suite is deliberately cheap: tiny prompts, `maxTokens` capped at 256, and
 the smallest tool-calling model on each wire — `gpt-4.1-mini` and
-`claude-haiku-4-5`. A whole pass costs well under a cent. It is still real
-money, so it is not something to loop.
+`claude-haiku-4-5`. A whole pass costs about a cent, most of it the one case
+that proves a prompt cache hit, whose prefix has to pass the model's minimum
+cacheable length. It is still real money, so it is not something to loop.
 
 Either default can be re-pointed without touching the code, which is also how a
 key that lacks one of those models is made green:
@@ -528,7 +529,7 @@ a token ceiling, prompt and completion together, kept by a ledger in
 
 | Half | Requests | Tokens | What holds the request ceiling |
 | ---- | -------: | -----: | ------------------------------ |
-| adapter cases (`internal/llm`) | 24 | 20,000 | a meter around every client refuses the request past the ceiling before it is sent |
+| adapter cases (`internal/llm`) | 24 | 30,000 | a meter around every client refuses the request past the ceiling before it is sent |
 | agent chain (`internal/engine`) | 14 | 20,000 | a meter around every client the agent loop builds, sub-agents included, refuses the request past the ceiling before it is sent; the agents' own `maxTurns` and `maxToolCalls` budgets sit under it |
 
 A run of `test:llm` therefore makes at most 38 completion requests. The
@@ -540,8 +541,9 @@ once an answer reports its usage, so the request that crosses the token
 ceiling is paid for; both meters refuse every request after it, and
 `maxTokens` keeps that request's answer to 256 tokens.
 Crossing either ceiling fails the run even when every case passed. The
-adapter cases make nine requests and a measured pass booked about 1,800
-tokens, so raising a ceiling is a deliberate edit to `live_test.go` or
+adapter cases make twelve requests: a pass before the cache case booked about
+1,800 tokens, and that case's two calls each carry a prefix of some 6,000, so
+a pass books about 15,000. Raising a ceiling is a deliberate edit to `live_test.go` or
 `agents_live_db_test.go`. Each binary prints its spend at the end of the run,
 one row per provider.
 

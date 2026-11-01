@@ -22,6 +22,11 @@ data:
     # row's, and one row serves several. gpt-5 takes minimal..high and refuses
     # `none`; the gpt-5.6 family takes `none` and needs it to put function
     # tools on a chat completion. An agent names what its own model accepts.
+    # OpenAI's own endpoint takes prompt_cache_key, so a thread's calls are
+    # routed to the cache that holds its prompt. Another openai-wire endpoint
+    # may refuse the field, which is why it is the row's to switch on.
+    cache:
+      key: true
     # contextWindow is the model's window in tokens: what lets a thread on
     # that model compact (docs/agents.md). A model without one never compacts.
     pricing:

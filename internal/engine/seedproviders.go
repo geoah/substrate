@@ -41,6 +41,10 @@ var defaultLLMProviders = []struct {
 			// and refuses "none"; the gpt-5.6 family takes "none" and needs it
 			// to put function tools on a chat completion. An agent names the
 			// value its own model accepts.
+			//
+			// OpenAI's own endpoint takes prompt_cache_key; the gemini row's
+			// endpoint is not held to, so it is left out there.
+			"cache": map[string]any{"key": true},
 			"pricing": []any{
 				map[string]any{"model": "gpt-5", "inputPer1M": "1.25", "outputPer1M": "10", "contextWindow": 400000},
 				map[string]any{"model": "gpt-5-mini", "inputPer1M": "0.25", "outputPer1M": "2", "contextWindow": 400000},

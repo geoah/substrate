@@ -15,6 +15,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -44,12 +45,14 @@ const (
 // here needs more than a sentence back.
 const liveMaxTokens = 256
 
-// The pass's ceilings, across every wire. The suite makes nine requests and a
-// measured pass booked about 1,800 tokens, so both leave room for a case being
-// added and none for a loop. Raising either is a deliberate edit.
+// The pass's ceilings, across every wire. The suite makes twelve requests. A
+// pass before the cache case booked about 1,800 tokens; that case's two calls
+// each carry a prefix of some 6,000, long enough to cache, so a pass books
+// about 15,000. Both leave room for a case being added and none for a loop.
+// Raising either is a deliberate edit.
 const (
 	liveMaxRequests  = 24
-	liveTokenCeiling = 20_000
+	liveTokenCeiling = 30_000
 )
 
 // liveLedger books every live request this binary makes; TestMain prints it
@@ -336,5 +339,75 @@ func TestLiveAnthropicConsecutiveUserTurns(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "7") {
 		t.Fatalf("content %q — both user turns should have reached the model", res.Content)
+	}
+}
+
+// liveCacheSystem is a system prompt past the longest minimum cacheable
+// prefix (4096 tokens, Haiku 4.5's): a shorter one is never cached, and the
+// case would prove nothing.
+func liveCacheSystem() string {
+	var b strings.Builder
+	b.WriteString("Answer with exactly one word. The numbered notes below are reference material; never quote them.\n")
+	for i := range 220 {
+		fmt.Fprintf(&b, "Note %d: a record carries a kind, an id and its declared properties, and note %d is not note %d.\n", i, i, i+1)
+	}
+	return b.String()
+}
+
+func TestLiveAnthropicReadsTheRunsPrefixFromTheCache(t *testing.T) {
+	// The second call of a run repeats the first's tools, system prompt and
+	// conversation, so it reads them back from the cache the first call's
+	// marks wrote. Five minutes, the cheaper write.
+	client, model := liveAnthropic.client(t)
+	first := Request{
+		Model: model, System: liveCacheSystem(),
+		Messages: []Message{{Role: RoleUser, Content: liveOneWordUser}},
+		Tools:    []Tool{liveAddTool()},
+		Params:   Params{MaxTokens: liveMaxTokens},
+		Cache:    &Cache{TTL: CacheTTL5m},
+	}
+	a, err := client.Complete(liveContext(t), first, nil)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if a.Usage == nil || a.Usage.CacheReadTokens+a.Usage.CacheWriteTokens == 0 {
+		t.Fatalf("the first call neither wrote nor read a cache: %+v", a.Usage)
+	}
+	second := first
+	second.Messages = append(append([]Message(nil), first.Messages...),
+		Message{Role: RoleAssistant, Content: a.Content},
+		Message{Role: RoleUser, Content: "And at night? One word."},
+	)
+	b, err := client.Complete(liveContext(t), second, nil)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if b.Usage == nil || b.Usage.CacheReadTokens < 4096 {
+		t.Fatalf("the second call read %+v from the cache, want the whole prefix", b.Usage)
+	}
+}
+
+func TestLiveOpenAIAcceptsThePromptCacheKey(t *testing.T) {
+	// prompt_cache_key is sent only where a row opts in; OpenAI's own
+	// endpoint, which the seeded row names, must take it.
+	key := liveKey(t, liveOpenAI.keyEnv)
+	cfg := liveOpenAI.config(key)
+	cfg.CacheKey = true
+	c, err := New(WireOpenAI, cfg)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	client := liveMeter{string(WireOpenAI), liveLedger, c}
+	res, err := client.Complete(liveContext(t), Request{
+		Model: liveOpenAI.modelName(), System: liveOneWordSystem,
+		Messages: []Message{{Role: RoleUser, Content: liveOneWordUser}},
+		Params:   Params{MaxTokens: liveMaxTokens},
+		Cache:    &Cache{Key: "substrate-live-test", TTL: CacheTTL5m},
+	}, nil)
+	if err != nil {
+		t.Fatalf("a request carrying prompt_cache_key: %v", err)
+	}
+	if strings.TrimSpace(res.Content) == "" {
+		t.Fatalf("empty content: %+v", res)
 	}
 }

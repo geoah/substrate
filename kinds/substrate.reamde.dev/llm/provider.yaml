@@ -27,7 +27,7 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  version: 14
+  version: 15
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -129,6 +129,43 @@ data:
             - max
           description: how hard a reasoning model thinks, when it takes the
             knob
+    # How the row asks its endpoint to keep a run's prompt prefix (tool cards,
+    # system prompt, the conversation so far) for the run's next call. The
+    # anthropic wire always marks the prefix; the openai and azure wires send
+    # nothing a gateway might refuse until the row opts in.
+    cache:
+      type: object
+      description: how this row asks its endpoint to cache an agent's prompt
+        between the calls of one run
+      fields:
+        # Absent is the engine's choice: an hour for a chat thread, which
+        # waits on a person between turns, five minutes for every other run.
+        # An hour costs twice the input rate to write, five minutes 1.25x.
+        ttl:
+          type: enum
+          values:
+            - value: fiveminutes
+              label: five minutes
+            - value: onehour
+              label: one hour
+          description: how long a cached prompt lives; absent means an hour
+            for chat threads and five minutes for every other run. Read by
+            the anthropic wire, and by the openai wire when breakpoints is
+            set
+        key:
+          type: bool
+          description: on the openai and azure wires, send the thread id as
+            prompt_cache_key so a thread's calls reach the same cache; off
+            by default because a gateway may refuse the field
+        # A LiteLLM row fronting an Anthropic model caches only where the
+        # request marks it, and the model id alone cannot say which models a
+        # gateway sends to Anthropic, so the row says so.
+        breakpoints:
+          type: bool
+          description: on the openai and azure wires, mark the last tool,
+            the system message and the last message with Anthropic's cache_control,
+            for a gateway such as LiteLLM that passes them to an Anthropic
+            model
     # data-driven cost estimation: USD per 1M tokens per model id. The cost
     # stamp prices the uncached prompt at inputPer1M, cache reads at
     # cacheReadPer1M, cache writes at cacheWritePer1M and the completion at
@@ -164,7 +201,8 @@ data:
           type: decimal
           min: 0
           description: USD per 1M prompt tokens the provider wrote to its
-            cache; absent means 1.25 times inputPer1M
+            cache; absent means 1.25 times inputPer1M, or twice it for a call
+            that asked for a one-hour cache
         # What compaction measures a thread against. It sits beside the
         # prices because both are facts about one model on one endpoint, and
         # a row edit changes it without a release.

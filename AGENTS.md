@@ -185,8 +185,8 @@ agent chain against the REAL OpenAI and Anthropic APIs. It runs when
 `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are in the environment, which on a dev
 box they are: they arrive from a gitignored `.mise.local.toml`. Without them
 every case skips and the task exits 0, so CI is untouched, and `mise run test`
-excludes the set by name either way. It SPENDS REAL MONEY — a pass is well
-under a cent, but run it once to confirm a change, never in a loop. Key
+excludes the set by name either way. It SPENDS REAL MONEY — a pass is about a
+cent, but run it once to confirm a change, never in a loop. Key
 material is never committed, never echoed, and never written into a file in
 this tree. [docs/testing.md](docs/testing.md) has the rest.
 
