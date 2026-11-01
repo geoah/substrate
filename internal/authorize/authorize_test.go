@@ -281,14 +281,27 @@ func TestARequestIsClaimedByOneRepositoryAndAnsweredOnce(t *testing.T) {
 	if _, err := s.Claim(r.ID, "eve.example.com"); !errors.Is(err, ErrNotPending) {
 		t.Fatalf("a second repository's claim = %v, want ErrNotPending", err)
 	}
+	if _, err := s.Snapshot(r.ID, "ada.example.com", Document{ClientID: r.Client.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
 	refuse := errors.New("refused")
 	if _, _, err := s.Approve(r.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{}, refuse }); !errors.Is(err, refuse) {
 		t.Fatalf("a refused approval = %v", err)
 	}
-	if _, err := s.Claim(r.ID, "ada.example.com"); err != nil {
-		t.Fatalf("a refused approval left the request = %v, want it pending", err)
+	if err := s.Fail(r.ID, "ada.example.com", nil); err != nil {
+		t.Fatalf("a refused approval left the request = %v, want it reserved", err)
 	}
-	code, _, err := s.Approve(r.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{Scopes: []string{"read:*"}}, nil })
+	// An approval answers a request it reserved, never a pending one.
+	if _, _, err := s.Approve(r.ID, "ada.example.com", approval); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("approving an unreserved request = %v, want ErrNotPending", err)
+	}
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := s.Approve(r.ID, "ada.example.com", approval)
 	if err != nil || len(code) != 64 {
 		t.Fatalf("approval = %q, %v", code, err)
 	}
@@ -310,11 +323,7 @@ func TestACodeIsSpentOnlyByAPresentationThatProvesItsBindings(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	s := NewStore(func() time.Time { return now })
 	verifier := strings.Repeat("v", 43)
-	r, _ := s.Park(Request{Challenge: challenge(verifier)})
-	code, _, err := s.Approve(r.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{}, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
+	code := approvedCode(t, s, Request{Challenge: challenge(verifier)})
 	proves := func(v string) func(Code) error {
 		return func(c Code) error {
 			if !VerifyS256(v, c.Request.Challenge) {
@@ -342,12 +351,32 @@ func TestACodeIsSpentOnlyByAPresentationThatProvesItsBindings(t *testing.T) {
 		t.Fatalf("a later replay = %+v first %v, %v", c, first, err)
 	}
 	// An unredeemed code lapses.
-	r2, _ := s.Park(Request{Challenge: challenge(verifier)})
-	code2, _, _ := s.Approve(r2.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{}, nil })
+	code2 := approvedCode(t, s, Request{Challenge: challenge(verifier)})
 	now = now.Add(CodeTTL)
 	if _, _, err := s.Redeem(code2, proves(verifier)); !errors.Is(err, ErrBadCode) {
 		t.Fatalf("a lapsed code = %v", err)
 	}
+}
+
+// approvedCode parks r, has ada's page show it, and approves it with nothing
+// to set up: the code the approval answers.
+func approvedCode(t *testing.T, s *Store, r Request) string {
+	t.Helper()
+	r, err := s.Park(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Snapshot(r.ID, "ada.example.com", Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := s.Approve(r.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{}, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code
 }
 
 func TestAWebAppsRedirectStaysOnItsOrigin(t *testing.T) {

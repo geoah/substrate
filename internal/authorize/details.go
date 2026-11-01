@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
@@ -22,6 +21,8 @@ const (
 	// maxAccountProperties bounds an account's properties as JSON: every
 	// value is shown to the owner before it is written.
 	maxAccountProperties = 1024
+	// inputDefaultID is the record id a bundle input resolves first.
+	inputDefaultID = "default"
 )
 
 // The entry shapes a request may send, one per type. Each is decoded
@@ -48,8 +49,11 @@ type (
 // ParseDetails reads an authorization request's `authorization_details`: a
 // JSON array of at most 8 entries in at most 2 KB. Each entry is read
 // strictly against its type's members, and the whole is held to
-// CheckDetails. An empty parameter is no details. Numbers in an account's
-// properties stay json.Number, as the REST door reads a record body.
+// checkDetails. An empty parameter is no details. Numbers in an account's
+// properties stay json.Number, as the REST door reads a record body. It is
+// the one reading of details: /oauth/authorize reads its parameter with it
+// and the set up check its body's `details`, so the check never admits what
+// an authorization request would be refused.
 func ParseDetails(param string) ([]substrate.AuthorizationDetail, error) {
 	if param == "" {
 		return nil, nil
@@ -72,7 +76,7 @@ func ParseDetails(param string) ([]substrate.AuthorizationDetail, error) {
 		}
 		out = append(out, d)
 	}
-	if err := CheckDetails(out); err != nil {
+	if err := checkDetails(out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -117,14 +121,13 @@ func parseDetail(raw json.RawMessage) (substrate.AuthorizationDetail, error) {
 	return d, nil
 }
 
-// CheckDetails holds details to what a request may ask: at most 8, each
+// checkDetails holds details to what a request may ask: at most 8, each
 // naming what its type names and nothing another type does, none twice.
 // A package is `<authority>/<package>` at version 1 or later; an account is
-// a kind named in full outside the substrate's own packages, a record id and
-// at most 1 KB of properties; a webhook is one trigger's id. The check
-// endpoint holds a decoded body to it, which ParseDetails' strict read
-// could not.
-func CheckDetails(details []substrate.AuthorizationDetail) error {
+// a kind named in full outside the substrate's own packages, a record id
+// other than `default` and at most 1 KB of properties; a webhook is one
+// trigger's id.
+func checkDetails(details []substrate.AuthorizationDetail) error {
 	if len(details) > maxDetails {
 		return fmt.Errorf("authorization_details names more than %d entries", maxDetails)
 	}
@@ -175,6 +178,12 @@ func checkDetail(d substrate.AuthorizationDetail) (string, error) {
 		if !vocabulary.ValidID(d.ID) {
 			return "", fmt.Errorf("id %q is not a record id", d.ID)
 		}
+		// A package's input resolves the record named `default` ahead of
+		// every other (engine inputs.go), so an app naming it would choose
+		// for every package that reads the kind.
+		if d.ID == inputDefaultID {
+			return "", fmt.Errorf("id %s is the one a package's inputs resolve first: an app names an account of its own", inputDefaultID)
+		}
 		raw, err := json.Marshal(d.Properties)
 		if err != nil {
 			return "", fmt.Errorf("properties: %w", err)
@@ -188,7 +197,7 @@ func checkDetail(d substrate.AuthorizationDetail) (string, error) {
 			return "", errors.New("a webhook detail names its trigger alone")
 		}
 		// One path segment of the webhook door, and what `webhook:` names.
-		if !vocabulary.ValidID(d.Trigger) || strings.ContainsAny(d.Trigger, "/*") {
+		if !vocabulary.ValidTriggerID(d.Trigger) {
 			return "", fmt.Errorf("trigger %q is not one trigger's id", d.Trigger)
 		}
 		return "webhook " + d.Trigger, nil

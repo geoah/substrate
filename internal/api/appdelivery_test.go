@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -440,5 +442,137 @@ func TestATriggerAnAppsTokenReadsNeverCarriesItsKey(t *testing.T) {
 	wantStatus(t, owner, http.StatusOK)
 	if k, ok := webhookKeyIn(decodeJSON[substrate.Record](t, owner).Properties); !ok || k != appHookKey {
 		t.Fatalf("the owner's read lost the key: %s", owner.Body.String())
+	}
+}
+
+// countingAuthSvc counts the token lookups the webhook door asks for.
+type countingAuthSvc struct {
+	*grantHookSvc
+	lookups atomic.Int32
+}
+
+func (s *countingAuthSvc) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
+	s.lookups.Add(1)
+	return s.grantHookSvc.Authenticate(ctx, secret)
+}
+
+// The door takes no bearer, so a bearer shaped like a token is a lookup
+// anybody can ask for: one that finds no token is charged to its source, and
+// a source that spent its pace is looked up no more until it refills.
+func TestABearerThatIsNoTokenIsLookedUpAtItsSourcesPace(t *testing.T) {
+	svc := &countingAuthSvc{grantHookSvc: newGrantHookSvc()}
+	now := time.Unix(1_000_000, 0)
+	h := New(Config{Service: svc, AuthInterval: time.Minute, Now: func() time.Time { return now }})
+	hook := "/webhooks/" + fakeRepository + "/" + appHook
+	bogus := map[string]string{"Authorization": "Bearer " + substrate.TokenSecretPrefix + "0123456789abcdef"}
+	for range 10 {
+		if rec := postHook(h, hook, []byte(`{}`), bogus); rec.Code != http.StatusNotFound {
+			t.Fatalf("a bearer that is no token = %d, want the door's 404", rec.Code)
+		}
+	}
+	if n := svc.lookups.Load(); n != authAllowance/costPaired {
+		t.Fatalf("ten bearers that are no token were looked up %d times, want %d", n, authAllowance/costPaired)
+	}
+	// Once the source's pace refills, an app's token from it delivers again.
+	now = now.Add(time.Minute)
+	app := appToken(svc.fakeService, fakeRepository, "webhook:"+appHook)
+	rec := postHook(h, hook, []byte(`{"n":1}`), map[string]string{"Content-Type": "application/json", "Authorization": "Bearer " + app})
+	wantStatus(t, rec, http.StatusAccepted)
+}
+
+// revokingBody revokes a token the first time the upload's body is read.
+type revokingBody struct {
+	io.Reader
+	once   sync.Once
+	revoke func()
+}
+
+func (b *revokingBody) Read(p []byte) (int, error) {
+	b.once.Do(b.revoke)
+	return b.Reader.Read(p)
+}
+
+// A blob upload may wait minutes for a slot and for its body: an app's token
+// revoked meanwhile stores nothing, as the webhook door delivers nothing.
+func TestATokenRevokedWhileItsBlobArrivesStoresNothing(t *testing.T) {
+	e, d := newDeliveryEnv(t)
+	app := appToken(e.svc, fakeRepository, "write:"+photoKind)
+	body := &revokingBody{Reader: strings.NewReader("a photo"), revoke: func() {
+		e.svc.mu.Lock()
+		defer e.svc.mu.Unlock()
+		delete(e.svc.tokens, app)
+	}}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/blobs", body)
+	req.Header.Set("Authorization", "Bearer "+app)
+	req.Header.Set("Content-Type", "image/jpeg")
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
+	if d.puts != 0 {
+		t.Fatalf("a token revoked mid-body stored %d blobs", d.puts)
+	}
+}
+
+// An app's uploads wait for slots of their own: a full pool of them never
+// holds the owner's back.
+func TestAnAppsBlobUploadsHoldSlotsOfTheirOwn(t *testing.T) {
+	e, _ := newDeliveryEnv(t)
+	app := appToken(e.svc, fakeRepository, "write:"+photoKind)
+	for range cap(appBlobPutSem) {
+		appBlobPutSem <- struct{}{}
+	}
+	defer func() {
+		for range cap(appBlobPutSem) {
+			<-appBlobPutSem
+		}
+	}()
+	wantStatus(t, putBlobAs(e, e.owner, "/api/v1/blobs", []byte("the owner's"), "image/png"), http.StatusCreated)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodPut, "/api/v1/blobs", strings.NewReader("the app's"))
+	req.Header.Set("Authorization", "Bearer "+app)
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	wantStatus(t, rec, http.StatusServiceUnavailable)
+}
+
+func TestABlobReferenceAnAppsTokenReadsCarriesNoManifestItCannotRead(t *testing.T) {
+	e, d := newDeliveryEnv(t)
+	const digest = substrate.BlobDigestPrefix + "4f2a"
+	d.records["p1"] = &substrate.Record{
+		ID: "p1", Kind: photoKind, Version: 1, Labels: map[string]any{},
+		Properties: map[string]any{
+			"caption": "a cat",
+			// What a read resolves a reference to: the manifest's name and
+			// type, which the owner's upload gave the bytes.
+			"image": map[string]any{
+				"digest": digest, "name": "letter-from-the-bank.pdf", "mediaType": "application/pdf",
+				"size": 42, "status": "stored",
+			},
+		},
+	}
+	path := "/api/v1/" + vocabulary.RecordPath(photoKind, "p1")
+
+	app := appToken(e.svc, fakeRepository, "write:"+photoKind)
+	rec := e.do(http.MethodGet, path, app, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	if body := rec.Body.String(); strings.Contains(body, "letter-from-the-bank") || strings.Contains(body, "application/pdf") {
+		t.Fatalf("an app that does not read the blob kind read its manifest: %s", body)
+	}
+	got := decodeJSON[substrate.Record](t, rec)
+	image, _ := got.Properties["image"].(map[string]any)
+	if image["digest"] != digest || image["status"] != "stored" || got.Properties["caption"] != "a cat" {
+		t.Fatalf("the cut took more than the manifest: %+v", got.Properties)
+	}
+	if name, _ := d.records["p1"].Properties["image"].(map[string]any)["name"].(string); name != "letter-from-the-bank.pdf" {
+		t.Fatal("the cut changed the record the dataset holds")
+	}
+
+	// A token that reads the manifests reads them through the reference too.
+	reader := appToken(e.svc, fakeRepository, "write:"+photoKind, "read:"+kindBlob)
+	rec = e.do(http.MethodGet, path, reader, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	if !strings.Contains(rec.Body.String(), "letter-from-the-bank.pdf") {
+		t.Fatalf("a token that reads the blob kind lost the manifest: %s", rec.Body.String())
 	}
 }

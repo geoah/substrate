@@ -77,6 +77,7 @@ func TestAuthorizationDetailsAreReadStrictly(t *testing.T) {
 		"llm kind":             `[{"type":"account","kind":"substrate.reamde.dev/llm/provider","id":"openai"}]`,
 		"console kind":         `[{"type":"account","kind":"substrate.reamde.dev/console/recordview","id":"a"}]`,
 		"bad id":               `[{"type":"account","kind":"example.com/notes/account","id":"has space"}]`,
+		"the default id":       `[{"type":"account","kind":"example.com/notes/account","id":"default"}]`,
 		"properties a list":    `[{"type":"account","kind":"example.com/notes/account","id":"a","properties":[1]}]`,
 		"properties null":      `[{"type":"account","kind":"example.com/notes/account","id":"a","properties":null}]`,
 		"properties too long":  long,
@@ -110,8 +111,8 @@ func TestADecodedBodyIsHeldToTheSameRules(t *testing.T) {
 		"empty props":   {Type: "package", Package: "example.com/notes", Version: 1, Properties: map[string]any{}},
 		"no type":       {Package: "example.com/notes", Version: 1},
 	} {
-		if err := CheckDetails([]substrate.AuthorizationDetail{d}); err == nil {
-			t.Errorf("%s: CheckDetails admitted %+v", name, d)
+		if err := checkDetails([]substrate.AuthorizationDetail{d}); err == nil {
+			t.Errorf("%s: checkDetails admitted %+v", name, d)
 		}
 	}
 }

@@ -193,6 +193,7 @@
   },
   "AuthorizationAnswer": {
     "redirect": false,
+    "setup": false,
     "state": false
   },
   "AuthorizationApp": {
@@ -209,8 +210,13 @@
     "planHash": false,
     "scopes": true
   },
+  "AuthorizationBlock": {
+    "fix": false,
+    "problem": true,
+    "reason": true
+  },
   "AuthorizationCheck": {
-    "authorization_details": true,
+    "details": true,
     "scope": true
   },
   "AuthorizationCheckResult": {
@@ -233,7 +239,7 @@
   },
   "AuthorizationFailure": {
     "message": true,
-    "row": true
+    "row": false
   },
   "AuthorizationFunction": {
     "id": true,
@@ -248,22 +254,25 @@
   "AuthorizationPackage": {
     "description": false,
     "functions": false,
-    "held": true,
+    "held": false,
     "id": true,
     "kinds": false,
-    "name": false,
     "required": true,
     "requires": false,
-    "shipped": true,
+    "shipped": false,
     "tier": false,
     "triggers": false
   },
   "AuthorizationPackageStep": {
     "action": true,
-    "held": true,
+    "blocked": false,
+    "description": false,
+    "functions": false,
+    "held": false,
     "id": true,
-    "name": false,
-    "shipped": true
+    "kinds": false,
+    "shipped": false,
+    "triggers": false
   },
   "AuthorizationPrevious": {
     "approvedAt": true,
@@ -286,7 +295,6 @@
     "next": false,
     "planHash": false,
     "previous": false,
-    "progress": false,
     "redirect": true,
     "repository": true,
     "scopes": true,
@@ -295,6 +303,7 @@
   },
   "AuthorizationScope": {
     "agents": true,
+    "allowed": false,
     "glob": true,
     "kinds": true,
     "pattern": true,
@@ -306,9 +315,9 @@
   "AuthorizationSetup": {
     "account": false,
     "action": true,
-    "fix": false,
+    "blocked": false,
     "package": false,
-    "problem": false,
+    "progress": false,
     "type": true,
     "webhook": false
   },
@@ -319,8 +328,8 @@
     "webhook": false
   },
   "AuthorizationWebhookPlan": {
-    "enabled": true,
-    "keyed": true,
+    "enabled": false,
+    "keyed": false,
     "package": false,
     "trigger": true
   },
@@ -819,6 +828,7 @@
     "id": true,
     "lastError": true,
     "parkedAt": true,
+    "pending": false,
     "recordId": false,
     "running": false,
     "seq": false,

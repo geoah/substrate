@@ -102,18 +102,25 @@ func (s Scope) Resolve(authority string) Scope {
 // WebhookScope is the scope an approved `webhook` detail puts on a token.
 func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: trigger} }
 
+// The verbs a stored scope may carry, and the four of them a request may ask
+// for, as a refusal names them.
+const (
+	storedVerbs    = "read, write, agents, decide or webhook"
+	requestedVerbs = "read, write, agents or decide"
+)
+
 // Parse reads one scope, in a request or as stored: `~` is allowed, and
 // `webhook:` parses (ParseRequest refuses it in a request).
 func Parse(raw string) (Scope, error) {
 	verb, pattern, ok := strings.Cut(raw, ":")
 	if !ok {
-		return Scope{}, fmt.Errorf("scope %q is not `<verb>:<pattern>`, the verb one of read, write, agents or decide", raw)
+		return Scope{}, fmt.Errorf("scope %q is not `<verb>:<pattern>`, the verb one of %s", raw, storedVerbs)
 	}
 	s := Scope{Verb: Verb(verb), Pattern: pattern}
 	switch s.Verb {
 	case Read, Write, Agents, Decide, Webhook:
 	default:
-		return Scope{}, fmt.Errorf("scope %q: %q is not read, write, agents or decide", raw, verb)
+		return Scope{}, fmt.Errorf("scope %q: %q is not %s", raw, verb, storedVerbs)
 	}
 	problem := ""
 	switch {
@@ -121,7 +128,7 @@ func Parse(raw string) (Scope, error) {
 		// One trigger by its record id: a webhook is delivered to one
 		// door, so there is nothing to glob, and a trigger id is the
 		// repository's own, so there is no authority to complete.
-		if !vocabulary.ValidID(s.Pattern) || strings.Contains(s.Pattern, "*") {
+		if !vocabulary.ValidTriggerID(s.Pattern) {
 			problem = "is not one trigger's id"
 		}
 	case s.OverAgents():
@@ -228,12 +235,20 @@ func ParseRequest(param string) ([]Scope, error) {
 		if raw == "offline_access" {
 			continue
 		}
+		verb, _, ok := strings.Cut(raw, ":")
+		switch Verb(verb) {
+		case Read, Write, Agents, Decide:
+		case Webhook:
+			return nil, fmt.Errorf("scope %q: an app asks for a webhook with a `webhook` authorization detail, never in scope", raw)
+		default:
+			if !ok {
+				return nil, fmt.Errorf("scope %q is not `<verb>:<pattern>`, the verb one of %s", raw, requestedVerbs)
+			}
+			return nil, fmt.Errorf("scope %q: %q is not %s, the verbs a request asks for", raw, verb, requestedVerbs)
+		}
 		s, err := Parse(raw)
 		if err != nil {
 			return nil, err
-		}
-		if s.Verb == Webhook {
-			return nil, fmt.Errorf("scope %q: an app asks for a webhook with a `webhook` authorization detail, never in scope", raw)
 		}
 		if seen[s.String()] {
 			continue
@@ -342,6 +357,40 @@ func (g Grant) NamesPackage(pkg string) bool {
 		return vocabulary.KindPackage(s.Pattern) == pkg
 	})
 }
+
+// Covers reports whether the grant already holds what want asks for: a scope
+// of the same verb, or a write for a read, over a pattern at least as wide.
+// internal is whether want names one kind whose declared purpose is
+// `internal`, which a glob never reaches, so only the exact scope covers it;
+// it means nothing for a glob or for the agent and webhook verbs. A webhook
+// scope covers its own trigger alone.
+func (g Grant) Covers(want Scope, internal bool) bool {
+	return slices.ContainsFunc(g.scopes, func(held Scope) bool {
+		switch {
+		case held.Verb == want.Verb:
+		case held.Verb == Write && want.Verb == Read:
+		default:
+			return false
+		}
+		if held.Pattern == want.Pattern {
+			return true
+		}
+		if want.Verb == Webhook || !vocabulary.IsTypeGlob(held.Pattern) {
+			return false
+		}
+		if vocabulary.IsTypeGlob(want.Pattern) {
+			return strings.HasPrefix(globPrefix(want.Pattern), globPrefix(held.Pattern))
+		}
+		if internal && !want.OverAgents() {
+			return false
+		}
+		return vocabulary.MatchTypeGlob(held.Pattern, want.Pattern)
+	})
+}
+
+// globPrefix is what every name a glob matches starts with: nothing for `*`,
+// `<authority>/` for `<authority>/*`, `<authority>/<package>/` for a package.
+func globPrefix(glob string) string { return strings.TrimSuffix(glob, "*") }
 
 // Writes reports whether the grant writes records of kind.
 func (g Grant) Writes(kind string, internal bool) bool {

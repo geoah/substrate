@@ -397,7 +397,7 @@ func (t *txn) refuseTakenTrigger(in substrate.PutInput, shipper substrate.Actor)
 	if held == "" || held == shipped {
 		return nil
 	}
-	if owner := callablePackage(held); owner != "" && owner != callablePackage(shipped) &&
+	if owner := vocabulary.CallablePackage(held); owner != "" && owner != vocabulary.CallablePackage(shipped) &&
 		string(shipper) != string(substrate.BundleActor(splitPackage(owner))) {
 		return fmt.Errorf("%w: trigger %s already delivers to %s, which belongs to %s; uninstall that package or rename its trigger first",
 			substrate.ErrConflict, in.ID, held, owner)
@@ -417,10 +417,10 @@ func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, er
 	if err != nil || cur == nil || cur.DeletedAt != nil {
 		return in, err
 	}
-	if callablePackage(storedReferencePath(cur.Props["callable"])) != callablePackage(storedReferencePath(in.Properties["callable"])) {
+	if vocabulary.CallablePackage(storedReferencePath(cur.Props["callable"])) != vocabulary.CallablePackage(storedReferencePath(in.Properties["callable"])) {
 		return in, nil
 	}
-	key := webhookKey(cur.Props)
+	key := vocabulary.TriggerKey(cur.Props)
 	source, _ := in.Properties["source"].(map[string]any)
 	webhook, _ := source["webhook"].(map[string]any)
 	if key == "" || webhook == nil {
@@ -437,29 +437,6 @@ func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, er
 	props["source"] = source
 	in.Properties = props
 	return in, nil
-}
-
-// webhookKey is a trigger's webhook key, or empty.
-func webhookKey(props map[string]any) string {
-	source, _ := props["source"].(map[string]any)
-	webhook, _ := source["webhook"].(map[string]any)
-	key, _ := webhook["key"].(string)
-	return key
-}
-
-// callablePackage is the package a trigger's callable belongs to:
-// `substrate.reamde.dev/core/function/<authority>/<package>/<name>` names
-// `<authority>/<package>`. Empty for anything else.
-func callablePackage(callable string) string {
-	for _, kind := range []string{"substrate.reamde.dev/core/function/", "substrate.reamde.dev/core/agent/"} {
-		if rest, ok := strings.CutPrefix(callable, kind); ok {
-			parts := strings.SplitN(rest, "/", 3)
-			if len(parts) == 3 {
-				return parts[0] + "/" + parts[1]
-			}
-		}
-	}
-	return ""
 }
 
 func splitPackage(pkg string) (string, string) {

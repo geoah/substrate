@@ -32,8 +32,10 @@ type AuthorizationRequest struct {
 	// asked for scopes alone.
 	Details []AuthorizationDetail `json:"details"`
 	// Setup is what approving would set up, one row per detail in the
-	// request's order, computed at every read: after a set up stops part
-	// way, a second read shows what landed.
+	// request's order. A pending request's rows are planned at every read,
+	// so after a set up stops part way a second read shows what landed;
+	// while a set up runs, and after one stopped, they are the rows the
+	// approval was checked against, each carrying its Progress.
 	Setup []AuthorizationSetup `json:"setup"`
 	// PlanHash digests Setup's rows. An approval of a request with setup
 	// names it, and the server refuses when its own plan has moved since:
@@ -44,14 +46,11 @@ type AuthorizationRequest struct {
 	Previous *AuthorizationPrevious `json:"previous,omitempty"`
 	// State is `pending`, `setting-up` or `approved`.
 	State string `json:"state"`
-	// Progress is each setup row's state while a set up runs, and after
-	// one stopped: `waiting`, `running`, `done` or `failed`, in Setup's
-	// order.
-	Progress []string `json:"progress,omitempty"`
 	// Failure is why the last set up stopped; the request is pending again.
 	Failure *AuthorizationFailure `json:"failure,omitempty"`
 	// Next is where the page goes once a set up finished and the code was
-	// issued: the app's redirect URI carrying it.
+	// issued: the app's redirect URI carrying it. An approved request is
+	// answered once, with Next and nothing planned again, and is gone after.
 	Next string `json:"next,omitempty"`
 }
 
@@ -71,17 +70,56 @@ const (
 	DetailWebhook = "webhook"
 )
 
-// The actions a setup row may need. SetupNone is in place already; SetupUnknown
-// answers a check for a row the token cannot see, which an app treats as
-// nothing to ask about.
+// The actions a setup row may need: what approving would do to it. SetupNone
+// is in place already; SetupUnknown answers a check for a row the token
+// cannot see, which an app treats as nothing to ask about. A row that cannot
+// run keeps its action and carries Blocked.
 const (
 	SetupInstall = "install"
 	SetupUpgrade = "upgrade"
 	SetupCreate  = "create"
-	SetupArm     = "arm"
+	SetupEnable  = "enable"
 	SetupNone    = "none"
-	SetupBlocked = "blocked"
 	SetupUnknown = "unknown"
+)
+
+// The reasons a setup row cannot run, which a client words and acts on
+// without reading the server's sentence.
+const (
+	// BlockServerUpdate: this server's catalog ships the package below the
+	// version the app needs; only a newer server can.
+	BlockServerUpdate = "server-update"
+	// BlockNotShipped: this server's catalog does not ship the package.
+	BlockNotShipped = "not-shipped"
+	// BlockSample: the package is a sample, which this door does not take;
+	// the console's own door imports it with its requirements.
+	BlockSample = "sample"
+	// BlockQuarantined: the repository's copy of the package is quarantined.
+	BlockQuarantined = "quarantined"
+	// BlockDeclaredByOwner: the owner declared the package by hand below the
+	// version needed; installing the shipped one would take it from them.
+	BlockDeclaredByOwner = "declared-by-owner"
+	// BlockUpgradeNeedsReview: the upgrade changes or drops what the
+	// repository holds, which the provider page asks the owner to confirm.
+	BlockUpgradeNeedsReview = "upgrade-needs-review"
+	// BlockNotRequested: an account or a webhook of a package the request
+	// does not name.
+	BlockNotRequested = "not-requested"
+	// BlockAccountDeleted: the account was deleted and its deletion is not
+	// collected yet, so it cannot be created again.
+	BlockAccountDeleted = "account-deleted"
+	// BlockUnsupported: what the row names is not something this door sets
+	// up: a kind that is no account, a property it may not set, a trigger
+	// that takes no webhook, or one its provider signs.
+	BlockUnsupported = "unsupported"
+)
+
+// The progress of one setup row while a set up runs, and after one stopped.
+const (
+	ProgressWaiting = "waiting"
+	ProgressRunning = "running"
+	ProgressDone    = "done"
+	ProgressFailed  = "failed"
 )
 
 // AuthorizationDetail is one entry of an app's `authorization_details`: a
@@ -109,43 +147,63 @@ type AuthorizationDetail struct {
 type AuthorizationSetup struct {
 	Type   string `json:"type"`
 	Action string `json:"action"`
-	// Problem says why a blocked row is blocked, in the owner's words, and
-	// Fix where to go about it: a console path, or empty when the server
-	// itself needs an update.
-	Problem string                    `json:"problem,omitempty"`
-	Fix     string                    `json:"fix,omitempty"`
-	Package *AuthorizationPackage     `json:"package,omitempty"`
-	Account *AuthorizationAccount     `json:"account,omitempty"`
-	Webhook *AuthorizationWebhookPlan `json:"webhook,omitempty"`
+	// Blocked is present when the row cannot run, and then approving is
+	// refused.
+	Blocked *AuthorizationBlock `json:"blocked,omitempty"`
+	// Progress is the row's ProgressWaiting, ProgressRunning, ProgressDone
+	// or ProgressFailed while a set up runs and after one stopped; absent
+	// otherwise.
+	Progress string                    `json:"progress,omitempty"`
+	Package  *AuthorizationPackage     `json:"package,omitempty"`
+	Account  *AuthorizationAccount     `json:"account,omitempty"`
+	Webhook  *AuthorizationWebhookPlan `json:"webhook,omitempty"`
+}
+
+// AuthorizationBlock is why a setup row cannot run: a Block* reason a client
+// branches on, the server's one sentence for it in the owner's words, and
+// Fix, a console path where the owner can resolve it, absent when only a
+// newer server or the app can.
+type AuthorizationBlock struct {
+	Reason  string `json:"reason"`
+	Problem string `json:"problem"`
+	Fix     string `json:"fix,omitempty"`
 }
 
 // AuthorizationPackage is a package row's facts. Held is the catalog release
 // the repository holds (its shippedVersion when published, else its stored
-// version), 0 when it holds none; Shipped is what this server's catalog
-// ships. A check answers ID, Required, Held and Shipped alone.
+// version), absent when it holds none; Shipped is what this server's catalog
+// ships, absent when it ships none. A check answers ID, Required, Held and
+// Shipped alone, and ID and Required alone for a row it cannot see. A
+// client names a package from its ID; the catalog carries no other name.
 type AuthorizationPackage struct {
 	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 	Tier        string `json:"tier,omitempty"`
 	Required    int64  `json:"required"`
-	Held        int64  `json:"held"`
-	Shipped     int64  `json:"shipped"`
+	Held        int64  `json:"held,omitempty"`
+	Shipped     int64  `json:"shipped,omitempty"`
 	// Requires is the requirement chain an install brings first, each with
-	// its own action, in the order they land.
+	// its own action and its own facts, in the order they land. Kinds,
+	// Functions and Triggers are this package's own.
 	Requires  []AuthorizationPackageStep `json:"requires,omitempty"`
 	Kinds     []AuthorizationKind        `json:"kinds,omitempty"`
 	Functions []AuthorizationFunction    `json:"functions,omitempty"`
 	Triggers  []AuthorizationTrigger     `json:"triggers,omitempty"`
 }
 
-// AuthorizationPackageStep is one package a requested one requires.
+// AuthorizationPackageStep is one package a requested one requires, with
+// what it brings of its own. Blocked is present when it cannot be installed
+// or upgraded, which blocks the row that requires it.
 type AuthorizationPackageStep struct {
-	ID      string `json:"id"`
-	Name    string `json:"name,omitempty"`
-	Action  string `json:"action"`
-	Held    int64  `json:"held"`
-	Shipped int64  `json:"shipped"`
+	ID          string                  `json:"id"`
+	Description string                  `json:"description,omitempty"`
+	Action      string                  `json:"action"`
+	Blocked     *AuthorizationBlock     `json:"blocked,omitempty"`
+	Held        int64                   `json:"held,omitempty"`
+	Shipped     int64                   `json:"shipped,omitempty"`
+	Kinds       []AuthorizationKind     `json:"kinds,omitempty"`
+	Functions   []AuthorizationFunction `json:"functions,omitempty"`
+	Triggers    []AuthorizationTrigger  `json:"triggers,omitempty"`
 }
 
 // AuthorizationFunction is code a package ships: what runs on the owner's
@@ -173,35 +231,41 @@ type AuthorizationAccount struct {
 }
 
 // AuthorizationWebhookPlan is a webhook row: the trigger approving turns on.
+// Package is the package its callable belongs to, the one deliveries reach.
 // Keyed says whether it holds a key already; the key is never shown or
-// shared, since the app delivers with its own token.
+// shared, since the app delivers with its own token. A check answers
+// Trigger and Package alone.
 type AuthorizationWebhookPlan struct {
 	Trigger string `json:"trigger"`
 	Package string `json:"package,omitempty"`
-	Enabled bool   `json:"enabled"`
-	Keyed   bool   `json:"keyed"`
+	Enabled bool   `json:"enabled,omitempty"`
+	Keyed   bool   `json:"keyed,omitempty"`
 }
 
 // AuthorizationPrevious is the newest token the repository holds for the
-// requesting client id.
+// requesting client id. Never present for a local app, whose client id
+// nothing verifies.
 type AuthorizationPrevious struct {
 	ApprovedAt time.Time  `json:"approvedAt"`
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	Scopes     []string   `json:"scopes"`
 }
 
-// AuthorizationFailure is why a set up stopped: the row, by its index in
-// Setup, and the error in the owner's words.
+// AuthorizationFailure is why a set up stopped, in the owner's words: Row
+// is the row it stopped at, by its index in Setup, absent when it stopped
+// before or after every row (waiting for the repository's turn, issuing the
+// code).
 type AuthorizationFailure struct {
-	Row     int    `json:"row"`
+	Row     *int   `json:"row,omitempty"`
 	Message string `json:"message"`
 }
 
 // AuthorizationCheck is `POST /api/v1/authorizations/check`'s body: the
-// request an app would send now.
+// request an app would send now, its `scope` parameter and its
+// `authorization_details`, held to the rules /oauth/authorize holds them to.
 type AuthorizationCheck struct {
 	Scope   string                `json:"scope"`
-	Details []AuthorizationDetail `json:"authorization_details"`
+	Details []AuthorizationDetail `json:"details"`
 }
 
 // AuthorizationCheckResult says whether a token still has what its app
@@ -275,6 +339,10 @@ type AuthorizationScope struct {
 	// change; empty when it matches none yet, and always empty for a read
 	// or write scope.
 	Agents []*Record `json:"agents"`
+	// Allowed is true when the previous token's scopes already cover this
+	// one (write covers read; a wider pattern covers a narrower one), so the
+	// page can fold it under what was allowed before.
+	Allowed bool `json:"allowed,omitempty"`
 }
 
 // AuthorizationKind is one kind a scope reaches today, or one a package the
@@ -303,9 +371,11 @@ type AuthorizationApproval struct {
 // AuthorizationAnswer is an approval's or a denial's answer: the URL the
 // page navigates to, the app's redirect URI carrying the code or the
 // refusal, the request's state and the issuer. An approval whose set up runs
-// in the background answers no redirect and State `setting-up`: the page
+// in the background answers no redirect, State `setting-up` and Setup, the
+// rows the set up runs with their first progress: the page shows those, then
 // reads the request until it is approved and carries the redirect.
 type AuthorizationAnswer struct {
-	Redirect string `json:"redirect,omitempty"`
-	State    string `json:"state,omitempty"`
+	Redirect string               `json:"redirect,omitempty"`
+	State    string               `json:"state,omitempty"`
+	Setup    []AuthorizationSetup `json:"setup,omitempty"`
 }

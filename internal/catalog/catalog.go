@@ -62,6 +62,11 @@ type Bundle struct {
 	// each one has in ONE repository, so it is filled per request and is empty
 	// here.
 	suggested []vocabulary.SuggestedMapping
+	// kinds, functions and triggers are what the closure brings, as an
+	// approval reads it (facts.go).
+	kinds     []KindFact
+	functions []FunctionFact
+	triggers  []TriggerFact
 }
 
 // Closure and ShippedRecord are the catalog's names for the two nested wire
@@ -374,6 +379,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	}
 	b.Name = b.Package
 	b.Version = version
+	b.readFacts()
 	return b, nil
 }
 
@@ -394,15 +400,6 @@ func (c *Catalog) ByID(id string) (*Bundle, bool) {
 
 // Warnings names the shipped directories dropped during Load.
 func (c *Catalog) Warnings() []string { return c.warnings }
-
-// Documents answers the closure as shipped: its declaration documents and
-// the data documents the install writes beside them, for a reader that needs
-// a fact the wire preview does not carry (a kind's label or traits, a
-// function's writes, how a trigger ships). Both are the catalog's, shared by
-// every repository it serves: a reader never changes them.
-func (b *Bundle) Documents() (declarations, records []map[string]any) {
-	return b.vocabularyDocs, b.dataDocs
-}
 
 // Requirements is what installing the shipped bundle id would install first,
 // in order: the list Install runs and the upgrade preview stages, so a third
@@ -814,7 +811,7 @@ func dataPutInput(d map[string]any) (substrate.PutInput, error) {
 func docID(d map[string]any) string { return mstr(d["metadata"], "id") }
 
 // kindTrigger is the kind a shipped trigger record IS one of.
-const kindTrigger = vocabulary.PackageCore + "/trigger"
+const kindTrigger = vocabulary.TriggerKind
 
 // describe records one closure member's prose under its id, allocating the map
 // only when there is prose: an absent description is omitted from the wire

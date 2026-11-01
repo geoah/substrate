@@ -120,15 +120,16 @@ func (d *setupDataset) InstallBundleClosure(ctx context.Context, _ substrate.Act
 	var kinds []substrate.KindInfo
 	for _, doc := range docs {
 		data, _ := doc["data"].(map[string]any)
+		md, _ := doc["metadata"].(map[string]any)
+		ref, _ := md["id"].(string)
 		switch doc["kind"] {
 		case vocabulary.CoreKind(vocabulary.DocBundle):
-			id = docMetadataID(doc)
+			id = ref
 		case vocabulary.CoreKind(vocabulary.DocKind):
-			ref := docMetadataID(doc)
 			authority, pkg, name := vocabulary.SplitKindRef(ref)
 			kinds = append(kinds, substrate.KindInfo{
 				Identity: ref, Name: name, Authority: authority, Package: pkg, Version: 1,
-				Source: vocabulary.SourcePublished, Definition: data, Label: definitionLabel(data),
+				Source: vocabulary.SourcePublished, Definition: data,
 			})
 		}
 	}
@@ -156,7 +157,7 @@ func (d *setupDataset) InstallBundleClosure(ctx context.Context, _ substrate.Act
 		if held, ok := d.records[in.ID]; ok {
 			version = held.Version + 1
 		}
-		d.put(&substrate.Record{ID: in.ID, Kind: in.Kind, Properties: cloneProperties(in.Properties), Version: version})
+		d.put(&substrate.Record{ID: in.ID, Kind: in.Kind, Properties: deepCopy(in.Properties), Version: version})
 	}
 	return nil, nil
 }
@@ -181,7 +182,7 @@ func (d *setupDataset) Put(ctx context.Context, actor substrate.Actor, in substr
 		return nil, err
 	}
 	if held != nil {
-		merged := cloneProperties(held.Properties)
+		merged := deepCopy(held.Properties)
 		for k, v := range in.Properties {
 			merged[k] = v
 		}
@@ -189,6 +190,16 @@ func (d *setupDataset) Put(ctx context.Context, actor substrate.Actor, in substr
 	}
 	d.fakeDataset.mu.Unlock()
 	return d.fakeDataset.Put(ctx, actor, in)
+}
+
+// deepCopy copies properties through JSON, numbers kept as written.
+func deepCopy(in map[string]any) map[string]any {
+	raw, _ := json.Marshal(in)
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	var out map[string]any
+	_ = dec.Decode(&out)
+	return out
 }
 
 func (d *setupDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) {
@@ -205,8 +216,9 @@ func (d *setupDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) {
 
 type setupEnv struct {
 	*appEnv
-	repo  *setupRepo
-	repos func(string) *setupRepo
+	repo    *setupRepo
+	repos   func(string) *setupRepo
+	catalog *catalog.Catalog
 }
 
 func newSetupEnv(t *testing.T) *setupEnv {
@@ -236,7 +248,7 @@ func newSetupEnv(t *testing.T) *setupEnv {
 		t: t, svc: svc, docs: docs, owner: svc.token(fakeRepository),
 		h: New(Config{Service: svc, ClientDocuments: docs, AuthInterval: time.Nanosecond, Catalog: cat}),
 	}
-	return &setupEnv{appEnv: e, repo: repoFor(fakeRepository), repos: repoFor}
+	return &setupEnv{appEnv: e, repo: repoFor(fakeRepository), repos: repoFor, catalog: cat}
 }
 
 func setupRequest(scopes, details string) map[string]string {
@@ -258,8 +270,8 @@ func (e *setupEnv) approveWith(id string, scopes []string, hash string) *httptes
 	return e.do(http.MethodPost, "/api/v1/authorizations/"+id, e.owner, body, "application/json")
 }
 
-// settle reads the request until its set up has ended: approved, or pending
-// again with a failure.
+// settle reads the request until its set up has ended: approved, which the
+// read that sees it hands over, or pending again with a failure.
 func (e *setupEnv) settle(id string) substrate.AuthorizationRequest {
 	e.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -303,7 +315,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	health := v.Setup[1]
 	if health.Action != substrate.SetupInstall || health.Package.Shipped != 5 ||
 		len(health.Package.Requires) != 1 || health.Package.Requires[0].ID != healthPkg ||
-		health.Package.Requires[0].Action != substrate.SetupInstall {
+		health.Package.Requires[0].Action != substrate.SetupInstall || health.Package.Requires[0].Shipped == 0 {
 		t.Fatalf("applehealth row = %+v %+v", health, health.Package)
 	}
 	var adapter *substrate.AuthorizationFunction
@@ -327,9 +339,17 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	if hook == nil || !hook.Webhook || hook.Enabled || record == nil || record.Webhook || !record.Enabled {
 		t.Fatalf("applehealth's triggers = %+v", health.Package.Triggers)
 	}
-	// The requirement's kinds land too, and are listed as added.
-	if !slices.ContainsFunc(health.Package.Kinds, func(k substrate.AuthorizationKind) bool { return k.Identity == healthPkg+"/sleep" }) {
-		t.Fatalf("applehealth adds %+v, want health's kinds among them", health.Package.Kinds)
+	// The requirement's kinds land too, listed as added under the step that
+	// brings them, and the row lists its own alone.
+	step := health.Package.Requires[0]
+	if !slices.ContainsFunc(step.Kinds, func(k substrate.AuthorizationKind) bool { return k.Identity == healthPkg+"/sleep" && k.Added }) {
+		t.Fatalf("health adds %+v, want its sleep kind among them", step.Kinds)
+	}
+	if slices.ContainsFunc(health.Package.Kinds, func(k substrate.AuthorizationKind) bool { return vocabulary.KindPackage(k.Identity) != appleHealthPkg }) {
+		t.Fatalf("applehealth's own kinds carry another package's: %+v", health.Package.Kinds)
+	}
+	if slices.ContainsFunc(health.Package.Functions, func(f substrate.AuthorizationFunction) bool { return vocabulary.KindPackage(f.ID) != appleHealthPkg }) {
+		t.Fatalf("applehealth's own functions carry another package's: %+v", health.Package.Functions)
 	}
 	acct := v.Setup[2]
 	if acct.Action != substrate.SetupCreate || acct.Account.Kind != healthAccount || acct.Account.ID != syncAccountID ||
@@ -337,8 +357,13 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		t.Fatalf("account row = %+v %+v", acct, acct.Account)
 	}
 	hookRow := v.Setup[3]
-	if hookRow.Action != substrate.SetupArm || hookRow.Webhook.Package != appleHealthPkg || hookRow.Webhook.Enabled || hookRow.Webhook.Keyed {
+	if hookRow.Action != substrate.SetupEnable || hookRow.Webhook.Package != appleHealthPkg || hookRow.Webhook.Enabled || hookRow.Webhook.Keyed {
 		t.Fatalf("webhook row = %+v %+v", hookRow, hookRow.Webhook)
+	}
+	for i, row := range v.Setup {
+		if row.Blocked != nil || row.Progress != "" {
+			t.Fatalf("row %d of a pending request = %+v", i, row)
+		}
 	}
 	// A scope row lists the kinds the set up would add that it reaches,
 	// an internal one through its exact scope alone.
@@ -356,6 +381,10 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	}) {
 		t.Fatalf("the apple glob reaches %+v", appleScope.Kinds)
 	}
+	// Nothing was approved before, so no scope is folded away.
+	if v.Previous != nil || slices.ContainsFunc(v.Scopes, func(s substrate.AuthorizationScope) bool { return s.Allowed }) {
+		t.Fatalf("a first approval reads as allowed before: %+v", v.Previous)
+	}
 	// The plan is the same on a second read.
 	if again := e.view(id); again.PlanHash != v.PlanHash {
 		t.Fatalf("plan hash moved between two reads: %s, %s", v.PlanHash, again.PlanHash)
@@ -372,7 +401,7 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 	// A trigger of another package's, already here under the id the app
 	// names.
 	ds := e.svc.datasets[fakeRepository]
-	ds.put(&substrate.Record{ID: "notes-webhook", Kind: setupTriggerKind, Version: 1, Properties: map[string]any{
+	ds.put(&substrate.Record{ID: "notes-webhook", Kind: vocabulary.TriggerKind, Version: 1, Properties: map[string]any{
 		"enabled":  false,
 		"source":   map[string]any{"webhook": map[string]any{}},
 		"callable": map[string]any{"ref": "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/googlesync"},
@@ -384,7 +413,7 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 	e.repo.mu.Lock()
 	e.repo.statuses[own] = substrate.BundleStatus{ID: own, Installed: true, Enabled: true, Version: 1}
 	e.repo.mu.Unlock()
-	ds.put(&substrate.Record{ID: "stripe-webhook", Kind: setupTriggerKind, Version: 1, Properties: map[string]any{
+	ds.put(&substrate.Record{ID: "stripe-webhook", Kind: vocabulary.TriggerKind, Version: 1, Properties: map[string]any{
 		"enabled":  true,
 		"source":   map[string]any{"webhook": map[string]any{"key": "the-owners-key-0123456789"}},
 		"callable": map[string]any{"ref": "substrate.reamde.dev/core/function/" + own + "/handle"},
@@ -392,57 +421,60 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 	cases := map[string]struct {
 		details string
 		row     int
+		action  string
+		reason  string
 		fix     string
 		problem string
 	}{
 		"a sample": {
 			details: `[{"type":"package","package":"samples.substrate.reamde.dev/tasks","version":1}]`,
-			fix:     "/data", problem: "sample",
+			action:  substrate.SetupInstall, reason: substrate.BlockSample, fix: "/data", problem: "sample",
 		},
 		"a version the server does not ship": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":99}]`,
-			problem: "This server ships version 5 of applehealth, and the app needs version 99. The server needs an update.",
+			action:  substrate.SetupInstall, reason: substrate.BlockServerUpdate,
+			problem: "This server ships version 5; the app needs version 99. The server needs an update first.",
 		},
 		"a package outside the catalog": {
 			details: `[{"type":"package","package":"example.com/notes","version":1}]`,
-			problem: "does not offer",
+			action:  substrate.SetupInstall, reason: substrate.BlockNotShipped, problem: "does not offer",
 		},
 		"an installed package of your own": {
 			details: `[{"type":"package","package":"` + own + `","version":1},{"type":"webhook","trigger":"stripe-webhook"}]`,
-			problem: "does not offer",
+			action:  substrate.SetupNone, reason: substrate.BlockNotShipped, problem: "does not offer",
 		},
 		"an account of a package not requested": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},
 			{"type":"account","kind":"` + healthAccount + `","id":"a"}]`,
-			row: 1, problem: "does not set up",
+			row: 1, action: substrate.SetupCreate, reason: substrate.BlockNotRequested, problem: "does not set up",
 		},
 		"an account kind that is no account": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},
 			{"type":"account","kind":"` + applePkg + `/contact","id":"a"}]`,
-			row: 1, problem: "not an account kind",
+			row: 1, action: substrate.SetupCreate, reason: substrate.BlockUnsupported, problem: "not an account kind",
 		},
 		"a secret property": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
 			{"type":"account","kind":"` + healthAccount + `","id":"a","properties":{"tokenRef":"x"}}]`,
-			row: 1, problem: "secret",
+			row: 1, action: substrate.SetupCreate, reason: substrate.BlockUnsupported, problem: "secret",
 		},
 		"another hand's property": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
 			{"type":"account","kind":"` + healthAccount + `","id":"a","properties":{"tokenStatus":"x"}}]`,
-			row: 1, problem: "the provider's sign-in",
+			row: 1, action: substrate.SetupCreate, reason: substrate.BlockUnsupported, problem: "the provider's sign-in",
 		},
 		"an undeclared property": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
 			{"type":"account","kind":"` + healthAccount + `","id":"a","properties":{"nickname":"x"}}]`,
-			row: 1, problem: "no nickname property",
+			row: 1, action: substrate.SetupCreate, reason: substrate.BlockUnsupported, problem: "no nickname property",
 		},
 		"a webhook another package's callable takes": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},{"type":"webhook","trigger":"notes-webhook"}]`,
-			row:     1, problem: "code from google",
+			row:     1, action: substrate.SetupEnable, reason: substrate.BlockNotRequested, problem: "code from a package this request does not set up",
 		},
 		"a webhook of a package not requested": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},{"type":"webhook","trigger":"` + healthWebhook + `"}]`,
-			row:     1, problem: "no such trigger",
+			row:     1, action: substrate.SetupEnable, reason: substrate.BlockNotRequested, problem: "no such trigger",
 		},
 	}
 	for name, c := range cases {
@@ -450,13 +482,14 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 			id := e.park(setupRequest("read:"+personKind, c.details))
 			v := e.view(id)
 			row := v.Setup[c.row]
-			if row.Action != substrate.SetupBlocked || row.Fix != c.fix || !strings.Contains(row.Problem, c.problem) {
-				t.Fatalf("row %d = %+v, want blocked with %q and fix %q", c.row, row, c.problem, c.fix)
+			if row.Action != c.action || row.Blocked == nil || row.Blocked.Reason != c.reason || row.Blocked.Fix != c.fix ||
+				!strings.Contains(row.Blocked.Problem, c.problem) {
+				t.Fatalf("row %d = %+v %+v, want %s blocked for %s with %q and fix %q", c.row, row, row.Blocked, c.action, c.reason, c.problem, c.fix)
 			}
 			// The owner reads it as a sentence, and the technical view
 			// shows the ids beside it.
-			if !regexp.MustCompile(`^[A-Z][^:/]*\.$`).MatchString(row.Problem) {
-				t.Fatalf("problem %q is not a sentence free of ids", row.Problem)
+			if !regexp.MustCompile(`^[A-Z][^:/]*\.$`).MatchString(row.Blocked.Problem) {
+				t.Fatalf("problem %q is not a sentence free of ids", row.Blocked.Problem)
 			}
 			// Blocked keeps the denial and refuses the approval.
 			rec := e.approveWith(id, []string{"read:" + personKind}, v.PlanHash)
@@ -483,14 +516,19 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), ""), http.StatusUnprocessableEntity)
 	rec := e.approveWith(id, resolvedSyncScopes(), v.PlanHash)
 	wantStatus(t, rec, http.StatusAccepted)
-	if a := decodeJSON[substrate.AuthorizationAnswer](t, rec); a.State != substrate.AuthorizationSettingUp || a.Redirect != "" {
+	// The answer carries the rows the set up runs, each waiting, so the page
+	// shows them before its first read.
+	if a := decodeJSON[substrate.AuthorizationAnswer](t, rec); a.State != substrate.AuthorizationSettingUp || a.Redirect != "" ||
+		len(a.Setup) != 4 || a.Setup[0].Progress != substrate.ProgressWaiting || a.Setup[1].Package.ID != appleHealthPkg {
 		t.Fatalf("answer = %+v", a)
 	}
 	done := e.settle(id)
 	if done.State != substrate.AuthorizationApproved || !strings.HasPrefix(done.Next, appRedirect+"?") ||
-		strings.Join(done.Progress, ",") != "done,done,done,done" {
-		t.Fatalf("after the set up = state %q next %q progress %v failure %+v", done.State, done.Next, done.Progress, done.Failure)
+		progress(done) != "done,done,done,done" {
+		t.Fatalf("after the set up = state %q next %q progress %v failure %+v", done.State, done.Next, progress(done), done.Failure)
 	}
+	// Answered once: the read that handed the code over was the last.
+	wantStatus(t, e.show(id), http.StatusNotFound)
 	// The requirement landed before what requires it.
 	e.repo.mu.Lock()
 	installs := strings.Join(e.repo.installs, ",")
@@ -505,12 +543,12 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	if account == nil || account.Kind != healthAccount || account.Properties["displayName"] != "Ada's iPhone" {
 		t.Fatalf("account = %+v", account)
 	}
-	key := triggerKeyOf(trigger.Properties)
+	key := vocabulary.TriggerKey(trigger.Properties)
 	if trigger.Properties["enabled"] != true || !regexp.MustCompile(`^[A-Za-z0-9_-]{32}$`).MatchString(key) ||
-		referencePath(trigger.Properties["callable"]) == "" {
+		vocabulary.ReferencePath(trigger.Properties["callable"]) == "" {
 		t.Fatalf("trigger = %+v", trigger.Properties)
 	}
-	// Answered once: the page reads where to go, nothing answers it again.
+	// Nothing answers it again.
 	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusNotFound)
 	wantStatus(t, e.do(http.MethodDelete, "/api/v1/authorizations/"+id, e.owner, nil, ""), http.StatusNotFound)
 
@@ -545,6 +583,11 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	if v.Previous == nil || !slices.Contains(v.Previous.Scopes, "webhook:"+healthWebhook) {
 		t.Fatalf("previous = %+v", v.Previous)
 	}
+	for _, s := range v.Scopes {
+		if !s.Allowed {
+			t.Fatalf("scope %s, approved before, is not folded as allowed", s.Scope)
+		}
+	}
 	rec = e.approveWith(again, resolvedSyncScopes(), v.PlanHash)
 	wantStatus(t, rec, http.StatusOK)
 	tok = e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))
@@ -554,7 +597,7 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	}
 	// Arming again never replaced the key.
 	ds.mu.Lock()
-	still := triggerKeyOf(ds.records[healthWebhook].Properties)
+	still := vocabulary.TriggerKey(ds.records[healthWebhook].Properties)
 	ds.mu.Unlock()
 	if still != key {
 		t.Fatal("the key changed")
@@ -613,11 +656,11 @@ func TestNothingElseAnswersARequestWhileItIsSettingUp(t *testing.T) {
 		if running.State != substrate.AuthorizationSettingUp {
 			t.Fatalf("while it runs = state %q", running.State)
 		}
-		if len(running.Progress) == 4 && running.Progress[0] == setupRunning && running.Progress[1] == setupWaiting {
+		if progress(running) == "running,waiting,waiting,waiting" && running.PlanHash == v.PlanHash {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the set up never reported its first row running: %v", running.Progress)
+			t.Fatalf("the set up never reported its first row running: %v", progress(running))
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -641,27 +684,61 @@ func TestAFailedSetUpIsPendingAgainAndTriesWhatIsLeft(t *testing.T) {
 	v := e.view(id)
 	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusAccepted)
 	failed := e.settle(id)
-	if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != 1 ||
-		!strings.Contains(failed.Failure.Message, "does not admit") || failed.Progress[0] != setupDone ||
-		failed.Progress[1] != setupFailed || failed.Progress[2] != setupWaiting {
-		t.Fatalf("after a failure = %+v progress %v", failed.Failure, failed.Progress)
+	if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row == nil || *failed.Failure.Row != 1 ||
+		!strings.Contains(failed.Failure.Message, "does not admit") || progress(failed) != "done,failed,," {
+		t.Fatalf("after a failure = %+v progress %q", failed.Failure, progress(failed))
 	}
-	// What landed stays, and the plan says so.
-	if failed.Setup[0].Action != substrate.SetupNone || failed.Setup[1].Action != substrate.SetupInstall {
-		t.Fatalf("rows after a failure = %q %q", failed.Setup[0].Action, failed.Setup[1].Action)
+	// The page reads the rows the approval was checked against, with what
+	// landed, and names their hash to try again.
+	if failed.PlanHash != v.PlanHash || failed.Setup[0].Action != substrate.SetupInstall {
+		t.Fatalf("rows after a failure = hash %q, apple %q", failed.PlanHash, failed.Setup[0].Action)
 	}
 	e.repo.mu.Lock()
 	delete(e.repo.fail, appleHealthPkg)
 	e.repo.mu.Unlock()
 	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), failed.PlanHash), http.StatusAccepted)
 	done := e.settle(id)
-	if done.State != substrate.AuthorizationApproved || done.Failure != nil {
-		t.Fatalf("trying again = state %q failure %+v", done.State, done.Failure)
+	if done.State != substrate.AuthorizationApproved || done.Failure != nil || progress(done) != "done,done,done,done" {
+		t.Fatalf("trying again = state %q failure %+v progress %q", done.State, done.Failure, progress(done))
 	}
 	e.repo.mu.Lock()
 	defer e.repo.mu.Unlock()
 	if n := len(slices.DeleteFunc(slices.Clone(e.repo.installs), func(s string) bool { return s != applePkg })); n != 1 {
 		t.Fatalf("apple was installed %d times: %v", n, e.repo.installs)
+	}
+}
+
+// A request whose set up stopped shows the rows it ran; once what approving
+// sets up moved from those, trying them again is refused and the page plans
+// the request afresh.
+func TestTryingAgainAfterThePlanMovedIsRefusedAndPlannedAfresh(t *testing.T) {
+	e := newSetupEnv(t)
+	e.repo.mu.Lock()
+	e.repo.statuses[applePkg] = substrate.BundleStatus{ID: applePkg, Installed: true, Enabled: true, Version: 3, ShippedVersion: 3}
+	e.repo.fail[appleHealthPkg] = fmt.Errorf("%w: the closure does not admit", substrate.ErrValidation)
+	e.repo.mu.Unlock()
+	id := e.park(setupRequest(syncScopes, syncDetails))
+	v := e.view(id)
+	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusAccepted)
+	failed := e.settle(id)
+	if failed.Failure == nil || failed.PlanHash != v.PlanHash || failed.Setup[0].Action != substrate.SetupNone {
+		t.Fatalf("after a failure = %+v hash %q", failed.Failure, failed.PlanHash)
+	}
+	// The owner removes apple, which the approval showed in place.
+	e.repo.mu.Lock()
+	delete(e.repo.statuses, applePkg)
+	delete(e.repo.fail, appleHealthPkg)
+	e.repo.mu.Unlock()
+	wantErrorCode(t, e.approveWith(id, resolvedSyncScopes(), failed.PlanHash), http.StatusConflict, codeConflict)
+	fresh := e.view(id)
+	if fresh.State != substrate.AuthorizationPending || fresh.PlanHash == failed.PlanHash || fresh.Setup[0].Action != substrate.SetupInstall ||
+		progress(fresh) != ",,," || fresh.Failure == nil {
+		t.Fatalf("after the refusal = state %q hash %q apple %q progress %q failure %+v",
+			fresh.State, fresh.PlanHash, fresh.Setup[0].Action, progress(fresh), fresh.Failure)
+	}
+	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), fresh.PlanHash), http.StatusAccepted)
+	if done := e.settle(id); done.State != substrate.AuthorizationApproved {
+		t.Fatalf("approving the fresh plan ended %+v", done.Failure)
 	}
 }
 
@@ -677,13 +754,22 @@ func (e *setupEnv) holdTurn() (string, chan struct{}) {
 	id := e.park(setupRequest("read:"+healthAccount, details))
 	wantStatus(e.t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
 	deadline := time.Now().Add(10 * time.Second)
-	for p := e.view(id).Progress; len(p) == 0 || p[0] != setupRunning; p = e.view(id).Progress {
+	for progress(e.view(id)) != substrate.ProgressRunning {
 		if time.Now().After(deadline) {
 			e.t.Fatal("the set up holding the turn never started")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	return id, gate
+}
+
+// progress is a request's rows' progress, in order.
+func progress(v substrate.AuthorizationRequest) string {
+	out := make([]string, len(v.Setup))
+	for i, row := range v.Setup {
+		out[i] = row.Progress
+	}
+	return strings.Join(out, ",")
 }
 
 // A set up that waited for another one runs the rows that landed meanwhile
@@ -735,9 +821,14 @@ func TestASetUpThatWaitedRunsOnlyWhatWasApproved(t *testing.T) {
 		close(gate)
 		e.settle(holder)
 		failed := e.settle(id)
-		if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != 0 ||
+		if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row == nil || *failed.Failure.Row != 0 ||
 			!strings.Contains(failed.Failure.Message, "changed") || failed.Setup[0].Action != substrate.SetupInstall {
 			t.Fatalf("after the plan moved = state %q failure %+v apple %q", failed.State, failed.Failure, failed.Setup[0].Action)
+		}
+		// The page plans it again: what approving does now, under a new
+		// hash, with no progress of the run that stopped.
+		if failed.PlanHash == v.PlanHash || progress(failed) != ",,," {
+			t.Fatalf("after the plan moved = hash %q progress %q", failed.PlanHash, progress(failed))
 		}
 		e.repo.mu.Lock()
 		installs := slices.Clone(e.repo.installs)
@@ -765,9 +856,9 @@ func TestASetUpThatPanicsFailsItsRequestAlone(t *testing.T) {
 	id := e.park(setupRequest("read:"+healthAccount, details))
 	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
 	failed := e.settle(id)
-	if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != setupWholeRow ||
-		!strings.Contains(failed.Failure.Message, "server") {
-		t.Fatalf("after a panic = state %q failure %+v", failed.State, failed.Failure)
+	if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != nil ||
+		!strings.Contains(failed.Failure.Message, "server") || progress(failed) != substrate.ProgressFailed {
+		t.Fatalf("after a panic = state %q failure %+v progress %q", failed.State, failed.Failure, progress(failed))
 	}
 	e.repo.mu.Lock()
 	e.repo.explode = ""
@@ -784,67 +875,43 @@ func TestASetUpStopsWithItsRequest(t *testing.T) {
 	e := newSetupEnv(t)
 	var mu sync.Mutex
 	now := time.Now()
-	clock := func() time.Time {
+	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, AuthInterval: time.Nanosecond, Catalog: e.catalog, Now: func() time.Time {
 		mu.Lock()
 		defer mu.Unlock()
 		return now
-	}
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	h := &handler{svc: e.svc, now: clock, catalog: cat, authz: authorize.NewStore(clock)}
-	ds := e.svc.wrap(e.svc.datasets[fakeRepository])
-	details, err := authorize.ParseDetails(`[{"type":"package","package":"` + applePkg + `","version":3}]`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req, _ := h.authz.Park(authorize.Request{Details: details})
-	if _, err := h.authz.Snapshot(req.ID, fakeRepository, authorize.Document{}); err != nil {
-		t.Fatal(err)
-	}
-	if req, err = h.authz.Reserve(req.ID, fakeRepository, func(authorize.Request) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	rows, _, err := h.planSetup(ctx, ds, details)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release, err := h.setupTurn(ctx, fakeRepository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		h.runSetup(ctx, ds, substrate.ActorAPI, req, rows, func(authorize.Request) (authorize.Approval, error) {
-			return authorize.Approval{Scopes: []string{"read:*"}}, nil
-		})
-	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		got, err := h.authz.Claim(req.ID, fakeRepository)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(got.Progress) == 1 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the set up never reported its rows")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	}})
+	holder, gate := e.holdTurn()
+	details := `[{"type":"package","package":"` + applePkg + `","version":3}]`
+	id := e.park(setupRequest("read:"+healthAccount, details))
+	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
 	mu.Lock()
 	now = now.Add(authorize.SetUpTTL)
 	mu.Unlock()
-	release()
-	<-done
+	close(gate)
+	// Both lapsed: the one holding the turn finishes its install, and the
+	// one waiting for it installs nothing.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		e.repo.mu.Lock()
+		installs := slices.Clone(e.repo.installs)
+		e.repo.mu.Unlock()
+		if slices.Contains(installs, appleHealthPkg) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the set up holding the turn never finished: %v", installs)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// A run that wrote anything would have by now: the fake is in memory.
+	time.Sleep(200 * time.Millisecond)
 	e.repo.mu.Lock()
 	defer e.repo.mu.Unlock()
-	if len(e.repo.installs) != 0 {
+	if slices.Contains(e.repo.installs, applePkg) {
 		t.Fatalf("a set up whose request lapsed installed %v", e.repo.installs)
+	}
+	for _, req := range []string{holder, id} {
+		wantStatus(t, e.show(req), http.StatusNotFound)
 	}
 }
 
@@ -859,14 +926,42 @@ func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
 	ds := e.svc.datasets[fakeRepository]
 	ds.mu.Lock()
 	ds.records[syncAccountID].Properties["displayName"] = "the owner's"
-	now := time.Unix(10, 0).UTC()
-	ds.records[syncAccountID].DeletedAt = &now
 	ds.mu.Unlock()
-	// Deleted is still there: the approval never resurrects it.
-	again := e.park(setupRequest("read:"+healthAccount, details))
-	if row := e.view(again).Setup[1]; row.Action != substrate.SetupNone {
-		t.Fatalf("a deleted account = %+v", row)
+	live := e.park(setupRequest("read:"+healthAccount, details))
+	if row := e.view(live).Setup[1]; row.Action != substrate.SetupNone || row.Blocked != nil {
+		t.Fatalf("a live account = %+v", row)
 	}
+	// Deleted and not collected yet: never brought back, and the page says
+	// why approving cannot create it, until the deletion is collected.
+	ds.mu.Lock()
+	deleted := time.Unix(10, 0).UTC()
+	ds.records[syncAccountID].DeletedAt = &deleted
+	ds.mu.Unlock()
+	again := e.park(setupRequest("read:"+healthAccount, details))
+	v = e.view(again)
+	row := v.Setup[1]
+	if row.Action != substrate.SetupCreate || row.Blocked == nil || row.Blocked.Reason != substrate.BlockAccountDeleted || row.Blocked.Fix != "" {
+		t.Fatalf("a deleted account = %+v %+v", row, row.Blocked)
+	}
+	wantErrorCode(t, e.approveWith(again, []string{"read:" + healthAccount}, v.PlanHash), http.StatusUnprocessableEntity, codeValidation)
+	ds.mu.Lock()
+	delete(ds.records, syncAccountID)
+	ds.mu.Unlock()
+	if row := e.view(again).Setup[1]; row.Action != substrate.SetupCreate || row.Blocked != nil {
+		t.Fatalf("an account whose deletion was collected = %+v", row)
+	}
+}
+
+// checkRequest is a check's body as an app sends it.
+func checkRequest(scopes, details string) []byte {
+	return []byte(`{"scope":` + jsonString(scopes) + `,"details":` + details + `}`)
+}
+
+func (e *setupEnv) check(bearer string, body []byte) substrate.AuthorizationCheckResult {
+	e.t.Helper()
+	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", bearer, body, "application/json")
+	wantStatus(e.t, rec, http.StatusOK)
+	return decodeJSON[substrate.AuthorizationCheckResult](e.t, rec)
 }
 
 func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
@@ -879,73 +974,72 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 	wantStatus(t, tok, http.StatusOK)
 	app := decodeJSON[tokenResponse](t, tok).AccessToken
 
-	check := func(bearer, scopes, details string) substrate.AuthorizationCheckResult {
-		t.Helper()
-		body := `{"scope":` + jsonString(scopes) + `,"authorization_details":` + details + `}`
-		rec := e.do(http.MethodPost, "/api/v1/authorizations/check", bearer, []byte(body), "application/json")
-		wantStatus(t, rec, http.StatusOK)
-		return decodeJSON[substrate.AuthorizationCheckResult](t, rec)
-	}
 	// Its own token sees every row its scopes name, all in place, and
 	// nothing missing.
-	got := check(app, syncScopes, syncDetails)
+	got := e.check(app, checkRequest(syncScopes, syncDetails))
 	if len(got.Scopes.Missing) != 0 || got.ExpiresAt == nil {
 		t.Fatalf("check = missing %v expires %v", got.Scopes.Missing, got.ExpiresAt)
 	}
 	for i, row := range got.Setup {
-		if row.Action != substrate.SetupNone {
+		if row.Action != substrate.SetupNone || row.Blocked != nil || row.Progress != "" {
 			t.Fatalf("row %d = %+v", i, row)
 		}
 	}
-	if p := got.Setup[0].Package; p.Held != 3 || p.Shipped != 3 || p.Name != "" || p.Kinds != nil {
+	if p := got.Setup[0].Package; p.Held != 3 || p.Shipped != 3 || p.Kinds != nil || p.Requires != nil || p.Tier != "" {
 		t.Fatalf("a package row carries %+v, want versions alone", p)
 	}
-	if w := got.Setup[3].Webhook; !w.Enabled || !w.Keyed || w.Package != "" {
-		t.Fatalf("the webhook row = %+v", w)
+	if w := got.Setup[3].Webhook; w.Enabled || w.Keyed || w.Package != appleHealthPkg {
+		t.Fatalf("the webhook row = %+v, want its trigger and package alone", w)
 	}
 	if a := got.Setup[2].Account; a.Properties != nil || a.Label != nil {
 		t.Fatalf("the account row = %+v", a)
 	}
-	// A newer version and another scope: both are asked about.
+	// A newer version and another scope: both are asked about, the row with
+	// why it cannot run, which the app shows the owner.
 	newer := strings.Replace(syncDetails, `"version": 5`, `"version": 99`, 1)
-	got = check(app, syncScopes+" read:~/notes/*", newer)
-	if strings.Join(got.Scopes.Missing, ",") != "read:"+fakeRepository+"/notes/*" || got.Setup[1].Action != substrate.SetupBlocked {
-		t.Fatalf("check = missing %v row %+v", got.Scopes.Missing, got.Setup[1])
+	got = e.check(app, checkRequest(syncScopes+" read:~/notes/*", newer))
+	blocked := got.Setup[1]
+	if strings.Join(got.Scopes.Missing, ",") != "read:"+fakeRepository+"/notes/*" || blocked.Action != substrate.SetupUpgrade ||
+		blocked.Blocked == nil || blocked.Blocked.Reason != substrate.BlockServerUpdate || blocked.Blocked.Problem == "" {
+		t.Fatalf("check = missing %v row %+v %+v", got.Scopes.Missing, blocked, blocked.Blocked)
+	}
+	// A scope the token covers under another spelling is not missing: write
+	// covers read, and a package glob covers a kind in it.
+	got = e.check(app, checkRequest("read:"+applePkg+"/contact read:~/notes/*", "[]"))
+	if strings.Join(got.Scopes.Missing, ",") != "read:"+fakeRepository+"/notes/*" {
+		t.Fatalf("a covered scope = missing %v", got.Scopes.Missing)
 	}
 
 	// A token that reaches none of it learns nothing of it.
 	narrow := e.grant("read:"+personKind, []string{"read:" + personKind})
-	got = check(narrow, syncScopes, syncDetails)
+	got = e.check(narrow, checkRequest(syncScopes, newer))
 	if len(got.Scopes.Missing) != 3 {
 		t.Fatalf("a narrow token is missing %v", got.Scopes.Missing)
 	}
 	for i, row := range got.Setup {
-		if row.Action != substrate.SetupUnknown {
+		if row.Action != substrate.SetupUnknown || row.Blocked != nil {
 			t.Fatalf("row %d = %+v, want unknown", i, row)
 		}
 	}
-	if p := got.Setup[0].Package; p.ID != applePkg || p.Held != 0 || p.Shipped != 0 {
+	if p := got.Setup[1].Package; p.ID != appleHealthPkg || p.Required != 99 || p.Held != 0 || p.Shipped != 0 {
 		t.Fatalf("an unknown package row = %+v", p)
 	}
-	if w := got.Setup[3].Webhook; w.Enabled || w.Keyed {
+	if w := got.Setup[3].Webhook; w.Trigger != healthWebhook || w.Package != "" {
 		t.Fatalf("an unknown webhook row = %+v", w)
+	}
+	raw := e.do(http.MethodPost, "/api/v1/authorizations/check", narrow, checkRequest(syncScopes, newer), "application/json").Body.String()
+	for _, absent := range []string{`"held"`, `"shipped"`, `"blocked"`, `"enabled"`, `"keyed"`} {
+		if strings.Contains(raw, absent) {
+			t.Fatalf("an unknown row answers %s: %s", absent, raw)
+		}
 	}
 
 	// The owner's token sees everything.
-	got = check(e.owner, syncScopes, syncDetails)
+	got = e.check(e.owner, checkRequest(syncScopes, syncDetails))
 	if len(got.Scopes.Missing) != 0 || got.ExpiresAt != nil || slices.ContainsFunc(got.Setup, func(r substrate.AuthorizationSetup) bool {
 		return r.Action != substrate.SetupNone
 	}) {
 		t.Fatalf("the owner's check = %+v", got)
-	}
-
-	// A malformed request is the app's to fix.
-	for _, body := range []string{
-		`{"scope":"everything","authorization_details":[]}`,
-		`{"scope":"read:*","authorization_details":[{"type":"webhook","trigger":"t","url":"https://example.com"}]}`,
-		`{"scope":"read:*","authorization_details":[],"extra":1}`,
-	} {
-		wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", app, []byte(body), "application/json"), http.StatusBadRequest)
 	}
 
 	// The check is the app's door, and the approval is not: chi routes
@@ -958,6 +1052,36 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/authorizations/check", app, nil, ""), http.StatusForbidden)
 }
 
+// A check reads its details as /oauth/authorize reads its parameter: the
+// same strict reading per type and the same bound, from the `details` key.
+func TestACheckReadsDetailsAsTheAuthorizationEndpointDoes(t *testing.T) {
+	e := newSetupEnv(t)
+	long := `[{"type":"account","kind":"` + healthAccount + `","id":"a","properties":{"note":"` + strings.Repeat("x", 2100) + `"}}]`
+	for name, body := range map[string]string{
+		"an unknown scope verb":           `{"scope":"everything","details":[]}`,
+		"a url in a request":              `{"scope":"read:*","details":[{"type":"webhook","trigger":"t","url":"https://example.com"}]}`,
+		"an empty url":                    `{"scope":"read:*","details":[{"type":"webhook","trigger":"t","url":""}]}`,
+		"null properties":                 `{"scope":"read:*","details":[{"type":"account","kind":"` + healthAccount + `","id":"a","properties":null}]}`,
+		"another type's member":           `{"scope":"read:*","details":[{"type":"package","package":"` + applePkg + `","version":3,"trigger":"t"}]}`,
+		"the default id":                  `{"scope":"read:*","details":[{"type":"account","kind":"` + healthAccount + `","id":"default"}]}`,
+		"past the bound":                  `{"scope":"read:*","details":` + long + `}`,
+		"the parameter's name, not a key": `{"scope":"read:*","authorization_details":[]}`,
+		"an unknown key":                  `{"scope":"read:*","details":[],"extra":1}`,
+		"details not a list":              `{"scope":"read:*","details":null}`,
+	} {
+		if rec := e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, []byte(body), "application/json"); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: answered %d %s, want 400", name, rec.Code, rec.Body.String())
+		}
+		if rec := e.do(http.MethodGet, authorizeURL(setupRequest("read:*", strings.TrimSuffix(strings.TrimPrefix(body, `{"scope":"read:*","details":`), "}"))), "", nil, ""); name != "an unknown scope verb" &&
+			name != "the parameter's name, not a key" && name != "an unknown key" && rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: /oauth/authorize answered %d, want the same refusal", name, rec.Code)
+		}
+	}
+	if got := e.check(e.owner, []byte(`{"scope":"read:*"}`)); len(got.Setup) != 0 {
+		t.Fatalf("a check without details = %+v", got)
+	}
+}
+
 // A check plans a package row the token cannot see no further than its
 // action: no upgrade preview is counted against the owner's data for a row
 // it answers as unknown.
@@ -966,43 +1090,59 @@ func TestACheckPlansNoFurtherThanTheTokenSees(t *testing.T) {
 	e.repo.mu.Lock()
 	e.repo.statuses[applePkg] = substrate.BundleStatus{ID: applePkg, Installed: true, Enabled: true, Version: 2, ShippedVersion: 2}
 	e.repo.mu.Unlock()
-	body := []byte(`{"scope":"read:` + personKind + `","authorization_details":[{"type":"package","package":"` + applePkg + `","version":3}]}`)
+	body := checkRequest("read:"+personKind, `[{"type":"package","package":"`+applePkg+`","version":3}]`)
 	previews := func() int {
 		e.repo.mu.Lock()
 		defer e.repo.mu.Unlock()
 		return e.repo.previews
 	}
 	narrow := e.grant("read:"+personKind, []string{"read:" + personKind})
-	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", narrow, body, "application/json")
-	wantStatus(t, rec, http.StatusOK)
-	if got := decodeJSON[substrate.AuthorizationCheckResult](t, rec); got.Setup[0].Action != substrate.SetupUnknown || previews() != 0 {
+	if got := e.check(narrow, body); got.Setup[0].Action != substrate.SetupUnknown || previews() != 0 {
 		t.Fatalf("a token that cannot see apple = %+v after %d previews", got.Setup[0], previews())
 	}
-	rec = e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, body, "application/json")
-	wantStatus(t, rec, http.StatusOK)
-	if got := decodeJSON[substrate.AuthorizationCheckResult](t, rec); got.Setup[0].Action != substrate.SetupUpgrade || previews() != 1 {
+	if got := e.check(e.owner, body); got.Setup[0].Action != substrate.SetupUpgrade || previews() != 1 {
 		t.Fatalf("the owner's check = %+v after %d previews", got.Setup[0], previews())
 	}
 }
 
-// Each token asks at its own pace: a loop of checks is answered 429.
-func TestACheckIsPaced(t *testing.T) {
+// A token asking again within the memo's window is answered the last answer
+// for the same body, planned once, and never refused for asking.
+func TestACheckIsAnsweredAgainNeverRefused(t *testing.T) {
 	e := newSetupEnv(t)
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		t.Fatal(err)
+	var mu sync.Mutex
+	now := time.Now()
+	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, AuthInterval: time.Hour, Catalog: e.catalog, Now: func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}})
+	e.repo.mu.Lock()
+	e.repo.statuses[applePkg] = substrate.BundleStatus{ID: applePkg, Installed: true, Enabled: true, Version: 2, ShippedVersion: 2}
+	e.repo.mu.Unlock()
+	previews := func() int {
+		e.repo.mu.Lock()
+		defer e.repo.mu.Unlock()
+		return e.repo.previews
 	}
-	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, AuthInterval: time.Hour, Catalog: cat})
-	body := []byte(`{"scope":"read:*","authorization_details":[]}`)
-	for range 2 {
-		wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, body, "application/json"), http.StatusOK)
+	body := checkRequest("read:*", `[{"type":"package","package":"`+applePkg+`","version":3}]`)
+	for range 5 {
+		if got := e.check(e.owner, body); got.Setup[0].Action != substrate.SetupUpgrade {
+			t.Fatalf("a check asked again = %+v", got.Setup[0])
+		}
 	}
-	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, body, "application/json")
-	wantErrorCode(t, rec, http.StatusTooManyRequests, codeRateLimited)
-	if rec.Header().Get("Retry-After") == "" {
-		t.Fatal("a paced check names no Retry-After")
+	if previews() != 1 {
+		t.Fatalf("five checks planned %d previews, want one", previews())
 	}
-	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", e.svc.token(fakeRepository), body, "application/json"), http.StatusOK)
+	// Another body, another token, or the window gone: planned afresh.
+	e.check(e.owner, checkRequest("read:*", `[{"type":"package","package":"`+applePkg+`","version":2}]`))
+	e.check(e.svc.token(fakeRepository), body)
+	mu.Lock()
+	now = now.Add(checkMemoTTL)
+	mu.Unlock()
+	e.check(e.owner, body)
+	if previews() != 3 {
+		t.Fatalf("previews = %d, want a fresh plan for the other token and after the window", previews())
+	}
 }
 
 func jsonString(s string) string {

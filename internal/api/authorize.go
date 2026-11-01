@@ -25,9 +25,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
@@ -223,7 +225,7 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := h.authz.Park(authorize.Request{
-		Issuer: iss, Client: client, RedirectURI: redirect, State: state,
+		Issuer: iss, Client: client, RedirectURI: redirect, AppState: state,
 		Challenge: q.Get("code_challenge"), Scopes: scopes, Details: details, Source: source,
 	})
 	if err != nil {
@@ -299,6 +301,12 @@ func (h *handler) verifiedApp(ctx context.Context, req authorize.Request) (autho
 	return doc, nil
 }
 
+// getAuthorization answers the approval page. A pending request with no
+// set up behind it is planned at every read, so it shows the repository as it
+// is; once an approval checked its rows, the page reads those, each with its
+// progress, while the set up runs and after it stopped. An approved request
+// is answered once, from what it holds, nothing planned again: that read
+// hands the page where to go, and the request is gone after it.
 func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
@@ -346,23 +354,33 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		DefaultLifetimeDays: defaultLifetimeDays,
 		ExpiresAt:           req.Expires,
 		Details:             req.Details,
-		State:               req.Status,
-		Progress:            req.Progress,
+		State:               req.State,
 		Failure:             req.Failure,
-		Next:                req.Next,
 	}
 	if view.Details == nil {
 		view.Details = []substrate.AuthorizationDetail{}
 	}
 	// The claim above came first: the plan reads this repository, and
 	// another repository's read of the request learns nothing of it.
-	if view.Setup, view.PlanHash, err = h.planSetup(ctx, ds, req.Details); err != nil {
+	if req.Setup != nil {
+		view.Setup, view.PlanHash = req.Setup, req.PlanHash
+	} else if view.Setup, view.PlanHash, err = appsetup.Plan(ctx, ds, h.catalog, req.Details, appsetup.Options{}); err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	if view.Previous, err = previousToken(ctx, ds, req.Client.ID); err != nil {
+	if view.Previous, err = previousToken(ctx, ds, req.Client); err != nil {
 		writeSubstrateError(w, r, err)
 		return
+	}
+	var before scope.Grant
+	if view.Previous != nil {
+		// A grant that does not parse covers nothing, so its scopes read as
+		// new.
+		before, _ = scope.NewGrant(view.Previous.Scopes)
+	}
+	registry := make(map[string]substrate.KindInfo, len(kinds))
+	for _, k := range kinds {
+		registry[k.Identity] = k
 	}
 	var agents []*substrate.Record
 	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
@@ -384,14 +402,24 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 			Scope: resolved.String(), Requested: s.String(), Verb: string(resolved.Verb),
 			Write: resolved.Verb == scope.Write, Pattern: resolved.Pattern,
 			Glob: strings.HasSuffix(resolved.Pattern, "*"), Kinds: []substrate.AuthorizationKind{},
-			Agents: []*substrate.Record{},
+			Agents:  []*substrate.Record{},
+			Allowed: before.Covers(resolved, scopeInternal(resolved, registry)),
 		}
 		if resolved.OverAgents() {
 			row.Agents = matchedAgents(resolved, agents)
 		} else {
-			row.Kinds = append(reachedKinds(resolved, kinds), addedKinds(resolved, view.Setup)...)
+			row.Kinds = scopeKinds(resolved, kinds, view.Setup)
 		}
 		view.Scopes = append(view.Scopes, row)
+	}
+	// Built whole before the hand-over, so nothing that can fail comes
+	// after it: the read that hands the code over is the last one.
+	if req.State == substrate.AuthorizationApproved {
+		if _, err := h.authz.HandOver(id, authority); err != nil {
+			writeAuthorizationGone(w)
+			return
+		}
+		view.Next = req.Next
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -427,6 +455,16 @@ func reachedKinds(s scope.Scope, kinds []substrate.KindInfo) []substrate.Authori
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
 	return out
+}
+
+// kindPurpose is a registry kind's declared purpose where it is not the
+// primary one an absent purpose reads as.
+func kindPurpose(k substrate.KindInfo) string {
+	p, _ := k.Definition["purpose"].(string)
+	if p == vocabulary.PurposePrimary {
+		return ""
+	}
+	return p
 }
 
 // agentRows is every agent row of the repository, sorted by id.
@@ -473,12 +511,13 @@ func hostname(raw string) string {
 	return strings.ToLower(u.Hostname())
 }
 
-// postAuthorization answers a request with an approval. A request whose
-// details need nothing set up is approved here and answered with the
-// redirect; otherwise the approval reserves the request, checks that the
-// plan is still the one the page showed, and answers 202 while the set up
-// runs (appsetup.go), and the page reads the request until it carries the
-// redirect.
+// postAuthorization answers a request with an approval. The approval
+// reserves the request, so nothing else answers it meanwhile, and plans what
+// it sets up once, under the reservation: a request that needs nothing set
+// up is approved there and answered with the redirect; otherwise the plan
+// must still be the one the page showed, and the approval answers 202 while
+// the set up runs (appsetup.go), the page reading the request until it
+// carries the redirect. Every refusal hands the request back.
 func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in substrate.AuthorizationApproval
@@ -488,7 +527,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	authority := ds.Repository().Authority
 	id := pathParam(r, "request")
-	// Checked again under the store's lock by whichever of Approve, Reserve
+	// Checked again under the store's lock by whichever of Reserve, Approve
 	// and Finish answers the request.
 	approve := func(req authorize.Request) (authorize.Approval, error) {
 		doc, err := shownApp(req)
@@ -517,37 +556,62 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 			Details: req.Details,
 		}, nil
 	}
-	req, err := h.authz.Peek(id, authority)
+	req, err := h.authz.Reserve(id, authority, func(req authorize.Request) error {
+		_, err := approve(req)
+		return err
+	})
 	if err != nil {
 		writeAuthorizationAnswerError(w, r, err)
 		return
 	}
-	var rows []substrate.AuthorizationSetup
-	if len(req.Details) > 0 && req.Status == substrate.AuthorizationPending {
-		// A request the page never showed is refused before its plan is
-		// read, as an approval without details is.
-		if _, err := shownApp(req); err != nil {
-			writeSubstrateError(w, r, err)
-			return
+	// refuse hands the request back; moved also drops the rows the page
+	// showed, so its next read plans what approving would do now.
+	refuse := func(moved bool, answer func()) {
+		end := h.authz.Fail
+		if moved {
+			end = h.authz.Replan
 		}
-		var hash string
-		if rows, hash, err = h.planSetup(ctx, ds, req.Details); err != nil {
-			writeSubstrateError(w, r, err)
-			return
+		if err := end(req.ID, authority, nil); err != nil {
+			slog.Warn("authorize: a refused approval could not return its request", "request", req.ID, "error", err)
 		}
-		if in.PlanHash != "" && in.PlanHash != hash {
-			writeError(w, http.StatusConflict, codeConflict, "what approving sets up changed since the page read it: read the request again")
-			return
-		}
-		if i := firstBlocked(rows); i >= 0 {
-			writeError(w, http.StatusUnprocessableEntity, codeValidation, "this request cannot be set up: "+rows[i].Problem)
-			return
-		}
+		answer()
 	}
-	if !needsAction(rows) {
+	conflict := func() {
+		writeError(w, http.StatusConflict, codeConflict, "what approving sets up changed since the page read it: read the request again")
+	}
+	rows, hash, err := appsetup.Plan(ctx, ds, h.catalog, req.Details, appsetup.Options{})
+	if err != nil {
+		refuse(false, func() { writeSubstrateError(w, r, err) })
+		return
+	}
+	// What runs is what the page showed: the plan it read, or, after a set
+	// up stopped, the rows that set up was checked against, of which the
+	// plan now may run less.
+	approved, approvedHash := rows, hash
+	if req.Setup != nil {
+		if in.PlanHash != "" && in.PlanHash != req.PlanHash {
+			refuse(false, conflict)
+			return
+		}
+		approved, approvedHash = withoutProgress(req.Setup), req.PlanHash
+		if appsetup.Moved(approved, rows) >= 0 {
+			refuse(true, conflict)
+			return
+		}
+	} else if in.PlanHash != "" && in.PlanHash != hash {
+		refuse(false, conflict)
+		return
+	}
+	if i := appsetup.FirstBlocked(rows); i >= 0 {
+		refuse(req.Setup != nil, func() {
+			writeError(w, http.StatusUnprocessableEntity, codeValidation, "this request cannot be set up: "+rows[i].Blocked.Problem)
+		})
+		return
+	}
+	if !appsetup.NeedsAction(rows) {
 		code, req, err := h.authz.Approve(id, authority, approve)
 		if err != nil {
-			writeAuthorizationAnswerError(w, r, err)
+			refuse(false, func() { writeAuthorizationAnswerError(w, r, err) })
 			return
 		}
 		writeJSON(w, http.StatusOK, substrate.AuthorizationAnswer{
@@ -556,53 +620,38 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.PlanHash == "" {
-		writeError(w, http.StatusUnprocessableEntity, codeValidation,
-			"an approval that sets something up names the planHash the page read")
+		refuse(false, func() {
+			writeError(w, http.StatusUnprocessableEntity, codeValidation, "an approval that sets something up names the planHash the page read")
+		})
 		return
 	}
 	actor := ActorFrom(ctx)
 	if !substrate.HumanActors[actor] {
-		writeError(w, http.StatusForbidden, codeForbidden,
-			"setting up is the owner's act, through the console, substratectl or the API, never as "+string(actor))
+		refuse(false, func() {
+			writeError(w, http.StatusForbidden, codeForbidden,
+				"setting up is the owner's act, through the console, substratectl or the API, never as "+string(actor))
+		})
 		return
 	}
-	req, err = h.authz.Reserve(id, authority, func(req authorize.Request) error {
-		_, err := approve(req)
-		return err
-	})
-	if err != nil {
+	started := appsetup.Started(approved, rows)
+	if err := h.authz.Begin(id, authority, started, approvedHash); err != nil {
 		writeAuthorizationAnswerError(w, r, err)
-		return
-	}
-	// What runs is what the page showed: the plan again, now that nothing
-	// else can answer the request.
-	rows, hash, err := h.planSetup(ctx, ds, req.Details)
-	switch {
-	case err != nil:
-		h.unreserve(req.ID, authority)
-		writeSubstrateError(w, r, err)
-		return
-	case hash != in.PlanHash:
-		h.unreserve(req.ID, authority)
-		writeError(w, http.StatusConflict, codeConflict, "what approving sets up changed since the page read it: read the request again")
-		return
-	case firstBlocked(rows) >= 0:
-		h.unreserve(req.ID, authority)
-		writeError(w, http.StatusUnprocessableEntity, codeValidation, "this request cannot be set up: "+rows[firstBlocked(rows)].Problem)
 		return
 	}
 	// Detached: a closed tab does not stop a set up that may be part way
 	// through an install, and the page that comes back reads where it is.
-	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, rows, approve)
-	writeJSON(w, http.StatusAccepted, substrate.AuthorizationAnswer{State: substrate.AuthorizationSettingUp})
+	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, approved, approve)
+	writeJSON(w, http.StatusAccepted, substrate.AuthorizationAnswer{State: substrate.AuthorizationSettingUp, Setup: started})
 }
 
-// unreserve puts a request a set up reserved back to pending before anything
-// ran, keeping the last run's failure as it was.
-func (h *handler) unreserve(id, authority string) {
-	if err := h.authz.Fail(id, authority, nil); err != nil {
-		slog.Warn("authorize: a refused set up could not return its request", "request", id, "error", err)
+// withoutProgress is rows as an approval names them, the progress of the
+// last run cleared.
+func withoutProgress(rows []substrate.AuthorizationSetup) []substrate.AuthorizationSetup {
+	out := slices.Clone(rows)
+	for i := range out {
+		out[i].Progress = ""
 	}
+	return out
 }
 
 // writeAuthorizationAnswerError answers the store's refusals of an approval
@@ -680,8 +729,8 @@ func (h *handler) deleteAuthorization(w http.ResponseWriter, r *http.Request) {
 // issuer (RFC 9207) to the redirect URI's query, leaving what it already
 // carries as it was.
 func withParams(redirect string, v url.Values, req authorize.Request) string {
-	if req.State != "" {
-		v.Set("state", req.State)
+	if req.AppState != "" {
+		v.Set("state", req.AppState)
 	}
 	v.Set("iss", req.Issuer)
 	sep := "?"

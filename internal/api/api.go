@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/metrics"
@@ -125,9 +126,10 @@ type handler struct {
 	fetcher   clientDocuments
 	parkRate  *rateLimiter
 	publicURL string
-	// setups is each repository's one-at-a-time slot for an approval's set
-	// up (appsetup.go), by authority.
-	setups sync.Map
+	// setups runs approvals' set ups, one per repository at a time, and
+	// checks is the last set up check each token got (appsetup.go).
+	setups *appsetup.Runner
+	checks checkMemo
 }
 
 // New builds the router.
@@ -153,6 +155,7 @@ func New(cfg Config) http.Handler {
 		fetcher:      cfg.ClientDocuments,
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
+		setups:       appsetup.NewRunner(cfg.Catalog),
 	}
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)

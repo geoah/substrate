@@ -156,6 +156,7 @@ var wireTypes = map[string]any{
 	"AuthorizationWebhookPlan": AuthorizationWebhookPlan{},
 	"AuthorizationPrevious":    AuthorizationPrevious{},
 	"AuthorizationFailure":     AuthorizationFailure{},
+	"AuthorizationBlock":       AuthorizationBlock{},
 	"AuthorizationCheck":       AuthorizationCheck{},
 	"AuthorizationCheckResult": AuthorizationCheckResult{},
 	"AuthorizationCheckScopes": AuthorizationCheckScopes{},

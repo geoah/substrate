@@ -170,7 +170,70 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 	if rec.Kind == kindTrigger {
 		withoutWebhookKeys(&cp)
 	}
+	if !s.grant.Reads(kindBlob, true) {
+		withoutBlobManifests(&cp, reg[rec.Kind])
+	}
 	return &cp, nil
+}
+
+// kindBlob is a blob's manifest, which holds the name and media type its
+// first upload gave it. An app's token that does not read the kind reads a
+// blob reference as its digest, size and status alone: the bytes dedupe by
+// digest, so an app holding another's bytes could otherwise name the digest
+// in a record and read the manifest it never saw.
+const kindBlob = corePackage + "/blob"
+
+// withoutBlobManifests drops the manifest's `name` and `mediaType` from every
+// blob reference a record's declared blobref properties resolve to. Every
+// map it changes is a copy.
+func withoutBlobManifests(rec *substrate.Record, k substrate.KindInfo) {
+	props, _ := k.Definition["properties"].(map[string]any)
+	copied := false
+	for name, decl := range props {
+		d, _ := decl.(map[string]any)
+		if t, _ := d["type"].(string); t != "blobref" {
+			continue
+		}
+		v, ok := rec.Properties[name]
+		if !ok {
+			continue
+		}
+		if cut, changed := withoutManifest(v); changed {
+			if !copied {
+				rec.Properties, copied = maps.Clone(rec.Properties), true
+			}
+			rec.Properties[name] = cut
+		}
+	}
+}
+
+// withoutManifest is a blob reference, or a list of them, without the
+// manifest's name and media type, and whether there were any to drop.
+func withoutManifest(v any) (any, bool) {
+	switch ref := v.(type) {
+	case map[string]any:
+		_, hasName := ref["name"]
+		_, hasType := ref["mediaType"]
+		if !hasName && !hasType {
+			return v, false
+		}
+		ref = maps.Clone(ref)
+		delete(ref, "name")
+		delete(ref, "mediaType")
+		return ref, true
+	case []any:
+		out, changed := ref, false
+		for i, item := range ref {
+			if cut, ok := withoutManifest(item); ok {
+				if !changed {
+					out, changed = slices.Clone(ref), true
+				}
+				out[i] = cut
+			}
+		}
+		return out, changed
+	}
+	return v, false
 }
 
 // kindTrigger is the kind whose records hold a webhook's key, which no app's

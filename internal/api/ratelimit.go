@@ -119,6 +119,22 @@ func (l *rateLimiter) allow(cost int, keys ...string) (bool, time.Duration) {
 	return true, 0
 }
 
+// spare reports whether every key could pay cost now, charging none: a door
+// that charges only what fails asks first, so a key that has spent its pace
+// costs nothing more.
+func (l *rateLimiter) spare(cost int, keys ...string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	l.trimLocked(now)
+	for _, key := range keys {
+		if float64(cost)-l.bucketLocked(key, now).units > 1e-9 {
+			return false
+		}
+	}
+	return true
+}
+
 // bucketLocked is one key's bucket, brought up to date: an unseen key starts
 // full, and an existing one accrues what the elapsed time bought (never past
 // the ceiling).

@@ -221,12 +221,24 @@ func webhookKey(r *http.Request) string {
 // full-access one, one of another repository or one without the scope, stays
 // the key the bearer always was, so it is refused exactly as a wrong key is
 // and the answer tells a sender nothing about the token.
+//
+// The door takes no bearer, so a token lookup is a database read anybody can
+// ask for: one that finds no token is charged to its source, and a source
+// that spent its pace is looked up no more until it refills, its bearer the
+// wrong key it then is.
 func (h *handler) webhookGranted(r *http.Request, authority, trigger, key string) bool {
 	secret := bearerSecret(r)
 	if secret == "" || secret != key || !strings.HasPrefix(secret, substrate.TokenSecretPrefix) {
 		return false
 	}
+	pace := sourceOf(r) + "|webhook-token"
+	if !h.parkRate.spare(costPaired, pace) {
+		return false
+	}
 	ds, tok, err := h.svc.Authenticate(r.Context(), secret)
+	if errors.Is(err, substrate.ErrAuth) {
+		h.parkRate.allow(costPaired, pace)
+	}
 	if err != nil || !tok.Scoped() {
 		return false
 	}

@@ -20,16 +20,16 @@ import (
 const (
 	// RequestTTL is how long a parked request waits for the owner.
 	RequestTTL = 10 * time.Minute
-	// CodeTTL is how long a code may be exchanged (OAuth 2.1 §4.1.2 caps it
-	// at ten minutes; an app exchanges within seconds).
+	// CodeTTL is how long a code may be exchanged once its app can hold it
+	// (an app exchanges within seconds).
 	CodeTTL = 60 * time.Second
+	// maxCodeLife is OAuth 2.1 §4.1.2's cap on a code: a set up's code waits
+	// for the page that reads it, and lives no longer than this from Finish
+	// whenever that read comes.
+	maxCodeLife = 10 * time.Minute
 	// SetUpTTL is how long a request a set up reserved waits for it: the set
 	// up's own bound, so a run that hangs lapses with its request.
 	SetUpTTL = 15 * time.Minute
-	// answeredTTL is how long a request a set up approved stays readable once
-	// the page first read where to go, for a page that reads it again: the
-	// code it carries lives no longer.
-	answeredTTL = CodeTTL
 	// codeMemory is how long a redeemed code is remembered, so a replay can
 	// still be recognized and revoke what the first exchange minted.
 	codeMemory = 10 * time.Minute
@@ -59,14 +59,16 @@ var (
 
 // Request is a parked authorization request: what the app asked for, taken
 // when GET /oauth/authorize checked it and never changed after, and where
-// its answer stands (Status and the fields after it).
+// its answer stands (State and the fields after it).
 type Request struct {
 	ID          string
 	Issuer      string
 	Client      Client
 	RedirectURI string
-	State       string
-	Challenge   string
+	// AppState is the app's opaque `state` parameter, said back on the
+	// redirect.
+	AppState  string
+	Challenge string
 	// Scopes are as the app wrote them, `~` and all; the approval resolves
 	// them against the approving repository.
 	Scopes []scope.Scope
@@ -89,24 +91,35 @@ type Request struct {
 	// is what the owner read.
 	Document *Document
 
-	// Status is substrate.AuthorizationPending until a set up reserves the
-	// request (Reserve), AuthorizationSettingUp while it runs, and
-	// AuthorizationApproved once it landed and the code exists (Finish).
-	Status string
-	// Progress is each setup row's state as the run last reported it, and
-	// Failure why the last run stopped; both outlive a failed run, so the
-	// page shows what landed. Next is the redirect carrying the code, once
-	// approved.
-	Progress []string
+	// State is substrate.AuthorizationPending until an approval reserves the
+	// request (Reserve), AuthorizationSettingUp while the approval is checked
+	// and its set up runs, and AuthorizationApproved once the set up landed
+	// and the code exists (Finish), until the page reads where to go
+	// (HandOver).
+	State string
+	// Setup is the rows an approval was checked against, each carrying its
+	// progress, from the moment its set up starts (Begin), and PlanHash their
+	// digest: the page reads these while the set up runs and after it stops,
+	// never a plan that moved as rows landed. They outlive a failed run, so
+	// the page shows what landed, and go when the plan moved from what was
+	// approved (Replan). Failure is why the last run stopped, and Next the
+	// redirect carrying the code once approved.
+	Setup    []substrate.AuthorizationSetup
+	PlanHash string
 	Failure  *substrate.AuthorizationFailure
 	Next     string
 
-	// code is the hash of the code Finish minted, and handed whether a read
-	// has handed Next over since. The code's clock and the request's last
-	// lapse start at that read, so a page that was away when the set up
-	// ended still finds where to go.
-	code   string
-	handed bool
+	// code is the hash of the code Finish minted, whose clock HandOver
+	// starts.
+	code string
+}
+
+// snapshot is a copy of r a caller may keep: the rows are the store's to
+// update while a set up runs.
+func (r *Request) snapshot() Request {
+	cp := *r
+	cp.Setup = slices.Clone(r.Setup)
+	return cp
 }
 
 // Approval is what the owner approved, bound to the code.
@@ -176,7 +189,7 @@ func (s *Store) Park(r Request) (Request, error) {
 		}
 	}
 	r.ID = randomText(16)
-	r.Status = substrate.AuthorizationPending
+	r.State = substrate.AuthorizationPending
 	r.Created = s.now()
 	r.Expires = r.Created.Add(RequestTTL)
 	cp := r
@@ -185,10 +198,10 @@ func (s *Store) Park(r Request) (Request, error) {
 }
 
 // Claim answers a request for repository, binding it to that repository on
-// the first call. A request being set up, or approved after a set up, is
-// answered too, to the repository that claimed it alone, so the page can
-// follow the set up it started. The first read of an approved one hands the
-// page Next: from then its code lives CodeTTL and the request answeredTTL.
+// the first call. A request being set up, or approved after a set up and not
+// yet handed over, is answered too, to the repository that claimed it alone,
+// so the page can follow the set up it started. Reading changes nothing
+// else: an approved request's Next is handed over by HandOver alone.
 func (s *Store) Claim(id, repository string) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -197,29 +210,7 @@ func (s *Store) Claim(id, repository string) (Request, error) {
 		return Request{}, err
 	}
 	r.Repository = repository
-	if r.Status == substrate.AuthorizationApproved && !r.handed {
-		now := s.now()
-		r.handed = true
-		r.Expires = now.Add(answeredTTL)
-		if c := s.codes[r.code]; c != nil && !c.Redeemed {
-			c.Expires, c.forgetAt = now.Add(CodeTTL), now.Add(codeMemory)
-		}
-	}
-	return *r, nil
-}
-
-// Peek answers a request as Claim does, without binding it: an approval
-// reads what it would set up before it answers, and an approval from a
-// repository that never read the request must not claim it from the one
-// that will.
-func (s *Store) Peek(id, repository string) (Request, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r, err := s.liveLocked(id, repository)
-	if err != nil {
-		return Request{}, err
-	}
-	return *r, nil
+	return r.snapshot(), nil
 }
 
 // Snapshot stores the app's document as the approval page first showed it,
@@ -257,7 +248,7 @@ func (s *Store) pendingLocked(id, repository string) (*Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch r.Status {
+	switch r.State {
 	case substrate.AuthorizationSettingUp:
 		return nil, ErrSettingUp
 	case substrate.AuthorizationApproved:
@@ -272,22 +263,21 @@ func (s *Store) settingUpLocked(id, repository string) (*Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Status != substrate.AuthorizationSettingUp || r.Repository != repository {
+	if r.State != substrate.AuthorizationSettingUp || r.Repository != repository {
 		return nil, ErrNotPending
 	}
 	return r, nil
 }
 
-// Approve moves a pending request to approved, once: it checks the approval
-// with check under the lock, so two approvals of one request cannot both
-// mint a code, and a refused approval leaves the request pending. It
-// answers the code's secret, shown this once. A request being set up is
-// refused with ErrSettingUp: its set up answers it (Finish).
+// Approve answers a request its approval reserved and found nothing to set
+// up for, once: check accepts the approval under the lock, the code's
+// secret is the caller's to answer, shown this once, and the request is
+// gone. A refused check leaves the request reserved, for the caller to Fail.
 func (s *Store) Approve(id, repository string, check func(Request) (Approval, error)) (string, Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweep()
-	r, err := s.pendingLocked(id, repository)
+	r, err := s.settingUpLocked(id, repository)
 	if err != nil {
 		return "", Request{}, err
 	}
@@ -296,7 +286,7 @@ func (s *Store) Approve(id, repository string, check func(Request) (Approval, er
 		return "", Request{}, err
 	}
 	delete(s.requests, id)
-	return code, *r, nil
+	return code, r.snapshot(), nil
 }
 
 // mintLocked checks an approval of r and binds a fresh code to it.
@@ -304,7 +294,7 @@ func (s *Store) mintLocked(r *Request, check func(Request) (Approval, error)) (s
 	if len(s.codes) >= maxCodes {
 		return "", ErrFull
 	}
-	a, err := check(*r)
+	a, err := check(r.snapshot())
 	if err != nil {
 		return "", err
 	}
@@ -316,11 +306,12 @@ func (s *Store) mintLocked(r *Request, check func(Request) (Approval, error)) (s
 	return code, nil
 }
 
-// Reserve moves a pending request to setting-up for the set up its approval
-// runs, once: the request must be claimed by repository and shown, and check
-// accepts the approval under the lock, so a second approval or a denial
-// meanwhile is refused with ErrSettingUp. The request then lapses SetUpTTL
-// from now, the set up's own bound. A refusal leaves it pending.
+// Reserve moves a pending request to setting-up for its approval, once: the
+// request must be claimed by repository and shown, and check accepts the
+// approval under the lock, so a second approval or a denial meanwhile is
+// refused with ErrSettingUp while the approval is checked and its set up
+// runs. The request then lapses SetUpTTL from now, the set up's own bound.
+// A refusal leaves it pending.
 func (s *Store) Reserve(id, repository string, check func(Request) error) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -329,22 +320,38 @@ func (s *Store) Reserve(id, repository string, check func(Request) error) (Reque
 	if err != nil {
 		return Request{}, err
 	}
-	if r.Repository != repository {
-		return Request{}, ErrNotPending
-	}
+	// A request is shown by the read that claims it, so one with no
+	// snapshot is unshown wherever it is asked from.
 	if r.Document == nil {
 		return Request{}, ErrNotShown
 	}
-	if err := check(*r); err != nil {
+	if r.Repository != repository {
+		return Request{}, ErrNotPending
+	}
+	if err := check(r.snapshot()); err != nil {
 		return Request{}, err
 	}
-	r.Status = substrate.AuthorizationSettingUp
+	r.State = substrate.AuthorizationSettingUp
 	r.Expires = s.now().Add(SetUpTTL)
-	return *r, nil
+	return r.snapshot(), nil
 }
 
-// Progress records each setup row's state as the run reaches it. A run
-// reporting progress has started again, so the last run's failure goes.
+// Begin records, as a reserved request's set up starts, the rows its
+// approval was checked against, each carrying its first progress, and their
+// digest. A set up that starts again ends the last one's failure.
+func (s *Store) Begin(id, repository string, rows []substrate.AuthorizationSetup, hash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.settingUpLocked(id, repository)
+	if err != nil {
+		return err
+	}
+	r.Setup, r.PlanHash, r.Failure = slices.Clone(rows), hash, nil
+	return nil
+}
+
+// Progress records each row's progress as the run reaches it, in Setup's
+// order.
 func (s *Store) Progress(id, repository string, progress []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -352,26 +359,53 @@ func (s *Store) Progress(id, repository string, progress []string) error {
 	if err != nil {
 		return err
 	}
-	r.Progress = slices.Clone(progress)
-	r.Failure = nil
+	for i, p := range progress {
+		if i < len(r.Setup) {
+			r.Setup[i].Progress = p
+		}
+	}
 	return nil
 }
 
 // Fail moves a request being set up back to pending, with why the set up
-// stopped; a nil failure leaves the last one as it was, for a set up refused
-// before it ran. The progress stays, so the page shows what landed, and the
-// request waits RequestTTL again for the owner to try again or deny.
+// stopped; a nil failure leaves the last one as it was, for an approval
+// refused before its set up ran. The rows stay with what landed: one the run
+// left running stopped part way and reads as failed, one left waiting never
+// ran and reads as neither. The request waits RequestTTL again for the owner
+// to try again or deny.
 func (s *Store) Fail(id, repository string, failure *substrate.AuthorizationFailure) error {
+	return s.stop(id, repository, failure, false)
+}
+
+// Replan is Fail for a set up that stopped because what approving sets up
+// moved from what was approved: the rows go with their digest, so the page
+// plans the request again and the owner approves what it is now.
+func (s *Store) Replan(id, repository string, failure *substrate.AuthorizationFailure) error {
+	return s.stop(id, repository, failure, true)
+}
+
+func (s *Store) stop(id, repository string, failure *substrate.AuthorizationFailure, replan bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, err := s.settingUpLocked(id, repository)
 	if err != nil {
 		return err
 	}
-	r.Status = substrate.AuthorizationPending
+	r.State = substrate.AuthorizationPending
 	if failure != nil {
 		f := *failure
 		r.Failure = &f
+	}
+	if replan {
+		r.Setup, r.PlanHash = nil, ""
+	}
+	for i := range r.Setup {
+		switch r.Setup[i].Progress {
+		case substrate.ProgressRunning:
+			r.Setup[i].Progress = substrate.ProgressFailed
+		case substrate.ProgressWaiting:
+			r.Setup[i].Progress = ""
+		}
 	}
 	r.Expires = s.now().Add(RequestTTL)
 	return nil
@@ -381,12 +415,11 @@ func (s *Store) Fail(id, repository string, failure *substrate.AuthorizationFail
 // check accepts the approval under the lock and the code is minted as
 // Approve mints it. The request stays readable to repository as approved,
 // holding next(request, code), the redirect the page that polls it navigates
-// to: RequestTTL from now while no read has handed it over, since a page in a
-// background tab may not be polling when the set up ends, and answeredTTL
-// from the first read that does (Claim). Until that read nobody holds the
-// code, so it lives as long as the request. Every later approval or denial
-// answers ErrNotPending. A refused check leaves the request setting up, for
-// the caller to Fail.
+// to, RequestTTL from now, since a page in a background tab may not be
+// polling when the set up ends. Until HandOver nobody holds the code, so it
+// lives until then, and never past maxCodeLife from now. Every later
+// approval or denial answers ErrNotPending. A refused check leaves the
+// request setting up, for the caller to Fail.
 func (s *Store) Finish(id, repository string, check func(Request) (Approval, error), next func(Request, string) string) (string, Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -400,14 +433,37 @@ func (s *Store) Finish(id, repository string, check func(Request) (Approval, err
 		return "", Request{}, err
 	}
 	now := s.now()
-	r.Status = substrate.AuthorizationApproved
+	r.State = substrate.AuthorizationApproved
 	r.Failure = nil
-	r.Next = next(*r, code)
+	r.Next = next(r.snapshot(), code)
 	r.Expires = now.Add(RequestTTL)
 	r.code = HashCode(code)
 	c := s.codes[r.code]
-	c.Expires, c.forgetAt = r.Expires, r.Expires.Add(codeMemory)
-	return code, *r, nil
+	c.Expires = now.Add(maxCodeLife)
+	c.forgetAt = c.Expires.Add(codeMemory)
+	return code, r.snapshot(), nil
+}
+
+// HandOver answers an approved request once, to the repository that claimed
+// it, and forgets it, as Approve does: a later read finds no request. The
+// code lives CodeTTL from here, and never past the cap Finish set.
+func (s *Store) HandOver(id, repository string) (Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.liveLocked(id, repository)
+	if err != nil {
+		return Request{}, err
+	}
+	if r.State != substrate.AuthorizationApproved || r.Repository != repository {
+		return Request{}, ErrNotPending
+	}
+	if c := s.codes[r.code]; c != nil && !c.Redeemed {
+		if handed := s.now().Add(CodeTTL); handed.Before(c.Expires) {
+			c.Expires = handed
+		}
+	}
+	delete(s.requests, id)
+	return r.snapshot(), nil
 }
 
 // Deny moves a pending request to denied, once, after check (which verifies
@@ -419,11 +475,11 @@ func (s *Store) Deny(id, repository string, check func(Request) error) (Request,
 	if err != nil {
 		return Request{}, err
 	}
-	if err := check(*r); err != nil {
+	if err := check(r.snapshot()); err != nil {
 		return Request{}, err
 	}
 	delete(s.requests, id)
-	return *r, nil
+	return r.snapshot(), nil
 }
 
 // Redeem presents a code, with check deciding whether the presentation
