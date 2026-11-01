@@ -54,16 +54,18 @@ sets every one it can:
   `python3` on PATH, when the provider installs and before the body runs.
   None is arrangeable from here, so each case SKIPs with the reason rather
   than reading an offline machine or an old interpreter as a broken sandbox.
-  This tree's mise does not pin python. Every dev start, the one `test:e2e`
-  and its restart hook use included, puts the directory of `mise which uv`
-  first on the server's PATH, because the sandbox runs uv by its resolved path
-  and mise's shim resolves to `mise`, which it refuses.
+  APP-01 needs the `python3` alone: it installs applehealth, whose bodies
+  declare no dependencies but are admitted by running them. This tree's mise
+  does not pin python. Every dev start, the one `test:e2e` and its restart
+  hook use included, puts the directory of `mise which uv` first on the
+  server's PATH, because the sandbox runs uv by its resolved path and mise's
+  shim resolves to `mise`, which it refuses.
 
 An id is `<AREA>-<NN>`, where the area names the surface the case drives, and
 an id is permanent: a case that moves keeps it, so a six-month-old report
 still names the same behavior. `registerCase` takes an order too, and each
-group file owns one hundred-block of that space (`extra_test.go` lists the
-blocks), so files never renumber each other.
+group file owns one block of that space (`extra_test.go` lists the blocks),
+so files never renumber each other.
 
 [STORIES.md](STORIES.md) is the other half of the list: the story-level cases,
 whole scenarios that compose many endpoint-level cases into one coherent

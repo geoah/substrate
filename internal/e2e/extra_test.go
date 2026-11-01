@@ -3,9 +3,9 @@ package e2e
 import "sort"
 
 // The extra cases: everything beyond the slice and the stories. Each group
-// file registers its cases from init() into this table and owns one
-// hundred-block of the order space, so files never edit each other and the
-// run order stays deterministic whatever order the files compile in.
+// file registers its cases from init() into this table and owns one block
+// of the order space, so files never edit each other and the run order
+// stays deterministic whatever order the files compile in.
 //
 //	100 auth, credential changes, tokens, rate limits, isolation
 //	200 records, references, merge/split, error shapes
@@ -14,7 +14,9 @@ import "sort"
 //	500 functions, triggers, agents
 //	600 recurrence, the calendar, the occurrences read
 //	700 wrong routes, the body caps, every published error code
-//	800 the OAuth facility and the embeddings queue
+//	800 the OAuth facility and the embeddings queue, up to 859
+//	860 an app's authorization and set up (extra_apps_test.go), up to 899:
+//	    after every other block, since what it installs shows in their lists
 //	900 the operator hat and the server's restart, last because they stop it
 type extraCase struct {
 	order int
