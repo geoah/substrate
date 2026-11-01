@@ -109,7 +109,8 @@ public struct ReviewChangesSheet: View {
             let listed = alreadyAllowed
                 ? "You choose on \(host): what \(appName) has now is listed there under Already allowed, where you can uncheck it."
                 : "You choose on \(host), where you can uncheck any access \(appName) asks for."
-            return listed + (setsUp ? " Access that comes with what it sets up, such as a webhook, has no checkbox: to refuse it, deny." : "")
+            // The footer (choosing(host:setsUp:)) says how set up is refused.
+            return listed
         case .moreAccess, .serverSetup, .moreAccessAndServerSetup:
             return "\(appName) has changed since you approved it. What it already has keeps working until you decide."
         }

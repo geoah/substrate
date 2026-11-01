@@ -366,8 +366,8 @@ func TestAShippedTriggerCannotTakeAnotherPackagesTriggerID(t *testing.T) {
 // Re-installing or upgrading a provider writes its shipped trigger again, and
 // the shipped document ships disabled and without a key. What the owner set
 // on it, being enabled and the webhook key every sender was given, survives:
-// a provider upgrade never disarms a webhook it does not own the key of.
-func TestAReinstallKeepsAnArmedWebhook(t *testing.T) {
+// a provider upgrade never turns off a webhook it does not own the key of.
+func TestAReinstallKeepsAWebhookTheOwnerTurnedOn(t *testing.T) {
 	ctx := context.Background()
 	c := loadCatalog(t)
 	ds := newDataset(t)

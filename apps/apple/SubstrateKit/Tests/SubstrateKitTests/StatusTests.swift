@@ -493,14 +493,14 @@ final class TransportBox: @unchecked Sendable {
         #expect(released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s",
                                                      clientID: released.clientID, scopes: ["read:*"])))
         #expect(sheet(released).intro == "You choose on ada.example.com: what Substrate Sync has now is listed there under "
-            + "Already allowed, where you can uncheck it. Access that comes with what it sets up, such as a webhook, has no checkbox: "
-            + "to refuse it, deny.")
+            + "Already allowed, where you can uncheck it.")
         // A local build's page is always a first approval.
         var local = released
         local.clientID = "http://127.0.0.1/substrate-sync"
         #expect(local.isLocal)
-        #expect(sheet(local).intro == "You choose on ada.example.com, where you can uncheck any access Substrate Sync asks for. "
-            + "Access that comes with what it sets up, such as a webhook, has no checkbox: to refuse it, deny.")
+        #expect(sheet(local).intro == "You choose on ada.example.com, where you can uncheck any access Substrate Sync asks for.")
+        // How set up is refused is the footer's to say, once.
+        #expect(ReviewChangesSections.choosing(host: "ada.example.com", setsUp: true).contains("to refuse it, deny"))
         // Approved for another client id, or a password session: nothing
         // is listed as already allowed.
         #expect(!released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s",

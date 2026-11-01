@@ -152,7 +152,9 @@ public struct SessionStore: Sendable {
     /// is revoked here, and one neither kept nor revoked stays the session in
     /// use (`NotRetired`). A session this store does not save is revoked,
     /// since nothing else holds its token. A kept `old` waits for
-    /// `revokePending`.
+    /// `revokePending`. Where the Keychain refuses both writes, `old` was
+    /// revoked to retire it and stays the session in use: its next request
+    /// is refused and the app signs in again, which loses nothing.
     public func save(_ session: Session, replacing old: Session?,
                      transport: any HTTPTransport = URLSessionTransport.shared) async throws
     {
