@@ -220,9 +220,10 @@ ships four host functions as `function` records (`query`, `write`, `propose`,
 The second package the binary seeds: the agent runtime's own data, out of core
 so core is not everything (decision record
 [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)). It
-is seeded exactly as core is, so a fresh repository holds these four kinds
-without importing anything. **Agents are alpha**, so all four are a preview,
-unfrozen at v1 and not part of the frozen core:
+is seeded exactly as core is, so a fresh repository holds these five kinds
+without importing anything, and one created before `memory` receives it at its
+next open. **Agents are alpha**, so all five are a preview, unfrozen at v1 and
+not part of the frozen core:
 
 | Kind          | What it is                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------ |
@@ -230,6 +231,7 @@ unfrozen at v1 and not part of the frozen core:
 | `thread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
 | `message`     | One turn in a thread, with its tool-call audit.                                                  |
 | `interaction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
+| `memory`      | One standing fact or instruction the owner keeps for their agents: `text`, `active` (default true) and `source` (`owner`, `agent` or `import`). The one `primary` kind of the package, because the rows are the owner's data; an agent reads the active ones through `context.pinned` ([agents](agents.md#pinned-context), decision record [0197](decisions/0197-an-agent-pins-standing-context-into-its-prompt-once-per-thread.md)). |
 
 The `agent` kind itself stays in core: it is one of the declarable kinds, and a
 manifest document is a record of a core kind whatever package it describes.

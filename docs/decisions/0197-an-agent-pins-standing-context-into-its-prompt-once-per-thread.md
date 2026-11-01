@@ -30,7 +30,9 @@ Chosen: evaluate once at thread open and store the rendered block on the
 thread row, because it is the one option that is both free of a tool round
 trip and byte-stable across a conversation. An agent declares
 `context.pinned` (each entry a list read: `kind`, `filter`, `orderBy`,
-`first`, `fields`) and `context.maxBytes`. Each read runs under the agent's own
+`first`, `fields`) and `context.maxBytes`. The filter is a string holding the
+JSON the records route's `filter` parameter takes, because a field of an
+object property is a declared shape and the filter grammar is open-ended. Each read runs under the agent's own
 `permissions.reads`, and a pinned kind outside that grant is refused when the
 declaration loads, so pinning needs no new permission. The engine renders the
 results as a `<pinned_context>` block after the agent's prompt and its kinds
@@ -55,7 +57,9 @@ A seeded kind, `substrate.reamde.dev/llm/memory` (`text`, `active`,
 `source`), is what an agent pins when the facts are the owner's. It is
 `primary`, unlike the rest of the `llm` package: its rows are the owner's own
 data, listed, searched and edited in the console like any record, so a fact an
-agent remembers is one the owner can see and take back.
+agent remembers is one the owner can see and take back. It is the one kind of
+a substrate-state package that is not `internal`, and the kinds test that
+holds the rest lists it by name.
 
 ### Consequences
 
@@ -67,6 +71,8 @@ agent remembers is one the owner can see and take back.
 - Bad, because a fact changed during a thread is not seen until the next
   thread or compaction. Noting the change as a system row is left for later.
 - Bad, because the thread row grows by up to `maxBytes` (64 KiB at most).
+- Bad, because `llm/memory` still sits in a substrate-state package, so a
+  records merge refuses it like the rest of `llm`.
 - Bad, because a pinned read is not charged to the run's read budget: it runs
   once per snapshot, bounded by `first` and `maxBytes` instead.
 
@@ -76,7 +82,8 @@ agent remembers is one the owner can see and take back.
 refusals, and `internal/engine/agentpinned_db_test.go` holds the rendered
 block in the prompt the model receives, the snapshot across two messages
 with a memory changed between them, a fresh snapshot on a new thread, the
-cap and the grant.
+cap and the grant. `TestEveryShippedPurposeIsValidAndTheSeedIsInternal`
+names `llm/memory` as the seeded kind that is the owner's data.
 
 ## More Information
 

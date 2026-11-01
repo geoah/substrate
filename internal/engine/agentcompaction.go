@@ -699,6 +699,7 @@ func (l *agentLoop) compact(ctx context.Context, plan *compactionPlan, tokensBef
 		return err
 	}
 	l.rows = append(l.rows, threadRow{id: id, props: props})
+	l.dropPinned(ctx)
 	covered := plan.throughIdx - plan.fromIdx + 1
 	l.event(substrate.AgentEvent{
 		Kind: substrate.AgentEventCompacted, Thread: l.threadID,

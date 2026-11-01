@@ -16,7 +16,7 @@ data:
     the thread IS the run. Status, turns, tokens and cost accumulate as the
     loop goes, and a root thread's tally rolls up every sub-agent's spend,
     so one number answers what a chain cost.
-  version: 16
+  version: 17
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -155,6 +155,27 @@ data:
         the running turn's lease horizon — one active continuation per thread;
         a second turn is refused while the lease is live, and a crashed turn's
         expired lease is taken over
+    # The agent's pinned context as this thread renders it (decision record
+    # 0197): taken when the thread opens and replayed on every later run, so
+    # the system prompt is the same bytes across messages. A compaction or a
+    # changed `context` declaration takes it again. Not searchable: it is a
+    # copy of records indexed on their own rows.
+    pinnedContext:
+      type: object
+      description: the pinned context block this thread's system prompt carries,
+        as taken when it opened or last compacted
+      fields:
+        block:
+          type: text
+          fts: false
+          description: the rendered block, exactly as the model reads it
+        digest:
+          type: string
+          description: a digest of the agent's context declaration it was
+            taken under
+        takenAt:
+          type: datetime
+          description: when the pinned reads ran
     parent:
       type: reference
       kind: substrate.reamde.dev/llm/thread

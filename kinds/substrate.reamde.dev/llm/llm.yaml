@@ -29,7 +29,7 @@ data:
   authority: substrate.reamde.dev
   package: llm
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 1
+  version: 2
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not
