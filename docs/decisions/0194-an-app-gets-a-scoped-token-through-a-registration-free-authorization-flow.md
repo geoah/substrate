@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-31
 decision-makers: George Antoniadis
+amended-by: 0204
 ---
 
 # 0194. An app gets a scoped token through a registration-free authorization flow

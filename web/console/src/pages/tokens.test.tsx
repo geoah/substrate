@@ -158,6 +158,29 @@ describe("Signed in and API tokens", () => {
     expect(screen.queryByText("this browser")).toBeNull()
   })
 
+  it("lists an app approved for full access under Apps, with what that is", async () => {
+    const full = {
+      id: "tok-console",
+      label: "apps.example.com",
+      createdAt: "2026-08-12T00:00:00Z",
+      clientId: "https://apps.example.com/console/client.json",
+      clientName: "Substrate Console",
+    }
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { items: [...TOKENS, full] })
+    )
+    renderWithClient(<AppTokenRows />)
+    const facts = await screen.findByLabelText("What apps.example.com can do")
+    expect(
+      within(facts).getByText(/^Do everything you can do when you sign in/)
+    ).toBeTruthy()
+    expect(within(facts).getByText("Substrate Console")).toBeTruthy()
+    cleanup()
+    renderWithClient(<ApiTokens />)
+    expect(await screen.findByText("ci runner")).toBeTruthy()
+    expect(screen.queryByText("apps.example.com")).toBeNull()
+  })
+
   it("says so when no app holds a token", async () => {
     fetchMock.mockImplementation(async () =>
       jsonResponse(200, { items: TOKENS.filter((t) => !("scopes" in t)) })

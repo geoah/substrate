@@ -24,8 +24,10 @@ repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
 is the truth and the **records** table is its fold. Tokens and the login credential are themselves records, and a token
 has full access to its repository unless it is an app's: a token an app got
 through the authorization flow carries the **scopes** the owner approved and
-reaches only those kinds
+reaches only those kinds, unless the owner approved it `full` access, which
+is a token without scopes like a sign-in's
 ([0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
+[0204](docs/decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md),
 [apps](docs/apps.md)). There are no tenants, no identities, no user-managed
 keys, no sharing and no roles.
 

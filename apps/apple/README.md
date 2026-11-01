@@ -38,6 +38,7 @@ base URL.
 | Concern         | What the shell does                                                                     |
 | --------------- | --------------------------------------------------------------------------------------- |
 | Which server    | A native picker checks the address's discovery document first; the choice is remembered |
+| Signing in      | The console's sign-in page asks the app, which opens the server's own page in Safari's sheet (the default browser on a Mac) and asks for full access; the session comes back to the page. A server without `full` keeps the console's password form |
 | Sessions        | One website data store per server: its token and console state stay with it             |
 | The page's view | `window.substrateShell` (`{platform, server}`) is set before any script runs            |
 | Links           | Anything outside `substrate://` opens in the system browser                             |

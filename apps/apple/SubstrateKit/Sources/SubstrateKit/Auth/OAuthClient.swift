@@ -9,6 +9,8 @@ public struct TokenResponse: Decodable, Sendable, Equatable {
     /// Absent when the owner approved the app until they revoke it.
     public let expiresIn: Int?
     public let repository: String
+    /// The token record's id, from a server that sends it.
+    public let tokenID: String?
     /// Each package with the version now held, each account's kind and id,
     /// each webhook's trigger and the URL to deliver to.
     public let authorizationDetails: [AuthorizationDetail]
@@ -19,6 +21,7 @@ public struct TokenResponse: Decodable, Sendable, Equatable {
         case scope
         case expiresIn = "expires_in"
         case repository
+        case tokenID = "token_id"
         case authorizationDetails = "authorization_details"
     }
 
@@ -29,6 +32,7 @@ public struct TokenResponse: Decodable, Sendable, Equatable {
         scope = c.value(.scope, or: "")
         expiresIn = c.value(.expiresIn, or: nil)
         repository = try c.decode(String.self, forKey: .repository)
+        tokenID = c.value(.tokenID, or: String?.none).flatMap { $0.isEmpty ? nil : $0 }
         authorizationDetails = c.value(.authorizationDetails, or: [])
     }
 
@@ -156,7 +160,7 @@ public struct OAuthClient: Sendable {
     }
 
     /// The whole flow: a loopback receiver for the redirect (RFC 8252), the
-    /// browser sheet on the server's own sign-in and approval page, the
+    /// browser on the server's own sign-in and approval page, the
     /// redirect checked and the code exchanged. `server` is the one the
     /// owner chose, and the metadata must be its own: an issuer or an
     /// endpoint elsewhere is refused before the browser opens. The session

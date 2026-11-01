@@ -4,6 +4,7 @@ import type { AuthorizationKind, SubstrateRecord } from "@/lib/api/types"
 import { packageName } from "@/lib/app-setup"
 
 import {
+  FULL_ACCESS_SENTENCE,
   overAgents,
   scopeSentence,
   scopeWords,
@@ -35,6 +36,24 @@ describe("scopeWords", () => {
       action: "Send data to, and see the refused deliveries of, the webhook",
       pattern: "applehealth-webhook",
     })
+  })
+
+  it("names full access, which has no pattern, by everything it does", () => {
+    expect(scopeWords("full")).toEqual({
+      verb: "full",
+      action: "Everything you can do when you sign in",
+      pattern: "",
+    })
+    expect(
+      scopeSentence({
+        verb: "full",
+        pattern: "",
+        glob: false,
+        kinds: [],
+        agents: [],
+      })
+    ).toBe(FULL_ACCESS_SENTENCE)
+    expect(FULL_ACCESS_SENTENCE).toMatch(/make or revoke tokens/)
   })
 
   it("keeps a scope it does not know as written", () => {
