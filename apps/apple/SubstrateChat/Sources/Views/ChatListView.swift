@@ -7,6 +7,9 @@ struct ChatListView: View {
     @State private var query = ""
     @State private var renaming: ChatThread?
     @State private var newTitle = ""
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     private var selection: Binding<String?> {
         Binding {
@@ -110,17 +113,32 @@ struct ChatListView: View {
                         }))
                 }
             }
-            ToolbarSpacer(.fixed, placement: .primaryAction)
-            ToolbarItem(placement: .primaryAction) {
-                // ⌘N is the File menu's.
-                Button("New Chat", systemImage: "square.and.pencil") { scene.open(store.newConversation()) }
+            #if os(iOS)
+            if sizeClass == .compact {
+                // A phone's search field sits in the bottom bar, and New
+                // Chat beside it, under the thumb.
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) { newChat }
+            } else {
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(placement: .primaryAction) { newChat }
             }
+            #else
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) { newChat }
+            #endif
         }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Cancel", role: .cancel) { renaming = nil }
             Button("Rename") { commitRename() }
         }
+    }
+
+    private var newChat: some View {
+        // ⌘N is the File menu's.
+        Button("New Chat", systemImage: "square.and.pencil") { scene.open(store.newConversation()) }
     }
 
     @ViewBuilder
@@ -154,51 +172,46 @@ struct ThreadRow: View {
     var body: some View {
         let unread = store.unread(thread)
         let attention = store.attention(thread.id)
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                AgentAvatar(id: thread.agentID, size: 40)
-                if thread.running { RunningRing().frame(width: 48, height: 48) }
-            }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if thread.automated {
-                        Image(systemName: modeSymbol)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(thread.mode)
-                    }
-                    Text(store.title(thread))
-                        .font(.body.weight(unread ? .semibold : .medium))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(thread.activeAt.listStamp)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if thread.automated {
+                    Image(systemName: modeSymbol)
                         .font(.caption)
-                        .foregroundStyle(unread ? Color.accentColor : .secondary)
-                        .monospacedDigit()
-                }
-                HStack(alignment: .top, spacing: 6) {
-                    Text(thread.running ? "Working…" : (thread.preview ?? "with \(agentName(thread.agentID ?? ""))"))
-                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    Spacer(minLength: 4)
-                    if attention > 0 {
-                        Image(systemName: "questionmark.circle.fill")
-                            .foregroundStyle(.orange)
-                            .accessibilityLabel("Waiting on you")
-                    } else if thread.status == "error" {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(.red)
-                            .accessibilityLabel("Ended in an error")
-                    } else if unread {
-                        Circle().fill(Color.accentColor).frame(width: 9, height: 9).padding(.top, 5)
-                            .accessibilityLabel("Unread")
-                    }
+                        .accessibilityLabel(thread.mode)
+                }
+                Text(store.title(thread))
+                    .font(.body.weight(unread ? .semibold : .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(thread.activeAt.listStamp)
+                    .font(.caption)
+                    .foregroundStyle(unread ? Color.accentColor : .secondary)
+                    .monospacedDigit()
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                AgentPill(id: thread.agentID, running: thread.running)
+                    .layoutPriority(1)
+                Text(thread.running ? "Working…" : (thread.preview ?? ""))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer(minLength: 4)
+                if attention > 0 {
+                    Image(systemName: "questionmark.circle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("Waiting on you")
+                } else if thread.status == "error" {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Ended in an error")
+                } else if unread {
+                    Circle().fill(Color.accentColor).frame(width: 9, height: 9).padding(.top, 5)
+                        .accessibilityLabel("Unread")
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
 

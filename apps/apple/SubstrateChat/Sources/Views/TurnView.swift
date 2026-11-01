@@ -7,11 +7,14 @@ struct TurnView: View, Equatable {
     let agent: Agent?
     /// The assistant turn the stream is writing.
     var live = false
+    /// The suggestions a later turn decided: their card shows there, under
+    /// the decision, rather than twice.
+    var decided: Set<String> = []
 
     var body: some View {
         switch turn.role {
         case .user: UserTurn(turn: turn)
-        case .assistant: AssistantTurn(turn: turn, agent: agent, live: live)
+        case .assistant: AssistantTurn(turn: turn, agent: agent, live: live, decided: decided)
         case .summary: SummaryLine(turn: turn)
         case .system: SystemLine(turn: turn)
         }
@@ -50,6 +53,7 @@ private struct AssistantTurn: View {
     let turn: Turn
     let agent: Agent?
     let live: Bool
+    let decided: Set<String>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -70,7 +74,7 @@ private struct AssistantTurn: View {
             ForEach(Array(turn.tools.enumerated()), id: \.offset) { _, call in
                 ToolCallRow(call: call, agent: agent)
                 if let request = requestID(of: call) {
-                    ProposalCard(id: request)
+                    if !decided.contains(request) { ProposalCard(id: request) }
                 } else if let interaction = interactionID(of: call) {
                     InteractionCard(id: interaction)
                 }
@@ -290,21 +294,43 @@ private struct SystemLine: View {
     let turn: Turn
 
     var body: some View {
-        Group {
-            if let decision = decisionNotice(turn) {
-                Label(decision.accepted ? (decision.adjusted ? "You applied the suggestion, with your changes" : "You applied the suggestion")
-                    : "You dismissed the suggestion",
-                    systemImage: decision.accepted ? "checkmark.seal" : "xmark.seal")
-            } else if let answer = interactionNotice(turn) {
-                Label(answer.answered ? "You answered" : "You dismissed the questions",
-                      systemImage: answer.answered ? "checkmark.bubble" : "xmark.bubble")
-            } else {
-                Text(turn.content).lineLimit(3)
+        if let decision = decisionNotice(turn) {
+            VStack(alignment: .leading, spacing: 10) {
+                OutcomeRow(text: decision.accepted ? (decision.adjusted ? "You applied the suggestion, with your changes" : "You applied the suggestion")
+                    : "You dismissed the suggestion", done: decision.accepted)
+                ProposalCard(id: decision.requestID, outcome: decision)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let answer = interactionNotice(turn) {
+            OutcomeRow(text: answer.answered ? "You answered" : "You dismissed the questions", done: answer.answered)
+        } else {
+            Text(turn.content)
+                .lineLimit(3)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity)
+    }
+}
+
+/// What the owner did with a card, in the tool rows' shape: a mark, then
+/// the words.
+private struct OutcomeRow: View {
+    let text: String
+    let done: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: done ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(done ? Color.green : Color.secondary)
+                .frame(width: 18)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 

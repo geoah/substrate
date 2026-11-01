@@ -152,6 +152,9 @@ struct InteractionCard: View {
 struct ProposalCard: View {
     @Environment(ChatStore.self) private var store
     let id: String
+    /// The decision the transcript recorded: the card is that decision's,
+    /// and says so before the request is read.
+    var outcome: DecisionNotice?
     @State private var request: Record?
     @State private var target: Record?
     @State private var busy: String?
@@ -159,7 +162,9 @@ struct ProposalCard: View {
 
     private var held: Record? { request ?? store.cardRecords[id] }
     private var op: String { held?["op"]?.string ?? "patch" }
-    private var decision: String { held?["decision"]?.string ?? "proposed" }
+    private var decision: String {
+        held?["decision"]?.string ?? outcome.map { $0.accepted ? "accepted" : "rejected" } ?? "proposed"
+    }
 
     private var targetKind: String? {
         held?["targetKind"]?.text ?? held?["target"]?.referencePath.map { path in
@@ -168,11 +173,25 @@ struct ProposalCard: View {
     }
 
     private var targetID: String? { held?["targetId"]?.text ?? held?["target"]?.referenceID }
-    private var proposed: [String: JSONValue] { held?["diff"]?["properties"]?.object ?? [:] }
+    /// What the change writes: the owner's adjusted diff where they applied
+    /// one, else the agent's.
+    private var proposed: [String: JSONValue] {
+        if decision == "accepted", let adjusted = held?["adjustedDiff"]?["properties"]?.object { return adjusted }
+        return held?["diff"]?["properties"]?.object ?? [:]
+    }
 
     var body: some View {
         if store.canDecide {
             card
+        } else if outcome != nil {
+            // Not the app's to read: what was decided is all it says.
+            HStack {
+                Label("Suggested a change", systemImage: "square.and.pencil")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                badge
+            }
+            .card(tint: tint)
         } else {
             // Without `decide:` the request is not the app's to read: the
             // console decides it.
@@ -193,16 +212,11 @@ struct ProposalCard: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Label(heading, systemImage: op == "delete" ? "trash" : op == "create" ? "plus.square" : "square.and.pencil")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if decision != "proposed" {
-                    Text(decision == "accepted" ? "Applied" : "Dismissed")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background((decision == "accepted" ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
-                }
+                badge
             }
             if let rationale = held?["rationale"]?.text {
                 Text(rationale).font(.footnote).foregroundStyle(.secondary)
@@ -211,10 +225,15 @@ struct ProposalCard: View {
             ForEach(proposed.keys.sorted(), id: \.self) { key in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    if op == "patch", let before = target?[key] {
+                    // The target's value is the before only until the change
+                    // is applied.
+                    if op == "patch", decision == "proposed", let before = target?[key] {
                         Text(words(before)).font(.footnote).strikethrough().foregroundStyle(.secondary)
                     }
-                    Text(words(proposed[key] ?? .null)).font(.footnote)
+                    Text(words(proposed[key] ?? .null))
+                        .font(.footnote)
+                        .strikethrough(decision == "rejected")
+                        .foregroundStyle(decision == "rejected" ? .secondary : .primary)
                 }
             }
             if let problem {
@@ -237,18 +256,40 @@ struct ProposalCard: View {
                 .disabled(busy != nil)
             }
         }
-        .card(tint: decision == "proposed" ? .blue : nil)
+        .card(tint: tint)
         .task(id: id) { await load() }
+    }
+
+    private var tint: Color? {
+        switch decision {
+        case "proposed": .blue
+        case "accepted": .green
+        default: nil
+        }
+    }
+
+    /// Applied or dismissed, once decided.
+    @ViewBuilder private var badge: some View {
+        if decision != "proposed" {
+            let accepted = decision == "accepted"
+            Label(accepted ? "Applied" : "Dismissed", systemImage: accepted ? "checkmark" : "xmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(accepted ? Color.green : Color.secondary)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background((accepted ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
+                .fixedSize()
+        }
     }
 
     private var heading: String {
         let what = targetKind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
+        let verb = decision == "proposed" ? "Suggests" : "Suggested"
         switch op {
-        case "create": return "Suggests adding a \(what)"
-        case "delete": return "Suggests deleting a \(what)"
+        case "create": return "\(verb) adding a \(what)"
+        case "delete": return "\(verb) deleting a \(what)"
         default:
             let name = target?["name"]?.text ?? target?["title"]?.text ?? target?["summary"]?.text
-            return name.map { "Suggests changing “\($0)”" } ?? "Suggests changing a \(what)"
+            return name.map { "\(verb) changing “\($0)”" } ?? "\(verb) changing a \(what)"
         }
     }
 

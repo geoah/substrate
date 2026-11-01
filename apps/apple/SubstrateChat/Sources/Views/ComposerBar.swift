@@ -266,7 +266,8 @@ private struct AgentChip: View {
             }
         } label: {
             HStack(spacing: 4) {
-                AgentAvatar(id: conversation.agentID, size: 28)
+                AgentPill(id: conversation.agentID)
+                    .frame(maxWidth: 150, alignment: .leading)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)

@@ -39,8 +39,9 @@ struct ConversationView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
+                let decided = Set(turns.compactMap { decisionNotice($0)?.requestID })
                 ForEach(turns) { turn in
-                    TurnView(turn: turn, agent: conversation.agent, live: turn.id == conversation.liveKey)
+                    TurnView(turn: turn, agent: conversation.agent, live: turn.id == conversation.liveKey, decided: decided)
                         .equatable()
                 }
                 if conversation.awaitingFirstEvent {
@@ -198,7 +199,6 @@ private struct NewChatHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let agent = conversation.agent {
-                AgentAvatar(id: agent.id, size: 64)
                 Text(agent.name)
                     .font(.title.weight(.bold))
                 if let description = agent.description {
@@ -231,7 +231,7 @@ private struct NewChatHero: View {
                 }
             }
         }
-        .padding(.top, 40)
+        .padding(.top, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

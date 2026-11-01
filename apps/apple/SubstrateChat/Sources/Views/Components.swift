@@ -1,41 +1,36 @@
 import SwiftUI
 
-/// An agent's mark: its initials on a disc whose colour is the id's own, so
-/// one agent looks the same in the list, the header and the picker.
-struct AgentAvatar: View {
+/// An agent's name in a capsule tinted with a colour of the id's own, so one
+/// agent reads the same in the list, the composer and Settings.
+struct AgentPill: View {
+    @Environment(\.colorScheme) private var scheme
     let id: String?
-    var size: CGFloat = 32
-
-    private var name: String { id.map(agentName) ?? "?" }
-
-    private var initials: String {
-        let words = name.split(separator: " ")
-        let letters = words.prefix(2).compactMap(\.first)
-        return letters.isEmpty ? "?" : String(letters).uppercased()
-    }
-
-    private var hue: Double {
-        guard let id else { return 0.72 }
-        var h: UInt64 = 1_469_598_103_934_665_603
-        for byte in id.utf8 { h = (h ^ UInt64(byte)) &* 1_099_511_628_211 }
-        return Double(h % 360) / 360
-    }
+    /// The chat is running: a pulsing dot before the name.
+    var running = false
 
     var body: some View {
-        Circle()
-            .fill(LinearGradient(
-                colors: [Color(hue: hue, saturation: 0.55, brightness: 0.92),
-                         Color(hue: (hue + 0.08).truncatingRemainder(dividingBy: 1), saturation: 0.75, brightness: 0.7)],
-                startPoint: .topLeading, endPoint: .bottomTrailing))
-            .overlay {
-                Text(initials)
-                    .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.5)
-            }
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
+        let tint = agentTint(id, dark: scheme == .dark)
+        HStack(spacing: 5) {
+            if running { PulsingDot(color: tint) }
+            Text(id.map(agentName) ?? "No assistant")
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(tint)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(tint.opacity(scheme == .dark ? 0.22 : 0.13), in: .capsule)
     }
+}
+
+/// A colour from the id alone: the same agent is the same colour on every
+/// device, with nothing stored.
+func agentTint(_ id: String?, dark: Bool) -> Color {
+    guard let id else { return .secondary }
+    var h: UInt64 = 1_469_598_103_934_665_603
+    for byte in id.utf8 { h = (h ^ UInt64(byte)) &* 1_099_511_628_211 }
+    return Color(hue: Double(h % 360) / 360, saturation: dark ? 0.5 : 0.7, brightness: dark ? 0.95 : 0.62)
 }
 
 /// A problem in a sentence, with an icon, where a status would be.
@@ -117,19 +112,20 @@ extension View {
     func shimmer() -> some View { modifier(Shimmer()) }
 }
 
-/// A pulsing ring: a chat is running.
-struct RunningRing: View {
+/// A pulsing dot: a chat is running.
+struct PulsingDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var color: Color = .accentColor
     @State private var on = false
 
     var body: some View {
         Circle()
-            .strokeBorder(Color.accentColor, lineWidth: 2)
-            .scaleEffect(on ? 1.18 : 1)
-            .opacity(on ? 0.2 : 0.9)
+            .fill(color)
+            .frame(width: 6, height: 6)
+            .opacity(on ? 0.3 : 1)
             .onAppear {
                 guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 1.1).repeatForever()) { on = true }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever()) { on = true }
             }
             .accessibilityLabel("Working")
     }

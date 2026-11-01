@@ -207,9 +207,8 @@ private struct AgentRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AgentAvatar(id: agent.id, size: 34)
             VStack(alignment: .leading, spacing: 3) {
-                Text(agent.name)
+                AgentPill(id: agent.id)
                 if let description = agent.description {
                     Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
