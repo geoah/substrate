@@ -141,7 +141,10 @@ data:
   JSON envelope, `{"truncated": true, "bytes", "limit", "head", "note"}`,
   whose `head` is the result's first bytes as a string. Sub-agents, `propose`,
   `write` and `ask` take no timeout of their own: a sub-agent runs on its own
-  budgets, and the other three write.
+  budgets, and the other three write. `maxParallelTools` (default 4, min 1,
+  max 16) is how many calls of one model response may run at once
+  ([calls that run together](#calls-that-run-together)); 1 runs every call
+  in turn.
 - optional **`compaction:`** bounds a thread's replayed history:
   `enabled` (default `true`), `reserveTokens` (default 16384, max 1000000)
   and `keepRecentTokens` (default 20000, max 1000000)
@@ -387,6 +390,34 @@ whatever an agent aliased it to. Two agents that alias one function
 differently write tool rows that list together on `callable`, and renaming
 an alias keeps the function's history. The chat stream's tool events carry
 the same `callable`. A name the agent carries no tool for gets none.
+
+### Calls that run together
+
+A model may ask for several tool calls in one response, and the loop runs
+the ones that cannot change what another reads at the same time. Those are
+`query`, a function whose permissions grant no `writes`, no `mutations`, no
+`call` and no `agents`, and a sub-agent whose effective emit is empty
+([the emit ceiling](#sub-agents-budgets-and-the-emit-ceiling)). Every other
+call is ordered: `write`, `propose`, `ask`, a function that may write or call,
+and a sub-agent that may write. The response's calls split, in order, into
+stretches of the first sort and single ordered calls. A stretch runs up to
+`budgets.maxParallelTools` calls at once, and an ordered call starts once
+everything before it settled, and holds everything after it. A function's
+`network` grant does not order it: the repository is what siblings read.
+
+What the model asked keeps its order whatever finishes first. Each call's
+`turn` is drawn in call order before any call starts; the tool rows are
+written in that order once their stretch settles; the results go back to the
+model in that order. `toolStarted` goes out for every call of a stretch
+before any of them runs, so a client shows each running call, and
+`toolFinished` follows in call order. `maxToolCalls` is charged in call order
+before a stretch launches, so which calls it refuses never depends on timing.
+The `query` calls of a stretch share what is left of the read budget: each
+takes its part of the rows left when it starts, and a part one does not read
+is there for the next.
+
+A failed call's result goes back flagged as a failure on a wire that has
+the flag (Anthropic's `is_error`), as well as carrying its `error` key.
 
 ## The engine's guidance
 
@@ -1095,7 +1126,8 @@ opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
 per streamed token, `reasoning` carrying `text` per streamed piece of the
 model's thinking, ahead of that turn's `delta` events and only from a model
-that exposes it, `toolStarted` and `toolFinished` around each dispatch,
+that exposes it, `toolStarted` and `toolFinished` around each dispatch, in
+call order ([calls that run together](#calls-that-run-together)),
 `compacted` when the loop summarizes older turns, one `done` carrying the
 settled result under `result`). A loop that fails after the
 `200` status line has already gone out terminates the stream with an `error`

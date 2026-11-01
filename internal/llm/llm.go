@@ -108,6 +108,9 @@ type Message struct {
 	ToolCalls  []ToolCall
 	ToolCallID string
 	ToolName   string
+	// Failed marks a tool result the call failed with; a wire that has a
+	// flag for it sends it, so the model reads the failure as one.
+	Failed bool
 	// ReasoningBlocks are an assistant turn's signed thinking blocks, as the
 	// Result that produced the turn carried them. Anthropic refuses a tool
 	// result whose assistant turn lost them, so a loop passes them back on

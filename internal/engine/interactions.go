@@ -207,7 +207,7 @@ func validateInteractionAnswers(storedQuestions, given any) error {
 // agent's emit naming the interaction kind (checked at load, held again
 // here); the questions ride to admission verbatim, where the batch contract
 // is enforced for every door at once; the thread is the loop's stamp.
-func (l *agentLoop) dispatchAsk(ctx context.Context, args map[string]any) (string, bool) {
+func (l *agentLoop) dispatchAsk(ctx context.Context, c *toolRun, args map[string]any) (string, bool) {
 	if !l.emitAllows(vocabulary.KindLLMInteraction) {
 		return toolError(vocabulary.KindLLMInteraction + " is not in the agent's effective emit allowlist"), false
 	}
@@ -221,7 +221,7 @@ func (l *agentLoop) dispatchAsk(ctx context.Context, args map[string]any) (strin
 	}
 	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
-		t.changeSink = &l.dispatchChanges
+		t.changeSink = &c.changes
 		t.interactionThread = true
 		_, err := t.put(substrate.PutInput{
 			Kind: vocabulary.KindLLMInteraction, ID: id,
@@ -235,6 +235,6 @@ func (l *agentLoop) dispatchAsk(ctx context.Context, args map[string]any) (strin
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	l.in.tally.effects["ask"]++
+	l.in.tally.addEffect("ask")
 	return toolJSON(map[string]any{"id": id}), true
 }
