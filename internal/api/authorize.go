@@ -108,6 +108,10 @@ type authorizationServerMetadata struct {
 	ScopesSupported                        []string `json:"scopes_supported"`
 	AuthorizationResponseISSSupported      bool     `json:"authorization_response_iss_parameter_supported"`
 	ClientIDMetadataDocumentSupported      bool     `json:"client_id_metadata_document_supported"`
+	// AuthorizationDetailsTypesSupported (RFC 9396) is how an app knows to
+	// send its set up: a server that does not list them ignores the
+	// parameter and would approve the scopes alone.
+	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported"`
 }
 
 type protectedResourceMetadata struct {
@@ -138,6 +142,7 @@ func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.
 		ScopesSupported:                        scopesSupported,
 		AuthorizationResponseISSSupported:      true,
 		ClientIDMetadataDocumentSupported:      true,
+		AuthorizationDetailsTypesSupported:     []string{substrate.DetailPackage, substrate.DetailAccount, substrate.DetailWebhook},
 	})
 }
 
@@ -197,6 +202,11 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	details, err := authorize.ParseDetails(q.Get("authorization_details"))
+	if err != nil {
+		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	iss := h.issuerOf(r)
 	if res := q.Get("resource"); res != "" && !sameResource(res, iss) {
 		writeAuthorizePage(w, http.StatusBadRequest, "resource must name this server, "+iss)
@@ -214,7 +224,7 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	req, err := h.authz.Park(authorize.Request{
 		Issuer: iss, Client: client, RedirectURI: redirect, State: state,
-		Challenge: q.Get("code_challenge"), Scopes: scopes, Source: source,
+		Challenge: q.Get("code_challenge"), Scopes: scopes, Details: details, Source: source,
 	})
 	if err != nil {
 		writeAuthorizePage(w, http.StatusServiceUnavailable, "the server is holding too many authorization requests; try again shortly")
@@ -335,6 +345,24 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		LifetimeDays:        lifetimeDays,
 		DefaultLifetimeDays: defaultLifetimeDays,
 		ExpiresAt:           req.Expires,
+		Details:             req.Details,
+		State:               req.Status,
+		Progress:            req.Progress,
+		Failure:             req.Failure,
+		Next:                req.Next,
+	}
+	if view.Details == nil {
+		view.Details = []substrate.AuthorizationDetail{}
+	}
+	// The claim above came first: the plan reads this repository, and
+	// another repository's read of the request learns nothing of it.
+	if view.Setup, view.PlanHash, err = h.planSetup(ctx, ds, req.Details); err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	if view.Previous, err = previousToken(ctx, ds, req.Client.ID); err != nil {
+		writeSubstrateError(w, r, err)
+		return
 	}
 	var agents []*substrate.Record
 	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
@@ -361,7 +389,7 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		if resolved.OverAgents() {
 			row.Agents = matchedAgents(resolved, agents)
 		} else {
-			row.Kinds = reachedKinds(resolved, kinds)
+			row.Kinds = append(reachedKinds(resolved, kinds), addedKinds(resolved, view.Setup)...)
 		}
 		view.Scopes = append(view.Scopes, row)
 	}
@@ -394,7 +422,7 @@ func reachedKinds(s scope.Scope, kinds []substrate.KindInfo) []substrate.Authori
 			ok = g.Writes(k.Identity, internalKind(k))
 		}
 		if ok {
-			out = append(out, substrate.AuthorizationKind{Identity: k.Identity, Label: k.Label})
+			out = append(out, substrate.AuthorizationKind{Identity: k.Identity, Label: k.Label, Purpose: kindPurpose(k)})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
@@ -445,6 +473,12 @@ func hostname(raw string) string {
 	return strings.ToLower(u.Hostname())
 }
 
+// postAuthorization answers a request with an approval. A request whose
+// details need nothing set up is approved here and answered with the
+// redirect; otherwise the approval reserves the request, checks that the
+// plan is still the one the page showed, and answers 202 while the set up
+// runs (appsetup.go), and the page reads the request until it carries the
+// redirect.
 func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in substrate.AuthorizationApproval
@@ -453,7 +487,10 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	ds := DatasetFrom(ctx)
 	authority := ds.Repository().Authority
-	code, req, err := h.authz.Approve(pathParam(r, "request"), authority, func(req authorize.Request) (authorize.Approval, error) {
+	id := pathParam(r, "request")
+	// Checked again under the store's lock by whichever of Approve, Reserve
+	// and Finish answers the request.
+	approve := func(req authorize.Request) (authorize.Approval, error) {
 		doc, err := shownApp(req)
 		if err != nil {
 			return authorize.Approval{}, err
@@ -468,26 +505,122 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(lifetimeDays, *in.LifetimeDays) {
 			return authorize.Approval{}, validation("lifetimeDays must be one of 7, 30 or 90, or 0 for until revoked")
 		}
+		// Only an approved webhook detail puts `webhook:` on a token.
+		for _, d := range req.Details {
+			if d.Type == substrate.DetailWebhook {
+				scopes = append(scopes, scope.WebhookScope(d.Trigger).String())
+			}
+		}
 		return authorize.Approval{
 			Repository: authority, Dataset: ds, Scopes: scopes,
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: doc.Name,
+			Details: req.Details,
 		}, nil
-	})
-	if errors.Is(err, authorize.ErrNotPending) {
-		writeAuthorizationGone(w)
-		return
 	}
-	if errors.Is(err, authorize.ErrFull) {
-		writeError(w, http.StatusServiceUnavailable, codeUnavailable, "the server is holding too many authorization codes; try again shortly")
-		return
-	}
+	req, err := h.authz.Peek(id, authority)
 	if err != nil {
+		writeAuthorizationAnswerError(w, r, err)
+		return
+	}
+	var rows []substrate.AuthorizationSetup
+	if len(req.Details) > 0 && req.Status == substrate.AuthorizationPending {
+		// A request the page never showed is refused before its plan is
+		// read, as an approval without details is.
+		if _, err := shownApp(req); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+		var hash string
+		if rows, hash, err = h.planSetup(ctx, ds, req.Details); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+		if in.PlanHash != "" && in.PlanHash != hash {
+			writeError(w, http.StatusConflict, codeConflict, "what approving sets up changed since the page read it: read the request again")
+			return
+		}
+		if i := firstBlocked(rows); i >= 0 {
+			writeError(w, http.StatusUnprocessableEntity, codeValidation, "this request cannot be set up: "+rows[i].Problem)
+			return
+		}
+	}
+	if !needsAction(rows) {
+		code, req, err := h.authz.Approve(id, authority, approve)
+		if err != nil {
+			writeAuthorizationAnswerError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, substrate.AuthorizationAnswer{
+			Redirect: withParams(req.RedirectURI, url.Values{"code": {code}}, req),
+		})
+		return
+	}
+	if in.PlanHash == "" {
+		writeError(w, http.StatusUnprocessableEntity, codeValidation,
+			"an approval that sets something up names the planHash the page read")
+		return
+	}
+	actor := ActorFrom(ctx)
+	if !substrate.HumanActors[actor] {
+		writeError(w, http.StatusForbidden, codeForbidden,
+			"setting up is the owner's act, through the console, substratectl or the API, never as "+string(actor))
+		return
+	}
+	req, err = h.authz.Reserve(id, authority, func(req authorize.Request) error {
+		_, err := approve(req)
+		return err
+	})
+	if err != nil {
+		writeAuthorizationAnswerError(w, r, err)
+		return
+	}
+	// What runs is what the page showed: the plan again, now that nothing
+	// else can answer the request.
+	rows, hash, err := h.planSetup(ctx, ds, req.Details)
+	switch {
+	case err != nil:
+		h.unreserve(req.ID, authority)
 		writeSubstrateError(w, r, err)
 		return
+	case hash != in.PlanHash:
+		h.unreserve(req.ID, authority)
+		writeError(w, http.StatusConflict, codeConflict, "what approving sets up changed since the page read it: read the request again")
+		return
+	case firstBlocked(rows) >= 0:
+		h.unreserve(req.ID, authority)
+		writeError(w, http.StatusUnprocessableEntity, codeValidation, "this request cannot be set up: "+rows[firstBlocked(rows)].Problem)
+		return
 	}
-	writeJSON(w, http.StatusOK, substrate.AuthorizationAnswer{
-		Redirect: withParams(req.RedirectURI, url.Values{"code": {code}}, req),
-	})
+	// Detached: a closed tab does not stop a set up that may be part way
+	// through an install, and the page that comes back reads where it is.
+	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, rows, approve)
+	writeJSON(w, http.StatusAccepted, substrate.AuthorizationAnswer{State: substrate.AuthorizationSettingUp})
+}
+
+// unreserve puts a request a set up reserved back to pending before anything
+// ran, keeping the last run's failure as it was.
+func (h *handler) unreserve(id, authority string) {
+	if err := h.authz.Fail(id, authority, nil); err != nil {
+		slog.Warn("authorize: a refused set up could not return its request", "request", id, "error", err)
+	}
+}
+
+// writeAuthorizationAnswerError answers the store's refusals of an approval
+// or a denial.
+func writeAuthorizationAnswerError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, authorize.ErrNotPending):
+		writeAuthorizationGone(w)
+	case errors.Is(err, authorize.ErrSettingUp):
+		writeError(w, http.StatusConflict, codeConflict,
+			"this request is being set up: it is answered when the set up finishes, or pending again if it fails")
+	case errors.Is(err, authorize.ErrNotShown):
+		writeSubstrateError(w, r, validation("the approval page has not shown this request yet: load it, then answer"))
+	case errors.Is(err, authorize.ErrFull):
+		writeError(w, http.StatusServiceUnavailable, codeUnavailable, "the server is holding too many authorization codes; try again shortly")
+	default:
+		writeSubstrateError(w, r, err)
+	}
 }
 
 // approvedScopes holds an approval to the request: a non-empty subset of
@@ -531,12 +664,8 @@ func (h *handler) deleteAuthorization(w http.ResponseWriter, r *http.Request) {
 		_, err := shownApp(req)
 		return err
 	})
-	if errors.Is(err, authorize.ErrNotPending) {
-		writeAuthorizationGone(w)
-		return
-	}
 	if err != nil {
-		writeSubstrateError(w, r, err)
+		writeAuthorizationAnswerError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.AuthorizationAnswer{
@@ -586,6 +715,10 @@ type tokenResponse struct {
 	// Repository is the authority the token opens, as IndieAuth's `me`
 	// tells an app whom it signed in as.
 	Repository string `json:"repository"`
+	// AuthorizationDetails (RFC 9396 §7) is what the approval set up or
+	// found in place: each package at the version now held, each account,
+	// and each webhook with the URL it takes deliveries at.
+	AuthorizationDetails []substrate.AuthorizationDetail `json:"authorization_details,omitempty"`
 }
 
 // readOAuthForm reads a bounded form body with each parameter once. It
@@ -692,7 +825,8 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	res := tokenResponse{
 		AccessToken: secret, TokenType: "Bearer", Scope: strings.Join(c.Approval.Scopes, " "),
-		Repository: c.Approval.Repository,
+		Repository:           c.Approval.Repository,
+		AuthorizationDetails: grantedDetails(ctx, c.Approval.Dataset, c.Request.Issuer, c.Approval.Repository, c.Approval.Details),
 	}
 	if c.Approval.Lifetime > 0 {
 		secs := int64(c.Approval.Lifetime / time.Second)

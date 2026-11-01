@@ -323,6 +323,26 @@ func (g Grant) Delivers(trigger string) bool {
 	})
 }
 
+// NamesPackage reports whether one of the grant's read or write scopes names
+// a kind of the package pkg (`<authority>/<package>`): exactly, or by a glob
+// that covers the package. It is what decides whether a token may learn the
+// versions of a package its app needs set up, so the agent verbs and
+// `webhook:` never count.
+func (g Grant) NamesPackage(pkg string) bool {
+	if pkg == "" {
+		return false
+	}
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		if s.Verb != Read && s.Verb != Write {
+			return false
+		}
+		if vocabulary.IsTypeGlob(s.Pattern) {
+			return vocabulary.MatchTypeGlob(s.Pattern, pkg+"/")
+		}
+		return vocabulary.KindPackage(s.Pattern) == pkg
+	})
+}
+
 // Writes reports whether the grant writes records of kind.
 func (g Grant) Writes(kind string, internal bool) bool {
 	if inUnwritable(kind) {

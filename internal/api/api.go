@@ -125,6 +125,9 @@ type handler struct {
 	fetcher   clientDocuments
 	parkRate  *rateLimiter
 	publicURL string
+	// setups is each repository's one-at-a-time slot for an approval's set
+	// up (appsetup.go), by authority.
+	setups sync.Map
 }
 
 // New builds the router.
@@ -344,6 +347,10 @@ func (h *handler) mountResources(r chi.Router) {
 			// the owner's, below.
 			r.Put("/blobs", h.putBlob)
 			r.Put("/blobs/{digest}", h.putBlob)
+			// Whether an app is still set up, asked with its own token
+			// (appsetup.go). The static segment wins over the owner's
+			// /authorizations/{request} below, whichever group holds it.
+			r.With(noStore).Post("/authorizations/check", h.postAuthorizationCheck)
 
 			// THE RECORD PATH. It IS the record's reference: the kind's three
 			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and

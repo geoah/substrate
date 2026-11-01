@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,6 +23,13 @@ const (
 	// CodeTTL is how long a code may be exchanged (OAuth 2.1 §4.1.2 caps it
 	// at ten minutes; an app exchanges within seconds).
 	CodeTTL = 60 * time.Second
+	// SetUpTTL is how long a request a set up reserved waits for it: the set
+	// up's own bound, so a run that hangs lapses with its request.
+	SetUpTTL = 15 * time.Minute
+	// answeredTTL is how long a request a set up approved stays readable, for
+	// the page polling it to read where to go: the code it carries lives no
+	// longer.
+	answeredTTL = CodeTTL
 	// codeMemory is how long a redeemed code is remembered, so a replay can
 	// still be recognized and revoke what the first exchange minted.
 	codeMemory = 10 * time.Minute
@@ -41,10 +49,17 @@ var (
 	ErrFull = errors.New("too many authorization requests in flight")
 	// ErrBadCode is a code that does not exist or lapsed.
 	ErrBadCode = errors.New("no such authorization code")
+	// ErrSettingUp is a request whose set up is running: the set up answers
+	// it when it ends, and nothing else answers it meanwhile.
+	ErrSettingUp = errors.New("the authorization request is being set up")
+	// ErrNotShown is a request the approval page has not shown, which no
+	// set up may start for.
+	ErrNotShown = errors.New("the approval page has not shown this authorization request")
 )
 
-// Request is a parked authorization request: an immutable snapshot of what
-// the app asked for, taken when GET /oauth/authorize checked it.
+// Request is a parked authorization request: what the app asked for, taken
+// when GET /oauth/authorize checked it and never changed after, and where
+// its answer stands (Status and the fields after it).
 type Request struct {
 	ID          string
 	Issuer      string
@@ -54,7 +69,10 @@ type Request struct {
 	Challenge   string
 	// Scopes are as the app wrote them, `~` and all; the approval resolves
 	// them against the approving repository.
-	Scopes  []scope.Scope
+	Scopes []scope.Scope
+	// Details are the app's checked `authorization_details` (ParseDetails):
+	// what approving sets up.
+	Details []substrate.AuthorizationDetail
 	Created time.Time
 	Expires time.Time
 	// Repository is the repository that claimed the request: the first owner
@@ -70,6 +88,18 @@ type Request struct {
 	// against this snapshot, never a later fetch, so what the owner approves
 	// is what the owner read.
 	Document *Document
+
+	// Status is substrate.AuthorizationPending until a set up reserves the
+	// request (Reserve), AuthorizationSettingUp while it runs, and
+	// AuthorizationApproved once it landed and the code exists (Finish).
+	Status string
+	// Progress is each setup row's state as the run last reported it, and
+	// Failure why the last run stopped; both outlive a failed run, so the
+	// page shows what landed. Next is the redirect carrying the code, once
+	// approved.
+	Progress []string
+	Failure  *substrate.AuthorizationFailure
+	Next     string
 }
 
 // Approval is what the owner approved, bound to the code.
@@ -82,6 +112,9 @@ type Approval struct {
 	Scopes     []string
 	Lifetime   time.Duration
 	ClientName string
+	// Details are what the approval set up, or found in place, which the
+	// token response lists.
+	Details []substrate.AuthorizationDetail
 }
 
 // Code is a code's bookkeeping.
@@ -136,6 +169,7 @@ func (s *Store) Park(r Request) (Request, error) {
 		}
 	}
 	r.ID = randomText(16)
+	r.Status = substrate.AuthorizationPending
 	r.Created = s.now()
 	r.Expires = r.Created.Add(RequestTTL)
 	cp := r
@@ -143,16 +177,32 @@ func (s *Store) Park(r Request) (Request, error) {
 	return r, nil
 }
 
-// Claim answers a pending request for repository, binding it to that
-// repository on the first call.
+// Claim answers a request for repository, binding it to that repository on
+// the first call. A request being set up, or approved after a set up, is
+// answered too, to the repository that claimed it alone, so the page can
+// follow the set up it started.
 func (s *Store) Claim(id, repository string) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r, err := s.pendingLocked(id, repository)
+	r, err := s.liveLocked(id, repository)
 	if err != nil {
 		return Request{}, err
 	}
 	r.Repository = repository
+	return *r, nil
+}
+
+// Peek answers a request as Claim does, without binding it: an approval
+// reads what it would set up before it answers, and an approval from a
+// repository that never read the request must not claim it from the one
+// that will.
+func (s *Store) Peek(id, repository string) (Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.liveLocked(id, repository)
+	if err != nil {
+		return Request{}, err
+	}
 	return *r, nil
 }
 
@@ -163,7 +213,7 @@ func (s *Store) Claim(id, repository string) (Request, error) {
 func (s *Store) Snapshot(id, repository string, doc Document) (Document, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r, err := s.pendingLocked(id, repository)
+	r, err := s.liveLocked(id, repository)
 	if err != nil {
 		return Document{}, err
 	}
@@ -174,11 +224,39 @@ func (s *Store) Snapshot(id, repository string, doc Document) (Document, error) 
 	return *r.Document, nil
 }
 
-// pendingLocked is a request that is waiting and not claimed by another
-// repository.
-func (s *Store) pendingLocked(id, repository string) (*Request, error) {
+// liveLocked is a request that has not lapsed and is not claimed by another
+// repository, in whatever state.
+func (s *Store) liveLocked(id, repository string) (*Request, error) {
 	r, ok := s.requests[id]
 	if !ok || !s.now().Before(r.Expires) || (r.Repository != "" && r.Repository != repository) {
+		return nil, ErrNotPending
+	}
+	return r, nil
+}
+
+// pendingLocked is a live request waiting for an answer: one being set up
+// answers ErrSettingUp, one already approved ErrNotPending.
+func (s *Store) pendingLocked(id, repository string) (*Request, error) {
+	r, err := s.liveLocked(id, repository)
+	if err != nil {
+		return nil, err
+	}
+	switch r.Status {
+	case substrate.AuthorizationSettingUp:
+		return nil, ErrSettingUp
+	case substrate.AuthorizationApproved:
+		return nil, ErrNotPending
+	}
+	return r, nil
+}
+
+// settingUpLocked is a live request a set up reserved for repository.
+func (s *Store) settingUpLocked(id, repository string) (*Request, error) {
+	r, err := s.liveLocked(id, repository)
+	if err != nil {
+		return nil, err
+	}
+	if r.Status != substrate.AuthorizationSettingUp || r.Repository != repository {
 		return nil, ErrNotPending
 	}
 	return r, nil
@@ -187,7 +265,8 @@ func (s *Store) pendingLocked(id, repository string) (*Request, error) {
 // Approve moves a pending request to approved, once: it checks the approval
 // with check under the lock, so two approvals of one request cannot both
 // mint a code, and a refused approval leaves the request pending. It
-// answers the code's secret, shown this once.
+// answers the code's secret, shown this once. A request being set up is
+// refused with ErrSettingUp: its set up answers it (Finish).
 func (s *Store) Approve(id, repository string, check func(Request) (Approval, error)) (string, Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -196,19 +275,115 @@ func (s *Store) Approve(id, repository string, check func(Request) (Approval, er
 	if err != nil {
 		return "", Request{}, err
 	}
-	if len(s.codes) >= maxCodes {
-		return "", Request{}, ErrFull
-	}
-	a, err := check(*r)
+	code, err := s.mintLocked(r, check)
 	if err != nil {
 		return "", Request{}, err
 	}
 	delete(s.requests, id)
+	return code, *r, nil
+}
+
+// mintLocked checks an approval of r and binds a fresh code to it.
+func (s *Store) mintLocked(r *Request, check func(Request) (Approval, error)) (string, error) {
+	if len(s.codes) >= maxCodes {
+		return "", ErrFull
+	}
+	a, err := check(*r)
+	if err != nil {
+		return "", err
+	}
 	code := randomText(32)
 	now := s.now()
 	s.codes[HashCode(code)] = &Code{
 		Request: *r, Approval: a, Expires: now.Add(CodeTTL), forgetAt: now.Add(codeMemory),
 	}
+	return code, nil
+}
+
+// Reserve moves a pending request to setting-up for the set up its approval
+// runs, once: the request must be claimed by repository and shown, and check
+// accepts the approval under the lock, so a second approval or a denial
+// meanwhile is refused with ErrSettingUp. The request then lapses SetUpTTL
+// from now, the set up's own bound. A refusal leaves it pending.
+func (s *Store) Reserve(id, repository string, check func(Request) error) (Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweep()
+	r, err := s.pendingLocked(id, repository)
+	if err != nil {
+		return Request{}, err
+	}
+	if r.Repository != repository {
+		return Request{}, ErrNotPending
+	}
+	if r.Document == nil {
+		return Request{}, ErrNotShown
+	}
+	if err := check(*r); err != nil {
+		return Request{}, err
+	}
+	r.Status = substrate.AuthorizationSettingUp
+	r.Expires = s.now().Add(SetUpTTL)
+	return *r, nil
+}
+
+// Progress records each setup row's state as the run reaches it. A run
+// reporting progress has started again, so the last run's failure goes.
+func (s *Store) Progress(id, repository string, progress []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.settingUpLocked(id, repository)
+	if err != nil {
+		return err
+	}
+	r.Progress = slices.Clone(progress)
+	r.Failure = nil
+	return nil
+}
+
+// Fail moves a request being set up back to pending, with why the set up
+// stopped; a nil failure leaves the last one as it was, for a set up refused
+// before it ran. The progress stays, so the page shows what landed, and the
+// request waits RequestTTL again for the owner to try again or deny.
+func (s *Store) Fail(id, repository string, failure *substrate.AuthorizationFailure) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.settingUpLocked(id, repository)
+	if err != nil {
+		return err
+	}
+	r.Status = substrate.AuthorizationPending
+	if failure != nil {
+		f := *failure
+		r.Failure = &f
+	}
+	r.Expires = s.now().Add(RequestTTL)
+	return nil
+}
+
+// Finish approves a request its set up reserved, once the set up landed:
+// check accepts the approval under the lock and the code is minted as
+// Approve mints it. The request stays readable to repository as approved
+// until answeredTTL from now, holding next(request, code), the redirect the
+// page that polls it navigates to; every later approval or denial answers
+// ErrNotPending. A refused check leaves the request setting up, for the
+// caller to Fail.
+func (s *Store) Finish(id, repository string, check func(Request) (Approval, error), next func(Request, string) string) (string, Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweep()
+	r, err := s.settingUpLocked(id, repository)
+	if err != nil {
+		return "", Request{}, err
+	}
+	code, err := s.mintLocked(r, check)
+	if err != nil {
+		return "", Request{}, err
+	}
+	r.Status = substrate.AuthorizationApproved
+	r.Failure = nil
+	r.Next = next(*r, code)
+	r.Expires = s.now().Add(answeredTTL)
 	return code, *r, nil
 }
 

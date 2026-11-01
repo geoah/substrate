@@ -320,3 +320,45 @@ func TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger(t *testing.T) {
 		t.Error("a webhook scope read a kind")
 	}
 }
+
+func TestAGrantNamesAPackageThroughItsReadAndWriteScopesAlone(t *testing.T) {
+	const pkg = "providers.example.com/applehealth"
+	for _, stored := range [][]string{
+		{"read:providers.example.com/applehealth/account"},
+		{"write:providers.example.com/applehealth/*"},
+		{"read:providers.example.com/*"},
+		{"read:*"},
+	} {
+		g, err := NewGrant(stored)
+		if err != nil {
+			t.Fatalf("NewGrant(%v): %v", stored, err)
+		}
+		if !g.NamesPackage(pkg) {
+			t.Errorf("%v does not name %s", stored, pkg)
+		}
+	}
+	for _, stored := range [][]string{
+		// Another package of the same authority, one whose word only
+		// starts with this one's, and another authority.
+		{"read:providers.example.com/apple/contact"},
+		{"write:providers.example.com/apple/*"},
+		{"read:providers.example.com/applehealthx/*"},
+		{"read:example.com/*"},
+		// The verbs that read no kind whole.
+		{"agents:providers.example.com/applehealth/*"},
+		{"decide:*"},
+		{"webhook:applehealth-webhook"},
+	} {
+		g, err := NewGrant(stored)
+		if err != nil {
+			t.Fatalf("NewGrant(%v): %v", stored, err)
+		}
+		if g.NamesPackage(pkg) {
+			t.Errorf("%v names %s, want not", stored, pkg)
+		}
+	}
+	g, _ := NewGrant([]string{"read:*"})
+	if g.NamesPackage("") {
+		t.Error("a grant named the empty package")
+	}
+}

@@ -36,10 +36,24 @@ The approval page shows, from top to bottom:
   app's, never as yours. Your triggers and mappings respond to its changes
   like any other, so they may run code you installed, call services that
   charge you, or change records the app cannot reach itself.
+- **What it sets up**: when the app needs something on your server, one row
+  per thing: a provider to install or upgrade (with what it requires, the
+  kinds it adds, the code it runs and its triggers), the account it
+  delivers under, with every value it writes, and the webhook it turns on.
+  A row already in place says so. A row the server cannot set up says why
+  and where to go about it, and the request cannot be approved until it is
+  settled or denied.
 - **How long the access lasts**: 7, 30 or 90 days, or until you revoke it.
   There is no refresh: when it ends, the app asks again. A token approved
   until revoked works for whoever holds it until you revoke it, a leaked one
   included.
+
+Approving a request that sets something up runs the set up on your server,
+as you, before the app receives anything: the page shows each row as it
+runs, and the app gets its code once every row landed. If a row fails, the
+request waits for you again with what failed; what landed stays, as it does
+when you install from a provider's page, and approving again runs what is
+left. Closing the page does not stop a set up that has started.
 
 An app on your own computer (a command-line tool, a desktop app) has a
 `client_id` on `127.0.0.1` or `localhost`. Nothing about it can be verified,
@@ -146,6 +160,50 @@ answered with an error page, never a redirect, because the redirect URI is
 not verified yet. The owner's answer comes back to the redirect URI as
 `code`, `state` and `iss` (RFC 9207), or as `error=access_denied`.
 
+### Ask for set up
+
+An app that needs more than access, a provider installed, the account it
+delivers under, a webhook turned on, names it in `authorization_details`
+(RFC 9396) beside `scope`: a JSON array of at most 8 entries in at most
+2 KB.
+
+```json
+[
+  {"type": "package", "package": "providers.substrate.reamde.dev/applehealth", "version": 5},
+  {"type": "account", "kind": "providers.substrate.reamde.dev/applehealth/account",
+   "id": "phone-1a2b3c4d", "properties": {"displayName": "Ada's iPhone"}},
+  {"type": "webhook", "trigger": "applehealth-webhook"}
+]
+```
+
+- `package`: a provider or a first-party catalogue this server's catalog
+  ships, at `version` or later. Installing it installs what it requires
+  first, as the provider page does. A sample is not set up this way: the
+  owner adds it from All data.
+- `account`: one record of a kind that implements
+  `substrate.reamde.dev/core/accountconfig`, in a package a `package` entry
+  of the same request names. It is created once: a row already there, live
+  or deleted, is left alone. `properties` is at most 1 KB, of properties the
+  kind declares, none of them a secret and none that only another hand
+  writes.
+- `webhook`: a trigger with a webhook source whose callable belongs to a
+  package a `package` entry of the same request names. Approving turns it
+  on, and gives it a key only when it has none; the key is never shared.
+  The token carries `webhook:<trigger>`, which delivers to that trigger
+  with the token itself. A request never asks for `webhook:` in `scope`.
+
+An entry with a member its type does not take (`url` included, which is the
+token response's), a type the server does not know, or the same entry twice
+refuses the request with an error page. The authorization server metadata
+lists `authorization_details_types_supported`. A server that does not list
+them ignores the parameter and would approve the scopes alone, so send
+details only to a server that lists them.
+
+The owner sees one row per entry and approves them with the scopes or not
+at all. The approval runs the set up before the code exists, so the code can
+take longer to arrive than for scopes alone: up to 15 minutes, and an app
+that waits on its redirect URI waits that long.
+
 ### Exchange the code
 
 ```
@@ -170,19 +228,67 @@ redirect URI and verifier is refused and spends nothing; a second
 presentation of a code that already worked revokes the token it minted (a
 revoke the database refuses is logged and retried for several minutes).
 `scope` lists what the owner approved, which may be less than the app asked
-for. `repository` is the authority the token opens. `expires_in` is absent
-when the owner approved the app until they revoke it: the token has no
-expiry.
+for, and a `webhook:` scope for each webhook it set up. `repository` is the
+authority the token opens. `expires_in` is absent when the owner approved the
+app until they revoke it: the token has no expiry.
+
+A request that carried `authorization_details` is answered with them as
+granted (RFC 9396 §7): each package with the `version` now held, each
+account's `kind` and `id`, and each webhook's `trigger` with the `url` to
+deliver to, `<issuer>/webhooks/<repository>/<trigger>`.
+
+```json
+"authorization_details": [
+  {"type": "package", "package": "providers.substrate.reamde.dev/applehealth", "version": 5},
+  {"type": "account", "kind": "providers.substrate.reamde.dev/applehealth/account", "id": "phone-1a2b3c4d"},
+  {"type": "webhook", "trigger": "applehealth-webhook",
+   "url": "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"}
+]
+```
+
+### Check that it is still set up
+
+`POST /api/v1/authorizations/check` takes the app's own token and the request
+it would send now, `{"scope": "…", "authorization_details": […]}`, and
+answers what has moved since it was approved:
+
+```json
+{
+  "scopes": {"missing": ["read:ada.example.com/notes/*"]},
+  "setup": [
+    {"type": "package", "action": "upgrade",
+     "package": {"id": "providers.substrate.reamde.dev/applehealth", "required": 6, "held": 5, "shipped": 6}}
+  ],
+  "expiresAt": "2026-12-01T09:00:00Z"
+}
+```
+
+- `scopes.missing`: the requested scopes, resolved, that the token does not
+  hold;
+- `setup`: per entry, in the request's order, what approving would do now
+  (`none` when it is in place, or `install`, `upgrade`, `create`, `arm`,
+  `blocked`) and, for a package, the versions required, held and shipped.
+  A row the token cannot see is `unknown`: a package unless one of its
+  `read` or `write` scopes names a kind of the package, an account unless it
+  reads the account's kind, a webhook unless it holds that `webhook:`. Treat
+  `unknown` as nothing to ask about;
+- `expiresAt`: when the token ends, absent for one approved until revoked.
+
+When anything needs action, send the owner through the authorization
+endpoint again with the whole request. The approval page compares the scopes
+with the newest token the app holds, and shows what is in place as in place.
+An owner's own token may ask too, and sees every row.
 
 ### Use the token
 
 Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
 the records route (`GET /api/v1/records` for lists and lexical search,
 `POST /api/v1/records`), the record path (`/api/v1/{authority}/{package}/{kind}/{id}`),
-the unit reads, the change feed's live tail, blob storage under the blob
-rule below, under an `agents:` scope the chat and the thread routes, and
-under a `webhook:` scope the webhook door and that trigger's parked list
-([deliver to a webhook](#deliver-to-a-webhook)), held to its scopes:
+the unit reads, the change feed's live tail, the set up check, blob
+storage under the blob rule below, under an `agents:` scope the chat and the
+thread routes, and under a `webhook:` scope the webhook door and that
+trigger's parked list ([deliver to a webhook](#deliver-to-a-webhook)), held
+to its scopes:
 
 - a kind the token cannot read answers `404`, as an unknown kind does;
 - a write to a kind it reads but cannot write answers `403` with
@@ -354,7 +460,9 @@ is bound to the issuer it began on.
 Parked requests and codes live in the server's memory: a restart forgets
 them, and an app that was mid-flow starts over. One address (or one IPv6
 /64) holds at most 32 parked requests. The tokens are records like any
-other.
+other. A set up runs one at a time per repository, for at most 15 minutes;
+a restart forgets its request too, and what it had landed stays, so the app
+starts over and finds those rows in place.
 
 A binary from before app authorization reads an app's token as a
 full-access one, since it does not know `scopes`. Before rolling back past

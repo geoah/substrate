@@ -395,6 +395,26 @@ func (c *Catalog) ByID(id string) (*Bundle, bool) {
 // Warnings names the shipped directories dropped during Load.
 func (c *Catalog) Warnings() []string { return c.warnings }
 
+// Documents answers the closure as shipped: its declaration documents and
+// the data documents the install writes beside them, for a reader that needs
+// a fact the wire preview does not carry (a kind's label or traits, a
+// function's writes, how a trigger ships). Both are the catalog's, shared by
+// every repository it serves: a reader never changes them.
+func (b *Bundle) Documents() (declarations, records []map[string]any) {
+	return b.vocabularyDocs, b.dataDocs
+}
+
+// Requirements is what installing the shipped bundle id would install first,
+// in order: the list Install runs and the upgrade preview stages, so a third
+// reader cannot disagree with either.
+func (c *Catalog) Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*Bundle, error) {
+	b, ok := c.byID[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	return c.requirementsToInstall(ctx, b, ds)
+}
+
 // Install applies a shipped bundle's closure into ds's repository as ONE atomic
 // admission: EVERY shipped data document is converted and validated BEFORE the
 // schema apply, then the schema closure and the delivery wiring commit as a
