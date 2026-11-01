@@ -5,6 +5,11 @@
     "sentence": "See all your records, including kinds added later"
   },
   {
+    "scope": "declare:ada.example.com/training",
+    "kinds": [],
+    "sentence": "Install and update the kinds of your Training package; a change that would lose what your records hold stays yours to make"
+  },
+  {
     "scope": "read:ada.example.com/*",
     "kinds": [
       {

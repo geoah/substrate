@@ -137,11 +137,22 @@ public enum ScopeWords {
         case "decide":
             let later = glob ? ", including agents added later" : ""
             return "Apply or dismiss the changes \(agentsPhrase(shape, pattern, agents)) \(glob ? "suggest" : "suggests")\(later), and edit one before applying it, as you"
+        case "declare":
+            return declareSentence(package: pattern)
         case "webhook":
             return webhookSentence(trigger: pattern, packageName: packageName)
         default:
             return scope
         }
+    }
+
+    /// What a `declare:` scope lets the app do with one package of the
+    /// owner's own (decision 0203): install it and add to it, never a change
+    /// that would lose what records hold.
+    public static func declareSentence(package: String) -> String {
+        let parts = package.split(separator: "/")
+        let name = packageDisplayName(parts.count == 2 ? String(parts[1]) : package)
+        return "Install and update the kinds of your \(name) package; a change that would lose what your records hold stays yours to make"
     }
 
     /// What a `webhook:` scope lets the app do: deliver with its own token,

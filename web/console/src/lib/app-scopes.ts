@@ -25,6 +25,7 @@ const ACTIONS: Record<ScopeVerb, string> = {
   write: "Read and write records of",
   agents: "Talk to, and read the chats of, the agents matching",
   decide: "Apply, edit or dismiss changes suggested by the agents matching",
+  declare: "Install and update the kinds of the package",
   webhook: "Send data to, and see the refused deliveries of, the webhook",
 }
 
@@ -199,9 +200,20 @@ export function scopeSentence(scope: SentenceScope): string {
       const one = !scope.glob
       return `Apply or dismiss the changes ${agentsPhrase(scope, shape)} ${one ? "suggests" : "suggest"}${later}, and edit one before applying it, as you`
     }
+    case "declare":
+      return declareSentence(scope.pattern)
     case "webhook":
       return webhookSentence(scope.pattern)
   }
+}
+
+/** What a `declare` scope lets an app do with one package of the owner's
+ * own (decision 0203): install it and add to it as the app's version needs.
+ * A change that would lose what records hold is refused to the app, so it
+ * stays the owner's. */
+export function declareSentence(pkg: string): string {
+  const name = packageDisplayName(pkg.split("/")[1] ?? pkg)
+  return `Install and update the kinds of your ${name} package; a change that would lose what your records hold stays yours to make`
 }
 
 /** What a `webhook` detail lets the app do once it is set up: deliver with

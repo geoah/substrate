@@ -298,6 +298,40 @@ the set up has up to 15 minutes, and the request then waits up to 10 more
 for the approval page to come back and send the browser on, so an app that
 waits on its redirect URI may wait up to 25 minutes.
 
+### Keep a package of your own
+
+An app whose records are of kinds no catalogue ships keeps them in a package
+of its own, under the repository's own authority
+([0203](decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
+It asks for `declare:~/<package>` beside the scopes that write the package's
+records, and the approval page says "Install and update the kinds of your
+<package> package". A package the app needs from the catalog, such as one its
+kinds name, is a `package` detail of the same request.
+
+```
+scope=declare:~/training write:~/training/* read:substrate.reamde.dev/health/workout
+authorization_details=[{"type":"package","package":"substrate.reamde.dev/health","version":1}]
+```
+
+The token then reads `GET /api/v1/substrate.reamde.dev/core/package/<authority>%2F<package>`,
+whose `properties.version` is the version the repository holds (404 when it
+holds none), and sends its manifests, `~` replaced by the repository's
+authority, to `POST /api/v1/vocabulary/apply`:
+
+- every document is a `package`, `bundle` or `kind` declaration of that
+  package; anything else, another package's or a function, trigger, agent,
+  mapping or trait, refuses the batch with `403`;
+- a change the engine would have to confirm as lossy is refused, since only
+  the owner confirms one: an app widens its package and never narrows it;
+- an unchanged declaration keeps its version, and a changed one lands at the
+  next, so an app compares the version it ships with the one held: install
+  when there is none, apply again when it is older, stop and say so when it
+  is newer.
+
+A request names only `declare:~/<package>`: a package under another
+authority, a glob or a kind is refused with an error page. A `builtin` or
+`published` package is refused at the apply, as for any token.
+
 ### Exchange the code
 
 ```
@@ -575,6 +609,7 @@ A scope is a verb and a pattern:
 | `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
 | `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |
+| `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row ([keep a package of your own](#keep-a-package-of-your-own)) |
 
 | Pattern | Reaches |
 | --- | --- |

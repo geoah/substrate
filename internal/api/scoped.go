@@ -385,6 +385,11 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 }
 
 func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
+	// The package and bundle kinds resolve for a token that keeps a package,
+	// so the record path reaches Get, which admits that package's rows alone.
+	if s.keepsPackage() && (ref == vocabulary.CoreKind(vocabulary.DocPackage) || ref == vocabulary.CoreKind(vocabulary.DocBundle)) {
+		return s.inner.KindByRef(ctx, ref)
+	}
 	if ok, err := s.reaches(ctx, ref); err != nil {
 		return substrate.KindInfo{}, err
 	} else if !ok {
@@ -418,6 +423,12 @@ func (s *scopedDataset) ConvertUnit(ctx context.Context, in substrate.UnitConver
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	// A package an app keeps the declarations of tells it the version it
+	// holds, through its package and bundle rows (decision 0203).
+	if (typ == vocabulary.CoreKind(vocabulary.DocPackage) || typ == vocabulary.CoreKind(vocabulary.DocBundle)) &&
+		s.grant.DeclaresIn(id, s.inner.Repository().Authority) {
+		return s.inner.Get(ctx, typ, id)
+	}
 	gated, err := s.rowGated(ctx, typ)
 	if err != nil {
 		return nil, err
@@ -942,8 +953,48 @@ func (s *scopedDataset) ChangeTriggers(context.Context, []substrate.Change) (map
 	return nil, errScope("the change feed")
 }
 
-func (s *scopedDataset) ApplyVocabularyDocuments(context.Context, substrate.Actor, []map[string]any) ([]*substrate.Record, error) {
-	return nil, errScope("the vocabulary")
+// ApplyVocabularyDocuments admits a batch that declares only packages the
+// grant's `declare:` scopes keep (decision 0203): their package, bundle and
+// kind documents, under the repository's own authority, and nothing that
+// runs code or reaches past the package. The engine's admission still holds
+// it to the package's source (a shipped or published package is refused) and
+// refuses a lossy change, which only the owner may confirm.
+func (s *scopedDataset) ApplyVocabularyDocuments(ctx context.Context, _ substrate.Actor, docs []map[string]any) ([]*substrate.Record, error) {
+	if err := s.declarable(docs); err != nil {
+		return nil, err
+	}
+	return s.inner.ApplyVocabularyDocuments(ctx, s.actor, docs)
+}
+
+// keepsPackage reports whether the grant holds a declare scope.
+func (s *scopedDataset) keepsPackage() bool {
+	return slices.ContainsFunc(s.grant.Scopes(), func(raw string) bool { return strings.HasPrefix(raw, string(scope.Declare)+":") })
+}
+
+// declarable is the declare scope's rule over one batch.
+func (s *scopedDataset) declarable(docs []map[string]any) error {
+	if len(docs) == 0 {
+		return errScope("the vocabulary")
+	}
+	home := s.inner.Repository().Authority
+	for _, doc := range docs {
+		kind, _ := doc["kind"].(string)
+		meta, _ := doc["metadata"].(map[string]any)
+		id, _ := meta["id"].(string)
+		var pkg string
+		switch kind {
+		case vocabulary.CoreKind(vocabulary.DocPackage), vocabulary.CoreKind(vocabulary.DocBundle):
+			pkg = id
+		case vocabulary.CoreKind(vocabulary.DocKind):
+			pkg = vocabulary.KindPackage(id)
+		default:
+			return fmt.Errorf("%w: an app's token declares packages, bundles and kinds, not %s", substrate.ErrForbidden, kind)
+		}
+		if !s.grant.DeclaresIn(pkg, home) {
+			return fmt.Errorf("%w: an app's token does not declare %s/%s: it holds no declare scope for the package", substrate.ErrForbidden, kind, id)
+		}
+	}
+	return nil
 }
 
 func (s *scopedDataset) PlanVocabularyApply(context.Context, substrate.Actor, []map[string]any) (substrate.VocabularyPlan, error) {

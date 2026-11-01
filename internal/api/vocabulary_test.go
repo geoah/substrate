@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -305,5 +307,48 @@ func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	if plan := decodeJSON[substrate.VocabularyPlan](t, rec); plan.Lossy || len(plan.Steps) != 0 || ds.lastVocabularyDocs != nil {
 		t.Fatalf("an all-waiting plan answered %+v and passed %d documents", plan, len(ds.lastVocabularyDocs))
+	}
+}
+
+// AN APP KEEPS ITS OWN PACKAGE'S DECLARATIONS AND NOTHING ELSE (decision
+// 0203): under `declare:~/<package>` its token applies that package's
+// package, bundle and kind documents, and is refused a function, another
+// package, a confirmed lossy change and the preview, which stay the owner's.
+func TestAnAppDeclaresOnlyThePackageItsScopeNames(t *testing.T) {
+	e := newAppEnv(t)
+	pkg := fakeRepository + "/training"
+	app := e.grant("declare:~/training write:~/training/*", []string{"declare:" + pkg, "write:" + pkg + "/*"})
+	doc := func(kind, id string) map[string]any {
+		return map[string]any{"kind": corePackage + "/" + kind, "metadata": map[string]any{"id": id}, "data": map[string]any{}}
+	}
+	apply := func(body map[string]any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		return e.do(http.MethodPost, "/api/v1/vocabulary/apply", app, raw, "application/json")
+	}
+	own := []map[string]any{doc("package", pkg), doc("bundle", pkg), doc("kind", pkg+"/set")}
+	wantStatus(t, apply(map[string]any{"documents": own}), http.StatusOK)
+	if got := len(e.svc.datasets[fakeRepository].lastVocabularyDocs); got != len(own) {
+		t.Fatalf("the dataset saw %d documents, want %d", got, len(own))
+	}
+	for name, docs := range map[string][]map[string]any{
+		"a function of the package":   {doc("function", pkg+"/rollup")},
+		"a trigger":                   {doc("trigger", "training-on-set")},
+		"another package of its own":  {doc("kind", fakeRepository+"/notes/note")},
+		"a first-party package":       {doc("kind", "substrate.reamde.dev/training/set")},
+		"its package beside another":  {doc("package", pkg), doc("package", fakeRepository+"/notes")},
+		"a kind named without a home": {doc("kind", "set")},
+	} {
+		if rec := apply(map[string]any{"documents": docs}); rec.Code != http.StatusForbidden {
+			t.Errorf("%s: %d %s, want 403", name, rec.Code, rec.Body.String())
+		}
+	}
+	confirmed := apply(map[string]any{"documents": own, "confirm": map[string]any{"planHash": "cafe", "changelogSeq": 1}})
+	wantStatus(t, confirmed, http.StatusForbidden)
+	raw, _ := json.Marshal(map[string]any{"documents": own})
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/vocabulary/plan", app, raw, "application/json"), http.StatusForbidden)
+	// A token without the scope is refused the same batch.
+	writer := e.grant("write:~/training/*", []string{"write:" + pkg + "/*"})
+	if rec := e.do(http.MethodPost, "/api/v1/vocabulary/apply", writer, raw, "application/json"); rec.Code != http.StatusForbidden {
+		t.Errorf("a write scope declared its package: %d %s", rec.Code, rec.Body.String())
 	}
 }
