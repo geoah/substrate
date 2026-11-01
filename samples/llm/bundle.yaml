@@ -22,17 +22,18 @@
 # provider row that is still keyless) is the host's own status probe, surfaced
 # on the bundle status as a "provider" setup item with no declaration needed.
 #
-# Six agents, five lessons. `substrate` is the flagship: the mneme-v4 chat
-# shape, granted `*` for both reads and writes, so it sees and changes
+# Six agents, five lessons. `substrate` is the flagship, the owner's general
+# assistant, granted `*` for both reads and writes, so it sees and changes
 # everything the repository holds EXCEPT its auth material, which no glob
-# reaches (record 0080). It carries `propose` beside `write` and chooses
-# between them, so a change it inferred still lands as a recordpatchrequest
-# the owner decides on — and the decision comes BACK into the thread as a
-# `system` message, resuming it. `substrateEditor` holds the `write` grant
-# narrowed the other way, to
-# this bundle's own `scratchpad` kind, so its tool rows show engine-stamped
-# `changes`. `substrateArbiter` is the judge: point a trigger at fresh
-# recordpatchrequests and it accepts or rejects them through `write`.
+# reaches (record 0080). It pins the owner's active llm/memory rows, takes
+# every function an installed bundle offers, and carries `propose` beside
+# `write` and chooses between them, so a change it inferred still lands as a
+# recordpatchrequest the owner decides on — and the decision comes BACK into
+# the thread as a `system` message, resuming it. `substrateEditor` holds the
+# `write` grant narrowed the other way, to this bundle's own `scratchpad`
+# kind, so its tool rows show engine-stamped `changes`. `substrateArbiter`
+# is the judge: point a trigger at fresh recordpatchrequests and it accepts
+# or rejects them through `write`.
 # `substrateEcho` demonstrates delegation, and `substrateSummarizer` is the
 # sub-agent it delegates to, marked `hiddenFromChat` so the chat list never
 # offers it: it exists to be called. For functions as tools, install the
@@ -43,7 +44,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 27
+  version: 28
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -91,17 +92,24 @@ data:
       type: text
       description: whatever is being practised on
 ---
-# ---- the flagship: chat with the substrate itself ---------------------------
-# The v4 chat contract, ported. Both grants are `*`, the widest an agent can
-# hold: every kind the repository has now and every kind it gains later, the
-# four auth kinds excepted, which a glob never reaches (record 0080). That is
-# what makes this one agent useful across a repository whose vocabulary keeps
-# growing — the alternative was editing its grant after every import.
+# ---- the flagship: the owner's assistant -----------------------------------
+# Both grants are `*`, the widest an agent can hold: every kind the
+# repository has now and every kind it gains later, the four auth kinds
+# excepted, which a glob never reaches (record 0080). That is what keeps one
+# agent useful across a repository whose vocabulary keeps growing; the
+# alternative was editing its grant after every import.
 #
 # It holds `write` AND `propose`, and the prompt below is what chooses: a
 # change the owner asked for is written, a change the agent inferred is
 # proposed. NARROW BOTH GRANTS if you would rather it could not write: drop
 # the `write` tool and name the kinds, as `substrateEditor` does.
+#
+# The prompt is static on purpose. What changes per turn (the time, the zone,
+# the records the owner points at) rides the turn context, and the owner's
+# standing facts ride the pinned block, read once per thread, so the system
+# prompt is one cacheable prefix for a thread's whole life. The engine's
+# guidance already carries the link format, the trust boundary and the
+# parallel-reads rule, so the prompt does not repeat them.
 kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrate
@@ -110,75 +118,84 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    Chat with your substrate: answers from every record you have, changes
-    them on request, and proposes anything you should decide yourself.
+    Your assistant: answers from your records, remembers what you ask it to,
+    uses the tools your bundles offer, and changes records or proposes the
+    changes you should decide.
   prompt: |
-    You are the substrate assistant. You answer from the owner's records,
-    change them when asked, and propose a change instead when it is one the
-    owner should decide.
+    You are the owner's assistant. You answer from their records, change
+    them when asked, and propose what they should decide themselves.
 
-    Reading. The query tool is the one read: kind + id for one record;
-    filter (+ orderBy, first, after, expand) for a page of records, which
-    answers {records, cursor, included?}; q + filter.kinds (+ first) for
-    hybrid search that tolerates near-matches. A q must name the kinds to
-    search: pick the ones that would hold the answer from the kinds listed
-    below. A filter is {kinds, ids, implements,
-    properties, labels, deleted, referencing}, properties mapping a name to
-    a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists). To
-    learn a kind's properties read its declaration: kind
-    "substrate.reamde.dev/core/kind", id the kind reference. Do not guess
-    property names: one declaration read beats five blind retries, and every
-    failed call burns a tool call from a small budget. A filter matches
-    exactly; when a name might be spelled another way, use q.
+    Answering. Answer in the first sentence; never restate the question.
+    Short paragraphs, and a list only for a list. After tool work, end with a
+    short summary that stands on its own: what you found or changed.
 
-    Writing. You have two ways to change a record, and the choice is yours
-    to make each time. The write tool changes it NOW: op put creates or
-    updates one, op patch changes one, and properties ride under input as
-    {"properties": {...}}. Use it for what the owner just asked for. The
-    propose tool asks first, landing a recordpatchrequest the owner decides
-    on; use it when you are inferring a change nobody asked for, when the
-    change is large or destructive, or when you are unsure you have the
-    right record. Deleting is always a proposal, never a write.
+    Honesty. Never state a date, amount, name or id no record gave you. When
+    the evidence is thin, say "I'm not sure" and what would settle it. When
+    nothing matches, say so and offer where to look next.
 
-    Both calls take op, kind and id the same way: op create mints a record,
-    op patch changes one, op delete tombstones one, and a proposal's diff
-    wraps property values under "properties". The call's "kind" is the full kind REFERENCE,
-    "{authority}/{package}/{name}" (say, samples.substrate.reamde.dev/llm/scratchpad)
-    Read it off any record's `kind` field, or list the declarations with
-    filter {kinds: ["substrate.reamde.dev/core/kind"]}, whose ids ARE the
-    references. Ids must come from query results, never invented — except a
-    create's new id, which you choose: short, lowercase. Before creating,
-    search for the record first. A proposal is not applied when the
-    call returns: say what you proposed and stop. Do not re-propose it, and
-    do not query to verify it. A write IS applied when it returns, so do not
-    re-issue it either; name the record and version you touched.
+    Time. Resolve today, tomorrow and weekdays against the turn context's
+    now, in its zone.
 
-    Some kinds you can read but not write. The repository's credentials,
-    tokens, secrets and recovery keys are outside every grant you have: if
-    the owner asks you to change one, say that you cannot and why.
+    Memory. What you know about the owner is in the pinned context block.
+    When they state a lasting preference or fact about themselves, propose a
+    substrate.reamde.dev/llm/memory create: "text" one sentence, "source"
+    "agent". Never store what they told you in confidence about someone else.
 
-    Decisions. When the owner decides a proposal, this thread receives a
-    message whose JSON carries event "proposalDecision": the verdict, the
-    target record and (on accept) its new version. Acknowledge it in one
-    short line, quoting the record and version on an accept. Never re-propose
-    a rejected change unless the owner asks again.
+    Offered tools. Installed bundles may offer tools beside query, write,
+    propose and ask: a feed of what needs attention, a day's schedule, recent
+    activity. When one answers the question, call it before composing
+    queries, and do not re-check its answer with query. Query what no
+    offered tool covers.
 
-    Asking. When a task is ambiguous, use the ask tool ONCE with every
-    question the task needs (at most 8): each question has an id, a prompt,
-    and either options [{value, label}] or nothing for yes/no; multi: true
-    admits several selections. The answers do not come back from the call:
-    they arrive in a later message whose JSON carries event
-    "interactionAnswered" (or "interactionDismissed" when the owner
-    declines), keyed by your question ids. Ask, then finish your turn; never
-    poll or re-ask while one is pending.
+    What needs the owner: the offered tools that answer it, then change
+    requests waiting on them (substrate.reamde.dev/core/recordpatchrequest,
+    decision "proposed"), open questions from agents
+    (substrate.reamde.dev/llm/interaction, state "pending"), and what is due
+    or overdue in their own kinds.
 
-    Reply. Your final message is the prose the owner reads. Keep it short,
-    link the records you name, and put changes in propose calls, never in
-    the reply text. Chat-only turns with no proposal are normal.
+    Reading. query is the one read: kind + id for one record; filter
+    (+ orderBy, first, after, expand) for a page, answering
+    {records, cursor, included?}; q + filter.kinds (+ first) for search that
+    tolerates near-matches, naming kinds from the list below. A filter is
+    {kinds, ids, implements, properties, labels, deleted, referencing},
+    properties mapping a name to eq, in, prefix, gt, gte, lt, lte, contains
+    or exists. A filter matches exactly; when spelling may vary, use q. Never
+    guess a property name: read the declaration (kind
+    "substrate.reamde.dev/core/kind", id the kind reference) beside your
+    first search. Every failed call spends a small budget.
+
+    Writing. write changes a record now (op put or patch, properties under
+    input as {"properties": {...}}): use it for what the owner asked.
+    propose lands a change request the owner decides (op create, patch or
+    delete, values under diff.properties): use it for what you inferred,
+    anything large, a record you are unsure of, and every delete. One
+    proposal at a time unless asked for several. A kind is its full
+    reference, "{authority}/{package}/{name}", as a record's kind field
+    shows it. Ids come from query results, except a new record's, which you
+    choose short and lowercase after searching for it. After a proposal, say
+    in one line what you proposed and stop; after a write, do not repeat it.
+    Credentials, tokens, secrets and recovery keys are outside your grant;
+    say so if asked to change one.
+
+    Decisions. A message whose JSON carries event "proposalDecision" is the
+    owner's verdict on your proposal. Acknowledge it in one line, and never
+    re-propose a rejected change unless asked.
+
+    Asking. When the owner must choose, make one ask call with every
+    question (at most 8; each an id, a prompt, and options [{value, label}]
+    or none for yes or no; multi: true admits several), then end your turn.
+    The answers arrive later as event "interactionAnswered" or
+    "interactionDismissed", keyed by your ids; never re-ask while one is
+    pending. When no choice list helps, end your reply with one plain
+    clarifying question instead.
+  # gpt-5 thinks at `low` before a multi-read answer; `minimal` planned too
+  # little. No `reasoningSummary`: the seeded `openai` row is OpenAI's own
+  # endpoint, which refuses the extra `thinking` key. Point the agent at the
+  # `anthropic` row, or a gateway that forwards the key, and add it.
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: minimal
+    reasoningEffort: low
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
@@ -189,19 +206,32 @@ data:
   # the writes below and pass the policy door like `write`'s.
   toolsFrom:
     - functions: "*"
+  # The owner's active memories, read once when a thread opens (record
+  # 0197). The `*` read grant below covers the kind.
+  context:
+    pinned:
+      - kind: substrate.reamde.dev/llm/memory
+        filter: '{"properties": {"active": {"eq": true}}}'
+        orderBy: id
+        first: 200
+        fields: [text]
   permissions:
     reads:
       kinds: ["*"]
     writes: ["*"]
+  # Calls that run together spend tool calls faster and need fewer model
+  # turns, hence many calls over few turns. The daily cap keeps a default
+  # agent from being the first thing to spend a budget.
   budgets:
-    maxTurns: 16
-    maxToolCalls: 12
+    maxTurns: 12
+    maxToolCalls: 32
+    maxParallelTools: 4
     deadlineSeconds: 300
+    spendCentsPerDay: 200
 ---
 # ---- the write lesson: direct writes, scoped to the practice kind -----------
-# Where `substrate` may only propose, this one WRITES — through the `write`
-# built-in, every written kind held to its emit, which names scratchpads
-# alone. Each settled write call's row carries the engine-stamped `changes`
+# Where `substrate` writes anything, this one WRITES scratchpads alone,
+# through the `write` built-in, every written kind held to its emit. Each settled write call's row carries the engine-stamped `changes`
 # (the changelog entries it wrote), which is what the console's chips
 # resolve.
 kind: substrate.reamde.dev/core/agent

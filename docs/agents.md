@@ -572,8 +572,10 @@ read is not charged to `reads.budgets`; `first` and `maxBytes` bound it.
 `substrate.reamde.dev/llm/memory` is the seeded kind for the owner's own
 standing facts: `text`, `active` (default `true`) and `source` (`owner`,
 `agent` or `import`, default `owner`). It is the one `primary` kind of the
-`llm` package, so its rows list and edit in the console like any record. No
-shipped agent pins it yet.
+`llm` package, so its rows list and edit in the console like any record. The
+LLM sample's `substrate` assistant pins the active ones, ordered by id, and
+saves a fact the owner states about themselves by proposing an `llm/memory`
+create with `source: agent`, so a remembered fact is one the owner accepted.
 
 ## The decision loop
 
@@ -1122,10 +1124,11 @@ refuses at dispatch and says which row it wanted.
 
 Every shipped sample agent names `provider: openai`, so a fresh repository's
 demo agents run once that row is keyed. Those that carry `tools:` or
-`subagents:` name `reasoningEffort: minimal` on their own `params`, the
-weakest value their `gpt-5` model accepts; the rows themselves set no
-reasoning default, because the accepted set belongs to the model and one row
-serves several. The LLM sample (**All data → Add a collection → Start from
+`subagents:` name a `reasoningEffort` their model accepts on their own
+`params`: `low` for the LLM sample's `substrate` assistant, which plans
+several reads before it answers, and `minimal`, the weakest value `gpt-5`
+accepts, for the rest. The rows themselves set no reasoning default, because
+the accepted set belongs to the model and one row serves several. The LLM sample (**All data → Add a collection → Start from
 a sample**) is the same closure creation already imported, and it ships the
 same three rows so a later import onto a repository born before the seed
 still has them. Key one, or write another row yourself as the document

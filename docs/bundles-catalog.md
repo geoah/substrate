@@ -152,11 +152,18 @@ rows (`openai`, `anthropic`, `gemini`). The demo agents name `openai`. Key
 that row and they run. A later import of this bundle onto a repository born
 before the seed writes the same three rows and the same agents.
 
-- `substrate` is the one to chat with: it reads the whole graph through the
-  `query` built-in, writes a change the owner asked for through `write`,
+- `substrate` is the one to chat with, a general assistant: it reads the
+  whole graph through the `query` built-in, calls every function an
+  installed bundle [offers](agents.md#offered-functions) before composing
+  queries of its own, writes a change the owner asked for through `write`,
   proposes a change it inferred as a `recordpatchrequest` the owner decides
   on, and asks clarifying questions through the `ask` built-in. Its prompt is
-  what chooses between `write` and `propose`.
+  what chooses between `write` and `propose`. It
+  [pins](agents.md#pinned-context) the owner's active
+  `substrate.reamde.dev/llm/memory` records and proposes a new one when the
+  owner states a lasting preference, runs at `reasoningEffort: low` with up
+  to 32 tool calls over 12 model turns, and stops starting runs once it has
+  spent USD 2 in a day (`budgets.spendCentsPerDay: 200`).
 - `substrateEditor` writes scratchpads directly through the `write` built-in,
   the demo for engine-stamped `changes` on a thread's tool rows.
 - `substrateArbiter` is a judge you point a trigger at: it accepts or rejects a
