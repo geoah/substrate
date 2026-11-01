@@ -22,8 +22,11 @@ Below, `~/training/…` is that name.
 
 **Changing it.** A change ships as the next `version` in `training.yaml`,
 and only additive changes (a new kind, a new optional property, a new enum
-value): the app's token may not confirm a lossy change, so a narrowing waits
-for the owner. Run the generator, then `mise run apple:test:workouts`, whose
+value): the server refuses the app's token an apply that removes anything the
+package holds, or that it would have to confirm as lossy, so a narrowing
+waits for the owner. A bundle the app sends lists its kinds and nothing more
+(no `modules`, `oauth2` or `inputs`), and a kind declares no `indices` or
+`embed`. Run the generator, then `mise run apple:test:workouts`, whose
 codec drift test reads the kinds' property names from the generated
 `kinds.json`.
 
@@ -285,7 +288,7 @@ session", title `{name|routine|id}`, traits
 | `about`                          | reference, any kind                                                                                                                                                  | 17                       | Who trained; absent means the owner.                                                                                                                                                                                                                  |
 | `origin`                         | reference, any kind                                                                                                                                                  | 17, 39                   | The record an importer built it from. Part of `revised`'s contract.                                                                                                                                                                                   |
 | `revision`                       | int                                                                                                                                                                  | 12, 17, 18, 34           | Raised with every change the phone sends; also `HKMetadataKeySyncVersion`. Part of `revised`'s contract.                                                                                                                                              |
-| `adapter`                        | string                                                                                                                                                               | 17, 39                   | What wrote it, `<name>@<version>` (`spotter@0.1.0`, or an importer's function).                                                                                                                                                                       |
+| `adapter`                        | string                                                                                                                                                               | 17, 39                   | What wrote it, `<name>@<version>` (`substrate-workouts@0.1.0`, or an importer's function).                                                                                                                                                                       |
 
 Notes:
 
@@ -1251,7 +1254,7 @@ data:
       - {key: bird-dog, exercise: ~/training/exercise/bird-dog, group: a, routineSlot: bird-dog}
       - {key: chest-press, exercise: ~/training/exercise/chest-press-machine, routineSlot: chest-press}
     revision: 1
-    adapter: spotter@0.1.0
+    adapter: substrate-workouts@0.1.0
 ---
 # Finish, sent as PATCH with ifVersion: the state, the end, the session RPE,
 # and the slots again, each with the planned sets the session started with,

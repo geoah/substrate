@@ -72,12 +72,20 @@ foreground, `PackageInstaller` reads
 | The repository holds | The app |
 | --- | --- |
 | none | applies its manifests, `~` written as the repository's authority |
-| an older version | applies them again; the server lands the change at the next version |
+| an older version, kinds as the app left them | applies them again; the server lands the change at the next version |
+| an older version, a kind the owner changed | stops, names the kinds, and applies over them only when the owner taps Update the Package Anyway |
 | this version | does nothing |
 | a newer version | writes nothing more, keeps sessions on the phone, and says to update the app |
 
-A change to the package ships as the next version and is additive only: the
-app's token may not confirm a lossy change. On the phone the kinds are spelled
+A change to the package ships as the next version and is additive only. The
+server refuses the app's token an apply that would remove anything the
+package holds, a kind, property or value the owner added included, and a
+lossy change; the app shows that refusal in the server's words and writes
+nothing until the owner settles it. A kind edit moves that kind's version and
+not the package's, so after each apply the app records every kind row's
+version (`package.json` in the repository's folder) and compares them before
+the next upgrade. The apply takes no expected version, so an owner's edit
+that lands between that comparison and the apply is not caught. On the phone the kinds are spelled
 `~/training/…`; `Rehome` swaps `~` for the repository's authority at the
 server's edge, both ways, and nowhere else.
 
@@ -85,7 +93,13 @@ server's edge, both ways, and nowhere else.
 cached for the gym (`catalog.json` in the repository's folder under
 Application Support). A repository without any shows **Add the Starter
 Routines**, which writes the carried exercises, then the routines that name
-them.
+them; like every write, only into a package checked at this build's version,
+and the button says why when it is not.
+
+**Each sign-in is one account**: its own folder, outbox, catalogue and
+package check. Signing out or signing in elsewhere replaces it, and a sync
+still running for the old one stops at its next step without publishing or
+writing anything.
 
 **A finished session goes through the outbox** (`outbox.json`), kept on the
 phone until the server takes it, in the package's order:
@@ -102,14 +116,31 @@ phone until the server takes it, in the package's order:
 A `409` reads the record and sends the patch again on top. A `422` naming a
 revision below the stored one means a newer write landed: the entry is
 dropped. No network, a busy server or a refused token stop the run with
-nothing lost; any other refusal waits with the server's words and holds back
-the rest of its session. Deleting a session in History drops what waits for
-it and purges the server's copy.
+nothing lost; any other refusal (a `404` for a session purged on the server,
+a validation error) parks the write with the server's words, holds back the
+rest of its session, and lists it in Settings with Retry and Discard. Each
+entry is found by its id after every network call, so a delete, a discard or
+a sign-out while a write is in flight never removes the wrong one; a purge
+asked for while the session's create is in flight goes after it. A change
+the outbox cannot keep on disk is refused and said; an unreadable
+`outbox.json` is set aside and listed, never replaced by an empty queue.
 
-**History** is the phone's and the server's: at each sync the finished
-sessions the server holds and the phone lacks join the local history, which
-PREVIOUS and the suggestions read, and the sessions and exercises the phone
-has that the server lacks (logged before signing in) are queued. Nothing is
+**History** is the phone's and the server's (`HistoryExchange`). At each sync
+the app reads every session and set the repository holds and decides from
+the outbox's record versions, which say what this phone sent to or read from
+that repository, and the phone's tombstones (`deleted-sessions.json`, every
+session deleted on the phone):
+
+| The server | The phone | The app |
+| --- | --- | --- |
+| holds a finished session | lacks it, never deleted it | imports it |
+| holds a session | deleted it | purges the server's copy, never imports it |
+| changed a session (a record at a version the phone did not see, a set added or removed) | holds it, nothing waiting | takes the server's records, keeping its own Health state |
+| holds a session unfinished | finished it | sends Finish again above the server's revision |
+| lacks a session | sent or read it before | deletes it from the phone: the owner deleted it |
+| lacks a session | never sent it | sends it |
+
+A session with a write still waiting is the phone's until the write lands. Nothing is
 ever written to `substrate.reamde.dev/health/workout`; the Apple Health save
 works as it always did.
 
@@ -117,14 +148,19 @@ works as it always did.
 
 `mise run apple:test:workouts` runs both suites on the Mac: WorkoutsCore's
 356 (the codec, the engine, the suggestions against their vectors, the
-presenters, the stores) and WorkoutsSync's 22: the codec against answers
+presenters, the stores) and WorkoutsSync's 41: the codec against answers
 recorded from a server built from this tree (`Tests/WorkoutsSyncTests/Fixtures`),
-the outbox's order and its answers to `409`, `422`, `401` and the network, the
-package installer, the rehoming, and the sign-in request and status.
+the outbox's order and its answers to `409`, `422`, `401` and the network, a
+delete, a discard, a reset and a new write while a write is in flight, a
+failed save and an unreadable file, parked writes, the history exchange, the
+package installer and an owner's edit, the rehoming, and the sign-in request
+and status.
 
 `LiveServerTests` runs the whole path against a real substrate when told
 where: the authorization request, approved through the approval API (which
-installs health), the package declared, the starter routines copied, a
+installs health), the package declared, upgraded, stopped by an owner's
+property and refused by the server when applied over it, the starter
+routines copied, a
 finished session and its 20 sets written through the outbox, and all of it
 read back as the owner.
 

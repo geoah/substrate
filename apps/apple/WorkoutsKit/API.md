@@ -21,7 +21,7 @@ The `SessionController` (app, main actor) is the only writer. Per command:
 At launch, `journal.load(fold: SessionEngine.fold)` returns the folded `state` and `cacheMatched` (log it when
 false). When it throws (not a `CocoaError`), `journal.setAside(at:)` moves the file out of the next Start's way; list
 it in Settings. After Discard, `apply` returns the state unchanged; delete the journal. At Finish, call
-`SessionEngine.records(state, adapter: "spotter@<version>")` to get `SessionRecords`. Then call
+`SessionEngine.records(state, adapter: "substrate-workouts@<version>")` to get `SessionRecords`. Then call
 `HistoryStore.write(HistoryEntry(records:))` and `HealthQueueFile.enqueue(_:at:)`, in that order with no `await`
 between, and delete the journal. At launch and each foreground, `HealthQueueFile.lost(in: history)` names the pending
 sessions the queue lost; `enqueue(missing:at:)` queues them again, after `setAsideIfUnreadable(at:)`.
