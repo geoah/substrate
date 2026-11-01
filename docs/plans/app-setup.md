@@ -1,8 +1,9 @@
 # An app's approval sets up what it needs
 
-Status: proposal, 2026-11-01, round 2: the first draft reviewed by Claude
+Status: implemented, 2026-11-01, round 2: the first draft reviewed by Claude
 Fable 5.1 and GPT-6 Astra, and changed by both (the review record is at the
-end). It builds on [app authorization](app-authorization.md) and decisions
+end). The binding choices are recorded in
+[0202](../decisions/0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md). It builds on [app authorization](app-authorization.md) and decisions
 [0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)
 and
 [0195](../decisions/0195-an-app-talks-to-agents-decides-their-requests-and-tails-the-feed-it-reads.md),
