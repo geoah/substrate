@@ -57,3 +57,45 @@ func TestModelPriceChargesCacheReadsAndWritesAtTheirRates(t *testing.T) {
 		})
 	}
 }
+
+// A row that states no write rate is charged the write rate of the TTL the
+// call asked for; a stated rate stands whatever the TTL.
+func TestModelPriceChargesAnHourLongCacheWriteAtTwiceTheInputRate(t *testing.T) {
+	usage := &llm.Usage{PromptTokens: 100, CompletionTokens: 5, CacheReadTokens: 60, CacheWriteTokens: 20}
+	for name, tc := range map[string]struct {
+		row  map[string]any
+		ttl  string
+		want float64
+	}{
+		"five minutes":         {row: map[string]any{"inputPer1M": "1", "outputPer1M": "5"}, ttl: llm.CacheTTL5m, want: (20*1 + 60*0.1 + 20*1.25 + 5*5) / 1e6},
+		"an hour":              {row: map[string]any{"inputPer1M": "1", "outputPer1M": "5"}, ttl: llm.CacheTTL1h, want: (20*1 + 60*0.1 + 20*2 + 5*5) / 1e6},
+		"an hour, rate stated": {row: map[string]any{"inputPer1M": "1", "outputPer1M": "5", "cacheWritePer1M": "1.5"}, ttl: llm.CacheTTL1h, want: (20*1 + 60*0.1 + 20*1.5 + 5*5) / 1e6},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := pricingRow(tc.row).forTTL(tc.ttl).cost(usage); math.Abs(got-tc.want) > 1e-12 {
+				t.Fatalf("cost = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A chat thread keeps its prompt an hour and every other run five minutes,
+// unless the provider row names a TTL; the key is always the thread.
+func TestAgentLoopAsksForTheCacheItsModeWants(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mode, rowTTL, want string
+	}{
+		"chat":                        {agentModeChat, "", llm.CacheTTL1h},
+		"a call":                      {"call", "", llm.CacheTTL5m},
+		"a sub-agent":                 {agentModeSubagent, "", llm.CacheTTL5m},
+		"the row's ttl over chat":     {agentModeChat, llm.CacheTTL5m, llm.CacheTTL5m},
+		"the row's ttl over the rest": {"call", llm.CacheTTL1h, llm.CacheTTL1h},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := &agentLoop{provider: &providerConfig{cacheTTL: tc.rowTTL}, in: agentInvocation{mode: tc.mode}, threadID: "th"}
+			if got := l.cache(); *got != (llm.Cache{Key: "th", TTL: tc.want}) {
+				t.Fatalf("cache = %+v, want ttl %s", got, tc.want)
+			}
+		})
+	}
+}

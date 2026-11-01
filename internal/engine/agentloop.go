@@ -332,6 +332,16 @@ type providerConfig struct {
 	// titleModel is the model chat threads are titled by; empty means each
 	// thread's own (agenttitle.go).
 	titleModel string
+	// cacheTTL is the row's cache.ttl as the wire spells it; empty leaves it
+	// to the run's mode (agentLoop.cache).
+	cacheTTL string
+}
+
+// providerCacheTTLs maps the declared cache.ttl words onto the wire's TTLs:
+// an enum value is a lowercase word, so the declaration cannot carry `1h`.
+var providerCacheTTLs = map[string]string{
+	"fiveminutes": llm.CacheTTL5m,
+	"onehour":     llm.CacheTTL1h,
 }
 
 type modelPrice struct {
@@ -341,6 +351,9 @@ type modelPrice struct {
 	// served from, and wrote to, its cache (decision 0181).
 	cacheReadPer1M  float64
 	cacheWritePer1M float64
+	// writeStated is whether the row named cacheWritePer1M; one that did not
+	// is charged the write rate of the TTL the run asked for (forTTL).
+	writeStated bool
 	// contextWindow is the model's window in tokens; 0 means unknown, and a
 	// model with no window never compacts.
 	contextWindow int
@@ -353,9 +366,20 @@ type modelPrice struct {
 // whose ratio differs (Opus 5.5 reads at 0.05x, a 1-hour cache writes at 2x)
 // needs its rate on the row.
 const (
-	defaultCacheReadFactor  = 0.1
-	defaultCacheWriteFactor = 1.25
+	defaultCacheReadFactor    = 0.1
+	defaultCacheWriteFactor   = 1.25
+	defaultCacheWrite1hFactor = 2
 )
+
+// forTTL is the price of a call that asked for cache entries of the given
+// TTL: an hour-long entry costs twice the input rate to write, where the
+// default write factor is the five-minute one. A stated write rate stands.
+func (p modelPrice) forTTL(ttl string) modelPrice {
+	if ttl == llm.CacheTTL1h && !p.writeStated {
+		p.cacheWritePer1M = p.inPer1M * defaultCacheWrite1hFactor
+	}
+	return p
+}
 
 // cost prices one completion's usage in USD: the uncached prompt at the
 // input rate, cache reads and writes at theirs, the completion at the output
@@ -381,13 +405,13 @@ func pricingRow(entry map[string]any) modelPrice {
 	if !ok {
 		read = in * defaultCacheReadFactor
 	}
-	write, ok := priceFloat(entry["cacheWritePer1M"])
-	if !ok {
+	write, stated := priceFloat(entry["cacheWritePer1M"])
+	if !stated {
 		write = in * defaultCacheWriteFactor
 	}
 	return modelPrice{
 		inPer1M: in, outPer1M: out, cacheReadPer1M: read, cacheWritePer1M: write,
-		contextWindow: int(window),
+		writeStated: stated, contextWindow: int(window),
 	}
 }
 
@@ -429,6 +453,12 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	}
 	pc.defaults, _ = row.Props["defaults"].(map[string]any)
 	pc.titleModel, _ = row.Props["titleModel"].(string)
+	if cache, ok := row.Props["cache"].(map[string]any); ok {
+		ttl, _ := cache["ttl"].(string)
+		pc.cacheTTL = providerCacheTTLs[ttl]
+		pc.cfg.CacheKey, _ = cache["key"].(bool)
+		pc.cfg.CacheBreakpoints, _ = cache["breakpoints"].(bool)
+	}
 	for _, entry := range objectRows(row.Props["pricing"]) {
 		model, _ := entry["model"].(string)
 		if model == "" {
@@ -1282,7 +1312,7 @@ func (l *agentLoop) charge(usage *llm.Usage) {
 	if usage == nil {
 		return
 	}
-	turnCost := l.provider.pricing[l.model].cost(usage)
+	turnCost := l.provider.pricing[l.model].forTTL(l.cache().TTL).cost(usage)
 	l.prompt += usage.PromptTokens
 	l.completion += usage.CompletionTokens
 	l.cacheRead += usage.CacheReadTokens
@@ -2948,6 +2978,22 @@ func (l *agentLoop) composeSystemPrompt() {
 	l.systemPrompt = composeSystem(l.ag.Prompt, l.catalogue, l.guidance(), l.pinnedBlock, l.in.systemSuffix)
 }
 
+// cache is what every turn of the run asks the provider to keep: the tool
+// cards, the system prompt and the conversation so far, keyed by the thread.
+// A chat thread waits on a person between turns, often past five minutes, so
+// it keeps its prefix an hour; every other run calls again as soon as a tool
+// answers. The row's cache.ttl overrides both.
+func (l *agentLoop) cache() *llm.Cache {
+	ttl := l.provider.cacheTTL
+	if ttl == "" {
+		ttl = llm.CacheTTL5m
+		if l.in.mode == agentModeChat {
+			ttl = llm.CacheTTL1h
+		}
+	}
+	return &llm.Cache{Key: l.threadID, TTL: ttl}
+}
+
 // complete runs one model turn through the provider's wire adapter:
 // streaming (deltas through emit) when a client is attached, one-shot
 // otherwise. The wire lives in internal/llm; the loop only ever sees the
@@ -2955,7 +3001,7 @@ func (l *agentLoop) composeSystemPrompt() {
 func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.Result, error) {
 	req := llm.Request{
 		Model: l.model, System: l.system(), Messages: messages,
-		Tools: l.defs, Params: l.params,
+		Tools: l.defs, Params: l.params, Cache: l.cache(),
 	}
 	l.reasoning = turnReasoning{}
 	l.partial.Reset()

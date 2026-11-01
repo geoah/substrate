@@ -44,7 +44,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 28
+  version: 29
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
