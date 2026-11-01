@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 26
+  version: 27
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -184,6 +184,11 @@ data:
     - function: substrate.reamde.dev/core/write
     - function: substrate.reamde.dev/core/propose
     - function: substrate.reamde.dev/core/ask
+  # Every function an installed bundle offers (record 0198). It adds no
+  # authority this agent lacks: an offered function's effects are held to
+  # the writes below and pass the policy door like `write`'s.
+  toolsFrom:
+    - functions: "*"
   permissions:
     reads:
       kinds: ["*"]

@@ -93,6 +93,11 @@ and tasks, and its writes carry their own machine hands —
 `bundle:<authority>:<package>` for the declarations an install lays down
 ([actors](api.md#actors)).
 
+A bundle need not ship an agent for the owner's assistant to use it: a
+function that declares `offer: {agents: true}` is taken as a tool by every
+agent whose `toolsFrom` matches it, for as long as the bundle is enabled
+([offered functions](agents.md#offered-functions)).
+
 ## Install and lifecycle
 
 Installing is one atomic apply of the whole closure: the same admission as any

@@ -20,7 +20,10 @@
 #      so every effect it could ever return refuses.
 #   2. A SUB-AGENT. `titler` is a second LLM loop with its own budget and its
 #      own thread, called by the root agent as a tool.
-#   3. A FUNCTION TOOL that writes. `savenote` emits a `note`, and that effect
+#   3. An OFFERED function (record 0198). `stats` offers itself to agents, so
+#      an agent with `toolsFrom: [{functions: "*"}]` takes it as the tool
+#      `notes_stats` without naming it.
+#   4. A FUNCTION TOOL that writes. `savenote` emits a `note`, and that effect
 #      is held to BOTH envelopes: the function's own `emit` and the agent's.
 #
 # The emit ceiling is worth watching here: `titler` declares no emit at all, so
@@ -40,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 12
+  version: 13
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -99,6 +102,9 @@ data:
   description: Count the words and characters in a piece of text.
   runtime: python
   timeout: PT5S
+  effect: read
+  offer:
+    agents: true
   arguments:
     - name: text
       type: string

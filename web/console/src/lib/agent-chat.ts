@@ -385,6 +385,66 @@ export function agentSubagents(agent: SubstrateRecord | undefined): string[] {
   return out
 }
 
+/** The most offered functions one run takes (vocabulary
+ * MaxAgentOfferedTools). */
+export const MAX_OFFERED_TOOLS = 32
+
+/** The patterns an agent's `toolsFrom:` takes offered functions by. */
+export function agentToolsFrom(agent: SubstrateRecord | undefined): string[] {
+  const raw = agent?.properties.toolsFrom
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue
+    const functions = (item as Record<string, unknown>).functions
+    if (typeof functions === "string" && functions) out.push(functions)
+  }
+  return out
+}
+
+function patternMatches(pattern: string, identity: string): boolean {
+  if (pattern === "*") return true
+  if (pattern.endsWith("/*")) return identity.startsWith(pattern.slice(0, -1))
+  return pattern === identity
+}
+
+/** The offered functions an agent takes as tools, the way a run resolves
+ * them (engine offeredTools): in identity order, after the tools it names,
+ * skipping a function it already names and a tool name already taken, up
+ * to MAX_OFFERED_TOOLS. A disabled bundle's are listed here and left out
+ * by the run. */
+export function agentOfferedTools(
+  agent: SubstrateRecord | undefined,
+  functions: SubstrateRecord[]
+): AgentTool[] {
+  const patterns = agentToolsFrom(agent)
+  if (patterns.length === 0) return []
+  const named = agentTools(agent)
+  const namedFns = new Set(named.map((t) => t.function))
+  const taken = new Set([
+    ...named.map((t) => t.name),
+    ...agentSubagents(agent).map((id) => id.slice(id.lastIndexOf("/") + 1)),
+  ])
+  const out: AgentTool[] = []
+  const sorted = [...functions].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  )
+  for (const fn of sorted) {
+    const offer = fn.properties.offer
+    if (!offer || typeof offer !== "object" || Array.isArray(offer)) continue
+    const { agents, name } = offer as Record<string, unknown>
+    if (agents !== true) continue
+    if (!patterns.some((p) => patternMatches(p, fn.id))) continue
+    if (namedFns.has(fn.id)) continue
+    const [, pkg, local] = fn.id.split("/")
+    const tool = typeof name === "string" && name ? name : `${pkg}_${local}`
+    if (taken.has(tool) || out.length === MAX_OFFERED_TOOLS) continue
+    taken.add(tool)
+    out.push({ function: fn.id, name: tool })
+  }
+  return out
+}
+
 /** The route params of a function's tool page. */
 export function toolRoute(
   fn: string

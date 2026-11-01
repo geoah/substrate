@@ -147,12 +147,23 @@ type Function struct {
 	// stream erroring when a delivery of the function parks; empty (a
 	// function keeping several streams, or none) marks the account alone.
 	Stream string
+	// Offer is non-nil when the function offers itself to agents (record
+	// 0198): an agent whose `toolsFrom` matches its identity takes it as a
+	// tool without naming it under `tools:`.
+	Offer *FunctionOffer
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties (engine/vocabularywrite.go
 	// authorityDeclarations). The retired `definition` blob is a different thing
 	// and has no spelling left: this is the document, not a wrapper around it.
 	Definition map[string]any
+}
+
+// FunctionOffer is `data.offer` parsed. The function's own description and
+// arguments are the card; the offer adds only the tool name, which is the
+// declared one or derived from the identity, and is valid either way.
+type FunctionOffer struct {
+	ToolName string
 }
 
 // FunctionCaps is the capability envelope: what the body's effects may address,
@@ -710,7 +721,14 @@ var functionDataKeys = map[string]bool{
 	"effect": true, "confirmation": true,
 	// The sync stream the function keeps, read by the sync status alone.
 	"stream": true,
+	// Whether the function offers itself to agents, and under what tool name.
+	"offer": true,
 }
+
+// functionOfferKeys is `data.offer`'s key set: `agents` is the audience, the
+// one there is, named so that a second audience is a new key rather than a
+// new meaning of this one.
+var functionOfferKeys = map[string]bool{"agents": true, "name": true}
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it.
 // Nothing translates a row written that way and no shim admits one: a store
@@ -814,7 +832,75 @@ func (l *loader) parseFunction(d Document) *Function {
 	if fn = l.parseFunctionCaps(where, d.Data, fn); fn == nil {
 		return nil
 	}
+	if !l.parseFunctionOffer(where, d.Data, fn) {
+		return nil
+	}
 	return fn
+}
+
+// parseFunctionOffer reads `data.offer` (record 0198). An offer is refused on
+// a host function, whose dispatch is the loop's own and is named under
+// `tools:` alone, and on a function that does not declare its `effect`: an
+// owner allows offered functions by pattern, so what each one does to the
+// repository is declared where the console and the policy door can read it.
+func (l *loader) parseFunctionOffer(where string, data map[string]any, fn *Function) bool {
+	raw, declared := data["offer"]
+	if !declared {
+		return true
+	}
+	offer, isMap := raw.(map[string]any)
+	if !isMap {
+		l.errf("%s: data.offer: a map, {agents: true, name}", where)
+		return false
+	}
+	l.checkKeys(where+": data.offer", offer, functionOfferKeys)
+	agents, isBool := offer["agents"].(bool)
+	if !isBool {
+		l.errf("%s: data.offer.agents: true or false, the audience the function is offered to", where)
+		return false
+	}
+	if !agents {
+		return true
+	}
+	if fn.IsHost() {
+		l.errf("%s: data.offer: a host function is named under an agent's tools, never offered", where)
+		return false
+	}
+	if fn.Effect == "" {
+		l.errf("%s: data.offer: an offered function declares its effect (read, write, external or irreversible)", where)
+		return false
+	}
+	name, named := offer["name"].(string)
+	if _, declaredName := offer["name"]; declaredName && !named {
+		l.errf("%s: data.offer.name: a string, the tool name", where)
+		return false
+	}
+	if !named {
+		name = OfferedToolName(fn.Package, fn.Name)
+	}
+	if !reToolName.MatchString(name) {
+		if named {
+			l.errf("%s: data.offer.name: %q — letters, digits, _ and -, at most 64", where, name)
+		} else {
+			l.errf("%s: data.offer: the derived tool name %q is over 64 characters — name the tool in data.offer.name", where, name)
+		}
+		return false
+	}
+	fn.Offer = &FunctionOffer{ToolName: name}
+	return true
+}
+
+// OfferedToolName derives an offered function's tool name from its package
+// and local name, `<package>_<name>`: both are one word in the tool-name
+// alphabet, so the derivation is total and stable, and the package keeps
+// two packages' `today` apart. Two authorities shipping one package name
+// collide, and the run keeps the first by identity (record 0198).
+func OfferedToolName(pkg, name string) string {
+	_, local := SplitPackageRef(pkg)
+	if local == "" {
+		local = pkg
+	}
+	return local + "_" + name
 }
 
 // parseFunctionBody reads what the runtime implies about the body: an inline

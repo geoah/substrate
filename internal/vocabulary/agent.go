@@ -177,6 +177,10 @@ type Agent struct {
 	Params map[string]any
 	// Tools lists what the model may call, in declaration order.
 	Tools []AgentTool
+	// ToolsFrom is `toolsFrom:` parsed: the patterns over function
+	// identities whose offered functions the loop takes as tools besides
+	// Tools (record 0198). Resolution is the run's, never the loader's.
+	ToolsFrom []string
 	// Subagents lists sub-agent identities the loop exposes as tools.
 	Subagents []string
 	// Budgets bounds one invocation.
@@ -233,6 +237,24 @@ type AgentTool struct {
 	// Description is the alias when declared; empty means the canonical
 	// description (the function manifest's) is the card.
 	Description string
+}
+
+// MaxAgentOfferedTools caps how many offered functions one run takes through
+// `toolsFrom`. Past it the run keeps the first by identity and logs the rest:
+// a tool block the size of every installed bundle costs every turn of every
+// run, and a model picks worse from a longer list.
+const MaxAgentOfferedTools = 32
+
+// TakesOffered reports whether the agent's `toolsFrom` covers a function
+// identity: `*`, `<authority>/*`, `<authority>/<package>/*` or the identity
+// itself, the shapes a kind grant takes (record 0080).
+func (a *Agent) TakesOffered(fnIdent string) bool {
+	for _, pat := range a.ToolsFrom {
+		if MatchTypeGlob(pat, fnIdent) {
+			return true
+		}
+	}
+	return false
 }
 
 // AgentBudgets bounds one agent invocation. Sub-agents carry their OWN
@@ -306,7 +328,7 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 var agentDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
-	"tools": true, "subagents": true, "budgets": true, "permissions": true,
+	"tools": true, "toolsFrom": true, "subagents": true, "budgets": true, "permissions": true,
 	"hiddenFromChat": true, "resume": true, "purpose": true, "compaction": true,
 }
 
@@ -340,6 +362,10 @@ var agentCompactionKeys = map[string]bool{
 var agentToolKeys = map[string]bool{
 	"function": true, "name": true, "description": true,
 }
+
+// agentToolsFromKeys is a `toolsFrom` entry's key set: `functions` is the one
+// source, named so a second source is a new key rather than a new meaning.
+var agentToolsFromKeys = map[string]bool{"functions": true}
 
 // deletedAgentToolKeys are the retired keys of a tool ENTRY, each naming its
 // replacement. `callable` said the entry might name something other than a
@@ -440,6 +466,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 
 	if !l.parseAgentTools(where, d.Data, a) {
+		return nil
+	}
+	if !l.parseAgentToolsFrom(where, d.Data, a) {
 		return nil
 	}
 	// Sub-agents surface as tools under their LOCAL name, so the name space
@@ -706,6 +735,40 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 		}
 	}
 	return true
+}
+
+// parseAgentToolsFrom reads `toolsFrom:`, each entry one pattern over
+// function identities. A pattern is never resolved here: it covers the
+// offered functions the repository holds when a run starts, the ones a later
+// install brings included, so an exact identity nothing declares is not an
+// error either.
+func (l *loader) parseAgentToolsFrom(where string, data map[string]any, a *Agent) bool {
+	for i, ev := range mslice(data, "toolsFrom") {
+		ewhere := fmt.Sprintf("%s: data.toolsFrom[%d]", where, i)
+		entry, isMap := ev.(map[string]any)
+		if !isMap {
+			l.errf("%s: an entry is a {functions: <pattern>} map, got %T", ewhere, ev)
+			return false
+		}
+		l.checkKeys(ewhere, entry, agentToolsFromKeys)
+		pat := mstr(entry, "functions")
+		if !validFunctionPattern(pat) {
+			l.errf("%s: functions %q — *, <authority>/*, <authority>/<package>/* or a full function identity", ewhere, pat)
+			return false
+		}
+		a.ToolsFrom = append(a.ToolsFrom, pat)
+	}
+	return true
+}
+
+// validFunctionPattern is ValidTypeGlob held to full identities: a bare name
+// in a pattern would mean a function in whichever package declares the agent,
+// which is the bare naming decision 0101 refuses.
+func validFunctionPattern(pat string) bool {
+	if pat == "" || !ValidTypeGlob(pat) {
+		return false
+	}
+	return IsTypeGlob(pat) || Qualified(pat)
 }
 
 // toolFunctionHint spells the identity a retired entry meant, so a refusal names

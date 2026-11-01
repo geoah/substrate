@@ -196,7 +196,7 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 	if err != nil {
 		return v, "", fmt.Errorf("judge %s does not resolve: %w", rule.judge, err)
 	}
-	if len(ag.Tools) > 0 || len(ag.Subagents) > 0 {
+	if len(ag.Tools) > 0 || len(ag.ToolsFrom) > 0 || len(ag.Subagents) > 0 {
 		return v, "", fmt.Errorf("judge %s carries tools — a judge reads the envelope and replies, nothing else", rule.judge)
 	}
 	envelope := map[string]any{

@@ -19,7 +19,7 @@ data:
     or built into the substrate on the `host` runtime. The declaration IS
     the record — a write admits it, the commit activates it, and the dispatcher
     reads the registry this row rebuilds into.
-  version: 21
+  version: 22
   purpose: internal
   names:
     singular: function
@@ -129,6 +129,24 @@ data:
       description: the sync stream this function keeps, the key its code writes
         under the account's `syncStreams`; a parked delivery of it marks that
         stream erroring in the sync status
+    # Offered to the owner's assistant (record 0198): an agent whose
+    # `toolsFrom` matches this function's identity takes it as a tool, its card
+    # this declaration's own description and arguments. A host function cannot
+    # be offered, and an offered one declares its `effect`, since the owner
+    # allows offered functions by pattern rather than one by one.
+    offer:
+      type: object
+      description: whether this function offers itself to agents as a tool,
+        and under what name
+      fields:
+        agents:
+          type: bool
+          required: true
+          description: offer this function to every agent whose toolsFrom
+            matches it
+        name:
+          type: string
+          description: the tool name the model sees; absent means <package>_<name>
     # The FLAT argument dialect: one level of named arguments, which is what
     # makes a card valid JSON Schema by construction and keeps the value check
     # off a recursion. `json` is the named escape hatch for a value whose shape

@@ -43,9 +43,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   agentName,
+  agentOfferedTools,
   agentProviderId,
   agentSubagents,
   agentTools,
+  agentToolsFrom,
   providerName,
   toolRoute,
 } from "@/lib/agent-chat"
@@ -94,6 +96,7 @@ import {
   CORE_PACKAGE_NAME,
   LLM_PACKAGE_NAME,
 } from "@/lib/api/http"
+import { functionsQueryOptions } from "@/lib/api/functions"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
@@ -125,6 +128,10 @@ export function AgentPage() {
   const policies = useQuery(writePoliciesQueryOptions())
   const providers = useQuery(llmProvidersQueryOptions())
   const registry = useQuery(kindsQueryOptions)
+  const functions = useQuery({
+    ...functionsQueryOptions,
+    enabled: agentToolsFrom(agent.data).length > 0,
+  })
 
   if (agent.isPending) {
     return (
@@ -173,6 +180,8 @@ export function AgentPage() {
   const truncated = Boolean(runs.data?.cursor)
   const tools = agentTools(record)
   const subagents = agentSubagents(record)
+  const toolsFrom = agentToolsFrom(record)
+  const offered = agentOfferedTools(record, functions.data ?? [])
   const hidden = record.properties.hiddenFromChat === true
   const agentKind = registry.data?.find((k) => k.identity === AGENT_KIND)
   const spendCap = agentSpendCap(record)
@@ -292,6 +301,39 @@ export function AgentPage() {
               </ul>
             ),
           ],
+          ...(toolsFrom.length
+            ? ([
+                [
+                  "Tools bundles offer it",
+                  offered.length === 0 ? (
+                    <span className="text-muted-foreground">
+                      None yet. It takes the tools installed bundles offer.
+                    </span>
+                  ) : (
+                    <ul className="flex flex-wrap gap-x-3 gap-y-1">
+                      {offered.map((tool) => {
+                        const route = toolRoute(tool.function)
+                        return (
+                          <li key={tool.function}>
+                            {route ? (
+                              <Link
+                                to="/tools/$authority/$pkg/$name"
+                                params={route}
+                                className="underline-offset-2 hover:underline"
+                              >
+                                {tool.name}
+                              </Link>
+                            ) : (
+                              tool.name
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ),
+                ],
+              ] as Array<[string, ReactNode]>)
+            : []),
           ...(subagents.length
             ? ([
                 [

@@ -116,6 +116,8 @@ data:
   provider row's `defaults` may not carry it: `false` drops the
   [engine's guidance](#the-engines-guidance) from the agent's system prompt.
 - **`tools:`**, the functions the model may invoke (below).
+- **`toolsFrom:`**, patterns over the functions installed bundles offer,
+  taken as tools beside `tools:` ([offered functions](#offered-functions)).
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
@@ -421,6 +423,51 @@ is there for the next.
 
 A failed call's result goes back flagged as a failure on a wire that has
 the flag (Anthropic's `is_error`), as well as carrying its `error` key.
+
+### Offered functions
+
+A bundle's function can offer itself to agents with `offer: {agents: true}`
+([functions](functions.md#the-manifest)), and an agent takes the offered
+functions it allows with `toolsFrom:`, without the bundle shipping an agent
+or the owner naming each function
+([0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)):
+
+```yaml
+  toolsFrom:
+    - functions: "*"                                  # every offered function
+    - functions: feeds.example.com/*                  # one authority's
+    - functions: feeds.example.com/feeds/*            # one package's
+    - functions: feeds.example.com/feeds/today        # one function
+```
+
+A run resolves the patterns when it builds its tools, so an install, a
+disable or an uninstall changes the next run and never the one in flight.
+What it takes:
+
+- **Only enabled bundles.** A disabled bundle's offered functions are left
+  out, and an uninstalled one's no longer exist.
+- **After the named tools.** The offered tools follow every `tools:` entry
+  and sub-agent, in function-reference order, so one set of installed
+  bundles gives one tool block, byte for byte, and a cached prompt prefix
+  holds.
+- **Named tools win.** A function the agent already names under `tools:` is
+  not offered twice, and an offered function whose tool name a named tool, a
+  sub-agent or an earlier offered function holds is left out and logged.
+- **At most 32.** Past that the run keeps the first 32 by reference and logs
+  the rest.
+
+The tool name is the offer's `name`, else `<package>_<name>` (the `today`
+function of `feeds.example.com/feeds` is `feeds_today`). The card is the
+function's own `description` and `arguments`. A call dispatches exactly as a
+`tools:` entry's does: the function runs under its own `permissions`, and
+every effect it returns is held to the agent's `permissions.writes` and
+passes the [policy door](#the-policy-door). Taking an offered function grants
+the agent nothing it did not hold. A judge takes no offered functions either:
+an agent with `toolsFrom` is refused as one, exactly as one with `tools:`.
+
+The llm sample's `substrate` agent takes `*`, and the notes sample's `stats`
+function is offered as `notes_stats`. The console lists an agent's offered
+tools on its page.
 
 ## The engine's guidance
 
