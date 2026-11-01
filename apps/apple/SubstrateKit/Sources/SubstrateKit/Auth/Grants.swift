@@ -147,12 +147,12 @@ public enum ScopeWords {
     }
 
     /// What a `declare:` scope lets the app do with one package of the
-    /// owner's own (decision 0203): install it and add to it, never a change
-    /// that would lose what records hold.
+    /// owner's own (decision 0203): install it and add to it, never remove
+    /// what it holds or declare code.
     public static func declareSentence(package: String) -> String {
         let parts = package.split(separator: "/")
         let name = packageDisplayName(parts.count == 2 ? String(parts[1]) : package)
-        return "Install and update the kinds of your \(name) package; a change that would lose what your records hold stays yours to make"
+        return "Install your \(name) package and add to it as the app changes; it can\u{2019}t remove a kind, property or value the package holds, yours included, or add code"
     }
 
     /// What a `webhook:` scope lets the app do: deliver with its own token,

@@ -304,9 +304,9 @@ An app whose records are of kinds no catalogue ships keeps them in a package
 of its own, under the repository's own authority
 ([0203](decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
 It asks for `declare:~/<package>` beside the scopes that write the package's
-records, and the approval page says "Install and update the kinds of your
-<package> package". A package the app needs from the catalog, such as one its
-kinds name, is a `package` detail of the same request.
+records, and the approval page says "Install your <package> package and add
+to it as the app changes". A package the app needs from the catalog, such as
+one its kinds name, is a `package` detail of the same request.
 
 ```
 scope=declare:~/training write:~/training/* read:substrate.reamde.dev/health/workout
@@ -321,12 +321,33 @@ authority, to `POST /api/v1/vocabulary/apply`:
 - every document is a `package`, `bundle` or `kind` declaration of that
   package; anything else, another package's or a function, trigger, agent,
   mapping or trait, refuses the batch with `403`;
-- a change the engine would have to confirm as lossy is refused, since only
-  the owner confirms one: an app widens its package and never narrows it;
+- a bundle only lists its closure: `authority`, `package`, `description`,
+  `requires`, `requiresAtLeast` and `installs`. `modules`, `oauth2`, `inputs`
+  and any other key refuse the batch with `403`, and so does a kind that
+  declares `indices` or a property that turns `embed` on, which spend the
+  owner's database and provider;
+- the apply only adds. A kind document that leaves out a property, field,
+  enum value, state, transition or trait the stored kind holds, whoever
+  added it, refuses the batch with `409`, and so does a bundle that would
+  replace a package without listing every declaration its stored bundle
+  lists. Removing anything, and a change the engine would have to confirm
+  as lossy, stay the owner's;
 - an unchanged declaration keeps its version, and a changed one lands at the
   next, so an app compares the version it ships with the one held: install
   when there is none, apply again when it is older, stop and say so when it
   is newer.
+
+A kind edit moves that kind's version and not the package's, so the package
+version alone does not say whether the owner changed the package. The token
+also reads the package's kind rows
+(`GET /api/v1/substrate.reamde.dev/core/kind/<authority>%2F<package>%2F<name>`),
+whose `version` an app records after each apply it makes and compares before
+the next: a kind whose version moved, or one it did not install, is the
+owner's change, and the app asks before it applies over it.
+
+The guard reads the stored package before the engine applies the batch, and
+the apply takes no expected version, so an owner's edit that lands in between
+is not seen by it.
 
 A request names only `declare:~/<package>`: a package under another
 authority, a glob or a kind is refused with an error page. A `builtin` or

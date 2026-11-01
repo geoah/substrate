@@ -54,13 +54,25 @@ app already writes with `~` (`write:~/training/*`) name the same package.
 - `POST /api/v1/vocabulary/apply` with documents that are each a `package`,
   `bundle` or `kind` declaration of the named package. A function, trigger,
   agent, mapping or trait, or any other package, refuses the batch with 403.
-  So 0202's objection to an installing scope, that a token which installs
-  ships code whenever it likes, does not reach it: no code can be declared.
-- No lossy change. The confirmation a lossy apply needs ([0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)) is refused to
-  an app's token, so an upgrade may only widen; a narrowing waits for the
-  owner.
-- The package's own `package` and `bundle` rows, readable, so the app knows
-  the version the repository holds.
+  A bundle document may carry only its closure listing (`authority`,
+  `package`, `description`, `requires`, `requiresAtLeast`, `installs`):
+  `modules` is source every function of the package imports and `oauth2`
+  makes the package a provider at endpoints the app would choose, so either
+  refuses the batch, as does `inputs`, a kind's `indices` and a property's
+  `embed`, which spend the owner's database and provider. So 0202's
+  objection to an installing scope, that a token which installs ships code
+  whenever it likes, does not reach it: no code can be declared.
+- Only additions. The confirmation a lossy apply needs ([0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)) is refused to
+  an app's token, and the lossy guard alone protects only values live
+  records hold, so the scoped apply also refuses, with 409, a batch that
+  would take away anything the repository holds in the package: a kind
+  document leaving out a stored property, field, enum value, state,
+  transition or trait, and a bundle (which replaces its package whole) that
+  does not list every declaration the stored bundle lists. The owner's
+  additions to the package therefore survive the app's upgrades, and any
+  removal, the app's own included, waits for the owner.
+- The package's own `package`, `bundle` and `kind` rows, readable, so the
+  app knows the version the repository holds and the version of each kind.
 - The engine's own rules still hold: a `builtin` or `published` package is
   refused (`authorizeDeclarationWrite`), and the publisher's authority stays
   closed (`authorizeNewPackage`).
@@ -72,22 +84,34 @@ authority, a glob or a kind is refused before the approval page.
 package row: missing, it applies its bundled manifests; older, it applies
 them again (the engine lands a changed declaration at the next version); the
 same, nothing; newer than it knows, it writes nothing more and says to update
-the app. The package requires `substrate.reamde.dev/health`, which the
+the app. A kind edit moves the kind's version and not the package's, so the
+package version cannot tell an owner's edit from the app's: the app records
+each kind's version after every apply it makes, and before an upgrade it
+compares them. A kind whose version moved, or one it never installed, is the
+owner's change, and the app stops and asks before applying over it. The package requires `substrate.reamde.dev/health`, which the
 approval's `package` detail installs first.
 
 ### Consequences
 
 - Good, because an app's kinds stay the app's: it ships, versions and
   documents them, and a server ships nothing for them.
-- Good, because the approval page says what the scope does ("Install and
-  update the kinds of your Training package"), and the token can do nothing
-  else with the vocabulary.
+- Good, because the approval page says what the scope does ("Install your
+  Training package and add to it as the app changes; it can't remove a kind,
+  property or value the package holds, yours included, or add code"), and
+  the token can do nothing else with the vocabulary.
 - Bad, because kind names differ per repository (`ada.example.com/training/set`),
   so two repositories' training records are not one name; the app rehomes
   `~` at the server's edge, and an importer or agent works from the
   repository's own name.
-- Bad, because an owner who edits the package by hand moves its version past
-  the app's, which the app then reads as a newer version and stops writing.
+- Bad, because an owner who edits a kind of the package by hand stops the
+  app's next upgrade until they choose to let it apply over the edit; an
+  owner who adds a kind or a property keeps it, and an upgrade that would
+  remove it is refused until the owner removes it or applies it themselves.
+- Bad, because the guard reads the stored package before the engine applies
+  the batch, outside its transaction, and the apply takes no expected
+  version: an owner's edit landing between the read and the apply is not
+  seen. Closing it needs an expected-version precondition on
+  `/vocabulary/apply`.
 - Bad, because `scopes_supported` lists `declare:~/<package>`, a shape rather
   than a scope, since no wider declare scope exists.
 
@@ -95,7 +119,9 @@ approval's `package` detail installs first.
 
 `internal/scope` tests the grammar (`TestADeclareScopeKeepsOnePackageOfTheOwnersOwn`);
 `internal/api` tests what the scoped apply admits and refuses
-(`TestAnAppDeclaresOnlyThePackageItsScopeNames`). WorkoutsKit's tests hold
+(`TestAnAppDeclaresOnlyThePackageItsScopeNames`,
+`TestADeclaredBundleListsItsKindsAndNothingElse`,
+`TestAnAppsApplyNeverRemovesWhatThePackageHolds`). WorkoutsKit's tests hold
 the app's side, and its live test runs the whole path against a server:
 approval, health installed, the package declared, a session written.
 

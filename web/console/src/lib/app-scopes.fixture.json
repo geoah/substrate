@@ -7,7 +7,7 @@
   {
     "scope": "declare:ada.example.com/training",
     "kinds": [],
-    "sentence": "Install and update the kinds of your Training package; a change that would lose what your records hold stays yours to make"
+    "sentence": "Install your Training package and add to it as the app changes; it can’t remove a kind, property or value the package holds, yours included, or add code"
   },
   {
     "scope": "read:ada.example.com/*",
