@@ -84,5 +84,7 @@
 	<string>$(SUBSTRATE_COMMIT)</string>
 	<key>SubstrateUpdates</key>
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstrateSyncClientID</key>
+	<string>$(SUBSTRATE_SYNC_CLIENT_ID)</string>
 </dict>
 </plist>

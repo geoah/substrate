@@ -35,6 +35,9 @@ final class EndToEndTests: XCTestCase {
         // Health is checked by posting its deliveries, not through the app:
         // the simulator's HealthKit sheet does not reliably answer a test.
         app.launchEnvironment["SUBSTRATE_SYNC_E2E_NO_HEALTH"] = "1"
+        // The password session and its Set Up, on a server that would offer
+        // the browser sign-in, which a test cannot approve.
+        app.launchEnvironment["SUBSTRATE_SYNC_PASSWORD_DOOR"] = "1"
         app.launch()
 
         let address = app.textFields["https://substrate.example.com"]

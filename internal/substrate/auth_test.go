@@ -32,3 +32,25 @@ func TestWithDecisionNamesOneRecord(t *testing.T) {
 		t.Fatalf("DecisionFrom = %q", got)
 	}
 }
+
+func TestWebhookGrantNamesOneTriggerOfOneRepository(t *testing.T) {
+	ctx := WithWebhookGrant(context.Background(), "ada.example.com", "applehealth-webhook")
+	if !WebhookGranted(ctx, "ada.example.com", "applehealth-webhook") {
+		t.Fatal("the grant does not reach the trigger it names")
+	}
+	for _, c := range [][2]string{
+		{"ada.example.com", "other-webhook"},
+		{"bob.example.com", "applehealth-webhook"},
+		{"", ""},
+	} {
+		if WebhookGranted(ctx, c[0], c[1]) {
+			t.Fatalf("the grant reaches %s/%s", c[0], c[1])
+		}
+	}
+	if WebhookGranted(WithWebhookGrant(context.Background(), "", ""), "", "") {
+		t.Fatal("an empty grant reaches an empty trigger")
+	}
+	if WebhookGranted(context.Background(), "ada.example.com", "applehealth-webhook") {
+		t.Fatal("an unmarked context is granted")
+	}
+}

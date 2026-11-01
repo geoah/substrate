@@ -247,6 +247,59 @@ func TestReceiveWebhookHoldsTheTriggersInlineBound(t *testing.T) {
 	}
 }
 
+// The door's webhook grant (an app's token under `webhook:`,
+// docs/plans/app-setup.md) stands in for one trigger's key and for nothing
+// else: another trigger, another repository and a disabled trigger still
+// refuse, and a declared signature still runs.
+func TestWebhookGrantStandsInForTheKeyAlone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	secretRef := vocabulary.RecordPath("substrate.reamde.dev/core/secret", hookSecretID)
+	svc, ds := newHookDataset(t,
+		[]enginetest.Trigger{
+			hookTrigger("hook-keyed", webhookSource(hookKey, "x-github-event"), "hookecho", true),
+			hookTrigger("hook-other", webhookSource(hookKey), "hookecho", true),
+			hookTrigger("hook-off", webhookSource(hookKey), "hookecho", false),
+			hookTrigger("hook-signed-keyed", signedSource(hookKey, secretRef), "hookecho", true),
+		},
+		pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource),
+	)
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	authority := testdb.Repository(t)
+	granted := func(trigger string) context.Context { return substrate.WithWebhookGrant(ctx, authority, trigger) }
+
+	if _, err := svc.CheckWebhook(granted("hook-keyed"), authority, "hook-keyed", ""); err != nil {
+		t.Fatalf("the grant did not stand in for the key: %v", err)
+	}
+	for name, c := range map[string]struct {
+		ctx     context.Context
+		trigger string
+	}{
+		"no grant":                   {ctx, "hook-keyed"},
+		"another trigger's grant":    {granted("hook-other"), "hook-keyed"},
+		"another repository's grant": {substrate.WithWebhookGrant(ctx, "nobody.example.com", "hook-keyed"), "hook-keyed"},
+		"a disabled trigger":         {granted("hook-off"), "hook-off"},
+	} {
+		if _, err := svc.CheckWebhook(c.ctx, authority, c.trigger, ""); !errors.Is(err, substrate.ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrNotFound", name, err)
+		}
+	}
+
+	if _, err := engine.ReceiveWebhookSync(granted("hook-signed-keyed"), svc, authority, "hook-signed-keyed", "", jsonHook(`{"n":"unsigned"}`, "x")); !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("an unsigned request under the grant: err = %v, want the signature's refusal", err)
+	}
+	if _, err := engine.ReceiveWebhookSync(granted("hook-signed-keyed"), svc, authority, "hook-signed-keyed", "", signedHook(`{"n":"signed"}`, hookSigningSecret, time.Now())); err != nil {
+		t.Fatalf("a signed request under the grant: %v", err)
+	}
+	fid, err := engine.ReceiveWebhookSync(granted("hook-keyed"), svc, authority, "hook-keyed", "", jsonHook(`{"n":"granted"}`, "issues"))
+	if err != nil {
+		t.Fatalf("a delivery under the grant: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["name"] != `{"n":"granted"}` || got["want"] != "issues" || got["record"] != fid {
+		t.Fatalf("the granted delivery echoed %v", got)
+	}
+}
+
 // One dataset, the whole door: an open endpoint delivers the request, a keyed
 // one checks its key, every refusal is the same ErrNotFound, a multipart
 // request spools its file part to the blob store, and the status row carries

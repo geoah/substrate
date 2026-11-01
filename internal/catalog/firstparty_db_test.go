@@ -366,8 +366,8 @@ func TestAShippedTriggerCannotTakeAnotherPackagesTriggerID(t *testing.T) {
 // Re-installing or upgrading a provider writes its shipped trigger again, and
 // the shipped document ships disabled and without a key. What the owner set
 // on it, being enabled and the webhook key every sender was given, survives:
-// a provider upgrade never disarms a webhook it does not own the key of.
-func TestAReinstallKeepsAnArmedWebhook(t *testing.T) {
+// a provider upgrade never turns off a webhook it does not own the key of.
+func TestAReinstallKeepsAWebhookTheOwnerTurnedOn(t *testing.T) {
 	ctx := context.Background()
 	c := loadCatalog(t)
 	ds := newDataset(t)
@@ -385,7 +385,7 @@ func TestAReinstallKeepsAnArmedWebhook(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: triggerKind, ID: id, Properties: map[string]any{"enabled": true, "source": source},
 	}); err != nil {
-		t.Fatalf("arm the trigger: %v", err)
+		t.Fatalf("turn the trigger on: %v", err)
 	}
 
 	if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {

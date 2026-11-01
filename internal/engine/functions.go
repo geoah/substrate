@@ -3652,8 +3652,11 @@ func (ds *dataset) TriggerFailures(ctx context.Context, id string) ([]substrate.
 // by hand or a webhook fire. A claim it does NOT hold belongs to a run that
 // ended without settling (its dispatch was canceled or died), so the row
 // reads as interrupted; the stored claim stays until a retry or a forget
-// ends it, or the next open rewrites it (settleInterruptedAgentRuns).
+// ends it, or the next open rewrites it (settleInterruptedAgentRuns). A
+// webhook delivery the door accepted and that is still filing is Pending,
+// so a client tells it from a failure without reading its text.
 func (ds *dataset) presentFailure(f *substrate.TriggerFailure) {
+	f.Pending = f.LastError == pendingWebhookError
 	if _, running := ds.runningClaims.Load(f.ID); running {
 		f.Running = true
 		return

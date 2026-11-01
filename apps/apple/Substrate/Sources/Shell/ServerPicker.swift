@@ -1,3 +1,4 @@
+import SubstrateKit
 import SwiftUI
 
 /// Where the app points: an address, checked against the server's discovery
@@ -86,7 +87,7 @@ struct ServerPicker: View {
     }
 
     private func connect() {
-        guard let server = ServerStore.origin(of: address) else {
+        guard let server = ServerAddress.origin(of: address) else {
             problem = "That is not an http or https address."
             return
         }
@@ -95,27 +96,14 @@ struct ServerPicker: View {
         Task {
             defer { checking = false }
             do {
-                try await Self.check(server)
+                // Every substrate serves its discovery document; anything
+                // else at the address is not one.
+                _ = try await SubstrateClient(server: server).discovery()
                 store.use(server)
                 dismiss()
             } catch {
-                problem = "\(server.absoluteString) did not answer as a substrate: \(error.localizedDescription)"
+                problem = "\(server.absoluteString) did not answer as a substrate: \(explain(error, app: "Substrate", server: server))"
             }
-        }
-    }
-
-    /// Every substrate serves its discovery document; anything else at the
-    /// address is not one.
-    private static func check(_ server: URL) async throws {
-        var request = URLRequest(url: server.appendingPathComponent(".well-known/substrate/server.json"))
-        request.timeoutInterval = 10
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-        guard (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
-            throw URLError(.cannotParseResponse)
         }
     }
 }

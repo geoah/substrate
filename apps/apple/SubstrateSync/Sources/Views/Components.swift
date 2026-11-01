@@ -1,51 +1,5 @@
 import SwiftUI
 
-/// A problem, in the same place a status would be: a red icon, a short title
-/// and the server's or the system's own words. It sits in a card of its own or
-/// inside one, never as a box inside a box.
-struct ErrorBox: View {
-    var title = "Something went wrong"
-    let message: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// A short state word in a capsule: what a step or a source is, at a glance.
-/// The word is the colour darkened (lightened in dark mode), so it reads on
-/// its own pale tint.
-struct StatusBadge: View {
-    let text: String
-    let color: Color
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(color.mix(with: scheme == .dark ? .white : .black, by: scheme == .dark ? 0.2 : 0.3))
-            .background(color.opacity(0.16), in: Capsule())
-            .fixedSize()
-    }
-}
-
 /// The app's buttons, one height whatever their label holds, and capsules,
 /// as iOS's own are. iOS's glass buttons swell while pressed, and a spinner
 /// is taller than a symbol; these dim instead, so nothing around them moves.

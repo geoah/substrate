@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SubstrateKit
 import WebKit
 
 /// The substrate the app is pointed at, and the ones it was pointed at before.
@@ -14,11 +15,11 @@ final class ServerStore: ObservableObject {
     @Published private(set) var recent: [URL]
 
     init(defaults: UserDefaults = .standard) {
-        current = defaults.string(forKey: Self.currentKey).flatMap(Self.origin(of:))
-        recent = (defaults.stringArray(forKey: Self.recentKey) ?? []).compactMap(Self.origin(of:))
+        current = defaults.string(forKey: Self.currentKey).flatMap(ServerAddress.origin(of:))
+        recent = (defaults.stringArray(forKey: Self.recentKey) ?? []).compactMap(ServerAddress.origin(of:))
         #if DEBUG
         // DebugDriver's runs start pointed at a server, past the picker.
-        if let preset = ProcessInfo.processInfo.environment["SUBSTRATE_SHELL_SERVER"].flatMap(Self.origin(of:)) {
+        if let preset = ProcessInfo.processInfo.environment["SUBSTRATE_SHELL_SERVER"].flatMap(ServerAddress.origin(of:)) {
             current = preset
         }
         #endif
@@ -51,26 +52,5 @@ final class ServerStore: ObservableObject {
         bytes[8] = (bytes[8] & 0x3F) | 0x80
         return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
                            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
-    }
-
-    /// The origin a typed address names. A bare host is HTTPS, except a
-    /// loopback one, which is what `mise run dev` serves over plain HTTP.
-    static func origin(of typed: String) -> URL? {
-        var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.isEmpty { return nil }
-        if !text.contains("://") {
-            let host = text.split(separator: "/").first.map(String.init) ?? text
-            let loopback = host.hasPrefix("localhost") || host.hasPrefix("127.") || host.hasPrefix("[::1]")
-            text = (loopback ? "http://" : "https://") + text
-        }
-        guard let parts = URLComponents(string: text),
-              let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let host = parts.host, !host.isEmpty
-        else { return nil }
-        var origin = URLComponents()
-        origin.scheme = scheme
-        origin.host = host.lowercased()
-        origin.port = parts.port
-        return origin.url
     }
 }

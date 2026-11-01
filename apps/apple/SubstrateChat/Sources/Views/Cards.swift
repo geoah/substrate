@@ -244,7 +244,7 @@ struct ProposalCard: View {
                 Text("Substrate Chat wasn't approved to apply suggestions. Decide this one in the console.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Link(destination: store.console("change-requests/\(API.segment(id))")) {
+                Link(destination: store.console("change-requests/\(segment(id))")) {
                     Label("Open in the Console", systemImage: "arrow.up.right.square")
                 }
                 .font(.footnote.weight(.semibold))
@@ -502,7 +502,7 @@ struct ProviderKeySheet: View {
         Form {
             Section {
                 Text("Agents run on your own key, sealed on the provider's record. Add it in the console, where only you can write it.")
-                Link(destination: store.console("data/\(Kinds.provider)/\(API.segment(provider.id))")) {
+                Link(destination: store.console("data/\(Kinds.provider)/\(segment(provider.id))")) {
                     Label("Open \(provider.name) in the Console", systemImage: "arrow.up.right.square")
                 }
             } header: {

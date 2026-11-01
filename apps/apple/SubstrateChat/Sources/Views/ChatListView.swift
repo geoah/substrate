@@ -3,9 +3,11 @@ import SubstrateKit
 
 /// The chats, newest activity first, under day headings.
 struct ChatListView: View {
+    @Environment(AppModel.self) private var model
     @Environment(ChatStore.self) private var store
     @Environment(SceneModel.self) private var scene
     @State private var query = ""
+    @State private var reviewing = false
     @State private var renaming: ChatThread?
     @State private var newTitle = ""
     #if os(iOS)
@@ -38,6 +40,15 @@ struct ChatListView: View {
             return items.isEmpty ? nil : (day, items)
         }
         List(selection: selection) {
+            if !model.issues.isEmpty {
+                AppStatusBanner(issues: model.issues, appName: ChatManifest.appName, host: host,
+                                actions: AppStatusActions(review: { reviewing = true }, signInAgain: { model.signInAgain() }))
+                    .listRowSeparator(.hidden)
+            }
+            if let problem = model.authorizeProblem {
+                ProblemLine(title: "Access didn't change", message: problem, tint: .orange)
+                    .listRowSeparator(.hidden)
+            }
             if !store.online {
                 Label("Offline. Showing saved chats.", systemImage: "wifi.slash")
                     .font(.subheadline)
@@ -130,12 +141,23 @@ struct ChatListView: View {
             ToolbarItem(placement: .primaryAction) { newChat }
             #endif
         }
+        .sheet(isPresented: $reviewing) {
+            ReviewChangesSheet(appName: ChatManifest.appName, host: host, changes: model.reviewChanges,
+                               firstSignIn: false,
+                               onContinue: {
+                                   reviewing = false
+                                   Task { await model.reauthorize() }
+                               },
+                               onCancel: { reviewing = false })
+        }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Cancel", role: .cancel) { renaming = nil }
             Button("Rename") { commitRename() }
         }
     }
+
+    private var host: String { ServerAddress.display(store.session.server) }
 
     private var newChat: some View {
         // ⌘N is the File menu's.

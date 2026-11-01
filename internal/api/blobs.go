@@ -34,6 +34,12 @@ const maxConcurrentBlobPuts = 8
 // channel is a counting (weighted, weight-1) semaphore: a token per slot.
 var blobPutSem = make(chan struct{}, maxConcurrentBlobPuts)
 
+// maxConcurrentAppBlobPuts is the same bound for apps' tokens, a pool of its
+// own: an app that uploads in a loop holds its own slots, never the owner's.
+const maxConcurrentAppBlobPuts = 2
+
+var appBlobPutSem = make(chan struct{}, maxConcurrentAppBlobPuts)
+
 // maxConcurrentBlobGets is the same bound on GET /blobs/{digest}: a read holds
 // the whole blob in memory to check its digest before the status line, so
 // parallel reads of a 64 MiB blob would otherwise hold 64 MiB each.
@@ -59,13 +65,29 @@ const blobCacheControl = "private, max-age=31536000, immutable"
 func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
+	slots := blobPutSem
+	if scoped, ok := ds.(*scopedDataset); ok {
+		if err := scoped.admitBlobs(ctx); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+		slots = appBlobPutSem
+	}
 	// Admission bound: acquire a slot before allocating the body, so waiting
 	// requests hold only their goroutine, not a full 64 MiB buffer.
 	select {
-	case blobPutSem <- struct{}{}:
-		defer func() { <-blobPutSem }()
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
 	case <-ctx.Done():
 		writeUnavailable(w, time.Second, "blob store is busy, retry")
+		return
+	}
+	// The wait for a slot and the body may each take minutes: an app's token
+	// revoked or lapsed meanwhile stores nothing. A full-access token is the
+	// owner's and has no lease.
+	lease := leaseFrom(ctx)
+	if err := lease.alive(ctx, 0); err != nil {
+		writeSubstrateError(w, r, err)
 		return
 	}
 
@@ -91,6 +113,10 @@ func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 	wantDigest := chi.URLParam(r, "digest")
 	if wantDigest != "" && wantDigest != sum {
 		writeError(w, http.StatusBadRequest, codeBadRequest, "digest mismatch — the bytes do not hash to the addressed digest")
+		return
+	}
+	if err := lease.alive(ctx, 0); err != nil {
+		writeSubstrateError(w, r, err)
 		return
 	}
 

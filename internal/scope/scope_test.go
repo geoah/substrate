@@ -286,3 +286,144 @@ func TestAnAgentScopeReachesItsAgentsAndNoKindWhole(t *testing.T) {
 		t.Error("a read scope talked to an agent")
 	}
 }
+
+func TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger(t *testing.T) {
+	for _, raw := range []string{"webhook:*", "webhook:", "webhook:ada.example.com/*", "webhook:apple health"} {
+		if _, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) admitted, want refused: a webhook scope names one trigger's id", raw)
+		}
+	}
+	// Only an approved webhook detail puts the verb on a token: an app that
+	// writes it into `scope` is refused, whatever else it asks.
+	if _, err := ParseRequest("read:~/tasks/* webhook:applehealth-webhook"); err == nil {
+		t.Error("a request asked for webhook: in scope and was admitted")
+	}
+	g, err := NewGrant([]string{"write:providers.example.com/apple/*", WebhookScope("applehealth-webhook").String()})
+	if err != nil {
+		t.Fatalf("a stored webhook scope does not parse: %v", err)
+	}
+	if !g.Delivers("applehealth-webhook") {
+		t.Error("the grant does not deliver to the trigger it names")
+	}
+	if g.Delivers("whoop-webhook") || g.Delivers("") {
+		t.Error("the grant delivered to a trigger it does not name")
+	}
+	// It reads and writes no kind whole, the trigger kind least of all.
+	if g.Reads("substrate.reamde.dev/core/trigger", true) || g.Writes("substrate.reamde.dev/core/trigger", true) {
+		t.Error("a webhook scope reached the trigger kind")
+	}
+	only, err := NewGrant([]string{"webhook:applehealth-webhook"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if only.Reads("providers.example.com/apple/contact", false) {
+		t.Error("a webhook scope read a kind")
+	}
+}
+
+func TestAGrantNamesAPackageThroughItsReadAndWriteScopesAlone(t *testing.T) {
+	const pkg = "providers.example.com/applehealth"
+	for _, stored := range [][]string{
+		{"read:providers.example.com/applehealth/account"},
+		{"write:providers.example.com/applehealth/*"},
+		{"read:providers.example.com/*"},
+		{"read:*"},
+	} {
+		g, err := NewGrant(stored)
+		if err != nil {
+			t.Fatalf("NewGrant(%v): %v", stored, err)
+		}
+		if !g.NamesPackage(pkg) {
+			t.Errorf("%v does not name %s", stored, pkg)
+		}
+	}
+	for _, stored := range [][]string{
+		// Another package of the same authority, one whose word only
+		// starts with this one's, and another authority.
+		{"read:providers.example.com/apple/contact"},
+		{"write:providers.example.com/apple/*"},
+		{"read:providers.example.com/applehealthx/*"},
+		{"read:example.com/*"},
+		// The verbs that read no kind whole.
+		{"agents:providers.example.com/applehealth/*"},
+		{"decide:*"},
+		{"webhook:applehealth-webhook"},
+	} {
+		g, err := NewGrant(stored)
+		if err != nil {
+			t.Fatalf("NewGrant(%v): %v", stored, err)
+		}
+		if g.NamesPackage(pkg) {
+			t.Errorf("%v names %s, want not", stored, pkg)
+		}
+	}
+	g, _ := NewGrant([]string{"read:*"})
+	if g.NamesPackage("") {
+		t.Error("a grant named the empty package")
+	}
+}
+
+// A scope already held is one the grant covers, whatever its spelling: the
+// same verb or a write for a read, over a pattern at least as wide, and an
+// internal kind only through its exact scope.
+func TestAGrantCoversWhatItHoldsByReachNotSpelling(t *testing.T) {
+	const kind = "providers.example.com/notes/note"
+	cases := []struct {
+		held     []string
+		want     string
+		internal bool
+		covers   bool
+	}{
+		{[]string{"read:" + kind}, "read:" + kind, false, true},
+		{[]string{"write:" + kind}, "read:" + kind, false, true},
+		{[]string{"read:" + kind}, "write:" + kind, false, false},
+		{[]string{"read:*"}, "read:providers.example.com/notes/*", false, true},
+		{[]string{"read:providers.example.com/*"}, "read:providers.example.com/notes/*", false, true},
+		{[]string{"write:providers.example.com/notes/*"}, "read:" + kind, false, true},
+		{[]string{"read:providers.example.com/notes/*"}, "read:providers.example.com/*", false, false},
+		{[]string{"read:providers.example.com/notes/*"}, "read:providers.example.com/notesx/*", false, false},
+		{[]string{"read:providers.example.com/*"}, "read:example.com/notes/*", false, false},
+		// A glob never reaches an internal kind, so it never covers one.
+		{[]string{"read:*"}, "read:" + kind, true, false},
+		{[]string{"read:" + kind}, "read:" + kind, true, true},
+		{[]string{"write:" + kind}, "read:" + kind, true, true},
+		// The agent verbs keep their own grammar, and a read covers none.
+		{[]string{"agents:*"}, "agents:ada.example.com/chat/assistant", true, true},
+		{[]string{"agents:ada.example.com/chat/*"}, "agents:ada.example.com/*", false, false},
+		{[]string{"read:*"}, "agents:ada.example.com/chat/assistant", false, false},
+		{[]string{"agents:*"}, "decide:*", false, false},
+		// A webhook scope covers its own trigger alone.
+		{[]string{"webhook:applehealth-webhook"}, "webhook:applehealth-webhook", false, true},
+		{[]string{"webhook:applehealth-webhook"}, "webhook:whoop-webhook", false, false},
+		{[]string{"read:*", "write:*"}, "webhook:applehealth-webhook", false, false},
+	}
+	for _, c := range cases {
+		g, err := NewGrant(c.held)
+		if err != nil {
+			t.Fatalf("NewGrant(%v): %v", c.held, err)
+		}
+		want, err := Parse(c.want)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", c.want, err)
+		}
+		if got := g.Covers(want, c.internal); got != c.covers {
+			t.Errorf("%v covers %s (internal %v) = %v, want %v", c.held, c.want, c.internal, got, c.covers)
+		}
+	}
+}
+
+// A trigger id is one predicate on every surface that names one, and a
+// refusal names the verbs where they apply: five stored, four requested.
+func TestAVerbRefusalNamesTheVerbsItsSurfaceTakes(t *testing.T) {
+	if _, err := Parse("webhook:a/b"); err == nil {
+		t.Error("a webhook scope naming a path was admitted")
+	}
+	_, err := Parse("delete:*")
+	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide or webhook") {
+		t.Errorf("a stored scope's unknown verb = %v, want the five verbs named", err)
+	}
+	_, err = ParseRequest("delete:*")
+	if err == nil || !strings.Contains(err.Error(), "read, write, agents or decide") || strings.Contains(err.Error(), "webhook") {
+		t.Errorf("a request's unknown verb = %v, want the four requestable verbs named", err)
+	}
+}

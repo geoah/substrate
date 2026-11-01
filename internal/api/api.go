@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/metrics"
@@ -106,6 +107,10 @@ type Config struct {
 	// (SUBSTRATE_PUBLIC_URL): the issuer of the authorization flow whatever
 	// Host a request names. Empty derives the issuer from the Host.
 	PublicURL string
+
+	// setUpEnded, when set, is told each set up's request id once its
+	// detached run has returned and nothing more lands for it.
+	setUpEnded func(request string)
 }
 
 type handler struct {
@@ -125,6 +130,13 @@ type handler struct {
 	fetcher   clientDocuments
 	parkRate  *rateLimiter
 	publicURL string
+	// setups runs approvals' set ups, one per repository at a time, checks
+	// is the last set up check each token got, and checkTurns queues the
+	// checks' plans (appsetup.go).
+	setups     *appsetup.Runner
+	setUpEnded func(request string)
+	checks     checkMemo
+	checkTurns *checkTurns
 }
 
 // New builds the router.
@@ -150,6 +162,9 @@ func New(cfg Config) http.Handler {
 		fetcher:      cfg.ClientDocuments,
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
+		setups:       appsetup.NewRunner(cfg.Catalog),
+		setUpEnded:   cfg.setUpEnded,
+		checkTurns:   newCheckTurns(maxCheckPlans),
 	}
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
@@ -335,6 +350,19 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
 			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
 			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
+			// A webhook's parked deliveries, for the trigger an app's
+			// `webhook:` scope names (docs/plans/app-setup.md); the rest
+			// of the trigger verbs are the owner's (mountTriggerVerbs).
+			r.Get("/"+corePackage+"/trigger/{id}/parked", h.getTriggerParked)
+			// Storing a blob, for a token that writes a kind declaring a
+			// blob-ref property (scopedDataset.PutBlob). Reading one stays
+			// the owner's, below.
+			r.Put("/blobs", h.putBlob)
+			r.Put("/blobs/{digest}", h.putBlob)
+			// Whether an app is still set up, asked with its own token
+			// (appsetup.go). The static segment wins over the owner's
+			// /authorizations/{request} below, whichever group holds it.
+			r.With(noStore).Post("/authorizations/check", h.postAuthorizationCheck)
 
 			// THE RECORD PATH. It IS the record's reference: the kind's three
 			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
@@ -394,11 +422,10 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get("/catalog/{id}", h.getCatalogItem)
 			r.Post("/catalog/{id}/install", h.postCatalogInstall)
 			r.Post("/catalog/{id}/import", h.postCatalogImport)
-			// The content-addressed blob store: store bytes under their digest,
-			// stream them back, both repository-scoped. A blob's manifest is an
-			// ordinary `blob` record under /substrate.reamde.dev/core/blob.
-			r.Put("/blobs", h.putBlob)
-			r.Put("/blobs/{digest}", h.putBlob)
+			// The content-addressed blob store: stream bytes back by digest,
+			// repository-scoped (the PUTs that store them sit on the scoped
+			// surface above). A blob's manifest is an ordinary `blob` record
+			// under /substrate.reamde.dev/core/blob.
 			r.Get("/blobs/{digest}", h.getBlob)
 
 			// CORE-RECORD ACTIONS AND SUB-RESOURCES. An ACTION hangs one level

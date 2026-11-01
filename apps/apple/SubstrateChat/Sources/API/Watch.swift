@@ -64,17 +64,13 @@ extension API {
                     }
                     let req = try request("GET", "api/v1/changes", query: query, accept: "application/x-ndjson", timeout: 75)
                     let (bytes, response) = try await Self.streaming.bytes(for: req)
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    if status != 200 {
-                        var data = Data()
-                        for try await byte in bytes {
-                            data.append(byte)
-                            if data.count > 64 * 1024 { break }
+                    guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                    if http.statusCode != 200 {
+                        let refused = try await Self.refusal(bytes, http, limit: 64 * 1024)
+                        if http.statusCode == 410 {
+                            throw FeedCompacted(text: (refused as? ServerError)?.text ?? "The change feed's cursor expired.")
                         }
-                        if status == 401 { throw SessionExpired() }
-                        let envelope = ServerError(status: status, envelope: data)
-                        if status == 410 { throw FeedCompacted(text: envelope?.text ?? "The change feed's cursor expired.") }
-                        throw envelope ?? TransportError(text: "The change feed answered HTTP \(status).")
+                        throw refused
                     }
                     for try await line in bytes.lines {
                         guard let parsed = WatchLine.parse(line) else { continue }

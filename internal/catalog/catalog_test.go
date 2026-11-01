@@ -212,3 +212,37 @@ func contains(hay []string, needle string) bool {
 	}
 	return false
 }
+
+// A closure answers what installing it brings as typed facts, read from the
+// documents the install applies: each kind with its label and purpose, each
+// function with what it may write, each trigger as it ships.
+func TestAClosureAnswersWhatItBringsAsFacts(t *testing.T) {
+	b, ok := realCatalog(t).ByID("providers.substrate.reamde.dev/applehealth")
+	if !ok {
+		t.Fatal("the catalog ships no applehealth")
+	}
+	account, ok := b.Kind("providers.substrate.reamde.dev/applehealth/account")
+	if !ok || account.Purpose != "internal" || account.Definition["traits"] == nil {
+		t.Fatalf("the account kind = %+v", account)
+	}
+	if len(b.Kinds()) < 2 {
+		t.Fatalf("applehealth declares %d kinds", len(b.Kinds()))
+	}
+	adapter := -1
+	for i, f := range b.Functions() {
+		if f.ID == "providers.substrate.reamde.dev/applehealth/adaptapplehealth" {
+			adapter = i
+		}
+	}
+	if adapter < 0 || !contains(b.Functions()[adapter].Writes, "substrate.reamde.dev/observations/observation") {
+		t.Fatalf("applehealth's functions = %+v", b.Functions())
+	}
+	hook, ok := b.Trigger("applehealth-webhook")
+	if !ok || !hook.Webhook || hook.Enabled ||
+		hook.Callable != "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/applehealth/applehealthingest" {
+		t.Fatalf("the webhook trigger = %+v", hook)
+	}
+	if record, ok := b.Trigger("applehealth-to-health"); !ok || record.Webhook || !record.Enabled {
+		t.Fatalf("the record trigger = %+v", record)
+	}
+}

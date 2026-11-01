@@ -17,22 +17,3 @@ enum Kinds {
     /// stamp written then still spells it, and must still find its card.
     static let interactionBeforeMove = "\(core)/interaction"
 }
-
-/// One page of `GET /api/v1/records`. `head` and `generation` are the change
-/// feed's handoff: a watch resumed from them sees every write after the read.
-struct Page: Decodable, Sendable {
-    var records: [Record]
-    var cursor: String?
-    var head: Int
-    var generation: String
-
-    enum CodingKeys: String, CodingKey { case records, cursor, head, generation }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        records = try c.decodeIfPresent([Record].self, forKey: .records) ?? []
-        cursor = try? c.decodeIfPresent(String.self, forKey: .cursor)
-        head = (try? c.decodeIfPresent(Int.self, forKey: .head)) ?? 0
-        generation = (try? c.decodeIfPresent(String.self, forKey: .generation)) ?? ""
-    }
-}

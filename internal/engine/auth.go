@@ -855,7 +855,7 @@ func (ds *dataset) rewriteCredential(ctx context.Context, cw credentialWrite) er
 // names its repository by being FOUND in it (ruling RB-2's one-repository
 // model made the routing hint pointless, and a secret that carries a name
 // leaks one).
-const tokenPrefix = "substrate_tok_"
+const tokenPrefix = substrate.TokenSecretPrefix
 
 // MintToken writes one token record and returns its secret, shown exactly
 // once. The record holds the SHA-256 and never the secret; the secret is 20

@@ -81,6 +81,33 @@ func DecisionFrom(ctx context.Context) string {
 	return p
 }
 
+// A WEBHOOK GRANT stands in for one webhook trigger's key
+// (docs/plans/app-setup.md). The webhook door sets it once it has
+// authenticated the bearer as an app's token that opens the repository the
+// path names and holds `webhook:` for the trigger the path names; the
+// engine's door then skips the key comparison for that trigger alone, and
+// every other check, a declared signature included, still runs.
+type webhookGrantKey struct{}
+
+type webhookGrant struct{ authority, trigger string }
+
+// WithWebhookGrant marks ctx as delivering to trigger in the repository whose
+// authority is authority, under a token that holds `webhook:` for it.
+func WithWebhookGrant(ctx context.Context, authority, trigger string) context.Context {
+	return context.WithValue(ctx, webhookGrantKey{}, webhookGrant{authority: authority, trigger: trigger})
+}
+
+// WebhookGranted reports whether ctx carries the webhook grant for exactly
+// this authority and trigger.
+func WebhookGranted(ctx context.Context, authority, trigger string) bool {
+	g, ok := ctx.Value(webhookGrantKey{}).(webhookGrant)
+	return ok && authority != "" && trigger != "" && g == webhookGrant{authority: authority, trigger: trigger}
+}
+
+// TokenSecretPrefix begins every token's bearer secret. The webhook door
+// reads a bearer carrying it as a token before it reads it as a trigger key.
+const TokenSecretPrefix = "substrate_tok_"
+
 // TokenInfo is a token RECORD's metadata — never the secret, which is shown
 // exactly once at mint and stored only as a SHA-256. A token without Scopes
 // has full access to its repository (decision 0143); a token an app received

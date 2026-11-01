@@ -1,3 +1,4 @@
+import SubstrateKit
 import SwiftUI
 
 /// What the repository still lacks, each step with its state, and the one
@@ -57,7 +58,7 @@ struct SetupView: View {
 
             if let error = model.setupError {
                 Section {
-                    ErrorBox(title: error.title, message: error.message)
+                    ProblemBox(title: error.title, message: error.message)
                 }
             }
 

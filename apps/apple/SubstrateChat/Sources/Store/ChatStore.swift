@@ -119,9 +119,10 @@ final class ChatStore {
     /// What the owner approved, for an app token; a password login's token
     /// reaches everything.
     var grants: Grants? { session.grants }
-    var canChat: Bool { grants?.chat ?? true }
-    var canDecide: Bool { grants?.decide ?? true }
-    var canReadProviders: Bool { grants?.providers ?? true }
+    var canChat: Bool { grants?.talks ?? true }
+    var canDecide: Bool { grants?.decidesAny ?? true }
+    /// Only an exact scope reaches the provider rows: `llm` is internal.
+    var canReadProviders: Bool { grants?.reads(Kinds.provider) ?? true }
     /// An app never writes a provider's key: the console does.
     var canWriteKeys: Bool { grants == nil }
 
@@ -534,7 +535,7 @@ final class ChatStore {
     }
 
     /// The provider rows, where the token may read them.
-    private func readProviders() async throws -> Page? {
+    private func readProviders() async throws -> RecordPage? {
         guard canReadProviders else { return nil }
         return try await api.listAll(ListQuery(kinds: [Kinds.provider], first: 100))
     }

@@ -2217,7 +2217,9 @@ repository answers)
 ([the blob store](operations.md#the-blob-store)). A `GET` whose
 `If-None-Match` names that `ETag` answers `304` with no body, and the server
 reads no bytes for it. A `PUT` body has 10 minutes to arrive, and one that
-has not answers `400`. A `GET` response has 10 minutes to be read.
+has not answers `400`. A `GET` response has 10 minutes to be read. An app's
+token stores a blob only when it writes a kind that declares a `blobref`
+property, and never reads one ([apps](apps.md#use-the-token)).
 
 **A read hashes what it serves.** The server reads the whole blob and checks
 its SHA-256 and its size against the digest and the manifest before it sends
@@ -2255,9 +2257,12 @@ the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
 path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
-reach the server. When the trigger declares `source.webhook.signature`, the
-server verifies the provider's signature before it stores anything
-([functions](functions.md#webhook-signatures)).
+reach the server. An app's token that holds `webhook:<trigger>` stands in for
+the key as `Authorization: Bearer`, and is read again once the body has
+arrived; any other token there is read as a key
+([apps](apps.md#deliver-to-a-webhook)). When the trigger declares
+`source.webhook.signature`, the server verifies the provider's signature
+before it stores anything ([functions](functions.md#webhook-signatures)).
 
 | Answer | When |
 | --- | --- |

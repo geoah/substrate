@@ -870,7 +870,56 @@ export interface AuthorizationRequest {
   defaultLifetimeDays: number
   /** When the parked request lapses unanswered. */
   expiresAt: string
+  /** The app's `authorization_details` as it wrote them (RFC 9396); empty
+   * when it asked for scopes alone. */
+  details: AuthorizationDetail[]
+  /** What approving would set up, one row per detail in the request's
+   * order. A pending request's rows are planned at every read; while a set
+   * up runs, and after one stopped, they are the rows the approval was
+   * checked against, each carrying its `progress`. */
+  setup: AuthorizationSetup[]
+  /** Digests `setup`; an approval of a request with setup names it, and the
+   * server refuses with 409 when its own plan has moved since. Absent when
+   * there is no setup. */
+  planHash?: string
+  /** The newest token this repository holds for the same client id; never
+   * present for a local app, whose client id nothing verifies. */
+  previous?: AuthorizationPrevious
+  state: AuthorizationState
+  /** Why the last set up stopped; the request is pending again. */
+  failure?: AuthorizationFailure
+  /** Where the page goes once a set up finished: the app's redirect URI
+   * carrying the code. An approved request is answered once, and is gone
+   * after. */
+  next?: string
 }
+
+/** The states a parked request moves through. */
+export type AuthorizationState = "pending" | "setting-up" | "approved"
+
+/** What approving would do to one setup row. `none` is in place already;
+ * `unknown` answers a check for a row the token cannot see. A row that
+ * cannot run keeps its action and carries `blocked`. */
+export type SetupAction =
+  "install" | "upgrade" | "create" | "enable" | "none" | "unknown"
+
+/** Why a setup row cannot run (`substrate.Block*`). */
+export type SetupBlockReason =
+  | "server-update"
+  | "not-shipped"
+  | "sample"
+  | "quarantined"
+  | "declared-by-owner"
+  | "upgrade-needs-review"
+  | "not-requested"
+  | "account-deleted"
+  | "unsupported"
+
+/** One setup row's state while a set up runs, and after one stopped. */
+export type SetupProgress = "waiting" | "running" | "done" | "failed"
+
+/** The detail types an authorization request may carry. */
+export type AuthorizationDetailType = "package" | "account" | "webhook"
 
 /** The app asking. `host` is the one fact its client id URL proves; `name` and
  * `uri` are what its own document claims, never present for a local app. */
@@ -905,42 +954,204 @@ export interface AuthorizationScope {
   scope: string
   requested: string
   /** `read` and `write` name kinds; `agents` and `decide` name agents
-   * (decision 0195). */
+   * (decision 0195). A request never asks for `webhook`. */
   verb: ScopeVerb
   write: boolean
   pattern: string
   /** The pattern covers more than one kind or agent, and so ones added
    * later. */
   glob: boolean
-  /** The kinds a read or write scope reaches today; empty when it reaches
-   * none yet, and for an agents or decide scope. */
+  /** The kinds a read or write scope reaches today, and the ones a package
+   * the request sets up would add; empty when it reaches none yet, and for
+   * an agents or decide scope. */
   kinds: AuthorizationKind[]
   /** The agent rows an agents or decide scope matches today, so the page
    * names each and says what it may read and change; empty for a read or
    * write scope. */
   agents: SubstrateRecord[]
+  /** The previous token's scopes already cover this one (write covers read,
+   * a wider pattern a narrower one), so the page folds it under what was
+   * allowed before. */
+  allowed?: boolean
 }
 
-/** What one scope of an app's token does with its pattern. */
-export type ScopeVerb = "read" | "write" | "agents" | "decide"
+/** What one scope of an app's token does with its pattern. `webhook` names
+ * one trigger, and only an approved `webhook` detail puts it on a token. */
+export type ScopeVerb = "read" | "write" | "agents" | "decide" | "webhook"
 
-/** One kind a scope reaches today. */
+/** One kind a scope reaches today, or one a package the request sets up
+ * would add (`added`). `purpose` is absent for a primary kind. */
 export interface AuthorizationKind {
   identity: string
   label?: KindLabel
+  purpose?: string
+  added?: boolean
+}
+
+/** One entry of an app's `authorization_details`: a package at a version or
+ * later, an account it delivers under, or a webhook it delivers to. Which
+ * fields a type carries is fixed by the type; the token response answers the
+ * same shape, with `url` where a webhook takes deliveries. */
+export interface AuthorizationDetail {
+  type: AuthorizationDetailType
+  package?: string
+  version?: number
+  kind?: string
+  id?: string
+  properties?: Record<string, unknown>
+  trigger?: string
+  url?: string
+}
+
+/** One detail as approving would set it up. Exactly one of `package`,
+ * `account` and `webhook` is present, by `type`. `blocked` is present when
+ * the row cannot run, and then approving is refused. `progress` is present
+ * while a set up runs and after one stopped. */
+export interface AuthorizationSetup {
+  type: AuthorizationDetailType
+  action: SetupAction
+  blocked?: AuthorizationBlock
+  progress?: SetupProgress
+  package?: AuthorizationPackage
+  account?: AuthorizationAccount
+  webhook?: AuthorizationWebhookPlan
+}
+
+/** Why a setup row cannot run: the reason a client branches on, the server's
+ * one sentence for it, shown in both views, and the console path where the
+ * owner can resolve it, absent when only a newer server or the app can. */
+export interface AuthorizationBlock {
+  reason: SetupBlockReason
+  problem: string
+  fix?: string
+}
+
+/** A package row's facts. `held` is the catalog release the repository
+ * holds, absent when none; `shipped` what this server's catalog ships,
+ * absent when none; `required` the floor the app asks for. A client names a
+ * package from its `id`. */
+export interface AuthorizationPackage {
+  id: string
+  description?: string
+  tier?: string
+  required: number
+  held?: number
+  shipped?: number
+  /** The requirement chain an install brings first, each with its own
+   * facts, in the order they land. `kinds`, `functions` and `triggers` are
+   * this package's own. */
+  requires?: AuthorizationPackageStep[]
+  kinds?: AuthorizationKind[]
+  functions?: AuthorizationFunction[]
+  triggers?: AuthorizationTrigger[]
+}
+
+/** One package a requested one requires, with what it brings of its own.
+ * `blocked` is present when it cannot be installed or upgraded, which blocks
+ * the row that requires it. */
+export interface AuthorizationPackageStep {
+  id: string
+  description?: string
+  action: SetupAction
+  blocked?: AuthorizationBlock
+  held?: number
+  shipped?: number
+  kinds?: AuthorizationKind[]
+  functions?: AuthorizationFunction[]
+  triggers?: AuthorizationTrigger[]
+}
+
+/** Code a package ships, and the kinds it may write. */
+export interface AuthorizationFunction {
+  id: string
+  writes?: string[]
+}
+
+/** A trigger a package ships; an enabled record or schedule trigger runs on
+ * its own once installed. */
+export interface AuthorizationTrigger {
+  id: string
+  callable?: string
+  webhook?: boolean
+  enabled: boolean
+}
+
+/** An account row: the record approving creates once. */
+export interface AuthorizationAccount {
+  kind: string
+  label?: KindLabel
+  id: string
+  properties?: Record<string, unknown>
+}
+
+/** A webhook row: the trigger approving turns on, and the package its
+ * callable belongs to. The key is never shown or shared; the app delivers
+ * with its own token. A check answers `trigger` and `package` alone. */
+export interface AuthorizationWebhookPlan {
+  trigger: string
+  package?: string
+  enabled?: boolean
+  keyed?: boolean
+  /** The token the app holds already delivers to this trigger, by the same
+   * coverage as a scope row's `allowed`. */
+  allowed?: boolean
+}
+
+/** The newest token the repository holds for the requesting client id. */
+export interface AuthorizationPrevious {
+  approvedAt: string
+  /** Absent when it lasts until revoked. */
+  expiresAt?: string
+  scopes: string[]
+}
+
+/** Why a set up stopped, in the owner's words: `row` is the row it stopped
+ * at, by its index in `setup`, absent when it stopped before or after every
+ * row. */
+export interface AuthorizationFailure {
+  row?: number
+  message: string
+}
+
+/** `POST /api/v1/authorizations/check`'s body: the request an app would
+ * send now, its `scope` and its `authorization_details` as `details`. */
+export interface AuthorizationCheck {
+  scope: string
+  details: AuthorizationDetail[]
+}
+
+/** Whether a token still has what its app needs: the requested scopes it
+ * lacks, each detail's action (`unknown` where the token cannot see it) and
+ * when the token ends. */
+export interface AuthorizationCheckResult {
+  scopes: AuthorizationCheckScopes
+  setup: AuthorizationSetup[]
+  expiresAt?: string
+}
+
+/** The requested scopes, resolved, that the token does not hold. */
+export interface AuthorizationCheckScopes {
+  missing: string[]
 }
 
 /** The approval body: the checked subset of the request's resolved scopes,
- * at least one, and one of the offered lifetimes (0 for until revoked). */
+ * at least one, one of the offered lifetimes (0 for until revoked), and the
+ * request's `planHash` as the page read it when it has setup. */
 export interface AuthorizationApproval {
   scopes: string[]
   lifetimeDays: number
+  planHash?: string
 }
 
 /** What an approval or a denial answers: the app's redirect URI carrying the
- * code or the refusal, for the page to navigate to. */
+ * code or the refusal, for the page to navigate to. An approval whose set up
+ * runs in the background answers `202` with no redirect and `state`
+ * `setting-up` instead. */
 export interface AuthorizationAnswer {
-  redirect: string
+  redirect?: string
+  state?: AuthorizationState
+  /** The rows a set up starts with, each waiting, on a 202. */
+  setup?: AuthorizationSetup[]
 }
 
 /** What a credential change answers (`POST /password`, `POST /totp`): the
@@ -1052,6 +1263,9 @@ export interface TriggerFailure {
   stream?: string
   /** The server is delivering this row now; a retry answers conflict. */
   running?: boolean
+  /** A webhook delivery the door accepted that is still filing: not a
+   * failure yet, and not to be sent again. */
+  pending?: boolean
 }
 
 /** The words a `sync`-trait record's `syncState` carries. A plain string on

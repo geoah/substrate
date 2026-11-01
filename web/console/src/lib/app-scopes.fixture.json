@@ -1,0 +1,207 @@
+[
+  {
+    "scope": "read:*",
+    "kinds": [],
+    "sentence": "See all your records, including kinds added later"
+  },
+  {
+    "scope": "read:ada.example.com/*",
+    "kinds": [
+      {
+        "identity": "ada.example.com/people/person",
+        "label": {
+          "singular": "Person",
+          "plural": "People"
+        }
+      },
+      {
+        "identity": "ada.example.com/tasks/project",
+        "label": {
+          "singular": "Project",
+          "plural": "Projects"
+        }
+      },
+      {
+        "identity": "ada.example.com/tasks/task"
+      }
+    ],
+    "sentence": "See your people, and projects and tasks, including kinds added later"
+  },
+  {
+    "scope": "read:ada.example.com/notes/*",
+    "kinds": [],
+    "sentence": "See your Notes records, including kinds added later"
+  },
+  {
+    "scope": "read:providers.substrate.reamde.dev/applehealth/account",
+    "kinds": [
+      {
+        "identity": "providers.substrate.reamde.dev/applehealth/account",
+        "label": {
+          "singular": "Account",
+          "plural": "Accounts"
+        },
+        "purpose": "internal"
+      }
+    ],
+    "sentence": "See your Apple Health accounts"
+  },
+  {
+    "scope": "read:substrate.reamde.dev/llm/provider",
+    "kinds": [],
+    "sentence": "See your LLM providers"
+  },
+  {
+    "scope": "read:ada.example.com/greek/*",
+    "kinds": [
+      {
+        "identity": "ada.example.com/greek/alpha",
+        "label": {
+          "singular": "Alpha",
+          "plural": "Alphas"
+        }
+      },
+      {
+        "identity": "ada.example.com/greek/beta",
+        "label": {
+          "singular": "Beta",
+          "plural": "Betas"
+        }
+      },
+      {
+        "identity": "ada.example.com/greek/gamma",
+        "label": {
+          "singular": "Gamma",
+          "plural": "Gammas"
+        }
+      },
+      {
+        "identity": "ada.example.com/greek/delta",
+        "label": {
+          "singular": "Delta",
+          "plural": "Deltas"
+        }
+      },
+      {
+        "identity": "ada.example.com/greek/epsilon",
+        "label": {
+          "singular": "Epsilon",
+          "plural": "Epsilons"
+        }
+      },
+      {
+        "identity": "ada.example.com/greek/zeta",
+        "label": {
+          "singular": "Zeta",
+          "plural": "Zetas"
+        }
+      },
+      {
+        "identity": "ada.example.com/greek/eta",
+        "label": {
+          "singular": "Eta",
+          "plural": "Etas"
+        }
+      }
+    ],
+    "sentence": "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind, including kinds added later"
+  },
+  {
+    "scope": "write:*",
+    "kinds": [],
+    "sentence": "See, add, change and delete all your records, including kinds added later"
+  },
+  {
+    "scope": "write:providers.substrate.reamde.dev/apple/*",
+    "kinds": [
+      {
+        "identity": "providers.substrate.reamde.dev/apple/addressbook",
+        "label": {
+          "singular": "Address book",
+          "plural": "Address books"
+        },
+        "purpose": "supporting"
+      },
+      {
+        "identity": "providers.substrate.reamde.dev/apple/contact",
+        "label": {
+          "singular": "Contact",
+          "plural": "Contacts"
+        }
+      },
+      {
+        "identity": "providers.substrate.reamde.dev/apple/event",
+        "label": {
+          "singular": "Event",
+          "plural": "Events"
+        }
+      },
+      {
+        "identity": "providers.substrate.reamde.dev/apple/reminder",
+        "label": {
+          "singular": "Reminder",
+          "plural": "Reminders"
+        }
+      },
+      {
+        "identity": "providers.substrate.reamde.dev/apple/visit",
+        "label": {
+          "singular": "Visit",
+          "plural": "Visits"
+        }
+      }
+    ],
+    "sentence": "See, add, change and delete your Apple contacts, events, reminders and visits, and 1 more kind, including kinds added later"
+  },
+  {
+    "scope": "write:ada.example.com/notes/note",
+    "kinds": [],
+    "sentence": "See, add, change and delete your notes"
+  },
+  {
+    "scope": "agents:*",
+    "kinds": [],
+    "sentence": "Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
+  },
+  {
+    "scope": "agents:b.example.com/*",
+    "kinds": [],
+    "sentence": "Talk to the agents from b.example.com, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
+  },
+  {
+    "scope": "agents:ada.example.com/llm/*",
+    "kinds": [],
+    "sentence": "Talk to the agents in LLM, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
+  },
+  {
+    "scope": "agents:ada.example.com/llm/substrateEditor",
+    "kinds": [],
+    "sentence": "Talk to Substrate editor, and through a chat have it do anything it may do; read every chat with it, yours included, answer its questions, and rename or stop any of those chats"
+  },
+  {
+    "scope": "decide:*",
+    "kinds": [],
+    "sentence": "Apply or dismiss the changes your agents suggest, including agents added later, and edit one before applying it, as you"
+  },
+  {
+    "scope": "decide:b.example.com/x/*",
+    "kinds": [],
+    "sentence": "Apply or dismiss the changes the agents in X suggest, including agents added later, and edit one before applying it, as you"
+  },
+  {
+    "scope": "decide:ada.example.com/llm/substrateEditor",
+    "kinds": [],
+    "sentence": "Apply or dismiss the changes Substrate editor suggests, and edit one before applying it, as you"
+  },
+  {
+    "scope": "webhook:applehealth-webhook",
+    "kinds": [],
+    "package": "providers.substrate.reamde.dev/applehealth",
+    "sentence": "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it"
+  },
+  {
+    "scope": "webhook:applehealth-webhook",
+    "kinds": [],
+    "sentence": "Send data to your repository through the applehealth-webhook webhook, and see every delivery to it that could not be filed, whoever sent it"
+  }
+]

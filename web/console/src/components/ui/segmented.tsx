@@ -108,7 +108,7 @@ export function Segmented<T extends string>({
           disabled={disabled}
           onClick={() => onChange(o.value)}
           className={cn(
-            "cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default",
+            "cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50",
             style.item,
             value === o.value && style.chosen
           )}

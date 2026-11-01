@@ -274,7 +274,7 @@ final class Conversation: Identifiable {
                 // Only the server's own 4xx says nothing ran. A 5xx, a 503 at
                 // shutdown or a gateway's answer can come after the turn was
                 // admitted, and so can a dropped connection.
-                if let refusal = error as? ServerError, (400 ..< 500).contains(refusal.status) {
+                if let refusal = refusal(error) {
                     end()
                     let restored = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     if restored { draft = message }
@@ -389,7 +389,7 @@ final class Conversation: Identifiable {
                 guard run == self.run else { return }
                 streamTask = nil
                 if store.handle(error) { return }
-                if let refusal = error as? ServerError, refusal.isPermanent {
+                if let refusal = refusal(error, permanent: true) {
                     if refusal.status == 404 { return gone(run) }
                     self.error = refusal.text
                     return settle(run)

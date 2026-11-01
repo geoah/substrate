@@ -1,4 +1,5 @@
 import Charts
+import SubstrateKit
 import SwiftUI
 
 /// One source's page: where it stands, what it has synced of what the phone
@@ -62,7 +63,7 @@ private struct StateCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary, .orange)
             } else if let error = overview.error {
-                ErrorBox(title: "The last sync didn't finish", message: error)
+                ProblemBox(title: "The last sync didn't finish", message: error)
                 if let last = status?.lastSync {
                     Text("Last complete sync \(last.formatted(.relative(presentation: .named))).")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -162,7 +163,7 @@ private struct HealthCoverage: View {
                 .padding(.vertical, 2)
             }
             if let error = model.coverageError {
-                ErrorBox(title: "Could not read what the phone holds", message: error)
+                ProblemBox(title: "Could not read what the phone holds", message: error)
             }
             if model.healthAvailable != nil {
                 Button("Read the Whole History Again") {

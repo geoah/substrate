@@ -69,6 +69,23 @@ SUBSTRATE_APPLE_RELEASE_URL=https://s3.example.com/public/projects/substrate/app
 AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… mise run apple:release
 ```
 
+**An app's client id names it on every server.** Substrate Sync and
+Substrate Chat each publish a client ID metadata document, `client.json`,
+and a release stamps its URL into the build as the app's OAuth client id.
+That URL's host is what the owner is shown at the head of the approval
+page, and what the server names the app's actor, so every write the app
+makes is recorded as `app:<host>`. Two apps published on one host share
+that actor. The host must therefore be one only the publisher serves: the
+documents go to `sync/client.json` and `chat/client.json` under
+`SUBSTRATE_APPLE_CLIENT_URL`, an https folder on a host of the publisher's own
+that the same key may write (a custom domain, or a virtual-hosted bucket,
+`https://<bucket>.s3.<region>.amazonaws.com/…`), and under the release folder
+when it is unset. `apple:release:sync` and `apple:release:chat` refuse a
+shared endpoint before they build anything (path-style S3 such as
+`s3.<region>.amazonaws.com`, `storage.googleapis.com`, a raw file host),
+since anybody could publish a document there that the approval page would
+head with the same name.
+
 The version is the next patch after the last released one, plus the build
 number and the commit, `0.113.1-pre.20261021.153012+ac85863e` (`.dirty`
 when the tree was); the build number is the UTC time, so it only rises, and
@@ -138,9 +155,12 @@ A second app in the same project: `SubstrateSync` (bundle id
 `dev.reamde.substrate.sync`), iPhone and iPad only, iOS 26. It carries no
 console and no Sparkle. It reads the device's Health, Contacts, Calendar,
 Reminders and the places it stays at, and pushes them into one repository,
-signed in with the owner's password, over the API alone. Nothing is written
+over the API alone, with access of its own the owner approved, or with the
+owner's password on a server too old to give it that. Nothing is written
 back to the device. Its share extension, Send to Substrate, saves what any
-app shares.
+app shares. Both are built on [SubstrateKit](SubstrateKit/README.md): the
+address, discovery, the requests and their errors, the sign-in, the session
+in the Keychain and the status check are the kit's.
 
 ```bash
 mise run apple:build:sync     # the app for the simulator
@@ -172,26 +192,107 @@ TEST_RUNNER_SUBSTRATE_UPDATE_GOLDEN=1 xcodebuild -project apps/apple/Substrate.x
 go test -count=1 -run TestSubstrateSync ./internal/providertest/
 ```
 
-**Signing in** checks the address's discovery document, asks for a code only
-when `registration.totpRequired` says so, and keeps the token's secret, its
-id and the repository in the Keychain. Sign Out forgets them on the phone at
-once and revokes the token in the background, so it works with the server
-unreachable or the token already refused. A token the server refuses (the
-repository was wiped, or the token revoked) stops every sync and shows one
-screen whose button signs in again. What the phone remembers is bound to the
-repository it was pushed to: signing in to another one, or finding the
-contacts' address book, the calendar store or the Health account gone from
-the server, sends everything again.
+**Signing in** reads the address's discovery document and its OAuth
+metadata, and takes one of two doors, which make two kinds of session
+(`SyncManifest` in `App/Manifest.swift`).
 
-**Set up** lists what the repository lacks and does it with one button:
+- A server whose metadata lists the `package`, `account` and `webhook`
+  detail types, and that is 0.114.0 or later where it names a release, gets
+  the app authorization flow, as Substrate Chat does: the browser sheet on
+  the server's own sign-in and approval page, which asks for
+  `write:providers.substrate.reamde.dev/apple/*`,
+  `read:…/applehealth/account` and `read:…/applehealth/export`, and sets up
+  on approval what Set Up would: `providers.substrate.reamde.dev/apple` at
+  version 3 or later, `…/applehealth` at 5 or later, the Health account
+  `substrate-sync-<first 8 characters of the install id>` (named for the
+  device, in its time zone) and the `applehealth-webhook` trigger, whose
+  `webhook:` scope the token then carries. The client id is the
+  `SubstrateSyncClientID` Info.plist key (`SUBSTRATE_SYNC_CLIENT_ID`), and
+  a local build's loopback `http://127.0.0.1/substrate-sync`. The sign-in
+  screen lists what the approval will ask for, in the approval page's
+  words, before it opens the sheet.
+- Any other server gets the password form, as before: the repository, the
+  password, and a code only when `registration.totpRequired` says so.
+
+Either session is kept in the Keychain under the service
+`dev.reamde.substrate.sync` and the app's access group, which the share
+extension reads too; a session an earlier build kept still reads as a
+password one. Sign Out forgets it on the phone at once and revokes the token
+in the background (the kit's `Session.revoke`: an app token at `/oauth/revoke`
+under the client id it was approved for, a password one with its own
+`DELETE /tokens/{id}`), so it works with the server unreachable or the token
+already refused. The token is kept in the Keychain until the server answers
+200 (a busy server's 429 or 503 is no revocation; a redirect is never
+followed), tried again at each launch, and Home, Settings and the sign-in
+screen say so while it still works, once for each server and repository.
+Where the Keychain will not keep it, Sign Out revokes it first and forgets
+the session only once the server confirms; a token neither kept nor revoked
+stays signed in, and the app says why, so no token is ever dropped. What the
+phone remembers is bound to the repository it was pushed to: signing in to
+another one, or finding the contacts' address book, the calendar store or the
+Health account gone from the server, sends everything again.
+
+**An app session asks whether it is still set up.** At launch and on return
+to the foreground, at most every five minutes, and at once when a sync meets
+something only an approval clears, the app runs the kit's status check
+(discovery, the metadata, `POST /api/v1/authorizations/check` with its whole
+request, and when the access ends). Home stays reachable: a package behind
+the version the app writes, the Health account or the webhook gone puts the
+kit's status in Set Up's place, listing each change in the approval page's
+words, with Review and Approve, which opens the review and then the flow
+again with the whole request. Scopes the app lacks, access ending soon or a
+server it could not reach show as a banner on Home, and so does a change the
+approval page would refuse (a blocked row: a quarantined package, one
+declared by hand, an account deleted): the server's own sentence says why,
+and its button opens the console page the server names to fix it, or the
+review where it names none, since the page shows why with Approve off. A
+package only a newer server ships waits for that update, with no button. A
+scope the owner left unticked is never asked about again; Settings → Change
+Access offers it back under "You left these out last time". A source whose
+scope the owner left unticked stops with that scope
+named, before it reads anything: a scoped read of a kind the token does not
+reach answers 404, which would otherwise read as rows the server lost. A
+Health account deleted on the server says so; the approval leaves a deleted
+row alone, so there is nothing to approve until the server lets it go. After
+a review the new session is kept and the old token revoked. Settings shows what was approved
+and until when, with Change Access and Sign Out, and Server Status, what the
+approval set up. A token the server refuses (the access ended, or was revoked
+in Settings, under Apps) stops every sync and shows the kit's access ended
+screen, whose Sign In Again runs the flow on the same server. A 403 with
+`insufficient_scope` is "needs your approval", never "sign in again".
+
+**A password session** works as it always has: Set Up below, the trigger's
+key, the account made when it is missing. A refused token stops every sync
+and shows one screen whose button signs in again. When its server can now
+give the app access of its own, Home offers Move to App Access: the flow with
+the same install id, so the approval finds the account and the webhook in
+place, the new session kept, then the password token revoked with its own
+`DELETE /tokens/{id}`, carrying itself (`/oauth/revoke` under the app's
+client id would answer 200 and revoke nothing). The replaced token is kept in
+the Keychain before the new session is saved over it, revoked before the
+status check runs, and tried again at each launch until the server answers;
+Home says so while it still works.
+
+**Set up**, for a password session, lists what the repository lacks and
+does it with one button:
 installs (or upgrades to version 3) `providers.substrate.reamde.dev/apple`
 and installs (or upgrades to version 5) `…/applehealth`, which ships the
 adapter and installs the `substrate.reamde.dev/health` catalogue it
 requires; then it creates the Health account
-`substrate-sync-<first 8 characters of the install id>`, and arms the
+`substrate-sync-<first 8 characters of the install id>`, and turns on the
 `applehealth-webhook` trigger. It keeps a key already on the trigger unless
 the owner says to replace it, and otherwise sets a new 32-character one. A
 refusal is shown in the server's own words.
+
+**Health deliveries carry the session's credential.** Under an app session
+the token is the credential (`Authorization: Bearer`, holding
+`webhook:applehealth-webhook`): the trigger, which the token cannot read, is
+never read, no key ever reaches the phone, and revoking the app ends its
+deliveries. The account is never written: one gone from the server stops
+Health with a review to approve, and every day is sent again once it is
+back. Under a password session every Health run reads the trigger's key and
+sends it, and makes a missing account. Either reads the trigger's parked
+deliveries to tell a refused day from one still filing.
 
 **Health** goes as two deliveries per local day, oldest day first: every
 metric at one row per minute (`automation-aggregation: minutes`), and the
@@ -242,8 +343,10 @@ keeps no history of its own, so Places starts when it is turned on.
 
 **Send to Substrate** is a share extension: a link, text and up to four
 images from any app's share sheet, with a note, saved as one `share` record.
-It reads the app's sign-in from the Keychain group the two share, uploads the
-images as blobs and writes the record within the minute the server keeps an
+It reads the app's sign-in from the Keychain group the two share, either
+kind, uploads the images as blobs (an app token may, since it writes
+`apple/share`, whose `images` are a `blobref`) and writes the record within
+the minute the server keeps an
 unreferenced blob, writing it again part way through when a slow uplink would
 outlast that minute. A link shared again updates its record; a share without
 one keeps one id per sheet, so a Save tried again updates the first try.
@@ -258,7 +361,8 @@ server goes on; the check after it finds the install done. Set Up's and Check
 Again's spinners end with the work, never after the error. A batch of writes
 that all fail for the network stops the run at the first batch, and a
 refused token stops it at the first refusal; a refused Health webhook key
-asks for Set Up and never signs the owner out. A read that fails (Reminders,
+asks for Set Up, and a refused app delivery for a review, and neither signs
+the owner out. A read that fails (Reminders,
 the events of a calendar that held some, a Health day) deletes nothing and
 marks nothing sent. Errors are said in sentences that name the server and
 what to do, with the server's own words where it gave some.
@@ -272,6 +376,14 @@ TEST_RUNNER_SYNC_SLOW_SERVER=http://localhost:8093 TEST_RUNNER_SYNC_E2E_REPOSITO
   TEST_RUNNER_SYNC_E2E_PASSWORD=… xcodebuild -project apps/apple/Substrate.xcodeproj -scheme SubstrateSync \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test -only-testing:SubstrateSyncUITests/SetupTimeoutTests
 ```
+
+The UI tests launch a debug build with `SUBSTRATE_SYNC_PASSWORD_DOOR=1`,
+which takes the password door on any server, since a test cannot approve
+in the browser sheet. The unit tests hold the rest: the request (scopes and
+details), a password session kept by an earlier build, and which credential
+a delivery carries under each kind. With `TEST_RUNNER_SYNC_SNAPSHOTS` naming
+a directory, they also draw the status screen, needing approval and up to
+date, and the review, to PNG files there.
 
 **Home is an overview.** A status card says what is syncing (the source,
 its step and how far it has got, and Stop) or how the last sync ended, above
@@ -373,16 +485,46 @@ attached again with backoff, Stop posts `…/stop`, and a send the server
 refused, or whose delivery is unknown, says so with the message to copy and
 is never sent again on its own.
 
-**Signing in** is the substrate's app authorization: the system's sign-in
-sheet opens the server's own sign-in and approval page, where the owner
-chooses what the app may do (talk to the agents, `agents:*`; apply what they
-suggest, `decide:*`; read the provider rows) and for how long. The redirect
-comes back to a loopback port the app listens on (RFC 8252), and the code is
-exchanged with its PKCE verifier; the app never sees the password, and its
-writes are recorded as `app:<host>`. A release publishes the app's client ID
-metadata document as `client.json` in its folder and stamps that URL into the
-build; any other build signs in as a local app. A server that predates app
-authorization gets the password form.
+**Signing in** is the substrate's app authorization, through
+[SubstrateKit](SubstrateKit/README.md) under Chat's manifest
+(`ChatManifest` in `App/Manifest.swift`): the kit's connect screen checks
+the address's discovery document and OAuth metadata, and the system's
+sign-in sheet opens the server's own sign-in and approval page, where the
+owner chooses what the app may do (talk to the agents, `agents:*`; apply
+what they suggest, `decide:*`; read the provider rows; read the records a
+chat links to, `read:*`) and for how long. The redirect comes back to a
+loopback port the app listens on (RFC 8252), and the code is exchanged with
+its PKCE verifier; the app never sees the password, and its writes are
+recorded as `app:<host>`. A release publishes the app's client ID metadata
+document as `chat/client.json` (see
+[Releases and updates](#releases-and-updates) for the host it goes on) and
+stamps that URL into the build (`SubstrateChatClientID`); any other build
+signs in as the local app
+`http://127.0.0.1/substrate-chat`. A server whose metadata answers 404 gets
+the password form; one whose metadata does not list `agents:` and `decide:`
+(between decisions 0194 and 0195) would refuse the request with an error
+page, so it gets the kit's too-old screen instead, as does a release older
+than 0.114.0, the first to carry both. A build between releases (`dev`, or
+`v0.113.0-143-g…`) is judged by its metadata alone.
+
+The session, either kind, is the kit's, kept where every build kept it (the
+Keychain service `dev.reamde.substrate.chat`), and a session an earlier
+build wrote still reads. At launch and on return to the foreground, at most
+every five minutes, the kit's status check runs for an app session, and the
+chat list shows its banner for access ending soon or ended, a server too
+old, and a scope a newer build asks for, with Review, which opens the flow
+again. A scope the owner left out at the last approval is never asked about
+again: it is theirs to add with Settings → Change Access, whose review
+offers it back, and which runs the flow and keeps the old access until the
+new one is kept. A 403 says to allow it there, never to sign in again. Chat's
+requests and their errors are the kit's `SubstrateClient`; it adds only the
+agent streams and the change feed. Sign Out revokes an app token under the
+client id it was approved for (none, for a session an earlier build kept
+without one), and a password one with its own `DELETE /tokens/{id}`; a
+revocation the server does not confirm is kept, tried again at launch, and
+said on the sign-in screen and in Settings with the server it is on. A token
+the Keychain will not keep is revoked before the session is forgotten or
+replaced, and one neither kept nor revoked stays in use, with the reason.
 
 **Instant.** Agents, providers, the chat list and each chat's rows are kept in
 Application Support, one folder per server and repository (excluded from

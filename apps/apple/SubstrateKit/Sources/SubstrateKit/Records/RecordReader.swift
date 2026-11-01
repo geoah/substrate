@@ -28,48 +28,40 @@ public enum RecordReadError: Error, Sendable, Equatable {
 }
 
 /// A reader over plain HTTP with a bearer token, for an app with no client
-/// of its own.
+/// of its own: a `SubstrateClient`'s record read.
 public struct HTTPRecordReader: RecordReader {
-    public let server: URL
-    public let token: String
-    public let session: URLSession
+    public let client: SubstrateClient
     public let deniedHint: String?
 
-    public init(server: URL, token: String, session: URLSession = .shared, deniedHint: String? = nil) {
-        self.server = server
-        self.token = token
-        self.session = session
+    public init(client: SubstrateClient, deniedHint: String? = nil) {
+        self.client = client
         self.deniedHint = deniedHint
     }
 
+    public init(server: URL, token: String, session: URLSession = .shared, deniedHint: String? = nil) {
+        self.init(client: SubstrateClient(server: server, token: token, transport: URLSessionTransport(session: session)),
+                  deniedHint: deniedHint)
+    }
+
+    public var server: URL { client.server }
+    public var token: String { client.token ?? "" }
+    public var session: URLSession { (client.transport as? URLSessionTransport)?.session ?? URLSessionTransport.shared.session }
+
     public func record(_ reference: RecordReference) async throws -> Record? {
-        try await get(reference)
+        do {
+            return try await client.record(reference.kind, reference.recordID)
+        } catch is SessionExpired {
+            throw RecordReadError.notAllowed
+        } catch is InsufficientScope {
+            throw RecordReadError.notAllowed
+        } catch let error as ServerError where error.status == 403 {
+            throw RecordReadError.notAllowed
+        }
     }
 
     public func declaration(of kind: String) async throws -> KindDeclaration? {
-        try await get(RecordReference(kind: KindDeclaration.kind, id: kind)).flatMap(KindDeclaration.init(record:))
+        try await record(RecordReference(kind: KindDeclaration.kind, id: kind)).flatMap(KindDeclaration.init(record:))
     }
-
-    private func get(_ reference: RecordReference) async throws -> Record? {
-        var req = URLRequest(url: server.appending(path: "api/v1/\(reference.kind)/\(segment(reference.recordID))", directoryHint: .notDirectory))
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: req)
-        switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
-        case 200: break
-        case 404: return nil
-        case 401, 403: throw RecordReadError.notAllowed
-        case let status: throw URLError(.badServerResponse, userInfo: ["status": status])
-        }
-        let record = try JSONDecoder().decode(Record.self, from: data)
-        return record.deletedAt == nil ? record : nil
-    }
-}
-
-/// An id as one path segment: its slashes and everything else outside the
-/// unreserved set escaped.
-public func segment(_ id: String) -> String {
-    id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~"))) ?? id
 }
 
 /// The part of a kind's declaration the record views read: its names and

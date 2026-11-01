@@ -189,7 +189,9 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 
 // webhookTarget resolves the repository by its authority and the trigger by
 // id, and checks that the trigger takes webhooks, is enabled and runnable, and
-// that the key matches when it declares one. Every check that fails answers
+// that the key matches when it declares one. The door's webhook grant for
+// this authority and trigger (substrate.WithWebhookGrant, an app's token)
+// stands in for the key and for nothing else. Every check that fails answers
 // errWebhookRefused.
 func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key string) (*dataset, *trigger, error) {
 	repo, err := s.repositoryByAuthority(ctx, authority)
@@ -220,7 +222,8 @@ func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key s
 	if !tr.Webhook || !tr.Enabled || !tr.runnable() {
 		return nil, nil, errWebhookRefused
 	}
-	if tr.WebhookKey != "" && subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
+	if tr.WebhookKey != "" && !substrate.WebhookGranted(ctx, authority, triggerID) &&
+		subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
 		return nil, nil, errWebhookRefused
 	}
 	return ds, tr, nil

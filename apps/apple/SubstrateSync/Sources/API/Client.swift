@@ -1,53 +1,5 @@
 import Foundation
-
-/// A refusal from the server, carrying its own words: the `message` and
-/// `problems` of the error envelope, shown to the owner verbatim.
-struct ServerError: LocalizedError, Sendable {
-    let status: Int
-    let text: String
-
-    var errorDescription: String? { text }
-
-    init(status: Int, data: Data) {
-        self.status = status
-        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = object["error"] as? [String: Any] {
-            var lines = [(error["message"] as? String) ?? "The server answered \(status)."]
-            lines += (error["problems"] as? [String]) ?? []
-            text = lines.joined(separator: "\n")
-        } else if let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !body.isEmpty, body.count < 500, !body.hasPrefix("<") {
-            // A proxy's HTML error page says nothing a person can use.
-            text = "The server answered \(status): \(body)"
-        } else {
-            text = "The server answered \(status)."
-        }
-    }
-}
-
-/// `GET /.well-known/substrate/server.json`, the part the app reads.
-struct Discovery: Decodable, Sendable {
-    struct Registration: Decodable, Sendable {
-        let totpRequired: Bool?
-    }
-
-    struct Server: Decodable, Sendable {
-        let version: String?
-    }
-
-    let registration: Registration?
-    let server: Server?
-}
-
-struct LoginResult: Decodable, Sendable {
-    struct Token: Decodable, Sendable {
-        let id: String
-    }
-
-    let token: Token
-    let secret: String
-    let repository: String
-}
+import SubstrateKit
 
 struct CatalogItem: Decodable, Sendable {
     let id: String
@@ -58,73 +10,29 @@ struct CatalogItem: Decodable, Sendable {
     struct Upgrade: Decodable, Sendable {}
 }
 
-/// The substrate API as this app speaks it. Every call but discovery and
-/// login carries the session's bearer secret.
+/// The substrate API as this app speaks it, over the kit's client: the
+/// session's bearer secret on every call, a record as Foundation JSON, and
+/// the refusals the app tells apart.
 struct Client: Sendable {
-    let server: URL
-    var secret: String?
+    let api: SubstrateClient
 
-    static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.httpMaximumConnectionsPerHost = 8
-        config.waitsForConnectivity = false
-        return URLSession(configuration: config)
-    }()
+    var server: URL { api.server }
 
-    /// A server address as typed: a bare host is HTTPS, localhost plain
-    /// HTTP, and only the origin is kept.
-    static func origin(of typed: String) -> URL? {
-        var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
-        if !text.contains("://") {
-            let local = text.hasPrefix("localhost") || text.hasPrefix("127.0.0.1") || text.hasPrefix("[::1]")
-            text = (local ? "http://" : "https://") + text
-        }
-        guard var parts = URLComponents(string: text), let scheme = parts.scheme?.lowercased(),
-              scheme == "http" || scheme == "https", let host = parts.host, !host.isEmpty
-        else { return nil }
-        parts.scheme = scheme
-        parts.path = ""
-        parts.query = nil
-        parts.fragment = nil
-        parts.user = nil
-        parts.password = nil
-        return parts.url
+    /// A minute per request, and as many connections as the parallel writes
+    /// (`eachLimited`) keep in flight.
+    static let transport = URLSessionTransport(session: URLSessionTransport.makeSession(timeout: 60))
+
+    init(server: URL, secret: String? = nil, transport: any HTTPTransport = Client.transport) {
+        api = SubstrateClient(server: server, token: secret, transport: transport)
     }
 
-    func discover() async throws -> Discovery {
-        let (data, status) = try await send("GET", path: ".well-known/substrate/server.json", authorized: false, timeout: Timeout.quick)
-        guard status == 200 else { throw ServerError(status: status, data: data) }
-        guard (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
-            throw URLError(.cannotParseResponse)
-        }
-        return try JSONDecoder().decode(Discovery.self, from: data)
-    }
-
-    func login(repository: String, password: String, totp: String?, label: String) async throws -> LoginResult {
-        var body: [String: Any] = ["repository": repository, "password": password, "label": label]
-        if let totp, !totp.isEmpty { body["totpCode"] = totp }
-        let (data, status) = try await send("POST", path: "login", json: body, authorized: false, retries: 0, timeout: Timeout.quick)
-        // At the door a 401 is the name, password or code, not a sign-in
-        // that ended.
-        if status == 401 { throw LoginRefused(server: ServerError(status: status, data: data)) }
-        guard status == 201 || status == 200 else { throw ServerError(status: status, data: data) }
-        return try JSONDecoder().decode(LoginResult.self, from: data)
-    }
-
-    /// Best effort and quick: a sign-out never waits on a server that is
-    /// gone or refuses the token anyway.
-    func revoke(token id: String) async throws {
-        let (data, status) = try await send("DELETE", path: "tokens/\(escape(id))", retries: 0, timeout: 10)
-        guard (200 ..< 300).contains(status) || status == 404 else { throw ServerError(status: status, data: data) }
+    init(_ session: Session, transport: any HTTPTransport = Client.transport) {
+        self.init(server: session.server, secret: session.secret, transport: transport)
     }
 
     func catalog() async throws -> [CatalogItem] {
         struct Page: Decodable { let items: [CatalogItem] }
-        let (data, status) = try await send("GET", path: "api/v1/catalog")
-        guard status == 200 else { throw ServerError(status: status, data: data) }
-        return try JSONDecoder().decode(Page.self, from: data).items
+        return try await api.send("GET", "api/v1/catalog").decode(Page.self).items
     }
 
     /// `install` for a provider (also its upgrade), `import` for a sample.
@@ -133,233 +41,141 @@ struct Client: Sendable {
     /// never sent twice: a second install while the first still runs only
     /// queues behind it.
     func catalog(_ verb: String, _ id: String) async throws {
-        let (data, status) = try await send("POST", path: "api/v1/catalog/\(escape(id))/\(verb)", json: [String: Any](),
-                                            retries: 0, timeout: Timeout.serverWork)
-        guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: data) }
+        try await api.send("POST", "api/v1/catalog/\(segment(id))/\(verb)", body: .json(Data("{}".utf8)),
+                           timeout: Self.serverWork, retries: 0)
     }
 
-    /// One live record's properties, or nil when there is none: a deleted
-    /// record answers 200 with `deletedAt`, and reads as absent here.
-    /// A reply that is not a record is an error, never an empty record: a
-    /// receipt read as present when it is not would mark a Health day filed.
-    func get(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws -> [String: Any]? {
-        let (data, status) = try await send("GET", path: recordPath(kind, id), retries: retries, timeout: timeout)
-        if status == 404 { return nil }
-        guard status == 200 else { throw ServerError(status: status, data: data) }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["id"] != nil
-        else { throw URLError(.cannotParseResponse) }
-        if let deleted = object["deletedAt"], !(deleted is NSNull) { return nil }
-        return object["properties"] as? [String: Any] ?? [:]
-    }
-
-    /// PUT merges per property and never prunes.
-    func put(_ kind: String, _ id: String, _ properties: Any) async throws {
-        let (data, status) = try await send("PUT", path: recordPath(kind, id), json: ["properties": properties])
-        guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: data) }
-    }
-
-    /// Clears keys: each one set to null.
-    func clear(_ kind: String, _ id: String, keys: [String]) async throws {
-        guard !keys.isEmpty else { return }
-        let nulls = Dictionary(uniqueKeysWithValues: keys.map { ($0, NSNull() as Any) })
-        let (data, status) = try await send("PATCH", path: recordPath(kind, id), json: ["properties": nulls])
-        guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: data) }
-    }
-
-    func delete(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws {
-        let (data, status) = try await send("DELETE", path: recordPath(kind, id), retries: retries, timeout: timeout)
-        guard (200 ..< 300).contains(status) || status == 404 else { throw ServerError(status: status, data: data) }
-    }
-
-    /// One Health delivery to the webhook door, answering the fire id it was
-    /// stored under. A 202 means stored, not filed: the provider's function
-    /// runs after it, and writes its receipt at that id or parks the
-    /// delivery (`parked`), so a caller confirms one or the other.
-    @discardableResult
-    func deliver(authority: String, trigger: String, body: Data, headers: [(String, String)]) async throws -> String {
-        var request = URLRequest(url: server.appendingPathComponent("webhooks/\(authority)/\(trigger)"))
-        request.httpMethod = "POST"
-        // A day of Health is up to 4 MiB over a phone's uplink.
-        request.timeoutInterval = Timeout.upload
-        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
-        request.httpBody = body
-        // A full spool drains as the server files: minutes, not seconds.
-        let (data, status) = try await perform(request, retries: 8, longest: 30)
-        // The webhook's own key was refused, not the sign-in: the session
-        // stands, and Set Up arms the webhook again.
-        if status == 401 || status == 403 { throw WebhookRefused(text: ServerError(status: status, data: data).text) }
-        guard status == 202 || status == 200 else { throw ServerError(status: status, data: data) }
-        struct Accepted: Decodable { let fire: String }
-        guard let fire = (try? JSONDecoder().decode(Accepted.self, from: data))?.fire, !fire.isEmpty else {
-            throw URLError(.cannotParseResponse)
-        }
-        return fire
-    }
-
-    /// Stores bytes as a blob and answers its digest, the value a `blobref`
-    /// property takes. The record naming it must follow within a minute: the
-    /// server collects a blob nothing references after that.
-    func putBlob(_ data: Data, mediaType: String, name: String?) async throws -> String {
-        var path = "api/v1/blobs"
-        if let name, let query = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) { path += "?name=" + query }
-        guard let url = URL(string: server.absoluteString.trimmingSuffix("/") + "/" + path) else { throw URLError(.badURL) }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.timeoutInterval = Timeout.upload
-        request.setValue(mediaType, forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let secret { request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization") }
-        request.httpBody = data
-        let (body, status) = try await perform(request)
-        guard (200 ..< 300).contains(status) else { throw ServerError(status: status, data: body) }
-        struct Stored: Decodable { let digest: String }
-        return try JSONDecoder().decode(Stored.self, from: body).digest
-    }
-
-    /// A row of the trigger's parked list: a delivery its function refused,
-    /// kept with its reason, or one the server accepted and has not run yet,
-    /// or is running now, which the list carries too and which is no failure.
-    struct Parked: Decodable, Sendable {
-        let fireId: String?
-        let lastError: String
-        var running: Bool?
-
-        /// The server's words for a webhook request it accepted and has not
-        /// settled (internal/engine/webhooks.go pendingWebhookError).
-        static let pendingPrefix = "delivery accepted:"
-
-        /// Refused for good: neither waiting to run nor running.
-        var refused: Bool { running != true && !lastError.hasPrefix(Self.pendingPrefix) }
-    }
-
-    func parked(trigger: String, timeout: TimeInterval = Timeout.read) async throws -> [Parked] {
-        struct Page: Decodable { let items: [Parked] }
-        let (data, status) = try await send("GET", path: "api/v1/substrate.reamde.dev/core/trigger/\(escape(trigger))/parked",
-                                            retries: 0, timeout: timeout)
-        guard status == 200 else { throw ServerError(status: status, data: data) }
-        return try JSONDecoder().decode(Page.self, from: data).items
-    }
-
-    private func recordPath(_ kind: String, _ id: String) -> String {
-        "api/v1/\(kind)/\(escape(id))"
-    }
-
-    private func escape(_ segment: String) -> String {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "/")
-        return segment.addingPercentEncoding(withAllowedCharacters: allowed) ?? segment
-    }
-
-    private func send(
-        _ method: String, path: String, json: Any? = nil, authorized: Bool = true, retries: Int = 3, timeout: TimeInterval = Timeout.read
-    ) async throws -> (Data, Int) {
-        // The path may carry a percent-encoded segment, so it is joined as
-        // text rather than through appendingPathComponent, which re-encodes.
-        guard let url = URL(string: server.absoluteString.trimmingSuffix("/") + "/" + path) else {
-            throw URLError(.badURL)
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.timeoutInterval = timeout
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if authorized, let secret { request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization") }
-        if let json {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes])
-        }
-        return try await perform(request, retries: retries)
-    }
-
-    /// Sends a request, waiting out a busy server: the webhook door answers
-    /// 503 with more than eight deliveries in flight across every sender.
-    private func perform(_ request: URLRequest, retries: Int = 3, longest: Double = 10) async throws -> (Data, Int) {
-        var attempt = 0
-        while true {
-            let (data, response) = try await Self.session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            // A busy server says when to come back; `retries` tries, then
-            // the refusal stands.
-            if status == 503 || status == 429, attempt < retries {
-                attempt += 1
-                let after = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 2
-                try await Task.sleep(for: .seconds(min(after, longest)))
-                continue
-            }
-            return (data, status)
-        }
-    }
-}
-
-/// How long a call may take, by what it asks of the server. A read the
-/// server answers from its index is quick or something is wrong; an install
-/// does real work; an upload is bounded by the phone's uplink.
-enum Timeout {
-    static let quick: TimeInterval = 20
-    static let read: TimeInterval = 30
-    static let upload: TimeInterval = 120
-
-    /// An install. A debug build reads SUBSTRATE_SYNC_SERVER_WORK_SECONDS,
-    /// so a test stands in for a slow server without waiting minutes.
+    /// How long an install may take. A debug build reads
+    /// SUBSTRATE_SYNC_SERVER_WORK_SECONDS, so a test stands in for a slow
+    /// server without waiting minutes.
     static var serverWork: TimeInterval {
         #if DEBUG
         if let seconds = ProcessInfo.processInfo.environment["SUBSTRATE_SYNC_SERVER_WORK_SECONDS"].flatMap(Double.init) {
             return seconds
         }
         #endif
-        return 300
+        return SubstrateClient.Timeout.serverWork
+    }
+
+    /// One live record's properties, or nil when there is none: a deleted
+    /// record answers 200 with `deletedAt`, and reads as absent here.
+    func get(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> [String: Any]? {
+        if case let .live(properties) = try await record(kind, id, retries: retries, timeout: timeout) { return properties }
+        return nil
+    }
+
+    enum Stored {
+        case live([String: Any])
+        /// Tombstoned: there until the server collects it, and a write at its
+        /// id restores it.
+        case deleted
+        case absent
+    }
+
+    /// One record as the server holds it. A reply that is not a record is an
+    /// error, never an empty record: a receipt read as present when it is
+    /// not would mark a Health day filed.
+    func record(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> Stored {
+        let response = try await api.send(api.request("GET", SubstrateClient.recordPath(kind, id), timeout: timeout),
+                                          accept: [404], retries: retries)
+        if response.status == 404 { return .absent }
+        guard let object = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any], object["id"] != nil
+        else { throw URLError(.cannotParseResponse) }
+        if let deleted = object["deletedAt"], !(deleted is NSNull) { return .deleted }
+        return .live(object["properties"] as? [String: Any] ?? [:])
+    }
+
+    /// PUT merges per property and never prunes.
+    func put(_ kind: String, _ id: String, _ properties: Any) async throws {
+        try await api.send("PUT", SubstrateClient.recordPath(kind, id), body: json(["properties": properties]), retries: 3)
+    }
+
+    /// Clears keys: each one set to null. Sent again on a busy server like a
+    /// put: nulling a key twice is nulling it once.
+    func clear(_ kind: String, _ id: String, keys: [String]) async throws {
+        guard !keys.isEmpty else { return }
+        let nulls = Dictionary(uniqueKeysWithValues: keys.map { ($0, NSNull() as Any) })
+        try await api.send("PATCH", SubstrateClient.recordPath(kind, id), body: json(["properties": nulls]), retries: 3)
+    }
+
+    func delete(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws {
+        try await api.send(api.request("DELETE", SubstrateClient.recordPath(kind, id), timeout: timeout), accept: [404],
+                           retries: retries)
+    }
+
+    /// One Health delivery to the webhook door, answering the fire id it was
+    /// stored under. A 202 means stored, not filed: the provider's function
+    /// runs after it, and writes its receipt at that id or parks the
+    /// delivery (`parked`), so a caller confirms one or the other. `key` is
+    /// the trigger's own, which a password session's delivery carries; with
+    /// none the session's token is the credential, as an app's token holding
+    /// `webhook:<trigger>` is.
+    @discardableResult
+    func deliver(authority: String, trigger: String, body: Data, headers: [(String, String)], key: String?) async throws -> String {
+        let named = Dictionary(headers, uniquingKeysWith: { _, last in last })
+        do {
+            // A full spool drains as the server files: minutes, not seconds.
+            return try await api.deliver(authority: authority, trigger: trigger, body: body,
+                                         contentType: named["Content-Type"] ?? "application/json",
+                                         headers: named.filter { $0.key != "Content-Type" }, credential: key)
+        } catch {
+            // The door's refusal is the webhook's, not the sign-in's: the
+            // session stands, and a record read says whether it does not.
+            throw WebhookRefused.from(error, app: key == nil) ?? error
+        }
+    }
+
+    /// Stores bytes as a blob and answers its digest, the value a `blobref`
+    /// property takes. The record naming it must follow within a minute: the
+    /// server collects a blob nothing references after that.
+    func putBlob(_ data: Data, mediaType: String, name: String?) async throws -> String {
+        try await api.putBlob(data, mediaType: mediaType, name: name).digest
+    }
+
+    /// The trigger's parked list: what its function refused, kept with its
+    /// reason, and what it has accepted and not settled yet.
+    func parked(trigger: String, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> [ParkedDelivery] {
+        try await api.parked(trigger: trigger, timeout: timeout)
+    }
+
+    private func json(_ object: Any) throws -> RequestBody {
+        .json(try JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes]))
     }
 }
 
-/// An error in a sentence a person can act on. The system's own words
-/// ("The request timed out", "The network connection was lost") say what
-/// failed but not what it means; the server's refusals are its own words
-/// and are kept.
+/// An error in a sentence a person can act on, in the kit's words for this
+/// app.
 func explain(_ error: Error, server: URL? = nil) -> String {
-    let host = server?.host() ?? "the server"
-    if let error = error as? URLError {
-        switch error.code {
-        case .timedOut: return "\(host.capitalizedFirst) took too long to answer."
-        case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff:
-            return "This phone is offline."
-        case .networkConnectionLost: return "The connection dropped before \(host) answered."
-        case .cannotFindHost, .dnsLookupFailed: return "Couldn't find \(host). Check the address."
-        case .cannotConnectToHost: return "\(host.capitalizedFirst) isn't answering."
-        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
-             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected:
-            return "Couldn't make a secure connection to \(host)."
-        case .appTransportSecurityRequiresSecureConnection:
-            return "\(host.capitalizedFirst) needs https:// for this phone to reach it."
-        case .cancelled: return "Stopped."
-        case .badServerResponse, .cannotParseResponse, .cannotDecodeContentData, .cannotDecodeRawData:
-            return "\(host.capitalizedFirst) answered with something this app can't read."
-        default: return error.localizedDescription
-        }
-    }
-    if let error = error as? ServerError {
-        switch error.status {
-        case 401: return "Your sign-in is no longer valid. Sign in again."
-        case 500...: return "\(host.capitalizedFirst) ran into a problem (\(error.status)): \(error.text)"
-        default: return error.text
-        }
-    }
-    if error is DecodingError { return "\(host.capitalizedFirst) answered with something this app can't read." }
-    if error is CancellationError { return "Stopped." }
-    return error.localizedDescription
+    SubstrateKit.explain(error, app: "Substrate Sync", server: server)
 }
 
-/// The server refused a sign-in: its own words where it gave some.
-struct LoginRefused: LocalizedError {
-    let server: ServerError
-    var errorDescription: String? {
-        server.text == "The server answered 401." ? "The repository name, password or code was not accepted." : server.text
-    }
-}
-
-/// The webhook refused the key a Health delivery carried.
+/// The webhook door refused a Health delivery. Under a password session the
+/// trigger's key was refused, and Set Up turns the webhook on again; under an app
+/// session the webhook is off or the app's access no longer reaches it, and
+/// only the owner's approval changes that.
 struct WebhookRefused: LocalizedError {
     let text: String
+    var app = false
+
     var errorDescription: String? {
-        "The server refused this phone's Health key (\(text)). Open Set Up and run it to arm the webhook again."
+        if app {
+            return "The server did not take this phone's Health (\(text)). Its webhook is off, or Substrate Sync's access no longer reaches it: review its access on Home."
+        }
+        return "The server refused this phone's Health key (\(text)). Open Set Up and run it to turn the webhook on again."
+    }
+
+    /// The refusal a delivery's error is, if it is one. The door answers 404
+    /// for every refusal of its own and 401 for a signature; under a password
+    /// session a 404 is the server's word as it is, since the key was read
+    /// from the trigger this run.
+    static func from(_ error: Error, app: Bool) -> WebhookRefused? {
+        switch error {
+        case let e as SessionExpired: return WebhookRefused(text: e.message ?? "401", app: app)
+        case let e as InsufficientScope: return WebhookRefused(text: e.message ?? "403", app: app)
+        case let e as ServerError where e.status == 403 || (app && e.status == 404): return WebhookRefused(text: e.text, app: app)
+        case let e as TransportError where e.status == 403 || (app && e.status == 404): return WebhookRefused(text: e.text, app: app)
+        default: return nil
+        }
     }
 }
 
@@ -401,24 +217,6 @@ private final class ResumeOnce<T: Sendable>: @unchecked Sendable {
     }
 }
 
-/// The network's errors that mean the server could not be reached, as
-/// against one it answered, refused or that was stopped.
-func isUnreachable(_ error: Error) -> Bool {
-    let codes: Set<URLError.Code> = [.timedOut, .cannotConnectToHost, .notConnectedToInternet, .networkConnectionLost,
-                                     .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
-    return (error as? URLError).map { codes.contains($0.code) } ?? false
-}
-
 /// A call that ran out of time may have finished on the server all the
 /// same: an install, for one, goes on after the phone stops waiting.
 func timedOut(_ error: Error) -> Bool { (error as? URLError)?.code == .timedOut }
-
-extension String {
-    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-
-    func trimmingSuffix(_ suffix: String) -> String {
-        var s = self
-        while s.hasSuffix(suffix) { s.removeLast(suffix.count) }
-        return s
-    }
-}

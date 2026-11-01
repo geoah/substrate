@@ -36,7 +36,7 @@ changed is listed at the end.
 - Registering a repository. Sign-in only.
 - Editing agents, grants, tools or policies. The app reads agents and writes
   only what a chat writes: messages, a thread's subject, answers, decisions,
-  a provider key.
+  and a provider key under a password sign-in.
 - Deleting threads. The console offers none; a thread is a run and its cost
   counts after deletion. A thread deleted elsewhere says so when opened.
 - Push through APNs. The server has no push channel; the app notifies from
@@ -53,7 +53,7 @@ changed is listed at the end.
 | Bundle id     | `dev.reamde.substrate.chat` |
 | Display name  | Substrate Chat |
 | Minimum OS    | iOS 26, iPadOS 26, macOS 26 |
-| Dependencies  | none in the app's own code; Markdown and speech are in-tree and the system's |
+| Dependencies  | SubstrateKit (the sign-in, the session, the status check, the record views); Markdown and speech are in-tree and the system's |
 | Keychain      | service `dev.reamde.substrate.chat`, `AfterFirstUnlockThisDeviceOnly` |
 | macOS sandbox | network client, audio input |
 | Tests         | `SubstrateChatTests`, run on macOS (the rules are platform-free) |
@@ -85,10 +85,11 @@ one segment, encoded exactly once: an agent's id
 
 | Need | Request |
 | ---- | ------- |
-| Server check | `GET /.well-known/substrate/server.json` (`registration.totpRequired`) |
-| Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization) |
+| Server check | `GET /.well-known/substrate/server.json` (`server.version`, `registration.totpRequired`) |
+| Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization; `scopes_supported` must list `agents:` and `decide:`) |
 | Sign in | the browser on `GET /oauth/authorize` (code, PKCE S256, `scope`, `state`), the redirect on `http://127.0.0.1:<port>/oauth/callback`, then `POST /oauth/token` (form) → `{access_token, scope, expires_in?, repository}` |
-| Sign out | `POST /oauth/revoke` (form `token`), best effort |
+| Sign out | `POST /oauth/revoke` (form `token`, `client_id` it was approved under, none where the session never kept one); kept and tried again at launch until it answers 200 |
+| Still set up | `POST /api/v1/authorizations/check` `{scope, details}` → `{scopes: {missing}, setup, expiresAt}`, on a server whose metadata lists detail types |
 | Sign in, older server | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}`; out with `DELETE /tokens/{id}` |
 | Agents | `{"kinds":["substrate.reamde.dev/core/agent"]}`, every page |
 | Providers | `{"kinds":["substrate.reamde.dev/llm/provider"]}`, every page |
@@ -105,18 +106,17 @@ one segment, encoded exactly once: an agent's id
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
 | Decide a suggestion | `PATCH …/core/recordpatchrequest/{id}` `{properties: {decision: accepted\|rejected}, ifVersion}` |
-| Add a model key | `PATCH …/llm/provider/{id}` `{properties: {apiKey}}` |
+| Add a model key | `PATCH …/llm/provider/{id}` `{properties: {apiKey}}`, a password sign-in only |
 | Live | `GET /api/v1/changes?watch=1&kinds=…&from=&generation=` |
 
 Resolving an interaction or a request must carry the version the owner read
 (`internal/engine/write.go:650`); a `409` means it moved: the card re-reads
 and asks again, never retries blind.
 
-**The actor.** Requests send no `X-Substrate-Actor`, so they are attributed
-`api`, as Sync's are. `console` would claim a door this app is not, and a
-name of its own would lose the owner's annotation namespace
-(`internal/engine/dataset.go:1243`). The device is named by the token's
-label, "Substrate Chat on <device>".
+**The actor.** Requests send no `X-Substrate-Actor`: an app token's writes
+are recorded as `app:<host>` and its token is labelled with the client's
+host; a password sign-in's are `api`, its token labelled "Substrate Chat on
+<device>". `console` would claim a door this app is not.
 
 ### Streams: every event, every exit
 
@@ -386,9 +386,10 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Errors**: "<Agent> couldn't answer: …"; refused and unknown-delivery cards;
   a reload failure with Try Again; "This chat was deleted".
 - **A provider without a key**: a callout above the composer, "Add an API
-  key for OpenAI", with a sheet that names the provider's endpoint and writes
-  the key. The key lives only in the field until it is sent; it is never
-  cached or logged.
+  key for OpenAI", with a sheet that names the provider's endpoint and, for
+  a password sign-in, writes the key (an app token links to the provider's
+  record in the console). The key lives only in the field until it is sent;
+  it is never cached or logged.
 - **More than 500 rows**: "Older messages aren't shown here" at the top.
 - The view follows the bottom while turns arrive (`defaultScrollAnchor(.bottom)`),
   stops when the reader scrolls up, and offers Jump to Latest;
@@ -417,7 +418,9 @@ the microphone, and Send, which morphs into Stop while a turn runs
 
 ### Settings
 
-- **Account**: the server, the repository, the server's version, Sign Out.
+- **Account**: SubstrateKit's: the server, the repository, the server's
+  version, the approved access in the approval page's words and until when,
+  Change Access and Sign Out. **App**: the version and updates.
 - **Agents**: every chat agent with a "Show in chat" switch and the default
   for new chats; each with its provider and model, and "No API key" with Add
   Key. Agents hidden from chat are listed apart, "Works for other agents".
@@ -448,8 +451,9 @@ them without a Shortcuts workflow:
 ### Sign in
 
 Through the substrate's app authorization (decision 0194 and its follow-up
-that opens agents, decisions and the feed to apps): the server is checked
-against its discovery document and its OAuth metadata, then the system's
+that opens agents, decisions and the feed to apps), on SubstrateKit's
+connect screen and flow: the server is checked against its discovery
+document and its OAuth metadata, then the system's
 sign-in sheet (`ASWebAuthenticationSession`, sharing Safari's cookies) opens
 the server's own sign-in and approval page. The owner chooses what the app
 may do and for how long; the app never sees the password.
@@ -459,7 +463,7 @@ may do and for how long; the app never sees the password.
   `read:substrate.reamde.dev/llm/provider` (whether an agent has a key) and
   `read:*` (open the records a chat links to). The owner may leave any out.
   Without `agents:` the app says it cannot talk to the assistants and offers
-  to sign in again; without `decide:` a suggestion card links to the
+  Change Access; without `decide:` a suggestion card links to the
   console; without the providers it shows no key callout; without `read:*` a
   pill still names its record from the chat, and opening it says the app may
   not read that kind.
@@ -476,10 +480,23 @@ may do and for how long; the app never sees the password.
   checked before the code is exchanged.
 - **The token** is an app token: writes are recorded as `app:<host>`, it may
   expire (the approved lifetime) and has no refresh. A refusal (401) shows
-  "Your approval ended" with Sign In Again, which keeps the saved chats.
-  Sign Out revokes it at the revocation endpoint.
+  the kit's access ended screen with Sign In Again, which keeps the saved
+  chats. Change Access opens the kit's review, which offers back what the
+  owner left out last time, then runs the flow again and keeps the old
+  access until the new one is kept; the old token is kept for revocation
+  until the server revokes it. Sign Out revokes it at the revocation
+  endpoint under the client id it was approved for, and a revocation the
+  server does not answer 200 for is kept and tried again at each launch,
+  which Settings → Account says while it waits.
+- **Still set up**: at launch and on return to the foreground, at most every
+  five minutes, the kit's status check; the chat list shows its banner for
+  access ending soon or ended, a server too old, and a scope a newer build
+  asks for. A scope the owner left out at the last approval (the session
+  keeps what its request asked for) is never asked about again.
 - **A server without app authorization** (no OAuth metadata) gets the
   password form, as before, so a deployment that predates it still works.
+  One whose metadata lacks `agents:` or `decide:` would refuse the request
+  with an error page, so it gets the kit's too-old screen instead.
 
 ### Feel and access
 
@@ -509,7 +526,7 @@ may do and for how long; the app never sees the password.
 
 **Must (v1)**
 
-1. Sign in with discovery, password and optional code; Keychain; Sign Out with revoke and the full teardown.
+1. Sign in through the app authorization flow (the password and an optional code on an older server); Keychain; Sign Out with revoke and the full teardown.
 2. Chat list from cache, refreshed, live through the feed; titles, previews, day groups, run state, unread, attention marks.
 3. Conversation from cache, current by version; prefetch of recent chats.
 4. Streaming send: reasoning, tools, compaction, result; every event and exit in the tables above.
@@ -522,7 +539,7 @@ may do and for how long; the app never sees the password.
 11. Voice typing with live transcription.
 12. Notifications for settled replies and attention items; continued processing on iOS.
 13. Questions and suggestions answered inline, CAS'd.
-14. A provider key added in-app.
+14. A provider key added in-app (a password sign-in; an app links to the console).
 15. Rename.
 16. Drafts per chat across launches.
 17. Offline banner and blocked-send reasons.

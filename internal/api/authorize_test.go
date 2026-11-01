@@ -653,6 +653,37 @@ func TestALocalAppIsNeverFetched(t *testing.T) {
 	}
 }
 
+// A local app's client id is a loopback address anybody on the owner's
+// computer may name, so a token the owner approved for it never makes a
+// later request read as asked before: every one of its pages is a first
+// approval.
+func TestALocalAppsPageIsAlwaysAFirstApproval(t *testing.T) {
+	e := newSetupEnv(t)
+	local := func() map[string]string {
+		p := appRequest("read:" + personKind)
+		p["client_id"] = "http://127.0.0.1/cli"
+		p["redirect_uri"] = "http://127.0.0.1:43123/callback"
+		return p
+	}
+	id := e.park(local())
+	rec := e.approve(id, []string{"read:" + personKind}, 30)
+	wantStatus(t, rec, http.StatusOK)
+	form := tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect))
+	form.Set("client_id", "http://127.0.0.1/cli")
+	form.Set("redirect_uri", "http://127.0.0.1:43123/callback")
+	wantStatus(t, e.exchange(form), http.StatusOK)
+	again := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(local())))
+	if again.Previous != nil || again.Scopes[0].Allowed {
+		t.Fatalf("a local app's second request = previous %+v, allowed %v", again.Previous, again.Scopes[0].Allowed)
+	}
+	// A web app's does: the client id is its proven origin.
+	e.grant("read:"+personKind, []string{"read:" + personKind})
+	web := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("read:"+personKind+" write:"+taskKind))))
+	if web.Previous == nil || !web.Scopes[0].Allowed || web.Scopes[1].Allowed {
+		t.Fatalf("a web app's second request = previous %+v, scopes %+v", web.Previous, web.Scopes)
+	}
+}
+
 func TestTheAuthorizationEndpointAnswersNoCORS(t *testing.T) {
 	e := newAppEnv(t)
 	req := httptest.NewRequest(http.MethodGet, authorizeURL(appRequest("read:"+personKind)), nil)

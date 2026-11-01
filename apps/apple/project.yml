@@ -15,8 +15,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
-  # What the apps share: records, values, kind names and glyphs, and the
-  # linked-record pill and its read-only view.
+  # What the apps share: the server's address and discovery, the requests,
+  # signing in, the session, the status check and their screens, and the
+  # record views (SubstrateKit/README.md).
   SubstrateKit:
     path: SubstrateKit
 settings:
@@ -36,8 +37,11 @@ settings:
     SUBSTRATE_SPARKLE_KEY: ""
     # Substrate Chat's OAuth client id: the URL of the client ID metadata
     # document a release publishes beside itself. Empty is a local app's
-    # loopback id (OAuth.clientID).
+    # loopback id (ChatManifest.localClientID).
     SUBSTRATE_CHAT_CLIENT_ID: ""
+    # Substrate Sync's, the same way: empty is a local build's loopback id
+    # (SyncManifest.localClientID).
+    SUBSTRATE_SYNC_CLIENT_ID: ""
 targets:
   Substrate:
     # One native target for iPhone, iPad and Mac: not Mac Catalyst and not
@@ -53,6 +57,8 @@ targets:
     dependencies:
       - package: Sparkle
         destinationFilters: [macOS]
+      # The server picker's address and discovery, nothing more.
+      - package: SubstrateKit
     settings:
       base:
         PRODUCT_NAME: Substrate
@@ -160,6 +166,7 @@ targets:
       - Substrate/Sources/App/Updater.swift
     dependencies:
       - target: SubstrateShare
+      - package: SubstrateKit
     scheme:
       testTargets:
         - SubstrateSyncTests
@@ -178,9 +185,10 @@ targets:
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
   SubstrateShare:
     # "Send to Substrate" in every app's share sheet: a link, text or images
-    # saved as one record, with the app's sign-in, read from the Keychain
-    # group the app and the extension share. It compiles the app's client,
-    # Keychain and ids rather than a framework of its own.
+    # saved as one record, with the app's sign-in, either kind, read from the
+    # Keychain group the app and the extension share. It compiles the app's
+    # client, Keychain and ids over SubstrateKit rather than a framework of
+    # its own.
     type: app-extension
     platform: iOS
     sources:
@@ -189,6 +197,8 @@ targets:
       - SubstrateSync/Sources/API/Keychain.swift
       - SubstrateSync/Sources/Sync/Identity.swift
       - SubstrateSync/Sources/Views/Components.swift
+    dependencies:
+      - package: SubstrateKit
     settings:
       base:
         PRODUCT_NAME: SubstrateShare

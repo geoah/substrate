@@ -2,6 +2,7 @@ import Contacts
 import EventKit
 import Foundation
 import HealthKit
+import SubstrateKit
 import UIKit
 
 /// The owner's choices, kept in UserDefaults.
@@ -115,7 +116,16 @@ enum Settings {
 
 enum SyncError: LocalizedError {
     case noAccess(String)
-    case notArmed
+    case webhookOff
+    /// An app session's Health account is gone from the server: the owner's
+    /// approval creates it, never the app.
+    case noAccount
+    /// An app session's Health account is deleted and not yet collected: an
+    /// approval leaves a deleted row alone, so there is nothing to approve
+    /// until the server lets it go.
+    case accountDeleted
+    /// An app session's approval leaves out scopes the source needs.
+    case notApproved(source: String, scopes: [String])
     case emptyScan(String)
     case unreadable(String)
     case signedOut
@@ -126,7 +136,15 @@ enum SyncError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .noAccess(what): "No access to \(what). Allow it in the Settings app."
-        case .notArmed: "The Apple Health webhook is not armed. Open Set Up and run it again."
+        case .webhookOff: "The Apple Health webhook is not on. Open Set Up and run it again."
+        case .noAccount:
+            "This phone's Health account is not on your server. Review Substrate Sync's access on Home to set it up again; every day is sent again once it is."
+        case .accountDeleted:
+            "This phone's Health account was deleted on your server, so Health has nowhere to go. Your server lets a deletion go within a few minutes; then review Substrate Sync's access on Home to create it again, and every day is sent again."
+        case let .notApproved(source, scopes):
+            "Substrate Sync can't sync \(source): the access you approved leaves out "
+                + joinWords(scopes.map { "“\(SyncManifest.scopeWords($0))”" })
+                + ". Review its access on Home to allow it; nothing this phone sent is sent again."
         case let .emptyScan(what):
             "The device returned no \(what), though earlier syncs pushed some. Nothing was deleted; sync again once they are back."
         case let .unreadable(what): "The device could not read your \(what) just now. Nothing was deleted; sync again in a moment."
@@ -147,20 +165,32 @@ enum RunBudget: Sendable {
 }
 
 /// Whether an error is a stop rather than a failure: a cancelled task, or a
-/// request URLSession cancelled with it.
-func isCancellation(_ error: Error) -> Bool {
-    if error is CancellationError { return true }
-    if let e = error as? URLError, e.code == .cancelled { return true }
-    if let e = error as? ContextError { return isCancellation(e.underlying) }
-    return false
+/// request URLSession cancelled with it, however deep in a context error.
+func isStop(_ error: Error) -> Bool {
+    if let e = error as? ContextError { return isStop(e.underlying) }
+    return isCancellation(error)
 }
 
 /// Whether the server refused the token: the session is over.
 func isSignedOut(_ error: Error) -> Bool {
-    if let e = error as? ServerError, e.status == 401 { return true }
+    if error is SessionExpired { return true }
     if let e = error as? ContextError { return isSignedOut(e.underlying) }
     if case SyncError.signedOut = error { return true }
     return false
+}
+
+/// Whether an error is one only the owner's approval clears: an app token's
+/// approval that does not reach a request, a webhook that refuses it, or
+/// set up gone from the server. The status check says what to approve.
+func needsApproval(_ error: Error) -> Bool {
+    switch error {
+    case let e as ContextError: needsApproval(e.underlying)
+    case is InsufficientScope: true
+    case let e as WebhookRefused: e.app
+    case SyncError.noAccount: true
+    case SyncError.notApproved: true
+    default: false
+    }
 }
 
 /// One sync run at a time; each source in turn, its outcome recorded.
@@ -223,6 +253,9 @@ actor SyncEngine {
     var onProgress: (@MainActor @Sendable (Source, SyncProgress?) -> Void)?
     /// Called on the main actor when the server refuses the token.
     var onSignedOut: (@MainActor @Sendable () -> Void)?
+    /// Called on the main actor when a source stops on something only the
+    /// owner's approval clears.
+    var onNeedsApproval: (@MainActor @Sendable () -> Void)?
 
     func setOnChange(_ f: @escaping @MainActor @Sendable (LocalState) -> Void) {
         onChange = f
@@ -234,6 +267,10 @@ actor SyncEngine {
 
     func setOnSignedOut(_ f: @escaping @MainActor @Sendable () -> Void) {
         onSignedOut = f
+    }
+
+    func setOnNeedsApproval(_ f: @escaping @MainActor @Sendable () -> Void) {
+        onNeedsApproval = f
     }
 
     private func progress(
@@ -305,18 +342,18 @@ actor SyncEngine {
     }
 
     private func run(_ only: Set<Source>?, budget: RunBudget) async {
-        guard let session = Keychain.load(), !Task.isCancelled else { return }
+        guard let session = SessionStore.sync.load(), !Task.isCancelled else { return }
         do {
             _ = try InstallID.get()
         } catch {
             log(nil, "Sync skipped: \(error.localizedDescription)", .error)
             return
         }
-        let client = Client(server: session.server, secret: session.secret)
+        let client = Client(session)
         // The state answers for one repository: pushed to another (or to
         // this one before it was reset), it is forgotten.
         var bound = LocalState.load()
-        if bound.repository != session.identity {
+        if !bound.isBound(to: session) {
             if bound.repository != nil { log(nil, "Signed in to \(session.repository): what this phone pushed before is forgotten, and everything is sent again") }
             bound.forgetPushed()
             bound.repository = session.identity
@@ -330,7 +367,10 @@ actor SyncEngine {
             await progress(source, "Starting")
             log(source, budget == .full ? "Sync started" : "Background sync started")
             var signedOut = false
+            var approval = false
             do {
+                let lacking = Self.unapproved(source, session)
+                if !lacking.isEmpty { throw SyncError.notApproved(source: source.title, scopes: lacking) }
                 switch source {
                 case .contacts: status.counts = try await syncContacts(client, &state)
                 case .calendars: status.counts = try await syncCalendars(client, &state)
@@ -341,7 +381,7 @@ actor SyncEngine {
                 status.lastSync = Date()
                 status.lastError = nil
                 status.stopped = nil
-            } catch where isCancellation(error) {
+            } catch where isStop(error) {
                 status.lastError = budget == .full ? "Stopped before it finished. Sync again to carry on." : "iOS ended the background time before it finished; the next sync carries on."
                 status.stopped = true
             } catch SyncError.locked {
@@ -354,6 +394,7 @@ actor SyncEngine {
             } catch {
                 status.lastError = explain(error, server: session.server)
                 status.stopped = nil
+                approval = session.isApp && needsApproval(error)
             }
             if let error = status.lastError {
                 log(source, "Sync did not finish: \(error)", status.stopped == true ? .warning : .error)
@@ -370,6 +411,7 @@ actor SyncEngine {
                 if let onSignedOut { await onSignedOut() }
                 return
             }
+            if approval, let onNeedsApproval { await onNeedsApproval() }
         }
     }
 
@@ -509,10 +551,10 @@ actor SyncEngine {
     /// The deliveries among `open` the server refused, with its reason. The
     /// parked list also carries the ones it accepted and has not run yet, and
     /// the ones it is running: those are still open, not refused.
-    static func refusals(_ items: [Client.Parked], among open: Set<String>) -> [String: String] {
+    static func refusals(_ items: [ParkedDelivery], among open: Set<String>) -> [String: String] {
         var out: [String: String] = [:]
         for p in items where p.refused {
-            if let f = p.fireId, open.contains(f) { out[f] = p.lastError }
+            if let f = p.fireID, open.contains(f) { out[f] = p.lastError }
         }
         return out
     }
@@ -688,7 +730,7 @@ actor SyncEngine {
     /// A batch that failed because the run was stopped is a stop, not a list
     /// of failed writes.
     private func rethrowStop(_ failures: [Error]) throws {
-        if Task.isCancelled || failures.contains(where: isCancellation) { throw CancellationError() }
+        if Task.isCancelled || failures.contains(where: isStop) { throw CancellationError() }
         if let signedOut = failures.first(where: isSignedOut) { throw signedOut }
     }
 
@@ -1070,28 +1112,84 @@ actor SyncEngine {
         return out.sorted()
     }
 
-    private func syncHealth(_ client: Client, _ session: Session, _ state: inout LocalState, budget: RunBudget) async throws -> String {
-        guard HealthReader.isAvailable else { throw SyncError.noAccess("Health on this device") }
+    /// The key a Health delivery carries. An app session's token holds
+    /// `webhook:applehealth-webhook` and is the credential itself, so the
+    /// trigger, which it cannot read, is not asked; a password session's
+    /// token is not one the door takes, so the trigger's own key is read,
+    /// every run, since Set Up may have replaced it.
+    static func deliveryKey(_ client: Client, _ session: Session) async throws -> String? {
+        guard !session.isApp else { return nil }
         guard let trigger = try await client.get(Self.triggerKind, Self.trigger),
               trigger["enabled"] as? Bool == true,
               let key = ((trigger["source"] as? [String: Any])?["webhook"] as? [String: Any])?["key"] as? String,
               !key.isEmpty
-        else { throw SyncError.notArmed }
+        else { throw SyncError.webhookOff }
+        return key
+    }
 
-        // The account every delivery names: one the server does not hold is
-        // made here, as Set Up makes it, and every day is sent again, because
-        // a missing account means the repository holds none of them.
-        if try await client.get(Self.healthAccountKind, state.healthAccount) == nil {
-            let device = await deviceName
-            try await client.put(Self.healthAccountKind, state.healthAccount, [
-                "displayName": device, "timezone": TimeZone.current.identifier,
-            ])
-            log(.health, "Created the Health account \(state.healthAccount)")
-            if !state.healthDays.isEmpty {
-                log(.health, "The server held no Health account for this phone: sending every day again")
-                state.healthDays = []
-            }
+    enum AccountCheck { case present, created, missing, deleted }
+
+    /// The account every delivery names, made sure of before a Health run. A
+    /// password session makes a missing one, or restores a deleted one, as
+    /// Set Up makes it; an app session never writes it, since only the
+    /// owner's approval creates it.
+    static func healthAccount(_ client: Client, _ session: Session, id: String,
+                              deviceName: @Sendable () async -> String) async throws -> AccountCheck
+    {
+        let stored = try await client.record(healthAccountKind, id)
+        if case .live = stored { return .present }
+        if session.isApp {
+            if case .deleted = stored { return .deleted }
+            return .missing
         }
+        try await client.put(healthAccountKind, id, ["displayName": await deviceName(), "timezone": TimeZone.current.identifier])
+        return .created
+    }
+
+    static func writes(_ source: Source) -> [String] {
+        switch source {
+        case .contacts: [appleKinds + "contact", appleKinds + "addressbook"]
+        case .calendars: [EventMapping.eventstoreKind, EventMapping.calendarKind, appleKinds + "event"]
+        case .reminders: [ReminderMapping.eventstoreKind, ReminderMapping.listKind, ReminderMapping.kind]
+        case .places: [VisitMapping.storeKind, VisitMapping.kind]
+        case .health: []
+        }
+    }
+
+    /// What a source needs that an app session's approval left out, as the
+    /// scopes Sync asks for. A scoped read of a kind the token does not reach
+    /// answers 404, which the source would take for rows the server lost and
+    /// forget what it pushed: asked first, it is a review instead.
+    static func unapproved(_ source: Source, _ session: Session) -> [String] {
+        guard let grants = session.grants else { return [] }
+        var lacking: [String] = []
+        func need(_ scope: String, _ held: Bool) {
+            if !held, !lacking.contains(scope) { lacking.append(scope) }
+        }
+        if source == .health {
+            need("read:\(healthAccountKind)", grants.reads(healthAccountKind))
+            need("read:\(healthExportKind)", grants.reads(healthExportKind))
+            need("webhook:\(trigger)", grants.delivers(trigger))
+        }
+        for kind in writes(source) { need("write:\(appleKinds)*", grants.writes(kind)) }
+        return lacking
+    }
+
+    private func syncHealth(_ client: Client, _ session: Session, _ state: inout LocalState, budget: RunBudget) async throws -> String {
+        guard HealthReader.isAvailable else { throw SyncError.noAccess("Health on this device") }
+        let key = try await Self.deliveryKey(client, session)
+
+        // A missing account means the repository holds none of its days, so
+        // every day is sent again once there is one.
+        let account = try await Self.healthAccount(client, session, id: state.healthAccount) { await self.deviceName }
+        if account == .created { log(.health, "Created the Health account \(state.healthAccount)") }
+        if account != .present, !state.healthDays.isEmpty {
+            log(.health, "The server held no Health account for this phone: sending every day again")
+            state.healthDays = []
+            commit(&state)
+        }
+        if account == .missing { throw SyncError.noAccount }
+        if account == .deleted { throw SyncError.accountDeleted }
 
         for g in Grouping.allCases where state.automation(g) == nil {
             state.automations[g.rawValue] = UUID().uuidString
@@ -1139,7 +1237,7 @@ actor SyncEngine {
                     available = try await HealthScan.shared.days(since: start, store: health, calendar: calendar) { done, total, _ in
                         await self.progress(.health, "Reading what the phone holds", done, total)
                     }
-                } catch where !isCancellation(error) {
+                } catch where !isStop(error) {
                     if await !Self.healthReadable { throw SyncError.locked }
                     throw ContextError(context: "Reading what the phone holds", underlying: error)
                 }
@@ -1178,14 +1276,15 @@ actor SyncEngine {
                 skipped += delivery.skipped
                 rows += delivery.metrics.map(\.rows.count).reduce(0, +) + delivery.workouts.count
                 let headers = HealthDelivery.headers(
-                    grouping: grouping, key: key, account: state.healthAccount,
+                    grouping: grouping, account: state.healthAccount,
                     automationID: state.automation(grouping)!, sessionID: sessionID)
                 // One at a time: the door takes eight in flight across
                 // every sender, and a day's order is the order its rows
                 // replace.
                 for body in delivery.bodies() {
                     do {
-                        made.append(try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body, headers: headers))
+                        made.append(try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body,
+                                                             headers: headers, key: key))
                     } catch {
                         throw ContextError(context: "Sending \(name) (\(grouping.rawValue))", underlying: error)
                     }

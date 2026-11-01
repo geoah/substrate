@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import SubstrateKit
 import XCTest
 
 @testable import SubstrateSync
@@ -136,15 +137,17 @@ final class HealthSettleTests: XCTestCase {
     }
 
     /// The parked list carries the requests the server accepted and has not
-    /// run, and the ones it is running: neither is a refusal.
+    /// run, which it marks pending, and the ones it is running: neither is a
+    /// refusal. A server that marks none says pending in its words.
     func testOnlyARefusalInTheParkedListFailsADay() {
         let items = [
-            Client.Parked(fireId: "hook-a", lastError: "delivery accepted: the fire has not settled, and a restart resumes it"),
-            Client.Parked(fireId: "hook-b", lastError: "run: runner: Refused: the body is not JSON", running: true),
-            Client.Parked(fireId: "hook-c", lastError: "run: runner: Refused: the body is not JSON"),
-            Client.Parked(fireId: "hook-z", lastError: "another sender's refusal"),
+            ParkedDelivery(fireID: "hook-a", lastError: "the fire has not settled, and a restart resumes it", pending: true),
+            ParkedDelivery(fireID: "hook-p", lastError: "delivery accepted: the fire has not settled, and a restart resumes it"),
+            ParkedDelivery(fireID: "hook-b", lastError: "run: runner: Refused: the body is not JSON", running: true),
+            ParkedDelivery(fireID: "hook-c", lastError: "run: runner: Refused: the body is not JSON"),
+            ParkedDelivery(fireID: "hook-z", lastError: "another sender's refusal"),
         ]
-        XCTAssertEqual(SyncEngine.refusals(items, among: ["hook-a", "hook-b", "hook-c"]),
+        XCTAssertEqual(SyncEngine.refusals(items, among: ["hook-a", "hook-p", "hook-b", "hook-c"]),
                        ["hook-c": "run: runner: Refused: the body is not JSON"])
     }
 
@@ -170,7 +173,7 @@ final class InstallIDTests: XCTestCase {
         XCTAssertEqual(b.install, c.install)
         XCTAssertEqual(a.healthAccount, c.healthAccount)
         XCTAssertEqual(a.ids.addressbook, b.ids.addressbook)
-        XCTAssertEqual(InstallID.current, Keychain.string(account: "install"))
+        XCTAssertEqual(InstallID.current, SessionStore.sync.string(account: "install"))
         XCTAssertEqual(UUID(uuidString: InstallID.current)?.uuidString.lowercased(), InstallID.current)
     }
 }
@@ -305,15 +308,15 @@ final class HealthScheduleTests: XCTestCase {
     /// A stop is not a failure, and a refused token is the end of the
     /// session, however deep in a context error either arrives.
     func testStopsAndRefusedTokensAreToldApart() {
-        XCTAssertTrue(isCancellation(CancellationError()))
-        XCTAssertTrue(isCancellation(URLError(.cancelled)))
-        XCTAssertTrue(isCancellation(ContextError(context: "Sending", underlying: URLError(.cancelled))))
-        XCTAssertFalse(isCancellation(URLError(.timedOut)))
-        let refused = ServerError(status: 401, data: Data(#"{"error":{"message":"invalid token"}}"#.utf8))
+        XCTAssertTrue(isStop(CancellationError()))
+        XCTAssertTrue(isStop(URLError(.cancelled)))
+        XCTAssertTrue(isStop(ContextError(context: "Sending", underlying: URLError(.cancelled))))
+        XCTAssertFalse(isStop(URLError(.timedOut)))
+        let refused = SessionExpired(message: "invalid token")
         XCTAssertTrue(isSignedOut(refused))
         XCTAssertTrue(isSignedOut(ContextError(context: "Sending", underlying: refused)))
-        XCTAssertFalse(isSignedOut(ServerError(status: 403, data: Data())))
-        XCTAssertEqual(refused.text, "invalid token")
+        XCTAssertFalse(isSignedOut(ServerError(status: 403, message: "forbidden")))
+        XCTAssertFalse(isSignedOut(InsufficientScope()))
     }
 
     /// A workout paused for a quarter of an hour lasts what HealthKit says,
@@ -430,19 +433,22 @@ final class ErrorTests: XCTestCase {
 
     func testTheNetworksErrorsAreSaidPlainly() {
         XCTAssertEqual(explain(URLError(.timedOut), server: server), "Substrate.example.com took too long to answer.")
-        XCTAssertEqual(explain(URLError(.notConnectedToInternet), server: server), "This phone is offline.")
+        XCTAssertEqual(explain(URLError(.notConnectedToInternet), server: server), "This device is offline.")
         XCTAssertEqual(explain(URLError(.cannotConnectToHost), server: server), "Substrate.example.com isn't answering.")
         XCTAssertEqual(explain(URLError(.cannotFindHost), server: server), "Couldn't find substrate.example.com. Check the address.")
         XCTAssertEqual(explain(URLError(.timedOut)), "The server took too long to answer.")
     }
 
-    func testTheServersOwnWordsAreKept() {
-        let refusal = ServerError(status: 409, data: Data(#"{"error":{"message":"the trigger is taken"}}"#.utf8))
+    func testTheServersOwnWordsAreKept() throws {
+        let refusal = try XCTUnwrap(ServerError(status: 409, envelope: Data(#"{"error":{"message":"the trigger is taken"}}"#.utf8)))
         XCTAssertEqual(explain(refusal, server: server), "the trigger is taken")
-        let signedOut = ServerError(status: 401, data: Data())
-        XCTAssertEqual(explain(signedOut, server: server), "Your sign-in is no longer valid. Sign in again.")
-        let broken = ServerError(status: 502, data: Data("Bad Gateway".utf8))
+        XCTAssertEqual(explain(SessionExpired(), server: server),
+                       "Substrate.example.com no longer accepts Substrate Sync's sign-in. Sign in again to carry on.")
+        let broken = ServerError(status: 502, message: "Bad Gateway")
         XCTAssertTrue(explain(broken, server: server).hasPrefix("Substrate.example.com ran into a problem (502)"))
+        // An approval that does not reach is the owner's to give, never a
+        // sign-in to repeat.
+        XCTAssertTrue(explain(InsufficientScope(), server: server).hasPrefix("Substrate Sync needs your approval"))
         XCTAssertTrue(timedOut(URLError(.timedOut)))
         XCTAssertFalse(timedOut(refusal))
     }
@@ -453,10 +459,10 @@ final class ErrorTests: XCTestCase {
         // Some rows went through: the server answers.
         XCTAssertNil(SyncEngine.unreachable(lost, of: 3))
         // The server refused: it answers, and the refusal is the row's.
-        XCTAssertNil(SyncEngine.unreachable([URLError(.timedOut), ServerError(status: 400, data: Data())], of: 2))
+        XCTAssertNil(SyncEngine.unreachable([URLError(.timedOut), ServerError(status: 400, message: "bad")], of: 2))
         XCTAssertNil(SyncEngine.unreachable([], of: 0))
         // A refused token stops the run at once, however the rest fared.
-        let signedOut = ServerError(status: 401, data: Data())
+        let signedOut = SessionExpired()
         XCTAssertNotNil(SyncEngine.unreachable([signedOut], of: 50))
         XCTAssertFalse(isUnreachable(URLError(.cancelled)))
         XCTAssertFalse(isUnreachable(signedOut))
@@ -465,15 +471,31 @@ final class ErrorTests: XCTestCase {
     func testAWebhookRefusalIsNotASignOutAndALoginRefusalIsNotAnExpiry() {
         XCTAssertFalse(isSignedOut(WebhookRefused(text: "bad key")))
         XCTAssertFalse(isSignedOut(ContextError(context: "Sending 2026-10-20", underlying: WebhookRefused(text: "bad key"))))
-        XCTAssertEqual(LoginRefused(server: ServerError(status: 401, data: Data())).localizedDescription,
-                       "The repository name, password or code was not accepted.")
-        let worded = ServerError(status: 401, data: Data(#"{"error":{"message":"invalid credentials"}}"#.utf8))
+        XCTAssertEqual(LoginRefused(server: nil).localizedDescription, "The repository name, password or code was not accepted.")
+        let worded = ServerError(status: 401, message: "invalid credentials")
         XCTAssertEqual(LoginRefused(server: worded).localizedDescription, "invalid credentials")
         XCTAssertEqual(explain(CancellationError()), "Stopped.")
     }
 
+    /// The door's 401 is the webhook's, never the sign-in's. Under a password
+    /// session its 404 is the server's word as it is; under an app session
+    /// it means the webhook is off or the access no longer reaches it, which
+    /// the owner's approval clears.
+    func testTheWebhookDoorsRefusalsAreTheWebhooks() {
+        let notFound = ServerError(status: 404, message: "no such webhook")
+        XCTAssertNil(WebhookRefused.from(notFound, app: false))
+        let app = WebhookRefused.from(notFound, app: true)
+        XCTAssertEqual(app?.app, true)
+        XCTAssertTrue(app.map(needsApproval) ?? false)
+        XCTAssertFalse(needsApproval(WebhookRefused(text: "bad key")))
+        XCTAssertEqual(WebhookRefused.from(SessionExpired(message: "webhook signature refused"), app: false)?.text, "webhook signature refused")
+        XCTAssertNil(WebhookRefused.from(URLError(.timedOut), app: true))
+        XCTAssertTrue(needsApproval(ContextError(context: "Sending 2026-10-20", underlying: InsufficientScope())))
+        XCTAssertTrue(needsApproval(SyncError.noAccount))
+    }
+
     func testAProxysHTMLPageIsNotShown() {
-        let page = ServerError(status: 502, data: Data("<html><body><h1>502 Bad Gateway</h1></body></html>".utf8))
+        let page = TransportError(status: 502, body: Data("<html><body><h1>502 Bad Gateway</h1></body></html>".utf8))
         XCTAssertEqual(page.text, "The server answered 502.")
     }
 
@@ -774,8 +796,8 @@ final class HealthGoldenTests: XCTestCase {
         precondition(body.count == 1)
         var headers: [String: String] = [:]
         for (name, value) in HealthDelivery.headers(
-            grouping: delivery.grouping, key: "<webhook key>", account: "substrate-sync-6f1c2e9a",
-            automationID: automation, sessionID: session) where name != "Authorization" {
+            grouping: delivery.grouping, account: "substrate-sync-6f1c2e9a",
+            automationID: automation, sessionID: session) {
             headers[name.lowercased()] = value
         }
         return [

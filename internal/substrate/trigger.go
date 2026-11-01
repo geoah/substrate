@@ -127,6 +127,9 @@ type TriggerFailure struct {
 	// that holds it as its claim, or a retry by hand. A retry of a running
 	// row answers conflict.
 	Running bool `json:"running,omitempty"`
+	// Pending is set on a webhook delivery the door accepted that is still
+	// filing: not a failure yet, and not to be sent again.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // TriggerReplayed is the reply to a replay: the seq the trigger's cursor was

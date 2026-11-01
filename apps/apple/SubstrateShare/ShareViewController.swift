@@ -1,10 +1,13 @@
+import SubstrateKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
 /// "Send to Substrate" in every app's share sheet. It reads the app's
-/// sign-in from the Keychain group the two share, and saves what was shared
-/// as one `share` record: the link, the text and the images, with a note.
+/// sign-in from the Keychain group the two share, either kind, and saves
+/// what was shared as one `share` record: the link, the text and the images,
+/// with a note. An app session's token writes `apple/share`, whose images
+/// are a `blobref`, so the server stores its blobs as it does the owner's.
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -51,7 +54,7 @@ final class ShareModel: ObservableObject {
     @Published var stopping = false
     @Published var error: String?
 
-    let session = Keychain.load()
+    let session = SessionStore.sync.load()
     private let items: [NSExtensionItem]
     private let done: () -> Void
     private let close: () -> Void
@@ -170,7 +173,7 @@ final class ShareModel: ObservableObject {
             saving = false
             saving_ = nil
         }
-        let client = Client(server: session.server, secret: session.secret)
+        let client = Client(session)
         let id = ExternalID.make("apple", "share", url?.absoluteString ?? draft)
         var wrote = false
         do {
@@ -217,13 +220,13 @@ struct ShareView: View {
             Form {
                 if model.session == nil {
                     Section {
-                        ErrorBox(title: "Not signed in", message: "Open Substrate Sync and sign in first; this sheet uses its sign-in.")
+                        ProblemBox(title: "Not signed in", message: "Open Substrate Sync and sign in first; this sheet uses its sign-in.")
                     }
                 } else if model.loading {
                     HStack(spacing: 10) { ProgressView(); Text("Reading what was shared…").foregroundStyle(.secondary) }
                 } else if model.isEmpty {
                     Section {
-                        ErrorBox(title: "Nothing to send", message: "This app shared nothing Substrate keeps: a link, text or an image.")
+                        ProblemBox(title: "Nothing to send", message: "This app shared nothing Substrate keeps: a link, text or an image.")
                     }
                 } else {
                     Section("Sending") {
@@ -262,7 +265,7 @@ struct ShareView: View {
                     }
                 }
                 if let error = model.error {
-                    Section { ErrorBox(title: "Not saved", message: error) }
+                    Section { ProblemBox(title: "Not saved", message: error) }
                 }
             }
             .navigationTitle("Send to Substrate")

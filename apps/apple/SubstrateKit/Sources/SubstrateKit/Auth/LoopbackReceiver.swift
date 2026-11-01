@@ -1,11 +1,4 @@
-import AuthenticationServices
 import Foundation
-#if os(macOS)
-import AppKit
-#else
-import UIKit
-import SubstrateKit
-#endif
 
 /// Receives the authorization redirect on a loopback port (RFC 8252 §7.3).
 /// A native app has no web host to claim an https redirect with, and the
@@ -14,34 +7,39 @@ import SubstrateKit
 /// plain socket, not Network.framework's listener: on iOS that listener
 /// accepts at the kernel and never hands the connection over, under the
 /// local network policy.
-final class LoopbackReceiver: @unchecked Sendable {
+public final class LoopbackReceiver: @unchecked Sendable {
     private let socket: Int32
     private let source: DispatchSourceRead
-    private let queue = DispatchQueue(label: "dev.reamde.substrate.chat.oauth")
     private let lock = NSLock()
     private var waiting: CheckedContinuation<[String: String], Error>?
     private var received: Result<[String: String], Error>?
-    let port: UInt16
+    private let appName: String
+    public let path: String
+    public let port: UInt16
 
-    static let path = "/oauth/callback"
+    public var redirect: String { "http://127.0.0.1:\(port)\(path)" }
 
-    var redirect: String { "http://127.0.0.1:\(port)\(Self.path)" }
-
-    struct Unavailable: LocalizedError {
-        let what: String
-        var errorDescription: String? { "Substrate Chat couldn't listen for the sign-in to come back (\(what))." }
+    public struct Unavailable: LocalizedError, Sendable {
+        public let appName: String
+        public let what: String
+        public var errorDescription: String? { "\(appName) couldn't listen for the sign-in to come back (\(what))." }
     }
 
-    private init(socket: Int32, port: UInt16) {
+    private init(socket: Int32, port: UInt16, appName: String, path: String) {
         self.socket = socket
         self.port = port
-        source = DispatchSource.makeReadSource(fileDescriptor: socket, queue: queue)
+        self.appName = appName
+        self.path = path
+        let slug = appName.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        source = DispatchSource.makeReadSource(fileDescriptor: socket,
+                                               queue: DispatchQueue(label: "dev.reamde.substrate.\(slug).oauth"))
     }
 
-    /// Listens on a free loopback port.
-    static func start() async throws -> LoopbackReceiver {
+    /// Listens on a free loopback port. `appName` is what the page the
+    /// browser lands on tells the person to go back to.
+    public static func start(appName: String, path: String = "/oauth/callback") async throws -> LoopbackReceiver {
         let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw Unavailable(what: "socket \(errno)") }
+        guard fd >= 0 else { throw Unavailable(appName: appName, what: "socket \(errno)") }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
@@ -52,14 +50,14 @@ final class LoopbackReceiver: @unchecked Sendable {
         }
         guard bound == 0, listen(fd, 8) == 0 else {
             close(fd)
-            throw Unavailable(what: "bind \(errno)")
+            throw Unavailable(appName: appName, what: "bind \(errno)")
         }
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         _ = withUnsafeMutablePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
         }
         _ = fcntl(fd, F_SETFL, O_NONBLOCK)
-        let receiver = LoopbackReceiver(socket: fd, port: UInt16(bigEndian: address.sin_port))
+        let receiver = LoopbackReceiver(socket: fd, port: UInt16(bigEndian: address.sin_port), appName: appName, path: path)
         receiver.source.setEventHandler { [weak receiver] in receiver?.accept() }
         receiver.source.setCancelHandler { close(fd) }
         receiver.source.resume()
@@ -67,7 +65,7 @@ final class LoopbackReceiver: @unchecked Sendable {
     }
 
     /// The redirect's query parameters, once the browser arrives.
-    func next() async throws -> [String: String] {
+    public func next() async throws -> [String: String] {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 lock.lock()
@@ -84,7 +82,7 @@ final class LoopbackReceiver: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    public func stop() {
         source.cancel()
         finish(.failure(CancellationError()))
     }
@@ -123,7 +121,7 @@ final class LoopbackReceiver: @unchecked Sendable {
         let line = String(decoding: request, as: UTF8.self).split(separator: "\r\n").first.map(String.init) ?? ""
         let parts = line.split(separator: " ")
         let target = parts.count >= 2 ? String(parts[1]) : ""
-        guard let components = URLComponents(string: "http://127.0.0.1\(target)"), components.path == Self.path else {
+        guard let components = URLComponents(string: "http://127.0.0.1\(target)"), components.path == path else {
             write(client, status: "404 Not Found", body: "Not found.")
             close(client)
             return
@@ -131,8 +129,8 @@ final class LoopbackReceiver: @unchecked Sendable {
         var query: [String: String] = [:]
         for item in components.queryItems ?? [] { query[item.name] = item.value ?? "" }
         write(client, status: "200 OK", body: query["error"] != nil
-            ? "Access was not granted. You can go back to Substrate Chat."
-            : "Signed in. You can go back to Substrate Chat.")
+            ? "Access was not granted. You can go back to \(appName)."
+            : "Signed in. You can go back to \(appName).")
         close(client)
         finish(.success(query))
     }
@@ -140,8 +138,8 @@ final class LoopbackReceiver: @unchecked Sendable {
     private func write(_ client: Int32, status: String, body: String) {
         let page = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">\
-        <title>Substrate Chat</title></head><body style="font:17px -apple-system,system-ui;\
-        display:flex;align-items:center;justify-content:center;height:90vh;color:#444">\(body)</body></html>
+        <title>\(Self.escape(appName))</title></head><body style="font:17px -apple-system,system-ui;\
+        display:flex;align-items:center;justify-content:center;height:90vh;color:#444">\(Self.escape(body))</body></html>
         """
         let bytes = Data(page.utf8)
         let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(bytes.count)\r\n"
@@ -156,85 +154,9 @@ final class LoopbackReceiver: @unchecked Sendable {
             }
         }
     }
-}
 
-/// The system's sign-in sheet, sharing the browser's cookies, so a person
-/// already signed in to their substrate in Safari only approves. It never
-/// sees the loopback redirect as its own callback: the receiver does, and
-/// the sheet is closed when it has.
-@MainActor
-final class WebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding {
-    struct Cancelled: LocalizedError {
-        var errorDescription: String? { "Sign-in was cancelled." }
-    }
-
-    func run(_ url: URL, receiver: LoopbackReceiver) async throws -> [String: String] {
-        let gate = ResumeGate<[String: String]>()
-        return try await withCheckedThrowingContinuation { continuation in
-            gate.set(continuation)
-            let session = ASWebAuthenticationSession(url: url, callback: .customScheme("dev.reamde.substrate.chat")) { _, error in
-                // The person closed the sheet, or the receiver's close below.
-                gate.resume(.failure(error.map { ($0 as? ASWebAuthenticationSessionError)?.code == .canceledLogin ? Cancelled() : $0 }
-                        ?? Cancelled()))
-            }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
-            let waiter = Task {
-                do {
-                    let query = try await receiver.next()
-                    gate.resume(.success(query))
-                } catch {
-                    gate.resume(.failure(error))
-                }
-                session.cancel()
-            }
-            if !session.start() {
-                waiter.cancel()
-                gate.resume(.failure(TransportError(text: "The sign-in sheet couldn't open.")))
-            }
-        }
-    }
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        #if os(macOS)
-        NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
-        #else
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first.map { UIWindow(windowScene: $0) } ?? UIWindow()
-        #endif
-    }
-}
-
-/// Runs its block once, from whichever thread gets there first.
-final class Once: @unchecked Sendable {
-    private let lock = NSLock()
-    private var done = false
-
-    func run(_ block: () -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !done else { return }
-        done = true
-        block()
-    }
-}
-
-/// A continuation resumed by whichever of its racers gets there first.
-final class ResumeGate<T: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<T, Error>?
-
-    func set(_ c: CheckedContinuation<T, Error>) {
-        lock.lock()
-        continuation = c
-        lock.unlock()
-    }
-
-    func resume(_ result: Result<T, Error>) {
-        lock.lock()
-        let c = continuation
-        continuation = nil
-        lock.unlock()
-        c?.resume(with: result)
+    private static func escape(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 }

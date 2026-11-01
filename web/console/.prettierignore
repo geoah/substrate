@@ -28,3 +28,8 @@ src/lib/unit-graph.shipped.json
 # Written by internal/vocabulary/aggregaterules_generated_test.go from the
 # server's aggregate rules, in Go's encoder shape, for the same reason.
 src/lib/aggregate.rules.json
+
+# Written by src/lib/app-scopes.test.ts from the approval page's own
+# sentences, and read by SubstrateKit's tests, for the same reason as the
+# wire golden above.
+src/lib/app-scopes.fixture.json

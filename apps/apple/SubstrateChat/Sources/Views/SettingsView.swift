@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var locales: [Locale] = []
     @State private var size = 0
     @State private var confirmSignOut = false
+    @State private var changingAccess = false
     @State private var serverVersion: String?
 
     var body: some View {
@@ -71,28 +72,19 @@ struct SettingsView: View {
                     }
                 }
 
-                Section {
-                    LabeledContent("Server", value: store.session.server.host() ?? store.session.server.absoluteString)
-                    LabeledContent("Repository", value: store.session.repository)
-                    if let grants = store.grants {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Approved access")
-                            ForEach(grants.words, id: \.self) { line in
-                                Label(line, systemImage: "checkmark")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        LabeledContent("Until", value: store.session.expiresAt.map {
-                            $0.formatted(date: .abbreviated, time: .shortened)
-                        } ?? "You revoke it")
-                        Button("Change What It May Do…") {
-                            dismiss()
-                            model.signInAgain()
-                        }
+                AccountSection(session: store.session, manifest: ChatManifest.manifest,
+                               serverVersion: model.status.status?.serverVersion ?? serverVersion, unrevoked: model.unrevoked,
+                               onChangeAccess: { changingAccess = true },
+                               onSignOut: { confirmSignOut = true })
+
+                if let problem = model.authorizeProblem {
+                    Section {
+                        ProblemBox(title: "Access didn't change", message: problem)
                     }
-                    if let serverVersion { LabeledContent("Server version", value: serverVersion) }
-                    LabeledContent("App version") {
+                }
+
+                Section("App") {
+                    LabeledContent("Version") {
                         Text(updates.build.version).monospaced().textSelection(.enabled)
                     }
                     if updates.enabled {
@@ -100,9 +92,6 @@ struct SettingsView: View {
                             .disabled(!updates.canCheck)
                         Toggle("Include pre-releases", isOn: $updates.prereleases)
                     }
-                    Button("Sign Out", role: .destructive) { confirmSignOut = true }
-                } header: {
-                    Text("Account")
                 }
             }
             .formStyle(.grouped)
@@ -124,10 +113,18 @@ struct SettingsView: View {
                     : "This device forgets its saved chats, and Substrate Chat's access is revoked. Your chats stay on the server.")
             }
             .sheet(item: $keySheet) { ProviderKeySheet(provider: $0).environment(store) }
+            .sheet(isPresented: $changingAccess) {
+                ReviewChangesSheet(changingAccessFor: ChatManifest.manifest, session: store.session, changes: model.reviewChanges,
+                                   onContinue: {
+                                       changingAccess = false
+                                       Task { await model.reauthorize() }
+                                   },
+                                   onCancel: { changingAccess = false })
+            }
             .task {
                 notifications = await Notifier.status()
                 size = store.cacheSize()
-                serverVersion = (try? await store.api.discover())?.server?.version
+                serverVersion = try? await SubstrateClient(server: store.session.server).discovery().server.version
                 let supported = await SpeechTranscriber.supportedLocales
                 locales = supported.sorted {
                     (Locale.current.localizedString(forIdentifier: $0.identifier) ?? "") <

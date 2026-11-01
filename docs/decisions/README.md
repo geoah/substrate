@@ -359,3 +359,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0198](0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md) | A bundle offers its functions, and an agent takes them by pattern | accepted |
 | [0200](0200-a-background-tool-returns-a-handle-and-its-result-resumes-the-thread.md) | A background tool returns a handle, and its result resumes the thread | accepted |
 | [0201](0201-a-continued-thread-replays-its-tool-exchanges.md) | A continued thread replays its tool exchanges | accepted |
+| [0202](0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md) | An app's approval sets up what it needs, and its token delivers to its webhook | accepted |

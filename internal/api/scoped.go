@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -25,10 +26,13 @@ import (
 // Patch, Delete), the unit table and conversions. Under `agents:` and
 // `decide:` (decision 0195) it also reads the rows those reach, chats with
 // and stops the matching agents, makes the few writes those verbs carry and
-// tails the change feed held to the same rows (scopedagents.go). A kind the
-// grant cannot read is answered exactly as a kind the repository never
-// declared, so a refusal does not tell an app which kinds exist. Every record
-// handed back, a write's answer included, is cut to what the grant reads.
+// tails the change feed held to the same rows (scopedagents.go). Under
+// `webhook:` it lists that trigger's parked deliveries, and a grant that
+// writes a kind declaring a blob-ref property stores blobs
+// (docs/plans/app-setup.md). A kind the grant cannot read is answered exactly
+// as a kind the repository never declared, so a refusal does not tell an app
+// which kinds exist. Every record handed back, a write's answer included, is
+// cut to what the grant reads, and a trigger never carries its webhook key.
 // Everything else is ErrForbidden.
 type scopedDataset struct {
 	inner substrate.Dataset
@@ -163,7 +167,146 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 			return allowKind(kindOfPath(path))
 		})
 	}
+	if rec.Kind == kindTrigger {
+		withoutWebhookKeys(&cp)
+	}
+	if !s.grant.Reads(kindBlob, true) {
+		withoutBlobManifests(&cp, reg[rec.Kind])
+	}
 	return &cp, nil
+}
+
+// kindBlob is a blob's manifest, which holds the name and media type its
+// first upload gave it. An app's token that does not read the kind reads a
+// blob reference as its digest, size and status alone: the bytes dedupe by
+// digest, so an app holding another's bytes could otherwise name the digest
+// in a record and read the manifest it never saw.
+const kindBlob = corePackage + "/blob"
+
+// withoutBlobManifests drops the manifest's `name` and `mediaType` from every
+// blob reference a record's declared blobref properties resolve to. Every
+// map it changes is a copy.
+func withoutBlobManifests(rec *substrate.Record, k substrate.KindInfo) {
+	props, _ := k.Definition["properties"].(map[string]any)
+	copied := false
+	for name, decl := range props {
+		d, _ := decl.(map[string]any)
+		if t, _ := d["type"].(string); t != "blobref" {
+			continue
+		}
+		v, ok := rec.Properties[name]
+		if !ok {
+			continue
+		}
+		if cut, changed := withoutManifest(v); changed {
+			if !copied {
+				rec.Properties, copied = maps.Clone(rec.Properties), true
+			}
+			rec.Properties[name] = cut
+		}
+	}
+}
+
+// withoutManifest is a blob reference, or a list of them, without the
+// manifest's name and media type, and whether there were any to drop.
+func withoutManifest(v any) (any, bool) {
+	switch ref := v.(type) {
+	case map[string]any:
+		_, hasName := ref["name"]
+		_, hasType := ref["mediaType"]
+		if !hasName && !hasType {
+			return v, false
+		}
+		ref = maps.Clone(ref)
+		delete(ref, "name")
+		delete(ref, "mediaType")
+		return ref, true
+	case []any:
+		out, changed := ref, false
+		for i, item := range ref {
+			if cut, ok := withoutManifest(item); ok {
+				if !changed {
+					out, changed = slices.Clone(ref), true
+				}
+				out[i] = cut
+			}
+		}
+		return out, changed
+	}
+	return v, false
+}
+
+// kindTrigger is the kind whose records hold a webhook's key, which no app's
+// token receives whatever its scopes: an app delivers under `webhook:` with
+// its own token (docs/plans/app-setup.md).
+const kindTrigger = corePackage + "/trigger"
+
+// triggerSource is the trigger property the key lives under.
+const triggerSource = "source"
+
+// withoutWebhookKeys drops `source.webhook.key` from a trigger, in its value
+// and in any offer its provenance carries. Every map it changes is a copy:
+// the record it was cut from may be one the inner dataset shares.
+func withoutWebhookKeys(rec *substrate.Record) {
+	if src, ok := withoutWebhookKey(rec.Properties[triggerSource]); ok {
+		rec.Properties = maps.Clone(rec.Properties)
+		rec.Properties[triggerSource] = src
+	}
+	m, ok := rec.PropertyMeta[triggerSource]
+	if !ok || len(m.Alternatives) == 0 {
+		return
+	}
+	alts := slices.Clone(m.Alternatives)
+	changed := false
+	for i := range alts {
+		if v, ok := withoutWebhookKey(alts[i].Value); ok {
+			alts[i].Value, changed = v, true
+		}
+	}
+	if changed {
+		m.Alternatives = alts
+		rec.PropertyMeta = maps.Clone(rec.PropertyMeta)
+		rec.PropertyMeta[triggerSource] = m
+	}
+}
+
+// withoutWebhookKey is a trigger's source without its webhook key, and
+// whether there was one to drop.
+func withoutWebhookKey(v any) (any, bool) {
+	src, _ := v.(map[string]any)
+	hook, _ := src["webhook"].(map[string]any)
+	if _, ok := hook["key"]; !ok {
+		return v, false
+	}
+	hook = maps.Clone(hook)
+	delete(hook, "key")
+	src = maps.Clone(src)
+	src["webhook"] = hook
+	return src, true
+}
+
+// checkTriggerSource refuses a condition or an order on a trigger's source
+// in a list that reaches triggers: the engine compares the property's stored
+// text, key included, and a cursor carries the last row's sort values, so
+// either would answer what the record no longer shows.
+func checkTriggerSource(kinds []string, q substrate.Query) error {
+	if !slices.Contains(kinds, kindTrigger) {
+		return nil
+	}
+	onSource := func(name string) bool {
+		return name == triggerSource || strings.HasPrefix(name, triggerSource+".")
+	}
+	for name := range q.Filter.Properties {
+		if onSource(name) {
+			return fmt.Errorf("%w: an app's token does not filter %s by its source", substrate.ErrForbidden, kindTrigger)
+		}
+	}
+	for _, o := range q.OrderBy {
+		if onSource(o.Property) {
+			return fmt.Errorf("%w: an app's token does not order %s by its source", substrate.ErrForbidden, kindTrigger)
+		}
+	}
+	return nil
 }
 
 // requireRead answers the refusal for a kind the grant cannot read.
@@ -318,6 +461,9 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 		return &substrate.Page{Records: []*substrate.Record{}}, nil
 	}
 	q.Filter.Kinds = kinds
+	if err := checkTriggerSource(kinds, q); err != nil {
+		return nil, err
+	}
 	if err := s.checkReferenceFilters(ctx, kinds, q.Filter.Properties); err != nil {
 		return nil, err
 	}
@@ -836,8 +982,13 @@ func (s *scopedDataset) WakeTrigger(context.Context, string) (int, error) {
 	return 0, errScope("triggers")
 }
 
-func (s *scopedDataset) TriggerFailures(context.Context, string) ([]substrate.TriggerFailure, error) {
-	return nil, errScope("triggers")
+// TriggerFailures lists the parked deliveries of the one trigger a
+// `webhook:` scope names, whoever sent them (docs/plans/app-setup.md).
+func (s *scopedDataset) TriggerFailures(ctx context.Context, id string) ([]substrate.TriggerFailure, error) {
+	if !s.grant.Delivers(id) {
+		return nil, errScope("triggers")
+	}
+	return s.inner.TriggerFailures(ctx, id)
 }
 
 func (s *scopedDataset) RetryTriggerFailure(context.Context, string, int64) (int, error) {
@@ -951,8 +1102,52 @@ func (s *scopedDataset) ProcessOAuthFinalizers(context.Context) (int, error) {
 	return 0, errScope("provider connections")
 }
 
-func (s *scopedDataset) PutBlob(context.Context, substrate.Actor, substrate.BlobUpload, []byte, string) (*substrate.BlobInfo, error) {
-	return nil, errScope("blobs")
+// PutBlob stores bytes for a grant that writes a kind declaring a blob-ref
+// property, which is where such a write finds them (docs/plans/app-setup.md).
+// The answer is the digest and size of what the app sent and the name and
+// media type it sent: a blob that already held those bytes keeps what its
+// first upload said, and that is not the app's to read.
+func (s *scopedDataset) PutBlob(ctx context.Context, _ substrate.Actor, up substrate.BlobUpload, data []byte, digest string) (*substrate.BlobInfo, error) {
+	if err := s.admitBlobs(ctx); err != nil {
+		return nil, err
+	}
+	info, err := s.inner.PutBlob(ctx, s.actor, up, data, digest)
+	if err != nil {
+		return nil, err
+	}
+	return &substrate.BlobInfo{
+		Digest: info.Digest, Size: int64(len(data)),
+		Name: up.Name, MediaType: up.MediaType, Status: info.Status,
+	}, nil
+}
+
+// admitBlobs is the blob rule: the grant writes a kind that declares a
+// blob-ref property. The PUT asks it before it reads a body, so a token the
+// rule refuses never holds an upload slot.
+func (s *scopedDataset) admitBlobs(ctx context.Context) error {
+	reg, err := s.kinds(ctx)
+	if err != nil {
+		return err
+	}
+	for id, k := range reg {
+		if s.grant.Writes(id, internalKind(k)) && declaresBlobRef(k) {
+			return nil
+		}
+	}
+	return errScope("blobs")
+}
+
+// declaresBlobRef reports whether a kind declares a blob-ref property. A
+// blob-ref is never a field of an object, so the top level is all of them.
+func declaresBlobRef(k substrate.KindInfo) bool {
+	props, _ := k.Definition["properties"].(map[string]any)
+	for _, raw := range props {
+		p, _ := raw.(map[string]any)
+		if t, _ := p["type"].(string); t == string(vocabulary.DatatypeBlobRef) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *scopedDataset) GetBlob(context.Context, string) (*substrate.BlobInfo, []byte, error) {

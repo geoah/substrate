@@ -39,6 +39,7 @@ const APP_TOKEN = {
     "write:ada.example.com/notes/note",
     "agents:ada.example.com/llm/*",
     "decide:ada.example.com/llm/substrate",
+    "webhook:notes-webhook",
   ],
   clientId: "https://notes.example.com/oauth/client.json",
   clientName: "Notes for Ada",
@@ -141,6 +142,13 @@ describe("Signed in and API tokens", () => {
         "Apply, edit or dismiss changes suggested by the agents matching"
       )
     ).toBeTruthy()
+    // A webhook the app's own approval turned on, by its trigger.
+    expect(
+      within(facts).getByText(
+        "Send data to, and see the refused deliveries of, the webhook"
+      )
+    ).toBeTruthy()
+    expect(within(facts).getByText("notes-webhook")).toBeTruthy()
     expect(within(facts).getByText("Approved")).toBeTruthy()
     expect(within(facts).getByText("Expires")).toBeTruthy()
     expect(within(facts).getByTitle(/^2026-08-1[01] /)).toBeTruthy()

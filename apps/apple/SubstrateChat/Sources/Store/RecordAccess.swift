@@ -17,6 +17,8 @@ struct ChatRecordReader: RecordReader {
             return try await api.get(reference.kind, reference.recordID)
         } catch let error as ServerError where error.status == 403 {
             throw RecordReadError.notAllowed
+        } catch is InsufficientScope {
+            throw RecordReadError.notAllowed
         }
     }
 
@@ -28,10 +30,10 @@ struct ChatRecordReader: RecordReader {
         var base = server.absoluteString
         while base.hasSuffix("/") { base.removeLast() }
         let parts = reference.kind.split(separator: "/").map(String.init) + [reference.recordID]
-        return URL(string: base + "/data/" + parts.map(API.segment).joined(separator: "/"))
+        return URL(string: base + "/data/" + parts.map(segment).joined(separator: "/"))
     }
 
     var deniedHint: String? {
-        grants != nil ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change What It May Do…" : nil
+        grants != nil ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
     }
 }

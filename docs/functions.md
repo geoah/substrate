@@ -1489,7 +1489,8 @@ repository.
   lock ([decision 0167](decisions/0167-the-webhook-door-answers-after-a-sealed-spool-write.md)).
   A drain records each spooled request in arrival order as a `delivery`
   entry that lists it under the trigger's parked failures as `delivery
-  accepted` until the fire settles, deletes the file, and starts the fire
+  accepted`, with `pending: true` so a client never reads it as a failure,
+  until the fire settles, deletes the file, and starts the fire
   ([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
   Until the drain has recorded it, a request is in no list and no count, and
   a full spool (10,000 requests or 256 MiB per repository) answers `503`
