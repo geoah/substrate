@@ -26,7 +26,13 @@ const ACTIONS: Record<ScopeVerb, string> = {
   agents: "Talk to, and read the chats of, the agents matching",
   decide: "Apply, edit or dismiss changes suggested by the agents matching",
   webhook: "Send data to, and see the refused deliveries of, the webhook",
+  full: "Everything you can do when you sign in",
 }
+
+/** What `full` lets an app do, in every view that names it: the same as
+ * signing in, which no other scope comes near. */
+export const FULL_ACCESS_SENTENCE =
+  "Do everything you can do when you sign in: see, add, change and delete any record, change your kinds, settings and agents, run your functions, and make or revoke tokens, including this one"
 
 function isVerb(word: string): word is ScopeVerb {
   return Object.hasOwn(ACTIONS, word)
@@ -35,6 +41,8 @@ function isVerb(word: string): word is ScopeVerb {
 /** A stored scope (`agents:ada.example.com/llm/*`) as words. A scope this
  * console does not know keeps its own spelling as the pattern. */
 export function scopeWords(scope: string): ScopeWords {
+  if (scope === "full")
+    return { verb: "full", action: ACTIONS.full, pattern: "" }
   const at = scope.indexOf(":")
   const word = at > 0 ? scope.slice(0, at) : ""
   if (!isVerb(word)) return { verb: undefined, action: "", pattern: scope }
@@ -201,6 +209,8 @@ export function scopeSentence(scope: SentenceScope): string {
     }
     case "webhook":
       return webhookSentence(scope.pattern)
+    case "full":
+      return FULL_ACCESS_SENTENCE
   }
 }
 

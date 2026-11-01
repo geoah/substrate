@@ -125,8 +125,9 @@ type protectedResourceMetadata struct {
 }
 
 // scopesSupported names the widest scope of each verb: every other scope is
-// a narrower pattern of one of them, which no list could enumerate.
-var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*"}
+// a narrower pattern of one of them, which no list could enumerate. `full`
+// is listed so an app knows this server can approve it (decision 0204).
+var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*", "full"}
 
 func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	iss := h.issuerOf(r)
@@ -207,6 +208,10 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	details, err := authorize.ParseDetails(q.Get("authorization_details"))
 	if err != nil {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if scope.RequestsFull(scopes) && len(details) > 0 {
+		writeAuthorizePage(w, http.StatusBadRequest, "a request for full access sets nothing up: it names no authorization_details")
 		return
 	}
 	iss := h.issuerOf(r)
@@ -442,6 +447,16 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 	}
 	seen := map[string]bool{}
 	for _, s := range req.Scopes {
+		if s == scope.FullScope {
+			// What it reaches is everything, so the row lists nothing; a
+			// previous token without scopes held it already.
+			view.Scopes = append(view.Scopes, substrate.AuthorizationScope{
+				Scope: s.String(), Requested: s.String(), Verb: string(s.Verb),
+				Kinds: []substrate.AuthorizationKind{}, Agents: []*substrate.Record{},
+				Allowed: view.Previous != nil && len(view.Previous.Scopes) == 0,
+			})
+			continue
+		}
 		resolved := s.Resolve(authority)
 		// `read:~/tasks/*` and `read:<authority>/tasks/*` are one scope once
 		// resolved, and the page lists it once.
@@ -575,9 +590,10 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	approve := func(req authorize.Request) (authorize.Approval, error) {
 		// First, so a door that may not approve this request reserves and
 		// plans nothing: what a request with details sets up, or finds in
-		// place, is approved as the owner, through a human door.
-		if len(req.Details) > 0 && !substrate.HumanActors[actor] {
-			return authorize.Approval{}, notTheOwnersDoor{actor: actor}
+		// place, and full access are approved as the owner, through a human
+		// door.
+		if (len(req.Details) > 0 || scope.RequestsFull(req.Scopes)) && !substrate.HumanActors[actor] {
+			return authorize.Approval{}, notTheOwnersDoor{actor: actor, full: scope.RequestsFull(req.Scopes)}
 		}
 		doc, err := shownApp(req)
 		if err != nil {
@@ -697,10 +713,17 @@ func withoutProgress(rows []substrate.AuthorizationSetup) []substrate.Authorizat
 
 // notTheOwnersDoor refuses an approval of a request with details from a door
 // that is not a human's.
-type notTheOwnersDoor struct{ actor substrate.Actor }
+type notTheOwnersDoor struct {
+	actor substrate.Actor
+	full  bool
+}
 
 func (e notTheOwnersDoor) Error() string {
-	return "setting up is the owner's act, through the console, substratectl or the API, never as " + string(e.actor)
+	what := "setting up"
+	if e.full {
+		what = "granting full access"
+	}
+	return what + " is the owner's act, through the console, substratectl or the API, never as " + string(e.actor)
 }
 
 // writeAuthorizationAnswerError answers the store's refusals of an approval
@@ -751,8 +774,11 @@ func approvedScopes(req authorize.Request, authority string, approved []string) 
 		sort.Strings(extra)
 		return nil, validation("the approval names scopes the app did not request: " + strings.Join(extra, ", "))
 	}
-	if err := scope.CheckStored(out); err != nil {
-		return nil, validation(err.Error())
+	// Full is never stored: the token it mints carries no scopes.
+	if !slices.Equal(out, []string{scope.FullScope.String()}) {
+		if err := scope.CheckStored(out); err != nil {
+			return nil, validation(err.Error())
+		}
 	}
 	return out, nil
 }
@@ -816,6 +842,10 @@ type tokenResponse struct {
 	// Repository is the authority the token opens, as IndieAuth's `me`
 	// tells an app whom it signed in as.
 	Repository string `json:"repository"`
+	// TokenID is the token record's id (an extra parameter RFC 6749 §5.1
+	// allows), what the owner's console lists the app under and what a
+	// full-access app deletes its own session by, as a sign-in's holder does.
+	TokenID string `json:"token_id"`
 	// AuthorizationDetails (RFC 9396 §7) is what the approval set up or
 	// found in place: each package at the version now held, each account,
 	// and each webhook with the URL it takes deliveries at.
@@ -907,8 +937,15 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		at := h.now().Add(c.Approval.Lifetime).UTC().Truncate(time.Second)
 		expiresAt = &at
 	}
+	// Approving `full` is approving a token without scopes, which is full
+	// access (decisions 0143, 0204); the client id still names the app, so
+	// the owner sees it under Apps and the app can revoke it.
+	scopes := c.Approval.Scopes
+	if slices.Equal(scopes, []string{scope.FullScope.String()}) {
+		scopes = nil
+	}
 	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
-		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: c.Approval.Scopes,
+		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
 	})
 	if err != nil {
@@ -926,7 +963,7 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	res := tokenResponse{
 		AccessToken: secret, TokenType: "Bearer", Scope: strings.Join(c.Approval.Scopes, " "),
-		Repository:           c.Approval.Repository,
+		Repository: c.Approval.Repository, TokenID: info.ID,
 		AuthorizationDetails: grantedDetails(ctx, c.Approval.Dataset, c.Request.Issuer, c.Approval.Repository, c.Approval.Details),
 	}
 	if c.Approval.Lifetime > 0 {

@@ -4,13 +4,17 @@ import Foundation
 /// them (internal/scope): `read:` and `write:` over kinds, `write` including
 /// read; `agents:` and `decide:` over agent ids; `webhook:` one trigger. A
 /// glob never reaches an internal kind, no scope reaches the auth kinds,
-/// and none writes core or llm.
+/// and none writes core or llm. `full` (decision 0204) is all of it: the
+/// server minted a token without scopes.
 public struct Grants: Codable, Hashable, Sendable {
     public var scopes: [String]
 
     public init(_ scopes: [String]) {
         self.scopes = scopes
     }
+
+    /// Whether the owner approved full access.
+    public var full: Bool { scopes.contains(ScopeWords.full) }
 
     /// The four core kinds that hold the repository's own auth material.
     static let authKinds = Set(["token", "credential", "secret", "recoverykey"].map { "substrate.reamde.dev/core/\($0)" })
@@ -25,34 +29,37 @@ public struct Grants: Codable, Hashable, Sendable {
     /// seeded core, llm and console packages counts as internal, which every
     /// one of them is.
     public func reads(_ kind: String, purpose: String? = nil) -> Bool {
+        if full { return true }
         let internalKind = Self.isInternal(kind, purpose: purpose)
         return parsed.contains { ($0.verb == "read" || $0.verb == "write") && Self.matches($0.pattern, kind, internalKind) }
     }
 
     public func writes(_ kind: String, purpose: String? = nil) -> Bool {
+        if full { return true }
         guard !Self.unwritable.contains(where: kind.hasPrefix) else { return false }
         let internalKind = Self.isInternal(kind, purpose: purpose)
         return parsed.contains { $0.verb == "write" && Self.matches($0.pattern, kind, internalKind) }
     }
 
     /// Whether the grant talks to the agent whose record id is `agent`.
-    public func talksTo(_ agent: String) -> Bool { matchesAgent("agents", agent) }
+    public func talksTo(_ agent: String) -> Bool { full || matchesAgent("agents", agent) }
 
     /// Whether the grant decides what the agent whose record id is `agent`
     /// proposes.
-    public func decides(_ agent: String) -> Bool { matchesAgent("decide", agent) }
+    public func decides(_ agent: String) -> Bool { full || matchesAgent("decide", agent) }
 
     /// Whether the grant delivers to the webhook trigger `trigger` and reads
-    /// its parked deliveries.
+    /// its parked deliveries. Never under `full`: the webhook door reads a
+    /// full-access bearer as the trigger's key, which it is not.
     public func delivers(_ trigger: String) -> Bool {
         !trigger.isEmpty && parsed.contains { $0.verb == "webhook" && $0.pattern == trigger }
     }
 
     /// Whether the grant holds any `agents:` scope.
-    public var talks: Bool { parsed.contains { $0.verb == "agents" } }
+    public var talks: Bool { full || parsed.contains { $0.verb == "agents" } }
 
     /// Whether the grant holds any `decide:` scope.
-    public var decidesAny: Bool { parsed.contains { $0.verb == "decide" } }
+    public var decidesAny: Bool { full || parsed.contains { $0.verb == "decide" } }
 
     /// The approved access as the console's everyday sentences, one a scope.
     public var words: [String] { scopes.map { ScopeWords.sentence($0) } }
@@ -139,10 +146,19 @@ public enum ScopeWords {
             return "Apply or dismiss the changes \(agentsPhrase(shape, pattern, agents)) \(glob ? "suggest" : "suggests")\(later), and edit one before applying it, as you"
         case "webhook":
             return webhookSentence(trigger: pattern, packageName: packageName)
+        case full:
+            return fullSentence
         default:
             return scope
         }
     }
+
+    /// The one scope with no pattern, asked for alone.
+    public static let full = "full"
+
+    /// What `full` lets an app do, as the approval page says it.
+    public static let fullSentence = "Do everything you can do when you sign in: see, add, change and delete any record, "
+        + "change your kinds, settings and agents, run your functions, and make or revoke tokens, including this one"
 
     /// What a `webhook:` scope lets the app do: deliver with its own token,
     /// for any account the package's callable accepts, and read every
@@ -165,6 +181,7 @@ public enum ScopeWords {
     }
 
     static func split(_ scope: String) -> (verb: String, pattern: String) {
+        if scope == full { return (full, "") }
         guard let colon = scope.firstIndex(of: ":") else { return ("", scope) }
         return (String(scope[..<colon]), String(scope[scope.index(after: colon)...]))
     }

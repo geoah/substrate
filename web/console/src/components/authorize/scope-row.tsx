@@ -180,6 +180,19 @@ export function ScopeRow({
   onChange: (checked: boolean) => void
 }) {
   const id = useId()
+  // Full access is approved whole or denied: there is nothing to uncheck.
+  if (scope.verb === "full") {
+    return (
+      <li className="flex flex-col gap-1 px-3 py-3">
+        <p className="font-medium">{scopeSentence(scope)}.</p>
+        {technical && (
+          <p className="font-mono text-xs text-muted-foreground">
+            {scope.scope}
+          </p>
+        )}
+      </li>
+    )
+  }
   return (
     <li className="flex gap-3 px-3 py-3">
       <input

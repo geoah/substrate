@@ -682,6 +682,45 @@ describe("AuthorizePage", () => {
     })
   })
 
+  it.each(MODES)(
+    "asks for full access whole, with its warning and nothing to uncheck ($name)",
+    async ({ technical }) => {
+      answers.GET = () =>
+        jsonResponse(200, {
+          ...REQUEST,
+          redirect: {
+            uri: "http://127.0.0.1:53021/oauth/callback",
+            host: "127.0.0.1:53021",
+            loopback: true,
+          },
+          scopes: [
+            {
+              scope: "full",
+              requested: "full",
+              verb: "full",
+              write: false,
+              pattern: "",
+              glob: false,
+              kinds: [],
+              agents: [],
+            },
+          ],
+        })
+      renderPage({ technical })
+      expect(await screen.findByText("It asks for full access")).toBeTruthy()
+      expect(
+        screen.getByText(/make or revoke tokens, including this one/)
+      ).toBeTruthy()
+      expect(screen.queryByRole("checkbox")).toBeNull()
+      expect(screen.queryByText(/Uncheck anything/)).toBeNull()
+      expect(screen.queryByText("app:notes.example.com")).toBeNull()
+      expect(screen.getByText(/Yours, as when you sign in/)).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+      await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+      expect(body("POST")).toEqual({ scopes: ["full"], lifetimeDays: 30 })
+    }
+  )
+
   it("denies, then goes to the app with the refusal", async () => {
     renderPage()
     fireEvent.click(await screen.findByRole("button", { name: "Deny" }))

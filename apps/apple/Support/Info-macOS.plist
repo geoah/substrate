@@ -41,6 +41,8 @@
 	<string>$(SUBSTRATE_COMMIT)</string>
 	<key>SubstrateUpdates</key>
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstrateConsoleClientID</key>
+	<string>$(SUBSTRATE_CONSOLE_CLIENT_ID)</string>
 	<key>SUPublicEDKey</key>
 	<string>$(SUBSTRATE_SPARKLE_KEY)</string>
 	<key>SUEnableInstallerLauncherService</key>

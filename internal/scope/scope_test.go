@@ -427,3 +427,39 @@ func TestAVerbRefusalNamesTheVerbsItsSurfaceTakes(t *testing.T) {
 		t.Errorf("a request's unknown verb = %v, want the four requestable verbs named", err)
 	}
 }
+
+func TestFullIsRequestedAloneAndNeverStored(t *testing.T) {
+	got, err := ParseRequest("full offline_access full")
+	if err != nil {
+		t.Fatalf("ParseRequest(full) = %v", err)
+	}
+	if len(got) != 1 || got[0] != FullScope || got[0].String() != "full" || !RequestsFull(got) {
+		t.Fatalf("ParseRequest(full) = %v, want the full scope once", got)
+	}
+	// Anything beside it is either covered by it or a misread of it, and the
+	// owner approves it whole: the request is refused, not narrowed.
+	for _, raw := range []string{"full read:*", "agents:* full"} {
+		if _, err := ParseRequest(raw); err == nil {
+			t.Errorf("ParseRequest(%q) admitted, want full refused beside another scope", raw)
+		}
+	}
+	for _, raw := range []string{"full:", "full:*", "Full"} {
+		if _, err := ParseRequest(raw); err == nil {
+			t.Errorf("ParseRequest(%q) admitted, want refused: full is the bare word", raw)
+		}
+	}
+	// A full approval mints a token without scopes, so a stored `full` is a
+	// damaged token and refuses rather than reads as a grant.
+	if _, err := Parse("full"); err == nil {
+		t.Error("Parse(full) admitted, want refused: it is never stored")
+	}
+	if err := CheckStored([]string{"full"}); err == nil {
+		t.Error("CheckStored([full]) admitted")
+	}
+	if _, err := NewGrant([]string{"full"}); err == nil {
+		t.Error("NewGrant([full]) admitted")
+	}
+	if RequestsFull([]Scope{{Verb: Read, Pattern: "*"}}) {
+		t.Error("read:* read as full")
+	}
+}

@@ -10,7 +10,8 @@ whose `client_id` is a URL
 
 Every other token, the console's session, a `substratectl` login, a token
 minted with `POST /tokens`, has full access to its repository and is
-unchanged ([tokens](auth.md)).
+unchanged ([tokens](auth.md)). An app may ask for that too, with the
+[`full` scope](#full-access), approved whole on the same page.
 
 ## For the owner
 
@@ -313,7 +314,8 @@ grant_type=authorization_code&code=…&client_id=…&redirect_uri=…&code_verif
   "token_type": "Bearer",
   "scope": "read:ada.example.com/tasks/* write:ada.example.com/tasks/task",
   "expires_in": 2592000,
-  "repository": "ada.example.com"
+  "repository": "ada.example.com",
+  "token_id": "2mjnmydr2be6"
 }
 ```
 
@@ -325,8 +327,9 @@ presentation of a code that already worked revokes the token it minted (a
 revoke the database refuses is logged and retried for several minutes).
 `scope` lists what the owner approved, which may be less than the app asked
 for, and a `webhook:` scope for each webhook it set up. `repository` is the
-authority the token opens. `expires_in` is absent when the owner approved the
-app until they revoke it: the token has no expiry.
+authority the token opens, and `token_id` the token record the owner lists the
+app under. `expires_in` is absent when the owner approved the app until they
+revoke it: the token has no expiry.
 
 A request that carried `authorization_details` is answered with them as
 granted (RFC 9396 §7): each package with the `version` now held, each
@@ -599,6 +602,21 @@ scope reaches:
   hold the functions, triggers, agents, providers and policies, beyond the
   few writes `agents:` and `decide:` carry;
 - a write to an account or a bundle input, the connections the owner manages.
+
+### Full access
+
+`full` is a scope with no pattern: everything a password sign-in gets
+([0204](decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)).
+The Console app asks for it, so the owner signs in on the server's own page
+in Safari rather than typing a password into the app. A request names it
+alone, with no `authorization_details`; anything beside it is refused. The
+approval page leads with a warning, offers nothing to uncheck, and takes the
+approval only through a human door. Approving mints a token without scopes,
+which is full access, keeping the app's client id and name: the owner sees
+it under Apps, the app revokes it at the revocation endpoint or deletes its
+own record (`token_id`) as a sign-in does, and its writes are the owner's,
+not `app:<host>`. A server lists `full` in `scopes_supported` when it can
+grant it.
 
 ## Running it
 

@@ -25,6 +25,7 @@ final class ConsoleController: NSObject, ObservableObject {
     var checkForUpdates: (() -> Void)?
 
     private let schemeHandler: ConsoleSchemeHandler
+    private let signIn: ConsoleSignIn
     private var observations: [NSKeyValueObservation] = []
     /// Windows the page opened (`window.open`), held until they navigate
     /// somewhere the system browser should show instead.
@@ -37,6 +38,7 @@ final class ConsoleController: NSObject, ObservableObject {
     init(server: URL) {
         self.server = server
         schemeHandler = ConsoleSchemeHandler(server: server)
+        signIn = ConsoleSignIn(server: server)
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = ServerStore.dataStore(for: server)
@@ -64,6 +66,7 @@ final class ConsoleController: NSObject, ObservableObject {
         super.init()
 
         content.add(WeakMessageHandler(self), name: "substrateShell")
+        content.addScriptMessageHandler(signIn, contentWorld: .page, name: ConsoleSignIn.handlerName)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         observations = [
@@ -88,7 +91,10 @@ final class ConsoleController: NSObject, ObservableObject {
         driver?.stop()
         #endif
         observations.removeAll()
+        signIn.cancel()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "substrateShell")
+        webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: ConsoleSignIn.handlerName, contentWorld: .page)
         webView.stopLoading()
         schemeHandler.invalidate()
     }
@@ -106,6 +112,9 @@ final class ConsoleController: NSObject, ObservableObject {
             "server": server.absoluteString.trimmingCharacters(in: ["/"]),
             "version": build.version,
             "updates": build.updates != nil,
+            // The sign-in page asks the app to sign in where the server can
+            // grant it full access (ConsoleSignIn).
+            "signIn": true,
         ]
         let json = String(data: try! JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]), encoding: .utf8)!
         return "window.substrateShell = Object.freeze(\(json));"
@@ -137,6 +146,7 @@ final class ConsoleController: NSObject, ObservableObject {
         switch type {
         case "changeServer": picking = true
         case "checkForUpdates": checkForUpdates?()
+        case "cancelSignIn": signIn.cancel()
         default: break
         }
     }

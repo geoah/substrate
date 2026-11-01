@@ -231,8 +231,9 @@ shared_host() {
 }
 
 release() {
-	local channel="${1:-prerelease}" short build commit version
+	local channel="${1:-prerelease}" short build commit version client
 	stamp "$channel"
+	client="$(client_url console)" || return 1
 	local base="${SUBSTRATE_APPLE_RELEASE_URL%/}"
 
 	xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme "$SCHEME" \
@@ -250,10 +251,16 @@ release() {
 	local stage="$out/stage"
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
+	# The console app signs in for the page with full access (decision
+	# 0204), approved on the server's own page that names this host.
+	jq -n --arg id "$client" --arg uri "$base/index.html" '{
+		client_id: $id, client_name: "Substrate Console", client_uri: $uri,
+		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
+	}' >"$out/client.json"
 	local settings=(
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
-		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SPARKLE_KEY="$key"
+		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SPARKLE_KEY="$key" SUBSTRATE_CONSOLE_CLIENT_ID="$client"
 	)
 	local platform
 	for platform in macOS iOS; do
@@ -293,6 +300,7 @@ release() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
+	upload "$out/client.json" "$client" "no-cache"
 	publish "$base" "$out" "$stage" "$rel"
 	echo "apple: released $version ($channel)"
 	echo "apple: $base/index.html"

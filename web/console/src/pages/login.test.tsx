@@ -344,3 +344,113 @@ describe("LoginPage and the door's own answer", () => {
     )
   })
 })
+
+describe("LoginPage in an app that signs in for it", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  const postSignIn = vi.fn()
+  const postShell = vi.fn()
+
+  function inShell(platform: "ios" | "macos", fullListed = true) {
+    vi.stubGlobal("substrateShell", {
+      platform,
+      server: "https://substrate.example.com",
+      signIn: true,
+    })
+    vi.stubGlobal("webkit", {
+      messageHandlers: {
+        substrateShell: { postMessage: postShell },
+        substrateShellSignIn: { postMessage: postSignIn },
+      },
+    })
+    fetchMock.mockImplementation(async (url) =>
+      String(url) === "/.well-known/oauth-authorization-server"
+        ? jsonResponse(200, {
+            scopes_supported: fullListed
+              ? ["read:*", "write:*", "full"]
+              : ["read:*", "write:*"],
+          })
+        : jsonResponse(404, {})
+    )
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    clearSession()
+    navigate.mockClear()
+    postSignIn.mockReset()
+    postShell.mockReset()
+    policy.live = false
+    loginSearch.redirect = undefined
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("hands signing in to Safari and keeps the session the app hands back", async () => {
+    inShell("ios")
+    postSignIn.mockResolvedValue({
+      secret: "substrate_tok_app",
+      repository: "ada.example.com",
+      tokenId: "tok-app",
+    })
+    loginSearch.redirect = "/authorize/req-1"
+    render(<LoginPage />)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Sign in with Safari" })
+    )
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_app"))
+    expect(getRepository()).toBe("ada.example.com")
+    expect(getTokenId()).toBe("tok-app")
+    expect(postSignIn).toHaveBeenCalledWith({ type: "signIn" })
+    expect(navigate).toHaveBeenCalledWith({
+      to: "/authorize/req-1",
+      replace: true,
+    })
+    expect(screen.queryByLabelText("Password")).toBeNull()
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === "/login")).toBe(
+      false
+    )
+  })
+
+  it("says why the app could not sign in, and stays", async () => {
+    inShell("ios")
+    postSignIn.mockResolvedValue({ error: "Access was not granted." })
+    render(<LoginPage />)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Sign in with Safari" })
+    )
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Access was not granted."
+    )
+    expect(getToken()).toBeNull()
+  })
+
+  it("offers Cancel while a Mac's browser has the sign-in", async () => {
+    inShell("macos")
+    let finish: (v: unknown) => void = () => {}
+    postSignIn.mockReturnValue(new Promise((r) => (finish = r)))
+    render(<LoginPage />)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue in your browser" })
+    )
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+    expect(postShell).toHaveBeenCalledWith({ type: "cancelSignIn" })
+    finish({ cancelled: true })
+    expect(
+      await screen.findByRole("button", { name: "Continue in your browser" })
+    ).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+
+  it("keeps the password form on a server that cannot grant full access", async () => {
+    inShell("ios", false)
+    render(<LoginPage />)
+    expect(await screen.findByLabelText("Password")).toBeTruthy()
+    expect(
+      screen.queryByRole("button", { name: "Sign in with Safari" })
+    ).toBeNull()
+  })
+})

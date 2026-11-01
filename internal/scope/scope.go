@@ -16,6 +16,12 @@
 // the second decides the change requests their threads proposed. Neither
 // reads or writes a kind through the rules of read and write.
 //
+// `full` (decision 0204) is a scope with no pattern, asked for alone: the
+// owner hands the app everything a password sign-in gets, through the same
+// approval. It is never stored: approving it mints a token without scopes,
+// which is full access (decision 0143), so Parse, CheckStored and NewGrant
+// refuse it and only ParseRequest reads it.
+//
 // `webhook:<trigger id>` (docs/plans/app-setup.md) names one webhook
 // trigger, never a glob: the app delivers to it with its own token and reads
 // its parked deliveries. An app never asks for it in `scope`; only a
@@ -47,7 +53,13 @@ const (
 	// Webhook delivers to one webhook trigger with the token, and reads that
 	// trigger's parked deliveries.
 	Webhook Verb = "webhook"
+	// Full is everything the owner's own token does. A request names it
+	// alone, as the bare word `full`.
+	Full Verb = "full"
 )
+
+// FullScope is the one scope of the Full verb.
+var FullScope = Scope{Verb: Full}
 
 const (
 	// Home is the authority placeholder: `read:~/tasks/*` asks for the tasks
@@ -80,7 +92,16 @@ type Scope struct {
 }
 
 // String is the scope's canonical spelling, the one the token stores.
-func (s Scope) String() string { return string(s.Verb) + ":" + s.Pattern }
+func (s Scope) String() string {
+	if s.Verb == Full {
+		return string(Full)
+	}
+	return string(s.Verb) + ":" + s.Pattern
+}
+
+// RequestsFull reports whether a parsed request asks for full access, which
+// ParseRequest admits only alone.
+func RequestsFull(scopes []Scope) bool { return slices.Contains(scopes, FullScope) }
 
 // OverAgents reports whether the pattern names agent ids rather than kinds.
 func (s Scope) OverAgents() bool { return s.Verb == Agents || s.Verb == Decide }
@@ -106,7 +127,7 @@ func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: t
 // for, as a refusal names them.
 const (
 	storedVerbs    = "read, write, agents, decide or webhook"
-	requestedVerbs = "read, write, agents or decide"
+	requestedVerbs = "read, write, agents or decide, or `full` alone"
 )
 
 // Parse reads one scope, in a request or as stored: `~` is allowed, and
@@ -235,6 +256,13 @@ func ParseRequest(param string) ([]Scope, error) {
 		if raw == "offline_access" {
 			continue
 		}
+		if raw == string(Full) {
+			if !seen[raw] {
+				seen[raw] = true
+				out = append(out, FullScope)
+			}
+			continue
+		}
 		verb, _, ok := strings.Cut(raw, ":")
 		switch Verb(verb) {
 		case Read, Write, Agents, Decide:
@@ -258,6 +286,9 @@ func ParseRequest(param string) ([]Scope, error) {
 	}
 	if len(out) == 0 {
 		return nil, errors.New("the request names no scope")
+	}
+	if RequestsFull(out) && len(out) > 1 {
+		return nil, errors.New("`full` is asked for alone: it already holds every other scope, and the owner approves it whole or not at all")
 	}
 	if len(out) > maxScopes {
 		return nil, fmt.Errorf("the request names more than %d scopes", maxScopes)

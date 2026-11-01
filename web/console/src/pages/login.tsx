@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { BoxesIcon } from "lucide-react"
@@ -29,6 +29,12 @@ import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
 import { safeReturnPath } from "@/lib/return-path"
+import {
+  cancelShellSignIn,
+  nativeShell,
+  shellSignIn,
+  shellSignsIn,
+} from "@/lib/shell"
 import { loginRoute } from "@/router"
 
 /** The door refuses to say WHICH factor was wrong — repository, password and
@@ -65,6 +71,67 @@ function loginSchema(totpRequired: boolean) {
 
 type LoginValues = z.infer<ReturnType<typeof loginSchema>>
 
+/** Sign in through the app: the substrate's own sign-in and approval page
+ * opens in Safari, or the default browser on a Mac, where a password
+ * manager fills it and the address bar names the server, and the app hands
+ * the session back. The password never reaches this page. */
+function ShellSignInCard({
+  onSignedIn,
+}: {
+  onSignedIn: (secret: string, repository: string, tokenId: string) => void
+}) {
+  const ios = nativeShell()?.platform === "ios"
+  const browser = ios ? "Safari" : "your browser"
+  const [waiting, setWaiting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function start() {
+    setError(null)
+    setWaiting(true)
+    const reply = await shellSignIn().catch(
+      (err: unknown) => ({ error: String(err) }) as const
+    )
+    setWaiting(false)
+    if ("secret" in reply)
+      onSignedIn(reply.secret, reply.repository, reply.tokenId)
+    else if ("error" in reply) setError(reply.error)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sign in</CardTitle>
+        <CardDescription>
+          Your server’s own sign-in page opens in {browser}, where your password
+          manager works. Sign in there and approve full access for this app.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Button onClick={() => void start()} disabled={waiting}>
+          {waiting && <Spinner />}
+          {waiting
+            ? `Waiting for ${ios ? "Safari" : "your browser"}…`
+            : ios
+              ? "Sign in with Safari"
+              : "Continue in your browser"}
+        </Button>
+        {/* Safari's sheet has its own Cancel; a browser tab left open never
+            answers, so the Mac's wait offers one here. */}
+        {waiting && !ios && (
+          <Button variant="ghost" onClick={() => cancelShellSignIn()}>
+            Cancel
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 /** Sign in: the repository, the password and the current TOTP code — all
  * three, every time. The response is a token RECORD and its secret; there is
  * no session beside it, so what the browser keeps is a token like any other
@@ -78,6 +145,21 @@ export function LoginPage() {
   const returnTo = safeReturnPath(search.redirect)
   const { inviteRequired, totpRequired } = useAuthPolicy()
   const [apiError, setApiError] = useState<string | null>(null)
+  // Undefined while the server is asked whether the app may sign in for
+  // the page; a browser never asks.
+  const [shellDoor, setShellDoor] = useState<boolean | undefined>(() =>
+    nativeShell()?.signIn ? undefined : false
+  )
+  useEffect(() => {
+    if (shellDoor !== undefined) return
+    let live = true
+    void shellSignsIn().then((yes) => {
+      if (live) setShellDoor(yes)
+    })
+    return () => {
+      live = false
+    }
+  }, [shellDoor])
   // The policy lands one render AFTER the first paint, so the resolver has to
   // FOLLOW it rather than be fixed at mount: react-hook-form reads the options
   // it is given on every render, and this form must not be remounted to change
@@ -110,6 +192,15 @@ export function LoginPage() {
     await navigate({ to: returnTo ?? "/", replace: true })
   }
 
+  function signedInByShell(
+    secret: string,
+    repository: string,
+    tokenId: string
+  ) {
+    saveSession(secret, repository, tokenId)
+    void navigate({ to: returnTo ?? "/", replace: true })
+  }
+
   const { errors, isSubmitting } = form.formState
 
   return (
@@ -121,82 +212,90 @@ export function LoginPage() {
           </div>
           <span className="text-lg font-semibold">substrate</span>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>
-              {totpRequired
-                ? `Your name, password and the current ${CODE_DIGITS}-digit code.`
-                : "Your name and password."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
-              <FieldGroup>
-                <Field data-invalid={!!errors.repository || undefined}>
-                  <FieldLabel htmlFor="repository">Repository</FieldLabel>
-                  <Input
-                    id="repository"
-                    autoComplete="username"
-                    autoFocus
-                    aria-invalid={!!errors.repository || !!apiError}
-                    {...form.register("repository")}
-                  />
-                  <FieldDescription>
-                    The name you chose when you registered, such as
-                    ada.example.com.
-                  </FieldDescription>
-                  <FieldError errors={[errors.repository]} />
-                </Field>
-                <Field data-invalid={!!errors.password || undefined}>
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    aria-invalid={!!errors.password || !!apiError}
-                    {...form.register("password")}
-                  />
-                  <FieldError errors={[errors.password]} />
-                </Field>
-                {totpRequired && (
-                  <Field data-invalid={!!errors.code || undefined}>
-                    <FieldLabel htmlFor="code">One-time code</FieldLabel>
+        {shellDoor === undefined ? (
+          <div className="flex justify-center p-6">
+            <Spinner aria-label="Checking how to sign in" />
+          </div>
+        ) : shellDoor ? (
+          <ShellSignInCard onSignedIn={signedInByShell} />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sign in</CardTitle>
+              <CardDescription>
+                {totpRequired
+                  ? `Your name, password and the current ${CODE_DIGITS}-digit code.`
+                  : "Your name and password."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={form.handleSubmit(onSubmit)}>
+                <FieldGroup>
+                  <Field data-invalid={!!errors.repository || undefined}>
+                    <FieldLabel htmlFor="repository">Repository</FieldLabel>
                     <Input
-                      id="code"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={CODE_DIGITS + 2}
-                      placeholder="123456"
-                      className="data tracking-[0.25em]"
-                      aria-invalid={!!errors.code || !!apiError}
-                      {...form.register("code")}
+                      id="repository"
+                      autoComplete="username"
+                      autoFocus
+                      aria-invalid={!!errors.repository || !!apiError}
+                      {...form.register("repository")}
                     />
                     <FieldDescription>
-                      The current {CODE_DIGITS}-digit code from your
-                      authenticator.
+                      The name you chose when you registered, such as
+                      ada.example.com.
                     </FieldDescription>
-                    <FieldError errors={[errors.code]} />
+                    <FieldError errors={[errors.repository]} />
                   </Field>
-                )}
-                {apiError && (
-                  <p
-                    role="alert"
-                    className="text-sm font-normal text-destructive"
-                  >
-                    {apiError}
-                  </p>
-                )}
-                <Field>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Spinner />}
-                    Sign in
-                  </Button>
-                </Field>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
+                  <Field data-invalid={!!errors.password || undefined}>
+                    <FieldLabel htmlFor="password">Password</FieldLabel>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete="current-password"
+                      aria-invalid={!!errors.password || !!apiError}
+                      {...form.register("password")}
+                    />
+                    <FieldError errors={[errors.password]} />
+                  </Field>
+                  {totpRequired && (
+                    <Field data-invalid={!!errors.code || undefined}>
+                      <FieldLabel htmlFor="code">One-time code</FieldLabel>
+                      <Input
+                        id="code"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={CODE_DIGITS + 2}
+                        placeholder="123456"
+                        className="data tracking-[0.25em]"
+                        aria-invalid={!!errors.code || !!apiError}
+                        {...form.register("code")}
+                      />
+                      <FieldDescription>
+                        The current {CODE_DIGITS}-digit code from your
+                        authenticator.
+                      </FieldDescription>
+                      <FieldError errors={[errors.code]} />
+                    </Field>
+                  )}
+                  {apiError && (
+                    <p
+                      role="alert"
+                      className="text-sm font-normal text-destructive"
+                    >
+                      {apiError}
+                    </p>
+                  )}
+                  <Field>
+                    <Button type="submit" disabled={isSubmitting}>
+                      {isSubmitting && <Spinner />}
+                      Sign in
+                    </Button>
+                  </Field>
+                </FieldGroup>
+              </form>
+            </CardContent>
+          </Card>
+        )}
         <p className="text-center text-xs text-muted-foreground">
           {inviteRequired ? "Have an invite code?" : "New here?"}{" "}
           <Link

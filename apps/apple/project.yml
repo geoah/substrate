@@ -35,6 +35,9 @@ settings:
     SUBSTRATE_COMMIT: ""
     SUBSTRATE_UPDATES_URL: ""
     SUBSTRATE_SPARKLE_KEY: ""
+    # The console app's OAuth client id, the same way: empty is a local
+    # build's loopback id (ConsoleSignIn.localClientID).
+    SUBSTRATE_CONSOLE_CLIENT_ID: ""
     # Substrate Chat's OAuth client id: the URL of the client ID metadata
     # document a release publishes beside itself. Empty is a local app's
     # loopback id (ChatManifest.localClientID).
