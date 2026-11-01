@@ -167,6 +167,7 @@ struct ChatListView: View {
 
 struct ThreadRow: View {
     @Environment(ChatStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let thread: ChatThread
 
     var body: some View {
@@ -189,12 +190,9 @@ struct ThreadRow: View {
                     .foregroundStyle(unread ? Color.accentColor : .secondary)
                     .monospacedDigit()
             }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                AgentPill(id: thread.agentID, running: thread.running)
-                    .layoutPriority(1)
-                Text(thread.running ? "Working…" : (thread.preview ?? ""))
+            HStack(alignment: .top, spacing: 6) {
+                preview
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
                     .lineLimit(2)
                 Spacer(minLength: 4)
                 if attention > 0 {
@@ -213,6 +211,16 @@ struct ThreadRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+
+    /// The agent's name in its colour, then the start of the last reply:
+    /// one run of text, so the name costs a word, not a column.
+    private var preview: Text {
+        let name = Text(agentName(thread.agentID ?? "")).fontWeight(.semibold)
+            .foregroundStyle(agentTint(thread.agentID, dark: scheme == .dark))
+        let rest = thread.running ? "Working…" : (thread.preview ?? "")
+        guard !rest.isEmpty else { return name }
+        return Text("\(name) \(Text(rest).foregroundStyle(.secondary))")
     }
 
     private var modeSymbol: String {

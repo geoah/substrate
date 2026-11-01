@@ -323,11 +323,11 @@ bubble is a tinted fill. The transcript softens under the composer with
 - Grouped Today, Yesterday, Previous 7 Days, Earlier, by last activity (the
   console has no week group; the list here is longer).
 - A row: the title (`subject`, else the opening line, else "New chat") and
-  when, then the agent's name in a pill tinted by its id beside the start of
-  the last reply, and a state: a pulsing dot in the pill while running, a
-  dot when unread, a question mark when a card waits on the owner, an
-  exclamation when the last turn ended in an error. No avatar: an initial
-  on a disc took a column and said less than the name.
+  when, then the agent's name in its colour running into the start of the
+  last reply ("Working…" while it runs), and a state: a dot when unread, a
+  question mark when a card waits on the owner, an exclamation when the
+  last turn ended in an error. No avatar and no pill: each took a column
+  and said no more than the name.
 - Automated runs are behind a toggle in the list's filter menu (off by
   default), with a glyph for what started each.
 - Search filters titles, previews and cached transcripts, and says it is
@@ -347,18 +347,28 @@ bubble is a tinted fill. The transcript softens under the composer with
   "Thought for 6 s", collapsed; tap to read.
 - **Tool calls**: one line per call in the console's words ("Searched for
   “dentist”, found 3", "Saved a task", "Asked Researcher"), a spinner while it
-  runs, a check or a cross when it settles; tap for what it found, changed or
-  failed on, and the raw arguments and output.
+  runs, a check or a cross when it settles; tap for what it found or failed
+  on, and the raw arguments and output.
+- **Changes**: a call that wrote shows what it wrote, open, under its line: a
+  `write` as a panel ("Changed “Groceries”", each value it set), a function
+  or a sub-agent as the records it changed. All of it comes from the
+  transcript (the call's arguments and answer, the row's change stamps), so
+  it shows whatever the token may read; a record's name comes from what the
+  chat's own lookups returned.
 - **Questions** (`ask`): a card with each question's options (one or many,
   as the console), Answer and Dismiss; a resolved one shows the choices.
 - **Suggestions** (`propose`): a card for a create, a patch or a delete:
-  the record, each property's before and after, Apply and Dismiss. Once
-  decided, the card moves to the decision (below).
+  the record, each property's before and after, Apply and Dismiss, drawn
+  from the `propose` call at once; Apply reads the request's version if the
+  card holds none, and refuses if the change is no longer the one shown.
+  Once decided, the card moves to the decision (below).
 - **Compactions**: a divider, "Earlier messages were summarized".
 - **Decisions and answers** the substrate wrote into the thread: a line in
   the tool calls' shape ("You applied the suggestion", a check or a cross);
-  a decision is followed by the suggestion's card, marked Applied or
-  Dismissed, showing what was written.
+  a decision is followed by the change as a panel, marked Applied ("Changed
+  “Groceries”", the values applied, the owner's own where they adjusted
+  them) or Dismissed (the values struck through). It is the transcript's:
+  no read, so nothing to fail.
 - **Triggered openings**: "When <record> changed", not JSON.
 - **Errors**: "<Agent> couldn't answer: …"; refused and unknown-delivery cards;
   a reload failure with Try Again; "This chat was deleted".

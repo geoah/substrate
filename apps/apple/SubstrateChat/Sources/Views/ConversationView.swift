@@ -13,6 +13,7 @@ struct ConversationView: View {
     @State private var keySheet: Provider?
     @State private var renaming = false
     @State private var newTitle = ""
+    @State private var titleIndex = TitleIndex()
 
     private var thread: ChatThread? { store.thread(conversation.threadID) }
 
@@ -40,8 +41,10 @@ struct ConversationView: View {
                         .frame(maxWidth: .infinity)
                 }
                 let decided = Set(turns.compactMap { decisionNotice($0)?.requestID })
+                let proposals = proposalCalls(turns)
                 ForEach(turns) { turn in
-                    TurnView(turn: turn, agent: conversation.agent, live: turn.id == conversation.liveKey, decided: decided)
+                    TurnView(turn: turn, agent: conversation.agent, live: turn.id == conversation.liveKey, decided: decided,
+                             proposal: decisionNotice(turn).flatMap { proposals[$0.requestID] })
                         .equatable()
                 }
                 if conversation.awaitingFirstEvent {
@@ -60,6 +63,7 @@ struct ConversationView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 16)
+            .environment(\.recordTitles, titleIndex.titles(for: turns))
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         }
@@ -181,6 +185,17 @@ struct ConversationView: View {
         h.combine(conversation.error)
         return h.finalize()
     }
+}
+
+/// Each suggestion's `propose` call, by the request it landed.
+func proposalCalls(_ turns: [Turn]) -> [String: ToolCall] {
+    var out: [String: ToolCall] = [:]
+    for turn in turns where turn.role == .assistant {
+        for call in turn.tools {
+            if let id = requestID(of: call) { out[id] = call }
+        }
+    }
+    return out
 }
 
 /// What dictation adds to a draft: after it, with a space.

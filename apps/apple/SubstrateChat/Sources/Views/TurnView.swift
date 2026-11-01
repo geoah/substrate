@@ -10,13 +10,15 @@ struct TurnView: View, Equatable {
     /// The suggestions a later turn decided: their card shows there, under
     /// the decision, rather than twice.
     var decided: Set<String> = []
+    /// On a decision: the `propose` call that made the suggestion.
+    var proposal: ToolCall?
 
     var body: some View {
         switch turn.role {
         case .user: UserTurn(turn: turn)
         case .assistant: AssistantTurn(turn: turn, agent: agent, live: live, decided: decided)
         case .summary: SummaryLine(turn: turn)
-        case .system: SystemLine(turn: turn)
+        case .system: SystemLine(turn: turn, proposal: proposal)
         }
     }
 }
@@ -74,13 +76,35 @@ private struct AssistantTurn: View {
             ForEach(Array(turn.tools.enumerated()), id: \.offset) { _, call in
                 ToolCallRow(call: call, agent: agent)
                 if let request = requestID(of: call) {
-                    if !decided.contains(request) { ProposalCard(id: request) }
+                    if !decided.contains(request) { ProposalCard(id: request, call: call) }
                 } else if let interaction = interactionID(of: call) {
                     InteractionCard(id: interaction)
+                } else {
+                    CallChanges(call: call, agent: agent)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// What a settled call changed, as panels: a write's record and values, or
+/// the records a function or a sub-agent wrote.
+private struct CallChanges: View {
+    let call: ToolCall
+    let agent: Agent?
+
+    var body: some View {
+        let resolved = resolveTool(agent: agent, name: call.name, callable: call.callable)
+        if resolved.function == HostFunction.write {
+            if let change = writeChange(call) { ChangePanel(change: change) }
+        } else if call.ok == true {
+            let stamped = stampedChanges(call)
+            let wrote = call.subagentWrites.flatMap { $0.records > 0 ? wroteSentence(records: $0.records, kinds: $0.kinds, moreKinds: $0.moreKinds) : nil }
+            if !stamped.isEmpty || wrote != nil {
+                ChangeList(changes: stamped, wrote: wrote)
+            }
+        }
     }
 }
 
@@ -145,7 +169,12 @@ struct ToolCallRow: View {
 
     var body: some View {
         let resolved = resolveTool(agent: agent, name: call.name, callable: call.callable)
-        let details = toolDetails(call, resolved)
+        let details = toolDetails(call, resolved).filter {
+            switch $0 {
+            case .changed, .wrote: false
+            default: true
+            }
+        }
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 withAnimation(.snappy) { open.toggle() }
@@ -292,13 +321,14 @@ private struct SummaryLine: View {
 
 private struct SystemLine: View {
     let turn: Turn
+    let proposal: ToolCall?
 
     var body: some View {
         if let decision = decisionNotice(turn) {
             VStack(alignment: .leading, spacing: 10) {
                 OutcomeRow(text: decision.accepted ? (decision.adjusted ? "You applied the suggestion, with your changes" : "You applied the suggestion")
                     : "You dismissed the suggestion", done: decision.accepted)
-                ProposalCard(id: decision.requestID, outcome: decision)
+                ProposalCard(id: decision.requestID, call: proposal, outcome: decision)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if let answer = interactionNotice(turn) {

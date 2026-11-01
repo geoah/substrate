@@ -102,3 +102,9 @@ func isUnreachable(_ error: Error) -> Bool {
                                      .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
     return (error as? URLError).map { codes.contains($0.code) } ?? false
 }
+
+/// A read the view gave up on (it scrolled away, or was redrawn): nothing to
+/// tell the owner.
+func isCancellation(_ error: Error) -> Bool {
+    error is CancellationError || (error as? URLError)?.code == .cancelled
+}

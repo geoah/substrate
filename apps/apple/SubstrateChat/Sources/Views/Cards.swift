@@ -109,7 +109,8 @@ struct InteractionCard: View {
             record = try await store.api.get(Kinds.interaction, id)
             if let record { store.remember(card: record) }
         } catch {
-            if !store.handle(error) { problem = explain(error, server: store.session.server) }
+            if isCancellation(error) || store.handle(error) { return }
+            problem = explain(error, server: store.session.server)
         }
     }
 
@@ -148,56 +149,97 @@ struct InteractionCard: View {
 
 /// A suggested change: the record, each property before and after, Apply and
 /// Dismiss. The decision carries the request's version, so a change slipped
-/// under it is refused, and a refusal means read again, never retry.
+/// under it is refused, and a refusal means read again, never retry. Once
+/// decided it is the change that was applied, or the one that was not.
+///
+/// What it shows comes from the transcript first (the `propose` call and the
+/// decision the substrate wrote), so it draws at once and whatever the token
+/// may read; the request, read when it can be, adds the version to decide
+/// with, and the target its name and its values before.
 struct ProposalCard: View {
     @Environment(ChatStore.self) private var store
     let id: String
-    /// The decision the transcript recorded: the card is that decision's,
-    /// and says so before the request is read.
+    /// The `propose` call that made it.
+    var call: ToolCall?
+    /// The decision the transcript recorded.
     var outcome: DecisionNotice?
     @State private var request: Record?
     @State private var target: Record?
     @State private var busy: String?
     @State private var problem: String?
 
-    private var held: Record? { request ?? store.cardRecords[id] }
-    private var op: String { held?["op"]?.string ?? "patch" }
+    /// The request as last read here, or by the store's list of the
+    /// suggestions waiting, which carries its version too.
+    private var held: Record? { request ?? store.cardRecords[id] ?? store.requests.first { $0.id == id } }
+    private var asked: (change: RecordChange, rationale: String?)? { call.flatMap(proposedChange) }
+
     private var decision: String {
         held?["decision"]?.string ?? outcome.map { $0.accepted ? "accepted" : "rejected" } ?? "proposed"
     }
 
+    private var op: String { held?["op"]?.string ?? outcome?.op ?? asked?.change.op.rawValue ?? "patch" }
+
+    private var targetPath: String? { held?["target"]?.referencePath ?? outcome?.target }
+
     private var targetKind: String? {
-        held?["targetKind"]?.text ?? held?["target"]?.referencePath.map { path in
-            path.split(separator: "/").dropLast().joined(separator: "/")
-        }
+        held?["targetKind"]?.text ?? targetPath.map { $0.split(separator: "/").dropLast().joined(separator: "/") }
+            ?? asked?.change.kind
     }
 
-    private var targetID: String? { held?["targetId"]?.text ?? held?["target"]?.referenceID }
-    /// What the change writes: the owner's adjusted diff where they applied
-    /// one, else the agent's.
-    private var proposed: [String: JSONValue] {
-        if decision == "accepted", let adjusted = held?["adjustedDiff"]?["properties"]?.object { return adjusted }
-        return held?["diff"]?["properties"]?.object ?? [:]
+    private var targetID: String? {
+        held?["targetId"]?.text ?? held?["target"]?.referenceID ?? outcome?.target?.split(separator: "/").last.map(String.init)
+            ?? asked?.change.id
+    }
+
+    /// What the change writes: the owner's adjusted values where they applied
+    /// their own, else the agent's.
+    private var values: [String: JSONValue] {
+        if decision == "accepted" {
+            if let adjusted = held?["adjustedDiff"]?["properties"]?.object ?? outcome?.adjustedValues { return adjusted }
+        }
+        return held?["diff"]?["properties"]?.object ?? asked?.change.values ?? [:]
+    }
+
+    private var change: RecordChange {
+        RecordChange(op: op, kind: targetKind, id: targetID, title: recordTitle(target.map { .object($0.properties) }),
+                     values: values)
     }
 
     var body: some View {
-        if store.canDecide {
-            card
-        } else if outcome != nil {
-            // Not the app's to read: what was decided is all it says.
-            HStack {
-                Label("Suggested a change", systemImage: "square.and.pencil")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                badge
+        switch decision {
+        case "proposed":
+            proposed
+        case "accepted":
+            ChangePanel(change: change, tense: .done, badge: .applied, note: held?["rationale"]?.text ?? asked?.rationale,
+                        tint: .green)
+                .task(id: id) { await load() }
+        default:
+            ChangePanel(change: change, tense: .suggested, badge: .dismissed,
+                        note: held?["rationale"]?.text ?? asked?.rationale, struck: true)
+                .task(id: id) { await load() }
+        }
+    }
+
+    private var proposed: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ChangeHeader(change: change, tense: .suggests)
+            if let rationale = held?["rationale"]?.text ?? asked?.rationale {
+                Text(rationale).font(.footnote).foregroundStyle(.secondary)
             }
-            .card(tint: tint)
-        } else {
-            // Without `decide:` the request is not the app's to read: the
-            // console decides it.
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Suggested a change", systemImage: "square.and.pencil")
-                    .font(.subheadline.weight(.semibold))
+            ForEach(values.keys.sorted(), id: \.self) { key in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    if op == "patch", let before = target?[key] {
+                        Text(valueWords(before)).font(.footnote).strikethrough().foregroundStyle(.secondary).lineLimit(4)
+                    }
+                    Text(valueWords(values[key] ?? .null)).font(.footnote).lineLimit(6)
+                }
+            }
+            if let problem {
+                Text("That didn't go through: \(problem)").font(.footnote).foregroundStyle(.red)
+            }
+            if !store.canDecide {
+                // Without `decide:` the request is not the app's to decide.
                 Text("Substrate Chat wasn't approved to apply suggestions. Decide this one in the console.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -205,41 +247,7 @@ struct ProposalCard: View {
                     Label("Open in the Console", systemImage: "arrow.up.right.square")
                 }
                 .font(.footnote.weight(.semibold))
-            }
-            .card(tint: .blue)
-        }
-    }
-
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Label(heading, systemImage: op == "delete" ? "trash" : op == "create" ? "plus.square" : "square.and.pencil")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                badge
-            }
-            if let rationale = held?["rationale"]?.text {
-                Text(rationale).font(.footnote).foregroundStyle(.secondary)
-            }
-            if held == nil { ProgressView().controlSize(.small) }
-            ForEach(proposed.keys.sorted(), id: \.self) { key in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    // The target's value is the before only until the change
-                    // is applied.
-                    if op == "patch", decision == "proposed", let before = target?[key] {
-                        Text(words(before)).font(.footnote).strikethrough().foregroundStyle(.secondary)
-                    }
-                    Text(words(proposed[key] ?? .null))
-                        .font(.footnote)
-                        .strikethrough(decision == "rejected")
-                        .foregroundStyle(decision == "rejected" ? .secondary : .primary)
-                }
-            }
-            if let problem {
-                Text("That didn't go through: \(problem)").font(.footnote).foregroundStyle(.red)
-            }
-            if decision == "proposed", request != nil {
+            } else {
                 HStack {
                     Button {
                         decide(accept: true)
@@ -256,66 +264,53 @@ struct ProposalCard: View {
                 .disabled(busy != nil)
             }
         }
-        .card(tint: tint)
+        .card(tint: .blue)
         .task(id: id) { await load() }
     }
 
-    private var tint: Color? {
-        switch decision {
-        case "proposed": .blue
-        case "accepted": .green
-        default: nil
-        }
-    }
-
-    /// Applied or dismissed, once decided.
-    @ViewBuilder private var badge: some View {
-        if decision != "proposed" {
-            let accepted = decision == "accepted"
-            Label(accepted ? "Applied" : "Dismissed", systemImage: accepted ? "checkmark" : "xmark")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(accepted ? Color.green : Color.secondary)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background((accepted ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
-                .fixedSize()
-        }
-    }
-
-    private var heading: String {
-        let what = targetKind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
-        let verb = decision == "proposed" ? "Suggests" : "Suggested"
-        switch op {
-        case "create": return "\(verb) adding a \(what)"
-        case "delete": return "\(verb) deleting a \(what)"
-        default:
-            let name = target?["name"]?.text ?? target?["title"]?.text ?? target?["summary"]?.text
-            return name.map { "\(verb) changing “\($0)”" } ?? "\(verb) changing a \(what)"
-        }
-    }
-
     private func load() async {
-        do {
-            request = try await store.api.get(Kinds.request, id)
-            if let request { store.remember(card: request) }
-        } catch {
-            if !store.handle(error) { problem = explain(error, server: store.session.server) }
-            return
+        if store.canDecide {
+            do {
+                request = try await store.api.get(Kinds.request, id)
+                if let request { store.remember(card: request) }
+            } catch {
+                if isCancellation(error) || store.handle(error) { return }
+                // A decided card has nothing to act on: what it shows is the
+                // transcript's, and a failed read changes none of it.
+                if decision == "proposed" { problem = explain(error, server: store.session.server) }
+            }
         }
         if op != "create", let kind = targetKind, let tid = targetID {
-            // The target is context: a card without it still decides.
+            // The target is context, and often out of the token's reach.
             target = try? await store.api.get(kind, tid)
         }
     }
 
     private func decide(accept: Bool) {
-        guard let request else { return }
         busy = accept ? "accept" : "reject"
         problem = nil
+        let shown = values
         Task {
             defer { busy = nil }
             do {
+                // The version decided on is the one whose change is on
+                // screen: read now if the card has none, and refuse if what
+                // it holds is not what was shown.
+                var held = self.held
+                if held == nil {
+                    held = try await store.api.get(Kinds.request, id)
+                    request = held
+                    if held?["diff"]?["properties"]?.object.map({ $0 != shown }) ?? false {
+                        problem = "It changed since you read it. Check it again."
+                        return
+                    }
+                }
+                guard let held else {
+                    problem = "This suggestion is no longer there."
+                    return
+                }
                 self.request = try await store.api.patch(Kinds.request, id, properties: ["decision": accept ? "accepted" : "rejected"],
-                                                         ifVersion: request.version)
+                                                         ifVersion: held.version)
                 try? await store.refreshCards()
                 await store.refreshThreads()
             } catch {
@@ -327,15 +322,162 @@ struct ProposalCard: View {
             }
         }
     }
+}
 
-    private func words(_ value: JSONValue) -> String {
-        switch value {
-        case .null: "Empty"
-        case let .string(s): s
-        case let .bool(b): b ? "Yes" : "No"
-        case let .number(n): n.rounded() == n ? String(Int(n)) : String(n)
-        default: value.referencePath ?? value.jsonText
+extension EnvironmentValues {
+    /// The chat's record titles by `kind/id` (recordTitles).
+    @Entry var recordTitles: [String: String] = [:]
+}
+
+extension RecordChange {
+    /// This change with a title from the chat where it has none of its own.
+    func titled(_ titles: [String: String]) -> RecordChange {
+        guard title == nil, let kind, let id, let known = titles["\(kind)/\(id)"] else { return self }
+        var out = self
+        out.title = known
+        return out
+    }
+}
+
+/// How a change's heading reads: done, still a suggestion, or a suggestion
+/// that was not taken.
+enum ChangeTense { case done, suggests, suggested }
+
+/// "Changed “Groceries”", "Suggests adding a task", with the op's mark.
+struct ChangeHeader: View {
+    @Environment(\.recordTitles) private var titles
+    let change: RecordChange
+    let tense: ChangeTense
+    var badge: ChangeBadge?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label(heading, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+            if let badge { badge }
         }
+    }
+
+    private var symbol: String {
+        switch change.op {
+        case .delete: "trash"
+        case .create: "plus.square"
+        case .put, .patch: "square.and.pencil"
+        }
+    }
+
+    private var heading: String {
+        let kind = change.kind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
+        let what = change.titled(titles).title.map { "“\($0)”" } ?? (change.op == .create ? "a new \(kind)" : "a \(kind)")
+        switch tense {
+        case .done:
+            let verb = switch change.op {
+            case .create: "Added"
+            case .put: "Saved"
+            case .patch: "Changed"
+            case .delete: "Deleted"
+            }
+            return "\(verb) \(what)"
+        case .suggests, .suggested:
+            let verb = switch change.op {
+            case .create: "adding"
+            case .put: "saving"
+            case .patch: "changing"
+            case .delete: "deleting"
+            }
+            return "\(tense == .suggests ? "Suggests" : "Suggested") \(verb) \(what)"
+        }
+    }
+}
+
+/// A decided suggestion's outcome, as a capsule.
+enum ChangeBadge: View {
+    case applied, dismissed
+
+    var body: some View {
+        let applied = self == .applied
+        Label(applied ? "Applied" : "Dismissed", systemImage: applied ? "checkmark" : "xmark")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(applied ? Color.green : Color.secondary)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background((applied ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
+            .fixedSize()
+    }
+}
+
+/// What a change wrote: the record, then each value it set. A delete has no
+/// values; a stamped change from a function names its record alone.
+struct ChangePanel: View {
+    let change: RecordChange
+    var tense: ChangeTense = .done
+    var badge: ChangeBadge?
+    var note: String?
+    var struck = false
+    var tint: Color?
+
+    /// Past this many values the panel says how many more there are.
+    private let shown = 8
+
+    var body: some View {
+        let keys = change.values.keys.sorted()
+        VStack(alignment: .leading, spacing: 10) {
+            ChangeHeader(change: change, tense: tense, badge: badge)
+            if let note {
+                Text(note).font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(keys.prefix(shown), id: \.self) { key in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(valueWords(change.values[key] ?? .null))
+                        .font(.footnote)
+                        .strikethrough(struck)
+                        .foregroundStyle(struck ? .secondary : .primary)
+                        .lineLimit(6)
+                        .textSelection(.enabled)
+                }
+            }
+            if keys.count > shown {
+                Text("and \(keys.count - shown) more").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .card(tint: tint)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A call's changes that carry no values (a function's, a sub-agent's): one
+/// line each, in one card.
+struct ChangeList: View {
+    @Environment(\.recordTitles) private var titles
+    let changes: [RecordChange]
+    var wrote: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(changes.prefix(8).enumerated()), id: \.offset) { _, change in
+                Label(line(change), systemImage: change.op == .delete ? "trash" : change.op == .create ? "plus.square" : "square.and.pencil")
+                    .font(.footnote)
+            }
+            if changes.count > 8 {
+                Text("and \(changes.count - 8) more").font(.caption).foregroundStyle(.secondary)
+            }
+            if let wrote {
+                Label(wrote, systemImage: "square.stack.3d.up").font(.footnote)
+            }
+        }
+        .card()
+    }
+
+    private func line(_ change: RecordChange) -> String {
+        let verb = switch change.op {
+        case .create: "Added"
+        case .put: "Saved"
+        case .patch: "Changed"
+        case .delete: "Deleted"
+        }
+        let kind = change.kind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
+        return change.titled(titles).title.map { "\(verb) \(kind) “\($0)”" } ?? "\(verb) a \(kind)"
     }
 }
 

@@ -315,7 +315,11 @@ struct DecisionNotice: Hashable, Sendable {
     var accepted: Bool
     var op: String
     var target: String?
-    var adjusted: Bool
+    /// The values the owner applied in place of the agent's, when they
+    /// changed them.
+    var adjustedValues: [String: JSONValue]?
+
+    var adjusted: Bool { adjustedValues != nil }
 }
 
 /// A system turn's interaction resolution.
@@ -355,7 +359,7 @@ func decisionNotice(_ turn: Turn) -> DecisionNotice? {
           let request = env["request"]?.string, let id = request.split(separator: "/").last.map(String.init)
     else { return nil }
     return DecisionNotice(requestID: id, accepted: decision == "accepted", op: env["op"]?.text ?? "patch",
-                          target: env["target"]?.text, adjusted: env["adjustedDiff"]?.object != nil)
+                          target: env["target"]?.text, adjustedValues: env["adjustedDiff"]?["properties"]?.object)
 }
 
 func interactionNotice(_ turn: Turn) -> InteractionNotice? {
