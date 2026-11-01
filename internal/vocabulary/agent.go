@@ -114,6 +114,13 @@ const (
 	AgentResumeNever  = "never"
 )
 
+// The declared `compaction.replayTools` values: whether a continued thread
+// replays its earlier tool exchanges (decision 0201). Absent means all.
+const (
+	AgentReplayToolsAll  = "all"
+	AgentReplayToolsNone = "none"
+)
+
 // The budget bounds. Depth is the sub-agent chain cap — a separate counter
 // from causal depth, hard-capped at 3.
 const (
@@ -301,11 +308,14 @@ type AgentBudgets struct {
 // AgentCompaction is `data.compaction` parsed. A thread compacts when its
 // context would leave less than ReserveTokens of the model's window free; the
 // newest KeepRecentTokens of history stay verbatim. A model whose provider row
-// declares no contextWindow never compacts, whatever this says.
+// declares no contextWindow never compacts, whatever this says. ReplayTools
+// is AgentReplayToolsAll or AgentReplayToolsNone, and holds whether or not
+// the thread ever compacts.
 type AgentCompaction struct {
 	Enabled          bool
 	ReserveTokens    int
 	KeepRecentTokens int
+	ReplayTools      string
 }
 
 // Identity is "<authority>/<package>/<name>".
@@ -368,7 +378,7 @@ var agentBudgetKeys = map[string]bool{
 }
 
 var agentCompactionKeys = map[string]bool{
-	"enabled": true, "reserveTokens": true, "keepRecentTokens": true,
+	"enabled": true, "reserveTokens": true, "keepRecentTokens": true, "replayTools": true,
 }
 
 // agentToolKeys is a tool entry's key set: `function` names the tool, `name` and
@@ -898,6 +908,15 @@ func (l *loader) parseAgentCompaction(where string, data map[string]any, a *Agen
 	if a.Compaction.KeepRecentTokens, ok = l.boundedIntFrom(where+": data.compaction.keepRecentTokens", c, "keepRecentTokens",
 		DefaultAgentKeepRecentTokens, 0, MaxAgentCompactionTokens); !ok {
 		return false
+	}
+	a.Compaction.ReplayTools = AgentReplayToolsAll
+	if v, has := c["replayTools"]; has {
+		s, _ := v.(string)
+		if s != AgentReplayToolsAll && s != AgentReplayToolsNone {
+			l.errf("%s: data.compaction.replayTools: %v — \"all\" or \"none\" (absent means all)", where, v)
+			return false
+		}
+		a.Compaction.ReplayTools = s
 	}
 	return true
 }

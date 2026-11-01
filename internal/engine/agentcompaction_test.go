@@ -70,7 +70,7 @@ func rowIDs(rows []threadRow) map[string]int {
 
 func plan(t *testing.T, rows []threadRow, keep int) (*compactionPlan, bool) {
 	t.Helper()
-	view, origin, _ := replayView(rows, nil)
+	view, origin, _ := replayView(rows, true, nil)
 	return planCompaction(rows, view, origin, keep)
 }
 
@@ -238,14 +238,16 @@ func TestCompactionFoldsASummaryAfterABlockedHead(t *testing.T) {
 		t.Fatalf("through %s, want a3", rows[p.throughIdx].id)
 	}
 	rows = append(rows, summaryRow("s2", "the second summary", "u1", "a3"))
-	view, _, _ := replayView(rows, nil)
+	view, _, _ := replayView(rows, true, nil)
 	var summaries int
 	for _, m := range view {
 		if strings.Contains(m.Content, "<summary>") {
 			summaries++
 		}
 	}
-	if summaries != 1 || view[0].Content != body || view[1].Content != "asked." {
+	// The blocked head replays raw, its tool exchange included.
+	if summaries != 1 || view[0].Content != body || len(view[1].ToolCalls) != 1 ||
+		view[2].ToolCallID != "call_a" || view[3].Content != "asked." {
 		t.Fatalf("view after the fold: %d summaries, %+v", summaries, view)
 	}
 }
@@ -261,7 +263,7 @@ func TestCompactionFoldsAPreviousSummary(t *testing.T) {
 		userRow("u2", body), assistantRow("a2", body),
 		userRow("u3", body), assistantRow("a3", body),
 	}
-	view, _, _ := replayView(rows, nil)
+	view, _, _ := replayView(rows, true, nil)
 	if !strings.Contains(view[0].Content, "the first summary") {
 		t.Fatalf("the view does not start with the summary: %q", view[0].Content)
 	}
@@ -285,7 +287,7 @@ func TestCompactionFoldsAPreviousSummary(t *testing.T) {
 	}
 	// The next replay emits only the new summary, where the old one began.
 	rows = append(rows, summaryRow("s2", "the second summary", "u0", "a2"))
-	view, _, _ = replayView(rows, nil)
+	view, _, _ = replayView(rows, true, nil)
 	if len(view) != 3 || !strings.Contains(view[0].Content, "the second summary") || view[1].Content != body {
 		t.Fatalf("view after the fold: %+v", view)
 	}
@@ -345,7 +347,7 @@ func TestCompactionReplayView(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			view, origin, _ := replayView(tc.rows, nil)
+			view, origin, _ := replayView(tc.rows, true, nil)
 			if got := contents(view); strings.Join(got, "|") != strings.Join(tc.want, "|") {
 				t.Fatalf("view = %q, want %q", got, tc.want)
 			}

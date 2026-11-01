@@ -453,8 +453,8 @@ func TestAgentRefusals(t *testing.T) {
 	}
 }
 
-// data.compaction: absent means on at the defaults, keepRecentTokens may be
-// zero, and each bound refuses at load.
+// data.compaction: absent means on at the defaults, replaying every tool
+// exchange, keepRecentTokens may be zero, and each bound refuses at load.
 func TestAgentCompaction(t *testing.T) {
 	load := func(block string) (*vocabulary.Agent, error) {
 		t.Helper()
@@ -476,15 +476,16 @@ func TestAgentCompaction(t *testing.T) {
 		Enabled:          true,
 		ReserveTokens:    vocabulary.DefaultAgentReserveTokens,
 		KeepRecentTokens: vocabulary.DefaultAgentKeepRecentTokens,
+		ReplayTools:      vocabulary.AgentReplayToolsAll,
 	}
 	if ag.Compaction != want {
 		t.Fatalf("defaults %+v", ag.Compaction)
 	}
-	ag, err = load("  compaction: {enabled: false, reserveTokens: 200, keepRecentTokens: 0}\n")
+	ag, err = load("  compaction: {enabled: false, reserveTokens: 200, keepRecentTokens: 0, replayTools: none}\n")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if ag.Compaction != (vocabulary.AgentCompaction{Enabled: false, ReserveTokens: 200, KeepRecentTokens: 0}) {
+	if ag.Compaction != (vocabulary.AgentCompaction{Enabled: false, ReserveTokens: 200, KeepRecentTokens: 0, ReplayTools: vocabulary.AgentReplayToolsNone}) {
 		t.Fatalf("parsed %+v", ag.Compaction)
 	}
 	for block, msg := range map[string]string{
@@ -493,6 +494,8 @@ func TestAgentCompaction(t *testing.T) {
 		"  compaction: {keepRecentTokens: 1000001}\n": "data.compaction.keepRecentTokens",
 		"  compaction: {enabled: yes please}\n":       "data.compaction.enabled",
 		"  compaction: {window: 5}\n":                 "window",
+		"  compaction: {replayTools: some}\n":         "data.compaction.replayTools",
+		"  compaction: {replayTools: true}\n":         "data.compaction.replayTools",
 	} {
 		if _, err := load(block); err == nil || !strings.Contains(err.Error(), msg) {
 			t.Errorf("%q: err = %v, want %q", strings.TrimSpace(block), err, msg)

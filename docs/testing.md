@@ -500,7 +500,10 @@ SUBSTRATE_TEST_OPENAI_MODEL=gpt-4.1-nano mise run test:llm
 SUBSTRATE_TEST_ANTHROPIC_MODEL=claude-3-5-haiku-latest mise run test:llm
 ```
 
-Both halves honor the same two variables.
+Both halves honor the same two variables. The one case that needs adaptive
+thinking, the replayed tool exchange with thinking on, asks
+`claude-haiku-5-5`, re-pointed by `SUBSTRATE_TEST_ANTHROPIC_THINKING_MODEL`,
+and runs only against Anthropic's own endpoint.
 
 ### The endpoints
 
