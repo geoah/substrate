@@ -396,14 +396,17 @@ the same `callable`. A name the agent carries no tool for gets none.
 A model may ask for several tool calls in one response, and the loop runs
 the ones that cannot change what another reads at the same time. Those are
 `query`, a function whose permissions grant no `writes`, no `mutations`, no
-`call` and no `agents`, and a sub-agent whose effective emit is empty
+`call` and no `agents` and whose declared `effect` is `read` (or absent, with
+no `network` grant), and a sub-agent whose effective emit is empty
 ([the emit ceiling](#sub-agents-budgets-and-the-emit-ceiling)). Every other
 call is ordered: `write`, `propose`, `ask`, a function that may write or call,
 and a sub-agent that may write. The response's calls split, in order, into
 stretches of the first sort and single ordered calls. A stretch runs up to
 `budgets.maxParallelTools` calls at once, and an ordered call starts once
-everything before it settled, and holds everything after it. A function's
-`network` grant does not order it: the repository is what siblings read.
+everything before it settled, and holds everything after it. A function whose
+effect is `external` or `irreversible` is ordered even with no grant: a sent
+message or a payment lands outside the repository, where the order two calls
+ran in is the owner's to see.
 
 What the model asked keeps its order whatever finishes first. Each call's
 `turn` is drawn in call order before any call starts; the tool rows are

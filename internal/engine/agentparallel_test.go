@@ -47,6 +47,9 @@ func TestToolConcurrentSafeHoldsWritersInOrder(t *testing.T) {
 			"caller":   {fn: &vocabulary.Function{Caps: vocabulary.FunctionCaps{Call: []string{"crew.test.dev/crew/other"}}}},
 			"runner":   {fn: &vocabulary.Function{Caps: vocabulary.FunctionCaps{Agents: []string{"crew.test.dev/crew/other"}}}},
 			"fetcher":  {fn: &vocabulary.Function{Caps: vocabulary.FunctionCaps{Network: []string{"example.com"}}}},
+			"looker":   {fn: &vocabulary.Function{Effect: vocabulary.FunctionEffectRead, Caps: vocabulary.FunctionCaps{Network: []string{"example.com"}}}},
+			"sender":   {fn: &vocabulary.Function{Effect: vocabulary.FunctionEffectExternal}},
+			"payer":    {fn: &vocabulary.Function{Effect: vocabulary.FunctionEffectIrreversible}},
 			"reader":   {sub: &vocabulary.Agent{}},
 			"outsider": {sub: &vocabulary.Agent{Emit: []string{"crew.test.dev/crew/task"}}},
 			"scribe":   {sub: &vocabulary.Agent{Emit: []string{widget}}},
@@ -54,7 +57,10 @@ func TestToolConcurrentSafeHoldsWritersInOrder(t *testing.T) {
 	}
 	want := map[string]bool{
 		"query": true, "write": false, "propose": false, "ask": false,
-		"pure": true, "writer": false, "merger": false, "caller": false, "runner": false, "fetcher": true,
+		"pure": true, "writer": false, "merger": false, "caller": false, "runner": false,
+		// Egress is concurrent only under a declared read; an external or
+		// irreversible effect runs in order even without egress.
+		"fetcher": false, "looker": true, "sender": false, "payer": false,
 		// The child's emit meets this loop's: what it may write is the
 		// intersection, and only an empty one lets it run beside others.
 		"reader": true, "outsider": true, "scribe": false,

@@ -80,7 +80,8 @@ func (l *agentLoop) concurrentSafe(calls []llm.ToolCall) []bool {
 }
 
 // toolConcurrentSafe is `query`; a function whose permissions grant no
-// effect, no mutation and no call that could carry one; and a sub-agent
+// effect, no mutation and no call that could carry one, and whose declared
+// effect is read (or undeclared, without egress); and a sub-agent
 // whose effective emit is empty, which no tool below it can widen. `write`,
 // `propose` and `ask` write, and run in order. A name the agent does not
 // carry answers an error and touches nothing.
@@ -97,8 +98,23 @@ func (l *agentLoop) toolConcurrentSafe(name string) bool {
 	case tool.sub != nil:
 		return len(effectiveEmit(tool.sub.Emit, l.emit, true)) == 0
 	default:
-		caps := tool.fn.Caps
-		return len(caps.Emit) == 0 && len(caps.Mutations) == 0 && len(caps.Call) == 0 && len(caps.Agents) == 0
+		fn := tool.fn
+		caps := fn.Caps
+		if len(caps.Emit) != 0 || len(caps.Mutations) != 0 || len(caps.Call) != 0 || len(caps.Agents) != 0 {
+			return false
+		}
+		// A declared effect beyond read reaches past the repository (a sent
+		// message, a payment), where two calls' order is the owner's to
+		// see. An undeclared one with egress may be the same, so only a
+		// declared read keeps egress concurrent.
+		switch fn.Effect {
+		case vocabulary.FunctionEffectRead:
+			return true
+		case "":
+			return len(caps.Network) == 0
+		default:
+			return false
+		}
 	}
 }
 
