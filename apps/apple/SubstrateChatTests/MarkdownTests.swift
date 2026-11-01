@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import SubstrateKit
 @testable import SubstrateChat
@@ -82,5 +83,24 @@ import SubstrateKit
     @Test func aReplyAlreadyOnOneLineLosesItsMarkersToo() {
         let line = "Here is what I found, **in Markdown**: ## A heading - First point * Second - [x] done | Name | Value | |:--|--:| | a | 1 | ```swift let x = 1 ``` > quoted"
         #expect(plainText(markdown: line) == "Here is what I found, in Markdown: A heading - First point Second done, Name, Value, a, 1, let x = 1 quoted")
+    }
+}
+
+@Suite struct RecordLinks {
+    let kind = "ada.example.com/tasks/task"
+
+    @Test func bothSpellingsNameTheRecord() {
+        #expect(linkedRecord(URL(string: "substrate://\(kind)/q4")!) == RecordReference(kind: kind, id: "q4"))
+        #expect(linkedRecord(URL(string: "ref:\(kind)/q4")!) == RecordReference(kind: kind, id: "q4"))
+        #expect(linkedRecord(URL(string: "https://example.com/a/b/c")!) == nil)
+        #expect(linkedRecord(URL(string: "substrate://nodot/b/c/d")!) == nil)
+    }
+
+    @Test func aRecordLinkStaysALinkAndAMissingOneIsText() {
+        let text = "[Q4](ref:\(kind)/q4) and [Ghost](substrate://\(kind)/ghost) and [x](javascript:alert)"
+        let out = parseInline(text, missing: ["\(kind)/ghost"])
+        let links = out.runs.compactMap(\.link)
+        #expect(links == [URL(string: "substrate://\(kind)/q4")!])
+        #expect(String(out.characters) == "Q4 and Ghost and x")
     }
 }

@@ -80,6 +80,7 @@ import {
   pushDelta,
   pushReasoning,
   pushToolStart,
+  settleMentions,
   settleTool,
   transcriptOf,
   type LiveOverlay,
@@ -457,7 +458,10 @@ export function Conversation({
         )
         break
       case "done":
-        if (ev.result) setResult(ev.result)
+        if (ev.result) {
+          setResult(ev.result)
+          update(settleMentions(liveRef.current, ev.result.mentions))
+        }
         break
     }
   }

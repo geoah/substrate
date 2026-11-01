@@ -1,14 +1,24 @@
 /** An agent's reply, rendered: paragraphs, lists, headings, code and links
  * from the markdown subset `chatBlocks` reads, and every record the reply
- * names, by path or by record link, as the record itself. Model-authored text
- * becomes elements, never HTML. */
+ * names, by path or by record link, as the record itself — unless the
+ * engine found no such record when the run settled (`mentions`), in which
+ * case the link's text stands alone. Model-authored text becomes elements,
+ * never HTML. */
 
 import { Fragment } from "react"
 
 import { RecordRef } from "@/components/identity/record-ref"
+import type { AgentMention } from "@/lib/api/agents"
 import { chatBlocks, type Inline } from "@/lib/chat-text"
 
-function Runs({ runs }: { runs: Inline[] }) {
+/** The `kind/id` paths of the mentions the engine found no record for. */
+function missingPaths(mentions: AgentMention[] | undefined): Set<string> {
+  return new Set(
+    (mentions ?? []).filter((m) => m.missing).map((m) => `${m.kind}/${m.id}`)
+  )
+}
+
+function Runs({ runs, missing }: { runs: Inline[]; missing: Set<string> }) {
   return (
     <>
       {runs.map((run, i) => {
@@ -16,7 +26,7 @@ function Runs({ runs }: { runs: Inline[] }) {
           case "strong":
             return (
               <strong key={i} className="font-semibold">
-                <Runs runs={run.runs} />
+                <Runs runs={run.runs} missing={missing} />
               </strong>
             )
           case "code":
@@ -29,6 +39,9 @@ function Runs({ runs }: { runs: Inline[] }) {
               </code>
             )
           case "record":
+            if (missing.has(`${run.kind}/${run.id}`)) {
+              return <Fragment key={i}>{run.text}</Fragment>
+            }
             return <RecordRef key={i} kind={run.kind} id={run.id} />
           case "link":
             // A page outside the console: a new tab in a browser, the system
@@ -54,8 +67,15 @@ function Runs({ runs }: { runs: Inline[] }) {
   )
 }
 
-export function MessageText({ text }: { text: string }) {
+export function MessageText({
+  text,
+  mentions,
+}: {
+  text: string
+  mentions?: AgentMention[]
+}) {
   const blocks = chatBlocks(text)
+  const missing = missingPaths(mentions)
   return (
     <div className="flex flex-col gap-2.5 [overflow-wrap:anywhere]">
       {blocks.map((block, i) => {
@@ -63,7 +83,7 @@ export function MessageText({ text }: { text: string }) {
           case "heading":
             return (
               <p key={i} className="font-semibold">
-                <Runs runs={block.runs} />
+                <Runs runs={block.runs} missing={missing} />
               </p>
             )
           case "code":
@@ -95,7 +115,7 @@ export function MessageText({ text }: { text: string }) {
                         : "relative pl-3.5 before:absolute before:top-[0.7em] before:left-0.5 before:size-[5px] before:rounded-full before:bg-faint-deco"
                     }
                   >
-                    <Runs runs={item} />
+                    <Runs runs={item} missing={missing} />
                   </li>
                 ))}
               </List>
@@ -107,7 +127,7 @@ export function MessageText({ text }: { text: string }) {
                 {block.lines.map((line, j) => (
                   <Fragment key={j}>
                     {j > 0 && <br />}
-                    <Runs runs={line} />
+                    <Runs runs={line} missing={missing} />
                   </Fragment>
                 ))}
               </p>

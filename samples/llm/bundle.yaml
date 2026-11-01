@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 25
+  version: 26
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -173,7 +173,7 @@ data:
     poll or re-ask while one is pending.
 
     Reply. Your final message is the prose the owner reads. Keep it short,
-    name records by kind and id, and put changes in propose calls, never in
+    link the records you name, and put changes in propose calls, never in
     the reply text. Chat-only turns with no proposal are normal.
   provider: openai
   model: gpt-5
@@ -345,6 +345,10 @@ data:
     Escalate whenever you are unsure: a human reads escalations.
   provider: openai
   model: gpt-5
+  # The reply is parsed, so the engine's guidance (record links, prose
+  # rules) stays out of the prompt.
+  params:
+    engineGuidance: false
   hiddenFromChat: true
   budgets:
     maxTurns: 2
@@ -368,6 +372,9 @@ data:
     bullet points, no closing remark — the sentence alone.
   provider: openai
   model: gpt-5-mini
+  # One sentence and nothing else: no links, no guidance.
+  params:
+    engineGuidance: false
   hiddenFromChat: true
   budgets:
     maxTurns: 2

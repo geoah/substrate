@@ -424,6 +424,10 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 // LOADER's own validator, so a provider row is held to exactly the rules an
 // agent manifest is and neither can carry a knob the loop would drop.
 func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, error) {
+	if _, ok := defaults[vocabulary.AgentParamEngineGuidance]; ok {
+		return llm.Params{}, fmt.Errorf("%w: llm/provider row %q: defaults.%s is the agent's own, not a request param",
+			substrate.ErrValidation, providerID, vocabulary.AgentParamEngineGuidance)
+	}
 	// Sized to one half: a summed capacity hint is an overflowable
 	// allocation size to the scanner, and the other half grows the map.
 	merged := make(map[string]any, len(defaults))
@@ -603,6 +607,9 @@ type agentLoop struct {
 	// spend is the root run's spend (spend.go), set on the root loop alone:
 	// a settle of this loop that commits the thread row tells it so at once.
 	spend *spendRun
+
+	// mentions are the final reply's record links, as its row stores them.
+	mentions []substrate.AgentMention
 
 	// reasoning is the current completion's thinking, as streamed or as the
 	// one-shot result carried it; reset by each complete.
@@ -861,7 +868,9 @@ loop:
 		l.reasoning.settle(res.Reasoning)
 		if len(calls) == 0 {
 			// The final tool-free reply is the loop's natural end.
-			if err := l.putReply(ctx, l.reasoning.stamp(map[string]any{"role": "assistant", "content": content})); err != nil {
+			props := map[string]any{"role": "assistant", "content": content}
+			l.mentions = l.stampMentions(ctx, props, content, messages)
+			if err := l.putReply(ctx, l.reasoning.stamp(props)); err != nil {
 				return nil, l.failWrite(ctx, err)
 			}
 			status, reply = threadOK, content
@@ -971,7 +980,7 @@ loop:
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
 		Turns: l.turns, ToolCalls: l.toolCalls,
-		Effects: l.in.tally.effectsTotal(),
+		Effects: l.in.tally.effectsTotal(), Mentions: l.mentions,
 	}
 	// The result's tally is the ROOT roll-up when this loop is the root, its
 	// own spend when it is a sub-agent (the parent keeps rolling).
@@ -1675,7 +1684,7 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 	}
 	openObject := map[string]any{"type": "object"}
 	catalogue := ""
-	defer func() { l.systemPrompt = composeSystem(l.ag.Prompt, catalogue, l.in.systemSuffix) }()
+	defer func() { l.systemPrompt = composeSystem(l.ag.Prompt, catalogue, l.guidance(), l.in.systemSuffix) }()
 	for _, t := range l.ag.Tools {
 		fn, err := l.ds.registry().ResolveFunction(t.Callable)
 		if err != nil {

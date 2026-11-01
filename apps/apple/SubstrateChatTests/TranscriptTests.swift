@@ -209,3 +209,25 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
         #expect(url?.absoluteString == "https://s.example.com/api/v1/records?filter=%7B%22kinds%22%3A%5B%22a%2Fb%22%5D%7D&orderBy=turn%3Adesc%2CcreatedAt%3Adesc")
     }
 }
+
+@Suite struct ReplyMentions {
+    @Test func aReplyRowCarriesWhatItLinks() {
+        let kind = "ada.example.com/tasks/task"
+        let turns = transcript(of: [
+            message("a", ["role": "assistant", "content": "see it", "turn": 1, "mentions": [
+                ["kind": .string(kind), "id": "q4", "text": "Q4", "unread": true],
+                ["kind": .string(kind), "id": "ghost", "text": "Ghost", "missing": true],
+                ["kind": .string(kind)],
+            ]]),
+        ])
+        #expect(turns[0].mentions == [
+            Mention(kind: kind, id: "q4", text: "Q4", unread: true),
+            Mention(kind: kind, id: "ghost", text: "Ghost", missing: true),
+        ])
+    }
+
+    @Test func aReplyWithoutLinksHasNone() {
+        let turns = transcript(of: [message("a", ["role": "assistant", "content": "hi", "turn": 1])])
+        #expect(turns[0].mentions == nil)
+    }
+}

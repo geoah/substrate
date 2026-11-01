@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 25
+  version: 26
   purpose: internal
   names:
     singular: agent
@@ -117,6 +117,14 @@ data:
           type: bool
           description: ask the model for a readable summary of its thinking,
             which the chat streams and the turn keeps
+        # Never sent to a wire: the engine's own guidance block (record
+        # links, the trust boundary, the turn context) rides every agent's
+        # system prompt unless this is false. An agent whose reply has a
+        # strict shape, a judge's verdict object, turns it off.
+        engineGuidance:
+          type: bool
+          description: whether the substrate's guidance for every agent rides
+            this agent's system prompt; on unless false
     # `function` names the tool, and it is the ONE arm: the four built-ins are
     # `runtime: host` function records core ships, so
     # `{function: substrate.reamde.dev/core/query}` names one exactly as a

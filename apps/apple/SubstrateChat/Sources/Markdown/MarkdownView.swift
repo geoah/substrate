@@ -21,9 +21,14 @@ enum MarkdownCache {
 
 /// A reply's Markdown, as SwiftUI views.
 struct MarkdownView: View {
+    @Environment(\.openRecord) private var openRecord
+    @Environment(\.openURL) private var openURL
     let text: String
     /// The streaming reply is parsed again with every flush and never cached.
     var live = false
+    /// The `kind/id` paths the engine found no record for: their links read
+    /// as their text alone.
+    var missing: Set<String> = []
 
     var body: some View {
         let blocks = live ? Markdown.parse(text) : MarkdownCache.parse(text)
@@ -33,29 +38,66 @@ struct MarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.missingRecords, missing)
+        .environment(\.openURL, OpenURLAction { url in
+            guard let reference = linkedRecord(url) else {
+                openURL(url)
+                return .handled
+            }
+            openRecord?(reference)
+            return .handled
+        })
     }
 }
 
-/// Inline Markdown, with links limited to http, https and mailto; memoized,
-/// since every visible paragraph asks again on each redraw.
+extension EnvironmentValues {
+    /// The paths a reply links that name no record (`MarkdownView.missing`).
+    @Entry var missingRecords: Set<String> = []
+}
+
+/// The record a `substrate://<kind>/<id>` link names (decision 0137), or
+/// one in the legacy `ref:<kind>/<id>` spelling; nil for any other link.
+func linkedRecord(_ url: URL) -> RecordReference? {
+    let raw = url.absoluteString
+    for scheme in ["substrate://", "ref:"] where raw.lowercased().hasPrefix(scheme) {
+        let path = String(raw.dropFirst(scheme.count))
+        return RecordReference(path: path.removingPercentEncoding ?? path)
+    }
+    return nil
+}
+
+/// Inline Markdown, with links limited to http, https, mailto and record
+/// links; memoized, since every visible paragraph asks again on each redraw.
 @MainActor
-func inline(_ text: String) -> AttributedString {
-    if let hit = MarkdownCache.inlines[text] { return hit }
-    let out = parseInline(text)
-    MarkdownCache.inlines[text] = out
+func inline(_ text: String, missing: Set<String> = []) -> AttributedString {
+    let key = missing.isEmpty ? text : text + "\u{0}" + missing.sorted().joined(separator: "\u{0}")
+    if let hit = MarkdownCache.inlines[key] { return hit }
+    let out = parseInline(text, missing: missing)
+    MarkdownCache.inlines[key] = out
     if MarkdownCache.inlines.count > 2000 { MarkdownCache.inlines.removeAll(keepingCapacity: true) }
     return out
 }
 
-private func parseInline(_ text: String) -> AttributedString {
+func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString {
     var out = (try? AttributedString(
         markdown: text,
         options: .init(allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace,
                        failurePolicy: .returnPartiallyParsedIfPossible)))
         ?? AttributedString(text)
     for run in out.runs {
-        if let link = run.link, !["http", "https", "mailto"].contains(link.scheme?.lowercased() ?? "") {
-            out[run.range].link = nil
+        if let link = run.link {
+            if let record = linkedRecord(link) {
+                // A record link opens the record in the app; one the engine
+                // found no record for is the model's invention, shown as text.
+                if missing.contains(record.path) {
+                    out[run.range].link = nil
+                } else {
+                    out[run.range].link = URL(string: "substrate://" + record.path)
+                    out[run.range].backgroundColor = Color.accentColor.opacity(0.12)
+                }
+            } else if !["http", "https", "mailto"].contains(link.scheme?.lowercased() ?? "") {
+                out[run.range].link = nil
+            }
         }
         if run.inlinePresentationIntent?.contains(.code) == true {
             out[run.range].font = .system(.body, design: .monospaced)
@@ -66,15 +108,16 @@ private func parseInline(_ text: String) -> AttributedString {
 }
 
 private struct BlockView: View {
+    @Environment(\.missingRecords) private var missing
     let block: MarkdownBlock
 
     var body: some View {
         switch block {
         case let .paragraph(text):
-            Text(inline(text))
+            Text(inline(text, missing: missing))
                 .fixedSize(horizontal: false, vertical: true)
         case let .heading(level, text):
-            Text(inline(text))
+            Text(inline(text, missing: missing))
                 .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
                 .padding(.top, level <= 2 ? 6 : 2)
                 .accessibilityAddTraits(.isHeader)
@@ -162,6 +205,7 @@ private struct CodeBlock: View {
 }
 
 private struct TableBlock: View {
+    @Environment(\.missingRecords) private var missing
     let header: [String]
     let alignments: [MarkdownAlignment]
     let rows: [[String]]
@@ -171,7 +215,7 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
-                        Text(inline(cell)).font(.subheadline.weight(.semibold))
+                        Text(inline(cell, missing: missing)).font(.subheadline.weight(.semibold))
                             .gridColumnAlignment(alignment(i))
                     }
                 }
@@ -179,7 +223,7 @@ private struct TableBlock: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(inline(cell)).font(.subheadline)
+                            Text(inline(cell, missing: missing)).font(.subheadline)
                         }
                     }
                 }

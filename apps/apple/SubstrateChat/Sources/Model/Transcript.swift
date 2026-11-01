@@ -55,6 +55,21 @@ struct Compaction: Hashable, Sendable {
     var model: String?
 }
 
+/// One record a reply links, as the engine read it when the run settled
+/// (`substrate.AgentMention`).
+struct Mention: Hashable, Sendable {
+    var kind: String
+    var id: String
+    /// The link's label as the model wrote it.
+    var text: String
+    /// No live record has this kind and id: the label stands alone.
+    var missing = false
+    /// Nothing the model saw in the run carried this record.
+    var unread = false
+
+    var path: String { "\(kind)/\(id)" }
+}
+
 struct Turn: Hashable, Sendable, Identifiable {
     enum Role: String, Hashable, Sendable { case user, assistant, system, summary }
 
@@ -73,6 +88,8 @@ struct Turn: Hashable, Sendable, Identifiable {
     var reasoningMillis: Int?
     /// On a live turn: when the first reasoning piece arrived.
     var reasoningStartedAt: Date?
+    /// On a run's final assistant turn: the records the reply links.
+    var mentions: [Mention]?
     /// On a live turn: the latest event was reasoning.
     var thinking = false
     /// On a live user turn: not yet confirmed by the server.
@@ -88,6 +105,16 @@ private func changes(of record: Record) -> [ChangeStamp]? {
     let out = raw.compactMap { item -> ChangeStamp? in
         guard let seq = item["seq"]?.int, let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
         return ChangeStamp(seq: seq, op: item["op"]?.string ?? "", kind: kind, id: id)
+    }
+    return out.isEmpty ? nil : out
+}
+
+private func mentions(of record: Record) -> [Mention]? {
+    guard let raw = record["mentions"]?.array else { return nil }
+    let out = raw.compactMap { item -> Mention? in
+        guard let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
+        return Mention(kind: kind, id: id, text: item["text"]?.text ?? id,
+                       missing: item["missing"]?.bool ?? false, unread: item["unread"]?.bool ?? false)
     }
     return out.isEmpty ? nil : out
 }
@@ -146,6 +173,7 @@ func transcript(of messages: [Record]) -> [Turn] {
                 content: record["content"]?.string ?? "", tools: tools,
                 reasoning: reasoning,
                 reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
+                mentions: role == "assistant" ? mentions(of: record) : nil,
                 createdAt: record.createdDate))
             for (i, call) in tools.enumerated() where !call.id.isEmpty {
                 pending[call.id] = (turns.count - 1, i)

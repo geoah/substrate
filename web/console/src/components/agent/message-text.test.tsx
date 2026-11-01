@@ -47,4 +47,20 @@ describe("MessageText links", () => {
     expect(container.querySelector("a")).toBeNull()
     expect(container.textContent).toBe("click (javascript:alert(1))")
   })
+
+  it("shows a link to a missing record as its text alone", () => {
+    const kind = "ada.example.com/tasks/task"
+    const { container } = render(
+      <MessageText
+        text={`[Q4 budget](substrate://${kind}/q4) and [Ghost](substrate://${kind}/ghost)`}
+        mentions={[
+          { kind, id: "q4", text: "Q4 budget" },
+          { kind, id: "ghost", text: "Ghost", missing: true },
+        ]}
+      />
+    )
+    expect(container.querySelectorAll("[data-record-ref]")).toHaveLength(1)
+    expect(container.textContent).toContain("Ghost")
+    expect(container.textContent).not.toContain("substrate://")
+  })
 })

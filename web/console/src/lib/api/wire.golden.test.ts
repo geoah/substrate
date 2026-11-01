@@ -34,7 +34,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import type { AgentEvent, AgentResult } from "./agents"
+import type { AgentEvent, AgentMention, AgentResult } from "./agents"
 import type { LoginRequest, RegisterInput, RegisterResult } from "./auth"
 import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
@@ -668,6 +668,15 @@ const agentResult: Shape<AgentResult> = {
   completionTokens: true,
   totalTokens: true,
   costUSD: true,
+  mentions: false,
+}
+
+const agentMention: Shape<AgentMention> = {
+  kind: true,
+  id: true,
+  text: true,
+  missing: false,
+  unread: false,
 }
 
 const agentEvent: Shape<AgentEvent> = {
@@ -1033,6 +1042,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   LoginRequest: loginRequest,
   SessionCredential: sessionCredential,
   AgentResult: agentResult,
+  AgentMention: agentMention,
   AgentEvent: agentEvent,
   CatalogBundle: catalogBundle,
   CatalogItem: catalogItem,

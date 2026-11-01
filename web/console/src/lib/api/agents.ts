@@ -295,6 +295,22 @@ export interface AgentResult {
   completionTokens: number
   totalTokens: number
   costUSD: number
+  /** The records the final reply links, as its row stores them. */
+  mentions?: AgentMention[]
+}
+
+/** One record a reply links (substrate.AgentMention), read by the engine
+ * when the run settled. */
+export interface AgentMention {
+  kind: string
+  id: string
+  /** The link's label as the model wrote it. */
+  text: string
+  /** No live record has this kind and id: the model named one that does not
+   * exist, so the reply shows the label alone. */
+  missing?: boolean
+  /** Nothing the model saw in the run carried this record. */
+  unread?: boolean
 }
 
 /** One streamed loop event (substrate.AgentEvent). */
