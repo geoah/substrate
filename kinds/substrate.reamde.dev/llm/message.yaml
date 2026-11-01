@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 19
+  version: 20
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
