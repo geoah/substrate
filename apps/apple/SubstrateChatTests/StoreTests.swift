@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SubstrateKit
 @testable import SubstrateChat
 
 /// A server scripted per test: each request is answered by the first route

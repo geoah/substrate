@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// One settled agent invocation (`substrate.AgentResult`).
 struct AgentResult: Codable, Hashable, Sendable {

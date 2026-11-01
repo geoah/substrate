@@ -350,11 +350,17 @@ bubble is a tinted fill. The transcript softens under the composer with
   runs, a check or a cross when it settles; tap for what it found or failed
   on, and the raw arguments and output.
 - **Changes**: a call that wrote shows what it wrote, open, under its line: a
-  `write` as a panel ("Changed “Groceries”", each value it set), a function
+  `write` as a panel ("Changed [Groceries]", each value it set), a function
   or a sub-agent as the records it changed. All of it comes from the
   transcript (the call's arguments and answer, the row's change stamps), so
   it shows whatever the token may read; a record's name comes from what the
   chat's own lookups returned.
+- **Linked records** are pills everywhere (SubstrateKit's `RecordPill`): the
+  kind's glyph and the record's name, the same as the console draws them. A
+  tap opens the record read-only in a sheet, its own links pushing within
+  it. The app asks for `read:*` to read them; a kind out of the token's reach
+  is said so ("This app can't read people", and where to allow it), never
+  shown as missing, since the server answers both alike.
 - **Questions** (`ask`): a card with each question's options (one or many,
   as the console), Answer and Dismiss; a resolved one shows the choices.
 - **Suggestions** (`propose`): a card for a create, a patch or a delete:
@@ -384,7 +390,8 @@ bubble is a tinted fill. The transcript softens under the composer with
 ### New chat
 
 - The agent: its name and description as the header, and its pill as the
-  picker in the composer; default from Settings, else the last chatted with, else the
+  picker in the composer, 32 points high in the 46-point field and close to
+  its type, the chevron inside; default from Settings, else the last chatted with, else the
   first offered.
 - Up to three openers by what the agent can do, as plain chips.
 
@@ -441,11 +448,14 @@ the server's own sign-in and approval page. The owner chooses what the app
 may do and for how long; the app never sees the password.
 
 - **Scopes asked for**: `agents:*` (talk to the agents: chats, questions,
-  turns, renames), `decide:*` (apply or dismiss what they suggest) and
-  `read:substrate.reamde.dev/llm/provider` (whether an agent has a key). The
-  owner may leave any out. Without `agents:` the app says it cannot talk to
-  the assistants and offers to sign in again; without `decide:` a suggestion
-  card links to the console; without the providers it shows no key callout.
+  turns, renames), `decide:*` (apply or dismiss what they suggest),
+  `read:substrate.reamde.dev/llm/provider` (whether an agent has a key) and
+  `read:*` (open the records a chat links to). The owner may leave any out.
+  Without `agents:` the app says it cannot talk to the assistants and offers
+  to sign in again; without `decide:` a suggestion card links to the
+  console; without the providers it shows no key callout; without `read:*` a
+  pill still names its record from the chat, and opening it says the app may
+  not read that kind.
   An app never writes a provider's key: the callout links to the provider's
   record in the console.
 - **Client**: a released build's `client_id` is the URL of a client ID

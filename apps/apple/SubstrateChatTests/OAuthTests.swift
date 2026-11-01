@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SubstrateKit
 @testable import SubstrateChat
 
 @Suite struct OAuthFlow {
@@ -41,18 +42,18 @@ import Testing
         #expect(items["response_type"] == "code")
         #expect(items["code_challenge_method"] == "S256")
         #expect(items["redirect_uri"] == "http://127.0.0.1:5000/oauth/callback")
-        #expect(items["scope"] == "agents:* decide:* read:substrate.reamde.dev/llm/provider")
+        #expect(items["scope"] == "agents:* decide:* read:substrate.reamde.dev/llm/provider read:*")
         #expect(items["state"] == "st")
         #expect(url.absoluteString.contains("scope=agents%3A%2A%20decide%3A%2A"))
     }
 
     @Test func grantsSayWhatTheTokenMayDo() {
-        let all = Grants(scopes: ["agents:*", "decide:*", "read:substrate.reamde.dev/llm/provider"])
+        let all = Grants(scopes: ["agents:*", "decide:*", "read:substrate.reamde.dev/llm/provider", "read:*"])
         #expect(all.chat && all.decide && all.providers)
         let chatOnly = Grants(scopes: ["agents:x.example.com/llm/helper"])
         #expect(chatOnly.chat && !chatOnly.decide && !chatOnly.providers)
         #expect(chatOnly.words == ["Talk to Helper"])
-        #expect(all.words == ["Talk to every agent", "Apply or dismiss what every agent suggests", "Read providers"])
+        #expect(all.words == ["Talk to every agent", "Apply or dismiss what every agent suggests", "Read providers", "Read your records"])
     }
 
     @Test func aSessionWrittenBeforeOAuthStillDecodes() throws {
@@ -75,5 +76,19 @@ import Testing
         let (body, response) = try await page
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         #expect(String(decoding: body, as: UTF8.self).contains("Signed in"))
+    }
+}
+
+@Suite struct GrantReach {
+    @Test func aReadScopeReachesItsKindsAndAGlobStopsAtTheInternalPackages() {
+        let all = Grants(scopes: ["agents:*", "read:*"])
+        #expect(all.reads("a.example.com/people/person"))
+        #expect(!all.reads("substrate.reamde.dev/core/kind"))
+        #expect(!all.reads("substrate.reamde.dev/llm/provider"))
+        let some = Grants(scopes: ["read:a.example.com/tasks/*", "write:substrate.reamde.dev/core/kind"])
+        #expect(some.reads("a.example.com/tasks/task"))
+        #expect(!some.reads("a.example.com/people/person"))
+        #expect(some.reads("substrate.reamde.dev/core/kind"))
+        #expect(!Grants(scopes: ["agents:*"]).reads("a.example.com/people/person"))
     }
 }

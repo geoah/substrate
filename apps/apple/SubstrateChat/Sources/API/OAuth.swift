@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SubstrateKit
 
 /// The substrate's app authorization (decision 0194): OAuth 2.1's code flow
 /// with PKCE for a public client whose `client_id` is a URL. The owner signs
@@ -9,9 +10,11 @@ import Foundation
 enum OAuth {
     /// What this app asks for. `agents:*` talks to the agents (their chats,
     /// questions and turns), `decide:*` applies or dismisses what they
-    /// suggest, and the provider rows say whether an agent can answer at all.
-    /// The owner may leave any of them out on the approval page.
-    static let scopes = ["agents:*", "decide:*", "read:\(Kinds.provider)"]
+    /// suggest, the provider rows say whether an agent can answer at all, and
+    /// `read:*` opens the records a chat links to. The owner may leave any of
+    /// them out on the approval page; a pill the app may not read still
+    /// names its record from the chat.
+    static let scopes = ["agents:*", "decide:*", "read:\(Kinds.provider)", "read:*"]
 
     /// The app's client id. A released build is stamped with the URL of its
     /// client ID metadata document, published beside the release, so the
@@ -179,6 +182,22 @@ struct Grants: Codable, Equatable, Sendable {
     var decide: Bool { scopes.contains { $0.hasPrefix("decide:") } }
     var providers: Bool { scopes.contains { $0 == "read:\(Kinds.provider)" || $0 == "write:\(Kinds.provider)" } }
 
+    /// Whether a read or write scope reaches a kind's records. The server
+    /// answers a kind out of reach as missing, so the app asks this first
+    /// and says why it cannot show one. A pattern ending in `*` never
+    /// reaches the internal packages (core, llm, console): only an exact
+    /// scope does (docs/apps.md).
+    func reads(_ kind: String) -> Bool {
+        let machinery = ["\(Kinds.core)/", "\(Kinds.llm)/", "substrate.reamde.dev/console/"].contains(where: kind.hasPrefix)
+        return scopes.contains { scope in
+            let (verb, pattern) = scope.split(separator: ":", maxSplits: 1).map(String.init).paired
+            guard verb == "read" || verb == "write" else { return false }
+            if pattern == kind { return true }
+            guard !machinery, pattern.hasSuffix("*") else { return false }
+            return pattern == "*" || kind.hasPrefix(String(pattern.dropLast()))
+        }
+    }
+
     /// The approved access as a person reads it.
     var words: [String] {
         scopes.map { scope in
@@ -188,7 +207,8 @@ struct Grants: Codable, Equatable, Sendable {
             case "agents": return "Talk to \(who)"
             // "every agent" and one agent take "suggests"; a package's agents, "suggest".
             case "decide": return "Apply or dismiss what \(who) suggest\(pattern.hasSuffix("/*") ? "" : "s")"
-            case "read": return "Read \(pattern.hasSuffix("/*") || pattern == "*" ? pattern : kindDisplayPlural(pattern).lowercasedFirst)"
+            case "read" where pattern == "*": return "Read your records"
+            case "read": return "Read \(pattern.hasSuffix("/*") ? pattern : kindDisplayPlural(pattern).lowercasedFirst)"
             case "write": return "Change \(pattern.hasSuffix("/*") || pattern == "*" ? pattern : kindDisplayPlural(pattern).lowercasedFirst)"
             default: return scope
             }

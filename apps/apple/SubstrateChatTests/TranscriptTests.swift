@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SubstrateKit
 @testable import SubstrateChat
 
 private func message(_ id: String, _ props: [String: JSONValue]) -> Record {

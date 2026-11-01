@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import SubstrateKit
 
 /// The session in the Keychain, readable after the first unlock so a
 /// background refresh can use it, and never synced off this device.

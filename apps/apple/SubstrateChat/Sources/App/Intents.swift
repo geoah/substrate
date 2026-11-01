@@ -1,4 +1,5 @@
 import AppIntents
+import SubstrateKit
 
 /// An assistant a chat can go to: the agents offered in Settings → Agents.
 struct AgentEntity: AppEntity {

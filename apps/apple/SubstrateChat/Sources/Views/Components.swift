@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// An agent's name in a capsule tinted with a colour of the id's own, so one
 /// agent reads the same in the list, the composer and Settings.
@@ -7,6 +8,9 @@ struct AgentPill: View {
     let id: String?
     /// The chat is running: a pulsing dot before the name.
     var running = false
+    /// The composer's picker: the field's height and close to its type, with
+    /// the chevron inside.
+    var picker = false
 
     var body: some View {
         let tint = agentTint(id, dark: scheme == .dark)
@@ -15,11 +19,16 @@ struct AgentPill: View {
             Text(id.map(agentName) ?? "No assistant")
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if picker {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.bold))
+            }
         }
-        .font(.caption.weight(.semibold))
+        .font(picker ? .subheadline.weight(.semibold) : .caption.weight(.semibold))
         .foregroundStyle(tint)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
+        .padding(.horizontal, picker ? 12 : 8)
+        .padding(.vertical, picker ? 0 : 3)
+        .frame(height: picker ? 32 : nil)
         .background(tint.opacity(scheme == .dark ? 0.22 : 0.13), in: .capsule)
     }
 }

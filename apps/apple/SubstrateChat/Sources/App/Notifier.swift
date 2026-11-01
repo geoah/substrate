@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import SubstrateKit
 
 /// Local notifications: there is no push channel, so the app says what it
 /// observed itself. Every notification carries its thread, and tapping it

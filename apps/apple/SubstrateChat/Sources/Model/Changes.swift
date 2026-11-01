@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// One record a call or a decision wrote, as its panel shows it: what
 /// happened, to what, and the values written. Read from the transcript alone,
@@ -22,6 +23,12 @@ struct RecordChange: Hashable, Sendable {
         self.values = values
     }
 
+    /// The record changed, where the change names one.
+    var reference: RecordReference? {
+        guard let kind, let id else { return nil }
+        return RecordReference(kind: kind, id: id)
+    }
+
     init(op raw: String?, kind: String?, id: String?, title: String? = nil, values: [String: JSONValue] = [:]) {
         let op: Op = switch raw {
         case "create": .create
@@ -31,12 +38,6 @@ struct RecordChange: Hashable, Sendable {
         }
         self.init(op: op, kind: kind, id: id, title: title, values: values)
     }
-}
-
-/// A record's heading from its properties: the derived `title`, else the
-/// property kinds most often title themselves from.
-func recordTitle(_ properties: JSONValue?) -> String? {
-    properties?["title"]?.text ?? properties?["name"]?.text ?? properties?["summary"]?.text ?? properties?["subject"]?.text
 }
 
 /// What a settled `write` wrote: the op and values it was asked for, and the
@@ -69,28 +70,6 @@ func proposedChange(_ call: ToolCall) -> (change: RecordChange, rationale: Strin
 func stampedChanges(_ call: ToolCall) -> [RecordChange] {
     (call.changes ?? []).filter { $0.kind != Kinds.request && $0.kind != Kinds.interaction && $0.kind != Kinds.interactionBeforeMove }
         .map { RecordChange(op: $0.op, kind: $0.kind, id: $0.id) }
-}
-
-/// A value as a person reads it.
-func valueWords(_ value: JSONValue) -> String {
-    switch value {
-    case .null: return "Empty"
-    case let .string(s): return s.isEmpty ? "Empty" : s
-    case let .bool(b): return b ? "Yes" : "No"
-    case let .number(n): return n.rounded() == n && abs(n) < 1e15 ? String(Int(n)) : String(n)
-    case let .array(items):
-        return items.isEmpty ? "None" : items.map(valueWords).joined(separator: ", ")
-    case let .object(o):
-        if let path = o["ref"]?.text {
-            let parts = path.split(separator: "/").map(String.init)
-            return parts.count > 1 ? "\(kindDisplayName(parts.dropLast().joined(separator: "/"))) \(parts.last!)" : path
-        }
-        // A quantity or an amount: the number, then its unit or currency.
-        if let n = o["value"] ?? o["amount"], let unit = (o["unit"] ?? o["currency"])?.referenceID {
-            return "\(valueWords(n)) \(unit)"
-        }
-        return value.jsonText
-    }
 }
 
 /// Every record title the chat's tool results carried, by `kind/id`: what

@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// The server first, checked against its discovery document. A substrate with
 /// app authorization is signed in to in the browser: the owner signs in there

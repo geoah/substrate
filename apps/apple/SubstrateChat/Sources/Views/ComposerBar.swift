@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// Where you write to the agent: a floating glass bar over the transcript,
 /// in one container with Jump to Latest so the two merge rather than stack.
@@ -120,7 +121,7 @@ struct ComposerBar: View {
                 }
             }
         }
-        .padding(.leading, conversation.threadID == nil ? 6 : 16)
+        .padding(.leading, conversation.threadID == nil ? 7 : 16)
         .padding(.trailing, 8)
         .frame(minHeight: 46)
     }
@@ -265,14 +266,10 @@ private struct AgentChip: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
-                AgentPill(id: conversation.agentID)
-                    .frame(maxWidth: 150, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 9)
+            // Centred on the field's first line: 32 points in a 46-point row.
+            AgentPill(id: conversation.agentID, picker: true)
+                .frame(maxWidth: 180, alignment: .leading)
+                .padding(.vertical, 7)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)

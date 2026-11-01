@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import SubstrateKit
 
 @main
 struct SubstrateChatApp: App {

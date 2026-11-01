@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// The agent's questions, inline in the thread that asked them. Answering is
 /// one patch with the version the owner read; the engine checks every
@@ -227,12 +228,12 @@ struct ProposalCard: View {
                 Text(rationale).font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(values.keys.sorted(), id: \.self) { key in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     if op == "patch", let before = target?[key] {
-                        Text(valueWords(before)).font(.footnote).strikethrough().foregroundStyle(.secondary).lineLimit(4)
+                        RecordValueView(before, struck: true).font(.footnote).lineLimit(4)
                     }
-                    Text(valueWords(values[key] ?? .null)).font(.footnote).lineLimit(6)
+                    RecordValueView(values[key] ?? .null).font(.footnote).lineLimit(6)
                 }
             }
             if let problem {
@@ -324,11 +325,6 @@ struct ProposalCard: View {
     }
 }
 
-extension EnvironmentValues {
-    /// The chat's record titles by `kind/id` (recordTitles).
-    @Entry var recordTitles: [String: String] = [:]
-}
-
 extension RecordChange {
     /// This change with a title from the chat where it has none of its own.
     func titled(_ titles: [String: String]) -> RecordChange {
@@ -343,7 +339,8 @@ extension RecordChange {
 /// that was not taken.
 enum ChangeTense { case done, suggests, suggested }
 
-/// "Changed “Groceries”", "Suggests adding a task", with the op's mark.
+/// "Changed [Groceries]", "Suggests adding a task": the op's mark, the verb,
+/// and the record as its pill where there is one to open.
 struct ChangeHeader: View {
     @Environment(\.recordTitles) private var titles
     let change: RecordChange
@@ -351,12 +348,22 @@ struct ChangeHeader: View {
     var badge: ChangeBadge?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Label(heading, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: symbol)
+                .frame(width: 20)
+            Text(verb)
+                .fixedSize()
+            // Nothing to open before a suggested record exists, nor after a
+            // delete: those say the kind instead.
+            if let ref = change.reference, change.op != .delete, !(change.op == .create && tense != .done) {
+                RecordPill(ref, title: change.title)
+            } else {
+                Text(what).lineLimit(1)
+            }
             Spacer(minLength: 8)
             if let badge { badge }
         }
+        .font(.subheadline.weight(.semibold))
     }
 
     private var symbol: String {
@@ -367,26 +374,29 @@ struct ChangeHeader: View {
         }
     }
 
-    private var heading: String {
+    private var what: String {
         let kind = change.kind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
-        let what = change.titled(titles).title.map { "“\($0)”" } ?? (change.op == .create ? "a new \(kind)" : "a \(kind)")
+        return change.titled(titles).title.map { "“\($0)”" } ?? (change.op == .create ? "a new \(kind)" : "a \(kind)")
+    }
+
+    private var verb: String {
         switch tense {
         case .done:
-            let verb = switch change.op {
+            switch change.op {
             case .create: "Added"
             case .put: "Saved"
             case .patch: "Changed"
             case .delete: "Deleted"
             }
-            return "\(verb) \(what)"
         case .suggests, .suggested:
-            let verb = switch change.op {
-            case .create: "adding"
-            case .put: "saving"
-            case .patch: "changing"
-            case .delete: "deleting"
-            }
-            return "\(tense == .suggests ? "Suggests" : "Suggested") \(verb) \(what)"
+            (tense == .suggests ? "Suggests " : "Suggested ") + {
+                switch change.op {
+                case .create: "adding"
+                case .put: "saving"
+                case .patch: "changing"
+                case .delete: "deleting"
+                }
+            }()
         }
     }
 }
@@ -420,21 +430,21 @@ struct ChangePanel: View {
     private let shown = 8
 
     var body: some View {
-        let keys = change.values.keys.sorted()
+        // The heading already names the record.
+        let keys = change.values.keys.sorted().filter { key in
+            !(["name", "title", "summary", "subject"].contains(key) && change.values[key]?.text == change.title && change.title != nil)
+        }
         VStack(alignment: .leading, spacing: 10) {
             ChangeHeader(change: change, tense: tense, badge: badge)
             if let note {
                 Text(note).font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(keys.prefix(shown), id: \.self) { key in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(propertyLabel(key)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text(valueWords(change.values[key] ?? .null))
+                    RecordValueView(change.values[key] ?? .null, struck: struck)
                         .font(.footnote)
-                        .strikethrough(struck)
-                        .foregroundStyle(struck ? .secondary : .primary)
                         .lineLimit(6)
-                        .textSelection(.enabled)
                 }
             }
             if keys.count > shown {
@@ -447,16 +457,15 @@ struct ChangePanel: View {
 }
 
 /// A call's changes that carry no values (a function's, a sub-agent's): one
-/// line each, in one card.
+/// line each, the record as its pill, in one card.
 struct ChangeList: View {
-    @Environment(\.recordTitles) private var titles
     let changes: [RecordChange]
     var wrote: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(changes.prefix(8).enumerated()), id: \.offset) { _, change in
-                Label(line(change), systemImage: change.op == .delete ? "trash" : change.op == .create ? "plus.square" : "square.and.pencil")
+                ChangeHeader(change: change, tense: .done)
                     .font(.footnote)
             }
             if changes.count > 8 {
@@ -468,24 +477,6 @@ struct ChangeList: View {
         }
         .card()
     }
-
-    private func line(_ change: RecordChange) -> String {
-        let verb = switch change.op {
-        case .create: "Added"
-        case .put: "Saved"
-        case .patch: "Changed"
-        case .delete: "Deleted"
-        }
-        let kind = change.kind.map { kindDisplayName($0).lowercasedFirst } ?? "record"
-        return change.titled(titles).title.map { "\(verb) \(kind) “\($0)”" } ?? "\(verb) a \(kind)"
-    }
-}
-
-/// `dueAt` → "Due", `assignee` → "Assignee".
-func propertyLabel(_ key: String) -> String {
-    var words = key.splittingWords().map { $0.lowercased() }
-    if words.count > 1, words.last == "at" { words.removeLast() }
-    return words.joined(separator: " ").capitalizedFirst
 }
 
 /// Writes a provider's API key. The key lives in the field until it is sent:

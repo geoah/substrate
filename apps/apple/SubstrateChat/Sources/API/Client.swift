@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// The signed-in session: the server, the repository's authority and the
 /// bearer secret. An app token (the OAuth door) carries what the owner

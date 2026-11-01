@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// Parsed blocks, memoized by text: a settled reply is parsed once, and only
 /// the streaming one parses again on each flush.

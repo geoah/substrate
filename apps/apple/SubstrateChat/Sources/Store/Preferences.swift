@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SubstrateKit
 
 /// The owner's choices for one signed-in repository. Kept in UserDefaults
 /// under the identity's hash, so two repositories never share them.

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SubstrateKit
 
 /// What became of a send that started no turn, kept until the owner sends it
 /// again or dismisses it: a refusal reads differently from an agent that

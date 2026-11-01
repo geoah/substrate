@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 // The transcript as a reader sees it, folded out of the `llm/message` rows the
 // loop wrote: a `user` row, an `assistant` row carrying prose and/or its

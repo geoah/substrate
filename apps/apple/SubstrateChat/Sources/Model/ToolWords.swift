@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// What a call's model-facing name stands for on the agent that made it.
 struct ResolvedTool: Hashable, Sendable {

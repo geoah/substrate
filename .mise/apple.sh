@@ -467,6 +467,11 @@ sim:chat)
 	project
 	sim_chat
 	;;
+test:kit)
+	# SubstrateKit is a Swift package: its tests run on the Mac with swift
+	# test, no project or simulator.
+	swift test --package-path SubstrateKit
+	;;
 test:chat)
 	project
 	chat -destination 'platform=macOS' test
@@ -492,7 +497,7 @@ release:chat)
 	release_chat "${2:-}"
 	;;
 *)
-	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|sim:chat|test:chat|install|sim|release|release:sync|release:chat [prerelease|stable]" >&2
+	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|sim:chat|test:chat|test:kit|install|sim|release|release:sync|release:chat [prerelease|stable]" >&2
 	exit 2
 	;;
 esac

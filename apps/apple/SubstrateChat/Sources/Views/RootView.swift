@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// Signed out, signed out by the server, or the chats.
 struct RootView: View {
@@ -13,6 +14,7 @@ struct RootView: View {
             } else if let store = model.store {
                 ChatSplitView()
                     .environment(store)
+                    .recordViewer(store.records)
                     .id(store.session.identity)
             } else {
                 SignInView()

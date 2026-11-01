@@ -2,6 +2,7 @@
 import Foundation
 import Observation
 import Speech
+import SubstrateKit
 
 /// Voice typing: the microphone through an `AVAudioEngine` tap, converted to
 /// the analyzer's format, into `SpeechAnalyzer` with a `SpeechTranscriber`

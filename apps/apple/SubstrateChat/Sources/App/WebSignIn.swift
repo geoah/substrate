@@ -4,6 +4,7 @@ import Foundation
 import AppKit
 #else
 import UIKit
+import SubstrateKit
 #endif
 
 /// Receives the authorization redirect on a loopback port (RFC 8252 §7.3).

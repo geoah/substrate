@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// One turn of the transcript, by role. Equatable, so a flush of the live
 /// turn redraws that turn and not every one above it.
@@ -239,12 +240,13 @@ private struct DetailLine: View {
                 .font(.footnote)
                 .foregroundStyle(.red)
         case let .found(records, total):
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(total == 0 ? "Found nothing." : "Found \(plural(total, "record")).")
                     .font(.footnote).foregroundStyle(.secondary)
-                ForEach(records, id: \.self) { r in
-                    Text("\(kindDisplayName(r.kind)) · \(r.id)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                WrapLayout(spacing: 6) {
+                    ForEach(records, id: \.self) { r in RecordPill(RecordReference(kind: r.kind, id: r.id)) }
                 }
+                .font(.footnote)
             }
         case let .changed(records):
             VStack(alignment: .leading, spacing: 3) {

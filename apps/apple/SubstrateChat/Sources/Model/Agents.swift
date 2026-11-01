@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 // The chat's words, derived from records: what an agent is called, what a
 // thread is called, what a tool call did. Ported from the console's
@@ -251,70 +252,4 @@ func plainText(markdown: String) -> String {
         lines.append(inline)
     }
     return lines.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
-}
-
-// MARK: Kinds in words
-
-/// A kind's name in words: its last segment, split. "Calendar event".
-func kindDisplayName(_ kind: String) -> String {
-    let name = kind.split(separator: "/").last.map(String.init) ?? kind
-    return name.splittingWords().joined(separator: " ").lowercased().capitalizedFirst
-}
-
-func kindDisplayPlural(_ kind: String) -> String {
-    var words = kindDisplayName(kind).split(separator: " ").map(String.init)
-    guard let last = words.popLast() else { return "" }
-    return (words + [pluralWord(last)]).joined(separator: " ")
-}
-
-private func pluralWord(_ word: String) -> String {
-    let lower = word.lowercased()
-    if lower == "person" { return word.prefix(1) == "P" ? "People" : "people" }
-    if lower.hasSuffix("y"), let before = lower.dropLast().last, !"aeiou".contains(before) {
-        return String(word.dropLast()) + "ies"
-    }
-    if ["s", "x", "z", "ch", "sh"].contains(where: lower.hasSuffix) { return word + "es" }
-    return word + "s"
-}
-
-func plural(_ n: Int, _ one: String, _ many: String? = nil) -> String {
-    "\(n.formatted()) \(n == 1 ? one : (many ?? one + "s"))"
-}
-
-/// "Tasks", "Tasks and Notes", "Tasks, Notes and People".
-func joinWords(_ words: [String]) -> String {
-    guard words.count > 1 else { return words.first ?? "" }
-    return words.dropLast().joined(separator: ", ") + " and " + words.last!
-}
-
-extension String {
-    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-
-    var lowercasedFirst: String {
-        // "API keys" and "Gmail threads" keep their first word's casing.
-        let first = split(separator: " ").first.map(String.init) ?? self
-        if first.dropFirst().contains(where: \.isUppercase) { return self }
-        return prefix(1).lowercased() + dropFirst()
-    }
-
-    /// `dueAt` → [due, At]; `snake_case-name` → [snake, case, name].
-    func splittingWords() -> [String] {
-        var words: [String] = []
-        var current = ""
-        var previous: Character?
-        for ch in self {
-            if ch == "_" || ch == "-" || ch == " " {
-                if !current.isEmpty { words.append(current) }
-                current = ""
-            } else if ch.isUppercase, let p = previous, p.isLowercase || p.isNumber {
-                words.append(current)
-                current = String(ch)
-            } else {
-                current.append(ch)
-            }
-            previous = ch
-        }
-        if !current.isEmpty { words.append(current) }
-        return words
-    }
 }

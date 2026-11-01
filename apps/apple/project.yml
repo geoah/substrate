@@ -15,6 +15,10 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
+  # What the apps share: records, values, kind names and glyphs, and the
+  # linked-record pill and its read-only view.
+  SubstrateKit:
+    path: SubstrateKit
 settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ
@@ -110,6 +114,7 @@ targets:
     dependencies:
       - package: Sparkle
         destinationFilters: [macOS]
+      - package: SubstrateKit
     settings:
       base:
         PRODUCT_NAME: SubstrateChat

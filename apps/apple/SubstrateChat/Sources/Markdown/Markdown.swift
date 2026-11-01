@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// The block structure of a reply. Inline spans (emphasis, code, links) stay
 /// as text here and are rendered by `AttributedString(markdown:)`, which

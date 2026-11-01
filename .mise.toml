@@ -832,6 +832,10 @@ run = ".mise/apple.sh sim:chat"
 description = "Run Substrate Chat's unit tests on the Mac"
 run = ".mise/apple.sh test:chat"
 
+[tasks."apple:test:kit"]
+description = "Run SubstrateKit's tests (the apps' shared records, names and record views) on the Mac"
+run = ".mise/apple.sh test:kit"
+
 [tasks."apple:install"]
 description = "Build the console and the macOS app, install it in /Applications and open it"
 depends = ["console:build"]

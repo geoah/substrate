@@ -1,6 +1,7 @@
 import Speech
 import SwiftUI
 import UserNotifications
+import SubstrateKit
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model

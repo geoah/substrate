@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SubstrateKit
 @testable import SubstrateChat
 
 /// What a change panel shows comes from the transcript alone: a token that

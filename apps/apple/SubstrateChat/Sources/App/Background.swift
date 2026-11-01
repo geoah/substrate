@@ -2,6 +2,7 @@
 import BackgroundTasks
 import SwiftUI
 import UIKit
+import SubstrateKit
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(

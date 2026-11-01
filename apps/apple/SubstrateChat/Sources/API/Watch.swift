@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// One committed change, as much of it as a chat reads: which record of
 /// which kind moved, and its position in the history.

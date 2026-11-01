@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import SubstrateKit
 
 /// Everything one signed-in repository's chats hold, for the whole process:
 /// every window reads this one store. Its concurrency rules are the
@@ -22,6 +23,8 @@ import Observation
 final class ChatStore {
     let session: Session
     let api: API
+    /// The linked records the chat's pills name and open, read once each.
+    let records: RecordDirectory
     let prefs: Preferences
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored private(set) var closed = false
@@ -88,6 +91,7 @@ final class ChatStore {
     init(session: Session) {
         self.session = session
         api = API(session)
+        records = RecordDirectory(reader: ChatRecordReader(api: api, server: session.server, grants: session.grants))
         prefs = Preferences(identity: session.identity)
         cache = DiskCache(identity: session.identity)
         if let state = cache.loadState() {

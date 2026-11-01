@@ -2,6 +2,7 @@ import Foundation
 import Observation
 #if os(iOS)
 import UIKit
+import SubstrateKit
 #endif
 
 /// Where a notification, a shortcut or a menu asks the app to go.

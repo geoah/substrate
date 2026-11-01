@@ -433,6 +433,7 @@ scripts/icons.mjs           draws every icon in the family: Substrate, Sync and 
 Substrate/Sources/App/      the app, its macOS menus, ServerStore, the updater
 scripts/feed.swift          a release's index.json, appcast.xml, install page and manifest
 Substrate/Sources/Shell/    the scheme handler, the web view's controller, the picker, the debug driver
+SubstrateKit/               the apps' shared Swift package: records, values, kind names and glyphs, the linked-record pill and its read-only view ([its README](SubstrateKit/README.md))
 SubstrateChat/Sources/      Substrate Chat: App/, API/, Model/ (the transcript fold, the words), Store/, Voice/, Markdown/, Views/
 SubstrateChatTests/         its tests: the fold, the stream lines, the Markdown parser, the words
 SubstrateSync/Sources/      Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/

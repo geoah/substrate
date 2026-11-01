@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// One chat: the transcript, what became of the last send, and the composer
 /// floating over it.

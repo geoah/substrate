@@ -1,4 +1,5 @@
 import Testing
+import SubstrateKit
 @testable import SubstrateChat
 
 @Suite struct MarkdownBlocks {

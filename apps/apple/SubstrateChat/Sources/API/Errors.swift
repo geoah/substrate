@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateKit
 
 /// The server's own refusal: the error envelope's code, message and
 /// problems. Its words are shown to the owner as they are.

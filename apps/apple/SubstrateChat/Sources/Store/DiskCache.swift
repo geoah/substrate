@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SubstrateKit
 
 /// What the chat list, Settings and the cards draw from at launch.
 struct CachedState: Codable, Sendable {

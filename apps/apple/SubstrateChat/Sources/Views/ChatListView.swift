@@ -1,4 +1,5 @@
 import SwiftUI
+import SubstrateKit
 
 /// The chats, newest activity first, under day headings.
 struct ChatListView: View {
