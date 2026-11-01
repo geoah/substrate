@@ -408,8 +408,10 @@ func xpCaseAppSetUp(c *C) {
 	c.stepf("the app reads `%s`'s parked list (%d rows) and is refused `%s`'s with 403", xpWebhook, len(parked.Items), xpAdapter)
 	c.xpReceipt(app, fire.Fire, parkedPath)
 
-	// Blobs: the app stores bytes a share points at, and an upload of bytes
-	// the owner stored first answers the app's own name.
+	// Blobs: the app stores bytes a share points at, an upload of bytes the
+	// owner stored first answers the app's own name, and a reference read
+	// back carries no manifest the app does not read (its token reaches no
+	// substrate.reamde.dev/core/blob).
 	ownerBytes := []byte("APP-01: bytes the owner stored first, under a name of their own (" + r.repository + ")\n")
 	appBytes := []byte("APP-01: an image the app shares (" + r.repository + ")\n")
 	status, _, raw = c.xpSend(r.token, http.MethodPut, "/api/v1/blobs?name=owner-private-scan.png", "image/png", nil, ownerBytes)
@@ -429,11 +431,13 @@ func xpCaseAppSetUp(c *C) {
 	c.requiref(status == http.StatusOK, "the app's read of its share answered %d: %s", status, raw)
 	images, _ := share.Properties["images"].([]any)
 	img, _ := xpFirst(images).(map[string]any)
-	c.requiref(img["digest"] == appBlob.Digest && img["name"] == "shared-from-sync.png",
-		"the share's images read %v", share.Properties["images"])
+	_, named := img["name"]
+	_, typed := img["mediaType"]
+	c.requiref(img["digest"] == appBlob.Digest && img["status"] == "stored" && !named && !typed,
+		"the share's images read %v, want the digest and status without the manifest's name and type", share.Properties["images"])
 	status, _, _ = c.xpSend(app, http.MethodGet, "/api/v1/blobs/"+appBlob.Digest, "", nil, nil)
 	c.requiref(status == http.StatusForbidden, "the app's read of a blob answered %d, want 403", status)
-	c.stepf("the app stored `%s` as `shared-from-sync.png` and share `%s` resolves it by digest and name; reading the bytes back is the owner's (403)",
+	c.stepf("the app stored `%s` as `shared-from-sync.png` and share `%s` resolves it by digest, without the manifest's name and type; reading the bytes back is the owner's (403)",
 		short(appBlob.Digest), share.ID)
 	status, _, raw = c.xpSend(app, http.MethodPut, "/api/v1/blobs?name=from-the-app.png", "image/png", nil, ownerBytes)
 	c.requiref(status == http.StatusCreated, "the app's upload of the owner's bytes answered %d: %s", status, raw)
@@ -442,7 +446,18 @@ func xpCaseAppSetUp(c *C) {
 		"the app's upload of bytes the owner stored first answered %s", raw)
 	manifest := c.getRec("/api/v1/"+xpBlobKind, ownerBlob.Digest)
 	c.requiref(manifest.prop("name") == "owner-private-scan.png", "the manifest's name moved to %q", manifest.prop("name"))
-	c.stepf("the app's upload of bytes the owner stored first answered the same digest under the app's own name; the manifest still names the owner's")
+	// A share naming the owner's digest reads it back without the owner's
+	// name: holding the bytes is not reading the manifest.
+	var leak record
+	status, raw = c.doAs(app, http.MethodPost, recordsRoute, map[string]any{"kind": xpShareKind, "properties": map[string]any{
+		"text": "naming the owner's bytes", "images": []any{map[string]any{"digest": ownerBlob.Digest}},
+	}}, &leak)
+	c.requiref(status == http.StatusCreated && !strings.Contains(string(raw), "owner-private-scan"),
+		"the app's share of the owner's digest answered %d: %s", status, raw)
+	status, raw = c.doAs(app, http.MethodGet, "/api/v1/"+xpShareKind+"/"+url.PathEscape(leak.ID), nil, nil)
+	c.requiref(status == http.StatusOK && !strings.Contains(string(raw), "owner-private-scan"),
+		"the app's read of a share naming the owner's digest answered %d: %s", status, raw)
+	c.stepf("the app's upload of bytes the owner stored first answered the same digest under the app's own name; the manifest still names the owner's, and a share naming that digest reads back without it")
 	appRows := c.readChangesForward(head)
 	for _, want := range []struct{ kind, id string }{{xpShareKind, share.ID}, {xpBlobKind, appBlob.Digest}} {
 		i := slices.IndexFunc(appRows, func(row changeRow) bool { return row.Kind == want.kind && row.RecordID == want.id })
