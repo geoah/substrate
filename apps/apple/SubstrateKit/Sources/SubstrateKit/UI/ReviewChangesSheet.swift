@@ -12,27 +12,33 @@ public struct ReviewChangesSheet: View {
     let onContinue: () -> Void
     let onCancel: () -> Void
 
-    public init(appName: String, host: String, changes: [Change], firstSignIn: Bool,
+    public init(appName: String, host: String, changes: [Change], heading: ReviewHeading,
                 onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
     {
         self.appName = appName
         self.host = host
-        heading = ReviewHeading(changes: changes, firstSignIn: firstSignIn)
+        self.heading = heading
         self.changes = changes
         self.onContinue = onContinue
         self.onCancel = onCancel
     }
 
-    private var access: [Change] { changes.filter { !$0.isSetup } }
-    private var setup: [Change] { changes.filter(\.isSetup) }
+    /// Headed by what the changes are.
+    public init(appName: String, host: String, changes: [Change], firstSignIn: Bool,
+                onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
+    {
+        self.init(appName: appName, host: host, changes: changes, heading: ReviewHeading(changes: changes, firstSignIn: firstSignIn),
+                  onContinue: onContinue, onCancel: onCancel)
+    }
 
     public var body: some View {
         NavigationStack {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(heading == .firstSignIn ? "Connect \(appName) to \(host)" : heading.title)
+                        Text(heading == .firstSignIn ? "Connect \(appName) to \(host)" : heading.title(appName: appName))
                             .font(.title2.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
                         Text(intro)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -40,23 +46,7 @@ public struct ReviewChangesSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                if !access.isEmpty {
-                    Section(heading == .firstSignIn ? "It will be able to" : "It asks to also") {
-                        ForEach(access) { ChangeRow($0) }
-                    }
-                }
-
-                if !setup.isEmpty {
-                    Section {
-                        ForEach(setup) { ChangeRow($0) }
-                    } header: {
-                        Text("It will set up on your server")
-                    } footer: {
-                        Text(setup.contains(where: \.blocked)
-                            ? "Some of this can't be done yet. The page on \(host) says what is in the way and where to fix it."
-                            : "If you stop part way, what was installed stays.")
-                    }
-                }
+                ReviewChangesSections(appName: appName, host: host, heading: heading, changes: changes)
 
                 Section {
                     Button(action: onContinue) {
@@ -68,11 +58,10 @@ public struct ReviewChangesSheet: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                 } footer: {
-                    Text("You approve this on \(host), signed in there. You can uncheck any access before you do, and change or revoke it later in Settings, under Apps.")
+                    Text(ReviewChangesSections.choosing(host: host, setsUp: changes.contains(where: \.isSetup)))
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(heading.title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -83,13 +72,79 @@ public struct ReviewChangesSheet: View {
     }
 
     private var intro: String {
+        let leftOut = changes.contains(where: \.leftOut)
         switch heading {
         case .firstSignIn:
-            "\(appName) will ask for this access. You see the same list in your browser, and approve it there."
+            return "\(appName) will ask for this access. You see the same list in your browser, and approve it there."
         case .renew:
-            "Nothing new: \(appName) asks to keep the access you approved, for another while."
+            return leftOut
+                ? "\(appName) asks to keep the access you approved, for another while, and asks again for what you left out last time."
+                : "Nothing new: \(appName) asks to keep the access you approved, for another while."
+        case .changeAccess:
+            return "You choose on \(host): everything \(appName) has now is listed there under Already allowed, where you can uncheck it."
         case .moreAccess, .serverSetup, .moreAccessAndServerSetup:
-            "\(appName) has changed since you approved it. What it already has keeps working until you decide."
+            return "\(appName) has changed since you approved it. What it already has keeps working until you decide."
         }
+    }
+}
+
+/// A review's lists, as sections of a form: the access the app asks for,
+/// what the owner left out last time and is asked for again, and what it
+/// sets up on their server. A sign-in screen shows the same sections the
+/// review sheet does.
+public struct ReviewChangesSections: View {
+    let appName: String
+    let host: String
+    let heading: ReviewHeading
+    let changes: [Change]
+
+    public init(appName: String, host: String, heading: ReviewHeading, changes: [Change]) {
+        self.appName = appName
+        self.host = host
+        self.heading = heading
+        self.changes = changes
+    }
+
+    private var access: [Change] { changes.filter { !$0.isSetup && !$0.leftOut } }
+    private var leftOut: [Change] { changes.filter(\.leftOut) }
+    private var setup: [Change] { changes.filter(\.isSetup) }
+
+    public var body: some View {
+        if !access.isEmpty {
+            Section(heading == .firstSignIn ? "It will be able to" : "It asks to also") {
+                ForEach(access) { ChangeRow($0) }
+            }
+        }
+
+        if !leftOut.isEmpty {
+            Section {
+                ForEach(leftOut) { ChangeRow($0) }
+            } header: {
+                Text("You left these out last time")
+            } footer: {
+                Text("The page on \(host) asks for them again; uncheck them there to keep them out.")
+            }
+        }
+
+        if !setup.isEmpty {
+            Section {
+                ForEach(setup) { ChangeRow($0) }
+            } header: {
+                Text("It will set up on your server")
+            } footer: {
+                Text(setup.contains(where: \.blocked)
+                    ? "Some of this can't be set up yet: the page on \(host) shows why, and approving waits until it is fixed."
+                    : "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke \(appName).")
+            }
+        }
+    }
+
+    /// What the owner can do on the page and after it, naming only the
+    /// controls there are: a checkbox per access, Deny for the set up,
+    /// Change Access in the app, and revoking in the server's Settings.
+    public static func choosing(host: String, setsUp: Bool) -> String {
+        "You choose in your browser: you can uncheck any access with a checkbox there."
+            + (setsUp ? " Setting up comes with the request; to refuse it, deny." : "")
+            + " Later, Change Access in this app asks again; to revoke, use \(host)'s Settings, under Apps."
     }
 }

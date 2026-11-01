@@ -18,9 +18,9 @@ enum ChatManifest {
 
     static let scopes = ["agents:*", "decide:*", "read:\(Kinds.provider)", "read:*"]
 
-    /// What every build asked for before the request was kept beside the
-    /// session. Frozen: a scope added later is one such a session was never
-    /// asked for.
+    /// What every build asked for before the request was kept in the
+    /// session (`AppModel.asked`). Frozen: a scope added later is one such a
+    /// session was never asked for.
     static let earliestRequest = ["agents:*", "decide:*", "read:substrate.reamde.dev/llm/provider", "read:*"]
 
     /// A server whose metadata lacks the agent verbs refuses this request
@@ -34,16 +34,4 @@ enum ChatManifest {
         scopes: scopes,
         requirement: requirement,
         passwordFallback: .withoutAppAuthorization)
-
-    /// The request the status check asks about for an app session: every
-    /// scope but those the last approval asked for and the owner left out,
-    /// which are theirs to add from Settings and never a reason to ask
-    /// again. A scope a later build adds is asked about.
-    static func checked(session: Session, requested: [String]?) -> AppManifest {
-        guard let held = session.scopes else { return manifest }
-        let asked = requested ?? earliestRequest
-        var checked = manifest
-        checked.scopes = scopes.filter { held.contains($0) || !asked.contains($0) }
-        return checked
-    }
 }

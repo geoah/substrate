@@ -137,7 +137,7 @@ import Testing
         let stub = StubTransport()
         stub.on("PUT", "/api/v1/blobs", json: #"{"digest":"blob-sha256-abc","size":3}"#)
         stub.on("GET", "/api/v1/substrate.reamde.dev/core/trigger/applehealth-webhook/parked",
-                json: #"{"items":[{"fireId":"f1","lastError":"delivery accepted: waiting"},{"fireId":"f2","lastError":"bad day"}]}"#)
+                json: #"{"items":[{"fireId":"f0","lastError":"still filing","pending":true},{"fireId":"f1","lastError":"delivery accepted: waiting"},{"fireId":"f2","lastError":"bad day"}]}"#)
         stub.on("POST", "/api/v1/authorizations/check", json: #"""
         {"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},
          "setup":[{"type":"package","action":"upgrade","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":3}}],
@@ -148,15 +148,19 @@ import Testing
         #expect(blob.digest == "blob-sha256-abc")
         #expect(stub.requests[0].url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.percentEncodedQuery } == "name=a%20photo.png")
         let parked = try await c.parked(trigger: "applehealth-webhook")
-        #expect(parked.map(\.refused) == [false, true])
-        let result = try await c.checkAuthorization(syncManifest().check(for: nil))
+        // The server's mark decides; a row without one, from a server that
+        // marks none, by its words.
+        #expect(parked.map(\.refused) == [false, false, true])
+        let session = Session(server: try #require(URL(string: "https://ada.example.com")), repository: "ada.example.com",
+                              secret: "sub_app_x", clientID: "c", scopes: [])
+        let result = try await c.checkAuthorization(syncManifest().check(for: session))
         #expect(result.missingScopes == ["write:providers.substrate.reamde.dev/apple/place"])
         #expect(result.setup.first?.package?.held == 2)
         #expect(result.expiresAt == Timestamp.parse("2026-12-01T10:00:00Z"))
         let body = try #require(stub.sent("POST", "/api/v1/authorizations/check").first?.httpBody)
         let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         #expect((sent["scope"] as? String)?.hasPrefix("write:providers.substrate.reamde.dev/apple/*") == true)
-        #expect((sent["authorization_details"] as? [Any])?.isEmpty == true)
+        #expect((sent["details"] as? [Any])?.count == 4)
     }
 }
 

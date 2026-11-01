@@ -56,9 +56,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var authorizing = false
     /// Why the last review, renewal or move did not finish.
     @Published var authorizeError: String?
-    /// A token this phone replaced that the server has not revoked yet, in
-    /// words: it is tried again at each launch until it is.
-    @Published private(set) var unrevoked: String?
+    /// Tokens this phone stopped using that the server has not revoked yet:
+    /// each is tried again at every launch until it is.
+    @Published private(set) var unrevoked: [Session] = []
     @Published var steps: [SetupStep] = []
     @Published var setupChecked = false
     @Published var setupBusy = false
@@ -208,7 +208,7 @@ final class AppModel: ObservableObject {
     /// renewal, a sign-in after the access ended, or the move from a password
     /// session. The install id is the same, so the approval finds this
     /// phone's account in place. The new session is kept first, then the
-    /// token it replaces is revoked through its own door (`revokeNow`).
+    /// token it replaces is revoked through its own door (`Session.revoke`).
     func authorize() async {
         guard let old = session, !authorizing else { return }
         authorizing = true
@@ -246,7 +246,7 @@ final class AppModel: ObservableObject {
             try SessionStore.sync.save(session)
         } catch {
             if let old, kept { SessionStore.sync.revoked(old) }
-            Self.revoke(session)
+            Task.detached { try? await session.revoke(transport: Client.transport) }
             throw error
         }
         await SyncEngine.shared.cancel()
@@ -262,12 +262,8 @@ final class AppModel: ObservableObject {
         if let old {
             if kept {
                 await revokeReplaced()
-            } else {
-                do {
-                    try await Self.revokeNow(old)
-                } catch {
-                    unrevoked = Self.unrevokedWords(old, retried: false)
-                }
+            } else if (try? await old.revoke(transport: Client.transport)) == nil {
+                unrevoked = [old]
             }
         }
         if session.isApp {
@@ -277,77 +273,40 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Signs out here at once; the token is revoked on the server as a best
-    /// effort afterwards, so a server that is gone, or that already refuses
-    /// the token, never holds the owner on this screen.
+    /// Signs out here at once. The token is kept for revocation before the
+    /// session is forgotten and revoked afterwards, so a server that is gone
+    /// never holds the owner on this screen, and one that does not answer now
+    /// is asked again at the next launch.
     func signOut() {
         let old = session
         Task { await SyncEngine.shared.cancel() }
-        SessionStore.sync.clear()
+        let kept = old.map { SessionStore.sync.signOut($0) } ?? true
         session = nil
         resetSetup()
         status.reset()
-        if let old { Self.revoke(old) }
-    }
-
-    /// Revokes a token this phone no longer keeps, in the background and as
-    /// a best effort.
-    nonisolated static func revoke(_ session: Session) {
-        Task.detached { try? await revokeNow(session) }
-    }
-
-    /// Revokes a token through its own door: an app token at its revocation
-    /// endpoint under the client id it was approved for, a password one with
-    /// its own `DELETE /tokens/{id}`, since `/oauth/revoke` under another
-    /// client id answers 200 and revokes nothing.
-    nonisolated static func revokeNow(_ session: Session, transport: any HTTPTransport = Client.transport) async throws {
-        if session.isApp {
-            try await OAuthClient.revoke(session, transport: transport)
-        } else if let id = session.tokenID {
-            try await Client(session, transport: transport).api.revokeToken(id: id)
-        }
-    }
-
-    /// Revokes every token kept for revocation, forgetting each the server
-    /// revoked or no longer accepts, and answers the ones still live. The
-    /// session in use is never revoked: one kept beside it is a replacement
-    /// whose save never landed.
-    nonisolated static func revokeKept(store: SessionStore = .sync, current: Session?,
-                                       transport: any HTTPTransport = Client.transport) async -> [Session]
-    {
-        var live: [Session] = []
-        for old in store.pendingRevocations() {
-            if old.secret == current?.secret {
-                store.revoked(old)
-                continue
-            }
-            do {
-                try await revokeNow(old, transport: transport)
-                store.revoked(old)
-            } catch is SessionExpired {
-                store.revoked(old)
-            } catch {
-                live.append(old)
+        guard let old else { return }
+        Task {
+            if kept {
+                await revokeReplaced()
+            } else {
+                try? await old.revoke(transport: Client.transport)
             }
         }
-        return live
     }
 
-    /// Revokes the tokens kept for revocation, and says so where one is
-    /// still live.
+    /// Revokes the tokens kept for revocation, and keeps the ones still live
+    /// to say so.
     func revokeReplaced() async {
-        let live = await Self.revokeKept(current: SessionStore.sync.load())
-        unrevoked = live.first.map { Self.unrevokedWords($0) }
+        unrevoked = await SessionStore.sync.revokePending(current: SessionStore.sync.load(), transport: Client.transport)
     }
 
-    /// What the owner does about a replaced token the server has not
-    /// revoked; `retried` where it is kept to try again at launch.
-    nonisolated static func unrevokedWords(_ old: Session, retried: Bool = true) -> String {
+    /// What the owner does about a token this phone stopped using that the
+    /// server has not revoked.
+    nonisolated static func unrevokedWords(_ old: Session) -> String {
         let host = ServerAddress.display(old.server)
         let place = old.isApp ? "in Settings, under Apps" : "in Settings, under Signed in"
         let reach = old.isApp ? "the access it had before" : "the password sign-in it used before, which reaches everything"
-        let again = retried ? " It tries again each time it opens; you can also" : " You can"
-        return "Substrate Sync couldn't revoke \(reach) on \(host).\(again) revoke it yourself on \(host), \(place)."
+        return "Substrate Sync couldn't revoke \(reach) on \(host). It tries again each time it opens; you can also revoke it yourself on \(host), \(place)."
     }
 
     // MARK: - status
@@ -355,6 +314,13 @@ final class AppModel: ObservableObject {
     private func statusCheck() -> AppStatusCheck? {
         guard let session, let manifest = try? manifest() else { return nil }
         return AppStatusCheck(manifest: manifest, session: session, client: SubstrateClient(session, transport: Client.transport))
+    }
+
+    /// What a review asks the owner for the request Sync sends now: what the
+    /// check found, and what they left out last time, offered back.
+    var reviewChanges: [Change] {
+        guard let session, let manifest = try? manifest() else { return status.status?.changes ?? [] }
+        return manifest.review(status.status, session: session)
     }
 
     /// An app session's access ended or was revoked: only the flow again
@@ -550,7 +516,7 @@ final class AppModel: ObservableObject {
         if timedOut(error), case .install? = step?.kind {
             return SetupProblem(
                 title: "The \(what) is taking long",
-                message: "The server did not finish installing it within \(Duration.seconds(Timeout.serverWork).formatted(.units(allowed: [.minutes, .seconds], width: .wide))). It may still be at it: Check Again in a minute.")
+                message: "The server did not finish installing it within \(Duration.seconds(Client.serverWork).formatted(.units(allowed: [.minutes, .seconds], width: .wide))). It may still be at it: Check Again in a minute.")
         }
         return SetupProblem(title: "Set Up stopped", message: "\(what): \(explain(error, server: server))")
     }

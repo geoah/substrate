@@ -110,6 +110,38 @@ public struct SessionStore: Sendable {
         }
     }
 
+    /// Revokes every token kept for revocation, forgetting each the server
+    /// revoked, and answers the ones still live, which stay kept for the next
+    /// try. The session in use is never revoked: one kept beside it is a
+    /// replacement whose save never landed.
+    public func revokePending(current: Session?, transport: any HTTPTransport = URLSessionTransport.shared) async -> [Session] {
+        var live: [Session] = []
+        for old in pendingRevocations() {
+            if old.secret == current?.secret {
+                revoked(old)
+                continue
+            }
+            do {
+                try await old.revoke(transport: transport)
+                revoked(old)
+            } catch {
+                live.append(old)
+            }
+        }
+        return live
+    }
+
+    /// Stops using `session` on this device: kept for revocation first, then
+    /// forgotten, so a revocation cut short is tried again at the next
+    /// launch (`revokePending`). Answers whether it was kept; one the
+    /// Keychain would not keep is the caller's to revoke now or never.
+    @discardableResult
+    public func signOut(_ session: Session) -> Bool {
+        let kept = (try? keepForRevocation(session)) != nil
+        clear()
+        return kept
+    }
+
     // MARK: Other items
 
     public enum Item: Sendable {

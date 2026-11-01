@@ -137,15 +137,17 @@ final class HealthSettleTests: XCTestCase {
     }
 
     /// The parked list carries the requests the server accepted and has not
-    /// run, and the ones it is running: neither is a refusal.
+    /// run, which it marks pending, and the ones it is running: neither is a
+    /// refusal. A server that marks none says pending in its words.
     func testOnlyARefusalInTheParkedListFailsADay() {
         let items = [
-            ParkedDelivery(fireID: "hook-a", lastError: "delivery accepted: the fire has not settled, and a restart resumes it"),
+            ParkedDelivery(fireID: "hook-a", lastError: "the fire has not settled, and a restart resumes it", pending: true),
+            ParkedDelivery(fireID: "hook-p", lastError: "delivery accepted: the fire has not settled, and a restart resumes it"),
             ParkedDelivery(fireID: "hook-b", lastError: "run: runner: Refused: the body is not JSON", running: true),
             ParkedDelivery(fireID: "hook-c", lastError: "run: runner: Refused: the body is not JSON"),
             ParkedDelivery(fireID: "hook-z", lastError: "another sender's refusal"),
         ]
-        XCTAssertEqual(SyncEngine.refusals(items, among: ["hook-a", "hook-b", "hook-c"]),
+        XCTAssertEqual(SyncEngine.refusals(items, among: ["hook-a", "hook-p", "hook-b", "hook-c"]),
                        ["hook-c": "run: runner: Refused: the body is not JSON"])
     }
 

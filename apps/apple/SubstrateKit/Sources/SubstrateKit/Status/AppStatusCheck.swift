@@ -48,10 +48,13 @@ public struct AppStatusCheck: Sendable {
         case .compatible:
             if !session.isApp {
                 issues.append(.legacyAccess)
-            } else {
+            } else if probe.metadata?.authorizationDetailsTypesSupported.isEmpty == false {
+                // The check shipped with set up on approval, which the
+                // metadata lists: a server listing none has no check, and its
+                // approval gave the scopes as the app asked.
                 do {
-                    let result = try await client.checkAuthorization(manifest.check(for: probe.metadata))
-                    let found = manifest.changes(from: result, session: session, metadata: probe.metadata)
+                    let result = try await client.checkAuthorization(manifest.check(for: session))
+                    let found = manifest.changes(from: result, session: session)
                     if !found.serverMissing.isEmpty {
                         issues.append(.serverTooOld(running: probe.version, needed: nil, missing: found.serverMissing))
                     }
@@ -59,10 +62,6 @@ public struct AppStatusCheck: Sendable {
                     expiresAt = result.expiresAt ?? expiresAt
                 } catch is SessionExpired {
                     return AppStatus(issues: [.accessEnded], serverVersion: probe.version, checkedAt: at)
-                } catch let error as ServerError where error.status == 404 || error.status == 405 {
-                    // A server between app authorization and the check: it
-                    // has nothing to say about set up, and the scopes were
-                    // approved as the app asked.
                 } catch {
                     issues.append(.unreachable(message: words(error)))
                 }
@@ -110,15 +109,19 @@ public final class AppStatusModel {
     public private(set) var checking = false
     public var interval: TimeInterval
     private var make: () -> AppStatusCheck?
+    private let now: () -> Date
     private var lastRun: Date?
     /// Moved by every check started and every reset: a check whose number
     /// is no longer current answers for a session, or a moment, gone by.
     private var generation = 0
 
     /// `make` builds the check from the app's current session; nil while
-    /// signed out.
-    public init(interval: TimeInterval = 300, make: @escaping () -> AppStatusCheck?) {
+    /// signed out. `now` is the clock the interval is kept by.
+    public init(interval: TimeInterval = 300, now: @escaping () -> Date = { Date() },
+                make: @escaping () -> AppStatusCheck?)
+    {
         self.interval = interval
+        self.now = now
         self.make = make
     }
 
@@ -126,11 +129,11 @@ public final class AppStatusModel {
     /// stands in place of the running one's.
     public func refresh(force: Bool = false) async {
         guard force || !checking, let check = make() else { return }
-        if !force, let lastRun, Date().timeIntervalSince(lastRun) < interval { return }
+        if !force, let lastRun, now().timeIntervalSince(lastRun) < interval { return }
         generation += 1
         let started = generation
         checking = true
-        lastRun = Date()
+        lastRun = now()
         let result = await check.run()
         guard started == generation else { return }
         status = result

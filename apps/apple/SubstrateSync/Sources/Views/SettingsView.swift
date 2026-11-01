@@ -9,7 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage(Settings.frequencyKey) private var frequency = Settings.Frequency.hourly.rawValue
     @State private var sampleNote: String?
-    @State private var reviewing = false
+    @State private var changingAccess = false
 
     private var isApp: Bool { model.session?.isApp == true }
 
@@ -17,7 +17,7 @@ struct SettingsView: View {
         Form {
             if let session = model.session, session.isApp {
                 AccountSection(session: session, manifest: try? model.manifest(), serverVersion: model.status.status?.serverVersion,
-                               onChangeAccess: { reviewing = true }, onSignOut: { model.signOut() })
+                               unrevoked: model.unrevoked, onChangeAccess: { changingAccess = true }, onSignOut: { model.signOut() })
             } else if let session = model.session {
                 Section("Account") {
                     LabeledContent("Repository", value: session.repository)
@@ -46,9 +46,8 @@ struct SettingsView: View {
                         HStack {
                             Text("Server Status")
                             Spacer()
-                            let clear = model.status.status?.isClear
-                            StatusBadge(text: clear == nil ? "Not checked" : clear == true ? "Up to date" : "Needs you",
-                                        color: clear == nil ? .secondary : clear == true ? .green : .orange)
+                            let badge = statusBadge
+                            StatusBadge(text: badge.text, color: badge.color)
                         }
                     }
                 } else {
@@ -106,14 +105,25 @@ struct SettingsView: View {
         }
         .readableWidth()
         .navigationTitle("Settings")
-        .sheet(isPresented: $reviewing) {
+        .sheet(isPresented: $changingAccess) {
             ReviewChangesSheet(appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
-                               changes: model.status.status?.changes ?? [], firstSignIn: false,
+                               changes: model.reviewChanges, heading: .changeAccess,
                                onContinue: {
-                                   reviewing = false
+                                   changingAccess = false
                                    Task { await model.authorize() }
                                },
-                               onCancel: { reviewing = false })
+                               onCancel: { changingAccess = false })
         }
+    }
+
+    /// The server status in a word: the status screen's own. A server that
+    /// could not be asked was not checked, and one only an update helps
+    /// needs that, not the owner's approval.
+    private var statusBadge: (text: String, color: Color) {
+        guard let issues = model.status.status?.issues else { return ("Not checked", .secondary) }
+        if issues.isEmpty { return ("Up to date", .green) }
+        if issues.allSatisfy({ if case .unreachable = $0 { true } else { false } }) { return ("Not checked", .secondary) }
+        if issues.waitsForUpdate { return ("Needs an update", .orange) }
+        return ("Needs approval", .orange)
     }
 }

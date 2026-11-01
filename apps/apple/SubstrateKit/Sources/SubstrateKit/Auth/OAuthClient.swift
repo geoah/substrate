@@ -85,9 +85,15 @@ public struct OAuthClient: Sendable {
     }
 
     /// The page the owner approves on. `authorization_details` is the
-    /// manifest's details as compact JSON, sent only to a server that lists
-    /// every type they use.
+    /// manifest's details as compact JSON. A server that does not list every
+    /// type they use would approve the scopes alone, so it is refused here
+    /// rather than sent the request without them, and so is metadata whose
+    /// endpoints are not on its issuer's origin.
     public func authorizeURL(redirect: String, pkce: PKCE, state: String) throws -> URL {
+        if let problem = metadata.mismatch(server: nil) { throw ServerMismatch(problem) }
+        guard manifest.takesDetails(metadata) else {
+            throw ServerMismatch("\(ServerAddress.display(metadata.issuerOrigin ?? metadata.authorizationEndpoint)) can't set up what \(manifest.appName) asks for: it needs an update first.")
+        }
         var items = [
             ("response_type", "code"),
             ("client_id", manifest.clientID),
@@ -97,8 +103,7 @@ public struct OAuthClient: Sendable {
             ("code_challenge_method", "S256"),
             ("state", state),
         ]
-        let details = manifest.details(for: metadata)
-        if !details.isEmpty { items.append(("authorization_details", try AuthorizationDetail.json(details))) }
+        if !manifest.details.isEmpty { items.append(("authorization_details", try AuthorizationDetail.json(manifest.details))) }
         guard var parts = URLComponents(url: metadata.authorizationEndpoint, resolvingAgainstBaseURL: false) else {
             throw URLError(.badURL)
         }
@@ -132,8 +137,11 @@ public struct OAuthClient: Sendable {
     }
 
     /// Trades the code for the token. Never sent twice: a code is spent on
-    /// first use, and a replay revokes the token the first use minted.
+    /// first use, and a replay revokes the token the first use minted. Never
+    /// sent off the issuer's origin either: the code and its verifier are
+    /// the token to whoever receives them.
     public func exchange(code: String, redirect: String, pkce: PKCE) async throws -> TokenResponse {
+        if let problem = metadata.mismatch(server: nil) { throw ServerMismatch(problem) }
         let request = Self.form(metadata.tokenEndpoint, [
             ("grant_type", "authorization_code"), ("code", code), ("client_id", manifest.clientID),
             ("redirect_uri", redirect), ("code_verifier", pkce.verifier),
@@ -143,34 +151,26 @@ public struct OAuthClient: Sendable {
         return try JSONDecoder().decode(TokenResponse.self, from: data)
     }
 
-    /// RFC 7009: answers 200 whether or not the token existed. Best effort
-    /// and quick, so a sign-out never waits on a server that is gone.
-    public func revoke(_ token: String) async throws {
-        _ = try await transport.data(for: Self.form(metadata.revocation, [("token", token), ("client_id", manifest.clientID)],
-                                                    timeout: 10))
+    /// The session a code is exchanged for. Its lifetime is read from `now`
+    /// once the token came back, so a long approval does not shorten it.
+    public func session(exchanging code: String, redirect: String, pkce: PKCE, server: URL,
+                        now: @Sendable () -> Date = { Date() }) async throws -> Session
+    {
+        let token = try await exchange(code: code, redirect: redirect, pkce: pkce)
+        return Session(server: server, token: token, clientID: manifest.clientID, revocation: metadata.revocation,
+                       requested: manifest.scopes, now: now())
     }
 
-    /// Revokes an app session's token where and as it was approved: its own
-    /// revocation endpoint under the client id it holds, whatever the build
-    /// at hand calls itself now, since the server answers 200 to a token sent
-    /// under another client id and leaves it live. A password session's token
-    /// is revoked with `SubstrateClient.revokeToken(id:)` instead. A 5xx
-    /// throws: the server says to try again (RFC 7009 §2.2.1), and the token
-    /// is live until it does.
-    public static func revoke(_ session: Session, transport: any HTTPTransport = URLSessionTransport.shared) async throws {
-        guard let clientID = session.clientID else { return }
-        let endpoint = session.revocation
-            ?? URL(string: session.server.absoluteString.trimmingTrailingSlashes + "/oauth/revoke") ?? session.server
-        let (data, response) = try await transport.data(for: form(endpoint, [("token", session.secret), ("client_id", clientID)], timeout: 10))
-        if response.statusCode >= 500 { throw TransportError(status: response.statusCode, body: data) }
-    }
-
-    /// The whole flow: a loopback receiver for the redirect, the browser
-    /// sheet on the server's own sign-in and approval page, the redirect
-    /// checked and the code exchanged. The session it answers is not saved.
+    /// The whole flow: a loopback receiver for the redirect (RFC 8252), the
+    /// browser sheet on the server's own sign-in and approval page, the
+    /// redirect checked and the code exchanged. `server` is the one the
+    /// owner chose, and the metadata must be its own: an issuer or an
+    /// endpoint elsewhere is refused before the browser opens. The session
+    /// it answers is not saved.
     @MainActor
-    public func signIn(server: URL, now: Date = Date()) async throws -> Session {
-        let receiver = try await LoopbackReceiver.start(appName: manifest.appName, path: manifest.redirectPath)
+    public func signIn(server: URL, now: @escaping @Sendable () -> Date = { Date() }) async throws -> Session {
+        if let problem = metadata.mismatch(server: server) { throw ServerMismatch(problem) }
+        let receiver = try await LoopbackReceiver.start(appName: manifest.appName, path: manifest.loopbackPath)
         defer { receiver.stop() }
         let pkce = try PKCE()
         let state = try PKCE.state()
@@ -178,11 +178,10 @@ public struct OAuthClient: Sendable {
         let url = try authorizeURL(redirect: redirect, pkce: pkce, state: state)
         let query = try await WebAuthenticator().run(url, receiver: receiver)
         let code = try callback(query, state: state)
-        let token = try await exchange(code: code, redirect: redirect, pkce: pkce)
-        return Session(server: server, token: token, clientID: manifest.clientID, revocation: metadata.revocation, now: now)
+        return try await session(exchanging: code, redirect: redirect, pkce: pkce, server: server, now: now)
     }
 
-    private static func form(_ url: URL, _ pairs: [(String, String)], timeout: TimeInterval) -> URLRequest {
+    static func form(_ url: URL, _ pairs: [(String, String)], timeout: TimeInterval) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = timeout

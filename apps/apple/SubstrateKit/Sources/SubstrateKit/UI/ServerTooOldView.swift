@@ -79,14 +79,8 @@ public struct ServerTooOldView: View {
     }
 
     private var summary: String {
-        let runs: String
-        if let version = running.flatMap(ServerVersion.init) {
-            runs = version.isRelease ? "\(host) runs \(version)." : "\(host) runs a build of \(version.release) that can't do it yet."
-        } else if let running, running != "dev" {
-            runs = "\(host) runs \(running)."
-        } else {
-            runs = "\(host) runs a development build that can't do it yet."
-        }
+        let release = running.flatMap(ServerVersion.init)?.isRelease == true
+        let runs = "\(host) runs \(ServerVersion.display(running))" + (release ? "." : " that can't do it yet.")
         guard let needed else { return "\(appName) needs a newer Substrate. \(runs)" }
         return "\(appName) needs Substrate \(needed) or later. \(runs)"
     }

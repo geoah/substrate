@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var locales: [Locale] = []
     @State private var size = 0
     @State private var confirmSignOut = false
+    @State private var changingAccess = false
     @State private var serverVersion: String?
 
     var body: some View {
@@ -72,8 +73,8 @@ struct SettingsView: View {
                 }
 
                 AccountSection(session: store.session, manifest: ChatManifest.manifest,
-                               serverVersion: model.status.status?.serverVersion ?? serverVersion,
-                               onChangeAccess: { Task { await model.reauthorize() } },
+                               serverVersion: model.status.status?.serverVersion ?? serverVersion, unrevoked: model.unrevoked,
+                               onChangeAccess: { changingAccess = true },
                                onSignOut: { confirmSignOut = true })
 
                 if let problem = model.authorizeProblem {
@@ -112,6 +113,15 @@ struct SettingsView: View {
                     : "This device forgets its saved chats, and Substrate Chat's access is revoked. Your chats stay on the server.")
             }
             .sheet(item: $keySheet) { ProviderKeySheet(provider: $0).environment(store) }
+            .sheet(isPresented: $changingAccess) {
+                ReviewChangesSheet(appName: ChatManifest.appName, host: ServerAddress.display(store.session.server),
+                                   changes: model.reviewChanges, heading: .changeAccess,
+                                   onContinue: {
+                                       changingAccess = false
+                                       Task { await model.reauthorize() }
+                                   },
+                                   onCancel: { changingAccess = false })
+            }
             .task {
                 notifications = await Notifier.status()
                 size = store.cacheSize()

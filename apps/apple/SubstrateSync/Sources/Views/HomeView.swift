@@ -19,7 +19,7 @@ struct HomeView: View {
                         signInAgain: { Task { await model.authorize() } },
                         moveToAppAccess: { Task { await model.authorize() } },
                         retry: { Task { await model.status.refresh(force: true) } },
-                        openServer: model.session.map { session in { openURL(session.server) } }))
+                        openFix: model.session.map { session in { path in ServerAddress.page(session.server, path: path).map { openURL($0) } } }))
                         .disabled(model.authorizing)
                 }
                 .listRowInsets(EdgeInsets())
@@ -31,9 +31,9 @@ struct HomeView: View {
                                message: problem)
                 }
             }
-            if let unrevoked = model.unrevoked {
+            if let unrevoked = model.unrevoked.first {
                 Section {
-                    ProblemBox(title: "The old sign-in still works", message: unrevoked, tint: .orange)
+                    ProblemBox(title: "The old sign-in still works", message: AppModel.unrevokedWords(unrevoked), tint: .orange)
                 }
             }
 
@@ -79,7 +79,7 @@ struct HomeView: View {
         .refreshable { await model.syncNow() }
         .task { await model.loadCoverage() }
         .sheet(isPresented: $reviewing) {
-            ReviewChangesSheet(appName: SyncManifest.appName, host: host, changes: model.status.status?.changes ?? [],
+            ReviewChangesSheet(appName: SyncManifest.appName, host: host, changes: model.reviewChanges,
                                firstSignIn: false,
                                onContinue: {
                                    reviewing = false

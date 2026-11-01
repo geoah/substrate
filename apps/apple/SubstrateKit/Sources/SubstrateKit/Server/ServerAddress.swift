@@ -30,6 +30,27 @@ public enum ServerAddress {
         return origin.url
     }
 
+    /// Whether two URLs are on one origin: the same scheme, host and port,
+    /// a port left out being the scheme's own.
+    public static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+        func parts(_ url: URL) -> (String, String, Int)? {
+            guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  let host = url.host(percentEncoded: false)?.lowercased(), !host.isEmpty
+            else { return nil }
+            return (scheme, host, url.port ?? (scheme == "https" ? 443 : 80))
+        }
+        guard let x = parts(a), let y = parts(b) else { return false }
+        return x == y
+    }
+
+    /// A console page on `server`, from a path the server gave: root-relative
+    /// only, so an answer can never send the owner off the server.
+    public static func page(_ server: URL, path: String) -> URL? {
+        guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("\\") else { return nil }
+        guard let url = URL(string: server.absoluteString.trimmingTrailingSlashes + path), sameOrigin(url, server) else { return nil }
+        return url
+    }
+
     /// Whether a server is on this machine: its address reaches nobody else,
     /// and nothing proves who answers on it.
     public static func isLoopback(_ server: URL) -> Bool {

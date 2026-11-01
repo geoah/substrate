@@ -80,10 +80,28 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(manifest.door(for: probe("v0.114.0", scopesOnly)), .password)
         XCTAssertEqual(manifest.door(for: probe("v0.112.0", nil)), .password)
         // An older server would approve the scopes alone, which the app would
-        // read as set up: it is sent no details.
-        XCTAssertTrue(manifest.details(for: scopesOnly).isEmpty)
-        XCTAssertEqual(manifest.details(for: full), manifest.details)
+        // read as set up: it never gets the request.
+        XCTAssertFalse(manifest.takesDetails(scopesOnly))
+        XCTAssertTrue(manifest.takesDetails(full))
+        XCTAssertEqual(SyncManifest.requirement.detailTypes, AuthorizationDetail.Types.all)
         XCTAssertTrue(manifest.canMoveToAppAccess(probe("v0.114.0", full)))
+    }
+
+    /// The first sign-in says what the approval page will: the apple kinds
+    /// by their labels, the supporting ones counted, and the webhook by the
+    /// package it delivers to.
+    func testTheRequestReadsAsTheApprovalPageWordsIt() {
+        XCTAssertEqual(manifest.plannedChanges().map(\.words), [
+            "See, add, change and delete your Apple contacts, events, reminders, shares and visits, and 5 more kinds, including kinds added later",
+            "See your Apple Health accounts",
+            "See your Apple Health deliveries",
+            "Send data to your repository through the Apple Health webhook, for any Apple Health account, "
+                + "and see every delivery to it that could not be filed, whoever sent it",
+            "Install Apple",
+            "Install Apple Health",
+            "Create the Apple Health account “Ada's iPhone”",
+            "Turn on the Apple Health webhook",
+        ])
     }
 }
 
@@ -301,8 +319,9 @@ final class ApprovalReachTests: XCTestCase {
     }
 }
 
-/// The token a move or a review replaces is kept until the server says it
-/// is revoked: a revocation cut short is tried again, never lost.
+/// The token a move, a review or a sign-out stops using is kept until the
+/// server says it is revoked: a revocation cut short is tried again, never
+/// lost.
 final class RevocationTests: XCTestCase {
     let server = URL(string: "https://ada.example.com")!
 
@@ -316,16 +335,42 @@ final class RevocationTests: XCTestCase {
 
         let stub = StubTransport()
         stub.on("DELETE", "/tokens/tok_1", status: 503, json: #"{"error":{"code":"unavailable","message":"try later"}}"#)
-        var live = await AppModel.revokeKept(store: store, current: current, transport: stub)
+        var live = await store.revokePending(current: current, transport: stub)
         XCTAssertEqual(live, [old])
         XCTAssertEqual(store.pendingRevocations(), [old])
         XCTAssertEqual(stub.sent("DELETE", "/tokens/tok_1").first?.value(forHTTPHeaderField: "Authorization"), "Bearer sub_password")
         XCTAssertTrue(AppModel.unrevokedWords(old).contains("in Settings, under Signed in"))
 
         stub.on("DELETE", "/tokens/tok_1", status: 204, json: "")
-        live = await AppModel.revokeKept(store: store, current: current, transport: stub)
+        live = await store.revokePending(current: current, transport: stub)
         XCTAssertEqual(live, [])
         XCTAssertEqual(store.pendingRevocations(), [])
+    }
+
+    /// A sign-out forgets the session at once and keeps its token until the
+    /// server answers 200; a busy server's answer is no revocation.
+    func testASignedOutTokenIsKeptUntilTheServerRevokesIt() async throws {
+        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        defer {
+            for old in store.pendingRevocations() { store.revoked(old) }
+            store.clear()
+        }
+        let app = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+                          scopes: SyncManifest.scopes)
+        try store.save(app)
+        XCTAssertTrue(store.signOut(app))
+        XCTAssertNil(store.load())
+        let busy = StubTransport()
+        busy.on("POST", "/oauth/revoke", status: 429, json: "")
+        let live = await store.revokePending(current: nil, transport: busy)
+        XCTAssertEqual(live, [app])
+        XCTAssertTrue(AppModel.unrevokedWords(app).contains("in Settings, under Apps"))
+        let ok = StubTransport()
+        ok.on("POST", "/oauth/revoke", json: "")
+        let none = await store.revokePending(current: nil, transport: ok)
+        XCTAssertEqual(none, [])
+        let body = String(decoding: try XCTUnwrap(ok.sent("POST", "/oauth/revoke").first?.httpBody), as: UTF8.self)
+        XCTAssertEqual(body, "token=sub_app_x&client_id=http%3A%2F%2F127.0.0.1%2Fsubstrate-sync")
     }
 
     /// A replacement whose save never landed leaves the old session in use:
@@ -336,7 +381,7 @@ final class RevocationTests: XCTestCase {
         let current = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
         try store.keepForRevocation(current)
         let stub = StubTransport()
-        let live = await AppModel.revokeKept(store: store, current: current, transport: stub)
+        let live = await store.revokePending(current: current, transport: stub)
         XCTAssertEqual(live, [])
         XCTAssertTrue(stub.sent("DELETE", "/tokens/tok_1").isEmpty)
         XCTAssertEqual(store.pendingRevocations(), [])

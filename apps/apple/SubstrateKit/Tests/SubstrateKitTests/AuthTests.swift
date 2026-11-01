@@ -45,14 +45,74 @@ import Testing
         // Encoded once: JSON's punctuation is escaped in the URL itself.
         #expect(url.absoluteString.contains("authorization_details=%5B%7B%22package%22%3A%22providers.substrate.reamde.dev%2Fapple%22"))
         let decoded = try JSONDecoder().decode([AuthorizationDetail].self, from: Data(details.utf8))
-        #expect(decoded == syncManifest().details)
+        #expect(decoded == syncManifest().details.map(\.sent))
+        // The package a webhook delivers to words it here and is never sent.
+        #expect(!details.contains("deliversTo"))
     }
 
-    @Test func aServerThatDoesNotListTheTypesGetsNoDetails() throws {
-        let url = try client(details: ["package"]).authorizeURL(redirect: "http://127.0.0.1:1/oauth/callback",
-                                                                pkce: PKCE(verifier: "v"), state: "s")
-        #expect(query(url)["authorization_details"] == nil)
-        #expect(query(url)["scope"] != nil)
+    /// A server that would ignore the details would approve the scopes alone,
+    /// which the app would read as set up: it is never sent the request.
+    @Test func aServerThatCannotSetUpIsNeverSentTheRequest() throws {
+        #expect(throws: ServerMismatch.self) {
+            try client(details: ["package"]).authorizeURL(redirect: "http://127.0.0.1:1/oauth/callback",
+                                                          pkce: PKCE(verifier: "v"), state: "s")
+        }
+        // Its requirement says so first: the details' types and the scopes'
+        // verbs are required whatever the app named.
+        let manifest = syncManifest()
+        #expect(manifest.requirement.detailTypes == ["package", "account", "webhook"])
+        #expect(manifest.requirement.scopeVerbs == ["write", "read"])
+        let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON(details: ["package"]).utf8))
+        let probe = ServerProbe.Result(origin: try #require(URL(string: "https://ada.example.com")),
+                                       discovery: Discovery(server: .init(version: "v0.114.0")), metadata: meta,
+                                       verdict: manifest.requirement.verdict(version: "v0.114.0", metadata: meta))
+        #expect(manifest.door(for: probe) == .password)
+        var strict = manifest
+        strict.passwordFallback = .never
+        #expect(strict.door(for: probe) == .tooOld)
+        // An explicit verb the scopes do not use still counts.
+        var more = manifest
+        more.requirement = ServerRequirement(scopeVerbs: ["agents"])
+        #expect(more.requirement.scopeVerbs == ["agents", "write", "read"])
+    }
+
+    /// The issuer is the server the owner chose and every endpoint is on its
+    /// origin, or nothing is sent: an answer naming another server's sign-in
+    /// would hand the code and its verifier to whoever answers there.
+    @Test func metadataOfAnotherOriginIsRefusedBeforeAnythingIsSent() async throws {
+        let origin = try #require(URL(string: "https://evil.example.com"))
+        let elsewhere = StubTransport()
+        elsewhere.on("GET", "/.well-known/substrate/server.json", json: discoveryJSON())
+        elsewhere.on("GET", "/.well-known/oauth-authorization-server", json: metadataJSON(issuer: "https://ada.example.com"))
+        await #expect(throws: ServerMismatch.self) {
+            try await ServerProbe(transport: elsewhere).probe(origin, requirement: ServerRequirement(), app: "Substrate Sync")
+        }
+        let handedOn = StubTransport()
+        handedOn.on("GET", "/.well-known/substrate/server.json", json: discoveryJSON())
+        handedOn.on("GET", "/.well-known/oauth-authorization-server",
+                    json: metadataJSON(issuer: "https://evil.example.com", endpoints: "https://ada.example.com"))
+        await #expect(throws: ServerMismatch.self) {
+            try await ServerProbe(transport: handedOn).probe(origin, requirement: ServerRequirement(), app: "Substrate Sync")
+        }
+
+        // Driven by hand, the client still never sends the code elsewhere.
+        let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(
+            metadataJSON(issuer: "https://ada.example.com", endpoints: "https://evil.example.com").utf8))
+        let stub = StubTransport()
+        stub.on("POST", "/oauth/token", json: #"{"access_token":"t","scope":"read:*","repository":"ada.example.com"}"#)
+        let oauth = OAuthClient(manifest: syncManifest(), metadata: meta, transport: stub)
+        await #expect(throws: ServerMismatch.self) {
+            try await oauth.exchange(code: "c", redirect: "http://127.0.0.1:1/oauth/callback", pkce: PKCE(verifier: "v"))
+        }
+        #expect(throws: ServerMismatch.self) {
+            try oauth.authorizeURL(redirect: "http://127.0.0.1:1/oauth/callback", pkce: PKCE(verifier: "v"), state: "s")
+        }
+        #expect(stub.requests.isEmpty)
+        // An issuer that is not the server chosen is refused before the
+        // browser opens.
+        let honest = try client()
+        await #expect(throws: ServerMismatch.self) { try await honest.signIn(server: origin) }
+        #expect(honest.metadata.mismatch(server: try #require(URL(string: "https://ada.example.com:443"))) == nil)
     }
 
     @Test func theCallbackChecksStateAndIssuer() throws {
@@ -129,26 +189,104 @@ import Testing
         #expect(body.contains("code_verifier=v"))
     }
 
-    @Test func aSessionIsRevokedWhereAndAsItWasApproved() async throws {
+    /// The session's lifetime starts when the token came back, however long
+    /// the owner took to approve.
+    @Test func aSessionsLifetimeIsReadAfterTheExchange() async throws {
+        final class Clock: @unchecked Sendable {
+            var now = Date(timeIntervalSince1970: 1_800_000_000)
+        }
+        let clock = Clock()
+        final class Slow: HTTPTransport, @unchecked Sendable {
+            let clock: Clock
+            init(_ clock: Clock) { self.clock = clock }
+            func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+                clock.now = clock.now.addingTimeInterval(900)
+                let body = #"{"access_token":"t","scope":"read:*","expires_in":3600,"repository":"ada.example.com"}"#
+                return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
+            }
+        }
+        var oauth = try client()
+        oauth.transport = Slow(clock)
+        let session = try await oauth.session(exchanging: "c", redirect: "http://127.0.0.1:1/oauth/callback",
+                                              pkce: PKCE(verifier: "v"), server: try #require(URL(string: "https://ada.example.com")),
+                                              now: { clock.now })
+        #expect(session.issuedAt == Date(timeIntervalSince1970: 1_800_000_900))
+        #expect(session.expiresAt == Date(timeIntervalSince1970: 1_800_004_500))
+        #expect(session.requestedScopes == syncManifest().scopes)
+    }
+}
+
+/// Revoking is one thing for both kinds of session, and it is done only once
+/// the server says so.
+@Suite struct Revocation {
+    let server = URL(string: "https://ada.example.com")!
+
+    func app(clientID: String? = "http://127.0.0.1/substrate-sync", revocation: URL? = nil) -> Session {
+        Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: clientID,
+                scopes: ["webhook:applehealth-webhook"], revocation: revocation)
+    }
+
+    @Test func anAppSessionIsRevokedWhereAndAsItWasApproved() async throws {
         let stub = StubTransport()
         stub.on("POST", "/oauth/revoke", json: "")
-        let session = Session(server: try #require(URL(string: "https://ada.example.com")), repository: "ada.example.com",
-                              secret: "sub_app_x", clientID: "http://127.0.0.1/substrate-sync",
-                              scopes: ["webhook:applehealth-webhook"])
-        try await OAuthClient.revoke(session, transport: stub)
+        try await app().revoke(transport: stub)
         let sent = stub.sent("POST", "/oauth/revoke")
         #expect(sent.count == 1)
         #expect(sent.first?.url?.absoluteString == "https://ada.example.com/oauth/revoke")
-        let body = String(decoding: sent.first?.httpBody ?? Data(), as: UTF8.self)
-        #expect(body == "token=sub_app_x&client_id=http%3A%2F%2F127.0.0.1%2Fsubstrate-sync")
-        // A password session has no client id to revoke under.
-        try await OAuthClient.revoke(Session(server: session.server, repository: "ada.example.com", secret: "s", tokenID: "t"),
-                                     transport: stub)
-        #expect(stub.sent("POST", "/oauth/revoke").count == 1)
-        // A server that cannot revoke now says so: the token is still live.
+        #expect(String(decoding: sent.first?.httpBody ?? Data(), as: UTF8.self)
+            == "token=sub_app_x&client_id=http%3A%2F%2F127.0.0.1%2Fsubstrate-sync")
+        // A session that never kept its client id sends none: the token is
+        // the credential, and a guessed id would revoke nothing.
+        try await app(clientID: nil).revoke(transport: stub)
+        #expect(String(decoding: stub.sent("POST", "/oauth/revoke").last?.httpBody ?? Data(), as: UTF8.self) == "token=sub_app_x")
+        // A revocation endpoint off the server's origin is never sent the
+        // token.
+        try await app(revocation: URL(string: "https://evil.example.com/oauth/revoke")).revoke(transport: stub)
+        #expect(stub.requests.allSatisfy { $0.url?.host() == "ada.example.com" })
+    }
+
+    @Test(arguments: [429, 503, 400, 302])
+    func anythingButA200LeavesTheTokenLive(status: Int) async {
+        let busy = StubTransport()
+        busy.on("POST", "/oauth/revoke", status: status, json: "")
+        await #expect(throws: (any Error).self) { try await app().revoke(transport: busy) }
+    }
+
+    @Test func aPasswordSessionIsRevokedThroughItsOwnToken() async throws {
+        let stub = StubTransport()
+        stub.on("DELETE", "/tokens/tok_1", status: 204, json: "")
+        let password = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
+        try await password.revoke(transport: stub)
+        #expect(stub.sent("DELETE", "/tokens/tok_1").first?.value(forHTTPHeaderField: "Authorization") == "Bearer sub_password")
+        #expect(stub.sent("POST", "/oauth/revoke").isEmpty)
+        // One the server no longer accepts has nothing left to revoke.
+        let gone = StubTransport()
+        gone.on("DELETE", "/tokens/tok_1", status: 401, json: #"{"error":{"code":"unauthorized","message":"invalid token"}}"#)
+        try await password.revoke(transport: gone)
+    }
+
+    @Test func aSignOutKeepsTheTokenUntilTheServerRevokesIt() async throws {
+        let store = SessionStore(service: "dev.reamde.substrate.kit.tests", account: "test-\(UUID().uuidString)")
+        defer {
+            for old in store.pendingRevocations() { store.revoked(old) }
+            store.clear()
+        }
+        let session = app()
+        try store.save(session)
+        #expect(store.signOut(session))
+        #expect(store.load() == nil)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
-        await #expect(throws: TransportError.self) { try await OAuthClient.revoke(session, transport: busy) }
+        #expect(await store.revokePending(current: nil, transport: busy) == [session])
+        #expect(store.pendingRevocations() == [session])
+        let ok = StubTransport()
+        ok.on("POST", "/oauth/revoke", json: "")
+        #expect(await store.revokePending(current: nil, transport: ok) == [])
+        #expect(store.pendingRevocations().isEmpty)
+        // The session in use is never revoked, only forgotten from the list.
+        try store.keepForRevocation(session)
+        #expect(await store.revokePending(current: session, transport: busy) == [])
+        #expect(store.pendingRevocations().isEmpty)
     }
 }
 
@@ -196,6 +334,9 @@ import Testing
         #expect((object["grants"] as? [String: Any])?["scopes"] as? [String] == ["webhook:applehealth-webhook"])
         #expect(object["expiresAt"] as? Double == 815_000_000)
         #expect(object["issuedAt"] as? Double == 812_408_000)
+        var asked = session
+        asked.requestedScopes = ["read:*"]
+        #expect(try JSONDecoder().decode(Session.self, from: JSONEncoder().encode(asked)).requestedScopes == ["read:*"])
         // An RFC 3339 stamp reads too.
         let stamped = #"{"version":2,"server":"https://a.example.com","repository":"a.example.com","secret":"s","expiresAt":"2026-12-01T10:00:00.123456789Z"}"#
         #expect(try JSONDecoder().decode(Session.self, from: Data(stamped.utf8)).expiresAt == Timestamp.parse("2026-12-01T10:00:00.123Z"))

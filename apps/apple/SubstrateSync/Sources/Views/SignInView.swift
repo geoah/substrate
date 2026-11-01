@@ -3,13 +3,20 @@ import SwiftUI
 
 /// The server first, checked against its discovery document and its OAuth
 /// metadata. A server whose approval sets up what Sync needs gets the
-/// browser sign-in, which asks for no password here; any other gets the
+/// browser sign-in, which asks for no password here, under the kit's review
+/// of the access it asks for and what it sets up; any other gets the
 /// repository, the password, and a code when the server asks for one.
 struct SignInView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("signin.server") private var address = ""
     @AppStorage("signin.repository") private var repository = ""
     @State private var probe: ServerProbe.Result?
+
+    /// `probe` is a server already found, as a snapshot draws the screen.
+    init(probe: ServerProbe.Result? = nil) {
+        _probe = State(initialValue: probe)
+    }
+
     @State private var password = ""
     @State private var code = ""
     @State private var busy = false
@@ -43,13 +50,8 @@ struct SignInView: View {
             }
 
             if let probe, door == .app {
-                Section {
-                    ForEach((try? model.manifest())?.plannedChanges(for: probe.metadata) ?? []) { ChangeRow($0) }
-                } header: {
-                    Text("Substrate Sync will ask you to allow")
-                } footer: {
-                    Text("You sign in on \(probe.host) itself and approve this there, and it sets up what is missing on your server. You can change or revoke it any time in its Settings, under Apps.")
-                }
+                ReviewChangesSections(appName: SyncManifest.appName, host: probe.host, heading: .firstSignIn,
+                                      changes: (try? model.manifest())?.plannedChanges() ?? [])
                 Section {
                     Button(action: signInWithApp) {
                         WideLabel(title: busy ? "Waiting for Your Browser…" : "Sign In with Your Substrate",
@@ -58,6 +60,9 @@ struct SignInView: View {
                     .primaryAction()
                     .disabled(busy)
                     .buttonRow()
+                } footer: {
+                    Text("You sign in on \(probe.host) itself, and approve this there. "
+                        + ReviewChangesSections.choosing(host: probe.host, setsUp: true))
                 }
             } else if probe != nil {
                 Section("Your repository") {
@@ -104,6 +109,12 @@ struct SignInView: View {
             if let problem {
                 Section {
                     ProblemBox(title: probe == nil ? "Couldn't reach that server" : "Couldn't sign in", message: problem)
+                }
+            }
+
+            if let unrevoked = model.unrevoked.first {
+                Section {
+                    ProblemBox(title: "Server access has not been revoked yet", message: AppModel.unrevokedWords(unrevoked), tint: .orange)
                 }
             }
 

@@ -17,16 +17,16 @@ public enum KindNames {
         "ecg", "email", "encounter", "event", "export", "file", "function", "gmail",
         "group", "health", "heart", "html", "id", "immunization", "ink", "instruction",
         "interaction", "issue", "item", "key", "kind", "lab", "label", "license",
-        "link", "list", "llm", "log", "mapping", "markup", "medication", "merge",
-        "message", "metric", "milestone", "mind", "note", "notification", "oauth", "observation",
-        "occurrence", "of", "organization", "package", "page", "patch", "patient", "person",
-        "policy", "preference", "project", "property", "provider", "pull", "rate", "reaction",
-        "reading", "record", "recording", "recovery", "referral", "reminder", "report", "repository",
-        "request", "result", "review", "run", "scratchpad", "secret", "series", "setting",
-        "share", "sleep", "source", "split", "state", "status", "store", "symptom",
-        "sync", "task", "team", "thread", "token", "trace", "trait", "transcript",
-        "trigger", "type", "unit", "url", "user", "view", "visit", "web",
-        "workflow", "workout",
+        "link", "list", "llm", "log", "mapping", "markup", "medication", "memory",
+        "merge", "message", "metric", "milestone", "mind", "note", "notification", "oauth",
+        "observation", "occurrence", "of", "organization", "package", "page", "patch", "patient",
+        "person", "policy", "preference", "project", "property", "provider", "pull", "rate",
+        "reaction", "reading", "record", "recording", "recovery", "referral", "reminder", "report",
+        "repository", "request", "result", "review", "run", "scratchpad", "secret", "series",
+        "setting", "share", "sleep", "source", "split", "state", "status", "store",
+        "symptom", "sync", "task", "team", "thread", "token", "trace", "trait",
+        "transcript", "trigger", "type", "unit", "url", "user", "view", "visit",
+        "web", "workflow", "workout",
     ]
 
     static let acronyms: [String: String] = [
@@ -116,7 +116,7 @@ public func kindDisplayName(_ kind: String) -> String {
 public func kindDisplayPlural(_ kind: String) -> String {
     var parts = KindNames.displayWords(kind)
     guard !parts.isEmpty else { return "" }
-    let at = parts.firstIndex(of: "of").map { max(0, $0 - 1) } ?? parts.count - 1
+    let at = parts.firstIndex(of: "of").flatMap { $0 > 0 ? $0 - 1 : nil } ?? parts.count - 1
     parts[at] = KindNames.pluralWord(parts[at])
     return parts.joined(separator: " ").capitalizedFirst
 }

@@ -62,7 +62,8 @@ public struct StatusBadge: View {
 }
 
 /// One change an approval would make: its symbol, its words, and the fact
-/// beside it. A change the server cannot make yet says so in orange.
+/// beside it. A change the server cannot make yet carries an orange mark and
+/// says why in full contrast, since that sentence is what the owner acts on.
 public struct ChangeRow: View {
     public let change: Change
 
@@ -82,7 +83,7 @@ public struct ChangeRow: View {
                 if let detail = change.detail {
                     Text(detail)
                         .font(.footnote)
-                        .foregroundStyle(change.blocked ? .orange : .secondary)
+                        .foregroundStyle(change.blocked ? .primary : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -91,22 +92,26 @@ public struct ChangeRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// A scope left out last time is not allowed now, so it never wears the
+    /// check an allowed one does.
     private var symbol: String {
+        if change.leftOut { return "circle.dashed" }
         switch change.kind {
-        case .scope: "checkmark.circle.fill"
-        case .install: "arrow.down.circle.fill"
-        case .upgrade: "arrow.up.circle.fill"
-        case .account: "plus.circle.fill"
-        case .webhook: "bolt.circle.fill"
+        case .scope: return "checkmark.circle.fill"
+        case .install: return "arrow.down.circle.fill"
+        case .upgrade: return "arrow.up.circle.fill"
+        case .account: return "plus.circle.fill"
+        case .webhook: return "bolt.circle.fill"
         }
     }
 
     private var tint: Color {
+        if change.leftOut { return Color.secondary }
         switch change.kind {
-        case .scope: .green
-        case .install, .upgrade: .blue
-        case .account: .teal
-        case .webhook: .orange
+        case .scope: return .green
+        case .install, .upgrade: return .blue
+        case .account: return .teal
+        case .webhook: return .orange
         }
     }
 }

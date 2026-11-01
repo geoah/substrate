@@ -102,16 +102,22 @@ final class TransportBox: @unchecked Sendable {
             Change(kind: .scope, words: "See, add, change and delete your Apple places"),
             Change(kind: .upgrade, words: "Update Apple", detail: "Version 2 to 3"),
         ])])
+        // The body names its details `details`, as the API's other bodies
+        // are camelCase.
+        let body = try #require(stub.sent("POST", "/api/v1/authorizations/check").first?.httpBody)
+        let sentBody = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect((sentBody["details"] as? [Any])?.count == 4)
+        #expect(sentBody["authorization_details"] == nil)
         #expect(status.serverVersion == "v0.114.0")
         let sent = try #require(stub.sent("POST", "/api/v1/authorizations/check").first)
         #expect(sent.value(forHTTPHeaderField: "Authorization") == "Bearer sub_app_x")
     }
 
     @Test func aMissingAccountAndAnOffWebhookAreNamedInTheConsolesWords() async {
-        let stub = server(check: #"{"scopes":{"missing":[]},"setup":\#(rows(["none", "install", "create", "arm"]))}"#)
+        let stub = server(check: #"{"scopes":{"missing":[]},"setup":\#(rows(["none", "install", "create", "enable"]))}"#)
         let status = await run(stub, session: appSession())
         #expect(status.changes == [
-            Change(kind: .install, words: "Install Apple Health"),
+            Change(kind: .install, words: "Install Apple Health", detail: "Version 5"),
             Change(kind: .account, words: "Create the Apple Health account “Ada's iPhone”", detail: "Timezone: Europe/London"),
             Change(kind: .webhook, words: "Turn on the Apple Health webhook"),
         ])
@@ -126,7 +132,27 @@ final class TransportBox: @unchecked Sendable {
     @Test func aWebhookTheTokenDoesNotDeliverToIsAsked() async {
         let stub = server(check: #"{"scopes":{"missing":[]},"setup":\#(rows(["none", "none", "none", "unknown"]))}"#)
         let status = await run(stub, session: appSession(webhook: false))
-        #expect(status.changes == [Change(kind: .scope, words: "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see which deliveries could not be filed")])
+        #expect(status.changes == [Change(kind: .scope, words: "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it")])
+    }
+
+    /// The package a webhook delivers to is the server's once a check names
+    /// it, and the app's own word for it only until then; nothing is guessed
+    /// from the trigger's name.
+    @Test func aWebhookIsNamedForThePackageTheServerSaysItReaches() async {
+        var manifest = syncManifest()
+        manifest.details[3] = .webhook(trigger: "health-export")
+        #expect(manifest.scopeWords("webhook:health-export")
+            == "Send data to your repository through the health-export webhook, and see every delivery to it that could not be filed, whoever sent it")
+        let stub = server(check: #"""
+        {"scopes":{"missing":[]},"setup":[{"type":"package","action":"none"},{"type":"package","action":"none"},
+          {"type":"account","action":"none"},
+          {"type":"webhook","action":"enable","webhook":{"trigger":"health-export","package":"providers.substrate.reamde.dev/applehealth"}}]}
+        """#)
+        let status = await run(stub, session: appSession(webhook: false), manifest: manifest)
+        #expect(status.changes.map(\.words) == [
+            "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it",
+            "Turn on the Apple Health webhook",
+        ])
     }
 
     @Test func aServerTooOldIsSaidAndAnAppSessionIsNotCheckedAgainstIt() async {
@@ -141,11 +167,31 @@ final class TransportBox: @unchecked Sendable {
 
     @Test func aPackageTheServerShipsTooOldIsAServerUpdate() async {
         let stub = server(check: #"""
-        {"scopes":{"missing":[]},"setup":[{"type":"package","action":"blocked","problem":"this server ships version 2, the app needs 3: update the server",
+        {"scopes":{"missing":[]},"setup":[{"type":"package","action":"upgrade",
+          "blocked":{"reason":"server-update","problem":"This server ships version 2; the app needs version 3. The server needs an update first."},
           "package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":2}}]}
         """#)
         let status = await run(stub, session: appSession())
         #expect(status.issues == [.serverTooOld(running: "v0.114.0", needed: nil, missing: ["install Apple version 3 or later"])])
+        // A package the catalog does not ship at all is a block like any
+        // other, whatever its versions say: the reason decides.
+        let unshipped = server(check: #"""
+        {"scopes":{"missing":[]},"setup":[{"type":"package","action":"install",
+          "blocked":{"reason":"not-shipped","problem":"This server's catalog does not ship it."},
+          "package":{"id":"providers.substrate.reamde.dev/apple","required":3}}]}
+        """#)
+        let blocked = await run(unshipped, session: appSession())
+        #expect(blocked.changes == [Change(kind: .install, words: "Install Apple", detail: "This server's catalog does not ship it.",
+                                           block: AuthorizationSetup.Block(reason: "not-shipped", problem: "This server's catalog does not ship it."))])
+        #expect(blocked.issues.fix == nil)
+    }
+
+    /// An update names the version the server will install, and the one the
+    /// app needs where that is another.
+    @Test func anUpdateNamesTheVersionItLandsAt() async {
+        let stub = server(check: #"{"scopes":{"missing":[]},"setup":\#(rows(["upgrade", "none", "none", "none"], held: 2, shipped: 4))}"#)
+        #expect(await run(stub, session: appSession()).changes
+            == [Change(kind: .upgrade, words: "Update Apple", detail: "Version 2 to 4 (needs 3 or later)")])
     }
 
     @Test func accessEndingSoonOrEndedIsSaid() async {
@@ -186,26 +232,71 @@ final class TransportBox: @unchecked Sendable {
         #expect(await status(approved: monthLate, lifetime: month).issues == [.accessEndsSoon(monthLate.addingTimeInterval(month))])
     }
 
-    /// A blocked row makes the approval page refuse, so it is never a review:
-    /// the owner fixes it on the server.
-    @Test func aBlockedRowBlocksTheReview() async {
+    /// A blocked row makes the approval page refuse: the server's sentence
+    /// says why, and its fix, where it names one, is where the owner goes.
+    @Test func aBlockedRowSaysWhyAndWhereItIsFixed() async {
         let quarantined = server(check: #"""
         {"scopes":{"missing":[]},"setup":[
-          {"type":"package","action":"install","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":0,"shipped":3}},
-          {"type":"package","action":"blocked","package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}}]}
+          {"type":"package","action":"install","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"shipped":3}},
+          {"type":"package","action":"none","blocked":{"reason":"quarantined","problem":"Apple Health is quarantined on this repository.",
+            "fix":"/catalog/providers.substrate.reamde.dev%2Fapplehealth"},
+           "package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}}]}
         """#)
         let blocked = await run(quarantined, session: appSession())
-        #expect(blocked.changes.contains { $0.blocked })
+        #expect(blocked.changes.map(\.words) == ["Install Apple", "Apple Health is installed"])
+        #expect(blocked.changes.last?.detail == "Apple Health is quarantined on this repository.")
         #expect(blocked.approvalBlocked)
+        #expect(blocked.issues.fix == "/catalog/providers.substrate.reamde.dev%2Fapplehealth")
+        #expect(!blocked.issues.waitsForUpdate)
         let tooOld = server(check: #"""
-        {"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},"setup":[{"type":"package","action":"blocked",
+        {"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},"setup":[{"type":"package","action":"upgrade",
+          "blocked":{"reason":"server-update","problem":"This server ships version 2; the app needs version 3."},
           "package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":2}}]}
         """#)
-        #expect(await run(tooOld, session: appSession()).approvalBlocked)
+        let waiting = await run(tooOld, session: appSession())
+        #expect(waiting.approvalBlocked)
+        #expect(waiting.issues.waitsForUpdate)
         let open = server(check: #"{"scopes":{"missing":[]},"setup":\#(rows(["none", "install", "none", "none"]))}"#)
         let approvable = await run(open, session: appSession())
         #expect(!approvable.changes.isEmpty)
         #expect(!approvable.approvalBlocked)
+        #expect(ServerAddress.page(server, path: "/catalog/x")?.absoluteString == "https://ada.example.com/catalog/x")
+        for path in ["https://evil.example.com/x", "//evil.example.com/x", "catalog/x", "/\\evil.example.com"] {
+            #expect(ServerAddress.page(server, path: path) == nil, "\(path)")
+        }
+    }
+
+    /// A scope the owner left out of the last approval is never asked about
+    /// again; a review offers it back. A scope a later build adds is asked.
+    @Test func aScopeTheOwnerLeftOutIsOfferedBackNotAsked() async throws {
+        let place = "write:providers.substrate.reamde.dev/apple/place"
+        var manifest = syncManifest()
+        manifest.scopes.append(place)
+        var session = appSession()
+        session.scopes = ["write:providers.substrate.reamde.dev/apple/*", "webhook:applehealth-webhook"]
+        session.requestedScopes = syncManifest().scopes
+        #expect(manifest.leftOut(by: session) == [
+            "read:providers.substrate.reamde.dev/applehealth/account", "read:providers.substrate.reamde.dev/applehealth/export",
+        ])
+        #expect(manifest.check(for: session).scope == "write:providers.substrate.reamde.dev/apple/* \(place)")
+        let stub = server(check: #"{"scopes":{"missing":["\#(place)"]},"setup":\#(rows(["none", "none", "none", "none"]))}"#)
+        let status = await run(stub, session: session, manifest: manifest)
+        #expect(status.changes == [Change(kind: .scope, words: "See, add, change and delete your Apple places")])
+        let review = manifest.review(status, session: session)
+        #expect(review.filter(\.leftOut).map(\.words) == ["See your Apple Health accounts", "See your Apple Health deliveries"])
+        #expect(ReviewHeading(changes: review, firstSignIn: false) == .moreAccess)
+        #expect(ReviewHeading(changes: review.filter(\.leftOut), firstSignIn: false) == .renew)
+        // `~` is the repository's authority, as the token stores it.
+        var home = manifest
+        home.scopes = ["read:~/notes/*"]
+        var held = session
+        held.scopes = ["read:ada.example.com/notes/*"]
+        held.requestedScopes = ["read:~/notes/*"]
+        #expect(home.leftOut(by: held).isEmpty)
+        // A session that never kept its request left nothing out.
+        held.requestedScopes = nil
+        held.scopes = []
+        #expect(home.leftOut(by: held).isEmpty)
     }
 
     /// The approval page words a kind by the label it declares, and so does
@@ -222,6 +313,41 @@ final class TransportBox: @unchecked Sendable {
             Change(kind: .scope, words: "See your Apple Health deliveries"),
             Change(kind: .account, words: "Create the Apple Health account “Ada's iPhone”", detail: "Timezone: Europe/London"),
         ])
+    }
+
+    /// The check came with set up on approval: a server whose metadata lists
+    /// no detail types has none to ask, and approved the scopes as asked.
+    @Test func aServerWithoutSetUpIsNotChecked() async {
+        let stub = server(version: "dev", details: [])
+        var manifest = syncManifest()
+        manifest.details = []
+        #expect(await run(stub, session: appSession(), manifest: manifest).isClear)
+        #expect(stub.sent("POST", "/api/v1/authorizations/check").isEmpty)
+    }
+
+    /// A check runs at most once an interval unless forced, by the model's
+    /// own clock.
+    @MainActor @Test func theStatusIsCheckedAtMostOnceAnInterval() async {
+        final class Clock { var now = Date(timeIntervalSince1970: 1_800_000_000) }
+        let clock = Clock()
+        let stub = server(check: #"{"scopes":{"missing":[]},"setup":[]}"#)
+        let session = appSession()
+        let model = AppStatusModel(interval: 300, now: { clock.now }) {
+            var client = SubstrateClient(session, transport: stub)
+            client.pause = { _ in }
+            return AppStatusCheck(manifest: syncManifest(), session: session, client: client, now: { Self.now })
+        }
+        let checks = { stub.sent("POST", "/api/v1/authorizations/check").count }
+        await model.refresh()
+        #expect(checks() == 1)
+        clock.now = clock.now.addingTimeInterval(299)
+        await model.refresh()
+        #expect(checks() == 1)
+        await model.refresh(force: true)
+        #expect(checks() == 2)
+        clock.now = clock.now.addingTimeInterval(300)
+        await model.refresh()
+        #expect(checks() == 3)
     }
 
     /// A check started under one session never stands for the next: a reset
@@ -284,13 +410,12 @@ final class TransportBox: @unchecked Sendable {
     }
 
     @Test func aFirstSignInPlansEveryRow() throws {
-        let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON().utf8))
-        let changes = syncManifest().plannedChanges(for: meta)
+        let changes = syncManifest().plannedChanges()
         #expect(changes.map(\.words) == [
             "See, add, change and delete your Apple records, including kinds added later",
             "See your Apple Health accounts",
             "See your Apple Health deliveries",
-            "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see which deliveries could not be filed",
+            "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it",
             "Install Apple",
             "Install Apple Health",
             "Create the Apple Health account “Ada's iPhone”",
@@ -300,6 +425,7 @@ final class TransportBox: @unchecked Sendable {
         #expect(ReviewHeading(changes: [changes[0]], firstSignIn: false) == .moreAccess)
         #expect(ReviewHeading(changes: [changes[4]], firstSignIn: false) == .serverSetup)
         #expect(ReviewHeading(changes: changes, firstSignIn: false) == .moreAccessAndServerSetup)
-        #expect(ReviewHeading(changes: [], firstSignIn: false).title == "Renew access")
+        #expect(ReviewHeading(changes: [], firstSignIn: false).title(appName: "Substrate Sync") == "Renew access")
+        #expect(ReviewHeading.changeAccess.title(appName: "Substrate Sync") == "Change what Substrate Sync may do")
     }
 }

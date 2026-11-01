@@ -166,6 +166,7 @@ struct ExpiredView: View {
 /// this app is for.
 struct NoChatAccessView: View {
     @Environment(AppModel.self) private var model
+    @State private var changingAccess = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -184,7 +185,7 @@ struct NoChatAccessView: View {
                     .card(tint: .red)
             }
             Button {
-                Task { await model.reauthorize() }
+                changingAccess = true
             } label: {
                 HStack(spacing: 8) {
                     if model.authorizing { ProgressView().controlSize(.small) }
@@ -199,5 +200,14 @@ struct NoChatAccessView: View {
         }
         .padding(32)
         .frame(maxWidth: 440)
+        .sheet(isPresented: $changingAccess) {
+            ReviewChangesSheet(appName: ChatManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your substrate",
+                               changes: model.reviewChanges, heading: .changeAccess,
+                               onContinue: {
+                                   changingAccess = false
+                                   Task { await model.reauthorize() }
+                               },
+                               onCancel: { changingAccess = false })
+        }
     }
 }

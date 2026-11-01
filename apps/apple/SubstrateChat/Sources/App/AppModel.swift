@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var authorizing = false
     /// Why the last change of access did not finish.
     private(set) var authorizeProblem: String?
+    /// Tokens this device stopped using that the server has not revoked yet:
+    /// each is tried again at every launch until it is.
+    private(set) var unrevoked: [Session] = []
     /// A route waiting for a scene to take it.
     var pendingRoute: Route?
     /// Whether an app session is still set up with its server: the kit's
@@ -32,7 +35,18 @@ final class AppModel {
     @ObservationIgnored private(set) lazy var status = AppStatusModel { [weak self] in self?.statusCheck() }
 
     private init() {
-        if let session = SessionStore.chat.load() { begin(session) }
+        if let session = SessionStore.chat.load() { begin(Self.asked(session)) }
+        Task { await revokePending() }
+    }
+
+    /// An app session an earlier build kept names no request: every such
+    /// build asked for `ChatManifest.earliestRequest`, so a scope it held
+    /// out of that was left out by the owner.
+    nonisolated static func asked(_ session: Session) -> Session {
+        guard session.isApp, session.requestedScopes == nil else { return session }
+        var asked = session
+        asked.requestedScopes = ChatManifest.earliestRequest
+        return asked
     }
 
     var session: Session? { store?.session }
@@ -60,7 +74,7 @@ final class AppModel {
     /// The flow again on the same server with the whole request: a change of
     /// access, a renewal, or what a newer build asks for. The old access
     /// works until the new one is kept, so closing the sheet changes nothing;
-    /// then the old token is revoked.
+    /// then the old token is kept for revocation and revoked.
     func reauthorize() async {
         guard let old = session, !authorizing else { return }
         authorizing = true
@@ -72,8 +86,7 @@ final class AppModel {
             guard manifest.door(for: probe) == .app, let oauth = OAuthClient(manifest: manifest, probe: probe) else {
                 throw Refusal(text: "\(ServerAddress.display(old.server)) can't give \(manifest.appName) access of its own: it needs an update first.")
             }
-            try adopt(try await oauth.signIn(server: old.server))
-            Self.revoke(old)
+            try adopt(try await oauth.signIn(server: old.server), replacing: old)
         } catch let error where error is WebAuthenticator.Cancelled || isCancellation(error) {
             // The person closed the sheet: the access stays as it was.
         } catch {
@@ -83,16 +96,21 @@ final class AppModel {
 
     /// Keeps a new session of either kind and starts on it. Kept first: a
     /// sign-in the Keychain would not hold is refused here, with the token it
-    /// minted revoked, rather than lost at the next launch.
-    private func adopt(_ session: Session) throws {
+    /// minted revoked, rather than lost at the next launch. The token it
+    /// replaces is kept for revocation before the save, since the save
+    /// overwrites the only other copy of it.
+    private func adopt(_ session: Session, replacing old: Session? = nil) throws {
+        let kept = old.map { (try? SessionStore.chat.keepForRevocation($0)) != nil } ?? false
         do {
             try SessionStore.chat.save(session)
         } catch {
-            Self.revoke(session)
+            if let old, kept { SessionStore.chat.revoked(old) }
+            Task.detached { try? await session.revoke() }
             throw error
         }
         end(forget: false)
-        begin(session, requested: session.isApp ? ChatManifest.scopes : nil)
+        begin(session)
+        if let old { retire(old, kept: kept) }
     }
 
     /// After the server refused the token: back to sign-in, keeping the saved
@@ -103,53 +121,47 @@ final class AppModel {
             return
         }
         end(forget: false)
-        SessionStore.chat.clear()
+        let kept = SessionStore.chat.signOut(session)
         expired = false
-        Self.revoke(session)
+        retire(session, kept: kept)
     }
 
     /// Forgets the session on this device at once, and revokes the token in
-    /// the background, so it works with the server gone or the token refused.
+    /// the background, so it works with the server gone or the token
+    /// refused; a token the server does not answer for now is kept and tried
+    /// again at the next launch.
     func signOut() {
         guard let session else {
             expired = false
             return
         }
         end(forget: true)
-        SessionStore.chat.clear()
+        let kept = SessionStore.chat.signOut(session)
         Notifier.removeAll()
-        Self.revoke(session)
+        retire(session, kept: kept)
     }
 
-    /// Revokes a token this device no longer keeps, in the background and as
-    /// a best effort: an app token at its revocation endpoint under the
-    /// client id it was approved for, a password one with its own
-    /// `DELETE /tokens/{id}`.
-    nonisolated static func revoke(_ session: Session) {
-        let session = revocable(session)
-        Task.detached {
-            if session.isApp {
-                try? await OAuthClient.revoke(session)
-            } else if let id = session.tokenID {
-                try? await SubstrateClient(session).revokeToken(id: id)
+    /// Revokes a token this device stopped using: every kept one, `old`
+    /// among them, or `old` alone where the Keychain would not keep it.
+    private func retire(_ old: Session, kept: Bool) {
+        Task {
+            if kept {
+                await revokePending()
+            } else {
+                try? await old.revoke()
             }
         }
     }
 
-    /// The server leaves a token live when it is revoked under a client id
-    /// it was not approved for. An app session an earlier build kept names
-    /// none; that build sent the one it carried, which this build's is the
-    /// best guess at.
-    nonisolated static func revocable(_ session: Session) -> Session {
-        var session = session
-        if session.isApp, session.clientID == nil { session.clientID = ChatManifest.manifest.clientID }
-        return session
+    /// Revokes the tokens kept for revocation, and keeps the ones still live
+    /// to say so.
+    func revokePending() async {
+        unrevoked = await SessionStore.chat.revokePending(current: SessionStore.chat.load())
     }
 
-    private func begin(_ session: Session, requested: [String]? = nil) {
+    private func begin(_ session: Session) {
         expired = false
         let store = ChatStore(session: session)
-        if let requested { store.prefs.requestedScopes = requested }
         store.onSessionExpired = { [weak self] in self?.sessionExpired() }
         self.store = store
         store.start()
@@ -185,8 +197,14 @@ final class AppModel {
 
     private func statusCheck() -> AppStatusCheck? {
         guard let store, store.session.isApp else { return nil }
-        return AppStatusCheck(manifest: ChatManifest.checked(session: store.session, requested: store.prefs.requestedScopes),
-                              session: store.session)
+        return AppStatusCheck(manifest: ChatManifest.manifest, session: store.session)
+    }
+
+    /// What a review asks the owner for the request Chat sends now: what the
+    /// check found, and what they left out last time, offered back.
+    var reviewChanges: [Change] {
+        guard let session else { return [] }
+        return ChatManifest.manifest.review(status.status, session: session)
     }
 
     // MARK: Routes

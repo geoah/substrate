@@ -12,16 +12,37 @@ public struct AppManifest: Sendable {
     public var clientID: String
     public var scopes: [String]
     public var details: [AuthorizationDetail]
-    public var requirement: ServerRequirement
-    /// The loopback path the authorization redirect comes back to.
-    public var redirectPath: String
+    /// What the server must be able to do: the requirement the app names,
+    /// with every scope verb its scopes use and every detail type its
+    /// details use added, so a server that cannot take the request never
+    /// meets it.
+    public var requirement: ServerRequirement {
+        get {
+            var needed = named
+            for verb in scopes.map({ ScopeWords.split($0).verb }) where !verb.isEmpty && !needed.scopeVerbs.contains(verb) {
+                needed.scopeVerbs.append(verb)
+            }
+            for type in details.map(\.type) where !needed.detailTypes.contains(type) {
+                needed.detailTypes.append(type)
+            }
+            return needed
+        }
+        set { named = newValue }
+    }
+
+    private var named: ServerRequirement
+    /// The path on the loopback address the authorization redirect comes
+    /// back to (RFC 8252): the kit signs in through a loopback receiver on
+    /// this device, and never through a claimed https callback.
+    public var loopbackPath: String
     public var passwordFallback: PasswordFallback
     /// What a person calls a package, an account kind or a trigger, by its
     /// id, where the word built from the id is not the right one.
     public var names: [String: String]
     /// The labels the kinds the app names declare, by kind reference: the
     /// approval page words a kind by its declared label, which the word
-    /// built from its name can miss (`applehealth/export` is "Deliveries").
+    /// built from its name can miss (`applehealth/export` is "Deliveries"),
+    /// and names the kinds a glob reaches by theirs.
     public var kindLabels: [String: KindLabel]
 
     /// When the app signs in with the owner's password instead.
@@ -35,7 +56,7 @@ public struct AppManifest: Sendable {
     }
 
     public init(appName: String, clientID: String, scopes: [String], details: [AuthorizationDetail] = [],
-                requirement: ServerRequirement = ServerRequirement(), redirectPath: String = "/oauth/callback",
+                requirement: ServerRequirement = ServerRequirement(), loopbackPath: String = "/oauth/callback",
                 passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
                 kindLabels: [String: KindLabel] = [:])
     {
@@ -43,8 +64,8 @@ public struct AppManifest: Sendable {
         self.clientID = clientID
         self.scopes = scopes
         self.details = details
-        self.requirement = requirement
-        self.redirectPath = redirectPath
+        named = requirement
+        self.loopbackPath = loopbackPath
         self.passwordFallback = passwordFallback
         self.names = names
         self.kindLabels = kindLabels
@@ -60,17 +81,31 @@ public struct AppManifest: Sendable {
     /// The `scope` parameter.
     public var scope: String { scopes.joined(separator: " ") }
 
-    /// The details a server sets up: every one when it lists every type the
-    /// app sends, none otherwise. An older server ignores the parameter and
-    /// would approve the scopes alone, which the app then reads as set up.
-    public func details(for metadata: AuthorizationServerMetadata?) -> [AuthorizationDetail] {
-        guard let metadata, details.allSatisfy({ metadata.supports(detailType: $0.type) }) else { return [] }
-        return details
+    /// Whether a server sets up every detail the app sends. One that does not
+    /// would ignore the parameter and approve the scopes alone, which the app
+    /// would then read as set up, so its requirement fails and it never gets
+    /// the request.
+    public func takesDetails(_ metadata: AuthorizationServerMetadata?) -> Bool {
+        details.isEmpty || (metadata.map { m in details.allSatisfy { m.supports(detailType: $0.type) } } ?? false)
     }
 
-    /// The request the app would send now, as the check reads it.
-    public func check(for metadata: AuthorizationServerMetadata?) -> AuthorizationCheck {
-        AuthorizationCheck(scopes: scopes, details: details(for: metadata))
+    /// The scopes the owner left out of the last approval: the ones its
+    /// request asked for that the token does not hold. Never a reason to ask
+    /// again; a review offers them back.
+    public func leftOut(by session: Session) -> [String] {
+        guard let held = session.scopes, let asked = session.requestedScopes else { return [] }
+        let resolve = { ScopeWords.resolve($0, authority: session.repository) }
+        let holds = Set(held.map(resolve))
+        let askedThen = Set(asked.map(resolve))
+        return scopes.filter { askedThen.contains(resolve($0)) && !holds.contains(resolve($0)) }
+    }
+
+    /// The request the check asks about for `session`: every detail, and
+    /// every scope but those the owner left out of the last approval. A scope
+    /// a later build adds is asked about.
+    public func check(for session: Session) -> AuthorizationCheck {
+        let leftOut = Set(leftOut(by: session))
+        return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details)
     }
 
     /// How the app signs in to a server it probed.
@@ -94,53 +129,42 @@ public struct AppManifest: Sendable {
         names[id] ?? packageDisplayName(String(id.split(separator: "/").last ?? Substring(id)))
     }
 
-    /// The package a trigger or an account kind belongs to, among the ones
-    /// the app asks for: the kind's own package, or the longest package
-    /// word a trigger id starts with (`applehealth-webhook` is
-    /// `applehealth`'s).
-    func owningPackage(kind: String? = nil, trigger: String? = nil) -> String? {
-        let packages = details.compactMap(\.package)
-        if let kind {
-            let prefix = kind.split(separator: "/").prefix(2).joined(separator: "/")
-            return packages.first { $0 == prefix }
-        }
-        if let trigger {
-            return packages.filter { trigger.hasPrefix(String($0.split(separator: "/").last ?? "")) }
-                .max { $0.count < $1.count }
-        }
-        return nil
-    }
-
-    /// "Apple Health account": the package's name and the kind's label.
+    /// "Apple Health account": the name of the package the kind belongs to,
+    /// and the kind's label.
     func accountWords(kind: String) -> String {
         if let named = names[kind] { return named }
         let label = (kindLabels[kind]?.singular ?? kindDisplayName(kind)).lowercasedFirst
-        guard let package = owningPackage(kind: kind) else { return label }
-        return "\(packageName(package)) \(label)"
+        let parts = kind.split(separator: "/")
+        guard parts.count == 3 else { return label }
+        return "\(packageName(parts.prefix(2).joined(separator: "/"))) \(label)"
     }
 
-    /// "Apple Health webhook".
-    func webhookWords(trigger: String) -> String {
+    /// "Apple Health webhook", by the package its deliveries reach where it
+    /// is known: the server's, else the one the app's detail names.
+    func webhookWords(trigger: String, package: String?) -> String {
         if let named = names[trigger] { return named }
-        guard let package = owningPackage(trigger: trigger) else { return "\(trigger) webhook" }
+        guard let package = package ?? deliversTo(trigger: trigger) else { return "\(trigger) webhook" }
         return "\(packageName(package)) webhook"
     }
 
-    /// The package name a trigger's deliveries are for, where the app asks
-    /// for its package.
-    func webhookPackageName(trigger: String) -> String? {
-        owningPackage(trigger: trigger).map(packageName)
+    /// The package the app's own webhook detail says a trigger delivers to.
+    func deliversTo(trigger: String) -> String? {
+        details.first { $0.type == AuthorizationDetail.Types.webhook && $0.trigger == trigger }?.deliversTo
     }
 }
 
-/// A kind's declared label, as its declaration's `label` gives it.
+/// A kind's declared label, as its declaration's `label` gives it, and its
+/// declared purpose where it is not `primary`: a sentence names the primary
+/// kinds a glob reaches by their labels and counts the rest.
 public struct KindLabel: Sendable, Hashable {
     public var singular: String
     public var plural: String
+    public var purpose: String?
 
-    public init(singular: String, plural: String) {
+    public init(singular: String, plural: String, purpose: String? = nil) {
         self.singular = singular
         self.plural = plural
+        self.purpose = purpose
     }
 }
 

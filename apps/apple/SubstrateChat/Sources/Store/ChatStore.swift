@@ -535,7 +535,7 @@ final class ChatStore {
     }
 
     /// The provider rows, where the token may read them.
-    private func readProviders() async throws -> Page? {
+    private func readProviders() async throws -> RecordPage? {
         guard canReadProviders else { return nil }
         return try await api.listAll(ListQuery(kinds: [Kinds.provider], first: 100))
     }

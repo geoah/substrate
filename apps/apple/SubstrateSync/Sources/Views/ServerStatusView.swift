@@ -20,11 +20,13 @@ struct ServerStatusView: View {
             review: { reviewing = true },
             checkAgain: { Task { await model.status.refresh(force: true) } },
             signInAgain: { Task { await model.authorize() } },
-            openServer: { if let server = model.session?.server { openURL(server) } },
+            openFix: { path in
+                if let server = model.session?.server, let page = ServerAddress.page(server, path: path) { openURL(page) }
+            },
             signOut: { model.signOut() })
             .sheet(isPresented: $reviewing) {
                 ReviewChangesSheet(appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
-                                   changes: model.status.status?.changes ?? [], firstSignIn: false,
+                                   changes: model.reviewChanges, firstSignIn: false,
                                    onContinue: {
                                        reviewing = false
                                        Task { await model.authorize() }
@@ -45,7 +47,7 @@ struct ServerStatusForm: View {
     var review: () -> Void = {}
     var checkAgain: () -> Void = {}
     var signInAgain: () -> Void = {}
-    var openServer: () -> Void = {}
+    var openFix: (String) -> Void = { _ in }
     var signOut: () -> Void = {}
 
     private var host: String { session.map { ServerAddress.display($0.server) } ?? "your server" }
@@ -53,9 +55,13 @@ struct ServerStatusForm: View {
     private var changes: [Change] { status?.changes ?? [] }
     /// Access that ends soon is renewed through the same review.
     private var ending: Bool { issues.contains { if case .accessEndsSoon = $0 { true } else { false } } }
-    /// The approval page would refuse a review: what blocks it is the
-    /// server's to fix, and the banner says where.
-    private var reviewable: Bool { (!changes.isEmpty || ending) && status?.approvalBlocked != true }
+    /// The approval page can be reviewed: it shows why a blocked change
+    /// waits, except where only a server update would help, or where the
+    /// server named the fix, which the banner opens instead.
+    private var reviewable: Bool {
+        guard let issues = status?.issues, !changes.isEmpty || ending else { return false }
+        return !issues.waitsForUpdate && issues.fix == nil
+    }
 
     var body: some View {
         Form {
@@ -84,7 +90,7 @@ struct ServerStatusForm: View {
                     // The review is the screen's own button, below the banner.
                     Section {
                         AppStatusBanner(issues: issues, appName: SyncManifest.appName, host: host,
-                                        actions: AppStatusActions(signInAgain: signInAgain, retry: checkAgain, openServer: openServer))
+                                        actions: AppStatusActions(signInAgain: signInAgain, retry: checkAgain, openFix: openFix))
                     }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -101,7 +107,8 @@ struct ServerStatusForm: View {
             if reviewable {
                 Section {
                     Button(action: review) {
-                        WideLabel(title: changes.isEmpty ? "Renew Access" : "Review and Approve", systemImage: "checkmark.shield",
+                        WideLabel(title: changes.isEmpty ? "Renew Access" : status?.approvalBlocked == true ? "Review" : "Review and Approve",
+                                  systemImage: "checkmark.shield",
                                   busy: authorizing)
                     }
                     .primaryAction()

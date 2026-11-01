@@ -5,10 +5,11 @@ import XCTest
 
 @testable import SubstrateSync
 
-/// The status screen an app session gets in Set Up's place, drawn to PNG
-/// files in the directory SYNC_SNAPSHOTS names, for a person to look at;
-/// skipped without it (`TEST_RUNNER_SYNC_SNAPSHOTS=<dir> xcodebuild … test`).
-/// Each status is what the kit's check makes of a scripted server.
+/// The sign-in an app session starts from and the status screen it gets in
+/// Set Up's place, drawn to PNG files in the directory SYNC_SNAPSHOTS names,
+/// for a person to look at; skipped without it
+/// (`TEST_RUNNER_SYNC_SNAPSHOTS=<dir> xcodebuild … test`). Each status is
+/// what the kit's check makes of a scripted server.
 @MainActor
 final class StatusSnapshotTests: XCTestCase {
     static let size = CGSize(width: 393, height: 852)
@@ -54,13 +55,21 @@ final class StatusSnapshotTests: XCTestCase {
           {"type":"package","action":"upgrade","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":3}},
           {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}},
           {"type":"account","action":"create","account":{"kind":"providers.substrate.reamde.dev/applehealth/account","id":"substrate-sync-1a2b3c4d"}},
-          {"type":"webhook","action":"arm","webhook":{"trigger":"applehealth-webhook","enabled":false,"keyed":true}}]}
+          {"type":"webhook","action":"enable","webhook":{"trigger":"applehealth-webhook","package":"providers.substrate.reamde.dev/applehealth"}}]}
         """#)
         XCTAssertTrue(behind.changes.contains(where: \.isSetup), "\(behind)")
         try await draw(directory, "status-needs-approval", NavigationStack { ServerStatusForm(session: earlier, status: behind) })
         try await draw(directory, "status-review", ReviewChangesSheet(appName: SyncManifest.appName, host: "ada.example.com",
                                                                       changes: behind.changes, firstSignIn: false,
                                                                       onContinue: {}, onCancel: {}))
+        // The owner left the deliveries out last time: Change Access offers
+        // them back.
+        var declined = session()
+        declined.scopes = [SyncManifest.scopes[0], SyncManifest.scopes[1], "webhook:applehealth-webhook"]
+        declined.requestedScopes = SyncManifest.scopes
+        try await draw(directory, "status-change-access", ReviewChangesSheet(
+            appName: SyncManifest.appName, host: "ada.example.com", changes: manifest.review(nil, session: declined),
+            heading: .changeAccess, onContinue: {}, onCancel: {}))
 
         let ready = await status(session(), check: #"""
         {"scopes":{"missing":[]},"setup":[
@@ -71,20 +80,37 @@ final class StatusSnapshotTests: XCTestCase {
         XCTAssertTrue(ready.isClear, "\(ready)")
         try await draw(directory, "status-up-to-date", NavigationStack { ServerStatusForm(session: session(), status: ready, fromSettings: true) })
         // Apple Health is quarantined: the approval page would refuse, so the
-        // screen offers the server, not a review.
+        // screen opens the page the server names to fix it.
         let blocked = await status(session(), check: #"""
         {"scopes":{"missing":[]},"setup":[
           {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":3,"shipped":3}},
-          {"type":"package","action":"blocked","package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}},
+          {"type":"package","action":"upgrade","blocked":{"reason":"quarantined","problem":"Apple Health is quarantined on this repository: a declaration it ships was refused.",
+            "fix":"/catalog/providers.substrate.reamde.dev%2Fapplehealth"},
+           "package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":4,"shipped":5}},
           {"type":"account","action":"none"},{"type":"webhook","action":"unknown"}]}
         """#)
         XCTAssertTrue(blocked.approvalBlocked, "\(blocked)")
+        XCTAssertEqual(blocked.issues.fix, "/catalog/providers.substrate.reamde.dev%2Fapplehealth")
         try await draw(directory, "status-blocked", NavigationStack { ServerStatusForm(session: session(), status: blocked, fromSettings: true) })
-        try await draw(directory, "first-sign-in-review", ReviewChangesSheet(
-            appName: SyncManifest.appName, host: "ada.example.com",
-            changes: manifest.plannedChanges(for: AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*"],
-                                                                              authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)),
-            firstSignIn: true, onContinue: {}, onCancel: {}))
+        // Only a newer server ships what Sync needs: the approval waits for it.
+        let waiting = await status(earlier, check: #"""
+        {"scopes":{"missing":[]},"setup":[
+          {"type":"package","action":"upgrade","blocked":{"reason":"server-update","problem":"This server ships version 2; the app needs version 3. The server needs an update first."},
+           "package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":2}},
+          {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}},
+          {"type":"account","action":"create","account":{"kind":"providers.substrate.reamde.dev/applehealth/account","id":"substrate-sync-1a2b3c4d"}},
+          {"type":"webhook","action":"none"}]}
+        """#)
+        XCTAssertTrue(waiting.issues.waitsForUpdate, "\(waiting)")
+        try await draw(directory, "status-waits-for-update", NavigationStack { ServerStatusForm(session: earlier, status: waiting) })
+
+        // The real sign-in, on a server it found.
+        let metadata = AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],
+                                                   authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
+        let found = ServerProbe.Result(origin: server, discovery: Discovery(server: .init(version: "v0.114.0")), metadata: metadata,
+                                       verdict: SyncManifest.requirement.verdict(version: "v0.114.0", metadata: metadata))
+        let model = AppModel()
+        try await draw(directory, "first-sign-in", NavigationStack { SignInView(probe: found) }.environmentObject(model))
     }
 
     /// Hosts the view in a window of its own at an iPhone's size, in light

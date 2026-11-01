@@ -34,16 +34,20 @@ public struct ParkedDelivery: Decodable, Sendable, Equatable {
     public let fireID: String?
     public let lastError: String
     public let running: Bool
+    /// A delivery the door accepted that is still filing, as the server
+    /// marks it; nil where the server marks none.
+    public let pending: Bool?
 
     enum CodingKeys: String, CodingKey {
         case fireID = "fireId"
-        case lastError, running
+        case lastError, running, pending
     }
 
-    public init(fireID: String?, lastError: String, running: Bool = false) {
+    public init(fireID: String?, lastError: String, running: Bool = false, pending: Bool? = nil) {
         self.fireID = fireID
         self.lastError = lastError
         self.running = running
+        self.pending = pending
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,14 +55,20 @@ public struct ParkedDelivery: Decodable, Sendable, Equatable {
         fireID = c.value(.fireID, or: nil)
         lastError = c.value(.lastError, or: "")
         running = c.value(.running, or: false)
+        pending = c.value(.pending, or: nil)
     }
 
-    /// The server's words for a delivery it accepted and has not settled
-    /// (internal/engine's webhooks.go pendingWebhookError).
+    /// The words a server that marks no row pending gives a delivery it
+    /// accepted and has not settled (internal/engine's webhooks.go
+    /// pendingWebhookError), read only where the mark is absent.
     public static let pendingPrefix = "delivery accepted:"
 
+    /// Still filing: marked so, or, on a row that carries no mark, said so
+    /// in the server's words.
+    public var isPending: Bool { pending ?? lastError.hasPrefix(Self.pendingPrefix) }
+
     /// Refused for good: neither waiting to run nor running.
-    public var refused: Bool { !running && !lastError.hasPrefix(Self.pendingPrefix) }
+    public var refused: Bool { !running && !isPending }
 }
 
 public extension SubstrateClient {

@@ -104,9 +104,9 @@ import Testing
 
     @Test func anAgentScopeSaysItReadsEveryChat() {
         #expect(ScopeWords.sentence("agents:*")
-            == "Talk to all your agents, including agents added later; read every chat with them, yours included, and rename or stop any of those chats")
+            == "Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats")
         #expect(ScopeWords.sentence("agents:x.example.com/llm/helper")
-            == "Talk to Helper; read every chat with it, yours included, and rename or stop any of those chats")
+            == "Talk to Helper, and through a chat have it do anything it may do; read every chat with it, yours included, answer its questions, and rename or stop any of those chats")
         #expect(ScopeWords.sentence("decide:*")
             == "Apply or dismiss the changes your agents suggest, including agents added later, and edit one before applying it, as you")
         #expect(ScopeWords.sentence("decide:x.example.com/llm/*")
@@ -115,9 +115,69 @@ import Testing
 
     @Test func aWebhookScopeSaysWhatItSends() {
         #expect(syncManifest().scopeWords("webhook:applehealth-webhook")
-            == "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see which deliveries could not be filed")
+            == "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it")
         #expect(ScopeWords.sentence("webhook:whoop-webhook")
-            == "Send data to your repository through the whoop-webhook webhook, and see which deliveries could not be filed")
+            == "Send data to your repository through the whoop-webhook webhook, and see every delivery to it that could not be filed, whoever sent it")
         #expect(Grants(["read:*", "webhook:x"]).words.count == 2)
+    }
+
+    /// A glob over a package the app labels names its primary kinds and
+    /// counts the rest, as the approval page does from what it reaches.
+    @Test func aGlobNamesTheKindsTheAppLabels() {
+        var manifest = syncManifest()
+        for (name, singular, plural, purpose) in [("contact", "Contact", "Contacts", nil), ("addressbook", "Address book", "Address books", "supporting"),
+                                                  ("event", "Event", "Events", nil), ("calendar", "Calendar", "Calendars", "supporting")]
+        {
+            manifest.kindLabels["providers.substrate.reamde.dev/apple/\(name)"] = KindLabel(singular: singular, plural: plural, purpose: purpose)
+        }
+        #expect(manifest.scopeWords("write:providers.substrate.reamde.dev/apple/*")
+            == "See, add, change and delete your Apple contacts and events, and 2 more kinds, including kinds added later")
+        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/apple/event") == "See your Apple events")
+    }
+}
+
+/// The console's own sentences, from the fixture its tests generate from
+/// app-scopes.ts: a change to either side's words fails the other's suite.
+@Suite struct ConsoleSentences {
+    struct Entry: Decodable {
+        struct Kind: Decodable {
+            struct Label: Decodable { let plural: String }
+            let identity: String
+            let label: Label?
+            let purpose: String?
+        }
+
+        let scope: String
+        let kinds: [Kind]
+        let package: String?
+        let sentence: String
+    }
+
+    static let fixture = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("web/console/src/lib/app-scopes.fixture.json")
+
+    @Test func everySentenceIsTheConsoles() throws {
+        let entries = try JSONDecoder().decode([Entry].self, from: Data(contentsOf: Self.fixture))
+        #expect(Set(entries.map { ScopeWords.split($0.scope).verb }) == ["read", "write", "agents", "decide", "webhook"])
+        // A manifest that names nothing itself, so a webhook's package reads
+        // by its id, as the console's packageName reads it.
+        let manifest = AppManifest(appName: "App", clientID: "http://localhost/client.json", scopes: [])
+        for entry in entries {
+            let kinds = entry.kinds.map { ScopeKind(identity: $0.identity, plural: $0.label?.plural, purpose: $0.purpose) }
+            let words = kinds.isEmpty ? manifest.scopeWords(entry.scope, package: entry.package)
+                : ScopeWords.sentence(entry.scope, kinds: kinds)
+            #expect(words == entry.sentence, "\(entry.scope) \(entry.package ?? "")")
+        }
+    }
+
+    /// Rules the fixture's well-formed scopes do not reach.
+    @Test func theNamesReadAsTheConsoleReadsThem() {
+        #expect(kindDisplayPlural("x.example.com/llm/agentmemory") == "Agent memories")
+        #expect(kindDisplayPlural("x.example.com/x/codeofconduct") == "Codes of conduct")
+        #expect(kindDisplayPlural("x.example.com/x/ofnote") == "Of notes")
+        #expect(ScopeWords.sentence("read:x.example.com//*") == "See your records from x.example.com, including kinds added later")
+        #expect(ScopeWords.agentWords("x.example.com/llm/") == "X.example.com/llm/")
     }
 }

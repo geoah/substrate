@@ -106,6 +106,42 @@ public struct AuthorizationServerMetadata: Codable, Hashable, Sendable {
     public var revocation: URL {
         revocationEndpoint ?? URL(string: issuer.trimmingTrailingSlashes + "/oauth/revoke") ?? tokenEndpoint
     }
+
+    /// The issuer as an origin; nil when it is no http or https URL.
+    var issuerOrigin: URL? { ServerAddress.origin(of: issuer) }
+
+    /// Why signing in to `server` through this metadata is refused, in
+    /// words, or nil. The issuer must be the server itself (a configured
+    /// public URL makes them one), and the authorization, token and
+    /// revocation endpoints on its origin: the code, its verifier and the
+    /// token go to them, and whoever receives those holds the access. With
+    /// no `server`, the endpoints are held to the issuer alone.
+    public func mismatch(server: URL?) -> String? {
+        guard let issuerOrigin, URL(string: issuer).map({ ServerAddress.sameOrigin($0, issuerOrigin) }) == true else {
+            return "The server's sign-in names no server of its own (\(issuer)), so nothing is sent to it."
+        }
+        if let server, !ServerAddress.sameOrigin(server, issuerOrigin) {
+            let host = ServerAddress.display(server)
+            let named = ServerAddress.display(issuerOrigin)
+            return "\(host)'s sign-in says it belongs to \(named), not to \(host) itself, so nothing is sent to it. "
+                + "If \(named) is your server, use that address."
+        }
+        for endpoint in [authorizationEndpoint, tokenEndpoint] + (revocationEndpoint.map { [$0] } ?? [])
+            where !ServerAddress.sameOrigin(endpoint, issuerOrigin)
+        {
+            return "\(ServerAddress.display(issuerOrigin))'s sign-in hands on to \(ServerAddress.display(endpoint)), "
+                + "another server, so nothing is sent to it."
+        }
+        return nil
+    }
+}
+
+/// Signing in would send the code, its verifier or the token somewhere other
+/// than the server the owner chose; the words say where.
+public struct ServerMismatch: LocalizedError, Sendable, Equatable {
+    public let text: String
+    public init(_ text: String) { self.text = text }
+    public var errorDescription: String? { text }
 }
 
 extension String {

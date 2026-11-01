@@ -833,7 +833,7 @@ description = "Run Substrate Chat's unit tests on the Mac"
 run = ".mise/apple.sh test:chat"
 
 [tasks."apple:test:kit"]
-description = "Run SubstrateKit's tests (the apps' shared records, names and record views) on the Mac"
+description = "Run SubstrateKit's tests (what the apps share: the server and its version, the requests, signing in, the session, the status check, their words and screens, and the record views) on the Mac"
 run = ".mise/apple.sh test:kit"
 
 [tasks."apple:install"]

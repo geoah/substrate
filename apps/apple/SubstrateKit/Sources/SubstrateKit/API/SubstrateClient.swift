@@ -60,6 +60,17 @@ public struct SubstrateClient: Sendable {
         public var status: Int
         public var headers: [String: String]
 
+        init(data: Data, status: Int, headers: [String: String]) {
+            self.data = data
+            self.status = status
+            self.headers = headers
+        }
+
+        /// An answer a caller read itself, such as a stream's.
+        public init(data: Data, response: HTTPURLResponse) {
+            self.init(data: data, status: response.statusCode, headers: SubstrateClient.headers(of: response))
+        }
+
         public func header(_ name: String) -> String? {
             headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
         }

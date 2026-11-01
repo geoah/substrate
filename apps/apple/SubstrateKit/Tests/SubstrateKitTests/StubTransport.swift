@@ -90,18 +90,20 @@ func discoveryJSON(version: String = "v0.114.0", totp: Bool = true) -> String {
     """#
 }
 
-/// The OAuth metadata a substrate at `issuer` serves.
+/// The OAuth metadata a substrate at `issuer` serves; `endpoints` moves its
+/// endpoints elsewhere, as a server handing the sign-in on would.
 func metadataJSON(issuer: String = "https://ada.example.com", details: [String] = ["package", "account", "webhook"],
-                  verbs: [String] = ["read", "write", "agents", "decide"]) -> String
+                  verbs: [String] = ["read", "write", "agents", "decide"], endpoints: String? = nil) -> String
 {
     let scopes = verbs.map { "\"\($0):*\"" }.joined(separator: ",")
     let types = details.map { "\"\($0)\"" }.joined(separator: ",")
+    let at = endpoints ?? issuer
     return #"""
     {
       "issuer": "\#(issuer)",
-      "authorization_endpoint": "\#(issuer)/oauth/authorize",
-      "token_endpoint": "\#(issuer)/oauth/token",
-      "revocation_endpoint": "\#(issuer)/oauth/revoke",
+      "authorization_endpoint": "\#(at)/oauth/authorize",
+      "token_endpoint": "\#(at)/oauth/token",
+      "revocation_endpoint": "\#(at)/oauth/revoke",
       "response_types_supported": ["code"],
       "response_modes_supported": ["query"],
       "grant_types_supported": ["authorization_code"],
@@ -129,9 +131,9 @@ func syncManifest() -> AppManifest {
             .package("providers.substrate.reamde.dev/applehealth", atLeast: 5),
             .account(kind: "providers.substrate.reamde.dev/applehealth/account", id: "substrate-sync-1a2b3c4d",
                      properties: ["displayName": "Ada's iPhone", "timezone": "Europe/London"]),
-            .webhook(trigger: "applehealth-webhook"),
+            .webhook(trigger: "applehealth-webhook", deliversTo: "providers.substrate.reamde.dev/applehealth"),
         ],
-        requirement: ServerRequirement(minimumVersion: "0.114.0", detailTypes: AuthorizationDetail.Types.all),
+        requirement: ServerRequirement(minimumVersion: "0.114.0"),
         passwordFallback: .belowRequirement,
         kindLabels: [
             "providers.substrate.reamde.dev/applehealth/account": KindLabel(singular: "Account", plural: "Accounts"),

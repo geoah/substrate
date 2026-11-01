@@ -203,9 +203,9 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 
     @Test func pathSegmentsEncodeSlashesOnce() {
-        #expect(API.segment("x.example.com/pkg/agent") == "x.example.com%2Fpkg%2Fagent")
+        #expect(segment("x.example.com/pkg/agent") == "x.example.com%2Fpkg%2Fagent")
         let api = API(server: URL(string: "https://s.example.com")!)
-        let url = try? api.url("api/v1/records", query: [("filter", "{\"kinds\":[\"a/b\"]}"), ("orderBy", "turn:desc,createdAt:desc")])
+        let url = try? api.client.url("api/v1/records", query: [("filter", "{\"kinds\":[\"a/b\"]}"), ("orderBy", "turn:desc,createdAt:desc")])
         #expect(url?.absoluteString == "https://s.example.com/api/v1/records?filter=%7B%22kinds%22%3A%5B%22a%2Fb%22%5D%7D&orderBy=turn%3Adesc%2CcreatedAt%3Adesc")
     }
 }

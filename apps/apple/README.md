@@ -201,9 +201,12 @@ Either session is kept in the Keychain under the service
 `dev.reamde.substrate.sync` and the app's access group, which the share
 extension reads too; a session an earlier build kept still reads as a
 password one. Sign Out forgets it on the phone at once and revokes the token
-in the background (an app token at `/oauth/revoke` under the client id it
-was approved for, a password one with its own `DELETE /tokens/{id}`), so it
-works with the server unreachable or the token already refused. What the
+in the background (the kit's `Session.revoke`: an app token at `/oauth/revoke`
+under the client id it was approved for, a password one with its own
+`DELETE /tokens/{id}`), so it works with the server unreachable or the token
+already refused. The token is kept in the Keychain until the server answers
+200 (a busy server's 429 or 503 is no revocation), tried again at each
+launch, and Settings and the sign-in screen say so while it still works. What the
 phone remembers is bound to the repository it was pushed to: signing in to
 another one, or finding the contacts' address book, the calendar store or the
 Health account gone from the server, sends everything again.
@@ -219,8 +222,13 @@ words, with Review and Approve, which opens the review and then the flow
 again with the whole request. Scopes the app lacks, access ending soon or a
 server it could not reach show as a banner on Home, and so does a change the
 approval page would refuse (a blocked row: a quarantined package, one
-declared by hand, a server too old), which offers the server instead of a
-review. A source whose scope the owner left unticked stops with that scope
+declared by hand, an account deleted): the server's own sentence says why,
+and its button opens the console page the server names to fix it, or the
+review where it names none, since the page shows why with Approve off. A
+package only a newer server ships waits for that update, with no button. A
+scope the owner left unticked is never asked about again; Settings → Change
+Access offers it back under "You left these out last time". A source whose
+scope the owner left unticked stops with that scope
 named, before it reads anything: a scoped read of a kind the token does not
 reach answers 404, which would otherwise read as rows the server lost. A
 Health account deleted on the server says so; the approval leaves a deleted
@@ -472,7 +480,9 @@ document as `client.json` in its folder and stamps that URL into the build
 `http://127.0.0.1/substrate-chat`. A server whose metadata answers 404 gets
 the password form; one whose metadata does not list `agents:` and `decide:`
 (between decisions 0194 and 0195) would refuse the request with an error
-page, so it gets the kit's too-old screen instead.
+page, so it gets the kit's too-old screen instead, as does a release older
+than 0.114.0, the first to carry both. A build between releases (`dev`, or
+`v0.113.0-143-g…`) is judged by its metadata alone.
 
 The session, either kind, is the kit's, kept where every build kept it (the
 Keychain service `dev.reamde.substrate.chat`), and a session an earlier
@@ -481,11 +491,14 @@ every five minutes, the kit's status check runs for an app session, and the
 chat list shows its banner for access ending soon or ended, a server too
 old, and a scope a newer build asks for, with Review, which opens the flow
 again. A scope the owner left out at the last approval is never asked about
-again: it is theirs to add with Settings → Change Access, which runs the
-flow and keeps the old access until the new one is kept. A 403 says to
-allow it there, never to sign in again. Sign Out revokes an app token under
-the client id it was approved for, and a password one with its own
-`DELETE /tokens/{id}`.
+again: it is theirs to add with Settings → Change Access, whose review
+offers it back, and which runs the flow and keeps the old access until the
+new one is kept. A 403 says to allow it there, never to sign in again. Chat's
+requests and their errors are the kit's `SubstrateClient`; it adds only the
+agent streams and the change feed. Sign Out revokes an app token under the
+client id it was approved for (none, for a session an earlier build kept
+without one), and a password one with its own `DELETE /tokens/{id}`; a
+revocation the server does not confirm is kept and tried again at launch.
 
 **Instant.** Agents, providers, the chat list and each chat's rows are kept in
 Application Support, one folder per server and repository (excluded from

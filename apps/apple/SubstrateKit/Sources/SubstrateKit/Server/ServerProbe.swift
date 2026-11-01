@@ -43,7 +43,9 @@ public struct ServerProbe: Sendable {
 
     /// Reads discovery, then the metadata, and judges the server against
     /// `requirement`. A discovery read that fails is `NotASubstrate`, with
-    /// `app`'s words for why.
+    /// `app`'s words for why. Metadata whose issuer is not `origin`, or whose
+    /// endpoints are elsewhere, is `ServerMismatch`: an app signing in
+    /// through it would hand the code and its verifier to another server.
     public func probe(_ origin: URL, requirement: ServerRequirement, app: String) async throws -> Result {
         let client = SubstrateClient(server: origin, transport: transport)
         let discovery: Discovery
@@ -54,6 +56,7 @@ public struct ServerProbe: Sendable {
             throw NotASubstrate(origin: origin, reason: explain(error, app: app, server: origin))
         }
         let metadata = try await client.authorizationServerMetadata()
+        if let problem = metadata?.mismatch(server: origin) { throw ServerMismatch(problem) }
         return Result(origin: origin, discovery: discovery, metadata: metadata,
                       verdict: requirement.verdict(version: discovery.server.version, metadata: metadata))
     }

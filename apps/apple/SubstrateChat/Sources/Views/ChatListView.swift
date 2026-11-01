@@ -142,7 +142,7 @@ struct ChatListView: View {
             #endif
         }
         .sheet(isPresented: $reviewing) {
-            ReviewChangesSheet(appName: ChatManifest.appName, host: host, changes: model.status.status?.changes ?? [],
+            ReviewChangesSheet(appName: ChatManifest.appName, host: host, changes: model.reviewChanges,
                                firstSignIn: false,
                                onContinue: {
                                    reviewing = false

@@ -104,8 +104,8 @@ public struct ScopeKind: Hashable, Sendable {
 /// checkbox (web/console's app-scopes.ts, whose words this mirrors): what the
 /// app may do, over the kinds or agents it reaches, by their labels. Every
 /// power stays in the words: a write may delete, a glob reaches what is
-/// added later, talking to an agent reads every chat with it, and a decision
-/// may edit the change it applies.
+/// added later, talking to an agent reaches whatever the agent may do and
+/// reads every chat with it, and a decision may edit the change it applies.
 public enum ScopeWords {
     /// How many kind labels one sentence names before it counts the rest.
     static let maxLabels = 6
@@ -130,7 +130,10 @@ public enum ScopeWords {
             let later = glob ? ", including agents added later" : ""
             let who: String
             if case .all = shape { who = "all your agents" } else { who = agentsPhrase(shape, pattern, agents) }
-            return "Talk to \(who)\(later); read every chat with \(glob ? "them" : "it"), yours included, and rename or stop any of those chats"
+            let them = glob ? "them" : "it"
+            return "Talk to \(who)\(later), and through a chat have \(them) do anything \(glob ? "they" : "it") may do; "
+                + "read every chat with \(them), yours included, answer \(glob ? "their" : "its") questions, "
+                + "and rename or stop any of those chats"
         case "decide":
             let later = glob ? ", including agents added later" : ""
             return "Apply or dismiss the changes \(agentsPhrase(shape, pattern, agents)) \(glob ? "suggest" : "suggests")\(later), and edit one before applying it, as you"
@@ -142,13 +145,23 @@ public enum ScopeWords {
     }
 
     /// What a `webhook:` scope lets the app do: deliver with its own token,
-    /// for any account the package's callable accepts, and read the
-    /// deliveries that could not be filed.
+    /// for any account the package's callable accepts, and read every
+    /// delivery to the trigger that could not be filed, whoever sent it.
+    /// `packageName` names the package whose trigger it is, where known.
     public static func webhookSentence(trigger: String, packageName: String? = nil) -> String {
+        let parked = "and see every delivery to it that could not be filed, whoever sent it"
         guard let packageName else {
-            return "Send data to your repository through the \(trigger) webhook, and see which deliveries could not be filed"
+            return "Send data to your repository through the \(trigger) webhook, \(parked)"
         }
-        return "Send data to your repository through the \(packageName) webhook, for any \(packageName) account, and see which deliveries could not be filed"
+        return "Send data to your repository through the \(packageName) webhook, for any \(packageName) account, \(parked)"
+    }
+
+    /// A scope with `~` in its authority completed with the repository's,
+    /// as the server stores it.
+    public static func resolve(_ scope: String, authority: String) -> String {
+        let (verb, pattern) = split(scope)
+        guard !verb.isEmpty, pattern == "~" || pattern.hasPrefix("~/") else { return scope }
+        return "\(verb):\(authority)\(pattern.dropFirst())"
     }
 
     static func split(_ scope: String) -> (verb: String, pattern: String) {
@@ -167,7 +180,7 @@ public enum ScopeWords {
                 self = .all
             } else if pattern.hasSuffix("/*") {
                 let parts = pattern.dropLast(2).split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-                self = parts.count > 1 ? .package(authority: parts[0], package: parts[1]) : .authority(parts.first ?? "")
+                self = parts.count > 1 && !parts[1].isEmpty ? .package(authority: parts[0], package: parts[1]) : .authority(parts.first ?? "")
             } else {
                 let parts = pattern.split(separator: "/", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
                 self = parts.count == 3 ? .exact(authority: parts[0], package: parts[1], name: parts[2])
@@ -240,10 +253,11 @@ public enum ScopeWords {
         }
     }
 
-    /// An agent's id as its name: the last segment's words.
+    /// An agent's id as its name: the words after its last `/` or `:`, else
+    /// the whole id (web/console's actor-identity.ts agentName).
     static func agentWords(_ id: String) -> String {
-        let local = id.split(whereSeparator: { $0 == "/" || $0 == ":" }).last.map(String.init) ?? id
+        let local = id.lastIndex(where: { $0 == "/" || $0 == ":" }).map { String(id[id.index(after: $0)...]) } ?? id
         let spaced = local.splittingWords().joined(separator: " ").lowercased()
-        return spaced.isEmpty ? id : spaced.capitalizedFirst
+        return (spaced.isEmpty ? id : spaced).capitalizedFirst
     }
 }

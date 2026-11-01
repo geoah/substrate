@@ -10,19 +10,29 @@ public struct Change: Hashable, Sendable, Identifiable {
     public var kind: Kind
     /// What approving does: "Install Apple Health", "See your Apple places".
     public var words: String
-    /// A fact beside it: "From version 2 to 3", a blocked row's problem.
+    /// A fact beside it: "Version 2 to 3", or a blocked row's problem.
     public var detail: String?
-    /// The approval page cannot do it as things stand; the detail says why.
-    public var blocked: Bool
+    /// Why the approval page cannot do it as things stand: the server's
+    /// reason, its sentence (the detail) and where the owner fixes it.
+    public var block: AuthorizationSetup.Block?
+    /// A scope the owner left out of the last approval, which the request
+    /// asks for again.
+    public var leftOut: Bool
 
-    public init(kind: Kind, words: String, detail: String? = nil, blocked: Bool = false) {
+    public init(kind: Kind, words: String, detail: String? = nil, block: AuthorizationSetup.Block? = nil,
+                leftOut: Bool = false)
+    {
         self.kind = kind
         self.words = words
         self.detail = detail
-        self.blocked = blocked
+        self.block = block
+        self.leftOut = leftOut
     }
 
-    public var id: String { "\(kind.rawValue)|\(words)" }
+    public var id: String { "\(kind.rawValue)|\(leftOut)|\(words)" }
+
+    /// The approval page cannot do it as things stand; the detail says why.
+    public var blocked: Bool { block != nil }
 
     /// Whether it is set up on the server, rather than access to allow.
     public var isSetup: Bool { kind != .scope }
@@ -91,8 +101,7 @@ public struct AppStatus: Hashable, Sendable {
 public extension [AppIssue] {
     /// Whether the approval page would refuse a review now: it disables
     /// Approve while any set up row is blocked, and a server too old for what
-    /// the app asks blocks one, so a review would lead to a page that cannot
-    /// approve.
+    /// the app asks blocks one.
     var approvalBlocked: Bool {
         contains { issue in
             switch issue {
@@ -102,19 +111,40 @@ public extension [AppIssue] {
             }
         }
     }
+
+    /// The console path where what blocks the approval is fixed, where the
+    /// server named one.
+    var fix: String? {
+        lazy.compactMap { issue -> String? in
+            guard case let .needsApproval(changes) = issue else { return nil }
+            return changes.lazy.compactMap { $0.block?.fix }.first
+        }.first
+    }
+
+    /// Whether only a server update stands in the way: the owner waits, and
+    /// nothing they open would help.
+    var waitsForUpdate: Bool {
+        contains { if case .serverTooOld = $0 { true } else { false } }
+            && !contains { if case let .needsApproval(changes) = $0 { changes.contains(where: \.blocked) } else { false } }
+    }
 }
 
 /// How a review of changes heads itself, by what changed since the access
-/// the app holds (the console's re-authorization headings).
+/// the app holds (the console's re-authorization headings), or by what the
+/// owner asked for.
 public enum ReviewHeading: Hashable, Sendable {
     case firstSignIn
     case renew
     case moreAccess
     case serverSetup
     case moreAccessAndServerSetup
+    /// The owner chose to change what the app may do.
+    case changeAccess
 
+    /// A scope left out last time is offered back, never what heads a
+    /// review.
     public init(changes: [Change], firstSignIn: Bool) {
-        let scopes = changes.contains { $0.kind == .scope }
+        let scopes = changes.contains { $0.kind == .scope && !$0.leftOut }
         let setup = changes.contains(where: \.isSetup)
         switch (firstSignIn, scopes, setup) {
         case (true, _, _): self = .firstSignIn
@@ -125,13 +155,15 @@ public enum ReviewHeading: Hashable, Sendable {
         }
     }
 
-    public var title: String {
+    /// The heading; `appName` names the app where the heading does.
+    public func title(appName: String) -> String {
         switch self {
         case .firstSignIn: "Connect to your substrate"
         case .renew: "Renew access"
         case .moreAccess: "Allow more access"
         case .serverSetup: "Update server setup"
         case .moreAccessAndServerSetup: "Allow more access and update server setup"
+        case .changeAccess: "Change what \(appName) may do"
         }
     }
 }

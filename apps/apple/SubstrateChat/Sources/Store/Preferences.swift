@@ -25,9 +25,6 @@ final class Preferences {
     var voiceLocale: String? { didSet { save("voiceLocale", voiceLocale) } }
     /// Whether the notification permission was asked after a first send.
     var askedNotifications: Bool { didSet { save("askedNotifications", askedNotifications) } }
-    /// The scopes the last approval asked for, of an app session; nil where
-    /// a build before this one signed in (`ChatManifest.earliestRequest`).
-    var requestedScopes: [String]? { didSet { save("requestedScopes", requestedScopes) } }
 
     init(identity: String, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -43,7 +40,6 @@ final class Preferences {
         notifyAttention = defaults.object(forKey: p + "notifyAttention") as? Bool ?? true
         voiceLocale = defaults.string(forKey: p + "voiceLocale")
         askedNotifications = defaults.object(forKey: p + "askedNotifications") as? Bool ?? false
-        requestedScopes = defaults.stringArray(forKey: p + "requestedScopes")
     }
 
     private func save(_ key: String, _ value: Any?) {

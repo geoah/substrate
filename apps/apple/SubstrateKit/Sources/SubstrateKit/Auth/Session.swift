@@ -24,6 +24,10 @@ public struct Session: Codable, Equatable, Sendable {
     public var clientID: String?
     /// The approved scopes; nil is a full-access password session.
     public var scopes: [String]?
+    /// The scopes the request that minted the token asked for, where the
+    /// session knows: one asked for and not approved was left out by the
+    /// owner, and the app does not ask about it again.
+    public var requestedScopes: [String]?
     /// Absent when the access lasts until the owner revokes it.
     public var expiresAt: Date?
     /// When the token was issued, where the session knows: with `expiresAt`,
@@ -37,8 +41,8 @@ public struct Session: Codable, Equatable, Sendable {
     public var details: [AuthorizationDetail]
 
     public init(server: URL, repository: String, secret: String, tokenID: String? = nil, clientID: String? = nil,
-                scopes: [String]? = nil, expiresAt: Date? = nil, issuedAt: Date? = nil, revocation: URL? = nil,
-                webhooks: [String: URL] = [:], details: [AuthorizationDetail] = [])
+                scopes: [String]? = nil, requestedScopes: [String]? = nil, expiresAt: Date? = nil, issuedAt: Date? = nil,
+                revocation: URL? = nil, webhooks: [String: URL] = [:], details: [AuthorizationDetail] = [])
     {
         version = Self.currentVersion
         self.server = server
@@ -47,6 +51,7 @@ public struct Session: Codable, Equatable, Sendable {
         self.tokenID = tokenID
         self.clientID = clientID
         self.scopes = scopes
+        self.requestedScopes = requestedScopes
         self.expiresAt = expiresAt
         self.issuedAt = issuedAt
         self.revocation = revocation
@@ -54,14 +59,19 @@ public struct Session: Codable, Equatable, Sendable {
         self.details = details
     }
 
-    /// An app session from the token endpoint's answer.
-    public init(server: URL, token: TokenResponse, clientID: String, revocation: URL?, now: Date = Date()) {
+    /// An app session from the token endpoint's answer to a request that
+    /// asked for `requested`. `now` is when the answer came: the lifetime the
+    /// owner approved starts at the exchange, however long the approval took.
+    public init(server: URL, token: TokenResponse, clientID: String, revocation: URL?, requested: [String]? = nil,
+                now: Date = Date())
+    {
         var webhooks: [String: URL] = [:]
         for detail in token.authorizationDetails where detail.type == AuthorizationDetail.Types.webhook {
             if let trigger = detail.trigger, let url = detail.url { webhooks[trigger] = url }
         }
         self.init(server: server, repository: token.repository, secret: token.accessToken, clientID: clientID,
-                  scopes: token.scopes, expiresAt: token.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
+                  scopes: token.scopes, requestedScopes: requested,
+                  expiresAt: token.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
                   issuedAt: now, revocation: revocation, webhooks: webhooks, details: token.authorizationDetails)
     }
 
@@ -78,7 +88,8 @@ public struct Session: Codable, Equatable, Sendable {
     public func hasEnded(at now: Date) -> Bool { expiresAt.map { $0 <= now } ?? false }
 
     enum CodingKeys: String, CodingKey {
-        case version, server, repository, secret, tokenID, clientID, scopes, grants, expiresAt, issuedAt, revocation, webhooks, details
+        case version, server, repository, secret, tokenID, clientID, scopes, requestedScopes, grants, expiresAt, issuedAt, revocation
+        case webhooks, details
     }
 
     enum GrantsKeys: String, CodingKey { case scopes }
@@ -96,6 +107,7 @@ public struct Session: Codable, Equatable, Sendable {
         } else {
             self.scopes = (try? c.nestedContainer(keyedBy: GrantsKeys.self, forKey: .grants))?.value(.scopes, or: nil)
         }
+        requestedScopes = c.value(.requestedScopes, or: nil)
         expiresAt = Self.date(c, .expiresAt)
         issuedAt = Self.date(c, .issuedAt)
         revocation = c.value(.revocation, or: nil)
@@ -113,6 +125,7 @@ public struct Session: Codable, Equatable, Sendable {
         try c.encode(tokenID ?? "", forKey: .tokenID)
         try c.encodeIfPresent(clientID, forKey: .clientID)
         try c.encodeIfPresent(scopes, forKey: .scopes)
+        try c.encodeIfPresent(requestedScopes, forKey: .requestedScopes)
         if let scopes {
             var grants = c.nestedContainer(keyedBy: GrantsKeys.self, forKey: .grants)
             try grants.encode(scopes, forKey: .scopes)
@@ -130,5 +143,34 @@ public struct Session: Codable, Equatable, Sendable {
     private static func date(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
         if let seconds = try? c.decodeIfPresent(Double.self, forKey: key) { return Date(timeIntervalSinceReferenceDate: seconds) }
         return c.value(key, or: String?.none).flatMap(Timestamp.parse)
+    }
+}
+
+public extension Session {
+    /// Revokes the token through its own door, and returns only once the
+    /// server says it is revoked: an app token at its revocation endpoint
+    /// (RFC 7009), which must answer 200, and a password one with its own
+    /// `DELETE /tokens/{id}`. An app token goes under the client id it was
+    /// approved for, since the server answers 200 to a token sent under
+    /// another and leaves it live; a session that never kept its client id
+    /// sends none, and the token alone is the credential. The endpoint is the
+    /// session's own only on its server's origin: a token is never sent
+    /// anywhere else.
+    func revoke(transport: any HTTPTransport = URLSessionTransport.shared) async throws {
+        if isApp {
+            let fixed = URL(string: server.absoluteString.trimmingTrailingSlashes + "/oauth/revoke") ?? server
+            let endpoint = revocation.flatMap { ServerAddress.sameOrigin($0, server) ? $0 : nil } ?? fixed
+            var pairs = [("token", secret)]
+            if let clientID { pairs.append(("client_id", clientID)) }
+            let (data, response) = try await transport.data(for: OAuthClient.form(endpoint, pairs, timeout: 10))
+            guard response.statusCode == 200 else { throw OAuthClient.refusal(status: response.statusCode, data: data) }
+        } else if let tokenID {
+            do {
+                try await SubstrateClient(self, transport: transport).revokeToken(id: tokenID)
+            } catch is SessionExpired {
+                // The server no longer accepts the token: there is nothing
+                // left to revoke.
+            }
+        }
     }
 }

@@ -66,6 +66,14 @@ public struct ServerVersion: Comparable, Hashable, Sendable, CustomStringConvert
     /// The release it names or comes before: `0.113.0`.
     public var release: ServerVersion { ServerVersion(major, minor, patch) }
 
+    /// A version as every screen says it: a release as `0.114.0`, a build
+    /// before or past one as a build of it, and anything else, `dev`
+    /// included, as a development build.
+    public static func display(_ text: String?) -> String {
+        guard let text, let version = ServerVersion(text) else { return "a development build" }
+        return version.isRelease ? version.description : "a build of \(version.release)"
+    }
+
     public var description: String {
         var text = "\(major).\(minor).\(patch)"
         if let prerelease { text += "-\(prerelease)" }

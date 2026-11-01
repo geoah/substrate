@@ -21,20 +21,43 @@ enum SyncManifest {
         "read:\(SyncEngine.healthExportKind)",
     ]
 
-    /// The labels of the Health kinds Sync reads, as the applehealth package
-    /// declares them (the account declares none, and reads as its name), so
-    /// the review says what the approval page will.
-    static let kindLabels = [
-        SyncEngine.healthAccountKind: KindLabel(singular: "Account", plural: "Accounts"),
-        SyncEngine.healthExportKind: KindLabel(singular: "Delivery", plural: "Deliveries"),
-    ]
+    /// The labels and purposes of the kinds Sync's scopes reach, as the apple
+    /// and applehealth packages declare them (the account declares no label,
+    /// and reads as its name), so the review names what the approval page
+    /// will: the apple kinds a glob reaches by their labels, the supporting
+    /// ones counted.
+    static let kindLabels: [String: KindLabel] = {
+        var labels = [
+            SyncEngine.healthAccountKind: KindLabel(singular: "Account", plural: "Accounts"),
+            SyncEngine.healthExportKind: KindLabel(singular: "Delivery", plural: "Deliveries"),
+        ]
+        let apple: [(String, String, String, String?)] = [
+            ("addressbook", "Address book", "Address books", "supporting"),
+            ("contact", "Contact", "Contacts", nil),
+            ("eventstore", "Event store", "Event stores", "supporting"),
+            ("calendar", "Calendar", "Calendars", "supporting"),
+            ("event", "Event", "Events", nil),
+            ("reminderlist", "Reminders list", "Reminders lists", "supporting"),
+            ("reminder", "Reminder", "Reminders", nil),
+            ("visitstore", "Visit store", "Visit stores", "supporting"),
+            ("visit", "Visit", "Visits", nil),
+            ("share", "Share", "Shares", nil),
+        ]
+        for (name, singular, plural, purpose) in apple {
+            labels[SyncEngine.appleKinds + name] = KindLabel(singular: singular, plural: plural, purpose: purpose)
+        }
+        return labels
+    }()
 
     /// The first release whose approval sets up packages, an account and a
-    /// webhook. A build between releases passes when its metadata lists the
-    /// verbs and the types, and a release below it is too old even when it
-    /// does.
-    static let requirement = ServerRequirement(minimumVersion: "0.114.0", scopeVerbs: ["read", "write"],
-                                               detailTypes: AuthorizationDetail.Types.all)
+    /// webhook.
+    private static let release = ServerRequirement(minimumVersion: "0.114.0")
+
+    /// What a server needs to sign Sync in: that release, and the verbs and
+    /// the detail types the request uses, which a build between releases
+    /// passes on by listing them in its metadata. A release below it is too
+    /// old even when it does.
+    static var requirement: ServerRequirement { make(account: "", deviceName: "", timeZone: "").requirement }
 
     /// One scope in the approval page's words.
     static func scopeWords(_ scope: String) -> String {
@@ -54,9 +77,9 @@ enum SyncManifest {
                 .package(AppModel.healthProvider, atLeast: AppModel.healthVersion),
                 .account(kind: SyncEngine.healthAccountKind, id: account,
                          properties: ["displayName": .string(deviceName), "timezone": .string(timeZone)]),
-                .webhook(trigger: SyncEngine.trigger),
+                .webhook(trigger: SyncEngine.trigger, deliversTo: AppModel.healthProvider),
             ],
-            requirement: requirement,
+            requirement: release,
             passwordFallback: .belowRequirement,
             kindLabels: kindLabels)
     }

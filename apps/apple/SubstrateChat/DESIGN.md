@@ -88,8 +88,8 @@ one segment, encoded exactly once: an agent's id
 | Server check | `GET /.well-known/substrate/server.json` (`server.version`, `registration.totpRequired`) |
 | Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization; `scopes_supported` must list `agents:` and `decide:`) |
 | Sign in | the browser on `GET /oauth/authorize` (code, PKCE S256, `scope`, `state`), the redirect on `http://127.0.0.1:<port>/oauth/callback`, then `POST /oauth/token` (form) → `{access_token, scope, expires_in?, repository}` |
-| Sign out | `POST /oauth/revoke` (form `token`, `client_id` it was approved under), best effort |
-| Still set up | `POST /api/v1/authorizations/check` `{scope}` → `{scopes: {missing}, setup, expiresAt}` |
+| Sign out | `POST /oauth/revoke` (form `token`, `client_id` it was approved under, none where the session never kept one); kept and tried again at launch until it answers 200 |
+| Still set up | `POST /api/v1/authorizations/check` `{scope, details}` → `{scopes: {missing}, setup, expiresAt}`, on a server whose metadata lists detail types |
 | Sign in, older server | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}`; out with `DELETE /tokens/{id}` |
 | Agents | `{"kinds":["substrate.reamde.dev/core/agent"]}`, every page |
 | Providers | `{"kinds":["substrate.reamde.dev/llm/provider"]}`, every page |
@@ -481,14 +481,18 @@ may do and for how long; the app never sees the password.
 - **The token** is an app token: writes are recorded as `app:<host>`, it may
   expire (the approved lifetime) and has no refresh. A refusal (401) shows
   the kit's access ended screen with Sign In Again, which keeps the saved
-  chats. Change Access runs the flow again and keeps the old access until
-  the new one is kept. Sign Out revokes it at the revocation endpoint under
-  the client id it was approved for.
+  chats. Change Access opens the kit's review, which offers back what the
+  owner left out last time, then runs the flow again and keeps the old
+  access until the new one is kept; the old token is kept for revocation
+  until the server revokes it. Sign Out revokes it at the revocation
+  endpoint under the client id it was approved for, and a revocation the
+  server does not answer 200 for is kept and tried again at each launch,
+  which Settings → Account says while it waits.
 - **Still set up**: at launch and on return to the foreground, at most every
   five minutes, the kit's status check; the chat list shows its banner for
   access ending soon or ended, a server too old, and a scope a newer build
-  asks for. A scope the owner left out at the last approval is never asked
-  about again.
+  asks for. A scope the owner left out at the last approval (the session
+  keeps what its request asked for) is never asked about again.
 - **A server without app authorization** (no OAuth metadata) gets the
   password form, as before, so a deployment that predates it still works.
   One whose metadata lacks `agents:` or `decide:` would refuse the request

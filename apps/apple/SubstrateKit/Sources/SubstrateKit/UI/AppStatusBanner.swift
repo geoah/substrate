@@ -9,18 +9,24 @@ public struct AppStatusActions {
     /// A password session's way to an app session.
     public var moveToAppAccess: (() -> Void)?
     public var retry: (() -> Void)?
-    /// Opens the server's console, where what blocks an approval is fixed.
-    public var openServer: (() -> Void)?
+    /// Opens the console page, by its root-relative path on the server,
+    /// where what blocks an approval is fixed (`ServerAddress.page`).
+    public var openFix: ((String) -> Void)?
 
     public init(review: (() -> Void)? = nil, signInAgain: (() -> Void)? = nil, moveToAppAccess: (() -> Void)? = nil,
-                retry: (() -> Void)? = nil, openServer: (() -> Void)? = nil)
+                retry: (() -> Void)? = nil, openFix: ((String) -> Void)? = nil)
     {
         self.review = review
         self.signInAgain = signInAgain
         self.moveToAppAccess = moveToAppAccess
         self.retry = retry
-        self.openServer = openServer
+        self.openFix = openFix
     }
+}
+
+/// Why an app's access ended, in one sentence every screen says it with.
+public func accessEndedWords(appName: String, host: String) -> String {
+    "\(host) no longer accepts \(appName): the time you approved it for is up, or it was revoked in Settings, under Apps."
 }
 
 /// An app's status issues, one line each with its action: what needs the
@@ -58,22 +64,32 @@ public struct AppStatusBanner: View {
         switch issue {
         case let .serverTooOld(running, needed, missing):
             let cannot = missing.isEmpty ? "" : "can't yet \(joinWords(missing))"
+            let runs = running.map { "\(host) runs \(ServerVersion.display($0))" }
             var message: String
             if let needed {
-                message = "\(appName) needs Substrate \(needed) or later" + (running.map { "; \(host) runs \($0)." } ?? ".")
+                message = "\(appName) needs Substrate \(needed) or later" + (runs.map { "; \($0)." } ?? ".")
                 if !cannot.isEmpty { message += " It \(cannot)." }
             } else {
-                message = running.map { "\(host) runs \($0), which \(cannot.isEmpty ? "is too old for \(appName)" : cannot)." }
+                message = runs.map { "\($0), which \(cannot.isEmpty ? "is too old for \(appName)" : cannot)." }
                     ?? "\(host) \(cannot.isEmpty ? "is too old for \(appName)" : cannot)."
             }
             return .init(symbol: "arrow.up.circle.fill", tint: .orange, title: "\(host) needs an update",
                          message: message + " Whoever runs it can update it.", action: nil)
-        case let .needsApproval(changes) where issues.approvalBlocked:
-            // The approval page would refuse: the way on is on the server.
+        case let .needsApproval(changes) where changes.contains(where: \.blocked):
+            // The approval page would refuse. A fix the server named is the
+            // way on; without one, the page itself shows why.
+            let count = changes.count == 1 ? "a change" : "\(changes.count) changes"
+            if let fix = changes.lazy.compactMap({ $0.block?.fix }).first, let openFix = actions.openFix {
+                return .init(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Something on \(host) is in the way",
+                             message: "\(appName) needs \(count) that can't be approved until what is in the way is fixed on \(host):",
+                             changes: changes, action: ("Fix It on \(host)", { openFix(fix) }))
+            }
             return .init(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Something on \(host) is in the way",
-                         message: "\(appName) needs \(changes.count == 1 ? "a change" : "\(changes.count) changes") that can't be approved until what is in the way is fixed on \(host):",
-                         changes: changes,
-                         action: actions.openServer.map { ("Open \(host)", $0) } ?? actions.retry.map { ("Check Again", $0) })
+                         message: "\(appName) needs \(count) that can't be approved yet. The approval page on \(host) shows why:",
+                         changes: changes, action: actions.review.map { ("Review", $0) })
+        case let .needsApproval(changes) where issues.waitsForUpdate:
+            return .init(symbol: "checkmark.shield.fill", tint: .blue, title: "\(appName) needs your approval",
+                         message: "Once \(host) is updated, \(appName) will ask you to approve:", changes: changes, action: nil)
         case let .needsApproval(changes):
             return .init(symbol: "checkmark.shield.fill", tint: .blue, title: "\(appName) needs your approval",
                          message: changes.count == 1 ? "One change, which you approve on \(host):"
@@ -85,7 +101,7 @@ public struct AppStatusBanner: View {
                          action: issues.approvalBlocked ? nil : actions.review.map { ("Renew", $0) })
         case .accessEnded:
             return .init(symbol: "xmark.circle.fill", tint: .red, title: "\(appName)'s access ended",
-                         message: "\(host) no longer accepts it: the time you approved is up, or it was revoked in Settings, under Apps.",
+                         message: accessEndedWords(appName: appName, host: host),
                          action: actions.signInAgain.map { ("Sign In Again", $0) })
         case let .unreachable(message):
             return .init(symbol: "wifi.exclamationmark", tint: .secondary, title: "Couldn't check with \(host)",
@@ -140,7 +156,7 @@ public struct AccessEndedView: View {
             Text("\(appName)'s access ended")
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text("\(host) no longer accepts \(appName): the time you approved it for is up, or it was revoked in Settings, under Apps. Sign in again to approve it.")
+            Text(accessEndedWords(appName: appName, host: host))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

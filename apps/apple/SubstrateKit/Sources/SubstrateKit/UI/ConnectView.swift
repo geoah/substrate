@@ -37,7 +37,8 @@ public struct ConnectHeader: View {
 /// and the app's requirement when the person presses Continue. A server that
 /// can give the app access of its own offers the browser sign-in; one the
 /// app falls back for shows the app's own password door; one too old says
-/// what it lacks.
+/// what it lacks. Without a password door, a server the app would fall back
+/// for is too old: there is no step to show for it.
 public struct ConnectView<Header: View, PasswordDoor: View>: View {
     let manifest: AppManifest
     @Binding var address: String
@@ -45,6 +46,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
     let header: Header
     let onSignIn: (ServerProbe.Result) async throws -> Void
     let passwordDoor: (ServerProbe.Result) -> PasswordDoor
+    let hasPasswordDoor: Bool
 
     enum Phase {
         case idle
@@ -63,12 +65,13 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
     {
         self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: passwordDoor, phase: .idle)
+                  passwordDoor: passwordDoor, hasPasswordDoor: true, phase: .idle)
     }
 
     init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe, header: Header,
          onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
-         passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, phase: Phase, problem: String? = nil)
+         passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, hasPasswordDoor: Bool, phase: Phase,
+         problem: String? = nil)
     {
         self.manifest = manifest
         _address = address
@@ -76,6 +79,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         self.header = header
         self.onSignIn = onSignIn
         self.passwordDoor = passwordDoor
+        self.hasPasswordDoor = hasPasswordDoor
         _phase = State(initialValue: phase)
         _problem = State(initialValue: problem)
     }
@@ -85,6 +89,13 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         case .found(let result), .signingIn(let result): result
         default: nil
         }
+    }
+
+    /// The door a server takes here: the manifest's, with the password door
+    /// read as too old where the app gave none.
+    private func door(for found: ServerProbe.Result) -> SignInDoor {
+        let door = manifest.door(for: found)
+        return door == .password && !hasPasswordDoor ? .tooOld : door
     }
 
     private var busy: Bool {
@@ -101,18 +112,18 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
 
                 addressField
 
-                if let found, manifest.door(for: found) == .tooOld, case let .tooOld(running, needed, missing) = found.verdict {
+                if let found, door(for: found) == .tooOld, case let .tooOld(running, needed, missing) = found.verdict {
                     ServerTooOldView(appName: manifest.appName, host: found.host, running: running, needed: needed,
                                      missing: missing, onTryAgain: check, onChangeServer: changeServer)
                 } else {
-                    if let found, manifest.door(for: found) == .password {
+                    if let found, door(for: found) == .password {
                         passwordDoor(found)
                     }
                     if let problem {
                         ProblemBox(title: found == nil ? "Couldn't reach that server" : "Couldn't sign in", message: problem)
                             .modifier(KitCard(tint: .red))
                     }
-                    if found.map({ manifest.door(for: $0) }) != .password {
+                    if found.map({ door(for: $0) }) != .password {
                         primaryButton
                     }
                     footer
@@ -190,7 +201,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 } icon: {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 }
-                if manifest.door(for: found) == .password {
+                if door(for: found) == .password {
                     Text("This server can't give \(manifest.appName) access of its own yet, so your password goes to it directly.")
                 } else {
                     Text("You sign in on \(found.host) itself and choose what \(manifest.appName) may do there. You can change or revoke it any time in its Settings, under Apps.")
@@ -250,7 +261,7 @@ public extension ConnectView where PasswordDoor == EmptyView {
          @ViewBuilder header: () -> Header, onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
     {
         self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: { _ in EmptyView() }, phase: .idle)
+                  passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle)
     }
 }
 
@@ -261,6 +272,6 @@ public extension ConnectView where Header == ConnectHeader, PasswordDoor == Empt
     {
         self.init(manifest: manifest, address: address, probe: probe,
                   header: ConnectHeader(appName: manifest.appName, tagline: tagline, icon: icon),
-                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, phase: .idle)
+                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle)
     }
 }

@@ -42,12 +42,24 @@ struct Client: Sendable {
     /// queues behind it.
     func catalog(_ verb: String, _ id: String) async throws {
         try await api.send("POST", "api/v1/catalog/\(segment(id))/\(verb)", body: .json(Data("{}".utf8)),
-                           timeout: Timeout.serverWork, retries: 0)
+                           timeout: Self.serverWork, retries: 0)
+    }
+
+    /// How long an install may take. A debug build reads
+    /// SUBSTRATE_SYNC_SERVER_WORK_SECONDS, so a test stands in for a slow
+    /// server without waiting minutes.
+    static var serverWork: TimeInterval {
+        #if DEBUG
+        if let seconds = ProcessInfo.processInfo.environment["SUBSTRATE_SYNC_SERVER_WORK_SECONDS"].flatMap(Double.init) {
+            return seconds
+        }
+        #endif
+        return SubstrateClient.Timeout.serverWork
     }
 
     /// One live record's properties, or nil when there is none: a deleted
     /// record answers 200 with `deletedAt`, and reads as absent here.
-    func get(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws -> [String: Any]? {
+    func get(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> [String: Any]? {
         if case let .live(properties) = try await record(kind, id, retries: retries, timeout: timeout) { return properties }
         return nil
     }
@@ -63,7 +75,7 @@ struct Client: Sendable {
     /// One record as the server holds it. A reply that is not a record is an
     /// error, never an empty record: a receipt read as present when it is
     /// not would mark a Health day filed.
-    func record(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws -> Stored {
+    func record(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> Stored {
         let response = try await api.send(api.request("GET", SubstrateClient.recordPath(kind, id), timeout: timeout),
                                           accept: [404], retries: retries)
         if response.status == 404 { return .absent }
@@ -86,7 +98,7 @@ struct Client: Sendable {
         try await api.send("PATCH", SubstrateClient.recordPath(kind, id), body: json(["properties": nulls]), retries: 3)
     }
 
-    func delete(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws {
+    func delete(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws {
         try await api.send(api.request("DELETE", SubstrateClient.recordPath(kind, id), timeout: timeout), accept: [404],
                            retries: retries)
     }
@@ -122,32 +134,12 @@ struct Client: Sendable {
 
     /// The trigger's parked list: what its function refused, kept with its
     /// reason, and what it has accepted and not settled yet.
-    func parked(trigger: String, timeout: TimeInterval = Timeout.read) async throws -> [ParkedDelivery] {
+    func parked(trigger: String, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> [ParkedDelivery] {
         try await api.parked(trigger: trigger, timeout: timeout)
     }
 
     private func json(_ object: Any) throws -> RequestBody {
         .json(try JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes]))
-    }
-}
-
-/// How long a call may take, by what it asks of the server. A read the
-/// server answers from its index is quick or something is wrong; an install
-/// does real work; an upload is bounded by the phone's uplink.
-enum Timeout {
-    static let quick: TimeInterval = SubstrateClient.Timeout.quick
-    static let read: TimeInterval = SubstrateClient.Timeout.read
-    static let upload: TimeInterval = SubstrateClient.Timeout.upload
-
-    /// An install. A debug build reads SUBSTRATE_SYNC_SERVER_WORK_SECONDS,
-    /// so a test stands in for a slow server without waiting minutes.
-    static var serverWork: TimeInterval {
-        #if DEBUG
-        if let seconds = ProcessInfo.processInfo.environment["SUBSTRATE_SYNC_SERVER_WORK_SECONDS"].flatMap(Double.init) {
-            return seconds
-        }
-        #endif
-        return SubstrateClient.Timeout.serverWork
     }
 }
 
