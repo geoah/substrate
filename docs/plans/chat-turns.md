@@ -1,6 +1,7 @@
 # Plan: detached chat turns, thread titles, and a reasoning stream
 
-Status: proposed 2026-10-17, written against `origin/main` at `6a9bcc2f`.
+Status: landed. Proposed 2026-10-17, written against `origin/main` at
+`6a9bcc2f`; its four pull requests merged as #958, #960, #961 and #963.
 Four pull requests, one branch each, in the order below. It is a plan, not a
 contract: the code that lands is the contract, and where the two differ the
 code is right.
