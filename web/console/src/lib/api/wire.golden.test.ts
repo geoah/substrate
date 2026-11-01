@@ -714,6 +714,7 @@ const authorizationWebhookPlan: Shape<AuthorizationWebhookPlan> = {
   package: false,
   enabled: false,
   keyed: false,
+  allowed: false,
 }
 
 const authorizationPrevious: Shape<AuthorizationPrevious> = {

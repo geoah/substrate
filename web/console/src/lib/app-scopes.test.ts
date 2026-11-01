@@ -159,6 +159,12 @@ describe("scopeSentence", () => {
     ).toBe("See your LLM providers")
   })
 
+  // The server refuses such a scope, so the sentence fixture never carries
+  // one; the page still reads it without an empty package name.
+  it("reads a pattern that names no package by its kind alone", () => {
+    expect(scopeSentence(scope({ pattern: "note" }))).toBe("See your notes")
+  })
+
   it("groups the kinds of several packages", () => {
     expect(
       scopeSentence(
@@ -374,5 +380,15 @@ describe("the sentence fixture", () => {
     await expect(`${JSON.stringify(cases, null, 2)}\n`).toMatchFileSnapshot(
       "./app-scopes.fixture.json"
     )
+  })
+
+  // The server refuses a kind pattern that names no package, so the file the
+  // kit reads never carries one.
+  it("carries only kind patterns the server accepts", () => {
+    for (const c of SENTENCE_CASES) {
+      const { verb, pattern } = scopeWords(c.scope)
+      if ((verb === "read" || verb === "write") && pattern !== "*")
+        expect(pattern, c.scope).toContain("/")
+    }
   })
 })

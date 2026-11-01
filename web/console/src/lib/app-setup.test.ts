@@ -86,6 +86,16 @@ const WEBHOOK: AuthorizationSetup = {
   action: "enable",
   webhook: { trigger: "applehealth-webhook", package: APPLEHEALTH },
 }
+/** The webhook row as the server plans it when the token the app holds
+ * already delivers to it. */
+const HELD_WEBHOOK: AuthorizationSetup = {
+  ...WEBHOOK,
+  webhook: {
+    trigger: "applehealth-webhook",
+    package: APPLEHEALTH,
+    allowed: true,
+  },
+}
 const ROWS = [HEALTH, ACCOUNT, WEBHOOK]
 
 function block(
@@ -442,7 +452,7 @@ describe("foldRequest", () => {
         setup: [
           { ...HEALTH, action: "none" },
           ACCOUNT,
-          { ...WEBHOOK, action: "none" },
+          { ...HELD_WEBHOOK, action: "none" },
         ],
         previous,
       },
@@ -475,12 +485,30 @@ describe("foldRequest", () => {
     expect(fold.toDo).toBe(0)
   })
 
+  it("takes whether the token holds a webhook's access from the server's coverage, never from its scopes' spelling", () => {
+    const fold = (row: AuthorizationSetup, scopes: string[]) =>
+      foldRequest(
+        {
+          ...REQUEST,
+          scopes: [{ ...ACCOUNTS, allowed: true }],
+          setup: [{ ...row, action: "none" }],
+          previous: { ...previous, scopes },
+        },
+        now
+      )
+    expect(fold(HELD_WEBHOOK, [ACCOUNTS.scope]).folded[0].grantHeld).toBe(true)
+    expect(
+      fold(WEBHOOK, [ACCOUNTS.scope, "webhook:applehealth-webhook"]).setup[0]
+        .grantHeld
+    ).toBe(false)
+  })
+
   it("asks for everything in full when the access it held has ended", () => {
     const fold = foldRequest(
       {
         ...REQUEST,
         scopes: [{ ...ACCOUNTS, allowed: true }],
-        setup: [{ ...WEBHOOK, action: "none" }],
+        setup: [{ ...HELD_WEBHOOK, action: "none" }],
         previous: { ...previous, expiresAt: "2026-10-31T00:00:00Z" },
       },
       now

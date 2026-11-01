@@ -1092,6 +1092,9 @@ export interface AuthorizationWebhookPlan {
   package?: string
   enabled?: boolean
   keyed?: boolean
+  /** The token the app holds already delivers to this trigger, by the same
+   * coverage as a scope row's `allowed`. */
+  allowed?: boolean
 }
 
 /** The newest token the repository holds for the requesting client id. */

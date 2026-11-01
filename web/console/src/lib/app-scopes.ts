@@ -79,8 +79,9 @@ function patternShape(pattern: string): PatternShape {
 }
 
 /** "Apple contacts and events", or "tasks and projects" where the package's
- * own name would only repeat the first label. */
+ * own name would only repeat the first label or the pattern names none. */
 function packagePhrase(pkg: string, labels: string[]): string {
+  if (!pkg) return listWords(labels)
   const name = packageDisplayName(pkg)
   const lower = name.toLowerCase()
   const repeats = labels.some((l) =>

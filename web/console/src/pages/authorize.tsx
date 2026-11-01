@@ -572,7 +572,9 @@ function Approval({
             <AutomationWarning />
           ))}
 
-        {fold.toDo > 0 && request.state === "pending" && (
+        {/* A blocked row holds the whole approval back, so nothing runs
+            until it clears. */}
+        {fold.toDo > 0 && !blocked && request.state === "pending" && (
           <p className="text-xs text-muted-foreground">{CONTINUES}</p>
         )}
 

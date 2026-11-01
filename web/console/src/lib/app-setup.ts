@@ -317,7 +317,8 @@ export function reauthorizationHeading(
 }
 
 /** One setup row where the page lists it. `grantHeld` is set on a webhook
- * row: whether the token the app holds carries the access it brings. */
+ * row: whether the token the app holds carries the access it brings, as the
+ * server's coverage says. */
 export interface SetupLine {
   row: AuthorizationSetup
   index: number
@@ -360,12 +361,9 @@ export function foldRequest(
   const previous = request.previous
   const live = previous !== undefined && stillHeld(previous, now)
   const split = splitByPrevious(request.scopes)
-  // A webhook scope names one trigger and nothing else, so the token holds
-  // the access a webhook row brings exactly when it carries that scope.
-  const held = new Set(previous?.scopes)
   const lines: SetupLine[] = request.setup.map((row, index) =>
     row.webhook
-      ? { row, index, grantHeld: held.has(`webhook:${row.webhook.trigger}`) }
+      ? { row, index, grantHeld: row.webhook.allowed === true }
       : { row, index }
   )
   const inPlace = (line: SetupLine) =>

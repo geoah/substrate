@@ -71,17 +71,24 @@ const STEP_WORDS: Record<SetupAction, string> = {
   unknown: "unknown",
 }
 
+/** How far a set up got with a row. A row in place runs nothing, so a set up
+ * that marks it done says nothing the row's title does not. */
+function progressOf(row: AuthorizationSetup): SetupProgress | undefined {
+  return row.action === "none" ? undefined : row.progress
+}
+
 function RowIcon({ row }: { row: AuthorizationSetup }) {
   const className = "mt-0.5 size-4 shrink-0"
-  if (row.progress === "running")
+  const progress = progressOf(row)
+  if (progress === "running")
     return <Spinner aria-hidden role={undefined} className={className} />
-  if (row.progress === "done")
+  if (progress === "done")
     return <CircleCheckIcon aria-hidden className={cn(className, "text-ok")} />
-  if (row.progress === "failed")
+  if (progress === "failed")
     return (
       <CircleXIcon aria-hidden className={cn(className, "text-destructive")} />
     )
-  if (row.progress === "waiting")
+  if (progress === "waiting")
     return (
       <CircleDashedIcon
         aria-hidden
@@ -95,11 +102,14 @@ function RowIcon({ row }: { row: AuthorizationSetup }) {
 }
 
 /** The row's state beside its title: how far a set up got, that it cannot
- * run and what it waits on, or that it is in place. */
+ * run and what it waits on, or that it is in place where the title does not
+ * already say so. */
 function statusWords(row: AuthorizationSetup): string | undefined {
-  if (row.progress) return PROGRESS_WORDS[row.progress]
+  const progress = progressOf(row)
+  if (progress) return PROGRESS_WORDS[progress]
   if (row.blocked) return blockStatus(row.blocked)
-  if (row.action === "none") return "In place"
+  if (row.action === "none" && !row.package && !row.account && !row.webhook)
+    return "In place"
   return undefined
 }
 
@@ -239,7 +249,7 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
         </Term>
       )}
       {own && (
-        <Term name="Its own">
+        <Term name="Ships">
           <OwnFacts facts={pkg} of={packageName(pkg.id)} />
         </Term>
       )}
@@ -380,7 +390,8 @@ export function SetupRow({
                 rel="noreferrer"
                 className="inline-flex w-fit items-center gap-1 text-primary underline-offset-4 hover:underline"
               >
-                Fix this in the console
+                Fix this in the console{" "}
+                <span className="sr-only">(opens in a new tab)</span>
                 <ExternalLinkIcon aria-hidden className="size-3" />
               </a>
             )}

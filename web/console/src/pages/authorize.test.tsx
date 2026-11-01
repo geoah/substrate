@@ -962,6 +962,9 @@ describe("AuthorizePage", () => {
       within(install).getByText("substrate.reamde.dev/health")
     ).toBeTruthy()
     expect(within(install).getByText("— 1 kind")).toBeTruthy()
+    // What it brings first, then what it ships of its own.
+    expect(within(install).getByText("Brings first")).toBeTruthy()
+    expect(within(install).getByText("Ships")).toBeTruthy()
     // Kinds, functions and triggers are counted and open on demand.
     expect(within(install).queryByText(`${APPLEHEALTH}/delivery`)).toBeNull()
     for (const name of [
@@ -1039,7 +1042,9 @@ describe("AuthorizePage", () => {
       expect(row.textContent).toContain("Needs a fix first")
       expect(
         within(row)
-          .getByRole("link", { name: "Fix this in the console" })
+          .getByRole("link", {
+            name: "Fix this in the console (opens in a new tab)",
+          })
           .getAttribute("href")
       ).toBe("/providers/applehealth")
       expect(
@@ -1047,6 +1052,8 @@ describe("AuthorizePage", () => {
           "Fix it in the console (the link beside the row), then check again, or deny the request."
         )
       ).toBeTruthy()
+      // Nothing runs while a row is blocked, so nothing is said to continue.
+      expect(screen.queryByText(CONTINUES)).toBeNull()
       expect(
         screen.getByRole<HTMLButtonElement>("button", {
           name: "Approve and set up",
@@ -1096,6 +1103,7 @@ describe("AuthorizePage", () => {
         )
       ).toBeTruthy()
       expect(screen.queryByText(/Fix it in the console/)).toBeNull()
+      expect(screen.queryByText(CONTINUES)).toBeNull()
       expect(
         screen.getByRole<HTMLButtonElement>("button", {
           name: "Approve and set up",
@@ -1119,6 +1127,8 @@ describe("AuthorizePage", () => {
       expect(account.textContent).toContain(
         "Your existing account stays as it is."
       )
+      // The title says it is in place; no status word says it again.
+      expect(account.textContent).not.toContain("In place")
       expect(within(account).queryByText("Ada's iPhone")).toBeNull()
       expect(within(account).queryByText(/Europe\/London/)).toBeNull()
       expect(
@@ -1126,6 +1136,33 @@ describe("AuthorizePage", () => {
       ).toBe(technical)
     }
   )
+
+  it("reads a row in place by its title while a set up runs, never as done", async () => {
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...SYNC,
+        state: "setting-up",
+        setup: [
+          { ...INSTALL, progress: "waiting" },
+          { ...CREATE, action: "none", progress: "done" },
+          { ...ENABLE, action: "none", progress: "done" },
+        ],
+      })
+    renderPage()
+    await screen.findByText(SETTING_UP)
+    expect(
+      screen.getByRole("listitem", { name: "Install Apple Health" }).textContent
+    ).toContain("Waiting")
+    for (const name of [
+      "The Apple Health account this app uses is in place",
+      "The Apple Health webhook is on",
+    ]) {
+      const row = screen.getByRole("listitem", { name })
+      expect(row.textContent).not.toContain("Done")
+      expect(row.textContent).not.toContain("In place")
+      expect(row.querySelector(".text-ok")).toBeNull()
+    }
+  })
 
   it("approves and sets up, follows the set up every second, then goes to the app", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -1541,6 +1578,11 @@ describe("AuthorizePage", () => {
       ...previous,
       scopes: [ACCOUNTS.scope, "webhook:applehealth-webhook"],
     }
+    // The server says the token above already delivers to the webhook.
+    const HELD_ENABLE = {
+      ...ENABLE,
+      webhook: { ...ENABLE.webhook, allowed: true },
+    }
 
     it.each(MODES)(
       "heads by the new access, folds what was allowed, and says denying keeps it, $name",
@@ -1630,7 +1672,7 @@ describe("AuthorizePage", () => {
         jsonResponse(200, {
           ...SYNC,
           scopes: [HELD_ACCOUNTS],
-          setup: [installed, CREATE, ENABLE],
+          setup: [installed, CREATE, HELD_ENABLE],
           previous: held,
         })
       renderPage()
@@ -1682,7 +1724,7 @@ describe("AuthorizePage", () => {
           setup: [
             installed,
             { ...CREATE, action: "none" },
-            { ...ENABLE, action: "none" },
+            { ...HELD_ENABLE, action: "none" },
           ],
           previous: held,
         })
@@ -1769,7 +1811,10 @@ describe("AuthorizePage", () => {
       const installed = { ...INSTALL, action: "none" }
       const request = { ...SYNC, scopes: [HELD_ACCOUNTS], previous: held }
       answers.GET = () =>
-        jsonResponse(200, { ...request, setup: [installed, CREATE, ENABLE] })
+        jsonResponse(200, {
+          ...request,
+          setup: [installed, CREATE, HELD_ENABLE],
+        })
       answers.POST = () => {
         answers.GET = () =>
           jsonResponse(200, {
@@ -1778,7 +1823,7 @@ describe("AuthorizePage", () => {
             setup: [
               { ...installed, progress: "done" },
               { ...CREATE, progress: "running" },
-              { ...ENABLE, progress: "waiting" },
+              { ...HELD_ENABLE, progress: "waiting" },
             ],
           })
         return jsonResponse(202, { state: "setting-up" })
@@ -1821,7 +1866,7 @@ describe("AuthorizePage", () => {
           setup: [
             { ...installed, progress: "done" },
             { ...CREATE, progress: "done" },
-            { ...ENABLE, progress: "failed" },
+            { ...HELD_ENABLE, progress: "failed" },
           ],
           failure: { row: 2, message: "the trigger refused the key" },
         })
@@ -1852,7 +1897,7 @@ describe("AuthorizePage", () => {
             setup: [
               { ...installed, progress: "done" },
               { ...CREATE, action: "none", progress: "done" },
-              { ...ENABLE, progress: "running" },
+              { ...HELD_ENABLE, progress: "running" },
             ],
           })
         return jsonResponse(202, { state: "setting-up" })
