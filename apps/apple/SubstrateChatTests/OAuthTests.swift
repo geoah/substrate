@@ -153,7 +153,7 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
         #expect(query["iss"] == "https://s.example.com")
         let (body, response) = try await page
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
-        #expect(String(decoding: body, as: UTF8.self).contains("Signed in. You can go back to Substrate Chat."))
+        #expect(String(decoding: body, as: UTF8.self).contains("Signed in. You can close this tab and go back to Substrate Chat."))
     }
 }
 

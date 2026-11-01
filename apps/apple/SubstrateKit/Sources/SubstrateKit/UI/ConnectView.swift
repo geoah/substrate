@@ -60,6 +60,8 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
 
     @State var phase: Phase
     @State var problem: String?
+    /// The sign-in waiting on the browser, which Cancel stops.
+    @State private var signingIn: Task<Void, Never>?
     @FocusState private var focused: Bool
 
     public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
@@ -130,6 +132,11 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                     if found.map({ door(for: $0) }) != .password {
                         primaryButton
                     }
+                    if WebAuthenticator.opensBrowser, case .signingIn = phase {
+                        Button("Cancel", action: cancelSignIn)
+                            .buttonStyle(.borderless)
+                            .keyboardShortcut(.cancelAction)
+                    }
                     footer
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -194,7 +201,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         switch phase {
         case .idle: "Continue"
         case .checking: "Checking…"
-        case .found: "Sign In with Your Substrate"
+        case .found: WebAuthenticator.opensBrowser ? "Continue in Your Browser" : "Sign In with Your Substrate"
         case .signingIn: "Waiting for Your Browser…"
         }
     }
@@ -209,6 +216,9 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 }
                 if door(for: found) == .password {
                     Text("This server can't give \(manifest.appName) access of its own yet, so your password goes to it directly.")
+                } else if case .signingIn = phase, WebAuthenticator.opensBrowser {
+                    Text("\(found.host)'s sign-in page is open in your browser. Sign in there and choose what \(manifest.appName) may do; "
+                        + "this window comes back when you're done.")
                 } else {
                     Text("You sign in on \(found.host) itself and choose what \(manifest.appName) may do there. "
                         + "Later, Change Access in this app asks again; to revoke, use \(found.host)'s Settings, under Apps.")
@@ -242,8 +252,11 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         guard let found else { return }
         phase = .signingIn(found)
         problem = nil
-        Task {
-            defer { if case .signingIn = phase { phase = .found(found) } }
+        signingIn = Task {
+            defer {
+                if case .signingIn = phase { phase = .found(found) }
+                signingIn = nil
+            }
             do {
                 try await onSignIn(found)
             } catch is WebAuthenticator.Cancelled {
@@ -252,6 +265,10 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 if !isCancellation(error) { problem = explain(error, app: manifest.appName, server: found.origin) }
             }
         }
+    }
+
+    private func cancelSignIn() {
+        signingIn?.cancel()
     }
 
     private func changeServer() {

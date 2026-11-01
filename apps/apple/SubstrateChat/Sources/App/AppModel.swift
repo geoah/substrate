@@ -23,6 +23,10 @@ final class AppModel {
     private(set) var expired = false
     /// The browser sheet is open for a change of access.
     private(set) var authorizing = false
+    /// The change of access waiting on the browser. On macOS that is a tab
+    /// the person may close unfinished, which never answers, so a new
+    /// request replaces it and Cancel stops it.
+    private var authorization: Task<Void, Never>?
     /// Why the last change of access did not finish.
     private(set) var authorizeProblem: String?
     /// Tokens this device stopped using that the server has not revoked yet:
@@ -79,10 +83,24 @@ final class AppModel {
     /// works until the new one is kept, so closing the sheet changes nothing;
     /// then the old token is kept for revocation and revoked.
     func reauthorize() async {
-        guard let old = session, !authorizing else { return }
+        guard let old = session else { return }
+        authorization?.cancel()
         authorizing = true
-        defer { authorizing = false }
         authorizeProblem = nil
+        let task = Task { await reauthorize(replacing: old) }
+        authorization = task
+        await task.value
+        if authorization == task {
+            authorization = nil
+            authorizing = false
+        }
+    }
+
+    func cancelAuthorization() {
+        authorization?.cancel()
+    }
+
+    private func reauthorize(replacing old: Session) async {
         let manifest = ChatManifest.manifest
         do {
             let probe = try await ServerProbe().probe(old.server, requirement: manifest.requirement, app: manifest.appName)

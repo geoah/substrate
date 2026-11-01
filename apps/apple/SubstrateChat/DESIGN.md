@@ -453,9 +453,11 @@ them without a Shortcuts workflow:
 Through the substrate's app authorization (decision 0194 and its follow-up
 that opens agents, decisions and the feed to apps), on SubstrateKit's
 connect screen and flow: the server is checked against its discovery
-document and its OAuth metadata, then the system's
-sign-in sheet (`ASWebAuthenticationSession`, sharing Safari's cookies) opens
-the server's own sign-in and approval page. The owner chooses what the app
+document and its OAuth metadata, then the server's own sign-in and approval
+page opens: in the default browser on the Mac, where its address bar and the
+person's password manager work, and the window comes forward once the
+redirect lands; in the system's Safari sheet (`ASWebAuthenticationSession`,
+sharing Safari's cookies) on iPhone and iPad. The owner chooses what the app
 may do and for how long; the app never sees the password.
 
 - **Scopes asked for**: `agents:*` (talk to the agents: chats, questions,

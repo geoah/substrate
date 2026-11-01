@@ -195,7 +195,11 @@ struct NoChatAccessView: View {
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
-            .disabled(model.authorizing)
+            .disabled(model.authorizing && !WebAuthenticator.opensBrowser)
+            if model.authorizing, WebAuthenticator.opensBrowser {
+                Button("Cancel") { model.cancelAuthorization() }
+                    .buttonStyle(.borderless)
+            }
             Button("Sign Out", role: .destructive) { model.signOut() }
                 .buttonStyle(.borderless)
         }
