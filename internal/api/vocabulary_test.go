@@ -2,8 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -305,5 +309,172 @@ func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	if plan := decodeJSON[substrate.VocabularyPlan](t, rec); plan.Lossy || len(plan.Steps) != 0 || ds.lastVocabularyDocs != nil {
 		t.Fatalf("an all-waiting plan answered %+v and passed %d documents", plan, len(ds.lastVocabularyDocs))
+	}
+}
+
+// AN APP KEEPS ITS OWN PACKAGE'S DECLARATIONS AND NOTHING ELSE (decision
+// 0203): under `declare:~/<package>` its token applies that package's
+// package, bundle and kind documents, and is refused a function, another
+// package, a confirmed lossy change and the preview, which stay the owner's.
+func TestAnAppDeclaresOnlyThePackageItsScopeNames(t *testing.T) {
+	e := newAppEnv(t)
+	pkg := fakeRepository + "/training"
+	app := e.grant("declare:~/training write:~/training/*", []string{"declare:" + pkg, "write:" + pkg + "/*"})
+	doc := func(kind, id string) map[string]any {
+		return map[string]any{"kind": corePackage + "/" + kind, "metadata": map[string]any{"id": id}, "data": map[string]any{}}
+	}
+	apply := func(body map[string]any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		return e.do(http.MethodPost, "/api/v1/vocabulary/apply", app, raw, "application/json")
+	}
+	own := []map[string]any{doc("package", pkg), doc("bundle", pkg), doc("kind", pkg+"/set")}
+	wantStatus(t, apply(map[string]any{"documents": own}), http.StatusOK)
+	if got := len(e.svc.datasets[fakeRepository].lastVocabularyDocs); got != len(own) {
+		t.Fatalf("the dataset saw %d documents, want %d", got, len(own))
+	}
+	for name, docs := range map[string][]map[string]any{
+		"a function of the package":   {doc("function", pkg+"/rollup")},
+		"a trigger":                   {doc("trigger", "training-on-set")},
+		"another package of its own":  {doc("kind", fakeRepository+"/notes/note")},
+		"a first-party package":       {doc("kind", "substrate.reamde.dev/training/set")},
+		"its package beside another":  {doc("package", pkg), doc("package", fakeRepository+"/notes")},
+		"a kind named without a home": {doc("kind", "set")},
+	} {
+		if rec := apply(map[string]any{"documents": docs}); rec.Code != http.StatusForbidden {
+			t.Errorf("%s: %d %s, want 403", name, rec.Code, rec.Body.String())
+		}
+	}
+	confirmed := apply(map[string]any{"documents": own, "confirm": map[string]any{"planHash": "cafe", "changelogSeq": 1}})
+	wantStatus(t, confirmed, http.StatusForbidden)
+	raw, _ := json.Marshal(map[string]any{"documents": own})
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/vocabulary/plan", app, raw, "application/json"), http.StatusForbidden)
+	// A token without the scope is refused the same batch.
+	writer := e.grant("write:~/training/*", []string{"write:" + pkg + "/*"})
+	if rec := e.do(http.MethodPost, "/api/v1/vocabulary/apply", writer, raw, "application/json"); rec.Code != http.StatusForbidden {
+		t.Errorf("a write scope declared its package: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A DECLARED BUNDLE ONLY LISTS ITS CLOSURE (decision 0203): `modules` is code
+// every function of the package imports, `oauth2` makes the package a
+// provider at endpoints the app would choose, `inputs` binds records the
+// owner configures. A kind may not build indexes or embed values, which spend
+// the owner's database and provider. Each is refused, naming the key.
+func TestADeclaredBundleListsItsKindsAndNothingElse(t *testing.T) {
+	e := newAppEnv(t)
+	pkg := fakeRepository + "/training"
+	app := e.grant("declare:~/training write:~/training/*", []string{"declare:" + pkg, "write:" + pkg + "/*"})
+	apply := func(docs ...map[string]any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(map[string]any{"documents": docs})
+		return e.do(http.MethodPost, "/api/v1/vocabulary/apply", app, raw, "application/json")
+	}
+	bundle := func(data map[string]any) map[string]any {
+		base := map[string]any{"authority": fakeRepository, "package": "training", "installs": []any{pkg + "/set"}}
+		for k, v := range data {
+			base[k] = v
+		}
+		return map[string]any{"kind": corePackage + "/bundle", "metadata": map[string]any{"id": pkg}, "data": base}
+	}
+	kind := func(data map[string]any) map[string]any {
+		return map[string]any{"kind": corePackage + "/kind", "metadata": map[string]any{"id": pkg + "/set"}, "data": data}
+	}
+	wantStatus(t, apply(bundle(map[string]any{"requires": []any{"substrate.reamde.dev/health"}, "description": "sets"})), http.StatusOK)
+	for name, doc := range map[string]map[string]any{
+		"modules":       bundle(map[string]any{"modules": map[string]any{"helpers": "import os"}}),
+		"oauth2":        bundle(map[string]any{"oauth2": map[string]any{"authorizationEndpoint": "https://evil.example.org/auth"}}),
+		"inputs":        bundle(map[string]any{"inputs": map[string]any{"config": map[string]any{"kind": pkg + "/set"}}}),
+		"indices":       kind(map[string]any{"indices": []any{map[string]any{"properties": []any{"reps"}}}}),
+		"embed":         kind(map[string]any{"properties": map[string]any{"notes": map[string]any{"type": "text", "embed": true}}}),
+		"embed (field)": kind(map[string]any{"properties": map[string]any{"target": map[string]any{"type": "object", "fields": map[string]any{"notes": map[string]any{"type": "text", "embed": true}}}}}),
+	} {
+		rec := apply(doc)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), strings.Fields(name)[0]) {
+			t.Errorf("%s: %d %s, want 403 naming the key", name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// AN APP'S APPLY ONLY ADDS (decision 0203): whatever the repository holds in
+// the package, the owner's additions included, stays. A kind document that
+// leaves out a stored property, field, enum value, state, transition or
+// trait is refused with 409, and so is a bundle that would replace a package
+// whose stored closure it does not list in full. The app reads its own kind
+// rows, and no other package's.
+func TestAnAppsApplyNeverRemovesWhatThePackageHolds(t *testing.T) {
+	e := newAppEnv(t)
+	pkg := fakeRepository + "/training"
+	app := e.grant("declare:~/training write:~/training/*", []string{"declare:" + pkg, "write:" + pkg + "/*"})
+	ds := e.svc.datasets[fakeRepository]
+	stored := map[string]any{
+		"traits": []any{"substrate.reamde.dev/core/revised"},
+		"properties": map[string]any{
+			"reps":   map[string]any{"type": "int"},
+			"notes":  map[string]any{"type": "text"},
+			"effort": map[string]any{"type": "enum", "values": []any{map[string]any{"value": "easy"}, map[string]any{"value": "hard"}}},
+			"status": map[string]any{
+				"type": "state", "states": []any{"active", "finished"},
+				"transitions": []any{map[string]any{"from": "active", "to": "finished"}},
+			},
+			"target": map[string]any{"type": "object", "fields": map[string]any{"load": map[string]any{"type": "decimal"}}},
+		},
+	}
+	for _, k := range []string{"package", "bundle", "kind"} {
+		ds.types = append(ds.types, substrate.KindInfo{Identity: corePackage + "/" + k, Name: k, Authority: "substrate.reamde.dev", Package: "core", Source: "builtin"})
+	}
+	ds.types = append(ds.types,
+		substrate.KindInfo{Identity: pkg + "/set", Name: "set", Authority: fakeRepository, Package: "training", Source: "installed", Version: 2, Definition: stored},
+		substrate.KindInfo{Identity: pkg + "/bodyweight", Name: "bodyweight", Authority: fakeRepository, Package: "training", Source: "installed", Version: 1, Definition: map[string]any{}},
+	)
+	ds.records[pkg] = &substrate.Record{Kind: corePackage + "/bundle", ID: pkg, Properties: map[string]any{"installs": []any{pkg + "/set", pkg + "/bodyweight"}}}
+	ds.records[pkg+"/set"] = &substrate.Record{Kind: corePackage + "/kind", ID: pkg + "/set", Properties: map[string]any{"version": 2}}
+
+	apply := func(docs ...map[string]any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(map[string]any{"documents": docs})
+		return e.do(http.MethodPost, "/api/v1/vocabulary/apply", app, raw, "application/json")
+	}
+	without := func(edit func(def map[string]any)) map[string]any {
+		raw, _ := json.Marshal(stored)
+		var def map[string]any
+		_ = json.Unmarshal(raw, &def)
+		edit(def)
+		return map[string]any{"kind": corePackage + "/kind", "metadata": map[string]any{"id": pkg + "/set"}, "data": def}
+	}
+	props := func(def map[string]any) map[string]any { return def["properties"].(map[string]any) }
+	prop := func(def map[string]any, name string) map[string]any { return props(def)[name].(map[string]any) }
+
+	// Everything kept, one property added: admitted.
+	wantStatus(t, apply(without(func(def map[string]any) { props(def)["rpe"] = map[string]any{"type": "decimal"} })), http.StatusOK)
+	for name, doc := range map[string]map[string]any{
+		"a property":    without(func(def map[string]any) { delete(props(def), "notes") }),
+		"a field":       without(func(def map[string]any) { prop(def, "target")["fields"] = map[string]any{} }),
+		"an enum value": without(func(def map[string]any) { prop(def, "effort")["values"] = []any{map[string]any{"value": "easy"}} }),
+		"a state":       without(func(def map[string]any) { prop(def, "status")["states"] = []any{"active"} }),
+		"a transition":  without(func(def map[string]any) { prop(def, "status")["transitions"] = []any{} }),
+		"a trait":       without(func(def map[string]any) { def["traits"] = []any{} }),
+	} {
+		if rec := apply(doc); rec.Code != http.StatusConflict {
+			t.Errorf("dropping %s: %d %s, want 409", name, rec.Code, rec.Body.String())
+		}
+	}
+	bundle := func(installs ...any) map[string]any {
+		return map[string]any{
+			"kind": corePackage + "/bundle", "metadata": map[string]any{"id": pkg},
+			"data": map[string]any{"authority": fakeRepository, "package": "training", "installs": installs},
+		}
+	}
+	rec := apply(bundle(pkg + "/set"))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), pkg+"/bodyweight") {
+		t.Errorf("a bundle dropping the owner's kind: %d %s, want 409 naming it", rec.Code, rec.Body.String())
+	}
+	wantStatus(t, apply(bundle(pkg+"/set", pkg+"/bodyweight", pkg+"/session")), http.StatusOK)
+	// A package holding kinds and no bundle: a bundle would replace it blind.
+	delete(ds.records, pkg)
+	wantStatus(t, apply(bundle(pkg+"/set", pkg+"/bodyweight")), http.StatusConflict)
+
+	// Its own kind rows read; another package's do not.
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/"+corePackage+"/kind/"+url.PathEscape(pkg+"/set"), app, nil, ""), http.StatusOK)
+	ds.records[fakeRepository+"/notes/note"] = &substrate.Record{Kind: corePackage + "/kind", ID: fakeRepository + "/notes/note"}
+	if rec := e.do(http.MethodGet, "/api/v1/"+corePackage+"/kind/"+url.PathEscape(fakeRepository+"/notes/note"), app, nil, ""); rec.Code == http.StatusOK {
+		t.Errorf("an app read another package's kind row: %s", rec.Body.String())
 	}
 }

@@ -363,6 +363,11 @@ func (h *handler) mountResources(r chi.Router) {
 			// (appsetup.go). The static segment wins over the owner's
 			// /authorizations/{request} below, whichever group holds it.
 			r.With(noStore).Post("/authorizations/check", h.postAuthorizationCheck)
+			// The vocabulary apply, for an app that keeps its own package's
+			// declarations under a `declare:` scope (decision 0203): the
+			// scoped dataset admits that package's documents alone, and the
+			// owner's token takes it whole.
+			r.Post("/vocabulary/apply", h.applyVocabulary)
 
 			// THE RECORD PATH. It IS the record's reference: the kind's three
 			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
@@ -398,7 +403,8 @@ func (h *handler) mountResources(r chi.Router) {
 			// document admitted or none, one transaction, activation on commit.
 			// It stays distinct because a batch of declarations is not record
 			// data and the vocabulary apply admission is not the generic write path.
-			r.Post("/vocabulary/apply", h.applyVocabulary)
+			// It is on the owner's surface; the scoped surface takes the same
+			// route for an app's `declare:` scope alone (decision 0203).
 			// The apply's preview: the guard lines it would refuse on and the
 			// conversion plan it would run, with the hash and changelog head a
 			// lossy plan's confirmation names (decision 0067). Writes nothing.

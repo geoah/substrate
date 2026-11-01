@@ -1,0 +1,504 @@
+# routine: the plan, as the console's agent writes it. "Workout routine" on
+# every surface, because `a habit-tracking `routine` kind` is a habit on a
+# repeat and an agent reading two "routines" picks the wrong one.
+#
+# THE ID IS CHOSEN BY THE WRITER and reads as the routine
+# (`day-1-strength-foundation`). A session points at it; editing the routine
+# never changes a session, because each set copies the targets it was done
+# against (`set.target`), the session keeps the planned sets as they stood
+# (`session.slots[].sets`) and the routine record's version
+# (`session.routineVersion`).
+#
+# A FOLDER IS A STRING, NOT A KIND. Hevy's folders ("Full Body 3x Week
+# (Back-Friendly)") are a heading over routines and carry nothing of their
+# own, so `folder` names one and `position` orders the routines inside it.
+#
+# NO TEMPORAL BINDING, NO `revised`. A plan has no instant of its own, and
+# one hand writes it (the console or its agent), not an upstream that numbers
+# its versions; the record's own `status.version` is the revision a session
+# keeps, to tell that the routine changed since (not to read it back: no
+# read serves a record as it was at an older version).
+#
+# A PUT MERGES. `slots` and `groups` are replaced whole by a PUT that names
+# them, but a property the PUT leaves out keeps its old value: a routine
+# rewritten without `deload` stays a deload routine. Clearing a property is
+# a PATCH naming it `null`.
+#
+# THE SHAPE: ordered SLOTS (one exercise each) holding ordered PLANNED SETS,
+# and GROUPS that bind adjacent slots into a superset, a circuit or paired
+# sets. A plan is a tree (routine, groups, slots, planned sets, segments);
+# the tree is flattened here to fit substrate's
+# nesting cap of four levels, a kind's own property being level 1:
+#
+#   level 1  groups[]   slots[]
+#   level 2  group fields, such as roundRest    slot fields, such as setRest,
+#                                               and sets[]
+#   level 3                                     planned-set fields, all
+#                                               scalars (quantities included)
+#
+# A slot names its group by `group` (a group's `key`); a slot with no group
+# is a plain exercise. Group values (its kind, round count, round rest) are
+# stored ONCE, on the group, not on every member: copied onto members, one
+# value can disagree with itself, and kept only on the last member, it moves
+# when the group is reordered, which is Hevy's failure.
+# Segments (a myo set's mini-sets, a drop set's drops, a unilateral set's
+# sides) are not written out: the planned set says how many and how heavy,
+# and the app generates the rows.
+#
+# PLANNED SETS HAVE KEYS. A performed set names the planned set it fulfils
+# by its `key` (`set.target.plannedSet`), so the agent keeps a planned set's
+# key when it edits the routine and never gives an old key to a new set. A
+# position would point at a different planned set as soon as a warm-up is
+# inserted.
+#
+# REST, BY THE SLOT IT FILLS. `setRest` and `warmupRest`
+# per slot, `transition` per group member, `roundRest` per group,
+# `intraSetPause` per structured planned set, `sideSwitch` per unilateral
+# slot, and `rest` on a planned set to override the rest after it. The
+# engine picks one by the slot it fills. ABSENT IS NOT ZERO: a rest left out takes the
+# engine's default, while `PT0S` means no
+# rest at all. The defaults are not declared as `default:` here, because a
+# declared default is stored into every slot the agent writes and would then
+# hide the difference between "the default" and "the owner chose this".
+#
+# METHOD PARAMETERS ARE DATA. Myo-rep targets, drop percentages, timer modes
+# and rests are fields here, not constants in Swift, so the agent changes a
+# method without an app release.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/routine
+data:
+  authority: "~"
+  package: training
+  description: >-
+    A workout routine: the plan for one gym session, written in the console
+    or by its agent. Ordered slots, one exercise each, hold planned sets with
+    their targets and rests; groups bind slots into supersets and circuits.
+    The Substrate Workouts app starts training sessions from it.
+  purpose: primary
+  names:
+    singular: routine
+  label:
+    singular: Workout routine
+    plural: Workout routines
+  displayTemplate: "{name}"
+  properties:
+    # ---- what it is -----------------------------------------------------------
+    name:
+      type: string
+      required: true
+      description: the routine's name, such as Day 1 – Strength Foundation
+    folder:
+      type: string
+      description: the folder it is listed under, such as Full Body 3x Week
+        (Back-Friendly)
+    position:
+      type: int
+      min: 1
+      description: its place in its folder, from 1
+    notes:
+      type: text
+      description: what the routine is for and how to run it, shown before
+        it starts
+    # A deload is a property of a routine or of a session: the
+    # agent writes deload routines, and a session started from one copies the
+    # flag, so suggestions and trends can leave it out.
+    deload:
+      type: bool
+      description: true for a deload routine, whose sessions suggestions and
+        trends discount
+    # HealthKit's workout activity types, spelled by the enum rule. Absent
+    # means traditional strength training, the type every session is saved
+    # as unless its routine says otherwise. An export setting only: what
+    # sport a session was is `session.sport`, which every session carries.
+    activityType:
+      type: enum
+      description: the Apple Health workout type its sessions are saved as,
+        used only by the Health save; absent means traditional strength training
+      values:
+        - value: traditionalstrengthtraining
+          label: Traditional strength training
+        - value: functionalstrengthtraining
+          label: Functional strength training
+        - value: coretraining
+          label: Core training
+        - value: highintensityintervaltraining
+          label: High-intensity interval training
+    # ---- groups (level 1; fields at level 2) ---------------------------------
+    # Only slots done together need a group. A group's members are the slots
+    # naming its key, in slot order; they are listed next to each other.
+    # Rounds pass through the members in that order, and a member with fewer
+    # sets drops out of the later rounds.
+    groups:
+      type: object
+      repeated: true
+      description: the supersets, circuits and paired sets of the routine;
+        a slot joins one by naming its key
+      fields:
+        key:
+          type: string
+          required: true
+          description: the group's key within the routine, such as a, which
+            its slots name in their group field
+        # NOT `kind`: every record already carries one.
+        groupKind:
+          type: enum
+          required: true
+          description: what sort of group it is
+          values:
+            - value: superset
+              label: Superset
+            - value: triset
+              label: Tri-set
+            - value: giantset
+              label: Giant set
+            - value: circuit
+              label: Circuit
+            - value: paired
+              label: Paired sets
+        # Descriptive only: it picks the default transition, 0 s
+        # for the same muscle, 15 s for antagonists or upper with lower.
+        pairing:
+          type: enum
+          description: how the members relate, which picks the default rest
+            between them
+          values:
+            - value: antagonist
+              label: Antagonists
+            - value: samemuscle
+              label: Same muscle
+            - value: preexhaust
+              label: Pre-exhaust
+            - value: upperlower
+              label: Upper with lower body
+            - value: unrelated
+              label: Unrelated
+            - value: mechanicaldrop
+              label: Mechanical drop
+        # Warm-ups run before round 1, never inside a round, so they do not count towards the rounds.
+        rounds:
+          type: int
+          min: 1
+          description: how many rounds; absent means as many as the member
+            with the most working sets, with warm-ups before round 1
+        roundRest:
+          type: duration
+          description: the rest after the last member of a round, before the
+            next round starts
+    # ---- slots (level 1; fields at level 2; planned sets at level 3) ----------
+    slots:
+      type: object
+      repeated: true
+      description: the routine's exercises in order, each with its rests and
+        planned sets
+      fields:
+        # Readable and unique within the routine (`chest-press`). A session
+        # started from the routine keeps it as `routineSlot`.
+        key:
+          type: string
+          required: true
+          description: the slot's key within the routine, such as chest-press
+        # mustExist: a slug the agent mistypes (`chest-press-machin`) is
+        # refused when the routine is written, not found missing at the gym.
+        exercise:
+          type: reference
+          kind: ~/training/exercise
+          required: true
+          mustExist: true
+          description: the exercise done in this slot
+        group:
+          type: string
+          description: the key of the group this slot is a member of; absent
+            for a plain exercise
+        setRest:
+          type: duration
+          description: the rest between this slot's working sets; absent means
+            the default for the exercise's rest class
+        warmupRest:
+          type: duration
+          description: the rest after one of this slot's warm-up sets; absent
+            means 45 seconds
+        transition:
+          type: duration
+          description: in a group, the rest from this member to the next one
+            in the same round
+        sideSwitch:
+          type: duration
+          description: for one side at a time, the pause between the sides
+            of a set; absent means none
+        sideOrder:
+          type: enum
+          description: for one side at a time, which side goes first
+          values:
+            - value: left
+              label: Left first
+            - value: right
+              label: Right first
+            - value: weakerfirst
+              label: Weaker side first
+        sideMatch:
+          type: bool
+          description: true when the second side's target is the reps the
+            first side did
+        notes:
+          type: text
+          description: what to remember about this exercise in this routine,
+            such as the seat height
+        # ---- planned sets (level 2; fields at level 3) ----
+        sets:
+          type: object
+          repeated: true
+          description: the sets planned for this slot, in order, warm-ups
+            first
+          fields:
+            # Unique within the slot and kept across edits: `w1` for a
+            # warm-up, `s1` for a working set, or any word the agent picks.
+            key:
+              type: string
+              required: true
+              description: the planned set's key within the slot, such as
+                w1 or s2, which a performed set names
+            # A set's four axes are separate fields:
+            # role, structure, termination here, and the outcome flags on the
+            # performed set.
+            role:
+              type: enum
+              default: working
+              description: warm-up or working
+              values:
+                - value: warmup
+                  label: Warm-up
+                - value: working
+                  label: Working
+            roleLabel:
+              type: enum
+              description: for a working set, top set or back-off set
+              values:
+                - value: top
+                  label: Top set
+                - value: backoff
+                  label: Back-off set
+            structure:
+              type: enum
+              default: straight
+              description: how the set is built, from straight to a chain
+                of drops or mini-sets
+              values:
+                - value: straight
+                  label: Straight
+                - value: drop
+                  label: Drop set
+                - value: myo
+                  label: Myo-reps
+                - value: myomatch
+                  label: Myo-rep match
+                - value: restpause
+                  label: Rest-pause
+                - value: cluster
+                  label: Cluster
+            # What ends the set. An effort target is a stop rule only under
+            # `rirstop` ("keep going until 2 in reserve"); under every other
+            # termination it selects the load.
+            # Absent: reps, or a range when repsMin and repsMax differ, or
+            # time when only a duration is set.
+            termination:
+              type: enum
+              description: what ends the set; absent means the reps or the
+                time it names
+              values:
+                - value: reps
+                  label: Reps
+                - value: reprange
+                  label: Rep range
+                - value: amrap
+                  label: As many reps as possible
+                - value: failure
+                  label: To failure
+                - value: rirstop
+                  label: Stop at the effort target
+                - value: time
+                  label: Time
+                - value: distance
+                  label: Distance
+                - value: totalreps
+                  label: Total reps
+            # Exact reps are repsMin equal to repsMax; an AMRAP with a floor
+            # names repsMin alone.
+            repsMin:
+              type: int
+              min: 0
+              description: the fewest reps aimed for; equal to repsMax for
+                an exact count
+            repsMax:
+              type: int
+              min: 0
+              description: the most reps aimed for
+            # The plan's load is a seed: once history exists the suggestion
+            # wins. No load and an effort target means "pick the
+            # load for the effort". In a bodyweight-plus mode this is the
+            # added load.
+            load:
+              type: quantity
+              unit: kg
+              units: [kg, lb]
+              min:
+                value: "0"
+                unit: kg
+              description: the load to start from, in the unit written; the
+                added load on a bodyweight-plus exercise; wins over loadPercent
+                when both are given
+            # A load as a percentage of a reference: 80 % of a training max. The app resolves it to an
+            # absolute load at Start and the set's target keeps both. The
+            # reference number's own home (a per-exercise 1RM or training
+            # max) is not modelled yet.
+            loadPercent:
+              type: decimal
+              min: 0
+              max: 200
+              description: the load as a percentage of loadReference, such
+                as 80; load wins when both are given
+            loadReference:
+              type: enum
+              description: what loadPercent is a percentage of
+              values:
+                - value: onerm
+                  label: Tested one-rep max
+                - value: e1rm
+                  label: Estimated one-rep max
+                - value: trainingmax
+                  label: Training max
+                - value: bodymass
+                  label: Body mass
+            # A positive amount of its own, never a negative load.
+            assistance:
+              type: quantity
+              unit: kg
+              units: [kg, lb]
+              min:
+                value: "0"
+                unit: kg
+              description: on an assisted exercise, the assistance to start
+                from
+            # Effort targets are ranges, as reps are: one value is min equal
+            # to max ("RPE 8"), a range is "RPE 7 to 8" (Boostcamp; wger's
+            # RiR and MaxRiR). The suggestion reads the top of the RPE range
+            # as the load selector. Both on the RIR-based scale, as
+            # the agent wrote them; RIR = 10 - RPE is applied at read.
+            rpeMin:
+              type: decimal
+              min: 1
+              max: 10
+              description: the lowest effort aimed for on the RIR-based RPE
+                scale; equal to rpeMax for one value, such as 8 for two reps
+                left
+            rpeMax:
+              type: decimal
+              min: 1
+              max: 10
+              description: the highest effort aimed for on the RIR-based RPE
+                scale
+            rirMin:
+              type: decimal
+              min: 0
+              description: the fewest reps in reserve aimed for, where the
+                routine says it that way; equal to rirMax for one value
+            rirMax:
+              type: decimal
+              min: 0
+              description: the most reps in reserve aimed for
+            durationMin:
+              type: duration
+              description: the shortest time aimed for in a timed set; equal
+                to durationMax for an exact time
+            durationMax:
+              type: duration
+              description: the longest time aimed for in a timed set
+            timerMode:
+              type: enum
+              description: how the set's timer runs; absent means a countdown
+                when a duration is set
+              values:
+                - value: countdown
+                  label: Count down to the target
+                - value: stopwatch
+                  label: Stopwatch
+            distance:
+              type: quantity
+              unit: m
+              min:
+                value: "0"
+                unit: m
+              description: the distance aimed for, such as 20 m of a carry
+            # Four phases, eccentric first, digits or X: 3-1-1-0, 2/0/X/0,
+            # 30X1. Shown, never measured.
+            tempo:
+              type: string
+              pattern: "^[0-9X]([-/]?[0-9X]){3}$"
+              description: the tempo to lift at, four phases eccentric first,
+                such as 3-1-1-0
+            # Myo-reps, rest-pause and clusters. The stop
+            # rule is the exercise's (`myoStopRule`) unless the planned set
+            # names its own.
+            miniSetReps:
+              type: int
+              min: 1
+              description: the reps of each mini-set or cluster; absent means
+                a quarter of the activation set's, from 3 to 5
+            # Counted after the first bout for every structure: a cluster set
+            # of four clusters has `miniSets: 3`.
+            miniSets:
+              type: int
+              min: 1
+              description: the most mini-sets after the first bout; for a
+                cluster set, the clusters after the first
+            myoStopRule:
+              type: enum
+              description: when this myo-rep set ends, overriding the exercise's
+                rule
+              values:
+                - value: repdrop
+                  label: A mini-set loses a rep from the first
+                - value: belowtarget
+                  label: A mini-set falls below its target
+            totalReps:
+              type: int
+              min: 1
+              description: the total reps that end a myo-rep or rest-pause
+                set; for a myo-rep match, absent means the previous set's
+                reps
+            drops:
+              type: int
+              min: 1
+              description: for a drop set, how many drops follow the first
+                bout
+            # For a drop set, each drop; for a back-off set, its cut from the
+            # set before, as a percentage or as a load.
+            # With both, the step wins.
+            dropPercent:
+              type: decimal
+              min: 0
+              max: 100
+              description: how much lighter, in percent, each drop or a back-off
+                set is than the set before
+            dropStep:
+              type: quantity
+              unit: kg
+              units: [kg, lb]
+              min:
+                value: "0"
+                unit: kg
+              description: how much lighter, as a load, each drop or a back-off
+                set is than the set before
+            # Absent: each drop goes to failure.
+            dropReps:
+              type: int
+              min: 1
+              description: the reps each drop aims for; absent means to failure
+            intraSetPause:
+              type: duration
+              description: the pause between the mini-sets, clusters or drops
+                of this set
+            rest:
+              type: duration
+              description: the rest after this set, overriding the slot's
+                or the group's

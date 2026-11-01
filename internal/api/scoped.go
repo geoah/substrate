@@ -385,6 +385,12 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 }
 
 func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
+	// The package, bundle and kind kinds resolve for a token that keeps a
+	// package, so the record path reaches Get, which admits that package's
+	// rows alone.
+	if s.keepsPackage() && declarationRowKind(ref) {
+		return s.inner.KindByRef(ctx, ref)
+	}
 	if ok, err := s.reaches(ctx, ref); err != nil {
 		return substrate.KindInfo{}, err
 	} else if !ok {
@@ -418,6 +424,13 @@ func (s *scopedDataset) ConvertUnit(ctx context.Context, in substrate.UnitConver
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	// A package an app keeps the declarations of tells it the version it
+	// holds, through its package and bundle rows, and what each of its kinds
+	// holds, through their rows, so the app can tell an owner's edit from its
+	// own (decision 0203).
+	if declarationRowKind(typ) && s.grant.DeclaresIn(declaredPackage(typ, id), s.inner.Repository().Authority) {
+		return s.inner.Get(ctx, typ, id)
+	}
 	gated, err := s.rowGated(ctx, typ)
 	if err != nil {
 		return nil, err
@@ -942,8 +955,21 @@ func (s *scopedDataset) ChangeTriggers(context.Context, []substrate.Change) (map
 	return nil, errScope("the change feed")
 }
 
-func (s *scopedDataset) ApplyVocabularyDocuments(context.Context, substrate.Actor, []map[string]any) ([]*substrate.Record, error) {
-	return nil, errScope("the vocabulary")
+// ApplyVocabularyDocuments admits a batch that declares only packages the
+// grant's `declare:` scopes keep (decision 0203): their package, bundle and
+// kind documents, under the repository's own authority, nothing that runs
+// code or reaches past the package, and nothing that removes what the
+// repository holds (scopeddeclare.go). The engine's admission still holds it
+// to the package's source (a shipped or published package is refused) and
+// refuses a lossy change, which only the owner may confirm.
+func (s *scopedDataset) ApplyVocabularyDocuments(ctx context.Context, _ substrate.Actor, docs []map[string]any) ([]*substrate.Record, error) {
+	if err := s.declarable(docs); err != nil {
+		return nil, err
+	}
+	if err := s.widensOnly(ctx, docs); err != nil {
+		return nil, err
+	}
+	return s.inner.ApplyVocabularyDocuments(ctx, s.actor, docs)
 }
 
 func (s *scopedDataset) PlanVocabularyApply(context.Context, substrate.Actor, []map[string]any) (substrate.VocabularyPlan, error) {
