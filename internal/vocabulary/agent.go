@@ -211,6 +211,9 @@ type Agent struct {
 	// the declaration says nothing, which a reader takes as primary. Clients
 	// read it to decide what they list; nothing here acts on it.
 	Purpose string
+	// Context is `data.context` parsed: the reads pinned into the system
+	// prompt when a thread opens (agentcontext.go).
+	Context AgentContext
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties.
@@ -330,6 +333,7 @@ var agentDataKeys = map[string]bool{
 	"provider": true, "model": true, "params": true,
 	"tools": true, "toolsFrom": true, "subagents": true, "budgets": true, "permissions": true,
 	"hiddenFromChat": true, "resume": true, "purpose": true, "compaction": true,
+	"context": true,
 }
 
 // deletedAgentKeys are the removed keys, each naming what replaced it. An
@@ -518,6 +522,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 		return nil
 	}
 	a.Reads = fn.Caps.Reads
+	if !l.parseAgentContext(where, d.Data, a) {
+		return nil
+	}
 
 	// The built-ins' grants are load errors, not dispatch surprises.
 	for _, t := range a.Tools {
@@ -896,6 +903,7 @@ func (r *Registry) resolvePackageAgents(g *Package) []string {
 				problems = append(problems, fmt.Sprintf("%s: data.subagents: unknown agent %q", where, ident))
 			}
 		}
+		problems = append(problems, r.resolveAgentContext(a)...)
 	}
 	return problems
 }

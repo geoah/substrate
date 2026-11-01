@@ -604,10 +604,16 @@ type agentLoop struct {
 
 	defs   []llm.Tool
 	byName map[string]agentTool
-	// systemPrompt is what system() sends, composed once by buildTools: the
-	// kinds list is tens of kilobytes, and one composition per run keeps every
-	// turn's prompt the same bytes.
+	// systemPrompt is what system() sends, composed once per run after the
+	// thread opens (composeSystemPrompt): the kinds list is tens of
+	// kilobytes, and one composition per run keeps every turn's prompt the
+	// same bytes. catalogue is the kinds list buildTools renders.
 	systemPrompt string
+	catalogue    string
+	// pinnedBlock is the thread's pinned context (agentpinned.go), and
+	// pinnedStored what the claimed thread row held for it.
+	pinnedBlock  string
+	pinnedStored any
 
 	// gateOrdinal counts the writes the policy door GATED across this
 	// invocation: it rides the request-id derivation, so two gated writes in
@@ -773,6 +779,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 	if err != nil {
 		return nil, nil, err
 	}
+	l.composeSystemPrompt()
 	if root {
 		// The run's charges count against the caps from its first one. A
 		// settle that commits the thread row moves them onto it (settle);
@@ -1305,6 +1312,9 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		// the thread from here on draws its ordinal from this loop.
 		l.ds.runningThreads.Store(l.threadID, l)
 		l.ds.clearLostRun(l.threadID)
+		if err := l.continuePinned(ctx, l.pinnedStored); err != nil {
+			return nil, l.failWrite(ctx, err)
+		}
 		rows, err := l.loadThreadRows(ctx)
 		if err != nil {
 			if serr := l.settleAfterFailure(ctx, "reading the thread failed: "+err.Error(), ""); serr != nil {
@@ -1338,6 +1348,9 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}
 		if subject := l.provisionalSubject(); subject != "" {
 			props[propThreadSubject] = subject
+		}
+		if pinned := l.openPinned(ctx); pinned != nil {
+			props[propThreadPinned] = pinned
 		}
 		in := substrate.PutInput{Kind: typeThread, ID: id, Properties: props}
 		if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
@@ -1449,6 +1462,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		l.threadID = l.in.threadID
 		l.leaseAt = l.leaseUntil()
 		l.openCost, _ = anyFloat(row.Props["costUSD"])
+		l.pinnedStored = row.Props[propThreadPinned]
 		_, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			"status": threadRunning, "leaseUntil": l.leaseAt.Format(time.RFC3339Nano),
 		}})
@@ -1727,8 +1741,6 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		l.defs = append(l.defs, llm.Tool{Name: name, Description: description, Parameters: params})
 	}
 	openObject := map[string]any{"type": "object"}
-	catalogue := ""
-	defer func() { l.systemPrompt = composeSystem(l.ag.Prompt, catalogue, l.guidance(), l.in.systemSuffix) }()
 	for _, t := range l.ag.Tools {
 		fn, err := l.ds.registry().ResolveFunction(t.Callable)
 		if err != nil {
@@ -1753,7 +1765,7 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)
 			if l.ag.Reads != nil {
-				catalogue = kindsCatalogue(l.ds.registry().Kinds(), l.ag.Reads.Kinds)
+				l.catalogue = kindsCatalogue(l.ds.registry().Kinds(), l.ag.Reads.Kinds)
 			}
 		}
 		tool := agentTool{fn: fn, builtin: t.Builtin}
@@ -2882,6 +2894,14 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 // the invocation carries one. The declaration is never rewritten to carry
 // either.
 func (l *agentLoop) system() string { return l.systemPrompt }
+
+// composeSystemPrompt lays the system prompt out once the thread is open:
+// what moves least first, so a provider's cached prefix covers the most. The
+// agent's prompt, the kinds list, the engine's guidance, the pinned context
+// the thread keeps, then the engine's suffix for a run whose reply it parses.
+func (l *agentLoop) composeSystemPrompt() {
+	l.systemPrompt = composeSystem(l.ag.Prompt, l.catalogue, l.guidance(), l.pinnedBlock, l.in.systemSuffix)
+}
 
 // complete runs one model turn through the provider's wire adapter:
 // streaming (deltas through emit) when a client is attached, one-shot

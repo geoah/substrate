@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 28
+  version: 29
   purpose: internal
   names:
     singular: agent
@@ -255,6 +255,55 @@ data:
           max: 1000000
           description: the newest history, in tokens, a compaction keeps verbatim,
             20000 when absent
+    # Standing facts without a tool call (decision record 0197): each pinned
+    # read is evaluated once when a thread opens, under `permissions.reads`,
+    # and rendered into the system prompt after the kinds list. The thread
+    # keeps that snapshot for its life, so the prompt prefix does not move
+    # between messages; a new thread or a compaction takes a fresh one.
+    context:
+      type: object
+      description: what the engine reads into this agent's system prompt when
+        a thread opens
+      fields:
+        pinned:
+          type: object
+          repeated: true
+          description: the reads rendered into the prompt, in this order;
+            each kind must be in permissions.reads
+          fields:
+            kind:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              description: the one kind this read lists
+            # A string, because a field is a declared shape and the filter
+            # grammar is open-ended: the same JSON the records route's
+            # `filter` parameter takes, decoded as strictly.
+            filter:
+              type: string
+              description: the records route's filter as JSON, without kinds,
+                such as {"properties":{"active":{"eq":true}}}
+            # Required by the loader: an unordered read is not the same bytes
+            # twice, and the block is cached.
+            orderBy:
+              type: string
+              description: the sort, as property[:asc|desc] separated by commas,
+                such as createdAt or id
+            first:
+              type: int
+              min: 1
+              max: 500
+              description: the most records this read renders, 50 when absent
+            fields:
+              type: string
+              repeated: true
+              description: the properties each record renders with; its title
+                when absent
+        maxBytes:
+          type: int
+          min: 1024
+          max: 65536
+          description: the most bytes the rendered block takes, 8192 when
+            absent; records past it are left out and counted
     # THE GRANT, in one object, spelled the way a function's is: an agent has
     # no body of its own to spend, so it carries two of the five, what it may
     # read and what it may write.

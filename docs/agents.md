@@ -36,8 +36,8 @@ disabled or uninstalled, every entry refuses with a guard error.
 The `agent` kind is a first-class core kind, `substrate.reamde.dev/core/agent`, declared
 like every other core kind: a manifest document is a record of a core kind
 whatever package it describes. Its runtime vocabulary is the SECOND seeded
-package, `substrate.reamde.dev/llm` — `provider`, `thread`, `message` and
-`interaction` — seeded into every repository exactly as core is (decision
+package, `substrate.reamde.dev/llm` — `provider`, `thread`, `message`,
+`interaction` and `memory` — seeded into every repository exactly as core is (decision
 record [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)).
 
 ## The manifest
@@ -175,6 +175,10 @@ data:
   the loader refuses `/token`, `/credential` and `/recoverykey` there, because
   they are the owner's alone ([auth](auth.md#tokens)). `permissions.call`
   takes no glob: it names functions, not kinds.
+- optional **`context:`**, what the engine reads into the system prompt when
+  a thread opens, without a tool call: `pinned`, a list of reads, and
+  `maxBytes` (default 8192, 1024 to 65536)
+  ([pinned context](#pinned-context)).
 - optional **`hiddenFromChat:`**, the chat-surface withholding: `true` keeps the
   agent off the console's chat list and makes the chat API refuse it, while
   sub-agent calls, the call API and triggers still dispatch it. An
@@ -471,8 +475,8 @@ tools on its page.
 
 ## The engine's guidance
 
-Every agent's system prompt ends with a short block the engine writes, after
-the agent's own `prompt` and its kinds list:
+Every agent's system prompt carries a short block the engine writes, after
+the agent's own `prompt` and its kinds list and before any pinned context:
 
 ```text
 <substrate>
@@ -503,6 +507,73 @@ no tool result or message the model saw in the run carried the record. The
 `done` event's result carries the same list. A client renders a missing
 mention as its text alone, so an invented id never reads as a record; an
 unread one still renders, and is there for evaluating the agent.
+
+## Pinned context
+
+An agent can carry standing facts in its system prompt instead of fetching
+them with a `query` call on every conversation
+([0197](decisions/0197-an-agent-pins-standing-context-into-its-prompt-once-per-thread.md)).
+`context.pinned` lists the reads, each a list of one kind:
+
+```yaml
+context:
+  pinned:
+    - kind: substrate.reamde.dev/llm/memory
+      filter: '{"properties": {"active": {"eq": true}}}'
+      orderBy: createdAt,id
+      first: 200
+      fields: [text]
+  maxBytes: 8192
+permissions:
+  reads:
+    kinds: [substrate.reamde.dev/llm/memory]
+```
+
+- **`kind`** is a full kind reference, never a glob, and it must be inside
+  `permissions.reads.kinds` (a glob there covers it). A pinned read is a read
+  under the agent's own grant, so pinning needs no other permission, and an
+  entry outside the grant is refused when the declaration loads.
+- **`filter`** is the JSON the records route's `filter` parameter takes, as a
+  string, decoded as strictly; it may not name `kinds`.
+- **`orderBy`** is required, in the records route's compact spelling
+  (`property[:asc|desc]`, comma-separated). An unordered read would not
+  render the same bytes twice.
+- **`first`** is how many records the read renders, 50 when absent and 500 at
+  most.
+- **`fields`** are the properties each record renders with, its title when
+  absent. A sensitive property is refused.
+
+The engine renders the results after the agent's prompt and its kinds list
+as one block, each record one JSON object on its own line under its kind,
+in the declared order:
+
+```text
+<pinned_context>
+Records this agent pins, read when this thread opened. A change made since is not shown here; query the record for its current value.
+<records kind="substrate.reamde.dev/llm/memory">
+{"id":"veg","text":"The owner is vegetarian."}
+</records>
+</pinned_context>
+```
+
+The JSON escapes `<`, `>` and `&`, so a record's text never closes the
+block. Records past `maxBytes` are left out from the end and counted on one
+line before the closing tag.
+
+**The block is a snapshot per thread.** It is read when a thread opens,
+stored on the `llm/thread` row as `pinnedContext` (the block, a digest of the
+`context` declaration, and when it was taken), and every later run of that
+thread replays the stored bytes, so the system prompt does not move between
+messages. A new thread reads again, and so does the run after a compaction,
+which clears the stored block, or after the agent's `context` declaration
+changes. A record changed during a thread is not shown until then. A pinned
+read is not charged to `reads.budgets`; `first` and `maxBytes` bound it.
+
+`substrate.reamde.dev/llm/memory` is the seeded kind for the owner's own
+standing facts: `text`, `active` (default `true`) and `source` (`owner`,
+`agent` or `import`, default `owner`). It is the one `primary` kind of the
+`llm` package, so its rows list and edit in the console like any record. No
+shipped agent pins it yet.
 
 ## The decision loop
 

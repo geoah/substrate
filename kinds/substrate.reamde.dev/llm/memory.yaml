@@ -1,0 +1,43 @@
+# one standing fact or instruction the owner keeps for their agents: "I am
+# vegetarian", "call me Sam", "summaries in bullet points". An agent pins the
+# active ones into its system prompt with `context.pinned` (decision record
+# 0197), so the facts ride every thread without a tool call; nothing reads
+# this kind unless an agent's declaration pins or queries it. PRIMARY, unlike
+# the rest of this package: the rows are the owner's own data, listed,
+# searched and edited in the console like any record, which is what makes a
+# remembered fact one the owner can see and take back.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/llm/memory
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  description: >-
+    One standing fact or instruction the owner keeps for their agents. An
+    agent that pins the active ones reads them at the start of every thread,
+    without a tool call.
+  purpose: primary
+  names:
+    singular: memory
+  displayTemplate: "{text}"
+  properties:
+    text:
+      type: text
+      required: true
+      description: the fact or instruction, in one or two sentences
+    # A memory the owner retires stays as a record, so taking a fact back is
+    # one switch and the history stays readable; the pinned read filters on
+    # it.
+    active:
+      type: bool
+      default: true
+      description: whether agents that pin memories read this one
+    source:
+      type: enum
+      default: owner
+      values:
+        - owner
+        - agent
+        - import
+      description: where the fact came from; owner (written by hand), agent
+        (an agent proposed it and the owner accepted) or import

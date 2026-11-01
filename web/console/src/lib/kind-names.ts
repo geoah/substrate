@@ -108,6 +108,7 @@ const WORDS = new Set([
   "mapping",
   "markup",
   "medication",
+  "memory",
   "merge",
   "message",
   "metric",

@@ -222,8 +222,9 @@ bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRA
 and `observations` (measured values,
 [0192](docs/decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)),
 three keyless provider rows, the LLM sample, and the shipped units.** The agent runtime's
-four data kinds are the second seeded package, `substrate.reamde.dev/llm`
-(`provider`, `thread`, `message`, `interaction`), out of core so core is not
+data kinds are the second seeded package, `substrate.reamde.dev/llm`
+(`provider`, `thread`, `message`, `interaction`, and `memory`, the owner's
+standing facts an agent pins), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
 the `agent` kind stays core's, because a manifest document is a record of a
 core kind whatever package it describes. Creation also writes three keyless
@@ -451,8 +452,8 @@ first label.
   validated and stored, read by clients to decide what they list, by search
   to rank machinery lower, and by the engine to leave `internal` kinds out
   of an agent's kinds list unless its grant names them; every kind of
-  `core`, `llm` and `console` is `internal`, while the seeded `observations`
-  kinds are the owner's data and keep their own
+  `core`, `llm` and `console` is `internal` but `llm/memory`, while it and the
+  seeded `observations` kinds are the owner's data and keep their own
   ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md),
   [0136](docs/decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md),
   [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). `renamedFrom` is live, on a
