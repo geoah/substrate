@@ -19,6 +19,7 @@ import {
   INTERACTION_KIND_PRE_MOVE,
 } from "@/lib/core-kinds"
 
+import type { AgentMention } from "./agents"
 import { readReference, type SubstrateRecord } from "./types"
 
 /** One changelog entry a dispatch wrote, as the engine stamps it onto the
@@ -119,6 +120,9 @@ export interface TurnView {
   /** On a live turn: the latest event was reasoning, so the model is still
    * thinking and a reader counts the seconds. */
   thinking?: boolean
+  /** On a run's final assistant turn: the records the reply links, as the
+   * engine read them when the run settled. Absent when it links none. */
+  mentions?: AgentMention[]
 }
 
 function str(value: unknown): string {
@@ -127,6 +131,31 @@ function str(value: unknown): string {
 
 function num(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+/** A row's `mentions`, read tolerantly: an entry without a kind and an id
+ * is dropped. */
+export function mentionsOf(
+  record: SubstrateRecord
+): AgentMention[] | undefined {
+  const raw = record.properties.mentions
+  if (!Array.isArray(raw)) return undefined
+  const out: AgentMention[] = []
+  for (const entry of raw as unknown[]) {
+    if (typeof entry !== "object" || entry === null) continue
+    const m = entry as Record<string, unknown>
+    const kind = str(m.kind)
+    const id = str(m.id)
+    if (!kind || !id) continue
+    out.push({
+      kind,
+      id,
+      text: str(m.text) || id,
+      ...(m.missing === true ? { missing: true } : {}),
+      ...(m.unread === true ? { unread: true } : {}),
+    })
+  }
+  return out.length ? out : undefined
 }
 
 /** A summary row's own facts: its `covers` range, the context size that set
@@ -343,6 +372,7 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
         role === "assistant"
           ? num(record.properties.reasoningMillis)
           : undefined
+      const mentions = role === "assistant" ? mentionsOf(record) : undefined
       turns.push({
         key: record.id,
         role,
@@ -352,6 +382,7 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
         ...(reasoning && reasoningMillis !== undefined
           ? { reasoningMillis }
           : {}),
+        ...(mentions ? { mentions } : {}),
       })
       continue
     }
@@ -690,6 +721,19 @@ export function pushToolStart(
     ...doneThinking(last),
     tools: [...last.tools, call],
   }
+  return { ...live, turns }
+}
+
+/** Puts the done event's mentions on the reply in flight, so a live reply
+ * shows what its row will hold before the rows are read again. */
+export function settleMentions(
+  live: LiveOverlay,
+  mentions: AgentMention[] | undefined
+): LiveOverlay {
+  const last = live.turns[live.turns.length - 1]
+  if (!mentions?.length || !last || last.role !== "assistant") return live
+  const turns = [...live.turns]
+  turns[turns.length - 1] = { ...last, mentions }
   return { ...live, turns }
 }
 

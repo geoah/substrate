@@ -227,7 +227,9 @@ function AgentReply({
             ))}
             {(turn.content || turn.key === liveKey) && (
               <div>
-                {turn.content && <MessageText text={turn.content} />}
+                {turn.content && (
+                  <MessageText text={turn.content} mentions={turn.mentions} />
+                )}
                 {turn.key === liveKey && (
                   <span
                     aria-label="Still writing"

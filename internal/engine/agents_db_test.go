@@ -275,7 +275,7 @@ func provisionAgents(t *testing.T, ds *dataset) *fakeLLM {
 	ds.mu.Lock()
 	ds.skipThreadTitles = true
 	ds.mu.Unlock()
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm", "namellm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm", "namellm", "tersellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -443,6 +443,11 @@ def main(input, host):
 			"budgets":     map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
+		// terse turns the engine's guidance off: the params switch.
+		agent("terse", map[string]any{
+			"provider": "tersellm", "model": "terse",
+			"params": map[string]any{"engineGuidance": false},
+		}),
 		// namer chats for the thread title tests (agenttitle_db_test.go).
 		agent("namer", map[string]any{"provider": "namellm", "model": "name"}),
 		agent("thinker", map[string]any{

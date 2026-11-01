@@ -551,3 +551,21 @@ func TestReasoningSummaryParamIsABool(t *testing.T) {
 		}
 	}
 }
+
+func TestEngineGuidanceIsOnUnlessParamsSayFalse(t *testing.T) {
+	for _, tc := range []struct {
+		params map[string]any
+		want   bool
+	}{
+		{nil, true},
+		{map[string]any{"engineGuidance": true}, true},
+		{map[string]any{"engineGuidance": false}, false},
+	} {
+		if got := (&vocabulary.Agent{Params: tc.params}).EngineGuidance(); got != tc.want {
+			t.Errorf("EngineGuidance(%v) = %v, want %v", tc.params, got, tc.want)
+		}
+	}
+	if _, err := vocabulary.ParseAgentParams(map[string]any{"engineGuidance": "no"}); err == nil {
+		t.Fatal("a non-bool engineGuidance parsed")
+	}
+}

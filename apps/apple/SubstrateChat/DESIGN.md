@@ -303,7 +303,8 @@ rules) renders blocks as SwiftUI views and inline spans through
 safe on any prefix of a reply: an unclosed fence is code, a half table is
 text. Settled messages are parsed once and memoized; only the streaming one
 re-parses on each flush; text past 200,000 characters is plain. Code blocks
-scroll sideways and have Copy. Only `http`, `https` and `mailto` links open.
+scroll sideways and have Copy. A link opens only when it is `http`, `https`,
+`mailto` or a record link (below).
 
 ## The interface
 
@@ -361,6 +362,12 @@ bubble is a tinted fill. The transcript softens under the composer with
   it. The app asks for `read:*` to read them; a kind out of the token's reach
   is said so ("This app can't read people", and where to allow it), never
   shown as missing, since the server answers both alike.
+- **Record links in a reply** (`[Q4 budget](substrate://<kind>/<id>)`, or the
+  older `ref:<kind>/<id>`) stay in the text, tinted, and a tap opens the
+  record like a pill. A link the engine found no record for (the reply row's
+  `mentions`, marked `missing`) is its text alone, so an invented id never
+  reads as a record. Under a settled reply, "Linked records" repeats each
+  record it links as a pill, since a link inside a line of text cannot be one.
 - **Questions** (`ask`): a card with each question's options (one or many,
   as the console), Answer and Dismiss; a resolved one shows the choices.
 - **Suggestions** (`propose`): a card for a create, a patch or a delete:

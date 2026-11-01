@@ -40,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 11
+  version: 12
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -190,6 +190,9 @@ data:
     over a summary of it.
   provider: openai
   model: gpt-5-mini
+  # The reply IS the title, so the engine's guidance stays out of it.
+  params:
+    engineGuidance: false
   budgets:
     maxTurns: 2
     maxToolCalls: 1

@@ -391,6 +391,9 @@ func TestTheEngineTellsTheJudgeItsReplyContract(t *testing.T) {
 	if !strings.Contains(system, judgeReplyContract) {
 		t.Fatalf("the judge was never told its reply contract: %q", system)
 	}
+	if strings.Contains(system, engineGuidance) {
+		t.Fatalf("a run whose reply the engine parses carries the engine's guidance: %q", system)
+	}
 	// The contract rides the INVOCATION, not the declaration: the agent row
 	// still carries only its author's prompt.
 	ag, err := ds.registry().ResolveAgent(crewPackage + "/verdictor")
@@ -402,9 +405,10 @@ func TestTheEngineTellsTheJudgeItsReplyContract(t *testing.T) {
 	}
 }
 
-// TestOrdinaryRunsCarryTheAgentsPromptAlone: the suffix is the judge mode's,
-// so nothing else in the loop grew a paragraph it did not ask for.
-func TestOrdinaryRunsCarryTheAgentsPromptAlone(t *testing.T) {
+// TestOrdinaryRunsCarryTheAgentsPromptAndTheGuidance: the suffix is the
+// judge mode's, so an ordinary run carries its prompt and the engine's
+// guidance under it, and nothing else.
+func TestOrdinaryRunsCarryTheAgentsPromptAndTheGuidance(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -416,8 +420,30 @@ func TestOrdinaryRunsCarryTheAgentsPromptAlone(t *testing.T) {
 	if len(requests) != 1 {
 		t.Fatalf("completions: %d", len(requests))
 	}
-	if system := systemOf(t, requests[0]); system != "You are chatter." {
+	if system := systemOf(t, requests[0]); system != "You are chatter.\n\n"+engineGuidance {
 		t.Fatalf("an ordinary run's system prompt: %q", system)
+	}
+}
+
+// TestAnAgentTurnsTheGuidanceOff: params.engineGuidance false leaves the
+// agent's prompt alone, and the knob never reaches the wire.
+func TestAnAgentTurnsTheGuidanceOff(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	fake.script("terse", fakeTurn{content: "ok"})
+	if _, err := ds.CallAgent(context.Background(), crewPackage+"/terse", "hi"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	requests := fake.requestsOf("terse")
+	if len(requests) != 1 {
+		t.Fatalf("completions: %d", len(requests))
+	}
+	if system := systemOf(t, requests[0]); system != "You are terse." {
+		t.Fatalf("a run with the guidance off: %q", system)
+	}
+	raw, _ := json.Marshal(requests[0])
+	if strings.Contains(string(raw), "engineGuidance") {
+		t.Fatalf("the knob reached the wire: %s", raw)
 	}
 }
 

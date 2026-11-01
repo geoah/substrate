@@ -146,8 +146,9 @@ var wireTypes = map[string]any{
 
 	// The agent chat stream (agents.ts): one ndjson event, and the settled
 	// result the done event carries.
-	"AgentResult": AgentResult{},
-	"AgentEvent":  AgentEvent{},
+	"AgentResult":  AgentResult{},
+	"AgentMention": AgentMention{},
+	"AgentEvent":   AgentEvent{},
 
 	// The catalog entry and the shapes nested in it. The console's Registry
 	// reads them on every visit and its two sections key on `tier`, so a

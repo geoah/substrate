@@ -23,11 +23,19 @@
     "tool": false,
     "turn": false
   },
+  "AgentMention": {
+    "id": true,
+    "kind": true,
+    "missing": false,
+    "text": true,
+    "unread": false
+  },
   "AgentResult": {
     "completionTokens": true,
     "costUSD": true,
     "effects": true,
     "effectsByAction": false,
+    "mentions": false,
     "promptTokens": true,
     "reason": false,
     "reply": true,

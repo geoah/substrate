@@ -55,6 +55,24 @@ type AgentResult struct {
 	CompletionTokens int     `json:"completionTokens"`
 	TotalTokens      int     `json:"totalTokens"`
 	CostUSD          float64 `json:"costUSD"`
+	// Mentions are the records the final reply links, as the assistant row
+	// stores them; absent when it links none.
+	Mentions []AgentMention `json:"mentions,omitempty"`
+}
+
+// AgentMention is one record a reply links as
+// `[text](substrate://<kind>/<id>)`, read by the engine when the run settles.
+type AgentMention struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	// Text is the link's label as the model wrote it.
+	Text string `json:"text"`
+	// Missing is set when no live record has that kind and id: the model
+	// named a record that does not exist, and a client shows the label alone.
+	Missing bool `json:"missing,omitempty"`
+	// Unread is set when nothing in the run's context carried that record:
+	// no tool result and no message. The link is still rendered.
+	Unread bool `json:"unread,omitempty"`
 }
 
 // The AgentEvent kinds a streaming client sees, in arrival order: deltas

@@ -64,7 +64,8 @@ private struct AssistantTurn: View {
                 ReasoningView(text: reasoning, millis: turn.reasoningMillis, thinking: turn.thinking && live)
             }
             if !turn.content.isEmpty {
-                MarkdownView(text: turn.content, live: live)
+                MarkdownView(text: turn.content, live: live,
+                             missing: Set((turn.mentions ?? []).filter(\.missing).map(\.path)))
                     .textSelection(.enabled)
                     .accessibilityAddTraits(live ? .updatesFrequently : [])
                     .contextMenu {
@@ -73,6 +74,9 @@ private struct AssistantTurn: View {
                     }
             } else if live, turn.tools.isEmpty, turn.reasoning == nil {
                 TypingDots()
+            }
+            if !live, let mentions = turn.mentions?.filter({ !$0.missing }), !mentions.isEmpty {
+                LinkedRecords(mentions: mentions)
             }
             ForEach(Array(turn.tools.enumerated()), id: \.offset) { _, call in
                 ToolCallRow(call: call, agent: agent)
@@ -86,6 +90,28 @@ private struct AssistantTurn: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The records a settled reply links, as pills under it: the reply's links
+/// are text, and this is where each is its record.
+private struct LinkedRecords: View {
+    let mentions: [Mention]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Linked records")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            WrapLayout(spacing: 6) {
+                ForEach(mentions, id: \.self) { m in
+                    RecordPill(RecordReference(kind: m.kind, id: m.id))
+                }
+            }
+            .font(.footnote)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Linked records")
     }
 }
 

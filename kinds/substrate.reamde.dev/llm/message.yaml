@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 17
+  version: 18
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -179,6 +179,34 @@ data:
           min: 1
           description: how many more kinds the chain wrote past the listed
             20; absent when every kind is listed
+    # Stamped by the ENGINE on a run's final assistant row: every record the
+    # reply links as [text](substrate://<kind>/<id>) (decision record 0137)
+    # or the legacy ref:<kind>/<id>, once each, code spans and blocks left
+    # out. Kind and id are strings, not a reference: the link is prose, and
+    # a missing one names a record that never existed.
+    mentions:
+      type: object
+      repeated: true
+      description: the records the reply links, read by the engine when the
+        run settled
+      fields:
+        kind:
+          type: string
+          description: the linked record's kind
+        id:
+          type: string
+          description: the linked record's id
+        text:
+          type: string
+          description: the link's label as the model wrote it
+        missing:
+          type: bool
+          description: set when no live record has that kind and id, so a
+            reader shows the label alone
+        unread:
+          type: bool
+          description: set when no tool result or message the model saw carried
+            that record
     # A summary row's range is two message ROW IDS, not turn ordinals: two
     # rows can share an ordinal, and replay orders by creation. The rows in
     # the range stay; replay emits the summary where `from` sat and resumes

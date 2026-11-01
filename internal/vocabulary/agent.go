@@ -63,10 +63,15 @@ const (
 	// its thinking. Anthropic's current models think with the text omitted
 	// unless a request asks, so an effort alone streams no reasoning.
 	AgentParamReasoningSummary = "reasoningSummary"
+	// AgentParamEngineGuidance is the one param that never reaches a wire:
+	// false drops the engine's guidance block from the system prompt, for an
+	// agent whose reply has a strict shape. It is the agent's own, so a
+	// provider row's defaults may not carry it.
+	AgentParamEngineGuidance = "engineGuidance"
 )
 
 // AgentParamKeys is the recognized set, in the order the errors name it.
-var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamReasoningEffort, AgentParamReasoningSummary, AgentParamTemperature}
+var AgentParamKeys = []string{AgentParamEngineGuidance, AgentParamMaxTokens, AgentParamReasoningEffort, AgentParamReasoningSummary, AgentParamTemperature}
 
 // AgentReasoningEfforts is the reasoning-effort set, weakest first — the UNION
 // of what the wires accept, because one declaration serves all of them and no
@@ -522,6 +527,8 @@ type AgentParams struct {
 	MaxTokens        int
 	ReasoningEffort  string
 	ReasoningSummary bool
+	// EngineGuidance is nil when the params do not name it, which reads as on.
+	EngineGuidance *bool
 }
 
 // ParseAgentParams validates a request-param map and parses it. The set is
@@ -570,12 +577,25 @@ func ParseAgentParams(params map[string]any) (AgentParams, error) {
 				return AgentParams{}, fmt.Errorf("%s: %v — true or false", k, params[k])
 			}
 			out.ReasoningSummary = b
+		case AgentParamEngineGuidance:
+			b, ok := params[k].(bool)
+			if !ok {
+				return AgentParams{}, fmt.Errorf("%s: %v — true or false", k, params[k])
+			}
+			out.EngineGuidance = &b
 		default:
 			return AgentParams{}, fmt.Errorf("%s is not a request param — one of %s",
 				k, strings.Join(AgentParamKeys, ", "))
 		}
 	}
 	return out, nil
+}
+
+// EngineGuidance reports whether the engine's guidance block rides this
+// agent's system prompt: on unless `params.engineGuidance` is false.
+func (a *Agent) EngineGuidance() bool {
+	b, ok := a.Params[AgentParamEngineGuidance].(bool)
+	return !ok || b
 }
 
 // parseAgentParams reads `params:` — the agent's own request knobs, which the
