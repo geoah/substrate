@@ -47,16 +47,30 @@ struct Client: Sendable {
 
     /// One live record's properties, or nil when there is none: a deleted
     /// record answers 200 with `deletedAt`, and reads as absent here.
-    /// A reply that is not a record is an error, never an empty record: a
-    /// receipt read as present when it is not would mark a Health day filed.
     func get(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws -> [String: Any]? {
+        if case let .live(properties) = try await record(kind, id, retries: retries, timeout: timeout) { return properties }
+        return nil
+    }
+
+    enum Stored {
+        case live([String: Any])
+        /// Tombstoned: there until the server collects it, and a write at its
+        /// id restores it.
+        case deleted
+        case absent
+    }
+
+    /// One record as the server holds it. A reply that is not a record is an
+    /// error, never an empty record: a receipt read as present when it is
+    /// not would mark a Health day filed.
+    func record(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = Timeout.read) async throws -> Stored {
         let response = try await api.send(api.request("GET", SubstrateClient.recordPath(kind, id), timeout: timeout),
                                           accept: [404], retries: retries)
-        if response.status == 404 { return nil }
+        if response.status == 404 { return .absent }
         guard let object = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any], object["id"] != nil
         else { throw URLError(.cannotParseResponse) }
-        if let deleted = object["deletedAt"], !(deleted is NSNull) { return nil }
-        return object["properties"] as? [String: Any] ?? [:]
+        if let deleted = object["deletedAt"], !(deleted is NSNull) { return .deleted }
+        return .live(object["properties"] as? [String: Any] ?? [:])
     }
 
     /// PUT merges per property and never prunes.

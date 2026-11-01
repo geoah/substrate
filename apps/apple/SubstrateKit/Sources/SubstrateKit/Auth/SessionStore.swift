@@ -80,6 +80,36 @@ public struct SessionStore: Sendable {
         SecItemDelete(query(account: account) as CFDictionary)
     }
 
+    // MARK: Revocations
+
+    /// Where the tokens waiting to be revoked are kept, beside the session.
+    var revocationsAccount: String { account + ".revocations" }
+
+    /// Tokens this device stopped using whose revocation the server has not
+    /// confirmed: kept, secret and id, since nothing else on the device
+    /// holds them once a new session is saved over the old.
+    public func pendingRevocations() -> [Session] {
+        guard case .found(let data) = data(account: revocationsAccount) else { return [] }
+        return (try? JSONDecoder().decode([Session].self, from: data)) ?? []
+    }
+
+    /// Keeps a token to revoke until `revoked(_:)` forgets it. Called before
+    /// the session that replaces it is saved, so no moment holds neither.
+    public func keepForRevocation(_ session: Session) throws {
+        let pending = pendingRevocations().filter { $0.secret != session.secret } + [session]
+        try write(try JSONEncoder().encode(pending), account: revocationsAccount)
+    }
+
+    /// Forgets a token the server revoked, or one still in use.
+    public func revoked(_ session: Session) {
+        let pending = pendingRevocations().filter { $0.secret != session.secret }
+        if pending.isEmpty {
+            SecItemDelete(query(account: revocationsAccount) as CFDictionary)
+        } else if let data = try? JSONEncoder().encode(pending) {
+            try? write(data, account: revocationsAccount)
+        }
+    }
+
     // MARK: Other items
 
     public enum Item: Sendable {

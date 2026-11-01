@@ -242,3 +242,103 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(found, .present)
     }
 }
+
+/// An app session's approval may leave out any scope Sync asks for, and a
+/// scoped read of a kind it does not reach answers 404: that is a review
+/// for the owner, never rows the server lost.
+final class ApprovalReachTests: XCTestCase {
+    let server = URL(string: "https://ada.example.com")!
+    let account = "/api/v1/providers.substrate.reamde.dev/applehealth/account/substrate-sync-1a2b3c4d"
+
+    func session(without scope: String? = nil) -> Session {
+        let scopes = (SyncManifest.scopes + ["webhook:applehealth-webhook"]).filter { $0 != scope }
+        return Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+                       scopes: scopes)
+    }
+
+    func testEveryScopeLeftOutStopsTheSourcesThatNeedItAsAReview() {
+        for source in Source.allCases {
+            XCTAssertEqual(SyncEngine.unapproved(source, session()), [], "\(source)")
+            let password = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
+            XCTAssertEqual(SyncEngine.unapproved(source, password), [], "\(source)")
+        }
+        let apple = "write:providers.substrate.reamde.dev/apple/*"
+        for source in [Source.contacts, .calendars, .reminders, .places] {
+            XCTAssertEqual(SyncEngine.unapproved(source, session(without: apple)), [apple], "\(source)")
+        }
+        XCTAssertEqual(SyncEngine.unapproved(.health, session(without: apple)), [])
+        for scope in ["read:providers.substrate.reamde.dev/applehealth/account", "read:providers.substrate.reamde.dev/applehealth/export",
+                      "webhook:applehealth-webhook"]
+        {
+            XCTAssertEqual(SyncEngine.unapproved(.health, session(without: scope)), [scope])
+            XCTAssertEqual(SyncEngine.unapproved(.contacts, session(without: scope)), [])
+        }
+
+        let error = SyncError.notApproved(source: "Health", scopes: ["read:providers.substrate.reamde.dev/applehealth/export"])
+        XCTAssertTrue(needsApproval(error))
+        XCTAssertFalse(isSignedOut(error))
+        XCTAssertEqual(error.localizedDescription, "Substrate Sync can't sync Health: the access you approved leaves out "
+            + "“See your Apple Health deliveries”. Review its access on Home to allow it; nothing this phone sent is sent again.")
+    }
+
+    /// A deleted account is not one an approval creates: the planner leaves
+    /// a deleted row alone, so a review would find nothing to do.
+    func testADeletedAccountIsToldApartFromAMissingOne() async throws {
+        let app = session()
+        let deleted = StubTransport()
+        deleted.on("GET", account, json: #"{"id":"substrate-sync-1a2b3c4d","deletedAt":"2026-11-01T10:00:00Z","properties":{}}"#)
+        let found = try await SyncEngine.healthAccount(Client(app, transport: deleted), app, id: "substrate-sync-1a2b3c4d") { "x" }
+        XCTAssertEqual(found, .deleted)
+        XCTAssertTrue(deleted.sent("PUT", account).isEmpty)
+        XCTAssertFalse(needsApproval(SyncError.accountDeleted))
+        XCTAssertTrue(needsApproval(SyncError.noAccount))
+
+        // A password session's write restores it, as Set Up does.
+        let password = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
+        deleted.on("PUT", account, json: #"{"id":"substrate-sync-1a2b3c4d","properties":{}}"#)
+        let restored = try await SyncEngine.healthAccount(Client(password, transport: deleted), password, id: "substrate-sync-1a2b3c4d") { "x" }
+        XCTAssertEqual(restored, .created)
+    }
+}
+
+/// The token a move or a review replaces is kept until the server says it
+/// is revoked: a revocation cut short is tried again, never lost.
+final class RevocationTests: XCTestCase {
+    let server = URL(string: "https://ada.example.com")!
+
+    func testAReplacedTokenIsKeptUntilTheServerRevokesIt() async throws {
+        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        defer { for old in store.pendingRevocations() { store.revoked(old) } }
+        let old = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
+        let current = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+                              scopes: SyncManifest.scopes)
+        try store.keepForRevocation(old)
+
+        let stub = StubTransport()
+        stub.on("DELETE", "/tokens/tok_1", status: 503, json: #"{"error":{"code":"unavailable","message":"try later"}}"#)
+        var live = await AppModel.revokeKept(store: store, current: current, transport: stub)
+        XCTAssertEqual(live, [old])
+        XCTAssertEqual(store.pendingRevocations(), [old])
+        XCTAssertEqual(stub.sent("DELETE", "/tokens/tok_1").first?.value(forHTTPHeaderField: "Authorization"), "Bearer sub_password")
+        XCTAssertTrue(AppModel.unrevokedWords(old).contains("in Settings, under Signed in"))
+
+        stub.on("DELETE", "/tokens/tok_1", status: 204, json: "")
+        live = await AppModel.revokeKept(store: store, current: current, transport: stub)
+        XCTAssertEqual(live, [])
+        XCTAssertEqual(store.pendingRevocations(), [])
+    }
+
+    /// A replacement whose save never landed leaves the old session in use:
+    /// that one is forgotten from the list, never revoked.
+    func testTheSessionInUseIsNeverRevoked() async throws {
+        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        defer { for old in store.pendingRevocations() { store.revoked(old) } }
+        let current = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
+        try store.keepForRevocation(current)
+        let stub = StubTransport()
+        let live = await AppModel.revokeKept(store: store, current: current, transport: stub)
+        XCTAssertEqual(live, [])
+        XCTAssertTrue(stub.sent("DELETE", "/tokens/tok_1").isEmpty)
+        XCTAssertEqual(store.pendingRevocations(), [])
+    }
+}

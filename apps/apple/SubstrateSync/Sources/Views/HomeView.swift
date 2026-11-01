@@ -7,6 +7,7 @@ import SwiftUI
 /// them, what the server says about Sync's access, where it says anything.
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openURL) private var openURL
     @State private var reviewing = false
 
     var body: some View {
@@ -17,7 +18,8 @@ struct HomeView: View {
                         review: { reviewing = true },
                         signInAgain: { Task { await model.authorize() } },
                         moveToAppAccess: { Task { await model.authorize() } },
-                        retry: { Task { await model.status.refresh(force: true) } }))
+                        retry: { Task { await model.status.refresh(force: true) } },
+                        openServer: model.session.map { session in { openURL(session.server) } }))
                         .disabled(model.authorizing)
                 }
                 .listRowInsets(EdgeInsets())
@@ -27,6 +29,11 @@ struct HomeView: View {
                 Section {
                     ProblemBox(title: model.session?.isApp == true ? "The review didn't finish" : "Couldn't move to app access",
                                message: problem)
+                }
+            }
+            if let unrevoked = model.unrevoked {
+                Section {
+                    ProblemBox(title: "The old sign-in still works", message: unrevoked, tint: .orange)
                 }
             }
 

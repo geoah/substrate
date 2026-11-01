@@ -120,6 +120,12 @@ enum SyncError: LocalizedError {
     /// An app session's Health account is gone from the server: the owner's
     /// approval creates it, never the app.
     case noAccount
+    /// An app session's Health account is deleted and not yet collected: an
+    /// approval leaves a deleted row alone, so there is nothing to approve
+    /// until the server lets it go.
+    case accountDeleted
+    /// An app session's approval leaves out scopes the source needs.
+    case notApproved(source: String, scopes: [String])
     case emptyScan(String)
     case unreadable(String)
     case signedOut
@@ -133,6 +139,12 @@ enum SyncError: LocalizedError {
         case .notArmed: "The Apple Health webhook is not armed. Open Set Up and run it again."
         case .noAccount:
             "This phone's Health account is not on your server. Review Substrate Sync's access on Home to set it up again; every day is sent again once it is."
+        case .accountDeleted:
+            "This phone's Health account was deleted on your server, so Health has nowhere to go. Your server lets a deletion go within a few minutes; then review Substrate Sync's access on Home to create it again, and every day is sent again."
+        case let .notApproved(source, scopes):
+            "Substrate Sync can't sync \(source): the access you approved leaves out "
+                + joinWords(scopes.map { "“\(SyncManifest.scopeWords($0))”" })
+                + ". Review its access on Home to allow it; nothing this phone sent is sent again."
         case let .emptyScan(what):
             "The device returned no \(what), though earlier syncs pushed some. Nothing was deleted; sync again once they are back."
         case let .unreadable(what): "The device could not read your \(what) just now. Nothing was deleted; sync again in a moment."
@@ -176,6 +188,7 @@ func needsApproval(_ error: Error) -> Bool {
     case is InsufficientScope: true
     case let e as WebhookRefused: e.app
     case SyncError.noAccount: true
+    case SyncError.notApproved: true
     default: false
     }
 }
@@ -356,6 +369,8 @@ actor SyncEngine {
             var signedOut = false
             var approval = false
             do {
+                let lacking = Self.unapproved(source, session)
+                if !lacking.isEmpty { throw SyncError.notApproved(source: source.title, scopes: lacking) }
                 switch source {
                 case .contacts: status.counts = try await syncContacts(client, &state)
                 case .calendars: status.counts = try await syncCalendars(client, &state)
@@ -1112,18 +1127,52 @@ actor SyncEngine {
         return key
     }
 
-    enum AccountCheck { case present, created, missing }
+    enum AccountCheck { case present, created, missing, deleted }
 
     /// The account every delivery names, made sure of before a Health run. A
-    /// password session makes a missing one, as Set Up makes it; an app
-    /// session never writes it, since only the owner's approval creates it.
+    /// password session makes a missing one, or restores a deleted one, as
+    /// Set Up makes it; an app session never writes it, since only the
+    /// owner's approval creates it.
     static func healthAccount(_ client: Client, _ session: Session, id: String,
                               deviceName: @Sendable () async -> String) async throws -> AccountCheck
     {
-        guard try await client.get(healthAccountKind, id) == nil else { return .present }
-        guard !session.isApp else { return .missing }
+        let stored = try await client.record(healthAccountKind, id)
+        if case .live = stored { return .present }
+        if session.isApp {
+            if case .deleted = stored { return .deleted }
+            return .missing
+        }
         try await client.put(healthAccountKind, id, ["displayName": await deviceName(), "timezone": TimeZone.current.identifier])
         return .created
+    }
+
+    static func writes(_ source: Source) -> [String] {
+        switch source {
+        case .contacts: [appleKinds + "contact", appleKinds + "addressbook"]
+        case .calendars: [EventMapping.eventstoreKind, EventMapping.calendarKind, appleKinds + "event"]
+        case .reminders: [ReminderMapping.eventstoreKind, ReminderMapping.listKind, ReminderMapping.kind]
+        case .places: [VisitMapping.storeKind, VisitMapping.kind]
+        case .health: []
+        }
+    }
+
+    /// What a source needs that an app session's approval left out, as the
+    /// scopes Sync asks for. A scoped read of a kind the token does not reach
+    /// answers 404, which the source would take for rows the server lost and
+    /// forget what it pushed: asked first, it is a review instead.
+    static func unapproved(_ source: Source, _ session: Session) -> [String] {
+        guard let grants = session.grants else { return [] }
+        var lacking: [String] = []
+        func need(_ scope: String, _ held: Bool) {
+            if !held, !lacking.contains(scope) { lacking.append(scope) }
+        }
+        if source == .health {
+            need("read:\(healthAccountKind)", grants.reads(healthAccountKind))
+            need("read:\(healthExportKind)", grants.reads(healthExportKind))
+            need("webhook:\(trigger)", grants.delivers(trigger))
+        }
+        for kind in writes(source) { need("write:\(appleKinds)*", grants.writes(kind)) }
+        return lacking
     }
 
     private func syncHealth(_ client: Client, _ session: Session, _ state: inout LocalState, budget: RunBudget) async throws -> String {
@@ -1140,6 +1189,7 @@ actor SyncEngine {
             commit(&state)
         }
         if account == .missing { throw SyncError.noAccount }
+        if account == .deleted { throw SyncError.accountDeleted }
 
         for g in Grouping.allCases where state.automation(g) == nil {
             state.automations[g.rawValue] = UUID().uuidString

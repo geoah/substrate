@@ -132,5 +132,9 @@ func syncManifest() -> AppManifest {
             .webhook(trigger: "applehealth-webhook"),
         ],
         requirement: ServerRequirement(minimumVersion: "0.114.0", detailTypes: AuthorizationDetail.Types.all),
-        passwordFallback: .belowRequirement)
+        passwordFallback: .belowRequirement,
+        kindLabels: [
+            "providers.substrate.reamde.dev/applehealth/account": KindLabel(singular: "Account", plural: "Accounts"),
+            "providers.substrate.reamde.dev/applehealth/export": KindLabel(singular: "Delivery", plural: "Deliveries"),
+        ])
 }

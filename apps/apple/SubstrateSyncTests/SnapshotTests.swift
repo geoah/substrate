@@ -70,6 +70,16 @@ final class StatusSnapshotTests: XCTestCase {
         """#)
         XCTAssertTrue(ready.isClear, "\(ready)")
         try await draw(directory, "status-up-to-date", NavigationStack { ServerStatusForm(session: session(), status: ready, fromSettings: true) })
+        // Apple Health is quarantined: the approval page would refuse, so the
+        // screen offers the server, not a review.
+        let blocked = await status(session(), check: #"""
+        {"scopes":{"missing":[]},"setup":[
+          {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":3,"shipped":3}},
+          {"type":"package","action":"blocked","package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}},
+          {"type":"account","action":"none"},{"type":"webhook","action":"unknown"}]}
+        """#)
+        XCTAssertTrue(blocked.approvalBlocked, "\(blocked)")
+        try await draw(directory, "status-blocked", NavigationStack { ServerStatusForm(session: session(), status: blocked, fromSettings: true) })
         try await draw(directory, "first-sign-in-review", ReviewChangesSheet(
             appName: SyncManifest.appName, host: "ada.example.com",
             changes: manifest.plannedChanges(for: AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*"],

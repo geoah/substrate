@@ -154,12 +154,15 @@ public struct OAuthClient: Sendable {
     /// revocation endpoint under the client id it holds, whatever the build
     /// at hand calls itself now, since the server answers 200 to a token sent
     /// under another client id and leaves it live. A password session's token
-    /// is revoked with `SubstrateClient.revokeToken(id:)` instead.
+    /// is revoked with `SubstrateClient.revokeToken(id:)` instead. A 5xx
+    /// throws: the server says to try again (RFC 7009 §2.2.1), and the token
+    /// is live until it does.
     public static func revoke(_ session: Session, transport: any HTTPTransport = URLSessionTransport.shared) async throws {
         guard let clientID = session.clientID else { return }
         let endpoint = session.revocation
             ?? URL(string: session.server.absoluteString.trimmingTrailingSlashes + "/oauth/revoke") ?? session.server
-        _ = try await transport.data(for: form(endpoint, [("token", session.secret), ("client_id", clientID)], timeout: 10))
+        let (data, response) = try await transport.data(for: form(endpoint, [("token", session.secret), ("client_id", clientID)], timeout: 10))
+        if response.statusCode >= 500 { throw TransportError(status: response.statusCode, body: data) }
     }
 
     /// The whole flow: a loopback receiver for the redirect, the browser

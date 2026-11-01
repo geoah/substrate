@@ -8,6 +8,7 @@ import SwiftUI
 /// account or the webhook needs one.
 struct ServerStatusView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openURL) private var openURL
     /// Opened from Settings, which already shows the account and Sign Out.
     var fromSettings = false
     @State private var reviewing = false
@@ -19,6 +20,7 @@ struct ServerStatusView: View {
             review: { reviewing = true },
             checkAgain: { Task { await model.status.refresh(force: true) } },
             signInAgain: { Task { await model.authorize() } },
+            openServer: { if let server = model.session?.server { openURL(server) } },
             signOut: { model.signOut() })
             .sheet(isPresented: $reviewing) {
                 ReviewChangesSheet(appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
@@ -43,6 +45,7 @@ struct ServerStatusForm: View {
     var review: () -> Void = {}
     var checkAgain: () -> Void = {}
     var signInAgain: () -> Void = {}
+    var openServer: () -> Void = {}
     var signOut: () -> Void = {}
 
     private var host: String { session.map { ServerAddress.display($0.server) } ?? "your server" }
@@ -50,6 +53,9 @@ struct ServerStatusForm: View {
     private var changes: [Change] { status?.changes ?? [] }
     /// Access that ends soon is renewed through the same review.
     private var ending: Bool { issues.contains { if case .accessEndsSoon = $0 { true } else { false } } }
+    /// The approval page would refuse a review: what blocks it is the
+    /// server's to fix, and the banner says where.
+    private var reviewable: Bool { (!changes.isEmpty || ending) && status?.approvalBlocked != true }
 
     var body: some View {
         Form {
@@ -78,7 +84,7 @@ struct ServerStatusForm: View {
                     // The review is the screen's own button, below the banner.
                     Section {
                         AppStatusBanner(issues: issues, appName: SyncManifest.appName, host: host,
-                                        actions: AppStatusActions(signInAgain: signInAgain, retry: checkAgain))
+                                        actions: AppStatusActions(signInAgain: signInAgain, retry: checkAgain, openServer: openServer))
                     }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -92,7 +98,7 @@ struct ServerStatusForm: View {
                 }
             }
 
-            if !changes.isEmpty || ending {
+            if reviewable {
                 Section {
                     Button(action: review) {
                         WideLabel(title: changes.isEmpty ? "Renew Access" : "Review and Approve", systemImage: "checkmark.shield",

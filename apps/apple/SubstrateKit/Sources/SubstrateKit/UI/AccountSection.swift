@@ -61,13 +61,3 @@ public struct AccountSection: View {
         manifest?.scopeWords(scope) ?? ScopeWords.sentence(scope)
     }
 }
-
-public extension AppManifest {
-    /// One approved scope in words, a webhook's named by the package it
-    /// delivers for where the app asks for that package.
-    func scopeWords(_ scope: String) -> String {
-        let (verb, pattern) = ScopeWords.split(scope)
-        if verb == "webhook" { return ScopeWords.webhookSentence(trigger: pattern, packageName: webhookPackageName(trigger: pattern)) }
-        return ScopeWords.sentence(scope)
-    }
-}

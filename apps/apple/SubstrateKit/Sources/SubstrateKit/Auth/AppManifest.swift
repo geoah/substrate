@@ -19,6 +19,10 @@ public struct AppManifest: Sendable {
     /// What a person calls a package, an account kind or a trigger, by its
     /// id, where the word built from the id is not the right one.
     public var names: [String: String]
+    /// The labels the kinds the app names declare, by kind reference: the
+    /// approval page words a kind by its declared label, which the word
+    /// built from its name can miss (`applehealth/export` is "Deliveries").
+    public var kindLabels: [String: KindLabel]
 
     /// When the app signs in with the owner's password instead.
     public enum PasswordFallback: Sendable, Hashable {
@@ -32,7 +36,8 @@ public struct AppManifest: Sendable {
 
     public init(appName: String, clientID: String, scopes: [String], details: [AuthorizationDetail] = [],
                 requirement: ServerRequirement = ServerRequirement(), redirectPath: String = "/oauth/callback",
-                passwordFallback: PasswordFallback = .never, names: [String: String] = [:])
+                passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
+                kindLabels: [String: KindLabel] = [:])
     {
         self.appName = appName
         self.clientID = clientID
@@ -42,6 +47,7 @@ public struct AppManifest: Sendable {
         self.redirectPath = redirectPath
         self.passwordFallback = passwordFallback
         self.names = names
+        self.kindLabels = kindLabels
     }
 
     /// The client id a release build is stamped with under `infoKey`, else
@@ -108,7 +114,7 @@ public struct AppManifest: Sendable {
     /// "Apple Health account": the package's name and the kind's label.
     func accountWords(kind: String) -> String {
         if let named = names[kind] { return named }
-        let label = kindDisplayName(kind).lowercasedFirst
+        let label = (kindLabels[kind]?.singular ?? kindDisplayName(kind)).lowercasedFirst
         guard let package = owningPackage(kind: kind) else { return label }
         return "\(packageName(package)) \(label)"
     }
@@ -124,6 +130,17 @@ public struct AppManifest: Sendable {
     /// for its package.
     func webhookPackageName(trigger: String) -> String? {
         owningPackage(trigger: trigger).map(packageName)
+    }
+}
+
+/// A kind's declared label, as its declaration's `label` gives it.
+public struct KindLabel: Sendable, Hashable {
+    public var singular: String
+    public var plural: String
+
+    public init(singular: String, plural: String) {
+        self.singular = singular
+        self.plural = plural
     }
 }
 

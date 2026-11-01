@@ -55,7 +55,7 @@ struct Snapshots {
 
     @Test func everyScreenDraws() async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let actions = AppStatusActions(review: {}, signInAgain: {}, moveToAppAccess: {}, retry: {})
+        let actions = AppStatusActions(review: {}, signInAgain: {}, moveToAppAccess: {}, retry: {}, openServer: {})
         let result = ServerProbe.Result(origin: server, discovery: Discovery(server: .init(version: "v0.114.0")),
                                         metadata: metadata, verdict: .compatible)
 
@@ -71,6 +71,12 @@ struct Snapshots {
         try await draw("banner-needs-approval", screen {
             AppStatusBanner(issues: [.needsApproval(changes: update)], appName: "Substrate Sync", host: "ada.example.com",
                             actions: actions)
+        })
+        try await draw("banner-blocked", screen {
+            AppStatusBanner(issues: [.needsApproval(changes: [
+                Change(kind: .install, words: "Install Apple"),
+                Change(kind: .install, words: "Install Apple Health", detail: "Open your substrate to see what is in the way.", blocked: true),
+            ])], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
         })
         try await draw("banner-ends-soon", screen {
             AppStatusBanner(issues: [.accessEndsSoon(now.addingTimeInterval(3 * 86400))], appName: "Substrate Sync",

@@ -9,14 +9,17 @@ public struct AppStatusActions {
     /// A password session's way to an app session.
     public var moveToAppAccess: (() -> Void)?
     public var retry: (() -> Void)?
+    /// Opens the server's console, where what blocks an approval is fixed.
+    public var openServer: (() -> Void)?
 
     public init(review: (() -> Void)? = nil, signInAgain: (() -> Void)? = nil, moveToAppAccess: (() -> Void)? = nil,
-                retry: (() -> Void)? = nil)
+                retry: (() -> Void)? = nil, openServer: (() -> Void)? = nil)
     {
         self.review = review
         self.signInAgain = signInAgain
         self.moveToAppAccess = moveToAppAccess
         self.retry = retry
+        self.openServer = openServer
     }
 }
 
@@ -47,7 +50,7 @@ public struct AppStatusBanner: View {
                     IssueLine(line: line(for: issue))
                 }
             }
-            .modifier(KitCard(tint: issues.contains(where: \.isUrgent) ? .orange : .blue))
+            .modifier(KitCard(tint: issues.contains(where: \.isUrgent) || issues.approvalBlocked ? .orange : .blue))
         }
     }
 
@@ -65,6 +68,12 @@ public struct AppStatusBanner: View {
             }
             return .init(symbol: "arrow.up.circle.fill", tint: .orange, title: "\(host) needs an update",
                          message: message + " Whoever runs it can update it.", action: nil)
+        case let .needsApproval(changes) where issues.approvalBlocked:
+            // The approval page would refuse: the way on is on the server.
+            return .init(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Something on \(host) is in the way",
+                         message: "\(appName) needs \(changes.count == 1 ? "a change" : "\(changes.count) changes") that can't be approved until what is in the way is fixed on \(host):",
+                         changes: changes,
+                         action: actions.openServer.map { ("Open \(host)", $0) } ?? actions.retry.map { ("Check Again", $0) })
         case let .needsApproval(changes):
             return .init(symbol: "checkmark.shield.fill", tint: .blue, title: "\(appName) needs your approval",
                          message: changes.count == 1 ? "One change, which you approve on \(host):"
@@ -73,7 +82,7 @@ public struct AppStatusBanner: View {
         case let .accessEndsSoon(date):
             return .init(symbol: "clock.fill", tint: .orange, title: "Access ends \(dayWords(date))",
                          message: "\(appName) stops working with \(host) then, until you approve it again.",
-                         action: actions.review.map { ("Renew", $0) })
+                         action: issues.approvalBlocked ? nil : actions.review.map { ("Renew", $0) })
         case .accessEnded:
             return .init(symbol: "xmark.circle.fill", tint: .red, title: "\(appName)'s access ended",
                          message: "\(host) no longer accepts it: the time you approved is up, or it was revoked in Settings, under Apps.",

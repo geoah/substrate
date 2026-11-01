@@ -217,8 +217,15 @@ the version the app writes, the Health account or the webhook gone puts the
 kit's status in Set Up's place, listing each change in the approval page's
 words, with Review and Approve, which opens the review and then the flow
 again with the whole request. Scopes the app lacks, access ending soon or a
-server it could not reach show as a banner on Home. After a review the new
-session is kept and the old token revoked. Settings shows what was approved
+server it could not reach show as a banner on Home, and so does a change the
+approval page would refuse (a blocked row: a quarantined package, one
+declared by hand, a server too old), which offers the server instead of a
+review. A source whose scope the owner left unticked stops with that scope
+named, before it reads anything: a scoped read of a kind the token does not
+reach answers 404, which would otherwise read as rows the server lost. A
+Health account deleted on the server says so; the approval leaves a deleted
+row alone, so there is nothing to approve until the server lets it go. After
+a review the new session is kept and the old token revoked. Settings shows what was approved
 and until when, with Change Access and Sign Out, and Server Status, what the
 approval set up. A token the server refuses (the access ended, or was revoked
 in Settings, under Apps) stops every sync and shows the kit's access ended
@@ -232,7 +239,10 @@ give the app access of its own, Home offers Move to App Access: the flow with
 the same install id, so the approval finds the account and the webhook in
 place, the new session kept, then the password token revoked with its own
 `DELETE /tokens/{id}`, carrying itself (`/oauth/revoke` under the app's
-client id would answer 200 and revoke nothing).
+client id would answer 200 and revoke nothing). The replaced token is kept in
+the Keychain before the new session is saved over it, revoked before the
+status check runs, and tried again at each launch until the server answers;
+Home says so while it still works.
 
 **Set up**, for a password session, lists what the repository lacks and
 does it with one button:

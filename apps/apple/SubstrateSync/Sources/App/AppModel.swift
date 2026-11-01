@@ -56,6 +56,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var authorizing = false
     /// Why the last review, renewal or move did not finish.
     @Published var authorizeError: String?
+    /// A token this phone replaced that the server has not revoked yet, in
+    /// words: it is tried again at each launch until it is.
+    @Published private(set) var unrevoked: String?
     @Published var steps: [SetupStep] = []
     @Published var setupChecked = false
     @Published var setupBusy = false
@@ -147,6 +150,7 @@ final class AppModel: ObservableObject {
             await SyncEngine.shared.setOnNeedsApproval { Task { await self.status.refresh(force: true) } }
         }
         refreshAccess()
+        Task { await revokeReplaced() }
         PlaceMonitor.shared.onAuthorizationChange = { [weak self] in self?.refreshAccess() }
         Activity.shared.onEntry = { [weak self] entry in
             guard let self else { return }
@@ -204,9 +208,7 @@ final class AppModel: ObservableObject {
     /// renewal, a sign-in after the access ended, or the move from a password
     /// session. The install id is the same, so the approval finds this
     /// phone's account in place. The new session is kept first, then the
-    /// token it replaces is revoked through its own door: a password one
-    /// with its own `DELETE /tokens/{id}`, since `/oauth/revoke` under the
-    /// new client id answers 200 and revokes nothing.
+    /// token it replaces is revoked through its own door (`revokeNow`).
     func authorize() async {
         guard let old = session, !authorizing else { return }
         authorizing = true
@@ -220,8 +222,7 @@ final class AppModel: ObservableObject {
             else {
                 throw Message("\(ServerAddress.display(old.server)) can't set up \(manifest.appName) on approval: it needs an update first.")
             }
-            try await adopt(try await oauth.signIn(server: old.server))
-            Self.revoke(old)
+            try await adopt(try await oauth.signIn(server: old.server), replacing: old)
         } catch where error is WebAuthenticator.Cancelled || isStop(error) {
             // The person closed the sheet, or the work was stopped: nothing
             // to say.
@@ -236,11 +237,15 @@ final class AppModel: ObservableObject {
     /// run forgets it where the identity differs, and each source asks the
     /// server what it still holds). Kept first: a sign-in the Keychain would
     /// not hold is refused here, with the token it minted revoked, rather
-    /// than lost at next launch.
-    private func adopt(_ session: Session) async throws {
+    /// than lost at next launch. The token it replaces is kept for
+    /// revocation before the save, since the save overwrites the only other
+    /// copy of its id, and revoked before anything else touches the network.
+    private func adopt(_ session: Session, replacing old: Session? = nil) async throws {
+        let kept = old.map { (try? SessionStore.sync.keepForRevocation($0)) != nil } ?? false
         do {
             try SessionStore.sync.save(session)
         } catch {
+            if let old, kept { SessionStore.sync.revoked(old) }
             Self.revoke(session)
             throw error
         }
@@ -254,6 +259,17 @@ final class AppModel: ObservableObject {
         self.session = session
         resetSetup()
         status.reset()
+        if let old {
+            if kept {
+                await revokeReplaced()
+            } else {
+                do {
+                    try await Self.revokeNow(old)
+                } catch {
+                    unrevoked = Self.unrevokedWords(old, retried: false)
+                }
+            }
+        }
         if session.isApp {
             await status.refresh(force: true)
         } else {
@@ -275,17 +291,63 @@ final class AppModel: ObservableObject {
     }
 
     /// Revokes a token this phone no longer keeps, in the background and as
-    /// a best effort: an app token at its revocation endpoint under the
-    /// client id it was approved for, a password one with its own
-    /// `DELETE /tokens/{id}`.
+    /// a best effort.
     nonisolated static func revoke(_ session: Session) {
-        Task.detached {
-            if session.isApp {
-                try? await OAuthClient.revoke(session, transport: Client.transport)
-            } else if let id = session.tokenID {
-                try? await Client(session).api.revokeToken(id: id)
+        Task.detached { try? await revokeNow(session) }
+    }
+
+    /// Revokes a token through its own door: an app token at its revocation
+    /// endpoint under the client id it was approved for, a password one with
+    /// its own `DELETE /tokens/{id}`, since `/oauth/revoke` under another
+    /// client id answers 200 and revokes nothing.
+    nonisolated static func revokeNow(_ session: Session, transport: any HTTPTransport = Client.transport) async throws {
+        if session.isApp {
+            try await OAuthClient.revoke(session, transport: transport)
+        } else if let id = session.tokenID {
+            try await Client(session, transport: transport).api.revokeToken(id: id)
+        }
+    }
+
+    /// Revokes every token kept for revocation, forgetting each the server
+    /// revoked or no longer accepts, and answers the ones still live. The
+    /// session in use is never revoked: one kept beside it is a replacement
+    /// whose save never landed.
+    nonisolated static func revokeKept(store: SessionStore = .sync, current: Session?,
+                                       transport: any HTTPTransport = Client.transport) async -> [Session]
+    {
+        var live: [Session] = []
+        for old in store.pendingRevocations() {
+            if old.secret == current?.secret {
+                store.revoked(old)
+                continue
+            }
+            do {
+                try await revokeNow(old, transport: transport)
+                store.revoked(old)
+            } catch is SessionExpired {
+                store.revoked(old)
+            } catch {
+                live.append(old)
             }
         }
+        return live
+    }
+
+    /// Revokes the tokens kept for revocation, and says so where one is
+    /// still live.
+    func revokeReplaced() async {
+        let live = await Self.revokeKept(current: SessionStore.sync.load())
+        unrevoked = live.first.map { Self.unrevokedWords($0) }
+    }
+
+    /// What the owner does about a replaced token the server has not
+    /// revoked; `retried` where it is kept to try again at launch.
+    nonisolated static func unrevokedWords(_ old: Session, retried: Bool = true) -> String {
+        let host = ServerAddress.display(old.server)
+        let place = old.isApp ? "in Settings, under Apps" : "in Settings, under Signed in"
+        let reach = old.isApp ? "the access it had before" : "the password sign-in it used before, which reaches everything"
+        let again = retried ? " It tries again each time it opens; you can also" : " You can"
+        return "Substrate Sync couldn't revoke \(reach) on \(host).\(again) revoke it yourself on \(host), \(place)."
     }
 
     // MARK: - status
@@ -303,9 +365,11 @@ final class AppModel: ObservableObject {
 
     /// The server lacks something only an approval sets up for an app
     /// session: a package, the Health account or the webhook. Scopes alone
-    /// leave Home in place.
+    /// leave Home in place, and so does a change the approval page would
+    /// refuse: that is fixed on the server, and Home's banner says so.
     var setupNeedsApproval: Bool {
-        session?.isApp == true && status.status?.changes.contains(where: \.isSetup) == true
+        guard session?.isApp == true, let status = status.status else { return false }
+        return status.changes.contains(where: \.isSetup) && !status.approvalBlocked
     }
 
     /// What Home tells the owner about. A password session hears only the

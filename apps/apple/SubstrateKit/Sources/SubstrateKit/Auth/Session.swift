@@ -26,6 +26,9 @@ public struct Session: Codable, Equatable, Sendable {
     public var scopes: [String]?
     /// Absent when the access lasts until the owner revokes it.
     public var expiresAt: Date?
+    /// When the token was issued, where the session knows: with `expiresAt`,
+    /// the lifetime the owner approved.
+    public var issuedAt: Date?
     /// Where an app session's token is revoked (RFC 7009).
     public var revocation: URL?
     /// Each approved webhook's delivery URL, by trigger id.
@@ -34,7 +37,7 @@ public struct Session: Codable, Equatable, Sendable {
     public var details: [AuthorizationDetail]
 
     public init(server: URL, repository: String, secret: String, tokenID: String? = nil, clientID: String? = nil,
-                scopes: [String]? = nil, expiresAt: Date? = nil, revocation: URL? = nil,
+                scopes: [String]? = nil, expiresAt: Date? = nil, issuedAt: Date? = nil, revocation: URL? = nil,
                 webhooks: [String: URL] = [:], details: [AuthorizationDetail] = [])
     {
         version = Self.currentVersion
@@ -45,6 +48,7 @@ public struct Session: Codable, Equatable, Sendable {
         self.clientID = clientID
         self.scopes = scopes
         self.expiresAt = expiresAt
+        self.issuedAt = issuedAt
         self.revocation = revocation
         self.webhooks = webhooks
         self.details = details
@@ -58,7 +62,7 @@ public struct Session: Codable, Equatable, Sendable {
         }
         self.init(server: server, repository: token.repository, secret: token.accessToken, clientID: clientID,
                   scopes: token.scopes, expiresAt: token.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
-                  revocation: revocation, webhooks: webhooks, details: token.authorizationDetails)
+                  issuedAt: now, revocation: revocation, webhooks: webhooks, details: token.authorizationDetails)
     }
 
     /// Whether the token is an app's, holding only what was approved.
@@ -74,7 +78,7 @@ public struct Session: Codable, Equatable, Sendable {
     public func hasEnded(at now: Date) -> Bool { expiresAt.map { $0 <= now } ?? false }
 
     enum CodingKeys: String, CodingKey {
-        case version, server, repository, secret, tokenID, clientID, scopes, grants, expiresAt, revocation, webhooks, details
+        case version, server, repository, secret, tokenID, clientID, scopes, grants, expiresAt, issuedAt, revocation, webhooks, details
     }
 
     enum GrantsKeys: String, CodingKey { case scopes }
@@ -93,6 +97,7 @@ public struct Session: Codable, Equatable, Sendable {
             self.scopes = (try? c.nestedContainer(keyedBy: GrantsKeys.self, forKey: .grants))?.value(.scopes, or: nil)
         }
         expiresAt = Self.date(c, .expiresAt)
+        issuedAt = Self.date(c, .issuedAt)
         revocation = c.value(.revocation, or: nil)
         webhooks = c.value(.webhooks, or: [:])
         details = c.value(.details, or: [])
@@ -115,6 +120,7 @@ public struct Session: Codable, Equatable, Sendable {
         // Seconds since 2001, as a default JSONEncoder wrote Chat's, whatever
         // strategy the encoder at hand was given.
         try c.encodeIfPresent(expiresAt?.timeIntervalSinceReferenceDate, forKey: .expiresAt)
+        try c.encodeIfPresent(issuedAt?.timeIntervalSinceReferenceDate, forKey: .issuedAt)
         try c.encodeIfPresent(revocation, forKey: .revocation)
         if !webhooks.isEmpty { try c.encode(webhooks, forKey: .webhooks) }
         if !details.isEmpty { try c.encode(details, forKey: .details) }

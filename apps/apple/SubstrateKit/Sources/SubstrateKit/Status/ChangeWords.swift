@@ -4,11 +4,23 @@ import Foundation
 /// (web/console's app-scopes.ts and app-setup.ts): a scope as what the app
 /// may do, a setup row as what approving does on the server.
 public extension AppManifest {
+    /// One scope in words: a kind the app names by its declared label, and a
+    /// webhook's by the package it delivers for where the app asks for that
+    /// package.
+    func scopeWords(_ scope: String) -> String {
+        let (verb, pattern) = ScopeWords.split(scope)
+        if verb == "webhook" { return ScopeWords.webhookSentence(trigger: pattern, packageName: webhookPackageName(trigger: pattern)) }
+        if verb == "read" || verb == "write", let label = kindLabels[pattern] {
+            return ScopeWords.sentence(scope, kinds: [ScopeKind(identity: pattern, plural: label.plural)])
+        }
+        return ScopeWords.sentence(scope)
+    }
+
     /// What a first sign-in asks the owner for: every scope, the webhook
     /// deliveries an approved webhook adds, and every row set up.
     func plannedChanges(for metadata: AuthorizationServerMetadata?) -> [Change] {
         let details = details(for: metadata)
-        var changes = scopes.map { Change(kind: .scope, words: ScopeWords.sentence($0)) }
+        var changes = scopes.map { Change(kind: .scope, words: scopeWords($0)) }
         changes += details.compactMap { detail in
             guard detail.type == AuthorizationDetail.Types.webhook, let trigger = detail.trigger else { return nil }
             return Change(kind: .scope, words: ScopeWords.webhookSentence(trigger: trigger, packageName: webhookPackageName(trigger: trigger)))
@@ -24,7 +36,7 @@ public extension AppManifest {
                  metadata: AuthorizationServerMetadata?) -> (changes: [Change], serverMissing: [String])
     {
         let details = details(for: metadata)
-        var changes = result.missingScopes.map { Change(kind: .scope, words: ScopeWords.sentence($0)) }
+        var changes = result.missingScopes.map { Change(kind: .scope, words: scopeWords($0)) }
         // A webhook the token does not hold reads `unknown` in the check, so
         // the session's own scopes say whether delivering to it was approved.
         if let grants = session?.grants {

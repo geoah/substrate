@@ -102,6 +102,7 @@ import Testing
                               clientID: "https://sync.substrate.example.com/client.json", revocation: nil, now: now)
         #expect(session.isApp)
         #expect(session.expiresAt == now.addingTimeInterval(2_592_000))
+        #expect(session.issuedAt == now)
         #expect(session.webhooks["applehealth-webhook"]?.absoluteString == "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook")
         #expect(session.grants?.delivers("applehealth-webhook") == true)
         #expect(session.tokenID == nil)
@@ -144,6 +145,10 @@ import Testing
         try await OAuthClient.revoke(Session(server: session.server, repository: "ada.example.com", secret: "s", tokenID: "t"),
                                      transport: stub)
         #expect(stub.sent("POST", "/oauth/revoke").count == 1)
+        // A server that cannot revoke now says so: the token is still live.
+        let busy = StubTransport()
+        busy.on("POST", "/oauth/revoke", status: 503, json: "")
+        await #expect(throws: TransportError.self) { try await OAuthClient.revoke(session, transport: busy) }
     }
 }
 
@@ -180,6 +185,7 @@ import Testing
         let session = Session(server: try #require(URL(string: "https://ada.example.com")), repository: "ada.example.com",
                               secret: "sub_app_x", clientID: "https://sync.substrate.example.com/client.json",
                               scopes: ["webhook:applehealth-webhook"], expiresAt: Date(timeIntervalSinceReferenceDate: 815_000_000),
+                              issuedAt: Date(timeIntervalSinceReferenceDate: 812_408_000),
                               webhooks: ["applehealth-webhook": try #require(URL(string: "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"))],
                               details: [.webhook(trigger: "applehealth-webhook")])
         let data = try JSONEncoder().encode(session)
@@ -189,6 +195,7 @@ import Testing
         #expect(object["tokenID"] as? String == "")
         #expect((object["grants"] as? [String: Any])?["scopes"] as? [String] == ["webhook:applehealth-webhook"])
         #expect(object["expiresAt"] as? Double == 815_000_000)
+        #expect(object["issuedAt"] as? Double == 812_408_000)
         // An RFC 3339 stamp reads too.
         let stamped = #"{"version":2,"server":"https://a.example.com","repository":"a.example.com","secret":"s","expiresAt":"2026-12-01T10:00:00.123456789Z"}"#
         #expect(try JSONDecoder().decode(Session.self, from: Data(stamped.utf8)).expiresAt == Timestamp.parse("2026-12-01T10:00:00.123Z"))

@@ -38,8 +38,13 @@ let manifest = AppManifest(
                        properties: ["displayName": "Ada's iPhone"]),
               .webhook(trigger: "applehealth-webhook")],
     requirement: ServerRequirement(minimumVersion: "0.114.0", detailTypes: AuthorizationDetail.Types.all),
-    passwordFallback: .belowRequirement)
+    passwordFallback: .belowRequirement,
+    kindLabels: ["providers.substrate.reamde.dev/applehealth/export": KindLabel(singular: "Delivery", plural: "Deliveries")])
 ```
+
+`kindLabels` carries the labels the kinds the app names declare, so a scope
+over one reads as the approval page words it ("See your Apple Health
+deliveries"), not as the word built from the kind's name.
 
 The requirement is decided by what the server can do: a `dev` build, or one
 between releases, passes when its metadata lists the scope verbs and detail
@@ -85,10 +90,15 @@ try await client.deliver(authority: session.repository, trigger: "applehealth-we
 few minutes, `AppStatusCheck` reads discovery and the metadata, posts the
 app's request to `/api/v1/authorizations/check`, and reads when the access
 ends. Its issues, any number at once, are a server too old, an approval
-needed (with each change in the console's words), access ending soon or
+needed (with each change in the console's words), access ending soon (within
+a week, or a quarter of the approved lifetime where that is shorter) or
 ended, a server it could not reach, and a password session on a server that
 can now give the app access of its own. A setup row the token cannot see
-answers `unknown`, which is never a reason to ask.
+answers `unknown`, which is never a reason to ask. A blocked row, or a server
+too old for a package, makes the approval page refuse, so `approvalBlocked`
+is set and the banner offers the server (`openServer`) instead of a review.
+A reset drops the answer of a check still running, and a forced refresh is
+never dropped for one.
 
 ```swift
 let status = AppStatusModel { store.load().map { AppStatusCheck(manifest: manifest, session: $0) } }
@@ -106,7 +116,9 @@ The review sends the whole request again through the browser; the page there
 says what is new and what was already allowed. Moving a password session to
 app access is the same sign-in, then the old token revoked with its own
 `client.revokeToken(id:)`, never through `/oauth/revoke` under the new client
-id.
+id. The old session goes to `store.keepForRevocation(_:)` before the new one
+is saved over it, and stays in `pendingRevocations()` until the server
+answers, so a revocation cut short is tried again at the next launch.
 
 **Errors.** `explain(error, app:, server:)` says any error as a sentence. A
 403 with `insufficient_scope` is `InsufficientScope`, which reads as needing

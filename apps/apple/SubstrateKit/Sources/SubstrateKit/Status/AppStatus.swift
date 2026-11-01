@@ -83,6 +83,25 @@ public struct AppStatus: Hashable, Sendable {
             return []
         }
     }
+
+    /// Whether the approval page would refuse a review now.
+    public var approvalBlocked: Bool { issues.approvalBlocked }
+}
+
+public extension [AppIssue] {
+    /// Whether the approval page would refuse a review now: it disables
+    /// Approve while any set up row is blocked, and a server too old for what
+    /// the app asks blocks one, so a review would lead to a page that cannot
+    /// approve.
+    var approvalBlocked: Bool {
+        contains { issue in
+            switch issue {
+            case .serverTooOld: true
+            case let .needsApproval(changes): changes.contains(where: \.blocked)
+            default: false
+            }
+        }
+    }
 }
 
 /// How a review of changes heads itself, by what changed since the access

@@ -21,12 +21,25 @@ enum SyncManifest {
         "read:\(SyncEngine.healthExportKind)",
     ]
 
+    /// The labels of the Health kinds Sync reads, as the applehealth package
+    /// declares them (the account declares none, and reads as its name), so
+    /// the review says what the approval page will.
+    static let kindLabels = [
+        SyncEngine.healthAccountKind: KindLabel(singular: "Account", plural: "Accounts"),
+        SyncEngine.healthExportKind: KindLabel(singular: "Delivery", plural: "Deliveries"),
+    ]
+
     /// The first release whose approval sets up packages, an account and a
     /// webhook. A build between releases passes when its metadata lists the
     /// verbs and the types, and a release below it is too old even when it
     /// does.
     static let requirement = ServerRequirement(minimumVersion: "0.114.0", scopeVerbs: ["read", "write"],
                                                detailTypes: AuthorizationDetail.Types.all)
+
+    /// One scope in the approval page's words.
+    static func scopeWords(_ scope: String) -> String {
+        make(account: "", deviceName: "", timeZone: "").scopeWords(scope)
+    }
 
     /// The manifest for this phone: its Health account, named for the
     /// install, with the device's name and time zone as the approval creates
@@ -44,6 +57,7 @@ enum SyncManifest {
                 .webhook(trigger: SyncEngine.trigger),
             ],
             requirement: requirement,
-            passwordFallback: .belowRequirement)
+            passwordFallback: .belowRequirement,
+            kindLabels: kindLabels)
     }
 }

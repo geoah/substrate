@@ -11,7 +11,9 @@ public struct AppStatusCheck: Sendable {
     public var session: Session
     public var client: SubstrateClient
     public var now: @Sendable () -> Date
-    /// How far ahead an ending is worth telling the owner about.
+    /// How far ahead an ending is worth telling the owner about, at most: a
+    /// quarter of the approved lifetime where the session knows it, so access
+    /// approved for a week is not ending from the moment it was approved.
     public var endingWindow: TimeInterval
 
     public init(manifest: AppManifest, session: Session, client: SubstrateClient? = nil,
@@ -73,7 +75,12 @@ public struct AppStatusCheck: Sendable {
     private func ending(_ expiresAt: Date?, at: Date) -> [AppIssue] {
         guard let expiresAt else { return [] }
         if expiresAt <= at { return [.accessEnded] }
-        return expiresAt.timeIntervalSince(at) <= endingWindow ? [.accessEndsSoon(expiresAt)] : []
+        return expiresAt.timeIntervalSince(at) <= window(until: expiresAt) ? [.accessEndsSoon(expiresAt)] : []
+    }
+
+    func window(until expiresAt: Date) -> TimeInterval {
+        guard let issuedAt = session.issuedAt, expiresAt > issuedAt else { return endingWindow }
+        return min(endingWindow, expiresAt.timeIntervalSince(issuedAt) / 4)
     }
 
     private func words(_ error: Error) -> String {
@@ -104,6 +111,9 @@ public final class AppStatusModel {
     public var interval: TimeInterval
     private var make: () -> AppStatusCheck?
     private var lastRun: Date?
+    /// Moved by every check started and every reset: a check whose number
+    /// is no longer current answers for a session, or a moment, gone by.
+    private var generation = 0
 
     /// `make` builds the check from the app's current session; nil while
     /// signed out.
@@ -112,18 +122,27 @@ public final class AppStatusModel {
         self.make = make
     }
 
+    /// A forced refresh while a check runs starts another, whose answer
+    /// stands in place of the running one's.
     public func refresh(force: Bool = false) async {
-        guard !checking, let check = make() else { return }
+        guard force || !checking, let check = make() else { return }
         if !force, let lastRun, Date().timeIntervalSince(lastRun) < interval { return }
+        generation += 1
+        let started = generation
         checking = true
-        defer { checking = false }
         lastRun = Date()
-        status = await check.run()
+        let result = await check.run()
+        guard started == generation else { return }
+        status = result
+        checking = false
     }
 
-    /// Forgets the status: the session changed.
+    /// Forgets the status, and the answer of any check still running: the
+    /// session changed.
     public func reset() {
+        generation += 1
         status = nil
         lastRun = nil
+        checking = false
     }
 }

@@ -2,6 +2,52 @@ import Foundation
 import Testing
 @testable import SubstrateKit
 
+/// A transport that holds every request until it is released.
+final class HeldTransport: HTTPTransport, @unchecked Sendable {
+    let inner: StubTransport
+    private let lock = NSLock()
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var open = false
+
+    init(_ inner: StubTransport) {
+        self.inner = inner
+    }
+
+    func waitUntilHeld() async throws {
+        for _ in 0 ..< 1000 {
+            if lock.withLock({ !waiting.isEmpty }) { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        Issue.record("no request was held")
+    }
+
+    func release() {
+        let waiters = lock.withLock {
+            open = true
+            defer { waiting = [] }
+            return waiting
+        }
+        for waiter in waiters { waiter.resume() }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        await withCheckedContinuation { continuation in
+            let go = lock.withLock {
+                if open { return true }
+                waiting.append(continuation)
+                return false
+            }
+            if go { continuation.resume() }
+        }
+        return try await inner.data(for: request)
+    }
+}
+
+final class TransportBox: @unchecked Sendable {
+    var transport: any HTTPTransport
+    init(_ transport: any HTTPTransport) { self.transport = transport }
+}
+
 @Suite struct Status {
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
     let server = URL(string: "https://ada.example.com")!
@@ -118,6 +164,101 @@ import Testing
         #expect(await run(revoked, session: appSession()).issues == [.accessEnded])
     }
 
+    /// The server offers access for a week: it is not ending from the moment
+    /// it was approved, or a renewal would mint another that is.
+    @Test func accessApprovedForAWeekEndsSoonOnlyNearItsEnd() async {
+        let week: TimeInterval = 7 * 86400
+        func status(approved: Date, lifetime: TimeInterval) async -> AppStatus {
+            let ends = approved.addingTimeInterval(lifetime)
+            var session = appSession(expiresAt: ends)
+            session.issuedAt = approved
+            let stub = server(check: #"{"scopes":{"missing":[]},"setup":[],"expiresAt":"\#(Timestamp.format(ends))"}"#)
+            return await run(stub, session: session)
+        }
+        #expect(await status(approved: Self.now, lifetime: week).isClear)
+        #expect(await status(approved: Self.now.addingTimeInterval(-5 * 86400), lifetime: week).isClear)
+        let late = Self.now.addingTimeInterval(-6 * 86400)
+        #expect(await status(approved: late, lifetime: week).issues == [.accessEndsSoon(late.addingTimeInterval(week))])
+        // A month's access hears of it a week ahead.
+        let month: TimeInterval = 30 * 86400
+        #expect(await status(approved: Self.now.addingTimeInterval(-22 * 86400), lifetime: month).isClear)
+        let monthLate = Self.now.addingTimeInterval(-24 * 86400)
+        #expect(await status(approved: monthLate, lifetime: month).issues == [.accessEndsSoon(monthLate.addingTimeInterval(month))])
+    }
+
+    /// A blocked row makes the approval page refuse, so it is never a review:
+    /// the owner fixes it on the server.
+    @Test func aBlockedRowBlocksTheReview() async {
+        let quarantined = server(check: #"""
+        {"scopes":{"missing":[]},"setup":[
+          {"type":"package","action":"install","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":0,"shipped":3}},
+          {"type":"package","action":"blocked","package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}}]}
+        """#)
+        let blocked = await run(quarantined, session: appSession())
+        #expect(blocked.changes.contains { $0.blocked })
+        #expect(blocked.approvalBlocked)
+        let tooOld = server(check: #"""
+        {"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},"setup":[{"type":"package","action":"blocked",
+          "package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":2}}]}
+        """#)
+        #expect(await run(tooOld, session: appSession()).approvalBlocked)
+        let open = server(check: #"{"scopes":{"missing":[]},"setup":\#(rows(["none", "install", "none", "none"]))}"#)
+        let approvable = await run(open, session: appSession())
+        #expect(!approvable.changes.isEmpty)
+        #expect(!approvable.approvalBlocked)
+    }
+
+    /// The approval page words a kind by the label it declares, and so does
+    /// the app wherever its manifest carries it.
+    @Test func aKindIsWordedByItsDeclaredLabel() async {
+        var bare = syncManifest()
+        bare.kindLabels = [:]
+        #expect(bare.scopeWords("read:providers.substrate.reamde.dev/applehealth/export") == "See your Apple Health exports")
+        let manifest = syncManifest()
+        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/applehealth/export") == "See your Apple Health deliveries")
+        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/applehealth/account") == "See your Apple Health accounts")
+        let stub = server(check: #"{"scopes":{"missing":["read:providers.substrate.reamde.dev/applehealth/export"]},"setup":\#(rows(["none", "none", "create", "none"]))}"#)
+        #expect(await run(stub, session: appSession()).changes == [
+            Change(kind: .scope, words: "See your Apple Health deliveries"),
+            Change(kind: .account, words: "Create the Apple Health account “Ada's iPhone”", detail: "Timezone: Europe/London"),
+        ])
+    }
+
+    /// A check started under one session never stands for the next: a reset
+    /// drops its answer, and a forced refresh is never dropped for it.
+    @MainActor @Test func aCheckFromBeforeAResetNeverStandsForTheNextSession() async throws {
+        let before = HeldTransport(server(check: #"{"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},"setup":[]}"#))
+        let after = server(check: #"{"scopes":{"missing":[]},"setup":[]}"#)
+        let current = TransportBox(before)
+        let session = appSession()
+        let model = AppStatusModel {
+            var client = SubstrateClient(session, transport: current.transport)
+            client.pause = { _ in }
+            return AppStatusCheck(manifest: syncManifest(), session: session, client: client, now: { Self.now })
+        }
+        let first = Task { await model.refresh() }
+        try await before.waitUntilHeld()
+        model.reset()
+        current.transport = after
+        await model.refresh(force: true)
+        #expect(model.status?.isClear == true)
+        before.release()
+        await first.value
+        #expect(model.status?.isClear == true)
+        #expect(!model.checking)
+
+        // Forced while one runs, without a reset: the forced answer stands.
+        let slow = HeldTransport(server(check: #"{"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},"setup":[]}"#))
+        current.transport = slow
+        let second = Task { await model.refresh(force: true) }
+        try await slow.waitUntilHeld()
+        current.transport = after
+        await model.refresh(force: true)
+        slow.release()
+        await second.value
+        #expect(model.status?.isClear == true)
+    }
+
     @Test func aPasswordSessionMovesOnceTheServerCan() async {
         let legacy = Session(server: server, repository: "ada.example.com", secret: "sub_x", tokenID: "tok_1")
         #expect(await run(server(), session: legacy).issues == [.legacyAccess])
@@ -148,7 +289,7 @@ import Testing
         #expect(changes.map(\.words) == [
             "See, add, change and delete your Apple records, including kinds added later",
             "See your Apple Health accounts",
-            "See your Apple Health exports",
+            "See your Apple Health deliveries",
             "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see which deliveries could not be filed",
             "Install Apple",
             "Install Apple Health",
