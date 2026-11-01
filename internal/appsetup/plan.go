@@ -387,7 +387,7 @@ func (p *planner) upgradeBlock(ctx context.Context, id string) (*packageProblem,
 		if ctx.Err() != nil {
 			return nil, err
 		}
-		slog.Error("appsetup: upgrade preview failed", "bundle", id, "error", err)
+		slog.Error("appsetup: upgrade preview failed", "bundle", logSafe(id), "error", logSafe(err.Error()))
 		return previewFailed(id), nil
 	}
 	switch {

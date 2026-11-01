@@ -11,6 +11,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/geoah/substrate/internal/catalog"
@@ -340,8 +341,31 @@ func FailureWords(what string, err error) string {
 	case ownersToRead(err):
 		return what + " failed: " + err.Error()
 	}
-	slog.Error("appsetup: a set up step failed", "step", what, "error", err)
+	slog.Error("appsetup: a set up step failed", "step", logSafe(what), "error", logSafe(err.Error()))
 	return what + " failed on the server. Try again, and if it fails again the server log says why."
+}
+
+// logSafe admits text an app's request shaped (a package id, a step's words,
+// an error quoting either) into a log line: a control character in it would
+// end the line and start a forged one, so each becomes a space, and the text
+// is capped so one request cannot flood the log.
+func logSafe(s string) string {
+	const maxLen = 2000
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= maxLen {
+			break
+		}
+		if r < 0x20 || r == 0x7f {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	// A no-op after the loop, which already replaced every control
+	// character: it is the newline replacement a static scanner recognizes
+	// as the log-injection sanitizer.
+	return strings.ReplaceAll(strings.ReplaceAll(b.String(), "\n", ""), "\r", "")
 }
 
 // ownersToRead reports whether err is a refusal of the owner's request, whose

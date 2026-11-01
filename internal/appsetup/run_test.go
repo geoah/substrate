@@ -274,3 +274,17 @@ func TestAFailureSaysTheRefusalAndHidesTheFault(t *testing.T) {
 		t.Fatalf("a lapse = %q", got)
 	}
 }
+
+func TestALogLineNeverCarriesARequestsControlCharacters(t *testing.T) {
+	forged := "providers.example.com/apple\nlevel=ERROR msg=\"forged\"\r\x1b[31m"
+	got := logSafe(forged)
+	if strings.ContainsAny(got, "\n\r\x1b") {
+		t.Fatalf("logSafe(%q) = %q, still carries a control character", forged, got)
+	}
+	if !strings.HasPrefix(got, "providers.example.com/apple ") {
+		t.Fatalf("logSafe(%q) = %q, lost the text around the control characters", forged, got)
+	}
+	if long := logSafe(strings.Repeat("a", 5000)); len(long) > 2000 {
+		t.Fatalf("logSafe kept %d bytes, want at most 2000", len(long))
+	}
+}
