@@ -219,6 +219,8 @@ func (t *txn) putThreadSystemRowID(threadID string, env map[string]any, wrote []
 	if len(wrote) > 0 {
 		props["changes"] = changeProps(wrote)
 	}
+	// The resume this row starts reads the time it landed (decision 0196).
+	renderTurnContext(nowUTC(), zoneOf(t.loadRow(eref{Kind: kindSetting, ID: timezoneSettingID}, false)), nil).stamp(props)
 	if err := t.requireThreadKinds(); err != nil {
 		return "", err
 	}

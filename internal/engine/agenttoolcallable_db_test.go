@@ -313,7 +313,7 @@ func TestToolEventsCarryTheCallable(t *testing.T) {
 		fakeTurn{content: "six"},
 	)
 	got := map[string][]string{}
-	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, aliasPackage+"/right", "", "measure gadget", func(ev substrate.AgentEvent) {
+	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, aliasPackage+"/right", substrate.ChatInput{Message: "measure gadget"}, func(ev substrate.AgentEvent) {
 		if ev.Kind == substrate.AgentEventToolStarted || ev.Kind == substrate.AgentEventToolFinished {
 			got[ev.Tool] = append(got[ev.Tool], ev.Kind+"="+ev.Callable)
 		}

@@ -103,8 +103,13 @@ type Config struct {
 // Message is one turn. An assistant turn may carry ToolCalls; a tool turn
 // answers exactly one of them, naming it by ToolCallID.
 type Message struct {
-	Role       string
-	Content    string
+	Role    string
+	Content string
+	// Context is a user turn's turn context (decision 0196): the engine's
+	// block after the text, sent as a content block of its own on a wire
+	// that has them, and verbatim, because a cached prefix holds only while
+	// replay sends the bytes the first request sent.
+	Context    string
 	ToolCalls  []ToolCall
 	ToolCallID string
 	ToolName   string

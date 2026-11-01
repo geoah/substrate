@@ -35,29 +35,25 @@ func (h *handler) postAgentCall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-type chatRequest struct {
-	// Thread continues an existing thread; empty or absent opens one.
-	Thread  string `json:"thread,omitempty"`
-	Message string `json:"message"`
-}
-
 // postAgentChat opens or continues a thread against an agent with one user
 // message and streams the run: `Content-Type: application/x-ndjson`, one
 // AgentEvent object per line: thread first, deltas and tool lifecycle as
 // they happen, one done event carrying the settled AgentResult. Mode chat:
 // no trigger, no cursor; mid-run state is the same loop machinery, and the
-// transcript persists as thread/message records either way. The turn runs
+// transcript persists as thread/message records either way. The body is a
+// substrate.ChatInput: `timezone` and `context` shape the turn context the
+// engine renders after the message (decision 0196). The turn runs
 // detached from this request (decision 0169): a client that leaves loses
 // the stream, not the turn, and attaches again by thread id.
 func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
-	var req chatRequest
+	var req substrate.ChatInput
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	actor, name := ActorFrom(r.Context()), pathParam(r, "name")
 	ok, err := h.streamAgentEvents(w, r, func(ctx context.Context, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
-		return ds.ChatAgent(ctx, actor, name, req.Thread, req.Message, emit)
+		return ds.ChatAgent(ctx, actor, name, req, emit)
 	})
 	if !ok {
 		writeSubstrateError(w, r, err)

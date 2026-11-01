@@ -421,7 +421,7 @@ func TestHiddenFromChatWithholdsChatAlone(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	// The chat surface refuses before any completion is bought.
-	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/judge", "", "hi", nil)
+	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/judge", substrate.ChatInput{Message: "hi"}, nil)
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "hidden from chat") {
 		t.Fatalf("chat on an agent hidden from chat: %v", err)
 	}

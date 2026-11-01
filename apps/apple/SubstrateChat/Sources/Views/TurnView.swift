@@ -34,20 +34,40 @@ private struct UserTurn: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
         } else {
-            HStack {
-                Spacer(minLength: 48)
-                Text(turn.content)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: 20))
-                    .opacity(turn.pending ? 0.7 : 1)
-                    .contextMenu {
-                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(turn.content) }
-                    }
+            VStack(alignment: .trailing, spacing: 6) {
+                if let about = turn.contextRecords, !about.isEmpty {
+                    ContextChips(records: about)
+                }
+                HStack {
+                    Spacer(minLength: 48)
+                    Text(turn.content)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: 20))
+                        .opacity(turn.pending ? 0.7 : 1)
+                        .contextMenu {
+                            Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(turn.content) }
+                        }
+                }
+                .accessibilityLabel("You: \(turn.content)")
             }
-            .accessibilityLabel("You: \(turn.content)")
         }
+    }
+}
+
+/// The records a message is about, as pills above it.
+private struct ContextChips: View {
+    let records: [RecordReference]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Spacer(minLength: 48)
+            Text("About").font(.caption).foregroundStyle(.secondary)
+            ForEach(records) { RecordPill($0) }
+        }
+        .font(.footnote)
+        .accessibilityElement(children: .combine)
     }
 }
 

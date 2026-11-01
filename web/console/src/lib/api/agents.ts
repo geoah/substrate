@@ -530,6 +530,30 @@ export async function readAgentStream(
   if (!errored) handlers.onDone?.()
 }
 
+/** One chat turn as the client sends it (substrate.ChatInput): the message,
+ * the thread it continues, and the two fields the server renders into the
+ * turn context after the message (decision 0196). */
+export interface ChatRequest {
+  /** Continues an existing thread; empty or absent opens one. */
+  thread?: string
+  message: string
+  /** The client's IANA zone; absent falls back to the repository's
+   * `substrate.reamde.dev/llm/timezone` setting, then UTC. */
+  timezone?: string
+  /** The record paths (`<kind>/<id>`) the message is about, at most
+   * eight, each read under the agent's grant. */
+  context?: string[]
+}
+
+/** The browser's IANA zone, or undefined where it names none. */
+export function browserTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Open or continue a thread against an agent with one user message and stream
  * the run: one AgentEvent per line (thread first, deltas and tool lifecycle as
  * they happen, one done event carrying the AgentResult). The turn runs on the
@@ -541,14 +565,19 @@ export function streamChat(
     /** Continues an existing thread; empty opens one. */
     thread?: string
     message: string
+    /** The records the message is about, as record paths. */
+    context?: string[]
   } & StreamHandlers
 ): ChatHandle {
+  const body: ChatRequest = {
+    thread: opts.thread ?? "",
+    message: opts.message,
+    timezone: browserTimezone(),
+  }
+  if (opts.context?.length) body.context = opts.context
   return openAgentStream(
     `${corePath("agent", opts.agent)}/chat`,
-    {
-      method: "POST",
-      body: { thread: opts.thread ?? "", message: opts.message },
-    },
+    { method: "POST", body },
     opts
   )
 }

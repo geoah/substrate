@@ -42,9 +42,16 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 	if err != nil {
 		return res, err
 	}
+	// The run's own time is the change's, so a retried delivery renders
+	// the same block (decision 0196).
+	at := ch.TS
+	if at.IsZero() {
+		at = nowUTC()
+	}
 	ares, err := ds.runAgent(ctx, tr.Agent, agentInvocation{
 		mode: mode, user: string(user),
-		causedBy: ch.Seq, causalDepth: depth,
+		turnContext: renderTurnContext(at, ds.repositoryZone(ctx), nil),
+		causedBy:    ch.Seq, causalDepth: depth,
 		// The stable delivery identity (the function-trigger key shape):
 		// tool idempotency keys derive from it, so a RETRIED delivery — a
 		// fresh thread by construction — reproduces the same keys.
@@ -147,6 +154,7 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 	}
 	ares, err := ds.runAgent(ctx, tr.Agent, agentInvocation{
 		mode: mode, user: string(user),
+		turnContext: renderTurnContext(at, ds.repositoryZone(ctx), nil),
 		// Stable per occurrence: a retried fire reuses the fire id, so tool
 		// keys survive the retry (the functionFire key shape).
 		delivery: fmt.Sprintf("%s/%s/%s", ds.Repository().ID, tr.ID, fid),
@@ -271,7 +279,7 @@ func agentEntryError(err error) error {
 // back before the first event, under ctx; after that the loop runs as a
 // background task of the service and ctx only carries this caller's attach,
 // so a client that leaves gets ctx.Err() and the turn runs on to its settle.
-func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", callableRefusal(name), err)
@@ -297,8 +305,12 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 			release()
 		}
 	}()
-	if message == "" {
+	if in.Message == "" {
 		return nil, fmt.Errorf("%w: a chat turn needs a message", substrate.ErrValidation)
+	}
+	turnCtx, err := ds.chatTurnContext(ctx, ag, in, nowUTC())
+	if err != nil {
+		return nil, err
 	}
 	if ds.svc.bg.stopping() {
 		// A shutdown never opens a thread it will not run.
@@ -320,8 +332,8 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 	}()
 	hub := newTurnHub()
 	runCtx, l, err := ds.prepareAgentRun(ctx, ag, agentInvocation{
-		mode: agentModeChat, user: message, userActor: actor,
-		threadID: threadID, hub: hub,
+		mode: agentModeChat, user: in.Message, userActor: actor,
+		turnContext: turnCtx, threadID: in.Thread, hub: hub,
 	})
 	if err != nil {
 		err = agentEntryError(err)

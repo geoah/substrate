@@ -864,7 +864,7 @@ func (s *scopedDataset) CallAgent(context.Context, string, any) (*substrate.Agen
 // user message is the app's, under its own actor; the turn runs the agent
 // under the agent's permissions, so the scoped mark stops here and the
 // agent's writes meet the gates an owner's chat meets (decision 0195).
-func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	if !s.grant.Talks() {
 		return nil, errScope("agents")
 	}
@@ -875,12 +875,12 @@ func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name, 
 	if !s.grant.TalksTo(name) {
 		return nil, fmt.Errorf("%w: agent %s", substrate.ErrNotFound, name)
 	}
-	if threadID != "" {
-		if err := s.requireThread(ctx, threadID); err != nil {
+	if in.Thread != "" {
+		if err := s.requireThread(ctx, in.Thread); err != nil {
 			return nil, err
 		}
 	}
-	return s.inner.ChatAgent(substrate.WithoutScopes(ctx), s.actor, name, threadID, message, emit)
+	return s.inner.ChatAgent(substrate.WithoutScopes(ctx), s.actor, name, in, emit)
 }
 
 func (s *scopedDataset) AttachAgentTurn(ctx context.Context, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {

@@ -1297,7 +1297,7 @@ func (d *fakeDataset) CallAgent(_ context.Context, name string, _ any) (*substra
 	return nil, noSuch("agent", name)
 }
 
-func (d *fakeDataset) ChatAgent(_ context.Context, _ substrate.Actor, name, _, _ string, _ func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (d *fakeDataset) ChatAgent(_ context.Context, _ substrate.Actor, name string, _ substrate.ChatInput, _ func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	return nil, noSuch("agent", name)
 }
 

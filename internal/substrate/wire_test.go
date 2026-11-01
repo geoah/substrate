@@ -149,6 +149,8 @@ var wireTypes = map[string]any{
 	"AgentResult":  AgentResult{},
 	"AgentMention": AgentMention{},
 	"AgentEvent":   AgentEvent{},
+	// The chat body: the message, and the turn context's two fields.
+	"ChatRequest": ChatInput{},
 
 	// The catalog entry and the shapes nested in it. The console's Registry
 	// reads them on every visit and its two sections key on `tier`, so a

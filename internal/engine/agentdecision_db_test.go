@@ -198,7 +198,7 @@ func TestProposalDecisionReportsAndResumesThread(t *testing.T) {
 	for _, m := range messages {
 		msg, _ := m.(map[string]any)
 		if msg["role"] == "user" {
-			if s, _ := msg["content"].(string); strings.Contains(s, "proposalDecision") {
+			if strings.Contains(msgText(msg), "proposalDecision") {
 				seen = true
 			}
 		}

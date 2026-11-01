@@ -34,7 +34,7 @@ func TestAReasoningModelStreamsItsThinkingAndTheRowKeepsASummary(t *testing.T) {
 		fakeTurn{reasoning: "The lookup failed, so I answer plainly.", content: "hello there"},
 	)
 	var events []substrate.AgentEvent
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(ev substrate.AgentEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -96,7 +96,7 @@ func TestAReasoningModelStreamsItsThinkingAndTheRowKeepsASummary(t *testing.T) {
 	}
 	// A continuation replays the thread, and no reasoning reaches the model.
 	fake.script("chat", fakeTurn{content: "again"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil); err != nil {
 		t.Fatalf("continue: %v", err)
 	}
 	reqs = fake.requestsOf("chat")
@@ -138,7 +138,7 @@ func TestAModelWithoutReasoningWritesNoReasoningFields(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "hello there"})
 	var kinds []string
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(ev substrate.AgentEvent) {
 		kinds = append(kinds, ev.Kind)
 	})
 	if err != nil {
@@ -166,7 +166,7 @@ func TestReasoningIsBoundedOnTheRow(t *testing.T) {
 	long := strings.Repeat("é", 6000) + strings.Repeat("z", 4000)
 	fake.script("chat", fakeTurn{reasoning: long, content: "done"})
 	var streamed int
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(ev substrate.AgentEvent) {
 		if ev.Kind == substrate.AgentEventReasoning {
 			streamed += utf8.RuneCountInString(ev.Text)
 		}
@@ -191,10 +191,10 @@ func TestAnAgentAskingForAReasoningSummarySendsTheThinkingKey(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("think", fakeTurn{reasoning: "Summarized.", content: "done"})
 	fake.script("chat", fakeTurn{content: "done"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/thinker", "", "hi", func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/thinker", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat thinker: %v", err)
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat chatter: %v", err)
 	}
 	asked := fake.requestsOf("think")[0]

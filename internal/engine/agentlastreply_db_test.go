@@ -18,7 +18,7 @@ func TestSettleKeepsTheLastReplyOnTheThread(t *testing.T) {
 	const budgeter = crewPackage + "/budgeter"
 	chat := func(thread, message string) *substrate.AgentResult {
 		t.Helper()
-		res, err := ds.ChatAgent(ctx, substrate.ActorAPI, budgeter, thread, message, func(substrate.AgentEvent) {})
+		res, err := ds.ChatAgent(ctx, substrate.ActorAPI, budgeter, substrate.ChatInput{Thread: thread, Message: message}, func(substrate.AgentEvent) {})
 		if err != nil {
 			t.Fatalf("chat: %v", err)
 		}
@@ -65,7 +65,7 @@ func TestSettleKeepsTheLastReplyOnTheThread(t *testing.T) {
 	chatted := make(chan struct{})
 	go func() {
 		defer close(chatted)
-		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, budgeter, first.Thread, "once more", log.emit)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, budgeter, substrate.ChatInput{Thread: first.Thread, Message: "once more"}, log.emit)
 	}()
 	log.waitFor(t, substrate.AgentEventDelta)
 	stopped, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, first.Thread)

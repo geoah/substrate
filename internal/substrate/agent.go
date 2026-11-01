@@ -156,3 +156,26 @@ type AgentEvent struct {
 	// tool row's `job.state` says the same.
 	Job string `json:"job,omitempty"`
 }
+
+// MaxChatContextRecords bounds a chat turn's Context: each record is read
+// and rendered into the turn, so the list is what a person points at, not a
+// query.
+const MaxChatContextRecords = 8
+
+// ChatInput is one chat turn as a client sends it (decision 0196): the
+// message, the thread it continues, and the turn context the engine renders
+// after the message, the clock in the owner's zone and the records the
+// message is about.
+type ChatInput struct {
+	// Thread continues an existing thread; empty or absent opens one.
+	Thread  string `json:"thread,omitempty"`
+	Message string `json:"message"`
+	// Timezone is the client's IANA zone (`Europe/London`). Empty falls
+	// back to the repository's `substrate.reamde.dev/llm/timezone` setting,
+	// then UTC.
+	Timezone string `json:"timezone,omitempty"`
+	// Context is the record paths (`<kind>/<id>`) the message is about, at
+	// most MaxChatContextRecords. Each is read under the agent's `reads`
+	// grant, and one the grant does not reach refuses the turn.
+	Context []string `json:"context,omitempty"`
+}

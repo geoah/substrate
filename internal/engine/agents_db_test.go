@@ -1009,7 +1009,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrGuard) {
 		t.Fatalf("disabled bundle's agent answered a call: %v", err)
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, greeter, "", "hi", nil); !errors.Is(err, substrate.ErrGuard) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, greeter, substrate.ChatInput{Message: "hi"}, nil); !errors.Is(err, substrate.ErrGuard) {
 		t.Fatalf("disabled bundle's agent answered a chat: %v", err)
 	}
 	// Sub-agent dispatch: the caller's hop is refused as a tool result — the
@@ -1050,7 +1050,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("uninstalled bundle's agent answered a call: %v", err)
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, greeter, "", "hi", nil); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, greeter, substrate.ChatInput{Message: "hi"}, nil); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("uninstalled bundle's agent answered a chat: %v", err)
 	}
 }
@@ -1229,7 +1229,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "first"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatalf("open thread: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	cctx, leave := context.WithCancel(ctx)
 	defer leave()
 	go func() {
-		_, err := ds.ChatAgent(cctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil)
+		_, err := ds.ChatAgent(cctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived // the first continuation holds the lease, parked at the model
@@ -1252,7 +1252,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 		t.Fatalf("the first continuation's client: %v, want context.Canceled", err)
 	}
 
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "sneak", nil); !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "sneak"}, nil); !errors.Is(err, substrate.ErrConflict) {
 		close(release)
 		t.Fatalf("a second active turn was admitted: %v", err)
 	}
@@ -1278,7 +1278,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 
 	// The settled thread admits the next turn.
 	fake.script("chat", fakeTurn{content: "third"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "again", nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "again"}, nil); err != nil {
 		t.Fatalf("post-settle turn: %v", err)
 	}
 }
@@ -1305,7 +1305,7 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "first"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatalf("open thread: %v", err)
 	}
@@ -1315,7 +1315,7 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 	fake.script("chat", fakeTurn{content: "second", arrived: arrived, release: release})
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil)
+		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived
@@ -1402,7 +1402,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	// End to end: a chat against a custom-endpoint agent — the fake server
 	// sees the ROW's bearer and nothing else.
 	fake.script("chat", fakeTurn{content: "done"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	auths := fake.authsSeen()
@@ -1426,7 +1426,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 	fake.script("chat", fakeTurn{content: "hello there"})
 
 	var events []substrate.AgentEvent
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(ev substrate.AgentEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -1449,7 +1449,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 	}
 
 	fake.script("chat", fakeTurn{content: "again"})
-	res2, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", func(substrate.AgentEvent) {})
+	res2, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, func(substrate.AgentEvent) {})
 	if err != nil {
 		t.Fatalf("continue: %v", err)
 	}
@@ -1466,7 +1466,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 		t.Fatalf("continuation history: %d messages (%v)", len(msgs), msgs)
 	}
 	last, _ := msgs[3].(map[string]any)
-	if last["role"] != "user" || last["content"] != "more" {
+	if last["role"] != "user" || msgText(last) != "more" {
 		t.Fatalf("last history message: %v", last)
 	}
 	prior, _ := msgs[2].(map[string]any)
@@ -1980,7 +1980,7 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 		log := newEventLog()
 		started := time.Now()
 		go func() {
-			_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, hurryPackage+"/hurried", "", "go", log.emit)
+			_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, hurryPackage+"/hurried", substrate.ChatInput{Message: "go"}, log.emit)
 		}()
 		waitArrived(t, writing, "the sub-agent's tool row write")
 		time.Sleep(time.Until(started.Add(1500 * time.Millisecond)))

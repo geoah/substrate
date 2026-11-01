@@ -32,7 +32,7 @@ sent and every client reads one structured field instead of a convention.
 - **The request.** A chat turn (`POST …/core/agent/{name}/chat`, the body is
   `substrate.ChatInput`) takes `timezone`, an IANA name, and `context`, at
   most eight record paths. A zone `time.LoadLocation` refuses, `Local`, or a
-  malformed path is a 400 before the turn starts. Each record is read under
+  malformed path is a 422 before the turn starts. Each record is read under
   the agent's `reads` grant, and one the grant does not reach, or that does
   not exist, refuses the turn with its own 4xx naming the path. Rendering it
   as "not readable" instead would let a turn run on a question about a record

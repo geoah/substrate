@@ -47,7 +47,7 @@ import { AgentMark } from "@/components/agent/agent-mark"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { Composer } from "@/components/agent/composer"
 import { ThreadHeading } from "@/components/agent/thread-heading"
-import { Transcript } from "@/components/agent/transcript"
+import { ContextChips, Transcript } from "@/components/agent/transcript"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
@@ -86,6 +86,7 @@ import {
   type LiveOverlay,
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
+import { splitRecordPath } from "@/lib/record-path"
 import { CopyButton } from "@/components/identity/copy-button"
 import {
   addUnsent,
@@ -205,6 +206,8 @@ export function Conversation({
   keylessProvider,
   autoSend = false,
   onAutoSent,
+  context,
+  onContextDone,
   actions,
 }: {
   /** The agent this conversation is with; undefined while none is known. */
@@ -230,6 +233,11 @@ export function Conversation({
   autoSend?: boolean
   /** The hand-over was used (sent, or held for a missing key). */
   onAutoSent?: () => void
+  /** The record paths the next message is about ("Ask about this" on a
+   * record page): shown above the composer and sent with that message. */
+  context?: string[]
+  /** The context was sent, or the person removed it. */
+  onContextDone?: () => void
   /** The header's buttons. */
   actions?: ReactNode
 }) {
@@ -694,6 +702,12 @@ export function Conversation({
     // `blockedReason` says why on the composer, and the text stays there.
     if (!message || blockedReason || !agentId || keylessProvider) return
     onDraft("")
+    const sentContext = context?.length ? context : undefined
+    const about = (sentContext ?? []).flatMap((p) => {
+      const parts = splitRecordPath(p)
+      return parts ? [parts] : []
+    })
+
     void dropReads()
     setError(null)
     // An outcome stays until its message is sent again or dismissed. One
@@ -720,6 +734,7 @@ export function Conversation({
           role: "user",
           content: message,
           tools: [],
+          ...(about.length ? { contextRecords: about } : {}),
         },
       ],
       closed: false,
@@ -764,10 +779,14 @@ export function Conversation({
       agent: agentId,
       thread: current || undefined,
       message,
+      context: sentContext,
       onEvent: (ev) => {
         if (ev.kind === "thread" && ev.thread && run === runRef.current) {
           named = true
           setAttachedFor(ev.thread)
+          // The turn holds its context now; a refusal before this kept it
+          // for the retry.
+          if (sentContext) onContextDone?.()
         }
         if (ev.kind === "done") done = true
         onEvent(ev, run)
@@ -967,6 +986,21 @@ export function Conversation({
         {keylessProvider && (
           <div className="px-4 pt-3 md:px-6">
             <KeylessCallout provider={keylessProvider} />
+          </div>
+        )}
+        {context && context.length > 0 && (
+          <div className="flex items-center justify-between gap-2 px-4 pt-3 md:px-6">
+            <ContextChips
+              records={context.flatMap((p) => {
+                const parts = splitRecordPath(p)
+                return parts ? [parts] : []
+              })}
+              label="Asking about"
+              className="max-w-none justify-start"
+            />
+            <Button size="sm" variant="ghost" onClick={() => onContextDone?.()}>
+              Remove
+            </Button>
           </div>
         )}
         <Composer

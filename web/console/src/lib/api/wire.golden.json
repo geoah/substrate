@@ -392,6 +392,12 @@
     "state": true,
     "trigger": true
   },
+  "ChatRequest": {
+    "context": false,
+    "message": true,
+    "thread": false,
+    "timezone": false
+  },
   "Cond": {
     "contains": false,
     "eq": false,

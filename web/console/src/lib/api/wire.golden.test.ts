@@ -34,7 +34,12 @@
 
 import { describe, expect, it } from "vitest"
 
-import type { AgentEvent, AgentMention, AgentResult } from "./agents"
+import type {
+  AgentEvent,
+  AgentMention,
+  AgentResult,
+  ChatRequest,
+} from "./agents"
 import type { LoginRequest, RegisterInput, RegisterResult } from "./auth"
 import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
@@ -679,6 +684,13 @@ const agentMention: Shape<AgentMention> = {
   unread: false,
 }
 
+const chatRequest: Shape<ChatRequest> = {
+  thread: false,
+  message: true,
+  timezone: false,
+  context: false,
+}
+
 const agentEvent: Shape<AgentEvent> = {
   kind: true,
   thread: false,
@@ -1045,6 +1057,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AgentResult: agentResult,
   AgentMention: agentMention,
   AgentEvent: agentEvent,
+  ChatRequest: chatRequest,
   CatalogBundle: catalogBundle,
   CatalogItem: catalogItem,
   CatalogInput: catalogInput,
@@ -1100,6 +1113,8 @@ const notOnTheWire: Record<string, string> = {
   KindNav: "the sidebar's grouping of KindInfo rows",
   // transcript.ts
   ChangeStamp: "a view the console folds from llm/message records",
+  ContextRecord:
+    "one entry of an llm/message row's contextRecords, folded from the record",
   SubagentWrites: "a view the console folds from llm/message records",
   ToolCallView: "a view the console folds from llm/message records",
   TurnView: "a view the console folds from llm/message records",

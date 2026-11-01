@@ -187,7 +187,7 @@ type Dataset interface {
 	// A chat turn runs detached from its client: ChatAgent streams it
 	// through emit and returns ctx.Err() when the client leaves first, and
 	// the turn runs on to its own settle.
-	ChatAgent(ctx context.Context, actor Actor, name, threadID, message string, emit func(AgentEvent)) (*AgentResult, error)
+	ChatAgent(ctx context.Context, actor Actor, name string, in ChatInput, emit func(AgentEvent)) (*AgentResult, error)
 	// AttachAgentTurn streams the running detached turn of threadID through
 	// emit, replay then live, and returns its settled result.
 	// ErrNoRunningTurn when no turn this process streams runs on the thread;

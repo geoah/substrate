@@ -345,7 +345,7 @@ func TestAgentFinalPhaseNudgeStaysOutOfLaterRuns(t *testing.T) {
 	)
 	fake.script("dnap", fakeTurn{content: "rested", arrived: arrived, release: held})
 	wait := releaseNearTheDeadline(ds, "chronicler", arrived, release)
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, chronicler, "", q1, func(substrate.AgentEvent) {})
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, chronicler, substrate.ChatInput{Message: q1}, func(substrate.AgentEvent) {})
 	wait()
 	if err != nil {
 		t.Fatalf("chat 1: %v", err)
@@ -362,7 +362,7 @@ func TestAgentFinalPhaseNudgeStaysOutOfLaterRuns(t *testing.T) {
 	}
 
 	fake.script("dchron", fakeTurn{content: r2, promptTokens: 900}, fakeTurn{content: "SUMMARY ONE"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, chronicler, res.Thread, q2, func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, chronicler, substrate.ChatInput{Thread: res.Thread, Message: q2}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat 2: %v", err)
 	}
 	reqs = fake.requestsOf("dchron")
@@ -372,7 +372,7 @@ func TestAgentFinalPhaseNudgeStaysOutOfLaterRuns(t *testing.T) {
 	// Both requests read run 1, so the absence below is not for want of
 	// looking.
 	continuation := requestMessages(reqs[2])
-	if continuation[1]["content"] != q1 {
+	if msgText(continuation[1]) != q1 {
 		t.Fatalf("run 2 did not replay run 1: %v", continuation)
 	}
 	noNudge(t, "run 2's request", reqs[2])

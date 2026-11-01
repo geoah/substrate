@@ -43,10 +43,10 @@ type agentDataset struct {
 	rec *chatRecord
 }
 
-func (d *agentDataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, thread, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (d *agentDataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	d.rec.mu.Lock()
 	d.rec.calls++
-	d.rec.actor, d.rec.name, d.rec.thread = actor, name, thread
+	d.rec.actor, d.rec.name, d.rec.thread = actor, name, in.Thread
 	_, d.rec.scoped = substrate.ScopesFrom(ctx)
 	d.rec.mu.Unlock()
 	emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "tA"})
