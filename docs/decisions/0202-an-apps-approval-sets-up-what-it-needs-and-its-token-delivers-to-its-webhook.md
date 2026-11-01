@@ -47,17 +47,35 @@ The rules this binds:
   its provider tier, at a version or later; nothing outside the binary's
   catalog, and no sample (its requirements are the console's door to
   import). `account`: one record of a kind that implements
-  `accountconfig` and belongs to a package the same request names, created
-  once with `ifVersion: 0`, no secret or writer-restricted property, written
-  under the owner's door. `webhook`: a trigger whose callable a package the
-  same request names ships; approving enables it and sets a key only when it
-  has none, and an existing key is never read, changed or returned.
+  `accountconfig` and belongs to a package the same request names, under an
+  id other than `default` (the record a package's inputs resolve first),
+  created once with `ifVersion: 0`, with no `secret` or `managed` property
+  and none restricted to a `writer` but `owner`, which the set up writes as.
+  `webhook`: a trigger its provider does not sign, whose callable a package
+  the same request names ships; approving enables it and sets a key only
+  when it has none, and an existing key is never read, changed or returned.
+- **One plan over the whole install closure.** The requested packages and
+  every requirement the catalog would install first meet the same checks,
+  and a row that cannot run keeps the action it would run (`install`,
+  `upgrade`, `create`, `enable`) and carries a block: a reason a client
+  branches on (`server-update`, `not-shipped`, `sample`, `quarantined`,
+  `declared-by-owner`, `upgrade-needs-review`, `not-requested`,
+  `account-deleted`, `unsupported`), the server's one sentence for it, and
+  the console path that clears it where the owner can. A blocked row keeps
+  the request from being approved.
 - **Approving runs the set up before the code exists**, in the background,
   detached from the HTTP request, one set up per repository at a time, as a
   state the parked request moves through under the store's lock after the
-  repository that claimed it is checked. The approval names the plan's hash
-  and a plan that moved is refused. What landed stays when a set up stops;
-  the flow's own state stays in memory.
+  repository that claimed it is checked. Setting up is the owner's act: an
+  approval that sets anything up comes through a human door, the console,
+  `substratectl` or the API, and writes as that door. The approval names the
+  plan's hash and a plan that moved is refused; a set up that waited for its
+  turn runs what was approved or less, and stops before writing when a row
+  would do more or a webhook would run another package's code. Packages
+  run first, then accounts, then webhooks, whatever the order of the rows.
+  What landed stays when a set up stops; the flow's own state stays in
+  memory, and an approved request is answered once, its code living from
+  that answer.
 - **`webhook:<trigger>` is a scope only an approved detail puts on a token.**
   It admits the token at the webhook door in place of the key, for that
   trigger of that repository, and reads that trigger's parked deliveries. A
@@ -68,7 +86,10 @@ The rules this binds:
   `blobref` property; reading a blob stays the owner's, and the answer never
   reveals another blob's name or media type.
 - **An app asks whether it is still set up** with its own token, and is told
-  only what its scopes let it see.
+  only what its scopes let it see. Its scopes, and the scopes the page
+  folds as already allowed, are compared by what they reach, never by how
+  they are spelled. A local app's request is never compared with an earlier
+  approval: nothing ties its client id to the app.
 - **The approval page reads the console's one Technical details switch**
   ([0131](0131-the-console-writes-for-two-readers-behind-one-switch.md))
   and offers it in place: plain sentences and the set up by default, every
@@ -93,25 +114,41 @@ The rules this binds:
 - Bad, because what a set up installed stays after the app is revoked, after
   a denial that followed a failed run, and after a rollback.
 - Bad, because a binary from before this change refuses a token carrying
-  `webhook:` (fail closed), and one from before 0194 reads every app token
-  as full access, as 0194 already says.
+  `webhook:` (fail closed; the token works again once rolled forward, and
+  there is nothing to revoke), and one from before 0194 reads every app
+  token as full access, as 0194 already says.
+- Bad, because a webhook its provider signs cannot be an app's, since the
+  provider holds the secret the door checks.
 
 ### Confirmation
 
 `internal/authorize`: `TestAuthorizationDetailsAreReadStrictly`,
 `TestASetUpReservesTheRequestForTheRepositoryThatShowedIt`,
-`TestAFailedSetUpIsPendingAgainWithWhatLanded`. `internal/api`:
+`TestAFailedSetUpIsPendingAgainWithWhatLanded`,
+`TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce`,
+`TestAFinishedSetUpsCodeLivesFromItsHandOver`. `internal/appsetup`:
+`TestTheChainCarriesEachPackagesOwnFacts`,
+`TestAPackageTheOwnerDeclaredIsNeverReplaced`,
+`TestAnAccountIsCreatedOnceAndNeverBroughtBack`,
+`TestTheShippedSignedWebhookIsNeverAnApps`,
+`TestARunSetsUpPackagesThenAccountsThenWebhooks`,
+`TestAWebhookReboundWhileWaitingStopsTheRun`. `internal/api`:
 `TestTheApprovalPageShowsWhatApprovingSetsUp`,
 `TestASetUpThatCannotRunIsBlockedAndRefused`,
 `TestApprovingRunsTheSetUpAndTheTokenCarriesIt`,
 `TestAnApprovalOfAPlanThatMovedIsRefused`,
 `TestAnAppAsksWhetherItIsStillSetUp`,
+`TestACheckReadsDetailsAsTheAuthorizationEndpointDoes`,
 `TestAnAppsTokenDeliversToTheWebhookItsScopeNames`,
 `TestAWebhookTokenThatDoesNotDeliverIsRefusedLikeAWrongKey`,
 `TestATriggerAnAppsTokenReadsNeverCarriesItsKey`,
 `TestAnAppsTokenStoresBlobsForAKindWithABlobRef`. `internal/engine`:
-`TestWebhookGrantStandsInForTheKeyAlone`. `internal/scope`:
-`TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger`.
+`TestWebhookGrantStandsInForTheKeyAlone`,
+`TestAPutAtVersionZeroNeverResurrectsATombstone`. `internal/scope`:
+`TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger`,
+`TestAGrantCoversWhatItHoldsByReachNotSpelling`. `internal/e2e`: APP-01,
+which approves Substrate Sync's request through the engine, exchanges the
+code, delivers with the token and revokes it.
 
 ## More Information
 
@@ -119,4 +156,5 @@ Amends 0194 (an approval may run set up; the scope grammar gains `webhook:`;
 the scoped surface gains the webhook door, the parked list, blob storage and
 the set up check) and 0195's out-of-scope list. Reopen when an app needs a
 package outside the binary's catalog, a sample set up, its deliveries bound
-to its own account, or a secret the owner types.
+to its own account, a webhook its provider signs, or a secret the owner
+types.
