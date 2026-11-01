@@ -547,6 +547,9 @@ type agentTool struct {
 	builtin string
 	fn      *vocabulary.Function
 	sub     *vocabulary.Agent
+	// background is the `tools:` entry's own `background: true`
+	// (agentjobs.go runsInBackground reads it beside the function's).
+	background bool
 }
 
 // callable is the tool's identity as the message rows stamp it: the actor
@@ -620,6 +623,14 @@ type agentLoop struct {
 	// one tool call convert to two requests while a retried delivery
 	// reproduces both ids.
 	gateOrdinal int
+	// jobInbox holds the toolCompleted rows of jobs that finished while the
+	// run goes, for its next batch, and consumed every system row the run
+	// handed the model, which the settle-time re-check skips. Both under
+	// jobMu: a job's end posts from its own goroutine.
+	jobMu      sync.Mutex
+	jobInbox   []jobDelivery
+	consumed   []string
+	jobsClosed bool
 
 	// rows are the thread's message rows this run replays from: those it
 	// loaded at open, plus any summary it wrote since (agentcompaction.go).
@@ -806,6 +817,9 @@ func (l *agentLoop) run(ctx context.Context) (*substrate.AgentResult, error) {
 		defer ds.spend.finish(l.spend)
 	}
 	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
+	// Whatever path the run ends by, a job that ends after it resumes the
+	// thread itself (agentjobs.go deliverJob).
+	defer l.closeJobs()
 	l.runCtx = ctx
 	messages := l.compactAtOpen(ctx, l.opening)
 
@@ -991,11 +1005,18 @@ loop:
 				if c.writes != nil {
 					toolProps["subagentWrites"] = c.writes
 				}
+				jobStarted := nowUTC()
+				if c.job != nil {
+					toolProps["job"] = jobProps(jobWorking, jobStarted, time.Time{})
+				}
 				wctx, done := l.writeContext(ctx)
-				err := l.putMessageAt(wctx, l.actor, c.turn, toolProps)
+				row, err := l.putMessageTurn(wctx, l.actor, c.turn, toolProps)
 				done()
 				if err != nil {
 					return nil, l.failWrite(ctx, err)
+				}
+				if c.job != nil {
+					l.startJob(c.call, c.turn, row, jobStarted, c.job)
 				}
 				messages = append(messages, llm.Message{
 					Role: llm.RoleTool, ToolCallID: c.call.ID, ToolName: c.call.Name, Content: c.out,
@@ -1003,6 +1024,10 @@ loop:
 				})
 			}
 		}
+		// Jobs that finished meanwhile follow the batch's results.
+		messages = l.deliverJobs(messages)
+		// Jobs that finished meanwhile follow the batch's results.
+		messages = l.deliverJobs(messages)
 		if stopped, why := l.stopReason(ctx); stopped {
 			status, reason = threadStopped, why
 			break loop
@@ -1281,6 +1306,12 @@ func (l *agentLoop) event(ev substrate.AgentEvent) {
 // sides: a turn may dispatch one tool several times, so a client pairing by
 // NAME settles the wrong card.
 func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, turn int, ok *bool, out string) {
+	l.toolEventJob(kind, tc, turn, ok, out, "")
+}
+
+// toolEventJob is toolEvent for a call that started a background job, whose
+// toolFinished carries the job's state.
+func (l *agentLoop) toolEventJob(kind string, tc llm.ToolCall, turn int, ok *bool, out, job string) {
 	if l.in.emit == nil {
 		return
 	}
@@ -1289,6 +1320,7 @@ func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, turn int, ok *bool, 
 		ev.Args = tc.Arguments
 	} else {
 		ev.Output = out
+		ev.Job = job
 	}
 	l.in.emit(ev)
 }
@@ -1395,11 +1427,15 @@ func (l *agentLoop) recheckResolutions(ctx context.Context) {
 		return
 	}
 	var n int
-	if err := l.ds.db.QueryRowContext(ctx, `
+	err = l.ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records e
 		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
-		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(l.openedAt),
-		b.args...).Scan(&n); err != nil || n == 0 {
+		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(l.openedAt)+`
+		  AND NOT (e.id = ANY(`+b.textArray(l.consumedRows())+`))`,
+		b.args...).Scan(&n)
+	// A job's end posted after the count is in the inbox, and one after the
+	// close resumes the thread itself.
+	if left := l.closeJobs(); (err != nil || n == 0) && !left {
 		return
 	}
 	l.ds.resumeNotifiedThread(l.threadID, "")
@@ -1768,7 +1804,7 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 				l.catalogue = kindsCatalogue(l.ds.registry().Kinds(), l.ag.Reads.Kinds)
 			}
 		}
-		tool := agentTool{fn: fn, builtin: t.Builtin}
+		tool := agentTool{fn: fn, builtin: t.Builtin, background: t.Background}
 		add(t.Name, description, params, tool)
 	}
 	for _, ident := range l.ag.Subagents {
@@ -1976,6 +2012,10 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchWrite(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolAsk:
 		return l.dispatchAsk(ctx, c, args)
+	case tool.builtin == vocabulary.AgentToolWait:
+		return l.dispatchWait(ctx, args)
+	case tool.runsInBackground(l.ag):
+		return l.dispatchBackground(c)
 	case tool.sub != nil:
 		return l.dispatchSubAgent(ctx, c, tool.sub, args)
 	default:

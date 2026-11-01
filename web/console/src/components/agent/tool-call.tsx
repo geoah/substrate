@@ -173,7 +173,10 @@ export function ToolCallCard({
   const [open, setOpen] = useState(false)
   const resolved = resolveTool(agent, call.name, call.callable)
   const summary = toolSummary(call, resolved)
-  const running = call.ok === undefined
+  // A background job still working reads as a running call: its handle is
+  // not its result.
+  const working = call.job === "working"
+  const running = call.ok === undefined || working
   const failed = call.ok === false
   // A propose lands a row somebody has to decide: the change is NOT applied
   // until then, so the call carries the suggestion itself.
@@ -196,7 +199,12 @@ export function ToolCallCard({
     <>
       <WrenchIcon className="size-3.5 shrink-0 text-faint" />
       <span className="min-w-0 [overflow-wrap:anywhere]">{summary}</span>
-      {running ? (
+      {working ? (
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+          <Spinner className="size-3" />
+          Working in the background
+        </span>
+      ) : running ? (
         <Spinner className="size-3 shrink-0" />
       ) : held ? (
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-warning">

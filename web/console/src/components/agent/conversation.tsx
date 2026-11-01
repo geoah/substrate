@@ -444,7 +444,8 @@ export function Conversation({
             },
             ev.output ?? "",
             ev.ok ?? true,
-            seqRef.current++
+            seqRef.current++,
+            ev.job
           )
         )
         break

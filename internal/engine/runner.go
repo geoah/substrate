@@ -952,6 +952,9 @@ func (ds *dataset) callHostFunction(ctx context.Context, fn *vocabulary.Function
 		// One call, the default row budget: a token needs no kind allowlist, but a
 		// list still answers a page rather than the repository.
 		out, ok, _ = ds.runQueryTool(ctx, queryScope{rows: vocabulary.DefaultReadRows}, m)
+	case vocabulary.HostFunctionWait:
+		return nil, 0, fmt.Errorf("%w: %s waits on the background jobs of the CALLING AGENT's thread, and a direct call has none: declare an agent carrying %s as a tool and call the agent",
+			substrate.ErrForbidden, fn.Identity(), fn.Identity())
 	default:
 		return nil, 0, fmt.Errorf("%w: %s is scoped by the CALLING AGENT's grants — its writes are held to that agent's effective emit, and a direct call has none: declare an agent carrying %s as a tool and call the agent",
 			substrate.ErrForbidden, fn.Identity(), fn.Identity())

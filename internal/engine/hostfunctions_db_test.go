@@ -24,12 +24,13 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// hostFunctionIDs are the four, in the order the assertions name them.
+// hostFunctionIDs are the five, in the order the assertions name them.
 var hostFunctionIDs = []string{
 	vocabulary.HostFunctionQuery,
 	vocabulary.HostFunctionWrite,
 	vocabulary.HostFunctionPropose,
 	vocabulary.HostFunctionAsk,
+	vocabulary.HostFunctionWait,
 }
 
 // A FRESH REPOSITORY HOLDS THEM. The seed writes the binary's tree into the
@@ -186,7 +187,7 @@ func preHostKindsDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	body = strings.Replace(body, "  version: 22\n", "  version: 4\n", 1)
+	body = strings.Replace(body, "  version: 23\n", "  version: 4\n", 1)
 	body = strings.Replace(body, "        - python\n        - host\n", "        - python\n", 1)
 	body = strings.Replace(body,
 		"    source:\n      type: text\n      fts: false\n",

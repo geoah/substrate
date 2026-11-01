@@ -44,6 +44,10 @@ type toolRun struct {
 	// stamped onto the tool row as `subagentWrites`; nil on every other call
 	// and on a sub-agent call whose child thread never opened.
 	writes map[string]any
+	// job is a background call the dispatch accepted and did not start: the
+	// loop stamps the tool row `working` and starts it once the row landed
+	// (agentjobs.go). nil on every other call.
+	job *pendingJob
 	// panicked carries a panic out of the call's goroutine, so it surfaces
 	// on the loop's own.
 	panicked any
@@ -139,7 +143,11 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 	}
 	finish := func(c *toolRun) {
 		c.out = l.capToolResult(c.out)
-		l.toolEvent(substrate.AgentEventToolFinished, c.call, c.turn, &c.ok, c.out)
+		job := ""
+		if c.job != nil {
+			job = jobWorking
+		}
+		l.toolEventJob(substrate.AgentEventToolFinished, c.call, c.turn, &c.ok, c.out, job)
 	}
 	limit := l.parallelTools()
 	if live <= 1 || limit == 1 {

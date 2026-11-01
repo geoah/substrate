@@ -36,6 +36,7 @@ const (
 	AgentToolPropose = "propose"
 	AgentToolWrite   = "write"
 	AgentToolAsk     = "ask"
+	AgentToolWait    = "wait"
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
@@ -49,6 +50,7 @@ var agentBuiltinByIdentity = map[string]string{
 	HostFunctionPropose: AgentToolPropose,
 	HostFunctionWrite:   AgentToolWrite,
 	HostFunctionAsk:     AgentToolAsk,
+	HostFunctionWait:    AgentToolWait,
 }
 
 // The request params an agent may name in `params:`. The set is closed on
@@ -183,6 +185,10 @@ type Agent struct {
 	ToolsFrom []string
 	// Subagents lists sub-agent identities the loop exposes as tools.
 	Subagents []string
+	// BackgroundSubagents holds the identities on Subagents whose entry sets
+	// `background: true`: a call of one runs as a job the loop does not wait
+	// for (decision record 0200).
+	BackgroundSubagents map[string]bool
 	// Budgets bounds one invocation.
 	Budgets AgentBudgets
 	// Compaction says when a thread's replayed history is folded into a
@@ -240,6 +246,10 @@ type AgentTool struct {
 	// Description is the alias when declared; empty means the canonical
 	// description (the function manifest's) is the card.
 	Description string
+	// Background is the entry's `background: true`: every call of the tool
+	// runs as a job the loop does not wait for, whatever the function's own
+	// `execution` says. A host function never takes it.
+	Background bool
 }
 
 // MaxAgentOfferedTools caps how many offered functions one run takes through
@@ -364,7 +374,7 @@ var agentCompactionKeys = map[string]bool{
 // agentToolKeys is a tool entry's key set: `function` names the tool, `name` and
 // `description` alias its card for this agent.
 var agentToolKeys = map[string]bool{
-	"function": true, "name": true, "description": true,
+	"function": true, "name": true, "description": true, "background": true,
 }
 
 // agentToolsFromKeys is a `toolsFrom` entry's key set: `functions` is the one
@@ -379,10 +389,10 @@ var deletedAgentToolKeys = map[string]string{
 	"callable": "function — a tool entry names a function, and only a function",
 }
 
-// agentBuiltinIdentities lists the four host functions in the order the errors
+// agentBuiltinIdentities lists the five host functions in the order the errors
 // name them.
 var agentBuiltinIdentities = []string{
-	HostFunctionQuery, HostFunctionPropose, HostFunctionWrite, HostFunctionAsk,
+	HostFunctionQuery, HostFunctionPropose, HostFunctionWrite, HostFunctionAsk, HostFunctionWait,
 }
 
 // buildPackageAgents parses one authority's agent documents — load.go's one-line
@@ -498,6 +508,21 @@ func (l *loader) parseAgent(d Document) *Agent {
 		}
 		toolNames[local] = true
 		a.Subagents = append(a.Subagents, ident)
+		if entry, isMap := mslice(d.Data, "subagents")[i].(map[string]any); isMap {
+			if bg, declared := entry["background"]; declared {
+				on, isBool := bg.(bool)
+				if !isBool {
+					l.errf("%s: data.subagents[%d].background: true or false", where, i)
+					continue
+				}
+				if on {
+					if a.BackgroundSubagents == nil {
+						a.BackgroundSubagents = map[string]bool{}
+					}
+					a.BackgroundSubagents[ident] = true
+				}
+			}
+		}
 	}
 	perms, ok := l.permissionsObject(where, d.Data, agentPermissionKeys)
 	if !ok {
@@ -730,9 +755,24 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 			// them and off the resolved function record otherwise, which is the
 			// same rule for all four arms of the old union and for every bundle
 			// function.
+			background := false
+			if bg, declared := entry["background"]; declared {
+				on, isBool := bg.(bool)
+				if !isBool {
+					l.errf("%s: background: true or false", twhere)
+					return false
+				}
+				background = on
+			}
+			builtin := agentBuiltinByIdentity[fnIdent]
+			if background && builtin != "" {
+				l.errf("%s: background: %s is a host function, which runs inside the loop under its grants and cannot run as a background job", twhere, fnIdent)
+				return false
+			}
 			if !add(i, AgentTool{
-				Callable: fnIdent, Name: name, Builtin: agentBuiltinByIdentity[fnIdent],
+				Callable: fnIdent, Name: name, Builtin: builtin,
 				Description: l.parseDescription(twhere, entry),
+				Background:  background,
 			}) {
 				return false
 			}

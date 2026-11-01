@@ -19,7 +19,7 @@ data:
     or built into the substrate on the `host` runtime. The declaration IS
     the record — a write admits it, the commit activates it, and the dispatcher
     reads the registry this row rebuilds into.
-  version: 22
+  version: 23
   purpose: internal
   names:
     singular: function
@@ -120,6 +120,18 @@ data:
       type: duration
       description: the inline run's wall-clock bound, an ISO 8601 duration
         (PT30S); absent defaults to 5s and the loader caps it at 60s
+    # How an AGENT's call runs (decision record 0200): a background call
+    # answers with a handle at once and its result reaches the thread later.
+    # Every other caller (a trigger, a direct call, a host Call) runs the body
+    # the same way whatever this says. A host function is refused it.
+    execution:
+      type: enum
+      values:
+        - foreground
+        - background
+      description: "`background` runs an agent's call of it as a job the agent
+        does not wait for, its result delivered to the thread when it finishes;
+        absent means `foreground`"
     # A sync's stream is a fact the dispatcher cannot learn otherwise: a
     # delivery row names a trigger and a record, never a stream, so a parked
     # delivery reaches one stream of the account only through the function

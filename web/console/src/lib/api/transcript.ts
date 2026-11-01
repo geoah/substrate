@@ -69,6 +69,10 @@ export interface ToolCallView {
   /** A sub-agent call's summary of what its child chain wrote, on the same
    * terms as `changes`: persisted rows only. */
   subagentWrites?: SubagentWrites
+  /** A background call's job state: `working` until the job ends, then
+   * `completed`, `failed` or `canceled`. The row's `job.state`, or the live
+   * event's `job`; absent on a call that held the loop. */
+  job?: string
 }
 
 /** What a compaction folded, as far as its `summary` row or its live
@@ -424,6 +428,8 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
       call.output = output
       call.ok = ok
       call.changes = changesOf(record)
+      const job = jobStateOf(record)
+      if (job) call.job = job
       const wrote = subagentWritesOf(record)
       if (wrote) call.subagentWrites = wrote
       if (callable && !call.callable) call.callable = callable
@@ -450,6 +456,7 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
           ok,
           changes: changesOf(record),
           subagentWrites: subagentWritesOf(record),
+          ...(jobStateOf(record) ? { job: jobStateOf(record) } : {}),
         },
       ],
     })
@@ -771,14 +778,23 @@ export function pushCompacted(
  * nothing else — so the one card a reader most needs ("stop calling tools")
  * would never appear live, only on reload. An unclaimed finish opens its own
  * card, already settled. */
+/** The `job.state` a background call's tool row carries, or undefined. */
+function jobStateOf(record: SubstrateRecord): string | undefined {
+  const job = record.properties.job
+  if (!job || typeof job !== "object") return undefined
+  const state = (job as Record<string, unknown>).state
+  return typeof state === "string" && state ? state : undefined
+}
+
 export function settleTool(
   live: LiveOverlay,
   call: ToolCallView,
   output: string,
   ok: boolean,
-  seq: number
+  seq: number,
+  job?: string
 ): LiveOverlay {
-  const settled = { ...call, output, ok }
+  const settled = { ...call, output, ok, ...(job ? { job } : {}) }
   // An empty id cannot identify anything, so it settles the OLDEST card still
   // running rather than every id-less card at once.
   const match = (c: ToolCallView) =>
@@ -793,7 +809,9 @@ export function settleTool(
       tools: turn.tools.map((c) => {
         if (done || !match(c)) return c
         done = true
-        return { ...c, output, ok }
+        // A job's end settles its card a second time: the output it brings
+        // replaces the handle the call answered with.
+        return { ...c, output, ok, ...(job ? { job } : {}) }
       }),
     }
   })

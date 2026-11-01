@@ -149,4 +149,10 @@ type AgentEvent struct {
 	Turn int `json:"turn,omitempty"`
 	// Status rides the idle event: the thread row's status.
 	Status string `json:"status,omitempty"`
+	// Job rides a toolFinished event of a background call (decision record
+	// 0200): `working` on the one its handle answers, then `completed`,
+	// `failed` or `canceled` on a second toolFinished, under the same ID,
+	// that the job's end publishes while a turn streams on the thread. The
+	// tool row's `job.state` says the same.
+	Job string `json:"job,omitempty"`
 }

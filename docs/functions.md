@@ -82,6 +82,12 @@ trigger, a host call and the call API all address it with.
   code writes under the account's `syncStreams`, so `sync status` marks that
   stream `erroring` when a delivery of the function parks
   ([the sync trait](bundles.md#the-sync-trait)).
+- Optional **`execution`** (`foreground`, the default, or `background`) says
+  how an agent's call runs: `background` answers the agent with a handle at
+  once and delivers the result to its thread when the body ends
+  ([background jobs](agents.md#background-jobs)). A trigger, a direct call
+  and a host call run the body the same way whatever it says, and a `host`
+  function is refused it.
 - **`permissions:`** is what the function is allowed to do while it runs, and
   it is the whole security boundary. Leave a grant out and what it covers is
   refused:
@@ -219,7 +225,7 @@ delivery applies the effects and discards the output.
 ## Host functions
 
 `runtime: host` is the function with no body, because the **engine** is its
-body. Core ships four of them, and they are the agent
+body. Core ships five of them, and they are the agent
 [built-in tools](agents.md#tools):
 
 | Reference | What it does |
@@ -228,6 +234,7 @@ body. Core ships four of them, and they are the agent
 | `substrate.reamde.dev/core/write` | one record write, `{op: put\|patch\|delete, kind, id, input, ifVersion}`, bounded by the calling agent's emit |
 | `substrate.reamde.dev/core/propose` | lands one reviewed `recordpatchrequest` |
 | `substrate.reamde.dev/core/ask` | lands one `llm/interaction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
+| `substrate.reamde.dev/core/wait` | holds the loop on the calling thread's [background jobs](agents.md#background-jobs), `{jobs, timeoutSeconds}`, and answers the ones that finished |
 
 They are **ordinary function records**: seeded into every new repository,
 delivered to an existing one by the [boot upgrade](vocabulary.md), listed in
@@ -245,12 +252,13 @@ kind and always the same one.
 
 That is also what decides **where each is callable**:
 
-- **As an agent tool**, all four.
+- **As an agent tool**, all five.
 - **Through the [call API](#host-call)**, `query` alone: the caller is a token
   that owns the repository, so a read needs no narrower grant. `write`,
-  `propose` and `ask` refuse there by name: there is no calling agent whose
-  grants would bound them, and `ask` has no thread to answer into. The refusal
-  points at declaring an agent that carries the tool.
+  `propose`, `ask` and `wait` refuse there by name: there is no calling agent
+  whose grants would bound them, `ask` has no thread to answer into, and `wait`
+  no thread whose jobs it waits on. The refusal points at declaring an agent
+  that carries the tool.
 - **As a [trigger](#triggers)'s callable**, none. A delivery has no caller to
   borrow grants from, so the row is refused at admission rather than parked
   forever, and the refusal names the same shape: an agent carrying the tool,
@@ -260,7 +268,7 @@ That is also what decides **where each is callable**:
 
 Two smaller rules follow. A host function is admissible **only from the shipped
 build**, so a bundle or an owner declaring one is refused, and a **bare name
-never resolves to one**: the four are named for what they do, which is exactly
+never resolves to one**: the five are named for what they do, which is exactly
 what a repository's own function is likeliest to be called, so `query` keeps
 meaning the user's `query` and the built-in answers its full reference.
 

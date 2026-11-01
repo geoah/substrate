@@ -1,7 +1,8 @@
-# THE HOST FUNCTIONS: the four callables whose body is the ENGINE.
+# THE HOST FUNCTIONS: the five callables whose body is the ENGINE.
 #
 # `runtime: host` names no source. What runs is engine code — the agent loop's
-# query executor, its write executor, the propose writer, the ask writer — and
+# query executor, its write executor, the propose writer, the ask writer, the
+# job waiter — and
 # this file is what makes each of them a RECORD like every other function:
 # seeded into a new repository, delivered to an existing one by the boot
 # upgrade, listed in the functions collection, and named by an agent under
@@ -236,3 +237,35 @@ data:
   permissions:
     writes:
       - substrate.reamde.dev/llm/interaction
+---
+# ---- wait: block on background jobs ------------------------------------------
+# A background tool answers with a handle and its result arrives later as a
+# toolCompleted message (decision record 0200). `wait` is for the result the
+# agent cannot answer without: it holds the loop on named jobs, never past the
+# run's own remaining time. It declares no grant: it reads jobs of the calling
+# thread alone.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/core/wait
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Wait for background jobs. A background tool answers at once with {job,
+    status: working}, and its result reaches you later as a toolCompleted
+    message, so start the slow work, carry on, and answer without it when
+    you can. Call wait only when you need a job's result to continue: pass
+    the job ids, and it returns {completed: [{job, ok, output}], working:
+    [ids]} once every job finished or timeoutSeconds passed, never past the
+    run's own deadline. A job still working delivers its result later.
+  runtime: host
+  arguments:
+    - name: jobs
+      type: string
+      repeated: true
+      required: true
+      description: the job ids background calls answered with
+    - name: timeoutSeconds
+      type: int
+      description: how long to wait at most; the run's remaining time bounds
+        it, and absent waits as long as that allows

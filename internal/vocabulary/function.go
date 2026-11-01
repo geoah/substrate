@@ -61,7 +61,7 @@ var retiredFunctionRuntimes = map[string]string{
 	"go": "write the body in python",
 }
 
-// The four host functions the engine implements, by identity. They are ordinary
+// The five host functions the engine implements, by identity. They are ordinary
 // function records — seeded, browsable, pickable as agent tools by reference —
 // and these constants are what the dispatch switch and the grant checks key on.
 const (
@@ -78,6 +78,13 @@ const (
 	HostFunctionPropose = PackageCore + "/propose"
 	HostFunctionWrite   = PackageCore + "/write"
 	HostFunctionAsk     = PackageCore + "/ask"
+	HostFunctionWait    = PackageCore + "/wait"
+
+	// The two ways an agent's call of a function runs: holding the loop until
+	// it returns, or as a background job the loop does not wait for (decision
+	// record 0200). Absent is foreground.
+	FunctionExecutionForeground = "foreground"
+	FunctionExecutionBackground = "background"
 )
 
 // The capability-gated identity mutations (`permissions.mutations`). The
@@ -151,6 +158,11 @@ type Function struct {
 	// 0198): an agent whose `toolsFrom` matches its identity takes it as a
 	// tool without naming it under `tools:`.
 	Offer *FunctionOffer
+	// Execution is how an agent's call of the function runs: "background"
+	// makes every call a job the loop does not wait for, "foreground" (and
+	// absent) holds the loop until it returns. A trigger, a direct call and a
+	// host Call run the function the same way whatever it says.
+	Execution string
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties (engine/vocabularywrite.go
@@ -244,6 +256,9 @@ func (f *Function) Identity() string { return f.Package + "/" + f.Name }
 // asks before it reaches for a spec: there is nothing to compile, register,
 // warm or reconcile, and the caller's own grants are what scope the call.
 func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
+
+// Background reports whether an agent's call of the function runs as a job.
+func (f *Function) Background() bool { return f.Execution == FunctionExecutionBackground }
 
 // Actor is the function's own writing hand: `function:<authority>:<name>`,
 // the actor its effects are attributed to and the one trigger self-exclusion
@@ -723,6 +738,8 @@ var functionDataKeys = map[string]bool{
 	"stream": true,
 	// Whether the function offers itself to agents, and under what tool name.
 	"offer": true,
+	// Whether an agent's call of it runs as a background job.
+	"execution": true,
 }
 
 // functionOfferKeys is `data.offer`'s key set: `agents` is the audience, the
@@ -819,6 +836,13 @@ func (l *loader) parseFunction(d Document) *Function {
 			return nil
 		}
 		fn.Stream = stream
+	}
+	fn.Execution = mstr(d.Data, "execution")
+	switch fn.Execution {
+	case "", FunctionExecutionForeground, FunctionExecutionBackground:
+	default:
+		l.errf("%s: data.execution: %q — \"foreground\" (the default) or \"background\"", where, fn.Execution)
+		return nil
 	}
 	if !l.parseFunctionBody(where, d.Data, fn) {
 		return nil
@@ -926,6 +950,10 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 		}
 		if _, declared := data["timeout"]; declared {
 			l.errf("%s: data.timeout: a host function runs in process under its caller's budgets — there is no child invocation to bound", where)
+			return false
+		}
+		if fn.Background() {
+			l.errf("%s: data.execution: a host function runs inside the calling loop and writes under its grants — it cannot run as a background job", where)
 			return false
 		}
 		return true

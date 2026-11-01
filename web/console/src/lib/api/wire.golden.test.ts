@@ -695,6 +695,7 @@ const agentEvent: Shape<AgentEvent> = {
   error: false,
   turn: false,
   status: false,
+  job: false,
 }
 
 /** The catalog entry and the shapes nested in it. */

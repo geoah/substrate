@@ -400,6 +400,12 @@ func (ds *dataset) AttachAgentTurn(ctx context.Context, threadID string, emit fu
 // first. A triggered run is not stoppable: it ends within its own budget.
 func (ds *dataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
 	hub, err := ds.runningTurn(ctx, threadID)
+	// A stop of the thread stops its background jobs too, turn or none
+	// (decision record 0200).
+	stopped := ds.jobs.stop(threadID, actor)
+	if errors.Is(err, substrate.ErrNoRunningTurn) && stopped > 0 {
+		return ds.stopIdleThread(ctx, actor, threadID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +456,10 @@ func (ds *dataset) settleInterruptedAgentRuns(ctx context.Context) error {
 	if err := ds.settleInterruptedClaims(ctx); err != nil {
 		return err
 	}
-	return ds.settleInterruptedThreads(ctx)
+	if err := ds.settleInterruptedThreads(ctx); err != nil {
+		return err
+	}
+	return ds.settleInterruptedJobs(ctx)
 }
 
 // settleInterruptedClaims rewrites every stored claim to interruptedAgentError,

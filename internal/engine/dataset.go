@@ -169,6 +169,9 @@ type dataset struct {
 	// settleLostThreads (agents.go noteLostRun).
 	lostMu   sync.Mutex
 	lostRuns map[string]string
+	// jobs is the background calls agent loops of this process started, by
+	// thread (agentjobs.go).
+	jobs agentJobs
 	// chatTurns counts the detached chat turns this process runs for the
 	// repository, from admission to settle (agents.go ChatAgent), against
 	// maxRunningChatTurns.
