@@ -1,8 +1,14 @@
 /** The approval page's building blocks: a labelled fact, a warning, a
- * refusal, and the technical view's terms and identifiers. */
+ * refusal, and the technical view's terms, identifiers and counted lists. */
 
 import type { ReactNode } from "react"
-import { TriangleAlertIcon } from "lucide-react"
+import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react"
+
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 
 /** One labelled fact on the page: a small heading over its value. */
 export function Fact({
@@ -92,4 +98,36 @@ export function Term({
 /** An identifier: a kind reference, a package id, a trigger id. */
 export function Mono({ children }: { children: ReactNode }) {
   return <span className="font-mono [overflow-wrap:anywhere]">{children}</span>
+}
+
+/** A list the technical view counts and opens on demand: "Kinds (3)",
+ * named for a screen reader by whose it is, since a row lists its own and
+ * each requirement's. */
+export function Disclosure({
+  label,
+  count,
+  of,
+  children,
+}: {
+  label: string
+  count: number
+  /** Whose list it is: "Apple Health". */
+  of: string
+  children: ReactNode
+}) {
+  return (
+    <Collapsible className="flex flex-col gap-1">
+      <CollapsibleTrigger
+        aria-label={`${of} ${label.toLowerCase()} (${count})`}
+        className="group flex w-fit cursor-pointer items-center gap-1 text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRightIcon
+          aria-hidden
+          className="size-3 transition-transform group-data-[panel-open]:rotate-90"
+        />
+        {label} ({count})
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pl-4">{children}</CollapsibleContent>
+    </Collapsible>
+  )
 }

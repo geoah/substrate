@@ -1,61 +1,45 @@
 /** What an app's approval sets up, in the owner's words
- * (docs/plans/app-setup.md): one line per setup row, the code a package
- * runs, the packages an install brings first, the account's values, how a
- * re-authorization heads itself, and what moved when the server's plan
- * changed under the page. Pure, so the words are tested here. */
+ * (docs/plans/app-setup.md): the lists the approval page renders, one line
+ * per setup row, the code a package and each of its requirements run, the
+ * account's values, why a row cannot run and what the owner can do about
+ * it, how a re-authorization heads itself, and what moved when the server's
+ * plan changed under the page. Pure, so the words are tested here. */
 
 import type {
   AuthorizationAccount,
+  AuthorizationBlock,
   AuthorizationPackage,
   AuthorizationPrevious,
+  AuthorizationRequest,
   AuthorizationScope,
   AuthorizationSetup,
-  AuthorizationState,
+  AuthorizationWebhookPlan,
   SetupAction,
-  SetupProgress,
 } from "@/lib/api/types"
+import { webhookSentence } from "@/lib/app-scopes"
 import { displayName, lowerFirst, packageDisplayName } from "@/lib/kind-names"
-import { listWords, sentence } from "@/lib/tools"
+import { sentence } from "@/lib/tools"
 
-/** Whether approving does something for this action; `none` is in place and
- * `blocked` cannot run. */
+/** Whether approving runs something for this action; `none` is in place. A
+ * blocked row keeps the action it would run. */
 export function needsAction(action: SetupAction): boolean {
   return (
     action === "install" ||
     action === "upgrade" ||
     action === "create" ||
-    action === "arm"
+    action === "enable"
   )
 }
 
-function packageWord(id: string): string {
-  return id.slice(id.lastIndexOf("/") + 1)
-}
-
-/** A package by its catalog name, else by its own word in words: a catalog
- * that names a package only by its word (`applehealth`) reads as the
- * console's display name for it ("Apple Health"). */
-export function packageName(pkg: { id: string; name?: string }): string {
-  const word = packageWord(pkg.id)
-  if (pkg.name && pkg.name !== word) return pkg.name
-  return packageDisplayName(word)
-}
-
-/** The catalog name of the package an account kind or a webhook belongs to:
- * the request's own package row where it names one, else the package's word. */
-export function ownerName(
-  rows: readonly AuthorizationSetup[],
-  packageId: string
-): string {
-  const row = rows.find((r) => r.package?.id === packageId)
-  return row?.package
-    ? packageName(row.package)
-    : packageDisplayName(packageWord(packageId))
+/** A package by the console's display name for the last segment of its id:
+ * `providers.substrate.reamde.dev/applehealth` reads "Apple Health". The
+ * catalog carries no other name. */
+export function packageName(id: string): string {
+  return packageDisplayName(id.slice(id.lastIndexOf("/") + 1))
 }
 
 function kindPackage(kind: string): string {
-  const parts = kind.split("/")
-  return parts.slice(0, 2).join("/")
+  return kind.split("/").slice(0, 2).join("/")
 }
 
 /** The account's own name: its display property where it has one, else its
@@ -69,82 +53,147 @@ export function accountName(account: AuthorizationAccount): string {
 }
 
 /** "Apple Health account": the package's name and the kind's label. */
-function accountWords(
-  account: AuthorizationAccount,
-  rows: readonly AuthorizationSetup[]
-): string {
+function accountWords(account: AuthorizationAccount): string {
   const label = account.label?.singular ?? displayName(account.kind)
-  return `${ownerName(rows, kindPackage(account.kind))} ${lowerFirst(label)}`
+  return `${packageName(kindPackage(account.kind))} ${lowerFirst(label)}`
+}
+
+/** "Apple Health webhook", by the package its callable belongs to where the
+ * server names it. */
+function webhookWords(webhook: AuthorizationWebhookPlan): string {
+  return webhook.package
+    ? `${packageName(webhook.package)} webhook`
+    : `${webhook.trigger} webhook`
 }
 
 /** One setup row as the line the approval page shows for it: what approving
  * does, or that it is in place already. A blocked row still says what it
  * would do; its problem is shown beside it. */
-export function setupTitle(
-  row: AuthorizationSetup,
-  rows: readonly AuthorizationSetup[]
-): string {
+export function setupTitle(row: AuthorizationSetup): string {
   if (row.package) {
-    const name = packageName(row.package)
+    const name = packageName(row.package.id)
     if (row.action === "none") return `${name} is installed`
     if (row.action === "upgrade") return `Update ${name}`
-    if (row.action === "blocked" && row.package.held > 0)
-      return `Update ${name}`
     return `Install ${name}`
   }
   if (row.account) {
     // An account in place is never written, so the name the app asked for
     // may not be the one it holds.
     if (row.action === "none")
-      return `The ${accountWords(row.account, rows)} this app uses is in place`
-    return `Create the ${accountWords(row.account, rows)} “${accountName(row.account)}”`
+      return `The ${accountWords(row.account)} this app uses is in place`
+    return `Create the ${accountWords(row.account)} “${accountName(row.account)}”`
   }
   if (row.webhook) {
-    const what = row.webhook.package
-      ? `${ownerName(rows, row.webhook.package)} webhook`
-      : `${row.webhook.trigger} webhook`
+    const what = webhookWords(row.webhook)
     return row.action === "none" ? `The ${what} is on` : `Turn on the ${what}`
   }
   return row.type
 }
 
-/** The triggers a request leaves on: every webhook it names, armed by
+/** The triggers a request leaves on: every webhook it names, enabled by
  * approving or on already. */
 export function webhookTriggers(rows: readonly AuthorizationSetup[]): string[] {
   return rows.flatMap((r) => (r.webhook ? [r.webhook.trigger] : []))
 }
 
+/** What a package, or one of its requirements, ships of its own. */
+type PackageFacts = Pick<
+  AuthorizationPackage,
+  "kinds" | "functions" | "triggers"
+>
+
 /** Whether a package ships code, and whether any of it starts on its own: an
  * enabled trigger that is not a webhook runs once the package is installed,
  * and a webhook trigger the request leaves on runs on every delivery the app
  * sends. `webhooks` are the triggers the request names. */
-export function codeWords(
-  pkg: AuthorizationPackage,
-  webhooks: readonly string[] = []
+function codeClause(
+  facts: PackageFacts,
+  webhooks: readonly string[]
 ): string | undefined {
-  if (!pkg.functions?.length) return undefined
-  const triggers = pkg.triggers ?? []
+  if (!facts.functions?.length) return undefined
+  const triggers = facts.triggers ?? []
   if (triggers.some((t) => t.webhook && webhooks.includes(t.id)))
-    return "Runs code on your server, automatically, each time data arrives."
+    return "runs code on your server, automatically, each time data arrives"
   return triggers.some((t) => t.enabled && !t.webhook)
-    ? "Runs code on your server, automatically."
-    : "Runs code on your server."
+    ? "runs code on your server, automatically"
+    : "runs code on your server"
 }
 
-/** The packages an install brings first: "Also installs Health." */
-export function chainWords(pkg: AuthorizationPackage): string | undefined {
-  const steps = pkg.requires ?? []
-  const installs = steps
-    .filter((s) => s.action === "install")
-    .map((s) => packageName(s))
-  const updates = steps
-    .filter((s) => s.action === "upgrade")
-    .map((s) => packageName(s))
+/** The code a package runs of its own, as a sentence. */
+export function codeWords(
+  facts: PackageFacts,
+  webhooks: readonly string[] = []
+): string | undefined {
+  const clause = codeClause(facts, webhooks)
+  return clause && `${sentence(clause)}.`
+}
+
+/** Each package an install brings first, with the code it runs of its own:
+ * "Also installs Labs, which runs code on your server, automatically." What
+ * is in place already is left out. */
+export function chainLines(
+  pkg: AuthorizationPackage,
+  webhooks: readonly string[] = []
+): string[] {
+  return (pkg.requires ?? []).flatMap((step) => {
+    if (step.action !== "install" && step.action !== "upgrade") return []
+    const verb = step.action === "install" ? "installs" : "updates"
+    const clause = codeClause(step, webhooks)
+    return [
+      `Also ${verb} ${packageName(step.id)}${clause ? `, which ${clause}` : ""}.`,
+    ]
+  })
+}
+
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/** What a requirement brings of its own, counted: "3 kinds, 1 function, 1
+ * trigger"; undefined when it ships none of the three. */
+export function factCounts(facts: PackageFacts): string | undefined {
   const parts = [
-    installs.length > 0 ? `installs ${listWords(installs)}` : "",
-    updates.length > 0 ? `updates ${listWords(updates)}` : "",
+    facts.kinds?.length ? count(facts.kinds.length, "kind", "kinds") : "",
+    facts.functions?.length
+      ? count(facts.functions.length, "function", "functions")
+      : "",
+    facts.triggers?.length
+      ? count(facts.triggers.length, "trigger", "triggers")
+      : "",
   ].filter(Boolean)
-  return parts.length > 0 ? `Also ${parts.join(" and ")}.` : undefined
+  return parts.length > 0 ? parts.join(", ") : undefined
+}
+
+/** The versions an everyday package row names: where an update goes from
+ * and to, or what an install brings. A blocked row's problem says its
+ * versions itself. */
+export function versionWords(row: AuthorizationSetup): string | undefined {
+  const pkg = row.package
+  if (!pkg || row.blocked || !pkg.shipped) return undefined
+  if (row.action === "upgrade" && pkg.held)
+    return `From version ${pkg.held} to ${pkg.shipped}`
+  if (row.action === "install" || row.action === "upgrade")
+    return `Version ${pkg.shipped}`
+  return undefined
+}
+
+/** What the webhook a row turns on lets the app do. The access comes with
+ * the set up, not with a scope it asked for, so it has no checkbox and
+ * refusing it is denying the request. `held` is true when the token the app
+ * holds carries it already. */
+export function grantWords(row: AuthorizationSetup, held: boolean): string {
+  const webhook = row.webhook
+  if (!webhook) return ""
+  const power = lowerFirst(
+    webhookSentence(
+      webhook.trigger,
+      webhook.package ? packageName(webhook.package) : undefined
+    )
+  )
+  if (held) return `The app can already ${power}.`
+  const when =
+    row.action === "none" ? "will be able to" : "will then be able to"
+  return `The app ${when} ${power}. To refuse this, deny the request.`
 }
 
 /** Text the server wrote, as a sentence: its first letter up and its end
@@ -154,21 +203,62 @@ export function asSentence(text: string): string {
   return !t || /[.!?…]$/.test(t) ? t : `${t}.`
 }
 
-/** Why a blocked row cannot run, in the owner's words. A package the
- * catalog ships below the app's floor, itself or a requirement, says so from
- * its versions; every other block is the server's own sentence. The server
- * links every other package block to a page, so a floor block is the one
- * without a fix. */
-export function problemWords(row: AuthorizationSetup): string | undefined {
-  const pkg = row.package
-  if (row.action === "blocked" && pkg && !row.fix) {
-    if (pkg.shipped > 0 && pkg.shipped < pkg.required)
-      return `Your server can install ${packageName(pkg)} up to version ${pkg.shipped}; this app needs version ${pkg.required}. The server needs an update first.`
-    const step = pkg.requires?.find((s) => s.action === "blocked")
-    if (step && step.shipped > 0)
-      return `Your server can install ${packageName(step)} up to version ${step.shipped}, and ${packageName(pkg)} needs a later one. The server needs an update first.`
+/** What can clear a block: the owner, in the console; a newer server; time;
+ * or nothing the owner does, since only the app or the server's catalog can
+ * change what is asked or offered. */
+export type BlockRemedy = "console" | "server" | "wait" | "elsewhere"
+
+export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
+  switch (block.reason) {
+    case "sample":
+    case "quarantined":
+    case "declared-by-owner":
+    case "upgrade-needs-review":
+      return "console"
+    case "server-update":
+      return "server"
+    case "account-deleted":
+      return "wait"
+    case "not-shipped":
+    case "not-requested":
+    case "unsupported":
+      return "elsewhere"
+    default:
+      // A reason newer than this console: the server's link is the one
+      // thing that says the owner can act on it.
+      return consolePath(block.fix) ? "console" : "elsewhere"
   }
-  return row.problem ? asSentence(row.problem) : undefined
+}
+
+const BLOCK_STATUS: Record<BlockRemedy, string> = {
+  console: "Needs a fix first",
+  server: "Needs a server update",
+  wait: "Can’t be done yet",
+  elsewhere: "Can’t be done",
+}
+
+/** The word beside a blocked row's title. */
+export function blockStatus(block: AuthorizationBlock): string {
+  return BLOCK_STATUS[blockRemedy(block)]
+}
+
+/** What the owner can do while something cannot be set up, said once below
+ * the buttons: fix it in the console, have the server updated, wait, or
+ * deny, by the rows' reasons. */
+export function blockedWords(blocks: readonly AuthorizationBlock[]): string {
+  const remedies = blocks.map(blockRemedy)
+  const fixes = remedies.filter((r) => r === "console").length
+  const link =
+    fixes > 1 ? "the links beside the rows" : "the link beside the row"
+  if (remedies.includes("elsewhere"))
+    return "This can’t be fixed from here: it takes a change to the app or to your server. Deny the request, or check again once one has changed."
+  if (remedies.includes("server"))
+    return fixes > 0
+      ? `Your server needs an update, and the rest can be fixed in the console (${link}), before this can be approved. Check again afterwards, or deny the request.`
+      : "Your server needs an update before this can be approved. Whoever runs it can update it; check again afterwards, or deny the request."
+  if (fixes > 0)
+    return `Fix it in the console (${link}), then check again, or deny the request.`
+  return "This can be approved once what is in the way has cleared. Check again later, or deny the request."
 }
 
 /** A property name as a label: `displayName` → "Display name". */
@@ -201,77 +291,153 @@ export function stillHeld(
   return !previous.expiresAt || Date.parse(previous.expiresAt) > now
 }
 
-/** The scopes the app asks for that the token it holds does not carry, and
- * the ones it does. Without a previous token every scope is new. */
-export function splitByPrevious(
-  scopes: readonly AuthorizationScope[],
-  previous: AuthorizationPrevious | undefined
-): { fresh: AuthorizationScope[]; allowed: AuthorizationScope[] } {
-  if (!previous) return { fresh: [...scopes], allowed: [] }
-  const held = new Set(previous.scopes)
+/** The scopes the app asks for that the token it holds does not cover, and
+ * the ones it does, as the server's coverage says. */
+export function splitByPrevious(scopes: readonly AuthorizationScope[]): {
+  fresh: AuthorizationScope[]
+  allowed: AuthorizationScope[]
+} {
   return {
-    fresh: scopes.filter((s) => !held.has(s.scope)),
-    allowed: scopes.filter((s) => held.has(s.scope)),
+    fresh: scopes.filter((s) => !s.allowed),
+    allowed: scopes.filter((s) => s.allowed),
   }
 }
 
 /** A re-authorization's heading, by what changed since the token the app
- * holds: nothing (a renewal), more scopes, setup to run, or both. */
+ * holds: nothing (a renewal), more access, setup to run, or both. */
 export function reauthorizationHeading(
-  newScopes: number,
+  newAccess: number,
   setupToDo: number
 ): string {
-  if (newScopes > 0 && setupToDo > 0)
+  if (newAccess > 0 && setupToDo > 0)
     return "Allow more access and update server setup"
-  if (newScopes > 0) return "Allow more access"
+  if (newAccess > 0) return "Allow more access"
   if (setupToDo > 0) return "Update server setup"
   return "Renew access"
 }
 
+/** One setup row where the page lists it. `grantHeld` is set on a webhook
+ * row: whether the token the app holds carries the access it brings. */
+export interface SetupLine {
+  row: AuthorizationSetup
+  index: number
+  grantHeld?: boolean
+}
+
+/** A request as the approval page lays it out. */
+export interface RequestFold {
+  /** The app asked before, and the newest token it holds still opens the
+   * repository: what that token covers folds away as already allowed. */
+  reauth: boolean
+  live: boolean
+  /** The scopes listed with their checkbox, and the ones folded away. */
+  fresh: AuthorizationScope[]
+  allowed: AuthorizationScope[]
+  /** The setup rows listed, and the ones folded away: in place, with any
+   * access they bring held already. */
+  setup: SetupLine[]
+  folded: SetupLine[]
+  /** Scopes and webhook access the token the app holds does not carry. */
+  newAccess: number
+  /** Rows approving runs, a blocked one included. */
+  toDo: number
+  /** Why rows cannot run; approving waits until there are none. */
+  blocks: AuthorizationBlock[]
+  /** Whether what the app does, or what approving sets up, writes under the
+   * app's name and so sets off the owner's automations. */
+  writes: boolean
+  /** The row a stopped set up stopped at, where it stopped at one. */
+  failedRow?: AuthorizationSetup
+}
+
+/** The lists the approval page renders from one read of the request. Only
+ * access the app still holds folds away; a token that ended holds nothing,
+ * so everything is asked for in full. */
+export function foldRequest(
+  request: AuthorizationRequest,
+  now: number = Date.now()
+): RequestFold {
+  const previous = request.previous
+  const live = previous !== undefined && stillHeld(previous, now)
+  const split = splitByPrevious(request.scopes)
+  // A webhook scope names one trigger and nothing else, so the token holds
+  // the access a webhook row brings exactly when it carries that scope.
+  const held = new Set(previous?.scopes)
+  const lines: SetupLine[] = request.setup.map((row, index) =>
+    row.webhook
+      ? { row, index, grantHeld: held.has(`webhook:${row.webhook.trigger}`) }
+      : { row, index }
+  )
+  const inPlace = (line: SetupLine) =>
+    line.row.action === "none" && line.grantHeld !== false
+  const toDo = request.setup.filter((r) => needsAction(r.action)).length
+  const failure = request.state === "pending" ? request.failure : undefined
+  return {
+    reauth: previous !== undefined,
+    live,
+    fresh: live ? split.fresh : [...request.scopes],
+    allowed: live ? split.allowed : [],
+    setup: live ? lines.filter((l) => !inPlace(l)) : lines,
+    folded: live ? lines.filter(inPlace) : [],
+    newAccess:
+      split.fresh.length + lines.filter((l) => l.grantHeld === false).length,
+    toDo,
+    blocks: request.setup.flatMap((r) => (r.blocked ? [r.blocked] : [])),
+    // Talking to an agent writes the app's messages, and deciding writes
+    // the decision, both under the app's name; what a setup writes, and
+    // what a delivery's function writes, set off the same automations.
+    writes:
+      request.scopes.some((s) => s.verb !== "read") ||
+      toDo > 0 ||
+      lines.some((l) => l.row.webhook),
+    failedRow:
+      failure?.row !== undefined ? request.setup[failure.row] : undefined,
+  }
+}
+
 /** What moved between the plan the page showed and the server's own: each
- * row whose action changed, as it reads now. Empty when only the facts
- * behind a row moved (a version, a description). */
+ * row whose action or block changed, as it reads now. Empty when only the
+ * facts behind a row moved (a version, a description). */
 export function planChanges(
   before: readonly AuthorizationSetup[],
   after: readonly AuthorizationSetup[]
 ): string[] {
   return after.flatMap((row, i) => {
-    if (before[i]?.action === row.action) return []
-    const title = setupTitle(row, after)
-    if (row.action !== "blocked") return [title]
-    const problem = problemWords(row)
-    return [`${title}: can’t be done now${problem ? `. ${problem}` : ""}`]
+    const was = before[i]
+    if (
+      was &&
+      was.action === row.action &&
+      was.blocked?.reason === row.blocked?.reason
+    )
+      return []
+    const title = setupTitle(row)
+    if (!row.blocked) return [title]
+    const problem = asSentence(row.blocked.problem)
+    return [`${title}: can’t be done now${problem ? `. ${problem}` : "."}`]
   })
 }
 
-/** A row's progress as the page shows it. Once the request is pending again
- * nothing runs, so a row left waiting or running says nothing, and a row
- * that stopped and is in place since says it is in place; what landed stays
- * ticked. */
-export function shownProgress(
-  state: AuthorizationState,
-  action: SetupAction,
-  progress: SetupProgress | undefined
-): SetupProgress | undefined {
-  if (state !== "pending") return progress
-  if (progress === "done") return progress
-  if (progress === "failed" && action !== "none") return progress
-  return undefined
+/** How far a set up got, for the page's live region: the row it is on, or
+ * how many of the rows it runs are done. */
+export function progressWords(
+  rows: readonly AuthorizationSetup[]
+): string | undefined {
+  const runs = rows.filter((r) => needsAction(r.action) && r.progress)
+  if (runs.length === 0) return undefined
+  const done = runs.filter((r) => r.progress === "done").length
+  const at = runs.find((r) => r.progress === "running")
+  if (at) return `${setupTitle(at)}: step ${done + 1} of ${runs.length}`
+  return `${done} of ${runs.length} done`
 }
 
-/** How far a set up got, for the page's live region: the row it is on, or
- * how many of the rows it runs are done. `runs` are the rows' indices. */
-export function progressWords(
-  rows: readonly AuthorizationSetup[],
-  progress: readonly SetupProgress[] | undefined,
-  runs: readonly number[]
-): string | undefined {
-  if (!progress || runs.length === 0) return undefined
-  const done = runs.filter((i) => progress[i] === "done").length
-  const at = runs.find((i) => progress[i] === "running")
-  if (at !== undefined && rows[at])
-    return `${setupTitle(rows[at], rows)}: step ${done + 1} of ${runs.length}`
-  return `${done} of ${runs.length} done`
+/** The one line under the buttons once a set up stopped: where, and what
+ * Try again does. A stop at no row (waiting for the repository's turn,
+ * issuing the code) has no row to carry its message, so the line does. */
+export function failureWords(
+  failedRow: AuthorizationSetup | undefined
+): string {
+  if (!failedRow) return "Setting up stopped."
+  return `Setting up stopped at ${setupTitle(failedRow)}. What landed stays; Try again runs the rest.`
 }
 
 const MONTHS = [

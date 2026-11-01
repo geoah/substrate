@@ -199,32 +199,3 @@ export function ScopeRow({
     </li>
   )
 }
-
-/** A power the app gains because of what it sets up, not because it asked
- * for a scope: no checkbox, since declining it is declining the setup. */
-export function GrantedRow({
-  sentence,
-  scope,
-  technical,
-}: {
-  sentence: string
-  scope: string
-  technical: boolean
-}) {
-  return (
-    <li className="flex flex-col gap-1 px-3 py-3">
-      <p>{sentence}</p>
-      {technical && (
-        <>
-          <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted-foreground">
-            {scope}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            It delivers with its own access, so revoking the app, or its access
-            ending, ends its deliveries.
-          </p>
-        </>
-      )}
-    </li>
-  )
-}

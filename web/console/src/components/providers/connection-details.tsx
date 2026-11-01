@@ -361,6 +361,11 @@ function ParkedList({
                 <p className="mt-1 text-muted-foreground">
                   Running now. It leaves this list when it finishes.
                 </p>
+              ) : f.pending ? (
+                <p className="mt-1 text-muted-foreground">
+                  Accepted, still being filed. It leaves this list when it is
+                  filed.
+                </p>
               ) : (
                 <p className="mt-1 break-words whitespace-pre-wrap text-destructive">
                   {f.lastError}
@@ -370,7 +375,7 @@ function ParkedList({
             <Button
               variant="outline"
               size="xs"
-              disabled={retry.isPending || f.running}
+              disabled={retry.isPending || f.running || f.pending}
               onClick={() => retry.mutate({ trigger: f.trigger, id: f.id })}
             >
               <RotateCcwIcon />

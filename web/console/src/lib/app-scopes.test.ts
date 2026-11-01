@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { AuthorizationKind, SubstrateRecord } from "@/lib/api/types"
+import { packageName } from "@/lib/app-setup"
 
 import {
   overAgents,
@@ -254,6 +255,124 @@ describe("scopeSentence", () => {
       scopeSentence(scope({ pattern: "ada.example.com/greek/*", kinds }))
     ).toBe(
       "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind"
+    )
+  })
+})
+
+/** One case of the sentence fixture: a scope as a token stores it, the
+ * kinds it reaches today, for a `webhook:` scope the package its trigger's
+ * callable belongs to, and the sentence the approval page shows for it. */
+interface SentenceCase {
+  scope: string
+  kinds: AuthorizationKind[]
+  package?: string
+  sentence: string
+}
+
+const APPLEHEALTH = "providers.substrate.reamde.dev/applehealth"
+
+function labelled(
+  identity: string,
+  singular: string,
+  plural: string,
+  purpose?: string
+): AuthorizationKind {
+  return {
+    identity,
+    label: { singular, plural },
+    ...(purpose ? { purpose } : {}),
+  }
+}
+
+/** Every verb over every pattern shape: all, one authority's, one
+ * package's and one kind or agent, with and without the kinds it reaches. */
+const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
+  { scope: "read:*", kinds: [] },
+  {
+    scope: "read:ada.example.com/*",
+    kinds: [
+      labelled("ada.example.com/people/person", "Person", "People"),
+      labelled("ada.example.com/tasks/project", "Project", "Projects"),
+      { identity: "ada.example.com/tasks/task" },
+    ],
+  },
+  { scope: "read:ada.example.com/notes/*", kinds: [] },
+  {
+    scope: `read:${APPLEHEALTH}/account`,
+    kinds: [
+      labelled(`${APPLEHEALTH}/account`, "Account", "Accounts", "internal"),
+    ],
+  },
+  { scope: "read:substrate.reamde.dev/llm/provider", kinds: [] },
+  {
+    scope: "read:ada.example.com/greek/*",
+    kinds: ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta"].map(
+      (n) => {
+        const word = n[0].toUpperCase() + n.slice(1)
+        return labelled(`ada.example.com/greek/${n}`, word, `${word}s`)
+      }
+    ),
+  },
+  { scope: "write:*", kinds: [] },
+  {
+    scope: `write:${APPLE}/*`,
+    kinds: [
+      labelled(
+        `${APPLE}/addressbook`,
+        "Address book",
+        "Address books",
+        "supporting"
+      ),
+      labelled(`${APPLE}/contact`, "Contact", "Contacts"),
+      labelled(`${APPLE}/event`, "Event", "Events"),
+      labelled(`${APPLE}/reminder`, "Reminder", "Reminders"),
+      labelled(`${APPLE}/visit`, "Visit", "Visits"),
+    ],
+  },
+  { scope: "write:ada.example.com/notes/note", kinds: [] },
+  { scope: "agents:*", kinds: [] },
+  { scope: "agents:b.example.com/*", kinds: [] },
+  { scope: "agents:ada.example.com/llm/*", kinds: [] },
+  { scope: "agents:ada.example.com/llm/substrateEditor", kinds: [] },
+  { scope: "decide:*", kinds: [] },
+  { scope: "decide:b.example.com/x/*", kinds: [] },
+  { scope: "decide:ada.example.com/llm/substrateEditor", kinds: [] },
+  { scope: "webhook:applehealth-webhook", kinds: [], package: APPLEHEALTH },
+  { scope: "webhook:applehealth-webhook", kinds: [] },
+]
+
+/** A case's sentence, from the functions the approval page uses: a glob is
+ * a pattern that ends in `*`, and a `webhook:` scope names its package by
+ * the display name of the id's last segment. */
+function sentenceOf(c: Omit<SentenceCase, "sentence">): string {
+  const { verb, pattern } = scopeWords(c.scope)
+  if (!verb) throw new Error(`${c.scope} names no verb`)
+  if (verb === "webhook")
+    return webhookSentence(
+      pattern,
+      c.package ? packageName(c.package) : undefined
+    )
+  return scopeSentence({
+    verb,
+    pattern,
+    glob: pattern === "*" || pattern.endsWith("/*"),
+    kinds: c.kinds,
+    agents: [],
+  })
+}
+
+describe("the sentence fixture", () => {
+  // SubstrateKit's tests read the same file, so a scope reads the same on
+  // the approval page and in an app. `vitest run -u` writes it again.
+  it("is what the approval page says for every verb and pattern shape", async () => {
+    const cases: SentenceCase[] = SENTENCE_CASES.map((c) => ({
+      scope: c.scope,
+      kinds: c.kinds,
+      ...(c.package ? { package: c.package } : {}),
+      sentence: sentenceOf(c),
+    }))
+    await expect(`${JSON.stringify(cases, null, 2)}\n`).toMatchFileSnapshot(
+      "./app-scopes.fixture.json"
     )
   })
 })

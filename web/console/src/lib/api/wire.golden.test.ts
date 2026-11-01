@@ -67,6 +67,7 @@ import type {
   AuthorizationAnswer,
   AuthorizationApp,
   AuthorizationApproval,
+  AuthorizationBlock,
   AuthorizationCheck,
   AuthorizationCheckResult,
   AuthorizationCheckScopes,
@@ -598,7 +599,6 @@ const authorizationRequest: Shape<AuthorizationRequest> = {
   planHash: false,
   previous: false,
   state: true,
-  progress: false,
   failure: false,
   next: false,
 }
@@ -628,6 +628,7 @@ const authorizationScope: Shape<AuthorizationScope> = {
   glob: true,
   kinds: true,
   agents: true,
+  allowed: false,
 }
 
 const authorizationKind: Shape<AuthorizationKind> = {
@@ -651,21 +652,26 @@ const authorizationDetail: Shape<AuthorizationDetail> = {
 const authorizationSetup: Shape<AuthorizationSetup> = {
   type: true,
   action: true,
-  problem: false,
-  fix: false,
+  blocked: false,
+  progress: false,
   package: false,
   account: false,
   webhook: false,
 }
 
+const authorizationBlock: Shape<AuthorizationBlock> = {
+  reason: true,
+  problem: true,
+  fix: false,
+}
+
 const authorizationPackage: Shape<AuthorizationPackage> = {
   id: true,
-  name: false,
   description: false,
   tier: false,
   required: true,
-  held: true,
-  shipped: true,
+  held: false,
+  shipped: false,
   requires: false,
   kinds: false,
   functions: false,
@@ -674,10 +680,14 @@ const authorizationPackage: Shape<AuthorizationPackage> = {
 
 const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
   id: true,
-  name: false,
+  description: false,
   action: true,
-  held: true,
-  shipped: true,
+  blocked: false,
+  held: false,
+  shipped: false,
+  kinds: false,
+  functions: false,
+  triggers: false,
 }
 
 const authorizationFunction: Shape<AuthorizationFunction> = {
@@ -702,8 +712,8 @@ const authorizationAccount: Shape<AuthorizationAccount> = {
 const authorizationWebhookPlan: Shape<AuthorizationWebhookPlan> = {
   trigger: true,
   package: false,
-  enabled: true,
-  keyed: true,
+  enabled: false,
+  keyed: false,
 }
 
 const authorizationPrevious: Shape<AuthorizationPrevious> = {
@@ -713,13 +723,13 @@ const authorizationPrevious: Shape<AuthorizationPrevious> = {
 }
 
 const authorizationFailure: Shape<AuthorizationFailure> = {
-  row: true,
+  row: false,
   message: true,
 }
 
 const authorizationCheck: Shape<AuthorizationCheck> = {
   scope: true,
-  authorization_details: true,
+  details: true,
 }
 
 const authorizationCheckResult: Shape<AuthorizationCheckResult> = {
@@ -741,6 +751,7 @@ const authorizationApproval: Shape<AuthorizationApproval> = {
 const authorizationAnswer: Shape<AuthorizationAnswer> = {
   redirect: false,
   state: false,
+  setup: false,
 }
 
 const mintedToken: Shape<MintedToken> = {
@@ -1025,6 +1036,7 @@ const triggerFailure: Shape<TriggerFailure> = {
   parkedAt: true,
   stream: false,
   running: false,
+  pending: false,
 }
 const syncStatus: Shape<SyncStatus> = {
   kind: true,
@@ -1171,6 +1183,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationKind: authorizationKind,
   AuthorizationDetail: authorizationDetail,
   AuthorizationSetup: authorizationSetup,
+  AuthorizationBlock: authorizationBlock,
   AuthorizationPackage: authorizationPackage,
   AuthorizationPackageStep: authorizationPackageStep,
   AuthorizationFunction: authorizationFunction,

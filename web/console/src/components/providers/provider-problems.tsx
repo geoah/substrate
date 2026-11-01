@@ -198,8 +198,10 @@ function RetryParkedButton({ bundleId }: { bundleId: string }) {
           ...triggerParkedQueryOptions(t.id),
           staleTime: 0,
         })
-        // A running row answers conflict: it is still being delivered.
-        for (const f of failures.filter((f) => !f.running)) {
+        // A running row answers conflict, and a pending one is a webhook
+        // delivery the door accepted that is still filing: neither is a
+        // failure to try again.
+        for (const f of failures.filter((f) => !f.running && !f.pending)) {
           await retryParked(t.id, f.id)
           retried++
         }

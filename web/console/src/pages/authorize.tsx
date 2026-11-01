@@ -19,7 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BoxesIcon, ChevronRightIcon } from "lucide-react"
 
 import { Fact, Problem, Warning } from "@/components/authorize/parts"
-import { GrantedRow, ScopeRow } from "@/components/authorize/scope-row"
+import { ScopeRow } from "@/components/authorize/scope-row"
 import { SetupRow } from "@/components/authorize/setup-row"
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { CopyButton } from "@/components/identity/copy-button"
@@ -58,22 +58,21 @@ import {
   type AuthorizationRequest,
   type AuthorizationSetup,
 } from "@/lib/api/types"
-import { webhookSentence } from "@/lib/app-scopes"
 import {
   asSentence,
+  blockedWords,
   dayWords,
+  failureWords,
+  foldRequest,
   lifetimeEnd,
-  needsAction,
-  ownerName,
   planChanges,
   progressWords,
   reauthorizationHeading,
-  setupTitle,
-  shownProgress,
-  splitByPrevious,
-  stillHeld,
+  webhookTriggers,
+  type SetupLine,
 } from "@/lib/app-setup"
 import { relativeTime, shortDateTime } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { authorizeRoute } from "@/router"
 
 type Verdict = "approve" | "deny"
@@ -82,7 +81,7 @@ type Verdict = "approve" | "deny"
  * or a plan that moved under the page and wants another look. */
 type Outcome =
   | { kind: "go"; to: string }
-  | { kind: "setting-up"; ran: AuthorizationSetup[] }
+  | { kind: "setting-up"; rows?: AuthorizationSetup[] }
   | {
       kind: "moved"
       before: AuthorizationSetup[]
@@ -90,11 +89,17 @@ type Outcome =
     }
 
 /** The page's frame: the doors' centred column, wider, since full URLs and
- * kind references wrap rather than truncate. */
-function Door({ children }: { children: ReactNode }) {
+ * kind references wrap rather than truncate, and wider again on a desktop
+ * for the technical view's identifiers. */
+function Door({ wide, children }: { wide: boolean; children: ReactNode }) {
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-background p-6">
-      <div className="flex w-full max-w-xl flex-col gap-6">
+      <div
+        className={cn(
+          "flex w-full max-w-xl flex-col gap-6",
+          wide && "lg:max-w-3xl"
+        )}
+      >
         <div className="flex items-center justify-center gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <BoxesIcon className="size-4" />
@@ -166,6 +171,9 @@ function isWebAddress(value: string | undefined): value is string {
 const SETTING_UP =
   "Setting up on your server. Closing this page does not stop it."
 
+const CONTINUES =
+  "Setting up continues even if you close this page. What it sets up stays if it stops part way or you later revoke the app."
+
 const NOT_A_WEB_PAGE =
   "The server answered with an address that is not a web page, so the console did not follow it."
 
@@ -199,7 +207,8 @@ function AccessWarning({ request }: { request: AuthorizationRequest }) {
 
 /** Everything the page showed before it had an everyday view: who claims
  * what, where the code goes and the repository, each with its warning, and
- * the access the app holds, or held until it ended. */
+ * the access the app holds, or held until it ended; the header says when it
+ * was approved. */
 function AppFacts({
   request,
   live,
@@ -277,16 +286,6 @@ function AppFacts({
               </li>
             ))}
           </ul>
-          <p
-            className="text-xs text-muted-foreground"
-            title={shortDateTime(request.previous.approvedAt)}
-          >
-            Approved {relativeTime(request.previous.approvedAt)};{" "}
-            {request.previous.expiresAt
-              ? `${live ? "ends" : "ended"} ${shortDateTime(request.previous.expiresAt)}`
-              : "lasts until you revoke it"}
-            .
-          </p>
         </Fact>
       )}
     </>
@@ -335,7 +334,7 @@ function Approval({
   /** Read the request again; the answer is the newest the page holds. */
   reread: () => Promise<AuthorizationRequest | undefined>
   /** The approval was taken and its set up runs in the background. */
-  onSettingUp: () => void
+  onSettingUp: (rows?: AuthorizationSetup[]) => void
   /** The latest read of the request failed, while the page still shows an
    * earlier one. */
   readError: unknown
@@ -353,51 +352,10 @@ function Approval({
     .filter((s) => !unchecked.has(s.scope))
     .map((s) => s.scope)
 
-  // The rows this page's approvals set out to run. The server plans again
-  // on every read and a row that landed reads `none`, so these stay where the
-  // owner saw them, with their progress, rather than folding away as in
-  // place.
-  const [ran, setRan] = useState<ReadonlySet<number>>(() => new Set())
-
-  const setup = request.setup
-  const rows = setup.map((row, index) => ({ row, index }))
-  // Progress with no run of this page's behind it is another tab's: which
-  // of its rows were in place before cannot be told, so none fold.
-  const othersRun = request.progress !== undefined && ran.size === 0
-  const inRun = (index: number) => ran.has(index) || othersRun
-  const toDo = rows.filter((r) => needsAction(r.row.action) || ran.has(r.index))
-  const blocked = setup.some((r) => r.action === "blocked")
-  const previous = request.previous
-  const reauth = previous !== undefined
-  // Only access the app still holds folds away as already allowed; a token
-  // that ended holds nothing, so everything is asked for in full.
-  const live = previous !== undefined && stillHeld(previous)
-  const split = splitByPrevious(request.scopes, previous)
-  const fresh = live ? split.fresh : request.scopes
-  const allowed = live ? split.allowed : []
-  const held = new Set(previous?.scopes)
-  const webhooks = setup.flatMap((r) => (r.webhook ? [r.webhook] : []))
-  const newGrants = webhooks.filter((w) => !held.has(`webhook:${w.trigger}`))
-  const shownGrants = live ? newGrants : webhooks
-  const oldGrants = live
-    ? webhooks.filter((w) => held.has(`webhook:${w.trigger}`))
-    : []
-  const changedSetup = rows.filter(
-    (r) => r.row.action !== "none" || inRun(r.index)
-  )
-  const shownSetup = live ? changedSetup : rows
-  const foldedSetup = live
-    ? rows.filter((r) => r.row.action === "none" && !inRun(r.index))
-    : []
-  const folded = allowed.length + oldGrants.length + foldedSetup.length
-  const newAccess = split.fresh.length + newGrants.length
-  // Talking to an agent writes the app's messages, and deciding writes the
-  // decision, both under the app's name; what a setup writes, and what a
-  // delivery's function writes, set off the same automations.
-  const writes =
-    request.scopes.some((s) => s.verb !== "read") ||
-    toDo.length > 0 ||
-    webhooks.length > 0
+  const fold = foldRequest(request)
+  const { previous } = request
+  const webhooks = webhookTriggers(request.setup)
+  const blocked = fold.blocks.length > 0
 
   const settingUp = request.state === "setting-up"
   const approved = request.state === "approved"
@@ -420,7 +378,7 @@ function Approval({
       try {
         const reply = await approveAuthorization(id, input.approval)
         if (!reply.redirect && reply.state === "setting-up")
-          return { kind: "setting-up", ran: before }
+          return { kind: "setting-up", rows: reply.setup }
         return { kind: "go", to: followable(reply.redirect) }
       } catch (error) {
         // A 409 is a request that moved: its plan changed, or another answer
@@ -439,16 +397,8 @@ function Approval({
     onMutate: () => setMoved(null),
     onSuccess: (outcome) => {
       if (outcome.kind === "go") window.location.assign(outcome.to)
-      else if (outcome.kind === "setting-up") {
-        setRan((prev) => {
-          const next = new Set(prev)
-          outcome.ran.forEach((r, i) => {
-            if (needsAction(r.action)) next.add(i)
-          })
-          return next
-        })
-        onSettingUp()
-      } else if (outcome.fresh.state === "pending")
+      else if (outcome.kind === "setting-up") onSettingUp(outcome.rows)
+      else if (outcome.fresh.state === "pending")
         setMoved(planChanges(outcome.before, outcome.fresh.setup))
     },
   })
@@ -461,17 +411,10 @@ function Approval({
   const settled = answer.isPending || leaving || gone || settingUp || approved
   const pendingVerdict = answer.isPending ? answer.variables.verdict : undefined
   const failure = request.state === "pending" ? request.failure : undefined
-  const failedRow = failure ? setup[failure.row] : undefined
-  const steps = settingUp
-    ? progressWords(
-        setup,
-        request.progress,
-        ran.size > 0 ? [...ran].sort((a, b) => a - b) : rows.map((r) => r.index)
-      )
-    : undefined
+  const steps = settingUp ? progressWords(request.setup) : undefined
   const approveLabel = failure
     ? "Try again"
-    : toDo.length > 0
+    : fold.toDo > 0
       ? "Approve and set up"
       : "Approve"
 
@@ -506,27 +449,12 @@ function Approval({
       onChange={(checked) => toggle(s.scope, checked)}
     />
   )
-  const grantRow = (w: (typeof webhooks)[number]) => (
-    <GrantedRow
-      key={w.trigger}
-      sentence={webhookSentence(
-        w.trigger,
-        w.package ? ownerName(setup, w.package) : undefined
-      )}
-      scope={`webhook:${w.trigger}`}
-      technical={technical}
-    />
-  )
-  const setupRow = ({ row, index }: (typeof rows)[number]) => (
+  const setupRow = ({ row, index, grantHeld }: SetupLine) => (
     <SetupRow
       key={index}
       row={row}
-      rows={setup}
-      progress={shownProgress(
-        request.state,
-        row.action,
-        request.progress?.[index]
-      )}
+      webhooks={webhooks}
+      grantHeld={grantHeld}
       failure={failure?.row === index ? failure.message : undefined}
       technical={technical}
     />
@@ -537,17 +465,20 @@ function Approval({
     <Card>
       <CardHeader className="gap-1.5">
         <p className="text-xs text-muted-foreground">
-          An app wants to connect to{" "}
+          {fold.reauth
+            ? "An app you approved asks "
+            : "An app wants to connect to "}
           <span className="[overflow-wrap:anywhere] text-foreground">
             {request.repository}
           </span>
+          {fold.reauth && " again"}
         </p>
         <h1 className="font-heading text-xl leading-snug font-semibold [overflow-wrap:anywhere]">
-          {reauth
-            ? reauthorizationHeading(newAccess, changedSetup.length)
+          {fold.reauth
+            ? reauthorizationHeading(fold.newAccess, fold.toDo)
             : appTitle}
         </h1>
-        {reauth && (
+        {fold.reauth && (
           <p className="font-medium [overflow-wrap:anywhere]">{appTitle}</p>
         )}
         {app.name && (
@@ -568,52 +499,44 @@ function Approval({
         )}
         {previous && (
           <p className="text-xs text-muted-foreground">
-            {previousWords(previous, live)}
+            {previousWords(previous, fold.live)}
           </p>
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         {technical ? (
-          <AppFacts request={request} live={live} />
+          <AppFacts request={request} live={fold.live} />
         ) : (
           <AccessWarning request={request} />
         )}
 
-        {live && newAccess + changedSetup.length === 0 && (
+        {fold.live && fold.newAccess + fold.toDo === 0 && (
           <p>
             It asks for nothing new: the access you approved before, for another
             stretch.
           </p>
         )}
 
-        {fresh.length > 0 && (
+        {fold.fresh.length > 0 && (
           <Fact label="It will be able to">
             <p className="text-xs text-muted-foreground">
               Uncheck anything you don’t want to allow.
             </p>
             <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
-              {fresh.map(scopeRow)}
+              {fold.fresh.map(scopeRow)}
             </ul>
           </Fact>
         )}
 
-        {shownGrants.length > 0 && (
-          <Fact label="It will also, because it sets these up">
-            <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
-              {shownGrants.map(grantRow)}
-            </ul>
-          </Fact>
-        )}
-
-        {shownSetup.length > 0 && (
+        {fold.setup.length > 0 && (
           <Fact label="It will set up on your server">
             <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
-              {shownSetup.map(setupRow)}
+              {fold.setup.map(setupRow)}
             </ul>
           </Fact>
         )}
 
-        {folded > 0 && (
+        {fold.allowed.length + fold.folded.length > 0 && (
           <section aria-label="Already allowed">
             <Collapsible className="flex flex-col gap-2">
               <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -621,20 +544,19 @@ function Approval({
                   aria-hidden
                   className="size-3 transition-transform group-data-[panel-open]:rotate-90"
                 />
-                Already allowed ({folded})
+                Already allowed ({fold.allowed.length + fold.folded.length})
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
-                  {allowed.map(scopeRow)}
-                  {oldGrants.map(grantRow)}
-                  {foldedSetup.map(setupRow)}
+                  {fold.allowed.map(scopeRow)}
+                  {fold.folded.map(setupRow)}
                 </ul>
               </CollapsibleContent>
             </Collapsible>
           </section>
         )}
 
-        {writes &&
+        {fold.writes &&
           (technical ? (
             <Fact label="Its changes appear as">
               <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
@@ -650,10 +572,8 @@ function Approval({
             <AutomationWarning />
           ))}
 
-        {toDo.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            If you stop part way, what was installed stays.
-          </p>
+        {fold.toDo > 0 && request.state === "pending" && (
+          <p className="text-xs text-muted-foreground">{CONTINUES}</p>
         )}
 
         {technical && request.details.length > 0 && (
@@ -681,21 +601,11 @@ function Approval({
 
         <Separator />
 
+        {/* A failure's message sits under the row it stopped at; one that
+            stopped at no row has nowhere else to say it. */}
         {failure && (
-          <Problem
-            title={
-              failedRow
-                ? "Setting up stopped part way"
-                : "Approving didn’t finish"
-            }
-          >
-            {failedRow && <p>Stopped at: {setupTitle(failedRow, setup)}</p>}
-            <p>{asSentence(failure.message)}</p>
-            {setup.some((r) => needsAction(r.action)) && (
-              <p>
-                What was set up before it stays. Try again to finish the rest.
-              </p>
-            )}
+          <Problem title={failureWords(fold.failedRow)}>
+            {!fold.failedRow && asSentence(failure.message)}
           </Problem>
         )}
         {moved && (
@@ -781,18 +691,15 @@ function Approval({
           )}
           {blocked && !settled && (
             <div className="flex flex-wrap items-center justify-end gap-2 text-right text-xs text-muted-foreground">
-              <span>
-                Something it needs can’t be set up yet. Fix it, then check
-                again, or deny the request.
-              </span>
+              <span>{blockedWords(fold.blocks)}</span>
               <Button variant="outline" size="xs" onClick={() => void reread()}>
                 Check again
               </Button>
             </div>
           )}
-          {reauth && !settled && (
+          {fold.reauth && !settled && (
             <p className="text-right text-xs text-muted-foreground">
-              {live
+              {fold.live
                 ? "If you deny, the access you approved before keeps working."
                 : "Its earlier access has ended; denying leaves it without access."}
             </p>
@@ -835,11 +742,12 @@ function AutomationWarning() {
 function AuthorizeDoor() {
   const { request: id } = authorizeRoute.useParams()
   const client = useQueryClient()
+  const [technical] = useTechnicalDetails()
   const queryKey = ["authorization", id]
-  // Read once, and again every second while a set up runs: a refetch after
-  // an answer would only find the request gone. A dropped connection or a
-  // busy server is still retried, the console's default for a read; a 404
-  // never is.
+  // Read once, right after an approval whose set up runs, and every second
+  // while it runs: a refetch after any other answer would only find the
+  // request gone. A dropped connection or a busy server is still retried,
+  // the console's default for a read; a 404 never is.
   const authorization = useQuery({
     queryKey,
     queryFn: ({ signal }) => getAuthorization(id, signal),
@@ -853,13 +761,17 @@ function AuthorizeDoor() {
   })
 
   return (
-    <Door>
+    <Door wide={technical}>
       {authorization.data ? (
         <Approval
           id={id}
           request={authorization.data}
           reread={async () => (await authorization.refetch()).data}
-          onSettingUp={() =>
+          onSettingUp={(rows) => {
+            // The answer carries the rows the server runs, each waiting; the
+            // read right after it brings their progress. It joins a read in
+            // flight rather than cancel it, since the read that hands over
+            // the code is the request's last.
             client.setQueryData<AuthorizationRequest>(
               queryKey,
               (old) =>
@@ -867,19 +779,11 @@ function AuthorizeDoor() {
                   ...old,
                   state: "setting-up",
                   failure: undefined,
-                  // A retry runs the stopped row again; until the next read
-                  // says how far it got, it waits. A first run starts every
-                  // row that needs work waiting, as the server does.
-                  progress:
-                    old.progress?.map((p) =>
-                      p === "failed" ? "waiting" : p
-                    ) ??
-                    old.setup.map((r) =>
-                      r.action === "none" ? "done" : "waiting"
-                    ),
+                  setup: rows ?? old.setup,
                 }
             )
-          }
+            void authorization.refetch({ cancelRefetch: false })
+          }}
           readError={authorization.isError ? authorization.error : undefined}
         />
       ) : authorization.isPending ? (
