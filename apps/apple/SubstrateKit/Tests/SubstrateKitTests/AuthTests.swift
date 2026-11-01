@@ -411,6 +411,75 @@ final class MemoryStorage: SessionStorage, @unchecked Sendable {
     }
 }
 
+extension Retention {
+    /// A sign-out that waits on the server to revoke runs before a
+    /// replacement that starts meanwhile, never across it: the session the
+    /// replacement saves is the one in use when both are done.
+    @Test func aSignOutWaitingOnTheServerNeverClearsTheSessionSavedAfterIt() async throws {
+        let store = SessionStore(service: "dev.reamde.substrate.kit.tests.overlap",
+                                 storage: MemoryStorage(refusing: ["session.revocations"]))
+        let old = app("sub_app_old"), new = app("sub_app_new")
+        try store.save(old)
+        let paused = PausedTransport()
+        let signingOut = Task { try await store.signOut(old, transport: paused) }
+        await paused.started()
+        let ok = StubTransport()
+        ok.on("POST", "/oauth/revoke", json: "")
+        let replacing = Task { try await store.save(new, replacing: old, transport: ok) }
+        // Room for the replacement to run ahead of the sign-out, as it would
+        // if nothing held it back: it revokes the old token through `ok`.
+        for _ in 0 ..< 50 where revoked(ok).isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await paused.release()
+        try await signingOut.value
+        try await replacing.value
+        #expect(store.load() == new)
+    }
+
+    /// A replacement whose save the Keychain refuses and whose revocation
+    /// the server does not answer is kept for revocation, never dropped.
+    @Test func aReplacementNeitherSavedNorRevokedIsKeptForRevocation() async throws {
+        let storage = MemoryStorage(refusing: ["session"])
+        let store = SessionStore(service: "dev.reamde.substrate.kit.tests.unsaved", storage: storage)
+        let old = app("sub_app_old"), new = app("sub_app_new")
+        try storage.writeUnchecked(JSONEncoder().encode(old), account: "session")
+        let busy = StubTransport()
+        busy.on("POST", "/oauth/revoke", status: 503, json: "")
+        await #expect(throws: SessionStore.NotSaved.self) { try await store.save(new, replacing: old, transport: busy) }
+        #expect(store.load() == old)
+        #expect(store.pendingRevocations().contains(new))
+    }
+}
+
+/// A transport that holds its first request until released, as a server
+/// slow to answer a revocation does.
+actor PausedTransport: HTTPTransport {
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var holding: CheckedContinuation<Void, Never>?
+    private var begun = false
+
+    func started() async {
+        if begun { return }
+        await withCheckedContinuation { waiting = $0 }
+    }
+
+    func release() {
+        holding?.resume()
+        holding = nil
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        await withCheckedContinuation { continuation in
+            holding = continuation
+            begun = true
+            waiting?.resume()
+            waiting = nil
+        }
+        return (Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
 extension MemoryStorage {
     /// An item as an earlier run left it, whatever this storage refuses now.
     func writeUnchecked(_ data: Data, account: String) {

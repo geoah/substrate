@@ -158,20 +158,22 @@ public struct SessionStore: Sendable {
     public func save(_ session: Session, replacing old: Session?,
                      transport: any HTTPTransport = URLSessionTransport.shared) async throws
     {
-        if let old {
+        try await SessionTransitions.shared.run(key) {
+            if let old {
+                do {
+                    try await retire(old, transport: transport)
+                } catch {
+                    await discard(session, transport: transport)
+                    throw error
+                }
+            }
             do {
-                try await retire(old, transport: transport)
+                try save(session)
             } catch {
-                try? await session.revoke(transport: transport)
+                if let old { revoked(old) }
+                await discard(session, transport: transport)
                 throw error
             }
-        }
-        do {
-            try save(session)
-        } catch {
-            if let old { revoked(old) }
-            try? await session.revoke(transport: transport)
-            throw error
         }
     }
 
@@ -182,9 +184,28 @@ public struct SessionStore: Sendable {
     /// revoked stays signed in (`NotRetired`), since nothing else would hold
     /// its token.
     public func signOut(_ session: Session, transport: any HTTPTransport = URLSessionTransport.shared) async throws {
-        try await retire(session, transport: transport)
-        clear()
+        try await SessionTransitions.shared.run(key) {
+            try await retire(session, transport: transport)
+            // Only the session this sign-out retired: one saved in its
+            // place is another transition's, kept or revoked by it.
+            if case .found(let stored) = read(), stored.secret != session.secret { return }
+            clear()
+        }
     }
+
+    /// A token this device never came to use, such as a replacement whose
+    /// save failed: kept for revocation before it is revoked, so a server
+    /// that does not answer leaves it for `revokePending` rather than
+    /// nowhere.
+    private func discard(_ session: Session, transport: any HTTPTransport) async {
+        let kept = (try? keepForRevocation(session)) != nil
+        guard (try? await session.revoke(transport: transport)) != nil else { return }
+        if kept { revoked(session) }
+    }
+
+    /// What the store's transitions are serialised on: one item, wherever
+    /// the store value was made.
+    private var key: String { "\(service)|\(accessGroup ?? "")|\(account)" }
 
     /// Kept for revocation, or else revoked now: never neither.
     private func retire(_ session: Session, transport: any HTTPTransport) async throws {
@@ -290,4 +311,23 @@ public protocol SessionStorage: Sendable {
     func read(account: String) -> SessionStore.Item
     func write(_ data: Data, account: String) throws
     func delete(account: String)
+}
+
+/// Runs one store's session transitions one after another. A sign-out that
+/// waits on the server to revoke would otherwise clear a session a
+/// replacement saved meanwhile.
+actor SessionTransitions {
+    static let shared = SessionTransitions()
+
+    private var tails: [String: Task<Void, Never>] = [:]
+
+    func run<T: Sendable>(_ key: String, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        let previous = tails[key]
+        let task = Task<T, Error> {
+            await previous?.value
+            return try await operation()
+        }
+        tails[key] = Task { _ = try? await task.value }
+        return try await task.value
+    }
 }

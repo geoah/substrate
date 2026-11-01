@@ -506,6 +506,11 @@ final class TransportBox: @unchecked Sendable {
         #expect(!released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s",
                                                       clientID: "https://other.example.com/client.json", scopes: ["read:*"])))
         #expect(!released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t")))
+        // An approval that has ended folds nothing on the page.
+        let ended = Session(server: server, repository: "ada.example.com", secret: "s", clientID: released.clientID,
+                            scopes: ["read:*"], expiresAt: Date(timeIntervalSince1970: 1_000))
+        #expect(!released.showsAlreadyAllowed(ended, at: Date(timeIntervalSince1970: 2_000)))
+        #expect(released.showsAlreadyAllowed(ended, at: Date(timeIntervalSince1970: 500)))
         // A request that sets nothing up has no access that comes with it.
         var scopesOnly = released
         scopesOnly.details = []

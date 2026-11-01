@@ -208,6 +208,8 @@ client_url() {
 	host="${host%%/*}"
 	host="${host%%:*}"
 	host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+	# A fully qualified spelling (`host.`) names the same host.
+	host="${host%.}"
 	if shared_host "$host"; then
 		echo "apple: $host is a shared endpoint, where anyone may publish a client document the approval page would head with the same name; set SUBSTRATE_APPLE_CLIENT_URL to a folder on a host of your own" >&2
 		return 1

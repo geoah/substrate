@@ -86,10 +86,11 @@ public struct AppManifest: Sendable {
     public var isLocal: Bool { URL(string: clientID)?.scheme?.lowercased() != "https" }
 
     /// Whether the approval page lists what `session` holds under Already
-    /// allowed: an app session, approved for this released client id (or
-    /// kept by a build that named none).
-    public func showsAlreadyAllowed(_ session: Session) -> Bool {
-        !isLocal && session.isApp && (session.clientID.map { $0 == clientID } ?? true)
+    /// allowed: an app session whose access has not ended, approved for this
+    /// released client id (or kept by a build that named none). The page
+    /// folds nothing an ended approval held.
+    public func showsAlreadyAllowed(_ session: Session, at now: Date = Date()) -> Bool {
+        !isLocal && session.isApp && !session.hasEnded(at: now) && (session.clientID.map { $0 == clientID } ?? true)
     }
 
     /// Whether a server sets up every detail the app sends. One that does not
