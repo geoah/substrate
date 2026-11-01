@@ -80,7 +80,7 @@ func putMemory(t *testing.T, ds *dataset, id, text string, props map[string]any)
 
 func chatPinned(t *testing.T, ds *dataset, agent, thread, text string) string {
 	t.Helper()
-	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, pinPackage+"/"+agent, thread, text, nil)
+	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, pinPackage+"/"+agent, substrate.ChatInput{Thread: thread, Message: text}, nil)
 	if err != nil {
 		t.Fatalf("chat %s: %v", agent, err)
 	}
