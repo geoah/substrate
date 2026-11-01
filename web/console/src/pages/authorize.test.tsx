@@ -352,7 +352,7 @@ describe("AuthorizePage", () => {
     const notes = screen.getAllByRole("note")
     expect(notes.map((n) => n.textContent)).toEqual([
       expect.stringMatching(
-        /A program on this computer receives the access.*Nothing confirms that program is notes\.example\.com/
+        /A program on this device receives the access.*Nothing confirms that program is notes\.example\.com/
       ),
       expect.stringContaining("Your automations run on its changes"),
     ])
@@ -425,7 +425,7 @@ describe("AuthorizePage", () => {
       within(sends).getByText("http://127.0.0.1:53021/oauth/callback")
     ).toBeTruthy()
     expect(within(sends).getByRole("note").textContent).toMatch(
-      /A program on this computer receives the access.*Nothing confirms that program is notes\.example\.com/
+      /A program on this device receives the access.*Nothing confirms that program is notes\.example\.com/
     )
 
     const repository = screen.getByRole("region", { name: "Repository" })
@@ -433,7 +433,7 @@ describe("AuthorizePage", () => {
 
     // No local-app warning for an app with a fetched document.
     expect(
-      screen.queryByText("This app says it runs on this computer")
+      screen.queryByText("This app says it runs on this device")
     ).toBeNull()
 
     const access = screen.getByRole("region", { name: "It will be able to" })
@@ -577,10 +577,10 @@ describe("AuthorizePage", () => {
       renderPage({ technical })
       await screen.findByRole("heading", {
         level: 1,
-        name: "An app on this computer",
+        name: "An app on this device",
       })
       expect(
-        screen.getByText("This app says it runs on this computer")
+        screen.getByText("This app says it runs on this device")
       ).toBeTruthy()
       expect(
         screen.getByText(/Approve only if you started it yourself/)
@@ -588,7 +588,7 @@ describe("AuthorizePage", () => {
       // The local-app warning already says it; the loopback one is not
       // repeated.
       expect(
-        screen.queryByText("A program on this computer receives the access")
+        screen.queryByText("A program on this device receives the access")
       ).toBeNull()
       // Its one scope reads, so nothing is said about what a write sets off.
       expect(

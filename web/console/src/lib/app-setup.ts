@@ -30,9 +30,13 @@ function packageWord(id: string): string {
   return id.slice(id.lastIndexOf("/") + 1)
 }
 
-/** A package by its catalog name, else by its own word. */
+/** A package by its catalog name, else by its own word in words: a catalog
+ * that names a package only by its word (`applehealth`) reads as the
+ * console's display name for it ("Apple Health"). */
 export function packageName(pkg: { id: string; name?: string }): string {
-  return pkg.name || packageDisplayName(packageWord(pkg.id))
+  const word = packageWord(pkg.id)
+  if (pkg.name && pkg.name !== word) return pkg.name
+  return packageDisplayName(word)
 }
 
 /** The catalog name of the package an account kind or a webhook belongs to:

@@ -168,12 +168,12 @@ function followable(value: string | undefined): string {
 }
 
 /** The one warning the everyday view gives about where the access goes: a
- * local app nothing can verify, or a program on this computer receiving it. */
+ * local app nothing can verify, or a program on this device receiving it. */
 function AccessWarning({ request }: { request: AuthorizationRequest }) {
   const { app, redirect } = request
   if (app.local) {
     return (
-      <Warning title="This app says it runs on this computer">
+      <Warning title="This app says it runs on this device">
         Nothing about it can be verified, not even its name or where it runs.
         Approve only if you started it yourself.
       </Warning>
@@ -181,7 +181,7 @@ function AccessWarning({ request }: { request: AuthorizationRequest }) {
   }
   if (redirect.loopback) {
     return (
-      <Warning title="A program on this computer receives the access">
+      <Warning title="A program on this device receives the access">
         Nothing confirms that program is {app.host}. Approve only if you started
         the app yourself.
       </Warning>
@@ -197,7 +197,7 @@ function AppFacts({ request }: { request: AuthorizationRequest }) {
   return (
     <>
       {app.local && (
-        <Warning title="This app says it runs on this computer">
+        <Warning title="This app says it runs on this device">
           Nothing about it can be verified, not even its name or where it runs.
           Approve only if you started it yourself.
         </Warning>
@@ -238,7 +238,7 @@ function AppFacts({ request }: { request: AuthorizationRequest }) {
           {request.redirect.uri}
         </p>
         {request.redirect.loopback && !app.local && (
-          <Warning title="A program on this computer receives the access">
+          <Warning title="A program on this device receives the access">
             Nothing confirms that program is {app.host}. Approve only if you
             started the app yourself.
           </Warning>
@@ -467,7 +467,7 @@ function Approval({
       technical={technical}
     />
   )
-  const appTitle = app.local ? "An app on this computer" : app.host
+  const appTitle = app.local ? "An app on this device" : app.host
 
   return (
     <Card>
@@ -792,10 +792,15 @@ function AuthorizeDoor() {
                   state: "setting-up",
                   failure: undefined,
                   // A retry runs the stopped row again; until the next read
-                  // says how far it got, it waits.
-                  progress: old.progress?.map((p) =>
-                    p === "failed" ? "waiting" : p
-                  ),
+                  // says how far it got, it waits. A first run starts every
+                  // row that needs work waiting, as the server does.
+                  progress:
+                    old.progress?.map((p) =>
+                      p === "failed" ? "waiting" : p
+                    ) ??
+                    old.setup.map((r) =>
+                      r.action === "none" ? "done" : "waiting"
+                    ),
                 }
             )
           }

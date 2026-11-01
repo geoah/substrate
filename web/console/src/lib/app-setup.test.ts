@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { AuthorizationScope, AuthorizationSetup } from "@/lib/api/types"
 
 import {
+  packageName,
   chainWords,
   codeWords,
   consolePath,
@@ -77,6 +78,16 @@ const ROWS = [HEALTH, ACCOUNT, WEBHOOK]
 describe("setupTitle", () => {
   it("says what approving does to each row, by the catalog's names", () => {
     expect(setupTitle(HEALTH, ROWS)).toBe("Install Apple Health")
+    // A catalog that names a package by its word alone reads in words.
+    expect(
+      packageName({
+        id: "providers.substrate.reamde.dev/applehealth",
+        name: "applehealth",
+      })
+    ).toBe("Apple Health")
+    expect(
+      packageName({ id: "substrate.reamde.dev/health", name: "health" })
+    ).toBe("Health")
     expect(setupTitle(ACCOUNT, ROWS)).toBe(
       "Create the Apple Health account “Ada's iPhone”"
     )
