@@ -129,8 +129,8 @@ public final class LoopbackReceiver: @unchecked Sendable {
         var query: [String: String] = [:]
         for item in components.queryItems ?? [] { query[item.name] = item.value ?? "" }
         write(client, status: "200 OK", body: query["error"] != nil
-            ? "Access was not granted. You can go back to \(appName)."
-            : "Signed in. You can go back to \(appName).")
+            ? "Access was not granted. You can close this tab and go back to \(appName)."
+            : "Signed in. You can close this tab and go back to \(appName).")
         close(client)
         finish(.success(query))
     }
