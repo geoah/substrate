@@ -239,7 +239,7 @@ release() {
 		--arg ipa "$ipa" --argjson ipaLength "$(stat -f %z "$stage/$ipa")" \
 		--arg ipaSum "$(shasum -a 256 "$stage/$ipa" | cut -d' ' -f1)" \
 		--arg rel "$rel" '{
-			version: $version, shortVersion: $short, build: $build, channel: $channel,
+			name: "Substrate Console", version: $version, shortVersion: $short, build: $build, channel: $channel,
 			commit: $commit, date: $date, bundleIdentifier: "dev.reamde.substrate.console",
 			macos: {path: $mac, length: $macLength, sha256: $macSum, minimumSystemVersion: "26.0",
 				edSignature: $macSig},

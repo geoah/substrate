@@ -25,7 +25,7 @@ struct Artifact: Codable {
 
 struct Release: Codable {
     /// The app's name, for the manifest and the page; absent is the console
-    /// app, "Substrate", whose feed predates the field.
+    /// app, "Substrate Console", whose feed predates the field.
     var name: String?
     var version: String
     var shortVersion: String
@@ -58,11 +58,11 @@ if args[2] != "-", let data = try? Data(contentsOf: URL(fileURLWithPath: args[2]
 index.releases.removeAll { $0.build == release.build }
 index.releases.append(release)
 index.releases.sort { $0.build.compare($1.build, options: .numeric) == .orderedDescending }
-let name = release.name ?? "Substrate"
+let name = release.name ?? "Substrate Console"
 // Another app's folder holds no Mac build, and its page says so.
 let hasMac = index.releases.contains { $0.macos != nil }
 let heading = hasMac ? "\(name) for iPhone, iPad and Mac" : "\(name) for iPhone and iPad"
-let blurb = name == "Substrate"
+let blurb = name == "Substrate Console"
     ? "The console in a native app that talks to a substrate's API. Installed builds update themselves from here."
     : "Installed builds offer each newer release themselves."
 
