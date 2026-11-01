@@ -207,8 +207,11 @@ type agentInvocation struct {
 }
 
 // agentTally is the root roll-up: one number answers "what did this chain
-// cost", so every loop on the chain adds to the same tally.
+// cost", so every loop on the chain adds to the same tally. mu guards every
+// field but spend: sub-agents that run concurrently charge it from their own
+// goroutines.
 type agentTally struct {
+	mu         sync.Mutex
 	prompt     int
 	completion int
 	cacheRead  int
@@ -229,11 +232,48 @@ type agentTally struct {
 }
 
 func (t *agentTally) effectsTotal() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	n := 0
 	for _, c := range t.effects {
 		n += c
 	}
 	return n
+}
+
+func (t *agentTally) addEffect(action string) {
+	t.mu.Lock()
+	t.effects[action]++
+	t.mu.Unlock()
+}
+
+func (t *agentTally) addChanges(entries []changeEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	t.mu.Lock()
+	t.changes = append(t.changes, entries...)
+	t.mu.Unlock()
+}
+
+// changesMark is where the entries a dispatch starting now will cause begin.
+func (t *agentTally) changesMark() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.changes)
+}
+
+func (t *agentTally) changesSince(mark int) []changeEntry {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.changes[mark:])
+}
+
+// usage is the chain's token and cost totals so far.
+func (t *agentTally) usage() (prompt, completion, cacheRead, cacheWrite int, cost float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.prompt, t.completion, t.cacheRead, t.cacheWrite, t.cost
 }
 
 // subagentWritesKinds caps the kinds a `subagentWrites` summary lists: the
@@ -574,17 +614,6 @@ type agentLoop struct {
 	// one tool call convert to two requests while a retried delivery
 	// reproduces both ids.
 	gateOrdinal int
-	// dispatchChanges collects the changelog entries the CURRENT tool dispatch
-	// committed (a mutate's writes, a propose's request row, a function tool's
-	// applied effects) — reset per call, stamped onto the tool's llm/message row
-	// as `changes`. Sub-agent dispatches deliberately collect nothing here:
-	// the child's own rows carry the child's writes.
-	dispatchChanges []changeEntry
-	// dispatchWrites is the CURRENT sub-agent dispatch's summary of what its
-	// child chain wrote, stamped onto the tool row as `subagentWrites`; nil on
-	// every other dispatch and on a sub-agent call whose child thread never
-	// opened.
-	dispatchWrites map[string]any
 
 	// rows are the thread's message rows this run replays from: those it
 	// loaded at open, plus any summary it wrote since (agentcompaction.go).
@@ -623,8 +652,14 @@ type agentLoop struct {
 	cacheRead  int
 	cacheWrite int
 	cost       float64
-	readCalls  int
-	readRows   int
+	// readCalls is spent in call order, before a `query` call launches.
+	// readRows is what finished `query` calls read, and readReserved what the
+	// ones still running may read: readMu guards both, because concurrent
+	// calls settle them from their own goroutines.
+	readCalls    int
+	readMu       sync.Mutex
+	readRows     int
+	readReserved int
 
 	// hub is in.hub: a detached chat turn's fan-out, nil on every other
 	// entry. partial is the current completion's streamed text, kept so a
@@ -898,60 +933,68 @@ loop:
 			Role: llm.RoleAssistant, Content: content, ToolCalls: calls,
 			ReasoningBlocks: res.ReasoningBlocks,
 		})
-		for _, tc := range calls {
-			var out string
-			var ok bool
-			l.dispatchChanges = nil
-			l.dispatchWrites = nil
-			// The tool row's ordinal, reserved before its events carry it.
-			toolTurn := l.takeTurn()
-			if l.toolCalls >= maxToolCalls {
-				// The v4 lesson: refuse with a synthetic result the model
-				// SEES, so it can land a final reply instead of a silent
-				// truncation. MaxTurns and the deadline still bound a model
-				// that ignores the signal.
-				out, ok = toolError(fmt.Sprintf("tool-call budget exhausted (max %d) — stop calling tools and write your final reply", l.ag.Budgets.MaxToolCalls)), false
-				if reason == "" {
-					reason = fmt.Sprintf("max tool calls reached (%d)", l.ag.Budgets.MaxToolCalls)
+		// Every row's ordinal is reserved in call order before anything
+		// dispatches, so the tool rows and their events read in the order the
+		// model asked, whatever finishes first.
+		batch := make([]*toolRun, len(calls))
+		for i, tc := range calls {
+			batch[i] = &toolRun{call: tc, turn: l.takeTurn()}
+		}
+		for _, span := range partitionCalls(l.concurrentSafe(calls)) {
+			run := batch[span[0]:span[1]]
+			// The budget is charged in call order before the run launches, so
+			// which calls it refuses never depends on which finished first.
+			for _, c := range run {
+				if l.toolCalls >= maxToolCalls {
+					// The v4 lesson: refuse with a synthetic result the model
+					// SEES, so it can land a final reply instead of a silent
+					// truncation. MaxTurns and the deadline still bound a model
+					// that ignores the signal.
+					c.out, c.ok = toolError(fmt.Sprintf("tool-call budget exhausted (max %d) — stop calling tools and write your final reply", l.ag.Budgets.MaxToolCalls)), false
+					c.refused = true
+					if reason == "" {
+						reason = fmt.Sprintf("max tool calls reached (%d)", l.ag.Budgets.MaxToolCalls)
+					}
+					continue
 				}
-			} else {
 				l.toolCalls++
-				l.toolEvent(substrate.AgentEventToolStarted, tc, toolTurn, nil, "")
-				out, ok = l.dispatch(lctx, tc)
+				c.seq = l.toolCalls
 			}
-			out = l.capToolResult(out)
-			l.toolEvent(substrate.AgentEventToolFinished, tc, toolTurn, &ok, out)
-			// `ok` is stored, not inferred: a replayed transcript otherwise has
-			// to sniff the failure envelope out of the payload, and a
-			// successful result carrying an `error` key would counterfeit it.
-			toolProps := map[string]any{
-				"role": "tool", "content": out, "toolCallId": tc.ID, "name": tc.Name, "ok": ok,
+			l.dispatchRun(lctx, run)
+			for _, c := range run {
+				// `ok` is stored, not inferred: a replayed transcript otherwise has
+				// to sniff the failure envelope out of the payload, and a
+				// successful result carrying an `error` key would counterfeit it.
+				toolProps := map[string]any{
+					"role": "tool", "content": c.out, "toolCallId": c.call.ID, "name": c.call.Name, "ok": c.ok,
+				}
+				if callable := l.byName[c.call.Name].callable(); callable != "" {
+					toolProps["callable"] = callable
+				}
+				// The dispatch's committed writes, as changelog addresses: what a
+				// reader resolves instead of parsing the payload. Only committed
+				// entries land here (inTx flushes the sink after commit), so a
+				// failed call stamps nothing. The same entries join the chain's
+				// tally before the row is written, so a caller's summary counts
+				// them even where this row fails to land.
+				l.in.tally.addChanges(c.changes)
+				if len(c.changes) > 0 {
+					toolProps["changes"] = changeProps(c.changes)
+				}
+				if c.writes != nil {
+					toolProps["subagentWrites"] = c.writes
+				}
+				wctx, done := l.writeContext(ctx)
+				err := l.putMessageAt(wctx, l.actor, c.turn, toolProps)
+				done()
+				if err != nil {
+					return nil, l.failWrite(ctx, err)
+				}
+				messages = append(messages, llm.Message{
+					Role: llm.RoleTool, ToolCallID: c.call.ID, ToolName: c.call.Name, Content: c.out,
+					Failed: !c.ok,
+				})
 			}
-			if callable := l.byName[tc.Name].callable(); callable != "" {
-				toolProps["callable"] = callable
-			}
-			// The dispatch's committed writes, as changelog addresses: what a
-			// reader resolves instead of parsing the payload. Only committed
-			// entries land here (inTx flushes the sink after commit), so a
-			// failed call stamps nothing. The same entries join the chain's
-			// tally before the row is written, so a caller's summary counts
-			// them even where this row fails to land.
-			l.in.tally.changes = append(l.in.tally.changes, l.dispatchChanges...)
-			if len(l.dispatchChanges) > 0 {
-				toolProps["changes"] = changeProps(l.dispatchChanges)
-			}
-			if l.dispatchWrites != nil {
-				toolProps["subagentWrites"] = l.dispatchWrites
-			}
-			wctx, done := l.writeContext(ctx)
-			err := l.putMessageAt(wctx, l.actor, toolTurn, toolProps)
-			done()
-			if err != nil {
-				return nil, l.failWrite(ctx, err)
-			}
-			messages = append(messages, llm.Message{
-				Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: out,
-			})
 		}
 		if stopped, why := l.stopReason(ctx); stopped {
 			status, reason = threadStopped, why
@@ -985,8 +1028,7 @@ loop:
 	// The result's tally is the ROOT roll-up when this loop is the root, its
 	// own spend when it is a sub-agent (the parent keeps rolling).
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
-		res.PromptTokens, res.CompletionTokens = l.in.tally.prompt, l.in.tally.completion
-		res.CostUSD = l.in.tally.cost
+		res.PromptTokens, res.CompletionTokens, _, _, res.CostUSD = l.in.tally.usage()
 		res.EffectsByAction = l.in.tally.effects
 	} else {
 		res.PromptTokens, res.CompletionTokens = l.prompt, l.completion
@@ -1211,11 +1253,14 @@ func (l *agentLoop) charge(usage *llm.Usage) {
 	l.cacheRead += usage.CacheReadTokens
 	l.cacheWrite += usage.CacheWriteTokens
 	l.cost += turnCost
-	l.in.tally.prompt += usage.PromptTokens
-	l.in.tally.completion += usage.CompletionTokens
-	l.in.tally.cacheRead += usage.CacheReadTokens
-	l.in.tally.cacheWrite += usage.CacheWriteTokens
-	l.in.tally.cost += turnCost
+	t := l.in.tally
+	t.mu.Lock()
+	t.prompt += usage.PromptTokens
+	t.completion += usage.CompletionTokens
+	t.cacheRead += usage.CacheReadTokens
+	t.cacheWrite += usage.CacheWriteTokens
+	t.cost += turnCost
+	t.mu.Unlock()
 	l.ds.spend.charge(l.in.tally.spend, turnCost)
 }
 
@@ -1537,8 +1582,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	prompt, completion, cost := l.prompt, l.completion, l.cost
 	cacheRead, cacheWrite := l.cacheRead, l.cacheWrite
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
-		prompt, completion, cost = l.in.tally.prompt, l.in.tally.completion, l.in.tally.cost
-		cacheRead, cacheWrite = l.in.tally.cacheRead, l.in.tally.cacheWrite
+		prompt, completion, cacheRead, cacheWrite, cost = l.in.tally.usage()
 	}
 	// What the row carries once this commits, for the root's spend: only a
 	// patch that committed puts the chain's cost on a row (spend.go).
@@ -1906,33 +1950,24 @@ func formatBytes(n int) string {
 	return strconv.Itoa(n) + " bytes"
 }
 
-// dispatch runs one tool call. A tool failure is a RESULT the model sees and
-// steers around, never a delivery failure — only the LLM transport itself
-// fails the loop.
-func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
-	tool, ok := l.byName[tc.Name]
-	if !ok {
-		return toolError("unknown tool: " + tc.Name), false
-	}
-	var args map[string]any
-	if s := strings.TrimSpace(tc.Arguments); s != "" {
-		if err := json.Unmarshal([]byte(s), &args); err != nil {
-			return toolError("arguments are not a JSON object: " + err.Error()), false
-		}
-	}
+// dispatch runs one tool call prepareCall left unsettled. A tool failure is
+// a RESULT the model sees and steers around, never a delivery failure — only
+// the LLM transport itself fails the loop.
+func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
+	tool, args := c.tool, c.args
 	switch {
 	case tool.builtin == vocabulary.AgentToolQuery:
-		return l.dispatchQuery(ctx, args)
+		return l.dispatchQuery(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolPropose:
-		return l.dispatchPropose(ctx, args)
+		return l.dispatchPropose(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolWrite:
-		return l.dispatchWrite(ctx, args)
+		return l.dispatchWrite(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolAsk:
-		return l.dispatchAsk(ctx, args)
+		return l.dispatchAsk(ctx, c, args)
 	case tool.sub != nil:
-		return l.dispatchSubAgent(ctx, tool.sub, args)
+		return l.dispatchSubAgent(ctx, c, tool.sub, args)
 	default:
-		return l.dispatchFunction(ctx, tool.fn, args)
+		return l.dispatchFunction(ctx, c, tool.fn, args)
 	}
 }
 
@@ -1946,29 +1981,18 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 // The loop owns the BUDGET; runQueryTool owns the reading. The split exists
 // because `substrate.reamde.dev/core/query` is also callable directly, where the
 // caller is a token that owns the whole repository and there is no loop to
-// account against.
-func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (string, bool) {
-	reads := l.ag.Reads
-	if reads == nil {
-		return toolError("query is not granted — the agent declares no reads"), false
-	}
-	if l.readCalls >= reads.Calls {
-		return toolError(fmt.Sprintf("read budget exhausted (%d calls)", reads.Calls)), false
-	}
-	l.readCalls++
-	remaining := reads.Rows - l.readRows
-	if remaining <= 0 {
-		return toolError(fmt.Sprintf("read budget exhausted (%d rows)", reads.Rows)), false
-	}
+// account against. The calls and the rows this call may spend were taken
+// before it launched (prepareCall).
+func (l *agentLoop) dispatchQuery(ctx context.Context, c *toolRun, args map[string]any) (string, bool) {
 	qctx, cancel, bound := l.toolContext(ctx, nil)
 	defer cancel()
-	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: reads.Kinds, rows: remaining, requireKinds: true}, args)
+	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: l.ag.Reads.Kinds, rows: c.readShare, requireKinds: true}, args)
+	l.settleRead(c, rows)
 	if late, timedOut := toolTimedOut(ctx, qctx, bound); timedOut {
 		// A read the timeout cut may still answer ok: a search whose rows
 		// failed to load skips them, so what it returned is not the answer.
 		return late, false
 	}
-	l.readRows += rows
 	return out, ok
 }
 
@@ -2495,7 +2519,7 @@ func rankedFilterArm(f substrate.Filter) string {
 // sees and never reaches the inbox. The check is kept HERE, ahead of the write,
 // only for that error: the write path runs the same normalizeDiff at admission
 // (admitRequestDiff), so every other door is held to it too.
-func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (string, bool) {
+func (l *agentLoop) dispatchPropose(ctx context.Context, c *toolRun, args map[string]any) (string, bool) {
 	if !l.emitAllows(vocabulary.KindRecordPatchRequest) {
 		return toolError(vocabulary.KindRecordPatchRequest + " is not in the agent's effective emit allowlist"), false
 	}
@@ -2600,7 +2624,7 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 	props[msgRelThread] = l.threadID
 	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
-		t.changeSink = &l.dispatchChanges
+		t.changeSink = &c.changes
 		_, err := t.put(substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchRequest, ID: id, Properties: props,
 		})
@@ -2609,7 +2633,7 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	l.in.tally.effects["propose"]++
+	l.in.tally.addEffect("propose")
 	// A voluntary proposal a judge-bearing GATE policy matches is judged
 	// too: the owner asked for a judge on exactly these writes, and a
 	// propose is the same want through the polite door.
@@ -2640,7 +2664,7 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 // the AGENT's emit and applies under the agent's actor. Both envelopes gate:
 // the function's own capabilities bounded the decode inside runCallable, and
 // the agent's emit bounds what this agent may let land.
-func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Function, args map[string]any) (string, bool) {
+func (l *agentLoop) dispatchFunction(ctx context.Context, c *toolRun, fn *vocabulary.Function, args map[string]any) (string, bool) {
 	var input any
 	if args != nil {
 		input = args
@@ -2661,7 +2685,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	// path and ordinal — never the thread id, which is minted fresh per
 	// attempt: a retried delivery hands an external deduper the SAME key,
 	// so an effectful tool that honors idempotency keys never double-fires.
-	key := fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), l.toolCalls)
+	key := fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), c.seq)
 	// The loop's effective emit rides the origin: an agent the function
 	// body runs starts under it, as a sub-agent does (record 0121).
 	fctx := withCallOrigin(ctx, callOrigin{
@@ -2741,7 +2765,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 				thread:   l.threadID,
 				function: callableIdentity(ef.by),
 			}
-			requestID, gerr := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &l.dispatchChanges, gw)
+			requestID, gerr := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &c.changes, gw)
 			if gerr != nil {
 				return toolError(gerr.Error()), false
 			}
@@ -2751,7 +2775,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 				noop[i] = true
 				continue
 			}
-			l.in.tally.effects["gate"]++
+			l.in.tally.addEffect("gate")
 			l.ds.maybeJudge(requestID, rule)
 			return toolError(heldForReview(requestID, fmt.Sprintf(
 				"effect %s %s is held and the batch did not apply — effects are all-or-nothing", op, ty.Identity)).Error()), false
@@ -2769,14 +2793,14 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	if len(effects) > 0 {
 		err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 			t.causedBy = l.in.causedBy
-			t.changeSink = &l.dispatchChanges
+			t.changeSink = &c.changes
 			return t.applyEffects(l.emit, effects)
 		})
 		if err != nil {
 			return toolError(err.Error()), false
 		}
 		for _, ef := range effects {
-			l.in.tally.effects[ef.Action]++
+			l.in.tally.addEffect(ef.Action)
 		}
 	}
 	return toolJSON(map[string]any{"output": output, "effects": len(effects)}), true
@@ -2788,7 +2812,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 // against the CALLER's depth cap, a child thread naming its parent,
 // the shared tally rolling cost onto the root. Synchronous — the child
 // settles before the caller's loop continues.
-func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent, args map[string]any) (string, bool) {
+func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocabulary.Agent, args map[string]any) (string, bool) {
 	// The lifecycle gate holds on the child hop too, re-checked under the
 	// root's held fence: a disabled or uninstalled bundle's agent
 	// refuses even when a live parent asks. No re-acquire; the lease rides ctx.
@@ -2808,7 +2832,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	// their own tool rows are stamped, and nothing on the child's run writes
 	// after runAgent returns, so the stretch is complete whatever status the
 	// child ended in, an error path that skipped its settle included.
-	mark := len(l.in.tally.changes)
+	mark := l.in.tally.changesMark()
 	// ctx carries this loop's deadline. The child takes it as its own
 	// instead of running on it: a write or a settle on a context that
 	// deadline ended fails, and would leave the child `running` under its
@@ -2833,7 +2857,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 		emitCeiling: l.emit, ceilinged: true,
 		// The child's delivery identity extends the caller's by the stable
 		// call path (this agent, this tool ordinal) — retries reproduce it.
-		delivery: fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), l.toolCalls),
+		delivery: fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), c.seq),
 		// After commit, so a thread row that rolled back is never named.
 		onThread: func(t *txn, id string) error {
 			t.afterCommit = append(t.afterCommit, func() { child = id })
@@ -2843,7 +2867,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	if child != "" {
 		// A child thread that never opened wrote nothing, and there is no
 		// thread to name.
-		l.dispatchWrites = subagentWrites(child, l.in.tally.changes[mark:])
+		c.writes = subagentWrites(child, l.in.tally.changesSince(mark))
 	}
 	if err != nil {
 		return toolError(err.Error()), false

@@ -134,6 +134,10 @@ const (
 	DefaultAgentToolResultBytes = 48 << 10
 	MinAgentToolResultBytes     = 1 << 10
 	MaxAgentToolResultBytes     = 1 << 20
+	// DefaultAgentParallelTools is how many concurrent-safe tool calls of
+	// one response run at once when the agent sets no maxParallelTools.
+	DefaultAgentParallelTools = 4
+	MaxAgentParallelTools     = 16
 	// MaxAgentSpendCentsPerDay is the largest whole number an `int` property
 	// holds exactly (decision 0012).
 	MaxAgentSpendCentsPerDay = 1<<53 - 1
@@ -249,6 +253,9 @@ type AgentBudgets struct {
 	// MaxToolResultBytes caps one tool result: a larger one is replaced by
 	// a truncation envelope carrying its head.
 	MaxToolResultBytes int
+	// MaxParallelTools bounds how many concurrent-safe calls of one response
+	// run at once; 1 runs every call in turn.
+	MaxParallelTools int
 	// SpendCentsPerDay caps what the agent's root runs may spend in a rolling
 	// 24 hours, in US cents (decision 0149); nil is no cap and 0 holds every
 	// run. It is not a bound on one invocation: the engine holds the next
@@ -321,6 +328,7 @@ var agentPermissionKeys = map[string]bool{"reads": true, "writes": true}
 var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
 	"spendCentsPerDay": true, "toolTimeoutSeconds": true, "maxToolResultBytes": true,
+	"maxParallelTools": true,
 }
 
 var agentCompactionKeys = map[string]bool{
@@ -738,6 +746,10 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 	}
 	if a.Budgets.MaxToolResultBytes, ok = l.boundedIntFrom(where+": data.budgets.maxToolResultBytes", budgets, "maxToolResultBytes",
 		DefaultAgentToolResultBytes, MinAgentToolResultBytes, MaxAgentToolResultBytes); !ok {
+		return false
+	}
+	if a.Budgets.MaxParallelTools, ok = l.boundedInt(where+": data.budgets.maxParallelTools", budgets, "maxParallelTools",
+		DefaultAgentParallelTools, MaxAgentParallelTools); !ok {
 		return false
 	}
 	// Absent is no cap, which is not the same as 0: a zero cap holds every run.

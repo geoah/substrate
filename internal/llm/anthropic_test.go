@@ -1428,3 +1428,22 @@ func TestAnthropicNeverReplaysAStartedStream(t *testing.T) {
 		t.Fatalf("deltas %q after %d attempts, want ok after 1", deltas.String(), attempts.Load())
 	}
 }
+
+// A failed tool result rides the wire's own flag, so the model reads it as a
+// failure and not as an answer that happens to carry an `error` key.
+func TestAnthropicFlagsAFailedToolResult(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		_, blocks := anthropicBlocks(Message{Role: RoleTool, ToolCallID: "toolu_0", Content: `{"error":"x"}`, Failed: failed})
+		raw, err := json.Marshal(blocks[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var block map[string]any
+		if err := json.Unmarshal(raw, &block); err != nil {
+			t.Fatal(err)
+		}
+		if block["is_error"] != failed {
+			t.Fatalf("failed=%v: block = %s", failed, raw)
+		}
+	}
+}

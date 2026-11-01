@@ -28,8 +28,8 @@ const (
 
 // dispatchWrite runs the write built-in: the loop's own dataset behind the
 // emit-gating wrapper, the loop's actor on every write.
-func (l *agentLoop) dispatchWrite(ctx context.Context, args map[string]any) (string, bool) {
-	return runWriteTool(ctx, l.actor, &agentWriteDataset{Dataset: l.ds, loop: l}, args)
+func (l *agentLoop) dispatchWrite(ctx context.Context, c *toolRun, args map[string]any) (string, bool) {
+	return runWriteTool(ctx, l.actor, &agentWriteDataset{Dataset: l.ds, loop: l, call: c}, args)
 }
 
 // runWriteTool executes one write call against target and shapes the answer
@@ -161,6 +161,7 @@ func inputKeys(v any) string {
 type agentWriteDataset struct {
 	substrate.Dataset
 	loop *agentLoop
+	call *toolRun
 }
 
 // ceiling is the emit set every write from this tool carries into its
@@ -170,7 +171,7 @@ type agentWriteDataset struct {
 // without it, so an unstamped accept would refuse while rejecting the same
 // request succeeded.
 func (m *agentWriteDataset) ceiling() *effectCeiling {
-	return &effectCeiling{emit: m.loop.emit, changes: &m.loop.dispatchChanges}
+	return &effectCeiling{emit: m.loop.emit, changes: &m.call.changes}
 }
 
 // allow resolves the written kind and holds it to the effective emit set —
@@ -209,15 +210,15 @@ func (m *agentWriteDataset) door(ctx context.Context, ty *vocabulary.Kind, op, i
 		l.gateOrdinal++
 		gw := &gatedWrite{
 			op: op, kind: ty, id: id, props: props, ifVersion: ifVersion,
-			key:      fmt.Sprintf("%s/agent/%s/%d/gate/%d", l.in.delivery, l.ag.Identity(), l.toolCalls, l.gateOrdinal),
+			key:      fmt.Sprintf("%s/agent/%s/%d/gate/%d", l.in.delivery, l.ag.Identity(), m.call.seq, l.gateOrdinal),
 			policyID: rule.id, policyVersion: rule.version,
 			thread: l.threadID,
 		}
-		requestID, err := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &l.dispatchChanges, gw)
+		requestID, err := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &m.call.changes, gw)
 		if err != nil {
 			return err
 		}
-		l.in.tally.effects["gate"]++
+		l.in.tally.addEffect("gate")
 		l.ds.maybeJudge(requestID, rule)
 		return heldForReview(requestID, fmt.Sprintf("policy %s gates %s %s for agent %s",
 			rule.id, op, ty.Identity, l.ag.Identity()))
@@ -227,7 +228,7 @@ func (m *agentWriteDataset) door(ctx context.Context, ty *vocabulary.Kind, op, i
 }
 
 func (m *agentWriteDataset) tally(action string) {
-	m.loop.in.tally.effects[action]++
+	m.loop.in.tally.addEffect(action)
 }
 
 func (m *agentWriteDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {

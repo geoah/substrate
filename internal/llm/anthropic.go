@@ -370,6 +370,7 @@ func anthropicBlocks(m Message) (string, []any) {
 			Type:      "tool_result",
 			ToolUseID: m.ToolCallID,
 			Content:   []anthropicText{newAnthropicText(m.Content)},
+			IsError:   m.Failed,
 		}}
 	case RoleAssistant:
 		var blocks []any

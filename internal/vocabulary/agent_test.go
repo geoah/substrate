@@ -569,3 +569,40 @@ func TestEngineGuidanceIsOnUnlessParamsSayFalse(t *testing.T) {
 		t.Fatal("a non-bool engineGuidance parsed")
 	}
 }
+
+// budgets.maxParallelTools defaults to DefaultAgentParallelTools and holds to
+// 1–16: 1 is every call in turn, and 0 would be no call at all.
+func TestAgentMaxParallelToolsIsBounded(t *testing.T) {
+	agent := func(budgets string) string {
+		return `  description: classifies widgets
+  prompt: You classify widgets.
+  provider: default
+  model: claude-opus-5
+  budgets: ` + budgets + "\n"
+	}
+	for _, tc := range []struct {
+		budgets string
+		want    int
+	}{
+		{budgets: `{maxTurns: 4}`, want: vocabulary.DefaultAgentParallelTools},
+		{budgets: `{maxParallelTools: 1}`, want: 1},
+		{budgets: `{maxParallelTools: 16}`, want: 16},
+	} {
+		r, err := loadAgAuthority(t, agAuthority(agent(tc.budgets)))
+		if err != nil {
+			t.Fatalf("%s: load: %v", tc.budgets, err)
+		}
+		ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ag.Budgets.MaxParallelTools != tc.want {
+			t.Fatalf("%s: maxParallelTools %d, want %d", tc.budgets, ag.Budgets.MaxParallelTools, tc.want)
+		}
+	}
+	for _, bad := range []string{`{maxParallelTools: 0}`, `{maxParallelTools: 17}`, `{maxParallelTools: 2.5}`} {
+		if _, err := loadAgAuthority(t, agAuthority(agent(bad))); err == nil || !strings.Contains(err.Error(), "maxParallelTools") {
+			t.Errorf("%s: loaded, or refused without naming the key: %v", bad, err)
+		}
+	}
+}
