@@ -359,6 +359,10 @@ export interface AgentEvent {
   turn?: number
   /** Rides the idle event: the thread row's status. */
   status?: string
+  /** Rides a toolFinished event of a background call: `working` on the one
+   * its handle answers, then where the job ended on a second toolFinished
+   * under the same `id`, sent while a turn streams on the thread. */
+  job?: "working" | "completed" | "failed" | "canceled"
 }
 
 /** One ndjson line off the chat stream, or null (blank line / garbage). */

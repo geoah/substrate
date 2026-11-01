@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 18
+  version: 19
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -110,6 +110,29 @@ data:
     ok:
       type: bool
       description: whether the dispatch a tool row answers for succeeded
+    # Stamped by the ENGINE on the tool row of a background call (decision
+    # record 0200): `working` when the call answered with its handle, then
+    # where it ended, in the transaction that writes its toolCompleted row.
+    job:
+      type: object
+      description: the background job a tool row's call started, stamped by
+        the engine
+      fields:
+        state:
+          type: enum
+          values:
+            - working
+            - completed
+            - failed
+            - canceled
+          required: true
+          description: where the job is
+        startedAt:
+          type: datetime
+          description: when the job started
+        finishedAt:
+          type: datetime
+          description: when the job ended
     # Stamped by the ENGINE, never authored by the model: the changelog
     # entries a tool row's dispatch wrote (a write's writes, a propose's
     # request row, a function tool's applied effects), or the entries a

@@ -76,7 +76,9 @@ data:
   # record 0187).
   # version 46: a bundle's `installs` is no longer required, so a catalogue
   # that ships records and declares nothing installs (decision record 0192).
-  version: 46
+  # version 47: the `wait` host function, and a function's `execution`
+  # (decision record 0200).
+  version: 47
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

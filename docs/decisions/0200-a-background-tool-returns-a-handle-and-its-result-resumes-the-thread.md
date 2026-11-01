@@ -40,7 +40,7 @@ background sub-agent's spend still counts against the root agent's caps and
 rolls up onto the root thread, in the transaction that reports it.
 
 Completion writes, in one transaction, the tool row's `job` (`completed`,
-`failed` or `cancelled`, with `finishedAt`) and a `system` row
+`failed` or `canceled`, with `finishedAt`) and a `system` row
 `{event: "toolCompleted", toolCallId, ok, output}`. A run still going reads it
 after its next batch of tool results; a settled thread resumes under the
 resume budget and the agent's `resume: never`; the resolution sweep picks up

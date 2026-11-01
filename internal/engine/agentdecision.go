@@ -194,17 +194,23 @@ func (t *txn) requestTarget(req *erow) (eref, error) {
 // decision writes under the owner's hand, a judge's under the policy's — so
 // the row says who resolved.
 func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []changeEntry) error {
+	_, err := t.putThreadSystemRowID(threadID, env, wrote)
+	return err
+}
+
+// putThreadSystemRowID is putThreadSystemRow answering the row's id.
+func (t *txn) putThreadSystemRowID(threadID string, env map[string]any, wrote []changeEntry) (string, error) {
 	content, err := json.Marshal(env)
 	if err != nil {
-		return err
+		return "", err
 	}
 	turn, err := t.nextThreadTurn(threadID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	id, err := newID()
 	if err != nil {
-		return err
+		return "", err
 	}
 	props := map[string]any{
 		"role": msgRoleSystem, "content": string(content),
@@ -214,10 +220,12 @@ func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []ch
 		props["changes"] = changeProps(wrote)
 	}
 	if err := t.requireThreadKinds(); err != nil {
-		return err
+		return "", err
 	}
-	_, err = t.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: props})
-	return err
+	if _, err := t.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: props}); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // requireThreadKinds refuses a thread write on a repository whose boot upgrade

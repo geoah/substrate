@@ -149,6 +149,11 @@ data:
         description:
           type: string
           description: the model-facing card, overriding the function's own
+        # Decision record 0200. Refused on a host function.
+        background:
+          type: bool
+          description: run every call of this tool as a background job, whatever
+            the function's own execution says
     # The functions bundles OFFER (record 0198), taken by pattern rather than
     # named one by one: `*` is every offered function of every enabled
     # bundle. Resolved when a run builds its tools, so an install or a
@@ -169,6 +174,11 @@ data:
       kind: substrate.reamde.dev/core/agent
       repeated: true
       description: the sub-agents the loop exposes as tools
+      properties:
+        background:
+          type: bool
+          description: run every call of this sub-agent as a background job,
+            its reply delivered to the thread when it settles
     budgets:
       type: object
       description: what bounds one invocation

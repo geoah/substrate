@@ -235,7 +235,7 @@ The key is `function` because an entry admits nothing else: a sub-agent is named
 on `subagents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
 where a target really may be a function or an agent.
 
-That is the only arm, because the four built-ins are
+That is the only arm, because the five built-ins are
 [**host functions**](functions.md#host-functions) — `runtime: host` records core
 ships — so an agent names one exactly as it names a bundle's function:
 
@@ -598,6 +598,53 @@ budget caps resumes at 20 resolutions an hour, past which the sweep or the
 next continuation picks the rows up. A thread that is mid-turn refuses the
 lease and picks the decision up on its next continuation, and a request no
 thread proposed (a human's, a function's) reports and resumes nothing.
+
+### Background jobs
+
+A call that would hold the loop too long runs as a **background job**
+([0200](decisions/0200-a-background-tool-returns-a-handle-and-its-result-resumes-the-thread.md)).
+A function declares `execution: background`, or one agent's entry asks for it:
+
+```yaml
+  tools:
+    - function: samples.substrate.reamde.dev/mail/import
+      background: true
+  subagents:
+    - ref: example.com/research/digger
+      background: true
+```
+
+A host function never runs in the background, and the loader refuses it. The
+call answers at once with `{"job": "<tool call id>", "status": "working"}`,
+and its tool row carries `job: {state: working, startedAt}`. The work runs on
+the server's background context, bounded by the function's own timeout or the
+sub-agent's own budgets, never by the calling run's deadline, so the run can
+reply first ("I've started the import") and several sub-agents can work at
+once. A background sub-agent's spend counts against the root agent's caps and
+rolls up onto the root thread.
+
+When the job ends, one transaction moves the tool row's `job` to `completed`,
+`failed` or `canceled` with `finishedAt`, stamps what the call wrote
+(`changes`, or a sub-agent's `subagentWrites`), and writes a `system` row
+`{event: "toolCompleted", toolCallId, name, ok, output}` into the thread.
+Delivery is the decision loop's. A run still going on the thread reads the
+row after its next batch of tool results. A settled thread resumes with it,
+under the same budget and `resume: never`. The sweep picks up a resume a
+restart dropped. A turn streaming on the thread also gets a second
+`toolFinished` event under the call's id, carrying the job's end in `job`.
+
+The built-in `wait` (`substrate.reamde.dev/core/wait`) holds the loop on named
+jobs, `{jobs: [ids], timeoutSeconds}`, for at most the run's remaining time
+less the reserve its last turn keeps. It answers
+`{completed: [{job, ok, state, output}], working: [ids]}`, and a job it
+answered does not come back as a toolCompleted message in the same run.
+
+Stopping the thread cancels its working jobs. A thread with no running turn
+then settles `stopped`, so the canceled jobs resume nothing until its owner
+writes again. A job lives in the server process: a job a restart interrupted
+settles `failed` at the next open, with a toolCompleted row saying so, and the
+agent calls again if it still needs it. A background call from a sub-agent
+reports into the sub-agent's own thread.
 
 ## Sub-agents, budgets, and the emit ceiling
 

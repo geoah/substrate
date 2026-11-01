@@ -12,6 +12,7 @@
     "covered": false,
     "error": false,
     "id": false,
+    "job": false,
     "kind": true,
     "ok": false,
     "output": false,
