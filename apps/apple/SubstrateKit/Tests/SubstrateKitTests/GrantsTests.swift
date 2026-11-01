@@ -83,6 +83,34 @@ import Testing
     }
 }
 
+@Suite struct FullAccess {
+    @Test func fullReachesEverythingButAWebhook() {
+        let g = Grants(["full"])
+        #expect(g.full)
+        #expect(g.reads("substrate.reamde.dev/core/token", purpose: "internal"))
+        #expect(g.writes("substrate.reamde.dev/llm/provider", purpose: "internal"))
+        #expect(g.talksTo("ada.example.com/llm/substrate") && g.decides("ada.example.com/llm/substrate"))
+        #expect(g.talks && g.decidesAny)
+        #expect(!g.delivers("applehealth-webhook"))
+        #expect(!Grants(["read:*"]).full)
+    }
+
+    @Test func fullIsSaidAsTheConsoleSaysIt() {
+        #expect(ScopeWords.sentence("full") == ScopeWords.fullSentence)
+        #expect(ScopeWords.fullSentence.hasPrefix("Do everything you can do when you sign in"))
+        #expect(ScopeWords.resolve("full", authority: "ada.example.com") == "full")
+    }
+
+    @Test func aServerThatCannotGrantFullIsTooOld() throws {
+        let manifest = AppManifest(appName: "Substrate", clientID: "http://127.0.0.1/substrate-console", scopes: ["full"])
+        #expect(manifest.requirement.scopeVerbs == ["full"])
+        let without = try JSONDecoder().decode(AuthorizationServerMetadata.self,
+                                               from: Data(metadataJSON(details: [], verbs: ["read", "write"]).utf8))
+        #expect(manifest.requirement.verdict(version: "dev", metadata: without)
+            == .tooOld(running: "dev", needed: nil, missing: ["let apps sign in with full access"]))
+    }
+}
+
 /// The console's sentences (web/console's app-scopes.ts), word for word.
 @Suite struct GrantWords {
     @Test func aKindScopeSaysEveryPowerItHolds() {

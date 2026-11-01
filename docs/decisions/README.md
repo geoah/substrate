@@ -361,3 +361,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0201](0201-a-continued-thread-replays-its-tool-exchanges.md) | A continued thread replays its tool exchanges | accepted |
 | [0202](0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md) | An app's approval sets up what it needs, and its token delivers to its webhook | accepted |
 | [0203](0203-an-app-keeps-its-own-package-under-a-declare-scope.md) | An app keeps its own package under a declare scope | proposed |
+| [0204](0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md) | An app may ask for full access, and its owner approves it whole | accepted |

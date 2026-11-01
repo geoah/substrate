@@ -59,5 +59,7 @@
 	<string>$(SUBSTRATE_COMMIT)</string>
 	<key>SubstrateUpdates</key>
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstrateConsoleClientID</key>
+	<string>$(SUBSTRATE_CONSOLE_CLIENT_ID)</string>
 </dict>
 </plist>

@@ -1165,3 +1165,93 @@ func TestAReverseReadNamesOnlyAReadableTarget(t *testing.T) {
 	both := e.grant("read:"+messageKind+" read:"+personKind, []string{"read:" + messageKind, "read:" + personKind})
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(hidden), both, nil, ""), http.StatusOK)
 }
+
+// Full access (decision 0204) is asked for alone, approved whole through a
+// human door, and mints a token without scopes that still names its app.
+func TestAnAppAskingForFullAccessGetsAFullAccessTokenNamingIt(t *testing.T) {
+	e := newAppEnv(t)
+	meta := e.do(http.MethodGet, "/.well-known/oauth-authorization-server", "", nil, "")
+	wantStatus(t, meta, http.StatusOK)
+	if !strings.Contains(meta.Body.String(), `"full"`) {
+		t.Fatalf("the metadata does not list full: %s", meta.Body.String())
+	}
+
+	id := e.park(appRequest("full"))
+	view := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
+	if len(view.Scopes) != 1 || view.Scopes[0].Scope != "full" || view.Scopes[0].Verb != "full" ||
+		view.Scopes[0].Pattern != "" || view.Scopes[0].Allowed || view.Scopes[0].Kinds == nil {
+		t.Fatalf("scopes = %+v, want the one full row", view.Scopes)
+	}
+
+	days := 30
+	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"full"}, LifetimeDays: &days})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/authorizations/"+id, bytes.NewReader(body))
+	req.Host = "substrate.example.com"
+	req.Header.Set("Authorization", "Bearer "+e.owner)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(actorHeader, "bob")
+	bob := httptest.NewRecorder()
+	e.h.ServeHTTP(bob, req)
+	wantErrorCode(t, bob, http.StatusForbidden, codeForbidden)
+	if !strings.Contains(bob.Body.String(), "granting full access is the owner's act") {
+		t.Fatalf("the refusal says %s", bob.Body.String())
+	}
+
+	rec := e.approveShown(id, []string{"full"}, 30)
+	wantStatus(t, rec, http.StatusOK)
+	tok := e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))
+	wantStatus(t, tok, http.StatusOK)
+	res := decodeJSON[tokenResponse](t, tok)
+	if res.Scope != "full" || res.Repository != fakeRepository || res.ExpiresIn == nil || res.TokenID == "" {
+		t.Fatalf("token response = %+v", res)
+	}
+	minted := e.svc.tokens[res.AccessToken].info
+	if minted.Scopes != nil || minted.Scoped() || minted.ClientID != appClientID || minted.ClientName != "Notes" || minted.ExpiresAt == nil {
+		t.Fatalf("minted token = %+v, want no scopes and the app's client id", minted)
+	}
+	// The owner's routes answer it as they answer a sign-in.
+	for _, path := range []string{"/tokens", "/api/v1/catalog", "/api/v1/sync/status"} {
+		wantStatus(t, e.do(http.MethodGet, path, res.AccessToken, nil, ""), http.StatusOK)
+	}
+	// And the app can still revoke what it was given.
+	revoke := url.Values{"token": {res.AccessToken}, "client_id": {appClientID}}
+	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(revoke.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
+	wantStatus(t, e.do(http.MethodGet, "/tokens", res.AccessToken, nil, ""), http.StatusUnauthorized)
+}
+
+func TestFullAccessIsAskedForAloneAndSetsNothingUp(t *testing.T) {
+	e := newAppEnv(t)
+	for _, params := range []map[string]string{
+		appRequest("full read:" + personKind),
+		func() map[string]string {
+			p := appRequest("full")
+			p["authorization_details"] = `[{"type":"package","package":"providers.substrate.reamde.dev/apple","version":{"atLeast":1}}]`
+			return p
+		}(),
+	} {
+		rec := e.do(http.MethodGet, authorizeURL(params), "", nil, "")
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Fatalf("authorize(%v) = %d %s, want a 400 page", params["scope"], rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	// A narrower app is never handed full by naming it in its approval.
+	id := e.park(appRequest("read:" + personKind))
+	wantErrorCode(t, e.approve(id, []string{"full"}, 30), http.StatusUnprocessableEntity, codeValidation)
+}
+
+func TestASecondFullRequestReadsAsAllowedBefore(t *testing.T) {
+	e := newSetupEnv(t)
+	e.grant("read:"+personKind, []string{"read:" + personKind})
+	narrower := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("full"))))
+	if narrower.Previous == nil || narrower.Scopes[0].Allowed {
+		t.Fatalf("full after a scoped approval = previous %+v allowed %v, want not allowed", narrower.Previous, narrower.Scopes[0].Allowed)
+	}
+	// The fake mints every token at one instant, so newest is decided only in
+	// a repository holding one.
+	e = newSetupEnv(t)
+	e.grant("full", []string{"full"})
+	again := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("full"))))
+	if again.Previous == nil || len(again.Previous.Scopes) != 0 || !again.Scopes[0].Allowed {
+		t.Fatalf("a second full request = previous %+v allowed %v", again.Previous, again.Scopes[0].Allowed)
+	}
+}

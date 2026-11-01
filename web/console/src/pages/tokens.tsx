@@ -8,9 +8,10 @@
  * the same write `substratectl` performs. The token whose id matches
  * getTokenId() is THIS browser; signing it out signs this browser out.
  *
- * A token with `scopes` is an app's (decision 0194): it reaches only what the
- * owner approved, and it is listed under Apps, never beside the full-access
- * tokens.
+ * A token with `scopes` or a client id is an app's (decisions 0194, 0204):
+ * it reaches only what the owner approved, or everything where the owner
+ * approved full access, and it is listed under Apps, never beside the
+ * owner's own full-access tokens.
  *
  * A minted secret is shown ONCE. Nothing can show it again, which is why the
  * panel that carries it stays until it is dismissed. */
@@ -46,7 +47,7 @@ import { toast } from "@/components/ui/toast"
 import { listTokens, mintToken, revokeToken } from "@/lib/api/auth"
 import { clearSession, getTokenId } from "@/lib/api/session"
 import { ApiError, type MintedToken, type TokenInfo } from "@/lib/api/types"
-import { scopeWords } from "@/lib/app-scopes"
+import { FULL_ACCESS_SENTENCE, scopeWords } from "@/lib/app-scopes"
 import { relativeTime, shortDateTime } from "@/lib/format"
 
 const TOKENS_KEY = ["tokens"] as const
@@ -55,10 +56,10 @@ function useTokens() {
   return useQuery({ queryKey: TOKENS_KEY, queryFn: listTokens })
 }
 
-/** An app's token: it carries the scopes the owner approved. A token without
- * them has full access. */
+/** An app's token: it carries the scopes the owner approved, or names the
+ * app it was approved for where the owner approved full access. */
 function isAppToken(t: TokenInfo): boolean {
-  return t.scopes !== undefined
+  return t.scopes !== undefined || t.clientId !== undefined
 }
 
 /** The host of an app's client id URL, the one fact about the app its URL
@@ -483,6 +484,7 @@ export function AppTokenRows() {
               )}
               <dt className="text-faint">Access</dt>
               <dd>
+                {t.scopes === undefined && <p>{FULL_ACCESS_SENTENCE}.</p>}
                 <ul className="flex flex-col gap-0.5">
                   {(t.scopes ?? []).map((scope) => {
                     const words = scopeWords(scope)

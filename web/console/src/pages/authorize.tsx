@@ -353,6 +353,7 @@ function Approval({
     .map((s) => s.scope)
 
   const fold = foldRequest(request)
+  const full = request.scopes.some((s) => s.verb === "full")
   const { previous } = request
   const webhooks = webhookTriggers(request.setup)
   const blocked = fold.blocks.length > 0
@@ -504,6 +505,13 @@ function Approval({
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
+        {full && (
+          <Warning title="It asks for full access">
+            Approving is the same as signing it in with your password: it can do
+            everything you can, including revoking your other sessions. Approve
+            only an app you trust that much.
+          </Warning>
+        )}
         {technical ? (
           <AppFacts request={request} live={fold.live} />
         ) : (
@@ -519,9 +527,11 @@ function Approval({
 
         {fold.fresh.length > 0 && (
           <Fact label="It will be able to">
-            <p className="text-xs text-muted-foreground">
-              Uncheck anything you don’t want to allow.
-            </p>
+            {!full && (
+              <p className="text-xs text-muted-foreground">
+                Uncheck anything you don’t want to allow.
+              </p>
+            )}
             <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
               {fold.fresh.map(scopeRow)}
             </ul>
@@ -556,7 +566,12 @@ function Approval({
           </section>
         )}
 
-        {fold.writes &&
+        {full ? (
+          <Fact label="Its changes appear as">
+            <p>Yours, as when you sign in, not under the app’s own name.</p>
+          </Fact>
+        ) : (
+          fold.writes &&
           (technical ? (
             <Fact label="Its changes appear as">
               <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
@@ -570,7 +585,8 @@ function Approval({
             </Fact>
           ) : (
             <AutomationWarning />
-          ))}
+          ))
+        )}
 
         {/* A blocked row holds the whole approval back, so nothing runs
             until it clears. */}

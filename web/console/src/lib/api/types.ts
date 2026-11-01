@@ -954,7 +954,8 @@ export interface AuthorizationScope {
   scope: string
   requested: string
   /** `read` and `write` name kinds; `agents` and `decide` name agents
-   * (decision 0195). A request never asks for `webhook`. */
+   * (decision 0195); `full` is everything, with no pattern, and asked for
+   * alone (decision 0204). A request never asks for `webhook`. */
   verb: ScopeVerb
   write: boolean
   pattern: string
@@ -977,9 +978,11 @@ export interface AuthorizationScope {
 
 /** What one scope of an app's token does with its pattern. `declare` keeps one
  * package of the owner's own (decision 0203). `webhook` names
- * one trigger, and only an approved `webhook` detail puts it on a token. */
+ * one trigger, and only an approved `webhook` detail puts it on a token.
+ * `full` is only ever requested: approving it mints a token without scopes
+ * (decision 0204). */
 export type ScopeVerb =
-  "read" | "write" | "agents" | "decide" | "declare" | "webhook"
+  "read" | "write" | "agents" | "decide" | "declare" | "webhook" | "full"
 
 /** One kind a scope reaches today, or one a package the request sets up
  * would add (`added`). `purpose` is absent for a primary kind. */

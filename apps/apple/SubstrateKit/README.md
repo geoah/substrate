@@ -81,9 +81,16 @@ ConnectView(manifest: manifest, tagline: "Your iPhone, in your substrate.", addr
 }
 ```
 
+An app that is the whole console asks for `scopes: ["full"]` alone (decision
+0204): the server's metadata must list `full`, the approval is whole, and the
+token has no scopes; `Grants.full` reads it as everything.
+
 `OAuthClient.signIn` is a native app's loopback redirect (RFC 8252): it
 listens on a port of this device's loopback address at the manifest's
-`loopbackPath`, opens the server's approval page in the system sheet, checks
+`loopbackPath`, opens the server's approval page (in the default browser on
+macOS, with a Cancel on the connect screen while it waits, and the app
+brought forward when the redirect lands; in the system's Safari sheet on
+iOS, where a backgrounded app's port is suspended), checks
 the redirect's `state` and `iss` (required when the metadata says the server
 sends it), and exchanges the code once, never again: a code is spent on
 first use. A claimed `https` callback (a universal link) is not in the kit.

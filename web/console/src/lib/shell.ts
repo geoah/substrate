@@ -15,13 +15,28 @@ export interface ShellInfo {
   /** The app was released and checks for newer releases itself; a local
    * build was not and never looks. */
   updates?: boolean
+  /** The app signs in through the substrate's own sign-in page, in Safari
+   * or the default browser, where the substrate can grant it full access
+   * (decision 0204), so the sign-in page asks the app rather than taking
+   * the password itself. */
+  signIn?: boolean
 }
+
+/** What the app's sign-in answers: the session the console keeps, or why
+ * there is none. */
+export type ShellSignIn =
+  | { secret: string; repository: string; tokenId: string }
+  | { cancelled: true }
+  | { error: string }
 
 interface ShellWindow {
   substrateShell?: ShellInfo
   webkit?: {
     messageHandlers?: {
       substrateShell?: { postMessage: (message: unknown) => void }
+      substrateShellSignIn?: {
+        postMessage: (message: unknown) => Promise<ShellSignIn>
+      }
     }
   }
 }
@@ -60,5 +75,48 @@ export function changeServer(win: unknown = window): void {
 export function checkForUpdates(win: unknown = window): void {
   ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
     type: "checkForUpdates",
+  })
+}
+
+/** Whether the sign-in page should hand signing in to the app: the app
+ * offers it and the substrate's authorization server lists `full`. A server
+ * older than full access, or one whose metadata does not answer, keeps the
+ * password form. */
+export async function shellSignsIn(
+  win: unknown = window,
+  fetcher: typeof fetch = fetch
+): Promise<boolean> {
+  const w = win as ShellWindow
+  if (
+    !nativeShell(w)?.signIn ||
+    !w.webkit?.messageHandlers?.substrateShellSignIn
+  )
+    return false
+  try {
+    const res = await fetcher("/.well-known/oauth-authorization-server")
+    if (!res.ok) return false
+    const meta = (await res.json()) as { scopes_supported?: unknown }
+    return (
+      Array.isArray(meta.scopes_supported) &&
+      meta.scopes_supported.includes("full")
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Ask the app to sign in: it opens the substrate's own sign-in and
+ * approval page and answers once the owner approved, denied or closed it. */
+export async function shellSignIn(win: unknown = window): Promise<ShellSignIn> {
+  const handler = (win as ShellWindow).webkit?.messageHandlers
+    ?.substrateShellSignIn
+  if (!handler) return { error: "This app can't sign in for the console." }
+  return handler.postMessage({ type: "signIn" })
+}
+
+/** Stop a sign-in waiting on the browser, which the owner may have left. */
+export function cancelShellSignIn(win: unknown = window): void {
+  ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
+    type: "cancelSignIn",
   })
 }

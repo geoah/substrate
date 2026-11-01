@@ -69,7 +69,8 @@ public struct Session: Codable, Equatable, Sendable {
         for detail in token.authorizationDetails where detail.type == AuthorizationDetail.Types.webhook {
             if let trigger = detail.trigger, let url = detail.url { webhooks[trigger] = url }
         }
-        self.init(server: server, repository: token.repository, secret: token.accessToken, clientID: clientID,
+        self.init(server: server, repository: token.repository, secret: token.accessToken, tokenID: token.tokenID,
+                  clientID: clientID,
                   scopes: token.scopes, requestedScopes: requested,
                   expiresAt: token.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
                   issuedAt: now, revocation: revocation, webhooks: webhooks, details: token.authorizationDetails)
