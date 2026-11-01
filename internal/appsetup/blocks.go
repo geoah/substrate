@@ -16,29 +16,34 @@ func block(reason, problem, fix string) *substrate.AuthorizationBlock {
 }
 
 // packageProblem is why a package cannot be installed or upgraded, worded
-// twice: own for the package's own row or step, first for the row of a
-// package that needs it installed first, which the block blocks too.
+// twice: itself for the package's own row or step, requirer for the row of a
+// package that needs it first, which the block blocks too.
 type packageProblem struct {
-	reason, fix, own, first string
+	reason, fix, itself, requirer string
 }
 
-// of is the block as the row of the package says it, or (first) as the row
-// that needs it first says it.
-func (p *packageProblem) of(first bool) *substrate.AuthorizationBlock {
+// own is the block as the package's own row or step says it.
+func (p *packageProblem) own() *substrate.AuthorizationBlock {
 	if p == nil {
 		return nil
 	}
-	if first {
-		return block(p.reason, p.first, p.fix)
+	return block(p.reason, p.itself, p.fix)
+}
+
+// needsFirst is the block as the row of a package that needs it first says
+// it.
+func (p *packageProblem) needsFirst() *substrate.AuthorizationBlock {
+	if p == nil {
+		return nil
 	}
-	return block(p.reason, p.own, p.fix)
+	return block(p.reason, p.requirer, p.fix)
 }
 
 func notShipped() *packageProblem {
 	return &packageProblem{
-		reason: substrate.BlockNotShipped,
-		own:    "This server does not offer this package, so approving cannot set it up.",
-		first:  "It needs a package first that this server does not offer, so approving cannot set it up.",
+		reason:   substrate.BlockNotShipped,
+		itself:   "This server does not offer this package, so approving cannot set it up.",
+		requirer: "It needs a package first that this server does not offer, so approving cannot set it up.",
 	}
 }
 
@@ -47,55 +52,55 @@ func notShipped() *packageProblem {
 func sample() *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockSample, fix: "/data",
-		own:   "This is a sample, which you add yourself from All data.",
-		first: "It needs a sample first, which you add yourself from All data.",
+		itself:   "This is a sample, which you add yourself from All data.",
+		requirer: "It needs a sample first, which you add yourself from All data.",
 	}
 }
 
 func quarantined(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockQuarantined, fix: ProviderPage(id),
-		own:   "Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why.",
-		first: "Your copy of a package it needs first is quarantined, so approving cannot set it up. Its provider page says why.",
+		itself:   "Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why.",
+		requirer: "Your copy of a package it needs first is quarantined, so approving cannot set it up. Its provider page says why.",
 	}
 }
 
 func declaredByOwner(id string, held int64) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockDeclaredByOwner, fix: ProviderPage(id),
-		own:   fmt.Sprintf("You declared this package yourself, at version %d. Installing the published version would replace yours.", held),
-		first: fmt.Sprintf("It needs a package first that you declared yourself, at version %d. Installing the published version would replace yours.", held),
+		itself:   fmt.Sprintf("You declared this package yourself, at version %d. Installing the published version would replace yours.", held),
+		requirer: fmt.Sprintf("It needs a package first that you declared yourself, at version %d. Installing the published version would replace yours.", held),
 	}
 }
 
 func serverUpdate(shipped, need int64) *packageProblem {
 	return &packageProblem{
-		reason: substrate.BlockServerUpdate,
-		own:    fmt.Sprintf("This server ships version %d; the app needs version %d. The server needs an update first.", shipped, need),
-		first:  fmt.Sprintf("It needs a package first at version %d, and this server ships version %d. The server needs an update first.", need, shipped),
+		reason:   substrate.BlockServerUpdate,
+		itself:   fmt.Sprintf("This server ships version %d; the app needs version %d. The server needs an update first.", shipped, need),
+		requirer: fmt.Sprintf("It needs a package first at version %d, and this server ships version %d. The server needs an update first.", need, shipped),
 	}
 }
 
 func upgradeRefused(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
-		own:   "Updating this package is refused for now. Its provider page says why.",
-		first: "Updating a package it needs first is refused for now. Its provider page says why.",
+		itself:   "Updating this package is refused for now. Its provider page says why.",
+		requirer: "Updating a package it needs first is refused for now. Its provider page says why.",
 	}
 }
 
 func upgradeConfirm(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
-		own:   "Updating this package would change records in a way its provider page asks you to confirm first.",
-		first: "Updating a package it needs first would change records in a way its provider page asks you to confirm first.",
+		itself:   "Updating this package would change records in a way its provider page asks you to confirm first.",
+		requirer: "Updating a package it needs first would change records in a way its provider page asks you to confirm first.",
 	}
 }
 
 func previewFailed(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
-		own:   "Updating this package could not be previewed. The server log says why.",
-		first: "Updating a package it needs first could not be previewed. The server log says why.",
+		itself:   "Updating this package could not be previewed. The server log says why.",
+		requirer: "Updating a package it needs first could not be previewed. The server log says why.",
 	}
 }

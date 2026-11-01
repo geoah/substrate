@@ -401,15 +401,27 @@ func (c *Catalog) ByID(id string) (*Bundle, bool) {
 // Warnings names the shipped directories dropped during Load.
 func (c *Catalog) Warnings() []string { return c.warnings }
 
+// Unmet is a requirement installing a bundle needs that the catalog cannot
+// install: the repository holds it below the floor the requiring bundle puts
+// under it, or not at all, and the catalog ships no provider under its id.
+// Bundle is the sample it ships under the id, which is the owner's to import,
+// nil where it ships nothing.
+type Unmet struct {
+	ID     string
+	Floor  int64
+	Bundle *Bundle
+}
+
 // Requirements is what installing the shipped bundle id would install first,
 // in order: the list Install runs and the upgrade preview stages, so a third
-// reader cannot disagree with either.
-func (c *Catalog) Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*Bundle, error) {
+// reader cannot disagree with either. Unmet is what the same walk passed over
+// as nothing it can install, which the install's admission refuses on.
+func (c *Catalog) Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*Bundle, []Unmet, error) {
 	b, ok := c.byID[id]
 	if !ok {
-		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+		return nil, nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	return c.requirementsToInstall(ctx, b, ds)
+	return c.walkRequirements(ctx, b, ds)
 }
 
 // Install applies a shipped bundle's closure into ds's repository as ONE atomic
@@ -611,26 +623,42 @@ func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Data
 // list and the upgrade preview stages it, so the two cannot disagree on what
 // a click brings.
 func (c *Catalog) requirementsToInstall(ctx context.Context, b *Bundle, ds substrate.Dataset) ([]*Bundle, error) {
+	order, _, err := c.walkRequirements(ctx, b, ds)
+	return order, err
+}
+
+// walkRequirements is requirementsToInstall with what it passed over: each
+// requirement of a bundle it walks that the repository does not hold at the
+// floor and that the catalog cannot install, once, in the order it met them.
+func (c *Catalog) walkRequirements(ctx context.Context, b *Bundle, ds substrate.Dataset) ([]*Bundle, []Unmet, error) {
 	// Nothing to walk, so nothing to read: the preview asks this for every
 	// provider entry on every listing, and most require nothing.
 	if len(b.Requires) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	held, err := heldVersions(ctx, ds)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var order []*Bundle
+	var unmet []Unmet
 	placed := map[string]bool{}
 	visiting := map[string]bool{b.ID: true}
 	var walk func(*Bundle)
 	walk = func(b *Bundle) {
 		for _, req := range b.Requires {
-			dep, ok := c.byID[req]
-			if !ok || dep.Tier != substrate.TierProvider || visiting[req] || placed[req] {
+			if visiting[req] || placed[req] {
 				continue
 			}
 			if v, has := held[req]; has && v >= b.RequiresAtLeast[req] {
+				continue
+			}
+			dep, ok := c.byID[req]
+			if !ok || dep.Tier != substrate.TierProvider {
+				// Placed too, so a second bundle requiring it reports it
+				// no second time.
+				placed[req] = true
+				unmet = append(unmet, Unmet{ID: req, Floor: b.RequiresAtLeast[req], Bundle: dep})
 				continue
 			}
 			visiting[req] = true
@@ -644,7 +672,7 @@ func (c *Catalog) requirementsToInstall(ctx context.Context, b *Bundle, ds subst
 		}
 	}
 	walk(b)
-	return order, nil
+	return order, unmet, nil
 }
 
 // heldVersions is the stored version of every installed bundle. It reads the

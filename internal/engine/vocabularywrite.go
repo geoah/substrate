@@ -405,11 +405,11 @@ func (t *txn) refuseTakenTrigger(in substrate.PutInput, shipper substrate.Actor)
 	return nil
 }
 
-// keepTriggerSettings carries an armed webhook over a re-install or an
-// upgrade of the same package: the key the owner set and whether they
-// enabled it. A shipped webhook trigger has no key and so ships disabled;
-// writing it back would disarm the trigger and drop the key every sender was
-// given (record 0192). Any other trigger takes the shipped document whole, so
+// keepTriggerSettings carries a webhook the owner turned on over a
+// re-install or an upgrade of the same package: the key the owner set and
+// whether they enabled it. A shipped webhook trigger has no key and so ships
+// disabled; writing it back would turn the trigger off and drop the key
+// every sender was given (record 0192). Any other trigger takes the shipped document whole, so
 // a release that turns one off lands. The shipped maps are copied, never
 // changed: they are the catalog's.
 func (t *txn) keepTriggerSettings(in substrate.PutInput) (substrate.PutInput, error) {

@@ -107,6 +107,10 @@ type Config struct {
 	// (SUBSTRATE_PUBLIC_URL): the issuer of the authorization flow whatever
 	// Host a request names. Empty derives the issuer from the Host.
 	PublicURL string
+
+	// setUpEnded, when set, is told each set up's request id once its
+	// detached run has returned and nothing more lands for it.
+	setUpEnded func(request string)
 }
 
 type handler struct {
@@ -126,10 +130,13 @@ type handler struct {
 	fetcher   clientDocuments
 	parkRate  *rateLimiter
 	publicURL string
-	// setups runs approvals' set ups, one per repository at a time, and
-	// checks is the last set up check each token got (appsetup.go).
-	setups *appsetup.Runner
-	checks checkMemo
+	// setups runs approvals' set ups, one per repository at a time, checks
+	// is the last set up check each token got, and checkTurns queues the
+	// checks' plans (appsetup.go).
+	setups     *appsetup.Runner
+	setUpEnded func(request string)
+	checks     checkMemo
+	checkTurns *checkTurns
 }
 
 // New builds the router.
@@ -156,6 +163,8 @@ func New(cfg Config) http.Handler {
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
 		setups:       appsetup.NewRunner(cfg.Catalog),
+		setUpEnded:   cfg.setUpEnded,
+		checkTurns:   newCheckTurns(maxCheckPlans),
 	}
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)

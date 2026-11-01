@@ -328,6 +328,7 @@
     "webhook": false
   },
   "AuthorizationWebhookPlan": {
+    "allowed": false,
     "enabled": false,
     "keyed": false,
     "package": false,

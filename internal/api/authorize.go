@@ -305,8 +305,8 @@ func (h *handler) verifiedApp(ctx context.Context, req authorize.Request) (autho
 // set up behind it is planned at every read, so it shows the repository as it
 // is; once an approval checked its rows, the page reads those, each with its
 // progress, while the set up runs and after it stopped. An approved request
-// is answered once, from what it holds, nothing planned again: that read
-// hands the page where to go, and the request is gone after it.
+// is answered once, as its set up left it, reading nothing: that read hands
+// the page where to go, and the request is gone after it.
 func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
@@ -317,10 +317,19 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizationGone(w)
 		return
 	}
+	if req.State == substrate.AuthorizationApproved {
+		handed, err := h.authz.HandOver(id, authority)
+		if err != nil {
+			writeAuthorizationGone(w)
+			return
+		}
+		writeJSON(w, http.StatusOK, handed.Answer)
+		return
+	}
 	// What the page shows is what an approval or a denial is checked
 	// against: the first snapshot, never a later fetch, so a request read
 	// twice shows the same document both times.
-	doc := authorize.Document{}
+	var doc authorize.Document
 	if req.Document != nil {
 		doc = *req.Document
 	} else {
@@ -333,11 +342,56 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	kinds, err := ds.Kinds(ctx)
+	// The claim above came first: the plan reads this repository, and
+	// another repository's read of the request learns nothing of it.
+	rows, hash := req.Setup, req.PlanHash
+	if rows == nil {
+		if rows, hash, err = appsetup.Plan(ctx, ds, h.catalog, req.Details, appsetup.Options{}); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+	}
+	reads, err := readForPage(ctx, ds, req)
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, reads.view(req, doc, authority, rows, hash))
+}
+
+// pageReads is what the approval page's view of a request reads from the
+// repository: the registry, the app's previous token, and the agent rows
+// where a scope names agents.
+type pageReads struct {
+	kinds    []substrate.KindInfo
+	previous *substrate.AuthorizationPrevious
+	agents   []*substrate.Record
+}
+
+// readForPage reads what the approval page's view of req needs of ds.
+func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Request) (pageReads, error) {
+	var out pageReads
+	var err error
+	if out.kinds, err = ds.Kinds(ctx); err != nil {
+		return out, err
+	}
+	if out.previous, err = previousToken(ctx, ds, req.Client); err != nil {
+		return out, err
+	}
+	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
+		if out.agents, err = agentRows(ctx, ds); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// view is the approval page's view of req in repository authority: the app as
+// doc describes it, rows as what approving sets up under their digest hash,
+// and each scope with what it reaches and whether the previous token holds
+// it. It reads nothing, so a set up that finished builds its request's last
+// view under the store's lock.
+func (p pageReads) view(req authorize.Request, doc authorize.Document, authority string, rows []substrate.AuthorizationSetup, hash string) substrate.AuthorizationRequest {
 	view := substrate.AuthorizationRequest{
 		ID: req.ID,
 		App: substrate.AuthorizationApp{
@@ -354,23 +408,17 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		DefaultLifetimeDays: defaultLifetimeDays,
 		ExpiresAt:           req.Expires,
 		Details:             req.Details,
+		Setup:               slices.Clone(rows),
+		PlanHash:            hash,
+		Previous:            p.previous,
 		State:               req.State,
 		Failure:             req.Failure,
 	}
 	if view.Details == nil {
 		view.Details = []substrate.AuthorizationDetail{}
 	}
-	// The claim above came first: the plan reads this repository, and
-	// another repository's read of the request learns nothing of it.
-	if req.Setup != nil {
-		view.Setup, view.PlanHash = req.Setup, req.PlanHash
-	} else if view.Setup, view.PlanHash, err = appsetup.Plan(ctx, ds, h.catalog, req.Details, appsetup.Options{}); err != nil {
-		writeSubstrateError(w, r, err)
-		return
-	}
-	if view.Previous, err = previousToken(ctx, ds, req.Client); err != nil {
-		writeSubstrateError(w, r, err)
-		return
+	if view.Setup == nil {
+		view.Setup = []substrate.AuthorizationSetup{}
 	}
 	var before scope.Grant
 	if view.Previous != nil {
@@ -378,16 +426,19 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 		// new.
 		before, _ = scope.NewGrant(view.Previous.Scopes)
 	}
-	registry := make(map[string]substrate.KindInfo, len(kinds))
-	for _, k := range kinds {
-		registry[k.Identity] = k
-	}
-	var agents []*substrate.Record
-	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
-		if agents, err = agentRows(ctx, ds); err != nil {
-			writeSubstrateError(w, r, err)
-			return
+	// The webhook a row turns on is the one scope a detail adds, so whether
+	// the previous token holds it is said on the row. The plan is copied:
+	// its pointer is shared with the rows the store holds.
+	for i, row := range view.Setup {
+		if row.Webhook != nil {
+			plan := *row.Webhook
+			plan.Allowed = before.Covers(scope.WebhookScope(plan.Trigger), false)
+			view.Setup[i].Webhook = &plan
 		}
+	}
+	registry := make(map[string]substrate.KindInfo, len(p.kinds))
+	for _, k := range p.kinds {
+		registry[k.Identity] = k
 	}
 	seen := map[string]bool{}
 	for _, s := range req.Scopes {
@@ -406,22 +457,13 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 			Allowed: before.Covers(resolved, scopeInternal(resolved, registry)),
 		}
 		if resolved.OverAgents() {
-			row.Agents = matchedAgents(resolved, agents)
+			row.Agents = matchedAgents(resolved, p.agents)
 		} else {
-			row.Kinds = scopeKinds(resolved, kinds, view.Setup)
+			row.Kinds = scopeKinds(resolved, p.kinds, view.Setup)
 		}
 		view.Scopes = append(view.Scopes, row)
 	}
-	// Built whole before the hand-over, so nothing that can fail comes
-	// after it: the read that hands the code over is the last one.
-	if req.State == substrate.AuthorizationApproved {
-		if _, err := h.authz.HandOver(id, authority); err != nil {
-			writeAuthorizationGone(w)
-			return
-		}
-		view.Next = req.Next
-	}
-	writeJSON(w, http.StatusOK, view)
+	return view
 }
 
 // shownApp is the document the approval page showed for a request, which an
@@ -527,9 +569,16 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	authority := ds.Repository().Authority
 	id := pathParam(r, "request")
+	actor := ActorFrom(ctx)
 	// Checked again under the store's lock by whichever of Reserve, Approve
 	// and Finish answers the request.
 	approve := func(req authorize.Request) (authorize.Approval, error) {
+		// First, so a door that may not approve this request reserves and
+		// plans nothing: what a request with details sets up, or finds in
+		// place, is approved as the owner, through a human door.
+		if len(req.Details) > 0 && !substrate.HumanActors[actor] {
+			return authorize.Approval{}, notTheOwnersDoor{actor: actor}
+		}
 		doc, err := shownApp(req)
 		if err != nil {
 			return authorize.Approval{}, err
@@ -625,14 +674,6 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	actor := ActorFrom(ctx)
-	if !substrate.HumanActors[actor] {
-		refuse(false, func() {
-			writeError(w, http.StatusForbidden, codeForbidden,
-				"setting up is the owner's act, through the console, substratectl or the API, never as "+string(actor))
-		})
-		return
-	}
 	started := appsetup.Started(approved, rows)
 	if err := h.authz.Begin(id, authority, started, approvedHash); err != nil {
 		writeAuthorizationAnswerError(w, r, err)
@@ -654,10 +695,21 @@ func withoutProgress(rows []substrate.AuthorizationSetup) []substrate.Authorizat
 	return out
 }
 
+// notTheOwnersDoor refuses an approval of a request with details from a door
+// that is not a human's.
+type notTheOwnersDoor struct{ actor substrate.Actor }
+
+func (e notTheOwnersDoor) Error() string {
+	return "setting up is the owner's act, through the console, substratectl or the API, never as " + string(e.actor)
+}
+
 // writeAuthorizationAnswerError answers the store's refusals of an approval
 // or a denial.
 func writeAuthorizationAnswerError(w http.ResponseWriter, r *http.Request, err error) {
+	var door notTheOwnersDoor
 	switch {
+	case errors.As(err, &door):
+		writeError(w, http.StatusForbidden, codeForbidden, door.Error())
 	case errors.Is(err, authorize.ErrNotPending):
 		writeAuthorizationGone(w)
 	case errors.Is(err, authorize.ErrSettingUp):

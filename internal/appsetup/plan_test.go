@@ -161,6 +161,76 @@ func TestAPackageTheOwnerDeclaredIsNeverReplaced(t *testing.T) {
 	}
 }
 
+// Whose a package is comes from its package record alone: one the owner
+// declared by hand is theirs though it declares no kind and no bundle owns
+// it, asked for or needed first, and one a provider install published is
+// not, stamped or not.
+func TestWhoseAPackageIsComesFromItsPackageRecord(t *testing.T) {
+	cat := testCatalog(t)
+	handDeclared := func(ds *fakeDataset, source string, stamp int64, bundle bool) {
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		ds.packageRecordLocked(hooksPkg, source, 1, stamp)
+		if bundle {
+			ds.statuses[hooksPkg] = substrate.BundleStatus{ID: hooksPkg, Installed: true, Enabled: true, Version: 1, ShippedVersion: stamp}
+		}
+	}
+	for name, c := range map[string]struct {
+		source string
+		stamp  int64
+		bundle bool
+		action string
+		owners bool
+	}{
+		"the owner's, with no bundle":        {source: vocabulary.SourceInstalled, action: substrate.SetupInstall, owners: true},
+		"the owner's, with a bundle":         {source: vocabulary.SourceInstalled, bundle: true, action: substrate.SetupUpgrade, owners: true},
+		"published before the stamp":         {source: vocabulary.SourcePublished, bundle: true, action: substrate.SetupUpgrade},
+		"published and stamped":              {source: vocabulary.SourcePublished, stamp: 1, bundle: true, action: substrate.SetupUpgrade},
+		"installed, then stamped as shipped": {source: vocabulary.SourceInstalled, stamp: 1, bundle: true, action: substrate.SetupUpgrade},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds := newFakeDataset()
+			handDeclared(ds, c.source, c.stamp, c.bundle)
+			row := plan(t, ds, cat, pkgDetail(hooksPkg, 2))[0]
+			if row.Action != c.action {
+				t.Fatalf("hooks = %q, want %q", row.Action, c.action)
+			}
+			if !c.owners {
+				if row.Blocked != nil {
+					t.Fatalf("a package that is not the owner's is blocked: %+v", row.Blocked)
+				}
+				return
+			}
+			wantBlocked(t, "hooks", row.Blocked, substrate.BlockDeclaredByOwner, ProviderPage(hooksPkg))
+			if !strings.Contains(row.Blocked.Problem, "version 1") {
+				t.Fatalf("hooks says %q, want the version the owner declared", row.Blocked.Problem)
+			}
+
+			// Needed first, at a floor above what the owner holds.
+			ds = newFakeDataset()
+			handDeclared(ds, c.source, c.stamp, c.bundle)
+			row = plan(t, ds, cat, pkgDetail(needsHooks, 1))[0]
+			i := slices.IndexFunc(row.Package.Requires, func(s substrate.AuthorizationPackageStep) bool { return s.ID == hooksPkg })
+			if row.Action != substrate.SetupInstall || i < 0 || row.Package.Requires[i].Action != c.action {
+				t.Fatalf("needshooks = %q bringing %+v", row.Action, row.Package.Requires)
+			}
+			wantBlocked(t, "hooks", row.Package.Requires[i].Blocked, substrate.BlockDeclaredByOwner, ProviderPage(hooksPkg))
+			wantBlocked(t, "needshooks", row.Blocked, substrate.BlockDeclaredByOwner, ProviderPage(hooksPkg))
+			if !strings.Contains(row.Blocked.Problem, "needs a package first") {
+				t.Fatalf("needshooks says %q", row.Blocked.Problem)
+			}
+		})
+	}
+	// A deleted package record is no package the owner holds.
+	ds := newFakeDataset()
+	handDeclared(ds, vocabulary.SourceInstalled, 0, false)
+	at := time.Unix(10, 0).UTC()
+	ds.record(packageKind, hooksPkg).DeletedAt = &at
+	if row := plan(t, ds, cat, pkgDetail(hooksPkg, 2))[0]; row.Action != substrate.SetupInstall || row.Blocked != nil {
+		t.Fatalf("hooks over a deleted package record = %+v %+v", row, row.Blocked)
+	}
+}
+
 // A quarantined copy is the provider page's to explain, asked for or needed
 // first.
 func TestAQuarantinedPackageIsBlocked(t *testing.T) {

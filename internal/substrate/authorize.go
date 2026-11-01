@@ -32,10 +32,9 @@ type AuthorizationRequest struct {
 	// asked for scopes alone.
 	Details []AuthorizationDetail `json:"details"`
 	// Setup is what approving would set up, one row per detail in the
-	// request's order. A pending request's rows are planned at every read,
-	// so after a set up stops part way a second read shows what landed;
-	// while a set up runs, and after one stopped, they are the rows the
-	// approval was checked against, each carrying its Progress.
+	// request's order: planned at every read until an approval is checked
+	// against them, then those rows, each carrying its Progress, while the
+	// set up runs, after it stopped and once it finished.
 	Setup []AuthorizationSetup `json:"setup"`
 	// PlanHash digests Setup's rows. An approval of a request with setup
 	// names it, and the server refuses when its own plan has moved since:
@@ -50,7 +49,8 @@ type AuthorizationRequest struct {
 	Failure *AuthorizationFailure `json:"failure,omitempty"`
 	// Next is where the page goes once a set up finished and the code was
 	// issued: the app's redirect URI carrying it. An approved request is
-	// answered once, with Next and nothing planned again, and is gone after.
+	// answered once, as it stood when the set up finished, with nothing read
+	// again, and is gone after.
 	Next string `json:"next,omitempty"`
 }
 
@@ -233,13 +233,15 @@ type AuthorizationAccount struct {
 // AuthorizationWebhookPlan is a webhook row: the trigger approving turns on.
 // Package is the package its callable belongs to, the one deliveries reach.
 // Keyed says whether it holds a key already; the key is never shown or
-// shared, since the app delivers with its own token. A check answers
-// Trigger and Package alone.
+// shared, since the app delivers with its own token. Allowed is true when the
+// previous token already delivers to the trigger, by the same rule as a
+// scope row's Allowed. A check answers Trigger and Package alone.
 type AuthorizationWebhookPlan struct {
 	Trigger string `json:"trigger"`
 	Package string `json:"package,omitempty"`
 	Enabled bool   `json:"enabled,omitempty"`
 	Keyed   bool   `json:"keyed,omitempty"`
+	Allowed bool   `json:"allowed,omitempty"`
 }
 
 // AuthorizationPrevious is the newest token the repository holds for the

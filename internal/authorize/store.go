@@ -18,7 +18,10 @@ import (
 // repository (decision 0083), so no second process needs the state, and the
 // token the flow ends in is a record in the changelog like any other.
 const (
-	// RequestTTL is how long a parked request waits for the owner.
+	// RequestTTL is how long a parked request waits for the owner, again
+	// after a set up of it failed, and for its hand-over once one finished.
+	// An approval refused before its set up ran gives the request back the
+	// lapse it had, so refusing never keeps a request parked longer.
 	RequestTTL = 10 * time.Minute
 	// CodeTTL is how long a code may be exchanged once its app can hold it
 	// (an app exchanges within seconds).
@@ -102,16 +105,24 @@ type Request struct {
 	// digest: the page reads these while the set up runs and after it stops,
 	// never a plan that moved as rows landed. They outlive a failed run, so
 	// the page shows what landed, and go when the plan moved from what was
-	// approved (Replan). Failure is why the last run stopped, and Next the
-	// redirect carrying the code once approved.
+	// approved (Replan). Failure is why the last run stopped.
 	Setup    []substrate.AuthorizationSetup
 	PlanHash string
 	Failure  *substrate.AuthorizationFailure
-	Next     string
+	// Answer is the approval page's whole view of the request once approved,
+	// its redirect carrying the code among it, built as the set up finished
+	// (Finish): the read that hands it over (HandOver) answers it as it is
+	// and reads nothing else, so no read that fails can keep an issued code
+	// from the page.
+	Answer *substrate.AuthorizationRequest
 
 	// code is the hash of the code Finish minted, whose clock HandOver
 	// starts.
 	code string
+	// waited is when the request lapsed before Reserve moved its lapse to
+	// the set up's bound, which an approval refused before its set up ran
+	// gives back.
+	waited time.Time
 }
 
 // snapshot is a copy of r a caller may keep: the rows are the store's to
@@ -201,7 +212,7 @@ func (s *Store) Park(r Request) (Request, error) {
 // the first call. A request being set up, or approved after a set up and not
 // yet handed over, is answered too, to the repository that claimed it alone,
 // so the page can follow the set up it started. Reading changes nothing
-// else: an approved request's Next is handed over by HandOver alone.
+// else: an approved request's Answer is handed over by HandOver alone.
 func (s *Store) Claim(id, repository string) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -332,7 +343,7 @@ func (s *Store) Reserve(id, repository string, check func(Request) error) (Reque
 		return Request{}, err
 	}
 	r.State = substrate.AuthorizationSettingUp
-	r.Expires = s.now().Add(SetUpTTL)
+	r.waited, r.Expires = r.Expires, s.now().Add(SetUpTTL)
 	return r.snapshot(), nil
 }
 
@@ -371,8 +382,9 @@ func (s *Store) Progress(id, repository string, progress []string) error {
 // stopped; a nil failure leaves the last one as it was, for an approval
 // refused before its set up ran. The rows stay with what landed: one the run
 // left running stopped part way and reads as failed, one left waiting never
-// ran and reads as neither. The request waits RequestTTL again for the owner
-// to try again or deny.
+// ran and reads as neither. A set up that failed waits RequestTTL again for
+// the owner to try again or deny; a refused approval lapses when the request
+// did before Reserve, so refusals never keep a request parked.
 func (s *Store) Fail(id, repository string, failure *substrate.AuthorizationFailure) error {
 	return s.stop(id, repository, failure, false)
 }
@@ -407,20 +419,24 @@ func (s *Store) stop(id, repository string, failure *substrate.AuthorizationFail
 			r.Setup[i].Progress = ""
 		}
 	}
-	r.Expires = s.now().Add(RequestTTL)
+	r.Expires = r.waited
+	if failure != nil {
+		r.Expires = s.now().Add(RequestTTL)
+	}
 	return nil
 }
 
 // Finish approves a request its set up reserved, once the set up landed:
 // check accepts the approval under the lock and the code is minted as
 // Approve mints it. The request stays readable to repository as approved,
-// holding next(request, code), the redirect the page that polls it navigates
-// to, RequestTTL from now, since a page in a background tab may not be
-// polling when the set up ends. Until HandOver nobody holds the code, so it
+// holding answer(request, code), the page's view of it carrying the redirect
+// the page that polls it navigates to, RequestTTL from now, since a page in a
+// background tab may not be polling when the set up ends. answer runs under
+// the lock and reads nothing. Until HandOver nobody holds the code, so it
 // lives until then, and never past maxCodeLife from now. Every later
 // approval or denial answers ErrNotPending. A refused check leaves the
 // request setting up, for the caller to Fail.
-func (s *Store) Finish(id, repository string, check func(Request) (Approval, error), next func(Request, string) string) (string, Request, error) {
+func (s *Store) Finish(id, repository string, check func(Request) (Approval, error), answer func(Request, string) substrate.AuthorizationRequest) (string, Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweep()
@@ -435,8 +451,9 @@ func (s *Store) Finish(id, repository string, check func(Request) (Approval, err
 	now := s.now()
 	r.State = substrate.AuthorizationApproved
 	r.Failure = nil
-	r.Next = next(r.snapshot(), code)
 	r.Expires = now.Add(RequestTTL)
+	a := answer(r.snapshot(), code)
+	r.Answer = &a
 	r.code = HashCode(code)
 	c := s.codes[r.code]
 	c.Expires = now.Add(maxCodeLife)

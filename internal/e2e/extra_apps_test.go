@@ -3,9 +3,9 @@ package e2e
 // An app's authorization and what its approval sets up (decisions 0194 and
 // 0202), through the real door and the real engine: internal/api drives the
 // same flow against a hand-written fake, so what only this case shows is
-// that the catalog's install door, the create-only account write, the
-// trigger's arming, the minted token, the webhook door and the blob store
-// agree with each other on a live server.
+// that the catalog's install door, the create-only account write, the write
+// that turns the trigger on, the minted token, the webhook door and the blob
+// store agree with each other on a live server.
 //
 // The app is Substrate Sync's request from a local client id, because the
 // server never dials loopback for a web app's document. Nothing listens at
@@ -337,21 +337,21 @@ func xpCaseAppSetUp(c *C) {
 	}
 	pkgRow := "substrate.reamde.dev/core/package"
 	appleAt, healthAt, appleHealthAt := first(pkgRow, xpApplePkg), first(pkgRow, xpHealthPkg), first(pkgRow, xpAppleHealthPkg)
-	accountAt, armedAt := first(xpAccountKind, xpAccountID), last(xpTriggerKind, xpWebhook)
-	c.requiref(appleAt >= 0 && appleAt < healthAt && healthAt < appleHealthAt && appleHealthAt < accountAt && accountAt < armedAt,
+	accountAt, enabledAt := first(xpAccountKind, xpAccountID), last(xpTriggerKind, xpWebhook)
+	c.requiref(appleAt >= 0 && appleAt < healthAt && healthAt < appleHealthAt && appleHealthAt < accountAt && accountAt < enabledAt,
 		"the set up's changelog order is apple %d, health %d, applehealth %d, account %d, trigger %d: want packages (health before "+
-			"applehealth), then the account, then the webhook", appleAt, healthAt, appleHealthAt, accountAt, armedAt)
+			"applehealth), then the account, then the webhook", appleAt, healthAt, appleHealthAt, accountAt, enabledAt)
 	accountRows := 0
 	for _, row := range rows {
 		if row.Kind == xpAccountKind && row.RecordID == xpAccountID {
 			accountRows++
 		}
 	}
-	c.requiref(accountRows == 1 && rows[accountAt].Actor == "api" && rows[armedAt].Actor == "api",
-		"the account has %d rows, the first by %q, and the trigger's arming is by %q: want one write each, the owner's door's",
-		accountRows, rows[accountAt].Actor, rows[armedAt].Actor)
-	c.stepf("the changelog holds the set up in order: `%s` (seq %d), `%s` (seq %d) before `%s` (seq %d), then the account's one write (seq %d) and the trigger's arming (seq %d), both as the owner's `api` door",
-		xpApplePkg, rows[appleAt].Seq, xpHealthPkg, rows[healthAt].Seq, xpAppleHealthPkg, rows[appleHealthAt].Seq, rows[accountAt].Seq, rows[armedAt].Seq)
+	c.requiref(accountRows == 1 && rows[accountAt].Actor == "api" && rows[enabledAt].Actor == "api",
+		"the account has %d rows, the first by %q, and the trigger is turned on by %q: want one write each, the owner's door's",
+		accountRows, rows[accountAt].Actor, rows[enabledAt].Actor)
+	c.stepf("the changelog holds the set up in order: `%s` (seq %d), `%s` (seq %d) before `%s` (seq %d), then the account's one write (seq %d) and the write turning the trigger on (seq %d), both as the owner's `api` door",
+		xpApplePkg, rows[appleAt].Seq, xpHealthPkg, rows[healthAt].Seq, xpAppleHealthPkg, rows[appleHealthAt].Seq, rows[accountAt].Seq, rows[enabledAt].Seq)
 	account := c.getRec("/api/v1/"+xpAccountKind, xpAccountID)
 	c.requiref(account.prop("displayName") == xpAccountName && account.prop("timezone") == "Europe/London",
 		"the account holds %v", account.Properties)

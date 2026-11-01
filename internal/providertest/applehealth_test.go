@@ -944,8 +944,8 @@ func ahWebhookTrigger(t *testing.T) map[string]any {
 	return nil
 }
 
-// ahDoor serves the API over the engine and arms the shipped trigger with a
-// key, the way an owner does before pointing the app at it.
+// ahDoor serves the API over the engine and turns the shipped trigger on with
+// a key, the way an owner does before pointing the app at it.
 func ahDoor(t *testing.T, svc substrate.Service, ds substrate.Dataset, key string) (*httptest.Server, string) {
 	t.Helper()
 	m := ahWebhookTrigger(t)

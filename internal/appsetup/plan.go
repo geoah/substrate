@@ -28,6 +28,10 @@ import (
 // accountConfigTrait is the trait an account detail's kind implements.
 const accountConfigTrait = vocabulary.PackageCore + "/" + vocabulary.TraitAccountConfig
 
+// packageKind is the kind of a package's own record, whose source and
+// shipped-version stamp say whose the package is.
+var packageKind = vocabulary.CoreKind(vocabulary.DocPackage)
+
 // Options narrows a plan.
 type Options struct {
 	// ActionOnly names packages whose rows are planned no further than their
@@ -48,6 +52,7 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat *catalog.Catalog, detai
 	p := &planner{
 		ds: ds, cat: cat, opts: opts, statuses: map[string]*substrate.BundleStatus{},
 		kinds: map[string]substrate.KindInfo{}, packages: map[string]*substrate.AuthorizationSetup{},
+		owned: map[string]ownership{},
 	}
 	statuses, err := ds.BundleStatusesUncounted(ctx)
 	if err != nil {
@@ -150,7 +155,7 @@ func ProviderPage(pkg string) string {
 }
 
 // planner reads once what one plan needs: every bundle's status, quarantined
-// ones included, and the registry.
+// ones included, the registry, and each package record it asks whose it is.
 type planner struct {
 	ds       substrate.Dataset
 	cat      *catalog.Catalog
@@ -160,6 +165,15 @@ type planner struct {
 	// packages are the request's package rows by package id, planned before
 	// the account and webhook rows that are held to them.
 	packages map[string]*substrate.AuthorizationSetup
+	owned    map[string]ownership
+}
+
+// ownership is whose a package is, as its package record says.
+type ownership struct {
+	// declared is set for a package the owner declared themselves, and
+	// version is the version they hold it at.
+	declared bool
+	version  int64
 }
 
 func (p *planner) bundle(id string) *catalog.Bundle {
@@ -185,42 +199,58 @@ func (p *planner) action(id string, need int64) string {
 	return substrate.SetupUpgrade
 }
 
-// declaredByOwner reports whether the owner declared a package themselves:
-// its kinds are the repository's own, and no provider install stamped it.
-// Installing the published closure over it would take it from them.
-func (p *planner) declaredByOwner(id string) bool {
-	if st := p.statuses[id]; st != nil && st.ShippedVersion > 0 {
-		return false
-	}
-	for _, k := range p.kinds {
-		if vocabulary.KindPackage(k.Identity) == id {
-			return k.Source == vocabulary.SourceInstalled
+// ownedBlock is the block on installing over package id when the owner
+// declared it themselves, nil when they did not. Installing the published
+// closure over it would take it from them. Whose it is is read off the
+// package record alone: a package of functions or traits declares no kind,
+// and one applied by hand carries no bundle. It is the owner's when it is
+// `installed` and no provider install stamped it; `published` and `builtin`
+// ones are not, nor is one the repository does not hold.
+func (p *planner) ownedBlock(ctx context.Context, id string) (*packageProblem, error) {
+	o, read := p.owned[id]
+	if !read {
+		rec, err := p.ds.Get(ctx, packageKind, id)
+		switch {
+		case errors.Is(err, substrate.ErrNotFound):
+		case err != nil:
+			return nil, err
+		case rec.DeletedAt == nil:
+			source, _ := rec.Properties["source"].(string)
+			stamp, _ := vocabulary.VersionValue(rec.Properties["shippedVersion"])
+			o.declared = source == vocabulary.SourceInstalled && stamp <= 0
+			o.version, _ = vocabulary.VersionValue(rec.Properties["version"])
 		}
+		p.owned[id] = o
 	}
-	return false
+	if !o.declared {
+		return nil, nil
+	}
+	return declaredByOwner(id, o.version), nil
 }
 
 // packageBlock is why approving cannot bring package id to need, nil when
 // nothing stands in its way but a preview: a package the catalog does not
 // ship, a sample, a quarantined copy, one the owner declared below need, or
 // one this server ships below need.
-func (p *planner) packageBlock(id string, need int64) *packageProblem {
+func (p *planner) packageBlock(ctx context.Context, id string, need int64) (*packageProblem, error) {
 	b, st := p.bundle(id), p.statuses[id]
 	switch {
 	case b == nil:
-		return notShipped()
+		return notShipped(), nil
 	case b.Tier == substrate.TierSample:
-		return sample()
+		return sample(), nil
 	case st != nil && st.Quarantined:
-		return quarantined(id)
+		return quarantined(id), nil
 	case st != nil && st.Installed && p.held(id) >= need:
-		return nil
-	case p.declaredByOwner(id):
-		return declaredByOwner(id, p.held(id))
-	case b.Version < need:
-		return serverUpdate(b.Version, need)
+		return nil, nil
 	}
-	return nil
+	if problem, err := p.ownedBlock(ctx, id); problem != nil || err != nil {
+		return problem, err
+	}
+	if b.Version < need {
+		return serverUpdate(b.Version, need), nil
+	}
+	return nil, nil
 }
 
 func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetail) (substrate.AuthorizationSetup, error) {
@@ -233,10 +263,14 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	// Installed or not: a package row admits the account and webhook rows of
 	// its package, which would otherwise reach the owner's own packages and
 	// the samples they imported, and nothing names those as the app's.
-	if row.Blocked = p.packageBlock(d.Package, d.Version).of(false); row.Blocked != nil || row.Action == substrate.SetupNone {
+	problem, err := p.packageBlock(ctx, d.Package, d.Version)
+	if err != nil {
+		return row, err
+	}
+	if row.Blocked = problem.own(); row.Blocked != nil || row.Action == substrate.SetupNone {
 		return row, nil
 	}
-	steps, err := p.cat.Requirements(ctx, d.Package, p.ds)
+	steps, unmet, err := p.cat.Requirements(ctx, d.Package, p.ds)
 	if err != nil {
 		return row, err
 	}
@@ -244,16 +278,15 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	if !actionOnly {
 		info.Kinds, info.Functions, info.Triggers = p.facts(b)
 	}
-	var problem *packageProblem
-	if info.Requires, problem = p.chain(b, steps, actionOnly); problem != nil || actionOnly {
-		row.Blocked = problem.of(true)
-		return row, nil
+	if info.Requires, problem, err = p.chain(ctx, b, steps, unmet, actionOnly); err != nil || problem != nil || actionOnly {
+		row.Blocked = problem.needsFirst()
+		return row, err
 	}
 	// The preview runs last and stops at the first package it blocks: it
 	// stages a closure against the owner's data.
 	if row.Action == substrate.SetupUpgrade {
 		if problem, err = p.upgradeBlock(ctx, d.Package); problem != nil || err != nil {
-			row.Blocked = problem.of(false)
+			row.Blocked = problem.own()
 			return row, err
 		}
 	}
@@ -263,7 +296,7 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 			continue
 		}
 		if problem, err = p.upgradeBlock(ctx, step.ID); problem != nil || err != nil {
-			step.Blocked, row.Blocked = problem.of(false), problem.of(true)
+			step.Blocked, row.Blocked = problem.own(), problem.needsFirst()
 			return row, err
 		}
 	}
@@ -272,13 +305,13 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 
 // chain is what installing b brings first, in the order it lands: steps, the
 // requirements the catalog installs, each held to the floor the chain puts
-// under it, and after them any requirement the chain needs that the catalog
+// under it, and after them unmet, what the chain needs that the catalog
 // cannot install, a package it does not ship or a sample, which the install
 // would be refused on. The problem is the first step's that blocks.
-func (p *planner) chain(b *catalog.Bundle, steps []*catalog.Bundle, actionOnly bool) ([]substrate.AuthorizationPackageStep, *packageProblem) {
+func (p *planner) chain(ctx context.Context, b *catalog.Bundle, steps []*catalog.Bundle, unmet []catalog.Unmet, actionOnly bool) ([]substrate.AuthorizationPackageStep, *packageProblem, error) {
 	var first *packageProblem
 	blocks := func(step *substrate.AuthorizationPackageStep, problem *packageProblem) {
-		step.Blocked = problem.of(false)
+		step.Blocked = problem.own()
 		if first == nil {
 			first = problem
 		}
@@ -291,16 +324,15 @@ func (p *planner) chain(b *catalog.Bundle, steps []*catalog.Bundle, actionOnly b
 		}
 	}
 	var out []substrate.AuthorizationPackageStep
-	landing := map[string]bool{}
 	for _, dep := range steps {
-		landing[dep.ID] = true
 		step := substrate.AuthorizationPackageStep{
-			ID: dep.ID, Description: dep.Description, Action: substrate.SetupInstall, Held: p.held(dep.ID), Shipped: dep.Version,
+			ID: dep.ID, Description: dep.Description, Action: p.stepAction(dep.ID), Held: p.held(dep.ID), Shipped: dep.Version,
 		}
-		if st := p.statuses[dep.ID]; st != nil && st.Installed {
-			step.Action = substrate.SetupUpgrade
+		problem, err := p.stepBlock(ctx, dep, floors[dep.ID])
+		if err != nil {
+			return out, first, err
 		}
-		if problem := p.stepBlock(dep.ID, floors[dep.ID]); problem != nil {
+		if problem != nil {
 			blocks(&step, problem)
 		}
 		if !actionOnly {
@@ -308,49 +340,41 @@ func (p *planner) chain(b *catalog.Bundle, steps []*catalog.Bundle, actionOnly b
 		}
 		out = append(out, step)
 	}
-	for _, lb := range chain {
-		for _, req := range lb.Requires {
-			if landing[req] || req == b.ID {
-				continue
-			}
-			// The catalog's own walk reads the stored version the same way.
-			if st := p.statuses[req]; st != nil && st.Installed && st.Version >= lb.RequiresAtLeast[req] {
-				continue
-			}
-			dep := p.bundle(req)
-			if dep != nil && dep.Tier == substrate.TierProvider {
-				continue
-			}
-			landing[req] = true
-			step := substrate.AuthorizationPackageStep{ID: req, Action: substrate.SetupInstall, Held: p.held(req)}
-			if st := p.statuses[req]; st != nil && st.Installed {
-				step.Action = substrate.SetupUpgrade
-			}
-			problem := notShipped()
-			if dep != nil {
-				step.Description, step.Shipped, problem = dep.Description, dep.Version, sample()
-			}
-			blocks(&step, problem)
-			out = append(out, step)
+	for _, u := range unmet {
+		step := substrate.AuthorizationPackageStep{ID: u.ID, Action: p.stepAction(u.ID), Held: p.held(u.ID)}
+		problem := notShipped()
+		if u.Bundle != nil {
+			step.Description, step.Shipped, problem = u.Bundle.Description, u.Bundle.Version, sample()
 		}
+		blocks(&step, problem)
+		out = append(out, step)
 	}
-	return out, first
+	return out, first, nil
+}
+
+// stepAction is what an install does to a requirement it brings first: an
+// upgrade of one the repository holds, else an install.
+func (p *planner) stepAction(id string) string {
+	if st := p.statuses[id]; st != nil && st.Installed {
+		return substrate.SetupUpgrade
+	}
+	return substrate.SetupInstall
 }
 
 // stepBlock is packageBlock for a requirement the catalog installs: it lands
 // whatever the repository holds, so only what would refuse or replace it
 // counts.
-func (p *planner) stepBlock(id string, floor int64) *packageProblem {
-	b, st := p.bundle(id), p.statuses[id]
-	switch {
-	case st != nil && st.Quarantined:
-		return quarantined(id)
-	case st != nil && st.Installed && p.declaredByOwner(id):
-		return declaredByOwner(id, p.held(id))
-	case b.Version < floor:
-		return serverUpdate(b.Version, floor)
+func (p *planner) stepBlock(ctx context.Context, dep *catalog.Bundle, floor int64) (*packageProblem, error) {
+	if st := p.statuses[dep.ID]; st != nil && st.Quarantined {
+		return quarantined(dep.ID), nil
 	}
-	return nil
+	if problem, err := p.ownedBlock(ctx, dep.ID); problem != nil || err != nil {
+		return problem, err
+	}
+	if dep.Version < floor {
+		return serverUpdate(dep.Version, floor), nil
+	}
+	return nil, nil
 }
 
 // upgradeBlock is why upgrading an installed package cannot run from the

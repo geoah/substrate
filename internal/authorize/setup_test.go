@@ -29,7 +29,11 @@ func accept(Request) error { return nil }
 
 func approval(Request) (Approval, error) { return Approval{Scopes: []string{"read:*"}}, nil }
 
-func redirectWith(_ Request, code string) string { return "https://a.example.org/cb?code=" + code }
+// answerWith is the page's view of an approved request, its redirect
+// carrying the code.
+func answerWith(r Request, code string) substrate.AuthorizationRequest {
+	return substrate.AuthorizationRequest{ID: r.ID, State: r.State, ExpiresAt: r.Expires, Next: "https://a.example.org/cb?code=" + code}
+}
 
 func TestASetUpReservesTheRequestForTheRepositoryThatShowedIt(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
@@ -93,7 +97,7 @@ func TestASetUpReservesTheRequestForTheRepositoryThatShowedIt(t *testing.T) {
 	if err := s.Fail(r.ID, "eve.example.com", nil); !errors.Is(err, ErrNotPending) {
 		t.Fatalf("another repository's failure = %v", err)
 	}
-	if _, _, err := s.Finish(r.ID, "eve.example.com", approval, redirectWith); !errors.Is(err, ErrNotPending) {
+	if _, _, err := s.Finish(r.ID, "eve.example.com", approval, answerWith); !errors.Is(err, ErrNotPending) {
 		t.Fatalf("another repository's finish = %v", err)
 	}
 }
@@ -176,6 +180,54 @@ func TestAFailedSetUpIsPendingAgainWithWhatLanded(t *testing.T) {
 	}
 }
 
+// An approval refused before its set up ran gives the request back the lapse
+// it had: refusing it again and again never keeps it parked. Only a run that
+// failed waits RequestTTL again.
+func TestARefusedApprovalKeepsTheRequestsLapse(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	s := NewStore(func() time.Time { return now })
+	r := shownRequest(t, s)
+	lapses := r.Expires
+	for _, refuse := range []func() error{
+		func() error { return s.Fail(r.ID, "ada.example.com", nil) },
+		func() error { return s.Replan(r.ID, "ada.example.com", nil) },
+	} {
+		now = now.Add(time.Minute)
+		if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+			t.Fatal(err)
+		}
+		if err := refuse(); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := s.Claim(r.ID, "ada.example.com"); got.State != substrate.AuthorizationPending || !got.Expires.Equal(lapses) {
+			t.Fatalf("after a refusal = %q lapsing %v, want pending lapsing at %v", got.State, got.Expires, lapses)
+		}
+	}
+	now = now.Add(time.Minute)
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Fail(r.ID, "ada.example.com", &substrate.AuthorizationFailure{Message: "the install was refused"}); err != nil {
+		t.Fatal(err)
+	}
+	failed, _ := s.Claim(r.ID, "ada.example.com")
+	if !failed.Expires.Equal(now.Add(RequestTTL)) {
+		t.Fatalf("after a failed run the request lapses at %v, want %v", failed.Expires, now.Add(RequestTTL))
+	}
+	// A refusal after that failure keeps the failure's lapse, and the
+	// request lapses at it.
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Fail(r.ID, "ada.example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	now = failed.Expires
+	if _, err := s.Claim(r.ID, "ada.example.com"); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("a request refused past its lapse = %v, want ErrNotPending", err)
+	}
+}
+
 // threeRows is three package rows carrying the progress p.
 func threeRows(p string) []substrate.AuthorizationSetup {
 	rows := make([]substrate.AuthorizationSetup, 3)
@@ -200,7 +252,7 @@ func finished(t *testing.T, s *Store) Request {
 	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); err != nil {
+	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, answerWith); err != nil {
 		t.Fatal(err)
 	}
 	return r
@@ -211,7 +263,7 @@ func TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce(t *testing.T) {
 	s := NewStore(func() time.Time { return now })
 	r := shownRequest(t, s)
 	// A request nobody reserved is not finished.
-	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); !errors.Is(err, ErrNotPending) {
+	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, answerWith); !errors.Is(err, ErrNotPending) {
 		t.Fatalf("finishing a pending request = %v, want ErrNotPending", err)
 	}
 	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
@@ -220,21 +272,23 @@ func TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce(t *testing.T) {
 	// The approval's checks still run under the lock, and a refusal leaves
 	// the set up to fail.
 	refuse := errors.New("refused")
-	if _, _, err := s.Finish(r.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{}, refuse }, redirectWith); !errors.Is(err, refuse) {
+	if _, _, err := s.Finish(r.ID, "ada.example.com", func(Request) (Approval, error) { return Approval{}, refuse }, answerWith); !errors.Is(err, refuse) {
 		t.Fatalf("a refused finish = %v", err)
 	}
 	if got, _ := s.Claim(r.ID, "ada.example.com"); got.State != substrate.AuthorizationSettingUp {
 		t.Fatalf("a refused finish left the request %q, want setting-up", got.State)
 	}
-	code, got, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith)
+	code, got, err := s.Finish(r.ID, "ada.example.com", approval, answerWith)
 	if err != nil || len(code) != 64 {
 		t.Fatalf("finish = %q, %v", code, err)
 	}
-	if got.State != substrate.AuthorizationApproved || got.Next != redirectWith(got, code) {
-		t.Fatalf("finished = %+v", got)
+	// The answer is built from the request as approved, its lapse moved.
+	if got.State != substrate.AuthorizationApproved || got.Answer == nil || got.Answer.Next != "https://a.example.org/cb?code="+code ||
+		got.Answer.State != substrate.AuthorizationApproved || !got.Answer.ExpiresAt.Equal(now.Add(RequestTTL)) {
+		t.Fatalf("finished = %+v answering %+v", got, got.Answer)
 	}
 	// Reading it hands nothing over: the page that reads it decides when.
-	if read, err := s.Claim(r.ID, "ada.example.com"); err != nil || read.Next == "" {
+	if read, err := s.Claim(r.ID, "ada.example.com"); err != nil || read.Answer == nil {
 		t.Fatalf("reading the approved request = %+v, %v", read, err)
 	}
 	if _, err := s.Claim(r.ID, "eve.example.com"); !errors.Is(err, ErrNotPending) {
@@ -247,7 +301,7 @@ func TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce(t *testing.T) {
 		"approving it again":   func() error { _, _, err := s.Approve(r.ID, "ada.example.com", approval); return err },
 		"denying it":           func() error { _, err := s.Deny(r.ID, "ada.example.com", accept); return err },
 		"setting it up again":  func() error { _, err := s.Reserve(r.ID, "ada.example.com", accept); return err },
-		"finishing it again":   func() error { _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); return err },
+		"finishing it again":   func() error { _, _, err := s.Finish(r.ID, "ada.example.com", approval, answerWith); return err },
 		"failing it after all": func() error { return s.Fail(r.ID, "ada.example.com", nil) },
 	} {
 		if err := answer(); !errors.Is(err, ErrNotPending) {
@@ -256,7 +310,7 @@ func TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce(t *testing.T) {
 	}
 	// Answered once: the hand-over is the last read.
 	handed, err := s.HandOver(r.ID, "ada.example.com")
-	if err != nil || handed.Next != got.Next {
+	if err != nil || handed.Answer == nil || handed.Answer.Next != got.Answer.Next {
 		t.Fatalf("the hand-over = %+v, %v", handed, err)
 	}
 	if _, err := s.Claim(r.ID, "ada.example.com"); !errors.Is(err, ErrNotPending) {
@@ -278,7 +332,7 @@ func TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce(t *testing.T) {
 func TestAFinishedSetUpsCodeLivesFromItsHandOver(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	s := NewStore(func() time.Time { return now })
-	codeOf := func(r Request) string { return strings.TrimPrefix(r.Next, "https://a.example.org/cb?code=") }
+	codeOf := func(r Request) string { return strings.TrimPrefix(r.Answer.Next, "https://a.example.org/cb?code=") }
 	redeems := func(code string) bool {
 		_, _, err := s.Redeem(code, func(Code) error { return nil })
 		return err == nil
@@ -340,7 +394,7 @@ func TestASetUpLapsesWithItsBound(t *testing.T) {
 		t.Fatalf("a set up inside its bound = %v", err)
 	}
 	now = now.Add(SetUpTTL)
-	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); !errors.Is(err, ErrNotPending) {
+	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, answerWith); !errors.Is(err, ErrNotPending) {
 		t.Fatalf("finishing a lapsed set up = %v, want ErrNotPending", err)
 	}
 	// Swept, so it holds no slot.

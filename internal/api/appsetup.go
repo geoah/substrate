@@ -30,12 +30,16 @@ import (
 )
 
 // runSetup runs an approval's set up, detached from the request that
-// started it, and answers the request: the code once every row landed, the
-// request pending again with why it stopped otherwise. approved is the rows
-// the approval was checked against.
+// started it, and answers the request: the code once every row landed, with
+// the page's whole view of the request as it then stands, or the request
+// pending again with why it stopped. approved is the rows the approval was
+// checked against.
 func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, req authorize.Request, approved []substrate.AuthorizationSetup,
 	approve func(authorize.Request) (authorize.Approval, error),
 ) {
+	if h.setUpEnded != nil {
+		defer h.setUpEnded(req.ID)
+	}
 	// The request's own lapse bounds the run: past it nobody can answer
 	// or read the request, so nothing more may land for it.
 	ctx, cancel := context.WithTimeout(ctx, req.Expires.Sub(h.now()))
@@ -73,8 +77,18 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		stop(out.Failure, out.Moved)
 		return
 	}
-	_, _, err := h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) string {
-		return withParams(req.RedirectURI, url.Values{"code": {code}}, req)
+	// What the approved request answers is read before the code exists: its
+	// hand-over reads nothing, so no read that fails then can keep the code
+	// from the page.
+	reads, err := readForPage(ctx, ds, req)
+	if err != nil {
+		stop(&substrate.AuthorizationFailure{Message: appsetup.FailureWords("Everything is set up, and approving", err)}, false)
+		return
+	}
+	_, _, err = h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
+		view := reads.view(req, *req.Document, authority, req.Setup, req.PlanHash)
+		view.Next = withParams(req.RedirectURI, url.Values{"code": {code}}, req)
+		return view
 	})
 	switch {
 	case errors.Is(err, authorize.ErrNotPending):
@@ -216,7 +230,8 @@ type checkBody struct {
 // one of its read or write scopes names a kind of, an account whose kind it
 // reads, a webhook it delivers to. The owner's own token sees every row. An
 // app asks at every launch, so the last answer a token got for a body is
-// answered again for checkMemoTTL rather than planned again.
+// answered again for checkMemoTTL rather than planned again, and a plan
+// waits its turn (checkTurns) rather than being refused.
 func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	raw, ok := readBody(w, r, jsonBody)
@@ -241,6 +256,17 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	principal := substrate.PrincipalFrom(ctx)
+	if out, ok := h.checks.answer(principal, raw, h.now()); ok {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	release, err := h.checkTurns.wait(ctx, principal)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	defer release()
+	// The plan this one waited for may have been of the same body.
 	if out, ok := h.checks.answer(principal, raw, h.now()); ok {
 		writeJSON(w, http.StatusOK, out)
 		return
@@ -371,6 +397,68 @@ const checkMemoTTL = 30 * time.Second
 // maxCheckMemo bounds the answers kept: one per token that checked within
 // checkMemoTTL.
 const maxCheckMemo = 1024
+
+// maxCheckPlans bounds the check plans running at once across the server.
+const maxCheckPlans = 4
+
+// checkTurns queues the check's plans: one at a time per token, and at most
+// maxCheckPlans at once. A plan stages upgrade previews against the owner's
+// data and a check is never refused for asking, so a token that changes its
+// body to miss the memo, in a loop or in parallel, waits instead.
+type checkTurns struct {
+	plans  chan struct{}
+	mu     sync.Mutex
+	tokens map[string]*tokenTurn
+}
+
+// tokenTurn is one token's turn and how many of its checks hold or want it.
+type tokenTurn struct {
+	slot chan struct{}
+	refs int
+}
+
+func newCheckTurns(plans int) *checkTurns {
+	return &checkTurns{plans: make(chan struct{}, plans), tokens: map[string]*tokenTurn{}}
+}
+
+// wait takes principal's turn, then one of the server's plans, in that order,
+// so a token's queued checks hold no more than one of them. release gives
+// both back; an error is ctx's, the caller gone while it waited.
+func (q *checkTurns) wait(ctx context.Context, principal string) (release func(), err error) {
+	q.mu.Lock()
+	t := q.tokens[principal]
+	if t == nil {
+		t = &tokenTurn{slot: make(chan struct{}, 1)}
+		q.tokens[principal] = t
+	}
+	t.refs++
+	q.mu.Unlock()
+	leave := func() {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if t.refs--; t.refs == 0 {
+			delete(q.tokens, principal)
+		}
+	}
+	select {
+	case t.slot <- struct{}{}:
+	case <-ctx.Done():
+		leave()
+		return nil, ctx.Err()
+	}
+	select {
+	case q.plans <- struct{}{}:
+	case <-ctx.Done():
+		<-t.slot
+		leave()
+		return nil, ctx.Err()
+	}
+	return func() {
+		<-q.plans
+		<-t.slot
+		leave()
+	}, nil
+}
 
 // checkMemo is the last check answer each token got.
 type checkMemo struct {

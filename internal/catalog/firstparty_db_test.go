@@ -385,7 +385,7 @@ func TestAReinstallKeepsAnArmedWebhook(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: triggerKind, ID: id, Properties: map[string]any{"enabled": true, "source": source},
 	}); err != nil {
-		t.Fatalf("arm the trigger: %v", err)
+		t.Fatalf("turn the trigger on: %v", err)
 	}
 
 	if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {

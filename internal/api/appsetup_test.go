@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
 
+	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
@@ -53,8 +55,13 @@ type setupRepo struct {
 	gate    chan struct{}
 	fail    map[string]error
 	explode string
-	// previews counts the upgrade previews the catalog asked for.
-	previews int
+	// previews counts the upgrade previews the catalog asked for, and
+	// statusReads the reads of every bundle's status, which every plan makes.
+	previews    int
+	statusReads int
+	// readErr, when set, fails the reads the approval page's view makes: the
+	// registry and the tokens.
+	readErr error
 }
 
 // setupDataset is the flow's dataset with the catalog's install door, a put
@@ -68,6 +75,9 @@ type setupDataset struct {
 func (d *setupDataset) Kinds(context.Context) ([]substrate.KindInfo, error) {
 	d.repo.mu.Lock()
 	defer d.repo.mu.Unlock()
+	if d.repo.readErr != nil {
+		return nil, d.repo.readErr
+	}
 	return append(slices.Clone(d.types), d.repo.kinds...), nil
 }
 
@@ -84,6 +94,7 @@ func (d *setupDataset) KindByRef(ctx context.Context, identity string) (substrat
 func (d *setupDataset) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
 	d.repo.mu.Lock()
 	defer d.repo.mu.Unlock()
+	d.repo.statusReads++
 	out := []substrate.BundleStatus{}
 	for _, st := range d.repo.statuses {
 		out = append(out, st)
@@ -203,6 +214,12 @@ func deepCopy(in map[string]any) map[string]any {
 }
 
 func (d *setupDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) {
+	d.repo.mu.Lock()
+	err := d.repo.readErr
+	d.repo.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	d.svc.mu.Lock()
 	defer d.svc.mu.Unlock()
 	var out []substrate.TokenInfo
@@ -357,7 +374,8 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		t.Fatalf("account row = %+v %+v", acct, acct.Account)
 	}
 	hookRow := v.Setup[3]
-	if hookRow.Action != substrate.SetupEnable || hookRow.Webhook.Package != appleHealthPkg || hookRow.Webhook.Enabled || hookRow.Webhook.Keyed {
+	if hookRow.Action != substrate.SetupEnable || hookRow.Webhook.Package != appleHealthPkg || hookRow.Webhook.Enabled || hookRow.Webhook.Keyed ||
+		hookRow.Webhook.Allowed {
 		t.Fatalf("webhook row = %+v %+v", hookRow, hookRow.Webhook)
 	}
 	for i, row := range v.Setup {
@@ -588,6 +606,14 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 			t.Fatalf("scope %s, approved before, is not folded as allowed", s.Scope)
 		}
 	}
+	// The webhook the previous token delivers to says so on its row, and the
+	// digest the approval names is the plan's, whatever the row says.
+	if !v.Setup[3].Webhook.Allowed {
+		t.Fatalf("the webhook row, delivered to before, = %+v", v.Setup[3].Webhook)
+	}
+	if rows, _, err := appsetup.Plan(context.Background(), ds, e.catalog, v.Details, appsetup.Options{}); err != nil || rows[3].Webhook.Allowed {
+		t.Fatalf("the plan itself = %+v, %v", rows[3].Webhook, err)
+	}
 	rec = e.approveWith(again, resolvedSyncScopes(), v.PlanHash)
 	wantStatus(t, rec, http.StatusOK)
 	tok = e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))
@@ -595,7 +621,7 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	if res := decodeJSON[tokenResponse](t, tok); !strings.Contains(res.Scope, "webhook:"+healthWebhook) || len(res.AuthorizationDetails) != 4 {
 		t.Fatalf("a re-approval's token = %+v", res)
 	}
-	// Arming again never replaced the key.
+	// Turning it on again never replaced the key.
 	ds.mu.Lock()
 	still := vocabulary.TriggerKey(ds.records[healthWebhook].Properties)
 	ds.mu.Unlock()
@@ -840,7 +866,7 @@ func TestASetUpThatWaitedRunsOnlyWhatWasApproved(t *testing.T) {
 		ds.mu.Lock()
 		defer ds.mu.Unlock()
 		if ds.records[syncAccountID] != nil || ds.records[healthWebhook].Properties["enabled"] == true {
-			t.Fatal("a set up whose plan moved wrote its account or armed its webhook")
+			t.Fatal("a set up whose plan moved wrote its account or turned its webhook on")
 		}
 	})
 }
@@ -875,11 +901,12 @@ func TestASetUpStopsWithItsRequest(t *testing.T) {
 	e := newSetupEnv(t)
 	var mu sync.Mutex
 	now := time.Now()
+	ended := make(chan string, 2)
 	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, AuthInterval: time.Nanosecond, Catalog: e.catalog, Now: func() time.Time {
 		mu.Lock()
 		defer mu.Unlock()
 		return now
-	}})
+	}, setUpEnded: func(id string) { ended <- id }})
 	holder, gate := e.holdTurn()
 	details := `[{"type":"package","package":"` + applePkg + `","version":3}]`
 	id := e.park(setupRequest("read:"+healthAccount, details))
@@ -890,29 +917,120 @@ func TestASetUpStopsWithItsRequest(t *testing.T) {
 	close(gate)
 	// Both lapsed: the one holding the turn finishes its install, and the
 	// one waiting for it installs nothing.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		e.repo.mu.Lock()
-		installs := slices.Clone(e.repo.installs)
-		e.repo.mu.Unlock()
-		if slices.Contains(installs, appleHealthPkg) {
-			break
+	for _, run := range waitEnded(t, ended, 2) {
+		if run != holder && run != id {
+			t.Fatalf("a set up of %s ended", run)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the set up holding the turn never finished: %v", installs)
-		}
-		time.Sleep(5 * time.Millisecond)
 	}
-	// A run that wrote anything would have by now: the fake is in memory.
-	time.Sleep(200 * time.Millisecond)
 	e.repo.mu.Lock()
 	defer e.repo.mu.Unlock()
-	if slices.Contains(e.repo.installs, applePkg) {
-		t.Fatalf("a set up whose request lapsed installed %v", e.repo.installs)
+	if !slices.Contains(e.repo.installs, appleHealthPkg) || slices.Contains(e.repo.installs, applePkg) {
+		t.Fatalf("installed %v, want what the set up holding the turn ran alone", e.repo.installs)
 	}
 	for _, req := range []string{holder, id} {
 		wantStatus(t, e.show(req), http.StatusNotFound)
 	}
+}
+
+// waitEnded is the ids of the next n set ups to end.
+func waitEnded(t *testing.T, ended <-chan string, n int) []string {
+	t.Helper()
+	var out []string
+	for range n {
+		select {
+		case id := <-ended:
+			out = append(out, id)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%d of %d set ups ended", len(out), n)
+		}
+	}
+	return out
+}
+
+// An approved request is answered as its set up left it: the read that hands
+// the code over reads nothing of the repository, so a repository whose reads
+// fail by then still lets the page take the code back to the app.
+func TestAnApprovedRequestIsHandedOverWithoutReadingTheRepository(t *testing.T) {
+	e := newSetupEnv(t)
+	ended := make(chan string, 1)
+	e.h = New(Config{
+		Service: e.svc, ClientDocuments: e.docs, AuthInterval: time.Nanosecond, Catalog: e.catalog,
+		setUpEnded: func(id string) { ended <- id },
+	})
+	id := e.park(setupRequest(syncScopes, syncDetails))
+	v := e.view(id)
+	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusAccepted)
+	waitEnded(t, ended, 1)
+	e.repo.mu.Lock()
+	e.repo.readErr = fmt.Errorf("%w: the database is away", substrate.ErrUnavailable)
+	e.repo.mu.Unlock()
+	// The reads do fail: a pending request's page cannot be built.
+	wantStatus(t, e.show(e.park(setupRequest(syncScopes, syncDetails))), http.StatusServiceUnavailable)
+	e.repo.mu.Lock()
+	reads := e.repo.statusReads
+	e.repo.mu.Unlock()
+
+	done := e.view(id)
+	if done.State != substrate.AuthorizationApproved || !strings.HasPrefix(done.Next, appRedirect+"?") || progress(done) != "done,done,done,done" ||
+		len(done.Scopes) != 3 || done.PlanHash != v.PlanHash || done.App.Name != "Sync" || done.Failure != nil {
+		t.Fatalf("the approved request = state %q next %q progress %q, %d scopes, hash %q", done.State, done.Next, progress(done), len(done.Scopes), done.PlanHash)
+	}
+	e.repo.mu.Lock()
+	planned := e.repo.statusReads - reads
+	e.repo.mu.Unlock()
+	if planned != 0 {
+		t.Fatalf("handing the approved request over planned it %d times", planned)
+	}
+	wantStatus(t, e.show(id), http.StatusNotFound)
+	wantStatus(t, e.exchange(tokenForm(codeFrom(t, done.Next))), http.StatusOK)
+}
+
+// What a request with details sets up is approved through a human door: the
+// owner's token writing as another actor is refused before anything is
+// reserved or planned, and the console approves the same request after.
+func TestAnApprovalWithDetailsComesThroughAHumanDoor(t *testing.T) {
+	e := newSetupEnv(t)
+	approveAs := func(id, actor, hash string) *httptest.ResponseRecorder {
+		days := 30
+		body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: resolvedSyncScopes(), LifetimeDays: &days, PlanHash: hash})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/authorizations/"+id, strings.NewReader(string(body)))
+		req.Host = "substrate.example.com"
+		req.Header.Set("Authorization", "Bearer "+e.owner)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(actorHeader, actor)
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec
+	}
+	statusReads := func() int {
+		e.repo.mu.Lock()
+		defer e.repo.mu.Unlock()
+		return e.repo.statusReads
+	}
+	id := e.park(setupRequest(syncScopes, syncDetails))
+	v := e.view(id)
+	before := statusReads()
+	rec := approveAs(id, "bob", v.PlanHash)
+	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
+	if body := rec.Body.String(); !strings.Contains(body, "setting up is the owner's act") || !strings.Contains(body, "never as bob") {
+		t.Fatalf("the refusal says %s", body)
+	}
+	if n := statusReads() - before; n != 0 {
+		t.Fatalf("a refused door planned the request %d times", n)
+	}
+	if again := e.view(id); again.State != substrate.AuthorizationPending || !again.ExpiresAt.Equal(v.ExpiresAt) || again.PlanHash != v.PlanHash {
+		t.Fatalf("after the refusal = state %q lapsing %v hash %q", again.State, again.ExpiresAt, again.PlanHash)
+	}
+	wantStatus(t, approveAs(id, string(substrate.ActorConsole), v.PlanHash), http.StatusAccepted)
+	if done := e.settle(id); done.State != substrate.AuthorizationApproved {
+		t.Fatalf("the console's approval ended %+v", done.Failure)
+	}
+	// Everything is in place now, and the same door is refused all the same:
+	// a request with details is approved as the owner whatever it finds.
+	inPlace := e.park(setupRequest(syncScopes, syncDetails))
+	v = e.view(inPlace)
+	wantErrorCode(t, approveAs(inPlace, "bob", v.PlanHash), http.StatusForbidden, codeForbidden)
+	wantStatus(t, approveAs(inPlace, string(substrate.ActorCLI), v.PlanHash), http.StatusOK)
 }
 
 func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
@@ -1028,7 +1146,7 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 		t.Fatalf("an unknown webhook row = %+v", w)
 	}
 	raw := e.do(http.MethodPost, "/api/v1/authorizations/check", narrow, checkRequest(syncScopes, newer), "application/json").Body.String()
-	for _, absent := range []string{`"held"`, `"shipped"`, `"blocked"`, `"enabled"`, `"keyed"`} {
+	for _, absent := range []string{`"held"`, `"shipped"`, `"blocked"`, `"enabled"`, `"keyed"`, `"allowed"`} {
 		if strings.Contains(raw, absent) {
 			t.Fatalf("an unknown row answers %s: %s", absent, raw)
 		}
@@ -1142,6 +1260,100 @@ func TestACheckIsAnsweredAgainNeverRefused(t *testing.T) {
 	e.check(e.owner, body)
 	if previews() != 3 {
 		t.Fatalf("previews = %d, want a fresh plan for the other token and after the window", previews())
+	}
+}
+
+// A check's plan waits its turn, never refused: one at a time per token, and
+// no more than the server's bound at once, a token's queued checks holding at
+// most one of those. A check whose caller left stops waiting and holds
+// nothing.
+func TestACheckPlanWaitsItsTurn(t *testing.T) {
+	q := newCheckTurns(2)
+	ctx := context.Background()
+	// waiting reports whether principal has n checks holding or wanting its
+	// turn, and holds the turn itself.
+	waiting := func(principal string, n int) func() bool {
+		return func() bool {
+			q.mu.Lock()
+			defer q.mu.Unlock()
+			turn := q.tokens[principal]
+			return turn != nil && turn.refs == n && len(turn.slot) == 1
+		}
+	}
+	until := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("never: %s", what)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	turns := make(chan func(), 1)
+	waitIn := func(ctx context.Context, principal string) chan error {
+		errs := make(chan error, 1)
+		go func() {
+			release, err := q.wait(ctx, principal)
+			if err == nil {
+				turns <- release
+			}
+			errs <- err
+		}()
+		return errs
+	}
+	ranBeside := func(what string) {
+		t.Helper()
+		select {
+		case <-turns:
+			t.Fatalf("%s ran beside the plans holding the turns", what)
+		default:
+		}
+	}
+
+	first, err := q.wait(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitIn(ctx, "a")
+	until("a's second check waits for its first", waiting("a", 2))
+	ranBeside("a's second check")
+	// One that leaves while it waits for its token's turn holds nothing.
+	left, leave := context.WithCancel(ctx)
+	errs := waitIn(left, "a")
+	until("a's third check waits", waiting("a", 3))
+	leave()
+	if err := <-errs; !errors.Is(err, context.Canceled) {
+		t.Fatalf("a check whose caller left = %v", err)
+	}
+	until("a's third check gave its place back", waiting("a", 2))
+	first()
+	second := <-turns
+
+	// Another token takes the server's second plan, and a third waits for
+	// one, holding its own token's turn.
+	other, err := q.wait(ctx, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitIn(ctx, "c")
+	until("c waits for one of the server's plans", waiting("c", 1))
+	ranBeside("a third token's check")
+	// One that leaves while it waits for the server gives its token's turn
+	// back.
+	left, leave = context.WithCancel(ctx)
+	errs = waitIn(left, "d")
+	until("d waits for one of the server's plans", waiting("d", 1))
+	leave()
+	if err := <-errs; !errors.Is(err, context.Canceled) {
+		t.Fatalf("a check whose caller left = %v", err)
+	}
+	other()
+	third := <-turns
+	second()
+	third()
+	if len(q.tokens) != 0 || len(q.plans) != 0 {
+		t.Fatalf("after every check: %d tokens, %d plans held", len(q.tokens), len(q.plans))
 	}
 }
 

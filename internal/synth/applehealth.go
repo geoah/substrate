@@ -70,7 +70,8 @@ const (
 	// ahDate is how the app writes a date.
 	ahDate = "2006-01-02 15:04:05 -0700"
 	// ahKeyPlaceholder stands where the owner's webhook key goes: the loader
-	// replaces an Authorization header with the key it armed the trigger with.
+	// replaces an Authorization header with the key it gave the trigger as it
+	// turned it on.
 	ahKeyPlaceholder = "Bearer <webhook key>"
 )
 

@@ -17,10 +17,13 @@ import (
 
 // The fixture catalog: app needs base at 2 first, and ships the account kind,
 // a function, and three triggers (a webhook, one its provider signs, and a
-// record trigger). The others each require what the catalog cannot install.
+// record trigger). hooks ships a function and no kind, and needshooks needs it
+// at 2 first. The others each require what the catalog cannot install.
 const (
 	basePkg      = "example.com/base"
 	appPkg       = "example.com/app"
+	hooksPkg     = "example.com/hooks"
+	needsHooks   = "example.com/needshooks"
 	newerBasePkg = "example.com/newerbase"
 	needsSample  = "example.com/needssample"
 	needsMissing = "example.com/needsmissing"
@@ -106,6 +109,8 @@ func testCatalog(t *testing.T) *catalog.Catalog {
 			triggerDoc(signedHook, "      webhook:\n        signature:\n          algorithm: hmac-sha256\n", appFunction, true),
 			triggerDoc("app-records", "      record:\n        kinds: [example.com/app/item]\n", appFunction, true),
 		))},
+		"example.com/hooks/bundle.yaml":        {Data: []byte(closure(hooksPkg, 2, nil, functionDoc(hooksPkg+"/relay", "[]")))},
+		"example.com/needshooks/bundle.yaml":   {Data: []byte(closure(needsHooks, 1, map[string]int{hooksPkg: 2}))},
 		"example.com/newerbase/bundle.yaml":    {Data: []byte(closure(newerBasePkg, 1, map[string]int{basePkg: 3}))},
 		"example.com/needssample/bundle.yaml":  {Data: []byte(closure(needsSample, 1, map[string]int{samplePkg: 1}))},
 		"example.com/needsmissing/bundle.yaml": {Data: []byte(closure(needsMissing, 1, map[string]int{"example.com/gone": 1}))},
@@ -260,6 +265,7 @@ func (d *fakeDataset) InstallBundleClosure(_ context.Context, _ substrate.Actor,
 	d.mu.Lock()
 	d.installs = append(d.installs, id)
 	d.statuses[id] = substrate.BundleStatus{ID: id, Installed: true, Enabled: true, Version: opts.ShippedVersion, ShippedVersion: opts.ShippedVersion}
+	d.packageRecordLocked(id, vocabulary.SourcePublished, opts.ShippedVersion, opts.ShippedVersion)
 	for _, k := range kinds {
 		d.kinds[k.Identity] = k
 	}
@@ -278,6 +284,7 @@ func (d *fakeDataset) installed(cat *catalog.Catalog, id string, version int64) 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.statuses[id] = substrate.BundleStatus{ID: id, Installed: true, Enabled: true, Version: version, ShippedVersion: version}
+	d.packageRecordLocked(id, vocabulary.SourcePublished, version, version)
 	if b, ok := cat.ByID(id); ok {
 		for _, k := range b.Kinds() {
 			d.kinds[k.Identity] = substrate.KindInfo{Identity: k.Identity, Source: vocabulary.SourcePublished, Definition: k.Definition, Label: k.Label}
@@ -294,12 +301,23 @@ func (d *fakeDataset) declared(cat *catalog.Catalog, id string, version int64) {
 	st := d.statuses[id]
 	st.ShippedVersion = 0
 	d.statuses[id] = st
+	d.packageRecordLocked(id, vocabulary.SourceInstalled, version, 0)
 	for ref, k := range d.kinds {
 		if vocabulary.KindPackage(ref) == id {
 			k.Source = vocabulary.SourceInstalled
 			d.kinds[ref] = k
 		}
 	}
+}
+
+// packageRecordLocked writes package id's own record: where it came from, its
+// version and the shipped version a provider install stamped, 0 for none.
+func (d *fakeDataset) packageRecordLocked(id, source string, version, stamp int64) {
+	props := map[string]any{"source": source, "version": version}
+	if stamp > 0 {
+		props["shippedVersion"] = stamp
+	}
+	d.records[recordKey(packageKind, id)] = &substrate.Record{Kind: packageKind, ID: id, Version: 1, Properties: props}
 }
 
 func (d *fakeDataset) put(rec substrate.Record) {
