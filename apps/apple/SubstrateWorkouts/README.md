@@ -135,12 +135,25 @@ WORKOUTS_E2E_SERVER=http://localhost:8080 WORKOUTS_E2E_OWNER_TOKEN=… WORKOUTS_
 
 ## Screenshots
 
-[docs/screenshots/](docs/screenshots/) holds the session's Rows layout as the
-app's first build drew it, on an iPhone 18 Pro Max simulator (iOS 27), with
-example sessions loaded as history: the session code moved unchanged, so this
-is what it looks like here. The signed-in screens (the approval, routines from
-a server, the Substrate section) are still to be added.
+Taken on an iPhone 18 Pro Max simulator (iOS 27) on 2026-11-01, signed in to a
+throwaway substrate built from this branch (`localhost:18087`, a fresh
+repository with neither health nor training installed). The approval set up
+Health, the app then installed its Training package, copied the starter
+routines, and the finished session and its sets were read back from the server.
+They are `docs/screenshots/signed-*.jpg`.
 
-| Set to do now | Resting | Superset | Plank |
+| Server | Approval | Empty server | Routines from the server |
 | --- | --- | --- | --- |
-| ![Set to do now](docs/screenshots/rows-01-set-open.jpg) | ![Resting](docs/screenshots/rows-04-resting.jpg) | ![Superset](docs/screenshots/rows-07-superset.jpg) | ![Plank](docs/screenshots/rows-10-plank.jpg) |
+| ![Server](docs/screenshots/signed-01-sign-in.jpg) | ![Approval](docs/screenshots/signed-02-approve.jpg) | ![Empty server](docs/screenshots/signed-03-empty-server.jpg) | ![Routines](docs/screenshots/signed-04-routines-from-server.jpg) |
+
+| Set to do now | Resting | Superset | Finish |
+| --- | --- | --- | --- |
+| ![Set to do now](docs/screenshots/signed-05-rows-set-open.jpg) | ![Resting](docs/screenshots/signed-06-resting.jpg) | ![Superset](docs/screenshots/signed-07-superset.jpg) | ![Finish](docs/screenshots/signed-08-finish.jpg) |
+
+| History | Substrate in Settings |
+| --- | --- |
+| ![History](docs/screenshots/signed-09-history-session.jpg) | ![Settings](docs/screenshots/signed-10-settings-substrate.jpg) |
+
+`docs/screenshots/rows-*.jpg` are the Rows layout from the app's first build
+(Spotter), with example sessions loaded as history: drops, a past set being
+fixed, a timed plank and dark mode.
