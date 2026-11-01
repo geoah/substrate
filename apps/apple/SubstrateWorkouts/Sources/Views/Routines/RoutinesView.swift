@@ -36,7 +36,7 @@ struct RoutinesView: View {
     @ViewBuilder
     private var banner: some View {
         switch link.syncStatus {
-        case .packageNewer, .needsApproval, .signedOut, .failed:
+        case .packageNewer, .packageEdited, .packageRefused, .needsApproval, .signedOut, .serverTooOld, .notKept, .refused, .failed:
             VStack(alignment: .leading, spacing: 8) {
                 Label(link.syncStatus.sentence, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
@@ -47,6 +47,12 @@ struct RoutinesView: View {
                         .font(.footnote.weight(.semibold))
                 } else if case .signedOut = link.syncStatus {
                     Button("Sign In Again") { signingIn = true }
+                        .font(.footnote.weight(.semibold))
+                } else if case .packageEdited = link.syncStatus {
+                    Button("Open Settings") { app.tab = .settings }
+                        .font(.footnote.weight(.semibold))
+                } else if case .refused = link.syncStatus {
+                    Button("Review in Settings") { app.tab = .settings }
                         .font(.footnote.weight(.semibold))
                 }
             }
@@ -79,7 +85,14 @@ struct RoutinesView: View {
                 ContentUnavailableView {
                     Label("No routines on \(host) yet", systemImage: "list.bullet.clipboard")
                 } description: {
-                    Text("Ask your agent for a routine, or start from the four full-body routines and thirty exercises this app carries.")
+                    VStack(spacing: 8) {
+                        Text("Ask your agent for a routine, or start from the four full-body routines and thirty exercises this app carries.")
+                        if let reason = link.writeBlockedReason {
+                            Text(reason)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } actions: {
                     Button {
                         Task { await link.copyStarterRoutines() }
@@ -90,7 +103,7 @@ struct RoutinesView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(link.copyingStarter)
+                    .disabled(link.copyingStarter || !link.canWrite)
                     StartSessionButton(request: .empty) {
                         Text("Start empty session")
                     }

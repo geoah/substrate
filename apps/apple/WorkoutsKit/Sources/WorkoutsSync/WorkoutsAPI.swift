@@ -29,15 +29,19 @@ public struct WorkoutsAPI: Sendable {
         return try Self.record(value, rehome: rehome)
     }
 
-    /// Every live record of the kinds, in the phone's spelling, by list pages.
-    public func list(_ kinds: [String], properties: [String: SubstrateKit.JSONValue] = [:], limit: Int = 5000) async throws -> [FlatRecord] {
+    /// Every live record of the kinds, in the phone's spelling, by list
+    /// pages, to the end of the list. A read that must stop sooner names a
+    /// limit and is told when it was reached (`ListTruncated`), never handed
+    /// a short list as if it were the whole.
+    public func list(_ kinds: [String], properties: [String: SubstrateKit.JSONValue] = [:], limit: Int? = nil) async throws -> [FlatRecord] {
         var query = ListQuery(kinds: kinds.map(rehome.remoteKind), properties: properties, first: 500)
         var out: [FlatRecord] = []
         while true {
             let response = try await client.send("GET", "api/v1/records", query: query.queryItems)
             let page = try JSONDecoder().decode(Page.self, from: response.data)
             out += try page.records.map { try Self.record($0, rehome: rehome) }
-            guard let cursor = page.cursor, !cursor.isEmpty, out.count < limit else { return out }
+            guard let cursor = page.cursor, !cursor.isEmpty else { return out }
+            if let limit, out.count >= limit { throw ListTruncated(kinds: kinds, limit: limit) }
             query.after = cursor
         }
     }
@@ -61,6 +65,20 @@ public struct WorkoutsAPI: Sendable {
     }
 
     // MARK: The package
+
+    /// One declaration row of the package (its package, bundle or a kind
+    /// row): its `properties` and the row's version, or nil when the
+    /// repository holds none.
+    public func declarationRow(_ kind: String, _ id: String) async throws -> (properties: JSONObject, version: Int)? {
+        let response = try await client.send("GET", SubstrateClient.recordPath(kind, id), accept: [404])
+        if response.status == 404 { return nil }
+        guard case let .object(object) = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: response.data),
+              case let .object(properties)? = object["properties"]
+        else { return nil }
+        if let deleted = object["deletedAt"], deleted != .null { return nil }
+        guard case let .number(version)? = object["version"] else { return (properties, 0) }
+        return (properties, NSDecimalNumber(decimal: version).intValue)
+    }
 
     /// The repository's row of a package, as `properties`, or nil when it
     /// holds none (or the token may not see it).
@@ -121,4 +139,12 @@ public struct WorkoutsAPI: Sendable {
         encoder.outputFormatting = [.withoutEscapingSlashes]
         return .json(try encoder.encode(value))
     }
+}
+
+/// A list read reached the limit it was given before the server's list
+/// ended.
+public struct ListTruncated: LocalizedError, Sendable {
+    public let kinds: [String]
+    public let limit: Int
+    public var errorDescription: String? { "More than \(limit) records of \(kinds.joined(separator: ", ")); the read stopped there." }
 }

@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import os
 import WorkoutsCore
+import WorkoutsSync
 
 /// Where the catalogue comes from.
 enum CatalogOrigin: Hashable {
@@ -63,6 +64,11 @@ final class AppModel {
 
     /// `Application Support/Workouts/`; nil in previews, which write nothing.
     let directory: URL?
+    /// The sessions deleted on this phone, never imported again from any
+    /// repository; nil in previews.
+    let tombstones: SessionTombstones?
+    /// Files of the substrate sync that could not be read, set aside.
+    private(set) var syncUnreadable: [UnreadableRecord] = []
     private let catalogSource: BundledCatalog
     private let historyStore: HistoryStore?
     private let persistsSettings: Bool
@@ -75,6 +81,9 @@ final class AppModel {
         persistsSettings = true
         catalogSource = BundledCatalog(localExercises: directory.map { LocalExercises(directory: $0) })
         historyStore = directory.map { HistoryStore(directory: $0) }
+        let tombstones = directory.map { SessionTombstones(directory: $0) }
+        self.tombstones = tombstones
+        if let unreadable = tombstones?.unreadable { syncUnreadable.append(unreadable) }
     }
 
     /// A model over fixed data, for previews: nothing is read or written.
@@ -84,6 +93,7 @@ final class AppModel {
         persistsSettings = false
         catalogSource = BundledCatalog()
         historyStore = nil
+        tombstones = nil
         self.catalog = catalog
         self.history = history
         historyIndex = HistoryIndex(history.map(\.records))
@@ -117,7 +127,14 @@ final class AppModel {
     /// records, the history files and a session journal set aside.
     var unreadable: [UnreadableRecord] {
         let bundle = catalogFailure.map { [UnreadableRecord(source: "The routines and exercises in this build", reason: $0)] } ?? []
-        return bundle + (catalog?.unreadable ?? []) + historyUnreadable + sessionUnreadable
+        return bundle + (catalog?.unreadable ?? []) + historyUnreadable + sessionUnreadable + syncUnreadable
+    }
+
+    /// A file of the substrate sync, or a server record, that could not be
+    /// read.
+    func noteUnreadable(_ record: UnreadableRecord) {
+        guard !syncUnreadable.contains(record) else { return }
+        syncUnreadable.append(record)
     }
 
     /// The journal of the session in progress did not load and was set aside.
@@ -196,8 +213,11 @@ final class AppModel {
     }
 
     /// Deletes a finished session's file, and the server's copy through the
-    /// outbox. Its Apple Health workout stays.
+    /// outbox. Its Apple Health workout stays. The tombstone is kept first:
+    /// without it a later sync could import the session again, so a delete
+    /// that cannot be recorded is refused.
     func deleteSession(_ id: SessionID) throws {
+        try tombstones?.add(id)
         try historyStore?.delete(id)
         history.removeAll { $0.id == id }
         historyIndex.remove(id)
@@ -245,6 +265,46 @@ final class AppModel {
         }
         guard added else { return }
         history.sort { $0.records.session.at > $1.records.session.at }
+        refreshHistorySections()
+    }
+
+    /// Sessions on the phone that another writer changed on the server: the
+    /// server's records replace the phone's, which keeps what only it knows
+    /// (the Health save's state).
+    func mergeServerSessions(_ sessions: [SessionRecords]) {
+        guard let historyStore, !sessions.isEmpty else { return }
+        var changed = false
+        for records in sessions {
+            guard let index = history.firstIndex(where: { $0.id == records.id }) else { continue }
+            let entry = HistoryEntry(records: records, local: history[index].local)
+            do {
+                try historyStore.write(entry)
+                history[index] = entry
+                historyIndex.remove(entry.id)
+                historyIndex.insert(records)
+                changed = true
+            } catch {
+                logger.error("A session changed on the server was not kept: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        guard changed else { return }
+        history.sort { $0.records.session.at > $1.records.session.at }
+        refreshHistorySections()
+    }
+
+    /// Sessions the server held from this phone and deleted since: deleted
+    /// here too. Their Apple Health workouts stay.
+    func removeSessionsDeletedOnServer(_ ids: [SessionID]) {
+        guard let historyStore, !ids.isEmpty else { return }
+        for id in ids {
+            do {
+                try historyStore.delete(id)
+                history.removeAll { $0.id == id }
+                historyIndex.remove(id)
+            } catch {
+                logger.error("A session deleted on the server stayed on this iPhone: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         refreshHistorySections()
     }
 

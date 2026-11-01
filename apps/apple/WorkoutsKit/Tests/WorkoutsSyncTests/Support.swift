@@ -18,6 +18,15 @@ final class ScriptedServer: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var rules: [Rule] = []
     private(set) var sent: [Sent] = []
+    private var gates: [String: Gate] = [:]
+
+    /// Holds the first `method path` request on the wire until the gate is
+    /// released, so a test can change the outbox while a write is in flight.
+    func hold(_ method: String, _ path: String) -> Gate {
+        let gate = Gate()
+        lock.withLock { gates["\(method) \(path)"] = gate }
+        return gate
+    }
 
     func on(_ rule: @escaping Rule) { lock.withLock { rules.append(rule) } }
 
@@ -31,6 +40,8 @@ final class ScriptedServer: HTTPTransport, @unchecked Sendable {
         var body: WorkoutsCore.JSONValue?
         if let data = request.httpBody { body = try? JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: data) }
         let sent = Sent(method: request.httpMethod ?? "GET", path: url.path(percentEncoded: true), query: url.query(percentEncoded: false), body: body)
+        let gate = lock.withLock { gates.removeValue(forKey: "\(sent.method) \(sent.path)") }
+        if let gate { await gate.arriveAndWait() }
         let (status, text) = lock.withLock { () -> (Int, String) in
             self.sent.append(sent)
             for rule in rules { if let answer = rule(sent) { return answer } }
@@ -42,6 +53,52 @@ final class ScriptedServer: HTTPTransport, @unchecked Sendable {
     }
 
     var methodsAndPaths: [String] { lock.withLock { sent.map { "\($0.method) \($0.path)" } } }
+}
+
+/// One request held on the wire: `arrived()` returns once it is, and
+/// `release()` lets it through.
+final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var arrival: CheckedContinuation<Void, Never>?
+    private var hasArrived = false
+    private var release_: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    func arriveAndWait() async {
+        lock.withLock {
+            hasArrived = true
+            arrival?.resume()
+            arrival = nil
+        }
+        await withCheckedContinuation { continuation in
+            let go = lock.withLock { () -> Bool in
+                if released { return true }
+                release_ = continuation
+                return false
+            }
+            if go { continuation.resume() }
+        }
+    }
+
+    func arrived() async {
+        await withCheckedContinuation { continuation in
+            let go = lock.withLock { () -> Bool in
+                if hasArrived { return true }
+                arrival = continuation
+                return false
+            }
+            if go { continuation.resume() }
+        }
+    }
+
+    func release() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            released = true
+            defer { release_ = nil }
+            return release_
+        }
+        continuation?.resume()
+    }
 }
 
 enum Fixtures {

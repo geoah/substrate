@@ -72,32 +72,59 @@ public enum SyncStatus: Sendable, Hashable {
     /// The token lacks a scope the app needs, such as `declare:` when the
     /// owner left it out: the review asks again.
     case needsApproval
+    /// The server cannot take what the app needs: update it.
+    case serverTooOld
+    /// The phone could not keep a change, or its queue, on disk.
+    case notKept(String)
     /// The repository holds a newer training package than this build knows.
     case packageNewer(held: Int, known: Int)
+    /// The owner changed these kinds of an older package: the upgrade waits
+    /// for them to choose.
+    case packageEdited(kinds: [String])
+    /// The server refused the upgrade, which would remove what the package
+    /// holds.
+    case packageRefused(String)
     /// Ready, with this many writes still waiting.
     case ready(waiting: Int)
+    /// Ready, and the approved access ends on this date.
+    case accessEndsSoon(Date, waiting: Int)
     /// The server could not be reached; writes wait.
     case offline(waiting: Int, reason: String)
-    /// The server refused a write, which waits with its words.
+    /// The server refused a write, which waits, parked, with its words.
     case refused(waiting: Int, reason: String)
     /// Something else stopped the package check.
     case failed(String)
 
-    public static func derive(signedIn: Bool, package: PackageState?, outbox: OutboxState, waiting: Int, known: Int) -> SyncStatus {
+    public static func derive(signedIn: Bool, package: PackageState?, outbox: OutboxState, waiting: Int, known: Int,
+                              issues: [AppIssue] = [], notKept: String? = nil) -> SyncStatus
+    {
         guard signedIn else { return .local }
+        if issues.contains(.accessEnded) { return .signedOut }
         switch outbox {
         case .signedOut: return .signedOut
         case .needsApproval: return .needsApproval
         default: break
         }
+        if issues.contains(where: { if case .needsApproval = $0 { true } else { false } }) { return .needsApproval }
+        if issues.contains(where: { if case .serverTooOld = $0 { true } else { false } }) { return .serverTooOld }
+        if let notKept { return .notKept(notKept) }
         guard let package else { return .preparing }
-        if case let .newer(held) = package { return .packageNewer(held: held, known: known) }
+        switch package {
+        case let .newer(held): return .packageNewer(held: held, known: known)
+        case let .edited(_, kinds): return .packageEdited(kinds: kinds)
+        case let .refused(_, reason): return .packageRefused(reason)
+        default: break
+        }
         guard package.writable else { return .preparing }
         switch outbox {
         case let .offline(reason): return .offline(waiting: waiting, reason: reason)
         case let .refused(reason): return .refused(waiting: waiting, reason: reason)
-        default: return .ready(waiting: waiting)
+        default: break
         }
+        for case let .accessEndsSoon(date) in issues {
+            return .accessEndsSoon(date, waiting: waiting)
+        }
+        return .ready(waiting: waiting)
     }
 
     /// One sentence for Settings.
@@ -111,6 +138,16 @@ public enum SyncStatus: Sendable, Hashable {
             "Your access ended. Sign in again to send what waits."
         case .needsApproval:
             "Substrate Workouts needs your approval for more access. Review it to send what waits."
+        case .serverTooOld:
+            "Your substrate needs an update before Substrate Workouts can use it. Sessions wait on this iPhone until then."
+        case let .notKept(reason):
+            "A change could not be kept on this iPhone: \(reason)"
+        case let .packageEdited(kinds):
+            "The training package on your substrate was changed there (\(kinds.joined(separator: ", "))). This app's update would apply over those changes, so it waits for you."
+        case let .packageRefused(reason):
+            "Your substrate refused this app's update to the training package: \(reason) Sessions wait on this iPhone until the package is settled on your substrate."
+        case let .accessEndsSoon(date, waiting):
+            "Access ends \(date.formatted(date: .abbreviated, time: .omitted)). Renew it to keep syncing." + (waiting == 0 ? "" : " Sending \(waiting) \(waiting == 1 ? "change" : "changes").")
         case let .packageNewer(held, known):
             "Your substrate has version \(held) of the training package, newer than the version \(known) this app knows. Update the app; sessions wait on this iPhone until then."
         case let .ready(waiting):
@@ -118,7 +155,7 @@ public enum SyncStatus: Sendable, Hashable {
         case let .offline(waiting, _):
             "Your substrate cannot be reached. \(waiting) \(waiting == 1 ? "change waits" : "changes wait") on this iPhone."
         case let .refused(waiting, reason):
-            "Your substrate refused a change: \(reason) \(waiting) \(waiting == 1 ? "change waits" : "changes wait")."
+            "Your substrate refused a change: \(reason) \(waiting) \(waiting == 1 ? "change waits" : "changes wait"); retry or discard it below."
         case let .failed(reason):
             "The training package could not be checked: \(reason)"
         }

@@ -74,11 +74,42 @@ struct LiveServerTests {
 
         // The approval installed health; the app now keeps its own package.
         let api = WorkoutsAPI(client: SubstrateClient(session), authority: session.repository)
-        let installer = PackageInstaller(api: api, manifest: try PackageManifest.bundled())
+        let baseline = temporaryDirectory()
+        let installer = PackageInstaller(api: api, manifest: try PackageManifest.bundled(), baselineDirectory: baseline)
         #expect(try await installer.state() == .missing)
         let installed = try await installer.ensure()
         #expect(installed == .current(held: installer.manifest.version))
         #expect(try await installer.ensure() == installed)
+        #expect(PackageBaseline.load(from: baseline)?.kinds.count == 5)
+
+        // The next build's upgrade passes the server's additions-only guard
+        // over the real stored package.
+        let shipped = installer.manifest.version
+        let upgrade = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 1), baselineDirectory: baseline)
+        #expect(try await upgrade.ensure() == .current(held: shipped + 1))
+
+        // The owner adds a property to the set kind in the console: the
+        // upgrade after stops for them, and applying over it anyway is refused
+        // by the server, which keeps the owner's property.
+        let ownerAPI = WorkoutsAPI(client: owner, authority: session.repository)
+        var setKind = try #require(upgrade.manifest.documents(for: api.rehome).first { document in
+            guard case let .object(object) = document, case let .object(metadata)? = object["metadata"] else { return false }
+            return metadata["id"] == .string("\(session.repository)/training/set")
+        })
+        if case var .object(object) = setKind, case var .object(data)? = object["data"], case var .object(properties)? = data["properties"] {
+            let note: JSONObject = ["type": .string("string"), "description": .string("the owner's own")]
+            properties["ownersNote"] = WorkoutsCore.JSONValue.object(note)
+            data["properties"] = WorkoutsCore.JSONValue.object(properties)
+            object["data"] = WorkoutsCore.JSONValue.object(data)
+            setKind = WorkoutsCore.JSONValue.object(object)
+        }
+        try await ownerAPI.applyVocabulary([setKind])
+        let third = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 2), baselineDirectory: baseline)
+        #expect(try await third.ensure() == .edited(held: shipped + 1, kinds: ["\(session.repository)/training/set"]))
+        guard case let .refused(_, reason) = try await third.ensure(overwritingEdits: true) else {
+            Issue.record("the app's apply removed the owner's property"); return
+        }
+        #expect(reason.contains("ownersNote"))
 
         // Routines from the server, after the starter copy.
         let directory = temporaryDirectory()
@@ -98,17 +129,31 @@ struct LiveServerTests {
         let codec = RecordCodec()
         let finished = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
         let outbox = Outbox(directory: directory, writingOptions: .atomic)
-        await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
+        try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
         #expect(await outbox.flush(api) == .sent)
 
         // Read back as the owner: the session finished, every set there.
-        let ownerAPI = WorkoutsAPI(client: owner, authority: session.repository)
         let stored = try #require(try await ownerAPI.get(codec.kinds.session, finished.session.id.rawValue))
         #expect(stored.properties["status"] == .string("finished"))
         let sets = try await ownerAPI.list([codec.kinds.set])
         #expect(sets.count == finished.sets.count)
-        print("live: \(session.repository) holds \(session.repository)/training at version \(installed.held ?? 0), " +
+        print("live: \(session.repository) holds \(session.repository)/training at version \(shipped + 1), " +
             "\(catalog.routines.count) routines, session \(finished.session.id.rawValue) finished with \(sets.count) sets")
+    }
+
+    /// The manifest as a later build would ship it: the package document at
+    /// `version`, nothing else changed.
+    private func bumped(_ manifest: PackageManifest, to version: Int) -> PackageManifest {
+        var out = manifest
+        out.version = version
+        out.documents = manifest.documents.map { document in
+            guard case var .object(object) = document, object["kind"] == .string("substrate.reamde.dev/core/package"),
+                  case var .object(data)? = object["data"] else { return document }
+            data["version"] = WorkoutsCore.JSONValue.number(Decimal(version))
+            object["data"] = WorkoutsCore.JSONValue.object(data)
+            return WorkoutsCore.JSONValue.object(object)
+        }
+        return out
     }
 
     private func repository(_ owner: SubstrateClient) throws -> String {

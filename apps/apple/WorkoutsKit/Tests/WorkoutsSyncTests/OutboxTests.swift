@@ -60,7 +60,7 @@ struct OutboxTests {
         }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
         let records = try finished()
-        await outbox.enqueue(OutboxPlan.finished(records, codec: codec))
+        try await outbox.enqueue(OutboxPlan.finished(records, codec: codec))
         let state = await outbox.flush(api(server))
         #expect(state == .sent)
         #expect(await outbox.entries.isEmpty)
@@ -87,7 +87,7 @@ struct OutboxTests {
         }
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
-        await outbox.enqueue([
+        try await outbox.enqueue([
             OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "s1", properties: [:], session: "s1"),
             OutboxEntry(method: .patch, kind: codec.kinds.session, recordID: "s1", properties: ["notes": .string("x")], guarded: true, session: "s1"),
         ])
@@ -108,7 +108,7 @@ struct OutboxTests {
         server.answer("PUT", "/api/v1/ada.example.com/training/set/a", 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#)
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
-        await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:], session: "s")])
+        try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:], session: "s")])
         #expect(await outbox.flush(api(server)) == .sent)
         #expect(await outbox.entries.isEmpty)
     }
@@ -119,7 +119,7 @@ struct OutboxTests {
         server.on { _ in (-1, "") }
         let directory = temporaryDirectory()
         let outbox = Outbox(directory: directory, writingOptions: .atomic)
-        await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
+        try await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
         let state = await outbox.flush(api(server))
         guard case .offline = state else { Issue.record("state \(state)"); return }
         let count = await outbox.entries.count
@@ -127,14 +127,14 @@ struct OutboxTests {
         #expect(await Outbox(directory: directory, writingOptions: .atomic).entries.count == count)
     }
 
-    @Test("a refusal holds the rest of its session and lets another session go")
+    @Test("a refusal parks the write, holds the rest of its session and lets another session go")
     func refusalHoldsItsSession() async throws {
         let server = ScriptedServer()
         server.answer("PUT", "/api/v1/ada.example.com/training/session/bad", 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
-        await outbox.enqueue([
+        try await outbox.enqueue([
             OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "bad", properties: [:], session: "bad"),
             OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "bad-1", properties: [:], session: "bad"),
             OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "good", properties: [:], session: "good"),
@@ -143,8 +143,13 @@ struct OutboxTests {
         guard case let .refused(words) = state else { Issue.record("state \(state)"); return }
         #expect(words.contains("props.sport"))
         #expect(await outbox.entries.map(\.recordID) == ["bad", "bad-1"])
+        #expect(await outbox.parked.map(\.recordID) == ["bad"])
         #expect(!server.methodsAndPaths.contains("PUT /api/v1/ada.example.com/training/set/bad-1"))
         #expect(server.methodsAndPaths.contains("PUT /api/v1/ada.example.com/training/session/good"))
+        // Parked, it is not sent again on its own, and the state still says so.
+        let before = server.sent.count
+        guard case .refused = await outbox.flush(api(server)) else { Issue.record("a parked write stopped being reported"); return }
+        #expect(server.sent.count == before)
     }
 
     @Test("a refused token stops the run and asks to sign in, keeping everything")
@@ -152,7 +157,7 @@ struct OutboxTests {
         let server = ScriptedServer()
         server.on { _ in (401, #"{"error":{"code":"auth","message":"invalid token"}}"#) }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
-        await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:])])
+        try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:])])
         #expect(await outbox.flush(api(server)) == .signedOut)
         #expect(await outbox.entries.count == 1)
     }
@@ -160,8 +165,8 @@ struct OutboxTests {
     @Test("a discard drops the session's queued writes; a session the server holds is purged")
     func discard() async throws {
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
-        let sink = OutboxSink<Int, Int>(outbox: outbox) {}
-        await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
+        let sink = OutboxSink<Int, Int>(outbox: outbox, onQueued: {})
+        try await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
         let id = try finished().session.id
         await sink.discarded(id)
         #expect(await outbox.entries.isEmpty)
@@ -169,7 +174,7 @@ struct OutboxTests {
         let server = ScriptedServer()
         server.on { $0.method == "PUT" || $0.method == "PATCH" ? (200, record(3)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
-        await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
+        try await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
         await outbox.flush(api(server))
         await sink.deleted(id)
         #expect(await outbox.flush(api(server)) == .sent)
@@ -182,7 +187,7 @@ struct OutboxTests {
     @Test("an exercise added on the phone goes before anything names it")
     func exerciseFirst() async throws {
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
-        let sink = OutboxSink<Int, Int>(outbox: outbox) {}
+        let sink = OutboxSink<Int, Int>(outbox: outbox, onQueued: {})
         let exercise = Exercise(id: ExerciseID(rawValue: "landmine-press"), name: "Landmine Press", measurement: .weightreps, equipment: .barbell)
         await sink.exerciseAdded(exercise)
         await sink.finished(try finished())
