@@ -57,7 +57,7 @@ RUN pnpm build
 # never emulates the Go toolchain. The version is held to .mise.toml's go pin
 # and to go.mod's `go` line by `lint:toolchain`: this image sets
 # GOTOOLCHAIN=local, so a go.mod that asks for a newer Go fails here.
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
 ARG TARGETOS TARGETARCH
 # What this image will call itself when asked (discovery's `server.version`).
 # It has to be handed in: .dockerignore drops .git, so the toolchain records
@@ -147,7 +147,7 @@ RUN set -eu; \
 # on the same pinned Go as `build`, so the target compiles the bridge and
 # nothing else; it runs on the same pinned alpine as the server, as the same
 # unprivileged uid. VERSION and COMMIT are handed in as for `build`.
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS slack-socket-build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS slack-socket-build
 ARG TARGETOS TARGETARCH
 ARG VERSION=""
 ARG COMMIT=""
