@@ -335,6 +335,15 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
 			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
 			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
+			// A webhook's parked deliveries, for the trigger an app's
+			// `webhook:` scope names (docs/plans/app-setup.md); the rest
+			// of the trigger verbs are the owner's (mountTriggerVerbs).
+			r.Get("/"+corePackage+"/trigger/{id}/parked", h.getTriggerParked)
+			// Storing a blob, for a token that writes a kind declaring a
+			// blob-ref property (scopedDataset.PutBlob). Reading one stays
+			// the owner's, below.
+			r.Put("/blobs", h.putBlob)
+			r.Put("/blobs/{digest}", h.putBlob)
 
 			// THE RECORD PATH. It IS the record's reference: the kind's three
 			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
@@ -394,11 +403,10 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get("/catalog/{id}", h.getCatalogItem)
 			r.Post("/catalog/{id}/install", h.postCatalogInstall)
 			r.Post("/catalog/{id}/import", h.postCatalogImport)
-			// The content-addressed blob store: store bytes under their digest,
-			// stream them back, both repository-scoped. A blob's manifest is an
-			// ordinary `blob` record under /substrate.reamde.dev/core/blob.
-			r.Put("/blobs", h.putBlob)
-			r.Put("/blobs/{digest}", h.putBlob)
+			// The content-addressed blob store: stream bytes back by digest,
+			// repository-scoped (the PUTs that store them sit on the scoped
+			// surface above). A blob's manifest is an ordinary `blob` record
+			// under /substrate.reamde.dev/core/blob.
 			r.Get("/blobs/{digest}", h.getBlob)
 
 			// CORE-RECORD ACTIONS AND SUB-RESOURCES. An ACTION hangs one level

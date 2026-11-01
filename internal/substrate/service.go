@@ -62,10 +62,11 @@ type Service interface {
 	CompleteOAuth(ctx context.Context, state, code string) (string, error)
 	// ReceiveWebhook is public webhook ingress. The request carries no
 	// bearer: the path names the repository's AUTHORITY and the trigger, and
-	// the trigger's own key, when it declares one, is the credential. Returns
-	// the fire id the delivery runs under; every refusal that must not
-	// distinguish "no such trigger" from "wrong key" or "disabled" is
-	// ErrNotFound.
+	// the trigger's own key, when it declares one, is the credential, unless
+	// ctx carries the WithWebhookGrant mark for that authority and trigger,
+	// which stands in for it. Returns the fire id the delivery runs under;
+	// every refusal that must not distinguish "no such trigger" from "wrong
+	// key" or "disabled" is ErrNotFound.
 	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)
 	// CheckWebhook runs ReceiveWebhook's checks without a request and
 	// answers the same ErrNotFound for every refusal. The door asks it before

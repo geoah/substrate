@@ -59,6 +59,12 @@ const blobCacheControl = "private, max-age=31536000, immutable"
 func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
+	if scoped, ok := ds.(*scopedDataset); ok {
+		if err := scoped.admitBlobs(ctx); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
+	}
 	// Admission bound: acquire a slot before allocating the body, so waiting
 	// requests hold only their goroutine, not a full 64 MiB buffer.
 	select {

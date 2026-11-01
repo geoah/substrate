@@ -179,8 +179,10 @@ expiry.
 Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
 the records route (`GET /api/v1/records` for lists and lexical search,
 `POST /api/v1/records`), the record path (`/api/v1/{authority}/{package}/{kind}/{id}`),
-the unit reads, the change feed's live tail and, under an `agents:` scope,
-the chat and the thread routes, held to its scopes:
+the unit reads, the change feed's live tail, blob storage under the blob
+rule below, under an `agents:` scope the chat and the thread routes, and
+under a `webhook:` scope the webhook door and that trigger's parked list
+([deliver to a webhook](#deliver-to-a-webhook)), held to its scopes:
 
 - a kind the token cannot read answers `404`, as an unknown kind does;
 - a write to a kind it reads but cannot write answers `403` with
@@ -194,11 +196,20 @@ the chat and the thread routes, held to its scopes:
   whole repository;
 - a list carries no changelog head, in its body or in its cursor;
 - inbound links, property provenance and expanded referents of other kinds
-  are left out of every record it receives.
+  are left out of every record it receives;
+- a trigger (`substrate.reamde.dev/core/trigger`, which only an exact scope
+  reaches) never carries its webhook key: `source.webhook.key` is left out
+  of every trigger the token receives, and a condition or an order on
+  `source` answers `403`;
+- `PUT /api/v1/blobs` (and `…/blobs/{digest}`) stores bytes when the token
+  writes at least one kind that declares a `blobref` property, and answers
+  `403` otherwise. The answer carries the digest and size of the bytes sent
+  and the name and media type the request gave, never what an earlier
+  upload of the same bytes said.
 
 Everything else answers `403`: the change feed's history, aggregate and
-window reads, blobs, the vocabulary, the catalog, functions, the agent call
-API, the export and the token endpoints. Writes are attributed to the app's own actor,
+window reads, reading a blob, the vocabulary, the catalog, functions, the
+agent call API, the export and the token endpoints. Writes are attributed to the app's own actor,
 `app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
 request can claim that name. Two apps on one host share it, and the
 changelog's principal (the token, which names the exact client id) tells
@@ -272,6 +283,26 @@ ends with a terminal error frame whose code is `auth`, and an agent's
 stream with an `error` event, before anything more is written. The turn
 itself runs on; the app signs in again to follow it.
 
+### Deliver to a webhook
+
+A `webhook:<trigger>` scope names one webhook trigger by its id. An app
+never asks for it in `scope`, which refuses it: only an approved `webhook`
+authorization detail puts it on a token. Under it:
+
+- `POST /webhooks/{authority}/{trigger}` takes the token as
+  `Authorization: Bearer` in place of the trigger's key. The door admits the
+  delivery when the token is live, opens the repository the path names and
+  holds `webhook:` for that trigger; any other bearer is read as a key, so a
+  revoked, expired or full-access token, or one without the scope, answers
+  the door's one `404`, as a wrong key does. A signature the trigger
+  declares is still checked, and the header never reaches the callable.
+  Revoking the app, or its access ending, ends its deliveries.
+- `GET /api/v1/substrate.reamde.dev/core/trigger/{id}/parked` lists that
+  trigger's parked deliveries, whoever sent them. Another trigger's list,
+  and the other trigger verbs, answer `403`.
+
+`webhook:` does not read the trigger record, and no scope reads its key.
+
 ### Revoke
 
 `POST /oauth/revoke` with `token=…` (form-encoded) revokes that token
@@ -287,6 +318,7 @@ A scope is a verb and a pattern:
 | `write` | kind references | the same, and writes them |
 | `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
+| `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |
 
 | Pattern | Reaches |
 | --- | --- |

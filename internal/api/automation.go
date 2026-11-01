@@ -11,13 +11,14 @@ import (
 
 // mountTriggerVerbs registers the trigger delivery verbs under one authority.
 // It is mounted at substrate.reamde.dev/core, where the trigger records live:
-// a resource's operational verbs sit at the resource.
+// a resource's operational verbs sit at the resource. The parked list is not
+// here: an app's token reaches it under `webhook:`, so it is registered on
+// the scoped surface (api.go).
 func (h *handler) mountTriggerVerbs(r chi.Router, authority string) {
 	r.Get("/"+authority+"/trigger/status", h.getTriggerStatus)
 	r.Post("/"+authority+"/trigger/{id}/replay", h.postTriggerReplay)
 	r.Post("/"+authority+"/trigger/{id}/run", h.postTriggerRun)
 	r.Post("/"+authority+"/trigger/{id}/wake", h.postTriggerWake)
-	r.Get("/"+authority+"/trigger/{id}/parked", h.getTriggerParked)
 	r.Post("/"+authority+"/trigger/{id}/parked/{fid}/retry", h.postTriggerRetry)
 	r.Delete("/"+authority+"/trigger/{id}/parked/{fid}", h.deleteTriggerParked)
 }

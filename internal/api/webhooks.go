@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -75,9 +76,10 @@ var webhookHeaderDenylist = map[string]bool{
 // postWebhook is POST /webhooks/{authority}/{trigger}[/{key}]: the public door
 // (decision 0045). No bearer; the path names the repository and the trigger,
 // and the trigger's own key, when it declares one, is the credential, read
-// from the trailing path segment, `?key=` or a bearer header. The request is
-// read into transport facts here and handed to the service, which answers
-// 404 for every refusal alike, 401 for a request that carried a keyed
+// from the trailing path segment, `?key=` or a bearer header; an app's token
+// as the bearer stands in for it under `webhook:` (webhookGranted). The
+// request is read into transport facts here and handed to the service, which
+// answers 404 for every refusal alike, 401 for a request that carried a keyed
 // trigger's key and that the trigger's declared signature refuses (decision
 // 0164), and 202 with the fire id once the delivery is on its way; the
 // callable's output is never a response.
@@ -98,7 +100,12 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	clear := bodyDeadline(w, deadline)
 	authority, trigger, key := pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r)
-	target, err := h.svc.CheckWebhook(r.Context(), authority, trigger, key)
+	ctx := r.Context()
+	if h.webhookGranted(r, authority, trigger, key) {
+		ctx = substrate.WithWebhookGrant(ctx, authority, trigger)
+		key = ""
+	}
+	target, err := h.svc.CheckWebhook(ctx, authority, trigger, key)
 	if err != nil {
 		// net/http reads the rest of a body before it answers, unless the
 		// answer closes the connection: a refusal reads none of it.
@@ -141,7 +148,7 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clear()
-	fid, err := h.svc.ReceiveWebhook(r.Context(), authority, trigger, key, req)
+	fid, err := h.svc.ReceiveWebhook(ctx, authority, trigger, key, req)
 	if err != nil {
 		writeWebhookError(w, r, err)
 		return
@@ -198,6 +205,29 @@ func webhookKey(r *http.Request) string {
 		return strings.TrimSpace(auth[7:])
 	}
 	return ""
+}
+
+// webhookGranted reports whether the bearer, the request's only credential,
+// is an app's token that delivers to this trigger in this repository
+// (`webhook:`, docs/plans/app-setup.md), which the engine then takes in place
+// of the trigger's key. Anything short of that, a revoked or lapsed token, a
+// full-access one, one of another repository or one without the scope, stays
+// the key the bearer always was, so it is refused exactly as a wrong key is
+// and the answer tells a sender nothing about the token.
+func (h *handler) webhookGranted(r *http.Request, authority, trigger, key string) bool {
+	secret := bearerSecret(r)
+	if secret == "" || secret != key || !strings.HasPrefix(secret, substrate.TokenSecretPrefix) {
+		return false
+	}
+	ds, tok, err := h.svc.Authenticate(r.Context(), secret)
+	if err != nil || !tok.Scoped() {
+		return false
+	}
+	if exp := tok.ExpiresAt; exp != nil && h.now().After(*exp) {
+		return false
+	}
+	grant, err := scope.NewGrant(tok.Scopes)
+	return err == nil && grant.Delivers(trigger) && ds.Repository().Authority == authority
 }
 
 // readWebhookRequest turns the HTTP request into the seam's transport facts,

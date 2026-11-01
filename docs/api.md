@@ -2255,9 +2255,11 @@ the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
 path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
-reach the server. When the trigger declares `source.webhook.signature`, the
-server verifies the provider's signature before it stores anything
-([functions](functions.md#webhook-signatures)).
+reach the server. An app's token that holds `webhook:<trigger>` stands in for
+the key as `Authorization: Bearer`, and any other token there is read as a
+key ([apps](apps.md#deliver-to-a-webhook)). When the trigger declares
+`source.webhook.signature`, the server verifies the provider's signature
+before it stores anything ([functions](functions.md#webhook-signatures)).
 
 | Answer | When |
 | --- | --- |
