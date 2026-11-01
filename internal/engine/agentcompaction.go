@@ -222,17 +222,28 @@ func summarySpans(rows []threadRow) (spans []summarySpan, unresolved []string) {
 }
 
 // replayView builds the model-facing history from a thread's rows: user rows
-// kept, assistant rows kept only as prose (a turn that called tools is
-// dropped), tool rows dropped, system rows replayed as user content, and each
-// summary emitted where its range starts, the range itself skipped. Where
-// several summaries start at one row the latest wins: a later compaction
-// folds the earlier summary into its own. Rows after a range, a resolution
-// that landed while the summary was being written among them, replay as
-// usual.
+// kept, system rows replayed as user content, and each summary emitted where
+// its range starts, the range itself skipped. Where several summaries start
+// at one row the latest wins: a later compaction folds the earlier summary
+// into its own. Rows after a range, a resolution that landed while the
+// summary was being written among them, replay as usual.
+//
+// With tools set, an assistant row that called tools replays with its calls,
+// each answered right after it by its stored tool row (decision 0201). Both
+// wires refuse a call without its answer or an answer away from its call, so
+// a row that lands between a call and its answer (a resolution written while
+// the call ran) replays after the answers, a call whose row never landed (a
+// run that died mid-dispatch) is answered with an interruption error, and a
+// tool row whose call is not replayed is dropped. Without tools, an assistant
+// row replays only as prose and tool rows are dropped.
+//
+// The output is a function of the rows alone, so a continued thread's prefix
+// is the same bytes on every continuation.
 //
 // origin[k] is the row the k-th message came from; for a summary message it
-// is the summary row itself.
-func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin []int, maxTurn int) {
+// is the summary row itself, and for an interruption answer the assistant
+// row that made the call.
+func replayView(rows []threadRow, tools bool, log *slog.Logger) (msgs []llm.Message, origin []int, maxTurn int) {
 	spans, unresolved := summarySpans(rows)
 	if log != nil {
 		for _, id := range unresolved {
@@ -251,6 +262,7 @@ func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin 
 			maxTurn = int(t)
 		}
 	}
+	answered := map[int]bool{}
 	for i := 0; i < len(rows); {
 		if s, ok := startAt[i]; ok {
 			msgs = append(msgs, summaryMessage(rows[s.at].content()))
@@ -265,9 +277,41 @@ func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin 
 			msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: content, Context: r.turnContext()})
 			origin = append(origin, i)
 		case "assistant":
-			if content != "" && r.props["toolCalls"] == nil {
-				msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Content: content})
-				origin = append(origin, i)
+			if r.props["toolCalls"] == nil {
+				if content != "" {
+					msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Content: content})
+					origin = append(origin, i)
+				}
+				break
+			}
+			if !tools {
+				break
+			}
+			calls := replayedCalls(r, i)
+			if len(calls) == 0 {
+				if content != "" {
+					msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Content: content})
+					origin = append(origin, i)
+				}
+				break
+			}
+			msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Content: content, ToolCalls: calls})
+			origin = append(origin, i)
+			for _, tc := range calls {
+				at := answerRow(rows, i, tc.ID, answered)
+				if at < 0 {
+					msgs = append(msgs, llm.Message{
+						Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name,
+						Content: toolError("this call was interrupted before it returned a result; it may or may not have taken effect"),
+					})
+					origin = append(origin, i)
+					continue
+				}
+				answered[at] = true
+				msgs = append(msgs, llm.Message{
+					Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: rows[at].content(),
+				})
+				origin = append(origin, at)
 			}
 		case msgRoleSystem:
 			// The substrate's own turn (a proposal decision) replays as USER
@@ -284,10 +328,57 @@ func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin 
 	return msgs, origin, maxTurn
 }
 
+// replayedCalls reads an assistant row's stored calls. A call stored without
+// an id is given one derived from the row, since both wires refuse an empty
+// one and nothing can answer it anyway.
+func replayedCalls(r threadRow, at int) []llm.ToolCall {
+	stored := objectRows(r.props["toolCalls"])
+	calls := make([]llm.ToolCall, 0, len(stored))
+	for n, c := range stored {
+		id, _ := c["id"].(string)
+		name, _ := c["name"].(string)
+		args, _ := c["arguments"].(string)
+		if name == "" {
+			continue
+		}
+		if id == "" {
+			id = fmt.Sprintf("replayed_%d_%d", at, n)
+		}
+		calls = append(calls, llm.ToolCall{ID: id, Name: name, Arguments: args})
+	}
+	return calls
+}
+
+// answerRow is the first tool row after the call's row that answers it and
+// has not answered another, or -1.
+func answerRow(rows []threadRow, after int, callID string, answered map[int]bool) int {
+	for j := after + 1; j < len(rows); j++ {
+		if answered[j] || rows[j].role() != "tool" {
+			continue
+		}
+		if id, _ := rows[j].props["toolCallId"].(string); id == callID {
+			return j
+		}
+	}
+	return -1
+}
+
+// replaysTools says whether this run's replay carries the thread's tool
+// exchanges. A request that declares no tools may not carry a tool exchange
+// on the anthropic wire, so an agent left without tools replays prose alone.
+func (l *agentLoop) replaysTools() bool {
+	return l.ag.Compaction.ReplayTools != vocabulary.AgentReplayToolsNone && len(l.defs) > 0
+}
+
 // messageTokens estimates one message at four characters per token, plus a
-// few for the wire's per-message framing.
+// few for the wire's per-message framing. A replayed call's id, name and
+// arguments are sent too, so they count.
 func messageTokens(m llm.Message) int {
-	return (len(m.Content)+len(m.Context)+3)/4 + 4
+	n := len(m.Content) + len(m.Context)
+	for _, tc := range m.ToolCalls {
+		n += len(tc.ID) + len(tc.Name) + len(tc.Arguments)
+	}
+	return (n+3)/4 + 4
 }
 
 func messagesTokens(msgs []llm.Message) int {
@@ -588,20 +679,30 @@ func planFrom(rows []threadRow, view []llm.Message, origin []int, spanAt map[int
 // line that reads as another speaker's label.
 func compactionTranscript(msgs []llm.Message, speakers []string) string {
 	lines := make([]string, 0, len(msgs))
-	for i, m := range msgs {
-		label := "[User]: "
-		switch {
-		case i < len(speakers) && speakers[i] == msgRoleSystem:
-			label = "[Substrate]: "
-		case m.Role == llm.RoleAssistant:
-			label = "[Assistant]: "
-		}
-		content := m.Content
+	add := func(label, content string) {
 		if n := utf8.RuneCountInString(content); n > compactionLineCap {
 			r := []rune(content)
 			content = string(r[:compactionLineCap]) + fmt.Sprintf(" [... %d more characters truncated]", n-compactionLineCap)
 		}
 		lines = append(lines, label+strings.ReplaceAll(content, "\n", "\n  "))
+	}
+	for i, m := range msgs {
+		label := "[User]: "
+		switch {
+		case m.Role == llm.RoleTool:
+			label = "[Tool result " + m.ToolName + "]: "
+		case i < len(speakers) && speakers[i] == msgRoleSystem:
+			label = "[Substrate]: "
+		case m.Role == llm.RoleAssistant:
+			label = "[Assistant]: "
+		}
+		// A turn that only called tools has no prose to label.
+		if m.Content != "" || len(m.ToolCalls) == 0 {
+			add(label, m.Content)
+		}
+		for _, tc := range m.ToolCalls {
+			add("[Assistant called "+tc.Name+"]: ", tc.Arguments)
+		}
 	}
 	// Oldest lines go first: the newest ones sit next to the kept tail, and
 	// a previous summary already carries what the oldest said.
@@ -751,7 +852,7 @@ func (l *agentLoop) compactHistory(ctx context.Context, messages []llm.Message, 
 	if err := l.compact(ctx, plan, tokensBefore); err != nil {
 		return nil, err
 	}
-	view, origin, _ := replayView(l.rows, l.ds.svc.log)
+	view, origin, _ := replayView(l.rows, l.replaysTools(), l.ds.svc.log)
 	next := append(view, messages[l.historyLen:]...)
 	l.historyLen, l.origin = len(view), origin
 	return next, nil
@@ -829,7 +930,7 @@ func (l *agentLoop) compactAtSettle(ctx context.Context, reply string) {
 			return err
 		}
 		l.rows = rows
-		view, origin, _ := replayView(rows, l.ds.svc.log)
+		view, origin, _ := replayView(rows, l.replaysTools(), l.ds.svc.log)
 		plan, ok := planCompaction(rows, view, origin, keep)
 		if !ok {
 			return errNothingToCompact

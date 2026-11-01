@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 30
+  version: 31
   purpose: internal
   names:
     singular: agent
@@ -265,6 +265,17 @@ data:
           max: 1000000
           description: the newest history, in tokens, a compaction keeps verbatim,
             20000 when absent
+        # Whether a continued thread replays its earlier tool calls and their
+        # stored results, or only the prose around them (decision 0201). It
+        # holds with or without a context window.
+        replayTools:
+          type: enum
+          values:
+            - all
+            - none
+          description: whether a continued thread replays the tool calls and
+            results of its earlier turns (all) or only their prose (none);
+            absent means all
     # Standing facts without a tool call (decision record 0197): each pinned
     # read is evaluated once when a thread opens, under `permissions.reads`,
     # and rendered into the system prompt after the kinds list. The thread

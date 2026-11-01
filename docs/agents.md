@@ -151,7 +151,11 @@ data:
   `enabled` (default `true`), `reserveTokens` (default 16384, max 1000000)
   and `keepRecentTokens` (default 20000, max 1000000)
   ([threads](#threads-messages-and-cost)). It acts only on a model whose
-  provider `pricing` entry declares `contextWindow`.
+  provider `pricing` entry declares `contextWindow`. `replayTools` (`all`,
+  the default, or `none`) says whether a continued thread replays its
+  earlier tool calls and results or only the prose around them, and holds
+  with or without a window
+  ([decision 0201](decisions/0201-a-continued-thread-replays-its-tool-exchanges.md)).
 - **`permissions:`**, what the agent is allowed to do while it runs: a
   function's grant, minus the three an LLM loop has no body to spend.
   - **`writes:`**, which record kinds it may create or change, the change
@@ -861,7 +865,21 @@ for people reading the thread: no later request replays it, and compaction
 never reads it. The provider's signed thinking blocks are another matter:
 within one run, the loop passes them back unchanged on the assistant turn
 that called tools, as Anthropic requires, and then drops them; no row keeps
-them.
+them, so a later run replays its earlier tool calls without them.
+
+**A follow-up replays what the thread already read**
+([decision 0201](decisions/0201-a-continued-thread-replays-its-tool-exchanges.md)).
+A continued thread replays every earlier assistant turn that called tools with
+its calls, each answered by its stored `tool` row in call order, so the next
+message does not fetch again what the last answer read. What replays is the
+stored result, truncated where the run truncated it. Replay is a function of
+the rows alone, so each continuation starts with the bytes the previous run
+sent. A row that landed between a call and its result (a resolution written
+while the call ran) replays after the results; a call whose result row never
+landed (a run that died mid-dispatch) is answered with an error saying it was
+interrupted; a result whose call is not replayed is dropped. An agent with no
+tools left, or one declaring `compaction.replayTools: none`, replays the prose
+alone.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
@@ -945,7 +963,9 @@ first and last message rows it replaces; those rows stay as the audit, and
 replay sends the summary in their place. The summarizer's tokens and cost land
 on the thread's tallies, and the chat stream reports each compaction as one
 `compacted` event carrying `tokensBefore` and `covered`, the number of rows
-covered. A summary with no content, a tool call or a `length` stop is
+covered. A replayed tool exchange counts toward the estimate and goes to
+the summarizer as labeled call and result lines, and a cut never separates a
+call from its result. A summary with no content, a tool call or a `length` stop is
 discarded: at settle and at open the run carries on uncompacted, and after an
 overflow the thread settles `error` as it did before compaction existed.
 
@@ -1335,9 +1355,9 @@ settled result under `result`). A loop that fails after the
 `200` status line has already gone out terminates the stream with an `error`
 event instead, the same choice the
 [changelog](changelog.md#frames-and-the-horizon) makes, so a failure is never a
-`done` with no result. A continued thread replays its prose history (user and
-assistant turns, with a `summary` row standing in for the older turns it
-covers; tool exchanges are audit, not context) and keeps one running
+`done` with no result. A continued thread replays its history (user and
+assistant turns, each tool call with its stored result right after it, and a
+`summary` row standing in for the older turns it covers) and keeps one running
 tally on the thread row; one active turn per thread is enforced by a lease, so
 a second concurrent turn is refused as a conflict, leaving nothing on the
 thread, and a crashed turn's expired lease is taken over by the next

@@ -1387,7 +1387,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			}
 			return nil, err
 		}
-		history, origin, maxTurn := replayView(rows, l.ds.svc.log)
+		history, origin, maxTurn := replayView(rows, l.replaysTools(), l.ds.svc.log)
 		messages = append(messages, history...)
 		l.rows, l.origin, l.historyLen = rows, origin, len(history)
 		l.turnMu.Lock()
@@ -1543,8 +1543,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 
 // loadThreadRows reads a continued thread's message rows in stored order,
 // every role included: replay (replayView) and compaction planning both work
-// from them. Tool exchanges are per-run artifacts, audit and not context, so
-// replay drops them and stays robust against tool renames.
+// from them.
 func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)

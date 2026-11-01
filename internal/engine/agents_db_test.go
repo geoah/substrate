@@ -448,6 +448,20 @@ def main(input, host):
 			"provider": "tersellm", "model": "terse",
 			"params": map[string]any{"engineGuidance": false},
 		}),
+		// recaller chats with a tool, so a follow-up has an exchange to replay
+		// (agentreplay_db_test.go); recallerprose is the same agent declaring
+		// that it replays none.
+		agent("recaller", map[string]any{
+			"provider": "chatllm", "model": "recall",
+			"tools":       []any{map[string]any{"function": crewPackage + "/annotate"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
+		}),
+		agent("recallerprose", map[string]any{
+			"provider": "chatllm", "model": "recallprose",
+			"tools":       []any{map[string]any{"function": crewPackage + "/annotate"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
+			"compaction":  map[string]any{"replayTools": "none"},
+		}),
 		// namer chats for the thread title tests (agenttitle_db_test.go).
 		agent("namer", map[string]any{"provider": "namellm", "model": "name"}),
 		agent("thinker", map[string]any{

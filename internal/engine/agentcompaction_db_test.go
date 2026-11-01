@@ -288,8 +288,10 @@ func TestCompactionKeepsAPendingAskRaw(t *testing.T) {
 		c := msgText(m)
 		contents = append(contents, c)
 	}
-	if len(contents) < 4 || contents[0] != "pick a color for me" || contents[1] != "asked." ||
-		!strings.Contains(contents[2], "TAIL SUMMARY") {
+	// The blocked head replays raw, the ask's call and its answer included.
+	if len(contents) < 6 || contents[0] != "pick a color for me" || msgs[2]["tool_calls"] == nil ||
+		msgs[3]["role"] != "tool" || contents[3] != "asked." ||
+		!strings.Contains(contents[4], "TAIL SUMMARY") {
 		t.Fatalf("the ask's run was not replayed raw ahead of the summary: %.40q", contents)
 	}
 }
