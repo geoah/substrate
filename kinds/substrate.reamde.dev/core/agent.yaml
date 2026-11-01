@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 27
+  version: 28
   purpose: internal
   names:
     singular: agent
@@ -149,6 +149,21 @@ data:
         description:
           type: string
           description: the model-facing card, overriding the function's own
+    # The functions bundles OFFER (record 0198), taken by pattern rather than
+    # named one by one: `*` is every offered function of every enabled
+    # bundle. Resolved when a run builds its tools, so an install or a
+    # disable changes the next run; `tools:` and sub-agents win a name.
+    toolsFrom:
+      type: object
+      repeated: true
+      description: where the model's tools come from besides tools, each a
+        pattern over offered functions
+      fields:
+        functions:
+          type: string
+          required: true
+          description: the offered functions to take, as *, <authority>/*,
+            <authority>/<package>/* or one function reference
     subagents:
       type: reference
       kind: substrate.reamde.dev/core/agent

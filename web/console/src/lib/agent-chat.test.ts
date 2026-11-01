@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest"
 import {
   agentListing,
   agentName,
+  agentOfferedTools,
   agentPurpose,
   callableOf,
   canChange,
@@ -606,5 +607,50 @@ describe("attaching to a running turn", () => {
     // meanwhile took 2: the reply has no row yet and must stay.
     const held = new Set([0, 2])
     expect(isReplayed({ kind: "delta", text: "a", turn: 1 }, held)).toBe(false)
+  })
+})
+
+describe("offered tools", () => {
+  const offering = (id: string, offer?: Record<string, unknown>) =>
+    record({
+      id,
+      kind: "substrate.reamde.dev/core/function",
+      properties: offer ? { offer } : {},
+    })
+  const functions = [
+    offering("feeds.example.com/feeds/today", { agents: true }),
+    offering("ada.localhost/notes/savenote", { agents: true }),
+    offering("ada.localhost/notes/stats", { agents: true }),
+    offering("ada.localhost/notes/plain"),
+    offering("other.example.com/other/save", { agents: true, name: "save" }),
+    offering("other.example.com/other/withheld", { agents: false }),
+  ]
+
+  it("takes nothing without toolsFrom", () => {
+    expect(agentOfferedTools(assistant, functions)).toEqual([])
+  })
+
+  it("takes what toolsFrom matches, in identity order, after the named tools", () => {
+    const agent = record({
+      ...assistant,
+      properties: {
+        ...assistant.properties,
+        toolsFrom: [{ functions: "*" }],
+      },
+    })
+    expect(agentOfferedTools(agent, functions)).toEqual([
+      { function: "ada.localhost/notes/stats", name: "notes_stats" },
+      { function: "feeds.example.com/feeds/today", name: "feeds_today" },
+    ])
+    const narrow = record({
+      ...assistant,
+      properties: {
+        ...assistant.properties,
+        toolsFrom: [{ functions: "feeds.example.com/*" }],
+      },
+    })
+    expect(agentOfferedTools(narrow, functions)).toEqual([
+      { function: "feeds.example.com/feeds/today", name: "feeds_today" },
+    ])
   })
 })

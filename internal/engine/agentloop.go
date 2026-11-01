@@ -1711,7 +1711,7 @@ func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substr
 
 // buildTools compiles the model-facing tool cards: one per `tools:` entry
 // (description from the resolved function's declaration, alias from the agent's
-// entry) plus one per sub-agent. Definition order is declaration order, so the
+// entry), one per sub-agent, then the offered functions `toolsFrom` takes. Definition order is declaration order, so the
 // on-wire schema stays stable across turns.
 //
 // THE BUILT-INS TAKE THE SAME PATH AS EVERY OTHER CALLABLE, because they are
@@ -1769,7 +1769,7 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 				"input": map[string]any{"type": "string", "description": "the task for the sub-agent"},
 			}, "required": []any{"input"}}, agentTool{sub: sub})
 	}
-	return nil
+	return l.addOfferedTools(ctx)
 }
 
 // queryLimits is the line the engine appends to the `query` card, alias or

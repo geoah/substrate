@@ -69,6 +69,15 @@ trigger, a host call and the call API all address it with.
   `always` holds every put, patch and delete the body returns for the
   owner's review ([held for review](#held-for-review)). Both are facts about
   the function, never grants.
+- Optional **`offer:`** offers the function to agents: `offer: {agents:
+  true}`, with an optional `name` for the tool (absent is
+  `<package>_<name>`). An agent whose `toolsFrom` matches the function takes
+  it as a tool without naming it, its card this declaration's own
+  `description` and `arguments`
+  ([offered functions](agents.md#offered-functions),
+  [0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)).
+  An offered function declares its `effect`, and a host function is never
+  offered.
 - Optional **`stream`** names the sync stream the function keeps, the key its
   code writes under the account's `syncStreams`, so `sync status` marks that
   stream `erroring` when a delivery of the function parks
