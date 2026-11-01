@@ -1,10 +1,11 @@
 # An app's approval sets up what it needs
 
 Status: implemented, 2026-11-01. Claude Fable 5.1 and GPT-6 Astra reviewed
-it twice, the first draft and then the implementation, and each round
-changed it (the review record is at the end). The binding choices are
-recorded in
-[0202](../decisions/0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md). It builds on [app authorization](app-authorization.md) and decisions
+it three times, the first draft, the implementation and a last confirmation
+of it, and each round changed it (the review record is at the end). The
+binding choices are recorded in
+[0202](../decisions/0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md).
+It builds on [app authorization](app-authorization.md) and decisions
 [0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)
 and
 [0195](../decisions/0195-an-app-talks-to-agents-decides-their-requests-and-tails-the-feed-it-reads.md),
@@ -30,8 +31,8 @@ refused:
    `substrate.reamde.dev/health` at 2 or later);
 2. creates the phone's Health account,
    `providers.substrate.reamde.dev/applehealth/account/substrate-sync-<8>`;
-3. arms `applehealth-webhook`: `enabled`, and a key it then reads back from
-   the trigger on every Health run and sends to the webhook door;
+3. turns on `applehealth-webhook`: `enabled`, and a key it then reads back
+   from the trigger on every Health run and sends to the webhook door;
 4. reads that trigger's parked deliveries to tell a refused day from one
    still filing;
 5. from the share extension, stores shared images as blobs.
@@ -159,7 +160,12 @@ expanded references).
 grant writes at least one kind in the registry that declares a `blobref`
 property. Its answer carries the digest and size of what it sent, never the
 stored name or media type of a blob that already held those bytes. Reading a
-blob stays the owner's. This is what the share extension needs. An app's
+blob stays the owner's, and so does its manifest: a blob reference in a
+record an app's token reads carries the digest, size and status, and its
+name and media type only when the token reads
+`substrate.reamde.dev/core/blob`, since the bytes are stored once by digest
+and an app could otherwise name another's digest in a record and read the
+name it was uploaded under. This is what the share extension needs. An app's
 uploads wait for two slots of their own, never the owner's eight, and the
 token is read again once a slot is taken and once the body has arrived, so a
 token revoked meanwhile stores nothing.
@@ -179,31 +185,40 @@ request, as today) answers, beside today's fields:
   | `progress` | while a set up runs, and after one stopped: `waiting`, `running`, `done` or `failed` |
   | `package` | for a package: id, description, tier, required, held (the catalog release it holds: `shippedVersion` for a published package, else its version; absent when it holds none), shipped (absent when the catalog ships none), the requirement chain in the order it lands (each step with its own action, block, versions, kinds, functions and triggers), and the package's own kinds it adds (with labels and purpose), functions (each with the kinds it may write) and triggers (each enabled or not). No name: a client names a package from its id |
   | `account` | kind, label, id, properties |
-  | `webhook` | trigger, the package its callable belongs to, enabled, keyed |
+  | `webhook` | trigger, the package its callable belongs to, enabled, keyed, and `allowed` when the previous token already delivers to it |
 
   A package is `none` when it holds the floor or more, `install` when absent
   and `upgrade` when held below the floor. One planner holds the whole
   install closure to the same checks, the requested package and every
   requirement the catalog would install first, and a step that cannot run
-  blocks the row that needs it. The reasons a package row is blocked:
-  `server-update` when the catalog ships less ("This server ships version
-  3; the app needs version 4. The server needs an update first."),
-  `not-shipped` when the catalog does not ship it, `sample` for a sample,
-  `quarantined`, `declared-by-owner` when the owner declared it by hand below
-  the floor (installing would take it from them; at or above the floor it is
-  `none` and left alone, as decision 0100 leaves a hand-declared
-  requirement), and `upgrade-needs-review` when the upgrade's preview has
-  blockers, is lossy, discards edits or fails (the provider page asks for
-  that confirmation; the row links there). An account row is `create`, or
-  `none` while its row is live, and blocked `not-requested` when no
-  `package` detail names its package, `unsupported` when its kind is no
-  account or a property is one it may not set, and `account-deleted`. A
-  webhook row is `enable`, or `none` when the trigger is enabled and keyed,
-  and blocked `not-requested` when its callable's package is not named or
-  the trigger is neither here nor shipped by a requested package, and
-  `unsupported` when it takes no webhook, its provider signs it, or its
-  callable belongs to no package. A problem sentence never names a package:
-  the row's title does, from its id, so the two views say one thing.
+  blocks the row that needs it. The closure is the catalog's one walk, the
+  one its install runs: the order it installs in, and beside it each
+  requirement it passed over as nothing it can install, a sample or a
+  package it does not ship, which the install would be refused on. The
+  reasons a package row is blocked: `server-update` when the catalog ships
+  less ("This server ships version 3; the app needs version 4. The server
+  needs an update first."), `not-shipped` when the catalog does not ship it,
+  `sample` for a sample, `quarantined`, `declared-by-owner` when the owner
+  declared it by hand and installing would take it from them, and
+  `upgrade-needs-review` when the upgrade's preview has blockers, is lossy,
+  discards edits or fails (the provider page asks for that confirmation; the
+  row links there). Whose a package is, is read off its package record
+  (`substrate.reamde.dev/core/package`): the owner's when it is `installed`
+  and no provider install stamped a `shippedVersion` on it, whether it
+  declares kinds or only functions or traits and whether a bundle carries it
+  or it was applied by hand; a `published` or `builtin` one is not. One the
+  owner holds as a bundle at the floor or more is `none` and left alone, as
+  decision 0100 leaves a hand-declared requirement. An account row is
+  `create`, or `none` while its row is live, and blocked `not-requested`
+  when no `package` detail names its package, `unsupported` when its kind is
+  no account, its package declares no such kind, or a property is one it may
+  not set, and `account-deleted`. A webhook row is `enable`, or `none` when
+  the trigger is enabled and keyed, and blocked `not-requested` when its
+  callable's package is not named or the trigger is neither here nor shipped
+  by a requested package, and `unsupported` when it takes no webhook, its
+  provider signs it, or its callable belongs to no package. A problem
+  sentence never names a package: the row's title does, from its id, so the
+  two views say one thing.
 - **`planHash`**: a digest of the setup rows, without their progress. An
   approval names it, and the server refuses with `409` when its own plan
   differs: what runs is what the page showed.
@@ -214,7 +229,8 @@ request, as today) answers, beside today's fields:
   by reach rather than spelling (a write covers a read, a wider pattern a
   narrower one, an `internal` kind only by its exact scope), which
   `internal/scope` decides for the check too; a setup row says "already in
-  place" by its action.
+  place" by its action, and a webhook row carries `allowed` when those
+  scopes already deliver to its trigger, by the same coverage.
 - **`state`**: `pending`, `setting-up` or `approved`. A pending request with
   nothing approved behind it is planned at every read. Once an approval
   reserved it, the page reads the rows that approval was checked against,
@@ -222,8 +238,10 @@ request, as today) answers, beside today's fields:
   way; a run that found the plan moved drops them, so the next read plans
   afresh. After a failed run, **`failure`**: the message, and `row`, the
   index it stopped at, absent when it stopped before or after every row
-  (waiting for the repository's turn, issuing the code). Once approved,
-  **`next`**, the redirect carrying the code, answered once.
+  (waiting for the repository's turn, issuing the code). Once approved, the
+  whole view as the set up left it, built as it finished, with **`next`**,
+  the redirect carrying the code: answered once, reading nothing from the
+  repository.
 - Scope rows' `kinds` also list the kinds a requested package would add,
   marked `added`.
 
@@ -232,22 +250,25 @@ request, as today) answers, beside today's fields:
 `POST /api/v1/authorizations/{request}` takes `scopes`, `lifetimeDays` and,
 when the request has setup to run, `planHash`.
 
+- Setting up is the owner's act: an approval of a request that carries
+  details comes through one of the three human doors, the console,
+  `substratectl` or the API, whatever its rows would do, even none. Any
+  other actor is refused with `403` first, before the request is reserved or
+  planned, and the request stays pending as it was.
 - Under the store's lock the approval reserves the request: it must be
   pending, claimed by this repository and shown, and the scopes and lifetime
   are checked; it moves to `setting-up` (a second approval or a denial
   answers `409`) and its lapse moves fifteen minutes on. The plan is
   computed once, under the reservation, and every refusal below hands the
-  request back, pending.
+  request back, pending, with the lapse it had before.
 - What runs is what the page showed: the plan, which must match `planHash`,
   or, after a set up stopped part way, the rows that set up was checked
   against, of which the plan now may run less. A blocked row refuses with
   `422`.
 - No row needs action: the code is minted there, `200` with the redirect,
   as before set up existed.
-- Otherwise `planHash` is required, and setting up is the owner's act: the
-  approval's actor must be one of the three human doors, the console,
-  `substratectl` or the API, and any other is refused with `403`. The
-  answer is `202` with the state and the rows, each with its first progress.
+- Otherwise `planHash` is required, and the answer is `202` with the state
+  and the rows, each with its first progress.
 - The set up runs in the background, detached from the HTTP request (a
   closed tab does not stop it), one set up per repository at a time. Holding
   the repository's turn, it plans again: a row may have come to need nothing
@@ -263,15 +284,20 @@ when the request has setup to run, `planHash`.
   webhook its provider does not sign, still running the approved package's
   code). Every webhook's binding is checked once more before the code is
   minted.
-- On success the code is minted and the request holds the redirect until
-  the page's next read, which is answered from what the request holds,
-  nothing planned again, and deletes it: a second read is the page's
-  "expired or already answered". The code lives 60 seconds from that read,
-  and never more than ten minutes after the set up finished. On failure the
-  request is pending again with `failure` and the rows as they ran (one left
-  running reads `failed`), and Try again approves those rows again and runs
-  what still needs action. What landed stays, as an install from the
-  provider page does; the page says so before approving.
+- On success what the page's view reads of the repository (the registry,
+  the app's previous token, the agents a scope names) is read before the
+  code exists, and the code is minted with the whole view built under the
+  store's lock: the request holds it, the redirect among it, until the
+  page's next read. That read answers it as it is, reading nothing, so no
+  read that fails then can keep an issued code from the page, and deletes
+  the request: a second read is the page's "expired or already answered".
+  The code lives 60 seconds from that read, and never more than ten minutes
+  after the set up finished. On failure, a failed read before the code
+  included, the request is pending again with `failure` and the rows as
+  they ran (one left running reads `failed`) and waits ten minutes again,
+  and Try again approves those rows again and runs what still needs action.
+  What landed stays, as an install from the provider page does; the page
+  says so before approving.
 - A restart forgets the request (0194); what landed stays and the app starts
   over, finding those rows in place.
 
@@ -303,8 +329,12 @@ under the same bounds, as at `/oauth/authorize`. The answer:
 
 An app reads it at launch and on return to the foreground (at most every
 few minutes). A token's last answer is answered again for the same body for
-30 seconds, and a check is never refused for its pace. When anything needs
-action the app offers the owner a review that sends its whole request again.
+30 seconds, and a check is never refused for its pace: one that must plan
+waits its turn, one plan at a time for a token and at most four at once on
+the server, since a plan stages upgrade previews against the owner's data
+and a token that changes its body to miss the memo would otherwise run them
+side by side. When anything needs action the app offers the owner a review
+that sends its whole request again.
 
 ## The approval page
 
@@ -405,10 +435,10 @@ copyable. On a wide screen the card is wider in this view.
 | Folder | What |
 | --- | --- |
 | `Server/` | `ServerAddress` (the one normaliser), `Discovery` (all of `server.json`), `AuthorizationServerMetadata`, `ServerVersion` (`v0.113.0`, `0.113.0-4-g…`; `dev` is not comparable), `ServerRequirement` (a minimum release, the scope verbs and detail types an app needs) and its verdict |
-| `API/` | `SubstrateClient` over an injected transport: bearer, timeouts by tier, `Retry-After` on 429 and 503 for idempotent requests only, the error envelope, `explain(_:app:server:)` (an `insufficient_scope` is "needs your approval", never "sign in again"), one path-segment encoder, records, lists, blob upload, webhook delivery, parked deliveries (one still filing told by `pending`, or by its text from a server that sends no mark) |
-| `Auth/` | `AppManifest` (built per run: client id, name, scopes, details, the server requirement, which adds every verb its scopes use and every type its details use), `AuthorizationDetail`, `PKCE` (a failed random source throws), `OAuthClient` (metadata, which must be the chosen server's own, issuer and endpoints on its origin, before the browser opens; the authorize URL, which throws rather than drop details; the loopback sign-in, RFC 8252, with no claimed callback; the exchange, never retried, `iss` required when advertised), `LoopbackReceiver`, `WebAuthenticator`, `Session` (an app session or a legacy password one, versioned, with the scopes it asked for, and its `revoke`, the one revocation, which returns only once the server says so), `SessionStore` (Keychain, an access group for extensions, available after first unlock for background work, and the sessions kept for revocation until the server confirms), `Grants` |
-| `Status/` | `AppStatusCheck`: discovery, the requirement, `/authorizations/check` (asked only of a server whose metadata lists detail types, and never about a scope the owner left out of the last approval) and the expiry, combined into a set of issues, any number at once: server too old, needs approval (with the changes in words, a blocked row with the server's sentence and fix), access ends soon, access ended, unreachable, legacy access to move |
-| `UI/` | `ConnectView`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` (the console's sentences, held to them by the fixture both read, `web/console/src/lib/app-scopes.fixture.json`), `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `ChangeRow`, `StatusBadge`, `ProblemBox` |
+| `API/` | `SubstrateClient` over an injected transport, which never follows a redirect (a 3xx is a refusal, since every request carries a token, or a code and its verifier, for the chosen server alone): bearer, timeouts by tier, `Retry-After` on 429 and 503 for idempotent requests only, the error envelope, `explain(_:app:server:)` (an `insufficient_scope` is "needs your approval", never "sign in again"), one path-segment encoder, records, lists, blob upload, webhook delivery, parked deliveries (one still filing told by `pending`, or by its text from a server that sends no mark) |
+| `Auth/` | `AppManifest` (built per run: client id, name, scopes, details, the server requirement, which adds every verb its scopes use and every type its details use), `AuthorizationDetail`, `PKCE` (a failed random source throws), `OAuthClient` (metadata, which must be the chosen server's own, issuer and endpoints on its origin, before the browser opens; the authorize URL, which throws rather than drop details; the loopback sign-in, RFC 8252, with no claimed callback; the exchange, never retried, `iss` required when advertised), `LoopbackReceiver`, `WebAuthenticator`, `Session` (an app session or a legacy password one, versioned, with the scopes it asked for, and its `revoke`, the one revocation, which returns only once the server says so), `SessionStore` (Keychain, an access group for extensions, available after first unlock for background work, and the sessions kept for revocation until the server confirms: one the app stops using or replaces is kept first, or else revoked first, and stays in use when neither worked), `Grants` |
+| `Status/` | `AppStatusCheck`: discovery, the requirement, `/authorizations/check` (asked only of a server whose metadata lists detail types, and never about a scope the owner left out of the last approval) and the expiry, combined into a set of issues, any number at once: server too old (with each package row only a newer server sets up, in the words of what it would do, over the server's sentence, which says whether the package or one it needs first ships too old), needs approval (with the changes in words, a blocked row with the server's sentence and fix), access ends soon, access ended, unreachable, legacy access to move |
+| `UI/` | `ConnectView`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` (the console's sentences, held to them by the fixture both read, `web/console/src/lib/app-scopes.fixture.json`), `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `UnrevokedNotices` (the old sign-ins still waiting for revocation, one notice per server and repository, in `AccountSection` and `ConnectView`), `ChangeRow`, `StatusBadge`, `ProblemBox` |
 
 `ServerRequirement` is the server minimum: a release to name and the
 capabilities to require. Capabilities decide: a `dev` build passes when it has
@@ -528,7 +558,7 @@ developer experience. What changed:
   ownership, quarantine, catalog and upgrade-review checks, a blocked step
   blocking its row.
 - **A block is the server's** (both): a row keeps the action it would run
-  (`arm` became `enable`, and `blocked` is no action) and carries `blocked`:
+  (a webhook's is `enable`, and `blocked` is no action) and carries `blocked`:
   a reason a client branches on, one sentence both views show, which never
   names a package, and a console path where the owner can fix it. The check
   keeps it for the rows a token may see. The catalog's name left the wire:
@@ -577,3 +607,38 @@ developer experience. What changed:
   approve a set up, the order it runs in, that `writer: owner` is allowed
   (Astra), the detail grammar and the block reasons, the timing, and what a
   rollback does to a `webhook:` token (Fable).
+
+Round 3 confirmed the implementation: Claude Fable 5.1 and GPT-6 Astra
+again, over the same four. What changed:
+
+- **Whose a package is** (Astra, blocking): ownership was read off a
+  package's kinds, so a package the owner declared with functions or traits
+  alone was offered as an install that would replace it. It is read off the
+  package record now, kinds or none, bundle or none, asked for or needed
+  first. The planner reads the catalog's one requirement walk, which names
+  what it passed over, rather than walking the graph a second time (Fable).
+- **The hand-over reads nothing** (Astra): an approved request's view is
+  built as its set up finishes, so a repository read that fails afterwards
+  cannot keep an issued code from the page.
+- **The human door comes first** (Fable): an approval of a request that
+  carries details, from any other actor, is refused before it reserves or
+  plans anything, and a test holds it. An approval refused before its set
+  up ran leaves the request the lapse it had.
+- **The check and the page** (Fable): a token's check plans wait their turn,
+  one at a time and four across the server, never refused; a webhook row
+  says whether the previous token already delivers to it (`allowed`), so
+  the console no longer spells the scope itself.
+- **The apps** (both; Astra, before the merge): the kit's transport never
+  follows a redirect, so a code, its verifier or a token never reaches
+  another origin; a token the app stops using or replaces is kept for
+  revocation, or revoked, before it is forgotten, and stays in use when
+  neither works; Chat shows its unrevoked sign-ins as Sync does, each under
+  its own server and repository; a server update says what it would do over
+  the server's own sentence, never blaming the requested package for a
+  requirement's block; Change Access and the connect screen name only
+  controls that exist; a release refuses to publish its client document on
+  a shared host (Fable).
+- **Docs** (Fable): [apps](../apps.md) says that a delivery's body and
+  headers are its package's, with Apple Health's account header, and where
+  a provider's ids are listed; this plan says what an app's token reads of a
+  blob reference.

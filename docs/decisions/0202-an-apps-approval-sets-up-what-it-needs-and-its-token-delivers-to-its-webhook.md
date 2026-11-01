@@ -10,7 +10,7 @@ decision-makers: George Antoniadis
 
 Substrate Sync signs in with the owner's password because its set up is five
 things an app's token is refused: installing two catalog packages, creating
-its Health account, arming a webhook trigger with a key, reading that
+its Health account, turning on a webhook trigger with a key, reading that
 trigger's parked deliveries, and storing shared images as blobs. Its token
 therefore reads every record, applies vocabulary and mints tokens, which
 [0194](0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)
@@ -55,27 +55,32 @@ The rules this binds:
   the same request names ships; approving enables it and sets a key only
   when it has none, and an existing key is never read, changed or returned.
 - **One plan over the whole install closure.** The requested packages and
-  every requirement the catalog would install first meet the same checks,
-  and a row that cannot run keeps the action it would run (`install`,
-  `upgrade`, `create`, `enable`) and carries a block: a reason a client
-  branches on (`server-update`, `not-shipped`, `sample`, `quarantined`,
-  `declared-by-owner`, `upgrade-needs-review`, `not-requested`,
-  `account-deleted`, `unsupported`), the server's one sentence for it, and
-  the console path that clears it where the owner can. A blocked row keeps
-  the request from being approved.
+  every requirement the catalog would install first, as the catalog's one
+  walk names them, meet the same checks. Whose a package is, the owner's or
+  a publisher's, is read off its package record, whether it declares kinds
+  or only functions or traits, so a package the owner declared is never
+  installed over. A row that cannot run keeps the action it would run
+  (`install`, `upgrade`, `create`, `enable`) and carries a block: a reason a
+  client branches on (`server-update`, `not-shipped`, `sample`,
+  `quarantined`, `declared-by-owner`, `upgrade-needs-review`,
+  `not-requested`, `account-deleted`, `unsupported`), the server's one
+  sentence for it, and the console path that clears it where the owner can.
+  A blocked row keeps the request from being approved.
 - **Approving runs the set up before the code exists**, in the background,
   detached from the HTTP request, one set up per repository at a time, as a
   state the parked request moves through under the store's lock after the
   repository that claimed it is checked. Setting up is the owner's act: an
-  approval that sets anything up comes through a human door, the console,
-  `substratectl` or the API, and writes as that door. The approval names the
-  plan's hash and a plan that moved is refused; a set up that waited for its
-  turn runs what was approved or less, and stops before writing when a row
-  would do more or a webhook would run another package's code. Packages
-  run first, then accounts, then webhooks, whatever the order of the rows.
-  What landed stays when a set up stops; the flow's own state stays in
-  memory, and an approved request is answered once, its code living from
-  that answer.
+  approval of a request that carries details comes through a human door,
+  the console, `substratectl` or the API, whatever its rows would do, and
+  writes as that door; any other actor is refused before the request is
+  reserved or planned. The approval names the plan's hash and a plan that
+  moved is refused; a set up that waited for its turn runs what was
+  approved or less, and stops before writing when a row would do more or a
+  webhook would run another package's code. Packages run first, then
+  accounts, then webhooks, whatever the order of the rows. What landed
+  stays when a set up stops; the flow's own state stays in memory, and an
+  approved request is answered once, with the view built as its set up
+  finished and nothing read again, its code living from that answer.
 - **`webhook:<trigger>` is a scope only an approved detail puts on a token.**
   It admits the token at the webhook door in place of the key, for that
   trigger of that repository, and reads that trigger's parked deliveries. A
@@ -83,13 +88,16 @@ The rules this binds:
 - **No app's token reads a webhook key**, on any read path, whatever its
   scopes.
 - **An app's token stores a blob** when it writes a kind that declares a
-  `blobref` property; reading a blob stays the owner's, and the answer never
-  reveals another blob's name or media type.
+  `blobref` property; reading a blob stays the owner's, the answer never
+  reveals another blob's name or media type, and neither does a blob
+  reference the token reads unless it reads the blob manifests.
 - **An app asks whether it is still set up** with its own token, and is told
-  only what its scopes let it see. Its scopes, and the scopes the page
-  folds as already allowed, are compared by what they reach, never by how
-  they are spelled. A local app's request is never compared with an earlier
-  approval: nothing ties its client id to the app.
+  only what its scopes let it see. Asking is never refused for its pace: a
+  check that must plan waits its turn, one at a time per token and a few at
+  once on the server. Its scopes, and the scopes the page folds as already
+  allowed, are compared by what they reach, never by how they are spelled.
+  A local app's request is never compared with an earlier approval: nothing
+  ties its client id to the app.
 - **The approval page reads the console's one Technical details switch**
   ([0131](0131-the-console-writes-for-two-readers-behind-one-switch.md))
   and offers it in place: plain sentences and the set up by default, every
@@ -126,9 +134,12 @@ The rules this binds:
 `TestASetUpReservesTheRequestForTheRepositoryThatShowedIt`,
 `TestAFailedSetUpIsPendingAgainWithWhatLanded`,
 `TestAFinishedSetUpMintsOneCodeAndIsAnsweredOnce`,
-`TestAFinishedSetUpsCodeLivesFromItsHandOver`. `internal/appsetup`:
+`TestAFinishedSetUpsCodeLivesFromItsHandOver`,
+`TestARefusedApprovalKeepsTheRequestsLapse`. `internal/catalog`:
+`TestRequirementsNamesWhatTheCatalogCannotInstall`. `internal/appsetup`:
 `TestTheChainCarriesEachPackagesOwnFacts`,
 `TestAPackageTheOwnerDeclaredIsNeverReplaced`,
+`TestWhoseAPackageIsComesFromItsPackageRecord`,
 `TestAnAccountIsCreatedOnceAndNeverBroughtBack`,
 `TestTheShippedSignedWebhookIsNeverAnApps`,
 `TestARunSetsUpPackagesThenAccountsThenWebhooks`,
@@ -137,12 +148,17 @@ The rules this binds:
 `TestASetUpThatCannotRunIsBlockedAndRefused`,
 `TestApprovingRunsTheSetUpAndTheTokenCarriesIt`,
 `TestAnApprovalOfAPlanThatMovedIsRefused`,
+`TestAnApprovalWithDetailsComesThroughAHumanDoor`,
+`TestAnApprovedRequestIsHandedOverWithoutReadingTheRepository`,
 `TestAnAppAsksWhetherItIsStillSetUp`,
 `TestACheckReadsDetailsAsTheAuthorizationEndpointDoes`,
+`TestACheckPlanWaitsItsTurn`,
 `TestAnAppsTokenDeliversToTheWebhookItsScopeNames`,
 `TestAWebhookTokenThatDoesNotDeliverIsRefusedLikeAWrongKey`,
 `TestATriggerAnAppsTokenReadsNeverCarriesItsKey`,
-`TestAnAppsTokenStoresBlobsForAKindWithABlobRef`. `internal/engine`:
+`TestAnAppsTokenStoresBlobsForAKindWithABlobRef`,
+`TestABlobReferenceAnAppsTokenReadsCarriesNoManifestItCannotRead`.
+`internal/engine`:
 `TestWebhookGrantStandsInForTheKeyAlone`,
 `TestAPutAtVersionZeroNeverResurrectsATombstone`. `internal/scope`:
 `TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger`,

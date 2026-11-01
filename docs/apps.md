@@ -213,6 +213,11 @@ delivers under, a webhook turned on, names it in `authorization_details`
 ]
 ```
 
+The ids an entry names are the package's own: a provider's package id,
+account kind and webhook trigger are in its section of
+[the bundles catalog](bundles-catalog.md), and a well-known catalogue's
+package in [built-in kinds](builtin-kinds.md).
+
 Each entry is read against its type's members alone. A member the type does
 not take (`url` included, which is the token response's), a required member
 missing or malformed, a type the server does not know, or the same entry
@@ -277,18 +282,21 @@ that cannot be installed blocks the row of the package that needs it.
 | `not-shipped` | the catalog does not ship the package, or one it requires (the owner's own packages and the samples they imported included) | none |
 | `sample` | the package, or one it requires, is a sample, which the owner adds from All data | `/data` |
 | `quarantined` | the repository's copy of the package, or of one it requires, is quarantined | its provider page |
-| `declared-by-owner` | the owner declared the package, or one it requires, by hand below the version needed, and installing the published one would replace theirs | its provider page |
+| `declared-by-owner` | the owner declared the package, or one it requires, by hand (its package record is `installed` and no provider install stamped it, whether it declares kinds or only functions or traits), and installing or upgrading the published one would replace theirs; one they hold as a bundle at the version needed is in place and left alone | its provider page |
 | `upgrade-needs-review` | the upgrade's preview refuses it, would lose data or discard edits, or could not run: the provider page asks the owner first | its provider page |
 | `not-requested` | the account or the webhook belongs to a package no `package` entry names, or the trigger is neither in the repository nor shipped by a requested package | none |
 | `account-deleted` | the account was deleted and the server has not collected the deletion yet; once it has, approving creates the account again | none |
-| `unsupported` | the account's kind is no account, or a property is one it may not set; the trigger takes no webhook, its provider signs it, or it runs code of no package | none |
+| `unsupported` | the account's kind is no account, its package declares no such kind, or a property is one it may not set; the trigger takes no webhook, its provider signs it, or it runs code of no package | none |
 
 The owner sees one row per entry and approves them with the scopes or not
-at all. The approval runs the set up before the code exists, so the code can
-take longer to arrive than for scopes alone: the set up has up to 15
-minutes, and the request then waits up to 10 more for the approval page to
-come back and send the browser on, so an app that waits on its redirect URI
-may wait up to 25 minutes.
+at all, as themselves: a request that carries entries is approved through
+the console, `substratectl` or the API, and an approval under any other
+`X-Substrate-Actor` is refused with `403` before anything is planned, the
+request still waiting for the owner. The approval runs the set up before the
+code exists, so the code can take longer to arrive than for scopes alone:
+the set up has up to 15 minutes, and the request then waits up to 10 more
+for the approval page to come back and send the browser on, so an app that
+waits on its redirect URI may wait up to 25 minutes.
 
 ### Exchange the code
 
@@ -389,7 +397,9 @@ Ask at launch and when the app comes back to the foreground, at most every
 few minutes, and only a server that lists
 `authorization_details_types_supported`: the check came with them. Asking
 is never refused for its pace: a token that sends the same body again
-within 30 seconds is answered what it was answered last.
+within 30 seconds is answered what it was answered last, and a check that
+must plan waits its turn, one at a time for a token and four at once on the
+server.
 
 ### Use the token
 
@@ -535,6 +545,17 @@ authorization detail puts it on a token. Under it:
 
 `webhook:` does not read the trigger record, and no scope reads its key.
 
+What a delivery carries is the package's to say, since its code reads it:
+the body, its content type, and the headers its trigger lets through
+([triggers](functions.md#triggers)). Apple Health's webhook takes the Health
+Auto Export app's JSON and files it under the account
+`X-Substrate-Account: <account id>` names, a header that may be left out
+while the repository holds one account; a delivery its code refuses after
+the door's `202` parks with its body kept, on the parked list
+([Apple Health](bundles-catalog.md#apple-health)). Each provider's section of
+[the bundles catalog](bundles-catalog.md) names its package, kinds and
+triggers, and, for a webhook, what a delivery to it carries.
+
 ### Revoke
 
 `POST /oauth/revoke` with `token=…` (form-encoded) revokes that token
@@ -590,7 +611,8 @@ Parked requests and codes live in the server's memory: a restart forgets
 them, and an app that was mid-flow starts over. One address (or one IPv6
 /64) holds at most 32 parked requests. The tokens are records like any
 other. A parked request waits 10 minutes for the owner, and 10 again after
-a set up stops part way. A set up runs one at a time per repository, for at
+a set up stops part way; an approval refused before its set up ran leaves it
+the time it had. A set up runs one at a time per repository, for at
 most 15 minutes; a restart forgets its request too, and what it had landed
 stays, so the app starts over and finds those rows in place.
 
