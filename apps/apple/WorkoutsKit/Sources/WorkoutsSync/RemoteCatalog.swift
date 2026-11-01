@@ -76,7 +76,8 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
         var written = 0
         let exercises = bundled.exercises.values.filter { !$0.isLocal }.sorted { $0.id.rawValue < $1.id.rawValue }
         // Exercises first: a routine slot's exercise must exist.
-        for record in exercises.map(codec.encode) + bundled.routines.values.sorted { $0.id.rawValue < $1.id.rawValue }.map(codec.encode)
+        let routines = bundled.routines.values.sorted { $0.id.rawValue < $1.id.rawValue }
+        for record in exercises.map(codec.encode) + routines.map(codec.encode)
             where !present.contains("\(record.kind)/\(record.id)")
         {
             try await api.write("PUT", record.kind, record.id, properties: record.properties)
