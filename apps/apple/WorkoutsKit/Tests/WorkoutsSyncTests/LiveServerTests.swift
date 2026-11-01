@@ -132,6 +132,19 @@ struct LiveServerTests {
         try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
         #expect(await outbox.flush(api) == .sent)
 
+        // The next exchange finds nothing to do: every record is at the
+        // version the outbox saw it written at. Then the owner deletes the
+        // session on the server, and the phone reads it as theirs to delete.
+        var snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
+        let quiet = HistoryExchange.plan(server: snapshot, local: [finished], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
+        #expect(quiet.isEmpty, "a session the phone just wrote read as changed: \(quiet)")
+        try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/session", finished.session.id.rawValue), query: [("purge", "true")])
+        snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
+        let deleted = HistoryExchange.plan(server: snapshot, local: [finished], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
+        #expect(deleted.removals == [finished.id] && deleted.uploads.isEmpty)
+        try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
+        #expect(await outbox.flush(api) == .sent)
+
         // Read back as the owner: the session finished, every set there.
         let stored = try #require(try await ownerAPI.get(codec.kinds.session, finished.session.id.rawValue))
         #expect(stored.properties["status"] == .string("finished"))
