@@ -67,7 +67,7 @@ func TestAFollowUpReplaysTheToolExchangesItsThreadAlreadyMade(t *testing.T) {
 	if reply, _ := msgs[4].(map[string]any); reply["role"] != "assistant" || reply["content"] != "annotated t-recalled" {
 		t.Fatalf("replayed reply: %v", reply)
 	}
-	if last, _ := msgs[5].(map[string]any); last["role"] != "user" || last["content"] != "which id was it?" {
+	if last, _ := msgs[5].(map[string]any); last["role"] != "user" || msgText(last) != "which id was it?" {
 		t.Fatalf("follow-up turn: %v", last)
 	}
 }
