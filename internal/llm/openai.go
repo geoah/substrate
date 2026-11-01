@@ -524,10 +524,25 @@ func openaiMessages(req Request) ([]openai.ChatCompletionMessage, map[int]map[st
 				Name: m.ToolName, Content: m.Content,
 			})
 		default:
-			out = append(out, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: m.Content})
+			out = append(out, openaiUserMessage(m))
 		}
 	}
 	return out, echoed
+}
+
+// openaiUserMessage is a user turn: a plain string, or two text parts when
+// the turn carries a context, so the context stays a block of its own.
+func openaiUserMessage(m Message) openai.ChatCompletionMessage {
+	switch {
+	case m.Context == "":
+		return openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: m.Content}
+	case m.Content == "":
+		return openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: m.Context}
+	}
+	return openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, MultiContent: []openai.ChatMessagePart{
+		{Type: openai.ChatMessagePartTypeText, Text: m.Content},
+		{Type: openai.ChatMessagePartTypeText, Text: m.Context},
+	}}
 }
 
 func neutralToolCalls(calls []openai.ToolCall) []ToolCall {

@@ -6,11 +6,12 @@
 
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CodeIcon,
   CopyPlusIcon,
   LinkIcon,
+  MessageSquareIcon,
   MoreHorizontalIcon,
   Trash2Icon,
   UserRoundIcon,
@@ -238,6 +239,19 @@ export function RecordHeader({
       heading={<Title record={record} kind={kind} readOnly={locked} />}
       actions={
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Open a chat about this record"
+            render={
+              <Link
+                to="/agents"
+                search={{ about: `${record.kind}/${record.id}` }}
+              />
+            }
+          >
+            <MessageSquareIcon /> Ask about this
+          </Button>
           {technical && (
             <Button
               variant="ghost"

@@ -80,6 +80,8 @@ struct Turn: Hashable, Sendable, Identifiable {
     var tools: [ToolCall] = []
     /// On a system turn: what the decision wrote.
     var changes: [ChangeStamp]?
+    /// On a user turn: the records it is about, the row's `contextRecords`.
+    var contextRecords: [RecordReference]?
     var compaction: Compaction?
     /// On an assistant turn: the model's thinking, as the row keeps it or as
     /// the live `reasoning` events carry it.
@@ -115,6 +117,17 @@ private func mentions(of record: Record) -> [Mention]? {
         guard let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
         return Mention(kind: kind, id: id, text: item["text"]?.text ?? id,
                        missing: item["missing"]?.bool ?? false, unread: item["unread"]?.bool ?? false)
+    }
+    return out.isEmpty ? nil : out
+}
+
+/// A user row's `contextRecords`: the records the turn is about. The
+/// engine's rendered block is the model's and is never shown.
+func contextRecords(of record: Record) -> [RecordReference]? {
+    guard let raw = record["contextRecords"]?.array else { return nil }
+    let out = raw.compactMap { item -> RecordReference? in
+        guard let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
+        return RecordReference(kind: kind, id: id)
     }
     return out.isEmpty ? nil : out
 }
@@ -171,6 +184,7 @@ func transcript(of messages: [Record]) -> [Turn] {
             turns.append(Turn(
                 id: record.id, role: role == "user" ? .user : .assistant,
                 content: record["content"]?.string ?? "", tools: tools,
+                contextRecords: role == "user" ? contextRecords(of: record) : nil,
                 reasoning: reasoning,
                 reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
                 mentions: role == "assistant" ? mentions(of: record) : nil,

@@ -21,9 +21,12 @@ type chatFake struct {
 	*fakeDataset
 	events []substrate.AgentEvent
 	err    error
+	// got is the turn the handler decoded.
+	got substrate.ChatInput
 }
 
-func (c *chatFake) ChatAgent(_ context.Context, _ substrate.Actor, _, _, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (c *chatFake) ChatAgent(_ context.Context, _ substrate.Actor, _ string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	c.got = in
 	for _, ev := range c.events {
 		emit(ev)
 	}
@@ -130,7 +133,7 @@ type heldChat struct {
 	stop   func() (*substrate.AgentResult, error)
 }
 
-func (c *heldChat) ChatAgent(ctx context.Context, _ substrate.Actor, _, _, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (c *heldChat) ChatAgent(ctx context.Context, _ substrate.Actor, _ string, _ substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th1"})
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -272,7 +275,7 @@ type panicChat struct {
 	events []substrate.AgentEvent
 }
 
-func (c *panicChat) ChatAgent(_ context.Context, _ substrate.Actor, _, _, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (c *panicChat) ChatAgent(_ context.Context, _ substrate.Actor, _ string, _ substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	for _, ev := range c.events {
 		emit(ev)
 	}
@@ -298,5 +301,28 @@ func TestAPanickingChatStreamEndsAsAnInternalError(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
 	if len(lines) != 2 || lines[1] != `{"kind":"error","error":"internal error"}` {
 		t.Fatalf("stream after a panic = %s", rec.Body.String())
+	}
+}
+
+// A chat body's turn context fields reach the engine as the client sent
+// them: the zone and the record paths, beside the thread and the message
+// (decision 0196). The engine validates both.
+func TestChatCarriesTheTimezoneAndTheContextRecords(t *testing.T) {
+	env := newTestEnv(t)
+	chat := &chatFake{
+		fakeDataset: env.svc.datasets[fakeRepository],
+		events:      []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}},
+	}
+	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
+	tok := env.svc.token(fakeRepository)
+	paths := []string{"ada.example.com/tasks/task/q4-budget", "ada.example.com/people/person/grace"}
+	rec := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/agent/helper/chat", tok, map[string]any{
+		"thread": "th1", "message": "what is due?", "timezone": "Europe/London", "context": paths,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	want := substrate.ChatInput{Thread: "th1", Message: "what is due?", Timezone: "Europe/London", Context: paths}
+	if chat.got.Thread != want.Thread || chat.got.Message != want.Message || chat.got.Timezone != want.Timezone ||
+		strings.Join(chat.got.Context, " ") != strings.Join(want.Context, " ") {
+		t.Fatalf("the engine got %+v, want %+v", chat.got, want)
 	}
 }

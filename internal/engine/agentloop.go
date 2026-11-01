@@ -134,6 +134,9 @@ type agentInvocation struct {
 	// triggered runs, the human's text on chat, the caller's input on call
 	// and sub-agent invocations.
 	user string
+	// turnContext is the block the user row carries after its text
+	// (agentturncontext.go); empty on the entries that render none.
+	turnContext turnContext
 	// userActor attributes the user message row; empty means the agent's
 	// own actor (triggered runs — the envelope is the machinery talking).
 	userActor substrate.Actor
@@ -1406,10 +1409,12 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		if userActor == "" {
 			userActor = l.actor
 		}
-		if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
+		props := map[string]any{"role": "user", "content": l.in.user}
+		l.in.turnContext.stamp(props)
+		if err := l.putMessage(ctx, userActor, props); err != nil {
 			return nil, l.failWrite(ctx, err)
 		}
-		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
+		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user, Context: l.in.turnContext.text})
 	}
 	return messages, nil
 }

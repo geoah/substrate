@@ -258,10 +258,21 @@ struct API: Sendable {
     }
 
     /// Opens or continues a thread with one user message, and streams the run.
-    func chat(agent: String, thread: String?, message: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    /// The device's zone and the records the message is about ride along, and
+    /// the server renders them into the turn's context (decision 0196).
+    func chat(agent: String, thread: String?, message: String, context: [RecordReference] = []) -> AsyncThrowingStream<AgentEvent, Error> {
         stream { try request("POST", "api/v1/\(Kinds.agent)/\(Self.segment(agent))/chat",
-                             json: ["thread": thread ?? "", "message": message],
+                             json: Self.chatBody(thread: thread, message: message, context: context),
                              accept: "application/x-ndjson", timeout: 75) }
+    }
+
+    /// The chat request's body: `substrate.ChatInput`.
+    static func chatBody(thread: String?, message: String, context: [RecordReference],
+                         timezone: String = TimeZone.current.identifier) -> [String: Any]
+    {
+        var body: [String: Any] = ["thread": thread ?? "", "message": message, "timezone": timezone]
+        if !context.isEmpty { body["context"] = context.map(\.path) }
+        return body
     }
 
     /// Attaches to the chat turn running on a thread: its replay, then live

@@ -392,10 +392,14 @@ func anthropicBlocks(m Message) (string, []any) {
 		}
 		return RoleAssistant, blocks
 	default:
-		if m.Content == "" {
-			return RoleUser, nil
+		var blocks []any
+		if m.Content != "" {
+			blocks = append(blocks, newAnthropicText(m.Content))
 		}
-		return RoleUser, []any{newAnthropicText(m.Content)}
+		if m.Context != "" {
+			blocks = append(blocks, newAnthropicText(m.Context))
+		}
+		return RoleUser, blocks
 	}
 }
 

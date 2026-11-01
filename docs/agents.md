@@ -1309,6 +1309,57 @@ a second concurrent turn is refused as a conflict, leaving nothing on the
 thread, and a crashed turn's expired lease is taken over by the next
 continuation.
 
+### Turn context
+
+A chat body may also carry `timezone`, the client's IANA zone
+(`Europe/London`), and `context`, at most eight record paths
+(`<kind>/<id>`) the message is about
+([decision 0196](decisions/0196-a-turn-carries-its-own-context-rendered-once-and-stored-on-its-row.md)).
+The engine renders a **turn context** and sends it after the message, as a
+second text block of the same user message on the `anthropic` wire and a
+second text part on the `openai` wire:
+
+```text
+<turn_context>
+now: 2026-11-01T09:41:00+00:00 (Sunday), Europe/London
+about: substrate://ada.example.com/tasks/task/q4-budget
+  {"kind":"ada.example.com/tasks/task","properties":{…},"title":"Q4 budget"}
+</turn_context>
+```
+
+`now` is the minute, in the zone, with the weekday and the zone's name. The
+zone is the request's `timezone`, else the repository's
+`substrate.reamde.dev/llm/timezone` setting, else UTC. The setting is a core
+`setting` record like the [spend cap](#the-daily-spend-cap); nothing seeds it,
+and a write naming a zone the server cannot load is refused:
+
+```yaml
+kind: substrate.reamde.dev/core/setting
+metadata:
+  id: substrate.reamde.dev/llm/timezone
+data:
+  properties:
+    displayName: Time zone
+    value: Europe/London
+```
+
+Each `about` record is read under the agent's `reads` grant and rendered as
+JSON, cut at 4000 characters. A zone the server cannot load, `Local`, more
+than eight paths, a path that is not a record path, a kind the grant does not
+reach (or an agent with no `reads`) is `422 validation`, and a record that
+does not exist is `404 not_found`, all before the turn starts; nothing is
+written. The call API takes neither field.
+
+The block is stored on the user row as `context`, and the records as
+`contextRecords` (`kind`, `id`). Replay sends the stored block verbatim and
+never renders it again, so a continued thread's prefix is byte-stable and a
+record named in an old turn shows the values it had then. A client shows
+`contextRecords` as record chips and never parses the block. The other entries
+render one too: a record trigger's `now` is the change's commit time, a
+schedule or webhook fire's is the fire time, and a resolution (a decision or
+an interaction answer) stamps its `system` row with the time it landed, which
+the resume that follows reads.
+
 A chat list is one read of the threads, most recently active first, because
 every settle writes the thread row:
 

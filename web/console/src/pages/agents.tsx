@@ -67,6 +67,7 @@ const SEARCH = {
   agent: parseAsString.withDefault(""),
   prompt: parseAsString.withDefault(""),
   send: parseAsString.withDefault(""),
+  about: parseAsString.withDefault(""),
 }
 
 export function AgentsPage() {
@@ -251,7 +252,13 @@ export function AgentsPage() {
           onThread={(minted) => {
             setAdopted({ from: conversationKey, to: minted })
             void setSearch(
-              { thread: minted, agent: null, prompt: null, send: null },
+              {
+                thread: minted,
+                agent: null,
+                prompt: null,
+                send: null,
+                about: null,
+              },
               { history: "replace" }
             )
           }}
@@ -275,6 +282,10 @@ export function AgentsPage() {
           }
           onAutoSent={() =>
             void setSearch({ send: null }, { history: "replace" })
+          }
+          context={search.about ? [search.about] : undefined}
+          onContextDone={() =>
+            void setSearch({ about: null }, { history: "replace" })
           }
           actions={
             <>

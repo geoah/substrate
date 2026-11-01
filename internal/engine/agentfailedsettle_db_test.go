@@ -76,7 +76,7 @@ func chatInBackground(ds *dataset, agent, message string) (<-chan error, *eventL
 	log := newEventLog()
 	turn := make(chan error, 1)
 	go func() {
-		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/"+agent, "", message, log.emit)
+		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/"+agent, substrate.ChatInput{Message: message}, log.emit)
 		turn <- err
 	}()
 	return turn, log

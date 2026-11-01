@@ -106,6 +106,10 @@ export interface TurnView {
   tools: ToolCallView[]
   /** On a system turn: the changelog entries the decision wrote. */
   changes?: ChangeStamp[]
+  /** On a user turn: the records it is about, the row's `contextRecords`
+   * (decision 0196). The engine's rendered block itself is the model's, not
+   * the reader's. */
+  contextRecords?: ContextRecord[]
   /** On a summary turn: what it folded. */
   compaction?: CompactionView
   /** On an assistant turn: the model's thinking, as the row keeps it (at
@@ -127,6 +131,32 @@ export interface TurnView {
   /** On a run's final assistant turn: the records the reply links, as the
    * engine read them when the run settled. Absent when it links none. */
   mentions?: AgentMention[]
+}
+
+/** One record a user turn is about. */
+export interface ContextRecord {
+  kind: string
+  id: string
+}
+
+/** A user row's `contextRecords`, or undefined where none rode it. */
+export function contextRecordsOf(
+  record: SubstrateRecord
+): ContextRecord[] | undefined {
+  const raw = record.properties.contextRecords
+  if (!Array.isArray(raw)) return undefined
+  const out: ContextRecord[] = []
+  for (const entry of raw) {
+    const e = entry as { kind?: unknown; id?: unknown } | null
+    if (
+      typeof e?.kind === "string" &&
+      typeof e.id === "string" &&
+      e.kind &&
+      e.id
+    )
+      out.push({ kind: e.kind, id: e.id })
+  }
+  return out.length ? out : undefined
 }
 
 function str(value: unknown): string {
@@ -377,11 +407,13 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
           ? num(record.properties.reasoningMillis)
           : undefined
       const mentions = role === "assistant" ? mentionsOf(record) : undefined
+      const about = role === "user" ? contextRecordsOf(record) : undefined
       turns.push({
         key: record.id,
         role,
         content: str(record.properties.content),
         tools,
+        ...(about ? { contextRecords: about } : {}),
         ...(reasoning ? { reasoning } : {}),
         ...(reasoning && reasoningMillis !== undefined
           ? { reasoningMillis }

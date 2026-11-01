@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 19
+  version: 20
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -45,6 +45,27 @@ data:
     content:
       type: text
       description: the turn's text; a tool row's result payload
+    # Stamped by the ENGINE (decision record 0196) on the row a turn opens
+    # with, a user row or a resolution's system row: the turn context it
+    # rendered, sent after `content` as its own block and replayed verbatim,
+    # never rendered again, so a cached prompt prefix holds.
+    context:
+      type: text
+      fts: false
+      description: the turn context the engine sent after this turn's text,
+        the time in the owner's zone and the records the turn is about
+    contextRecords:
+      type: object
+      repeated: true
+      description: the records a user turn is about, as the client named them
+        and the engine rendered them into its context
+      fields:
+        kind:
+          type: string
+          description: the record's kind
+        id:
+          type: string
+          description: the record's id
     turn:
       type: int
       required: true

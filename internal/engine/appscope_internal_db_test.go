@@ -125,7 +125,7 @@ func TestAChatAnAppOpensIsItsMessageAndItsThreadToRename(t *testing.T) {
 	app := substrate.WithScopes(ctx, []string{"agents:*"})
 	actor := substrate.AppActor("notes.example.org")
 
-	res, err := ds.ChatAgent(substrate.WithoutScopes(app), actor, crewPackage+"/chatter", "", "hi", nil)
+	res, err := ds.ChatAgent(substrate.WithoutScopes(app), actor, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatalf("the app's chat: %v", err)
 	}

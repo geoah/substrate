@@ -244,11 +244,19 @@ export const agentsRoute = createRoute({
   path: "/agents",
   validateSearch: (
     search: Record<string, unknown>
-  ): { thread?: string; agent?: string; prompt?: string; send?: string } => ({
+  ): {
+    thread?: string
+    agent?: string
+    prompt?: string
+    send?: string
+    about?: string
+  } => ({
     thread: searchText(search.thread),
     agent: searchText(search.agent),
     prompt: searchText(search.prompt),
     send: searchText(search.send),
+    // A record path the next message is about ("Ask about this").
+    about: searchText(search.about),
   }),
   component: AgentsPage,
 })

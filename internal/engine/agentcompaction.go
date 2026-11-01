@@ -178,6 +178,12 @@ func (r threadRow) content() string {
 	return s
 }
 
+// turnContext is the block the row was sent with, replayed verbatim.
+func (r threadRow) turnContext() string {
+	s, _ := r.props[propMsgContext].(string)
+	return s
+}
+
 // summaryMessage is the one user message replay emits for a summary row.
 func summaryMessage(content string) llm.Message {
 	return llm.Message{Role: llm.RoleUser, Content: summaryFramingHead + content + summaryFramingTail}
@@ -256,7 +262,7 @@ func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin 
 		content := r.content()
 		switch r.role() {
 		case "user":
-			msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: content})
+			msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: content, Context: r.turnContext()})
 			origin = append(origin, i)
 		case "assistant":
 			if content != "" && r.props["toolCalls"] == nil {
@@ -269,7 +275,7 @@ func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin 
 			// array (the system slot is the agent's prompt), and the content
 			// is a self-describing JSON envelope either way.
 			if content != "" {
-				msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: content})
+				msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: content, Context: r.turnContext()})
 				origin = append(origin, i)
 			}
 		}
@@ -281,7 +287,7 @@ func replayView(rows []threadRow, log *slog.Logger) (msgs []llm.Message, origin 
 // messageTokens estimates one message at four characters per token, plus a
 // few for the wire's per-message framing.
 func messageTokens(m llm.Message) int {
-	return (len(m.Content)+3)/4 + 4
+	return (len(m.Content)+len(m.Context)+3)/4 + 4
 }
 
 func messagesTokens(msgs []llm.Message) int {

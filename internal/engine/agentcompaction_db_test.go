@@ -72,7 +72,7 @@ func isSummarizerRequest(req map[string]any) bool {
 func chat(t *testing.T, ds *dataset, thread, text string) (*substrate.AgentResult, []substrate.AgentEvent) {
 	t.Helper()
 	var events []substrate.AgentEvent
-	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, compactor, thread, text, func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, compactor, substrate.ChatInput{Thread: thread, Message: text}, func(ev substrate.AgentEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -173,7 +173,7 @@ func TestCompactionAtSettleWritesSummaryAndReplaysIt(t *testing.T) {
 	var roles, heads []string
 	for _, m := range msgs {
 		roles = append(roles, m["role"].(string))
-		c, _ := m["content"].(string)
+		c := msgText(m)
 		heads = append(heads, c[:min(len(c), 12)])
 	}
 	if strings.Join(roles, ",") != "system,user,user,assistant,user" {
@@ -181,7 +181,7 @@ func TestCompactionAtSettleWritesSummaryAndReplaysIt(t *testing.T) {
 	}
 	framing, _ := msgs[1]["content"].(string)
 	if !strings.Contains(framing, "<summary>\nSUMMARY ONE\n</summary>") ||
-		msgs[2]["content"] != q2 || msgs[3]["content"] != r2 || msgs[4]["content"] != q3 {
+		msgText(msgs[2]) != q2 || msgText(msgs[3]) != r2 || msgText(msgs[4]) != q3 {
 		t.Fatalf("continuation messages: %v", heads)
 	}
 	if !isSummarizerRequest(reqs[4]) || !strings.Contains(requestMessages(reqs[4])[1]["content"].(string), "<previous-summary>\nSUMMARY ONE") {
@@ -220,7 +220,7 @@ func TestCompactionAtOpenUsesTheEstimate(t *testing.T) {
 	}
 	msgs := requestMessages(reqs[3])
 	if len(msgs) != 5 || !strings.Contains(msgs[1]["content"].(string), "OPEN SUMMARY") ||
-		msgs[2]["content"] != long2 || msgs[4]["content"] != "short question" {
+		msgText(msgs[2]) != long2 || msgText(msgs[4]) != "short question" {
 		t.Fatalf("the completion after the open-time compaction: %d messages", len(msgs))
 	}
 	if events[0].Kind != substrate.AgentEventThread {
@@ -285,7 +285,7 @@ func TestCompactionKeepsAPendingAskRaw(t *testing.T) {
 	msgs := requestMessages(reqs[len(reqs)-1])
 	var contents []string
 	for _, m := range msgs[1:] {
-		c, _ := m["content"].(string)
+		c := msgText(m)
 		contents = append(contents, c)
 	}
 	if len(contents) < 4 || contents[0] != "pick a color for me" || contents[1] != "asked." ||
@@ -353,7 +353,7 @@ func TestCompactionOnOverflowRetriesOnce(t *testing.T) {
 		t.Fatalf("requests: %d", len(reqs))
 	}
 	retry := requestMessages(reqs[2])
-	if len(retry) != 5 || !strings.Contains(retry[1]["content"].(string), "OVERFLOW SUMMARY") || retry[4]["content"] != "q3" {
+	if len(retry) != 5 || !strings.Contains(retry[1]["content"].(string), "OVERFLOW SUMMARY") || msgText(retry[4]) != "q3" {
 		t.Fatalf("the retry's messages: %d", len(retry))
 	}
 	if n := len(summaryRows(compactionRows(t, ds, thread))); n != 1 {
@@ -366,7 +366,7 @@ func TestCompactionOnOverflowRetriesOnce(t *testing.T) {
 		fakeTurn{status: 400, errBody: overflowBody},
 		fakeTurn{content: "ANOTHER SUMMARY"},
 		fakeTurn{status: 400, errBody: overflowBody})
-	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, compactor, thread, "q3", func(substrate.AgentEvent) {}); err == nil {
+	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, compactor, substrate.ChatInput{Thread: thread, Message: "q3"}, func(substrate.AgentEvent) {}); err == nil {
 		t.Fatal("a second overflow did not fail the run")
 	}
 	for _, th := range agentThreadsOf(t, ds, "compactor") {
@@ -384,7 +384,7 @@ func TestCompactionOverflowRetriesOnTheLastTurn(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	one := crewPackage + "/compactorone"
 	chatOne := func(thread, text string) *substrate.AgentResult {
-		res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, one, thread, text, func(substrate.AgentEvent) {})
+		res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, one, substrate.ChatInput{Thread: thread, Message: text}, func(substrate.AgentEvent) {})
 		if err != nil {
 			t.Fatalf("chat %.20q: %v", text, err)
 		}

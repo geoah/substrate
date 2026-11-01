@@ -91,6 +91,11 @@ func (t *txn) guardSettingWrite(sp *applySpec) error {
 			return err
 		}
 	}
+	if sp.id == timezoneSettingID {
+		if err := guardTimezoneSetting(value); err != nil {
+			return err
+		}
+	}
 	if value == "" {
 		return nil
 	}

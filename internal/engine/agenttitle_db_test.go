@@ -62,7 +62,7 @@ func subjectManager(rec *substrate.Record) string {
 
 func chatOnce(t *testing.T, ds *dataset, thread, message string) *substrate.AgentResult {
 	t.Helper()
-	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, namerAgent, thread, message, func(substrate.AgentEvent) {})
+	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, namerAgent, substrate.ChatInput{Thread: thread, Message: message}, func(substrate.AgentEvent) {})
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestATitleCallCountsAgainstTheSpendCap(t *testing.T) {
 		t.Fatalf("before: %d cents", got)
 	}
 	fake.script("open", fakeTurn{content: "hello"}, fakeTurn{content: "Greeting"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, "", "hi", nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitTitle()
@@ -325,7 +325,7 @@ func TestATitleCallCountsAgainstTheSpendCap(t *testing.T) {
 	// The thread is deleted while its title call runs.
 	arrived, release := make(chan struct{}), make(chan struct{})
 	fake.script("open", fakeTurn{content: "hello"}, fakeTurn{content: "Gone", arrived: arrived, release: release})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, "", "again", nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "again"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

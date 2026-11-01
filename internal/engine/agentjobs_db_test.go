@@ -142,8 +142,10 @@ func threadStatusOf(t *testing.T, ds *dataset, thread string) (string, map[strin
 // requestCarries reports whether any message of a model request holds text.
 func requestCarries(req map[string]any, text string) bool {
 	for _, m := range requestMessages(req) {
-		if c, _ := m["content"].(string); strings.Contains(c, text) {
-			return true
+		for _, c := range messageParts(m) {
+			if strings.Contains(c, text) {
+				return true
+			}
 		}
 	}
 	return false

@@ -246,7 +246,7 @@ func TestAZeroSpendCapHoldsEveryRun(t *testing.T) {
 	}
 	_, err := ds.CallAgent(ctx, spendPackage+"/zero", "hello")
 	refused("a call", err)
-	_, err = ds.ChatAgent(ctx, substrate.ActorAPI, spendPackage+"/zero", "", "hello", nil)
+	_, err = ds.ChatAgent(ctx, substrate.ActorAPI, spendPackage+"/zero", substrate.ChatInput{Message: "hello"}, nil)
 	refused("a chat", err)
 
 	trigger := putSpendTrigger(t, ds, "zero")
@@ -593,7 +593,7 @@ func TestASpendCapCountsARunWhoseSettleNeverCommitted(t *testing.T) {
 	// writes nothing. The thread's first turn (100 cents) is on its row,
 	// which a tombstone keeps counted; the continuation's 200 are on none.
 	fake.script("open", fakeTurn{content: "first"})
-	first, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, open, "", "hi", nil)
+	first, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +602,7 @@ func TestASpendCapCountsARunWhoseSettleNeverCommitted(t *testing.T) {
 	t.Cleanup(unblock2)
 	fake.script("open", fakeTurn{content: "second", arrived: arrived2, release: release2, promptTokens: 20})
 	go func() {
-		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, open, first.Thread, "more", nil)
+		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, open, substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived2
@@ -648,7 +648,7 @@ func TestASpendCapCountsAContinuedChatsWholeThreadAtOnce(t *testing.T) {
 	ds, fake := openSpendDataset(t)
 	capped := spendPackage + "/capped"
 	fake.script("capped", fakeTurn{content: "long ago"}, fakeTurn{content: "today"})
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, capped, "", "hi", nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, capped, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,7 +670,7 @@ func TestASpendCapCountsAContinuedChatsWholeThreadAtOnce(t *testing.T) {
 	// snapshot read before it already sees the whole thread.
 	var between int64 = -1
 	ds.spend.finishing = func(*spendRun) { between = spentOf(t, ds, "capped", false) }
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, capped, first.Thread, "again", nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, capped, substrate.ChatInput{Thread: first.Thread, Message: "again"}, nil); err != nil {
 		t.Fatalf("the continuation, admitted at 0 of 150: %v", err)
 	}
 	ds.spend.finishing = nil
@@ -678,7 +678,7 @@ func TestASpendCapCountsAContinuedChatsWholeThreadAtOnce(t *testing.T) {
 		t.Fatalf("between the settle and the loop's return, on the cached snapshot: %d cents, want 600", between)
 	}
 	want := heldAt("capped", 600, 150)
-	_, err = ds.ChatAgent(ctx, substrate.ActorAPI, capped, first.Thread, "and again", nil)
+	_, err = ds.ChatAgent(ctx, substrate.ActorAPI, capped, substrate.ChatInput{Thread: first.Thread, Message: "and again"}, nil)
 	if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
 		t.Fatalf("an admission right after the settle: %v, want %q", err, want)
 	}
@@ -766,7 +766,7 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 	open := spendPackage + "/open"
 
 	fake.script("open", fakeTurn{content: "first"})
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, "", "hi", nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,7 +776,7 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 	fake.script("open", fakeTurn{content: "second", arrived: arrived, release: release, promptTokens: 20})
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, first.Thread, "more", nil)
+		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived
@@ -790,7 +790,7 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 
 	// An old thread, settled 30 hours ago and deleted, is collectable.
 	fake.script("open", fakeTurn{content: "old"})
-	old, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, "", "hi", nil)
+	old, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

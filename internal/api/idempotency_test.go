@@ -49,7 +49,7 @@ func (c *callableFake) CallAgent(ctx context.Context, _ string, _ any) (*substra
 	return &substrate.AgentResult{Reply: "done", Thread: "th1", Status: "ok"}, nil
 }
 
-func (c *callableFake) ChatAgent(ctx context.Context, _ substrate.Actor, _, _, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (c *callableFake) ChatAgent(ctx context.Context, _ substrate.Actor, _ string, _ substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	c.saw("ChatAgent", substrate.IdempotencyKeyFrom(ctx))
 	res := &substrate.AgentResult{Reply: "done", Thread: "th1", Status: "ok"}
 	emit(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})

@@ -40,6 +40,7 @@ import {
 } from "@/lib/api/transcript"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
+import { cn } from "@/lib/utils"
 
 /** The substrate's own turn: a decision or an answer as one quiet line, or —
  * for a system row this reader cannot decode — the raw content, so nothing in
@@ -184,12 +185,51 @@ function SummaryTurn({ turn }: { turn: TurnView }) {
 }
 
 function UserTurn({ turn }: { turn: TurnView }) {
-  return (
+  const bubble = (
     <div
       data-slot="user-message"
       className="max-w-[70%] self-end rounded-[14px_14px_4px_14px] bg-hover px-3.5 py-2 leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap"
     >
       {turn.content}
+    </div>
+  )
+  if (!turn.contextRecords?.length) return bubble
+  return (
+    <div className="flex flex-col items-end gap-1.5 self-end">
+      <ContextChips records={turn.contextRecords} />
+      {bubble}
+    </div>
+  )
+}
+
+/** The records a message is about, as chips above it: the turn context's
+ * records, never its rendered text. */
+export function ContextChips({
+  records,
+  label = "About",
+  className,
+}: {
+  records: { kind: string; id: string }[]
+  label?: string
+  className?: string
+}) {
+  return (
+    <div
+      data-slot="context-records"
+      className={cn(
+        "flex max-w-[70%] flex-wrap items-center justify-end gap-1.5 text-[12px] text-muted-foreground",
+        className
+      )}
+    >
+      <span>{label}</span>
+      {records.map((r) => (
+        <RecordRef
+          key={`${r.kind}/${r.id}`}
+          kind={r.kind}
+          id={r.id}
+          variant="chip"
+        />
+      ))}
     </div>
   )
 }

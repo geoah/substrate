@@ -223,4 +223,22 @@ describe("the transcript", () => {
       reply.textContent?.indexOf("Hello.") ?? 0
     )
   })
+
+  it("shows the records a message is about as chips above it", () => {
+    const { container } = render(
+      <Transcript
+        turns={[
+          turn({
+            content: "What is due?",
+            contextRecords: [{ kind: "ada.example.com/tasks/task", id: "q4" }],
+          }),
+        ]}
+      />
+    )
+    const chips = container.querySelector('[data-slot="context-records"]')
+    expect(chips?.textContent).toContain("About")
+    expect(
+      container.querySelector('[data-slot="user-message"]')?.textContent
+    ).toBe("What is due?")
+  })
 })
