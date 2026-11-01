@@ -143,6 +143,22 @@ var wireTypes = map[string]any{
 	"AuthorizationKind":       AuthorizationKind{},
 	"AuthorizationApproval":   AuthorizationApproval{},
 	"AuthorizationAnswer":     AuthorizationAnswer{},
+	// The set up an approval runs (docs/plans/app-setup.md): each detail as
+	// the app wrote it and as the page shows it, and the check an app's
+	// token asks with.
+	"AuthorizationDetail":      AuthorizationDetail{},
+	"AuthorizationSetup":       AuthorizationSetup{},
+	"AuthorizationPackage":     AuthorizationPackage{},
+	"AuthorizationPackageStep": AuthorizationPackageStep{},
+	"AuthorizationFunction":    AuthorizationFunction{},
+	"AuthorizationTrigger":     AuthorizationTrigger{},
+	"AuthorizationAccount":     AuthorizationAccount{},
+	"AuthorizationWebhookPlan": AuthorizationWebhookPlan{},
+	"AuthorizationPrevious":    AuthorizationPrevious{},
+	"AuthorizationFailure":     AuthorizationFailure{},
+	"AuthorizationCheck":       AuthorizationCheck{},
+	"AuthorizationCheckResult": AuthorizationCheckResult{},
+	"AuthorizationCheckScopes": AuthorizationCheckScopes{},
 
 	// The agent chat stream (agents.ts): one ndjson event, and the settled
 	// result the done event carries.

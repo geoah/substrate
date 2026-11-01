@@ -26,6 +26,197 @@ type AuthorizationRequest struct {
 	DefaultLifetimeDays int   `json:"defaultLifetimeDays"`
 	// ExpiresAt is when the parked request lapses unanswered.
 	ExpiresAt time.Time `json:"expiresAt"`
+
+	// Details are the app's `authorization_details` as it wrote them
+	// (RFC 9396), for the technical view to show verbatim; empty when it
+	// asked for scopes alone.
+	Details []AuthorizationDetail `json:"details"`
+	// Setup is what approving would set up, one row per detail in the
+	// request's order, computed at every read: after a set up stops part
+	// way, a second read shows what landed.
+	Setup []AuthorizationSetup `json:"setup"`
+	// PlanHash digests Setup's rows. An approval of a request with setup
+	// names it, and the server refuses when its own plan has moved since:
+	// what runs is what the page showed. Empty when there is no setup.
+	PlanHash string `json:"planHash,omitempty"`
+	// Previous is the newest token this repository holds for the same
+	// client id, so the page can say which scopes are new.
+	Previous *AuthorizationPrevious `json:"previous,omitempty"`
+	// State is `pending`, `setting-up` or `approved`.
+	State string `json:"state"`
+	// Progress is each setup row's state while a set up runs, and after
+	// one stopped: `waiting`, `running`, `done` or `failed`, in Setup's
+	// order.
+	Progress []string `json:"progress,omitempty"`
+	// Failure is why the last set up stopped; the request is pending again.
+	Failure *AuthorizationFailure `json:"failure,omitempty"`
+	// Next is where the page goes once a set up finished and the code was
+	// issued: the app's redirect URI carrying it.
+	Next string `json:"next,omitempty"`
+}
+
+// The states a parked request moves through.
+const (
+	AuthorizationPending   = "pending"
+	AuthorizationSettingUp = "setting-up"
+	AuthorizationApproved  = "approved"
+)
+
+// The detail types an authorization request may carry (RFC 9396), what the
+// authorization server metadata lists as
+// `authorization_details_types_supported`.
+const (
+	DetailPackage = "package"
+	DetailAccount = "account"
+	DetailWebhook = "webhook"
+)
+
+// The actions a setup row may need. SetupNone is in place already; SetupUnknown
+// answers a check for a row the token cannot see, which an app treats as
+// nothing to ask about.
+const (
+	SetupInstall = "install"
+	SetupUpgrade = "upgrade"
+	SetupCreate  = "create"
+	SetupArm     = "arm"
+	SetupNone    = "none"
+	SetupBlocked = "blocked"
+	SetupUnknown = "unknown"
+)
+
+// AuthorizationDetail is one entry of an app's `authorization_details`: a
+// package it needs at a version or later, an account it delivers under, or
+// a webhook it delivers to. Which fields a type carries is fixed by the
+// type; the token response answers the same shape, with Version the
+// version now held and URL where a webhook takes deliveries.
+type AuthorizationDetail struct {
+	Type string `json:"type"`
+	// Package and Version: a `package` detail.
+	Package string `json:"package,omitempty"`
+	Version int64  `json:"version,omitempty"`
+	// Kind, ID and Properties: an `account` detail.
+	Kind       string         `json:"kind,omitempty"`
+	ID         string         `json:"id,omitempty"`
+	Properties map[string]any `json:"properties,omitempty"`
+	// Trigger: a `webhook` detail; URL only in the token response.
+	Trigger string `json:"trigger,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
+
+// AuthorizationSetup is one detail as approving would set it up: the action
+// it needs and the facts behind it. Exactly one of Package, Account and
+// Webhook is present, by Type.
+type AuthorizationSetup struct {
+	Type   string `json:"type"`
+	Action string `json:"action"`
+	// Problem says why a blocked row is blocked, in the owner's words, and
+	// Fix where to go about it: a console path, or empty when the server
+	// itself needs an update.
+	Problem string                    `json:"problem,omitempty"`
+	Fix     string                    `json:"fix,omitempty"`
+	Package *AuthorizationPackage     `json:"package,omitempty"`
+	Account *AuthorizationAccount     `json:"account,omitempty"`
+	Webhook *AuthorizationWebhookPlan `json:"webhook,omitempty"`
+}
+
+// AuthorizationPackage is a package row's facts. Held is the catalog release
+// the repository holds (its shippedVersion when published, else its stored
+// version), 0 when it holds none; Shipped is what this server's catalog
+// ships. A check answers ID, Required, Held and Shipped alone.
+type AuthorizationPackage struct {
+	ID          string `json:"id"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Tier        string `json:"tier,omitempty"`
+	Required    int64  `json:"required"`
+	Held        int64  `json:"held"`
+	Shipped     int64  `json:"shipped"`
+	// Requires is the requirement chain an install brings first, each with
+	// its own action, in the order they land.
+	Requires  []AuthorizationPackageStep `json:"requires,omitempty"`
+	Kinds     []AuthorizationKind        `json:"kinds,omitempty"`
+	Functions []AuthorizationFunction    `json:"functions,omitempty"`
+	Triggers  []AuthorizationTrigger     `json:"triggers,omitempty"`
+}
+
+// AuthorizationPackageStep is one package a requested one requires.
+type AuthorizationPackageStep struct {
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Action  string `json:"action"`
+	Held    int64  `json:"held"`
+	Shipped int64  `json:"shipped"`
+}
+
+// AuthorizationFunction is code a package ships: what runs on the owner's
+// server once it is installed, and the kinds it may write.
+type AuthorizationFunction struct {
+	ID     string   `json:"id"`
+	Writes []string `json:"writes,omitempty"`
+}
+
+// AuthorizationTrigger is a trigger a package ships. Enabled is how it ships:
+// an enabled record or schedule trigger runs on its own once installed.
+type AuthorizationTrigger struct {
+	ID       string `json:"id"`
+	Callable string `json:"callable,omitempty"`
+	Webhook  bool   `json:"webhook,omitempty"`
+	Enabled  bool   `json:"enabled"`
+}
+
+// AuthorizationAccount is an account row: the record approving creates once.
+type AuthorizationAccount struct {
+	Kind       string         `json:"kind"`
+	Label      *KindLabel     `json:"label,omitempty"`
+	ID         string         `json:"id"`
+	Properties map[string]any `json:"properties,omitempty"`
+}
+
+// AuthorizationWebhookPlan is a webhook row: the trigger approving turns on.
+// Keyed says whether it holds a key already; the key is never shown or
+// shared, since the app delivers with its own token.
+type AuthorizationWebhookPlan struct {
+	Trigger string `json:"trigger"`
+	Package string `json:"package,omitempty"`
+	Enabled bool   `json:"enabled"`
+	Keyed   bool   `json:"keyed"`
+}
+
+// AuthorizationPrevious is the newest token the repository holds for the
+// requesting client id.
+type AuthorizationPrevious struct {
+	ApprovedAt time.Time  `json:"approvedAt"`
+	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
+	Scopes     []string   `json:"scopes"`
+}
+
+// AuthorizationFailure is why a set up stopped: the row, by its index in
+// Setup, and the error in the owner's words.
+type AuthorizationFailure struct {
+	Row     int    `json:"row"`
+	Message string `json:"message"`
+}
+
+// AuthorizationCheck is `POST /api/v1/authorizations/check`'s body: the
+// request an app would send now.
+type AuthorizationCheck struct {
+	Scope   string                `json:"scope"`
+	Details []AuthorizationDetail `json:"authorization_details"`
+}
+
+// AuthorizationCheckResult says whether a token still has what its app
+// needs: the requested scopes it lacks, each detail's action (`unknown`
+// where the token cannot see it) and when the token ends.
+type AuthorizationCheckResult struct {
+	Scopes    AuthorizationCheckScopes `json:"scopes"`
+	Setup     []AuthorizationSetup     `json:"setup"`
+	ExpiresAt *time.Time               `json:"expiresAt,omitempty"`
+}
+
+// AuthorizationCheckScopes lists the requested scopes, resolved, that the
+// token does not hold.
+type AuthorizationCheckScopes struct {
+	Missing []string `json:"missing"`
 }
 
 // AuthorizationApp is the app asking. Host is the client id URL's host, the
@@ -86,10 +277,14 @@ type AuthorizationScope struct {
 	Agents []*Record `json:"agents"`
 }
 
-// AuthorizationKind is one kind a scope reaches today.
+// AuthorizationKind is one kind a scope reaches today, or one a package the
+// request sets up would add (Added). Purpose is the kind's declared purpose
+// where it is not `primary`.
 type AuthorizationKind struct {
 	Identity string     `json:"identity"`
 	Label    *KindLabel `json:"label,omitempty"`
+	Purpose  string     `json:"purpose,omitempty"`
+	Added    bool       `json:"added,omitempty"`
 }
 
 // AuthorizationApproval is the approval: the subset of the request's
@@ -100,11 +295,17 @@ type AuthorizationApproval struct {
 	// LifetimeDays is required: a pointer, so an approval that names none
 	// is refused rather than read as 0, which is until revoked.
 	LifetimeDays *int `json:"lifetimeDays"`
+	// PlanHash is the request's planHash as the page read it; required
+	// when the request has setup to run.
+	PlanHash string `json:"planHash,omitempty"`
 }
 
 // AuthorizationAnswer is an approval's or a denial's answer: the URL the
 // page navigates to, the app's redirect URI carrying the code or the
-// refusal, the request's state and the issuer.
+// refusal, the request's state and the issuer. An approval whose set up runs
+// in the background answers no redirect and State `setting-up`: the page
+// reads the request until it is approved and carries the redirect.
 type AuthorizationAnswer struct {
-	Redirect string `json:"redirect"`
+	Redirect string `json:"redirect,omitempty"`
+	State    string `json:"state,omitempty"`
 }

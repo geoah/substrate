@@ -15,6 +15,12 @@
 // reference: the first talks to the matching agents and reads their threads,
 // the second decides the change requests their threads proposed. Neither
 // reads or writes a kind through the rules of read and write.
+//
+// `webhook:<trigger id>` (docs/plans/app-setup.md) names one webhook
+// trigger, never a glob: the app delivers to it with its own token and reads
+// its parked deliveries. An app never asks for it in `scope`; only a
+// `webhook` authorization detail the owner approved puts it on a token, so
+// ParseRequest refuses it and CheckStored admits it.
 package scope
 
 import (
@@ -38,6 +44,9 @@ const (
 	// Decide accepts or rejects the change requests the matching agents'
 	// threads proposed, and reads them.
 	Decide Verb = "decide"
+	// Webhook delivers to one webhook trigger with the token, and reads that
+	// trigger's parked deliveries.
+	Webhook Verb = "webhook"
 )
 
 const (
@@ -90,7 +99,11 @@ func (s Scope) Resolve(authority string) Scope {
 	return s
 }
 
-// Parse reads one scope as an app may request it: `~` is allowed.
+// WebhookScope is the scope an approved `webhook` detail puts on a token.
+func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: trigger} }
+
+// Parse reads one scope, in a request or as stored: `~` is allowed, and
+// `webhook:` parses (ParseRequest refuses it in a request).
 func Parse(raw string) (Scope, error) {
 	verb, pattern, ok := strings.Cut(raw, ":")
 	if !ok {
@@ -98,14 +111,22 @@ func Parse(raw string) (Scope, error) {
 	}
 	s := Scope{Verb: Verb(verb), Pattern: pattern}
 	switch s.Verb {
-	case Read, Write, Agents, Decide:
+	case Read, Write, Agents, Decide, Webhook:
 	default:
 		return Scope{}, fmt.Errorf("scope %q: %q is not read, write, agents or decide", raw, verb)
 	}
 	problem := ""
-	if s.OverAgents() {
+	switch {
+	case s.Verb == Webhook:
+		// One trigger by its record id: a webhook is delivered to one
+		// door, so there is nothing to glob, and a trigger id is the
+		// repository's own, so there is no authority to complete.
+		if !vocabulary.ValidID(s.Pattern) || strings.Contains(s.Pattern, "*") {
+			problem = "is not one trigger's id"
+		}
+	case s.OverAgents():
 		problem = agentPatternProblem(s)
-	} else {
+	default:
 		problem = patternProblem(s)
 	}
 	if problem != "" {
@@ -211,6 +232,9 @@ func ParseRequest(param string) ([]Scope, error) {
 		if err != nil {
 			return nil, err
 		}
+		if s.Verb == Webhook {
+			return nil, fmt.Errorf("scope %q: an app asks for a webhook with a `webhook` authorization detail, never in scope", raw)
+		}
 		if seen[s.String()] {
 			continue
 		}
@@ -287,7 +311,15 @@ func (g Grant) Scopes() []string {
 // and decide make readable is decided record by record (TalksTo, Decides).
 func (g Grant) Reads(kind string, internal bool) bool {
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
-		return !s.OverAgents() && matches(s.Pattern, kind, internal)
+		return (s.Verb == Read || s.Verb == Write) && matches(s.Pattern, kind, internal)
+	})
+}
+
+// Delivers reports whether the grant delivers to the webhook trigger whose
+// id is trigger, and reads its parked deliveries.
+func (g Grant) Delivers(trigger string) bool {
+	return trigger != "" && slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		return s.Verb == Webhook && s.Pattern == trigger
 	})
 }
 

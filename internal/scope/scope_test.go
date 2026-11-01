@@ -286,3 +286,37 @@ func TestAnAgentScopeReachesItsAgentsAndNoKindWhole(t *testing.T) {
 		t.Error("a read scope talked to an agent")
 	}
 }
+
+func TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger(t *testing.T) {
+	for _, raw := range []string{"webhook:*", "webhook:", "webhook:ada.example.com/*", "webhook:apple health"} {
+		if _, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) admitted, want refused: a webhook scope names one trigger's id", raw)
+		}
+	}
+	// Only an approved webhook detail puts the verb on a token: an app that
+	// writes it into `scope` is refused, whatever else it asks.
+	if _, err := ParseRequest("read:~/tasks/* webhook:applehealth-webhook"); err == nil {
+		t.Error("a request asked for webhook: in scope and was admitted")
+	}
+	g, err := NewGrant([]string{"write:providers.example.com/apple/*", WebhookScope("applehealth-webhook").String()})
+	if err != nil {
+		t.Fatalf("a stored webhook scope does not parse: %v", err)
+	}
+	if !g.Delivers("applehealth-webhook") {
+		t.Error("the grant does not deliver to the trigger it names")
+	}
+	if g.Delivers("whoop-webhook") || g.Delivers("") {
+		t.Error("the grant delivered to a trigger it does not name")
+	}
+	// It reads and writes no kind whole, the trigger kind least of all.
+	if g.Reads("substrate.reamde.dev/core/trigger", true) || g.Writes("substrate.reamde.dev/core/trigger", true) {
+		t.Error("a webhook scope reached the trigger kind")
+	}
+	only, err := NewGrant([]string{"webhook:applehealth-webhook"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if only.Reads("providers.example.com/apple/contact", false) {
+		t.Error("a webhook scope read a kind")
+	}
+}

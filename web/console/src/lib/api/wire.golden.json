@@ -185,8 +185,15 @@
     "unit": false,
     "value": true
   },
+  "AuthorizationAccount": {
+    "id": true,
+    "kind": true,
+    "label": false,
+    "properties": false
+  },
   "AuthorizationAnswer": {
-    "redirect": true
+    "redirect": false,
+    "state": false
   },
   "AuthorizationApp": {
     "actor": true,
@@ -199,11 +206,69 @@
   },
   "AuthorizationApproval": {
     "lifetimeDays": true,
+    "planHash": false,
     "scopes": true
   },
+  "AuthorizationCheck": {
+    "authorization_details": true,
+    "scope": true
+  },
+  "AuthorizationCheckResult": {
+    "expiresAt": false,
+    "scopes": true,
+    "setup": true
+  },
+  "AuthorizationCheckScopes": {
+    "missing": true
+  },
+  "AuthorizationDetail": {
+    "id": false,
+    "kind": false,
+    "package": false,
+    "properties": false,
+    "trigger": false,
+    "type": true,
+    "url": false,
+    "version": false
+  },
+  "AuthorizationFailure": {
+    "message": true,
+    "row": true
+  },
+  "AuthorizationFunction": {
+    "id": true,
+    "writes": false
+  },
   "AuthorizationKind": {
+    "added": false,
     "identity": true,
-    "label": false
+    "label": false,
+    "purpose": false
+  },
+  "AuthorizationPackage": {
+    "description": false,
+    "functions": false,
+    "held": true,
+    "id": true,
+    "kinds": false,
+    "name": false,
+    "required": true,
+    "requires": false,
+    "shipped": true,
+    "tier": false,
+    "triggers": false
+  },
+  "AuthorizationPackageStep": {
+    "action": true,
+    "held": true,
+    "id": true,
+    "name": false,
+    "shipped": true
+  },
+  "AuthorizationPrevious": {
+    "approvedAt": true,
+    "expiresAt": false,
+    "scopes": true
   },
   "AuthorizationRedirectTo": {
     "host": true,
@@ -213,12 +278,20 @@
   "AuthorizationRequest": {
     "app": true,
     "defaultLifetimeDays": true,
+    "details": true,
     "expiresAt": true,
+    "failure": false,
     "id": true,
     "lifetimeDays": true,
+    "next": false,
+    "planHash": false,
+    "previous": false,
+    "progress": false,
     "redirect": true,
     "repository": true,
-    "scopes": true
+    "scopes": true,
+    "setup": true,
+    "state": true
   },
   "AuthorizationScope": {
     "agents": true,
@@ -229,6 +302,27 @@
     "scope": true,
     "verb": true,
     "write": true
+  },
+  "AuthorizationSetup": {
+    "account": false,
+    "action": true,
+    "fix": false,
+    "package": false,
+    "problem": false,
+    "type": true,
+    "webhook": false
+  },
+  "AuthorizationTrigger": {
+    "callable": false,
+    "enabled": true,
+    "id": true,
+    "webhook": false
+  },
+  "AuthorizationWebhookPlan": {
+    "enabled": true,
+    "keyed": true,
+    "package": false,
+    "trigger": true
   },
   "BlobInfo": {
     "digest": true,
