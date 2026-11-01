@@ -1,5 +1,8 @@
 # The Apple apps
 
+Three apps: the console in a native shell, Substrate Chat (below) and
+Substrate Sync (below).
+
 The console, bundled, in a native shell for macOS, iPadOS and iOS: one
 SwiftUI target (`Substrate`, bundle id `dev.reamde.substrate.console`) that
 builds natively for both SDKs, not Mac Catalyst. The app carries its own copy
@@ -344,17 +347,95 @@ automatic signing `-allowProvisioningUpdates` adds it to
 developer portal. The IPA installs on the team's registered devices, with
 Developer Mode on.
 
+## Substrate Chat
+
+A third app in the same project: `SubstrateChat` (bundle id
+`dev.reamde.substrate.chat`), one SwiftUI target for iPhone, iPad and Mac,
+iOS and macOS 26. It is the console's agent chat as a native app: it carries
+no console, speaks only the API, and keeps a repository's chats on the device
+so every screen draws before it asks the server anything. The design, the
+feature list and what the reviews of it changed are in
+[SubstrateChat/DESIGN.md](SubstrateChat/DESIGN.md).
+
+```bash
+mise run apple:build:chat     # the Mac app and the iOS simulator app
+mise run apple:sim:chat       # the iOS app on a booted (or the first) iPhone simulator
+mise run apple:test:chat      # its unit tests, on the Mac
+mise run apple:release:chat   # both platforms, signed and published under chat/
+```
+
+**The chat is the console's.** The transcript is the `llm/message` rows folded
+the way `web/console/src/lib/api/transcript.ts` folds them, a reply streams as
+an overlay over them, and the overlay is dropped in the same update the rows
+land in once the turn settles, so nothing blinks. A chat that is running when
+it is opened is attached to (`…/llm/thread/{id}/events`), a dropped stream is
+attached again with backoff, Stop posts `…/stop`, and a send the server
+refused, or whose delivery is unknown, says so with the message to copy and
+is never sent again on its own.
+
+**Signing in** is the substrate's app authorization: the system's sign-in
+sheet opens the server's own sign-in and approval page, where the owner
+chooses what the app may do (talk to the agents, `agents:*`; apply what they
+suggest, `decide:*`; read the provider rows) and for how long. The redirect
+comes back to a loopback port the app listens on (RFC 8252), and the code is
+exchanged with its PKCE verifier; the app never sees the password, and its
+writes are recorded as `app:<host>`. A release publishes the app's client ID
+metadata document as `client.json` in its folder and stamps that URL into the
+build; any other build signs in as a local app. A server that predates app
+authorization gets the password form.
+
+**Instant.** Agents, providers, the chat list and each chat's rows are kept in
+Application Support, one folder per server and repository (excluded from
+backups; on iOS protected until the first unlock), and drawn at launch. The
+eight most recent chats whose rows are out of date are read in the background.
+Cached rows are current while their thread is settled and its `version` is the
+one they were read under. The change feed (`/api/v1/changes?watch=1`), resumed
+from the list read's `head` and `generation`, keeps the list and the open chat
+live while the app is in front (and while the Mac app runs). Sign Out deletes
+the folder and revokes the token in the background.
+
+**Assistants.** Settings → Assistants lists every agent with a switch that
+offers it for new chats and to the Action Button, the default for new chats,
+and an Add Key for an agent whose provider has none: the console's provider
+record for an app token, which never writes a key, or the provider row's
+`apiKey` for a password sign-in (never kept). The agents whose purpose is primary are
+offered until the owner says otherwise; one hidden from chat is listed apart.
+
+**Voice typing.** The microphone runs `SpeechAnalyzer` with a
+`SpeechTranscriber` (on device; a `DictationTranscriber` where that is not
+available), the speech model downloaded the first time a language is used.
+The words heard so far are drawn in the composer, the guess dimmed, and land
+in the field when listening stops; Send stops, finalizes and sends.
+
+**Notifications.** The server has no push channel, so the app notifies what it
+sees: a reply that settles in a chat not on screen, and a new question or
+suggestion waiting on the owner, each once. On iOS a turn still streaming when
+the app leaves is kept running as a continued processing task, which iOS draws
+with a Stop button, and a refresh task checks now and then when iOS lets it.
+
+**The Action Button.** Two App Shortcuts: New Chat (an assistant, else the
+default; optionally listening) and Talk to an Assistant (listening from the
+start). Either is a choice for the Action Button under Settings → Action
+Button → Shortcut.
+
+**Releases** go to `$SUBSTRATE_APPLE_RELEASE_URL/chat/`, a folder of their
+own with the same feeds and install page as the console app's; the Mac build
+updates itself through Sparkle with the console app's key, and the iOS build
+offers each newer release.
+
 ## Layout
 
 ```text
 project.yml                 the xcodegen spec, the only project source
-Support/                    Info.plist per platform and Substrate Sync's, the entitlements
+Support/                    Info.plist per platform and per app, the entitlements
 Substrate/Assets.xcassets   the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../../docs/app-icons.md))
 scripts/icons.mjs           draws every icon in the family: Substrate, Sync and Chat
-Icons/                      icons drawn ahead of their app: SubstrateChat.appiconset for the chat agent
 Substrate/Sources/App/      the app, its macOS menus, ServerStore, the updater
 scripts/feed.swift          a release's index.json, appcast.xml, install page and manifest
 Substrate/Sources/Shell/    the scheme handler, the web view's controller, the picker, the debug driver
+SubstrateKit/               the apps' shared Swift package: records, values, kind names and glyphs, the linked-record pill and its read-only view ([its README](SubstrateKit/README.md))
+SubstrateChat/Sources/      Substrate Chat: App/, API/, Model/ (the transcript fold, the words), Store/, Voice/, Markdown/, Views/
+SubstrateChatTests/         its tests: the fold, the stream lines, the Markdown parser, the words
 SubstrateSync/Sources/      Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 SubstrateSyncTests/         its tests: ids, labels, dates, the Health goldens
 ```

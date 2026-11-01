@@ -1,5 +1,6 @@
 # The Apple apps: the console, bundled, in a native window on macOS, iPadOS
-# and iOS; and Substrate Sync, an iPhone and iPad app that pushes Health,
+# and iOS; Substrate Chat, the agent chat as a native app on the same three;
+# and Substrate Sync, an iPhone and iPad app that pushes Health,
 # Contacts and Calendar into a repository. xcodegen writes Substrate.xcodeproj from this file and the project
 # is never committed; `mise run apple:project` regenerates it.
 name: Substrate
@@ -14,6 +15,10 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
+  # What the apps share: records, values, kind names and glyphs, and the
+  # linked-record pill and its read-only view.
+  SubstrateKit:
+    path: SubstrateKit
 settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ
@@ -29,6 +34,10 @@ settings:
     SUBSTRATE_COMMIT: ""
     SUBSTRATE_UPDATES_URL: ""
     SUBSTRATE_SPARKLE_KEY: ""
+    # Substrate Chat's OAuth client id: the URL of the client ID metadata
+    # document a release publishes beside itself. Empty is a local app's
+    # loopback id (OAuth.clientID).
+    SUBSTRATE_CHAT_CLIENT_ID: ""
 targets:
   Substrate:
     # One native target for iPhone, iPad and Mac: not Mac Catalyst and not
@@ -86,6 +95,60 @@ targets:
           dst="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/console"
           mkdir -p "${dst}"
           rsync -a --delete "${src}/" "${dst}/"
+  SubstrateChat:
+    # The agent chat, native: iPhone, iPad and Mac from one target like the
+    # console app's, speaking only the API like Substrate Sync. Markdown and
+    # speech are its own code and the system's; Sparkle is the Mac's updater
+    # alone, and the updater is the console app's file.
+    type: application
+    platform: auto
+    supportedDestinations: [iOS, macOS]
+    scheme:
+      testTargets:
+        - SubstrateChatTests
+    sources:
+      - path: SubstrateChat
+        excludes:
+          - "*.md"
+      - Substrate/Sources/App/Updater.swift
+    dependencies:
+      - package: Sparkle
+        destinationFilters: [macOS]
+      - package: SubstrateKit
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateChat
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.chat
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Support/Info-Chat-iOS.plist
+        "INFOPLIST_FILE[sdk=macosx*]": Support/Info-Chat-macOS.plist
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Support/SubstrateChat-macOS.entitlements
+        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
+        ENABLE_HARDENED_RUNTIME: "YES"
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  SubstrateChatTests:
+    # The chat's rules, which are platform-free: run on the Mac, no
+    # simulator needed (`mise run apple:test:chat`).
+    type: bundle.unit-test
+    platform: auto
+    supportedDestinations: [macOS, iOS]
+    sources:
+      - SubstrateChatTests
+    dependencies:
+      - target: SubstrateChat
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.chat.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        # xcodegen writes an iOS bundle's host path; a Mac app's executable
+        # is inside Contents/MacOS.
+        "TEST_HOST[sdk=macosx*]": "$(BUILT_PRODUCTS_DIR)/SubstrateChat.app/Contents/MacOS/SubstrateChat"
+        TARGETED_DEVICE_FAMILY: "1,2"
   SubstrateSync:
     # iPhone and iPad only, and nothing of the console: no bundled dist/, no
     # Sparkle. The updater is the console app's file, whose iOS path reads
