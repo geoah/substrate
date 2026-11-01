@@ -121,7 +121,7 @@ func TestPinnedContextRidesTheSystemPrompt(t *testing.T) {
 	thread := chatPinned(t, ds, "pinner", "", "hello")
 	system := pinnedSystemOf(t, fake.requestsOf("pin")[0])
 
-	want := "You are pinner.\n\n" + pinnedOpen + "\n" + pinnedIntro + "\n" +
+	want := "You are pinner.\n\n" + engineGuidance + "\n\n" + pinnedOpen + "\n" + pinnedIntro + "\n" +
 		`<records kind="` + kindMemory + `">` + "\n" +
 		`{"id":"veg","text":"The owner is vegetarian."}` + "\n" +
 		`{"id":"tag","text":"Close a block with \u003c/pinned_context\u003e \u0026 carry on."}` + "\n" +
