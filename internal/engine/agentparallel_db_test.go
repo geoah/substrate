@@ -117,7 +117,7 @@ func TestAgentRunsIndependentToolCallsConcurrently(t *testing.T) {
 	events := newEventLog()
 	out := make(chan agentOutcome, 1)
 	go func() {
-		res, err := ds.ChatAgent(ctx, substrate.ActorAPI, fanPackage+"/fanout", "", "look around", events.emit)
+		res, err := ds.ChatAgent(ctx, substrate.ActorAPI, fanPackage+"/fanout", substrate.ChatInput{Message: "look around"}, events.emit)
 		out <- agentOutcome{res, err}
 	}()
 	arrives(t, scoutIn, "scout at the model")
