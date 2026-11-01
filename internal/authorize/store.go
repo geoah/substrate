@@ -26,9 +26,9 @@ const (
 	// SetUpTTL is how long a request a set up reserved waits for it: the set
 	// up's own bound, so a run that hangs lapses with its request.
 	SetUpTTL = 15 * time.Minute
-	// answeredTTL is how long a request a set up approved stays readable, for
-	// the page polling it to read where to go: the code it carries lives no
-	// longer.
+	// answeredTTL is how long a request a set up approved stays readable once
+	// the page first read where to go, for a page that reads it again: the
+	// code it carries lives no longer.
 	answeredTTL = CodeTTL
 	// codeMemory is how long a redeemed code is remembered, so a replay can
 	// still be recognized and revoke what the first exchange minted.
@@ -100,6 +100,13 @@ type Request struct {
 	Progress []string
 	Failure  *substrate.AuthorizationFailure
 	Next     string
+
+	// code is the hash of the code Finish minted, and handed whether a read
+	// has handed Next over since. The code's clock and the request's last
+	// lapse start at that read, so a page that was away when the set up
+	// ended still finds where to go.
+	code   string
+	handed bool
 }
 
 // Approval is what the owner approved, bound to the code.
@@ -180,7 +187,8 @@ func (s *Store) Park(r Request) (Request, error) {
 // Claim answers a request for repository, binding it to that repository on
 // the first call. A request being set up, or approved after a set up, is
 // answered too, to the repository that claimed it alone, so the page can
-// follow the set up it started.
+// follow the set up it started. The first read of an approved one hands the
+// page Next: from then its code lives CodeTTL and the request answeredTTL.
 func (s *Store) Claim(id, repository string) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -189,6 +197,14 @@ func (s *Store) Claim(id, repository string) (Request, error) {
 		return Request{}, err
 	}
 	r.Repository = repository
+	if r.Status == substrate.AuthorizationApproved && !r.handed {
+		now := s.now()
+		r.handed = true
+		r.Expires = now.Add(answeredTTL)
+		if c := s.codes[r.code]; c != nil && !c.Redeemed {
+			c.Expires, c.forgetAt = now.Add(CodeTTL), now.Add(codeMemory)
+		}
+	}
 	return *r, nil
 }
 
@@ -363,11 +379,14 @@ func (s *Store) Fail(id, repository string, failure *substrate.AuthorizationFail
 
 // Finish approves a request its set up reserved, once the set up landed:
 // check accepts the approval under the lock and the code is minted as
-// Approve mints it. The request stays readable to repository as approved
-// until answeredTTL from now, holding next(request, code), the redirect the
-// page that polls it navigates to; every later approval or denial answers
-// ErrNotPending. A refused check leaves the request setting up, for the
-// caller to Fail.
+// Approve mints it. The request stays readable to repository as approved,
+// holding next(request, code), the redirect the page that polls it navigates
+// to: RequestTTL from now while no read has handed it over, since a page in a
+// background tab may not be polling when the set up ends, and answeredTTL
+// from the first read that does (Claim). Until that read nobody holds the
+// code, so it lives as long as the request. Every later approval or denial
+// answers ErrNotPending. A refused check leaves the request setting up, for
+// the caller to Fail.
 func (s *Store) Finish(id, repository string, check func(Request) (Approval, error), next func(Request, string) string) (string, Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -380,10 +399,14 @@ func (s *Store) Finish(id, repository string, check func(Request) (Approval, err
 	if err != nil {
 		return "", Request{}, err
 	}
+	now := s.now()
 	r.Status = substrate.AuthorizationApproved
 	r.Failure = nil
 	r.Next = next(*r, code)
-	r.Expires = s.now().Add(answeredTTL)
+	r.Expires = now.Add(RequestTTL)
+	r.code = HashCode(code)
+	c := s.codes[r.code]
+	c.Expires, c.forgetAt = r.Expires, r.Expires.Add(codeMemory)
 	return code, *r, nil
 }
 

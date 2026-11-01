@@ -53,7 +53,12 @@ as you, before the app receives anything: the page shows each row as it
 runs, and the app gets its code once every row landed. If a row fails, the
 request waits for you again with what failed; what landed stays, as it does
 when you install from a provider's page, and approving again runs what is
-left. Closing the page does not stop a set up that has started.
+left. One set up runs at a time in a repository, so yours may wait for
+another; if what yours would do has grown meanwhile (a row you saw in place
+needs work again), it stops before it changes anything and waits for you to
+approve again. Closing the page does not stop a set up that has started, and
+once it finishes the request waits ten minutes for the page to come back and
+take you to the app.
 
 An app on your own computer (a command-line tool, a desktop app) has a
 `client_id` on `127.0.0.1` or `localhost`. Nothing about it can be verified,
@@ -179,7 +184,8 @@ delivers under, a webhook turned on, names it in `authorization_details`
 - `package`: a provider or a first-party catalogue this server's catalog
   ships, at `version` or later. Installing it installs what it requires
   first, as the provider page does. A sample is not set up this way: the
-  owner adds it from All data.
+  owner adds it from All data. A package the catalog does not ship, the
+  owner's own or a sample they imported, cannot be named, installed or not.
 - `account`: one record of a kind that implements
   `substrate.reamde.dev/core/accountconfig`, in a package a `package` entry
   of the same request names. It is created once: a row already there, live
@@ -278,6 +284,10 @@ When anything needs action, send the owner through the authorization
 endpoint again with the whole request. The approval page compares the scopes
 with the newest token the app holds, and shows what is in place as in place.
 An owner's own token may ask too, and sees every row.
+
+Ask at launch and when the app comes back to the foreground, at most every
+few minutes. A token that asks again within seconds is answered `429` with
+`Retry-After`.
 
 ### Use the token
 

@@ -101,7 +101,8 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	clear := bodyDeadline(w, deadline)
 	authority, trigger, key := pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r)
 	ctx := r.Context()
-	if h.webhookGranted(r, authority, trigger, key) {
+	granted, bearer := h.webhookGranted(r, authority, trigger, key), key
+	if granted {
 		ctx = substrate.WithWebhookGrant(ctx, authority, trigger)
 		key = ""
 	}
@@ -148,6 +149,12 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clear()
+	// The body may take minutes: a token revoked or lapsed meanwhile no
+	// longer delivers, and is refused as a wrong key is.
+	if granted && !h.webhookGranted(r, authority, trigger, bearer) {
+		writeWebhookError(w, r, substrate.ErrNotFound)
+		return
+	}
 	fid, err := h.svc.ReceiveWebhook(ctx, authority, trigger, key, req)
 	if err != nil {
 		writeWebhookError(w, r, err)

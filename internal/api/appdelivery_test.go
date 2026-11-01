@@ -39,6 +39,9 @@ type grantHookSvc struct {
 	mu    sync.Mutex
 	keys  map[string]string // "<authority>/<trigger>" -> its key
 	calls []webhookCall
+	// checked runs once the door's checks admitted a delivery, before its
+	// body is read.
+	checked func()
 }
 
 func (s *grantHookSvc) admit(ctx context.Context, authority, trigger, key string) error {
@@ -52,6 +55,9 @@ func (s *grantHookSvc) admit(ctx context.Context, authority, trigger, key string
 func (s *grantHookSvc) CheckWebhook(ctx context.Context, authority, trigger, key string) (substrate.WebhookTarget, error) {
 	if err := s.admit(ctx, authority, trigger, key); err != nil {
 		return substrate.WebhookTarget{}, err
+	}
+	if s.checked != nil {
+		s.checked()
 	}
 	return substrate.WebhookTarget{MaxBody: substrate.WebhookInlineDefault}, nil
 }
@@ -142,6 +148,32 @@ func TestAWebhookTokenThatDoesNotDeliverIsRefusedLikeAWrongKey(t *testing.T) {
 	}
 	if len(svc.calls) != 0 {
 		t.Fatalf("a refused delivery reached the service: %+v", svc.calls)
+	}
+}
+
+// A token revoked while its delivery's body arrives delivers nothing: the
+// door reads the token again before it hands the delivery on.
+func TestATokenRevokedWhileItsBodyArrivesDeliversNothing(t *testing.T) {
+	svc := newGrantHookSvc()
+	h := New(Config{Service: svc})
+	hook := "/webhooks/" + fakeRepository + "/" + appHook
+	app := appToken(svc.fakeService, fakeRepository, "webhook:"+appHook)
+	svc.checked = func() {
+		svc.fakeService.mu.Lock()
+		defer svc.fakeService.mu.Unlock()
+		delete(svc.tokens, app)
+	}
+	got := postHook(h, hook, []byte(`{"n":1}`), map[string]string{"Content-Type": "application/json", "Authorization": "Bearer " + app})
+	svc.checked = nil
+	wrong := postHook(h, hook, []byte(`{"n":1}`), map[string]string{"Content-Type": "application/json", "Authorization": "Bearer wrong-key-0123456789"})
+	if got.Code != http.StatusNotFound {
+		t.Fatalf("a delivery whose token was revoked mid-body = %d %s, want the door's 404", got.Code, got.Body.String())
+	}
+	if diff := webhookAnswerDiff(wrong, got); diff != "" {
+		t.Fatalf("a revoked token and a wrong key are told apart: %s", diff)
+	}
+	if len(svc.calls) != 0 {
+		t.Fatalf("a revoked token's delivery reached the service: %+v", svc.calls)
 	}
 }
 

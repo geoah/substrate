@@ -22,8 +22,10 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/geoah/substrate/internal/authorize"
@@ -64,18 +66,28 @@ type setupPlanner struct {
 	// packages are the request's package rows by package id, planned before
 	// the account and webhook rows that are held to them.
 	packages map[string]*substrate.AuthorizationSetup
+	// skim names the packages whose rows stop at their action: no
+	// requirement chain, no closure facts and no upgrade preview, which a
+	// reader that may not see the row has no business paying for.
+	skim map[string]bool
 }
 
 // planSetup is what approving details would set up in ds's repository: one
 // row per detail, in the request's order, and the digest of the rows an
 // approval names. Nothing is cached: a row reads the repository as it is.
 func (h *handler) planSetup(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail) ([]substrate.AuthorizationSetup, string, error) {
+	return h.planSetupSkimming(ctx, ds, details, nil)
+}
+
+// planSetupSkimming is planSetup with the package rows skim names cut short
+// at their action.
+func (h *handler) planSetupSkimming(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail, skim map[string]bool) ([]substrate.AuthorizationSetup, string, error) {
 	if len(details) == 0 {
 		return []substrate.AuthorizationSetup{}, "", nil
 	}
 	p := &setupPlanner{
 		h: h, ds: ds, statuses: map[string]*substrate.BundleStatus{},
-		kinds: map[string]substrate.KindInfo{}, packages: map[string]*substrate.AuthorizationSetup{},
+		kinds: map[string]substrate.KindInfo{}, packages: map[string]*substrate.AuthorizationSetup{}, skim: skim,
 	}
 	statuses, err := ds.BundleStatusesUncounted(ctx)
 	if err != nil {
@@ -176,28 +188,31 @@ func (p *setupPlanner) packageRow(ctx context.Context, d substrate.Authorization
 	}
 	page := providerPage(d.Package)
 	switch {
-	case b == nil && installed && info.Held >= d.Version:
-		row.Action = substrate.SetupNone
-		return row, nil
+	// Installed or not: a package row admits the account and webhook rows
+	// of its package, which would otherwise reach the owner's own packages
+	// and the samples they imported, and nothing names those as the app's.
 	case b == nil:
-		return blocked(row, fmt.Sprintf("this server does not ship %s, so it cannot set it up", d.Package), ""), nil
+		return blocked(row, "This server does not offer this package, so approving cannot set it up.", ""), nil
 	case b.Tier == substrate.TierSample:
-		return blocked(row, fmt.Sprintf("%s is a sample, which you add yourself from All data", d.Package), "/data"), nil
+		return blocked(row, fmt.Sprintf("This is the %s sample, which you add yourself from All data.", b.Name), "/data"), nil
 	case st != nil && st.Quarantined:
-		return blocked(row, fmt.Sprintf("%s is quarantined: %s", d.Package, st.QuarantineReason), page), nil
+		return blocked(row, fmt.Sprintf("Your %s package is quarantined, so approving cannot set it up. Its provider page says why.", b.Name), page), nil
 	case installed && info.Held >= d.Version:
 		row.Action = substrate.SetupNone
 		return row, nil
 	case p.declaredByHand(d.Package):
-		return blocked(row, fmt.Sprintf("you declared %s yourself, at version %d: installing the published version would replace yours",
-			d.Package, info.Held), page), nil
+		return blocked(row, fmt.Sprintf("You declared %s yourself, at version %d. Installing the published version would replace yours.",
+			b.Name, info.Held), page), nil
 	case b.Version < d.Version:
-		return blocked(row, fmt.Sprintf("this server ships version %d of %s, and the app needs version %d: the server needs an update",
-			b.Version, d.Package, d.Version), ""), nil
+		return blocked(row, fmt.Sprintf("This server ships version %d of %s, and the app needs version %d. The server needs an update.",
+			b.Version, b.Name, d.Version), ""), nil
 	}
 	row.Action = substrate.SetupInstall
 	if installed {
 		row.Action = substrate.SetupUpgrade
+	}
+	if p.skim[d.Package] {
+		return row, nil
 	}
 	steps, err := p.h.catalog.Requirements(ctx, d.Package, p.ds)
 	if err != nil {
@@ -226,8 +241,8 @@ func (p *setupPlanner) packageRow(ctx context.Context, d substrate.Authorization
 		}
 		if floor := floors[dep.ID]; dep.Version < floor && problem == "" {
 			step.Action = substrate.SetupBlocked
-			problem = fmt.Sprintf("this server ships version %d of %s, which %s needs at version %d: the server needs an update",
-				dep.Version, dep.ID, d.Package, floor)
+			problem = fmt.Sprintf("This server ships version %d of %s, which %s needs at version %d. The server needs an update.",
+				dep.Version, dep.Name, b.Name, floor)
 		}
 		info.Requires = append(info.Requires, step)
 	}
@@ -252,23 +267,37 @@ func (p *setupPlanner) packageRow(ctx context.Context, d substrate.Authorization
 // data or discards edits, which only its provider page confirms. A preview
 // that fails blocks the row, as it costs a catalog entry its offer.
 func (p *setupPlanner) upgradeProblem(ctx context.Context, id string) (string, error) {
+	name := p.h.catalogName(id)
 	up, err := p.h.catalog.Upgrade(ctx, id, p.ds, p.statuses[id])
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", err
 		}
 		slog.Error("authorize: upgrade preview failed", "bundle", id, "error", err)
-		return failedPreviewBlocker, nil
+		return fmt.Sprintf("Upgrading %s could not be previewed. The server log says why.", name), nil
 	}
 	switch {
 	case up == nil:
 		return "", nil
 	case len(up.Blockers) > 0:
-		return fmt.Sprintf("upgrading %s is refused: %s", id, strings.Join(up.Blockers, "; ")), nil
+		return fmt.Sprintf("Upgrading %s is refused for now. Its provider page says why.", name), nil
 	case up.Lossy || up.DiscardsEdits:
-		return fmt.Sprintf("upgrading %s would change records in a way its provider page asks you to confirm first", id), nil
+		return fmt.Sprintf("Upgrading %s would change records in a way its provider page asks you to confirm first.", name), nil
 	}
 	return "", nil
+}
+
+// catalogName is how a problem the owner reads names a package: its catalog
+// name, never its id, which the technical view shows beside the sentence.
+// Empty for a package the catalog does not ship.
+func (h *handler) catalogName(id string) string {
+	if h.catalog == nil {
+		return ""
+	}
+	if b, ok := h.catalog.ByID(id); ok {
+		return b.Name
+	}
+	return ""
 }
 
 // closureFacts lists what the bundles a row lands bring: the kinds the
@@ -313,15 +342,18 @@ func (p *setupPlanner) accountRow(ctx context.Context, d substrate.Authorization
 	pkg := vocabulary.KindPackage(d.Kind)
 	prow := p.packages[pkg]
 	if prow == nil {
-		return blocked(row, fmt.Sprintf("%s belongs to %s, a package this request does not set up", d.Kind, pkg), ""), nil
+		if name := p.h.catalogName(pkg); name != "" {
+			return blocked(row, fmt.Sprintf("This account belongs to %s, which this request does not set up.", name), ""), nil
+		}
+		return blocked(row, "This account belongs to a package this request does not set up.", ""), nil
 	}
 	def, label, found := p.definition(d.Kind, prow)
 	acct.Label = label
 	switch {
 	case !found:
-		return blocked(row, fmt.Sprintf("%s declares no kind %s", pkg, d.Kind), ""), nil
+		return blocked(row, "The package this account belongs to declares no such kind.", ""), nil
 	case !implementsTrait(def, accountConfigTrait):
-		return blocked(row, fmt.Sprintf("%s is not an account kind", d.Kind), ""), nil
+		return blocked(row, "This is not an account kind, so approving cannot create one.", ""), nil
 	}
 	if problem := accountPropertyProblem(d, def); problem != "" {
 		return blocked(row, problem, ""), nil
@@ -385,21 +417,32 @@ func accountPropertyProblem(d substrate.AuthorizationDetail, def map[string]any)
 	for _, name := range slices.Sorted(maps.Keys(d.Properties)) {
 		pd, ok := declared[name].(map[string]any)
 		if !ok {
-			return fmt.Sprintf("%s declares no property %s", d.Kind, name)
+			return fmt.Sprintf("This kind of account has no %s property.", name)
 		}
 		if t, _ := pd["type"].(string); t == string(vocabulary.DatatypeSecret) {
-			return fmt.Sprintf("%s is a secret, which you write yourself", name)
+			return fmt.Sprintf("The %s property is a secret, which you write yourself.", name)
 		}
 		if managed, _ := pd["managed"].(bool); managed {
-			return fmt.Sprintf("%s is the server's to write", name)
+			return fmt.Sprintf("The %s property is the server's to write.", name)
 		}
 		// `owner` is the one restriction an approval meets: the set up
 		// writes as the owner.
 		if w, _ := pd["writer"].(string); w != "" && w != vocabulary.WriterOwner {
-			return fmt.Sprintf("%s is written by the %s alone", name, w)
+			return fmt.Sprintf("The %s property is written by %s alone.", name, writerWords(w))
 		}
 	}
 	return ""
+}
+
+// writerWords names a property's writer role in the owner's words.
+func writerWords(writer string) string {
+	switch writer {
+	case vocabulary.WriterOAuth:
+		return "the provider's sign-in"
+	case vocabulary.WriterConnector:
+		return "the provider's sync"
+	}
+	return "the " + writer
 }
 
 func (p *setupPlanner) webhookRow(ctx context.Context, d substrate.AuthorizationDetail) (substrate.AuthorizationSetup, error) {
@@ -410,18 +453,19 @@ func (p *setupPlanner) webhookRow(ctx context.Context, d substrate.Authorization
 		return row, err
 	}
 	if props == nil {
-		return blocked(row, fmt.Sprintf("there is no trigger %s here, and no package this request sets up ships one", d.Trigger), ""), nil
+		return blocked(row, "There is no such trigger here, and no package this request sets up ships one.", ""), nil
 	}
-	callable := referencePath(props["callable"])
-	plan.Package = setupCallablePackage(callable)
+	plan.Package = setupCallablePackage(referencePath(props["callable"]))
 	switch {
 	case triggerWebhook(props) == nil:
-		return blocked(row, fmt.Sprintf("%s takes no webhook deliveries", d.Trigger), ""), nil
+		return blocked(row, "This trigger takes no webhook deliveries.", ""), nil
 	case plan.Package == "":
-		return blocked(row, fmt.Sprintf("%s delivers to %s, which no package ships", d.Trigger, callable), ""), nil
+		return blocked(row, "This trigger runs code that belongs to no package.", ""), nil
 	case p.packages[plan.Package] == nil:
-		return blocked(row, fmt.Sprintf("%s delivers to %s, which belongs to %s, a package this request does not set up",
-			d.Trigger, callable, plan.Package), ""), nil
+		if name := p.h.catalogName(plan.Package); name != "" {
+			return blocked(row, fmt.Sprintf("This trigger runs code from %s, which this request does not set up.", name), ""), nil
+		}
+		return blocked(row, "This trigger runs code from a package this request does not set up.", ""), nil
 	}
 	plan.Enabled, _ = props["enabled"].(bool)
 	plan.Keyed = triggerKeyOf(props) != ""
@@ -602,48 +646,80 @@ func (h *handler) setupTurn(ctx context.Context, authority string) (func(), erro
 // started it, and answers the request: the code once every row landed, the
 // request pending again with the failing row otherwise. What landed before a
 // failure stays, as it does when the owner installs from the provider page.
-// rows is the plan the approval was checked against; the run plans again
+// approved is the plan the approval was checked against. The run plans again
 // once it holds the repository's turn, since a set up before it may have
-// landed some of it.
-func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, req authorize.Request, rows []substrate.AuthorizationSetup,
+// landed some of it, and runs that plan only where it is the approved one or
+// less: what runs is what the page showed.
+func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, req authorize.Request, approved []substrate.AuthorizationSetup,
 	approve func(authorize.Request) (authorize.Approval, error),
 ) {
-	ctx, cancel := context.WithTimeout(ctx, authorize.SetUpTTL)
+	// The request's own lapse bounds the run: past it nobody can answer
+	// or read the request, so nothing more may land for it.
+	ctx, cancel := context.WithTimeout(ctx, req.Expires.Sub(h.now()))
 	defer cancel()
 	authority := ds.Repository().Authority
-	progress := make([]string, len(rows))
-	report := func() {
+	progress := make([]string, len(approved))
+	report := func() bool {
 		if err := h.authz.Progress(req.ID, authority, progress); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
+			return false
 		}
+		return true
 	}
 	fail := func(row int, msg string) {
 		if err := h.authz.Fail(req.ID, authority, &substrate.AuthorizationFailure{Row: row, Message: msg}); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 		}
 	}
-	mark := func(rows []substrate.AuthorizationSetup) {
+	// Detached from the HTTP request, a panic here is outside chi's
+	// recoverer and would take the server down with every repository on it.
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("authorize: a set up panicked and was contained",
+				"request", req.ID, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+			fail(setupWholeRow, "The set up failed on the server. Try again, and if it fails again the server log says why.")
+		}
+	}()
+	mark := func(rows []substrate.AuthorizationSetup) bool {
 		for i, row := range rows {
 			progress[i] = setupWaiting
 			if row.Action == substrate.SetupNone {
 				progress[i] = setupDone
 			}
 		}
-		report()
+		return report()
 	}
-	mark(rows)
+	if !mark(approved) {
+		return
+	}
 	release, err := h.setupTurn(ctx, authority)
 	if err != nil {
 		fail(setupWholeRow, "another set up in this repository did not finish in time: try again")
 		return
 	}
 	defer release()
-	rows, _, err = h.planSetup(ctx, ds, req.Details)
+	rows, _, err := h.planSetup(ctx, ds, req.Details)
 	if err != nil {
 		fail(setupWholeRow, setupFailure("Reading what to set up", err))
 		return
 	}
-	mark(rows)
+	if !mark(rows) {
+		return
+	}
+	// Nothing is written unless every row still is what the owner approved.
+	stop := firstBlocked(rows)
+	problem := ""
+	if stop >= 0 {
+		problem = rows[stop].Problem
+	} else if stop = movedRow(approved, rows); stop >= 0 {
+		problem = "What approving sets up changed after you approved it. Check what it sets up now, then approve again."
+	}
+	if stop >= 0 {
+		progress[stop] = setupFailed
+		report()
+		fail(stop, problem)
+		return
+	}
 	packages := map[string]bool{}
 	for _, d := range req.Details {
 		if d.Type == substrate.DetailPackage {
@@ -659,18 +735,13 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 	rank := map[string]int{substrate.DetailPackage: 0, substrate.DetailAccount: 1, substrate.DetailWebhook: 2}
 	sort.SliceStable(order, func(a, b int) bool { return rank[rows[order[a]].Type] < rank[rows[order[b]].Type] })
 	for _, i := range order {
-		row := rows[i]
-		if row.Action == substrate.SetupNone {
+		if rows[i].Action == substrate.SetupNone {
 			continue
 		}
-		if row.Action == substrate.SetupBlocked {
-			progress[i] = setupFailed
-			report()
-			fail(i, row.Problem)
+		progress[i] = setupRunning
+		if !report() {
 			return
 		}
-		progress[i] = setupRunning
-		report()
 		if err := h.setUpRow(ctx, ds, actor, req.Details[i], packages); err != nil {
 			progress[i] = setupFailed
 			report()
@@ -679,7 +750,9 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		}
 		progress[i] = setupDone
 	}
-	report()
+	if !report() {
+		return
+	}
 	_, _, err = h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) string {
 		return withParams(req.RedirectURI, url.Values{"code": {code}}, req)
 	})
@@ -691,6 +764,39 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 	case err != nil:
 		fail(setupWholeRow, setupFailure("Everything is set up, and approving", err))
 	}
+}
+
+// movedRow is the first row a plan made after the approval would run beyond
+// what the approved plan showed, -1 when none would: a row may keep its
+// approved action or have come to need nothing, a package row may lose
+// requirements another set up landed but never gain one or change what it
+// does to one, and a webhook row keeps the package it delivers to. A row the
+// owner saw as in place that needs work again, or a requirement they removed
+// since, is theirs to approve again.
+func movedRow(approved, now []substrate.AuthorizationSetup) int {
+	for i, row := range now {
+		if row.Action == substrate.SetupNone {
+			continue
+		}
+		was := approved[i]
+		if row.Action != was.Action {
+			return i
+		}
+		if row.Webhook != nil && (was.Webhook == nil || row.Webhook.Package != was.Webhook.Package) {
+			return i
+		}
+		if row.Package == nil {
+			continue
+		}
+		for _, step := range row.Package.Requires {
+			if was.Package == nil || !slices.ContainsFunc(was.Package.Requires, func(s substrate.AuthorizationPackageStep) bool {
+				return s.ID == step.ID && s.Action == step.Action
+			}) {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // setUpRow runs one row: a package through the catalog's own install door,
@@ -947,7 +1053,25 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	rows, _, err := h.planSetup(ctx, owner, in.Details)
+	// Each check plans against the owner's data, an upgrade preview
+	// included, so an app that asks in a loop is held to a pace.
+	if ok, wait := h.parkRate.allow(costPaired, "check|"+substrate.PrincipalFrom(ctx)); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
+		writeError(w, http.StatusTooManyRequests, codeRateLimited, "this token checks its set up too often: ask again shortly")
+		return
+	}
+	// A package row the token will see as `unknown` is planned no further
+	// than its action, which the account and webhook rows it admits read.
+	var skim map[string]bool
+	if !full {
+		skim = map[string]bool{}
+		for _, d := range in.Details {
+			if d.Type == substrate.DetailPackage && !grant.NamesPackage(d.Package) {
+				skim[d.Package] = true
+			}
+		}
+	}
+	rows, _, err := h.planSetupSkimming(ctx, owner, in.Details, skim)
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return

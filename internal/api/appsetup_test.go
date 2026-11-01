@@ -49,9 +49,12 @@ type setupRepo struct {
 	kinds    []substrate.KindInfo
 	installs []string
 	// gate, when set, holds every install until it is closed; fail refuses
-	// the install of the bundles it names.
-	gate chan struct{}
-	fail map[string]error
+	// the install of the bundles it names, and explode panics in it.
+	gate    chan struct{}
+	fail    map[string]error
+	explode string
+	// previews counts the upgrade previews the catalog asked for.
+	previews int
 }
 
 // setupDataset is the flow's dataset with the catalog's install door, a put
@@ -134,6 +137,10 @@ func (d *setupDataset) InstallBundleClosure(ctx context.Context, _ substrate.Act
 		d.repo.mu.Unlock()
 		return nil, err
 	}
+	if d.repo.explode == id {
+		d.repo.mu.Unlock()
+		panic("the install of " + id + " exploded")
+	}
 	authority, pkg := vocabulary.SplitPackageRef(id)
 	d.repo.statuses[id] = substrate.BundleStatus{
 		ID: id, Name: pkg, Authority: authority, Package: pkg, Installed: true, Enabled: true,
@@ -152,6 +159,13 @@ func (d *setupDataset) InstallBundleClosure(ctx context.Context, _ substrate.Act
 		d.put(&substrate.Record{ID: in.ID, Kind: in.Kind, Properties: cloneProperties(in.Properties), Version: version})
 	}
 	return nil, nil
+}
+
+func (d *setupDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
+	d.repo.mu.Lock()
+	defer d.repo.mu.Unlock()
+	d.repo.previews++
+	return substrate.BundleUpgrade{}, nil
 }
 
 // Put merges into the row it finds and holds ifVersion to it, a tombstone
@@ -363,6 +377,18 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 		"source":   map[string]any{"webhook": map[string]any{}},
 		"callable": map[string]any{"ref": "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/googlesync"},
 	}})
+	// The owner's own package, installed, whose keyed and enabled trigger
+	// an app names: nothing on the page says it is the app's, so neither
+	// row may pass as already in place.
+	own := fakeRepository + "/stripe"
+	e.repo.mu.Lock()
+	e.repo.statuses[own] = substrate.BundleStatus{ID: own, Installed: true, Enabled: true, Version: 1}
+	e.repo.mu.Unlock()
+	ds.put(&substrate.Record{ID: "stripe-webhook", Kind: setupTriggerKind, Version: 1, Properties: map[string]any{
+		"enabled":  true,
+		"source":   map[string]any{"webhook": map[string]any{"key": "the-owners-key-0123456789"}},
+		"callable": map[string]any{"ref": "substrate.reamde.dev/core/function/" + own + "/handle"},
+	}})
 	cases := map[string]struct {
 		details string
 		row     int
@@ -375,11 +401,15 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 		},
 		"a version the server does not ship": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":99}]`,
-			problem: "needs an update",
+			problem: "This server ships version 5 of applehealth, and the app needs version 99. The server needs an update.",
 		},
 		"a package outside the catalog": {
 			details: `[{"type":"package","package":"example.com/notes","version":1}]`,
-			problem: "does not ship",
+			problem: "does not offer",
+		},
+		"an installed package of your own": {
+			details: `[{"type":"package","package":"` + own + `","version":1},{"type":"webhook","trigger":"stripe-webhook"}]`,
+			problem: "does not offer",
 		},
 		"an account of a package not requested": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},
@@ -399,20 +429,20 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 		"another hand's property": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
 			{"type":"account","kind":"` + healthAccount + `","id":"a","properties":{"tokenStatus":"x"}}]`,
-			row: 1, problem: "oauth",
+			row: 1, problem: "the provider's sign-in",
 		},
 		"an undeclared property": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
 			{"type":"account","kind":"` + healthAccount + `","id":"a","properties":{"nickname":"x"}}]`,
-			row: 1, problem: "no property nickname",
+			row: 1, problem: "no nickname property",
 		},
 		"a webhook another package's callable takes": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},{"type":"webhook","trigger":"notes-webhook"}]`,
-			row:     1, problem: "providers.substrate.reamde.dev/google",
+			row:     1, problem: "code from google",
 		},
 		"a webhook of a package not requested": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},{"type":"webhook","trigger":"` + healthWebhook + `"}]`,
-			row:     1, problem: "no trigger",
+			row:     1, problem: "no such trigger",
 		},
 	}
 	for name, c := range cases {
@@ -423,6 +453,11 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 			if row.Action != substrate.SetupBlocked || row.Fix != c.fix || !strings.Contains(row.Problem, c.problem) {
 				t.Fatalf("row %d = %+v, want blocked with %q and fix %q", c.row, row, c.problem, c.fix)
 			}
+			// The owner reads it as a sentence, and the technical view
+			// shows the ids beside it.
+			if !regexp.MustCompile(`^[A-Z][^:/]*\.$`).MatchString(row.Problem) {
+				t.Fatalf("problem %q is not a sentence free of ids", row.Problem)
+			}
 			// Blocked keeps the denial and refuses the approval.
 			rec := e.approveWith(id, []string{"read:" + personKind}, v.PlanHash)
 			wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
@@ -430,6 +465,13 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 				t.Fatalf("a refused approval left the request %q", got.State)
 			}
 		})
+	}
+	e.svc.mu.Lock()
+	defer e.svc.mu.Unlock()
+	for _, tok := range e.svc.tokens {
+		if slices.ContainsFunc(tok.info.Scopes, func(s string) bool { return strings.HasPrefix(s, "webhook:") }) {
+			t.Fatalf("a blocked set up minted %v", tok.info.Scopes)
+		}
 	}
 }
 
@@ -623,6 +665,189 @@ func TestAFailedSetUpIsPendingAgainAndTriesWhatIsLeft(t *testing.T) {
 	}
 }
 
+// holdTurn starts a set up of applehealth whose install waits at a gate, so
+// it holds the repository's one turn until the gate closes.
+func (e *setupEnv) holdTurn() (string, chan struct{}) {
+	e.t.Helper()
+	gate := make(chan struct{})
+	e.repo.mu.Lock()
+	e.repo.gate = gate
+	e.repo.mu.Unlock()
+	details := `[{"type":"package","package":"` + appleHealthPkg + `","version":5}]`
+	id := e.park(setupRequest("read:"+healthAccount, details))
+	wantStatus(e.t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
+	deadline := time.Now().Add(10 * time.Second)
+	for p := e.view(id).Progress; len(p) == 0 || p[0] != setupRunning; p = e.view(id).Progress {
+		if time.Now().After(deadline) {
+			e.t.Fatal("the set up holding the turn never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return id, gate
+}
+
+// A set up that waited for another one runs the rows that landed meanwhile
+// as in place, and nothing it was not approved for: a row the owner saw in
+// place that needs work again stops it before it writes anything.
+func TestASetUpThatWaitedRunsOnlyWhatWasApproved(t *testing.T) {
+	inPlace := func(e *setupEnv) {
+		e.repo.mu.Lock()
+		defer e.repo.mu.Unlock()
+		e.repo.statuses[applePkg] = substrate.BundleStatus{ID: applePkg, Installed: true, Enabled: true, Version: 3, ShippedVersion: 3}
+	}
+	t.Run("what landed meanwhile is not run again", func(t *testing.T) {
+		e := newSetupEnv(t)
+		inPlace(e)
+		holder, gate := e.holdTurn()
+		id := e.park(setupRequest(syncScopes, syncDetails))
+		v := e.view(id)
+		if v.Setup[1].Action != substrate.SetupInstall {
+			t.Fatalf("applehealth = %q, want install", v.Setup[1].Action)
+		}
+		wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusAccepted)
+		close(gate)
+		if done := e.settle(holder); done.State != substrate.AuthorizationApproved {
+			t.Fatalf("the set up holding the turn ended %+v", done.Failure)
+		}
+		if done := e.settle(id); done.State != substrate.AuthorizationApproved {
+			t.Fatalf("the set up that waited ended %+v", done.Failure)
+		}
+		e.repo.mu.Lock()
+		defer e.repo.mu.Unlock()
+		if got := strings.Join(e.repo.installs, ","); got != healthPkg+","+appleHealthPkg {
+			t.Fatalf("installed %s, want applehealth's closure once", got)
+		}
+	})
+	t.Run("a row that came to need work stops it", func(t *testing.T) {
+		e := newSetupEnv(t)
+		inPlace(e)
+		holder, gate := e.holdTurn()
+		id := e.park(setupRequest(syncScopes, syncDetails))
+		v := e.view(id)
+		if v.Setup[0].Action != substrate.SetupNone {
+			t.Fatalf("apple = %q, want in place", v.Setup[0].Action)
+		}
+		wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusAccepted)
+		// The owner removes apple while the set up waits for its turn.
+		e.repo.mu.Lock()
+		delete(e.repo.statuses, applePkg)
+		e.repo.mu.Unlock()
+		close(gate)
+		e.settle(holder)
+		failed := e.settle(id)
+		if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != 0 ||
+			!strings.Contains(failed.Failure.Message, "changed") || failed.Setup[0].Action != substrate.SetupInstall {
+			t.Fatalf("after the plan moved = state %q failure %+v apple %q", failed.State, failed.Failure, failed.Setup[0].Action)
+		}
+		e.repo.mu.Lock()
+		installs := slices.Clone(e.repo.installs)
+		e.repo.mu.Unlock()
+		if slices.Contains(installs, applePkg) {
+			t.Fatalf("installed %v, apple among them", installs)
+		}
+		ds := e.svc.datasets[fakeRepository]
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		if ds.records[syncAccountID] != nil || ds.records[healthWebhook].Properties["enabled"] == true {
+			t.Fatal("a set up whose plan moved wrote its account or armed its webhook")
+		}
+	})
+}
+
+// A panic inside a set up fails its request and leaves the server, and the
+// repository's turn, to the next one.
+func TestASetUpThatPanicsFailsItsRequestAlone(t *testing.T) {
+	e := newSetupEnv(t)
+	e.repo.mu.Lock()
+	e.repo.explode = appleHealthPkg
+	e.repo.mu.Unlock()
+	details := `[{"type":"package","package":"` + appleHealthPkg + `","version":5}]`
+	id := e.park(setupRequest("read:"+healthAccount, details))
+	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
+	failed := e.settle(id)
+	if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != setupWholeRow ||
+		!strings.Contains(failed.Failure.Message, "server") {
+		t.Fatalf("after a panic = state %q failure %+v", failed.State, failed.Failure)
+	}
+	e.repo.mu.Lock()
+	e.repo.explode = ""
+	e.repo.mu.Unlock()
+	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, failed.PlanHash), http.StatusAccepted)
+	if done := e.settle(id); done.State != substrate.AuthorizationApproved {
+		t.Fatalf("trying again after a panic ended %+v", done.Failure)
+	}
+}
+
+// A set up whose request lapsed while it waited for its turn writes nothing:
+// nobody can read or answer the request any more.
+func TestASetUpStopsWithItsRequest(t *testing.T) {
+	e := newSetupEnv(t)
+	var mu sync.Mutex
+	now := time.Now()
+	clock := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &handler{svc: e.svc, now: clock, catalog: cat, authz: authorize.NewStore(clock)}
+	ds := e.svc.wrap(e.svc.datasets[fakeRepository])
+	details, err := authorize.ParseDetails(`[{"type":"package","package":"` + applePkg + `","version":3}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := h.authz.Park(authorize.Request{Details: details})
+	if _, err := h.authz.Snapshot(req.ID, fakeRepository, authorize.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if req, err = h.authz.Reserve(req.ID, fakeRepository, func(authorize.Request) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	rows, _, err := h.planSetup(ctx, ds, details)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := h.setupTurn(ctx, fakeRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.runSetup(ctx, ds, substrate.ActorAPI, req, rows, func(authorize.Request) (authorize.Approval, error) {
+			return authorize.Approval{Scopes: []string{"read:*"}}, nil
+		})
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		got, err := h.authz.Claim(req.ID, fakeRepository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Progress) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the set up never reported its rows")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mu.Lock()
+	now = now.Add(authorize.SetUpTTL)
+	mu.Unlock()
+	release()
+	<-done
+	e.repo.mu.Lock()
+	defer e.repo.mu.Unlock()
+	if len(e.repo.installs) != 0 {
+		t.Fatalf("a set up whose request lapsed installed %v", e.repo.installs)
+	}
+}
+
 func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
 	e := newSetupEnv(t)
 	details := `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
@@ -731,6 +956,53 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: resolvedSyncScopes(), LifetimeDays: &days})
 	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/"+pending, app, body, "application/json"), http.StatusForbidden)
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/authorizations/check", app, nil, ""), http.StatusForbidden)
+}
+
+// A check plans a package row the token cannot see no further than its
+// action: no upgrade preview is counted against the owner's data for a row
+// it answers as unknown.
+func TestACheckPlansNoFurtherThanTheTokenSees(t *testing.T) {
+	e := newSetupEnv(t)
+	e.repo.mu.Lock()
+	e.repo.statuses[applePkg] = substrate.BundleStatus{ID: applePkg, Installed: true, Enabled: true, Version: 2, ShippedVersion: 2}
+	e.repo.mu.Unlock()
+	body := []byte(`{"scope":"read:` + personKind + `","authorization_details":[{"type":"package","package":"` + applePkg + `","version":3}]}`)
+	previews := func() int {
+		e.repo.mu.Lock()
+		defer e.repo.mu.Unlock()
+		return e.repo.previews
+	}
+	narrow := e.grant("read:"+personKind, []string{"read:" + personKind})
+	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", narrow, body, "application/json")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.AuthorizationCheckResult](t, rec); got.Setup[0].Action != substrate.SetupUnknown || previews() != 0 {
+		t.Fatalf("a token that cannot see apple = %+v after %d previews", got.Setup[0], previews())
+	}
+	rec = e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, body, "application/json")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.AuthorizationCheckResult](t, rec); got.Setup[0].Action != substrate.SetupUpgrade || previews() != 1 {
+		t.Fatalf("the owner's check = %+v after %d previews", got.Setup[0], previews())
+	}
+}
+
+// Each token asks at its own pace: a loop of checks is answered 429.
+func TestACheckIsPaced(t *testing.T) {
+	e := newSetupEnv(t)
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, AuthInterval: time.Hour, Catalog: cat})
+	body := []byte(`{"scope":"read:*","authorization_details":[]}`)
+	for range 2 {
+		wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, body, "application/json"), http.StatusOK)
+	}
+	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, body, "application/json")
+	wantErrorCode(t, rec, http.StatusTooManyRequests, codeRateLimited)
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("a paced check names no Retry-After")
+	}
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", e.svc.token(fakeRepository), body, "application/json"), http.StatusOK)
 }
 
 func jsonString(s string) string {

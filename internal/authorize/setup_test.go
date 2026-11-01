@@ -2,6 +2,7 @@ package authorize
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -213,6 +214,70 @@ func TestAFinishedSetUpMintsOneCodeAndStaysReadableUntilItLapses(t *testing.T) {
 	now = now.Add(answeredTTL)
 	if _, err := s.Claim(r.ID, "ada.example.com"); !errors.Is(err, ErrNotPending) {
 		t.Fatalf("the approved request outlived its lapse: %v", err)
+	}
+}
+
+// A page in a background tab may not be polling when the set up ends: the
+// request waits for the read that hands it where to go, and the code's clock
+// starts there.
+func TestAFinishedSetUpWaitsForThePageToReadWhereToGo(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	s := NewStore(func() time.Time { return now })
+	r := shownRequest(t, s)
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	read, err := s.Claim(r.ID, "ada.example.com")
+	if err != nil || read.Status != substrate.AuthorizationApproved || read.Next == "" {
+		t.Fatalf("reading it two minutes after the set up = %+v, %v", read, err)
+	}
+	code := strings.TrimPrefix(read.Next, "https://a.example.org/cb?code=")
+	// Read again inside its lapse: the same place to go, and no later lapse.
+	now = now.Add(answeredTTL - time.Second)
+	if again, err := s.Claim(r.ID, "ada.example.com"); err != nil || again.Next != read.Next {
+		t.Fatalf("reading it again = %+v, %v", again, err)
+	}
+	if _, first, err := s.Redeem(code, func(Code) error { return nil }); err != nil || !first {
+		t.Fatalf("redeeming the code the page read = %v, %v", first, err)
+	}
+	now = now.Add(time.Second)
+	if _, err := s.Claim(r.ID, "ada.example.com"); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("the request outlived the read that handed it over: %v", err)
+	}
+
+	// The code the page reads lives CodeTTL from that read.
+	r = shownRequest(t, s)
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(RequestTTL - time.Second)
+	read, err = s.Claim(r.ID, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(CodeTTL)
+	if _, _, err := s.Redeem(strings.TrimPrefix(read.Next, "https://a.example.org/cb?code="), func(Code) error { return nil }); !errors.Is(err, ErrBadCode) {
+		t.Fatalf("redeeming the code CodeTTL after the read = %v, want ErrBadCode", err)
+	}
+
+	// Nobody reads it: it lapses RequestTTL after the set up.
+	r = shownRequest(t, s)
+	if _, err := s.Reserve(r.ID, "ada.example.com", accept); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Finish(r.ID, "ada.example.com", approval, redirectWith); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(RequestTTL)
+	if _, err := s.Claim(r.ID, "ada.example.com"); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("an approved request nobody read outlived RequestTTL: %v", err)
 	}
 }
 
