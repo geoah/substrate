@@ -27,8 +27,13 @@ interface Pending {
 
 export function ConsolePreferencesProvider({
   children,
+  sidebar = true,
 }: {
   children: ReactNode
+  /** Whether the shell's sidebar is mounted with the preferences. A page
+   * outside the shell leaves it out: the sidebar's keyboard shortcut would
+   * take the browser's own and fold the console's sidebar where none shows. */
+  sidebar?: boolean
 }) {
   const client = useQueryClient()
   const options = consolePreferencesOptions()
@@ -119,33 +124,43 @@ export function ConsolePreferencesProvider({
     [preferences, busy, change]
   )
 
+  const content = (
+    <>
+      {children}
+      {(query.isError || failed) && (
+        <div
+          role="alert"
+          className="fixed right-4 bottom-4 z-50 max-w-sm rounded-lg border bg-popover p-4 text-sm shadow-lg"
+        >
+          <p>
+            Your console preferences could not be{" "}
+            {query.isError ? "loaded" : "saved"}.
+          </p>
+          <button
+            className="mt-2 underline"
+            onClick={() =>
+              query.isError ? void query.refetch() : failed && change(failed)
+            }
+          >
+            Try again
+          </button>
+        </div>
+      )}
+    </>
+  )
+
   return (
     <ConsolePreferencesContext.Provider value={value}>
-      <SidebarProvider
-        open={preferences.sidebarOpen}
-        onOpenChange={(open) => change({ type: "sidebar", open })}
-      >
-        {children}
-        {(query.isError || failed) && (
-          <div
-            role="alert"
-            className="fixed right-4 bottom-4 z-50 max-w-sm rounded-lg border bg-popover p-4 text-sm shadow-lg"
-          >
-            <p>
-              Your console preferences could not be{" "}
-              {query.isError ? "loaded" : "saved"}.
-            </p>
-            <button
-              className="mt-2 underline"
-              onClick={() =>
-                query.isError ? void query.refetch() : failed && change(failed)
-              }
-            >
-              Try again
-            </button>
-          </div>
-        )}
-      </SidebarProvider>
+      {sidebar ? (
+        <SidebarProvider
+          open={preferences.sidebarOpen}
+          onOpenChange={(open) => change({ type: "sidebar", open })}
+        >
+          {content}
+        </SidebarProvider>
+      ) : (
+        content
+      )}
     </ConsolePreferencesContext.Provider>
   )
 }

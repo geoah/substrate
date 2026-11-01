@@ -221,8 +221,7 @@ export function GrantedRow({
           </p>
           <p className="text-xs text-muted-foreground">
             It delivers with its own access, so revoking the app, or its access
-            ending, ends its deliveries. It sees every delivery that could not
-            be filed, whoever sent it.
+            ending, ends its deliveries.
           </p>
         </>
       )}

@@ -182,11 +182,11 @@ describe("scopeSentence", () => {
     )
   })
 
-  it("says talking to agents reads every chat with them and may rename or stop one", () => {
+  it("says talking to agents reaches whatever they may do, reads every chat with them and may rename or stop one", () => {
     expect(
       scopeSentence(scope({ verb: "agents", pattern: "*", glob: true }))
     ).toBe(
-      "Talk to all your agents, including agents added later; read every chat with them, yours included, and rename or stop any of those chats"
+      "Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
     )
     expect(
       scopeSentence(
@@ -197,7 +197,7 @@ describe("scopeSentence", () => {
         })
       )
     ).toBe(
-      "Talk to Substrate editor; read every chat with it, yours included, and rename or stop any of those chats"
+      "Talk to Substrate editor, and through a chat have it do anything it may do; read every chat with it, yours included, answer its questions, and rename or stop any of those chats"
     )
   })
 
@@ -227,14 +227,14 @@ describe("scopeSentence", () => {
     )
   })
 
-  it("says a webhook scope sends data and sees what could not be filed", () => {
+  it("says a webhook scope sends data and sees every delivery that could not be filed, whoever sent it", () => {
     expect(
       scopeSentence(scope({ verb: "webhook", pattern: "applehealth-webhook" }))
     ).toBe(
-      "Send data to your repository through the applehealth-webhook webhook, and see which deliveries could not be filed"
+      "Send data to your repository through the applehealth-webhook webhook, and see every delivery to it that could not be filed, whoever sent it"
     )
     expect(webhookSentence("applehealth-webhook", "Apple Health")).toBe(
-      "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see which deliveries could not be filed"
+      "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it"
     )
   })
 

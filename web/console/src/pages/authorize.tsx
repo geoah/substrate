@@ -60,14 +60,18 @@ import {
 } from "@/lib/api/types"
 import { webhookSentence } from "@/lib/app-scopes"
 import {
+  asSentence,
   dayWords,
   lifetimeEnd,
   needsAction,
   ownerName,
   planChanges,
+  progressWords,
   reauthorizationHeading,
   setupTitle,
+  shownProgress,
   splitByPrevious,
+  stillHeld,
 } from "@/lib/app-setup"
 import { relativeTime, shortDateTime } from "@/lib/format"
 import { authorizeRoute } from "@/router"
@@ -78,7 +82,7 @@ type Verdict = "approve" | "deny"
  * or a plan that moved under the page and wants another look. */
 type Outcome =
   | { kind: "go"; to: string }
-  | { kind: "setting-up" }
+  | { kind: "setting-up"; ran: AuthorizationSetup[] }
   | {
       kind: "moved"
       before: AuthorizationSetup[]
@@ -159,6 +163,9 @@ function isWebAddress(value: string | undefined): value is string {
   }
 }
 
+const SETTING_UP =
+  "Setting up on your server. Closing this page does not stop it."
+
 const NOT_A_WEB_PAGE =
   "The server answered with an address that is not a web page, so the console did not follow it."
 
@@ -191,8 +198,15 @@ function AccessWarning({ request }: { request: AuthorizationRequest }) {
 }
 
 /** Everything the page showed before it had an everyday view: who claims
- * what, where the code goes and the repository, each with its warning. */
-function AppFacts({ request }: { request: AuthorizationRequest }) {
+ * what, where the code goes and the repository, each with its warning, and
+ * the access the app holds, or held until it ended. */
+function AppFacts({
+  request,
+  live,
+}: {
+  request: AuthorizationRequest
+  live: boolean
+}) {
   const { app } = request
   return (
     <>
@@ -252,7 +266,7 @@ function AppFacts({ request }: { request: AuthorizationRequest }) {
       </Fact>
 
       {request.previous && (
-        <Fact label="The access it holds now">
+        <Fact label={live ? "The access it holds now" : "The access it held"}>
           <ul className="flex flex-col gap-0.5">
             {request.previous.scopes.map((s) => (
               <li
@@ -269,7 +283,7 @@ function AppFacts({ request }: { request: AuthorizationRequest }) {
           >
             Approved {relativeTime(request.previous.approvedAt)};{" "}
             {request.previous.expiresAt
-              ? `ends ${shortDateTime(request.previous.expiresAt)}`
+              ? `${live ? "ends" : "ended"} ${shortDateTime(request.previous.expiresAt)}`
               : "lasts until you revoke it"}
             .
           </p>
@@ -298,12 +312,15 @@ function RawDetails({ request }: { request: AuthorizationRequest }) {
   )
 }
 
-/** When the app's current access was approved, and until when. */
-function previousWords(previous: AuthorizationPrevious): string {
+/** When the app's newest access was approved, and until when. */
+function previousWords(previous: AuthorizationPrevious, live: boolean): string {
   const approved = `You approved it on ${dayWords(new Date(previous.approvedAt))}`
-  return previous.expiresAt
-    ? `${approved}; that access ends on ${dayWords(new Date(previous.expiresAt))}.`
-    : `${approved}; that access lasts until you revoke it.`
+  if (!previous.expiresAt)
+    return `${approved}; that access lasts until you revoke it.`
+  const ends = dayWords(new Date(previous.expiresAt))
+  return live
+    ? `${approved}; that access ends on ${ends}.`
+    : `${approved}; that access ended on ${ends}.`
 }
 
 function Approval({
@@ -336,24 +353,51 @@ function Approval({
     .filter((s) => !unchecked.has(s.scope))
     .map((s) => s.scope)
 
+  // The rows this page's approvals set out to run. The server plans again
+  // on every read and a row that landed reads `none`, so these stay where the
+  // owner saw them, with their progress, rather than folding away as in
+  // place.
+  const [ran, setRan] = useState<ReadonlySet<number>>(() => new Set())
+
   const setup = request.setup
   const rows = setup.map((row, index) => ({ row, index }))
-  const toDo = setup.filter((r) => needsAction(r.action))
+  // Progress with no run of this page's behind it is another tab's: which
+  // of its rows were in place before cannot be told, so none fold.
+  const othersRun = request.progress !== undefined && ran.size === 0
+  const inRun = (index: number) => ran.has(index) || othersRun
+  const toDo = rows.filter((r) => needsAction(r.row.action) || ran.has(r.index))
   const blocked = setup.some((r) => r.action === "blocked")
-  const reauth = request.previous !== undefined
-  const { fresh, allowed } = splitByPrevious(request.scopes, request.previous)
-  const held = new Set(request.previous?.scopes)
+  const previous = request.previous
+  const reauth = previous !== undefined
+  // Only access the app still holds folds away as already allowed; a token
+  // that ended holds nothing, so everything is asked for in full.
+  const live = previous !== undefined && stillHeld(previous)
+  const split = splitByPrevious(request.scopes, previous)
+  const fresh = live ? split.fresh : request.scopes
+  const allowed = live ? split.allowed : []
+  const held = new Set(previous?.scopes)
   const webhooks = setup.flatMap((r) => (r.webhook ? [r.webhook] : []))
   const newGrants = webhooks.filter((w) => !held.has(`webhook:${w.trigger}`))
-  const oldGrants = webhooks.filter((w) => held.has(`webhook:${w.trigger}`))
-  const shownSetup = reauth ? rows.filter((r) => r.row.action !== "none") : rows
-  const foldedSetup = reauth ? rows.filter((r) => r.row.action === "none") : []
+  const shownGrants = live ? newGrants : webhooks
+  const oldGrants = live
+    ? webhooks.filter((w) => held.has(`webhook:${w.trigger}`))
+    : []
+  const changedSetup = rows.filter(
+    (r) => r.row.action !== "none" || inRun(r.index)
+  )
+  const shownSetup = live ? changedSetup : rows
+  const foldedSetup = live
+    ? rows.filter((r) => r.row.action === "none" && !inRun(r.index))
+    : []
   const folded = allowed.length + oldGrants.length + foldedSetup.length
+  const newAccess = split.fresh.length + newGrants.length
   // Talking to an agent writes the app's messages, and deciding writes the
-  // decision, both under the app's name; what a setup writes sets off the
-  // same automations.
+  // decision, both under the app's name; what a setup writes, and what a
+  // delivery's function writes, set off the same automations.
   const writes =
-    request.scopes.some((s) => s.verb !== "read") || toDo.length > 0
+    request.scopes.some((s) => s.verb !== "read") ||
+    toDo.length > 0 ||
+    webhooks.length > 0
 
   const settingUp = request.state === "setting-up"
   const approved = request.state === "approved"
@@ -376,7 +420,7 @@ function Approval({
       try {
         const reply = await approveAuthorization(id, input.approval)
         if (!reply.redirect && reply.state === "setting-up")
-          return { kind: "setting-up" }
+          return { kind: "setting-up", ran: before }
         return { kind: "go", to: followable(reply.redirect) }
       } catch (error) {
         // A 409 is a request that moved: its plan changed, or another answer
@@ -395,8 +439,16 @@ function Approval({
     onMutate: () => setMoved(null),
     onSuccess: (outcome) => {
       if (outcome.kind === "go") window.location.assign(outcome.to)
-      else if (outcome.kind === "setting-up") onSettingUp()
-      else if (outcome.fresh.state === "pending")
+      else if (outcome.kind === "setting-up") {
+        setRan((prev) => {
+          const next = new Set(prev)
+          outcome.ran.forEach((r, i) => {
+            if (needsAction(r.action)) next.add(i)
+          })
+          return next
+        })
+        onSettingUp()
+      } else if (outcome.fresh.state === "pending")
         setMoved(planChanges(outcome.before, outcome.fresh.setup))
     },
   })
@@ -409,6 +461,14 @@ function Approval({
   const settled = answer.isPending || leaving || gone || settingUp || approved
   const pendingVerdict = answer.isPending ? answer.variables.verdict : undefined
   const failure = request.state === "pending" ? request.failure : undefined
+  const failedRow = failure ? setup[failure.row] : undefined
+  const steps = settingUp
+    ? progressWords(
+        setup,
+        request.progress,
+        ran.size > 0 ? [...ran].sort((a, b) => a - b) : rows.map((r) => r.index)
+      )
+    : undefined
   const approveLabel = failure
     ? "Try again"
     : toDo.length > 0
@@ -462,7 +522,11 @@ function Approval({
       key={index}
       row={row}
       rows={setup}
-      progress={request.progress?.[index]}
+      progress={shownProgress(
+        request.state,
+        row.action,
+        request.progress?.[index]
+      )}
       failure={failure?.row === index ? failure.message : undefined}
       technical={technical}
     />
@@ -480,10 +544,7 @@ function Approval({
         </p>
         <h1 className="font-heading text-xl leading-snug font-semibold [overflow-wrap:anywhere]">
           {reauth
-            ? reauthorizationHeading(
-                fresh.length + newGrants.length,
-                shownSetup.length
-              )
+            ? reauthorizationHeading(newAccess, changedSetup.length)
             : appTitle}
         </h1>
         {reauth && (
@@ -505,26 +566,25 @@ function Approval({
             </span>
           </p>
         )}
-        {request.previous && (
+        {previous && (
           <p className="text-xs text-muted-foreground">
-            {previousWords(request.previous)}
+            {previousWords(previous, live)}
           </p>
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         {technical ? (
-          <AppFacts request={request} />
+          <AppFacts request={request} live={live} />
         ) : (
           <AccessWarning request={request} />
         )}
 
-        {reauth &&
-          fresh.length + newGrants.length + shownSetup.length === 0 && (
-            <p>
-              It asks for nothing new: the access you approved before, for
-              another stretch.
-            </p>
-          )}
+        {live && newAccess + changedSetup.length === 0 && (
+          <p>
+            It asks for nothing new: the access you approved before, for another
+            stretch.
+          </p>
+        )}
 
         {fresh.length > 0 && (
           <Fact label="It will be able to">
@@ -537,10 +597,10 @@ function Approval({
           </Fact>
         )}
 
-        {newGrants.length > 0 && (
+        {shownGrants.length > 0 && (
           <Fact label="It will also, because it sets these up">
             <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
-              {newGrants.map(grantRow)}
+              {shownGrants.map(grantRow)}
             </ul>
           </Fact>
         )}
@@ -622,16 +682,20 @@ function Approval({
         <Separator />
 
         {failure && (
-          <Problem title="Setting up stopped part way">
-            <p>
-              {setup[failure.row]
-                ? `${setupTitle(setup[failure.row], setup)}: `
-                : ""}
-              {failure.message}
-            </p>
-            <p>
-              What was set up before it stays. Try again to finish the rest.
-            </p>
+          <Problem
+            title={
+              failedRow
+                ? "Setting up stopped part way"
+                : "Approving didn’t finish"
+            }
+          >
+            {failedRow && <p>Stopped at: {setupTitle(failedRow, setup)}</p>}
+            <p>{asSentence(failure.message)}</p>
+            {setup.some((r) => needsAction(r.action)) && (
+              <p>
+                What was set up before it stays. Try again to finish the rest.
+              </p>
+            )}
           </Problem>
         )}
         {moved && (
@@ -663,13 +727,23 @@ function Approval({
             {NOT_A_WEB_PAGE}
           </Problem>
         )}
+        {/* One live region, there from the first render: a region inserted
+            already filled is not announced, and the rows' progress is
+            outside it. The visible lines repeat it for the eye alone. */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {leaving
+            ? "Taking you back to the app…"
+            : settingUp && !gone
+              ? [SETTING_UP, steps].filter(Boolean).join(" ")
+              : ""}
+        </p>
         {settingUp && !gone && (
           <p
-            role="status"
+            aria-hidden
             className="flex items-center gap-2 text-sm text-muted-foreground"
           >
             <Spinner aria-hidden role={undefined} />
-            Setting up on your server. Closing this page does not stop it.
+            {SETTING_UP}
           </p>
         )}
         {settingUp && readError !== undefined && !gone && (
@@ -678,7 +752,7 @@ function Approval({
           </p>
         )}
         {leaving && (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p aria-hidden className="text-sm text-muted-foreground">
             Taking you back to the app…
           </p>
         )}
@@ -718,7 +792,9 @@ function Approval({
           )}
           {reauth && !settled && (
             <p className="text-right text-xs text-muted-foreground">
-              If you deny, the access you approved before keeps working.
+              {live
+                ? "If you deny, the access you approved before keeps working."
+                : "Its earlier access has ended; denying leaves it without access."}
             </p>
           )}
           {!settled && (
@@ -847,11 +923,12 @@ function AuthorizeDoor() {
 }
 
 /** The page reads and writes the console's one Technical details switch, so
- * it mounts the preferences the shell would; it renders outside the shell. */
+ * it mounts the preferences the shell would; it renders outside the shell,
+ * so without its sidebar. */
 export function AuthorizePage() {
   useDocumentTitle("Authorize an app")
   return (
-    <ConsolePreferencesProvider>
+    <ConsolePreferencesProvider sidebar={false}>
       <AuthorizeDoor />
     </ConsolePreferencesProvider>
   )

@@ -170,8 +170,9 @@ function agentsPhrase(scope: SentenceScope, shape: PatternShape): string {
 /** A scope as the everyday sentence the approval page shows beside its
  * checkbox: what the app may do, over the kinds or the agents it reaches by
  * their labels. Every power stays in the words: a write may delete, a glob
- * reaches what is added later, talking to an agent reads every chat with
- * it, and a decision may edit the change it applies. */
+ * reaches what is added later, talking to an agent reaches whatever the
+ * agent may do and reads every chat with it, and a decision may edit the
+ * change it applies. */
 export function scopeSentence(scope: SentenceScope): string {
   const shape = patternShape(scope.pattern)
   switch (scope.verb) {
@@ -189,7 +190,8 @@ export function scopeSentence(scope: SentenceScope): string {
       const one = !scope.glob
       const who =
         shape.shape === "all" ? "all your agents" : agentsPhrase(scope, shape)
-      return `Talk to ${who}${later}; read every chat with ${one ? "it" : "them"}, yours included, and rename or stop any of those chats`
+      const them = one ? "it" : "them"
+      return `Talk to ${who}${later}, and through a chat have ${them} do anything ${one ? "it" : "they"} may do; read every chat with ${them}, yours included, answer ${one ? "its" : "their"} questions, and rename or stop any of those chats`
     }
     case "decide": {
       const later = scope.glob ? ", including agents added later" : ""
@@ -203,10 +205,13 @@ export function scopeSentence(scope: SentenceScope): string {
 
 /** What a `webhook` detail lets the app do once it is set up: deliver with
  * its own token, for any account the package's callable accepts, and read
- * the deliveries that could not be filed. `packageName` is the catalog name
- * of the package whose trigger it is, where the page knows it. */
+ * every delivery to the trigger that could not be filed, whoever sent it.
+ * `packageName` is the catalog name of the package whose trigger it is,
+ * where the page knows it. */
 export function webhookSentence(trigger: string, packageName?: string): string {
+  const parked =
+    "and see every delivery to it that could not be filed, whoever sent it"
   if (!packageName)
-    return `Send data to your repository through the ${trigger} webhook, and see which deliveries could not be filed`
-  return `Send data to your repository through the ${packageName} webhook, for any ${packageName} account, and see which deliveries could not be filed`
+    return `Send data to your repository through the ${trigger} webhook, ${parked}`
+  return `Send data to your repository through the ${packageName} webhook, for any ${packageName} account, ${parked}`
 }

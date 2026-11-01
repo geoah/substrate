@@ -30,12 +30,15 @@ import type {
 } from "@/lib/api/types"
 import {
   accountName,
+  asSentence,
   chainWords,
   codeWords,
   consolePath,
+  problemWords,
   propertyLabel,
   propertyValue,
   setupTitle,
+  webhookTriggers,
 } from "@/lib/app-setup"
 import { cn } from "@/lib/utils"
 
@@ -207,7 +210,15 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
   )
 }
 
-function AccountFacts({ account }: { account: AuthorizationAccount }) {
+/** The account by kind and id; the values it is created with where
+ * approving creates it, since one in place is never written. */
+function AccountFacts({
+  account,
+  inPlace,
+}: {
+  account: AuthorizationAccount
+  inPlace: boolean
+}) {
   return (
     <Facts>
       <Term name="Kind">
@@ -216,11 +227,12 @@ function AccountFacts({ account }: { account: AuthorizationAccount }) {
       <Term name="Id">
         <Mono>{account.id}</Mono>
       </Term>
-      {Object.entries(account.properties ?? {}).map(([key, value]) => (
-        <Term key={key} name={key}>
-          <Mono>{JSON.stringify(value)}</Mono>
-        </Term>
-      ))}
+      {!inPlace &&
+        Object.entries(account.properties ?? {}).map(([key, value]) => (
+          <Term key={key} name={key}>
+            <Mono>{JSON.stringify(value)}</Mono>
+          </Term>
+        ))}
     </Facts>
   )
 }
@@ -282,8 +294,14 @@ export function SetupRow({
   const title = setupTitle(row, rows)
   const status = statusWords(row.action, progress)
   const fix = consolePath(row.fix)
-  const code = row.package && codeWords(row.package)
+  const code = row.package && codeWords(row.package, webhookTriggers(rows))
   const chain = row.package && chainWords(row.package)
+  const inPlace = row.action === "none"
+  // The everyday view words a block itself where the versions say what it
+  // is; the technical view keeps the server's own sentence.
+  const problem = technical
+    ? row.problem && asSentence(row.problem)
+    : problemWords(row)
   return (
     <li aria-label={title} className="flex gap-3 px-3 py-3">
       <RowIcon action={row.action} progress={progress} />
@@ -301,10 +319,17 @@ export function SetupRow({
         )}
         {code && <p className="text-xs">{code}</p>}
         {chain && <p className="text-xs">{chain}</p>}
-        {row.account && <AccountValues account={row.account} />}
+        {row.account &&
+          (inPlace ? (
+            <p className="text-xs text-muted-foreground">
+              Your existing account stays as it is.
+            </p>
+          ) : (
+            <AccountValues account={row.account} />
+          ))}
         {row.action === "blocked" && (
           <div className="flex flex-col gap-0.5 text-xs">
-            {row.problem && <p className="text-destructive">{row.problem}</p>}
+            {problem && <p className="text-destructive">{problem}</p>}
             {fix && (
               <a
                 href={fix}
@@ -318,11 +343,15 @@ export function SetupRow({
             )}
           </div>
         )}
-        {failure && <p className="text-xs text-destructive">{failure}</p>}
+        {failure && (
+          <p className="text-xs text-destructive">{asSentence(failure)}</p>
+        )}
         {technical && (
           <div className="pt-1">
             {row.package && <PackageFacts pkg={row.package} />}
-            {row.account && <AccountFacts account={row.account} />}
+            {row.account && (
+              <AccountFacts account={row.account} inPlace={inPlace} />
+            )}
             {row.webhook && <WebhookFacts webhook={row.webhook} />}
           </div>
         )}

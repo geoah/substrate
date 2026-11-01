@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { AuthorizationScope, AuthorizationSetup } from "@/lib/api/types"
 
 import {
+  asSentence,
   packageName,
   chainWords,
   codeWords,
@@ -10,11 +11,16 @@ import {
   lifetimeEnd,
   needsAction,
   planChanges,
+  problemWords,
+  progressWords,
   propertyLabel,
   propertyValue,
   reauthorizationHeading,
   setupTitle,
+  shownProgress,
   splitByPrevious,
+  stillHeld,
+  webhookTriggers,
 } from "./app-setup"
 
 const HEALTH: AuthorizationSetup = {
@@ -120,8 +126,10 @@ describe("setupTitle", () => {
         ROWS
       )
     ).toBe("Apple is installed")
+    // An account in place is never written, so the name the app asked for
+    // is not the one to show.
     expect(setupTitle({ ...ACCOUNT, action: "none" }, ROWS)).toBe(
-      "The Apple Health account “Ada's iPhone” is in place"
+      "The Apple Health account this app uses is in place"
     )
     expect(setupTitle({ ...WEBHOOK, action: "none" }, ROWS)).toBe(
       "The Apple Health webhook is on"
@@ -141,6 +149,24 @@ describe("the package's words", () => {
       })
     ).toBe("Runs code on your server.")
     expect(codeWords({ ...HEALTH.package!, functions: [] })).toBeUndefined()
+  })
+
+  it("says code runs each time data arrives when the request turns its webhook on", () => {
+    expect(webhookTriggers(ROWS)).toEqual(["applehealth-webhook"])
+    expect(codeWords(HEALTH.package!, webhookTriggers(ROWS))).toBe(
+      "Runs code on your server, automatically, each time data arrives."
+    )
+    expect(
+      codeWords(
+        {
+          ...HEALTH.package!,
+          triggers: [
+            { id: "applehealth-webhook", webhook: true, enabled: false },
+          ],
+        },
+        ["applehealth-webhook"]
+      )
+    ).toBe("Runs code on your server, automatically, each time data arrives.")
   })
 
   it("names what an install brings first, and leaves out what is in place", () => {
@@ -163,6 +189,65 @@ describe("the account's values", () => {
   })
 })
 
+describe("a blocked row's problem", () => {
+  const floor: AuthorizationSetup = {
+    ...HEALTH,
+    action: "blocked",
+    package: { ...HEALTH.package!, name: "Apple", shipped: 3, required: 4 },
+    problem:
+      "this server ships version 3 of providers.substrate.reamde.dev/apple, and the app needs version 4: the server needs an update",
+  }
+
+  it("says a catalog below the app's floor in the owner's words", () => {
+    expect(problemWords(floor)).toBe(
+      "Your server can install Apple up to version 3; this app needs version 4. The server needs an update first."
+    )
+    expect(
+      problemWords({
+        ...HEALTH,
+        action: "blocked",
+        package: {
+          ...HEALTH.package!,
+          requires: [
+            {
+              id: "substrate.reamde.dev/health",
+              name: "Health",
+              action: "blocked",
+              held: 0,
+              shipped: 1,
+            },
+          ],
+        },
+        problem:
+          "this server ships version 1 of substrate.reamde.dev/health, which providers.substrate.reamde.dev/applehealth needs at version 2: the server needs an update",
+      })
+    ).toBe(
+      "Your server can install Health up to version 1, and Apple Health needs a later one. The server needs an update first."
+    )
+  })
+
+  it("keeps the server's sentence for any other block, as a sentence", () => {
+    // A quarantined package links to its page, so the versions are not why.
+    expect(
+      problemWords({
+        ...floor,
+        fix: "/providers/x",
+        problem: "providers.substrate.reamde.dev/apple is quarantined: bad",
+      })
+    ).toBe("Providers.substrate.reamde.dev/apple is quarantined: bad.")
+    expect(
+      problemWords({
+        ...WEBHOOK,
+        action: "blocked",
+        problem: "the trigger's function is not Apple Health's",
+      })
+    ).toBe("The trigger's function is not Apple Health's.")
+    expect(asSentence("try again shortly")).toBe("Try again shortly.")
+    expect(asSentence("Done!")).toBe("Done!")
+    expect(asSentence("")).toBe("")
+  })
+})
+
 describe("needsAction", () => {
   it("is true for what approving runs, never for a row in place or blocked", () => {
     for (const a of ["install", "upgrade", "create", "arm"] as const)
@@ -174,6 +259,24 @@ describe("needsAction", () => {
 
 describe("re-authorization", () => {
   const scope = (s: string) => ({ scope: s }) as AuthorizationScope
+
+  it("holds access only until it ends", () => {
+    const now = Date.parse("2026-11-01T12:00:00Z")
+    const approvedAt = "2026-10-01T00:00:00Z"
+    expect(stillHeld({ approvedAt, scopes: [] }, now)).toBe(true)
+    expect(
+      stillHeld(
+        { approvedAt, expiresAt: "2026-11-02T00:00:00Z", scopes: [] },
+        now
+      )
+    ).toBe(true)
+    expect(
+      stillHeld(
+        { approvedAt, expiresAt: "2026-10-31T09:00:00Z", scopes: [] },
+        now
+      )
+    ).toBe(false)
+  })
 
   it("splits the scopes the app holds from the new ones", () => {
     const split = splitByPrevious([scope("read:*"), scope("decide:*")], {
@@ -203,7 +306,7 @@ describe("planChanges", () => {
       {
         ...WEBHOOK,
         action: "blocked",
-        problem: "The trigger's function is not Apple Health's.",
+        problem: "the trigger's function is not Apple Health's",
       },
     ]
     expect(planChanges(ROWS, after)).toEqual([
@@ -211,6 +314,33 @@ describe("planChanges", () => {
       "Turn on the Apple Health webhook: can’t be done now. The trigger's function is not Apple Health's.",
     ])
     expect(planChanges(ROWS, ROWS)).toEqual([])
+  })
+})
+
+describe("progress", () => {
+  it("shows a run's progress while it runs, and once it stopped only what landed and where it stopped", () => {
+    expect(shownProgress("setting-up", "install", "waiting")).toBe("waiting")
+    expect(shownProgress("setting-up", "none", "done")).toBe("done")
+    expect(shownProgress("approved", "none", "done")).toBe("done")
+    // Pending again: nothing runs, so nothing waits.
+    expect(shownProgress("pending", "arm", "waiting")).toBeUndefined()
+    expect(shownProgress("pending", "arm", "running")).toBeUndefined()
+    expect(shownProgress("pending", "none", "done")).toBe("done")
+    expect(shownProgress("pending", "create", "failed")).toBe("failed")
+    // Stopped once, and in place since: it is in place.
+    expect(shownProgress("pending", "none", "failed")).toBeUndefined()
+    expect(shownProgress("pending", "create", undefined)).toBeUndefined()
+  })
+
+  it("says which row a run is on and how many of its rows are done", () => {
+    expect(progressWords(ROWS, ["done", "running", "waiting"], [0, 1, 2])).toBe(
+      "Create the Apple Health account “Ada's iPhone”: step 2 of 3"
+    )
+    expect(progressWords(ROWS, ["done", "done", "waiting"], [0, 1, 2])).toBe(
+      "2 of 3 done"
+    )
+    expect(progressWords(ROWS, undefined, [0])).toBeUndefined()
+    expect(progressWords(ROWS, ["done"], [])).toBeUndefined()
   })
 })
 

@@ -10,10 +10,12 @@ import type {
   AuthorizationPrevious,
   AuthorizationScope,
   AuthorizationSetup,
+  AuthorizationState,
   SetupAction,
+  SetupProgress,
 } from "@/lib/api/types"
 import { displayName, lowerFirst, packageDisplayName } from "@/lib/kind-names"
-import { listWords } from "@/lib/tools"
+import { listWords, sentence } from "@/lib/tools"
 
 /** Whether approving does something for this action; `none` is in place and
  * `blocked` cannot run. */
@@ -91,10 +93,11 @@ export function setupTitle(
     return `Install ${name}`
   }
   if (row.account) {
-    const what = `${accountWords(row.account, rows)} “${accountName(row.account)}”`
-    return row.action === "none"
-      ? `The ${what} is in place`
-      : `Create the ${what}`
+    // An account in place is never written, so the name the app asked for
+    // may not be the one it holds.
+    if (row.action === "none")
+      return `The ${accountWords(row.account, rows)} this app uses is in place`
+    return `Create the ${accountWords(row.account, rows)} “${accountName(row.account)}”`
   }
   if (row.webhook) {
     const what = row.webhook.package
@@ -105,12 +108,25 @@ export function setupTitle(
   return row.type
 }
 
+/** The triggers a request leaves on: every webhook it names, armed by
+ * approving or on already. */
+export function webhookTriggers(rows: readonly AuthorizationSetup[]): string[] {
+  return rows.flatMap((r) => (r.webhook ? [r.webhook.trigger] : []))
+}
+
 /** Whether a package ships code, and whether any of it starts on its own: an
- * enabled trigger that is not a webhook runs once the package is installed. */
-export function codeWords(pkg: AuthorizationPackage): string | undefined {
+ * enabled trigger that is not a webhook runs once the package is installed,
+ * and a webhook trigger the request leaves on runs on every delivery the app
+ * sends. `webhooks` are the triggers the request names. */
+export function codeWords(
+  pkg: AuthorizationPackage,
+  webhooks: readonly string[] = []
+): string | undefined {
   if (!pkg.functions?.length) return undefined
-  const automatic = pkg.triggers?.some((t) => t.enabled && !t.webhook)
-  return automatic
+  const triggers = pkg.triggers ?? []
+  if (triggers.some((t) => t.webhook && webhooks.includes(t.id)))
+    return "Runs code on your server, automatically, each time data arrives."
+  return triggers.some((t) => t.enabled && !t.webhook)
     ? "Runs code on your server, automatically."
     : "Runs code on your server."
 }
@@ -129,6 +145,30 @@ export function chainWords(pkg: AuthorizationPackage): string | undefined {
     updates.length > 0 ? `updates ${listWords(updates)}` : "",
   ].filter(Boolean)
   return parts.length > 0 ? `Also ${parts.join(" and ")}.` : undefined
+}
+
+/** Text the server wrote, as a sentence: its first letter up and its end
+ * stopped. */
+export function asSentence(text: string): string {
+  const t = sentence(text)
+  return !t || /[.!?…]$/.test(t) ? t : `${t}.`
+}
+
+/** Why a blocked row cannot run, in the owner's words. A package the
+ * catalog ships below the app's floor, itself or a requirement, says so from
+ * its versions; every other block is the server's own sentence. The server
+ * links every other package block to a page, so a floor block is the one
+ * without a fix. */
+export function problemWords(row: AuthorizationSetup): string | undefined {
+  const pkg = row.package
+  if (row.action === "blocked" && pkg && !row.fix) {
+    if (pkg.shipped > 0 && pkg.shipped < pkg.required)
+      return `Your server can install ${packageName(pkg)} up to version ${pkg.shipped}; this app needs version ${pkg.required}. The server needs an update first.`
+    const step = pkg.requires?.find((s) => s.action === "blocked")
+    if (step && step.shipped > 0)
+      return `Your server can install ${packageName(step)} up to version ${step.shipped}, and ${packageName(pkg)} needs a later one. The server needs an update first.`
+  }
+  return row.problem ? asSentence(row.problem) : undefined
 }
 
 /** A property name as a label: `displayName` → "Display name". */
@@ -150,6 +190,15 @@ export function propertyValue(value: unknown): string {
   if (Array.isArray(value) && value.every((v) => typeof v !== "object"))
     return value.map((v) => propertyValue(v)).join(", ")
   return JSON.stringify(value)
+}
+
+/** Whether the app's newest token still opens the repository: one that
+ * ended holds nothing, whatever scopes it carried. */
+export function stillHeld(
+  previous: AuthorizationPrevious,
+  now: number = Date.now()
+): boolean {
+  return !previous.expiresAt || Date.parse(previous.expiresAt) > now
 }
 
 /** The scopes the app asks for that the token it holds does not carry, and
@@ -190,10 +239,39 @@ export function planChanges(
     if (before[i]?.action === row.action) return []
     const title = setupTitle(row, after)
     if (row.action !== "blocked") return [title]
-    return [
-      `${title}: can’t be done now${row.problem ? `. ${row.problem}` : ""}`,
-    ]
+    const problem = problemWords(row)
+    return [`${title}: can’t be done now${problem ? `. ${problem}` : ""}`]
   })
+}
+
+/** A row's progress as the page shows it. Once the request is pending again
+ * nothing runs, so a row left waiting or running says nothing, and a row
+ * that stopped and is in place since says it is in place; what landed stays
+ * ticked. */
+export function shownProgress(
+  state: AuthorizationState,
+  action: SetupAction,
+  progress: SetupProgress | undefined
+): SetupProgress | undefined {
+  if (state !== "pending") return progress
+  if (progress === "done") return progress
+  if (progress === "failed" && action !== "none") return progress
+  return undefined
+}
+
+/** How far a set up got, for the page's live region: the row it is on, or
+ * how many of the rows it runs are done. `runs` are the rows' indices. */
+export function progressWords(
+  rows: readonly AuthorizationSetup[],
+  progress: readonly SetupProgress[] | undefined,
+  runs: readonly number[]
+): string | undefined {
+  if (!progress || runs.length === 0) return undefined
+  const done = runs.filter((i) => progress[i] === "done").length
+  const at = runs.find((i) => progress[i] === "running")
+  if (at !== undefined && rows[at])
+    return `${setupTitle(rows[at], rows)}: step ${done + 1} of ${runs.length}`
+  return `${done} of ${runs.length} done`
 }
 
 const MONTHS = [

@@ -216,7 +216,9 @@ const SYNC = {
 }
 const ACCOUNTS_WORDS = "See your Apple Health accounts"
 const WEBHOOK_WORDS =
-  "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see which deliveries could not be filed"
+  "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it"
+const SETTING_UP =
+  "Setting up on your server. Closing this page does not stop it."
 
 const APPROVED =
   "https://callback.example.net/oauth/callback?code=c0de&state=s&iss=https%3A%2F%2Fsubstrate.example.com"
@@ -249,21 +251,10 @@ describe("AuthorizePage", () => {
   const assign = vi.fn()
   /** What each route answers; a test overrides one to change the story. */
   let answers: Record<string, () => Response>
+  /** What any other address answers, where a test needs more than absence. */
+  let elsewhere: (url: string, init?: RequestInit) => Response | undefined
 
   beforeEach(() => {
-    // The preferences provider's sidebar asks whether the viewport is a
-    // phone; jsdom implements no media queries.
-    window.matchMedia = (media: string) =>
-      ({
-        media,
-        matches: false,
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      }) as MediaQueryList
     vi.stubGlobal("fetch", fetchMock)
     // jsdom's Location is unforgeable, so the page's navigation is observed
     // through a stand-in.
@@ -276,14 +267,19 @@ describe("AuthorizePage", () => {
       POST: () => jsonResponse(200, { redirect: APPROVED }),
       DELETE: () => jsonResponse(200, { redirect: DENIED }),
     }
+    elsewhere = () => undefined
     fetchMock.mockImplementation(async (url, init) => {
       const method = init?.method ?? "GET"
       // Everything else the page reads (the preference record, the kind
-      // registry) is absent here, which the console treats as defaults.
+      // registry) is absent unless a test says otherwise, which the console
+      // treats as defaults.
       if (String(url) !== PATH)
-        return jsonResponse(404, {
-          error: { code: "not_found", message: "not found" },
-        })
+        return (
+          elsewhere(String(url), init) ??
+          jsonResponse(404, {
+            error: { code: "not_found", message: "not found" },
+          })
+        )
       return answers[method]()
     })
   })
@@ -530,8 +526,10 @@ describe("AuthorizePage", () => {
       answers.GET = () =>
         jsonResponse(200, { ...REQUEST, scopes: [agents, decide, nobody] })
       renderPage({ technical })
+      // Talking reaches whatever the agents may do, and the sentence says so
+      // in both views.
       const talk = await screen.findByRole("checkbox", {
-        name: "Talk to Substrate editor, including agents added later; read every chat with them, yours included, and rename or stop any of those chats",
+        name: "Talk to Substrate editor, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats",
       })
       expect(
         screen.getByRole("checkbox", {
@@ -788,8 +786,12 @@ describe("AuthorizePage", () => {
         "Keeps a copy of the Health data your iPhone sends."
       )
     ).toBeTruthy()
+    // Its webhook is turned on by this request, so its code runs on every
+    // delivery.
     expect(
-      within(install).getByText("Runs code on your server, automatically.")
+      within(install).getByText(
+        "Runs code on your server, automatically, each time data arrives."
+      )
     ).toBeTruthy()
     expect(within(install).getByText("Also installs Health.")).toBeTruthy()
     const account = within(setup).getByRole("listitem", {
@@ -878,8 +880,7 @@ describe("AuthorizePage", () => {
       const blocked = {
         ...INSTALL,
         action: "blocked",
-        problem:
-          "This server ships version 4 of Apple Health, the app needs 5: update the server.",
+        problem: `upgrading ${APPLEHEALTH} would change records in a way its provider page asks you to confirm first`,
         fix: "/providers/applehealth",
       }
       answers.GET = () =>
@@ -888,9 +889,11 @@ describe("AuthorizePage", () => {
       const row = await screen.findByRole("listitem", {
         name: "Install Apple Health",
       })
+      // The server's sentence may start lower case; the page writes it as
+      // a sentence.
       expect(
         within(row).getByText(
-          "This server ships version 4 of Apple Health, the app needs 5: update the server."
+          `Upgrading ${APPLEHEALTH} would change records in a way its provider page asks you to confirm first.`
         )
       ).toBeTruthy()
       expect(
@@ -913,17 +916,74 @@ describe("AuthorizePage", () => {
     }
   )
 
+  it.each(MODES)(
+    "says a server whose catalog is too old needs an update, in words, and the server's own sentence technically, $name",
+    async ({ technical }) => {
+      const floor = {
+        ...INSTALL,
+        action: "blocked",
+        package: { ...INSTALL.package, shipped: 4 },
+        problem: `this server ships version 4 of ${APPLEHEALTH}, and the app needs version 5: the server needs an update`,
+      }
+      answers.GET = () =>
+        jsonResponse(200, { ...SYNC, setup: [floor, CREATE, ARM] })
+      renderPage({ technical })
+      const row = await screen.findByRole("listitem", {
+        name: "Install Apple Health",
+      })
+      const words =
+        "Your server can install Apple Health up to version 4; this app needs version 5. The server needs an update first."
+      const server = `This server ships version 4 of ${APPLEHEALTH}, and the app needs version 5: the server needs an update.`
+      expect(within(row).queryByText(words) !== null).toBe(!technical)
+      expect(within(row).queryByText(server) !== null).toBe(technical)
+      expect(within(row).queryByRole("link")).toBeNull()
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", {
+          name: "Approve and set up",
+        }).disabled
+      ).toBe(true)
+    }
+  )
+
+  it.each(MODES)(
+    "never shows what the app asked for as the values of an account already in place, $name",
+    async ({ technical }) => {
+      answers.GET = () =>
+        jsonResponse(200, {
+          ...SYNC,
+          setup: [INSTALL, { ...CREATE, action: "none" }, ARM],
+        })
+      renderPage({ technical })
+      const account = await screen.findByRole("listitem", {
+        name: "The Apple Health account this app uses is in place",
+      })
+      expect(account.textContent).toContain(
+        "Your existing account stays as it is."
+      )
+      expect(within(account).queryByText("Ada's iPhone")).toBeNull()
+      expect(within(account).queryByText(/Europe\/London/)).toBeNull()
+      expect(
+        within(account).queryByText("substrate-sync-1a2b3c4d") !== null
+      ).toBe(technical)
+    }
+  )
+
   it("approves and sets up, follows the set up every second, then goes to the app", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     answers.GET = () => jsonResponse(200, SYNC)
     answers.POST = () => jsonResponse(202, { state: "setting-up" })
     renderPage()
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Approve and set up" })
-    )
-    await screen.findByText(
-      "Setting up on your server. Closing this page does not stop it."
-    )
+    const approve = await screen.findByRole("button", {
+      name: "Approve and set up",
+    })
+    // The live region is there before anything happens, so what is written
+    // into it later is announced.
+    const live = screen.getByRole("status")
+    expect(live.textContent).toBe("")
+    fireEvent.click(approve)
+    await screen.findByText(SETTING_UP)
+    expect(screen.getByRole("status")).toBe(live)
+    expect(live.textContent).toContain("Setting up on your server.")
     expect(body("POST")).toEqual({
       scopes: [ACCOUNTS.scope],
       lifetimeDays: 30,
@@ -950,6 +1010,17 @@ describe("AuthorizePage", () => {
         name: "Create the Apple Health account “Ada's iPhone”",
       }).textContent
     ).toContain("Setting up")
+    // The landed package still reads as part of the set up, and the
+    // warnings about it stay.
+    expect(screen.getByText("Your automations run on its changes")).toBeTruthy()
+    expect(
+      screen.getByText("If you stop part way, what was installed stays.")
+    ).toBeTruthy()
+    await waitFor(() =>
+      expect(live.textContent).toContain(
+        "Create the Apple Health account “Ada's iPhone”: step 2 of 3"
+      )
+    )
     expect(assign).not.toHaveBeenCalled()
 
     answers.GET = () =>
@@ -961,7 +1032,7 @@ describe("AuthorizePage", () => {
       })
     await vi.advanceTimersByTimeAsync(1000)
     await waitFor(() => expect(assign).toHaveBeenCalledWith(NEXT))
-    expect(screen.getByText("Taking you back to the app…")).toBeTruthy()
+    expect(live.textContent).toBe("Taking you back to the app…")
     const reads = calls("GET").length
     await vi.advanceTimersByTimeAsync(3000)
     // Once approved, the page stops asking.
@@ -1005,18 +1076,26 @@ describe("AuthorizePage", () => {
     const alert = await screen.findByRole("alert")
     expect(alert.textContent).toContain("Setting up stopped part way")
     expect(alert.textContent).toContain(
-      "Create the Apple Health account “Ada's iPhone”: the account kind refused timezone"
+      "Stopped at: Create the Apple Health account “Ada's iPhone”"
     )
-    expect(alert.textContent).toContain("What was set up before it stays.")
+    expect(alert.textContent).toContain("The account kind refused timezone.")
+    expect(alert.textContent).toContain(
+      "What was set up before it stays. Try again to finish the rest."
+    )
     const account = screen.getByRole("listitem", {
       name: "Create the Apple Health account “Ada's iPhone”",
     })
     expect(account.textContent).toContain("Stopped")
-    expect(account.textContent).toContain("the account kind refused timezone")
+    expect(account.textContent).toContain("The account kind refused timezone.")
     expect(
       screen.getByRole("listitem", { name: "Apple Health is installed" })
         .textContent
     ).toContain("Done")
+    // Nothing runs once it stopped, so nothing reads as waiting.
+    expect(
+      screen.getByRole("listitem", { name: "Turn on the Apple Health webhook" })
+        .textContent
+    ).not.toContain("Waiting")
 
     answers.POST = () => jsonResponse(200, { redirect: NEXT })
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
@@ -1024,8 +1103,9 @@ describe("AuthorizePage", () => {
     expect(body("POST", 1).planHash).toBe("plan-2")
   })
 
-  it("reads the request again when its plan moved, says what changed, and approves the new plan", async () => {
-    answers.GET = () => jsonResponse(200, SYNC)
+  it("reads the request again when its plan moved, says what changed, and approves the new plan with the choices made", async () => {
+    answers.GET = () =>
+      jsonResponse(200, { ...SYNC, scopes: [ACCOUNTS, NOTES] })
     answers.POST = () =>
       jsonResponse(409, {
         error: {
@@ -1037,9 +1117,11 @@ describe("AuthorizePage", () => {
     const approve = await screen.findByRole("button", {
       name: "Approve and set up",
     })
+    fireEvent.click(screen.getByRole("checkbox", { name: NOTES_WORDS }))
     answers.GET = () =>
       jsonResponse(200, {
         ...SYNC,
+        scopes: [ACCOUNTS, NOTES],
         setup: [{ ...INSTALL, action: "none" }, CREATE, ARM],
         planHash: "plan-2",
       })
@@ -1055,16 +1137,165 @@ describe("AuthorizePage", () => {
 
     answers.POST = () => jsonResponse(202, { state: "setting-up" })
     fireEvent.click(screen.getByRole("button", { name: "Approve and set up" }))
-    await screen.findByText(
-      "Setting up on your server. Closing this page does not stop it."
+    await screen.findByText(SETTING_UP)
+    expect(body("POST", 1)).toEqual({
+      scopes: [ACCOUNTS.scope],
+      lifetimeDays: 30,
+      planHash: "plan-2",
+    })
+  })
+
+  it("follows a set up another answer started when its approval meets one", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    answers.GET = () => jsonResponse(200, SYNC)
+    answers.POST = () =>
+      jsonResponse(409, {
+        error: { code: "conflict", message: "the request is being set up" },
+      })
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...SYNC,
+        state: "setting-up",
+        progress: ["running", "waiting", "waiting"],
+      })
+    fireEvent.click(approve)
+    await screen.findByText(SETTING_UP)
+    expect(
+      screen.queryByText("What it sets up changed since this page was read")
+    ).toBeNull()
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(approve.disabled).toBe(true)
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Deny" }).disabled
+    ).toBe(true)
+
+    const reads = calls("GET").length
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...SYNC,
+        state: "approved",
+        progress: ["done", "done", "done"],
+        next: NEXT,
+      })
+    await vi.advanceTimersByTimeAsync(1000)
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(NEXT))
+    expect(calls("GET").length).toBeGreaterThan(reads)
+    expect(calls("POST")).toHaveLength(1)
+  })
+
+  it("stops following a set up whose request is gone, and says so", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    answers.GET = () => jsonResponse(200, SYNC)
+    answers.POST = () => jsonResponse(202, { state: "setting-up" })
+    renderPage()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Approve and set up" })
     )
-    expect(body("POST", 1).planHash).toBe("plan-2")
+    await screen.findByText(SETTING_UP)
+    answers.GET = () =>
+      jsonResponse(404, {
+        error: {
+          code: "not_found",
+          message: "authorization request not found",
+        },
+      })
+    await vi.advanceTimersByTimeAsync(1000)
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain(
+      "This request has expired or was already answered."
+    )
+    expect(screen.queryByText(SETTING_UP)).toBeNull()
+    const reads = calls("GET").length
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(calls("GET")).toHaveLength(reads)
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it("checks a blocked request again and approves the plan it reads then", async () => {
+    const blocked = {
+      ...INSTALL,
+      action: "blocked",
+      problem: `${APPLEHEALTH} is quarantined: a kind failed to load`,
+      fix: "/providers/applehealth",
+    }
+    answers.GET = () =>
+      jsonResponse(200, { ...SYNC, setup: [blocked, CREATE, ARM] })
+    answers.POST = () => jsonResponse(202, { state: "setting-up" })
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    expect(approve.disabled).toBe(true)
+    answers.GET = () => jsonResponse(200, { ...SYNC, planHash: "plan-2" })
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }))
+    await waitFor(() => expect(approve.disabled).toBe(false))
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull()
+    fireEvent.click(approve)
+    await screen.findByText(SETTING_UP)
+    expect(body("POST").planHash).toBe("plan-2")
+  })
+
+  it("says when approving stopped for the request as a whole, and offers the rest only while something is left", async () => {
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...SYNC,
+        progress: ["waiting", "waiting", "waiting"],
+        failure: {
+          row: -1,
+          message:
+            "another set up in this repository did not finish in time: try again",
+        },
+      })
+    renderPage()
+    let alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("Approving didn’t finish")
+    expect(alert.textContent).not.toContain("Stopped at")
+    expect(alert.textContent).toContain(
+      "Another set up in this repository did not finish in time: try again."
+    )
+    expect(alert.textContent).toContain("Try again to finish the rest.")
+    // Nothing runs while the request waits for an answer.
+    for (const row of within(
+      screen.getByRole("region", { name: "It will set up on your server" })
+    ).getAllByRole("listitem"))
+      expect(row.textContent).not.toContain("Waiting")
+
+    cleanup()
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...SYNC,
+        setup: [
+          { ...INSTALL, action: "none" },
+          { ...CREATE, action: "none" },
+          { ...ARM, action: "none" },
+        ],
+        progress: ["done", "done", "done"],
+        failure: {
+          row: -1,
+          message:
+            "everything is set up, and the server is holding too many authorization codes to issue one: try again shortly",
+        },
+      })
+    renderPage()
+    alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("Approving didn’t finish")
+    expect(alert.textContent).toContain(
+      "Everything is set up, and the server is holding too many authorization codes to issue one: try again shortly."
+    )
+    expect(alert.textContent).not.toContain("finish the rest")
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
   })
 
   describe("a re-authorization", () => {
+    // Access the app still holds: it ends a month from whenever the test
+    // runs.
     const previous = {
       approvedAt: "2026-10-01T09:00:00Z",
-      expiresAt: "2026-10-31T09:00:00Z",
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       scopes: [TASKS.scope],
     }
 
@@ -1173,7 +1404,237 @@ describe("AuthorizePage", () => {
         level: 1,
         name: "Allow more access and update server setup",
       })
+
+      // A renewal of an app that reads and delivers: each delivery runs
+      // code that writes, so the automation warning stays.
+      cleanup()
+      answers.GET = () =>
+        jsonResponse(200, {
+          ...SYNC,
+          setup: [
+            installed,
+            { ...CREATE, action: "none" },
+            { ...ARM, action: "none" },
+          ],
+          previous: {
+            ...previous,
+            scopes: [ACCOUNTS.scope, "webhook:applehealth-webhook"],
+          },
+        })
+      renderPage()
+      await screen.findByRole("heading", { level: 1, name: "Renew access" })
+      expect(
+        screen.getByText("Your automations run on its changes")
+      ).toBeTruthy()
     })
+
+    it.each(MODES)(
+      "asks for everything in full when the access it held has ended, $name",
+      async ({ technical }) => {
+        answers.GET = () =>
+          jsonResponse(200, {
+            ...REQUEST,
+            scopes: [TASKS],
+            previous: { ...previous, expiresAt: "2026-10-31T09:00:00Z" },
+          })
+        renderPage({ technical })
+        await screen.findByRole("heading", { level: 1, name: "Renew access" })
+        expect(screen.getByText(/that access ended on 31 October/)).toBeTruthy()
+        expect(screen.queryByText(/It asks for nothing new/)).toBeNull()
+        // Nothing is held, so nothing folds away checked.
+        expect(
+          screen.queryByRole("region", { name: "Already allowed" })
+        ).toBeNull()
+        const access = screen.getByRole("region", {
+          name: "It will be able to",
+        })
+        expect(
+          within(access).getByRole<HTMLInputElement>("checkbox", {
+            name: TASKS_WORDS,
+          }).checked
+        ).toBe(true)
+        expect(
+          screen.getByText(
+            "Its earlier access has ended; denying leaves it without access."
+          )
+        ).toBeTruthy()
+        expect(
+          screen.queryByText(
+            "If you deny, the access you approved before keeps working."
+          )
+        ).toBeNull()
+        expect(
+          screen.queryByRole("region", { name: "The access it held" }) !== null
+        ).toBe(technical)
+      }
+    )
+
+    it("keeps what a set up ran in place among what it sets up, through a stop and a retry", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const held = {
+        ...previous,
+        scopes: [ACCOUNTS.scope, "webhook:applehealth-webhook"],
+      }
+      answers.GET = () => jsonResponse(200, { ...SYNC, previous: held })
+      answers.POST = () => jsonResponse(202, { state: "setting-up" })
+      renderPage()
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Update server setup",
+      })
+      fireEvent.click(
+        screen.getByRole("button", { name: "Approve and set up" })
+      )
+      await screen.findByText(SETTING_UP)
+
+      const setupRows = () =>
+        within(
+          screen.getByRole("region", { name: "It will set up on your server" })
+        ).getAllByRole("listitem")
+      const folds = () =>
+        within(
+          screen.getByRole("region", { name: "Already allowed" })
+        ).getByRole("button").textContent
+
+      answers.GET = () =>
+        jsonResponse(200, {
+          ...SYNC,
+          previous: held,
+          setup: [{ ...INSTALL, action: "none" }, CREATE, ARM],
+          state: "setting-up",
+          progress: ["done", "running", "waiting"],
+        })
+      await vi.advanceTimersByTimeAsync(1000)
+      const install = await screen.findByRole("listitem", {
+        name: "Apple Health is installed",
+      })
+      await waitFor(() => expect(install.textContent).toContain("Done"))
+      expect(setupRows()).toHaveLength(3)
+      expect(folds()).toBe("Already allowed (2)")
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Update server setup" })
+      ).toBeTruthy()
+
+      answers.GET = () =>
+        jsonResponse(200, {
+          ...SYNC,
+          previous: held,
+          setup: [
+            { ...INSTALL, action: "none" },
+            { ...CREATE, action: "none" },
+            ARM,
+          ],
+          planHash: "plan-2",
+          state: "pending",
+          progress: ["done", "done", "failed"],
+          failure: { row: 2, message: "the trigger refused the key" },
+        })
+      await vi.advanceTimersByTimeAsync(1000)
+      const alert = await screen.findByRole("alert")
+      expect(alert.textContent).toContain("Setting up stopped part way")
+      expect(setupRows()).toHaveLength(3)
+      expect(
+        screen.getByRole("listitem", {
+          name: "The Apple Health account this app uses is in place",
+        }).textContent
+      ).toContain("Done")
+      expect(
+        screen.getByRole("listitem", {
+          name: "Turn on the Apple Health webhook",
+        }).textContent
+      ).toContain("Stopped")
+      expect(folds()).toBe("Already allowed (2)")
+
+      // Everything landed, and only the code could not be issued.
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+      await waitFor(() => expect(calls("POST")).toHaveLength(2))
+      expect(body("POST", 1).planHash).toBe("plan-2")
+      answers.GET = () =>
+        jsonResponse(200, {
+          ...SYNC,
+          previous: held,
+          setup: [
+            { ...INSTALL, action: "none" },
+            { ...CREATE, action: "none" },
+            { ...ARM, action: "none" },
+          ],
+          planHash: "plan-3",
+          state: "pending",
+          progress: ["done", "done", "done"],
+          failure: {
+            row: -1,
+            message:
+              "everything is set up, and the server is holding too many authorization codes to issue one: try again shortly",
+          },
+        })
+      await vi.advanceTimersByTimeAsync(1000)
+      await screen.findByText(/Approving didn’t finish/)
+      expect(setupRows()).toHaveLength(3)
+      for (const row of setupRows()) expect(row.textContent).toContain("Done")
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Update server setup" })
+      ).toBeTruthy()
+      expect(screen.queryByText(/It asks for nothing new/)).toBeNull()
+    })
+  })
+
+  it("keeps the browser's own Ctrl+B: the page has no sidebar to fold", async () => {
+    renderPage()
+    await screen.findByRole("heading", { level: 1, name: "notes.example.com" })
+    const key = new KeyboardEvent("keydown", {
+      key: "b",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    window.dispatchEvent(key)
+    expect(key.defaultPrevented).toBe(false)
+    expect(localStorage.getItem("substrate.console.sidebarOpen")).toBeNull()
+  })
+
+  it("saves the Technical details switch to the preference record where the repository declares it", async () => {
+    const RECORD =
+      "/api/v1/substrate.reamde.dev/core/consolepreference/navigation"
+    const puts: Array<Record<string, unknown>> = []
+    elsewhere = (url, init) => {
+      if (url.startsWith("/api/v1/records?"))
+        return jsonResponse(200, {
+          kinds: [
+            {
+              identity: "substrate.reamde.dev/core/consolepreference",
+              name: "consolepreference",
+              authority: "substrate.reamde.dev",
+              package: "core",
+              version: 2,
+              source: "builtin",
+              description: "",
+              definition: { properties: { technicalDetails: {} } },
+            },
+          ],
+        })
+      if (url !== RECORD) return undefined
+      if (init?.method === "PUT") {
+        const sent = JSON.parse(String(init.body)).properties
+        puts.push(sent)
+        return jsonResponse(200, {
+          id: "navigation",
+          kind: "substrate.reamde.dev/core/consolepreference",
+          version: puts.length,
+          properties: sent,
+        })
+      }
+      return undefined
+    }
+    renderPage()
+    const toggle = await screen.findByRole("switch", {
+      name: "Show technical details",
+    })
+    fireEvent.click(toggle)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0].technicalDetails).toBe(true)
+    expect(
+      await screen.findByText("https://notes.example.com/oauth/client.json")
+    ).toBeTruthy()
   })
 
   it("flips the console's one Technical details switch and keeps every choice made", async () => {
