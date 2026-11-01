@@ -51,10 +51,13 @@ public extension AppManifest {
         (status?.changes ?? []) + leftOut(by: session).map { Change(kind: .scope, words: scopeWords($0), leftOut: true) }
     }
 
-    /// The changes a check found against what the app holds, and what the
-    /// server itself lacks to make them: a package the catalog ships below
-    /// the version the app needs is a server update, not an approval.
-    func changes(from result: AuthorizationCheckResult, session: Session?) -> (changes: [Change], serverMissing: [String]) {
+    /// The changes a check found against what the app holds, and the package
+    /// rows the server itself cannot set up yet: one whose package, or a
+    /// package it needs first, the catalog ships below the version needed is
+    /// a server update, not an approval. Its words are what the row would do
+    /// and its detail the server's sentence, which says which of the two it
+    /// is.
+    func changes(from result: AuthorizationCheckResult, session: Session?) -> (changes: [Change], serverBlocked: [Change]) {
         let delivering = Dictionary(result.setup.compactMap { row in row.webhook.flatMap { w in w.package.map { (w.trigger, $0) } } }) { a, _ in a }
         var changes = result.missingScopes.map { Change(kind: .scope, words: scopeWords($0)) }
         // A webhook the token does not hold reads `unknown` in the check, so
@@ -66,12 +69,17 @@ public extension AppManifest {
                 return Change(kind: .scope, words: scopeWords("webhook:\(trigger)", package: delivering[trigger]))
             }
         }
-        var serverMissing: [String] = []
+        var serverBlocked: [Change] = []
         for (index, row) in result.setup.enumerated() {
             let detail = index < details.count ? details[index] : AuthorizationDetail(type: row.type)
             if let block = row.blocked {
                 if block.reason == AuthorizationSetup.Block.Reasons.serverUpdate, let package = row.package {
-                    serverMissing.append("install \(packageName(package.id)) version \(package.required) or later")
+                    let name = packageName(package.id)
+                    let upgrade = row.action == AuthorizationSetup.Actions.upgrade
+                    serverBlocked.append(Change(kind: upgrade ? .upgrade : .install,
+                                                words: upgrade ? "Update \(name) to version \(package.required) or later"
+                                                    : "Install \(name) version \(package.required) or later",
+                                                detail: block.problem.isEmpty ? nil : block.problem, block: block))
                 } else if var change = setupChange(detail, row: row) {
                     change.detail = block.problem.isEmpty ? change.detail : block.problem
                     change.block = block
@@ -83,7 +91,7 @@ public extension AppManifest {
             // `none` is in place, `unknown` is out of the token's sight, and
             // an action this kit does not know asks nothing either.
         }
-        return (changes, serverMissing)
+        return (changes, serverBlocked)
     }
 
     /// One setup row in words. `row` is the server's plan where a check gave

@@ -112,9 +112,9 @@ struct SignInView: View {
                 }
             }
 
-            if let unrevoked = model.unrevoked.first {
+            if !model.unrevoked.isEmpty {
                 Section {
-                    ProblemBox(title: "Server access has not been revoked yet", message: AppModel.unrevokedWords(unrevoked), tint: .orange)
+                    UnrevokedNotices(appName: SyncManifest.appName, unrevoked: model.unrevoked)
                 }
             }
 

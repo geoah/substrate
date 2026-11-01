@@ -140,3 +140,46 @@ func syncManifest() -> AppManifest {
             "providers.substrate.reamde.dev/applehealth/export": KindLabel(singular: "Delivery", plural: "Deliveries"),
         ])
 }
+
+/// The server's block sentences, as internal/appsetup/blocks.go words them:
+/// what an owner sees, so a fixture says it too.
+enum Blocks {
+    static let quarantined = "Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why."
+    static let notShipped = "This server does not offer this package, so approving cannot set it up."
+
+    /// The package's own row: the catalog ships it below the version needed.
+    static func serverUpdate(shipped: Int, need: Int) -> String {
+        "This server ships version \(shipped); the app needs version \(need). The server needs an update first."
+    }
+
+    /// The row of a package whose requirement the catalog ships too old.
+    static func serverUpdateFirst(need: Int, shipped: Int) -> String {
+        "It needs a package first at version \(need), and this server ships version \(shipped). The server needs an update first."
+    }
+}
+
+/// The labels and purposes Substrate Sync's manifest carries
+/// (SubstrateSync/Sources/App/Manifest.swift), so the gallery words a scope
+/// as the app does.
+let syncKindLabels: [String: KindLabel] = {
+    var labels = [
+        "providers.substrate.reamde.dev/applehealth/account": KindLabel(singular: "Account", plural: "Accounts"),
+        "providers.substrate.reamde.dev/applehealth/export": KindLabel(singular: "Delivery", plural: "Deliveries"),
+    ]
+    let apple: [(String, String, String, String?)] = [
+        ("addressbook", "Address book", "Address books", "supporting"),
+        ("contact", "Contact", "Contacts", nil),
+        ("eventstore", "Event store", "Event stores", "supporting"),
+        ("calendar", "Calendar", "Calendars", "supporting"),
+        ("event", "Event", "Events", nil),
+        ("reminderlist", "Reminders list", "Reminders lists", "supporting"),
+        ("reminder", "Reminder", "Reminders", nil),
+        ("visitstore", "Visit store", "Visit stores", "supporting"),
+        ("visit", "Visit", "Visits", nil),
+        ("share", "Share", "Shares", nil),
+    ]
+    for (name, singular, plural, purpose) in apple {
+        labels["providers.substrate.reamde.dev/apple/" + name] = KindLabel(singular: singular, plural: plural, purpose: purpose)
+    }
+    return labels
+}()

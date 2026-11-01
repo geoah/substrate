@@ -114,8 +114,7 @@ struct SettingsView: View {
             }
             .sheet(item: $keySheet) { ProviderKeySheet(provider: $0).environment(store) }
             .sheet(isPresented: $changingAccess) {
-                ReviewChangesSheet(appName: ChatManifest.appName, host: ServerAddress.display(store.session.server),
-                                   changes: model.reviewChanges, heading: .changeAccess,
+                ReviewChangesSheet(changingAccessFor: ChatManifest.manifest, session: store.session, changes: model.reviewChanges,
                                    onContinue: {
                                        changingAccess = false
                                        Task { await model.reauthorize() }

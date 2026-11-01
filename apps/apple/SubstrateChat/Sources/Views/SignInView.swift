@@ -6,13 +6,14 @@ import SubstrateKit
 /// browser, where the owner approves what Substrate Chat may do; one with no
 /// app authorization takes the repository, the password and, when it asks,
 /// a code; one whose app authorization cannot reach the agents says it
-/// needs an update.
+/// needs an update. Below the door, a token an earlier sign-in left that its
+/// server has not revoked yet, with where to revoke it by hand.
 struct SignInView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("signin.server") private var address = ""
 
     var body: some View {
-        ConnectView(manifest: ChatManifest.manifest, address: $address) {
+        ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: model.unrevoked) {
             // The app's own icon, drawn by scripts/icons.mjs like the AppIcon
             // set, light and dark.
             ConnectHeader(appName: ChatManifest.appName, tagline: "Talk to the agents in your substrate.",
@@ -201,13 +202,14 @@ struct NoChatAccessView: View {
         .padding(32)
         .frame(maxWidth: 440)
         .sheet(isPresented: $changingAccess) {
-            ReviewChangesSheet(appName: ChatManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your substrate",
-                               changes: model.reviewChanges, heading: .changeAccess,
-                               onContinue: {
-                                   changingAccess = false
-                                   Task { await model.reauthorize() }
-                               },
-                               onCancel: { changingAccess = false })
+            if let session = model.session {
+                ReviewChangesSheet(changingAccessFor: ChatManifest.manifest, session: session, changes: model.reviewChanges,
+                                   onContinue: {
+                                       changingAccess = false
+                                       Task { await model.reauthorize() }
+                                   },
+                                   onCancel: { changingAccess = false })
+            }
         }
     }
 }

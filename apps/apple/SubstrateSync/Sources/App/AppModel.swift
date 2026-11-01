@@ -14,7 +14,7 @@ struct SetupProblem: Equatable {
     let message: String
 }
 
-/// One thing Set up installs, imports, creates or arms.
+/// One thing Set up installs, imports, creates or turns on.
 struct SetupStep: Identifiable, Equatable {
     enum Kind: Equatable {
         case install(String)
@@ -59,6 +59,9 @@ final class AppModel: ObservableObject {
     /// Tokens this phone stopped using that the server has not revoked yet:
     /// each is tried again at every launch until it is.
     @Published private(set) var unrevoked: [Session] = []
+    /// Why the last sign-out did not happen: the token could be neither kept
+    /// to revoke later nor revoked, so the session stays.
+    @Published var signOutProblem: String?
     @Published var steps: [SetupStep] = []
     @Published var setupChecked = false
     @Published var setupBusy = false
@@ -235,20 +238,14 @@ final class AppModel: ObservableObject {
     /// repository: signed in to any other, or to this one again, what was
     /// pushed before is checked against the server rather than trusted (the
     /// run forgets it where the identity differs, and each source asks the
-    /// server what it still holds). Kept first: a sign-in the Keychain would
-    /// not hold is refused here, with the token it minted revoked, rather
-    /// than lost at next launch. The token it replaces is kept for
-    /// revocation before the save, since the save overwrites the only other
-    /// copy of its id, and revoked before anything else touches the network.
+    /// server what it still holds). Kept first, through the kit's store: the
+    /// token it replaces is kept for revocation before the save overwrites
+    /// the only other copy of it, or revoked first where the Keychain will
+    /// not keep it, and a sign-in the Keychain will not hold is refused here,
+    /// with the token it minted revoked, rather than lost at next launch. A
+    /// kept token is revoked before anything else touches the network.
     private func adopt(_ session: Session, replacing old: Session? = nil) async throws {
-        let kept = old.map { (try? SessionStore.sync.keepForRevocation($0)) != nil } ?? false
-        do {
-            try SessionStore.sync.save(session)
-        } catch {
-            if let old, kept { SessionStore.sync.revoked(old) }
-            Task.detached { try? await session.revoke(transport: Client.transport) }
-            throw error
-        }
+        try await SessionStore.sync.save(session, replacing: old, transport: Client.transport)
         await SyncEngine.shared.cancel()
         state = await SyncEngine.shared.update { s in
             if !s.isBound(to: session) {
@@ -259,13 +256,7 @@ final class AppModel: ObservableObject {
         self.session = session
         resetSetup()
         status.reset()
-        if let old {
-            if kept {
-                await revokeReplaced()
-            } else if (try? await old.revoke(transport: Client.transport)) == nil {
-                unrevoked = [old]
-            }
-        }
+        if old != nil { await revokeReplaced() }
         if session.isApp {
             await status.refresh(force: true)
         } else {
@@ -273,24 +264,31 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Signs out here at once. The token is kept for revocation before the
-    /// session is forgotten and revoked afterwards, so a server that is gone
-    /// never holds the owner on this screen, and one that does not answer now
-    /// is asked again at the next launch.
+    /// Signs out here. The token is kept for revocation before the session
+    /// is forgotten and revoked afterwards, so a server that is gone never
+    /// holds the owner on this screen, and one that does not answer now is
+    /// asked again at the next launch. Where the Keychain will not keep it,
+    /// it is revoked first, and one neither kept nor revoked stays signed in
+    /// and says why.
     func signOut() {
-        let old = session
+        signOutProblem = nil
+        guard let old = session else {
+            resetSetup()
+            status.reset()
+            return
+        }
         Task { await SyncEngine.shared.cancel() }
-        let kept = old.map { SessionStore.sync.signOut($0) } ?? true
-        session = nil
-        resetSetup()
-        status.reset()
-        guard let old else { return }
         Task {
-            if kept {
-                await revokeReplaced()
-            } else {
-                try? await old.revoke(transport: Client.transport)
+            do {
+                try await SessionStore.sync.signOut(old, transport: Client.transport)
+            } catch {
+                signOutProblem = explain(error, server: old.server)
+                return
             }
+            if session?.secret == old.secret { session = nil }
+            resetSetup()
+            status.reset()
+            await revokeReplaced()
         }
     }
 
@@ -298,15 +296,6 @@ final class AppModel: ObservableObject {
     /// to say so.
     func revokeReplaced() async {
         unrevoked = await SessionStore.sync.revokePending(current: SessionStore.sync.load(), transport: Client.transport)
-    }
-
-    /// What the owner does about a token this phone stopped using that the
-    /// server has not revoked.
-    nonisolated static func unrevokedWords(_ old: Session) -> String {
-        let host = ServerAddress.display(old.server)
-        let place = old.isApp ? "in Settings, under Apps" : "in Settings, under Signed in"
-        let reach = old.isApp ? "the access it had before" : "the password sign-in it used before, which reaches everything"
-        return "Substrate Sync couldn't revoke \(reach) on \(host). It tries again each time it opens; you can also revoke it yourself on \(host), \(place)."
     }
 
     // MARK: - status
@@ -417,7 +406,7 @@ final class AppModel: ObservableObject {
             let trigger = try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)
             steps.append(SetupStep(
                 id: "trigger", kind: .trigger, title: "The webhook Health is sent to", code: SyncEngine.trigger,
-                done: Self.armed(trigger),
+                done: Self.webhookOn(trigger),
                 detail: trigger == nil ? "Appears once the Apple Health provider is installed." : nil))
             guard current else { return }
             self.steps = steps
@@ -481,11 +470,11 @@ final class AppModel: ObservableObject {
             }
             // The trigger is read after the installs, never from the steps
             // computed before them: installing a provider writes its shipped
-            // trigger again, which can disarm one that was armed.
+            // trigger again, which can turn off one that was on.
             current = steps.first { $0.kind == .trigger }
             setupStepRunning = current?.id
-            if !Self.armed(try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)) {
-                if try await armTrigger(client, replaceKey: replaceKey) {
+            if !Self.webhookOn(try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)) {
+                if try await turnOnTrigger(client, replaceKey: replaceKey) {
                     if let id = current?.id { markDone(id) }
                 } else {
                     foreignKey = true
@@ -524,7 +513,7 @@ final class AppModel: ObservableObject {
     /// Reads the trigger, keeps or sets its key, enables it, and writes the
     /// whole source object back. False when a key this app did not set is
     /// there and the owner has not said whether to keep it.
-    private func armTrigger(_ client: Client, replaceKey: Bool?) async throws -> Bool {
+    private func turnOnTrigger(_ client: Client, replaceKey: Bool?) async throws -> Bool {
         guard let trigger = try await client.get(SyncEngine.triggerKind, SyncEngine.trigger) else {
             throw ServerError(status: 404, message: "The applehealth-webhook trigger is not installed.")
         }
@@ -554,7 +543,7 @@ final class AppModel: ObservableObject {
         SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    static func armed(_ trigger: [String: Any]?) -> Bool {
+    static func webhookOn(_ trigger: [String: Any]?) -> Bool {
         guard let trigger, trigger["enabled"] as? Bool == true else { return false }
         let key = ((trigger["source"] as? [String: Any])?["webhook"] as? [String: Any])?["key"] as? String
         return !(key ?? "").isEmpty

@@ -124,6 +124,12 @@ struct RootView: View {
             }
             .readableWidth()
         }
+        .alert("Couldn't sign out", isPresented: Binding(get: { model.signOutProblem != nil },
+                                                          set: { if !$0 { model.signOutProblem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.signOutProblem ?? "")
+        }
         .task(id: model.session) {
             guard let session = model.session else { return }
             if !session.isApp, !model.setupChecked { await model.checkSetup() }

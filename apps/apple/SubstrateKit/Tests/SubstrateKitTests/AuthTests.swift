@@ -273,7 +273,9 @@ import Testing
         }
         let session = app()
         try store.save(session)
-        #expect(store.signOut(session))
+        let offline = StubTransport()
+        try await store.signOut(session, transport: offline)
+        #expect(offline.requests.isEmpty)
         #expect(store.load() == nil)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
@@ -287,6 +289,132 @@ import Testing
         try store.keepForRevocation(session)
         #expect(await store.revokePending(current: session, transport: busy) == [])
         #expect(store.pendingRevocations().isEmpty)
+    }
+}
+
+/// Storage in memory that refuses to write the accounts in `refusing`, as a
+/// Keychain locked before the first unlock does.
+final class MemoryStorage: SessionStorage, @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String: Data] = [:]
+    let refusing: Set<String>
+
+    init(refusing: Set<String> = []) {
+        self.refusing = refusing
+    }
+
+    func read(account: String) -> SessionStore.Item {
+        lock.withLock { items[account].map(SessionStore.Item.found) ?? .missing }
+    }
+
+    func write(_ data: Data, account: String) throws {
+        guard !refusing.contains(account) else { throw SessionStore.NotSaved(status: errSecInteractionNotAllowed) }
+        lock.withLock { items[account] = data }
+    }
+
+    func delete(account: String) {
+        lock.withLock { items[account] = nil }
+    }
+}
+
+/// A token stops being used on this device only once it is kept to revoke
+/// later or the server revoked it: one that is neither stays where it was,
+/// never dropped.
+@Suite struct Retention {
+    let server = URL(string: "https://ada.example.com")!
+
+    func app(_ secret: String) -> Session {
+        Session(server: server, repository: "ada.example.com", secret: secret, clientID: "http://127.0.0.1/substrate-sync",
+                scopes: ["read:*"])
+    }
+
+    /// The Keychain will not keep the revocations, and the store is over
+    /// storage that says so.
+    func store(refusing: Set<String> = ["session.revocations"]) -> SessionStore {
+        SessionStore(service: "dev.reamde.substrate.kit.tests", storage: MemoryStorage(refusing: refusing))
+    }
+
+    func revoked(_ transport: StubTransport) -> [String] {
+        transport.sent("POST", "/oauth/revoke").map { String(decoding: $0.httpBody ?? Data(), as: UTF8.self) }
+    }
+
+    @Test func aSignOutTheKeychainWillNotKeepIsRevokedBeforeItIsForgotten() async throws {
+        let store = store()
+        let session = app("sub_app_old")
+        try store.save(session)
+        let ok = StubTransport()
+        ok.on("POST", "/oauth/revoke", json: "")
+        try await store.signOut(session, transport: ok)
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
+        #expect(store.load() == nil)
+    }
+
+    @Test func aSignOutNeitherKeptNorRevokedStaysSignedIn() async throws {
+        let store = store()
+        let session = app("sub_app_old")
+        try store.save(session)
+        let busy = StubTransport()
+        busy.on("POST", "/oauth/revoke", status: 503, json: "")
+        await #expect(throws: SessionStore.NotRetired.self) { try await store.signOut(session, transport: busy) }
+        #expect(store.load() == session)
+        #expect(store.pendingRevocations().isEmpty)
+    }
+
+    @Test func aReplacementKeepsTheOldTokenBeforeItIsSavedOver() async throws {
+        let store = store(refusing: [])
+        let old = app("sub_app_old"), new = app("sub_app_new")
+        try store.save(old)
+        let offline = StubTransport()
+        try await store.save(new, replacing: old, transport: offline)
+        #expect(offline.requests.isEmpty)
+        #expect(store.load() == new)
+        #expect(store.pendingRevocations() == [old])
+    }
+
+    @Test func aReplacementTheKeychainWillNotKeepRevokesTheOldTokenFirst() async throws {
+        let store = store()
+        let old = app("sub_app_old"), new = app("sub_app_new")
+        try store.save(old)
+        let ok = StubTransport()
+        ok.on("POST", "/oauth/revoke", json: "")
+        try await store.save(new, replacing: old, transport: ok)
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
+        #expect(store.load() == new)
+    }
+
+    /// Neither kept nor revoked: the old session stays in use, and the new
+    /// token, which nothing on the device will hold, is revoked.
+    @Test func aReplacementNeitherKeptNorRevokedLeavesTheOldSessionInUse() async throws {
+        let store = store()
+        let old = app("sub_app_old"), new = app("sub_app_new")
+        try store.save(old)
+        let busy = StubTransport()
+        busy.on("POST", "/oauth/revoke", status: 503, json: "")
+        await #expect(throws: SessionStore.NotRetired.self) { try await store.save(new, replacing: old, transport: busy) }
+        #expect(store.load() == old)
+        #expect(revoked(busy).map { String($0.prefix(18)) } == ["token=sub_app_old&", "token=sub_app_new&"])
+    }
+
+    /// A save the Keychain refuses leaves the session before it in use, kept
+    /// for nothing, and revokes the token it would have saved.
+    @Test func aReplacementTheKeychainWillNotSaveLeavesTheOldSessionInUse() async throws {
+        let storage = MemoryStorage(refusing: ["session"])
+        let store = SessionStore(service: "dev.reamde.substrate.kit.tests", storage: storage)
+        let old = app("sub_app_old"), new = app("sub_app_new")
+        try storage.writeUnchecked(JSONEncoder().encode(old), account: "session")
+        let ok = StubTransport()
+        ok.on("POST", "/oauth/revoke", json: "")
+        await #expect(throws: SessionStore.NotSaved.self) { try await store.save(new, replacing: old, transport: ok) }
+        #expect(store.load() == old)
+        #expect(store.pendingRevocations().isEmpty)
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_new&") } == [true])
+    }
+}
+
+extension MemoryStorage {
+    /// An item as an earlier run left it, whatever this storage refuses now.
+    func writeUnchecked(_ data: Data, account: String) {
+        lock.withLock { items[account] = data }
     }
 }
 

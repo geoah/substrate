@@ -9,18 +9,43 @@ public struct ReviewChangesSheet: View {
     let host: String
     let heading: ReviewHeading
     let changes: [Change]
+    /// The page lists what the app holds now under Already allowed: a
+    /// released app's client id, approved before.
+    let alreadyAllowed: Bool
+    /// The request carries details, whose access comes with setting them up.
+    let setsUp: Bool
     let onContinue: () -> Void
     let onCancel: () -> Void
 
     public init(appName: String, host: String, changes: [Change], heading: ReviewHeading,
                 onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
     {
+        self.init(appName: appName, host: host, changes: changes, heading: heading, alreadyAllowed: false,
+                  setsUp: changes.contains(where: \.isSetup), onContinue: onContinue, onCancel: onCancel)
+    }
+
+    init(appName: String, host: String, changes: [Change], heading: ReviewHeading, alreadyAllowed: Bool, setsUp: Bool,
+         onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
+    {
         self.appName = appName
         self.host = host
         self.heading = heading
         self.changes = changes
+        self.alreadyAllowed = alreadyAllowed
+        self.setsUp = setsUp
         self.onContinue = onContinue
         self.onCancel = onCancel
+    }
+
+    /// The owner's own Change Access for the request `manifest` sends now,
+    /// `session` the access the app holds: the page's controls as the
+    /// server will show them.
+    public init(changingAccessFor manifest: AppManifest, session: Session, changes: [Change],
+                onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
+    {
+        self.init(appName: manifest.appName, host: ServerAddress.display(session.server), changes: changes,
+                  heading: .changeAccess, alreadyAllowed: manifest.showsAlreadyAllowed(session),
+                  setsUp: !manifest.details.isEmpty, onContinue: onContinue, onCancel: onCancel)
     }
 
     /// Headed by what the changes are.
@@ -58,7 +83,7 @@ public struct ReviewChangesSheet: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                 } footer: {
-                    Text(ReviewChangesSections.choosing(host: host, setsUp: changes.contains(where: \.isSetup)))
+                    Text(ReviewChangesSections.choosing(host: host, setsUp: setsUp))
                 }
             }
             .formStyle(.grouped)
@@ -71,7 +96,7 @@ public struct ReviewChangesSheet: View {
         }
     }
 
-    private var intro: String {
+    var intro: String {
         let leftOut = changes.contains(where: \.leftOut)
         switch heading {
         case .firstSignIn:
@@ -81,7 +106,10 @@ public struct ReviewChangesSheet: View {
                 ? "\(appName) asks to keep the access you approved, for another while, and asks again for what you left out last time."
                 : "Nothing new: \(appName) asks to keep the access you approved, for another while."
         case .changeAccess:
-            return "You choose on \(host): everything \(appName) has now is listed there under Already allowed, where you can uncheck it."
+            let listed = alreadyAllowed
+                ? "You choose on \(host): what \(appName) has now is listed there under Already allowed, where you can uncheck it."
+                : "You choose on \(host), where you can uncheck any access \(appName) asks for."
+            return listed + (setsUp ? " Access that comes with what it sets up, such as a webhook, has no checkbox: to refuse it, deny." : "")
         case .moreAccess, .serverSetup, .moreAccessAndServerSetup:
             return "\(appName) has changed since you approved it. What it already has keeps working until you decide."
         }

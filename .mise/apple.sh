@@ -187,6 +187,47 @@ stamp() {
 	fi
 }
 
+# The URL of an app's client ID metadata document, for the app named in $1.
+# Its host heads the owner's approval page and names the app's actor
+# (`app:<host>`), so it is a host the publisher alone serves:
+# SUBSTRATE_APPLE_CLIENT_URL, an https folder there the same key may write
+# (a custom domain, or a virtual-hosted bucket), else the release folder.
+# Both apps published under one host share that actor. A shared endpoint,
+# where anyone may publish a document under the same host, is refused.
+client_url() {
+	local app="$1" base="${SUBSTRATE_APPLE_CLIENT_URL:-$SUBSTRATE_APPLE_RELEASE_URL}"
+	base="${base%/}"
+	case "$base" in
+	https://*) ;;
+	*)
+		echo "apple: the client documents' folder is https: $base" >&2
+		return 1
+		;;
+	esac
+	local host="${base#https://}"
+	host="${host%%/*}"
+	host="${host%%:*}"
+	host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+	if shared_host "$host"; then
+		echo "apple: $host is a shared endpoint, where anyone may publish a client document the approval page would head with the same name; set SUBSTRATE_APPLE_CLIENT_URL to a folder on a host of your own" >&2
+		return 1
+	fi
+	echo "$base/$app/client.json"
+}
+
+# A host anyone may publish under at a path of their own: a path-style
+# object store endpoint, or a raw file host.
+shared_host() {
+	case "$1" in
+	s3.amazonaws.com | s3.*.amazonaws.com | s3-*.amazonaws.com | \
+		s3.*.backblazeb2.com | s3.wasabisys.com | s3.*.wasabisys.com | \
+		storage.googleapis.com | raw.githubusercontent.com | gist.githubusercontent.com)
+		return 0
+		;;
+	esac
+	return 1
+}
+
 release() {
 	local channel="${1:-prerelease}" short build commit version
 	stamp "$channel"
@@ -260,17 +301,17 @@ release() {
 # under the console app's, with feeds of its own. Its version is stamped the
 # same way, so the two apps built from one commit carry one version.
 release_sync() {
-	local channel="${1:-prerelease}" short build commit version
+	local channel="${1:-prerelease}" short build commit version client
 	stamp "$channel"
+	# Its OAuth client id is its client ID metadata document, as Substrate
+	# Chat's is: without one a release signs in as a local app, which the
+	# approval page cannot name.
+	client="$(client_url sync)" || return 1
 	local base="${SUBSTRATE_APPLE_RELEASE_URL%/}/sync"
 	local out="build/release-sync/$build" rel="releases/$build"
 	local stage="$out/stage"
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
-	# Its OAuth client id is its client ID metadata document, published at
-	# the root of its release folder, as Substrate Chat's is: without one a
-	# release signs in as a local app, which the approval page cannot name.
-	local client="$base/client.json"
 	jq -n --arg id "$client" --arg uri "$base/index.html" '{
 		client_id: $id, client_name: "Substrate Sync", client_uri: $uri,
 		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
@@ -314,8 +355,9 @@ release_sync() {
 # app's are, the Mac build signed for Sparkle with the same key, published to
 # its own folder, `chat/` under the console app's.
 release_chat() {
-	local channel="${1:-prerelease}" short build commit version
+	local channel="${1:-prerelease}" short build commit version client
 	stamp "$channel"
+	client="$(client_url chat)" || return 1
 	local base="${SUBSTRATE_APPLE_RELEASE_URL%/}/chat"
 
 	xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme SubstrateChat \
@@ -330,11 +372,10 @@ release_chat() {
 	local stage="$out/stage"
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
-	# The app's OAuth client id is its client ID metadata document, published
-	# at the root of its release folder, so the approval page names the host
-	# that serves it. The redirect is a loopback one (RFC 8252), which a native
-	# app can listen on; the server admits it on any port.
-	local client="$base/client.json"
+	# The app's OAuth client id is its client ID metadata document, so the
+	# approval page names the host that serves it. The redirect is a loopback
+	# one (RFC 8252), which a native app can listen on; the server admits it
+	# on any port.
 	jq -n --arg id "$client" --arg uri "$base/index.html" '{
 		client_id: $id, client_name: "Substrate Chat", client_uri: $uri,
 		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"

@@ -31,9 +31,9 @@ struct HomeView: View {
                                message: problem)
                 }
             }
-            if let unrevoked = model.unrevoked.first {
+            if !model.unrevoked.isEmpty {
                 Section {
-                    ProblemBox(title: "The old sign-in still works", message: AppModel.unrevokedWords(unrevoked), tint: .orange)
+                    UnrevokedNotices(appName: SyncManifest.appName, unrevoked: model.unrevoked)
                 }
             }
 

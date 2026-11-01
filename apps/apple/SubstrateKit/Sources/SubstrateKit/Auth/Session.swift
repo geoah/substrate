@@ -154,8 +154,8 @@ public extension Session {
     /// approved for, since the server answers 200 to a token sent under
     /// another and leaves it live; a session that never kept its client id
     /// sends none, and the token alone is the credential. The endpoint is the
-    /// session's own only on its server's origin: a token is never sent
-    /// anywhere else.
+    /// session's own only on its server's origin, and a redirect is a
+    /// refusal: a token is never sent anywhere else.
     func revoke(transport: any HTTPTransport = URLSessionTransport.shared) async throws {
         if isApp {
             let fixed = URL(string: server.absoluteString.trimmingTrailingSlashes + "/oauth/revoke") ?? server
@@ -163,7 +163,7 @@ public extension Session {
             var pairs = [("token", secret)]
             if let clientID { pairs.append(("client_id", clientID)) }
             let (data, response) = try await transport.data(for: OAuthClient.form(endpoint, pairs, timeout: 10))
-            guard response.statusCode == 200 else { throw OAuthClient.refusal(status: response.statusCode, data: data) }
+            guard response.statusCode == 200 else { throw OAuthClient.refusal(response, data: data) }
         } else if let tokenID {
             do {
                 try await SubstrateClient(self, transport: transport).revokeToken(id: tokenID)

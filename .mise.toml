@@ -846,8 +846,11 @@ description = "Build the console and the iOS app, and run it on a simulator"
 depends = ["console:build"]
 run = ".mise/apple.sh sim"
 
-# SUBSTRATE_APPLE_RELEASE_URL (a public S3 folder, path-style) and the AWS_*
-# key that may write it come from the environment, never from this file.
+# SUBSTRATE_APPLE_RELEASE_URL (a public S3 folder, path-style), the AWS_*
+# key that may write it, and SUBSTRATE_APPLE_CLIENT_URL (the folder on a host
+# of the publisher's own the apps' client documents go under, when the
+# release folder's host is a shared endpoint) come from the environment,
+# never from this file.
 [tasks."apple:release"]
 description = "Build, sign and publish both apps as a release (prerelease, or stable), with the feeds that update them"
 depends = ["console:build"]

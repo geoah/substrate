@@ -23,6 +23,12 @@ struct RootView: View {
             }
         }
         .animation(.default, value: model.store == nil)
+        .alert("Couldn't sign out", isPresented: Binding(get: { model.signOutProblem != nil },
+                                                          set: { if !$0 { model.signOutProblem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.signOutProblem ?? "")
+        }
     }
 }
 

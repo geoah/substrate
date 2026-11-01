@@ -60,6 +60,26 @@ public struct TransportError: LocalizedError, Sendable, Equatable {
     }
 }
 
+/// The server answered with a redirect, which is never followed: what a
+/// request carries (a token, a code and its verifier) goes to the server the
+/// owner chose alone. `location` is where it pointed, as the server said it.
+public struct Redirected: LocalizedError, Sendable, Equatable {
+    public let status: Int
+    public let location: String?
+
+    public init(status: Int, location: String?) {
+        self.status = status
+        self.location = location
+    }
+
+    /// The host it pointed at, where the location names one.
+    public var target: String? { location.flatMap { URL(string: $0)?.host() } }
+
+    public var errorDescription: String? {
+        "The server answered with a redirect\(target.map { " to \($0)" } ?? "") (\(status)), which is never followed."
+    }
+}
+
 /// The server no longer accepts the token: revoked, expired, or the
 /// repository was reset. Signing in again is the way out.
 public struct SessionExpired: LocalizedError, Sendable, Equatable {
@@ -124,6 +144,10 @@ public func explain(_ error: Error, app: String, server: URL? = nil) -> String {
     }
     if let error = error as? ServerError, error.status >= 500 {
         return "\(Host) ran into a problem (\(error.status)): \(error.text)"
+    }
+    if let error = error as? Redirected {
+        return "\(Host) answered with a redirect\(error.target.map { " to \($0)" } ?? ""), which \(app) never follows: "
+            + "what it sends carries your sign-in, and goes to \(host) alone. Check the address, or ask whoever runs \(host)."
     }
     if error is DecodingError { return "\(Host) answered with something \(app) can't read." }
     if error is CancellationError { return "Stopped." }

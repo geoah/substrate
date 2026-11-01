@@ -165,25 +165,50 @@ final class TransportBox: @unchecked Sendable {
         #expect(stub.sent("POST", "/api/v1/authorizations/check").isEmpty)
     }
 
+    /// A package the catalog ships too old is a server update, worded by
+    /// what the row would do, with the server's sentence under it.
     @Test func aPackageTheServerShipsTooOldIsAServerUpdate() async {
+        let block = AuthorizationSetup.Block(reason: "server-update", problem: Blocks.serverUpdate(shipped: 2, need: 3))
         let stub = server(check: #"""
         {"scopes":{"missing":[]},"setup":[{"type":"package","action":"upgrade",
-          "blocked":{"reason":"server-update","problem":"This server ships version 2; the app needs version 3. The server needs an update first."},
+          "blocked":{"reason":"server-update","problem":"\#(block.problem)"},
           "package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":2}}]}
         """#)
         let status = await run(stub, session: appSession())
-        #expect(status.issues == [.serverTooOld(running: "v0.114.0", needed: nil, missing: ["install Apple version 3 or later"])])
+        #expect(status.issues == [.serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: [
+            Change(kind: .upgrade, words: "Update Apple to version 3 or later", detail: block.problem, block: block),
+        ])])
+        #expect(status.issues.waitsForUpdate)
         // A package the catalog does not ship at all is a block like any
         // other, whatever its versions say: the reason decides.
         let unshipped = server(check: #"""
         {"scopes":{"missing":[]},"setup":[{"type":"package","action":"install",
-          "blocked":{"reason":"not-shipped","problem":"This server's catalog does not ship it."},
+          "blocked":{"reason":"not-shipped","problem":"\#(Blocks.notShipped)"},
           "package":{"id":"providers.substrate.reamde.dev/apple","required":3}}]}
         """#)
         let blocked = await run(unshipped, session: appSession())
-        #expect(blocked.changes == [Change(kind: .install, words: "Install Apple", detail: "This server's catalog does not ship it.",
-                                           block: AuthorizationSetup.Block(reason: "not-shipped", problem: "This server's catalog does not ship it."))])
+        #expect(blocked.changes == [Change(kind: .install, words: "Install Apple", detail: Blocks.notShipped,
+                                           block: AuthorizationSetup.Block(reason: "not-shipped", problem: Blocks.notShipped))])
         #expect(blocked.issues.fix == nil)
+    }
+
+    /// A package the catalog ships at the version the app needs, whose
+    /// requirement it ships too old: the row says what the app asked for,
+    /// and the server's sentence that it is a package it needs first, never
+    /// that this package is too old.
+    @Test func aBlockedPrerequisiteIsSaidInTheServersWords() async {
+        let block = AuthorizationSetup.Block(reason: "server-update", problem: Blocks.serverUpdateFirst(need: 2, shipped: 1))
+        let stub = server(check: #"""
+        {"scopes":{"missing":[]},"setup":[
+          {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":3,"shipped":3}},
+          {"type":"package","action":"install","blocked":{"reason":"server-update","problem":"\#(block.problem)"},
+           "package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"shipped":5}}]}
+        """#)
+        let status = await run(stub, session: appSession())
+        let change = Change(kind: .install, words: "Install Apple Health version 5 or later", detail: block.problem, block: block)
+        #expect(status.issues == [.serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: [change])])
+        #expect(status.changes.isEmpty)
+        #expect(status.approvalBlocked)
     }
 
     /// An update names the version the server will install, and the one the
@@ -238,19 +263,19 @@ final class TransportBox: @unchecked Sendable {
         let quarantined = server(check: #"""
         {"scopes":{"missing":[]},"setup":[
           {"type":"package","action":"install","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"shipped":3}},
-          {"type":"package","action":"none","blocked":{"reason":"quarantined","problem":"Apple Health is quarantined on this repository.",
+          {"type":"package","action":"none","blocked":{"reason":"quarantined","problem":"\#(Blocks.quarantined)",
             "fix":"/catalog/providers.substrate.reamde.dev%2Fapplehealth"},
            "package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":5,"shipped":5}}]}
         """#)
         let blocked = await run(quarantined, session: appSession())
         #expect(blocked.changes.map(\.words) == ["Install Apple", "Apple Health is installed"])
-        #expect(blocked.changes.last?.detail == "Apple Health is quarantined on this repository.")
+        #expect(blocked.changes.last?.detail == Blocks.quarantined)
         #expect(blocked.approvalBlocked)
         #expect(blocked.issues.fix == "/catalog/providers.substrate.reamde.dev%2Fapplehealth")
         #expect(!blocked.issues.waitsForUpdate)
         let tooOld = server(check: #"""
         {"scopes":{"missing":["write:providers.substrate.reamde.dev/apple/place"]},"setup":[{"type":"package","action":"upgrade",
-          "blocked":{"reason":"server-update","problem":"This server ships version 2; the app needs version 3."},
+          "blocked":{"reason":"server-update","problem":"\#(Blocks.serverUpdate(shipped: 2, need: 3))"},
           "package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":2,"shipped":2}}]}
         """#)
         let waiting = await run(tooOld, session: appSession())
@@ -427,5 +452,64 @@ final class TransportBox: @unchecked Sendable {
         #expect(ReviewHeading(changes: changes, firstSignIn: false) == .moreAccessAndServerSetup)
         #expect(ReviewHeading(changes: [], firstSignIn: false).title(appName: "Substrate Sync") == "Renew access")
         #expect(ReviewHeading.changeAccess.title(appName: "Substrate Sync") == "Change what Substrate Sync may do")
+    }
+}
+
+/// What a device says of the tokens it stopped using: each server and
+/// repository in its own words, never the session in use's.
+@Suite struct Unrevoked {
+    @Test func eachServerAndRepositoryIsSaidOnce() throws {
+        let ada = try #require(URL(string: "https://ada.example.com"))
+        let other = try #require(URL(string: "https://substrate.example.org"))
+        let sentences = UnrevokedNotices.sentences(appName: "Substrate Sync", unrevoked: [
+            Session(server: ada, repository: "ada.example.com", secret: "a", tokenID: "tok_1"),
+            Session(server: other, repository: "grace.example.org", secret: "b", clientID: "https://sync.substrate.example.com/client.json",
+                    scopes: ["read:*"]),
+            Session(server: ada, repository: "ada.example.com", secret: "c", clientID: "https://sync.substrate.example.com/client.json",
+                    scopes: ["read:*"]),
+        ])
+        #expect(sentences == [
+            "Substrate Sync's earlier access still works on ada.example.com. It tries again each time it opens; "
+                + "you can also revoke it yourself in ada.example.com's Settings, under Apps and under Signed in.",
+            "Substrate Sync's earlier access to grace.example.org still works on substrate.example.org. It tries again each time it opens; "
+                + "you can also revoke it yourself in substrate.example.org's Settings, under Apps.",
+        ])
+        #expect(UnrevokedNotices.sentences(appName: "Substrate Sync", unrevoked: []).isEmpty)
+    }
+}
+
+/// Change Access names only the controls the approval page will show.
+@MainActor @Suite struct ChangeAccess {
+    let server = URL(string: "https://ada.example.com")!
+
+    func sheet(_ manifest: AppManifest, clientID: String? = nil) -> ReviewChangesSheet {
+        let session = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: clientID ?? manifest.clientID,
+                              scopes: manifest.scopes)
+        return ReviewChangesSheet(changingAccessFor: manifest, session: session, changes: [], onContinue: {}, onCancel: {})
+    }
+
+    @Test func alreadyAllowedIsSaidOnlyWhereThePageListsIt() {
+        let released = syncManifest()
+        #expect(released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s",
+                                                     clientID: released.clientID, scopes: ["read:*"])))
+        #expect(sheet(released).intro == "You choose on ada.example.com: what Substrate Sync has now is listed there under "
+            + "Already allowed, where you can uncheck it. Access that comes with what it sets up, such as a webhook, has no checkbox: "
+            + "to refuse it, deny.")
+        // A local build's page is always a first approval.
+        var local = released
+        local.clientID = "http://127.0.0.1/substrate-sync"
+        #expect(local.isLocal)
+        #expect(sheet(local).intro == "You choose on ada.example.com, where you can uncheck any access Substrate Sync asks for. "
+            + "Access that comes with what it sets up, such as a webhook, has no checkbox: to refuse it, deny.")
+        // Approved for another client id, or a password session: nothing
+        // is listed as already allowed.
+        #expect(!released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s",
+                                                      clientID: "https://other.example.com/client.json", scopes: ["read:*"])))
+        #expect(!released.showsAlreadyAllowed(Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t")))
+        // A request that sets nothing up has no access that comes with it.
+        var scopesOnly = released
+        scopesOnly.details = []
+        #expect(sheet(scopesOnly).intro
+            == "You choose on ada.example.com: what Substrate Sync has now is listed there under Already allowed, where you can uncheck it.")
     }
 }

@@ -62,8 +62,9 @@ public struct AppStatusBanner: View {
 
     private func line(for issue: AppIssue) -> IssueLine.Content {
         switch issue {
-        case let .serverTooOld(running, needed, missing):
-            let cannot = missing.isEmpty ? "" : "can't yet \(joinWords(missing))"
+        case let .serverTooOld(running, needed, missing, blocked):
+            let cannot = missing.isEmpty ? blocked.isEmpty ? "" : "can't yet set up everything \(appName) needs"
+                : "can't yet \(joinWords(missing))"
             let runs = running.map { "\(host) runs \(ServerVersion.display($0))" }
             var message: String
             if let needed {
@@ -74,7 +75,7 @@ public struct AppStatusBanner: View {
                     ?? "\(host) \(cannot.isEmpty ? "is too old for \(appName)" : cannot)."
             }
             return .init(symbol: "arrow.up.circle.fill", tint: .orange, title: "\(host) needs an update",
-                         message: message + " Whoever runs it can update it.", action: nil)
+                         message: message + " Whoever runs it can update it.", changes: blocked, action: nil)
         case let .needsApproval(changes) where changes.contains(where: \.blocked):
             // The approval page would refuse. A fix the server named is the
             // way on; without one, the page itself shows why.

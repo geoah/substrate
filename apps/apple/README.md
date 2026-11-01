@@ -69,6 +69,23 @@ SUBSTRATE_APPLE_RELEASE_URL=https://s3.example.com/public/projects/substrate/app
 AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… mise run apple:release
 ```
 
+**An app's client id names it on every server.** Substrate Sync and
+Substrate Chat each publish a client ID metadata document, `client.json`,
+and a release stamps its URL into the build as the app's OAuth client id.
+That URL's host is what the owner is shown at the head of the approval
+page, and what the server names the app's actor, so every write the app
+makes is recorded as `app:<host>`. Two apps published on one host share
+that actor. The host must therefore be one only the publisher serves: the
+documents go to `sync/client.json` and `chat/client.json` under
+`SUBSTRATE_APPLE_CLIENT_URL`, an https folder on a host of the publisher's own
+that the same key may write (a custom domain, or a virtual-hosted bucket,
+`https://<bucket>.s3.<region>.amazonaws.com/…`), and under the release folder
+when it is unset. `apple:release:sync` and `apple:release:chat` refuse a
+shared endpoint before they build anything (path-style S3 such as
+`s3.<region>.amazonaws.com`, `storage.googleapis.com`, a raw file host),
+since anybody could publish a document there that the approval page would
+head with the same name.
+
 The version is the next patch after the last released one, plus the build
 number and the commit, `0.113.1-pre.20261021.153012+ac85863e` (`.dirty`
 when the tree was); the build number is the UTC time, so it only rises, and
@@ -205,8 +222,12 @@ in the background (the kit's `Session.revoke`: an app token at `/oauth/revoke`
 under the client id it was approved for, a password one with its own
 `DELETE /tokens/{id}`), so it works with the server unreachable or the token
 already refused. The token is kept in the Keychain until the server answers
-200 (a busy server's 429 or 503 is no revocation), tried again at each
-launch, and Settings and the sign-in screen say so while it still works. What the
+200 (a busy server's 429 or 503 is no revocation; a redirect is never
+followed), tried again at each launch, and Home, Settings and the sign-in
+screen say so while it still works, once for each server and repository.
+Where the Keychain will not keep it, Sign Out revokes it first and forgets
+the session only once the server confirms; a token neither kept nor revoked
+stays signed in, and the app says why, so no token is ever dropped. What the
 phone remembers is bound to the repository it was pushed to: signing in to
 another one, or finding the contacts' address book, the calendar store or the
 Health account gone from the server, sends everything again.
@@ -258,7 +279,7 @@ installs (or upgrades to version 3) `providers.substrate.reamde.dev/apple`
 and installs (or upgrades to version 5) `…/applehealth`, which ships the
 adapter and installs the `substrate.reamde.dev/health` catalogue it
 requires; then it creates the Health account
-`substrate-sync-<first 8 characters of the install id>`, and arms the
+`substrate-sync-<first 8 characters of the install id>`, and turns on the
 `applehealth-webhook` trigger. It keeps a key already on the trigger unless
 the owner says to replace it, and otherwise sets a new 32-character one. A
 refusal is shown in the server's own words.
@@ -475,8 +496,10 @@ chat links to, `read:*`) and for how long. The redirect comes back to a
 loopback port the app listens on (RFC 8252), and the code is exchanged with
 its PKCE verifier; the app never sees the password, and its writes are
 recorded as `app:<host>`. A release publishes the app's client ID metadata
-document as `client.json` in its folder and stamps that URL into the build
-(`SubstrateChatClientID`); any other build signs in as the local app
+document as `chat/client.json` (see
+[Releases and updates](#releases-and-updates) for the host it goes on) and
+stamps that URL into the build (`SubstrateChatClientID`); any other build
+signs in as the local app
 `http://127.0.0.1/substrate-chat`. A server whose metadata answers 404 gets
 the password form; one whose metadata does not list `agents:` and `decide:`
 (between decisions 0194 and 0195) would refuse the request with an error
@@ -498,7 +521,10 @@ requests and their errors are the kit's `SubstrateClient`; it adds only the
 agent streams and the change feed. Sign Out revokes an app token under the
 client id it was approved for (none, for a session an earlier build kept
 without one), and a password one with its own `DELETE /tokens/{id}`; a
-revocation the server does not confirm is kept and tried again at launch.
+revocation the server does not confirm is kept, tried again at launch, and
+said on the sign-in screen and in Settings with the server it is on. A token
+the Keychain will not keep is revoked before the session is forgotten or
+replaced, and one neither kept nor revoked stays in use, with the reason.
 
 **Instant.** Agents, providers, the chat list and each chat's rows are kept in
 Application Support, one folder per server and repository (excluded from

@@ -28,6 +28,9 @@ final class AppModel {
     /// Tokens this device stopped using that the server has not revoked yet:
     /// each is tried again at every launch until it is.
     private(set) var unrevoked: [Session] = []
+    /// Why the last sign-out did not happen: the token could be neither kept
+    /// to revoke later nor revoked, so the session stays.
+    var signOutProblem: String?
     /// A route waiting for a scene to take it.
     var pendingRoute: Route?
     /// Whether an app session is still set up with its server: the kit's
@@ -61,14 +64,14 @@ final class AppModel {
         guard let oauth = OAuthClient(manifest: ChatManifest.manifest, probe: probe) else {
             throw URLError(.badServerResponse)
         }
-        try adopt(try await oauth.signIn(server: probe.origin))
+        try await adopt(try await oauth.signIn(server: probe.origin))
     }
 
     /// The password door, for a server without app authorization.
     func signIn(server: URL, repository: String, password: String, totp: String?) async throws {
         let result = try await SubstrateClient(server: server)
             .login(repository: repository, password: password, totp: totp, label: Self.tokenLabel)
-        try adopt(Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id))
+        try await adopt(Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id))
     }
 
     /// The flow again on the same server with the whole request: a change of
@@ -86,7 +89,7 @@ final class AppModel {
             guard manifest.door(for: probe) == .app, let oauth = OAuthClient(manifest: manifest, probe: probe) else {
                 throw Refusal(text: "\(ServerAddress.display(old.server)) can't give \(manifest.appName) access of its own: it needs an update first.")
             }
-            try adopt(try await oauth.signIn(server: old.server), replacing: old)
+            try await adopt(try await oauth.signIn(server: old.server), replacing: old)
         } catch let error where error is WebAuthenticator.Cancelled || isCancellation(error) {
             // The person closed the sheet: the access stays as it was.
         } catch {
@@ -94,23 +97,17 @@ final class AppModel {
         }
     }
 
-    /// Keeps a new session of either kind and starts on it. Kept first: a
-    /// sign-in the Keychain would not hold is refused here, with the token it
-    /// minted revoked, rather than lost at the next launch. The token it
-    /// replaces is kept for revocation before the save, since the save
-    /// overwrites the only other copy of it.
-    private func adopt(_ session: Session, replacing old: Session? = nil) throws {
-        let kept = old.map { (try? SessionStore.chat.keepForRevocation($0)) != nil } ?? false
-        do {
-            try SessionStore.chat.save(session)
-        } catch {
-            if let old, kept { SessionStore.chat.revoked(old) }
-            Task.detached { try? await session.revoke() }
-            throw error
-        }
+    /// Keeps a new session of either kind and starts on it, through the
+    /// kit's store: the token it replaces is kept for revocation before the
+    /// save overwrites the only other copy of it, or revoked first where the
+    /// Keychain will not keep it, and a sign-in the Keychain will not hold is
+    /// refused here, with the token it minted revoked, rather than lost at
+    /// the next launch.
+    private func adopt(_ session: Session, replacing old: Session? = nil) async throws {
+        try await SessionStore.chat.save(session, replacing: old)
         end(forget: false)
         begin(session)
-        if let old { retire(old, kept: kept) }
+        if old != nil { await revokePending() }
     }
 
     /// After the server refused the token: back to sign-in, keeping the saved
@@ -120,36 +117,37 @@ final class AppModel {
             expired = false
             return
         }
-        end(forget: false)
-        let kept = SessionStore.chat.signOut(session)
-        expired = false
-        retire(session, kept: kept)
+        stopUsing(session, forget: false)
     }
 
-    /// Forgets the session on this device at once, and revokes the token in
-    /// the background, so it works with the server gone or the token
-    /// refused; a token the server does not answer for now is kept and tried
-    /// again at the next launch.
+    /// Forgets the session on this device, and revokes the token in the
+    /// background, so it works with the server gone or the token refused; a
+    /// token the server does not answer for now is kept and tried again at
+    /// the next launch.
     func signOut() {
         guard let session else {
             expired = false
             return
         }
-        end(forget: true)
-        let kept = SessionStore.chat.signOut(session)
-        Notifier.removeAll()
-        retire(session, kept: kept)
+        stopUsing(session, forget: true)
     }
 
-    /// Revokes a token this device stopped using: every kept one, `old`
-    /// among them, or `old` alone where the Keychain would not keep it.
-    private func retire(_ old: Session, kept: Bool) {
+    /// Keeps the token for revocation, or revokes it where the Keychain will
+    /// not keep it, and only then forgets the session; one neither kept nor
+    /// revoked stays, and the sign-out says why.
+    private func stopUsing(_ session: Session, forget: Bool) {
+        signOutProblem = nil
         Task {
-            if kept {
-                await revokePending()
-            } else {
-                try? await old.revoke()
+            do {
+                try await SessionStore.chat.signOut(session)
+            } catch {
+                signOutProblem = explain(error, server: session.server)
+                return
             }
+            if self.session?.secret == session.secret { end(forget: forget) }
+            expired = false
+            if forget { Notifier.removeAll() }
+            await revokePending()
         }
     }
 

@@ -18,7 +18,12 @@ struct Snapshots {
     let server = URL(string: "https://ada.example.com")!
     let now = Date()
 
-    var manifest: AppManifest { syncManifest() }
+    /// Sync's request with Sync's kind labels, as its screens word it.
+    var manifest: AppManifest {
+        var manifest = syncManifest()
+        manifest.kindLabels = syncKindLabels
+        return manifest
+    }
 
     var metadata: AuthorizationServerMetadata {
         AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],
@@ -62,17 +67,33 @@ struct Snapshots {
         try await draw("connect-empty", connect(.idle, address: ""))
         try await draw("connect-checking", connect(.checking, address: "ada.example.com"))
         try await draw("connect-found", connect(.found(result), address: "https://ada.example.com"))
+        // Signed out with an earlier sign-in on another server still live.
+        try await draw("connect-unrevoked", ConnectView(
+            manifest: manifest, address: .constant("https://ada.example.com"), probe: ServerProbe(), header: header,
+            onSignIn: { _ in }, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .found(result),
+            unrevoked: [Session(server: URL(string: "https://substrate.example.org")!, repository: "grace.example.org",
+                                secret: "s", clientID: manifest.clientID, scopes: ["read:*"])]))
         try await draw("server-too-old", ScrollView {
             ServerTooOldView(appName: "Substrate Sync", host: "ada.example.com", running: "v0.113.0", needed: "0.114.0",
                              missing: [ServerRequirement.detailWords("account"), ServerRequirement.detailWords("webhook")],
                              onTryAgain: {}, onChangeServer: {})
                 .padding(24)
         })
+        let shipsOld = AuthorizationSetup.Block(reason: "server-update", problem: Blocks.serverUpdate(shipped: 2, need: 3))
+        let needsFirst = AuthorizationSetup.Block(reason: "server-update", problem: Blocks.serverUpdateFirst(need: 2, shipped: 1))
+        let serverBlocked = [
+            Change(kind: .upgrade, words: "Update Apple to version 3 or later", detail: shipsOld.problem, block: shipsOld),
+            Change(kind: .install, words: "Install Apple Health version 5 or later", detail: needsFirst.problem, block: needsFirst),
+        ]
+        try await draw("banner-server-update", screen {
+            AppStatusBanner(issues: [.serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: serverBlocked)],
+                            appName: "Substrate Sync", host: "ada.example.com", actions: actions)
+        })
         try await draw("banner-needs-approval", screen {
             AppStatusBanner(issues: [.needsApproval(changes: update)], appName: "Substrate Sync", host: "ada.example.com",
                             actions: actions)
         })
-        let quarantined = AuthorizationSetup.Block(reason: "quarantined", problem: "Apple Health is quarantined on this repository.",
+        let quarantined = AuthorizationSetup.Block(reason: "quarantined", problem: Blocks.quarantined,
                                                    fix: "/catalog/providers.substrate.reamde.dev%2Fapplehealth")
         try await draw("banner-blocked", screen {
             AppStatusBanner(issues: [.needsApproval(changes: [
@@ -80,7 +101,7 @@ struct Snapshots {
                 Change(kind: .upgrade, words: "Update Apple Health", detail: quarantined.problem, block: quarantined),
             ])], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
         })
-        let unshipped = AuthorizationSetup.Block(reason: "not-shipped", problem: "This server's catalog does not ship it; the server needs an update first.")
+        let unshipped = AuthorizationSetup.Block(reason: "not-shipped", problem: Blocks.notShipped)
         try await draw("banner-blocked-no-fix", screen {
             AppStatusBanner(issues: [.needsApproval(changes: [
                 Change(kind: .install, words: "Install Clinical", detail: unshipped.problem, block: unshipped),
@@ -95,7 +116,7 @@ struct Snapshots {
         })
         try await draw("banner-several", screen {
             AppStatusBanner(issues: [
-                .serverTooOld(running: "v0.114.0", needed: nil, missing: ["install Apple version 3 or later"]),
+                .serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: [serverBlocked[1]]),
                 .needsApproval(changes: update), .accessEndsSoon(now.addingTimeInterval(3 * 86400)),
             ], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
         })
@@ -114,14 +135,16 @@ struct Snapshots {
         declined.scopes = [manifest.scopes[0], "webhook:applehealth-webhook"]
         declined.requestedScopes = manifest.scopes
         try await draw("review-change-access", ReviewChangesSheet(
-            appName: "Substrate Sync", host: "ada.example.com", changes: manifest.review(nil, session: declined),
-            heading: .changeAccess, onContinue: {}, onCancel: {}))
+            changingAccessFor: manifest, session: declined, changes: manifest.review(nil, session: declined),
+            onContinue: {}, onCancel: {}))
         try await draw("account-section", Form {
             AccountSection(session: session, manifest: manifest, serverVersion: "v0.114.0", onChangeAccess: {}, onSignOut: {})
         }.formStyle(.grouped))
         try await draw("account-section-unrevoked", Form {
             AccountSection(session: session, manifest: manifest, serverVersion: "v0.114.0-3-gabc1234",
-                           unrevoked: [Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t")],
+                           unrevoked: [Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t"),
+                                       Session(server: URL(string: "https://substrate.example.org")!, repository: "grace.example.org",
+                                               secret: "o", clientID: manifest.clientID, scopes: ["read:*"])],
                            onChangeAccess: {}, onSignOut: {})
         }.formStyle(.grouped))
         try await draw("account-section-password", Form {

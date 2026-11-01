@@ -8,10 +8,13 @@ public struct ServerTooOldView: View {
     let running: String?
     let needed: String?
     let missing: [String]
+    /// The package rows only a newer server sets up, each with the server's
+    /// sentence.
+    let blocked: [Change]
     var onTryAgain: (() -> Void)?
     var onChangeServer: (() -> Void)?
 
-    public init(appName: String, host: String, running: String?, needed: String?, missing: [String],
+    public init(appName: String, host: String, running: String?, needed: String?, missing: [String], blocked: [Change] = [],
                 onTryAgain: (() -> Void)? = nil, onChangeServer: (() -> Void)? = nil)
     {
         self.appName = appName
@@ -19,6 +22,7 @@ public struct ServerTooOldView: View {
         self.running = running
         self.needed = needed
         self.missing = missing
+        self.blocked = blocked
         self.onTryAgain = onTryAgain
         self.onChangeServer = onChangeServer
     }
@@ -39,7 +43,7 @@ public struct ServerTooOldView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !missing.isEmpty {
+            if !missing.isEmpty || !blocked.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("It can't yet")
                         .font(.subheadline.weight(.semibold))
@@ -51,6 +55,7 @@ public struct ServerTooOldView: View {
                         }
                         .font(.subheadline)
                     }
+                    ForEach(blocked) { ChangeRow($0).font(.subheadline) }
                 }
                 .modifier(KitCard())
             }

@@ -150,7 +150,7 @@ func explain(_ error: Error, server: URL? = nil) -> String {
 }
 
 /// The webhook door refused a Health delivery. Under a password session the
-/// trigger's key was refused, and Set Up arms the webhook again; under an app
+/// trigger's key was refused, and Set Up turns the webhook on again; under an app
 /// session the webhook is off or the app's access no longer reaches it, and
 /// only the owner's approval changes that.
 struct WebhookRefused: LocalizedError {
@@ -161,7 +161,7 @@ struct WebhookRefused: LocalizedError {
         if app {
             return "The server did not take this phone's Health (\(text)). Its webhook is off, or Substrate Sync's access no longer reaches it: review its access on Home."
         }
-        return "The server refused this phone's Health key (\(text)). Open Set Up and run it to arm the webhook again."
+        return "The server refused this phone's Health key (\(text)). Open Set Up and run it to turn the webhook on again."
     }
 
     /// The refusal a delivery's error is, if it is one. The door answers 404

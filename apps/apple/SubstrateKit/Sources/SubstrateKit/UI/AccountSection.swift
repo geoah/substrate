@@ -3,8 +3,8 @@ import SwiftUI
 /// The account, as a settings form shows it: which server and repository,
 /// the server's version, what the app was approved to do and until when,
 /// and the two ways out of it. A password session says it reaches
-/// everything. A token this device stopped using that the server has not
-/// revoked yet is said, with where to revoke it by hand.
+/// everything. A token this device stopped using that its server has not
+/// revoked yet is said, with where to revoke it by hand (`UnrevokedNotices`).
 public struct AccountSection: View {
     let session: Session
     let manifest: AppManifest?
@@ -52,21 +52,13 @@ public struct AccountSection: View {
             } else {
                 LabeledContent("Access", value: "Everything, with your password")
             }
-            if !unrevoked.isEmpty {
-                ProblemBox(title: "Server access has not been revoked yet", message: unrevokedWords, tint: .orange)
-            }
+            UnrevokedNotices(appName: manifest?.appName ?? "The app", unrevoked: unrevoked)
             Button("Sign Out", role: .destructive, action: onSignOut)
         } header: {
             Text("Account")
         } footer: {
             Text("Sign Out: signs out on this device and revokes \(session.isApp ? "its access" : "its sign-in") on \(host).")
         }
-    }
-
-    private var unrevokedWords: String {
-        let places = Set(unrevoked.map { $0.isApp ? "under Apps" : "under Signed in" }).sorted().joined(separator: " and ")
-        return "\(manifest.map { "\($0.appName)'s" } ?? "The app's") earlier access still works on \(host). It tries again each time it opens; "
-            + "you can also revoke it yourself in \(host)'s Settings, \(places)."
     }
 
     private func words(_ scope: String) -> String {

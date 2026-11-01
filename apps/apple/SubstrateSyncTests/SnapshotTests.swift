@@ -68,8 +68,8 @@ final class StatusSnapshotTests: XCTestCase {
         declined.scopes = [SyncManifest.scopes[0], SyncManifest.scopes[1], "webhook:applehealth-webhook"]
         declined.requestedScopes = SyncManifest.scopes
         try await draw(directory, "status-change-access", ReviewChangesSheet(
-            appName: SyncManifest.appName, host: "ada.example.com", changes: manifest.review(nil, session: declined),
-            heading: .changeAccess, onContinue: {}, onCancel: {}))
+            changingAccessFor: manifest, session: declined, changes: manifest.review(nil, session: declined),
+            onContinue: {}, onCancel: {}))
 
         let ready = await status(session(), check: #"""
         {"scopes":{"missing":[]},"setup":[
@@ -84,7 +84,7 @@ final class StatusSnapshotTests: XCTestCase {
         let blocked = await status(session(), check: #"""
         {"scopes":{"missing":[]},"setup":[
           {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":3,"shipped":3}},
-          {"type":"package","action":"upgrade","blocked":{"reason":"quarantined","problem":"Apple Health is quarantined on this repository: a declaration it ships was refused.",
+          {"type":"package","action":"upgrade","blocked":{"reason":"quarantined","problem":"Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why.",
             "fix":"/catalog/providers.substrate.reamde.dev%2Fapplehealth"},
            "package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":4,"shipped":5}},
           {"type":"account","action":"none"},{"type":"webhook","action":"unknown"}]}
@@ -103,6 +103,17 @@ final class StatusSnapshotTests: XCTestCase {
         """#)
         XCTAssertTrue(waiting.issues.waitsForUpdate, "\(waiting)")
         try await draw(directory, "status-waits-for-update", NavigationStack { ServerStatusForm(session: earlier, status: waiting) })
+        // Apple Health ships at the version Sync needs, but a package it
+        // needs first ships too old: the server's sentence says so.
+        let prerequisite = await status(session(), check: #"""
+        {"scopes":{"missing":[]},"setup":[
+          {"type":"package","action":"none","package":{"id":"providers.substrate.reamde.dev/apple","required":3,"held":3,"shipped":3}},
+          {"type":"package","action":"upgrade","blocked":{"reason":"server-update","problem":"It needs a package first at version 2, and this server ships version 1. The server needs an update first."},
+           "package":{"id":"providers.substrate.reamde.dev/applehealth","required":5,"held":4,"shipped":5}},
+          {"type":"account","action":"none"},{"type":"webhook","action":"unknown"}]}
+        """#)
+        XCTAssertTrue(prerequisite.issues.waitsForUpdate, "\(prerequisite)")
+        try await draw(directory, "status-prerequisite-waits", NavigationStack { ServerStatusForm(session: session(), status: prerequisite) })
 
         // The real sign-in, on a server it found.
         let metadata = AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],

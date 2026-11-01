@@ -207,13 +207,13 @@ final class DeliveryTests: XCTestCase {
         try await client.deliver(authority: session.repository, trigger: SyncEngine.trigger, body: Data("{}".utf8), headers: headers, key: key)
         XCTAssertEqual(stub.sent("POST", door).first?.value(forHTTPHeaderField: "Authorization"), "Bearer k3y")
 
-        // An unarmed trigger stops Health before a day is read.
+        // A webhook that is off stops Health before a day is read.
         let off = StubTransport()
         off.on("GET", trigger, json: #"{"id":"applehealth-webhook","properties":{"enabled":false,"source":{"webhook":{"key":"k3y"}}}}"#)
         do {
             _ = try await SyncEngine.deliveryKey(Client(session, transport: off), session)
             XCTFail("a disabled trigger gave a key")
-        } catch SyncError.notArmed {}
+        } catch SyncError.webhookOff {}
     }
 
     /// The door refusing an app's delivery is a review for the owner, not a
@@ -339,7 +339,9 @@ final class RevocationTests: XCTestCase {
         XCTAssertEqual(live, [old])
         XCTAssertEqual(store.pendingRevocations(), [old])
         XCTAssertEqual(stub.sent("DELETE", "/tokens/tok_1").first?.value(forHTTPHeaderField: "Authorization"), "Bearer sub_password")
-        XCTAssertTrue(AppModel.unrevokedWords(old).contains("in Settings, under Signed in"))
+        XCTAssertEqual(UnrevokedNotices.sentences(appName: SyncManifest.appName, unrevoked: live),
+                       ["Substrate Sync's earlier access still works on ada.example.com. It tries again each time it opens; "
+                           + "you can also revoke it yourself in ada.example.com's Settings, under Signed in."])
 
         stub.on("DELETE", "/tokens/tok_1", status: 204, json: "")
         live = await store.revokePending(current: current, transport: stub)
@@ -347,8 +349,8 @@ final class RevocationTests: XCTestCase {
         XCTAssertEqual(store.pendingRevocations(), [])
     }
 
-    /// A sign-out forgets the session at once and keeps its token until the
-    /// server answers 200; a busy server's answer is no revocation.
+    /// A sign-out forgets the session once its token is kept, and keeps it
+    /// until the server answers 200; a busy server's answer is no revocation.
     func testASignedOutTokenIsKeptUntilTheServerRevokesIt() async throws {
         let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
         defer {
@@ -358,13 +360,15 @@ final class RevocationTests: XCTestCase {
         let app = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
                           scopes: SyncManifest.scopes)
         try store.save(app)
-        XCTAssertTrue(store.signOut(app))
+        let offline = StubTransport()
+        try await store.signOut(app, transport: offline)
+        XCTAssertTrue(offline.sent("POST", "/oauth/revoke").isEmpty)
         XCTAssertNil(store.load())
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 429, json: "")
         let live = await store.revokePending(current: nil, transport: busy)
         XCTAssertEqual(live, [app])
-        XCTAssertTrue(AppModel.unrevokedWords(app).contains("in Settings, under Apps"))
+        XCTAssertTrue(UnrevokedNotices.sentences(appName: SyncManifest.appName, unrevoked: live)[0].hasSuffix("Settings, under Apps."))
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
         let none = await store.revokePending(current: nil, transport: ok)

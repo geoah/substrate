@@ -43,8 +43,10 @@ public struct Change: Hashable, Sendable, Identifiable {
 /// and a review.
 public enum AppIssue: Hashable, Sendable, Identifiable {
     /// The server cannot do what the app needs: `running` is its version,
-    /// `needed` the release the app names, `missing` what it cannot do yet.
-    case serverTooOld(running: String?, needed: String?, missing: [String])
+    /// `needed` the release the app names, `missing` what it cannot do yet,
+    /// and `blocked` each package row only a newer server sets up, in the
+    /// words of what it would do, with the server's sentence for why.
+    case serverTooOld(running: String?, needed: String?, missing: [String], blocked: [Change] = [])
     /// The app's request has grown past what was approved, or set up on the
     /// server has gone or fallen behind: the owner reviews the difference.
     case needsApproval(changes: [Change])

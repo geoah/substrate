@@ -77,13 +77,6 @@ public struct OAuthClient: Sendable {
         self.init(manifest: manifest, metadata: metadata, transport: transport)
     }
 
-    /// The server's metadata; nil when it predates app authorization.
-    public static func metadata(server: URL, transport: any HTTPTransport = URLSessionTransport.shared) async throws
-        -> AuthorizationServerMetadata?
-    {
-        try await SubstrateClient(server: server, transport: transport).authorizationServerMetadata()
-    }
-
     /// The page the owner approves on. `authorization_details` is the
     /// manifest's details as compact JSON. A server that does not list every
     /// type they use would approve the scopes alone, so it is refused here
@@ -138,8 +131,9 @@ public struct OAuthClient: Sendable {
 
     /// Trades the code for the token. Never sent twice: a code is spent on
     /// first use, and a replay revokes the token the first use minted. Never
-    /// sent off the issuer's origin either: the code and its verifier are
-    /// the token to whoever receives them.
+    /// sent off the issuer's origin either, by its endpoint or by a redirect,
+    /// which is a refusal here: the code and its verifier are the token to
+    /// whoever receives them.
     public func exchange(code: String, redirect: String, pkce: PKCE) async throws -> TokenResponse {
         if let problem = metadata.mismatch(server: nil) { throw ServerMismatch(problem) }
         let request = Self.form(metadata.tokenEndpoint, [
@@ -147,7 +141,7 @@ public struct OAuthClient: Sendable {
             ("redirect_uri", redirect), ("code_verifier", pkce.verifier),
         ], timeout: SubstrateClient.Timeout.quick)
         let (data, response) = try await transport.data(for: request)
-        guard response.statusCode == 200 else { throw Self.refusal(status: response.statusCode, data: data) }
+        guard response.statusCode == 200 else { throw Self.refusal(response, data: data) }
         return try JSONDecoder().decode(TokenResponse.self, from: data)
     }
 
@@ -191,7 +185,14 @@ public struct OAuthClient: Sendable {
         return request
     }
 
-    static func refusal(status: Int, data: Data) -> Error {
+    /// Anything but the 200 the token and revocation endpoints answer: a
+    /// redirect, which is never followed, RFC 6749's error object, or the
+    /// envelope.
+    static func refusal(_ response: HTTPURLResponse, data: Data) -> Error {
+        let status = response.statusCode
+        if (300 ..< 400).contains(status) {
+            return Redirected(status: status, location: response.value(forHTTPHeaderField: "Location"))
+        }
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let code = object["error"] as? String {
             return OAuthRefusal(code: code, text: object["error_description"] as? String)
         }

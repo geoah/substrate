@@ -55,8 +55,8 @@ public struct AppStatusCheck: Sendable {
                 do {
                     let result = try await client.checkAuthorization(manifest.check(for: session))
                     let found = manifest.changes(from: result, session: session)
-                    if !found.serverMissing.isEmpty {
-                        issues.append(.serverTooOld(running: probe.version, needed: nil, missing: found.serverMissing))
+                    if !found.serverBlocked.isEmpty {
+                        issues.append(.serverTooOld(running: probe.version, needed: nil, missing: [], blocked: found.serverBlocked))
                     }
                     if !found.changes.isEmpty { issues.append(.needsApproval(changes: found.changes)) }
                     expiresAt = result.expiresAt ?? expiresAt

@@ -106,13 +106,14 @@ struct SettingsView: View {
         .readableWidth()
         .navigationTitle("Settings")
         .sheet(isPresented: $changingAccess) {
-            ReviewChangesSheet(appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
-                               changes: model.reviewChanges, heading: .changeAccess,
-                               onContinue: {
-                                   changingAccess = false
-                                   Task { await model.authorize() }
-                               },
-                               onCancel: { changingAccess = false })
+            if let session = model.session, let manifest = try? model.manifest() {
+                ReviewChangesSheet(changingAccessFor: manifest, session: session, changes: model.reviewChanges,
+                                   onContinue: {
+                                       changingAccess = false
+                                       Task { await model.authorize() }
+                                   },
+                                   onCancel: { changingAccess = false })
+            }
         }
     }
 

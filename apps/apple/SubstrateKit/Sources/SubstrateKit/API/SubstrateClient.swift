@@ -155,11 +155,14 @@ public struct SubstrateClient: Sendable {
 
     static let idempotent: Set<String> = ["GET", "HEAD", "PUT", "DELETE", "OPTIONS"]
 
-    /// A refusal as the error that says what it means: a 401 is the sign-in
-    /// ending, a 403 naming `insufficient_scope` an approval that does not
-    /// reach, the envelope the server's own words, anything else not the
-    /// server's answer.
+    /// A refusal as the error that says what it means: a 3xx a redirect
+    /// never followed, a 401 the sign-in ending, a 403 naming
+    /// `insufficient_scope` an approval that does not reach, the envelope the
+    /// server's own words, anything else not the server's answer.
     public static func failure(_ response: Response) -> Error {
+        if (300 ..< 400).contains(response.status) {
+            return Redirected(status: response.status, location: response.header("Location"))
+        }
         let envelope = ServerError(status: response.status, envelope: response.data)
         if response.status == 401 { return SessionExpired(message: envelope?.text) }
         if response.status == 403, response.header("WWW-Authenticate")?.contains("insufficient_scope") == true {

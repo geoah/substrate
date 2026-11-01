@@ -47,6 +47,9 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
     let onSignIn: (ServerProbe.Result) async throws -> Void
     let passwordDoor: (ServerProbe.Result) -> PasswordDoor
     let hasPasswordDoor: Bool
+    /// Tokens the app stopped using that their servers have not revoked
+    /// yet, said below the door whatever server it is.
+    let unrevoked: [Session]
 
     enum Phase {
         case idle
@@ -59,19 +62,19 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
     @State var problem: String?
     @FocusState private var focused: Bool
 
-    public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(),
+    public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
                 @ViewBuilder header: () -> Header,
                 onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
                 @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
     {
         self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: passwordDoor, hasPasswordDoor: true, phase: .idle)
+                  passwordDoor: passwordDoor, hasPasswordDoor: true, phase: .idle, unrevoked: unrevoked)
     }
 
     init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe, header: Header,
          onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
          passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, hasPasswordDoor: Bool, phase: Phase,
-         problem: String? = nil)
+         problem: String? = nil, unrevoked: [Session] = [])
     {
         self.manifest = manifest
         _address = address
@@ -80,6 +83,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         self.onSignIn = onSignIn
         self.passwordDoor = passwordDoor
         self.hasPasswordDoor = hasPasswordDoor
+        self.unrevoked = unrevoked
         _phase = State(initialValue: phase)
         _problem = State(initialValue: problem)
     }
@@ -131,6 +135,8 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
+                UnrevokedNotices(appName: manifest.appName, unrevoked: unrevoked)
+                    .modifier(KitCard(tint: .orange))
             }
             .padding(24)
             .frame(maxWidth: 440)
@@ -204,7 +210,8 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 if door(for: found) == .password {
                     Text("This server can't give \(manifest.appName) access of its own yet, so your password goes to it directly.")
                 } else {
-                    Text("You sign in on \(found.host) itself and choose what \(manifest.appName) may do there. You can change or revoke it any time in its Settings, under Apps.")
+                    Text("You sign in on \(found.host) itself and choose what \(manifest.appName) may do there. "
+                        + "Later, Change Access in this app asks again; to revoke, use \(found.host)'s Settings, under Apps.")
                 }
             }
         } else {
@@ -257,21 +264,23 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
 
 public extension ConnectView where PasswordDoor == EmptyView {
     /// A connect screen for an app with no password door.
-    init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(),
+    init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
          @ViewBuilder header: () -> Header, onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
     {
         self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle)
+                  passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle, unrevoked: unrevoked)
     }
 }
 
 public extension ConnectView where Header == ConnectHeader, PasswordDoor == EmptyView {
     /// A connect screen headed by the app's name and what it is for.
     init(manifest: AppManifest, tagline: String? = nil, icon: Image? = nil, address: Binding<String>,
-         probe: ServerProbe = ServerProbe(), onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
+         probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
+         onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
     {
         self.init(manifest: manifest, address: address, probe: probe,
                   header: ConnectHeader(appName: manifest.appName, tagline: tagline, icon: icon),
-                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle)
+                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle,
+                  unrevoked: unrevoked)
     }
 }

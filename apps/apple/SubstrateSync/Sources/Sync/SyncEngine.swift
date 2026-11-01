@@ -116,7 +116,7 @@ enum Settings {
 
 enum SyncError: LocalizedError {
     case noAccess(String)
-    case notArmed
+    case webhookOff
     /// An app session's Health account is gone from the server: the owner's
     /// approval creates it, never the app.
     case noAccount
@@ -136,7 +136,7 @@ enum SyncError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .noAccess(what): "No access to \(what). Allow it in the Settings app."
-        case .notArmed: "The Apple Health webhook is not armed. Open Set Up and run it again."
+        case .webhookOff: "The Apple Health webhook is not on. Open Set Up and run it again."
         case .noAccount:
             "This phone's Health account is not on your server. Review Substrate Sync's access on Home to set it up again; every day is sent again once it is."
         case .accountDeleted:
@@ -1123,7 +1123,7 @@ actor SyncEngine {
               trigger["enabled"] as? Bool == true,
               let key = ((trigger["source"] as? [String: Any])?["webhook"] as? [String: Any])?["key"] as? String,
               !key.isEmpty
-        else { throw SyncError.notArmed }
+        else { throw SyncError.webhookOff }
         return key
     }
 

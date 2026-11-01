@@ -81,6 +81,17 @@ public struct AppManifest: Sendable {
     /// The `scope` parameter.
     public var scope: String { scopes.joined(separator: " ") }
 
+    /// Whether the client id is a loopback one, which the server never
+    /// matches to an earlier approval: every approval page is a first.
+    public var isLocal: Bool { URL(string: clientID)?.scheme?.lowercased() != "https" }
+
+    /// Whether the approval page lists what `session` holds under Already
+    /// allowed: an app session, approved for this released client id (or
+    /// kept by a build that named none).
+    public func showsAlreadyAllowed(_ session: Session) -> Bool {
+        !isLocal && session.isApp && (session.clientID.map { $0 == clientID } ?? true)
+    }
+
     /// Whether a server sets up every detail the app sends. One that does not
     /// would ignore the parameter and approve the scopes alone, which the app
     /// would then read as set up, so its requirement fails and it never gets

@@ -27,6 +27,9 @@ public struct SessionStore: Sendable {
     /// On macOS, the data protection keychain, which an access group needs.
     /// Off keeps the item where a build without it left one.
     public let dataProtection: Bool
+    /// Where the items are: the Keychain under the attributes above, unless
+    /// the store was made over storage of the caller's.
+    private let storage: (any SessionStorage)?
 
     public init(service: String, accessGroup: String? = nil, account: String = "session",
                 accessibility: Accessibility = .afterFirstUnlockThisDeviceOnly, dataProtection: Bool = false)
@@ -36,6 +39,18 @@ public struct SessionStore: Sendable {
         self.account = account
         self.accessibility = accessibility
         self.dataProtection = dataProtection
+        storage = nil
+    }
+
+    /// A store over `storage` instead of the Keychain, such as a test's that
+    /// refuses to write.
+    public init(service: String, account: String = "session", storage: any SessionStorage) {
+        self.service = service
+        accessGroup = nil
+        self.account = account
+        accessibility = .afterFirstUnlockThisDeviceOnly
+        dataProtection = false
+        self.storage = storage
     }
 
     public enum Read: Sendable {
@@ -77,7 +92,7 @@ public struct SessionStore: Sendable {
 
     /// Forgets the session only; the app's other items stay.
     public func clear() {
-        SecItemDelete(query(account: account) as CFDictionary)
+        delete(account: account)
     }
 
     // MARK: Revocations
@@ -104,7 +119,7 @@ public struct SessionStore: Sendable {
     public func revoked(_ session: Session) {
         let pending = pendingRevocations().filter { $0.secret != session.secret }
         if pending.isEmpty {
-            SecItemDelete(query(account: revocationsAccount) as CFDictionary)
+            delete(account: revocationsAccount)
         } else if let data = try? JSONEncoder().encode(pending) {
             try? write(data, account: revocationsAccount)
         }
@@ -131,15 +146,72 @@ public struct SessionStore: Sendable {
         return live
     }
 
-    /// Stops using `session` on this device: kept for revocation first, then
-    /// forgotten, so a revocation cut short is tried again at the next
-    /// launch (`revokePending`). Answers whether it was kept; one the
-    /// Keychain would not keep is the caller's to revoke now or never.
-    @discardableResult
-    public func signOut(_ session: Session) -> Bool {
-        let kept = (try? keepForRevocation(session)) != nil
+    /// Saves `session` in place of `old`, the session in use where there is
+    /// one. `old` is kept for revocation first, since the save overwrites the
+    /// only other copy of its token; where the Keychain will not keep it, it
+    /// is revoked here, and one neither kept nor revoked stays the session in
+    /// use (`NotRetired`). A session this store does not save is revoked,
+    /// since nothing else holds its token. A kept `old` waits for
+    /// `revokePending`.
+    public func save(_ session: Session, replacing old: Session?,
+                     transport: any HTTPTransport = URLSessionTransport.shared) async throws
+    {
+        if let old {
+            do {
+                try await retire(old, transport: transport)
+            } catch {
+                try? await session.revoke(transport: transport)
+                throw error
+            }
+        }
+        do {
+            try save(session)
+        } catch {
+            if let old { revoked(old) }
+            try? await session.revoke(transport: transport)
+            throw error
+        }
+    }
+
+    /// Stops using `session` on this device: kept for revocation, then
+    /// forgotten, so a revocation cut short is tried again at the next launch
+    /// (`revokePending`). Where the Keychain will not keep it, it is revoked
+    /// first and forgotten only once the server says so: one neither kept nor
+    /// revoked stays signed in (`NotRetired`), since nothing else would hold
+    /// its token.
+    public func signOut(_ session: Session, transport: any HTTPTransport = URLSessionTransport.shared) async throws {
+        try await retire(session, transport: transport)
         clear()
-        return kept
+    }
+
+    /// Kept for revocation, or else revoked now: never neither.
+    private func retire(_ session: Session, transport: any HTTPTransport) async throws {
+        do {
+            try keepForRevocation(session)
+        } catch {
+            do {
+                try await session.revoke(transport: transport)
+            } catch let refused {
+                throw NotRetired(session: session, keeping: error, revoking: refused)
+            }
+        }
+    }
+
+    /// A token this device would stop using that it could neither keep to
+    /// revoke later nor revoke now: it stays in use, since nothing else would
+    /// hold it.
+    public struct NotRetired: LocalizedError, Sendable {
+        public let session: Session
+        /// Why the Keychain did not keep it.
+        public let keeping: Error
+        /// Why the server did not confirm revoking it.
+        public let revoking: Error
+
+        public var errorDescription: String? {
+            let host = ServerAddress.display(session.server)
+            return "This device couldn't keep the sign-in to \(host) to revoke later, and \(host) didn't confirm revoking it now, "
+                + "so it stays in use here. Try again once \(host) answers."
+        }
     }
 
     // MARK: Other items
@@ -153,6 +225,7 @@ public struct SessionStore: Sendable {
     /// Another item of the app's beside the session, such as an install id
     /// that outlives a sign-out.
     public func data(account: String) -> Item {
+        if let storage { return storage.read(account: account) }
         var q = query(account: account)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -177,6 +250,7 @@ public struct SessionStore: Sendable {
     /// Replaces the item in place, so a write that fails leaves the one
     /// before it rather than none.
     public func write(_ data: Data, account: String) throws {
+        if let storage { return try storage.write(data, account: account) }
         let match = query(account: account)
         let attributes: [String: Any] = [
             kSecAttrAccessible as String: accessibility.attribute,
@@ -187,6 +261,11 @@ public struct SessionStore: Sendable {
             status = SecItemAdd(match.merging(attributes) { a, _ in a } as CFDictionary, nil)
         }
         guard status == errSecSuccess else { throw NotSaved(status: status) }
+    }
+
+    public func delete(account: String) {
+        if let storage { return storage.delete(account: account) }
+        SecItemDelete(query(account: account) as CFDictionary)
     }
 
     func query(account: String) -> [String: Any] {
@@ -201,4 +280,12 @@ public struct SessionStore: Sendable {
         #endif
         return q
     }
+}
+
+/// Where a `SessionStore` keeps its items in place of the Keychain. A write
+/// that fails throws and leaves the item before it, as the Keychain's does.
+public protocol SessionStorage: Sendable {
+    func read(account: String) -> SessionStore.Item
+    func write(_ data: Data, account: String) throws
+    func delete(account: String)
 }
