@@ -77,6 +77,13 @@ public enum Timestamp {
         defer { lock.unlock() }
         return withFraction.date(from: s) ?? plain.date(from: s)
     }
+
+    /// RFC 3339 in UTC with milliseconds, which `parse` reads back.
+    public static func format(_ date: Date) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return withFraction.string(from: date)
+    }
 }
 
 public extension Record {
