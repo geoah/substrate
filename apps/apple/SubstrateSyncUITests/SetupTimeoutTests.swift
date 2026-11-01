@@ -18,6 +18,8 @@ final class SetupTimeoutTests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["SUBSTRATE_SYNC_E2E_NO_HEALTH"] = "1"
         app.launchEnvironment["SUBSTRATE_SYNC_SERVER_WORK_SECONDS"] = "3"
+        // Set Up is a password session's.
+        app.launchEnvironment["SUBSTRATE_SYNC_PASSWORD_DOOR"] = "1"
         app.launch()
 
         let address = app.textFields["https://substrate.example.com"]

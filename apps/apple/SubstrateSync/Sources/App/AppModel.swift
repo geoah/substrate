@@ -3,6 +3,7 @@ import CryptoKit
 import EventKit
 import Foundation
 import HealthKit
+import SubstrateKit
 import SwiftUI
 import UIKit
 
@@ -34,16 +35,27 @@ struct SetupStep: Identifiable, Equatable {
 /// Everything the screens show, and the actions they take.
 @MainActor
 final class AppModel: ObservableObject {
-    static let appleProvider = "providers.substrate.reamde.dev/apple"
-    static let healthProvider = "providers.substrate.reamde.dev/applehealth"
+    nonisolated static let appleProvider = "providers.substrate.reamde.dev/apple"
+    nonisolated static let healthProvider = "providers.substrate.reamde.dev/applehealth"
     /// The apple package version that declares the calendar kinds.
-    static let appleVersion = 3
+    nonisolated static let appleVersion = 3
     /// The applehealth version that carries its adapter into the health
     /// catalogue (decision record 0192).
-    static let healthVersion = 5
+    nonisolated static let healthVersion = 5
 
+    /// A password session (Set Up, the trigger's key) or an app one (the
+    /// owner's approval sets up, the token delivers).
     @Published private(set) var session: Session?
     @Published private(set) var state = LocalState.load()
+    /// Whether the server still gives this app what it needs, by the kit's
+    /// check: asked at launch and on return to the foreground, at most every
+    /// five minutes, and at once when a sync meets something only an
+    /// approval clears.
+    lazy var status = AppStatusModel { [weak self] in self?.statusCheck() }
+    /// The authorization flow is running: a sign-in, a review or a move.
+    @Published private(set) var authorizing = false
+    /// Why the last review, renewal or move did not finish.
+    @Published var authorizeError: String?
     @Published var steps: [SetupStep] = []
     @Published var setupChecked = false
     @Published var setupBusy = false
@@ -121,7 +133,7 @@ final class AppModel: ObservableObject {
     private static let generatedKeyDefaults = "trigger.generatedKeyHash"
 
     init() {
-        session = Keychain.load()
+        session = SessionStore.sync.load()
         Task {
             // The model lives as long as the app, so the engine holds it.
             await SyncEngine.shared.setOnChange { state in self.state = state }
@@ -132,6 +144,7 @@ final class AppModel: ObservableObject {
                 if step != nil { self.continued?.show(self.continuedShown) }
             }
             await SyncEngine.shared.setOnSignedOut { self.sessionExpired = true }
+            await SyncEngine.shared.setOnNeedsApproval { Task { await self.status.refresh(force: true) } }
         }
         refreshAccess()
         PlaceMonitor.shared.onAuthorizationChange = { [weak self] in self?.refreshAccess() }
@@ -142,39 +155,110 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var client: Client? { session.map { Client(server: $0.server, secret: $0.secret) } }
+    var client: Client? { session.map { Client($0) } }
     var setupComplete: Bool { setupChecked && !setupBusy && !setupSettling && steps.allSatisfy(\.done) }
 
     // MARK: - sign in and out
 
+    /// Sync's request for this phone. Refused while the install id cannot be
+    /// read: a request naming another Health account would have the approval
+    /// create that one.
+    func manifest() throws -> AppManifest {
+        _ = try InstallID.get()
+        return SyncManifest.make(account: state.healthAccount, deviceName: UIDevice.current.name,
+                                 timeZone: TimeZone.current.identifier)
+    }
+
+    /// How this app signs in to a server it probed: the authorization flow
+    /// where the server sets up what Sync needs, the password elsewhere.
+    func door(for probe: ServerProbe.Result) -> SignInDoor {
+        #if DEBUG
+        // The end-to-end tests drive the password door on any server.
+        if ProcessInfo.processInfo.environment["SUBSTRATE_SYNC_PASSWORD_DOOR"] == "1" { return .password }
+        #endif
+        return (try? manifest())?.door(for: probe) ?? .password
+    }
+
+    /// The password door, for a server that cannot set up what Sync needs.
     func signIn(server: URL, repository: String, password: String, totp: String?) async throws {
         let label = "Substrate Sync on \(UIDevice.current.name)"
-        let result = try await Client(server: server).login(
+        let result = try await Client(server: server).api.login(
             repository: repository, password: password, totp: totp, label: label)
-        let session = Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id)
-        // The state answers for one repository: signed in to any other, or
-        // to this one again, what was pushed before is checked against the
-        // server rather than trusted (the run forgets it where the identity
-        // differs, and each source asks the server what it still holds).
-        // Kept first: a sign-in the Keychain would not hold is refused here,
-        // with the token it minted revoked, rather than lost at next launch.
+        try await adopt(Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id))
+    }
+
+    /// The authorization flow: the server's own sign-in and approval page in
+    /// the browser sheet, whose approval sets up the packages, the account and
+    /// the webhook before the code is issued.
+    func signIn(probe: ServerProbe.Result) async throws {
+        let manifest = try manifest()
+        guard let oauth = OAuthClient(manifest: manifest, probe: probe, transport: Client.transport) else {
+            throw URLError(.badServerResponse)
+        }
+        authorizing = true
+        defer { authorizing = false }
+        try await adopt(try await oauth.signIn(server: probe.origin))
+    }
+
+    /// The flow again with the whole manifest: a review of what changed, a
+    /// renewal, a sign-in after the access ended, or the move from a password
+    /// session. The install id is the same, so the approval finds this
+    /// phone's account in place. The new session is kept first, then the
+    /// token it replaces is revoked through its own door: a password one
+    /// with its own `DELETE /tokens/{id}`, since `/oauth/revoke` under the
+    /// new client id answers 200 and revokes nothing.
+    func authorize() async {
+        guard let old = session, !authorizing else { return }
+        authorizing = true
+        defer { authorizing = false }
+        authorizeError = nil
         do {
-            try Keychain.save(session)
+            let manifest = try manifest()
+            let probe = try await ServerProbe(transport: Client.transport)
+                .probe(old.server, requirement: manifest.requirement, app: manifest.appName)
+            guard door(for: probe) == .app, let oauth = OAuthClient(manifest: manifest, probe: probe, transport: Client.transport)
+            else {
+                throw Message("\(ServerAddress.display(old.server)) can't set up \(manifest.appName) on approval: it needs an update first.")
+            }
+            try await adopt(try await oauth.signIn(server: old.server))
+            Self.revoke(old)
+        } catch where error is WebAuthenticator.Cancelled || isStop(error) {
+            // The person closed the sheet, or the work was stopped: nothing
+            // to say.
         } catch {
-            Task.detached { try? await Client(server: server, secret: session.secret).revoke(token: session.tokenID) }
+            authorizeError = explain(error, server: old.server)
+        }
+    }
+
+    /// Keeps a new session of either kind. The state answers for one
+    /// repository: signed in to any other, or to this one again, what was
+    /// pushed before is checked against the server rather than trusted (the
+    /// run forgets it where the identity differs, and each source asks the
+    /// server what it still holds). Kept first: a sign-in the Keychain would
+    /// not hold is refused here, with the token it minted revoked, rather
+    /// than lost at next launch.
+    private func adopt(_ session: Session) async throws {
+        do {
+            try SessionStore.sync.save(session)
+        } catch {
+            Self.revoke(session)
             throw error
         }
         await SyncEngine.shared.cancel()
-        let identity = session.identity
         state = await SyncEngine.shared.update { s in
-            if s.repository != identity {
+            if !s.isBound(to: session) {
                 s.forgetPushed()
-                s.repository = identity
+                s.repository = session.identity
             }
         }
         self.session = session
         resetSetup()
-        await checkSetup()
+        status.reset()
+        if session.isApp {
+            await status.refresh(force: true)
+        } else {
+            await checkSetup()
+        }
     }
 
     /// Signs out here at once; the token is revoked on the server as a best
@@ -183,12 +267,54 @@ final class AppModel: ObservableObject {
     func signOut() {
         let old = session
         Task { await SyncEngine.shared.cancel() }
-        Keychain.clear()
+        SessionStore.sync.clear()
         session = nil
         resetSetup()
-        if let old {
-            Task.detached { try? await Client(server: old.server, secret: old.secret).revoke(token: old.tokenID) }
+        status.reset()
+        if let old { Self.revoke(old) }
+    }
+
+    /// Revokes a token this phone no longer keeps, in the background and as
+    /// a best effort: an app token at its revocation endpoint under the
+    /// client id it was approved for, a password one with its own
+    /// `DELETE /tokens/{id}`.
+    nonisolated static func revoke(_ session: Session) {
+        Task.detached {
+            if session.isApp {
+                try? await OAuthClient.revoke(session, transport: Client.transport)
+            } else if let id = session.tokenID {
+                try? await Client(session).api.revokeToken(id: id)
+            }
         }
+    }
+
+    // MARK: - status
+
+    private func statusCheck() -> AppStatusCheck? {
+        guard let session, let manifest = try? manifest() else { return nil }
+        return AppStatusCheck(manifest: manifest, session: session, client: SubstrateClient(session, transport: Client.transport))
+    }
+
+    /// An app session's access ended or was revoked: only the flow again
+    /// gets it back.
+    var accessEnded: Bool {
+        session?.isApp == true && (sessionExpired || status.status?.issues.contains(.accessEnded) == true)
+    }
+
+    /// The server lacks something only an approval sets up for an app
+    /// session: a package, the Health account or the webhook. Scopes alone
+    /// leave Home in place.
+    var setupNeedsApproval: Bool {
+        session?.isApp == true && status.status?.changes.contains(where: \.isSetup) == true
+    }
+
+    /// What Home tells the owner about. A password session hears only the
+    /// offer to move to app access, since Set Up speaks for its server; an
+    /// app session hears everything but an ended access, which is a screen
+    /// of its own.
+    var homeIssues: [AppIssue] {
+        guard let session, let issues = status.status?.issues else { return [] }
+        return session.isApp ? issues.filter { $0 != .accessEnded } : issues.filter { $0 == .legacyAccess }
     }
 
     /// What one session's Set Up showed, forgotten when the session changes.
@@ -200,16 +326,19 @@ final class AppModel: ObservableObject {
         foreignKey = false
         sessionExpired = false
         serverUnreachable = nil
+        authorizeError = nil
     }
 
     // MARK: - set up
 
-    /// Reads what the server holds and what Set Up still has to do.
+    /// Reads what the server holds and what Set Up still has to do, for a
+    /// password session; an app session's approval sets up.
     /// `keepError` keeps what the Set Up before it reported, unless the check
     /// finds everything in place: then whatever stopped it finished after
     /// all. A check already under way answers for this one.
     func checkSetup(keepError: Bool = false) async {
-        guard let identity = session?.identity else { return }
+        guard let session, !session.isApp else { return }
+        let identity = session.identity
         if let checking, checking.identity == identity {
             await checking.task.value
             return
@@ -298,7 +427,7 @@ final class AppModel: ObservableObject {
         // run that asked it still reads: it waits for that check, never
         // drops the answer.
         if let checking { await checking.task.value }
-        guard let client, let identity = session?.identity, !setupBusy else { return }
+        guard let client, let identity = session?.identity, session?.isApp == false, !setupBusy else { return }
         setupBusy = true
         setupSettling = true
         defer { setupSettling = false }
@@ -367,7 +496,7 @@ final class AppModel: ObservableObject {
     /// there and the owner has not said whether to keep it.
     private func armTrigger(_ client: Client, replaceKey: Bool?) async throws -> Bool {
         guard let trigger = try await client.get(SyncEngine.triggerKind, SyncEngine.trigger) else {
-            throw ServerError(status: 404, data: Data(#"{"error":{"message":"The applehealth-webhook trigger is not installed."}}"#.utf8))
+            throw ServerError(status: 404, message: "The applehealth-webhook trigger is not installed.")
         }
         var source = trigger["source"] as? [String: Any] ?? [:]
         var webhook = source["webhook"] as? [String: Any] ?? [:]
@@ -636,7 +765,7 @@ final class AppModel: ObservableObject {
                         self.healthScanning = done < total ? SyncProgress(step: "Reading what the phone holds", done: done, total: total) : nil
                     }
                 }
-            } catch where isCancellation(error) {
+            } catch where isStop(error) {
             } catch {
                 coverageError = explain(error)
             }

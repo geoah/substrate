@@ -1,15 +1,24 @@
+import SubstrateKit
 import SwiftUI
 
 /// The account, the app's own settings, the server set up, and signing out.
-/// What one source lets the owner choose is on that source's page.
+/// What one source lets the owner choose is on that source's page. An app
+/// session's account is the kit's: what the owner approved and until when,
+/// and the way to change it.
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage(Settings.frequencyKey) private var frequency = Settings.Frequency.hourly.rawValue
     @State private var sampleNote: String?
+    @State private var reviewing = false
+
+    private var isApp: Bool { model.session?.isApp == true }
 
     var body: some View {
         Form {
-            if let session = model.session {
+            if let session = model.session, session.isApp {
+                AccountSection(session: session, manifest: try? model.manifest(), serverVersion: model.status.status?.serverVersion,
+                               onChangeAccess: { reviewing = true }, onSignOut: { model.signOut() })
+            } else if let session = model.session {
                 Section("Account") {
                     LabeledContent("Repository", value: session.repository)
                     LabeledContent("Server") {
@@ -30,13 +39,27 @@ struct SettingsView: View {
             }
 
             Section {
-                NavigationLink {
-                    SetupView(fromSettings: true)
-                } label: {
-                    HStack {
-                        Text("Server Set Up")
-                        Spacer()
-                        StatusBadge(text: model.setupComplete ? "Complete" : "Needs work", color: model.setupComplete ? .green : .orange)
+                if isApp {
+                    NavigationLink {
+                        ServerStatusView(fromSettings: true)
+                    } label: {
+                        HStack {
+                            Text("Server Status")
+                            Spacer()
+                            let clear = model.status.status?.isClear
+                            StatusBadge(text: clear == nil ? "Not checked" : clear == true ? "Up to date" : "Needs you",
+                                        color: clear == nil ? .secondary : clear == true ? .green : .orange)
+                        }
+                    }
+                } else {
+                    NavigationLink {
+                        SetupView(fromSettings: true)
+                    } label: {
+                        HStack {
+                            Text("Server Set Up")
+                            Spacer()
+                            StatusBadge(text: model.setupComplete ? "Complete" : "Needs work", color: model.setupComplete ? .green : .orange)
+                        }
                     }
                 }
                 LabeledContent("Health account", value: model.state.healthAccount)
@@ -68,17 +91,29 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                Button(role: .destructive) {
-                    model.signOut()
-                } label: {
-                    WideLabel(title: "Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+            // An app session's Sign Out is in its account section.
+            if !isApp {
+                Section {
+                    Button(role: .destructive) {
+                        model.signOut()
+                    } label: {
+                        WideLabel(title: "Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                    .destructiveAction()
+                    .buttonRow()
                 }
-                .destructiveAction()
-                .buttonRow()
             }
         }
         .readableWidth()
         .navigationTitle("Settings")
+        .sheet(isPresented: $reviewing) {
+            ReviewChangesSheet(appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
+                               changes: model.status.status?.changes ?? [], firstSignIn: false,
+                               onContinue: {
+                                   reviewing = false
+                                   Task { await model.authorize() }
+                               },
+                               onCancel: { reviewing = false })
+        }
     }
 }

@@ -32,6 +32,6 @@ struct ChatRecordReader: RecordReader {
     }
 
     var deniedHint: String? {
-        grants != nil ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change What It May Do…" : nil
+        grants != nil ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
     }
 }

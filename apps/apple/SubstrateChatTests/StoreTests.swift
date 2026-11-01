@@ -221,7 +221,7 @@ private func routes(chat: ScriptedServer.Answer, version: Int = 3) -> [ScriptedS
         ])
         let id = UUID().uuidString.lowercased()
         let app = ChatStore(session: Session(server: URL(string: "https://\(id).example.com")!, repository: "\(id).example.com",
-                                             secret: "secret", tokenID: "token", grants: Grants(scopes: ["agents:*"])))
+                                             secret: "secret", clientID: "http://127.0.0.1/substrate-chat", scopes: ["agents:*"]))
         defer { app.close(forget: true) }
         await app.refreshAll()
         #expect(app.refreshError == nil)

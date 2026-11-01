@@ -12,10 +12,12 @@ struct RootView: View {
             } else if let store = model.store, !store.canChat {
                 NoChatAccessView()
             } else if let store = model.store {
+                // One view per store: a change of access starts a new one on
+                // the same identity, and a conversation of the old is closed.
                 ChatSplitView()
                     .environment(store)
                     .recordViewer(store.records)
-                    .id(store.session.identity)
+                    .id(ObjectIdentifier(store))
             } else {
                 SignInView()
             }
@@ -82,6 +84,7 @@ struct ChatSplitView: View {
         .onChange(of: scene.current?.threadID) { _, thread in restored = thread ?? "" }
         .onChange(of: phase) { _, phase in
             store.setActive(phase == .active)
+            if phase == .active { Task { await model.status.refresh() } }
             #if os(iOS)
             // Asked for while the app is still in front, as iOS requires of a
             // continued processing task: inactive comes before background.

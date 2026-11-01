@@ -1,13 +1,35 @@
+import SubstrateKit
 import SwiftUI
 
 /// The overview: what is happening now, one row per source with its state,
 /// and the way to the activity. Each source's details and settings are on its
-/// own page, and the account and the app's settings behind the gear.
+/// own page, and the account and the app's settings behind the gear. Above
+/// them, what the server says about Sync's access, where it says anything.
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var reviewing = false
 
     var body: some View {
         List {
+            if !model.homeIssues.isEmpty {
+                Section {
+                    AppStatusBanner(issues: model.homeIssues, appName: SyncManifest.appName, host: host, actions: AppStatusActions(
+                        review: { reviewing = true },
+                        signInAgain: { Task { await model.authorize() } },
+                        moveToAppAccess: { Task { await model.authorize() } },
+                        retry: { Task { await model.status.refresh(force: true) } }))
+                        .disabled(model.authorizing)
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            }
+            if let problem = model.authorizeError {
+                Section {
+                    ProblemBox(title: model.session?.isApp == true ? "The review didn't finish" : "Couldn't move to app access",
+                               message: problem)
+                }
+            }
+
             Section {
                 StatusCard()
             }
@@ -49,7 +71,18 @@ struct HomeView: View {
         }
         .refreshable { await model.syncNow() }
         .task { await model.loadCoverage() }
+        .sheet(isPresented: $reviewing) {
+            ReviewChangesSheet(appName: SyncManifest.appName, host: host, changes: model.status.status?.changes ?? [],
+                               firstSignIn: false,
+                               onContinue: {
+                                   reviewing = false
+                                   Task { await model.authorize() }
+                               },
+                               onCancel: { reviewing = false })
+        }
     }
+
+    private var host: String { model.session.map { ServerAddress.display($0.server) } ?? "Your server" }
 }
 
 /// What the app is doing now, and the one button. Every state has the same

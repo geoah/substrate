@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SubstrateKit
 
 /// What one pushed row was: the hash of what was sent and its keys, so an
 /// unchanged row is skipped and a vanished key is cleared with a PATCH.
@@ -203,6 +204,13 @@ struct LocalState: Codable, Sendable {
         try? data.write(to: Self.url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
+    /// Whether the pushed rows went to the session's repository. Compared
+    /// without case: a host is, and builds before the kit's normaliser kept
+    /// the server as typed.
+    func isBound(to session: Session) -> Bool {
+        repository?.lowercased() == session.identity
+    }
+
     /// Forgets what was pushed, keeping the install: a new sign-in may be a
     /// different repository, which has none of these rows.
     mutating func forgetPushed() {
@@ -268,7 +276,7 @@ enum InstallID {
         lock.lock()
         defer { lock.unlock() }
         if let cached { return cached }
-        switch Keychain.read(account: "install") {
+        switch SessionStore.sync.data(account: "install") {
         case let .found(data):
             let id = String(decoding: data, as: UTF8.self)
             cached = id
@@ -277,7 +285,9 @@ enum InstallID {
             let id = LocalState.storedInstall() ?? UUID().uuidString.lowercased()
             // An id the Keychain did not keep would be minted again next
             // launch, and fork the address book and the Health account.
-            do { try Keychain.setString(id, account: "install") } catch let e as Keychain.NotSaved { throw Unavailable(status: e.status) }
+            do { try SessionStore.sync.setString(id, account: "install") } catch let e as SessionStore.NotSaved {
+                throw Unavailable(status: e.status)
+            }
             cached = id
             return id
         case let .failed(status):

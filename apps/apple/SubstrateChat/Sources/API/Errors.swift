@@ -48,14 +48,6 @@ struct SessionExpired: LocalizedError, Sendable {
     var errorDescription: String? { "Your sign-in is no longer valid. Sign in again." }
 }
 
-/// The server refused a sign-in: the name, the password or the code.
-struct LoginRefused: LocalizedError, Sendable {
-    let server: ServerError?
-    var errorDescription: String? {
-        server?.text ?? "The repository name, password or code was not accepted."
-    }
-}
-
 #if os(macOS)
 private let thisDevice = "This Mac"
 #else
@@ -85,8 +77,10 @@ func explain(_ error: Error, server: URL? = nil) -> String {
         default: return error.localizedDescription
         }
     }
+    // An approval that does not reach is changed in Settings, never by
+    // signing in again, which approves nothing more on its own.
     if let error = error as? ServerError, error.status == 403 {
-        return "Substrate Chat isn't allowed to do that on \(host): \(error.text) Sign in again to approve more."
+        return "Substrate Chat isn't approved to do that on \(host): \(error.text) Allow it with Settings → Change Access…"
     }
     if let error = error as? ServerError, error.status >= 500 {
         return "\(Host) ran into a problem (\(error.status)): \(error.text)"

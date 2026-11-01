@@ -1,5 +1,6 @@
 import BackgroundTasks
 import HealthKit
+import SubstrateKit
 import UIKit
 
 /// Syncs without the app open: a refresh task the system runs when it
@@ -59,7 +60,7 @@ enum Background {
     /// Observer queries live only as long as the process, so every launch
     /// starts them again; background delivery is what launches it.
     static func observeHealth() {
-        guard HealthReader.isAvailable, !observing, Keychain.load() != nil,
+        guard HealthReader.isAvailable, !observing, SessionStore.sync.load() != nil,
               UserDefaults.standard.bool(forKey: "health.asked"), Settings.enabled(.health)
         else { return }
         observing = true

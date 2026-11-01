@@ -75,14 +75,13 @@ struct HealthDelivery: Sendable {
         return JSON.object([("data", .object(data))]).encoded
     }
 
-    /// The headers the provider reads, beside the key: the five Health Auto
-    /// Export adds on its own and the account.
+    /// The headers the provider reads: the five Health Auto Export adds on
+    /// its own and the account. The credential is the client's to add.
     static func headers(
-        grouping: Grouping, key: String, account: String, automationID: String, sessionID: String
+        grouping: Grouping, account: String, automationID: String, sessionID: String
     ) -> [(String, String)] {
         [
             ("Content-Type", "application/json"),
-            ("Authorization", "Bearer \(key)"),
             ("X-Substrate-Account", account),
             ("automation-name", grouping.automationName),
             ("automation-id", automationID),

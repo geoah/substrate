@@ -1,33 +1,6 @@
 import Foundation
 import SubstrateKit
 
-/// The signed-in session: the server, the repository's authority and the
-/// bearer secret. An app token (the OAuth door) carries what the owner
-/// approved, when it ends and where it is revoked; a password login carries
-/// the token's id, so Sign Out revokes the very token it forgets.
-struct Session: Codable, Equatable, Sendable {
-    var server: URL
-    var repository: String
-    var secret: String
-    var tokenID: String
-    /// The approved scopes; nil is a full-access token (a password login).
-    var grants: Grants?
-    /// Absent when the owner approved the app until they revoke it.
-    var expiresAt: Date?
-    var revocation: URL?
-
-    /// Which repository on which server: what every cached byte is bound to.
-    var identity: String { server.absoluteString.lowercased() + "|" + repository.lowercased() }
-}
-
-/// `GET /.well-known/substrate/server.json`, the part the app reads.
-struct Discovery: Decodable, Sendable {
-    struct Registration: Decodable, Sendable { let totpRequired: Bool? }
-    struct Server: Decodable, Sendable { let version: String? }
-    let registration: Registration?
-    let server: Server?
-}
-
 /// A list read of `GET /api/v1/records`: the kinds in `filter.kinds`, the
 /// other arms beside them, and the wire's compact `orderBy`.
 struct ListQuery: Sendable, Hashable {
@@ -51,10 +24,10 @@ struct ListQuery: Sendable, Hashable {
     }
 }
 
-/// The substrate API as this app speaks it. Every request but discovery and
-/// login carries the bearer secret. None names an actor, so the server
-/// attributes them to `api`: `console` would claim a door this app is not,
-/// and a name of its own would lose the owner's annotation namespace.
+/// The substrate API as the chat speaks it, with the session's bearer
+/// secret; signing in is SubstrateKit's. None names an actor, so the server
+/// records an app token's writes as `app:<host>` and a password sign-in's as
+/// `api`: `console` would claim a door this app is not.
 struct API: Sendable {
     let server: URL
     var secret: String?
@@ -90,27 +63,6 @@ struct API: Sendable {
         config.urlCache = nil
         if let protocolClasses { config.protocolClasses = protocolClasses }
         return URLSession(configuration: config)
-    }
-
-    /// A server address as typed: a bare host is HTTPS, a local one plain
-    /// HTTP, and only the origin is kept.
-    static func origin(of typed: String) -> URL? {
-        var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
-        if !text.contains("://") {
-            let local = text.hasPrefix("localhost") || text.hasPrefix("127.0.0.1") || text.hasPrefix("[::1]")
-            text = (local ? "http://" : "https://") + text
-        }
-        guard var parts = URLComponents(string: text), let scheme = parts.scheme?.lowercased(),
-              scheme == "http" || scheme == "https", let host = parts.host, !host.isEmpty
-        else { return nil }
-        parts.scheme = scheme
-        parts.path = ""
-        parts.query = nil
-        parts.fragment = nil
-        parts.user = nil
-        parts.password = nil
-        return parts.url
     }
 
     // MARK: Requests
@@ -161,44 +113,6 @@ struct API: Sendable {
         if status == 401 { throw SessionExpired() }
         if let error = ServerError(status: status, envelope: data) { throw error }
         throw TransportError(text: "The request ended with HTTP \(status) and no answer from the server.")
-    }
-
-    // MARK: The door
-
-    func discover() async throws -> Discovery {
-        let req = try request("GET", ".well-known/substrate/server.json", timeout: 20)
-        let (data, _) = try await send(req)
-        return try JSONDecoder().decode(Discovery.self, from: data)
-    }
-
-    struct LoginResult: Decodable, Sendable {
-        struct Token: Decodable, Sendable { let id: String }
-        let token: Token
-        let secret: String
-        let repository: String
-    }
-
-    func login(repository: String, password: String, totp: String?, label: String) async throws -> LoginResult {
-        var body: [String: Any] = ["repository": repository, "password": password, "label": label]
-        if let totp, !totp.isEmpty { body["totpCode"] = totp }
-        var req = try request("POST", "login", json: body, timeout: 20)
-        req.setValue(nil, forHTTPHeaderField: "Authorization")
-        let (data, response) = try await Self.session.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        // At the door a 401 is the name, password or code, not a session ending.
-        if status == 401 { throw LoginRefused(server: ServerError(status: status, envelope: data)) }
-        guard (200 ..< 300).contains(status) else {
-            throw ServerError(status: status, envelope: data)
-                ?? TransportError(text: "The sign-in ended with HTTP \(status) and no answer from the server.")
-        }
-        return try JSONDecoder().decode(LoginResult.self, from: data)
-    }
-
-    /// Best effort and quick: a sign-out never waits on a server that is gone
-    /// or already refuses the token.
-    func revoke(token id: String) async throws {
-        let req = try request("DELETE", "tokens/\(Self.segment(id))", timeout: 10)
-        try await send(req, accept: [404])
     }
 
     // MARK: Records

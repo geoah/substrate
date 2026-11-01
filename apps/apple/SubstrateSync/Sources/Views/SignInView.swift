@@ -1,18 +1,22 @@
+import SubstrateKit
 import SwiftUI
 
-/// The server first, checked against its discovery document the way the
-/// console app's picker does; then the repository, the password, and a code
-/// when the server asks for one.
+/// The server first, checked against its discovery document and its OAuth
+/// metadata. A server whose approval sets up what Sync needs gets the
+/// browser sign-in, which asks for no password here; any other gets the
+/// repository, the password, and a code when the server asks for one.
 struct SignInView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("signin.server") private var address = ""
     @AppStorage("signin.repository") private var repository = ""
-    @State private var server: URL?
-    @State private var totpRequired = false
+    @State private var probe: ServerProbe.Result?
     @State private var password = ""
     @State private var code = ""
     @State private var busy = false
     @State private var problem: String?
+
+    private var door: SignInDoor? { probe.map { model.door(for: $0) } }
+    private var totpRequired: Bool { probe?.discovery.registration.totpRequired ?? true }
 
     var body: some View {
         Form {
@@ -23,18 +27,39 @@ struct SignInView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onSubmit(check)
-                    .onChange(of: address) { _, _ in server = nil }
+                    .onChange(of: address) { _, typed in
+                        // Writing the checked origin back is not a new address.
+                        if let probe, typed == probe.origin.absoluteString { return }
+                        probe = nil
+                    }
             } header: {
                 Text("Server")
             } footer: {
-                if let server {
+                if probe != nil {
                     Label("Server found.", systemImage: "checkmark.circle")
                 } else {
                     Text("Your Substrate server's address. A name alone is read as https://.")
                 }
             }
 
-            if server != nil {
+            if let probe, door == .app {
+                Section {
+                    ForEach((try? model.manifest())?.plannedChanges(for: probe.metadata) ?? []) { ChangeRow($0) }
+                } header: {
+                    Text("Substrate Sync will ask you to allow")
+                } footer: {
+                    Text("You sign in on \(probe.host) itself and approve this there, and it sets up what is missing on your server. You can change or revoke it any time in its Settings, under Apps.")
+                }
+                Section {
+                    Button(action: signInWithApp) {
+                        WideLabel(title: busy ? "Waiting for Your Browser…" : "Sign In with Your Substrate",
+                                  systemImage: "person.badge.key", busy: busy)
+                    }
+                    .primaryAction()
+                    .disabled(busy)
+                    .buttonRow()
+                }
+            } else if probe != nil {
                 Section("Your repository") {
                     LabeledContent("Repository") {
                         TextField("you.example.com", text: $repository)
@@ -78,7 +103,7 @@ struct SignInView: View {
 
             if let problem {
                 Section {
-                    ErrorBox(title: server == nil ? "Couldn't reach that server" : "Couldn't sign in", message: problem)
+                    ProblemBox(title: probe == nil ? "Couldn't reach that server" : "Couldn't sign in", message: problem)
                 }
             }
 
@@ -91,7 +116,7 @@ struct SignInView: View {
     }
 
     private func check() {
-        guard let origin = Client.origin(of: address) else {
+        guard let origin = ServerAddress.origin(of: address) else {
             problem = "That is not an http or https address."
             return
         }
@@ -100,18 +125,18 @@ struct SignInView: View {
         Task {
             defer { busy = false }
             do {
-                let discovery = try await Client(server: origin).discover()
-                totpRequired = discovery.registration?.totpRequired ?? true
+                let found = try await ServerProbe(transport: Client.transport)
+                    .probe(origin, requirement: SyncManifest.requirement, app: SyncManifest.appName)
                 address = origin.absoluteString
-                server = origin
+                probe = found
             } catch {
-                problem = "\(origin.absoluteString) did not answer as a Substrate server. \(explain(error, server: origin))"
+                problem = (error as? LocalizedError)?.errorDescription ?? explain(error, server: origin)
             }
         }
     }
 
     private func signIn() {
-        guard let server else { return }
+        guard let server = probe?.origin else { return }
         busy = true
         problem = nil
         Task {
@@ -124,6 +149,22 @@ struct SignInView: View {
                 code = ""
             } catch {
                 problem = explain(error, server: server)
+            }
+        }
+    }
+
+    private func signInWithApp() {
+        guard let probe else { return }
+        busy = true
+        problem = nil
+        Task {
+            defer { busy = false }
+            do {
+                try await model.signIn(probe: probe)
+            } catch where error is WebAuthenticator.Cancelled || isStop(error) {
+                // The person closed the sheet: nothing to say.
+            } catch {
+                problem = explain(error, server: probe.origin)
             }
         }
     }
