@@ -46,8 +46,8 @@ uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's ma
 
 Without a server the app runs on the one routine it carries, "Sample: every
 feature", and keeps every session on the phone, so it can be tried before
-anyone signs in. The sample shows each method the app runs, one exercise per
-idea, each with a note saying what it shows
+anyone signs in. The sample holds every measurement, set structure and way a
+set ends the app runs, each exercise with a note saying what it shows
 ([`docs/examples/sample.yaml`](docs/examples/sample.yaml), decision
 [S1](docs/decisions.md#s1-one-sample-routine-that-shows-every-feature-written-once-and-deletable)).
 
@@ -119,21 +119,26 @@ server's edge, both ways, and nowhere else.
 
 **Routines** come from the server once the package is in place, and are
 cached for the gym (`catalog.json` in the repository's folder under
-Application Support). The first sync on a repository with no routine at all
-writes the sample routine, its exercises first, and records that it did in
-`sample.json` in the repository's folder; a repository that already has
-routines gets no sample, and that is recorded too. Either way it happens once
-per server and repository, so a deleted sample never comes back. An empty
-repository says routines come from the agent, and offers **Add the sample
-routine** only when the sample was written there and then deleted; like every
-write, only into a package checked at this build's version, and the button
-says why when it is not.
+Application Support). The first sync on a repository writes the sample
+routine, its exercises first, when the repository holds no routine and none of
+the sample's exercises. The server is the marker: deleting a routine keeps its
+exercises, so a second phone, or this one reinstalled, finds them and writes
+nothing. A repository that already has routines gets no sample. `sample.json`
+in the repository's folder keeps what this phone settled, and a write it
+started, which it finishes at the next sync. A sample write that fails is
+shown on the empty Routines screen and tried again at the next sync; it never
+stops the history exchange or the outbox. An empty repository says routines
+come from the agent, and offers **Add the sample routine** only when the sample
+was written there and then deleted; like every write, only into a package
+checked at this build's version, and the button says why when it is not.
 
 **A routine can be deleted** from the app: a swipe or the menu in Routines,
 or Delete on its preview, after a confirmation, for any routine on the
-signed-in substrate. It leaves the cached catalogue at once and is purged on
-the server through the outbox (`DELETE ?purge=true`); a sync before the
-delete lands leaves it out. The exercises it named stay, since past sessions
+signed-in substrate while the app may write its package (when it may not,
+Delete is not offered and the Routines banner says why). It leaves the cached
+catalogue at once and is purged on the server through the outbox
+(`DELETE ?purge=true`); a sync that reads the catalogue before the delete
+lands, or while it is being made, leaves it out. The exercises it named stay, since past sessions
 name them. Signed out there is nothing to delete the sample from, so the
 app offers no delete there.
 
@@ -143,7 +148,9 @@ still running for the old one stops at its next step without publishing or
 writing anything.
 
 **A finished session goes through the outbox** (`outbox.json`), kept on the
-phone until the server takes it, in the package's order:
+phone until the server takes it, in the package's order, after any exercise it
+names that the repository lacks (a session logged signed out on the sample,
+for a repository that never got it):
 
 1. the session `PUT` at its UUIDv7, without `status`, so a replay never moves
    a finished session back;
@@ -192,11 +199,15 @@ works as it always did.
 ## Tests
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
-then runs both suites on the Mac: WorkoutsCore's 392 (the codec, the engine,
+then runs both suites on the Mac (CI runs the check, in the `lint` job, and
+not the suites: no workflow builds the Apple apps): WorkoutsCore's 392 (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
-routine's methods and a session through it to Finish) and WorkoutsSync's 51:
-the sample written once and never after a delete, a routine's delete through
-the outbox, the empty Routines screen's offer, the codec against answers
+routine's methods and a session through it to Finish) and WorkoutsSync's 58:
+the sample written once and never again after a delete, on a second phone or a
+reinstall, a refused sample write that stops nothing, a session logged signed
+out finding its exercises, a routine's delete through the outbox and during a
+read, the sample added back while its delete lands, the empty Routines
+screen's offer, the codec against answers
 recorded from a server built from this tree (`Tests/WorkoutsSyncTests/Fixtures`),
 the outbox's order and its answers to `409`, `422`, `401` and the network, a
 delete, a discard, a reset and a new write while a write is in flight, a
@@ -210,7 +221,9 @@ where: the authorization request, approved through the approval API (which
 installs health), the package declared and upgraded, the owner's edit to
 it refused, the package taken over and the app's apply stopped, the sample
 routine written on the first run, deleted through the outbox and not written
-again, a
+again by this phone, a second one or a reinstall, added back, a session logged
+signed out whose exercises the repository lacks taken by the server's
+`mustExist`, a
 finished session and its 20 sets written through the outbox, and all of it
 read back as the owner.
 

@@ -218,7 +218,7 @@ exercise). The next save writes the file as format 2.
 
 ### 2.4 Bundled data and the generator
 
-> **2026-11-02:** the app now bundles one sample routine and its nine exercises, written from
+> **2026-11-02:** the app now bundles one sample routine and its thirteen exercises, written from
 > [`docs/examples/sample.yaml`](docs/examples/sample.yaml) by `apps/apple/scripts/workouts-package.py`, which
 > also writes the test fixtures from their YAML; the previews run the sample through the engine instead of reading
 > `PreviewHistory.json`, which is gone (decision

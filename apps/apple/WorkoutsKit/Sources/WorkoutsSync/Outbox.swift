@@ -135,6 +135,26 @@ public enum OutboxPlan {
         OutboxEntry(method: .purge, kind: codec.kinds.routine, recordID: routine.rawValue)
     }
 
+    /// The exercises the outbox must write before `uploads`: every one an
+    /// upload names (a slot or a set) that the repository lacks, from
+    /// `known` (the phone's exercises, then the ones this build carries), in
+    /// id order. A session logged signed out on the sample names the
+    /// sample's exercises, and a repository that never got the sample would
+    /// refuse it: a session's and a set's exercise must exist. An id no
+    /// catalogue knows is left to the server's refusal, parked with its words.
+    public static func exercisesFor(_ uploads: [SessionRecords], server: Set<String>, known: [ExerciseID: Exercise],
+                                    codec: RecordCodec) -> [OutboxEntry]
+    {
+        var named = Set<ExerciseID>()
+        for records in uploads {
+            named.formUnion(records.session.slots.map(\.exercise))
+            named.formUnion(records.sets.map(\.exercise))
+        }
+        return named.filter { !server.contains($0.rawValue) }
+            .sorted { $0.rawValue < $1.rawValue }
+            .compactMap { known[$0].map { exerciseAdded($0, codec: codec) } }
+    }
+
     /// The sets in their order, each chain member after the set it continues.
     static func headsFirst(_ sets: [PerformedSet]) -> [PerformedSet] {
         let ids = Set(sets.map(\.id))
@@ -314,6 +334,18 @@ public actor Outbox {
         let key = OutboxPlan.routineDeleted(routine, codec: codec).key
         try change { file in
             file.entries.removeAll { $0.method == .purge && $0.session == nil && $0.key == key && $0.id != inFlight?.id }
+        }
+    }
+
+    /// Returns once no delete of the routine is on the wire, or after
+    /// `limit`: a purge already sent cannot be taken back, so what follows it
+    /// waits for it to land.
+    public func settle(routine: RoutineID, codec: RecordCodec, limit: Duration = .seconds(30)) async {
+        let key = OutboxPlan.routineDeleted(routine, codec: codec).key
+        let clock = ContinuousClock()
+        let deadline = clock.now + limit
+        while inFlight?.key == key, inFlight?.method == .purge, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
         }
     }
 

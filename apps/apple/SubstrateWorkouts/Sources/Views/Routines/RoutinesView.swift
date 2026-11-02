@@ -88,6 +88,12 @@ struct RoutinesView: View {
                 } description: {
                     VStack(spacing: 8) {
                         Text(RoutineListPresentation.serverEmptyText)
+                        if let problem = link.sampleProblem {
+                            // The first run's write failed; the next sync tries again.
+                            Text("The sample routine could not be added: \(problem) The app tries again at the next sync.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         if offersSample, let reason = link.writeBlockedReason {
                             Text(reason)
                                 .font(.footnote)

@@ -3,6 +3,54 @@
   "records": [
     {
       "kind": "~/training/exercise",
+      "id": "rowing-machine",
+      "properties": {
+        "name": "Rowing (Machine)",
+        "aliases": [
+          "Rower",
+          "Ergometer"
+        ],
+        "measurement": "distanceduration",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "cardio"
+        ],
+        "secondaryMuscles": [
+          "upperback",
+          "quadriceps"
+        ],
+        "restClass": "highrep",
+        "codes": [
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_ROWING_MACHINE"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "bird-dog",
+      "properties": {
+        "name": "Bird Dog",
+        "measurement": "repsonly",
+        "equipment": "none",
+        "laterality": "alternating",
+        "primaryMuscles": [
+          "lowerback"
+        ],
+        "secondaryMuscles": [
+          "abdominals",
+          "glutes"
+        ],
+        "restClass": "highrep",
+        "defaultRepsMin": 8,
+        "defaultRepsMax": 12
+      }
+    },
+    {
+      "kind": "~/training/exercise",
       "id": "leg-press-machine",
       "properties": {
         "name": "Leg Press (Machine)",
@@ -37,13 +85,13 @@
     },
     {
       "kind": "~/training/exercise",
-      "id": "chest-press-machine",
+      "id": "iso-lateral-chest-press-machine",
       "properties": {
-        "name": "Chest Press (Machine)",
+        "name": "Iso-Lateral Chest Press (Machine)",
         "measurement": "weightreps",
-        "equipment": "machine",
+        "equipment": "plateloaded",
         "laterality": "bilateral",
-        "loadBasis": "total",
+        "loadBasis": "perside",
         "primaryMuscles": [
           "chest"
         ],
@@ -52,8 +100,9 @@
           "triceps"
         ],
         "restClass": "compound",
+        "variationOf": "~/training/exercise/chest-press-machine",
         "loadStep": {
-          "value": "5",
+          "value": "2.5",
           "unit": "kg"
         }
       }
@@ -183,6 +232,31 @@
     },
     {
       "kind": "~/training/exercise",
+      "id": "dip-weighted",
+      "properties": {
+        "name": "Chest Dip (Weighted)",
+        "aliases": [
+          "Weighted dip"
+        ],
+        "measurement": "weightedbodyweightreps",
+        "equipment": "plate",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "triceps",
+          "shoulders"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
       "id": "triceps-pushdown",
       "properties": {
         "name": "Triceps Pushdown",
@@ -263,6 +337,25 @@
             "code": "carry/farmers_walk"
           }
         ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "plank-weighted",
+      "properties": {
+        "name": "Plank (Weighted)",
+        "measurement": "weightduration",
+        "equipment": "plate",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "timed",
+        "variationOf": "~/training/exercise/plank",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
       }
     }
   ]

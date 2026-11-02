@@ -54,12 +54,14 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     /// and yields the catalogue to every `updates()` stream. A record whose
     /// delete still waits in the outbox (`hiding`, as `kind/id`) is left
     /// out, so a routine deleted offline does not come back before its
-    /// delete lands.
+    /// delete lands. `hiding` is asked after the server answers, so a delete
+    /// made while the read was on the wire is left out too.
     @discardableResult
-    public func refresh(_ api: WorkoutsAPI, hiding: Set<String> = []) async throws -> Catalog {
+    public func refresh(_ api: WorkoutsAPI, hiding: @Sendable () async -> Set<String> = { [] }) async throws -> Catalog {
         let kinds = codec.kinds
-        let records = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
-            .filter { !hiding.contains("\($0.kind)/\($0.id)") }
+        let listed = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
+        let hidden = await hiding()
+        let records = listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }
         try write(records)
         let catalog = merged(catalog(from: records, source: api.client.server.host() ?? "the server"))
         publish(catalog)
@@ -82,11 +84,14 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     /// Writes the sample routine this build carries, and the exercises it
     /// names, into the repository (`SampleInstall`). An id the repository
     /// holds already is left as it is: an exercise the owner or the agent
-    /// changed keeps its changes. Answers how many records it wrote.
+    /// changed keeps its changes. `rewritingRoutine` writes the routine even
+    /// when the server lists it: the sample added back while its purge is
+    /// landing. Answers how many records it wrote.
     @discardableResult
-    public func copySample(_ api: WorkoutsAPI, from bundled: Catalog) async throws -> Int {
+    public func copySample(_ api: WorkoutsAPI, from bundled: Catalog, rewritingRoutine: Bool = false) async throws -> Int {
         guard let sample = bundled.routines[SampleRoutine.id] else { return 0 }
-        let present = Set(try await api.list([codec.kinds.exercise, codec.kinds.routine]).map { "\($0.kind)/\($0.id)" })
+        var present = Set(try await api.list([codec.kinds.exercise, codec.kinds.routine]).map { "\($0.kind)/\($0.id)" })
+        if rewritingRoutine { present.remove("\(codec.kinds.routine)/\(SampleRoutine.id.rawValue)") }
         let named = Set(sample.slots.map(\.exercise))
         // Exercises first: a routine slot's exercise must exist.
         let exercises = bundled.exercises.values.filter { named.contains($0.id) && !$0.isLocal }.sorted { $0.id.rawValue < $1.id.rawValue }

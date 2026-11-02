@@ -17,66 +17,58 @@ struct SampleRoutineTests {
         try #require(routine.slots.first { $0.key == key }, "no slot \(key)")
     }
 
-    @Test("it holds every method the app runs, and says on each exercise what it shows")
+    @Test("it holds every measurement, side, load basis, structure, ending, timer and stop rule the app runs")
     func everyFeature() throws {
         let (routine, catalog) = try Self.sample()
         let sets = routine.slots.flatMap(\.sets)
-        #expect(routine.slots.count == 9)
-        #expect(sets.count == 23)
+        let exercises = try routine.slots.map { try #require(catalog.exercises[$0.exercise], "no exercise for \($0.key)") }
+        #expect(routine.slots.count == 13)
+        #expect(sets.count == 25)
         #expect(routine.notes != nil)
         #expect(routine.slots.allSatisfy { $0.notes != nil }, "every exercise says what it shows")
 
-        // Warm-up at a percentage of body weight, top and back-off sets, the slot's own rests.
+        // Every case of each of these, so a feature dropped from the sample,
+        // or added to the app without a place in it, fails here. What the
+        // sample leaves out on purpose is named, as sample.yaml's header says.
+        #expect(Set(exercises.map(\.measurement)) == Set(MeasurementType.allCases))
+        #expect(Set(exercises.map(\.resolvedLaterality)) == Set(Laterality.allCases))
+        #expect(Set(exercises.compactMap(\.loadBasis)) == Set(LoadBasis.allCases))
+        #expect(Set(sets.map(\.structure)) == Set(Structure.allCases))
+        #expect(Set(sets.compactMap(SessionEngine.impliedTermination(of:))) == Set(Termination.allCases))
+        #expect(Set(sets.compactMap(\.roleLabel)) == Set(RoleLabel.allCases))
+        #expect(Set(sets.map(\.role)) == Set(Role.allCases))
+        #expect(Set(exercises.compactMap(\.myoStopRule) + sets.compactMap(\.myoStopRule)) == Set(MyoStopRule.allCases))
+        let timed = sets.filter { $0.durationMin != nil }
+        #expect(Set(timed.map { $0.timerMode ?? .countdown }) == Set(TimerMode.allCases))
+        #expect(Set(routine.groups.map(\.groupKind)).union([.triset, .giantset, .paired]) == Set(GroupKind.allCases))
+        #expect(Set(sets.compactMap(\.loadReference)) == [.bodymass], "the one reference V1 resolves")
+        #expect(routine.deload == nil && routine.activityType == nil)
+
+        // The finer options, each once.
+        #expect(sets.contains { $0.loadPercent != nil })
+        #expect(sets.contains { $0.dropPercent != nil } && sets.contains { $0.dropStep != nil } && sets.contains { $0.dropReps != nil })
+        #expect(sets.contains { $0.totalReps != nil && $0.structure == .restpause })
+        #expect(sets.contains { $0.rirMin != nil } && sets.contains { $0.rpeMin != $0.rpeMax })
+        #expect(sets.contains { $0.repsMin != $0.repsMax && $0.repsMax != nil })
+        #expect(sets.contains { $0.assistance != nil } && sets.contains { $0.tempo != nil } && sets.contains { $0.rest != nil })
+        #expect(sets.contains { $0.miniSetReps != nil } && sets.contains { $0.intraSetPause != nil })
+
+        // The rests and the sides.
         let legPress = try Self.slot(routine, "leg-press")
-        #expect(legPress.sets.map(\.role) == [.warmup, .working, .working])
         #expect(legPress.sets[0].loadPercent == 50 && legPress.sets[0].loadReference == .bodymass)
-        #expect(legPress.sets.compactMap(\.roleLabel) == [.top, .backoff])
-        #expect(legPress.sets[2].dropPercent == 10)
         #expect(legPress.warmupRest == 60 && legPress.setRest == 150)
-
-        // Straight sets with rep and RPE ranges at a tempo, a set's own rest, a drop set.
-        let chest = try Self.slot(routine, "chest-press")
-        #expect(chest.sets[0].repsMin == 8 && chest.sets[0].repsMax == 12)
-        #expect(chest.sets[0].rpeMin == 7 && chest.sets[0].rpeMax == 8)
-        #expect(chest.sets[0].tempo == "3-0-1-0")
-        #expect(chest.sets[1].rest == 180)
-        #expect(chest.sets[2].structure == .drop && chest.sets[2].drops == 2)
-
-        // A superset with no rest inside it and a rest after each round.
         let superset = try #require(routine.groups.first { $0.key == "a" })
-        #expect(superset.groupKind == .superset && superset.roundRest == 90)
+        #expect(superset.groupKind == .superset && superset.roundRest == 90 && superset.rounds == nil)
         #expect(try Self.slot(routine, "pull-up").transition == 0)
         #expect(routine.slots.filter { $0.group == "a" }.map(\.key) == ["pull-up", "push-up"])
-        // Assisted and bodyweight, an RIR stop and an AMRAP.
-        #expect(try Self.slot(routine, "pull-up").sets.allSatisfy { $0.assistance == .lb(60) })
-        #expect(catalog.exercises["assisted-pull-up-machine"]?.measurement == .bodyweightassistedreps)
-        #expect(catalog.exercises["push-up"]?.measurement == .bodyweightreps)
-        let push = try Self.slot(routine, "push-up")
-        #expect(push.sets.map(\.termination) == [.rirstop, .rirstop, .amrap])
-        #expect(push.sets[0].rirMin == 2 && push.sets[0].rirMax == 3)
-
-        // Myo-reps and a myo-rep match.
-        #expect(try Self.slot(routine, "lateral-raise").sets.map(\.structure) == [.myo, .myomatch])
-
-        // One side at a time.
-        let split = try Self.slot(routine, "split-squat")
-        #expect(catalog.exercises[split.exercise]?.resolvedLaterality == .unilateral)
-        #expect(split.sideOrder == .left && split.sideSwitch == 15 && split.sideMatch == true)
-
-        // A cluster, a rest-pause and a set to failure.
-        let pushdown = try Self.slot(routine, "pushdown")
-        #expect(pushdown.sets.map(\.structure) == [.cluster, .restpause, .straight])
-        #expect(pushdown.sets[2].termination == .failure)
-
-        // A circuit of two rounds: a timed hold on a countdown then a stopwatch, a carried distance.
         let circuit = try #require(routine.groups.first { $0.key == "b" })
         #expect(circuit.groupKind == .circuit && circuit.rounds == 2 && circuit.roundRest == 60)
-        let plank = try Self.slot(routine, "plank")
-        #expect(catalog.exercises[plank.exercise]?.measurement == .duration)
-        #expect(plank.sets[0].durationMin == 45 && plank.sets[0].durationMax == 60 && plank.sets[0].timerMode == nil)
-        #expect(plank.sets[1].timerMode == .stopwatch)
-        let carry = try Self.slot(routine, "carry")
-        #expect(carry.sets.allSatisfy { $0.termination == .distance && $0.distance != nil && $0.load != nil })
+        #expect(try Self.slot(routine, "plank").transition == 15)
+        let split = try Self.slot(routine, "split-squat")
+        #expect(split.sideOrder == .weakerfirst && split.sideSwitch == 15 && split.sideMatch == true)
+
+        // Signed out it cannot be deleted, so the note says so.
+        #expect(routine.notes?.contains("Once you are signed in") == true)
     }
 
     @Test("the preview says each method in words")
@@ -86,15 +78,16 @@ struct SampleRoutineTests {
         #expect(preview.name == "Sample: every feature")
         #expect(preview.unreadable.isEmpty)
         let slots = preview.blocks.flatMap(\.slots)
-        #expect(slots.count == 9)
+        #expect(slots.count == 13)
         #expect(slots.allSatisfy { $0.notes != nil })
         let text = slots.flatMap(\.lines).joined(separator: "\n")
-        for phrase in ["Warm-up: 50% of body mass \u{00D7} 12", "Set 1 is the top set", "Set 2 backs off 10%", "Warm-up rest 1:00",
-                       "RPE 7–8", "Tempo 3-0-1-0", "Rest after set 2: 3:00", "Set 3 is a drop set: 2 drops", "BW − 60 lb",
-                       "Then straight to A2", "each until 2–3 reps in reserve", "as many reps as possible", "Set 1 is myo-reps",
-                       "Set 2 is a myo-rep match", "Left side first", "Switch sides 0:15", "The second side matches",
-                       "Set 1 is a cluster set", "Set 2 is rest-pause", "Set 3 to failure", "counted down", "on the stopwatch",
-                       "Then 0:15 to B2", "2 sets of 40 m, with 16 kg"]
+        for phrase in ["Warm-up: 500 m", "Warm-up: 8 reps", "Warm-up: 12 reps at 50% of body mass", "Set 1 is the top set",
+                       "Set 2 backs off 10%", "Warm-up rest 1:00", "RPE 7–8", "Tempo 3-0-1-0", "Rest after set 2: 3:00",
+                       "Set 3 is a drop set: 2 drops, 5 kg lighter each, 6 reps each", "BW − 90 lb", "Then straight to A2",
+                       "each until 2–3 reps in reserve", "as many reps as possible", "Set 1 is myo-reps, until a mini-set comes in short",
+                       "Set 2 is a myo-rep match", "Weaker side first", "Switch sides 0:15", "The second side matches",
+                       "Set 2 is rest-pause: 3 mini-sets, to 20 total reps", "Set 1 is a cluster set", "Set 2 to failure",
+                       "counted down", "on the stopwatch", "Then 0:15 to B2", "2 sets of 40 m, with 16 kg", "hold 0:30–0:45, counted down, with 10 kg"]
         {
             #expect(text.localizedCaseInsensitiveContains(phrase), "the preview names \(phrase):\n\(text)")
         }
@@ -145,8 +138,8 @@ struct SampleRoutineTests {
             ticks += 1
         }
         #expect(walk.upNext == nil, "every set was offered and done")
-        // Two between the superset's three rounds, one between the circuit's two.
-        #expect(roundRests == 3, "the superset's and the circuit's round rests ran: \(roundRests)")
+        // One between the superset's two rounds, one between the circuit's two.
+        #expect(roundRests == 2, "the superset's and the circuit's round rests ran: \(roundRests)")
 
         let state = try walk.state
         let summary = FinishPresenter.summary(state, presentation: try walk.shown, policy: .drop, end: walk.now, healthAllowed: true)

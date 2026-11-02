@@ -144,7 +144,9 @@ def examples() -> dict[Path, dict]:
                 continue
             key = (record["kind"], record["id"])
             if key in seen and seen[key][1] != record["properties"]:
-                raise GenerateError(f"{name}.yaml: exercise {record['id']} differs from {seen[key][0]}.yaml's")
+                raise GenerateError(
+                    f"exercise {record['id']} differs between {seen[key][0]}.yaml and {name}.yaml: make the two records equal"
+                )
             seen.setdefault(key, (name, record["properties"]))
     sample = files[SAMPLE]
     exercises = [record for record in sample if record["kind"].endswith("/exercise")]

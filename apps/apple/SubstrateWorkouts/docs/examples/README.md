@@ -27,15 +27,15 @@ records with no refusal ([Verification](#verification)).
 
 > **Since 2026-11-02 the app carries one sample routine, not the owner's folder**
 > ([decision S1](../decisions.md#s1-one-sample-routine-that-shows-every-feature-written-once-and-deletable)).
-> [`sample.yaml`](sample.yaml) is that routine and its nine exercises. The four files below it
+> [`sample.yaml`](sample.yaml) is that routine and its thirteen exercises. The four files below it
 > are test vectors now: the engine's tests replay the owner's sessions on the owner's
 > routines, so they stay here, and the app ships none of them.
 
 These YAML files are the readable form of records the app carries as JSON, in the flat
 shape substrate's REST API speaks (`{"kind", "id", "properties"}`). The YAML is the source:
 `apps/apple/scripts/workouts-package.py` writes the JSON from it, and
-`mise run apple:test:workouts` runs the script with `--check` first, so a change to one
-without the other fails:
+`mise run lint:python`, which CI's `lint` job runs, and `mise run apple:test:workouts` both run
+the script with `--check`, so a change to one without the other fails:
 
 | JSON in `apps/apple/`                                                    | Written from                                  | Used for                           |
 | ------------------------------------------------------------------------ | --------------------------------------------- | ---------------------------------- |
@@ -56,7 +56,7 @@ until then.
 
 | File                               | Records                                                    | Holds                                                                                                                                                                                                                                                                                                 |
 | ---------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`sample.yaml`](sample.yaml)       | 9 exercises, 1 routine                                     | **What the app ships.** "Sample: every feature": one exercise per method the app runs, each with a note saying what it shows. Its header lists what each part shows and the methods left out, with why.                                                                                          |
+| [`sample.yaml`](sample.yaml)       | 13 exercises, 1 routine                                    | **What the app ships.** "Sample: every feature": every measurement, side, load basis, set structure and way a set ends the app runs, each exercise with a note saying what it shows. Its header lists what each part shows and what is left out, with why.                                                                                          |
 | [`exercises.yaml`](exercises.yaml) | 30 exercises                                               | Every exercise the screenshots show, with measurement type, equipment, laterality, load basis, implements, muscles, rest class, suggestion settings, and codes where the code is certain.                                                                                                             |
 | [`routines.yaml`](routines.yaml)   | 4 workout routines                                         | The folder "Full Body 3x Week (Back-Friendly)": Fully Body Collection #1, Day 1 – Strength Foundation, Day 2 – Volume & Stability, and Day 3 (title hidden in the screenshot). Every planned set has a key.                                                                                           |
 | [`sessions.yaml`](sessions.yaml)   | 3 training sessions, then 65 sets                          | Two finished Day 1 sessions (Thu 22 and Mon 26 October 2026, either side of the clock change) and the finished Fully Body Collection #1 session of Tue 27 October that the screenshots' PREVIOUS column reads from. Each session keeps the planned sets it started with; every set is its own record. |

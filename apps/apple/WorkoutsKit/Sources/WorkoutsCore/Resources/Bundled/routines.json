@@ -8,7 +8,7 @@
         "name": "Sample: every feature",
         "folder": "Sample",
         "position": 1,
-        "notes": "A tour of what a routine can hold, one idea per exercise; each exercise's note says what it shows. Train it as a light full-body day. Your agent writes your own routines. When you no longer need this one, delete it: swipe it in Routines, or Delete on this screen. The exercises it added stay, since your sessions name them.",
+        "notes": "A tour of what a routine can hold, one idea per exercise or a few; each exercise's note says what it shows. Train it as a full-body day, or do the parts you like. Your agent writes your own routines. Once you are signed in, you can delete this one: swipe it in Routines, or Delete on this screen. The exercises it added stay, since your sessions name them.",
         "groups": [
           {
             "key": "a",
@@ -24,11 +24,40 @@
         ],
         "slots": [
           {
+            "key": "row",
+            "exercise": "~/training/exercise/rowing-machine",
+            "notes": "A warm-up over a distance: row 500 m at an easy pace. The app keeps your time with the distance.",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "termination": "distance",
+                "distance": {
+                  "value": "500",
+                  "unit": "m"
+                }
+              }
+            ]
+          },
+          {
+            "key": "bird-dog",
+            "exercise": "~/training/exercise/bird-dog",
+            "notes": "A warm-up counted in reps only, one side then the other: 8 reps a side.",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "repsMin": 8,
+                "repsMax": 8
+              }
+            ]
+          },
+          {
             "key": "leg-press",
             "exercise": "~/training/exercise/leg-press-machine",
             "setRest": "PT2M30S",
             "warmupRest": "PT1M",
-            "notes": "A warm-up (W) at 50 % of your body weight from Apple Health, a top set and a back-off set 10 % lighter. The warm-up rests 1 min and the working sets 2 min 30 s, this slot's own rests.",
+            "notes": "A warm-up (W) at 50 % of your body mass, from Apple Health or typed in Settings; with neither, the warm-up has no load and you enter one. Then a top set and a back-off set 10 % lighter. The warm-up rests 1 min and the working sets 2 min 30 s, this slot's own rests.",
             "sets": [
               {
                 "key": "w1",
@@ -63,14 +92,14 @@
           },
           {
             "key": "chest-press",
-            "exercise": "~/training/exercise/chest-press-machine",
+            "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
             "setRest": "PT2M",
-            "notes": "Straight sets of 8 to 12 at RPE 7 to 8, lowered over three seconds (tempo 3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set: two drops, each 20 % lighter, to failure.",
+            "notes": "Each arm has its own plates, so the load is per side. Straight sets of 8 to 12 at RPE 7 to 8, lowered over three seconds (tempo 3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set: two drops, each 5 kg a side lighter, of 6 reps each.",
             "sets": [
               {
                 "key": "s1",
                 "load": {
-                  "value": "30",
+                  "value": "20",
                   "unit": "kg"
                 },
                 "repsMin": 8,
@@ -82,7 +111,7 @@
               {
                 "key": "s2",
                 "load": {
-                  "value": "30",
+                  "value": "20",
                   "unit": "kg"
                 },
                 "repsMin": 8,
@@ -96,7 +125,7 @@
                 "key": "s3",
                 "structure": "drop",
                 "load": {
-                  "value": "30",
+                  "value": "20",
                   "unit": "kg"
                 },
                 "repsMin": 8,
@@ -104,7 +133,11 @@
                 "rpeMin": "9",
                 "rpeMax": "10",
                 "drops": 2,
-                "dropPercent": "20"
+                "dropStep": {
+                  "value": "5",
+                  "unit": "kg"
+                },
+                "dropReps": 6
               }
             ]
           },
@@ -113,12 +146,12 @@
             "exercise": "~/training/exercise/assisted-pull-up-machine",
             "group": "a",
             "transition": "PT0S",
-            "notes": "A1 of a superset: go straight to A2 with no rest, and rest 1 min 30 s after each round. Assisted: the machine takes 60 lb off, and less assistance is harder.",
+            "notes": "A1 of a superset: go straight to A2 with no rest, and rest 1 min 30 s after the round. Assisted: the machine takes 90 lb off, and more assistance is easier.",
             "sets": [
               {
                 "key": "s1",
                 "assistance": {
-                  "value": "60",
+                  "value": "90",
                   "unit": "lb"
                 },
                 "repsMin": 6,
@@ -129,18 +162,7 @@
               {
                 "key": "s2",
                 "assistance": {
-                  "value": "60",
-                  "unit": "lb"
-                },
-                "repsMin": 6,
-                "repsMax": 10,
-                "rpeMin": "8",
-                "rpeMax": "8"
-              },
-              {
-                "key": "s3",
-                "assistance": {
-                  "value": "60",
+                  "value": "90",
                   "unit": "lb"
                 },
                 "repsMin": 6,
@@ -154,7 +176,7 @@
             "key": "push-up",
             "exercise": "~/training/exercise/push-up",
             "group": "a",
-            "notes": "A2, your body weight: stop with two to three reps in reserve, and do the last round as many reps as possible (AMRAP).",
+            "notes": "A2, your body weight: stop round 1 with two to three reps in reserve, and do round 2 for as many reps as possible (AMRAP).",
             "sets": [
               {
                 "key": "s1",
@@ -164,12 +186,6 @@
               },
               {
                 "key": "s2",
-                "termination": "rirstop",
-                "rirMin": "2",
-                "rirMax": "3"
-              },
-              {
-                "key": "s3",
                 "termination": "amrap"
               }
             ]
@@ -178,7 +194,7 @@
             "key": "lateral-raise",
             "exercise": "~/training/exercise/lateral-raise-dumbbell",
             "setRest": "PT1M30S",
-            "notes": "Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them until one loses a rep. Set 2 is a myo-rep match: set 1's total reps, in as few mini-sets as it takes.",
+            "notes": "Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them, until one comes in under 4 (this set's own rule; the exercise's is to stop when one loses a rep). Set 2 is a myo-rep match: set 1's total reps, in as few mini-sets as it takes.",
             "sets": [
               {
                 "key": "s1",
@@ -192,6 +208,7 @@
                 "rpeMin": "9",
                 "rpeMax": "9",
                 "miniSetReps": 4,
+                "myoStopRule": "belowtarget",
                 "intraSetPause": "PT15S"
               },
               {
@@ -210,10 +227,10 @@
             "key": "split-squat",
             "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
             "setRest": "PT2M",
-            "sideOrder": "left",
+            "sideOrder": "weakerfirst",
             "sideSwitch": "PT15S",
             "sideMatch": true,
-            "notes": "One side at a time: left first, 15 s to switch, and the right side aims for the reps the left side did. The load is per dumbbell.",
+            "notes": "One side at a time: the side that did fewer reps last time goes first (the left, the first time), 15 s to switch, and the second side aims for the reps the first side did. The load is per dumbbell.",
             "sets": [
               {
                 "key": "s1",
@@ -240,10 +257,40 @@
             ]
           },
           {
+            "key": "dip",
+            "exercise": "~/training/exercise/dip-weighted",
+            "setRest": "PT2M",
+            "notes": "Your body weight plus 10 kg on a belt: the load is what you add. Set 2 is rest-pause to a total: 20 reps in as many as three bouts, 20 s apart.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "structure": "restpause",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "totalReps": 20,
+                "miniSets": 3,
+                "intraSetPause": "PT20S"
+              }
+            ]
+          },
+          {
             "key": "pushdown",
             "exercise": "~/training/exercise/triceps-pushdown",
             "setRest": "PT1M30S",
-            "notes": "Past a straight set, three ways: a cluster set (4 reps, 15 s, three more clusters, two reps in reserve), a rest-pause set (near failure, 20 s, two more bouts) and a last set to failure.",
+            "notes": "A cluster set (4 reps, 15 s, three more clusters, two reps in reserve), then a last set to failure.",
             "sets": [
               {
                 "key": "s1",
@@ -260,20 +307,6 @@
               },
               {
                 "key": "s2",
-                "structure": "restpause",
-                "load": {
-                  "value": "20",
-                  "unit": "kg"
-                },
-                "repsMin": 10,
-                "repsMax": 12,
-                "rpeMin": "9.5",
-                "rpeMax": "9.5",
-                "miniSets": 2,
-                "intraSetPause": "PT20S"
-              },
-              {
-                "key": "s3",
                 "termination": "failure",
                 "load": {
                   "value": "17.5",
@@ -288,7 +321,7 @@
             "exercise": "~/training/exercise/plank",
             "group": "b",
             "transition": "PT15S",
-            "notes": "B1 of a circuit of two rounds, a timed hold: round 1 counts down from 45 s to 1 min, round 2 runs a stopwatch for as long as you hold. 15 s to the carry, 1 min after each round.",
+            "notes": "B1 of a circuit of two rounds, a timed hold. Round 1 is a countdown: hold for 45 s to 1 min. Round 2 runs a stopwatch: hold as long as you can. 15 s to the carry, 1 min after each round.",
             "sets": [
               {
                 "key": "s1",
@@ -331,6 +364,22 @@
                   "value": "40",
                   "unit": "m"
                 }
+              }
+            ]
+          },
+          {
+            "key": "weighted-plank",
+            "exercise": "~/training/exercise/plank-weighted",
+            "notes": "A load and a time: one hold of 30 to 45 s with a 10 kg plate on your back.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "durationMin": "PT30S",
+                "durationMax": "PT45S"
               }
             ]
           }

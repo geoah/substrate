@@ -83,6 +83,9 @@ final class SubstrateLink {
     private(set) var addingSample = false
     /// The signed-in repository's sample: nil until its first run is settled.
     private(set) var sampleState: SampleInstall.State?
+    /// Why the sample could not be written at the last sync; tried again at
+    /// the next. Shown where the sample would be, never in the way of sync.
+    private(set) var sampleProblem: String?
     /// Tokens this device stopped using that the server has not revoked yet.
     private(set) var unrevoked: [Session] = []
     var signOutProblem: String?
@@ -213,6 +216,7 @@ final class SubstrateLink {
         waiting = 0
         syncing = false
         sampleState = account.sample?.state
+        sampleProblem = nil
         if let remote = account.remote, remote.hasCache, let cached = try? remote.loadNow() {
             AppModel.shared.showServerCatalog(cached, host: account.host)
         }
@@ -238,6 +242,7 @@ final class SubstrateLink {
         parked = []
         syncing = false
         sampleState = nil
+        sampleProblem = nil
         status.reset()
     }
 
@@ -299,17 +304,15 @@ final class SubstrateLink {
                 return
             }
             if let remote = account.remote {
-                var catalog = try await remote.refresh(account.api, hiding: await account.outbox?.waitingDeletes ?? [])
-                guard isCurrent(account) else { return }
-                if let sample = account.sample, sample.state == nil,
-                   try await sample.firstRun(account.api, remote: remote, bundled: BundledCatalog().loadNow())
-                {
-                    guard isCurrent(account) else { return }
-                    catalog = try await remote.refresh(account.api, hiding: await account.outbox?.waitingDeletes ?? [])
-                }
+                let read = try await CatalogSync.read(account.api, remote: remote, outbox: account.outbox, sample: account.sample,
+                                                      bundled: { try BundledCatalog().loadNow() })
                 guard isCurrent(account) else { return }
                 sampleState = account.sample?.state
-                AppModel.shared.showServerCatalog(catalog, host: account.host)
+                sampleProblem = read.sampleProblem
+                if let problem = read.sampleProblem {
+                    logger.error("sample routine: \(problem, privacy: .public)")
+                }
+                AppModel.shared.showServerCatalog(read.catalog, host: account.host)
             }
             await exchangeHistory(account)
             guard isCurrent(account) else { return }
@@ -368,6 +371,12 @@ final class SubstrateLink {
             {
                 entries.append(OutboxPlan.exerciseAdded(exercise, codec: codec))
             }
+            // The exercises a session to upload names that the repository
+            // lacks: the sample's, for a session logged signed out.
+            let queuedExercises = Set(entries.map(\.recordID))
+            let bundled = (try? BundledCatalog().loadNow())?.exercises ?? [:]
+            let known = bundled.merging(app.exercises) { _, phone in phone }
+            entries += OutboxPlan.exercisesFor(plan.uploads, server: exercises.union(queuedExercises), known: known, codec: codec)
             for records in plan.uploads.sorted(by: { $0.session.at < $1.session.at }) {
                 entries += OutboxPlan.finished(records, codec: codec)
             }
@@ -389,10 +398,12 @@ final class SubstrateLink {
         addingSample = true
         defer { addingSample = false }
         do {
-            try await account.outbox?.withdrawDelete(routine: SampleRoutine.id, codec: codec)
-            try await remote.copySample(account.api, from: BundledCatalog().loadNow())
+            let outbox = account.outbox
+            try await account.sample?.addBack(account.api, remote: remote, outbox: outbox, bundled: BundledCatalog().loadNow())
             guard isCurrent(account) else { return }
-            let catalog = try await remote.refresh(account.api, hiding: await account.outbox?.waitingDeletes ?? [])
+            sampleState = account.sample?.state
+            sampleProblem = nil
+            let catalog = try await remote.refresh(account.api) { await outbox?.waitingDeletes ?? [] }
             guard isCurrent(account) else { return }
             AppModel.shared.showServerCatalog(catalog, host: account.host)
         } catch {
@@ -401,8 +412,15 @@ final class SubstrateLink {
     }
 
     /// Whether a routine may be deleted from the app: signed in, with an
-    /// outbox to send the delete through.
-    var canDeleteRoutines: Bool { account?.outbox != nil && account?.remote != nil }
+    /// outbox to send the delete through, and a package the app may write.
+    /// While the package is unchecked the delete is queued like any write;
+    /// one known not writable (newer, changed outside the app) would hold the
+    /// delete back with no word of why, so Delete is not offered, and the
+    /// Routines banner says what stops the writes.
+    var canDeleteRoutines: Bool {
+        guard account?.outbox != nil, account?.remote != nil else { return false }
+        return package.map(\.writable) ?? true
+    }
 
     /// Deletes a routine the owner chose: out of the cached catalogue at
     /// once, and purged on the server through the outbox. The exercises it

@@ -301,12 +301,12 @@ struct LocalExercisesTests {
 
 @Suite("Bundled catalogue")
 struct BundledCatalogTests {
-    @Test("the bundle is the sample routine and the nine exercises it names, all readable")
+    @Test("the bundle is the sample routine and the thirteen exercises it names, all readable")
     func bundled() throws {
         let catalog = try BundledCatalog().loadNow()
         #expect(catalog.routines.keys.map(\.rawValue) == [SampleRoutine.id.rawValue])
         #expect(catalog.routines[SampleRoutine.id]?.name == "Sample: every feature")
-        #expect(catalog.exercises.count == 9)
+        #expect(catalog.exercises.count == 13)
         #expect(catalog.unreadable.isEmpty)
         #expect(catalog.exercises.values.allSatisfy { !$0.isLocal })
         // Every slot names a bundled exercise, and every bundled exercise is
@@ -316,7 +316,7 @@ struct BundledCatalogTests {
         // The owner's routines and the test-only coverage routine never ship.
         #expect(catalog.routines["fully-body-collection-1"] == nil)
         #expect(catalog.routines["coverage-every-method"] == nil)
-        #expect(catalog.exercises["rowing-machine"] == nil)
+        #expect(catalog.exercises["side-plank"] == nil)
     }
 
     @Test("local exercises join the catalogue and every update stream hears of a new one")
@@ -329,7 +329,7 @@ struct BundledCatalogTests {
         try catalogSource.addLocalExercise(added)
         var iterator = updates.makeAsyncIterator()
         let update = try #require(await iterator.next())
-        #expect(update.exercises.count == 10)
+        #expect(update.exercises.count == 14)
         #expect(update.exercises["sled-push"]?.isLocal == true)
         let loaded = try await catalogSource.load()
         #expect(loaded.exercises["sled-push"]?.name == "Sled Push")
@@ -340,10 +340,10 @@ struct BundledCatalogTests {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let local = LocalExercises(directory: directory.url, writingOptions: .atomic)
-        try local.add(Exercise(id: "chest-press-machine", name: "My Chest Press", measurement: .weightreps))
+        try local.add(Exercise(id: "leg-press-machine", name: "My Leg Press", measurement: .weightreps))
         let catalog = try BundledCatalog(localExercises: local).loadNow()
-        #expect(catalog.exercises["chest-press-machine"]?.name == "Chest Press (Machine)")
-        #expect(catalog.unreadable.map(\.id) == ["chest-press-machine"])
+        #expect(catalog.exercises["leg-press-machine"]?.name == "Leg Press (Machine)")
+        #expect(catalog.unreadable.map(\.id) == ["leg-press-machine"])
     }
 
     @Test("without a local store, adding is refused")

@@ -218,7 +218,12 @@ public enum RoutinePresenter {
         for planned in warmups {
             var text = plannedText(planned, measurement: measurement)
             if planned.load == nil, let percent = percentText(planned) {
-                text = text.isEmpty ? percent : text.hasPrefix("\u{00D7}") ? "\(percent) \(text)" : "\(text), \(percent)"
+                // `12 reps at 50% of body mass`, rather than `× 12` beside it.
+                if let reps = planned.repsMin, planned.repsMax == reps {
+                    text = "\(Format.count(reps, "rep")) at \(percent)"
+                } else {
+                    text = text.isEmpty ? percent : "\(text), \(percent)"
+                }
             }
             lines.append(text.isEmpty ? "Warm-up" : "Warm-up: \(text)")
         }
@@ -276,6 +281,8 @@ public enum RoutinePresenter {
         if reps == nil, let min = planned.repsMin, let max = planned.repsMax {
             text += text.isEmpty ? "\(Format.range(min, max)) reps" : " \u{00D7} \(Format.range(min, max))"
         }
+        // Reps with nothing to multiply (a reps-only warm-up): `8 reps`, not `× 8`.
+        if let reps, text == "\u{00D7} \(reps)" { text = Format.count(reps, "rep") }
         return text
     }
 
@@ -333,18 +340,28 @@ public enum RoutinePresenter {
         }
     }
 
+    /// `, to 20 total reps` when a myo-rep or rest-pause set names its total.
+    static func totalText(_ planned: PlannedSet) -> String {
+        planned.totalReps.map { ", to \($0) total reps" } ?? ""
+    }
+
     /// A working set's method in words: `Set 2 is a drop set: 1 drop`.
     static func specialText(_ planned: PlannedSet, number: Int) -> String? {
         let set = "Set \(number)"
         switch planned.structure {
         case .drop:
-            return "\(set) is a drop set: \(Format.count(planned.drops ?? 1, "drop"))"
+            var text = "\(set) is a drop set: \(Format.count(planned.drops ?? 1, "drop"))"
+            if let step = planned.dropStep { text += ", \(Format.mass(step)) lighter each" }
+            if let reps = planned.dropReps { text += ", \(Format.count(reps, "rep")) each" }
+            return text
         case .myo:
-            return "\(set) is myo-reps"
+            var text = "\(set) is myo-reps" + totalText(planned)
+            if planned.myoStopRule == .belowtarget { text += ", until a mini-set comes in short" }
+            return text
         case .myomatch:
             return "\(set) is a myo-rep match"
         case .restpause:
-            return "\(set) is rest-pause: \(Format.count(planned.miniSets ?? 2, "mini-set"))"
+            return "\(set) is rest-pause: \(Format.count(planned.miniSets ?? 2, "mini-set"))" + totalText(planned)
         case .cluster:
             let clusters = (planned.miniSets ?? SessionEngine.defaultClusters) + 1
             return "\(set) is a cluster set: \(clusters) clusters" + (planned.miniSetReps.map { " of \($0)" } ?? "")

@@ -125,28 +125,71 @@ struct LiveServerTests {
         let directory = temporaryDirectory()
         let remote = RemoteCatalog(directory: directory, writingOptions: .atomic)
         let sample = SampleInstall(directory: directory, writingOptions: .atomic)
+        let bundled = try BundledCatalog().loadNow()
         #expect(try await remote.refresh(api).routines.isEmpty)
-        #expect(try await sample.firstRun(api, remote: remote, bundled: BundledCatalog().loadNow()))
+        #expect(try await sample.firstRun(api, remote: remote, bundled: bundled))
         let catalog = try await remote.refresh(api)
         #expect(catalog.routines.keys.map(\.rawValue) == [SampleRoutine.id.rawValue])
-        #expect(catalog.exercises.count == 9)
+        #expect(catalog.exercises.count == 13)
 
-        // Deleted through the outbox: gone from the server, its exercises
-        // stay, and the next first run writes nothing.
+        // Deleted through the outbox: gone from the server, its exercises stay.
         let outbox = Outbox(directory: directory, writingOptions: .atomic)
         let codec = RecordCodec()
         try await outbox.delete(routine: SampleRoutine.id, codec: codec)
         #expect(await outbox.flush(api) == .sent)
         #expect(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue) == nil)
         let afterDelete = try await remote.refresh(api)
-        #expect(afterDelete.routines.isEmpty && afterDelete.exercises.count == 9)
-        #expect(try await !sample.firstRun(api, remote: remote, bundled: BundledCatalog().loadNow()))
+        #expect(afterDelete.routines.isEmpty && afterDelete.exercises.count == 13)
+        #expect(try await !sample.firstRun(api, remote: remote, bundled: bundled))
         #expect(sample.offersSample(afterDelete))
+
+        // A second phone, and this one reinstalled: neither writes it again.
+        for _ in 0 ..< 2 {
+            let other = temporaryDirectory()
+            let fresh = SampleInstall(directory: other, writingOptions: .atomic)
+            #expect(try await !fresh.firstRun(api, remote: RemoteCatalog(directory: other, writingOptions: .atomic), bundled: bundled))
+            #expect(fresh.state == .installed)
+        }
+        #expect(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue) == nil)
+
+        // Added back, then a session logged signed out on the sample whose
+        // exercises the repository lacks (the owner purged two): the outbox
+        // writes them before the session, and the server's mustExist takes it.
+        try await sample.addBack(api, remote: remote, outbox: outbox, bundled: bundled)
+        #expect(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue) != nil)
+        for id in ["bulgarian-split-squat-dumbbell", "triceps-pushdown"] {
+            try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/exercise", id), query: [("purge", "true")])
+        }
+        let rehomed = Rehome(authority: recordedAuthority)
+        func recorded(_ name: String) throws -> [FlatRecord] {
+            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0, rehome: rehomed) }
+        }
+        var signedOut = try #require(codec.sessionRecords(from: recorded("list-sessions") + recorded("list-sets")).first)
+        let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell", "seated-row-machine": "triceps-pushdown"]
+        signedOut.session.id = SessionID(UUIDv7.make(at: signedOut.session.at))
+        for index in signedOut.session.slots.indices {
+            signedOut.session.slots[index].exercise = onto[signedOut.session.slots[index].exercise] ?? signedOut.session.slots[index].exercise
+        }
+        var renamed: [SetID: SetID] = [:]
+        for set in signedOut.sets { renamed[set.id] = SetID(UUIDv7.make(at: set.at)) }
+        for index in signedOut.sets.indices {
+            signedOut.sets[index].exercise = onto[signedOut.sets[index].exercise] ?? signedOut.sets[index].exercise
+            signedOut.sets[index].session = signedOut.session.id
+            signedOut.sets[index].id = renamed[signedOut.sets[index].id]!
+            signedOut.sets[index].continues = signedOut.sets[index].continues.map { renamed[$0] ?? $0 }
+        }
+        let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
+        let missingFirst = OutboxPlan.exercisesFor([signedOut], server: held, known: bundled.exercises, codec: codec)
+        #expect(Set(missingFirst.map(\.recordID)) == ["bulgarian-split-squat-dumbbell", "triceps-pushdown"])
+        try await outbox.enqueue(missingFirst + OutboxPlan.finished(signedOut, codec: codec))
+        let signedOutSent = await outbox.flush(api)
+        let signedOutParked = await outbox.parked.map(\.lastError)
+        #expect(signedOutSent == .sent, "refused: \(signedOutParked)")
+        #expect(try await ownerAPI.get(codec.kinds.session, signedOut.session.id.rawValue) != nil)
 
         // The recorded session's exercises the sample does not carry, as the
         // phone adds them.
-        let missing = [("iso-lateral-chest-press-machine", "Iso-Lateral Chest Press (Machine)"),
-                       ("romanian-deadlift-dumbbell", "Romanian Deadlift (Dumbbell)"), ("seated-row-machine", "Seated Row (Machine)")]
+        let missing = [("romanian-deadlift-dumbbell", "Romanian Deadlift (Dumbbell)"), ("seated-row-machine", "Seated Row (Machine)")]
         try await outbox.enqueue(missing.map { OutboxPlan.exerciseAdded(Exercise(id: ExerciseID($0.0), name: $0.1, measurement: .weightreps), codec: codec) })
         #expect(await outbox.flush(api) == .sent)
 
@@ -164,11 +207,11 @@ struct LiveServerTests {
         // version the outbox saw it written at. Then the owner deletes the
         // session on the server, and the phone reads it as theirs to delete.
         var snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
-        let quiet = HistoryExchange.plan(server: snapshot, local: [finished], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
+        let quiet = HistoryExchange.plan(server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
         #expect(quiet.isEmpty, "a session the phone just wrote read as changed: \(quiet)")
         try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/session", finished.session.id.rawValue), query: [("purge", "true")])
         snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
-        let deleted = HistoryExchange.plan(server: snapshot, local: [finished], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
+        let deleted = HistoryExchange.plan(server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
         #expect(deleted.removals == [finished.id] && deleted.uploads.isEmpty)
         try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
         #expect(await outbox.flush(api) == .sent)
@@ -177,7 +220,7 @@ struct LiveServerTests {
         let stored = try #require(try await ownerAPI.get(codec.kinds.session, finished.session.id.rawValue))
         #expect(stored.properties["status"] == .string("finished"))
         let sets = try await ownerAPI.list([codec.kinds.set])
-        #expect(sets.count == finished.sets.count)
+        #expect(sets.count == finished.sets.count + signedOut.sets.count)
         print("live: \(session.repository) holds \(session.repository)/training at version \(shipped + 1), " +
             "the sample written and deleted, session \(finished.session.id.rawValue) finished with \(sets.count) sets")
     }
