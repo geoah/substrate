@@ -5,8 +5,10 @@ import SwiftUI
 /// `Set 1  110 kg × 8  @ 8      +5 kg, −2 reps  =`. Done lines end with the
 /// change against last time and the verdict mark; pending lines are muted
 /// and end with last time. When the line does not fit, its end moves under
-/// it. VoiceOver reads the presenter's sentence.
-struct RowsSetLine: View {
+/// it. VoiceOver reads the presenter's sentence. A done line's check unticks
+/// it, and its `…` holds the set's menu (Untick set, Delete set and the
+/// rest), as the open set's does (owner, 2026-11-02).
+struct RowsSetLine<MenuItems: View>: View {
     let item: RowsSetItem
     /// The set to do now, drawn as a line while another set is being fixed.
     var collapsed = false
@@ -14,12 +16,75 @@ struct RowsSetLine: View {
     var isResting = false
     /// Just logged: a green wash for a moment.
     var isFresh = false
+    /// A "Then" tap took the list here: an accent wash for a moment.
+    var isMarked = false
     var groupColor: Color = .accentColor
+    /// A done set: a tap on its check unticks it.
+    var onUntick: (() -> Void)?
     let onTap: () -> Void
+    /// The set's `…` menu; none when there are no items.
+    @ViewBuilder var menuItems: () -> MenuItems
 
     @ScaledMetric(relativeTo: .subheadline) private var labelWidth: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var glyphSize: CGFloat = 22
 
     var body: some View {
+        HStack(spacing: 0) {
+            check
+            line
+            if MenuItems.self != EmptyView.self {
+                Menu {
+                    menuItems()
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .accessibilityLabel("\(item.sentence) options")
+                .accessibilityHint("Untick, delete, set kind, rest and note")
+                .padding(.trailing, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+        .background {
+            if isFresh || isMarked {
+                LinearGradient(colors: [(isFresh ? Color.green : Color.accentColor).opacity(0.12), .clear],
+                               startPoint: .leading, endPoint: UnitPoint(x: 0.75, y: 0.5))
+                    .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.3), value: isMarked)
+        .opacity(item.state == .locked ? 0.55 : 1)
+    }
+
+    /// The glyph, at the line's start; a done set's check is a 44 pt button
+    /// centred where the glyph always sits.
+    @ViewBuilder
+    private var check: some View {
+        let inset = max(0, 16 + glyphSize / 2 - 22)
+        if let onUntick, isDone {
+            Button(action: onUntick) {
+                RowsGlyph(kind: glyph)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, inset)
+            .padding(.trailing, max(0, 10 - (44 - glyphSize) / 2))
+            .accessibilityLabel("Untick \(item.title)")
+            .accessibilityHint("Back to not done, with its values")
+        } else {
+            RowsGlyph(kind: glyph)
+                .padding(.leading, 16)
+                .padding(.trailing, 10)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var line: some View {
         if isTappable {
             Button(action: onTap) { content }
                 .buttonStyle(.plain)
@@ -46,53 +111,42 @@ struct RowsSetLine: View {
     }
 
     private var content: some View {
-        HStack(spacing: 10) {
-            RowsGlyph(kind: glyph)
-            ViewThatFits(in: .horizontal) {
-                // One line at its ideal width, or the end on a line of its own:
-                // a word is never cut to fit.
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    leading
-                        .fixedSize()
-                    Spacer(minLength: 6)
-                    trailing
-                        .fixedSize()
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        title
-                            .fixedSize()
-                        values
-                            .fixedSize()
-                    }
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        effortAndTags
-                        trailing
-                    }
-                }
-                // The largest text: the name, the values and the rest each on a line.
-                VStack(alignment: .leading, spacing: 2) {
+        ViewThatFits(in: .horizontal) {
+            // One line at its ideal width, or the end on a line of its own:
+            // a word is never cut to fit.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                leading
+                    .fixedSize()
+                Spacer(minLength: 6)
+                trailing
+                    .fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     title
+                        .fixedSize()
                     values
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        effortAndTags
-                        trailing
-                    }
+                        .fixedSize()
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    effortAndTags
+                    trailing
+                }
+            }
+            // The largest text: the name, the values and the rest each on a line.
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                values
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    effortAndTags
+                    trailing
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.trailing, MenuItems.self == EmptyView.self ? 16 : 0)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-        .background {
-            if isFresh {
-                LinearGradient(colors: [Color.green.opacity(0.12), .clear], startPoint: .leading,
-                               endPoint: UnitPoint(x: 0.75, y: 0.5))
-                    .transition(.opacity)
-            }
-        }
         .contentShape(.rect)
-        .opacity(item.state == .locked ? 0.55 : 1)
     }
 
     private var glyph: RowsGlyph.Kind {
@@ -101,7 +155,6 @@ struct RowsSetLine: View {
         case .done: return warmup ? .warmupDone : .done
         case .now: return isResting || collapsed ? .waiting : warmup ? .warmupNow : .now
         case .next: return warmup ? .warmupTodo : item.role == .drop ? .hook : .todo
-        case .later: return .later
         case .locked: return item.role == .drop ? .hook : .locked
         }
     }
@@ -175,6 +228,15 @@ struct RowsSetLine: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+}
+
+extension RowsSetLine where MenuItems == EmptyView {
+    init(item: RowsSetItem, collapsed: Bool = false, isResting: Bool = false, isFresh: Bool = false, isMarked: Bool = false,
+         groupColor: Color = .accentColor, onTap: @escaping () -> Void)
+    {
+        self.init(item: item, collapsed: collapsed, isResting: isResting, isFresh: isFresh, isMarked: isMarked,
+                  groupColor: groupColor, onUntick: nil, onTap: onTap) { EmptyView() }
     }
 }
 
@@ -264,48 +326,6 @@ struct RowsRoundHeaderView: View {
             .padding(.top, 8)
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// A thin line between a group's sets, on the rail that joins their rings:
-/// `→ 0:00, straight to A2`, `⏱ Rest 1:00, then round 2`.
-struct RowsConnectorView: View {
-    let connector: RowsConnector
-
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var glyph: CGFloat = 22
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Rectangle()
-                    .fill(Color(.tertiaryLabel))
-                    .frame(width: 1.5)
-                Image(systemName: connector.kind == .transition ? "arrow.right" : "timer")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isRest ? Color.accentColor : Color.secondary)
-                    .frame(width: glyph, height: 18)
-                    .background(RowsStyle.card)
-            }
-            .frame(width: glyph)
-            Text("\(Text("\(connector.lead),").fontWeight(.semibold).foregroundStyle(leadColor)) \(connector.text)")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 28)
-        .opacity(connector.phase == .passed ? 0.55 : 1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(connector.sentence)
-        .accessibilityValue(connector.phase == .running ? "running now" : "")
-    }
-
-    private var isRest: Bool { connector.kind != .transition }
-
-    private var leadColor: Color {
-        isRest ? .accentColor : .primary
     }
 }
 

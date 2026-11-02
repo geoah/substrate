@@ -74,6 +74,7 @@ struct RowsSession {
             let values = try #require(try present(at: seconds).row(row)?.commitValues)
             try script.tick(row, values, at: at(seconds))
         case let .touch(row): try send(.touchRow(row: row), at: seconds)
+        case let .untick(row): try send(.uncompleteSet(row: row), at: seconds)
         case let .edit(row, patch): try edit(row, patch, at: seconds)
         case let .removeSet(row): try send(.removeSet(row: row), at: seconds)
         case let .startTimedSet(row):
@@ -98,7 +99,6 @@ extension RowsBlock {
             case let .set(set): "\(set.badge.map { "\($0) " } ?? "")\(set.title): \(set.state.rawValue)"
             case let .warmups(fold): "\(fold.title): \(fold.values)"
             case let .round(header): header.title
-            case let .connector(connector): "\(connector.lead), \(connector.text) (\(connector.phase.rawValue))"
             case let .chainHeader(header): header.text
             case let .miniSets(line): "\(line.title) \(line.chips.map(\.text).joined(separator: " "))"
             }
@@ -160,21 +160,31 @@ struct RowsOpenSetTests {
 
         let strip = try #require(editor.rpe)
         #expect(strip.shown == 8 && !strip.isRated && !strip.isCollapsed)
-        #expect(strip.cells.map(\.text) == ["6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10"])
-        #expect(strip.cells.filter(\.isHalf).map(\.text) == ["6.5", "7.5", "8.5", "9.5"])
+        // Five whole stops and a half toggle: narrow enough for the card, every half step two taps away.
+        #expect(strip.cells.map(\.text) == ["6", "7", "8", "9", "10"] && !strip.cells.contains(where: \.isHalf))
         #expect(strip.cells.filter { $0.style != .plain }.map(\.text) == ["8"])
         // The pre-filled cell is hollow; a tap on it rates it.
-        #expect(strip.cells[4].style == .outlined && strip.cells[4].patch == .enteringRPE(8))
-        #expect(strip.cells[5].meaning == "RPE 8.5: could do 1 more rep, maybe 2")
+        #expect(strip.cells[2].style == .outlined && strip.cells[2].patch == .enteringRPE(8))
+        #expect(strip.half == RowsRPEHalf(text: "\u{00BD}", isOn: false, patch: .enteringRPE(d("8.5")),
+                                          meaning: "RPE 8.5: could do 1 more rep, maybe 2", accessibilityLabel: "Add half a point"))
         #expect(strip.accessibilityValue == "8, planned, not rated yet")
 
         // The Log button names exactly what the tick commits.
         #expect(editor.primary == RowsButton(title: "Log 105 kg × 10 @ 8", action: .tick(set2.id)))
         #expect(presentation.row(set2.id)?.commitValues
             == SetValues(load: .kg(105), reps: 10, rpe: 8, rpeMethod: .prefilled))
-        #expect(layout.capsule == .upNext(RowsNowCapsule(row: set2.id, tone: .restDone, title: "Set 2 is up",
-                                                          detail: "Rest 2:30 done", since: session.at(400),
-                                                          sinceLabel: "since set 1")))
+        // The rest is over: no "is up" page, no clock. The island holds set 2 compact and set 3 after it.
+        let island = layout.island
+        #expect(island.rest == nil && island.end == nil)
+        #expect(island.next == RowsNextPart(
+            row: set2.id, exercise: "Leg Press (Machine)", badge: nil, label: "Set 2", tint: .accent, fields: editor.fields,
+            rpe: "@ 8", rpeStrip: editor.rpe,
+            primary: RowsButton(title: "Log", accessibilityLabel: "Log 105 kg × 10 @ 8", action: .tick(set2.id)),
+            timerStartedAt: nil, sentence: "Next: Leg Press (Machine). \(set2.sentence)"
+        ))
+        #expect(island.after == RowsAfterPart(row: set3.id, label: "Then", text: "Set 3, 105 kg × 10",
+                                              sentence: "Then Set 3, 105 kg × 10"))
+        #expect(!island.isCounting)
     }
 
     @Test("One rep fewer: −1 turns the value to the tint, offers ↺ 10 back, and the Log label follows")
@@ -204,7 +214,7 @@ struct RowsOpenSetTests {
         #expect(!back.valuesChanged && back.editor?.primary.title == "Log 105 kg × 10 @ 8")
     }
 
-    @Test("RPE in one tap: a cell is rated at once, the pre-filled one too, and a tap on the selected cell clears it")
+    @Test("RPE in one tap: a stop is rated at once, the pre-filled one too, ½ adds or takes the half, a tap on the selected stop clears it")
     func rpeStrip() throws {
         var session = try RowsSession.dayOne()
         try session.log("leg-press", 0, at: 60)
@@ -217,26 +227,65 @@ struct RowsOpenSetTests {
         }
 
         let (first, _, _) = try strip(300)
-        try session.edit(set1, first.cells[5].patch, at: 301)
+        try session.edit(set1, try #require(first.half.patch), at: 301)
         let (rated, editor, commit) = try strip(302)
         #expect(rated.shown == d("8.5") && rated.isRated)
-        #expect(rated.cells.map(\.style) == [.plain, .plain, .plain, .plain, .plain, .filled, .plain, .plain, .plain])
-        #expect(rated.cells[5].patch == .clearingRPE && rated.cells[4].patch == .enteringRPE(8))
+        // The stop holding the value shows it, half point and all.
+        #expect(rated.cells.map(\.style) == [.plain, .plain, .filled, .plain, .plain])
+        #expect(rated.cells.map(\.text) == ["6", "7", "8.5", "9", "10"] && rated.cells[2].isHalf)
+        #expect(rated.cells[2].patch == .clearingRPE && rated.cells[3].patch == .enteringRPE(9))
+        #expect(rated.half.isOn && rated.half.patch == .enteringRPE(8) && rated.half.accessibilityLabel == "Take off the half point")
         #expect(editor.primary.title == "Log 105 kg × 10 @ 8.5")
         #expect(commit?.rpe == d("8.5") && commit?.rpeMethod == .entered)
 
-        // The pre-filled value tapped is a rating, solid.
-        try session.edit(set1, rated.cells[4].patch, at: 303)
+        // ½ again takes the half off: 8, rated.
+        try session.edit(set1, try #require(rated.half.patch), at: 303)
         let (eight, _, commitEight) = try strip(304)
-        #expect(eight.cells[4].style == .filled && eight.isRated && eight.accessibilityValue == "8")
+        #expect(eight.cells[2].style == .filled && eight.cells[2].text == "8" && eight.isRated && eight.accessibilityValue == "8")
         #expect(commitEight?.rpe == 8 && commitEight?.rpeMethod == .entered)
 
-        // A tap on the selected cell clears it: no RPE, no pre-fill, the strip stays open.
+        // 10 has no half above it.
         try session.edit(set1, eight.cells[4].patch, at: 305)
-        let (cleared, clearedEditor, commitCleared) = try strip(306)
+        let (ten, _, _) = try strip(306)
+        #expect(ten.shown == 10 && ten.half.patch == nil && ten.half.meaning == nil)
+
+        // A tap on the selected stop clears it: no RPE, no pre-fill, the strip stays open.
+        try session.edit(set1, ten.cells[4].patch, at: 307)
+        let (cleared, clearedEditor, commitCleared) = try strip(308)
         #expect(cleared.shown == nil && !cleared.isCollapsed && cleared.accessibilityValue == "not rated")
+        #expect(cleared.half.patch == nil && !cleared.half.isOn)
         #expect(clearedEditor.primary.title == "Log 105 kg × 10")
         #expect(commitCleared?.rpe == nil)
+    }
+
+    @Test("Every half step of 6 to 10 is a stop, then ½")
+    func everyHalfStepReachable() throws {
+        var session = try RowsSession.dayOne()
+        try session.log("leg-press", 0, at: 60)
+        try session.log("leg-press", 1, at: 160)
+        let set1 = try session.row("leg-press", 2)
+        var reached: [Decimal] = []
+        var at = 300
+        for index in 0 ..< 5 {
+            for withHalf in [false, true] {
+                let strip = try #require(try session.layout(at: at).item(set1)?.editor?.rpe)
+                // Whole first: from a value on this stop, the stop clears; so start from 6 when needed.
+                let cell = strip.cells[index]
+                if cell.style != .filled || cell.value != Decimal(6 + index) {
+                    try session.edit(set1, .enteringRPE(Decimal(6 + index)), at: at)
+                }
+                at += 1
+                if withHalf {
+                    let whole = try #require(try session.layout(at: at).item(set1)?.editor?.rpe)
+                    guard let patch = whole.half.patch else { continue }
+                    try session.edit(set1, patch, at: at)
+                    at += 1
+                }
+                if let shown = try session.layout(at: at).item(set1)?.editor?.rpe?.shown { reached.append(shown) }
+                at += 1
+            }
+        }
+        #expect(Set(reached) == Set(RPEScaleText.values))
     }
 
     @Test("Warm-ups: warm-up 1 open in orange with no strip shown, then one done, then both fold into one line")
@@ -250,12 +299,13 @@ struct RowsOpenSetTests {
         let editor = try #require(warmup.editor)
         #expect(editor.tint == .orange && editor.title == "Warm-up 1")
         #expect(editor.note == RowsNote(text: "of 2", kind: .status))
-        #expect(editor.rpe?.isCollapsed == true && editor.rpe?.addTitle == "+ RPE")
+        #expect(editor.rpe?.isCollapsed == true && editor.rpe?.addTitle == "RPE")
         #expect(editor.primary.title == "Log warm-up 40 kg × 12")
-        #expect(layout.capsule == .upNext(RowsNowCapsule(
-            row: warmup.id, tone: .orange, title: "Leg Press (Machine), warm-up 1 is up",
-            detail: "Rest 0:45 after, then warm-up 2, 70 kg × 6", since: session.start, sinceLabel: "session"
-        )))
+        // A new session starts nothing: no countdown, no clock, just the first set and the one after it.
+        #expect(layout.island.rest == nil && !layout.island.isCounting)
+        #expect(layout.island.next?.row == warmup.id && layout.island.next?.label == "Warm-up 1")
+        #expect(layout.island.next?.tint == .orange && layout.island.next?.primary.title == "Log")
+        #expect(layout.island.after?.text == "Warm-up 2, 70 kg × 6")
 
         try session.log("leg-press", 0, at: 60)
         let one = try #require(try session.layout(at: 61).block("leg-press"))
@@ -327,19 +377,21 @@ struct RowsFlowTests {
         return session
     }
 
-    @Test("Resting after set 2: the capsule counts down with −15, +15 and Skip, and says what comes after set 3")
+    @Test("Resting after set 2: the island counts down with −15, +15 and Skip over set 3 and the set after it")
     func resting() throws {
         let session = try afterSetTwo()
         let layout = try session.layout(at: 642)
         let block = try #require(layout.block("leg-press"))
         #expect(block.shape == ["Warm-ups: 40 kg × 12, 70 kg × 6", "Set 1: done", "Set 2: done", "Set 3: now"])
         #expect(block.lines[1].changes == [RowsChange(text: "+1 rep", isGain: true)] && block.lines[1].verdict == .better)
-        #expect(block.lines[2].editor?.note == RowsNote(text: "after the rest", kind: .status))
-        guard case let .resting(rest) = layout.capsule else { Issue.record("not resting: \(layout.capsule)"); return }
-        #expect(rest.kind == .rest && rest.title == "Rest, then set 3" && rest.totalText == "of 2:30")
+        // Set 3 waits for nothing: no "after the rest", its reason shows.
+        #expect(block.lines[2].editor?.note?.kind == .reason)
+        let rest = try #require(layout.island.rest)
+        #expect(rest.kind == .rest && rest.title == "Rest" && rest.totalText == "of 2:30")
         #expect(rest.startedAt == session.at(600) && rest.endsAt == session.at(750))
-        #expect(rest.afterLabel == "After set 3")
-        #expect(rest.afterText == "Iso-Lateral Chest Press (Machine), set 1, 25 kg × 7")
+        #expect(layout.island.next?.row == block.lines[2].id)
+        #expect(layout.island.after?.text == "Iso-Lateral Chest Press (Machine), set 1, 25 kg × 7")
+        #expect(layout.island.isCounting)
         #expect(rest.minus.action == .adjustRest(-15) && rest.plus.action == .adjustRest(15) && rest.skip.action == .skipRest)
         #expect(rest.minus.title == "\u{2212}15" && rest.skip.title == "Skip")
     }
@@ -359,8 +411,8 @@ struct RowsFlowTests {
                                                action: .removeSet(set1)))
         #expect(untouched.primary.title == "Save 105 kg × 10 @ 8" && !untouched.primary.isEnabled)
         // Logged as the plan's pre-fill, it is no rating: hollow, and a tap rates it.
-        #expect(untouched.rpe?.cells[4].style == .outlined && untouched.rpe?.isRated == false)
-        #expect(untouched.rpe?.cells[4].patch == .enteringRPE(8))
+        #expect(untouched.rpe?.cells[2].style == .outlined && untouched.rpe?.isRated == false)
+        #expect(untouched.rpe?.cells[2].patch == .enteringRPE(8))
         #expect(untouched.rpe?.accessibilityValue == "8, as planned, not rated")
         #expect(fix.save(fix.logged) == nil)
 
@@ -374,7 +426,7 @@ struct RowsFlowTests {
         #expect(changed.primary.action == .edit(set1, SetValuesPatch(reps: .set(9))))
         #expect(fix.save(draft) == .edit(set1, SetValuesPatch(reps: .set(9))))
         // A tap on the logged RPE rates it: Save sends it as entered.
-        draft = draft.applying(try #require(changed.rpe?.cells[4].patch))
+        draft = draft.applying(try #require(changed.rpe?.cells[2].patch))
         #expect(fix.save(draft) == .edit(set1, SetValuesPatch(reps: .set(9), rpe: .set(8), rpeMethod: .entered)))
 
         let countdown = try session.script.current.countdown
@@ -386,7 +438,7 @@ struct RowsFlowTests {
         #expect(after.values == "105 kg × 9" && after.changes == [RowsChange(text: "as last time", isGain: false)])
     }
 
-    @Test("Out of order: a tap on a later row opens it, the passed-over set waits with a later tag, Go back returns")
+    @Test("Any order: a tap on any pending set opens it, the passed-over set is just pending, no waiting nag")
     func outOfOrder() throws {
         var session = try afterSetTwo()
         let chest = try session.row("iso-lateral-chest-press", 0)
@@ -396,20 +448,21 @@ struct RowsFlowTests {
         try session.perform(.touch(chest), at: 800)
 
         let layout = try session.layout(at: 801)
-        let waiting = try #require(layout.item(set3))
-        #expect(waiting.state == .later && waiting.tags == [RowsTag(text: "later", style: .grey)])
-        #expect(waiting.tap == .doNow(.touch(set3)) && waiting.editor == nil)
-        #expect(waiting.sentence == "Set 3, waiting: 105 kilograms, 10 reps. Last time 105 kilograms, 8 reps.")
+        let passed = try #require(layout.item(set3))
+        #expect(passed.state == .next && passed.tags.isEmpty)
+        #expect(passed.tap == .doNow(.touch(set3)) && passed.editor == nil)
+        #expect(passed.sentence == "Set 3, coming up: 105 kilograms, 10 reps. Last time 105 kilograms, 8 reps.")
         #expect(layout.item(chest)?.state == .now && layout.openRow == chest)
         #expect(layout.item(chest)?.editor?.primary.title == "Log 25 kg × 7 @ 8")
-        let goBack = RowsButton(title: "Go back", accessibilityLabel: "Go back to Leg Press (Machine), set 3", action: .touch(set3))
-        #expect(layout.capsule == .waiting(RowsWaitingCapsule(row: set3, title: "Leg Press (Machine), set 3 is waiting",
-                                                               detail: "Go back to it when you are ready", goBack: goBack)))
+        #expect(layout.island.next?.row == chest && layout.island.next?.exercise == "Iso-Lateral Chest Press (Machine)")
 
-        try session.perform(goBack.action, at: 802)
-        let back = try session.layout(at: 803)
-        #expect(back.openRow == set3 && back.item(set3)?.state == .now && back.item(chest)?.state == .next)
-        if case .waiting = back.capsule { Issue.record("still waiting") }
+        // Log it, then go back to set 3 by tapping it: it logs as any other.
+        try session.perform(.tick(chest), at: 820)
+        try session.perform(.touch(set3), at: 830)
+        let back = try session.layout(at: 831)
+        #expect(back.openRow == set3 && back.item(set3)?.state == .now && back.item(chest)?.state == .done)
+        try session.perform(.tick(set3), at: 840)
+        #expect(try session.layout(at: 841).item(set3)?.state == .done)
     }
 
     @Test("The verdict reads effort when both sets were rated: the same numbers at a higher RPE are below")
@@ -437,7 +490,7 @@ struct RowsFlowTests {
 
 @Suite("Rows layout: groups, chains and timed sets")
 struct RowsStructureTests {
-    @Test("The superset mid-round: rounds in the order done, the transition and round rest as connectors, go straight to A2")
+    @Test("The superset mid-round: rounds in the order done, no rest lines in the block, A2 next in the island")
     func supersetMidRound() throws {
         var session = try RowsSession.fullyBody()
         try session.log("glute-bridge", 0, at: 60)
@@ -446,20 +499,15 @@ struct RowsStructureTests {
         #expect(block.title == "Superset A" && block.subtitle == "Glute Bridge and Bird Dog, 2 rounds")
         #expect(block.group == "a" && block.slots == ["glute-bridge", "bird-dog"])
         #expect(block.addSets.map(\.title) == ["Add A1 set", "Add A2 set"])
+        // Rest shows only in the island, as for a plain exercise: no "0:00, straight to A2", no "Rest 1:00, then round 2".
         #expect(block.shape == [
             "Round 1 of 2",
             "A1 Glute Bridge: done",
-            "0:00, straight to A2 (passed)",
             "A2 Bird Dog: now",
-            "Rest 1:00, then round 2 (upcoming)",
             "Round 2 of 2",
             "A1 Glute Bridge: next",
-            "0:00, straight to A2 (upcoming)",
             "A2 Bird Dog: next",
-            "Rest 1:00, then Cable Core Pallof Press (upcoming)",
         ])
-        guard case let .connector(transition) = block.items[2] else { Issue.record("no transition"); return }
-        #expect(transition.kind == .transition && transition.seconds == 0 && transition.sentence == "No rest, straight to A2")
         let a1 = block.lines[0]
         #expect(a1.values == "16 reps" && a1.changes == [RowsChange(text: "+1 rep", isGain: true)] && a1.verdict == .better)
         let editor = try #require(block.lines[1].editor)
@@ -470,17 +518,19 @@ struct RowsStructureTests {
         #expect(editor.rpe?.isCollapsed == true)
         #expect(editor.primary.title == "Log A2, 11 per side")
         let a2 = try session.row("bird-dog", 0)
-        #expect(layout.capsule == .go(RowsNowCapsule(row: a2, tone: .accent, title: "A2 Bird Dog now, no rest",
-                                                      detail: "Rest 1:00 after, then A1 Glute Bridge, round 2, 16 reps",
-                                                      since: session.at(60), sinceLabel: "since A1")))
+        #expect(layout.island.rest == nil)
+        #expect(layout.island.next?.row == a2 && layout.island.next?.badge == "A2")
+        #expect(layout.island.next?.exercise == "Bird Dog" && layout.island.next?.label == "Round 1")
+        #expect(layout.island.after?.text == "A1 Glute Bridge, round 2, 16 reps")
 
-        // A2 done: the round rest runs.
+        // A2 done: the round rest runs in the island, and the block gains no line.
         try session.log("bird-dog", 0, at: 100)
         let resting = try session.layout(at: 110)
         let rested = try #require(resting.block("group-a"))
-        #expect(rested.shape[4] == "Rest 1:00, then round 2 (running)" && rested.items.count == 10)
-        guard case let .resting(rest) = resting.capsule else { Issue.record("not resting"); return }
-        #expect(rest.kind == .roundRest && rest.title == "Round rest, then A1 Glute Bridge, round 2")
+        #expect(rested.items.count == 6)
+        let rest = try #require(resting.island.rest)
+        #expect(rest.kind == .roundRest && rest.title == "Round rest")
+        #expect(resting.island.next?.label == "Round 2" && resting.island.next?.exercise == "Glute Bridge")
     }
 
     @Test("The chest press drop: a + drop tag until set 2 is done, then the drop hangs off it and opens at once")
@@ -507,14 +557,16 @@ struct RowsStructureTests {
         #expect(editor.tint == .orange && editor.title == "Drop" && editor.trailingNote == "no rest")
         #expect(editor.note == RowsNote(text: "to failure", kind: .status))
         let reps = try #require(editor.field(.reps))
-        #expect(reps.value == nil && reps.placeholder == "to failure" && reps.isMissing && reps.last == "last 8")
+        // The field holds no words: the note above says "to failure" once; VoiceOver hears it with the field.
+        #expect(reps.value == nil && reps.placeholder == nil && reps.isMissing && reps.last == "last 8")
+        #expect(reps.accessibilityValue == "to failure, empty")
         // The steppers start from last time's 8.
         #expect(reps.minus?.patch == SetValuesPatch(reps: .set(7)) && reps.plus?.patch == SetValuesPatch(reps: .set(9)))
         #expect(editor.rpe?.isCollapsed == false && editor.rpe?.shown == nil)
         #expect(editor.primary.title == "Log drop 25 kg" && !editor.primary.isEnabled)
-        #expect(layout.capsule == .go(RowsNowCapsule(row: drop.id, tone: .orange, title: "Drop to 25 kg now",
-                                                      detail: "Rest 1:30 after, then Seated Row (Machine), set 1, 50 kg × 11",
-                                                      since: session.at(400), sinceLabel: "since set 2")))
+        #expect(layout.island.next?.row == drop.id && layout.island.next?.label == "Drop" && layout.island.next?.tint == .orange)
+        #expect(layout.island.next?.primary.isEnabled == false)
+        #expect(layout.island.after?.text == "Seated Row (Machine), set 1, 50 kg × 11")
 
         try session.edit(drop.id, SetValuesPatch(reps: .set(12)), at: 410)
         let typed = try #require(try session.layout(at: 411).item(drop.id)?.editor)
@@ -528,7 +580,7 @@ struct RowsStructureTests {
             + "drop, 25 kilograms, 12 reps. 5 kilograms more than last time.")
     }
 
-    @Test("The plank: ready with its goal and last time on the track, then running with Stop and log")
+    @Test("The plank: ready with its goal and last time on the track, then running with Stop and log; the island's next part runs its clock")
     func plank() throws {
         var session = try RowsSession.fullyBody()
         let plank = try session.row("plank", 0)
@@ -545,6 +597,10 @@ struct RowsStructureTests {
         #expect(ready.primary.accessibilityLabel == "Start Plank, set 1, goal 1:07")
         #expect(ready.secondary == RowsButton(title: "Log 1:07 hold", action: .tick(plank)))
         #expect(ready.rpe?.isCollapsed == true)
+        let readyIsland = try session.layout(at: 6).island
+        #expect(readyIsland.next?.primary == RowsButton(title: "Start", accessibilityLabel: "Start Plank, set 1, goal 1:07",
+                                                         action: .startTimedSet(plank)))
+        #expect(readyIsland.next?.timerStartedAt == nil && !readyIsland.isCounting)
 
         try session.perform(ready.primary.action, at: 100)
         let layout = try session.layout(at: 141)
@@ -556,9 +612,11 @@ struct RowsStructureTests {
         #expect(timer.caption(elapsed: 41) == "0:21 to beat last time")
         #expect(timer.caption(elapsed: 63) == "0:04 to the goal" && timer.caption(elapsed: 70) == "Goal reached")
         #expect(timer.fraction(40) == 0.5 && timer.fraction(200) == 1)
-        #expect(layout.capsule == .timing(RowsTimingCapsule(row: plank, title: "Then rest 0:15",
-                                                             detail: "Set 2, 0:58 hold, last 0:53",
-                                                             startedAt: session.at(100), endsAt: session.at(167))))
+        // The timed set's own countdown is no rest: the island has no rest part, its next part runs the clock.
+        #expect(layout.island.rest == nil && layout.island.isCounting)
+        #expect(layout.island.next?.timerStartedAt == session.at(100) && layout.island.next?.fields.isEmpty == true)
+        #expect(layout.island.next?.primary.title == "Stop" && layout.island.next?.primary.action == .stopTimedSet(plank))
+        #expect(layout.island.after?.text == "Set 2, 0:58 hold")
     }
 
     @Test("Myo-reps: a header, the activation, mini-sets one at a time, done ones as chips, End myo-reps")
@@ -574,13 +632,14 @@ struct RowsStructureTests {
         let mini = block.lines[2]
         #expect(mini.role == .miniSet && mini.isChained)
         let editor = try #require(mini.editor)
-        #expect(editor.fields.map(\.field) == [.reps] && editor.note == RowsNote(text: "after the pause", kind: .status))
+        #expect(editor.fields.map(\.field) == [.reps] && editor.note == RowsNote(text: "at 6 kg", kind: .status))
         #expect(editor.primary.title == "Log mini-set 1, 4 reps")
         #expect(editor.secondary == RowsButton(title: "End myo-reps here", action: .removeSet(mini.id)))
-        guard case let .resting(pause) = pausing.capsule else { Issue.record("no pause"); return }
-        #expect(pause.kind == .pause && pause.title == "Pause, then mini-set 1" && pause.totalText == "of 0:15")
-        // The next mini-set appears only on a tick; the capsule names it all the same.
-        #expect(pause.afterLabel == "After mini-set 1" && pause.afterText == "Mini-set 2")
+        let pause = try #require(pausing.island.rest)
+        #expect(pause.kind == .pause && pause.title == "Pause" && pause.totalText == "of 0:15")
+        // The next mini-set appears only on a tick; the island names it all the same, with nothing to tap.
+        #expect(pausing.island.after == RowsAfterPart(row: nil, label: "Then", text: "Mini-set 2",
+                                                      sentence: "Then Mini-set 2"))
 
         try session.tick("lateral-raise", 2, SetValues(load: .kg(6), reps: 4), at: 230)
         try session.tick("lateral-raise", 3, SetValues(load: .kg(6), reps: 4), at: 260)
@@ -594,9 +653,8 @@ struct RowsStructureTests {
         #expect(line.sentence == "Mini-sets done: 4 and 4 reps. The same as last time.")
         let third = try #require(chain.lines.last?.editor)
         #expect(third.note == RowsNote(text: "at 6 kg", kind: .status) && third.primary.title == "Log mini-set 3, 4 reps")
-        #expect(layout.capsule == .upNext(RowsNowCapsule(row: third.row, tone: .restDone, title: "Mini-set 3 is up",
-                                                          detail: "Pause 0:15 done", since: session.at(260),
-                                                          sinceLabel: "since mini-set 2")))
+        // After the pause: no "is up" page, mini-set 3 is simply next.
+        #expect(layout.island.rest == nil && layout.island.next?.row == third.row && layout.island.next?.label == "Mini-set 3")
 
         // End myo-reps: the pending mini-set goes, the chain's chips stay.
         try session.perform(try #require(third.secondary?.action), at: 300)
@@ -628,7 +686,8 @@ struct RowsStructureTests {
         try empty.start(nil, exercises: [])
         let none = SessionPresenter.present(try empty.current, history: HistoryIndex([]),
                                             settings: PresenterSettings(prefillsRPE: true), now: engineEpoch)
-        #expect(none.rowsLayout == RowsLayout(blocks: [], capsule: .empty, openRow: nil))
+        #expect(none.rowsLayout == RowsLayout(blocks: [], island: .empty, openRow: nil))
+        #expect(none.rowsLayout.island.parts(editorInView: false) == [.empty])
 
         let routine = EngineCatalog.routine([EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(1))])
         var one = EngineScript(at: engineEpoch)
@@ -636,7 +695,8 @@ struct RowsStructureTests {
         try one.tick(try one.row("press", 0), kgReps(50, 10, rpe: 8))
         let done = SessionPresenter.present(try one.current, history: HistoryIndex([]),
                                             settings: PresenterSettings(prefillsRPE: true), now: engineEpoch.addingTimeInterval(5))
-        #expect(done.rowsLayout.capsule == .allDone(title: "All sets done", detail: "Finish saves the session"))
+        #expect(done.rowsLayout.island.end == .allDone(title: "All sets done", detail: "Finish saves the session"))
+        #expect(done.rowsLayout.island.next == nil && done.rowsLayout.island.after == nil)
         #expect(done.rowsLayout.openRow == nil)
         let block = try #require(done.rowsLayout.blocks.first)
         #expect(block.isFinished && block.summary?.text == "50 kg × 10")

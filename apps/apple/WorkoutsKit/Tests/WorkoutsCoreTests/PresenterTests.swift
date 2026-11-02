@@ -267,7 +267,8 @@ struct PresenterSessionTests {
         ))
         #expect(presentation.notification == nil)
         #expect(presentation.accessory == AccessoryPresentation(title: "Fully Body Collection #1",
-                                                                detail: "Leg Press (Machine), warm-up", isPaused: false,
+                                                                set: "Leg Press (Machine), warm-up", values: "40 kg × 12",
+                                                                row: upNext.row, isPaused: false,
                                                                 restEndsAt: nil))
         #expect(presentation.summary == "Fully Body Collection #1, started 13:42, 0 sets done.")
         #expect(presentation.nextChange == nil)
@@ -337,7 +338,7 @@ struct PresenterRestTests {
         #expect(presentation.liveActivity.next == "Set 1: 40 kg × 11")
         #expect(presentation.liveActivity.exercise == "Chest Press (Machine)")
         #expect(presentation.accessory.restEndsAt == end)
-        #expect(presentation.accessory.detail == "Chest Press (Machine), set 1")
+        #expect(presentation.accessory.detail == "Chest Press (Machine), set 1, 40 kg × 11")
         #expect(presentation.nextChange == end)
         #expect(presentation.upNext?.reason == "Last time 35 kg × 15, top of range; try 40 kg × 11")
 

@@ -6,8 +6,8 @@ import Testing
 // Table's RPE sheet rates what it confirms, a planned set's unknown fields
 // stay out of `set.target`, ratings read only known methods on an RIR-based
 // scale, a journal from before effort ranges resumes with its targets, a
-// timed set's rest is measured to its start, superset connectors honour a
-// per-set rest, and the capsule's session clock stops while paused. Each
+// timed set's rest is measured to its start, and a superset's rest honours a
+// per-set rest. Each
 // test but the volume one failed before its fix; that one pins the rule the
 // package README and DESIGN §4.11 now state.
 
@@ -229,36 +229,15 @@ struct RowsReviewRecordTests {
 
 @Suite("Rows review fixes: the Rows layout")
 struct RowsReviewLayoutTests {
-    @Test("a per-set rest on A1 is the connector's rest, as the countdown runs it")
-    func connectorHonoursOverride() throws {
+    @Test("a per-set rest on A1 is the island's rest, as the countdown runs it")
+    func restHonoursOverride() throws {
         var session = try RowsSession.fullyBody()
         let a1 = try session.row("glute-bridge", 0)
         try session.send(.setRowRest(row: a1, seconds: 45), at: 30)
         try session.log("glute-bridge", 0, at: 60)
         let layout = try session.layout(at: 69)
-        let block = try #require(layout.block("group-a"))
-        #expect(block.shape[2] == "Rest 0:45, then A2 (running)")
-        guard case let .connector(connector) = block.items[2] else { Issue.record("no connector"); return }
-        #expect(connector.seconds == 45 && connector.sentence == "Rest 0:45, then A2")
         #expect(try session.script.current.countdown?.kind == .rest(.override))
-        guard case let .resting(rest) = layout.capsule else { Issue.record("not resting"); return }
+        let rest = try #require(layout.island.rest)
         #expect(rest.totalText == "of 0:45")
-        // Round 2's A1 has no override: its connector is the plan's.
-        #expect(block.shape[7] == "0:00, straight to A2 (upcoming)")
-    }
-
-    @Test("before the first set the capsule's session clock stands still while the session clock is paused")
-    func capsuleClockPauses() throws {
-        var session = try RowsSession.dayOne()
-        guard case let .upNext(running) = try session.layout(at: 5).capsule else { Issue.record("no up next"); return }
-        #expect(running.sinceLabel == "session" && running.pausedAt == nil)
-        try session.send(.pauseClock, at: 10)
-        guard case let .upNext(paused) = try session.layout(at: 40).capsule else { Issue.record("no up next"); return }
-        #expect(paused.sinceLabel == "session" && paused.pausedAt == session.at(10))
-        #expect(paused.pausedAt == (try session.present(at: 40)).header.clockPausedAt)
-        try session.send(.resumeClock, at: 50)
-        guard case let .upNext(resumed) = try session.layout(at: 60).capsule else { Issue.record("no up next"); return }
-        #expect(resumed.pausedAt == nil)
-        #expect(resumed.since == session.start.addingTimeInterval(40))
     }
 }

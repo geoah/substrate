@@ -30,7 +30,9 @@ struct RootView: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewBottomAccessory(isEnabled: session.presentation != nil) {
             if let presentation = session.presentation {
-                InProgressAccessory(accessory: presentation.accessory, header: presentation.header) {
+                InProgressAccessory(accessory: presentation.accessory) {
+                    // Opens at the set the bar names.
+                    if let row = presentation.accessory.row { session.scrollTarget = ScrollTarget(row: row) }
                     app.isSessionPresented = true
                 }
                 .matchedTransitionSource(id: presentation.sessionID.rawValue, in: zoom)

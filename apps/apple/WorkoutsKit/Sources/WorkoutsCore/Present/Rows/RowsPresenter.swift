@@ -4,10 +4,14 @@ import Foundation
 // same state, evaluator and row presentations the Table layout reads: the
 // suggestion, the ghost values, PREVIOUS, the rest rules, Up next and the
 // chains are reused, never worked out again.
+//
+// Sets are logged in any order: every pending set opens with a tap, and the
+// suggested next set is only the one open when nothing else is. Nothing
+// counts up for a set that is not timed.
 
 extension Presenting {
-    func rowsLayout(blocks: [ExerciseBlock], header: SessionHeaderStats) -> RowsLayout {
-        RowsBuilder(self, blocks: blocks, header: header).layout()
+    func rowsLayout(blocks: [ExerciseBlock]) -> RowsLayout {
+        RowsBuilder(self, blocks: blocks).layout()
     }
 }
 
@@ -15,25 +19,18 @@ extension Presenting {
 struct RowsBuilder {
     let p: Presenting
     let blocks: [ExerciseBlock]
-    let header: SessionHeaderStats
     /// Every row's Table presentation: commit values, PREVIOUS, labels, the RPE entry.
     let views: [RowID: SetRowPresentation]
     let cards: [String: ExerciseCard]
-    /// The plan sequence (§4.6) and each row's place in it.
-    let sequence: [RowID]
-    let position: [RowID: Int]
     /// The open row: the timed row while it runs, else Up next.
     let openRow: RowID?
 
-    init(_ presenting: Presenting, blocks: [ExerciseBlock], header: SessionHeaderStats) {
+    init(_ presenting: Presenting, blocks: [ExerciseBlock]) {
         p = presenting
         self.blocks = blocks
-        self.header = header
         let cards = blocks.flatMap(\.cards)
         views = Dictionary(cards.flatMap(\.rows).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.cards = Dictionary(cards.map { ($0.slot, $0) }, uniquingKeysWith: { first, _ in first })
-        sequence = UpNext.sequence(presenting.state)
-        position = Dictionary(sequence.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         openRow = presenting.timedID ?? presenting.upNextID
     }
 
@@ -41,15 +38,14 @@ struct RowsBuilder {
     var evaluator: SessionEvaluator { p.evaluator }
 
     func layout() -> RowsLayout {
-        let built = blocks.enumerated().map { index, block in
-            self.block(block, next: index + 1 < blocks.count ? blocks[index + 1] : nil)
-        }
-        return RowsLayout(blocks: built, capsule: capsule(), openRow: openRow)
+        let built = blocks.map(block)
+        let open = openRow.flatMap { row in built.lazy.compactMap { $0.item(row) }.first }
+        return RowsLayout(blocks: built, island: island(open: open, blocks: built), openRow: openRow)
     }
 
     // MARK: - Blocks
 
-    func block(_ block: ExerciseBlock, next: ExerciseBlock?) -> RowsBlock {
+    func block(_ block: ExerciseBlock) -> RowsBlock {
         let slots = block.cards.map(\.slot)
         var items: [RowsItem] = []
         let isGroup = block.group != nil
@@ -58,24 +54,15 @@ struct RowsBuilder {
             items += warmupItems(lanes.flatMap { $0.filter(isWarmup) }, id: block.id, isGroup: true)
             let working = lanes.map { $0.filter { !isWarmup($0) } }
             let rounds = working.map(\.count).max() ?? 0
-            var lastUnit: [RowID]?
             for round in 0 ..< rounds {
                 let members = working.compactMap { round < $0.count ? $0[round] : nil }
                 let done = members.joined().allSatisfy { state.rows[$0]?.isCompleted == true }
                 items.append(.round(RowsRoundHeader(id: "\(block.id)-round-\(round + 1)", round: round + 1, rounds: rounds,
                                                     title: "Round \(round + 1) of \(rounds)", isDone: done)))
-                for (index, unit) in members.enumerated() {
+                // No rest lines between members or rounds: rest shows in the island.
+                for unit in members {
                     items += unitItems(unit, isGroup: true)
-                    if index + 1 < members.count {
-                        items.append(.connector(transition(after: unit, to: members[index + 1])))
-                    } else if round + 1 < rounds {
-                        items.append(.connector(roundRest(after: unit, group: group.key, nextRound: round + 2)))
-                    }
-                    lastUnit = unit
                 }
-            }
-            if let next, let lastUnit {
-                items.append(.connector(blockRest(after: lastUnit, group: group.key, next: next)))
             }
         } else if let slot = slots.first {
             let units = state.units(inSlot: slot)
@@ -264,57 +251,12 @@ struct RowsBuilder {
                             sets: sets, sentence: sentence)
     }
 
-    // MARK: - Connectors
-
-    func transition(after unit: [RowID], to next: [RowID]) -> RowsConnector {
-        let slot = unit.first.flatMap { state.rows[$0] }?.slot ?? ""
-        let seconds = RestRules.transition(slot: slot, in: state).seconds
-        let to = next.first.flatMap { state.rows[$0] }.flatMap { cards[$0.slot] }.map { $0.groupLabel ?? $0.name } ?? "the next"
-        return connector(id: "\(unit[0].rawValue)-transition", kind: .transition, seconds: seconds, to: to, after: unit)
-    }
-
-    func roundRest(after unit: [RowID], group: String, nextRound: Int) -> RowsConnector {
-        let seconds = RestRules.roundRest(group: group, in: state).seconds
-        return connector(id: "\(unit[0].rawValue)-round", kind: .roundRest, seconds: seconds, to: "round \(nextRound)",
-                         after: unit)
-    }
-
-    func blockRest(after unit: [RowID], group: String, next: ExerciseBlock) -> RowsConnector {
-        let seconds = state.settings.restAfterLastSet ? RestRules.roundRest(group: group, in: state).seconds : 0
-        let to = next.group.map { "\($0.kind.label) \($0.key.uppercased())" } ?? next.cards.first?.name ?? "the next exercise"
-        return connector(id: "\(unit[0].rawValue)-block", kind: .blockRest, seconds: seconds, to: to, after: unit)
-    }
-
-    /// `0:00, straight to A2`; `Rest 1:00, then round 2`. A per-set rest on
-    /// the unit's set wins, as it does for the countdown (`RestRules.after`,
-    /// line 1), and reads as a rest: `Rest 0:45, then A2`.
-    func connector(id: String, kind: RowsConnector.Kind, seconds: Seconds, to: String, after unit: [RowID]) -> RowsConnector {
-        let override = unit.first.flatMap { state.rows[$0] }.flatMap { state.rows[$0.headID]?.restOverride }
-        let seconds = override ?? seconds
-        let isRest = override != nil || kind != .transition
-        let lead = seconds > 0 ? (isRest ? "Rest \(Format.duration(seconds))" : Format.duration(seconds))
-            : Format.duration(0)
-        let text = seconds > 0 ? "then \(to)" : "straight to \(to)"
-        let phase: RowsConnector.Phase
-        let unitDone = unit.allSatisfy { state.rows[$0]?.isCompleted == true }
-        if let countdown = state.countdown, case .rest = countdown.kind, !countdown.hasEnded(by: p.now),
-           let last = state.lastCompleted, unit.contains(last)
-        {
-            phase = .running
-        } else {
-            phase = unitDone ? .passed : .upcoming
-        }
-        let sentence = seconds > 0 ? "Rest \(Format.duration(seconds)), then \(to)" : "No rest, straight to \(to)"
-        return RowsConnector(id: id, kind: kind, seconds: seconds, lead: lead, text: text, phase: phase, sentence: sentence)
-    }
-
     // MARK: - Set rows
 
     func rowState(_ row: Row) -> RowsRowState {
         if row.isCompleted { return .done }
         if row.id == openRow { return .now }
         if state.isLocked(row.id) { return .locked }
-        if let open = openRow.flatMap({ position[$0] }), let mine = position[row.id], mine < open { return .later }
         return .next
     }
 
@@ -335,8 +277,7 @@ struct RowsBuilder {
         let name = p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))
         let label = views[row.id]?.label
         let ordinal = state.ordinal(of: row.id) ?? 1
-        let warmups = Ordinals.warmupCount(inSlot: row.slot, of: state)
-        let base = head.role == .warmup ? (warmups > 1 ? "Warm-up \(ordinal)" : "Warm-up") : "Set \(ordinal)"
+        let base = head.role == .warmup ? warmupTitle(row) : "Set \(ordinal)"
         if let side = row.side {
             return isGroup ? "\(name), \(side.rawValue)" : "\(base) \(side.rawValue)"
         }
@@ -354,6 +295,12 @@ struct RowsBuilder {
         case .cluster: return "Cluster 1"
         case .straight, .drop: return isGroup ? name : base
         }
+    }
+
+    /// `Warm-up`, or `Warm-up 2` when the exercise has more than one.
+    func warmupTitle(_ row: Row) -> String {
+        let ordinal = state.ordinal(of: row.id) ?? 1
+        return Ordinals.warmupCount(inSlot: row.slot, of: state) > 1 ? "Warm-up \(ordinal)" : "Warm-up"
     }
 
     /// The Log button's words before the values.
@@ -396,7 +343,6 @@ struct RowsBuilder {
         if waitingDrops > 0 {
             tags.append(RowsTag(text: waitingDrops == 1 ? "+ drop" : "+ \(waitingDrops) drops", style: .orange))
         }
-        if rowState == .later { tags.append(RowsTag(text: "later", style: .grey)) }
         if view?.label.failureBadge == true { tags.append(RowsTag(text: "to failure", style: .red)) }
         if let roleText = view?.label.roleText {
             tags.append(RowsTag(text: roleText == "Top" ? "top set" : "back-off", style: .grey))
@@ -427,8 +373,6 @@ struct RowsBuilder {
             sentence = "\(who), now: \(spokenNow)." + (spokenLast.map { " \($0)." } ?? "")
         case .next:
             sentence = "\(who), coming up: \(spokenNow)." + (spokenLast.map { " \($0)." } ?? "")
-        case .later:
-            sentence = "\(who), waiting: \(spokenNow)." + (spokenLast.map { " \($0)." } ?? "")
         case .locked:
             let before = state.chain(of: row.id).last { $0.chainPosition < row.chainPosition }
             let after = before.map { self.title($0, head: head, isGroup: isGroup) } ?? "the set before it"
@@ -436,7 +380,7 @@ struct RowsBuilder {
         }
         let tap: RowsTap = switch rowState {
         case .done: .fix
-        case .next, .later: .doNow(.touch(row.id))
+        case .next: .doNow(.touch(row.id))
         case .now, .locked: .none
         }
         let rpeShown = done?.rpe
@@ -560,25 +504,18 @@ struct RowsBuilder {
                 note = RowsNote(text: "logged at \(Format.time(at, in: p.settings.timeZone))", kind: .status)
             }
         case .log:
-            var resting: String?
-            if let countdown = state.countdown, case let .rest(slot) = countdown.kind, !countdown.hasEnded(by: p.now) {
-                resting = switch slot {
-                case .intraSetPause: "after the pause"
-                case .sideSwitch: "after the switch"
-                default: "after the rest"
-                }
-            }
+            // No "after the rest": a set waits for nothing, the rest shows in the island.
             let warmups = Ordinals.warmupCount(inSlot: row.slot, of: state)
             if running {
                 note = RowsNote(text: measurement.isTimedHold ? "holding" : "timing", kind: .running)
-            } else if let resting {
-                note = RowsNote(text: resting, kind: .status)
             } else if head.role == .warmup, row.isHead, warmups > 1 {
                 note = RowsNote(text: "of \(warmups)", kind: .status)
             } else if role == .drop, ghost.repsPlaceholder != nil {
                 note = RowsNote(text: GhostValues.toFailure, kind: .status)
             } else if isMini, let load = Format.load(shown, mode: measurement.loadMode), load != "BW" {
-                note = RowsNote(text: "at \(load)", kind: .status)
+                // The reps field holds no words: the header says "to failure" when the plan does.
+                let failure = ghost.repsPlaceholder.map { ", \($0)" } ?? ""
+                note = RowsNote(text: "at \(load)\(failure)", kind: .status)
             } else if let text = view.reason {
                 note = RowsNote(text: text, kind: .reason)
             }
@@ -786,134 +723,104 @@ struct RowsBuilder {
         return RowsText.sameAsLastTime
     }
 
-    // MARK: - The capsule
+    // MARK: - The island
 
-    func capsule() -> RowsCapsule {
+    /// The island's parts: the rest while one runs, the open set compact, and
+    /// the set after it. Nothing counts up: there is no "is up" moment after a
+    /// Log, the next set simply shows.
+    func island(open item: RowsSetItem?, blocks: [RowsBlock]) -> RowsIsland {
         if state.rows.isEmpty { return .empty }
-        if let timed = p.timedID, let countdown = state.countdown {
-            let after = afterRow(timed)
-            let title = after.rest > 0 ? "Then rest \(Format.duration(after.rest))"
-                : after.next == nil ? "Last set" : "Then no rest"
-            let detail = after.next.map { next in
-                let last = views[next]?.previous.flatMap { previous in
-                    state.rows[next].map { ", last \(compactText(previous.values, row: $0))" }
-                } ?? ""
-                return nextText(next, from: timed, in: after.state).capitalizedFirst + last
-            }
-            return .timing(RowsTimingCapsule(row: timed, title: title, detail: detail, startedAt: countdown.startedAt,
-                                             endsAt: countdown.endsAt))
-        }
-        if let countdown = state.countdown, countdown.isRestLike, let end = countdown.endsAt, end > p.now {
-            return .resting(resting(countdown, endsAt: end))
+        var rest: RowsRestPart?
+        if p.timedID == nil, let countdown = state.countdown, countdown.isRestLike, let end = countdown.endsAt, end > p.now {
+            rest = restPart(countdown, endsAt: end)
         }
         guard let open = openRow else {
-            return .allDone(title: "All sets done", detail: "Finish saves the session")
+            return RowsIsland(rest: rest, next: nil, after: nil,
+                              end: .allDone(title: "All sets done", detail: "Finish saves the session"))
         }
-        if state.focus == open, let waiting = sequence.first(where: { id in
-            guard let row = state.rows[id], row.isPending, !state.isLocked(id), let mine = position[id],
-                  let at = position[open] else { return false }
-            return mine < at
-        }) {
-            let what = describe(waiting, from: nil)
-            return .waiting(RowsWaitingCapsule(
-                row: waiting, title: "\(what.capitalizedFirst) is waiting", detail: "Go back to it when you are ready",
-                goBack: RowsButton(title: "Go back", accessibilityLabel: "Go back to \(what)", action: .touch(waiting))
-            ))
-        }
-        let (since, sinceLabel, pausedAt) = sinceClock(open)
-        let openRole = state.rows[open].map { role($0, head: state.rows[$0.headID] ?? $0) }
-        let orange = openRole == .warmup || openRole == .drop
-        if state.countdown == nil, let clock = state.restClock, clock.endedAt == nil, clock.planned == 0, clock.slot != nil {
-            return .go(RowsNowCapsule(row: open, tone: orange ? .orange : .accent, title: goTitle(open, slot: clock.slot),
-                                      detail: afterLine(open), since: since, sinceLabel: sinceLabel, pausedAt: pausedAt))
-        }
-        let subject = describe(open, from: state.lastCompleted).capitalizedFirst
-        var detail = afterLine(open)
-        var tone: RowsCapsuleTone = orange ? .orange : .accent
-        if let clock = state.restClock, clock.planned > 0, state.lastCompleted != nil {
-            let what = switch clock.slot {
-            case .intraSetPause: "Pause"
-            case .sideSwitch: "Switch"
-            case .roundRest: "Round rest"
-            case .warmupRest: "Warm-up rest"
-            default: "Rest"
-            }
-            detail = clock.skipped ? "\(what) skipped" : "\(what) \(Format.duration(clock.planned)) done"
-            if !clock.skipped { tone = .restDone }
-        }
-        return .upNext(RowsNowCapsule(row: open, tone: tone, title: "\(subject) is up", detail: detail, since: since,
-                                      sinceLabel: sinceLabel, pausedAt: pausedAt))
+        return RowsIsland(rest: rest, next: item.flatMap(nextPart), after: afterPart(open, blocks: blocks), end: nil)
     }
 
-    func resting(_ countdown: Countdown, endsAt end: Date) -> RowsRestCapsule {
-        let kind = p.activityKind(countdown)
-        var title: String
-        var afterLabel: String?
-        var afterText: String?
-        switch countdown.kind {
-        case .manual, .timedSet:
-            title = "Timer"
-        case let .rest(slot):
-            title = slot.label
-            if let open = openRow {
-                let what = describe(open, from: state.lastCompleted)
-                title += ", then \(what)"
-                afterLabel = "After \(what)"
-                let after = afterRow(open)
-                afterText = after.next.map { nextText($0, from: open, in: after.state).capitalizedFirst }
-                    ?? "all sets are done"
+    /// The open set, compact: its exercise and label, the editor's fields, the
+    /// RPE the Log commits, and the primary action in a word.
+    func nextPart(_ item: RowsSetItem) -> RowsNextPart? {
+        guard let editor = item.editor, let row = state.rows[item.id], let slot = state.slot(row.slot) else { return nil }
+        let exercise = p.exerciseName(slot.exercise)
+        var label = item.title
+        if item.badge != nil {
+            // A group's line is titled by its exercise: say the warm-up or the
+            // round, or the part after the name.
+            let prefix = "\(exercise), "
+            if label == exercise {
+                label = item.role == .warmup ? warmupTitle(row)
+                    : "Round \(max(1, UpNext.round(of: row.id, in: state)))"
+            } else if label.hasPrefix(prefix) {
+                label = String(label.dropFirst(prefix.count)).capitalizedFirst
             }
         }
+        let word: String = switch editor.primary.action {
+        case .startTimedSet: "Start"
+        case .stopTimedSet: "Stop"
+        default: "Log"
+        }
+        var startedAt: Date?
+        if case let .running(start, _)? = editor.timer?.phase { startedAt = start }
+        return RowsNextPart(
+            row: item.id, exercise: exercise, badge: item.badge, label: label, tint: editor.tint, fields: editor.fields,
+            rpe: editor.rpe?.shown.map { "@ \(Format.rpe($0))" },
+            rpeStrip: editor.rpe,
+            primary: RowsButton(title: word, accessibilityLabel: editor.primary.accessibilityLabel,
+                                action: editor.primary.action, isEnabled: editor.primary.isEnabled),
+            timerStartedAt: startedAt,
+            sentence: "Next: \(exercise). \(item.sentence)"
+        )
+    }
+
+    /// The set a Log of the open one would lead to, on one line.
+    func afterPart(_ open: RowID, blocks: [RowsBlock]) -> RowsAfterPart? {
+        let after = afterRow(open)
+        guard let next = after.next, next != open else { return nil }
+        let text = nextText(next, from: open, in: after.state).capitalizedFirst
+        return RowsAfterPart(row: lineShowing(next, in: blocks), label: "Then", text: text, sentence: "Then \(text)")
+    }
+
+    /// The line a tap on "Then" takes the list to: the set's own, or for a
+    /// drop that waits on its set (drawn as `+ drop` on it) the set's line.
+    /// Nil when the set does not exist yet.
+    func lineShowing(_ id: RowID, in blocks: [RowsBlock]) -> RowID? {
+        guard let row = state.rows[id] else { return nil }
+        for candidate in [id, row.headID] where blocks.contains(where: { $0.item(candidate) != nil }) {
+            return candidate
+        }
+        return nil
+    }
+
+    func restPart(_ countdown: Countdown, endsAt end: Date) -> RowsRestPart {
+        let title: String = switch countdown.kind {
+        case .manual, .timedSet: "Timer"
+        case let .rest(slot): slot.label
+        }
         let total = Seconds(end.timeIntervalSince(countdown.startedAt).rounded())
-        return RowsRestCapsule(
-            kind: kind, title: title, startedAt: countdown.startedAt, endsAt: end, totalText: "of \(Format.duration(total))",
-            afterLabel: afterLabel, afterText: afterText,
+        return RowsRestPart(
+            kind: p.activityKind(countdown), title: title, startedAt: countdown.startedAt, endsAt: end,
+            totalText: "of \(Format.duration(total))",
             minus: RowsButton(title: "\u{2212}15", accessibilityLabel: "15 seconds less", action: .adjustRest(-15)),
             plus: RowsButton(title: "+15", accessibilityLabel: "15 seconds more", action: .adjustRest(15)),
             skip: RowsButton(title: "Skip", accessibilityLabel: "Skip the rest", action: .skipRest)
         )
     }
 
-    /// The capsule's words when no rest comes before the open row.
-    func goTitle(_ open: RowID, slot: RestSlot?) -> String {
-        guard let row = state.rows[open], let head = state.rows[row.headID] else { return "Go now" }
-        switch slot {
-        case .transition:
-            return "\(describe(open, from: nil)) now, no rest"
-        case .intraSetPause where head.structure == .drop:
-            let load = Format.load(evaluator.shown(open), mode: state.exercise(ofRow: open)?.measurement.loadMode)
-            return load.map { "Drop to \($0) now" } ?? "Drop now"
-        case .sideSwitch:
-            return "\(row.side.map { $0.rawValue.capitalizedFirst } ?? "Other") side now"
-        case .roundRest:
-            return "Round \(UpNext.round(of: open, in: state)) now, no rest"
-        default:
-            return "\(describe(open, from: state.lastCompleted).capitalizedFirst) now, no rest"
-        }
-    }
-
-    /// What follows the open row: `Rest 1:00 after, then warm-up 2, 70 kg × 6`,
-    /// `Then A2 Bird Dog, 11 per side`, `Last set`.
-    func afterLine(_ open: RowID) -> String {
-        let after = afterRow(open)
-        guard let next = after.next else { return "Last set" }
-        let what = nextText(next, from: open, in: after.state)
-        if after.rest > 0 { return "Rest \(Format.duration(after.rest)) after, then \(what)" }
-        return "Then \(what)"
-    }
-
     /// What a tick of `id` would lead to, as if it were done now with what it
-    /// shows: the rest it starts (§4.7) and the row expected after it (§4.6
-    /// rule 2), with the engine's own chain step (a myo chain's next mini-set
-    /// appears only on a tick). `state` is that previewed session.
-    func afterRow(_ id: RowID) -> (rest: Seconds, next: RowID?, state: SessionState) {
+    /// shows: the row expected after it (§4.6 rule 2), with the engine's own
+    /// chain step (a myo chain's next mini-set appears only on a tick).
+    /// `state` is that previewed session.
+    func afterRow(_ id: RowID) -> (next: RowID?, state: SessionState) {
         var ticked = state
         ticked.rows[id]?.performed = Performed(recordID: SetID("rows-preview"), completedAt: p.now, values: evaluator.commit(id))
         ticked.focus = nil
         var ids = RowIDPool([], prefix: "rows-preview")
         try? ticked.afterTick(id, noLighterLoad: false, ids: &ids)
-        let decision = RestRules.after(id, in: ticked)
-        return (decision.seconds, UpNext.expectedNext(after: id, in: ticked), ticked)
+        return (UpNext.expectedNext(after: id, in: ticked), ticked)
     }
 
     /// The row after the open one in words with its values: `warm-up 2, 70 kg × 6`,
@@ -923,22 +830,6 @@ struct RowsBuilder {
         guard state.rows[next] != nil else { return what }
         let values = valuesText(next)
         return values.isEmpty ? what : "\(what), \(values)"
-    }
-
-    /// The clock the capsule counts up: since the last tick, else since the start.
-    /// The capsule's clock: the session's, which stops while the session
-    /// clock is paused, until a set is logged; then the time since that set.
-    func sinceClock(_ open: RowID) -> (since: Date, label: String, pausedAt: Date?) {
-        guard let last = state.lastCompleted, let clock = state.restClock else {
-            return (header.clockStart, "session", header.clockPausedAt)
-        }
-        let lastSlot = state.rows[last].flatMap { state.slot($0.slot) }
-        let openSlot = state.rows[open].flatMap { state.slot($0.slot) }
-        if let group = lastSlot?.group, group == openSlot?.group, let badge = cards[lastSlot?.key ?? ""]?.groupLabel {
-            return (clock.since, "since \(badge)", nil)
-        }
-        guard lastSlot?.key == openSlot?.key else { return (clock.since, "since the last set", nil) }
-        return (clock.since, "since \(describe(last, from: open))", nil)
     }
 
     /// A row in words, lower-case first, as seen from `anchor`: `mini-set 3`

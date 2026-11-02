@@ -149,12 +149,8 @@ open row; apply it to the draft when fixing (below).
 - `.set(RowsSetItem)`, one set (below).
 - `.warmups(RowsWarmupFold)`. Once every warm-up is done they fold into one line: `title` ("Warm-ups"), `values`
   ("40 kg × 12, 70 kg × 6") and `comparison` ("as last time"). Unfolding shows `sets`.
-- `.round(RowsRoundHeader)`, a group's `title` ("Round 1 of 2"), with `isDone`.
-- `.connector(RowsConnector)`, a thin line in a group:
-  - `kind`: an arrow for a `transition`; a timer for a `roundRest` or `blockRest`.
-  - `lead` ("0:00", "Rest 1:00") and `text` ("straight to A2", "then round 2", "then Plank"). A per-set rest on the set
-    before wins and reads as a rest: "Rest 0:45", "then A2".
-  - `phase` (upcoming, running, passed) and `sentence`.
+- `.round(RowsRoundHeader)`, a group's `title` ("Round 1 of 2"), with `isDone`. A group has no rest lines between its
+  sets: the rest shows in the island, as for a plain exercise.
 - `.chainHeader(RowsChainHeader)`, above a myo, myo-match, rest-pause or cluster set: "Set 2 as myo-reps, 0:15 between
   mini-sets".
 - `.miniSets(RowsMiniSets)`, a chain's done mini-sets as chips:
@@ -163,13 +159,13 @@ open row; apply it to the draft when fixing (below).
 
 **A set line** (`RowsSetItem`):
 
-- `state`: `done`, `now` (open in place), `next` (muted), `later` (passed over, out of order) or `locked`.
+- `state`: `done`, `now` (open in place), `next` (pending, muted; a tap opens it, in any order) or `locked`.
 - `role`, which sets the colour: orange for `warmup` and `drop`. Also `isChained`: the line hangs off the one above.
 - `title` ("Set 1", "Warm-up 2", "Activation", "Drop", "Mini-set 3", "Set 1 left"). In a group, the exercise's name
   with `badge` ("A1").
 - `values` ("110 kg × 8", "16 reps", "11 per side", "0:58 hold", "25 kg to failure"). Tint them when `valuesChanged`.
 - `rpe` ("@ 8") on done rows; `rpeIsPrefilled` when it was the plan's value logged as shown.
-- `tags` ("+ drop", "later", "to failure", "top set", "warm-up"), each with a `style`. `collapsedTag` ("up next") goes
+- `tags` ("+ drop", "to failure", "top set", "warm-up"), each with a `style`. `collapsedTag` ("up next") goes
   on the open row only while another row's fix is open and this one is drawn collapsed.
 - `last` ("last 105 × 10 @ 9.5") on pending rows.
 - On done rows, `changes` and `verdict`. Each change is green when `isGain`, else grey: `+5 kg`, `−2 reps`, or one
@@ -183,8 +179,8 @@ open row; apply it to the draft when fixing (below).
 - `mode`: `log` for the set to do now, `fix` for a done one. `tint`: `accent`, `orange` (warm-up, drop) or `neutral`
   (fix).
 - The header: `title` and `badge`, `note` and `trailingNote` ("no rest").
-  - `note.kind` is `reason` (a sparkle before the suggestion's words) or `status` ("after the rest", "of 2", "to
-    failure", "at 6 kg", "logged at 12:06").
+  - `note.kind` is `reason` (a sparkle before the suggestion's words) or `status` ("of 2", "to failure", "at 6 kg",
+    "logged at 12:06"). There is no "after the rest": a set waits for nothing.
   - It is `running` (a red dot) for "holding".
 - `fields`, each a `RowsField`:
   - the big number: `value`, else `placeholder` ("to failure", "≈15").
@@ -198,13 +194,16 @@ open row; apply it to the draft when fixing (below).
     - `allowsDecimal` gives the `.` key.
     - `patch(typed)` is nil while the text is no value. `confirmTitle(typed)` reads "Set 120 kg".
   - `accessibilityLabel` and `accessibilityValue` ("9, changed from 10").
-- `rpe`, a `RowsRPEStrip`: nine `cells` from 6 to 10, each a ninth of the strip (44 pt on a 440 pt iPhone, 40 pt on
-  a 402 pt one); two rows where nine cells of 38 pt do not fit.
-  - Each cell has `text`, `isHalf` (smaller, regular weight), `style` and `patch`.
+- `rpe`, a `RowsRPEStrip`: five whole `cells`, 6 to 10, and `half`, the `½` that adds or takes off the half point.
+  - Each cell has `value`, `text`, `isHalf`, `style` and `patch`. The cell holding the value stands for it, half point
+    and all (`text` "8.5").
   - `style` is `.outlined` (hollow, shown but no rating: the plan's pre-fill, or a pre-filled or copied value) or
     `.filled` (a rating). A tap on an outlined cell rates it; a tap on the filled cell clears it.
-  - `meaning` ("RPE 8.5: could do 1 more rep, maybe 2") goes in the header for a moment after a tap.
-  - `isCollapsed`: show `addTitle` ("+ RPE") until the owner opens the strip.
+  - `half`: `text` ("½"), `isOn`, and `patch`, the value with the half added or taken off, rated; nil with no value
+    and at 10.
+  - `meaning` ("RPE 8.5: could do 1 more rep, maybe 2", on a cell and on `half`) goes in the header for a moment after
+    a tap.
+  - `isCollapsed`: show `addTitle` ("RPE", after a plus symbol) until the owner opens the strip.
 - `timer`, a `RowsTimer`, on a timed row:
   - `phase`: `ready`, or `running(startedAt:endsAt:)` (the big clock counts up from `startedAt`).
   - The track: `trackEnd`, with `goal` and `goalText` above it and `last` and `lastText` below it. Place them with
@@ -219,33 +218,30 @@ open row; apply it to the draft when fixing (below).
 render `fix.editor(draft:)`. Apply every patch to the draft: `draft = draft.applying(patch)`. Save sends
 `fix.save(draft)`. Cancel drops the draft and sends nothing. The rest keeps running throughout.
 
-**The capsule** (`capsule`, Liquid Glass, at the bottom) replaces the rest bar on this screen:
+**The island** (`island`, Liquid Glass, at the bottom) replaces the rest bar on this screen. It stacks up to three
+parts; draw `island.parts(editorInView:)`, top to bottom:
 
-- `.resting(RowsRestCapsule)`:
-  - the countdown from `startedAt` to `endsAt`, with `totalText` ("of 2:30") and `title` ("Rest, then set 3", "Pause,
-    then mini-set 1").
-  - `afterLabel` ("After set 3", tinted) and `afterText` ("Iso-Lateral Chest Press (Machine), set 1, 25 kg × 7").
-  - `minus`, `plus` and `skip`.
-- `.upNext(RowsNowCapsule)` ("Set 2 is up") and `.go(RowsNowCapsule)` ("A2 Bird Dog now, no rest", "Drop to 25 kg
-  now"):
-  - `tone`: `restDone` is a green check; also accent or orange.
-  - `detail` ("Rest 2:30 done", "Rest 1:00 after, then A1 Glute Bridge, round 2, 16 reps").
-  - A clock counting up from `since`, under it `sinceLabel` ("since set 1", "session"). `pausedAt`, on the session's
-    clock only, is where it stands while the session clock is paused: `Text(timerInterval:pauseTime:countsDown:)`.
-- `.waiting(RowsWaitingCapsule)`: after a tap on a later set, the passed-over one waits. It has `title`, `detail` and
-  `goBack`.
-- `.timing(RowsTimingCapsule)`: a timed set runs. `title` ("Then rest 0:15") and `detail` ("Set 2, 0:58 hold, last
-  0:53").
-- `.allDone(title:detail:)`, with Finish; `.empty`, where a tap opens the exercise picker.
+- `rest`, a `RowsRestPart`, while a rest, pause or switch counts down: from `startedAt` to `endsAt`, with `totalText`
+  ("of 2:30"), `title` ("Rest", "Round rest", "Pause"; VoiceOver's label), `minus`, `plus` and `skip`.
+- `next`, a `RowsNextPart`: the open set compact. `exercise`, `badge`, `label` ("Set 2", "Round 1", "Drop"), `tint`,
+  the editor's `fields` (steppers and keypads as in the editor), `rpe` ("@ 8") and `primary` ("Log", "Start" or "Stop",
+  its `accessibilityLabel` the editor's full title). `timerStartedAt` while a timed set runs. `parts` leaves it out
+  while `editorInView`: the list shows the set then.
+- `after`, a `RowsAfterPart`: the set after the next one. `label` ("Then"), `text` ("Calf Press (Machine), set 1,
+  60 kg × 12") and `action` (`.touch(row)`); `row` and `action` are nil for a mini-set not made yet.
+- `end`: `.allDone(title:detail:)` with Finish, or `.empty`, where a tap opens the exercise picker.
+
+`isCounting` (a rest or a timed set) keeps the island on a page pushed inside the cover.
 
 The rules the presenter applies:
 
-- A row before the open one in the plan sequence (§4.6) that is still pending is `later`.
+- Sets are done in any order: every pending, unlocked row is `next` and opens with `.doNow(.touch(row))`. Nothing marks
+  a passed-over row.
 - A drop that cannot be done yet is a `+ drop` tag on its set.
 - The verdict compares estimated one-rep maxes on the suggestion engine's curve. It adjusts for RPE when both sets
   carry a rating, and counts within 1 % as the same. With no estimate, the changes decide when they all point one way.
-- The capsule picks, in order: a running timed set, a running countdown, a passed-over set while the owner chose
-  another, no rest after the last tick, else Up next.
+- Nothing counts up: there is no "is up" moment after a Log and no clock since the last set. The rest part shows only
+  while a rest runs (not a timed set's own countdown); a timed set's clock is in its editor and in `next`.
 
 ## RPE on the Rows screen (§4.14)
 

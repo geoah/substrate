@@ -3,10 +3,11 @@ import SwiftUI
 
 /// The set open in place (DESIGN.md §7.6a): a tinted panel with a header
 /// line (the set and why today's numbers), each value with last time beside
-/// it and its steppers under the thumb, the full-width RPE strip, a timed
-/// set's clock and track, and a Log button that names exactly what it saves.
-/// A done set being fixed uses the same panel, neutral, with Save, Cancel
-/// and Delete set. Every number, word and patch comes from `RowsEditor`.
+/// it and its steppers under the thumb, the RPE stops, a timed set's clock
+/// and track, and a Log button that names exactly what it saves.
+/// A done set being fixed uses the same panel, neutral, with Save and
+/// Cancel; Delete set is in its `…`, as on every set (owner, 2026-11-02).
+/// Every number, word and patch comes from `RowsEditor`.
 struct RowsEditorPanel: View {
     let editor: RowsEditor
     /// The row as the Table reads it, for the set menu; nil hides the `…`.
@@ -16,6 +17,11 @@ struct RowsEditorPanel: View {
     /// A drop or a mini-set: the line hangs off the one above.
     var role: RowsRowRole = .working
     var groupColor: Color = .accentColor
+    /// `Set 2`, `A2 Round 1`: the set as its line names it, for the undo toast.
+    var name = ""
+    /// The open set's Log button came into view or left it: the island docks
+    /// the set while it is out (§7.6a). Nil for a fix.
+    var onLogVisibility: ((Bool) -> Void)?
 
     @Environment(SessionController.self) private var session
     @Environment(CoverModel.self) private var cover
@@ -54,12 +60,21 @@ struct RowsEditorPanel: View {
                     .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
             if let strip = editor.rpe, !strip.isCollapsed || screen.openStrips.contains(editor.row) {
-                // The panel's full inner width: a ninth of it is 44 pt on a 440 pt iPhone.
-                RowsRPEStripView(strip: strip, tint: tint) { cell in
-                    screen.pick(cell, in: editor, session: session)
+                // Inside the panel's padding, lined up with the values, and
+                // named as they are: the stops alone did not say what they rate.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("RPE")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    RowsRPEStripView(strip: strip, tint: tint) { cell in
+                        screen.pick(cell, in: editor, session: session)
+                    } onHalf: { half in
+                        screen.pick(half, in: editor, session: session)
+                    }
                 }
-                .padding(.horizontal, -12)
-                .padding(.top, 8)
+                .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
+                .padding(.top, 6)
             }
             buttons
                 .padding(.top, 10)
@@ -99,7 +114,28 @@ struct RowsEditorPanel: View {
     /// The note beside the title when it fits, else on its own line under
     /// it. The RPE meaning shown for a moment takes the note's place without
     /// changing which: the panel never jumps.
+    @ViewBuilder
     private var header: some View {
+        if typeSize.isAccessibilitySize {
+            // The title first, never squeezed to a letter a line by the
+            // controls beside it; the controls under it, at the trailing edge.
+            VStack(alignment: .leading, spacing: 2) {
+                titleGroup
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    trailing
+                }
+                noteSlot(lines: nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(minHeight: 36)
+        } else {
+            compactHeader
+        }
+    }
+
+    private var compactHeader: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 titleGroup
@@ -201,10 +237,14 @@ struct RowsEditorPanel: View {
                 Button {
                     screen.openStrips.insert(editor.row)
                 } label: {
-                    Text(strip.addTitle)
+                    // A symbol and a short word, never wrapped.
+                    Label(strip.addTitle, systemImage: "plus")
+                        .labelStyle(.titleAndIcon)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(tint)
-                        .padding(.horizontal, 11)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 10)
                         .frame(minHeight: 30)
                         .background(tint.opacity(0.13), in: .capsule)
                         .frame(minHeight: 44)
@@ -223,10 +263,16 @@ struct RowsEditorPanel: View {
                 Button(cancel) { screen.cancelFix() }
                     .font(.body)
                     .foregroundStyle(Color.accentColor)
+                    // One word, never wrapped: the header moves its note down first.
+                    .lineLimit(1)
+                    .fixedSize()
                     .frame(minHeight: 44)
-            } else if let row {
+            }
+            if let row {
                 Menu {
-                    SetMenuItems(row: row)
+                    SetMenuItems(row: row,
+                                 untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
+                                 delete: { screen.delete(editor.row, name: name, session: session) })
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.subheadline.weight(.bold))
@@ -237,7 +283,7 @@ struct RowsEditorPanel: View {
                         .contentShape(.rect)
                 }
                 .accessibilityLabel("\(editor.title) options")
-                .accessibilityHint("Set kind, rest and note")
+                .accessibilityHint(editor.mode == .fix ? "Untick, delete, set kind, rest and note" : "Delete, set kind, rest and note")
             }
         }
     }
@@ -248,17 +294,7 @@ struct RowsEditorPanel: View {
     private var buttons: some View {
         switch editor.mode {
         case .fix:
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    deleteButton
-                    Spacer(minLength: 0)
-                    primaryButton(fullWidth: false)
-                }
-                VStack(spacing: 8) {
-                    primaryButton(fullWidth: true)
-                    deleteButton
-                }
-            }
+            primaryButton(fullWidth: true)
         case .log:
             if editor.timer != nil, let secondary = editor.secondary {
                 ViewThatFits(in: .horizontal) {
@@ -301,6 +337,9 @@ struct RowsEditorPanel: View {
         .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(editor.tint)))
         .disabled(!primary.isEnabled)
         .accessibilityLabel(primary.accessibilityLabel)
+        // The dock follows this button alone, in whichever layout shows it:
+        // not the secondary action beside or under it, not the padding.
+        .modifier(RowsLogVisibility(viewport: screen.listViewport, action: onLogVisibility))
     }
 
     private func secondaryButton(_ button: RowsButton, fullWidth: Bool) -> some View {
@@ -317,20 +356,32 @@ struct RowsEditorPanel: View {
         .accessibilityLabel(button.accessibilityLabel)
     }
 
-    @ViewBuilder
-    private var deleteButton: some View {
-        if let delete = editor.delete {
-            Button(delete.title, role: .destructive) { run(delete.action) }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(RowsStyle.red)
-                .frame(minHeight: 44)
-                .accessibilityLabel(delete.accessibilityLabel)
-        }
-    }
-
     private func run(_ action: RowsAction) {
-        let logged = editor.badge.map { "\($0) \(editor.title) logged" } ?? "\(editor.title) logged"
-        screen.perform(action, session: session, cover: cover, loggedText: logged)
+        screen.perform(action, session: session, cover: cover, loggedText: editor.loggedText)
+    }
+}
+
+/// Reports whether the primary button (Log, Start, Stop) is in the list's viewport, on screen:
+/// between the list's top and the bar over its foot (`RowsDock.isInView`). Geometry
+/// reports on appearing too, so a panel laid out again says where it is at
+/// once; a lazy list dropping it counts as out of view.
+private struct RowsLogVisibility: ViewModifier {
+    let viewport: ClosedRange<Double>
+    let action: ((Bool) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content
+                .onGeometryChange(for: Bool.self) { proxy in
+                    let frame = proxy.frame(in: .global)
+                    return RowsDock.isInView(Double(frame.minY) ... Double(frame.maxY), viewport: viewport)
+                } action: { visible in
+                    action(visible)
+                }
+                .onDisappear { action(false) }
+        } else {
+            content
+        }
     }
 }
 
@@ -425,9 +476,10 @@ struct RowsFieldRow: View {
         .accessibilityHint("Opens a keypad")
     }
 
-    /// A hint such as `≈15` reads with its unit; words such as `to failure` do not.
+    /// A hint such as `≈15` reads with its unit, and so does an empty field
+    /// that must be filled (`– reps` on a drop to failure): it says what it wants.
     private var showsUnit: Bool {
-        field.value != nil || typing != nil || field.placeholder?.first == "\u{2248}"
+        field.value != nil || typing != nil || field.placeholder?.first == "\u{2248}" || field.isMissing
     }
 
     @ViewBuilder
@@ -551,72 +603,61 @@ struct RowsStepper: View {
 
 // MARK: - RPE
 
-/// The full-width RPE strip, 6 to 10 in half steps: the plan's value an
-/// outlined, hollow cell; a rating filled solid inside its cell. A tap on any
-/// cell rates it (the outlined one too); a tap on the filled cell clears it.
-/// Each cell is 48 pt tall and a ninth of the strip wide: 44 pt on a 440 pt
-/// iPhone, 40 pt on a 402 pt one, 39 pt on a 390 pt one. It takes two rows
-/// at the accessibility sizes, and where a cell would be narrower than 38 pt
-/// (a 375 pt iPhone).
+/// The RPE control: five whole stops, 6 to 10, and a `½` beside them that
+/// adds or takes off the half point, so every half step is reachable and the
+/// whole control stays inside the panel. The plan's value is an outlined,
+/// hollow stop; a rating is filled solid inside its stop. A tap on any stop
+/// rates it (the outlined one too); a tap on the filled stop clears it.
+/// Every target is at least 44 pt square; where the row does not fit (larger
+/// text) the `½` goes under the stops.
 struct RowsRPEStripView: View {
     let strip: RowsRPEStrip
     let tint: Color
     let onPick: (RowsRPECell) -> Void
+    let onHalf: (RowsRPEHalf) -> Void
 
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 48
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var scaledWidth: CGFloat = 48
 
-    /// The narrowest a cell gets in one row.
-    private static let narrowestCell: CGFloat = 38
+    /// A stop grows with the text up to 52 pt; past that its digits shrink to fit.
+    private var width: CGFloat { min(52, scaledWidth) }
+
+    /// The width `ViewThatFits` judges the row by: 44 pt at the standard sizes,
+    /// so the stops and the `½` (5 × 44 + 8 + 44) fit one row on a 375 pt
+    /// phone, then widen to `width` where the row has room.
+    private var idealWidth: CGFloat { width > 48 ? width : 44 }
 
     var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                twoRows
-            } else {
-                // One row when nine cells of 38 pt fit, else two; chosen in
-                // layout, so the strip never redraws from one to the other.
-                ViewThatFits(in: .horizontal) {
-                    row(strip.cells, narrowest: Self.narrowestCell)
-                    twoRows
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                stops
+                half
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                stops
+                half
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(strip.accessibilityLabel)
         .accessibilityValue(strip.accessibilityValue)
     }
 
-    private var twoRows: some View {
-        VStack(spacing: 4) {
-            row(Array(strip.cells.prefix(5)))
-            row(Array(strip.cells.dropFirst(5)))
-        }
-    }
-
-    private func row(_ cells: [RowsRPECell], narrowest: CGFloat = 0) -> some View {
+    private var stops: some View {
         HStack(spacing: 0) {
-            ForEach(cells) { cell in
+            ForEach(strip.cells) { cell in
                 Button {
                     onPick(cell)
                 } label: {
                     Text(cell.text)
-                        .font(cell.isHalf ? .subheadline : .body.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .monospacedDigit()
-                        .foregroundStyle(foreground(cell))
+                        .foregroundStyle(foreground(cell.style))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(minWidth: narrowest, maxWidth: .infinity, minHeight: height)
-                        .background {
-                            switch cell.style {
-                            case .filled:
-                                RoundedRectangle(cornerRadius: 11).fill(tint).padding(3)
-                            case .outlined:
-                                RoundedRectangle(cornerRadius: 10).strokeBorder(tint, lineWidth: 2).padding(4)
-                            case .plain:
-                                EmptyView()
-                            }
-                        }
+                        .frame(minWidth: 44, idealWidth: idealWidth, maxWidth: width, minHeight: height)
+                        .background { mark(cell.style) }
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -625,11 +666,40 @@ struct RowsRPEStripView: View {
                 .accessibilityAddTraits(cell.style == .filled ? .isSelected : [])
             }
         }
-        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 14))
+        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func foreground(_ cell: RowsRPECell) -> Color {
-        switch cell.style {
+    private var half: some View {
+        let style: RowsRPECell.Style = strip.half.isOn ? (strip.isRated ? .filled : .outlined) : .plain
+        return Button {
+            onHalf(strip.half)
+        } label: {
+            Text(strip.half.text)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(strip.half.patch == nil ? Color(.tertiaryLabel) : foreground(style))
+                .frame(minWidth: 44, idealWidth: idealWidth, maxWidth: max(44, width), minHeight: height, maxHeight: height)
+                .background { mark(style) }
+                .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(strip.half.patch == nil)
+        .accessibilityLabel(strip.half.accessibilityLabel)
+        .accessibilityAddTraits(strip.half.isOn ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func mark(_ style: RowsRPECell.Style) -> some View {
+        switch style {
+        case .filled: RoundedRectangle(cornerRadius: 10).fill(tint).padding(3)
+        case .outlined: RoundedRectangle(cornerRadius: 9).strokeBorder(tint, lineWidth: 2).padding(4)
+        case .plain: EmptyView()
+        }
+    }
+
+    private func foreground(_ style: RowsRPECell.Style) -> Color {
+        switch style {
         case .filled: .white
         case .outlined: tint
         case .plain: .primary

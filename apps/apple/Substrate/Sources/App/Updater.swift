@@ -36,10 +36,12 @@ struct BuildInfo: Sendable {
         updates = base.isEmpty ? nil : URL(string: base.hasSuffix("/") ? base : base + "/")
     }
 
-    /// The app's name as the home screen shows it: the console app and
-    /// Substrate Sync share this file.
+    /// The app's full name (`Substrate Workouts`), not the home screen's
+    /// short label (`Workouts`): the update alert says which app it updates.
+    /// Every app that shares this file (the console, Chat, Sync, Workouts)
+    /// sets both.
     static var appName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Substrate"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Substrate"
     }
 
     static func newer(_ a: String, than b: String) -> Bool {

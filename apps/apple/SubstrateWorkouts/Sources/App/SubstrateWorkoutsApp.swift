@@ -52,6 +52,10 @@ struct SubstrateWorkoutsApp: App {
                 .task { await session.prepare() }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .background {
+                // A set deleted a moment ago is deleted for good: the app may not come back.
+                Task { await session.commitRemoval() }
+            }
             guard phase == .active else { return }
             Task { await session.sceneBecameActive() }
             Task {

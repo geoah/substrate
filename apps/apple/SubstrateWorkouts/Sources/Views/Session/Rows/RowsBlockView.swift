@@ -3,9 +3,9 @@ import SwiftUI
 
 /// One exercise or group on the Rows layout (DESIGN.md §7.6a): an opaque
 /// card with the name, the plan in one line and the `…` menu, then its lines
-/// in the order they are done (a group's members interleaved by round, with
-/// the hand-off and the rests as thin lines), the set to do now open in
-/// place, and `+ Add set`. A finished block folds to one line with the
+/// in the order they are done (a group's members interleaved by round; the
+/// rests show in the island, not here), the open set in place, and
+/// `+ Add set`. Any pending set opens with a tap. A finished block folds to one line with the
 /// headline change until it is opened again.
 struct RowsBlockView: View {
     let block: RowsBlock
@@ -205,7 +205,7 @@ struct RowsBlockView: View {
         switch item {
         case let .set(set): !showsEditor(set)
         case .warmups, .miniSets: true
-        case .round, .connector, .chainHeader: false
+        case .round, .chainHeader: false
         }
     }
 
@@ -219,6 +219,9 @@ struct RowsBlockView: View {
         switch item {
         case let .set(set):
             setView(set)
+        case let .warmups(fold) where fold.sets.count == 1:
+            // One warm-up folds to nothing shorter: its own line, with its check and `…`.
+            setView(fold.sets[0])
         case let .warmups(fold):
             let open = screen.unfolded.contains(fold.id) || fold.sets.contains { $0.id == screen.fixing?.row }
             RowsWarmupFoldLine(fold: fold, isOpen: open) {
@@ -234,8 +237,6 @@ struct RowsBlockView: View {
             }
         case let .round(header):
             RowsRoundHeaderView(header: header)
-        case let .connector(connector):
-            RowsConnectorView(connector: connector)
         case let .chainHeader(header):
             RowsChainHeaderView(header: header)
         case let .miniSets(line):
@@ -252,18 +253,37 @@ struct RowsBlockView: View {
     private func setView(_ set: RowsSetItem) -> some View {
         Group {
             if let fixing = screen.fixing, fixing.row == set.id, let fix = set.fix {
-                RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: nil, role: set.role, groupColor: groupColor)
+                RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: presentation.row(set.id), role: set.role,
+                                groupColor: groupColor, name: name(set))
             } else if screen.fixing == nil, set.state == .now, let editor = set.editor {
+                // With its Log button out of view, the island docks this set (§7.6a, `RowsDock`).
                 RowsEditorPanel(editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
-                                groupColor: groupColor)
+                                groupColor: groupColor, name: name(set)) { visible in
+                    screen.logVisibility(set.id, visible: visible)
+                }
+            } else if set.state == .done, let row = presentation.row(set.id) {
+                // A done set: its check unticks it, its `…` holds Untick set and Delete set (owner, 2026-11-02).
+                RowsSetLine(item: set, isFresh: screen.fresh == set.id, isMarked: screen.mark?.row == set.id,
+                            groupColor: groupColor, onUntick: { screen.untick(set.id, name: name(set), session: session) }) {
+                    tap(set)
+                } menuItems: {
+                    SetMenuItems(row: row,
+                                 untick: { screen.untick(set.id, name: name(set), session: session) },
+                                 delete: { screen.delete(set.id, name: name(set), session: session) })
+                }
             } else {
                 RowsSetLine(item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
-                            groupColor: groupColor) {
+                            isMarked: screen.mark?.row == set.id, groupColor: groupColor) {
                     tap(set)
                 }
             }
         }
         .id(set.id)
+    }
+
+    /// `A2 Round 1`, `Set 2`: the set as its line names it, for the undo toast.
+    private func name(_ set: RowsSetItem) -> String {
+        set.badge.map { "\($0) \(set.title)" } ?? set.title
     }
 
     private func tap(_ set: RowsSetItem) {

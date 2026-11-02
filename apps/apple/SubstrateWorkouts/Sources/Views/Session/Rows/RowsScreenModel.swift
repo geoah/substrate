@@ -5,7 +5,9 @@ import SwiftUI
 /// The Rows layout's own view state (DESIGN.md §7.6a): which done set is
 /// being fixed and its draft, which field the keypad types into, which
 /// finished blocks and warm-up folds are open, the RPE meaning shown for a
-/// moment, and the undo offer after a Log. The session lives in
+/// moment, the undo offer after a Log, an untick or a delete, the set a
+/// "Then" tap marks, the island's RPE picker, and what the list reports for
+/// the island's dock (`RowsDock` decides it). The session lives in
 /// `SessionController`; this never holds a rule. Every value it shows and
 /// every change it sends comes from `SessionPresentation.rowsLayout`.
 @MainActor
@@ -25,6 +27,8 @@ final class RowsScreenModel {
         var keypad: RowsKeypad
         /// What was typed; empty shows the field's value until the first key.
         var text = ""
+        /// Opened from the island's docked set: the list stays where the owner scrolled it.
+        var fromIsland = false
 
         var field: ValueField { keypad.field }
     }
@@ -36,10 +40,26 @@ final class RowsScreenModel {
         var token: Int
     }
 
-    /// The offer to take back the set just logged.
+    /// The offer to take back what was just done to a set.
     struct Undo: Equatable {
+        enum Kind: Equatable {
+            /// Logged: the Undo takes it back and opens it (`RowsAction.takeBack`).
+            case logged
+            /// Unticked: the Undo logs it again with its values.
+            case unticked
+            /// Deleted: the removal is still held (`SessionController.pendingRemoval`); the Undo keeps the set.
+            case deleted
+        }
+
         var row: RowID
         var text: String
+        var token: Int
+        var kind: Kind = .logged
+    }
+
+    /// A set a "Then" tap took the list to, marked for a moment.
+    struct Mark: Equatable {
+        var row: RowID
         var token: Int
     }
 
@@ -55,6 +75,37 @@ final class RowsScreenModel {
     var undo: Undo?
     /// The set just logged: tinted green for a moment.
     var fresh: RowID?
+    /// The set a "Then" tap took the list to.
+    var mark: Mark?
+    /// The island's RPE stops, open on the docked set.
+    var islandRPE: RowID?
+    /// Whether the island docks the open set, and holds the docked height.
+    private(set) var dock = RowsDock()
+    /// The dock's changes animate with this: a fade under Reduce Motion (the view sets it).
+    @ObservationIgnored var dockAnimation: Animation? = .smooth(duration: 0.3)
+    /// The list's frame on screen (it starts under the toolbar) and the top
+    /// of the bar over its foot (the island, the undo offer, the keypad), on
+    /// screen: the two edges of where the list shows content.
+    var listFrame = CGRect.zero
+    var barTop: CGFloat?
+
+    /// Where the list shows content, on screen: from its top to the top of
+    /// the bar, at its docked height while it holds it. Both edges are
+    /// measured, not derived from the scroll view's insets, which count the
+    /// toolbar again on top of a frame that already starts under it (a Log
+    /// button just under the toolbar docked a second one).
+    var listViewport: ClosedRange<Double> {
+        let top = Double(listFrame.minY)
+        let bottom = Double(barTop ?? listFrame.maxY)
+        return top ... max(top, bottom)
+    }
+    @ObservationIgnored private var hideTask: Task<Void, Never>?
+    /// The bounded wait for an awaited editor's report (`RowsDock.noReport`).
+    @ObservationIgnored private var reportTask: Task<Void, Never>?
+    /// The list's own scroll to the open set, while it runs (`RowsDock.seek`).
+    @ObservationIgnored private var seekTask: Task<Void, Never>?
+    /// Releases a held height when the list never says it is idle.
+    @ObservationIgnored private var holdTask: Task<Void, Never>?
     /// A Log the entry check holds: once the answer logs the row, it gets the
     /// undo offer and the green wash as any other Log.
     @ObservationIgnored private var heldLog: (row: RowID, text: String?)?
@@ -92,10 +143,105 @@ final class RowsScreenModel {
         }
     }
 
+    /// The `½`: the value with its half point added or taken off, rated, and its meaning for a moment.
+    func pick(_ half: RowsRPEHalf, in editor: RowsEditor, session: SessionController) {
+        guard let patch = half.patch else { return }
+        apply(patch, row: editor.row, mode: editor.mode, session: session)
+        if let meaning = half.meaning { show(Flash(row: editor.row, text: meaning, token: next())) }
+    }
+
     // MARK: - The keypad
 
     func openKeypad(_ field: RowsField, in editor: RowsEditor) {
-        typing = Typing(row: editor.row, mode: editor.mode, keypad: field.keypad)
+        openKeypad(field, row: editor.row, mode: editor.mode)
+    }
+
+    func openKeypad(_ field: RowsField, row: RowID, mode: RowsEditor.Mode, fromIsland: Bool = false) {
+        typing = Typing(row: row, mode: mode, keypad: field.keypad, fromIsland: fromIsland)
+    }
+
+    // MARK: - Docking
+
+    /// The open editor's Log button came into view or left it. Back in view
+    /// undocks at once; out of view docks after a beat, so a panel that only
+    /// blinks out (a Log, a row opening) never makes the island jump. A
+    /// report from a row not open (yet) is kept as it is (`RowsDock.early`)
+    /// and cannot cancel the open editor's.
+    func logVisibility(_ row: RowID, visible: Bool) {
+        guard row == dock.open else {
+            dock.logButton(of: row, isVisible: visible)
+            return
+        }
+        hideTask?.cancel()
+        if visible {
+            withAnimation(dockAnimation) { dock.logButton(of: row, isVisible: true) }
+            return
+        }
+        hideTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(self.dockAnimation) { self.dock.logButton(of: row, isVisible: false) }
+        }
+    }
+
+    /// The list started or stopped moving. Idle gives back a held height,
+    /// animated, so the end of the list settles rather than jumps after the
+    /// finger lifts. A list that never says it is idle (its drag taken by a
+    /// system gesture) gives it back after a few seconds.
+    func scrollPhase(isIdle: Bool) {
+        holdTask?.cancel()
+        withAnimation(isIdle ? dockAnimation : nil) { dock.scroll(isIdle: isIdle) }
+        guard !isIdle else { return }
+        holdTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(self.dockAnimation) { self.dock.scroll(isIdle: true) }
+        }
+    }
+
+    /// The list scrolls itself to the open set: nothing docks until it has
+    /// landed (the scroll's spring, and a beat for the editor's report).
+    func seek() {
+        seekTask?.cancel()
+        dock.seek(true)
+        seekTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(750))
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(self.dockAnimation) { self.dock.seek(false) }
+        }
+    }
+
+    /// The list jumped to a set other than the open one.
+    func jumped() {
+        withAnimation(dockAnimation) { dock.jumped() }
+    }
+
+    /// The screen went away (the cover closed, the Table took over): nothing held.
+    func leave() {
+        for task in [hideTask, reportTask, seekTask, holdTask] { task?.cancel() }
+        dock.seek(false)
+        dock.scroll(isIdle: true)
+    }
+
+    /// The open row or the fix changed. A new open row, or a fix ending,
+    /// waits for the editor's report: a panel laid out reports at once, so
+    /// none after a beat (and after the list's own scroll) means it was
+    /// never laid out, and it is out of view.
+    private func showEditor(open: RowID?) {
+        guard open != dock.open || (fixing != nil) != dock.isFixing else { return }
+        hideTask?.cancel()
+        dock.show(open: open, isFixing: fixing != nil)
+        guard dock.awaitsReport else { return }
+        reportTask?.cancel()
+        reportTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            while self?.dock.isSeeking == true, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(self.dockAnimation) { self.dock.noReport() }
+        }
     }
 
     func type(_ key: String) {
@@ -143,14 +289,11 @@ final class RowsScreenModel {
             await session.send(action.command)
             fixing = nil
             typing = nil
-        case let .removeSet(row) where session.state?.rows[row]?.isPending == false:
-            // A done set asks first, as the Table's does.
-            fixing = nil
-            typing = nil
-            cover.removeDoneRow = row
+            showEditor(open: dock.open)
         case .touch:
             fixing = nil
             typing = nil
+            showEditor(open: dock.open)
             await session.send(action.command)
         default:
             await session.send(action.command)
@@ -162,25 +305,76 @@ final class RowsScreenModel {
         guard let fix = item.fix else { return }
         typing = nil
         fixing = Fixing(row: item.id, draft: fix.logged)
+        showEditor(open: dock.open)
     }
 
     func cancelFix() {
         fixing = nil
         if typing?.mode == .fix { typing = nil }
+        showEditor(open: dock.open)
     }
 
+    /// The undo toast's Undo, for what it offered.
     func undoLast(session: SessionController) {
         guard let undo else { return }
         self.undo = nil
         if fresh == undo.row { fresh = nil }
-        session.run(.untick(undo.row))
+        switch undo.kind {
+        case .logged:
+            Task {
+                for action in RowsAction.takeBack(undo.row) { await session.send(action.command) }
+            }
+        case .unticked:
+            Task {
+                await session.send(.tick(undo.row))
+                if session.state?.rows[undo.row]?.isPending == false { logged(undo.row, text: nil) }
+            }
+        case .deleted:
+            session.keepPendingRemoval()
+        }
+    }
+
+    /// Untick set, or a tap on a done set's check: back to pending with its
+    /// values, open in place, as the Undo after a Log does. The toast offers
+    /// to log it again. `name` is the set as its line names it (`Set 2`).
+    func untick(_ row: RowID, name: String, session: SessionController) {
+        Task {
+            if fixing?.row == row { cancelFix() }
+            await session.send(.untick(row))
+            guard session.state?.rows[row]?.isPending == true else { return }
+            await session.send(.touchRow(row))
+            Haptics.shared.play(.step)
+            offer(Undo(row: row, text: "\(name) unticked", token: next(), kind: .unticked))
+        }
+    }
+
+    /// Delete set from a set's `…`: gone at once, with a moment to take it back.
+    func delete(_ row: RowID, name: String, session: SessionController) {
+        Task {
+            if fixing?.row == row { cancelFix() }
+            typing = nil
+            await session.removeLater(row)
+            guard session.pendingRemoval == row else { return }
+            offer(Undo(row: row, text: "\(name) deleted", token: next(), kind: .deleted))
+        }
+    }
+
+    /// "Then …": the list goes to that set and marks it for a moment; nothing opens.
+    func showLine(_ row: RowID, session: SessionController) {
+        let mark = Mark(row: row, token: next())
+        self.mark = mark
+        session.scrollTarget = ScrollTarget(row: row)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if self?.mark == mark { self?.mark = nil }
+        }
     }
 
     /// Drops what no longer matches the session: a fix of a row that is no
     /// longer done, a keypad on a row no longer open. A Log the entry check
     /// held is offered for undo once its answer logged the row, and dropped
     /// when the answer was Edit.
-    func reconcile(with layout: RowsLayout, entryCheckRow: RowID?) {
+    func reconcile(with layout: RowsLayout, entryCheckRow: RowID?, pendingRemoval: RowID?) {
         if let held = heldLog {
             if layout.item(held.row)?.state == .done {
                 heldLog = nil
@@ -192,6 +386,7 @@ final class RowsScreenModel {
         if let fixing, layout.item(fixing.row)?.state != .done {
             self.fixing = nil
         }
+        showEditor(open: layout.openRow)
         if let typing {
             switch typing.mode {
             case .log where layout.item(typing.row)?.editor == nil: self.typing = nil
@@ -199,22 +394,39 @@ final class RowsScreenModel {
             default: break
             }
         }
-        if let undo, layout.item(undo.row)?.state != .done {
-            self.undo = nil
+        if let undo {
+            let state = layout.item(undo.row)?.state
+            let stands = switch undo.kind {
+            case .logged: state == .done
+            case .unticked: state != nil && state != .done
+            case .deleted: pendingRemoval == undo.row
+            }
+            if !stands { self.undo = nil }
         }
+        if let islandRPE, islandRPE != layout.openRow { self.islandRPE = nil }
     }
 
     // MARK: - Moments
 
     private func logged(_ row: RowID, text: String?) {
-        let token = next()
         fresh = row
-        undo = text.map { Undo(row: row, text: $0, token: token) }
+        if let text {
+            offer(Undo(row: row, text: text, token: next()))
+        } else {
+            undo = nil
+        }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
-            guard let self else { return }
-            if self.undo?.token == token { self.undo = nil }
-            if self.fresh == row { self.fresh = nil }
+            if self?.fresh == row { self?.fresh = nil }
+        }
+    }
+
+    /// The toast, for five seconds (a held removal is sent as it goes).
+    private func offer(_ undo: Undo) {
+        self.undo = undo
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            if self?.undo?.token == undo.token { self?.undo = nil }
         }
     }
 

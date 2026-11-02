@@ -78,7 +78,7 @@ struct Presenting {
         let header = headerStats()
         let upNext = upNextPresentation()
         let blocks = self.blocks()
-        let rowsLayout = self.rowsLayout(blocks: blocks, header: header)
+        let rowsLayout = self.rowsLayout(blocks: blocks)
         let completed = state.rows.values.count { $0.isHead && $0.isCompleted }
         let started = Format.time(state.session.at, in: settings.timeZone)
         // The Live Activity's Done ticks Up next with its shown values only;
@@ -103,18 +103,28 @@ struct Presenting {
             restBar: restBar(upNext),
             liveActivity: liveActivity(header, upNext, canComplete: canComplete),
             notification: notification(upNext),
-            accessory: AccessoryPresentation(
-                title: title,
-                detail: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" },
-                isPaused: header.isPaused,
-                restEndsAt: state.countdown.flatMap { $0.isRestLike && !$0.hasEnded(by: now) ? $0.endsAt : nil }
-            ),
+            accessory: accessory(title: title, upNext: upNext, isPaused: header.isPaused),
             unticked: unticked(),
             completedSets: completed,
             summary: "\(title), started \(started), \(Format.count(completed, "set")) done.",
             timedRow: timedID,
             nextChange: nextChange(),
             rowsLayout: rowsLayout
+        )
+    }
+
+    /// The minimised bar: the next set and its values, or the timed set running with its start.
+    func accessory(title: String, upNext: UpNextPresentation?, isPaused: Bool) -> AccessoryPresentation {
+        let timerStart = timedID.flatMap { state.rows[$0]?.timerStartedAt }
+        let isTiming = timerStart != nil && timedID == upNext?.row
+        return AccessoryPresentation(
+            title: title,
+            set: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" },
+            values: isTiming ? "holding" : upNext.flatMap { $0.values.isEmpty ? nil : $0.values },
+            row: upNext?.row,
+            isPaused: isPaused,
+            restEndsAt: state.countdown.flatMap { $0.isRestLike && !$0.hasEnded(by: now) ? $0.endsAt : nil },
+            timerStartedAt: isTiming ? timerStart : nil
         )
     }
 

@@ -18,15 +18,16 @@ newest first. **Exercises** lists every exercise with its history and its
 estimated 1RM trend. **Settings** holds units, rest defaults, the session
 switches, alerts, Apple Health, the substrate and the update check. A session
 runs in a full-screen cover whose default layout, **Rows**, shows each set as
-a line, opens the set to do now in place with steppers and the planned RPE
-filled in, and keeps a capsule at the bottom with the rest countdown or what
-is up next; **Table** is the grid. The session's Live Activity
+a line, opens the next set in place with steppers and the planned RPE filled
+in (any other set opens with a tap, in any order), and keeps an island at the
+bottom with the rest countdown, the next set once its editor is scrolled away,
+and the set after it; **Table** is the grid. The session's Live Activity
 (`SubstrateWorkoutsWidgets`) shows the rest on the Lock Screen and in the
 Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (378 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (405 tests, on the Mac)
 mise run apple:release:workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's manifests into the app's JSON
 ```
@@ -191,6 +192,46 @@ They are `docs/screenshots/signed-*.jpg`.
 | History | Substrate in Settings |
 | --- | --- |
 | ![History](docs/screenshots/signed-09-history-session.jpg) | ![Settings](docs/screenshots/signed-10-settings-substrate.jpg) |
+
+The session screen after the owner's first review (2026-11-02, iPhone 18 Pro
+Max simulator): sets logged in any order, nothing timed but a timed set, and
+the island's three parts, the rest, the next set (docked once its editor is
+scrolled away) and the one after it. They are `docs/screenshots/session-after-*.jpg`;
+`session-before-*.jpg` are the same moments before.
+
+| Start | Resting | Any order | Three parts |
+| --- | --- | --- | --- |
+| ![Start](docs/screenshots/session-after-start.jpg) | ![Resting](docs/screenshots/session-after-resting.jpg) | ![Any order](docs/screenshots/session-after-any-order.jpg) | ![Island](docs/screenshots/session-after-island.jpg) |
+
+| Docked next set | Superset | Plank | Minimised |
+| --- | --- | --- | --- |
+| ![Docked](docs/screenshots/session-after-docked.jpg) | ![Superset](docs/screenshots/session-after-superset.jpg) | ![Plank](docs/screenshots/session-after-plank.jpg) | ![Minimised](docs/screenshots/session-after-minimised.jpg) |
+
+After the second review and the owner's feedback on the pre-release
+(2026-11-02, iPhone 17 simulator; "Three parts" and "Docked next set" above
+are retaken there too): a done set's `…` with Untick set and Delete set, the
+RPE in the island with its stops, a fix with Save and Cancel only, "Then"
+taking the list to its set, the labelled RPE stops, and at the largest text
+size the island docking only the name and Log, or Stop and its clock (Stop is
+measured alone, so a visible Stop above Cancel docks nothing).
+
+| A done set's `…` | RPE in the island | Fixing | "Then" shows the set |
+| --- | --- | --- | --- |
+| ![Done set menu](docs/screenshots/session-after-done-menu.jpg) | ![Island RPE](docs/screenshots/session-after-island-rpe.jpg) | ![Fix](docs/screenshots/session-after-fix.jpg) | ![Then](docs/screenshots/session-after-then.jpg) |
+
+The docked set keeps its − and + beside the RPE (owner, 2026-11-02): the
+values, the RPE and Log share one row where they fit: a load and reps on Plus
+and Pro Max phones, one value or a timed set on every phone. On a 402 pt phone
+and narrower a load and reps take two rows, the RPE and Log under the values;
+larger text puts each value on a line of its own, steppers kept.
+
+| Two values: two rows | One value: one row | Timed set | Larger text |
+| --- | --- | --- | --- |
+| ![Docked](docs/screenshots/session-after-docked.jpg) | ![One row](docs/screenshots/session-after-island-one-row.jpg) | ![Timed](docs/screenshots/session-after-island-timed.jpg) | ![Larger text](docs/screenshots/session-after-island-large-text.jpg) |
+
+| RPE, labelled | Largest text, docked | Largest text, timed | Largest text, Stop in view |
+| --- | --- | --- | --- |
+| ![RPE label](docs/screenshots/session-after-rpe-label.jpg) | ![AX docked](docs/screenshots/session-after-accessibility-size.jpg) | ![AX timed](docs/screenshots/session-after-accessibility-timed.jpg) | ![AX Stop](docs/screenshots/session-after-accessibility-stop.jpg) |
 
 `docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
 rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being

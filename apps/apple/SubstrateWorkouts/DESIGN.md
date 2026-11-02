@@ -40,7 +40,8 @@ those files disagree about a property, the kind files win and this document is w
 ### 1.1 What V1 does
 
 - Lists the owner's workout routines by folder, previews one, and starts a session from it or from nothing.
-- Runs one session at a time: any set can be ticked in any order, with an Up next pointer.
+- Runs one session at a time: sets are ticked in any order, with an Up next pointer; only the links of one set's chain
+  (a second side, a drop, a cluster's next part, a myo mini-set) wait for the link before them.
 - Supports warm-ups, working sets, failure and AMRAP sets, top and back-off sets, drop sets, myo-reps, myo-rep match,
   rest-pause and cluster sets (the last two only when a routine asks for them), timed holds, distance work, one side at
   a time, supersets, tri-sets, giant sets, circuits and paired sets.
@@ -1719,9 +1720,9 @@ label.
 
 ### 7.3 Routine preview
 
-Pushed from a card. A `List` in the content layer; a bottom toolbar with one `.glassProminent` "Start routine". The page
-hides the tab bar (`.toolbar(.hidden, for: .tabBar)`): the floating tab bar would otherwise lie over Start and take its
-taps. Back stays in the navigation bar.
+Pushed from a card. A `List` in the content layer; one `.glassProminent` "Start routine" in a `safeAreaBar(edge:
+.bottom)` of the list, which sits above the tab bar and the session's accessory (§7.5) when a session runs, so neither
+glass lies over Start and the list scrolls clear of all three. Back stays in the navigation bar.
 
 ```text
 +--------------------------------------------------+
@@ -1745,7 +1746,7 @@ taps. Back stays in the navigation bar.
 | | A1 Glute Bridge   2 sets of 12–20 reps         |
 | | A2 Bird Dog       2 sets of 8–10 reps          |
 | ...                                              |
-|              [   Start routine   ]               |  <- bottom toolbar (glass)
+|              [   Start routine   ]               |  <- its own bar, above the tab bar (glass)
 +--------------------------------------------------+
 ```
 
@@ -1781,15 +1782,19 @@ no set is done) and then starts.
 the system's glass). It reads `tabViewBottomAccessoryPlacement`:
 
 ```text
-expanded:  [ ● Fully Body Collection #1                  24:16 ]
-           [   Chest Press (Machine), set 2       Rest 1:16    ]
-inline:    [ ● Rest 1:16 ]        or        [ ● 24:16 ]
+expanded:  [ ● Fully Body Collection #1              Rest 1:16 ]
+           [   Chest Press (Machine), set 2, 40 kg × 11        ]
+inline:    [ ● Rest 1:16  Chest Pr…ne), set 2, 40 kg × 11 ]   or   [ ● Chest Press (Machine), set 2, 40 kg × 11 ]
 ```
 
-- The dot is green while active, grey while the clock is paused ("Paused" replaces the clock).
-- The clock is `Text(timerInterval:)` from `clockStart` (§9.1), the rest `Text(timerInterval:countsDown: true)`; both
-  tick with no app code.
-- No discard button ([06 §5](docs/research/06-app-teardown.md#5-pain-points-to-avoid) item 8). Tapping opens the session cover with the zoom transition.
+- It says what helps at a glance, never a bare timer: the session's name with the rest's countdown while one runs, or
+  a running timed set's clock counting up ("Plank, set 1, holding"), and the next set with its values
+  (`AccessoryPresentation.set` and `.values`); "All sets done" once there is none. The set truncates in its middle and
+  the values never do, so a long name gives way first.
+- The dot is green while active, grey while the clock is paused ("Paused" under the name when no set is next).
+- The rest is `Text(timerInterval:countsDown: true)` and ticks with no app code.
+- No discard button ([06 §5](docs/research/06-app-teardown.md#5-pain-points-to-avoid) item 8). Tapping opens the session cover with the zoom transition, at the set the bar names
+  (`AccessoryPresentation.row`).
 
 ### 7.6 The session cover
 
@@ -2026,19 +2031,21 @@ then A to Z. Rows show the name and the equipment label. "New exercise…" at th
 
 ### 7.6a The Rows layout (the default)
 
-The owner's chosen session screen. Each set is one line that reads like a sentence; the set to do now is open in place
-as a small editor; a floating glass capsule at the bottom says what is happening. It is the default; the grid of §7.6
+The owner's chosen session screen. Each set is one line that reads like a sentence; the open set is in place as a small
+editor; a floating glass island at the bottom stacks the rest, the next set and the one after it. Sets are logged in
+any order: every set opens with a tap, save the later links of one set's chain (see **Any order**), and nothing is
+ever "started" or counts up for a set unless it is timed (a plank's Start, its clock and Stop). It is the default; the grid of §7.6
 stays as **Table**. Settings > Session > Layout (Rows, Table) picks one, and the session's `…` menu has "Show as table"
 or "Show as rows" (§6.4, §7.10). Both read the same `SessionPresentation` and send the same `SessionCommand`s; the
 toolbar, the sheets, the menus, the dialogs, Finish, the countdown coordinator, the notifications and the Live Activity
 are the same for both. Everything Rows shows comes from `SessionPresentation.rowsLayout` (WorkoutsKit/API.md, "The Rows
 layout"); the views hold only view state (`RowsScreenModel`: a fix and its draft, the keypad, what is folded or opened,
-the undo offer) and compute no rule. The views are in `the app/Views/Session/Rows/`.
+the undo offer, whether the open editor is scrolled out of view) and compute no rule. The views are in `the app/Views/Session/Rows/`.
 
 ```text
 +--------------------------------------------------+
-| (v)  Day 1 – Strength Foundation    (≡ …) [Finish]|  <- glass toolbar; the clock under the title
-|      ⏱ 12:40                                      |
+| (v)  Day 1 – Strength Foundation    (≡ …) [Finish]|  <- glass toolbar; the session's length under the title
+|      12 min                                       |
 | Leg Press (Machine)                         (…)  |
 | 6–10 reps at RPE 8, rest 2:30                    |
 | (✓) Warm-ups 40 kg × 12, 70 kg × 6  as last time |  <- folded once every warm-up is done
@@ -2047,22 +2054,27 @@ the undo offer) and compute no rule. The views are in `the app/Views/Session/Row
 | | (●) Set 2  ✦ reason for today's numbers  (…) | |  <- the open set, tinted
 | |     110 kg   last 105            ( −5 | +5 ) | |
 | |     8 reps   last 10             ( −1 | +1 ) | |
-| | [6  6.5  7  7.5 [8] 8.5  9  9.5  10]         | |  <- RPE strip; the plan's 8 outlined
+| |     [6  7 [8] 9  10] [½]                     | |  <- RPE stops; the plan's 8 outlined
 | | [         ✓ Log 110 kg × 8 @ 8          ]    | |
 | +----------------------------------------------+ |
-| ( ) Set 3  110 kg × 8              last 105 × 10 |  <- upcoming: muted, last time
+| ( ) Set 3  110 kg × 8              last 105 × 10 |  <- pending: muted, last time; a tap opens it
 |  +  Add set                                      |
 |--------------------------------------------------|
-| (✓) Set 2 is up                        2:41      |  <- the capsule (glass)
-|     Rest 2:30 done                 since set 1   |
+| (◔) 1:56  of 2:30           [−15] [+15] [Skip]   |  <- the island (glass): the rest, while one runs,
+|  ----------------------------------------------  |
+| Leg Press (Machine)  Set 3                    ⌃  |     the next set, docked once its editor is
+| (− 110 kg +) (− 8 reps +)      @ 8   [✓ Log]     |     scrolled out of view,
+|  ----------------------------------------------  |
+| Then  Iso-Lateral Chest Press, set 1, 25 kg × 7 › |     and the one after it
 +--------------------------------------------------+
 ```
 
 **Structure.** A `ScrollView` with a `LazyVStack` of blocks (16 pt side margins, 12 pt between blocks), the "Alerts
-are off" and "not saving" banners at the top as in §7.6, and "+ Add exercise" at the end. The capsule sits in a
-`safeAreaBar(edge: .bottom)` with `scrollEdgeEffectStyle(.soft, for: .bottom)`. Rows has no header row: the toolbar's
-principal item shows the session's title over its clock (`stopwatch` and the elapsed time in the accent colour, or
-"Paused" in orange); a tap pauses or resumes it.
+are off" and "not saving" banners at the top as in §7.6, and "+ Add exercise" at the end. The island sits in a
+`safeAreaBar(edge: .bottom)` with `scrollEdgeEffectStyle(.soft, for: .bottom)`, so the list always scrolls clear of it
+and it never covers the set being edited. Rows has no header row: the toolbar's principal item shows the session's
+title over how long it has run, to the minute and in grey ("24 min"; "Paused, 24 min" in orange), so it reads as the
+session's length and not as a clock running for the set at hand; a tap pauses or resumes it.
 
 **Blocks.** One card per `RowsBlock` (`secondarySystemGroupedBackground`, corner radius 24, opaque, no shadow):
 
@@ -2079,27 +2091,23 @@ principal item shows the session's title over its clock (`stopwatch` and the ela
 **A set line** (`RowsSetItem`), at least 46 pt tall, 0.5 pt hairlines between neighbouring lines from x = 48:
 
 - A 22 pt ring: done is a filled green check (orange for a warm-up); the open set an accent ring with a dot (a hollow
-  inner ring while a rest runs before it, and on the open set drawn as a line while another set is fixed); upcoming a
-  grey ring (orange for a warm-up); `later` a grey disc with a pause mark; `locked` a dashed ring, the line dimmed; a
-  drop not yet done a hook.
+  inner ring while a rest runs before it, and on the open set drawn as a line while another set is fixed); pending a
+  grey ring (orange for a warm-up); `locked` a dashed ring, the line dimmed; a drop not yet done a hook.
 - The title (15 pt secondary, at least 44 pt wide so the values line up; orange semibold for a warm-up or a drop; in a
   group the `A1` badge in the group's colour and the exercise's name at 17 pt), the values (17 pt, monospaced digits:
   primary when done, secondary when pending, the accent when `valuesChanged`), the RPE ("@ 8", 15 pt secondary) and the
-  tags ("+ drop" orange, "later" grey, "up next" accent).
+  tags ("+ drop" orange, "up next" accent).
 - At the end: on a done line the changes, joined by commas, gains green and everything else grey, then the verdict mark
   (a 20 pt disc: `arrow.up.right` green for better, `equal` or `arrow.down.right` grey); on a pending line `last`.
 - When it does not fit on one line, the end moves to a second line; at the largest sizes the title, the values and the
   end each take a line. Nothing is cut to fit.
-- A tap: a done line opens its fix in place; a later or upcoming line is done now (`touchRow`, out of order); the open
-  set drawn as a line goes back to it. VoiceOver reads `sentence` as one element, with a hint for the tap.
+- A tap: a done line opens its fix in place; any pending line that is not a locked link opens as the editor
+  (`touchRow`), in any order; the open set drawn as a line goes back to it. VoiceOver reads `sentence` as one element, with a hint for the tap.
 - The set just logged is washed green from the left for five seconds.
 
 **Other lines.** The warm-up fold ("Warm-ups 40 kg × 12, 70 kg × 6", "as last time"; a tap unfolds the warm-ups as set
-lines, each fixable). A group's "Round 1 of 2" (13 pt semibold, dimmed when done). Connectors, 28 pt: an arrow for the
-hand-off ("**0:00,** straight to A2"), a timer in the accent colour for a rest ("**Rest 1:00,** then round 2"), on a
-rail that joins the rings, dimmed once passed. A per-set rest on the set before ("Rest after this set…", or a
-planned set's `rest`) wins, as it does for the countdown (§4.7 line 1), and reads as a rest ("**Rest 0:45,** then
-A2"). The text takes up to two lines, all of it at the accessibility sizes. A chain's header ("Set 2 as myo-reps, 0:15 between mini-sets") and its
+lines, each fixable). A group's "Round 1 of 2" (13 pt semibold, dimmed when done). A group shows no rest or hand-off
+lines between its sets: the rest shows in the island, as for a plain exercise. A chain's header ("Set 2 as myo-reps, 0:15 between mini-sets") and its
 done mini-sets as chips on one line ("Mini-sets 4 4", "first time"); a tap on a chip fixes that mini-set; the stop text
 in orange once the chain has ended.
 
@@ -2108,8 +2116,8 @@ filled with the accent at 8 % and a 1 pt accent line (orange for a warm-up or a 
 line when fixing). In order:
 
 - The header, at least 36 pt: the ring, the badge and title (17 pt semibold), the note (a sparkle and the suggestion's
-  reason in 13 pt; a status such as "after the rest" or "logged at 12:06" in 15 pt; a red dot and "holding"), and on
-  the right "+ RPE" while the strip is folded, `trailingNote` ("no rest", orange), and the set menu `…` (the Table's set
+  reason in 13 pt; a status such as "of 2" or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
+  rest": a set waits for nothing), and on the right a plus symbol and "RPE" on one line while the strip is folded, `trailingNote` ("no rest", orange), and the set menu `…` (the Table's set
   menu items) or Cancel when fixing. The note sits beside the title when it fits, else on its own line under it. After
   an RPE tap the cell's meaning ("RPE 8.5: could do 1 more rep, maybe 2") shows in the note's place for 2.5 s without
   changing the header's height.
@@ -2117,31 +2125,46 @@ line when fixing). In order:
   dotted underline (a tap opens the keypad; the target is 44 pt tall), its unit (15 pt secondary), `last` (15 pt secondary) at the same x on
   every row (the widest number and unit sets it, at least 84 pt), the reset chip ("↺ 8", or "↺ was 8" when fixing), and
   the stepper on the right: one tinted capsule, 44 pt tall, two 56 pt halves ("−5 | +5", "−1 | +1", "−0:05 | +0:05")
-  that repeat while held. A changed number is drawn in the accent colour. A value with nothing to log shows its
-  placeholder ("to failure", "≈15") in grey italics, outlined in orange when it is required. When the row is narrow the
+  that repeat while held. A changed number is drawn in the accent colour. A value with nothing to log shows a hint
+  ("≈15") or a dash in grey italics, outlined in orange when it is required. A field holds a number, never words: a
+  drop or a mini-set the plan takes to failure says so once, in the header's note ("to failure", "at 25 kg, to
+  failure"), and VoiceOver reads it with the empty field ("to failure, empty"). The failure choice itself is the set
+  kind in the `…` (Failure), and a set logged as one carries a small red "to failure" tag on its line; neither
+  changed, nor does what is written (owner, 2026-11-02). When the row is narrow the
   chip goes under `last`; at larger sizes `last` goes under the number; at the accessibility sizes the stepper goes
   under them.
-- The RPE strip: nine cells from 6 to 10 in half steps across the panel's full inner width, 48 pt tall, on a
-  `tertiarySystemFill` track. Each cell is a ninth of the strip: 44 pt wide on a 440 pt iPhone, 40 pt on a 402 pt one,
-  39 pt on a 390 pt one. Where nine cells of 38 pt do not fit (a 375 pt iPhone) the strip takes two rows, as at the
-  accessibility sizes. Whole numbers are 17 pt semibold, half steps 15 pt regular. The plan's value (and a
-  pre-filled or copied value) is an outlined, hollow cell; a rating is filled solid with its fill inset in the cell. A
-  tap on any cell rates it (the outlined one too, as `entered`); a tap on the filled cell clears it. Folded behind
-  "+ RPE" when there is nothing to show (a warm-up, a timed set, or a set with no planned RPE and none last time).
+- The RPE stops, under the label "RPE" (15 pt secondary, as the values' units are): five whole stops, 6 to 10, on a
+  `tertiarySystemFill` track, then a separate `½` (`RowsRPEStrip.half`)
+  that adds or takes off the half point, so every half step is a stop and then `½` and the control stays inside the
+  panel's padding, indented to the values: about 280 pt wide, each target 44 pt tall and 44 to 52 pt wide. The stop
+  holding the value shows it ("8.5"). The plan's value (and a pre-filled or copied value) is outlined and hollow; a
+  rating is filled solid with its fill inset. A tap on any stop rates it (the outlined one too, as `entered`); a tap on
+  the filled stop clears it; `½` rates the value with the half added or taken off, and is off with no value and at 10.
+  At the accessibility sizes `½` goes under the stops. Folded behind "RPE" when there is nothing to show (a warm-up, a
+  timed set, or a set with no planned RPE and none last time).
 - A timed set: ready, the duration row with its stepper and, under it, the track with the goal's tick labelled above and
   last time's below. Running, the duration row gives way to the clock (28 pt, counting up, its width reserved so it
   never moves anything) with "0:21 to beat last time" beside it, and the track filling.
 - The buttons. Log is a 50 pt capsule in the panel's colour that names exactly what it saves ("Log 110 kg × 8 @ 8",
   "Log A2, 11 per side", "Log drop 25 kg × 12"); disabled while a required value is missing. A timed set has "Log 1:07
   hold" beside Start, then Cancel beside "Stop and log". A pending mini-set has "End myo-reps here" under Log. Fixing
-  has "Delete set" in red (it asks first, as the Table's removal of a done set does) and Save, enabled once the draft
-  differs.
+  has Save, enabled once the draft differs; Delete set is in the `…`, as on every set.
+- **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02; a lone done warm-up is
+  drawn as its own line rather than folded, so it has one too): the Table's set menu items,
+  with "Untick set" first on a done set and "Delete set" last. Delete set takes the set off the screen at once and
+  "Set 2 deleted, Undo" floats above the island for five seconds; the removal itself waits that long
+  (`SessionController.pendingRemoval`: the engine has no event that brings a removed set back), and goes before any
+  other command, before Finish and when the app leaves the foreground. Untick set, and a tap on a done line's green
+  check (a 44 pt target where the check is drawn), takes the set back as the Undo after a Log does: pending with its
+  values, open in place; "Set 2 unticked, Undo" logs it again.
 
 **Logging.** One tap on Log sends `tick` with the row's `commitValues`, which carry the plan's RPE as `prefilled`
 when nothing was tapped (§4.14), through the entry check as in the Table. Once the set is in the journal the phone
-plays `.success` (§9.3), the line is washed green, and "Set 2 logged, Undo" floats above the capsule for five seconds
-(Undo sends `untick`); when the entry check asks first, that comes once its Keep or Use corrected logs the set, and
-not after Edit. The next set opens where it is, and the list makes the least scroll that shows it whole; a scroll
+plays `.success` (§9.3), the line is washed green, and "Set 2 logged, Undo" floats above the island for five seconds.
+Undo takes the set back and opens it again (`RowsAction.takeBack`: `untick`, then `touch`), so a set logged out of
+order is the one reopened, not the set the plan has next; when the entry check asks first, that comes once its Keep or Use corrected logs the set, and
+not after Edit. The next set opens where it is, with the rest (if any) in the island and no page in between, and the
+list makes the least scroll that shows it whole; a scroll
 the owner is making is never interrupted: the list waits until the scroll settles. A superset's 0 s hand-off scrolls
 the same way: superset auto-scroll is the Table's, and Rows follows its open set instead. A request to show the open
 set (the entry check's Edit, Finish's way back) takes the same least scroll.
@@ -2151,43 +2174,87 @@ stepper, chip, keypad entry and RPE cell changes the draft (`SetValues.applying`
 one edit with only what changed. Cancel drops the draft. While a fix is open the set to do now is drawn as a line with
 its "up next" tag, and the rest keeps running.
 
-**Out of order.** A tap on any later set opens it at once. Sets passed over show a grey "later" tag and a pause mark,
-and the capsule says which set waits, with Go back.
+**Any order.** A tap on any pending set, in any exercise, opens it at once; it can be edited and logged like the
+suggested one. Sets passed over stay plain pending sets: no tag, no waiting state. After a Log the suggestion, and the
+island's "Then …", pick up after the set just logged (§4.6 rule 2): a set skipped earlier is not pulled forward, it
+comes back when the plan wraps round to it (the owner's call,
+[decisions U8](docs/decisions.md#u8-after-an-out-of-order-log-then-follows-the-plan-from-that-set)).
 
-**Supersets** read top to bottom in the order they are done: Round 1 of 2, A1, "0:00, straight to A2", A2, "Rest 1:00,
-then round 2", Round 2, then the rest before the next exercise. **Drops** show as "+ drop" on their set until it is
+What stays in order, by design, is a chain inside one set (§4.9): a second side waits for the first, a drop for its
+set, a cluster's next part for the one before, and a myo chain makes its next mini-set only when the last is logged.
+Those lines are drawn dashed and a tap does nothing. While a timed set runs it keeps the editor: other sets open once
+it is stopped or cancelled.
+
+**Supersets** read top to bottom in the order they are done: Round 1 of 2, A1, A2, Round 2, A1, A2. The rests between
+them show only in the island. **Drops** show as "+ drop" on their set until it is
 done, then hang off it with no rest and open at once (orange). **Myo-reps**: the activation, then one mini-set at a time,
 with the done ones as chips.
 
-**The keypad.** A tap on a number opens a keypad that floats where the capsule was, on glass (corner radius 34): the
+**The keypad.** A tap on a number (in the editor or in the island's next set) opens a keypad that floats where the island was, on glass (corner radius 34): the
 nearby steps of the exercise's grid as six chips, 44 pt tall (a tap sets the value and closes the pad), digits, "." for loads and
 distances, delete, Cancel, and "Set 120 kg". The field shows what is typed in a box with a caret; a time is typed as
 digits ("107" is 1:07). On a fix it changes the draft.
 
-**The capsule** (`rowsLayout.capsule`) replaces the Table's rest bar. A rounded glass shape, at least 60 pt tall, 16 pt
-from the screen's edges:
+**The island** (`rowsLayout.island`) replaces the Table's rest bar: one rounded glass shape (corner radius 28), 12 pt
+from the screen's edges, stacking up to three parts with hairlines between them, each drawn only when it applies
+(`RowsIsland.parts(editorInView:)`):
 
-- Resting: a ring of what is left, the countdown (28 pt) and "of 2:30", then −15, +15 and Skip, and under a hairline
-  "After set 3" (accent) with what follows. When the row is narrow "of 2:30" goes first, then the buttons move under the
-  time. VoiceOver reads the rest's title as the clock's label and the time left with the total as its value.
-- Up next and Go: a 36 pt disc (a green check after a rest, an accent arrow, orange with a flame for a warm-up or an
-  arrow for a drop), the title ("Set 2 is up", "A2 Bird Dog now, no rest", "Drop to 25 kg now") and detail, and a clock
-  counting up since the last set with its label ("since set 1"). Before the first set it is the session's clock
-  ("session"), which stands still while the session clock is paused (`RowsNowCapsule.pausedAt`), as the title's does.
-  A tap brings the open set into view.
-- Waiting: a grey pause disc, which set waits, and Go back.
-- A timed set: what comes after it ("Then rest 0:15", "Set 2, 0:58 hold, last 0:53"); the clock is in the open set.
-- Every set done: Finish. No exercise: a tap opens the picker.
-- It fades out while a sheet is up, as the rest bar does. On a page pushed inside the cover it stays while a rest or a
-  timed set counts; a tap goes back.
+1. **The rest**, while a rest, pause or switch counts down: a ring of what is left and the countdown (28 pt) centred on
+   one axis, "of 2:30" on the countdown's baseline, then −15, +15 and Skip. When the row is narrow "of 2:30" goes
+   first, then the buttons move under the time. VoiceOver reads the rest's title as the clock's label and the time
+   left with the total as its value.
+2. **The next set** (`RowsNextPart`): the exercise and its label ("Leg Press (Machine)  Set 3", "A2 Bird Dog  Round
+   1") on a line of their own, the name cut in its middle, with a chevron (a tap brings the full editor into view).
+   Under it its values, each in a tinted capsule with − and + (44 pt targets; a tap on the number opens the keypad),
+   its RPE ("@ 8", outlined while it is the plan's, filled once rated) and Log as a check alone (44 pt, read "Log"
+   and then what it logs; play or stop for a timed set, whose clock leads the values): on one row where they fit;
+   where they do not, the values take the first row and the RPE the second, with Log at its right edge; with larger
+   text each value takes a line of its own, still with its steppers, and on the narrowest line the number shrinks
+   between them. The steppers never give way to the RPE (owner, 2026-11-02). The single row is packed: 4 pt gaps,
+   Log right-aligned without a spacer, Log exactly 44 pt, the RPE chip 6 pt either side of its text (44 pt at least),
+   no padding beside the number between its steppers, and the part 12 and 10 pt inside an island 12 pt from the
+   screen's edges. Measured at the default size, "60 kg", "8 reps", "@ 8" and Log need 364 pt; the island holds
+   394 pt on a 440 pt phone and 384 pt on a 430 pt one, so a load-and-reps set takes one row on Plus and Pro Max
+   phones (30 and 20 pt to spare, room for a three-digit load or a half-point RPE), and two on a 402 pt phone (356
+   pt) and narrower. A set with one value (reps alone, a hold) takes one row everywhere. A tap on the RPE opens the panel's stops in the island, under the values: a stop
+   rates and closes them, `½` keeps them open. The RPE shows as the panel shows it, so a warm-up's or a timed set's
+   stays out until opened there. A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. At the
+   accessibility sizes it docks only the name row and Log, or the clock and stop: a tap on the name brings the full
+   editor into view, so the island stays a few lines and the list keeps the screen. The layout gives way, never the
+   targets: each stepper half, each number and the name row stay at least 44 pt. A tap on a number opens the keypad where the list is, without scrolling it. It is drawn only
+   while the open editor's primary button (Log, Start or Stop, measured alone, without the action beside or under it)
+   is out of view (less than half of it between the toolbar and the island, for a quarter of a second, so a Log or a
+   row opening never makes it blink): while that button is on screen the list already offers the Log, and the island
+   never shows it twice. `RowsDock` decides it and is tested. A new open row waits for its editor's report (one that
+   came in the same pass, before the dock heard the row opened, is kept and used); a fix
+   takes the open panel off the list for a while, which is not the panel leaving the viewport, so the last report
+   stands through it and the panel reports again when it ends. An editor awaited that never reports (the lazy list
+   never laid it out) is out of view once a bounded wait ends, and a jump past an editor the list never laid out
+   docks it. While the list scrolls itself to the open set nothing docks, so a Log near the bottom does not blink the
+   next set in and out. It comes and goes with a fade and a small rise, a fade alone under Reduce Motion. The
+   island's bar is the list's bottom inset: it grows at once when the set docks, and when it undocks while the list
+   moves the bar keeps its height until the list is idle, then gives it back animated (a plain fade's curve under
+   Reduce Motion), so the content neither moves under a finger nor jumps after it lifts; a list that never says it
+   is idle gives the height back after four seconds.
+3. **After that** (`RowsAfterPart`): one line, "Then" in the accent and the set after the next one with its values. A
+   tap takes the list to that set and washes it in the accent for a moment; it never opens it, and the open set stays
+   open (the owner opens the other with a tap of its own, owner, 2026-11-02). Any set in the list is a target, a
+   second side, a drop or a cluster's next part as much as any; a drop still waiting on its set is drawn as "+ drop"
+   on that set's line, so the tap goes there. Only a myo chain's next mini-set, not made yet, leaves the line to read,
+   with no chevron. One line, cut in the middle so the values stay; at the accessibility sizes up to three lines, cut
+   at the end.
+
+There is no "… is up", "Rest skipped" or "since the last set" moment: after a Log the island shows the rest (if any)
+and the next set directly, and nothing counts up for a set that is not timed. Every set done: Finish. No exercise: a
+tap opens the picker. The island fades out while a sheet is up, as the rest bar does. On a page pushed inside the
+cover it stays, with the next set docked, while a rest or a timed set counts; a tap on the set's name goes back.
 
 **Sizes and accessibility.** System text styles throughout (17, 15 and 13 pt at the default size; the numbers 26 pt,
 the clocks 28 pt; nothing larger), with `@ScaledMetric` for the rings, steppers and cells, so everything grows with
 Dynamic Type. Every time on screen ticks with `Text(timerInterval:)` or a once-a-second `TimelineView` in monospaced
 digits inside a width reserved for its longest form, so nothing beside it moves. Each control is at least 44 pt tall,
-and at least 44 pt wide save two: the RPE cells (a ninth of the strip, above) and the done mini-set chips (26 pt wide
-or more, 44 pt tall). Glass
-is used only on what floats (the toolbar, the capsule, the keypad and the undo offer); cards, editors, steppers and the
+and at least 44 pt wide save one: the done mini-set chips (26 pt wide or more, 44 pt tall). Glass
+is used only on what floats (the toolbar, the island, the keypad and the undo offer); cards, editors, steppers and the
 strip are opaque. Light and dark use the system colours, the accent, the group palette and an adaptive green for gains
 (`RowsStyle`).
 
@@ -2199,10 +2266,11 @@ strip are opaque. Light and dark use the system colours, the accent, the group p
   mini-set (§4.14). Log stays disabled until reps are set; the stepper starts from last time.
 - A timed set offers Cancel, not Pause: the engine has no paused timed set.
 - The verdict mark follows the presenter's estimated one-rep max, so heavier for fewer reps can read as below.
-- Dragging along the RPE strip does not scrub: inside the scrolling list a drag there is a scroll. Each cell is a
-  tap target instead.
+- Dragging along the RPE stops does not scrub: inside the scrolling list a drag there is a scroll. Each stop is a
+  tap target instead, and the half steps sit behind `½` so the control fits inside the card.
 - The keypad's Log label changes when the typed value is set, not while typing.
-- Rows has no Duration, Volume and Working sets header; the clock is under the title and the totals are in Finish.
+- Rows has no Duration, Volume and Working sets header; the session's length is under the title and the totals are in
+  Finish.
 
 ### 7.7 Finish
 
@@ -2388,9 +2456,8 @@ Glass is a functional layer for navigation and controls; content never gets it (
 - sheets (RPE, rest wheel, exercise picker, new exercise, reorder, set types, Finish) with no `presentationBackground`;
 - menus (set kind, exercise, group, rest presets, toolbar overflow) and confirmation dialogs and alerts.
 
-**Glass, custom, in the Rows layout** (§7.6a): the capsule at the bottom, the keypad that floats in its place, and the
-undo offer above it, each `.glassEffect(.regular)` (the capsule `.interactive()`, tinted orange for a warm-up or a drop),
-with opaque fills for the buttons on them. Nothing else in Rows is glass.
+**Glass, custom, in the Rows layout** (§7.6a): the island at the bottom, the keypad that floats in its place, and the
+undo offer above it, each `.glassEffect(.regular)`, with opaque fills for the buttons on them. Nothing else in Rows is glass.
 
 **Glass, custom, in the Table layout, exactly one element**: the rest bar in the session cover: a `safeAreaBar(edge: .bottom)` holding a
 `GlassEffectContainer(spacing: 6)` (under the row's spacing, so the controls stay separate shapes); the countdown pill uses `.glassEffect(.regular.tint(color))` and

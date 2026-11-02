@@ -177,6 +177,77 @@ The options, with their screens and rationales, are in [design/](design/README.m
   [reviews/data-model-2026-10-31/DECISIONS.md](reviews/data-model-2026-10-31/DECISIONS.md),
   [DESIGN.md §4.14](../DESIGN.md#414-rpe-provenance-and-the-pre-fill).
 
+### U7. Any order, nothing timed but a timed set, and a three-part island
+
+- **Decided by** the owner, 2026-11-02, after the first session on the Rows screen.
+- **What:** a set is never "started" and nothing counts up for it: only a timed set (a
+  plank) has Start, a running clock and Stop. Any set in any exercise opens with a tap and
+  logs in any order; the suggested next set is only the one open when nothing else is.
+  There is no "… is up" page after a Log. The bottom capsule becomes an island of up to
+  three parts, each shown only when it applies: the rest, the next set (compact, with Log),
+  and the set after it on one line. The RPE strip must fit inside the card, "+ RPE" on one
+  line, no rest lines inside a superset, and the minimised session bar must not cover
+  Start and must say more than a timer.
+- **The lead's choices**, open to the owner: the island docks the next set only while its
+  editor is scrolled out of view, so it is never on screen twice; the RPE control is five
+  whole stops and a `½` toggle; the title keeps the session's length, to the minute and in
+  grey ("24 min"), so it does not read as a set's timer; the minimised bar shows the rest
+  beside the session's name while one runs, otherwise the next set with its values, and
+  drops the session clock; passed-over sets carry no tag.
+- **Why:** the owner said "I don't want to have to start a workout that is not timed … I
+  want to just freely move between exercises and mark them as done", and asked for the
+  island's "three parts that should be shown/hidden as they are appropriate".
+- **Source:** owner, 2026-11-02;
+  [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
+### U8. After an out-of-order Log, "Then" follows the plan from that set
+
+- **Decided by** the owner, 2026-11-02, answering the question the reviews of #1110 raised.
+- **What:** after a set is logged out of order, the suggestion and the island's "Then …"
+  line carry on with the plan from the set just logged (§4.6 rule 2), not from the set the
+  plan was on. A set passed over earlier is not pulled forward: it comes back when the plan
+  wraps round to it. Unchanged from #1110.
+- **What stays in order:** the links of one set's chain (a second side, a drop, a cluster's
+  next part, a myo mini-set) and a running timed set, which keeps the editor until it stops
+  ([U7](#u7-any-order-nothing-timed-but-a-timed-set-and-a-three-part-island)). "Then …"
+  no longer opens anything: [U9](#u9-then-only-shows-the-set-a-set-menu-on-every-set-and-rpe-in-the-island).
+- **Why:** the owner moves freely between exercises and wants the plan to follow them, not
+  to keep sending them back to what they skipped.
+- **Source:** owner, 2026-11-02;
+  [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
+### U9. "Then" only shows the set; a set menu on every set; and RPE in the island
+
+- **Decided by** the owner, 2026-11-02, using the pre-release built from e4cd635e.
+- **What:**
+  - A tap on the island's "Then …" takes the list to that set and marks it for a moment. It
+    does not open it or change the open set: "I click it and it moves me to that, but I don't
+    know what I need to do now. It shouldn't select the next one, it should just take me to
+    it, I can select it if I want." Since it never opens anything, any set in the list is a
+    target (a second side, a drop, a cluster's next part); U8's "only when it can open" goes.
+  - Every done set has the `…` the open set has, and Delete set lives there on every set,
+    with the undo toast in place of a question. A done set can be unticked from its `…` or
+    with a tap on its green check; it opens again with its values, as Undo after a Log now
+    does, and the toast logs it again.
+  - The island's docked set shows its RPE, a tap opening the stops in the island, and Log is
+    a check alone. **The − and + stay**: the owner, the same day, on the pre-release that
+    traded them for tap-to-type numbers to fit the RPE on the values' row: "why did you
+    remove the +/- from the current set island? that was useful. add it back". The name keeps
+    its own line; under it the values with their steppers, the RPE and Log share one row
+    where they fit, and where they do not the values take the first row and the RPE the
+    second, with Log at its right edge. The steppers never give way to the RPE on any width.
+  - The RPE stops in the panel carry the label "RPE".
+  - "To failure" is no longer words inside the reps field. The header says it once, and the
+    failure choice stays the set kind in the `…`, tagged on the logged line. What is written
+    is unchanged.
+- **Why:** the owner's words, from the pre-release: "Completed sets don't have … button",
+  "'Delete set' should be in the set's … button", "Completed sets should have a clear/undo set
+  button", "Can we fit RPE into the current workout island? Maybe make the log button just an
+  icon and reduce the spacing on the other items?", "'To failure' isn't great as an
+  element/ux", "On the active set panel the RPE row doesn't say this is for RPE".
+- **Source:** owner, 2026-11-02;
+  [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
 ## The data model, first draft (lead)
 
 Taken by the lead on 2026-10-30 from the research, for the owner to overturn. They are listed
