@@ -157,24 +157,52 @@ public struct CoachModel: Sendable, Hashable {
         self.params = params
     }
 
-    /// The models this build prefers, by wire, with the params each needs.
-    static let preferred: [(wire: String, model: String, params: JSONObject)] = [
-        ("anthropic", "claude-sonnet-5-5", ["reasoningEffort": .string("medium")]),
-        ("openai", "gpt-5", ["reasoningEffort": .string("low")]),
-    ]
+    /// The models this build prefers, best first: a family name, matched
+    /// exactly or behind a gateway's prefix (`anthropic/claude-sonnet-5-5`
+    /// on an OpenAI-wire gateway such as LiteLLM); a dated suffix does not
+    /// match. A stored model is replaced only by a better-ranked one
+    /// (`rank`), so never move a family down this list between releases:
+    /// two devices on different builds would overwrite each other's choice.
+    static let preferred = ["claude-sonnet-5-5", "claude-sonnet-5", "gpt-5"]
+
+    /// A model's place in `preferred`, lower is better; a model no family
+    /// matches ranks after all of them.
+    static func rank(_ model: String) -> Int {
+        preferred.firstIndex { model == $0 || model.hasSuffix("/" + $0) } ?? preferred.count
+    }
+
+    /// The params a preferred model needs on its own wire. A gateway gets
+    /// none, so a coach behind one runs at the gateway's or model's default
+    /// reasoning effort.
+    static func params(wire: String?, family: String) -> JSONObject {
+        switch (wire, family) {
+        case ("anthropic", let f) where f.hasPrefix("claude-"): ["reasoningEffort": .string("medium")]
+        case ("openai", "gpt-5"): ["reasoningEffort": .string("low")]
+        default: [:]
+        }
+    }
+
+    /// The row's priced model that is `family`, bare or prefixed.
+    static func model(_ family: String, in row: FlatRecord) -> String? {
+        priced(row).first { $0 == family || $0.hasSuffix("/" + family) }
+    }
 
     /// The model the coach runs on, chosen from the repository's provider
-    /// rows: a keyed row first, the preferred model of its wire where the row
-    /// prices it, else the row's first priced model. A row with no key still
+    /// rows: a keyed row first, the best preferred model any of them prices,
+    /// else the first row's first priced model. A row with no key still
     /// serves when none has one: the coach is installed and refuses until
     /// the owner keys it. The server refuses a model the row does not price,
     /// so nothing unpriced is chosen.
     public static func choose(from providers: [FlatRecord]) -> CoachModel? {
         let keyed = providers.filter { $0.properties["apiKey"].map { $0 != .null } ?? false }
         for rows in [keyed, providers] {
-            for (wire, model, params) in preferred {
-                if let row = rows.first(where: { $0.properties["wire"] == .string(wire) && priced($0).contains(model) }) {
-                    return CoachModel(provider: row.id, model: model, params: params)
+            for family in preferred {
+                for row in rows {
+                    if let model = model(family, in: row) {
+                        let wire: String? = if case let .string(w)? = row.properties["wire"] { w } else { nil }
+                        let exact = model == family
+                        return CoachModel(provider: row.id, model: model, params: exact ? params(wire: wire, family: family) : [:])
+                    }
                 }
             }
             if let row = rows.first(where: { !priced($0).isEmpty }), let model = priced(row).first {
@@ -254,17 +282,20 @@ public struct CoachInstaller: Sendable {
         {
             return .newer(revision: revision)
         }
-        // The stored choice stands across releases while its provider row
-        // still prices it; a first install, or one whose provider row went
-        // or lost the model's price (the engine stops such a coach), takes
-        // this build's default.
+        // The owner has no control over the model (the package is the app's),
+        // so a stored one came from a build. It stands while its row prices
+        // it, unless this build's choice ranks strictly better: an older
+        // build's fallback (Haiku behind a gateway) moves up to Sonnet, and
+        // two devices on different builds settle instead of flip-flopping.
         let providers = try await api.list([Coach.providerKind])
+        let chosen = CoachModel.choose(from: providers)
         let model: CoachModel
         if let stored, let kept = Self.model(of: stored),
-           providers.contains(where: { $0.id == kept.provider && CoachModel.priced($0).contains(kept.model) })
+           providers.contains(where: { $0.id == kept.provider && CoachModel.priced($0).contains(kept.model) }),
+           chosen.map({ CoachModel.rank($0.model) >= CoachModel.rank(kept.model) }) ?? true
         {
             model = kept
-        } else if let chosen = CoachModel.choose(from: providers) {
+        } else if let chosen {
             model = chosen
         } else {
             return .noProvider
@@ -359,6 +390,7 @@ public struct CoachInstaller: Sendable {
         }
         return stored["prompt"] == data["prompt"] && referenceID(stored["provider"]) == referenceID(data["provider"])
             && stored["model"] == data["model"] && storedCap(stored) == storedCap(data)
+            && (stored["params"] ?? .object([:])) == (data["params"] ?? .object([:]))
             && perms(stored) == perms(data)
     }
 }
