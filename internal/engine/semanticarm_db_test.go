@@ -118,6 +118,55 @@ func TestSemanticSearchFindsARareKindByMeaning(t *testing.T) {
 	}
 }
 
+// Deleted records whose chunks sit nearer the query than a live record's, more
+// of them than the arm reads candidates, do not hide the live record: the
+// candidate read skips a tombstoned record's chunks before its LIMIT, and a
+// tombstone keeps its vectors until the purge.
+func TestSemanticTombstonesDoNotCrowdOutALiveMatch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	const book = "shelf.test.dev/shelf/book"
+	// The default k reads 160 candidates; 200 deleted chunks nearer than the
+	// live one fill every place.
+	var gone []string
+	for i := range 200 {
+		r := mustPut(t, ds, owner, substrate.PutInput{
+			Kind: book, Properties: map[string]any{"title": fmt.Sprintf("Gone %d", i), "description": "lighthouse keeper"},
+		})
+		gone = append(gone, r.ID)
+	}
+	live := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: book, Properties: map[string]any{"title": "Kept", "description": "lighthouse keeper writes at dawn"},
+	})
+	for {
+		n, err := ds.ProcessEmbedQueue(ctx, 256)
+		if err != nil {
+			t.Fatalf("drain: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	for _, id := range gone {
+		if _, err := ds.Delete(ctx, owner, book, id, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("delete %s: %v", id, err)
+		}
+	}
+	for _, mode := range []substrate.SearchMode{substrate.SearchSemantic, substrate.SearchHybrid} {
+		res, err := ds.Search(ctx, substrate.SearchInput{Q: "lighthouse keeper", Mode: mode})
+		if err != nil {
+			t.Fatalf("%s search: %v", mode, err)
+		}
+		if len(res.Hits) == 0 || res.Hits[0].Record.ID != live.ID || res.Hits[0].Semantic <= 0 {
+			t.Fatalf("%s search = %v, want the live book %s first with a semantic score", mode, hitIDs(res.Hits), live.ID)
+		}
+	}
+}
+
 // semanticFixture is a repository with an embeddings provider whose endpoint
 // a test can take down, and two books the drain has embedded: one the query
 // `marmalade` matches by its words.
