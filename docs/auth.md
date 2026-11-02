@@ -94,6 +94,51 @@ half-created user.
 Registration therefore ends logged in: the response carries the first token's
 secret.
 
+## Verify domain
+
+Registration takes the name on its owner's word, so on a shared server
+anyone can register a domain they do not hold. **Verify domain** proves it
+afterwards
+([decision record 0208](decisions/0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md)).
+Until it passes, the console marks the name unverified beside it and on an
+app's approval page.
+
+```http
+POST /api/v1/repository/domain
+
+→ 200 {"name": "_substrate.ada.example.com",
+       "record": "v=substrate1 server=https://substrate.example.net proof=k3j9x2abcd",
+       "proof": "k3j9x2abcd"}
+```
+
+Add `record` as a TXT record at `name` in the domain's DNS. The proof is
+one-time and stays pending on the repository record (`domainProof`) until a
+check passes, so asking again answers the same record. Then check:
+
+```http
+POST /api/v1/repository/domain/verify
+
+→ 200 {"verified": true, "verifiedAt": "2026-11-02T12:00:00Z"}
+```
+
+The check reads `_substrate.<repository>`, holds its `proof=` to the pending
+one, and fetches the `server=` origin's
+`/.well-known/substrate/server.json` to confirm its `server.instance` is this
+server's, an id each server mints once into a file under its data root. A
+pass stamps `domainVerifiedAt` on the repository record and spends the proof;
+the record may then keep `server=` alone. A failure answers `verified: false`
+and a `reason` naming what to change: no record, a record that does not
+parse, the proof differs, `server=` names another substrate, or the lookup
+failed. An earlier stamp stands through a failed check.
+
+A name of one label under the host the request reached (`ada.example.net` on
+`example.net`) passes with no record. The check never dials a loopback or
+private address, so a development server on `localhost` verifies only names
+under its own host. Both routes are the owner's: an app's scoped token is
+refused. Settings shows the record to copy and a **Check** button, and
+[`substratectl domain`](substratectl.md#verifying-the-repositorys-name) runs
+the same two calls.
+
 ## Logging in
 
 A login presents both factors directly and mints a token record:

@@ -243,7 +243,26 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusServiceUnavailable, "the server is holding too many authorization requests; try again shortly")
 		return
 	}
-	http.Redirect(w, r, h.consoleURL+approvalPage+req.ID, http.StatusSeeOther)
+	target := h.consoleURL + approvalPage + req.ID
+	if hint := loginHint(q.Get("login_hint"), r.Host); hint != "" {
+		target += "?" + url.Values{"login_hint": {hint}}.Encode()
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// loginHint resolves an app's `login_hint` to the repository it names, the
+// way the sign-in door resolves what an owner types, or "" when it names no
+// valid repository. An invalid hint is dropped, never refused: it only fills
+// the sign-in page's repository field, which the owner can still change.
+func loginHint(hint, host string) string {
+	if hint == "" || len(hint) > vocabulary.MaxAuthorityLen {
+		return ""
+	}
+	authority := vocabulary.RepositoryAuthority(hint, host)
+	if !vocabulary.ValidRepositoryAuthority(authority) {
+		return ""
+	}
+	return authority
 }
 
 var authorizePage = template.Must(template.New("authorize").Parse(`<!doctype html>
