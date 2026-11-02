@@ -68,7 +68,12 @@ const (
 	DetailPackage = "package"
 	DetailAccount = "account"
 	DetailWebhook = "webhook"
+	DetailAgent   = "agent"
 )
+
+// AppAgentSpendCeilingCents is the most an app's agent may spend a day, in
+// cents, whatever its approval asks (decision 0207).
+const AppAgentSpendCeilingCents = 200
 
 // The actions a setup row may need: what approving would do to it. SetupNone
 // is in place already; SetupUnknown answers a check for a row the token
@@ -139,11 +144,18 @@ type AuthorizationDetail struct {
 	// Trigger: a `webhook` detail; URL only in the token response.
 	Trigger string `json:"trigger,omitempty"`
 	URL     string `json:"url,omitempty"`
+	// Agent, Reads, Writes and SpendCentsPerDay: an `agent` detail
+	// (decision 0207), the one agent the app may declare, the exact kinds it
+	// reads and writes and its daily cap.
+	Agent            string   `json:"agent,omitempty"`
+	Reads            []string `json:"reads,omitempty"`
+	Writes           []string `json:"writes,omitempty"`
+	SpendCentsPerDay int      `json:"spendCentsPerDay,omitempty"`
 }
 
 // AuthorizationSetup is one detail as approving would set it up: the action
-// it needs and the facts behind it. Exactly one of Package, Account and
-// Webhook is present, by Type.
+// it needs and the facts behind it. Exactly one of Package, Account, Webhook
+// and Agent is present, by Type.
 type AuthorizationSetup struct {
 	Type   string `json:"type"`
 	Action string `json:"action"`
@@ -157,6 +169,7 @@ type AuthorizationSetup struct {
 	Package  *AuthorizationPackage     `json:"package,omitempty"`
 	Account  *AuthorizationAccount     `json:"account,omitempty"`
 	Webhook  *AuthorizationWebhookPlan `json:"webhook,omitempty"`
+	Agent    *AuthorizationAgentPlan   `json:"agent,omitempty"`
 }
 
 // AuthorizationBlock is why a setup row cannot run: a Block* reason a client
@@ -244,6 +257,38 @@ type AuthorizationWebhookPlan struct {
 	Allowed bool   `json:"allowed,omitempty"`
 }
 
+// AuthorizationAgentPlan is an agent row: the agent the app may declare
+// and keep (decision 0207), what it may read and write, each kind as the
+// repository holds it (Held false for one it does not hold yet), and its
+// daily cap. Approving sets nothing up: the token carries the approval, and
+// the app declares the agent with it. Allowed is true when the previous
+// token's approval already covers this one. An approval without the agent
+// package's declare scope leaves the agent off the token. A check answers
+// Agent alone.
+type AuthorizationAgentPlan struct {
+	Agent            string                   `json:"agent"`
+	Reads            []AuthorizationAgentKind `json:"reads,omitempty"`
+	Writes           []AuthorizationAgentKind `json:"writes,omitempty"`
+	SpendCentsPerDay int                      `json:"spendCentsPerDay,omitempty"`
+	Allowed          bool                     `json:"allowed,omitempty"`
+	// TalkedToBy names the apps the owner already let talk to their agents
+	// whose reads cover everything this agent reads: they can ask it
+	// questions and read its chats (decision 0207). Another app reaches it
+	// only once it can read all of that itself.
+	TalkedToBy []string `json:"talkedToBy,omitempty"`
+	// Withheld says why approving leaves the agent out: its package's
+	// declare scope is refused, since another hand keeps the package
+	// (decision 0205). The rest of the request is approved as usual.
+	Withheld string `json:"withheld,omitempty"`
+}
+
+// AuthorizationAgentKind is one kind an app's agent reads or writes.
+type AuthorizationAgentKind struct {
+	Identity string     `json:"identity"`
+	Label    *KindLabel `json:"label,omitempty"`
+	Held     bool       `json:"held,omitempty"`
+}
+
 // AuthorizationPrevious is the newest token the repository holds for the
 // requesting client id. Never present for a local app, whose client id
 // nothing verifies.
@@ -251,6 +296,8 @@ type AuthorizationPrevious struct {
 	ApprovedAt time.Time  `json:"approvedAt"`
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	Scopes     []string   `json:"scopes"`
+	// Agents are the agents that token approves its app to declare.
+	Agents []AgentApproval `json:"agents,omitempty"`
 }
 
 // AuthorizationFailure is why a set up stopped, in the owner's words: Row

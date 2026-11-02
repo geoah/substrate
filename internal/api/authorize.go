@@ -147,7 +147,7 @@ func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.
 		ScopesSupported:                        scopesSupported,
 		AuthorizationResponseISSSupported:      true,
 		ClientIDMetadataDocumentSupported:      true,
-		AuthorizationDetailsTypesSupported:     []string{substrate.DetailPackage, substrate.DetailAccount, substrate.DetailWebhook},
+		AuthorizationDetailsTypesSupported:     []string{substrate.DetailPackage, substrate.DetailAccount, substrate.DetailWebhook, substrate.DetailAgent},
 	})
 }
 
@@ -214,6 +214,10 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if scope.RequestsFull(scopes) && len(details) > 0 {
 		writeAuthorizePage(w, http.StatusBadRequest, "a request for full access sets nothing up: it names no authorization_details")
+		return
+	}
+	if err := agentsDeclared(details, scopes); err != nil {
+		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	iss := h.issuerOf(r)
@@ -376,6 +380,9 @@ type pageReads struct {
 	// refused is why each refused declare scope, resolved, cannot be
 	// approved (declareRefusal).
 	refused map[string]string
+	// tokens are the repository's live tokens, read when the request names
+	// an agent, to say which apps could reach it.
+	tokens []substrate.TokenInfo
 }
 
 // readForPage reads what the approval page's view of req needs of ds.
@@ -390,6 +397,11 @@ func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Reques
 	}
 	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
 		if out.agents, err = agentRows(ctx, ds); err != nil {
+			return out, err
+		}
+	}
+	if slices.ContainsFunc(req.Details, func(d substrate.AuthorizationDetail) bool { return d.Type == substrate.DetailAgent }) {
+		if out.tokens, err = ds.Tokens(ctx); err != nil {
 			return out, err
 		}
 	}
@@ -496,6 +508,25 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			plan := *row.Webhook
 			plan.Allowed = before.Covers(scope.WebhookScope(plan.Trigger), false)
 			view.Setup[i].Webhook = &plan
+		}
+		if row.Agent != nil && i < len(req.Details) {
+			plan := *row.Agent
+			want := approvedAgents([]substrate.AuthorizationDetail{req.Details[i]}, authority)
+			if view.Previous != nil {
+				for _, held := range view.Previous.Agents {
+					if len(want) == 1 && scope.CoversAgent(held, want[0]) {
+						plan.Allowed = true
+					}
+				}
+			}
+			declare := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(req.Details[i].Agent)}.Resolve(authority).String()
+			if why := p.refused[declare]; why != "" {
+				plan.Withheld = why
+			}
+			if len(want) == 1 {
+				plan.TalkedToBy = agentTalkers(p.tokens, p.kinds, want[0], req.Client.ID)
+			}
+			view.Setup[i].Agent = &plan
 		}
 	}
 	registry := make(map[string]substrate.KindInfo, len(p.kinds))
@@ -680,6 +711,12 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(lifetimeDays, *in.LifetimeDays) {
 			return authorize.Approval{}, validation("lifetimeDays must be one of 7, 30 or 90, or 0 for until revoked")
 		}
+		// An agent is declared under its package's declare scope. Without
+		// it, unchecked by the owner or refused because another hand keeps
+		// the package (decision 0205), the app could never declare the
+		// agent, so the rest is approved and the agent approval left off
+		// the token (decision 0207).
+		details := withDeclaredAgents(req.Details, scopes, authority)
 		// Only an approved webhook detail puts `webhook:` on a token.
 		for _, d := range req.Details {
 			if d.Type == substrate.DetailWebhook {
@@ -689,7 +726,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return authorize.Approval{
 			Repository: authority, Dataset: ds, Scopes: scopes,
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: doc.Name,
-			Details: req.Details,
+			Details: details,
 		}, nil
 	}
 	req, err := h.authz.Reserve(id, authority, func(req authorize.Request) error {
@@ -816,6 +853,103 @@ func writeAuthorizationAnswerError(w http.ResponseWriter, r *http.Request, err e
 	default:
 		writeSubstrateError(w, r, err)
 	}
+}
+
+// agentsDeclared refuses a request whose agent detail comes without the
+// declare scope of the agent's package: the app declares the agent under it,
+// so an approval of one without the other sets up nothing it can use.
+func agentsDeclared(details []substrate.AuthorizationDetail, scopes []scope.Scope) error {
+	for _, d := range details {
+		if d.Type != substrate.DetailAgent {
+			continue
+		}
+		want := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}
+		if !slices.Contains(scopes, want) {
+			return fmt.Errorf("the agent %s is declared under %s, which scope does not ask for", d.Agent, want)
+		}
+	}
+	return nil
+}
+
+// agentTalkers names the apps whose live tokens would reach an app's agent
+// that reads what want reads: a full-access app, or one whose agents scope
+// matches it and whose reads cover every kind it reads (decision 0207). The
+// requesting app is left out; the owner's own sessions are not apps.
+func agentTalkers(tokens []substrate.TokenInfo, kinds []substrate.KindInfo, want substrate.AgentApproval, client string) []string {
+	registry := make(map[string]substrate.KindInfo, len(kinds))
+	for _, k := range kinds {
+		registry[k.Identity] = k
+	}
+	var out []string
+	for _, t := range tokens {
+		if t.ClientID == "" || t.ClientID == client || (t.ExpiresAt != nil && !t.ExpiresAt.After(time.Now())) {
+			continue
+		}
+		name := t.ClientName
+		if name == "" {
+			name = t.ClientID
+		}
+		if slices.Contains(out, name) {
+			continue
+		}
+		if !t.Scoped() {
+			out = append(out, name)
+			continue
+		}
+		g, err := scope.NewGrant(t.Scopes)
+		if err != nil || !g.TalksTo(want.Agent) {
+			continue
+		}
+		covers := true
+		for _, k := range want.Reads {
+			info, held := registry[k]
+			if !g.Reads(k, !held || internalKind(info)) {
+				covers = false
+				break
+			}
+		}
+		if covers {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// withDeclaredAgents is details without the agent details whose package's
+// declare scope the approval does not hold.
+func withDeclaredAgents(details []substrate.AuthorizationDetail, scopes []string, authority string) []substrate.AuthorizationDetail {
+	out := make([]substrate.AuthorizationDetail, 0, len(details))
+	for _, d := range details {
+		if d.Type == substrate.DetailAgent {
+			want := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}.Resolve(authority).String()
+			if !slices.Contains(scopes, want) {
+				continue
+			}
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// approvedAgents are the agent details an approval carried, as the token
+// stores them: every authority resolved.
+func approvedAgents(details []substrate.AuthorizationDetail, authority string) []substrate.AgentApproval {
+	var out []substrate.AgentApproval
+	for _, d := range details {
+		if d.Type != substrate.DetailAgent {
+			continue
+		}
+		a := substrate.AgentApproval{Agent: scope.ResolveAgentKind(d.Agent, authority), SpendCentsPerDay: d.SpendCentsPerDay}
+		for _, k := range d.Reads {
+			a.Reads = append(a.Reads, scope.ResolveAgentKind(k, authority))
+		}
+		for _, k := range d.Writes {
+			a.Writes = append(a.Writes, scope.ResolveAgentKind(k, authority))
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // approvedScopes holds an approval to the request: a non-empty subset of
@@ -1018,6 +1152,7 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
 		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
+		Agents: approvedAgents(c.Approval.Details, c.Approval.Repository),
 	})
 	if err != nil {
 		status, code := http.StatusInternalServerError, "server_error"

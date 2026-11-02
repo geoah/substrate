@@ -14,15 +14,15 @@ public struct AppManifest: Sendable {
     public var details: [AuthorizationDetail]
     /// What the server must be able to do: the requirement the app names,
     /// with every scope verb its scopes use and every detail type its
-    /// details use added, so a server that cannot take the request never
-    /// meets it.
+    /// required details use added, so a server that cannot take the request
+    /// never meets it. An optional detail is left out for such a server.
     public var requirement: ServerRequirement {
         get {
             var needed = named
             for verb in scopes.map({ ScopeWords.split($0).verb }) where !verb.isEmpty && !needed.scopeVerbs.contains(verb) {
                 needed.scopeVerbs.append(verb)
             }
-            for type in details.map(\.type) where !needed.detailTypes.contains(type) {
+            for type in details.filter({ !$0.optional }).map(\.type) where !needed.detailTypes.contains(type) {
                 needed.detailTypes.append(type)
             }
             return needed
@@ -98,7 +98,14 @@ public struct AppManifest: Sendable {
     /// would then read as set up, so its requirement fails and it never gets
     /// the request.
     public func takesDetails(_ metadata: AuthorizationServerMetadata?) -> Bool {
-        details.isEmpty || (metadata.map { m in details.allSatisfy { m.supports(detailType: $0.type) } } ?? false)
+        let required = details.filter { !$0.optional }
+        return required.isEmpty || (metadata.map { m in required.allSatisfy { m.supports(detailType: $0.type) } } ?? false)
+    }
+
+    /// The details the request sends to a server: every one it requires,
+    /// and each optional one whose type the server lists.
+    public func details(for metadata: AuthorizationServerMetadata?) -> [AuthorizationDetail] {
+        details.filter { !$0.optional || metadata?.supports(detailType: $0.type) == true }
     }
 
     /// The scopes the owner left out of the last approval: the ones its
@@ -115,8 +122,16 @@ public struct AppManifest: Sendable {
     /// The request the check asks about for `session`: every detail, and
     /// every scope but those the owner left out of the last approval. A scope
     /// a later build adds is asked about.
-    public func check(for session: Session) -> AuthorizationCheck {
+    ///
+    /// An agent detail whose `declare:` scope the owner left out is left out
+    /// too: the owner declined the agent, and asking again at every check
+    /// would bring back a review they already answered.
+    public func check(for session: Session, metadata: AuthorizationServerMetadata? = nil) -> AuthorizationCheck {
         let leftOut = Set(leftOut(by: session))
+        let details = details(for: metadata).filter { detail in
+            guard let declare = detail.declareScope else { return true }
+            return !leftOut.contains(declare)
+        }
         return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details)
     }
 

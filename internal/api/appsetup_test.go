@@ -311,7 +311,7 @@ func resolvedSyncScopes() []string {
 func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	e := newSetupEnv(t)
 	md := decodeJSON[authorizationServerMetadata](t, e.do(http.MethodGet, asMetadataPath, "", nil, ""))
-	if strings.Join(md.AuthorizationDetailsTypesSupported, ",") != "package,account,webhook" {
+	if strings.Join(md.AuthorizationDetailsTypesSupported, ",") != "package,account,webhook,agent" {
 		t.Fatalf("authorization_details_types_supported = %v", md.AuthorizationDetailsTypesSupported)
 	}
 	id := e.park(setupRequest(syncScopes, syncDetails))

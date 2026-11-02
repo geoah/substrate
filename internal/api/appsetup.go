@@ -178,7 +178,7 @@ func previousToken(ctx context.Context, ds substrate.Dataset, client authorize.C
 	if scopes == nil {
 		scopes = []string{}
 	}
-	return &substrate.AuthorizationPrevious{ApprovedAt: newest.Created, ExpiresAt: newest.ExpiresAt, Scopes: scopes}, nil
+	return &substrate.AuthorizationPrevious{ApprovedAt: newest.Created, ExpiresAt: newest.ExpiresAt, Scopes: scopes, Agents: newest.Agents}, nil
 }
 
 // grantedDetails is what the token response lists as set up: each package
@@ -209,6 +209,12 @@ func grantedDetails(ctx context.Context, ds substrate.Dataset, issuer, authority
 				Type: d.Type, Trigger: d.Trigger,
 				URL: issuer + "/webhooks/" + url.PathEscape(authority) + "/" + url.PathEscape(d.Trigger),
 			})
+		case substrate.DetailAgent:
+			for _, a := range approvedAgents([]substrate.AuthorizationDetail{d}, authority) {
+				out = append(out, substrate.AuthorizationDetail{
+					Type: d.Type, Agent: a.Agent, Reads: a.Reads, Writes: a.Writes, SpendCentsPerDay: a.SpendCentsPerDay,
+				})
+			}
 		}
 	}
 	return out
@@ -337,9 +343,21 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 				visible = grant.Reads(row.Account.Kind, !held || internalKind(k))
 			case substrate.DetailWebhook:
 				visible = grant.Delivers(row.Webhook.Trigger)
+			case substrate.DetailAgent:
+				// The token's own approval is what the row is about, so the
+				// row is always the token's to read.
+				visible = true
 			}
 		}
 		out.Setup[i] = checkRow(row, visible)
+		if row.Type == substrate.DetailAgent {
+			action, withheld, err := agentCheck(ctx, owner, grant, full, requested, details[i], authority)
+			if err != nil {
+				return substrate.AuthorizationCheckResult{}, err
+			}
+			out.Setup[i].Action = action
+			out.Setup[i].Agent.Withheld = withheld
+		}
 	}
 	if lease := leaseFrom(ctx); lease != nil {
 		out.ExpiresAt = lease.expires
@@ -384,8 +402,61 @@ func checkRow(row substrate.AuthorizationSetup, visible bool) substrate.Authoriz
 		if visible {
 			out.Webhook.Package = row.Webhook.Package
 		}
+	case substrate.DetailAgent:
+		out.Agent = &substrate.AuthorizationAgentPlan{Agent: row.Agent.Agent}
 	}
 	return out
+}
+
+// agentCheck is a check's answer for an agent row, and why approving would
+// leave the agent out: none when the request leaves out the agent package's
+// declare scope, or when 0205 would refuse that scope (the owner or another
+// client id keeps the package), since approving again would withhold the
+// agent again; otherwise agentCheckAction's answer.
+func agentCheck(ctx context.Context, ds substrate.Dataset, grant scope.Grant, full bool, requested []scope.Scope,
+	d substrate.AuthorizationDetail, authority string,
+) (string, string, error) {
+	declare := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}
+	if !slices.Contains(requested, declare) {
+		return substrate.SetupNone, "the request leaves out " + declare.String() + ", the scope the agent is declared under", nil
+	}
+	if !full {
+		client := clientOf(substrate.ClientIDFrom(ctx))
+		why, err := declareRefusal(ctx, ds, client, declare.Resolve(authority).String())
+		if err != nil {
+			return "", "", err
+		}
+		if why != "" {
+			return substrate.SetupNone, why, nil
+		}
+	}
+	return agentCheckAction(grant, full, d, authority), "", nil
+}
+
+// clientOf is the client a check's token was minted for, by its client id.
+func clientOf(id string) authorize.Client {
+	c := authorize.Client{ID: id}
+	if u, err := url.Parse(id); err == nil {
+		c.Host = u.Host
+	}
+	return c
+}
+
+// agentCheckAction is a check's answer for an agent row: none when the
+// calling token's approval already covers the agent detail (its reach and
+// its cap), enable when approving again is needed. Nothing is set up on
+// approval either way; an owner's full-access token declares agents freely.
+func agentCheckAction(grant scope.Grant, full bool, d substrate.AuthorizationDetail, authority string) string {
+	if full {
+		return substrate.SetupNone
+	}
+	want := approvedAgents([]substrate.AuthorizationDetail{d}, authority)
+	if len(want) == 1 {
+		if held, ok := grant.Agent(want[0].Agent); ok && scope.CoversAgent(held, want[0]) {
+			return substrate.SetupNone
+		}
+	}
+	return substrate.SetupEnable
 }
 
 // checkMemoTTL is how long a token's last check answers the same body

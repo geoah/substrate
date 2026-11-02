@@ -11,7 +11,12 @@ import WorkoutsCore
 /// - `read:` the Health workout and the Apple Health account, to find the
 ///   row a finished session was saved to Apple Health as;
 /// - and, set up on approval, `substrate.reamde.dev/health`, the catalogue
-///   the package requires.
+///   the package requires;
+/// - the workout coach (decision 0207): `declare:~/trainingcoach` and an
+///   `agent` detail with its reach and daily cap, which the owner approves
+///   on the same page, and `read:` the AI provider rows to pick the model it
+///   runs on. A server without agents is sent the request without the
+///   detail.
 public enum WorkoutsManifest {
     public static let appName = "Substrate Workouts"
     /// The Info.plist key a release stamps with the URL of its client ID
@@ -27,11 +32,16 @@ public enum WorkoutsManifest {
     public static let declareScope = "declare:\(KindNames.packageID(authority: KindNames.home))"
     public static let writeScope = "write:\(KindNames.packageID(authority: KindNames.home))/*"
 
-    public static let scopes = [declareScope, writeScope, "read:\(healthWorkout)", "read:\(healthAccount)"]
+    public static let coachDeclareScope = "declare:\(Coach.package)"
+    public static let providerScope = "read:substrate.reamde.dev/llm/provider"
+
+    public static let scopes = [declareScope, writeScope, "read:\(healthWorkout)", "read:\(healthAccount)", coachDeclareScope, providerScope]
 
     /// The release of the health catalogue whose `workout` the package's
     /// `session.workout` names.
-    public static let details = [AuthorizationDetail.package(healthPackage, atLeast: 1)]
+    /// The coach's detail comes last: it is optional, so a request to a
+    /// server without agents is the others alone, in the same order.
+    public static let details = [AuthorizationDetail.package(healthPackage, atLeast: 1), Coach.detail]
 
     /// A server that lists `declare` and `package` details can take the
     /// request, whatever it calls its build; one that cannot is too old.

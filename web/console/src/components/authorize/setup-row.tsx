@@ -21,8 +21,11 @@ import {
 
 import { Disclosure, Mono, Term } from "@/components/authorize/parts"
 import { Spinner } from "@/components/ui/spinner"
+import { INTERACTION_KIND } from "@/lib/core-kinds"
 import type {
   AuthorizationAccount,
+  AuthorizationAgentKind,
+  AuthorizationAgentPlan,
   AuthorizationPackage,
   AuthorizationPackageStep,
   AuthorizationSetup,
@@ -37,6 +40,7 @@ import {
   chainLines,
   codeWords,
   consolePath,
+  dollars,
   factCounts,
   grantWords,
   packageName,
@@ -108,6 +112,10 @@ function statusWords(row: AuthorizationSetup): string | undefined {
   const progress = progressOf(row)
   if (progress) return PROGRESS_WORDS[progress]
   if (row.blocked) return blockStatus(row.blocked)
+  if (row.agent) {
+    if (row.agent.withheld) return "Left out"
+    return row.agent.allowed ? "Already approved" : undefined
+  }
   if (row.action === "none" && !row.package && !row.account && !row.webhook)
     return "In place"
   return undefined
@@ -300,6 +308,102 @@ function WebhookFacts({ webhook }: { webhook: AuthorizationWebhookPlan }) {
   )
 }
 
+/** One kind an agent reaches, by its label where the server holds it. */
+function agentKindWords(k: AuthorizationAgentKind): string {
+  const name = k.label?.plural ?? k.identity
+  return k.held ? name : `${name} (not on this server yet)`
+}
+
+/** What an app's agent may do (decision 0207): what it reads and writes,
+ * that it asks questions, what it spends, where what it reads goes, and who
+ * keeps it. Every fact is its own labeled line. */
+function AgentWords({ agent }: { agent: AuthorizationAgentPlan }) {
+  const reads = agent.reads ?? []
+  const writes = agent.writes ?? []
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <dl className="flex flex-col gap-1">
+        <div>
+          <dt className="text-muted-foreground">It reads</dt>
+          <dd>
+            <ul aria-label="What the agent reads" className="list-disc pl-4">
+              {reads.map((k) => (
+                <li key={k.identity}>{agentKindWords(k)}</li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+        {writes.length > 0 && (
+          <div>
+            <dt className="text-muted-foreground">It changes</dt>
+            <dd>
+              <ul
+                aria-label="What the agent changes"
+                className="list-disc pl-4"
+              >
+                {writes.map((k) => (
+                  <li key={k.identity}>{agentKindWords(k)}</li>
+                ))}
+              </ul>
+            </dd>
+          </div>
+        )}
+        {agent.spendCentsPerDay !== undefined && (
+          <div>
+            <dt className="text-muted-foreground">It spends</dt>
+            <dd>
+              It stops for the day once it has spent about{" "}
+              {dollars(agent.spendCentsPerDay)} of your AI provider&apos;s
+              credit in 24 hours.
+            </dd>
+          </div>
+        )}
+      </dl>
+      <p>It can ask you questions in the chat.</p>
+      <p>
+        Apps you let talk to your agents can ask it questions and read its chats
+        only if they can read everything it reads.
+        {agent.talkedToBy && agent.talkedToBy.length > 0
+          ? ` Already: ${agent.talkedToBy.join(", ")}.`
+          : " None can yet."}
+      </p>
+      <p>
+        What it reads is sent to the AI provider it runs on. The app writes its
+        instructions and keeps them current. It stops when this app&apos;s
+        access ends, and you can turn it off on its package&apos;s page.
+      </p>
+    </div>
+  )
+}
+
+function AgentFacts({ agent }: { agent: AuthorizationAgentPlan }) {
+  const list = (ids: string[]) => (
+    <span className="flex flex-col">
+      {ids.map((id) => (
+        <Mono key={id}>{id}</Mono>
+      ))}
+    </span>
+  )
+  return (
+    <Facts>
+      <Term name="Agent">
+        <Mono>{agent.agent}</Mono>
+      </Term>
+      <Term name="Reads">
+        {list((agent.reads ?? []).map((k) => k.identity))}
+      </Term>
+      <Term name="Writes">
+        {list([
+          ...(agent.writes ?? []).map((k) => k.identity),
+          `${INTERACTION_KIND} (its questions)`,
+        ])}
+      </Term>
+      <Term name="Daily cap">{agent.spendCentsPerDay ?? 0} cents</Term>
+      <Term name="Tools">query, write and ask</Term>
+    </Facts>
+  )
+}
+
 /** Every value the account is created with, by its property's name. */
 function AccountValues({ account }: { account: AuthorizationAccount }) {
   const entries = Object.entries(account.properties ?? {})
@@ -378,6 +482,12 @@ export function SetupRow({
         {row.webhook && (
           <p className="text-xs">{grantWords(row, !!grantHeld)}</p>
         )}
+        {row.agent?.withheld && (
+          <p className="text-xs text-muted-foreground">
+            Approving leaves this agent out: {asSentence(row.agent.withheld)}
+          </p>
+        )}
+        {row.agent && !row.agent.withheld && <AgentWords agent={row.agent} />}
         {row.blocked && (
           <div className="flex flex-col gap-0.5 text-xs">
             <p className="text-destructive">
@@ -405,6 +515,7 @@ export function SetupRow({
             {row.package && <PackageFacts pkg={row.package} />}
             {row.account && <AccountFacts account={row.account} />}
             {row.webhook && <WebhookFacts webhook={row.webhook} />}
+            {row.agent && <AgentFacts agent={row.agent} />}
           </div>
         )}
       </div>

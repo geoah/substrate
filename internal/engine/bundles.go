@@ -546,6 +546,37 @@ func (ds *dataset) UninstallBundle(ctx context.Context, id string) error {
 	return err
 }
 
+// UninstallAppBundle is an app removing a package it keeps (decision 0207):
+// the package must declare no kinds, so no record loses its kind, and the
+// batch runs as the app, so the ownership chokepoint (decision 0205) admits
+// the app that owns it and nobody else. Its agents' threads stay, naming the
+// agent, as any uninstall leaves them.
+func (ds *dataset) UninstallAppBundle(ctx context.Context, actor substrate.Actor, id string) error {
+	if !substrate.IsAppActor(actor) {
+		return fmt.Errorf("%w: only an app removes a package it keeps this way; the owner uninstalls the bundle", substrate.ErrForbidden)
+	}
+	pkg, err := ds.bundlePackageOf(ctx, id)
+	if err != nil {
+		return err
+	}
+	if g, ok := ds.registry().PackageByName(pkg); ok && len(g.Kinds) > 0 {
+		return fmt.Errorf("%w: %s declares kinds, whose records would lose their kind: an app removes only a package that holds no kinds", substrate.ErrForbidden, pkg)
+	}
+	ds.lifecycleFence.Lock()
+	defer ds.lifecycleFence.Unlock()
+	callables, err := ds.packageCallableIdentities(ctx, pkg)
+	if err != nil {
+		return err
+	}
+	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
+		replacePackages: []string{pkg},
+		beforeGuards: func(t *txn) error {
+			return t.tearDownCallableTriggers(callables)
+		},
+	})
+	return err
+}
+
 // packageCallableIdentities lists the identities of a package's functions and
 // agents from the stored schema rows — the callables whose triggers the
 // uninstall tears down. Reading from rows (not the registry) covers a

@@ -41,7 +41,8 @@ func (s *scopedDataset) keepsPackage() bool {
 }
 
 // declarationRowKind reports whether kind is one of the declaration kinds a
-// declare scope reads its own package's rows of.
+// declare scope reads its own package's rows of. The agent row is read
+// apart, for an approved agent alone (declaresAgent).
 func declarationRowKind(kind string) bool {
 	switch kind {
 	case vocabulary.CoreKind(vocabulary.DocPackage), vocabulary.CoreKind(vocabulary.DocBundle), vocabulary.CoreKind(vocabulary.DocKind):
@@ -91,8 +92,15 @@ func (s *scopedDataset) declarable(docs []map[string]any) error {
 			if path := embedded(data["properties"], "properties"); path != "" {
 				return fmt.Errorf("%w: an app's token may not declare %s.embed on %s: embedding spends the owner's provider budget", substrate.ErrForbidden, path, id)
 			}
+		case vocabulary.CoreKind(vocabulary.DocAgent):
+			// The one document that runs: the agent an `agent` detail
+			// approved, held to its approval (decision 0207).
+			pkg = vocabulary.KindPackage(id)
+			if err := s.declarableAgent(id, data); err != nil {
+				return err
+			}
 		default:
-			return fmt.Errorf("%w: an app's token declares packages, bundles and kinds, not %s", substrate.ErrForbidden, kind)
+			return fmt.Errorf("%w: an app's token declares packages, bundles and kinds, and the one agent the owner approved, not %s", substrate.ErrForbidden, kind)
 		}
 		if !s.grant.DeclaresIn(pkg, home) {
 			return fmt.Errorf("%w: an app's token does not declare %s/%s: it holds no declare scope for the package", substrate.ErrForbidden, kind, id)

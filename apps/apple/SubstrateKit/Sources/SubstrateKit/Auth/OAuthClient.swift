@@ -100,7 +100,8 @@ public struct OAuthClient: Sendable {
             ("code_challenge_method", "S256"),
             ("state", state),
         ]
-        if !manifest.details.isEmpty { items.append(("authorization_details", try AuthorizationDetail.json(manifest.details))) }
+        let details = manifest.details(for: metadata)
+        if !details.isEmpty { items.append(("authorization_details", try AuthorizationDetail.json(details))) }
         guard var parts = URLComponents(url: metadata.authorizationEndpoint, resolvingAgainstBaseURL: false) else {
             throw URLError(.badURL)
         }

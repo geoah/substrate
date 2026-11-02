@@ -6,7 +6,7 @@
 # before it applies them. The app's README says how it installs, upgrades and
 # reads the package.
 #
-# Five kinds, a catalogue, a plan and a log:
+# Six kinds, a catalogue, a plan, a log and the coach's memory:
 #
 #   exercise   one movement, with the settings the next-set suggestion reads
 #   setup      one station an exercise is done on, such as a gym's machine,
@@ -14,6 +14,7 @@
 #   routine    the plan the console's agent writes ("Workout routine")
 #   session    one visit to the gym, as the app ran it ("Training session")
 #   set        one performed set, its own record
+#   memory     one fact the workout coach keeps ("Coach memory")
 #
 # ONE RECORD PER SET. A list filter and the aggregate read reach only a
 # kind's top-level properties, so a set's load, reps and effort are
@@ -38,10 +39,11 @@ metadata:
 data:
   authority: "~"
   package: training
-  # 1: exercise, setup, routine, session and set. The app ships each
-  # change as the next version, additive only, and reads the version a
-  # repository holds to decide whether to install, upgrade or stop.
-  version: 1
+  # 1: exercise, setup, routine, session and set. 2: memory, the facts the
+  # workout coach keeps (decision record 0207). The app ships each change as
+  # the next version, additive only, and reads the version a repository
+  # holds to decide whether to install, upgrade or stop.
+  version: 2
 ---
 # ---- the bundle document -----------------------------------------------------
 #
@@ -72,3 +74,4 @@ data:
     - ~/training/routine
     - ~/training/session
     - ~/training/set
+    - ~/training/memory

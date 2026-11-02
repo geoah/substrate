@@ -87,12 +87,15 @@ func (s *scopedDataset) visible(ctx context.Context, rec *substrate.Record) (boo
 func (s *scopedDataset) rowVisible(ctx context.Context, rec *substrate.Record) (bool, error) {
 	switch rec.Kind {
 	case kindAgent:
-		return s.grant.TalksTo(rec.ID), nil
+		return s.talksTo(ctx, rec.ID)
 	case kindThread:
-		return s.grant.TalksTo(referencedID(rec.Properties["agent"], kindAgent)), nil
+		return s.talksTo(ctx, referencedID(rec.Properties["agent"], kindAgent))
 	case kindMessage, kindInteraction:
 		agent, err := s.agentOfThread(ctx, referencedID(rec.Properties["thread"], kindThread))
-		return err == nil && s.grant.TalksTo(agent), err
+		if err != nil {
+			return false, err
+		}
+		return s.talksTo(ctx, agent)
 	case kindRequest:
 		agent, err := s.agentOfThread(ctx, referencedID(rec.Properties["thread"], kindThread))
 		return err == nil && s.grant.Decides(agent), err
@@ -111,7 +114,7 @@ func (s *scopedDataset) threadReached(ctx context.Context, kind, thread string) 
 	if kind == kindRequest {
 		return s.grant.Decides(agent), nil
 	}
-	return s.grant.TalksTo(agent), nil
+	return s.talksTo(ctx, agent)
 }
 
 // agentOfThread is the id of the agent a thread ran, "" for a thread that does
@@ -173,7 +176,12 @@ func (s *scopedDataset) talkedAgents(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		for _, rec := range page.Records {
-			if rec.Kind == kindAgent && s.grant.TalksTo(rec.ID) {
+			if rec.Kind != kindAgent {
+				continue
+			}
+			if ok, err := s.talksTo(ctx, rec.ID); err != nil {
+				return nil, err
+			} else if ok {
 				out = append(out, rec.ID)
 			}
 		}
@@ -323,7 +331,9 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 				return nil, err
 			}
 			for _, a := range agents {
-				if !s.grant.TalksTo(a) {
+				if ok, err := s.talksTo(ctx, a); err != nil {
+					return nil, err
+				} else if !ok {
 					return nil, fmt.Errorf("%w: agent %s", substrate.ErrNotFound, a)
 				}
 			}
@@ -473,7 +483,9 @@ func (s *scopedDataset) requireThread(ctx context.Context, thread string) error 
 	if err != nil {
 		return err
 	}
-	if !s.grant.TalksTo(agent) {
+	if ok, err := s.talksTo(ctx, agent); err != nil {
+		return err
+	} else if !ok {
 		return fmt.Errorf("%w: thread %s", substrate.ErrNotFound, thread)
 	}
 	return nil
@@ -568,7 +580,7 @@ func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (boo
 		return false, err
 	}
 	if kind == kindAgent {
-		return s.grant.TalksTo(id), nil
+		return s.talksTo(ctx, id)
 	}
 	path := vocabulary.RecordPath(kind, id)
 	s.mu.Lock()

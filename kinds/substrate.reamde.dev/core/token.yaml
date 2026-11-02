@@ -11,7 +11,7 @@ data:
     owner approved and the app's client id. A token without scopes has full
     access to its repository; sessions are these records, login mints one,
     and revoking one is an ordinary record delete.
-  version: 9
+  version: 10
   purpose: internal
   names:
     singular: token
@@ -53,3 +53,32 @@ data:
       type: string
       description: the name the app claimed for itself when the owner approved
         it
+    # The agents the owner approved the app to declare (decision record
+    # 0207), each from an `agent` authorization detail: the agent's id, the
+    # exact kinds it reads and writes, and its daily cap. Never a scope: the
+    # app's own scopes stay what the app itself uses, and the engine runs the
+    # agent only while a live token of its app approves its reach.
+    agents:
+      type: object
+      repeated: true
+      description: the agents the owner approved this app to declare, with
+        what each may read and write and spend a day
+      fields:
+        agent:
+          type: string
+          required: true
+          description: the agent's id, <authority>/<package>/<name>
+        reads:
+          type: string
+          repeated: true
+          description: the kinds it may read, each named in full
+        writes:
+          type: string
+          repeated: true
+          description: the kinds it may write, each named in full
+        spendCentsPerDay:
+          type: int
+          required: true
+          min: 1
+          max: 200
+          description: the most it may spend in 24 hours, in cents

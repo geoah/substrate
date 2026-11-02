@@ -2,16 +2,17 @@ import Foundation
 
 /// One entry of an app's `authorization_details` (RFC 9396), as
 /// internal/substrate's authorize.go carries it: a package the app needs at a
-/// version or later, the account it delivers under, or the webhook it
-/// delivers to. The token response answers the same shape, with `version`
+/// version or later, the account it delivers under, the webhook it
+/// delivers to, or the one agent it may declare (decision 0207). The token response answers the same shape, with `version`
 /// the version now held and `url` where a webhook takes deliveries.
 public struct AuthorizationDetail: Codable, Hashable, Sendable {
-    /// The three types a substrate sets up.
+    /// The types a substrate takes.
     public enum Types {
         public static let package = "package"
         public static let account = "account"
         public static let webhook = "webhook"
-        public static let all = [package, account, webhook]
+        public static let agent = "agent"
+        public static let all = [package, account, webhook, agent]
     }
 
     public var type: String
@@ -27,9 +28,21 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
     /// a webhook detail carries its trigger alone and the server refuses any
     /// other member.
     public var deliversTo: String?
+    /// An `agent` detail: the agent's id, the exact kinds it reads and
+    /// writes, and the most it may spend a day, in cents.
+    public var agent: String?
+    public var reads: [String]?
+    public var writes: [String]?
+    public var spendCentsPerDay: Int?
+    /// Whether the app asks for it only where the server takes its type: a
+    /// server that does not is sent the request without it, rather than
+    /// refused as too old. Never sent.
+    public var optional: Bool = false
 
     public init(type: String, package: String? = nil, version: Int? = nil, kind: String? = nil, id: String? = nil,
-                properties: [String: JSONValue]? = nil, trigger: String? = nil, url: URL? = nil, deliversTo: String? = nil)
+                properties: [String: JSONValue]? = nil, trigger: String? = nil, url: URL? = nil, deliversTo: String? = nil,
+                agent: String? = nil, reads: [String]? = nil, writes: [String]? = nil, spendCentsPerDay: Int? = nil,
+                optional: Bool = false)
     {
         self.type = type
         self.package = package
@@ -40,6 +53,28 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         self.trigger = trigger
         self.url = url
         self.deliversTo = deliversTo
+        self.agent = agent
+        self.reads = reads
+        self.writes = writes
+        self.spendCentsPerDay = spendCentsPerDay
+        self.optional = optional
+    }
+
+    /// The one agent the app may declare in a package of its own, with what
+    /// it reads and writes and its daily cap; the owner approves it on the
+    /// approval page and the token carries the approval (decision 0207).
+    /// Optional: a server without agents takes the rest of the request.
+    public static func agent(_ id: String, reads: [String], writes: [String], spendCentsPerDay: Int) -> AuthorizationDetail {
+        AuthorizationDetail(type: Types.agent, agent: id, reads: reads, writes: writes, spendCentsPerDay: spendCentsPerDay, optional: true)
+    }
+
+    /// The `declare:` scope an agent detail's agent is declared under,
+    /// `declare:~/<package>`; nil for every other detail.
+    public var declareScope: String? {
+        guard type == Types.agent, let agent else { return nil }
+        let parts = agent.split(separator: "/")
+        guard parts.count == 3 else { return nil }
+        return "declare:\(parts[0])/\(parts[1])"
     }
 
     /// A catalog package at `version` or later, installed or upgraded on
@@ -67,10 +102,11 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
     public var sent: AuthorizationDetail {
         var wire = self
         wire.deliversTo = nil
+        wire.optional = false
         return wire
     }
 
-    enum CodingKeys: String, CodingKey { case type, package, version, kind, id, properties, trigger, url }
+    enum CodingKeys: String, CodingKey { case type, package, version, kind, id, properties, trigger, url, agent, reads, writes, spendCentsPerDay }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -83,6 +119,10 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         trigger = c.value(.trigger, or: nil)
         url = c.value(.url, or: nil)
         deliversTo = nil
+        agent = c.value(.agent, or: nil)
+        reads = c.value(.reads, or: nil)
+        writes = c.value(.writes, or: nil)
+        spendCentsPerDay = c.value(.spendCentsPerDay, or: nil)
     }
 
     /// The fields its type carries and nothing else: the server reads a
@@ -97,6 +137,10 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         if let properties, !properties.isEmpty { try c.encode(properties, forKey: .properties) }
         try c.encodeIfPresent(trigger, forKey: .trigger)
         try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(agent, forKey: .agent)
+        try c.encodeIfPresent(reads, forKey: .reads)
+        try c.encodeIfPresent(writes, forKey: .writes)
+        try c.encodeIfPresent(spendCentsPerDay, forKey: .spendCentsPerDay)
     }
 
     /// The details as the compact JSON the `authorization_details` parameter

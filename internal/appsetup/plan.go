@@ -21,6 +21,7 @@ import (
 	"slices"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -84,6 +85,8 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat *catalog.Catalog, detai
 			rows[i], err = p.accountRow(ctx, d)
 		case substrate.DetailWebhook:
 			rows[i], err = p.webhookRow(ctx, d)
+		case substrate.DetailAgent:
+			rows[i] = p.agentRow(d)
 		}
 		if err != nil {
 			return nil, "", err
@@ -567,6 +570,31 @@ func (p *planner) webhookRow(ctx context.Context, d substrate.AuthorizationDetai
 		row.Action = substrate.SetupNone
 	}
 	return row, nil
+}
+
+// agentRow plans an agent detail (decision 0207). Approving sets nothing
+// up: the token carries the approval and the app declares the agent with
+// it, so the row's action is none. It names each kind as the repository
+// holds it, or as not held yet: the app declares only the kinds held, since
+// an agent naming a missing kind is refused at load.
+func (p *planner) agentRow(d substrate.AuthorizationDetail) substrate.AuthorizationSetup {
+	home := p.ds.Repository().Authority
+	resolve := func(home string, kinds []string) []substrate.AuthorizationAgentKind {
+		out := make([]substrate.AuthorizationAgentKind, 0, len(kinds))
+		for _, k := range kinds {
+			id := scope.ResolveAgentKind(k, home)
+			ak := substrate.AuthorizationAgentKind{Identity: id}
+			if info, ok := p.kinds[id]; ok {
+				ak.Held, ak.Label = true, info.Label
+			}
+			out = append(out, ak)
+		}
+		return out
+	}
+	return substrate.AuthorizationSetup{Type: substrate.DetailAgent, Action: substrate.SetupNone, Agent: &substrate.AuthorizationAgentPlan{
+		Agent: scope.ResolveAgentKind(d.Agent, home), Reads: resolve(home, d.Reads), Writes: resolve(home, d.Writes),
+		SpendCentsPerDay: d.SpendCentsPerDay,
+	}}
 }
 
 // triggerProperties is a trigger's properties as the set up will find them:

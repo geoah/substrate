@@ -22,6 +22,10 @@ package is in [`Package/`](../Package/README.md).
   [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md):
   why the app keeps its own package under a `declare:` scope, the one server change it
   needed.
+- Decision record
+  [0207](../../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md)
+  and [the coach plan](../../../../docs/plans/workouts-coach.md): the workout coach the app
+  installs for the owner to use from Substrate Chat.
 
 ### Research
 
@@ -43,6 +47,9 @@ for this repository; the text is as written.
   one record per set, and linking a session to Apple Health.
 - [06 App teardown](research/06-app-teardown.md): the owner's 13 Hevy screenshots, screen by
   screen, and what the app must do in the gym.
+- [07 Coaching](research/07-coaching.md): how a strength coach plans and adjusts
+  training, intake, recovery signals, safety and memory, written on 2026-11-02 for the
+  workout coach and distilled into its instructions (`Package/coach/`).
 
 ### Examples
 

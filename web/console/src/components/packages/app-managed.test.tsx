@@ -71,3 +71,22 @@ it("takes the package over only once its identity is typed", async () => {
     confirm: "ada.example.com/training",
   })
 })
+
+it("words an app's agent as the app's to keep, and its pause as the off switch", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("{}", { status: 404 }))
+  )
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AppManagedSection
+        app="app:workouts.example.org"
+        packageId="ada.example.com/trainingcoach"
+        agent
+      />
+    </QueryClientProvider>
+  )
+  expect(screen.getByText(/keeps this agent: its instructions/)).toBeTruthy()
+  expect(screen.getByText(/Pause it to turn it off/)).toBeTruthy()
+  expect(screen.queryByText(/manages these collections/)).toBeNull()
+})

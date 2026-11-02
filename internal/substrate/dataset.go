@@ -234,6 +234,11 @@ type Dataset interface {
 	// clears the choice), the explicit step of input resolution.
 	BindBundleInput(ctx context.Context, id, input, record string) error
 	UninstallBundle(ctx context.Context, id string) error
+	// UninstallAppBundle is an app removing a package it keeps that declares
+	// no kinds, only its agent (decision 0207): the uninstall runs as the
+	// app, so the ownership chokepoint admits that app alone, and no record
+	// loses its kind.
+	UninstallAppBundle(ctx context.Context, actor Actor, id string) error
 	PurgeBundle(ctx context.Context, id string) (int, error)
 	StartOAuth(ctx context.Context, actor Actor, record string) (string, error)
 	TypesImplementing(ctx context.Context, trait string) ([]KindInfo, error)

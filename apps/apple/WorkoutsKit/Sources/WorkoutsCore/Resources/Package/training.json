@@ -1,6 +1,6 @@
 {
   "package": "~/training",
-  "version": 1,
+  "version": 2,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
@@ -10,7 +10,7 @@
       "data": {
         "authority": "~",
         "package": "training",
-        "version": 1
+        "version": 2
       }
     },
     {
@@ -30,7 +30,8 @@
           "~/training/setup",
           "~/training/routine",
           "~/training/session",
-          "~/training/set"
+          "~/training/set",
+          "~/training/memory"
         ]
       }
     },
@@ -2490,6 +2491,117 @@
             "type": "int",
             "min": 0,
             "description": "rises with each change the writer sends; a lower one is refused"
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/memory"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "One fact about your training that your workout coach keeps: a goal, an injury, your schedule, the equipment you have, how you respond to training, or why a routine changed. The coach reads the active ones at the start of every chat.",
+        "purpose": "primary",
+        "names": {
+          "singular": "memory"
+        },
+        "label": {
+          "singular": "Coach memory",
+          "plural": "Coach memories"
+        },
+        "displayTemplate": "{text}",
+        "properties": {
+          "text": {
+            "type": "text",
+            "required": true,
+            "description": "the fact, in one or two sentences, in the owner's words"
+          },
+          "topic": {
+            "type": "enum",
+            "required": true,
+            "description": "what the fact is about",
+            "values": [
+              {
+                "value": "goal",
+                "label": "Goal"
+              },
+              {
+                "value": "experience",
+                "label": "Experience"
+              },
+              {
+                "value": "schedule",
+                "label": "Schedule"
+              },
+              {
+                "value": "equipment",
+                "label": "Equipment"
+              },
+              {
+                "value": "limitation",
+                "label": "Limitation"
+              },
+              {
+                "value": "preference",
+                "label": "Preference"
+              },
+              {
+                "value": "baseline",
+                "label": "Baseline"
+              },
+              {
+                "value": "lifestyle",
+                "label": "Lifestyle"
+              },
+              {
+                "value": "response",
+                "label": "Response to training"
+              },
+              {
+                "value": "change",
+                "label": "Routine change"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "exercise": {
+            "type": "reference",
+            "kind": "~/training/exercise",
+            "description": "the exercise the fact is about, when it is about one"
+          },
+          "until": {
+            "type": "date",
+            "description": "the last day the fact holds, for a passing one such as a cold or a trip; absent means it holds until it changes"
+          },
+          "active": {
+            "type": "bool",
+            "default": true,
+            "description": "whether the coach reads it; off retires the fact and keeps its history"
+          },
+          "source": {
+            "type": "enum",
+            "default": "owner",
+            "description": "who wrote it",
+            "values": [
+              {
+                "value": "owner",
+                "label": "You"
+              },
+              {
+                "value": "coach",
+                "label": "Your coach"
+              },
+              {
+                "value": "app",
+                "label": "Substrate Workouts"
+              }
+            ]
           }
         }
       }

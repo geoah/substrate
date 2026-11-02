@@ -155,6 +155,19 @@ type TokenInfo struct {
 	// for an app.
 	ClientID   string `json:"clientId,omitempty"`
 	ClientName string `json:"clientName,omitempty"`
+	// Agents are the agents the owner approved the app to declare (decision
+	// 0207), each with its reach and cap; absent on every other token.
+	Agents []AgentApproval `json:"agents,omitempty"`
+}
+
+// AgentApproval is one approved `agent` detail as a token stores it: the
+// agent's id, the exact kinds it may read and write and its daily cap in
+// cents, every authority resolved.
+type AgentApproval struct {
+	Agent            string   `json:"agent"`
+	Reads            []string `json:"reads"`
+	Writes           []string `json:"writes,omitempty"`
+	SpendCentsPerDay int      `json:"spendCentsPerDay"`
 }
 
 // Scoped reports whether the token reaches less than its whole repository.
@@ -169,6 +182,8 @@ type MintTokenInput struct {
 	Scopes     []string
 	ClientID   string
 	ClientName string
+	// Agents are the approved agents of a scoped token, none on any other.
+	Agents []AgentApproval
 }
 
 // MintedToken is what a login and a `POST /tokens` answer with: the token

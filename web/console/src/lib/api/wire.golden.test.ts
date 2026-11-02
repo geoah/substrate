@@ -84,6 +84,9 @@ import type {
   AuthorizationSetup,
   AuthorizationTrigger,
   AuthorizationWebhookPlan,
+  AuthorizationAgentPlan,
+  AuthorizationAgentKind,
+  AgentApproval,
   BlobInfo,
   BundleClosure,
   BundlePurged,
@@ -580,6 +583,14 @@ const tokenInfo: Shape<TokenInfo> = {
   scopes: false,
   clientId: false,
   clientName: false,
+  agents: false,
+}
+
+const agentApproval: Shape<AgentApproval> = {
+  agent: true,
+  reads: true,
+  writes: false,
+  spendCentsPerDay: true,
 }
 
 /** An app's authorization request as the approval page reads it, and the
@@ -648,6 +659,10 @@ const authorizationDetail: Shape<AuthorizationDetail> = {
   properties: false,
   trigger: false,
   url: false,
+  agent: false,
+  reads: false,
+  writes: false,
+  spendCentsPerDay: false,
 }
 
 const authorizationSetup: Shape<AuthorizationSetup> = {
@@ -658,6 +673,23 @@ const authorizationSetup: Shape<AuthorizationSetup> = {
   package: false,
   account: false,
   webhook: false,
+  agent: false,
+}
+
+const authorizationAgentPlan: Shape<AuthorizationAgentPlan> = {
+  agent: true,
+  reads: false,
+  writes: false,
+  spendCentsPerDay: false,
+  allowed: false,
+  talkedToBy: false,
+  withheld: false,
+}
+
+const authorizationAgentKind: Shape<AuthorizationAgentKind> = {
+  identity: true,
+  label: false,
+  held: false,
 }
 
 const authorizationBlock: Shape<AuthorizationBlock> = {
@@ -722,6 +754,7 @@ const authorizationPrevious: Shape<AuthorizationPrevious> = {
   approvedAt: true,
   expiresAt: false,
   scopes: true,
+  agents: false,
 }
 
 const authorizationFailure: Shape<AuthorizationFailure> = {
@@ -1192,6 +1225,9 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationTrigger: authorizationTrigger,
   AuthorizationAccount: authorizationAccount,
   AuthorizationWebhookPlan: authorizationWebhookPlan,
+  AuthorizationAgentPlan: authorizationAgentPlan,
+  AuthorizationAgentKind: authorizationAgentKind,
+  AgentApproval: agentApproval,
   AuthorizationPrevious: authorizationPrevious,
   AuthorizationFailure: authorizationFailure,
   AuthorizationCheck: authorizationCheck,

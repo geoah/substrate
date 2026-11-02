@@ -34,7 +34,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -911,13 +913,30 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	if in.ClientName != "" {
 		props["clientName"] = in.ClientName
 	}
+	if len(in.Agents) > 0 {
+		if in.Scopes == nil {
+			return zero, "", fmt.Errorf("%w: only an app's scoped token carries approved agents", substrate.ErrValidation)
+		}
+		if _, err := checkAgentApprovals(in.Agents); err != nil {
+			return zero, "", fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+		agents := make([]any, len(in.Agents))
+		for i, a := range in.Agents {
+			entry := map[string]any{"agent": a.Agent, "reads": stringsAny(a.Reads), "spendCentsPerDay": a.SpendCentsPerDay}
+			if len(a.Writes) > 0 {
+				entry["writes"] = stringsAny(a.Writes)
+			}
+			agents[i] = entry
+		}
+		props["agents"] = agents
+	}
 	ent, err := t.put(substrate.PutInput{Kind: kindToken, Properties: props})
 	if err != nil {
 		return zero, "", err
 	}
 	return substrate.TokenInfo{
 		ID: ent.ID, Label: in.Label, Created: ent.CreatedAt, ExpiresAt: in.ExpiresAt,
-		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
+		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName, Agents: in.Agents,
 	}, secret, nil
 }
 
@@ -926,7 +945,7 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, props->>'label', props->>'expiresAt', props->'scopes',
-		       props->>'clientId', props->>'clientName', created_at
+		       props->>'clientId', props->>'clientName', props->'agents', created_at
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC, id`, kindToken)
@@ -938,8 +957,8 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	for rows.Next() {
 		var info substrate.TokenInfo
 		var label, expires, clientID, clientName sql.NullString
-		var scopes []byte
-		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &info.Created); err != nil {
+		var scopes, agents []byte
+		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &agents, &info.Created); err != nil {
 			return nil, err
 		}
 		info.Label = label.String
@@ -951,6 +970,7 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		if info.Scopes, derr = decodeScopes(scopes); derr != nil {
 			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
 		}
+		info.Agents = softAgents(ds.svc.log, info.ID, agents)
 		info.ClientID, info.ClientName = clientID.String, clientName.String
 		out = append(out, info)
 	}
@@ -987,6 +1007,61 @@ func decodeScopes(raw []byte) ([]string, error) {
 		return nil, fmt.Errorf("token scopes unreadable: %w", err)
 	}
 	return scopes, nil
+}
+
+// decodeAgents reads a token record's `agents` column (decision 0207): nil
+// when absent, an error when present and unreadable, so a damaged approval
+// fails closed rather than reading as another.
+func decodeAgents(raw []byte) ([]substrate.AgentApproval, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	var list []substrate.AgentApproval
+	if err := json.Unmarshal(raw, &list); err != nil || list == nil {
+		return nil, errors.New("token agents are not a list of approvals")
+	}
+	return checkAgentApprovals(list)
+}
+
+// softAgents is a token's approved agents, or none when they cannot be read
+// or are no longer admissible (a damaged write, or a later release that
+// narrowed the rule). Only the approvals fail, and closed: the agent stops,
+// while the token still authenticates and every token still lists.
+func softAgents(log *slog.Logger, token string, raw []byte) []substrate.AgentApproval {
+	agents, err := decodeAgents(raw)
+	if err != nil {
+		log.Warn("substrate: a token's approved agents are unreadable; the token approves none", "token", token, "error", err)
+		return nil
+	}
+	return agents
+}
+
+// checkAgentApprovals holds stored approvals to what an agent detail admits:
+// an agent id, at least one read, every kind under the effective-permission
+// rule, and a cap from a cent to the ceiling.
+func checkAgentApprovals(list []substrate.AgentApproval) ([]substrate.AgentApproval, error) {
+	for _, a := range list {
+		if a.Agent == "" || len(a.Reads) == 0 {
+			return nil, errors.New("a token's approved agent names no agent or reads nothing")
+		}
+		for _, k := range append(slices.Clone(a.Reads), a.Writes...) {
+			if p := scope.AgentKindProblem(k); p != "" || strings.HasPrefix(k, scope.Home) {
+				return nil, fmt.Errorf("a token's approved agent %s names %s, which is not admissible", a.Agent, k)
+			}
+		}
+		if a.SpendCentsPerDay < 1 || a.SpendCentsPerDay > substrate.AppAgentSpendCeilingCents {
+			return nil, fmt.Errorf("a token's approved agent %s caps its day at %d cents", a.Agent, a.SpendCentsPerDay)
+		}
+	}
+	return list, nil
+}
+
+func stringsAny(in []string) []any {
+	out := make([]any, len(in))
+	for i, s := range in {
+		out[i] = s
+	}
+	return out
 }
 
 func parseStamp(s sql.NullString) *time.Time {
@@ -1049,16 +1124,16 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 	var zero substrate.TokenInfo
 	var info substrate.TokenInfo
 	var label, got, expires, clientID, clientName sql.NullString
-	var scopes []byte
+	var scopes, agents []byte
 	row := s.maint.QueryRowContext(ctx, `
 		SELECT `+tokenRepositoryColumns+`,
 		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt',
-		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.created_at
+		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.props->'agents', r.created_at
 		FROM records r JOIN repositories p ON p.id = r.repository
 		WHERE r.kind = $1 AND r.deleted_at IS NULL AND r.props @> jsonb_build_object('hash', $2::text)`,
 		kindToken, hash)
 	repo, err := scanRepositoryRow(func(dest ...any) error {
-		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &info.Created)...)
+		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &agents, &info.Created)...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
@@ -1076,6 +1151,7 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 	if info.Scopes, err = decodeScopes(scopes); err != nil {
 		return Repository{}, zero, fmt.Errorf("%w: %w", substrate.ErrAuth, err)
 	}
+	info.Agents = softAgents(s.log, info.ID, agents)
 	// Expiry is SERVER-ENFORCED here: a token past its stamp authenticates as
 	// a spent credential, so no dataset is ever handed out for it. An
 	// unreadable stamp fails closed for the same reason.

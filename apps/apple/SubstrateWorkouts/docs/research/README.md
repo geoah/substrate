@@ -26,6 +26,7 @@ The six documents build on substrate's `docs/plans/health-data/02-workouts.md` (
 - [04-ios-platform.md](04-ios-platform.md): iOS 27 APIs checked in the 27.2 SDK. It covers Liquid Glass, the rest timer on a locked phone (Live Activity, time-sensitive notification, AlarmKit), the Apple Health export, session safety, readiness for a watch app, and signing.
 - [05-substrate-fit.md](05-substrate-fit.md): where routines, sessions and sets live in substrate. It compares three record shapes, sketches the recommended kinds, and covers the link to Apple Health and `health/workout`.
 - [06-app-teardown.md](06-app-teardown.md): the owner's 13 Hevy screenshots, read screen by screen. It also surveys eleven other strength apps and their reviews, and gives a prioritised feature list, flows and pain points.
+- [07-coaching.md](07-coaching.md): written later, on 2026-11-02, for the workout coach: intake, programme defaults, adjusting from data, recovery signals, safety and memory.
 
 ## Short answers
 
