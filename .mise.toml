@@ -302,7 +302,10 @@ description = "The live end-to-end suite: a fresh user on the dev substrate, lef
 # each of those waits was mostly the tick. The OAuth callback URL turns the
 # OAuth facility on, which OAU-01 to OAU-03 drive. The second factor follows
 # the caller: `SUBSTRATE_INSECURE_DISABLE_TOTP=false mise run test:e2e` runs
-# the suite against the enforced door, which AUTH-05 and AUTH-07 need.
+# the suite against the enforced door, which AUTH-05 and AUTH-07 need. The
+# cases declare their kinds under fixed `*.e2e.example` authorities, not the
+# repository's fresh one, so the server lets a token create a package under
+# any authority (SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES, decision 0210).
 run = [
   "mise run build",
   "mise run build:cli",
@@ -312,6 +315,7 @@ run = [
     export SUBSTRATE_EGRESS_ALLOW="127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}"
     export SUBSTRATE_SANDBOX_EGRESS_ALLOW="127.0.0.0/8,::1/128${SUBSTRATE_SANDBOX_EGRESS_ALLOW:+,$SUBSTRATE_SANDBOX_EGRESS_ALLOW}"
     export SUBSTRATE_TRIGGER_INTERVAL="${SUBSTRATE_TRIGGER_INTERVAL:-1s}"
+    export SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES=true
     export SUBSTRATE_OAUTH_CALLBACK_URL="${SUBSTRATE_OAUTH_CALLBACK_URL:-http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}/api/v1/oauth/callback}"
     .mise/dev.sh restart
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \

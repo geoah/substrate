@@ -438,9 +438,9 @@ func (c *Catalog) Requirements(ctx context.Context, id string, ds substrate.Data
 // repository's own authority. Install still admits one, verbatim under the
 // placeholder: nothing in the tree needs that door now that no provider names
 // a sample package, but a repository that wants the shipped vocabulary under
-// the shipped authority may still ask for it, which is what
-// `authorizeNewPackage` sanctions. It takes the same suggested-mapping filter
-// an import does.
+// the shipped authority may still ask for it. The install writes as the
+// bundle, a substrate path, so `authorizeNewPackage` (decision 0210) does not
+// bind it. It takes the same suggested-mapping filter an import does.
 func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, []substrate.SuggestedMapping, error) {
 	return c.InstallConfirmed(ctx, actor, id, ds, nil)
 }

@@ -206,6 +206,8 @@ type options struct {
 	// (runner.go runCallableRaw), so a test can act while the body runs.
 	// Inert unless set.
 	invokeHook func(function string)
+	// foreignPackages lifts decision 0210 (WithInsecureForeignPackages).
+	foreignPackages bool
 	// healthNow is the clock the failing-trigger read measures a park's age
 	// on (seams.go WithTestHealthClock); the wall clock when nil.
 	healthNow func() time.Time
@@ -387,6 +389,17 @@ func WithInsecureDisableTOTP() Option {
 	return func(o *options) { o.insecureDisableTOTP = true }
 }
 
+// WithInsecureForeignPackages lifts decision 0210 (seed.go
+// authorizeNewPackage): a token may create a package under any authority,
+// which is the hand apply of a shipped provider's rewired files that the
+// provider end-to-end suite runs. It exists for a local substrate
+// (SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES) until a development document
+// replaces it; never set it where the substrate is reachable, because any
+// token may then squat another authority's package names.
+func WithInsecureForeignPackages(on bool) Option {
+	return func(o *options) { o.foreignPackages = on }
+}
+
 // WithLLMSampleSeed controls whether CreateRepository imports the shipped
 // LLM sample (the demo agents and scratchpad) onto the repository's own
 // authority. Production Open defaults on. OpenForTest turns it off so the
@@ -491,6 +504,8 @@ type service struct {
 	deliverySlots chan struct{}
 	// healthFailingAfter is the failing window (health.go), always positive.
 	healthFailingAfter time.Duration
+	// foreignPackages is options.foreignPackages.
+	foreignPackages bool
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
@@ -826,6 +841,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		orphanGrace:        o.orphanGrace,
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
+		foreignPackages:    o.foreignPackages,
 		laneWorkers:        o.laneWorkers,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,

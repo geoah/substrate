@@ -396,10 +396,11 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
 
-	// The hand door: the closure's own files, applied by the repository's
-	// token. What lands is the repository's, and it stays writable.
+	// A copy held from before decision 0210, when the repository's token
+	// could apply the closure's own files. What lands is the repository's,
+	// and it stays writable.
 	installHealth(t, ds)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(whoopID), whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourceInstalled {
@@ -483,7 +484,7 @@ func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 	ctx := context.Background()
 
 	installHealth(t, ds)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(whoopID), whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
 	const notionID = whoopAuthority + "/notion"
@@ -543,7 +544,7 @@ func TestAChangedDurationOrReferenceMovesThePackage(t *testing.T) {
 			ds := newDataset(t)
 			ctx := context.Background()
 			installHealth(t, ds)
-			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+			if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(whoopID), whoopClosure(t)); err != nil {
 				t.Fatalf("apply the whoop closure: %v", err)
 			}
 			first := packageVersion(t, ds, whoopID)
@@ -577,4 +578,13 @@ func packageVersion(t *testing.T, ds substrate.Dataset, pkg string) int64 {
 		t.Fatalf("package %s carries no version: %v", pkg, row.Properties["version"])
 	}
 	return v
+}
+
+// heldHand writes a package the repository holds from before decision 0210,
+// when a token could apply another authority's files by hand. A token now
+// creates packages only under its own authority, so the fixture writes as
+// the bundle an install would; later writes to the held package stay the
+// token's.
+func heldHand(pkg string) substrate.Actor {
+	return substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
 }

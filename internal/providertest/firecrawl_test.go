@@ -232,7 +232,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	// The atomic install from the shipped manifest — bundle.yaml ALONE: the
 	// closure ships zero triggers, and it admits.
 	vocabularyDocs := loadDocs(t, firecrawlDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, closureHand(t, vocabularyDocs), vocabularyDocs); err != nil {
 		t.Fatalf("install the firecrawl bundle: %v", err)
 	}
 	assertMembers(t, ds, map[string]string{
