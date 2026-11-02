@@ -10,7 +10,8 @@ import (
 
 // TAKEOVER IS DELIBERATE (decision 0205): without --confirm repeating the
 // package it refuses before it sends anything; with it, it posts the package
-// twice under the actor the CLI writes as and prints the new declarer.
+// twice under the actor the CLI writes as and prints the app it was taken
+// from and the new declarer.
 func TestTakeoverConfirmsThePackageBeforeItSends(t *testing.T) {
 	h := newHarness(t)
 	var got []map[string]string
@@ -25,7 +26,7 @@ func TestTakeoverConfirmsThePackageBeforeItSends(t *testing.T) {
 		got = append(got, body)
 		actors = append(actors, r.Header.Get("X-Substrate-Actor"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"substrate.reamde.dev/core/package","id":"geoah/training","properties":{"declaredBy":"substratectl"}}`))
+		_, _ = w.Write([]byte(`{"kind":"substrate.reamde.dev/core/package","id":"geoah/training","properties":{"declaredBy":"substratectl","takenOverFrom":"https://workouts.example.org/client.json"}}`))
 	}))
 	defer srv.Close()
 	h.server = srv.URL
@@ -46,7 +47,7 @@ func TestTakeoverConfirmsThePackageBeforeItSends(t *testing.T) {
 	if len(got) != 1 || got[0]["package"] != "geoah/training" || got[0]["confirm"] != "geoah/training" || actors[0] != "substratectl" {
 		t.Fatalf("the server saw %v as %v", got, actors)
 	}
-	if !strings.Contains(out, "declared by substratectl") {
+	if !strings.Contains(out, "taken over from https://workouts.example.org/client.json, declared by substratectl") {
 		t.Fatalf("stdout = %q", out)
 	}
 }

@@ -51,7 +51,7 @@ import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { METRIC_TRAIT, SYNC_TRAIT } from "@/lib/core-kinds"
 import { OBSERVED_SHOWN, observedVariant } from "@/lib/observations"
-import { packagesQueryOptions } from "@/lib/packages"
+import { awaitsPackageRows, packagesQueryOptions } from "@/lib/packages"
 import { readOnlyReason } from "@/lib/provenance"
 import { foldedBy } from "@/lib/record-view"
 import { inkPlan, inkPlanNames } from "@/lib/ink-record"
@@ -132,7 +132,9 @@ export function RecordDocument({
   // with a record of their own, and takes the third's package over (the
   // header says how).
   const packages = useQuery(packagesQueryOptions)
-  const readOnly = Boolean(readOnlyReason(record, packages.data))
+  const readOnly =
+    Boolean(readOnlyReason(record, packages.data)) ||
+    awaitsPackageRows(record, packages.isPending)
   const { rows } = useRecordChanges(record)
   const moved = useLiveRecord(record)
   const mappingIds = useMemo(

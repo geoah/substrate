@@ -28,10 +28,10 @@ func TestAnAppOwnsThePackageItDeclares(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mint := func(host string) *testenv.Env {
+	mint := func(client string) *testenv.Env {
 		t.Helper()
 		_, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{
-			Label: host, ClientID: "https://" + host + "/client.json", ClientName: host,
+			Label: client, ClientID: client, ClientName: client,
 			Scopes: []string{"declare:" + pkg, "read:" + pkg + "/*", "write:" + pkg + "/*"},
 		})
 		if err != nil {
@@ -39,8 +39,13 @@ func TestAnAppOwnsThePackageItDeclares(t *testing.T) {
 		}
 		return e.WithToken(secret)
 	}
-	workouts, notes := mint("workouts.example.org"), mint("notes.example.org")
-	const owner = "app:workouts.example.org"
+	// Notes is another app; Planner is served from Workouts' own host, so it
+	// writes as the same `app:workouts.example.org` actor and is still not
+	// the owner, which is the client id.
+	const owner = "https://workouts.example.org/client.json"
+	workouts := mint(owner)
+	notes := mint("https://notes.example.org/client.json")
+	planner := mint("https://workouts.example.org/planner/client.json")
 
 	docs := func(props ...string) map[string]any {
 		declared := map[string]any{}
@@ -101,6 +106,25 @@ func TestAnAppOwnsThePackageItDeclares(t *testing.T) {
 	}
 	status, body := as(notes, "", http.MethodPost, "/api/v1/vocabulary/apply", docs("reps", "weight"))
 	refused("another app with the same scope applies the package", status, body)
+	status, body = as(planner, "", http.MethodPost, "/api/v1/vocabulary/apply", docs("reps", "weight"))
+	refused("another app on the owner's host applies the package", status, body)
+	if status, body := as(e, "", http.MethodGet, packagePath, nil); status != http.StatusOK ||
+		!strings.Contains(body, `"declaredBy":"app:workouts.example.org"`) || !strings.Contains(body, `"declaredByClient":"`+owner+`"`) {
+		t.Fatalf("the package row names its app: %d %s", status, body)
+	}
+
+	// The bundle's runtime switch is the owner's; its purge is not.
+	bundlePath := "/api/v1/substrate.reamde.dev/core/bundle/" + url.PathEscape(pkg)
+	for _, off := range []bool{true, false, true} {
+		if status, body := as(e, "console", http.MethodPatch, bundlePath, map[string]any{"properties": map[string]any{"disabled": off}}); status != http.StatusOK {
+			t.Fatalf("the owner switches the app's bundle (disabled %v): %d %s", off, status, body)
+		}
+	}
+	status, body = as(e, "console", http.MethodPatch, bundlePath, map[string]any{"properties": map[string]any{"purging": true}})
+	refused("the owner purges the app's bundle", status, body)
+	if status, body := as(e, "console", http.MethodPatch, bundlePath, map[string]any{"properties": map[string]any{"disabled": false}}); status != http.StatusOK {
+		t.Fatalf("the owner enables the app's bundle: %d %s", status, body)
+	}
 
 	// The records stay the owner's.
 	recordPath := "/api/v1/" + set + "/s1"
@@ -124,14 +148,20 @@ func TestAnAppOwnsThePackageItDeclares(t *testing.T) {
 	if status, body := as(e, "console", http.MethodPost, "/api/v1/vocabulary/takeover", map[string]any{"package": pkg, "confirm": "training"}); status != http.StatusUnprocessableEntity {
 		t.Errorf("a takeover with the wrong confirmation: %d %s", status, body)
 	}
-	if status, body := as(e, "console", http.MethodPost, "/api/v1/vocabulary/takeover", takeover); status != http.StatusOK || !strings.Contains(body, `"declaredBy":"console"`) {
-		t.Fatalf("the owner takes the package over: %d %s", status, body)
+	if status, body := as(e, "console", http.MethodPost, "/api/v1/vocabulary/takeover", takeover); status != http.StatusOK ||
+		!strings.Contains(body, `"declaredBy":"console"`) || !strings.Contains(body, `"takenOverFrom":"`+owner+`"`) {
+		t.Fatalf("the owner takes the package over, and the answer names the app: %d %s", status, body)
 	}
 	if status, body := as(e, "substratectl", http.MethodPost, "/api/v1/vocabulary/apply", docs("reps", "weight", "rpe")); status != http.StatusOK {
 		t.Fatalf("the owner edits the package after taking it over: %d %s", status, body)
 	}
 	if status, body := as(workouts, "", http.MethodPost, "/api/v1/vocabulary/apply", docs("reps", "weight", "rpe", "tempo")); status != http.StatusForbidden {
 		t.Fatalf("the app wrote a package the owner took over: %d %s", status, body)
+	}
+	// The app's record writes, its outbox, still land: the token and its
+	// write scope are untouched by the takeover.
+	if status, body := as(workouts, "", http.MethodPut, "/api/v1/"+set+"/s2", map[string]any{"properties": map[string]any{"reps": "6"}}); status/100 != 2 {
+		t.Fatalf("the app writes a record after the takeover: %d %s", status, body)
 	}
 	if status, body := as(e, "console", http.MethodDelete, recordPath, nil); status/100 != 2 {
 		t.Fatalf("the owner deletes a record of the kind: %d %s", status, body)

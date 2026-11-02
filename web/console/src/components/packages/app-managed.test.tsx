@@ -35,6 +35,7 @@ it("takes the package over only once its identity is typed", async () => {
     <QueryClientProvider client={new QueryClient()}>
       <AppManagedSection
         app="app:workouts.example.org"
+        clientId="https://workouts.example.org/client.json"
         packageId="ada.example.com/training"
       />
     </QueryClientProvider>
@@ -42,6 +43,10 @@ it("takes the package over only once its identity is typed", async () => {
   expect(
     screen.getByText(/workouts\.example\.org manages these collections/)
   ).toBeTruthy()
+  expect(
+    screen.getByText("https://workouts.example.org/client.json")
+  ).toBeTruthy()
+  expect(screen.getByText(/You can pause it and resume it/)).toBeTruthy()
   fireEvent.click(screen.getByRole("button", { name: "Take over…" }))
   const confirm = screen.getByRole("button", { name: "Take over" })
   expect((confirm as HTMLButtonElement).disabled).toBe(true)
@@ -54,9 +59,12 @@ it("takes the package over only once its identity is typed", async () => {
   })
   expect((confirm as HTMLButtonElement).disabled).toBe(false)
   fireEvent.click(confirm)
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
-  const [path, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
-  expect(path).toBe("/api/v1/vocabulary/takeover")
+  const takeover = () =>
+    (fetch.mock.calls as unknown as [string, RequestInit][]).find(
+      ([path]) => path === "/api/v1/vocabulary/takeover"
+    )
+  await vi.waitFor(() => expect(takeover()).toBeTruthy())
+  const [, init] = takeover()!
   expect(init.method).toBe("POST")
   expect(JSON.parse(String(init.body))).toEqual({
     package: "ada.example.com/training",

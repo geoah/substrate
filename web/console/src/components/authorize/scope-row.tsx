@@ -11,11 +11,7 @@ import type {
   SubstrateRecord,
 } from "@/lib/api/types"
 import { agentName, canChange, canSee } from "@/lib/agent-chat"
-import {
-  DECLARE_OWNERSHIP_NOTE,
-  overAgents,
-  scopeSentence,
-} from "@/lib/app-scopes"
+import { overAgents, scopeSentence } from "@/lib/app-scopes"
 
 /** How many kinds a scope lists before it offers the rest. */
 const KIND_PREVIEW = 8
@@ -215,9 +211,9 @@ export function ScopeRow({
         <label htmlFor={id} className="cursor-pointer">
           {scopeSentence(scope)}
         </label>
-        {scope.verb === "declare" && (
-          <p className="text-xs text-muted-foreground">
-            {DECLARE_OWNERSHIP_NOTE}
+        {scope.refused && (
+          <p className="text-xs text-destructive">
+            Can’t be approved: {scope.refused}.
           </p>
         )}
         {technical && <ScopeFacts scope={scope} repository={repository} />}

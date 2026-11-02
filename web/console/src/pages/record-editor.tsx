@@ -92,6 +92,7 @@ import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { actorIdentity } from "@/lib/actor-identity"
 import {
+  awaitsPackageRows,
   declarationApp,
   packagesQueryOptions,
   type PackageRow,
@@ -155,7 +156,13 @@ function RecordEditor({
     enabled: mode === "edit" && Boolean(id),
   })
 
-  const ready = !registry.isPending && (mode === "create" || !record.isPending)
+  // A declaration's editor waits for the package rows too: they say whether
+  // an app manages it (decision 0205).
+  const ready =
+    !registry.isPending &&
+    (mode === "create" ||
+      (!record.isPending &&
+        !(record.data && awaitsPackageRows(record.data, packages.isPending))))
 
   if (!ready) return <EditorSkeleton />
 

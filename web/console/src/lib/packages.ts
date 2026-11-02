@@ -27,6 +27,9 @@ export interface PackageRow {
   /** The actor whose transaction created the row; absent on a package
    * created before the engine stamped it. */
   declaredBy?: string
+  /** The client id of the app that declared it, beside its `app:<host>`
+   * actor: what ownership is compared on (decision 0205). */
+  declaredByClient?: string
 }
 
 /** A page of `package` records → the rows, by id. */
@@ -36,9 +39,13 @@ export function packageRows(
   const out = new Map<string, PackageRow>()
   for (const record of page.records ?? []) {
     const declaredBy = record.properties?.declaredBy
+    const declaredByClient = record.properties?.declaredByClient
     out.set(record.id, {
       id: record.id,
       ...(typeof declaredBy === "string" && declaredBy ? { declaredBy } : {}),
+      ...(typeof declaredByClient === "string" && declaredByClient
+        ? { declaredByClient }
+        : {}),
     })
   }
   return out
@@ -117,6 +124,18 @@ export function declarationApp(
     default:
       return undefined
   }
+}
+
+/** Whether a record's edit doors wait for the package rows: a bundle or a
+ * kind, whose package's row says whether an app manages it (decision 0205),
+ * while those rows load. A package row says it on itself and never waits.
+ * Without the wait, an app's kind offers the edit sheet for a moment and the
+ * server's refusal arrives as a toast instead of the read-only page. */
+export function awaitsPackageRows(
+  record: Pick<SubstrateRecord, "kind">,
+  pending: boolean
+): boolean {
+  return pending && (record.kind === BUNDLE_KIND || record.kind === KIND_KIND)
 }
 
 /** Where a kind's records come from, with its package's declarer in view: an

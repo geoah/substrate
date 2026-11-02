@@ -43,7 +43,11 @@ import {
 import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { actorIdentity, providerOfKind } from "@/lib/actor-identity"
-import { declarationApp, packagesQueryOptions } from "@/lib/packages"
+import {
+  awaitsPackageRows,
+  declarationApp,
+  packagesQueryOptions,
+} from "@/lib/packages"
 import { splitKind } from "@/lib/api/http"
 import { createRecord } from "@/lib/api/records"
 import { deleteRecord } from "@/lib/api/sync"
@@ -210,7 +214,11 @@ export function RecordHeader({
   const packages = useQuery(packagesQueryOptions)
   const app =
     provider || adapter ? undefined : declarationApp(record, packages.data)
-  const locked = Boolean(provider) || Boolean(adapter) || Boolean(app)
+  const locked =
+    Boolean(provider) ||
+    Boolean(adapter) ||
+    Boolean(app) ||
+    awaitsPackageRows(record, packages.isPending)
   const facts = headerFacts(record, rows)
   const path = `${record.kind}/${record.id}`
   const { authority, pkg, name } = splitKind(record.kind)

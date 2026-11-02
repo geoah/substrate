@@ -26,7 +26,8 @@ takeover makes the package yours. Nothing else moves: no kind, no record, no
 token. The app keeps its token and its scope, and its next change to the package
 is refused, so take a package over only when you mean to manage its kinds
 yourself from now on. It cannot be handed back. --confirm repeats the package
-identity.`,
+identity. The answer, and the package row from then on, name the app it was
+taken from.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pkg := args[0]
@@ -42,7 +43,11 @@ identity.`,
 			if err := cl.do(cmd.Context(), http.MethodPost, pathVocabularyTakeover, nil, body, &row); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "package %s: taken over, declared by %v\n", pkg, row.Properties["declaredBy"])
+			from := "an app"
+			if f, _ := row.Properties[substrate.PackageTakenOverFrom].(string); f != "" {
+				from = f
+			}
+			fmt.Fprintf(a.out, "package %s: taken over from %s, declared by %v\n", pkg, from, row.Properties[substrate.PackageDeclaredBy])
 			return nil
 		},
 	}

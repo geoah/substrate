@@ -429,7 +429,13 @@ export function PackagePage() {
           </ul>
         </section>
       )}
-      {app && <AppManagedSection app={app} packageId={`${authority}/${pkg}`} />}
+      {app && (
+        <AppManagedSection
+          app={app}
+          clientId={packages.data?.get(`${authority}/${pkg}`)?.declaredByClient}
+          packageId={`${authority}/${pkg}`}
+        />
+      )}
       {agentId && (
         <section>
           <SectionHead title="Made by" />

@@ -12,34 +12,99 @@ import (
 	"fmt"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// packageOwner is the app that owns pkg: its live package row's `declaredBy`
-// where that names an app, empty otherwise (a package nobody holds, one the
-// owner, an agent or the substrate declared, or one created before the
-// stamp). Ownership is read from the row on every write, never cached: the
-// row is the changelog's, so a rebuild, an export and a takeover all carry
-// it, and a repository that already holds an app's package needs no
-// migration to have it owned.
-func (ds *dataset) packageOwner(ctx context.Context, q dbx, pkg string) (substrate.Actor, error) {
-	var by sql.NullString
+// packageOwner is the app that owns pkg, read off its live package row's
+// `declaredBy` and `declaredByClient` (substrate.PackageOwnerOf): the zero
+// value for a package nobody holds, one the owner, an agent or the substrate
+// declared, or one created before the stamp. Ownership is read from the row
+// on every write, never cached: the row is the changelog's, so a rebuild, an
+// export and a takeover all carry it, and a repository that already holds an
+// app's package needs no migration to have it owned.
+func (ds *dataset) packageOwner(ctx context.Context, q dbx, pkg string) (substrate.PackageOwner, error) {
+	var by, client sql.NullString
 	err := q.QueryRowContext(ctx,
-		`SELECT props->>'`+propPackageDeclaredBy+`' FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
-		kindPackage, pkg).Scan(&by)
+		`SELECT props->>'`+propPackageDeclaredBy+`', props->>'`+propPackageDeclaredByClient+`' FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		kindPackage, pkg).Scan(&by, &client)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+		return substrate.PackageOwner{}, nil
 	}
 	if err != nil {
-		return "", err
+		return substrate.PackageOwner{}, err
 	}
-	if a := substrate.Actor(by.String); substrate.IsAppActor(a) {
-		return a, nil
+	return substrate.PackageOwnerOf(map[string]any{
+		propPackageDeclaredBy: by.String, propPackageDeclaredByClient: client.String,
+	}), nil
+}
+
+// appOwnedPackages is every live package an app owns, by identity: what the
+// dependency guard reads (appDependentGuards).
+func (ds *dataset) appOwnedPackages(ctx context.Context, q dbx) (map[string]substrate.PackageOwner, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT id, props->>'`+propPackageDeclaredBy+`', props->>'`+propPackageDeclaredByClient+`' FROM records
+		  WHERE kind = $1 AND deleted_at IS NULL AND props->>'`+propPackageDeclaredBy+`' LIKE $2`,
+		kindPackage, substrate.AppActorPrefix+"%")
+	if err != nil {
+		return nil, err
 	}
-	return "", nil
+	defer func() { _ = rows.Close() }()
+	out := map[string]substrate.PackageOwner{}
+	for rows.Next() {
+		var id string
+		var by, client sql.NullString
+		if err := rows.Scan(&id, &by, &client); err != nil {
+			return nil, err
+		}
+		if o := substrate.PackageOwnerOf(map[string]any{propPackageDeclaredBy: by.String, propPackageDeclaredByClient: client.String}); o.App() {
+			out[id] = o
+		}
+	}
+	return out, rows.Err()
+}
+
+// appDependentGuards refuses a batch that would leave an app's package
+// requiring what the candidate no longer holds (decision 0205). The batch
+// does not touch the app's package, so the chokepoint does not stop it, and
+// the candidate rebuilds only what the batch touches: uninstalling health,
+// which training requires, would otherwise land, and training would meet the
+// missing requirement only at its next apply, or be quarantined at the next
+// open. The app cannot fix that and the owner cannot edit the package, so the
+// batch is refused instead, naming the app's package and who keeps it. The
+// owner takes the app's package over, or removes it, first. A package the
+// owner keeps is not guarded here: its owner can mend it.
+func appDependentGuards(owned map[string]substrate.PackageOwner, candidate *vocabulary.Registry, touched map[string]bool) []string {
+	var out []string
+	for _, id := range sortedKeys(owned) {
+		if touched[id] {
+			continue
+		}
+		g, ok := candidate.PackageByName(id)
+		if !ok || g.Bundle == nil {
+			continue
+		}
+		for _, req := range g.Bundle.Requires {
+			if !touched[req] {
+				continue
+			}
+			held, ok := candidate.PackageByName(req)
+			floor, pinned := g.Bundle.RequiresAtLeast[req]
+			switch {
+			case !ok:
+				out = append(out, fmt.Sprintf("%s requires %s, and %s is managed by the app %s, which cannot be changed to do without it: take %s over, or remove it, first",
+					id, req, id, owned[id], id))
+			case pinned && vocabulary.CompareVersions(held.Version, floor) < 0:
+				out = append(out, fmt.Sprintf("%s requires %s at version %d or later, and %s is managed by the app %s: take %s over, or remove it, first",
+					id, req, floor, id, owned[id], id))
+			}
+		}
+	}
+	return out
 }
 
 // TakeOverPackage makes an app's package the owner's: the package row's
-// `declaredBy` becomes the hand that took it over, so the chokepoint no
+// `declaredBy` becomes the hand that took it over, `takenOverFrom` names the
+// app it was taken from and `declaredByClient` is cleared, so the chokepoint no
 // longer names an app and the owner's doors write the package's declarations
 // as they write any of their own. It is deliberate on both ends: confirm must
 // repeat the package identity, and only the owner's own hand may take it (a
@@ -65,17 +130,27 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 		if row == nil || row.DeletedAt != nil {
 			return fmt.Errorf("%w: package %s", substrate.ErrNotFound, pkg)
 		}
-		owner, _ := row.Props[propPackageDeclaredBy].(string)
-		if !substrate.IsAppActor(substrate.Actor(owner)) {
+		owner := substrate.PackageOwnerOf(row.Props)
+		if !owner.App() {
 			return fmt.Errorf("%w: %s is not managed by an app: its declarations are already yours to change", substrate.ErrConflict, pkg)
 		}
 		ty, err := ds.resolveType(kindPackage)
 		if err != nil {
 			return err
 		}
-		out, err = t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: pkg, Properties: map[string]any{
-			propPackageDeclaredBy: string(actor),
-		}})
+		// The row says who it was taken from, so the answer and the
+		// changelog entry both name the app, and the app's client id leaves
+		// the row with its ownership. A `package` kind from before the two
+		// properties (a withheld upgrade) carries the old actor in the
+		// entry's delta alone.
+		props := map[string]any{propPackageDeclaredBy: string(actor)}
+		if ty.Props[propPackageTakenOverFrom] != nil {
+			props[propPackageTakenOverFrom] = owner.String()
+		}
+		if ty.Props[propPackageDeclaredByClient] != nil {
+			props[propPackageDeclaredByClient] = nil
+		}
+		out, err = t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: pkg, Properties: props})
 		return err
 	})
 	if err != nil {

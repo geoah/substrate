@@ -974,6 +974,11 @@ export interface AuthorizationScope {
    * a wider pattern a narrower one), so the page folds it under what was
    * allowed before. */
   allowed?: boolean
+  /** Why this scope cannot be approved: a declare scope over a package the
+   * owner keeps, or one another app declared (decision 0205). The page
+   * leaves it unchecked and says why; the server refuses an approval that
+   * names it. */
+  refused?: string
 }
 
 /** What one scope of an app's token does with its pattern. `declare` keeps one

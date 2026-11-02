@@ -223,16 +223,8 @@ export function scopeSentence(scope: SentenceScope): string {
  * holds, and a bundle that carries code, so both stay the owner's. */
 export function declareSentence(pkg: string): string {
   const name = packageDisplayName(pkg.split("/")[1] ?? pkg)
-  return `Install your ${name} package and add to it as the app changes; it can’t remove a kind, property or value the package holds, yours included, or add code`
+  return `Install your ${name} package and add to it as the app changes; it can’t remove a kind, property or value the package holds, or add code. The app will own these kinds: you can’t edit them unless you take them over, and their records stay yours`
 }
-
-/** What approving a `declare` scope gives away (decision 0205): the package
- * the app installs is the app's, so its kinds change only through the app
- * until the owner takes the package over, while its records stay theirs.
- * Said under the scope's sentence on the approval page, which the sentence
- * itself, shared with SubstrateKit, does not yet say. */
-export const DECLARE_OWNERSHIP_NOTE =
-  "The app will own these kinds: only it can change them, and you can’t edit them unless you take the package over. The records in them stay yours."
 
 /** What a `webhook` detail lets the app do once it is set up: deliver with
  * its own token, for any account the package's callable accepts, and read

@@ -6,6 +6,7 @@ import { originWords } from "@/lib/origin"
 import { readOnlyReason } from "@/lib/provenance"
 
 import {
+  awaitsPackageRows,
   declarationApp,
   kindOrigin,
   packageAgent,
@@ -114,5 +115,46 @@ describe("packages", () => {
     expect(
       declarationApp(decl("function", "ada.example.com/training/x"), rows)
     ).toBeUndefined()
+  })
+})
+
+// The edit doors of a bundle or a kind wait for the package rows, which say
+// whether an app manages it; a package row and a record never wait.
+describe("awaitsPackageRows", () => {
+  const of = (kind: string) => ({ kind })
+  it("waits only for a bundle or a kind, only while the rows load", () => {
+    expect(awaitsPackageRows(of("substrate.reamde.dev/core/kind"), true)).toBe(
+      true
+    )
+    expect(
+      awaitsPackageRows(of("substrate.reamde.dev/core/bundle"), true)
+    ).toBe(true)
+    expect(
+      awaitsPackageRows(of("substrate.reamde.dev/core/package"), true)
+    ).toBe(false)
+    expect(awaitsPackageRows(of("ada.example.com/training/set"), true)).toBe(
+      false
+    )
+    expect(awaitsPackageRows(of("substrate.reamde.dev/core/kind"), false)).toBe(
+      false
+    )
+  })
+
+  it("reads the client id beside the app's actor", () => {
+    const withClient = packageRows({
+      records: [
+        {
+          kind: "substrate.reamde.dev/core/package",
+          id: "ada.example.com/training",
+          properties: {
+            declaredBy: "app:workouts.example.org",
+            declaredByClient: "https://workouts.example.org/client.json",
+          },
+        } as unknown as SubstrateRecord,
+      ],
+    })
+    expect(withClient.get("ada.example.com/training")?.declaredByClient).toBe(
+      "https://workouts.example.org/client.json"
+    )
   })
 })

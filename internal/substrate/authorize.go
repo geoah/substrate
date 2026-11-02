@@ -345,6 +345,11 @@ type AuthorizationScope struct {
 	// one (write covers read; a wider pattern covers a narrower one), so the
 	// page can fold it under what was allowed before.
 	Allowed bool `json:"allowed,omitempty"`
+	// Refused says why this scope cannot be approved, empty when it can: a
+	// `declare:` scope over a package the owner keeps, or one another app
+	// declared (decision 0205). The page leaves it unchecked and says why,
+	// and an approval that names it is refused before a token is issued.
+	Refused string `json:"refused,omitempty"`
 }
 
 // AuthorizationKind is one kind a scope reaches today, or one a package the

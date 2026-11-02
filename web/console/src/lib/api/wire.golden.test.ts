@@ -629,6 +629,7 @@ const authorizationScope: Shape<AuthorizationScope> = {
   kinds: true,
   agents: true,
   allowed: false,
+  refused: false,
 }
 
 const authorizationKind: Shape<AuthorizationKind> = {

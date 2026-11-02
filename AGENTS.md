@@ -350,8 +350,10 @@ repository's token may not write a `builtin` package (the seeded `core`,
 `llm`, `console` and `observations`) or a `published` one (an installed
 provider or catalogue); its own packages and the
 samples it imported are `installed` and writable, except one an app declared
-under its `declare:` scope (`declaredBy: app:<host>`), whose declarations
-only that app writes until the owner takes it over
+under its `declare:` scope (`declaredBy: app:<host>`, owned by the full
+client id in `declaredByClient`), whose declarations only that app writes
+until the owner takes it over; the bundle's disable and enable stay the
+owner's, its purge does not
 ([0205](docs/decisions/0205-an-app-owns-the-package-it-declares.md)). A
 bundle owns one package and its id IS that package.
 

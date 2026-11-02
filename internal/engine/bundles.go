@@ -433,7 +433,9 @@ func (ds *dataset) bundleByID(id string) (*vocabulary.Bundle, error) {
 
 // DisableBundle stops the bundle's execution, fully reversibly: trigger
 // cursors stand still, functions refuse invocation, config and accounts
-// freeze. Data stays readable. It takes the exclusive side of the lifecycle
+// freeze. Data stays readable. It is the owner's runtime switch even on a
+// bundle an app keeps (decision 0205): it changes no declaration, so it is
+// not the chokepoint's, and EnableBundle turns it back on. Purge is not. It takes the exclusive side of the lifecycle
 // fence, so every ADMITTED invocation's effects have committed by the time
 // this returns — nothing runs "a little longer" after a disable.
 func (ds *dataset) DisableBundle(ctx context.Context, id string) error {
@@ -645,6 +647,18 @@ func (ds *dataset) PurgeBundle(ctx context.Context, id string) (int, error) {
 	if !st.blocked() {
 		return 0, fmt.Errorf("%w: bundle %s is live — disable or uninstall it before purging its data",
 			substrate.ErrGuard, b.Package)
+	}
+	// An app's bundle is the app's to tear down (decision 0205). Disable and
+	// enable stay the owner's runtime switch, but a purge deletes every
+	// record of the app's kinds and its configuration, which the app cannot
+	// put back, so the owner takes the package over first.
+	owner, err := ds.packageOwner(ctx, ds.db, b.Package)
+	if err != nil {
+		return 0, err
+	}
+	if owner.App() {
+		return 0, fmt.Errorf("%w: %s is managed by the app %s: disabling and enabling its bundle are yours, purging its data is not; to purge it, take the package over first (POST /api/v1/vocabulary/takeover)",
+			substrate.ErrForbidden, b.Package, owner)
 	}
 	g, ok := ds.registry().PackageByName(b.Package)
 	if !ok {
