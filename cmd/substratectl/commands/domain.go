@@ -33,10 +33,12 @@ and verify reads the record back. Once a check passes, the repository record
 carries domainVerifiedAt, the proof is spent, and the record may keep only
 its server= field.
 
-A repository named under the server's own host (ada.substrate.example.com on
-substrate.example.com) is verified without a record. A server reached on a
-loopback or private address cannot verify any other name, because the check
-fetches the record's server= origin and never dials such an address.`,
+A repository named one label under the server's configured public URL
+(ada.substrate.example.com under https://substrate.example.com) is verified
+without a record; with no public URL configured, every name needs one. A
+server reached on a loopback or private address verifies only such names,
+because the check fetches the record's server= origin and never dials such
+an address.`,
 	}
 	cmd.AddCommand(a.domainShowCommand(), a.domainVerifyCommand())
 	return cmd

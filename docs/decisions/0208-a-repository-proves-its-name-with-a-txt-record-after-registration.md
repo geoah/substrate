@@ -34,16 +34,26 @@ one-time proof, keeps it on the repository record as the managed
 _substrate.example.org.  TXT  "v=substrate1 server=https://substrate.example.net proof=k3j9x2abcd"
 ```
 
-The check (`POST /api/v1/repository/domain/verify`) reads that record, holds
-`proof=` to the pending proof, and fetches `server=`'s
-`/.well-known/substrate/server.json` through the confined client to compare
-its `server.instance` with this server's. A server mints its instance id once,
-into a file under the data root, so it recognizes itself without a configured
-public URL. A passing check stamps the managed `domainVerifiedAt` and spends
-the proof. A name of one label under the host the request reached is
-verified without a record, because the server's operator controls that DNS.
-The console marks the name unverified until the stamp lands. Both routes are
-the owner's.
+The check (`POST /api/v1/repository/domain/verify`) reads that record and
+holds `proof=` to the pending proof. That proof is the evidence: only the
+name's controller can publish it. The check then confirms that `server=`
+reaches this server. With a configured public URL (`SUBSTRATE_PUBLIC_URL`),
+`server=` must equal that origin exactly. With or without one, the check
+fetches `server=`'s `/.well-known/substrate/server.json` through the confined
+client and compares its `server.instance` with this server's, an id the
+server mints once into a file under the data root. Both comparisons are a
+consistency check that the record points here, not authentication of the
+server: a proxy that forwards to this server relays its document. A passing
+check stamps the managed `domainVerifiedAt` and spends the proof.
+
+A name of exactly one label under the host of the configured public URL is
+verified without a record, because the operator controls that DNS. The
+request's `Host` never decides anything, since a caller names any `Host` it
+likes; with no public URL configured there is no shortcut, and every name
+needs the record. The console marks the name unverified until the stamp
+lands. Both routes refuse a scoped app token; a full-access token is a
+sign-in and acts as the owner
+([0204](0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)).
 
 The authority stays permanent and the repository id
 ([0052](0052-the-authority-is-the-repository-id.md)): verification renames
@@ -58,15 +68,23 @@ nothing. This amends 0046 and 0074, which accepted a name without proof.
   starts from the name reaches the server the name's own DNS points at.
 - Bad, because squatting stays possible on a shared server; the mark is a
   warning, not a refusal.
-- Bad, because a server reached on a loopback or private address verifies no
-  name but its own host's: the confined client never dials such an address.
-- Bad, because a server whose data root is lost mints a new instance id, and
-  every name it verified must publish its record and check again.
+- Bad, because a server reached on a loopback or private address verifies
+  only names under its configured public URL's host: the confined client
+  never dials such an address.
+- Bad, because without a public URL an origin that relays this server's
+  document passes the server comparison; the proof in DNS still has to be
+  published by the name's controller.
+- Neutral: a server whose data root is lost mints a new instance id. The
+  stamps it wrote stay, and a later check compares against the new id and
+  still passes while `server=` reaches this server.
 
 ### Confirmation
 
 `internal/api/domain_test.go` holds the lifecycle, each refusal reason, the
-own-host case and the owner-only rule; `internal/engine/domain_db_test.go`
+public-URL shortcut, a forged `Host` refused, the exact `server=` origin
+under a public URL, and a scoped app token refused while a full-access one is
+admitted; `internal/engine/instance_test.go` holds one persisted instance id
+across racing first boots; `internal/engine/domain_db_test.go`
 holds the proof on the repository record and refuses a generic write of
 either property.
 
