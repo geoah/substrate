@@ -563,7 +563,9 @@ rendered `coach.json`; training version 2.
   app reading its coach's row and the provider without its key, a chat with
   a stub model that stores a memory, the next chat's prompt pinning it, and
   the coach refusing after the owner revokes the app.
-- Live, opt-in (`coachpersona_live_db_test.go`): the injected-note persona.
+- Live, opt-in (`coachpersona_live_db_test.go`): the personas, an injected
+  note, a planted memory, a red flag, a change without a yes, a whole plan
+  brought with a medical history, and a yes while a session is running.
 
 **Console:** the agent row in both views (`setup-row.agent.test.tsx`); the
 "Managed by" words for an app's agent (`app-managed.test.tsx`); the wire
