@@ -162,8 +162,8 @@ struct CoachTests {
         #expect(!n.methodsAndPaths.contains { $0.hasPrefix("POST") })
     }
 
-    @Test("a release keeps the stored model and a lowered cap")
-    func keepsTheStoredChoice() async throws {
+    @Test("a release replaces an older build's stored model with its own choice, and keeps a lowered cap")
+    func replacesTheStoredModel() async throws {
         let props: JSONObject = [
             "prompt": .string("Workout coach instructions, revision 0.\n\nolder"),
             "provider": .object(["ref": .string("substrate.reamde.dev/llm/provider/openai")]), "model": .string("gpt-5"),
@@ -173,7 +173,9 @@ struct CoachTests {
         let s = server(agent: row)
         #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .applied)
         let data = try #require(applied(s))
-        #expect(data["provider"] == .string("openai") && data["model"] == .string("gpt-5"))
+        // The owner cannot choose the model, so the stored one is only an
+        // older build's pick; this build's preference wins where it is priced.
+        #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
         guard case let .object(budgets)? = data["budgets"] else { Issue.record("no budgets"); return }
         #expect(budgets["spendCentsPerDay"] == .number(40))
     }
@@ -218,5 +220,14 @@ struct CoachTests {
         #expect(CoachModel.choose(from: [row("gateway", wire: "openai", keyed: true, models: ["mystery"])])?.model == "mystery")
         #expect(CoachModel.choose(from: [row("anthropic", wire: "anthropic", keyed: false, models: ["claude-sonnet-5-5"])])?.provider == "anthropic")
         #expect(CoachModel.choose(from: [row("bare", wire: "openai", keyed: true, models: [])]) == nil)
+        // A LiteLLM-style gateway lists Haiku first and names Sonnet with
+        // a prefix: Sonnet wins, with no wire-specific params.
+        let gateway = CoachModel.choose(from: [row("litellm", wire: "openai", keyed: true,
+                                                   models: ["anthropic/claude-haiku-4-5", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-5-5"]),
+                                               row("anthropic", wire: "anthropic", keyed: false, models: ["claude-haiku-4-5"])])
+        #expect(gateway?.provider == "litellm")
+        #expect(gateway?.model == "anthropic/claude-sonnet-5-5")
+        #expect(gateway?.params.isEmpty == true)
+        #expect(CoachModel.choose(from: [row("anthropic", wire: "anthropic", keyed: true, models: ["claude-haiku-4-5", "claude-sonnet-5-5"])])?.params["reasoningEffort"] == .string("medium"))
     }
 }

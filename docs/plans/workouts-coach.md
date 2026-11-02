@@ -576,8 +576,9 @@ rules and optional; an older server sent the request without it; the
 bundled prompt's revision, size and training version; nothing written
 without an approval or before training is current; a first install on a
 keyed, priced model reading only held kinds, homed; an unchanged coach not
-applied; a newer revision left alone; the stored model and a lowered cap
-kept; a refusal as a state; the model choice. SubstrateKit's and WorkoutsKit's
+applied; a newer revision left alone; a lowered cap kept and an older
+build's model replaced by this build's preferred one (matched bare or behind a
+gateway prefix such as LiteLLM's `anthropic/`); a refusal as a state; the model choice. SubstrateKit's and WorkoutsKit's
 existing suites pass with training version 2.
 
 ## 11. Deferred and not done
