@@ -264,8 +264,9 @@ Each of these is what install and update need, even without a coach screen:
   package the token declares, and nothing else of that kind (Fable 6).
   Update needs it: the app reads the stored prompt's revision line, so an
   older build never writes over a newer one's coach; it keeps the stored
-  provider, model and cap across releases rather than choosing again; and it
-  skips an apply when the row already says what it would declare.
+  cap, and the stored provider and model unless its own choice ranks
+  strictly better (§8); and it skips an apply when the row already says
+  what it would declare.
 - **The definitions of the kinds its agent is approved to read** (`Get` of
   the `core/kind` row, or `KindByRef`), so it declares only kinds the server
   holds: an unknown exact kind is refused at load, and the clinical catalogue
@@ -367,11 +368,14 @@ them. Allergies, lab reports, documents and the rest of `clinical` are not
 asked for.
 
 **Provider and model.** The app reads the `llm/provider` rows and chooses
-for the owner on a first install (§8): `claude-sonnet-5-5`
-(`reasoningEffort: medium`) on a keyed Anthropic row, else `gpt-5` (`low`)
-on a keyed OpenAI row, else a keyed row's first priced model. A model the
-row does not price is never chosen, and the server refuses it anyway.
-Choosing in the app comes with the coach screen.
+for the owner (§8): the best of `claude-sonnet-5-5`, `claude-sonnet-5`,
+`gpt-5` that a keyed row prices, matched exactly or behind a gateway prefix
+(`anthropic/claude-sonnet-5-5` on a LiteLLM row, which gets no
+`reasoningEffort`; `medium` and `low` go only on an exact Anthropic or
+OpenAI match), else a keyed row's first priced model. A model the row does
+not price is never chosen, and the server refuses it anyway. A coach screen
+that lets the owner choose must make the owner's choice stand over §8's
+upgrade (2026-11-02).
 
 ## 6. The prompt
 
@@ -477,12 +481,15 @@ version 2 in every sync):
 1. No approved agent detail in the session's token response: nothing.
 2. Training not yet at version 2: wait for the next sync.
 3. Read the coach's row. A prompt revision above this build's: leave it.
-4. Keep the row's provider, model and cap while a provider row still prices
-   that model; on a first install, or when it no longer does, choose a
-   keyed provider row that prices `claude-sonnet-5-5` (Anthropic,
-   `reasoningEffort: medium`) or `gpt-5` (OpenAI, `low`), else a keyed row's
-   first priced model, else an unkeyed row's (the coach then installs and
-   refuses until the owner keys it). No priced model at all: nothing.
+4. Keep the row's cap. Keep its provider and model while a provider row
+   still prices that model and this build's choice does not rank strictly
+   better in the preference list (`claude-sonnet-5-5`, `claude-sonnet-5`,
+   `gpt-5`, matched exactly or behind a gateway prefix; anything else ranks
+   last). Otherwise take this build's choice: the best preferred model a
+   keyed row prices, else a keyed row's first priced model, else an unkeyed
+   row's (the coach then installs and refuses until the owner keys it). No
+   priced model at all: nothing. The list's order never moves a family down
+   between releases.
 5. Read only the approved kinds the server holds; the interaction kind joins
    the writes for `ask`.
 6. If the row already says this prompt, model, cap and reach: nothing.
@@ -492,9 +499,11 @@ version 2 in every sync):
    403 naming another keeper reads the same, and any other refusal (a
    narrower approval) is logged and left. No sync ever stops on the coach.
 
-**Settings authority (Astra 4).** The stored row is the truth for provider,
-model, cap and reach; a release changes the prompt and keeps the rest, so
-two devices never flip-flop (Fable 14).
+**Settings authority (Astra 4).** The stored row is the truth for cap and
+reach. For provider and model it stands unless a build's choice ranks
+strictly better, so an older build's fallback moves up (Haiku behind a
+LiteLLM gateway to Sonnet, 2026-11-02, owner: "Sonnet is fine") and two
+devices on different builds settle rather than flip-flop (Fable 14).
 
 **Where the owner meets the coach.** Substrate Chat lists every agent its
 `agents:*` scope reads and offers the primary, chat-capable ones by default,
@@ -576,8 +585,8 @@ rules and optional; an older server sent the request without it; the
 bundled prompt's revision, size and training version; nothing written
 without an approval or before training is current; a first install on a
 keyed, priced model reading only held kinds, homed; an unchanged coach not
-applied; a newer revision left alone; a lowered cap kept and an older
-build's model replaced by this build's preferred one (matched bare or behind a
+applied; a newer revision left alone; a lowered cap kept, and a stored
+model replaced only by a better-ranked one (matched exactly or behind a
 gateway prefix such as LiteLLM's `anthropic/`); a refusal as a state; the model choice. SubstrateKit's and WorkoutsKit's
 existing suites pass with training version 2.
 

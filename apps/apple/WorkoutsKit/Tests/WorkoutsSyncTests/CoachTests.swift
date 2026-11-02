@@ -229,5 +229,33 @@ struct CoachTests {
         #expect(gateway?.model == "anthropic/claude-sonnet-5-5")
         #expect(gateway?.params.isEmpty == true)
         #expect(CoachModel.choose(from: [row("anthropic", wire: "anthropic", keyed: true, models: ["claude-haiku-4-5", "claude-sonnet-5-5"])])?.params["reasoningEffort"] == .string("medium"))
+        // Two keyed rows that both price Sonnet: the first in server order wins.
+        #expect(CoachModel.choose(from: [row("a", wire: "openai", keyed: true, models: ["anthropic/claude-sonnet-5-5"]),
+                                         row("b", wire: "anthropic", keyed: true, models: ["claude-sonnet-5-5"])])?.provider == "a")
+        // Ranks: a family by its place, prefixed or not; anything else last.
+        #expect(CoachModel.rank("claude-sonnet-5-5") == 0 && CoachModel.rank("anthropic/claude-sonnet-5-5") == 0)
+        #expect(CoachModel.rank("anthropic/claude-haiku-4-5") == CoachModel.preferred.count)
+    }
+}
+
+extension CoachTests {
+    @Test("a stored model is replaced only by a better-ranked one, and a second sync applies nothing")
+    func upgradeOnly() async throws {
+        func stored(provider: String, model: String) throws -> String {
+            let props: JSONObject = [
+                "prompt": .string("Workout coach instructions, revision 0.\n\nolder"),
+                "provider": .object(["ref": .string("substrate.reamde.dev/llm/provider/\(provider)")]), "model": .string(model),
+            ]
+            return String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
+        }
+        // A stored Sonnet on the unkeyed-but-priced openai row would rank
+        // last (gpt-5 ranks 2, the anthropic row's Sonnet 0), so it moves.
+        let worse = server(agent: try stored(provider: "openai", model: "gpt-5"))
+        #expect(try await installer(worse, approval: approval).ensure(training: .current(held: 2)) == .applied)
+        #expect(try #require(applied(worse))["model"] == .string("claude-sonnet-5-5"))
+        // The same rank stands, so devices on different builds settle.
+        let equal = server(agent: try stored(provider: "anthropic", model: "claude-sonnet-5-5"))
+        _ = try await installer(equal, approval: approval).ensure(training: .current(held: 2))
+        if let data = applied(equal) { #expect(data["model"] == .string("claude-sonnet-5-5") && data["provider"] == .string("anthropic")) }
     }
 }
