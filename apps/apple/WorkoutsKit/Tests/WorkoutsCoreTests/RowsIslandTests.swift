@@ -21,8 +21,7 @@ struct RowsIslandTests {
         let button = RowsButton(title: "Log", action: .tick(RowID("r1")))
         let next = RowsNextPart(row: RowID("r1"), exercise: "Leg Press (Machine)", badge: nil, label: "Set 1", tint: .accent,
                                 fields: [], rpe: nil, primary: button, timerStartedAt: nil, sentence: "")
-        let after = RowsAfterPart(row: RowID("r2"), label: "Then", text: "Set 2, 90 kg × 10", action: .touch(RowID("r2")),
-                                  sentence: "")
+        let after = RowsAfterPart(row: RowID("r2"), label: "Then", text: "Set 2, 90 kg × 10", sentence: "")
         let rest = RowsRestPart(kind: .rest, title: "Rest", startedAt: engineEpoch, endsAt: engineEpoch.addingTimeInterval(90),
                                 totalText: "of 1:30", minus: button, plus: button, skip: button)
 
@@ -148,17 +147,15 @@ struct RowsIslandTests {
         #expect(skipped.island.parts(editorInView: true) == [.after])
     }
 
-    @Test("the line after the next set opens that set, and the island follows")
-    func afterOpensThatSet() throws {
-        var session = try RowsSession.dayOne()
+    @Test("the line after the next set names that set and leaves the open set alone")
+    func afterNamesThatSet() throws {
+        let session = try RowsSession.dayOne()
         let layout = try session.layout(at: 0)
         let after = try #require(layout.island.after)
         let warmup2 = try session.row("leg-press", 1)
-        #expect(after.row == warmup2 && after.action == .touch(warmup2))
-        try session.perform(try #require(after.action), at: 5)
-        let opened = try session.layout(at: 6)
-        #expect(opened.openRow == warmup2 && opened.island.next?.row == warmup2)
-        #expect(opened.island.after?.text == "Set 1, 105 kg × 10")
+        // A tap only takes the list to it (the view scrolls): the line carries the row, nothing to perform.
+        #expect(after.row == warmup2 && layout.item(warmup2) != nil)
+        #expect(layout.openRow != warmup2)
     }
 
     @Test("the minimised bar names the next set with its values and points at it")

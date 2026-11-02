@@ -17,6 +17,7 @@ struct RowsSessionView: View {
     @Environment(SessionController.self) private var session
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollPhase: ScrollPhase = .idle
     /// The open row changed while the list was being dragged: scroll once it settles.
     @State private var scrollPending = false
@@ -86,7 +87,10 @@ struct RowsSessionView: View {
                 }
             }
             .onChange(of: presentation, initial: true) { _, _ in
-                screen.reconcile(with: layout, entryCheckRow: session.entryCheck?.row)
+                screen.reconcile(with: layout, entryCheckRow: session.entryCheck?.row, pendingRemoval: session.pendingRemoval)
+            }
+            .onChange(of: reduceMotion, initial: true) { _, reduce in
+                screen.dockAnimation = reduce ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
             }
             .onChange(of: screen.typing?.row) { _, row in
                 // The keypad takes the bottom: keep the field it types into in view,
@@ -107,6 +111,7 @@ struct RowsSessionView: View {
                 try? await Task.sleep(for: .milliseconds(80))
                 scrollToOpenRow(proxy, animated: false)
             }
+            .onDisappear { screen.leave() }
         }
     }
 
@@ -136,6 +141,7 @@ struct RowsSessionView: View {
                     editorInView: editorInView,
                     perform: { screen.perform($0, session: session, cover: cover) },
                     showOpenRow: { scrollToOpenRow(proxy) },
+                    showLine: { screen.showLine($0, session: session) },
                     finish: finish,
                     addExercise: { cover.sheet = .addExercise(after: nil) }
                 )
@@ -164,9 +170,11 @@ struct RowsSessionView: View {
 
     // MARK: - Scrolling
 
-    /// The least scroll that shows the open set whole; none when it already is.
+    /// The least scroll that shows the open set whole; none when it already
+    /// is. Nothing docks while it runs: the editor is on its way into view.
     private func scrollToOpenRow(_ proxy: ScrollViewProxy, animated: Bool = true) {
         guard let row = layout.openRow, let block = layout.blocks.first(where: { $0.item(row) != nil }) else { return }
+        screen.seek()
         Task {
             // A lazy block far away is laid out first, then its row is brought in.
             if animated {

@@ -102,6 +102,13 @@ final class SessionController {
     /// The last journal write failed (a full disk): ticks live only in
     /// memory until a write succeeds again. The cover and Finish say so.
     private(set) var journalWriteFailed = false
+    /// A set the Rows layout deleted, held back for a moment so its Undo can
+    /// keep it (§7.6a): the screens already show it gone, the journal does
+    /// not have it yet. The engine has no event that brings a removed set
+    /// back, so the removal is what waits. It is sent when the moment
+    /// passes, before any other command, before Finish, and when the app
+    /// leaves the foreground; a session dropped meanwhile keeps the set.
+    private(set) var pendingRemoval: RowID?
 
     @ObservationIgnored private var events: [EventEnvelope] = []
     @ObservationIgnored private var journal: ActiveSessionJournal?
@@ -110,6 +117,7 @@ final class SessionController {
     private let sink: any SessionSyncSink<EventEnvelope, SessionState> = LinkSink()
     @ObservationIgnored private var preparing: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var removalTask: Task<Void, Never>?
     /// A launch with a session open shows the cover the first time the app is
     /// in the foreground (§1.4, §6.3).
     @ObservationIgnored private var coverOnFirstForeground = true
@@ -328,6 +336,7 @@ final class SessionController {
     /// engine refuses or the history file cannot be written.
     @discardableResult
     func finish(start: Date, end: Date, policy: PendingSetPolicy, sessionRPE: Int?, notes: String?) async -> Bool {
+        await commitRemoval()
         let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         // `finish` keeps the notes when given none, so clearing them is its own event.
         if trimmed?.isEmpty == true, self.state?.session.notes != nil {
@@ -414,12 +423,45 @@ final class SessionController {
 
     private func clearSession() {
         refreshTask?.cancel()
+        removalTask?.cancel()
+        pendingRemoval = nil
         journalWriteFailed = false
         state = nil
         presentation = nil
         events = []
         entryCheck = nil
         scrollTarget = nil
+    }
+
+    // MARK: - A removal held for its undo
+
+    /// Deletes a set with a moment to take it back (`pendingRemoval`).
+    func removeLater(_ row: RowID, for moment: Duration = .seconds(5)) async {
+        await commitRemoval()
+        guard state?.rows[row] != nil else { return }
+        pendingRemoval = row
+        present()
+        removalTask = Task { [weak self] in
+            try? await Task.sleep(for: moment)
+            guard !Task.isCancelled else { return }
+            await self?.commitRemoval()
+        }
+    }
+
+    /// The Undo: the set was never deleted.
+    func keepPendingRemoval() {
+        guard pendingRemoval != nil else { return }
+        removalTask?.cancel()
+        pendingRemoval = nil
+        present()
+    }
+
+    /// Sends a held removal now.
+    func commitRemoval() async {
+        guard let row = pendingRemoval else { return }
+        removalTask?.cancel()
+        pendingRemoval = nil
+        if await !apply(.removeSet(row: row), now: .now) { present() }
     }
 
     // MARK: - Commands
@@ -432,6 +474,8 @@ final class SessionController {
     /// The only way anything changes a session (§6.1).
     func send(_ command: SessionCommand) async {
         await prepare()
+        // A held removal goes first: every command sees the set gone, as the screens do.
+        await commitRemoval()
         guard let state else {
             logger.error("Command with no session open: \(String(describing: command), privacy: .public)")
             return
@@ -689,7 +733,9 @@ final class SessionController {
             presentation = nil
             return
         }
-        presentation = SessionPresenter.present(state, catalog: app.catalog, history: app.historyIndex,
+        // A removal held for its undo shows as done: the screens see the set gone.
+        let shown = pendingRemoval.flatMap { try? SessionEngine.apply(envelope(.removeSet(row: $0), now: now), to: state) }
+        presentation = SessionPresenter.present(shown ?? state, catalog: app.catalog, history: app.historyIndex,
                                                 settings: app.sessionPresenterSettings, now: now)
         scheduleRefresh()
     }

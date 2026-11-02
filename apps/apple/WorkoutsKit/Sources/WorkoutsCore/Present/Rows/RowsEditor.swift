@@ -602,10 +602,14 @@ struct RowsEditorSource: Equatable, Sendable {
                                   patch: FieldAccess.restoring(field, from: baseline))
             }
         }
+        // A hint (`≈15`) shows in the empty field. Words (`to failure`) do
+        // not: a field holds a number, and the header says it once (owner,
+        // 2026-11-02). VoiceOver still hears them with the empty field.
         var placeholder: String?
+        var words: String?
         if current == nil, mode == .log, field == .reps {
-            if let words = repsPlaceholder {
-                placeholder = words
+            if let repsPlaceholder {
+                words = repsPlaceholder
             } else if repsHint, let base {
                 placeholder = "\u{2248}\(RowsText.fieldText(.reps, base, unit: unit, withUnit: false))"
             }
@@ -618,7 +622,7 @@ struct RowsEditorSource: Equatable, Sendable {
         let (minus, plus) = steps(field, from: seed, unit: currentUnit)
         let spokenName = RowsText.spokenField(field, measurement: measurement, unit: unit)
         let valueText = current.map { RowsText.fieldText(field, $0, unit: currentUnit, withUnit: false) }
-        var accessibilityValue = valueText ?? placeholder.map { "\($0), empty" } ?? (missing ? "required, empty" : "empty")
+        var accessibilityValue = valueText ?? (placeholder ?? words).map { "\($0), empty" } ?? (missing ? "required, empty" : "empty")
         if let valueText {
             if isChanged, let base {
                 let was = RowsText.fieldText(field, base, unit: FieldAccess.unit(field, baseline) ?? unit, withUnit: false)

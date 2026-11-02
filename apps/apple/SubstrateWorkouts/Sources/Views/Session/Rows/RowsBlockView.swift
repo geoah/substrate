@@ -18,7 +18,6 @@ struct RowsBlockView: View {
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var separatorIndent: CGFloat = 48
 
     var body: some View {
@@ -251,16 +250,27 @@ struct RowsBlockView: View {
     private func setView(_ set: RowsSetItem) -> some View {
         Group {
             if let fixing = screen.fixing, fixing.row == set.id, let fix = set.fix {
-                RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: nil, role: set.role, groupColor: groupColor)
+                RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: presentation.row(set.id), role: set.role,
+                                groupColor: groupColor, name: name(set))
             } else if screen.fixing == nil, set.state == .now, let editor = set.editor {
                 // With its Log button out of view, the island docks this set (§7.6a, `RowsDock`).
                 RowsEditorPanel(editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
-                                groupColor: groupColor) { visible in
-                    screen.logVisibility(set.id, visible: visible, animation: dockAnimation)
+                                groupColor: groupColor, name: name(set)) { visible in
+                    screen.logVisibility(set.id, visible: visible)
+                }
+            } else if set.state == .done, let row = presentation.row(set.id) {
+                // A done set: its check unticks it, its `…` holds Untick set and Delete set (owner, 2026-11-02).
+                RowsSetLine(item: set, isFresh: screen.fresh == set.id, isMarked: screen.mark?.row == set.id,
+                            groupColor: groupColor, onUntick: { screen.untick(set.id, name: name(set), session: session) }) {
+                    tap(set)
+                } menuItems: {
+                    SetMenuItems(row: row,
+                                 untick: { screen.untick(set.id, name: name(set), session: session) },
+                                 delete: { screen.delete(set.id, name: name(set), session: session) })
                 }
             } else {
                 RowsSetLine(item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
-                            groupColor: groupColor) {
+                            isMarked: screen.mark?.row == set.id, groupColor: groupColor) {
                     tap(set)
                 }
             }
@@ -268,8 +278,9 @@ struct RowsBlockView: View {
         .id(set.id)
     }
 
-    private var dockAnimation: Animation {
-        reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
+    /// `A2 Round 1`, `Set 2`: the set as its line names it, for the undo toast.
+    private func name(_ set: RowsSetItem) -> String {
+        set.badge.map { "\($0) \(set.title)" } ?? set.title
     }
 
     private func tap(_ set: RowsSetItem) {

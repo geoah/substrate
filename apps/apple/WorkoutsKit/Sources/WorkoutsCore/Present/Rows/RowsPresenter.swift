@@ -40,7 +40,7 @@ struct RowsBuilder {
     func layout() -> RowsLayout {
         let built = blocks.map(block)
         let open = openRow.flatMap { row in built.lazy.compactMap { $0.item(row) }.first }
-        return RowsLayout(blocks: built, island: island(open: open), openRow: openRow)
+        return RowsLayout(blocks: built, island: island(open: open, blocks: built), openRow: openRow)
     }
 
     // MARK: - Blocks
@@ -513,7 +513,9 @@ struct RowsBuilder {
             } else if role == .drop, ghost.repsPlaceholder != nil {
                 note = RowsNote(text: GhostValues.toFailure, kind: .status)
             } else if isMini, let load = Format.load(shown, mode: measurement.loadMode), load != "BW" {
-                note = RowsNote(text: "at \(load)", kind: .status)
+                // The reps field holds no words: the header says "to failure" when the plan does.
+                let failure = ghost.repsPlaceholder.map { ", \($0)" } ?? ""
+                note = RowsNote(text: "at \(load)\(failure)", kind: .status)
             } else if let text = view.reason {
                 note = RowsNote(text: text, kind: .reason)
             }
@@ -726,7 +728,7 @@ struct RowsBuilder {
     /// The island's parts: the rest while one runs, the open set compact, and
     /// the set after it. Nothing counts up: there is no "is up" moment after a
     /// Log, the next set simply shows.
-    func island(open item: RowsSetItem?) -> RowsIsland {
+    func island(open item: RowsSetItem?, blocks: [RowsBlock]) -> RowsIsland {
         if state.rows.isEmpty { return .empty }
         var rest: RowsRestPart?
         if p.timedID == nil, let countdown = state.countdown, countdown.isRestLike, let end = countdown.endsAt, end > p.now {
@@ -736,7 +738,7 @@ struct RowsBuilder {
             return RowsIsland(rest: rest, next: nil, after: nil,
                               end: .allDone(title: "All sets done", detail: "Finish saves the session"))
         }
-        return RowsIsland(rest: rest, next: item.flatMap(nextPart), after: afterPart(open), end: nil)
+        return RowsIsland(rest: rest, next: item.flatMap(nextPart), after: afterPart(open, blocks: blocks), end: nil)
     }
 
     /// The open set, compact: its exercise and label, the editor's fields, the
@@ -766,6 +768,7 @@ struct RowsBuilder {
         return RowsNextPart(
             row: item.id, exercise: exercise, badge: item.badge, label: label, tint: editor.tint, fields: editor.fields,
             rpe: editor.rpe?.shown.map { "@ \(Format.rpe($0))" },
+            rpeStrip: editor.rpe,
             primary: RowsButton(title: word, accessibilityLabel: editor.primary.accessibilityLabel,
                                 action: editor.primary.action, isEnabled: editor.primary.isEnabled),
             timerStartedAt: startedAt,
@@ -774,21 +777,22 @@ struct RowsBuilder {
     }
 
     /// The set a Log of the open one would lead to, on one line.
-    func afterPart(_ open: RowID) -> RowsAfterPart? {
+    func afterPart(_ open: RowID, blocks: [RowsBlock]) -> RowsAfterPart? {
         let after = afterRow(open)
         guard let next = after.next, next != open else { return nil }
         let text = nextText(next, from: open, in: after.state).capitalizedFirst
-        let exists = state.rows[next] != nil
-        return RowsAfterPart(row: exists ? next : nil, label: "Then", text: text, action: canOpen(next) ? .touch(next) : nil,
-                             sentence: "Then \(text)")
+        return RowsAfterPart(row: lineShowing(next, in: blocks), label: "Then", text: text, sentence: "Then \(text)")
     }
 
-    /// A touch would make `id` the open set now: it exists, is pending, no
-    /// earlier link of its chain waits (a second side, a drop, a cluster's
-    /// next part), and no timed set runs (the running one keeps the editor).
-    func canOpen(_ id: RowID) -> Bool {
-        guard let row = state.rows[id], row.isPending else { return false }
-        return !state.isLocked(id) && p.timedID == nil
+    /// The line a tap on "Then" takes the list to: the set's own, or for a
+    /// drop that waits on its set (drawn as `+ drop` on it) the set's line.
+    /// Nil when the set does not exist yet.
+    func lineShowing(_ id: RowID, in blocks: [RowsBlock]) -> RowID? {
+        guard let row = state.rows[id] else { return nil }
+        for candidate in [id, row.headID] where blocks.contains(where: { $0.item(candidate) != nil }) {
+            return candidate
+        }
+        return nil
     }
 
     func restPart(_ countdown: Countdown, endsAt end: Date) -> RowsRestPart {

@@ -2125,11 +2125,16 @@ line when fixing). In order:
   dotted underline (a tap opens the keypad; the target is 44 pt tall), its unit (15 pt secondary), `last` (15 pt secondary) at the same x on
   every row (the widest number and unit sets it, at least 84 pt), the reset chip ("↺ 8", or "↺ was 8" when fixing), and
   the stepper on the right: one tinted capsule, 44 pt tall, two 56 pt halves ("−5 | +5", "−1 | +1", "−0:05 | +0:05")
-  that repeat while held. A changed number is drawn in the accent colour. A value with nothing to log shows its
-  placeholder ("to failure", "≈15") in grey italics, outlined in orange when it is required. When the row is narrow the
+  that repeat while held. A changed number is drawn in the accent colour. A value with nothing to log shows a hint
+  ("≈15") or a dash in grey italics, outlined in orange when it is required. A field holds a number, never words: a
+  drop or a mini-set the plan takes to failure says so once, in the header's note ("to failure", "at 25 kg, to
+  failure"), and VoiceOver reads it with the empty field ("to failure, empty"). The failure choice itself is the set
+  kind in the `…` (Failure), and a set logged as one carries a small red "to failure" tag on its line; neither
+  changed, nor does what is written (owner, 2026-11-02). When the row is narrow the
   chip goes under `last`; at larger sizes `last` goes under the number; at the accessibility sizes the stepper goes
   under them.
-- The RPE stops: five whole stops, 6 to 10, on a `tertiarySystemFill` track, then a separate `½` (`RowsRPEStrip.half`)
+- The RPE stops, under the label "RPE" (15 pt secondary, as the values' units are): five whole stops, 6 to 10, on a
+  `tertiarySystemFill` track, then a separate `½` (`RowsRPEStrip.half`)
   that adds or takes off the half point, so every half step is a stop and then `½` and the control stays inside the
   panel's padding, indented to the values: about 280 pt wide, each target 44 pt tall and 44 to 52 pt wide. The stop
   holding the value shows it ("8.5"). The plan's value (and a pre-filled or copied value) is outlined and hollow; a
@@ -2143,13 +2148,20 @@ line when fixing). In order:
 - The buttons. Log is a 50 pt capsule in the panel's colour that names exactly what it saves ("Log 110 kg × 8 @ 8",
   "Log A2, 11 per side", "Log drop 25 kg × 12"); disabled while a required value is missing. A timed set has "Log 1:07
   hold" beside Start, then Cancel beside "Stop and log". A pending mini-set has "End myo-reps here" under Log. Fixing
-  has "Delete set" in red (it asks first, as the Table's removal of a done set does) and Save, enabled once the draft
-  differs.
+  has Save, enabled once the draft differs; Delete set is in the `…`, as on every set.
+- **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02): the Table's set menu items,
+  with "Untick set" first on a done set and "Delete set" last. Delete set takes the set off the screen at once and
+  "Set 2 deleted, Undo" floats above the island for five seconds; the removal itself waits that long
+  (`SessionController.pendingRemoval`: the engine has no event that brings a removed set back), and goes before any
+  other command, before Finish and when the app leaves the foreground. Untick set, and a tap on a done line's green
+  check (a 44 pt target where the check is drawn), takes the set back as the Undo after a Log does: pending with its
+  values, open in place; "Set 2 unticked, Undo" logs it again.
 
 **Logging.** One tap on Log sends `tick` with the row's `commitValues`, which carry the plan's RPE as `prefilled`
 when nothing was tapped (§4.14), through the entry check as in the Table. Once the set is in the journal the phone
-plays `.success` (§9.3), the line is washed green, and "Set 2 logged, Undo" floats above the island for five seconds
-(Undo sends `untick`); when the entry check asks first, that comes once its Keep or Use corrected logs the set, and
+plays `.success` (§9.3), the line is washed green, and "Set 2 logged, Undo" floats above the island for five seconds.
+Undo takes the set back and opens it again (`RowsAction.takeBack`: `untick`, then `touch`), so a set logged out of
+order is the one reopened, not the set the plan has next; when the entry check asks first, that comes once its Keep or Use corrected logs the set, and
 not after Edit. The next set opens where it is, with the rest (if any) in the island and no page in between, and the
 list makes the least scroll that shows it whole; a scroll
 the owner is making is never interrupted: the list waits until the scroll settles. A superset's 0 s hand-off scrolls
@@ -2191,23 +2203,37 @@ from the screen's edges, stacking up to three parts with hairlines between them,
    first, then the buttons move under the time. VoiceOver reads the rest's title as the clock's label and the time
    left with the total as its value.
 2. **The next set** (`RowsNextPart`): the exercise and its label ("Leg Press (Machine)  Set 3", "A2 Bird Dog  Round 1")
-   with a chevron, then its values each in a tinted capsule with − and + (44 pt targets; a tap on the number opens the
-   keypad), the RPE the Log commits ("@ 8"), and Log; Start, or the running clock and Stop, for a timed set. A group's
-   warm-up reads "Warm-up", never a round. Too narrow, the steppers go and the numbers stay tappable; narrower still
-   (the accessibility sizes), the clock, each value and Log take a line each. The layout gives way, never the targets:
-   each stepper half, each number and the name row stay at least 44 pt. A tap on the name or the RPE brings the full
-   editor into view; a tap on a number opens the keypad where the list is, without scrolling it. It is drawn only while
-   the open editor's Log button is out of view (less than half of it between the toolbar and the island, for a quarter
-   of a second, so a Log or a row opening never makes it blink): while that button is on screen the list already
-   offers the Log, and the island never shows it twice. `RowsDock` decides it and is tested: a new open row, a fix
-   starting or ending and an Undo all start with the editor in view, and a jump past an editor the list never laid out
-   docks it. It comes and goes with a fade and a small rise, a fade alone under Reduce Motion. The island's bar is the
-   list's bottom inset: it grows at once when the set docks, and when it undocks while the list moves the bar keeps
-   its height until the list is idle, so the content never moves under a finger.
-3. **After that** (`RowsAfterPart`): one line, "Then" in the accent and the set after the next one with its values; a
-   tap opens that set when it can be the open set now. Otherwise the line only reads, with no chevron: a second side,
-   a drop or a cluster's next part waiting on the open set, anything while a timed set runs, and a myo chain's next
-   mini-set, not made yet.
+   with a chevron, then on one row its values each in a tinted capsule with − and + (44 pt targets; a tap on the
+   number opens the keypad), its RPE ("@ 8", outlined while it is the plan's, filled once rated), and Log as a check
+   alone (44 pt, read "Log" and then what it logs); play, or the running clock and stop, for a timed set. A tap on the
+   RPE opens the panel's stops in the island, under the row: a stop rates and closes them, `½` keeps them open. The
+   RPE shows as the panel shows it, so a warm-up's or a timed set's stays out until opened there (owner, 2026-11-02).
+   A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. Too narrow, the steppers go and the numbers
+   stay tappable: on a 375 pt phone at the default size load, reps and RPE fit one row so; narrower still the clock,
+   each value, the RPE and Log take a line each. At the accessibility sizes it docks only the name row and Log, or
+   the clock and stop: a tap on the name brings the full editor into view, so the island stays a few lines and the
+   list keeps the screen. The layout gives way, never the targets: each stepper half, each number and the name row
+   stay at least 44 pt. A tap on a number opens the keypad where the list is, without scrolling it. It is drawn only
+   while the open editor's primary button (Log, Start or Stop, measured alone, without the action beside or under it)
+   is out of view (less than half of it between the toolbar and the island, for a quarter of a second, so a Log or a
+   row opening never makes it blink): while that button is on screen the list already offers the Log, and the island
+   never shows it twice. `RowsDock` decides it and is tested. A new open row waits for its editor's report; a fix
+   takes the open panel off the list for a while, which is not the panel leaving the viewport, so the last report
+   stands through it and the panel reports again when it ends. An editor awaited that never reports (the lazy list
+   never laid it out) is out of view once a bounded wait ends, and a jump past an editor the list never laid out
+   docks it. While the list scrolls itself to the open set nothing docks, so a Log near the bottom does not blink the
+   next set in and out. It comes and goes with a fade and a small rise, a fade alone under Reduce Motion. The
+   island's bar is the list's bottom inset: it grows at once when the set docks, and when it undocks while the list
+   moves the bar keeps its height until the list is idle, then gives it back animated (a plain fade's curve under
+   Reduce Motion), so the content neither moves under a finger nor jumps after it lifts; a list that never says it
+   is idle gives the height back after four seconds.
+3. **After that** (`RowsAfterPart`): one line, "Then" in the accent and the set after the next one with its values. A
+   tap takes the list to that set and washes it in the accent for a moment; it never opens it, and the open set stays
+   open (the owner opens the other with a tap of its own, owner, 2026-11-02). Any set in the list is a target, a
+   second side, a drop or a cluster's next part as much as any; a drop still waiting on its set is drawn as "+ drop"
+   on that set's line, so the tap goes there. Only a myo chain's next mini-set, not made yet, leaves the line to read,
+   with no chevron. One line, cut in the middle so the values stay; at the accessibility sizes up to three lines, cut
+   at the end.
 
 There is no "… is up", "Rest skipped" or "since the last set" moment: after a Log the island shows the rest (if any)
 and the next set directly, and nothing counts up for a set that is not timed. Every set done: Finish. No exercise: a

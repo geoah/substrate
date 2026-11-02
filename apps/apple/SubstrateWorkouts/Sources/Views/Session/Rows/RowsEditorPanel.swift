@@ -5,8 +5,9 @@ import SwiftUI
 /// line (the set and why today's numbers), each value with last time beside
 /// it and its steppers under the thumb, the RPE stops, a timed set's clock
 /// and track, and a Log button that names exactly what it saves.
-/// A done set being fixed uses the same panel, neutral, with Save, Cancel
-/// and Delete set. Every number, word and patch comes from `RowsEditor`.
+/// A done set being fixed uses the same panel, neutral, with Save and
+/// Cancel; Delete set is in its `…`, as on every set (owner, 2026-11-02).
+/// Every number, word and patch comes from `RowsEditor`.
 struct RowsEditorPanel: View {
     let editor: RowsEditor
     /// The row as the Table reads it, for the set menu; nil hides the `…`.
@@ -16,6 +17,8 @@ struct RowsEditorPanel: View {
     /// A drop or a mini-set: the line hangs off the one above.
     var role: RowsRowRole = .working
     var groupColor: Color = .accentColor
+    /// `Set 2`, `A2 Round 1`: the set as its line names it, for the undo toast.
+    var name = ""
     /// The open set's Log button came into view or left it: the island docks
     /// the set while it is out (§7.6a). Nil for a fix.
     var onLogVisibility: ((Bool) -> Void)?
@@ -57,17 +60,23 @@ struct RowsEditorPanel: View {
                     .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
             if let strip = editor.rpe, !strip.isCollapsed || screen.openStrips.contains(editor.row) {
-                // Inside the panel's padding, lined up with the values.
-                RowsRPEStripView(strip: strip, tint: tint) { cell in
-                    screen.pick(cell, in: editor, session: session)
-                } onHalf: { half in
-                    screen.pick(half, in: editor, session: session)
+                // Inside the panel's padding, lined up with the values, and
+                // named as they are: the stops alone did not say what they rate.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("RPE")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    RowsRPEStripView(strip: strip, tint: tint) { cell in
+                        screen.pick(cell, in: editor, session: session)
+                    } onHalf: { half in
+                        screen.pick(half, in: editor, session: session)
+                    }
                 }
                 .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
-                .padding(.top, 8)
+                .padding(.top, 6)
             }
             buttons
-                .modifier(RowsLogVisibility(viewport: screen.listViewport, action: onLogVisibility))
                 .padding(.top, 10)
         }
         .padding(.top, 6)
@@ -234,9 +243,12 @@ struct RowsEditorPanel: View {
                     .font(.body)
                     .foregroundStyle(Color.accentColor)
                     .frame(minHeight: 44)
-            } else if let row {
+            }
+            if let row {
                 Menu {
-                    SetMenuItems(row: row)
+                    SetMenuItems(row: row,
+                                 untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
+                                 delete: { screen.delete(editor.row, name: name, session: session) })
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.subheadline.weight(.bold))
@@ -247,7 +259,7 @@ struct RowsEditorPanel: View {
                         .contentShape(.rect)
                 }
                 .accessibilityLabel("\(editor.title) options")
-                .accessibilityHint("Set kind, rest and note")
+                .accessibilityHint(editor.mode == .fix ? "Untick, delete, set kind, rest and note" : "Delete, set kind, rest and note")
             }
         }
     }
@@ -258,17 +270,7 @@ struct RowsEditorPanel: View {
     private var buttons: some View {
         switch editor.mode {
         case .fix:
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    deleteButton
-                    Spacer(minLength: 0)
-                    primaryButton(fullWidth: false)
-                }
-                VStack(spacing: 8) {
-                    primaryButton(fullWidth: true)
-                    deleteButton
-                }
-            }
+            primaryButton(fullWidth: true)
         case .log:
             if editor.timer != nil, let secondary = editor.secondary {
                 ViewThatFits(in: .horizontal) {
@@ -311,6 +313,9 @@ struct RowsEditorPanel: View {
         .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(editor.tint)))
         .disabled(!primary.isEnabled)
         .accessibilityLabel(primary.accessibilityLabel)
+        // The dock follows this button alone, in whichever layout shows it:
+        // not the secondary action beside or under it, not the padding.
+        .modifier(RowsLogVisibility(viewport: screen.listViewport, action: onLogVisibility))
     }
 
     private func secondaryButton(_ button: RowsButton, fullWidth: Bool) -> some View {
@@ -327,23 +332,12 @@ struct RowsEditorPanel: View {
         .accessibilityLabel(button.accessibilityLabel)
     }
 
-    @ViewBuilder
-    private var deleteButton: some View {
-        if let delete = editor.delete {
-            Button(delete.title, role: .destructive) { run(delete.action) }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(RowsStyle.red)
-                .frame(minHeight: 44)
-                .accessibilityLabel(delete.accessibilityLabel)
-        }
-    }
-
     private func run(_ action: RowsAction) {
         screen.perform(action, session: session, cover: cover, loggedText: editor.loggedText)
     }
 }
 
-/// Reports whether the Log button is in the list's viewport, on screen: the
+/// Reports whether the primary button (Log, Start, Stop) is in the list's viewport, on screen: the
 /// list less its insets, the bars over it (`RowsDock.isInView`). Geometry
 /// reports on appearing too, so a panel laid out again says where it is at
 /// once; a lazy list dropping it counts as out of view.

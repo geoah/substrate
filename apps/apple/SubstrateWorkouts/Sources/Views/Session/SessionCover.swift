@@ -241,6 +241,10 @@ struct SessionCover: View {
                 editorInView: false,
                 perform: { rowsScreen.perform($0, session: session, cover: cover) },
                 showOpenRow: { path = NavigationPath() },
+                showLine: { row in
+                    path = NavigationPath()
+                    rowsScreen.showLine(row, session: session)
+                },
                 finish: beginFinish,
                 addExercise: { cover.sheet = .addExercise(after: nil) }
             )

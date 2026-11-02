@@ -1,20 +1,26 @@
 // When the island docks the open set (DESIGN.md §7.6a). The view reports
 // what it sees (the open editor's Log button in or out of view, the list
-// scrolling or idle, a jump, a fix, an Undo); this decides what the island
-// draws and how tall the bar stays. It is a rule, so it lives here and is
-// tested, and the view only feeds it.
+// scrolling or idle, the list scrolling itself to the open set, a jump, a
+// fix); this decides what the island draws and how tall the bar stays. It
+// is a rule, so it lives here and is tested, and the view only feeds it.
 
 /// Whether the island docks the open set, and whether the bar keeps the
 /// docked height.
 ///
 /// - The open set docks only while its editor's Log button is known to be
-///   out of view and no done set is being fixed. A new open row, a fix
-///   starting or ending, and an Undo all start from "in view": the editor is
-///   put back in front of the owner, so the island never shows it twice.
+///   out of view and no done set is being fixed. A new open row starts
+///   unknown: its editor has not reported yet.
+/// - A fix takes the open panel off the list for a while; that is not the
+///   panel leaving the viewport. The last report stands through the fix,
+///   and when it ends the panel is laid out again and reports at once.
+///   Until it does the dock waits for a report (`awaitsReport`); if none
+///   comes, the editor was never laid out, so it is out of view
+///   (`noReport()`, which the view calls after a bounded beat).
 /// - An open editor the list never laid out counts as out of view once the
 ///   list jumps elsewhere (the jump menu, a deep link).
-/// - The view reports the Log button from its geometry, on appearing too,
-///   so a panel laid out again (a fix ending, an Undo) undocks at once.
+/// - While the list scrolls itself to the open set (`seek`), nothing docks:
+///   the editor is on its way into view, and an island that showed it for a
+///   beat would blink. Undocking is never held back.
 /// - Undocking while the list moves keeps the bar's height until it is idle:
 ///   the bar is the list's bottom inset, and shrinking it near the end of the
 ///   list would move the content under the finger.
@@ -25,7 +31,14 @@ public struct RowsDock: Equatable, Sendable {
     public private(set) var isFixing = false
     /// The open editor's Log button as last reported; nil until it reports.
     public private(set) var logVisible: Bool?
+    /// The open editor is to report: a new open row, or a fix ended. Until
+    /// it does, `logVisible` is the best guess, and `noReport()` settles it.
+    public private(set) var awaitsReport = false
     public private(set) var isScrolling = false
+    /// The list scrolls itself to the open set.
+    public private(set) var isSeeking = false
+    /// The island draws the open set, compact.
+    public private(set) var isDocked = false
     /// The bar keeps the docked height: set on docking, released once the
     /// list is idle and the set is no longer docked.
     public private(set) var holdsHeight = false
@@ -34,32 +47,37 @@ public struct RowsDock: Equatable, Sendable {
         self.open = open
     }
 
-    /// The island draws the open set, compact.
-    public var isDocked: Bool {
-        open != nil && !isFixing && logVisible == false
-    }
-
     /// The open row or the fix, as the session and the screen now have them.
-    /// A change puts the editor back in view.
     public mutating func show(open: RowID?, isFixing: Bool) {
         guard open != self.open || isFixing != self.isFixing else { return }
+        if open != self.open {
+            logVisible = nil
+            awaitsReport = open != nil
+        } else if !isFixing {
+            // The fix ended: the open panel is laid out again where it was.
+            awaitsReport = true
+        }
         self.open = open
         self.isFixing = isFixing
-        logVisible = nil
-        settle()
-    }
-
-    /// An Undo: the set taken back opens in place, in view.
-    public mutating func undo() {
-        logVisible = nil
         settle()
     }
 
     /// An editor's Log button came into view or left it. Only the open
-    /// editor's counts, and none while a fix holds the screen.
+    /// editor's counts, and none while a fix holds the screen (the open
+    /// panel leaving for the fix's is not the panel leaving the viewport).
     public mutating func logButton(of row: RowID, isVisible: Bool) {
         guard row == open, !isFixing else { return }
         logVisible = isVisible
+        awaitsReport = false
+        settle()
+    }
+
+    /// The open editor was awaited and never reported: it was never laid
+    /// out, so it is out of view.
+    public mutating func noReport() {
+        guard awaitsReport, open != nil, !isFixing else { return }
+        logVisible = false
+        awaitsReport = false
         settle()
     }
 
@@ -69,6 +87,13 @@ public struct RowsDock: Equatable, Sendable {
     public mutating func jumped() {
         guard open != nil, !isFixing, logVisible == nil else { return }
         logVisible = false
+        awaitsReport = false
+        settle()
+    }
+
+    /// The list started or stopped scrolling itself to the open set.
+    public mutating func seek(_ isSeeking: Bool) {
+        self.isSeeking = isSeeking
         settle()
     }
 
@@ -92,6 +117,9 @@ public struct RowsDock: Equatable, Sendable {
     }
 
     private mutating func settle() {
+        let wanted = open != nil && !isFixing && logVisible == false
+        // A seek holds a dock back, never an undock.
+        isDocked = wanted && (isDocked || !isSeeking)
         if isDocked {
             holdsHeight = true
         } else if !isScrolling {

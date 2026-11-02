@@ -59,14 +59,24 @@ struct SetKindMenu: View {
 /// A set's menu items (DESIGN.md §7.6): the kinds §4.3 allows (the rest
 /// disabled), "About set types…", "Rate effort…" on a row whose grid has no
 /// RPE column, the rest after this set, a note, Remove. The Table's SET label
-/// and the Rows editor's `…` open the same items.
+/// and the Rows layout's `…` open the same items; the Rows layout adds
+/// Untick set on a done set and deletes with an undo rather than a question
+/// (§7.6a).
 struct SetMenuItems: View {
     let row: SetRowPresentation
+    /// Untick set, on a done set: back to pending with its values.
+    var untick: (() -> Void)?
+    /// Delete set, with an undo; nil removes as the Table does (a done set asks first).
+    var delete: (() -> Void)?
 
     @Environment(SessionController.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {
+        if let untick, row.isDone {
+            Button("Untick set", systemImage: "arrow.uturn.backward", action: untick)
+            Divider()
+        }
         if row.kind != nil {
             ForEach(SetKind.allCases, id: \.self) { kind in
                 Button {
@@ -105,6 +115,14 @@ struct SetMenuItems: View {
         Button("Note…", systemImage: "note.text") {
             cover.sheet = .note(.row(row.id))
         }
+        if let delete {
+            Button("Delete set", systemImage: "trash", role: .destructive, action: delete)
+        } else {
+            removeButton
+        }
+    }
+
+    private var removeButton: some View {
         Button("Remove set", systemImage: "trash", role: .destructive) {
             if row.isDone {
                 cover.removeDoneRow = row.id

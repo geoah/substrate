@@ -6,13 +6,15 @@ import SwiftUI
 /// applies (`RowsIsland.parts(editorInView:)`).
 ///
 /// 1. The rest: a ring and the time left, `of 2:00`, −15, +15 and Skip.
-/// 2. The next set, compact: its name and RPE (a tap brings the full editor
-///    into view), its values with steppers (a tap on a number types it) and
-///    Log; Start or Stop and the clock for a timed set. Drawn only while
-///    the open editor is scrolled out of view, so logging never needs a
-///    scroll back, and never twice on screen.
-/// 3. The set after that, on one line; a tap opens it when it can open now,
-///    else it only reads (no chevron).
+/// 2. The next set, compact: its name (a tap brings the full editor into
+///    view), its values with steppers where they fit (a tap on a number
+///    types it), its RPE (a tap opens the stops in the island) and a Log
+///    check; Start or Stop and the clock for a timed set. At the
+///    accessibility sizes only the name and Log (or Stop and its clock).
+///    Drawn only while the open editor is scrolled out of view, so logging
+///    never needs a scroll back, and never twice on screen.
+/// 3. The set after that, on one line; a tap takes the list to it and marks
+///    it for a moment. It never opens it (owner, 2026-11-02).
 ///
 /// Parts come and go with a fade and a small rise (a fade alone under Reduce
 /// Motion). Nothing here counts up for a set that is not timed.
@@ -23,6 +25,8 @@ struct RowsIslandView: View {
     let perform: (RowsAction) -> Void
     /// Brings the open set's full editor into view.
     let showOpenRow: () -> Void
+    /// Takes the list to a set and marks it ("Then …").
+    let showLine: (RowID) -> Void
     let finish: () -> Void
     let addExercise: () -> Void
 
@@ -93,20 +97,23 @@ struct RowsIslandView: View {
         }
     }
 
-    /// `Then  Calf Press (Machine), set 1, 60 kg × 12  ›`: a tap opens that set.
+    /// `Then  Calf Press (Machine), set 1, 60 kg × 12  ›`: a tap takes the
+    /// list to that set; the open set stays open.
     @ViewBuilder
     private func afterLine(_ after: RowsAfterPart) -> some View {
         let content = HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(after.label)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
+            // One line, cut in the middle so the values stay; at the
+            // accessibility sizes it wraps and is cut only at its end.
             Text(after.text)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-                .truncationMode(.middle)
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                .truncationMode(typeSize.isAccessibilitySize ? .tail : .middle)
             Spacer(minLength: 4)
-            if after.action != nil {
+            if after.row != nil {
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
@@ -116,11 +123,11 @@ struct RowsIslandView: View {
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(.rect)
-        if let action = after.action {
-            Button { perform(action) } label: { content }
+        if let row = after.row {
+            Button { showLine(row) } label: { content }
                 .buttonStyle(.plain)
                 .accessibilityLabel(after.sentence)
-                .accessibilityHint("Opens that set")
+                .accessibilityHint("Shows that set in the list")
         } else {
             content
                 .accessibilityElement(children: .ignore)
@@ -216,11 +223,15 @@ struct RowsRestPartView: View {
     }
 }
 
-/// The next set, compact: `A2 Bird Dog  Round 1  @ 8  ⌃` over its values
-/// with steppers and Log. When the row is too narrow the steppers go and a tap
-/// on a number types it; when even that does not fit (the accessibility
-/// sizes, a narrow phone) the clock, each value and Log take a line each.
-/// Every target stays at least 44 pt: the layout gives way, never the targets.
+/// The next set, compact: `A2 Bird Dog  Round 1  ⌃` over its values with
+/// steppers, its RPE and a Log check. When the row is too narrow the steppers
+/// go and a tap on a number types it (on a 375 pt phone at the default size
+/// load, reps and RPE fit one row so); when even that does not fit the
+/// clock, each value, the RPE and Log take a line each. At the accessibility
+/// sizes it docks only the name and Log, or Stop and its clock: a tap on the
+/// name brings the full editor into view, so the island never takes half the
+/// screen. Every target stays at least 44 pt: the layout gives way, never
+/// the targets.
 struct RowsNextPartView: View {
     let next: RowsNextPart
     let perform: (RowsAction) -> Void
@@ -239,10 +250,22 @@ struct RowsNextPartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             title
-            ViewThatFits(in: .horizontal) {
-                controls(steppers: true)
-                controls(steppers: false)
-                stacked
+            if typeSize.isAccessibilitySize {
+                HStack(spacing: 8) {
+                    clock
+                    Spacer(minLength: 0)
+                    primary
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    controls(steppers: true)
+                    controls(steppers: false)
+                    stacked
+                }
+                if screen.islandRPE == next.row, let strip = showsRPE {
+                    rpePicker(strip)
+                        .transition(.opacity)
+                }
             }
         }
         .padding(.leading, 14)
@@ -268,7 +291,7 @@ struct RowsNextPartView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             setLabel
                             Spacer(minLength: 4)
-                            trailing
+                            chevron
                         }
                     }
                 } else {
@@ -277,7 +300,7 @@ struct RowsNextPartView: View {
                         exerciseName.lineLimit(1)
                         setLabel
                         Spacer(minLength: 4)
-                        trailing
+                        chevron
                     }
                 }
             }
@@ -310,15 +333,7 @@ struct RowsNextPartView: View {
             .layoutPriority(1)
     }
 
-    @ViewBuilder
-    private var trailing: some View {
-        if let rpe = next.rpe {
-            Text(rpe)
-                .font(.subheadline.weight(.medium).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .fixedSize()
-                .accessibilityLabel("RPE \(rpe.dropFirst(2))")
-        }
+    private var chevron: some View {
         Image(systemName: "chevron.up")
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.tertiary)
@@ -326,15 +341,15 @@ struct RowsNextPartView: View {
     }
 
     private func controls(steppers: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             values(steppers: steppers)
             Spacer(minLength: 0)
             primary
         }
     }
 
-    /// The clock, each value and Log on a line of their own; a value keeps
-    /// its steppers where its line has room for them.
+    /// The clock, each value, the RPE and Log on a line of their own; a
+    /// value keeps its steppers where its line has room for them.
     private var stacked: some View {
         VStack(alignment: .leading, spacing: 6) {
             clock
@@ -345,6 +360,7 @@ struct RowsNextPartView: View {
                     compactField(field, steppers: false, fitsWidth: true)
                 }
             }
+            rpeButton
             primary
         }
     }
@@ -355,6 +371,64 @@ struct RowsNextPartView: View {
         ForEach(next.fields) { field in
             compactField(field, steppers: steppers)
         }
+        rpeButton
+    }
+
+    /// The RPE the island shows: as the panel shows it, so a warm-up's or a
+    /// timed set's stays out until the owner opens it there.
+    private var showsRPE: RowsRPEStrip? {
+        guard let strip = next.rpeStrip, !strip.isCollapsed || screen.openStrips.contains(next.row) else { return nil }
+        return strip
+    }
+
+    /// `@ 8`, filled once rated and outlined while it is the plan's; a tap opens the stops.
+    @ViewBuilder
+    private var rpeButton: some View {
+        if let strip = showsRPE {
+            let open = screen.islandRPE == next.row
+            Button {
+                withAnimation(.smooth(duration: 0.2)) { screen.islandRPE = open ? nil : next.row }
+            } label: {
+                Text(next.rpe ?? "RPE")
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(next.rpe == nil ? Color.secondary : tint)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .background(tint.opacity(strip.isRated || open ? 0.13 : 0), in: .capsule)
+                    .overlay {
+                        if !strip.isRated, !open { Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1.5) }
+                    }
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("RPE")
+            .accessibilityValue(strip.accessibilityValue)
+            .accessibilityHint(open ? "Hides the RPE stops" : "Shows the RPE stops")
+        }
+    }
+
+    /// The panel's RPE stops, in the island: a stop rates and closes them, `½` keeps them open.
+    private func rpePicker(_ strip: RowsRPEStrip) -> some View {
+        let label = Text("RPE").font(.subheadline).foregroundStyle(.secondary).accessibilityHidden(true)
+        let stops = RowsRPEStripView(strip: strip, tint: tint) { cell in
+            screen.apply(cell.patch, row: next.row, mode: .log, session: session)
+            withAnimation(.smooth(duration: 0.2)) { screen.islandRPE = nil }
+        } onHalf: { half in
+            if let patch = half.patch { screen.apply(patch, row: next.row, mode: .log, session: session) }
+        }
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                label
+                stops
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                label
+                stops
+            }
+        }
+        .padding(.top, 2)
     }
 
     @ViewBuilder
@@ -394,7 +468,7 @@ struct RowsNextPartView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(fitsWidth ? 0.5 : 1)
                 .fixedSize(horizontal: !fitsWidth, vertical: false)
-                .padding(.horizontal, steppers ? 2 : 12)
+                .padding(.horizontal, steppers ? 2 : 10)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
             }
@@ -429,18 +503,27 @@ struct RowsNextPartView: View {
         .accessibilityHidden(step == nil)
     }
 
+    /// The check (play, stop for a timed set), alone: the room goes to the values and the RPE.
     private var primary: some View {
         Button {
             screen.perform(next.primary.action, session: session, cover: cover, loggedText: next.loggedText)
         } label: {
-            Label(next.primary.title, systemImage: next.primary.action.symbol)
-                .labelStyle(.titleAndIcon)
-                .lineLimit(1)
-                .fixedSize()
+            Image(systemName: next.primary.action.symbol)
+                .font(.body.weight(.bold))
+                .frame(minWidth: 20, minHeight: 20)
         }
-        .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(next.tint), minHeight: 44, horizontalPadding: 12))
+        .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(next.tint), minHeight: 44, horizontalPadding: 13))
+        .frame(minWidth: 44, minHeight: 44)
         .disabled(!next.primary.isEnabled)
-        .accessibilityLabel(next.primary.accessibilityLabel)
+        // "Log", then what it logs: `105 kg × 10 @ 8`.
+        .accessibilityLabel(next.primary.title)
+        .accessibilityValue(spokenValues)
+    }
+
+    private var spokenValues: String {
+        let label = next.primary.accessibilityLabel
+        guard label.hasPrefix(next.primary.title) else { return label }
+        return String(label.dropFirst(next.primary.title.count)).trimmingCharacters(in: .whitespaces)
     }
 }
 

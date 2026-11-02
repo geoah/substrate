@@ -248,6 +248,7 @@ extension RowsAction {
         switch self {
         case let .tick(row): .tick(row)
         case let .touch(row): .touchRow(row)
+        case let .untick(row): .untick(row)
         case let .edit(row, patch): .edit(row, patch)
         case let .removeSet(row): .removeSet(row)
         case let .addSet(slot, role): .addSet(slot: slot, role: role)

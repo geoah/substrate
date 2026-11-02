@@ -417,6 +417,8 @@ public enum RowsAction: Equatable, Sendable {
     case tick(RowID)
     /// `.touchRow(row)`: do this row now.
     case touch(RowID)
+    /// `.untick(row)`: a done set back to pending, its values kept.
+    case untick(RowID)
     /// `.edit(row, patch)`: a fix's Save.
     case edit(RowID, SetValuesPatch)
     /// `.removeSet(row)`: Delete set, or End myo-reps on a pending mini-set.
@@ -429,6 +431,17 @@ public enum RowsAction: Equatable, Sendable {
     /// `.adjustRest(seconds)`: −15 and +15.
     case adjustRest(Seconds)
     case skipRest
+}
+
+extension RowsAction {
+    /// Taking a logged set back (the Undo after a Log, Untick set, a tap on
+    /// a done set's check): it goes back to pending with its values and
+    /// opens again, in place. The untick alone would open the set the plan
+    /// has next, which is the set taken back only when it was logged in
+    /// plan order (§7.6a).
+    public static func takeBack(_ row: RowID) -> [RowsAction] {
+        [.untick(row), .touch(row)]
+    }
 }
 
 /// A button: its words and what it sends.
@@ -553,6 +566,10 @@ public struct RowsNextPart: Equatable, Sendable {
     public var fields: [RowsField]
     /// `@ 8`: the RPE the Log commits; nil when none.
     public var rpe: String?
+    /// The editor's RPE control, for the island's picker; nil when the set
+    /// takes no RPE. Collapsed (a warm-up, a timed set, nothing to show) the
+    /// island leaves it out unless the owner opened it in the panel.
+    public var rpeStrip: RowsRPEStrip?
     /// `Log`, `Start`, `Stop`: the editor's primary action, in a word.
     public var primary: RowsButton
     /// A timed set runs: its clock counts up from here.
@@ -561,7 +578,7 @@ public struct RowsNextPart: Equatable, Sendable {
     public var sentence: String
 
     public init(row: RowID, exercise: String, badge: String?, label: String, tint: RowsEditor.Tint, fields: [RowsField],
-                rpe: String?, primary: RowsButton, timerStartedAt: Date?, sentence: String)
+                rpe: String?, rpeStrip: RowsRPEStrip? = nil, primary: RowsButton, timerStartedAt: Date?, sentence: String)
     {
         self.row = row
         self.exercise = exercise
@@ -570,6 +587,7 @@ public struct RowsNextPart: Equatable, Sendable {
         self.tint = tint
         self.fields = fields
         self.rpe = rpe
+        self.rpeStrip = rpeStrip
         self.primary = primary
         self.timerStartedAt = timerStartedAt
         self.sentence = sentence
@@ -581,27 +599,26 @@ public struct RowsNextPart: Equatable, Sendable {
     }
 }
 
-/// The island's last line: the set after the next one. A tap opens it
-/// when it can be the open set now; otherwise the line only reads.
+/// The island's last line: the set after the next one. A tap takes the
+/// list to that set and marks it for a moment; it never opens it (the owner
+/// opens it with a tap of its own, owner, 2026-11-02).
 public struct RowsAfterPart: Equatable, Sendable {
-    /// Nil when that set does not exist yet (a myo chain's next mini-set
-    /// appears only on a tick): the line reads, a tap does nothing.
+    /// The line a tap takes the list to: that set's, or for a drop still
+    /// waiting on its set (drawn as `+ drop` on it) the set's. A second side,
+    /// a drop or a cluster's next part is as much a target as any. Nil when
+    /// the set does not exist yet (a myo chain's next mini-set appears only
+    /// on a tick): the line only reads.
     public var row: RowID?
     /// `Then`.
     public var label: String
     /// `Calf Press (Machine), set 1, 60 kg × 12`, `set 3, 105 kg × 10`, `A2 Bird Dog, 11 per side`.
     public var text: String
-    /// `.touch(row)` when a tap would open that set now; nil when it does not
-    /// exist yet, waits on an earlier link of its chain (a second side, a
-    /// drop, a cluster's next part), or a timed set runs and keeps the editor.
-    public var action: RowsAction?
     public var sentence: String
 
-    public init(row: RowID?, label: String, text: String, action: RowsAction?, sentence: String) {
+    public init(row: RowID?, label: String, text: String, sentence: String) {
         self.row = row
         self.label = label
         self.text = text
-        self.action = action
         self.sentence = sentence
     }
 }

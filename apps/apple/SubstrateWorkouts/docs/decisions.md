@@ -210,9 +210,37 @@ The options, with their screens and rationales, are in [design/](design/README.m
 - **What stays in order:** the links of one set's chain (a second side, a drop, a cluster's
   next part, a myo mini-set) and a running timed set, which keeps the editor until it stops
   ([U7](#u7-any-order-nothing-timed-but-a-timed-set-and-a-three-part-island)). "Then …"
-  offers a tap only when its set can open now.
+  no longer opens anything: [U9](#u9-then-only-shows-the-set-a-set-menu-on-every-set-and-rpe-in-the-island).
 - **Why:** the owner moves freely between exercises and wants the plan to follow them, not
   to keep sending them back to what they skipped.
+- **Source:** owner, 2026-11-02;
+  [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
+### U9. "Then" only shows the set; a set menu on every set; and RPE in the island
+
+- **Decided by** the owner, 2026-11-02, using the pre-release built from e4cd635e.
+- **What:**
+  - A tap on the island's "Then …" takes the list to that set and marks it for a moment. It
+    does not open it or change the open set: "I click it and it moves me to that, but I don't
+    know what I need to do now. It shouldn't select the next one, it should just take me to
+    it, I can select it if I want." Since it never opens anything, any set in the list is a
+    target (a second side, a drop, a cluster's next part); U8's "only when it can open" goes.
+  - Every done set has the `…` the open set has, and Delete set lives there on every set,
+    with the undo toast in place of a question. A done set can be unticked from its `…` or
+    with a tap on its green check; it opens again with its values, as Undo after a Log now
+    does, and the toast logs it again.
+  - The island's docked set shows its RPE, a tap opening the stops in the island; Log is a
+    check alone, and the spacing is tighter, so load, reps and RPE fit one row on a 375 pt
+    phone.
+  - The RPE stops in the panel carry the label "RPE".
+  - "To failure" is no longer words inside the reps field. The header says it once, and the
+    failure choice stays the set kind in the `…`, tagged on the logged line. What is written
+    is unchanged.
+- **Why:** the owner's words, from the pre-release: "Completed sets don't have … button",
+  "'Delete set' should be in the set's … button", "Completed sets should have a clear/undo set
+  button", "Can we fit RPE into the current workout island? Maybe make the log button just an
+  icon and reduce the spacing on the other items?", "'To failure' isn't great as an
+  element/ux", "On the active set panel the RPE row doesn't say this is for RPE".
 - **Source:** owner, 2026-11-02;
   [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
 

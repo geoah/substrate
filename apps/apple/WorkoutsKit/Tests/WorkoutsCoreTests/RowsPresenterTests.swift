@@ -74,6 +74,7 @@ struct RowsSession {
             let values = try #require(try present(at: seconds).row(row)?.commitValues)
             try script.tick(row, values, at: at(seconds))
         case let .touch(row): try send(.touchRow(row: row), at: seconds)
+        case let .untick(row): try send(.uncompleteSet(row: row), at: seconds)
         case let .edit(row, patch): try edit(row, patch, at: seconds)
         case let .removeSet(row): try send(.removeSet(row: row), at: seconds)
         case let .startTimedSet(row):
@@ -177,10 +178,11 @@ struct RowsOpenSetTests {
         #expect(island.rest == nil && island.end == nil)
         #expect(island.next == RowsNextPart(
             row: set2.id, exercise: "Leg Press (Machine)", badge: nil, label: "Set 2", tint: .accent, fields: editor.fields,
-            rpe: "@ 8", primary: RowsButton(title: "Log", accessibilityLabel: "Log 105 kg × 10 @ 8", action: .tick(set2.id)),
+            rpe: "@ 8", rpeStrip: editor.rpe,
+            primary: RowsButton(title: "Log", accessibilityLabel: "Log 105 kg × 10 @ 8", action: .tick(set2.id)),
             timerStartedAt: nil, sentence: "Next: Leg Press (Machine). \(set2.sentence)"
         ))
-        #expect(island.after == RowsAfterPart(row: set3.id, label: "Then", text: "Set 3, 105 kg × 10", action: .touch(set3.id),
+        #expect(island.after == RowsAfterPart(row: set3.id, label: "Then", text: "Set 3, 105 kg × 10",
                                               sentence: "Then Set 3, 105 kg × 10"))
         #expect(!island.isCounting)
     }
@@ -555,7 +557,9 @@ struct RowsStructureTests {
         #expect(editor.tint == .orange && editor.title == "Drop" && editor.trailingNote == "no rest")
         #expect(editor.note == RowsNote(text: "to failure", kind: .status))
         let reps = try #require(editor.field(.reps))
-        #expect(reps.value == nil && reps.placeholder == "to failure" && reps.isMissing && reps.last == "last 8")
+        // The field holds no words: the note above says "to failure" once; VoiceOver hears it with the field.
+        #expect(reps.value == nil && reps.placeholder == nil && reps.isMissing && reps.last == "last 8")
+        #expect(reps.accessibilityValue == "to failure, empty")
         // The steppers start from last time's 8.
         #expect(reps.minus?.patch == SetValuesPatch(reps: .set(7)) && reps.plus?.patch == SetValuesPatch(reps: .set(9)))
         #expect(editor.rpe?.isCollapsed == false && editor.rpe?.shown == nil)
@@ -634,7 +638,7 @@ struct RowsStructureTests {
         let pause = try #require(pausing.island.rest)
         #expect(pause.kind == .pause && pause.title == "Pause" && pause.totalText == "of 0:15")
         // The next mini-set appears only on a tick; the island names it all the same, with nothing to tap.
-        #expect(pausing.island.after == RowsAfterPart(row: nil, label: "Then", text: "Mini-set 2", action: nil,
+        #expect(pausing.island.after == RowsAfterPart(row: nil, label: "Then", text: "Mini-set 2",
                                                       sentence: "Then Mini-set 2"))
 
         try session.tick("lateral-raise", 2, SetValues(load: .kg(6), reps: 4), at: 230)

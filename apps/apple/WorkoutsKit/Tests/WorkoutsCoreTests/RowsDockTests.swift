@@ -33,7 +33,7 @@ struct RowsDockTests {
         #expect(!dock.isDocked)
     }
 
-    @Test("a fix: the open panel leaving for the fix's never docks it, and Cancel brings it back in view")
+    @Test("a fix: the open panel leaving for the fix's never docks it, and the last report stands through it")
     func cancelFix() {
         var dock = dock(open: set2)
         dock.show(open: set2, isFixing: true)
@@ -41,33 +41,105 @@ struct RowsDockTests {
         dock.logButton(of: set2, isVisible: false)
         #expect(!dock.isDocked)
         dock.show(open: set2, isFixing: false)
-        #expect(!dock.isDocked && dock.logVisible == nil)
+        // In view before the fix, in view after it until the panel reports again.
+        #expect(!dock.isDocked && dock.logVisible == true && dock.awaitsReport)
+        dock.logButton(of: set2, isVisible: true)
+        #expect(!dock.isDocked && !dock.awaitsReport)
         // A real report after the fix still counts.
         dock.logButton(of: set2, isVisible: false)
         #expect(dock.isDocked)
-        // Docked, then a fix starts and ends: back in view either way.
+        // Docked, then a fix starts: the fix holds the screen.
         dock.show(open: set2, isFixing: true)
-        #expect(!dock.isDocked)
-        dock.show(open: set2, isFixing: false)
         #expect(!dock.isDocked)
     }
 
-    @Test("Undo: the set taken back opens in view, and the panel the Log removed reports nothing that counts")
-    func undo() {
-        var dock = dock(open: set1)
-        // Log set 1: set 2 opens; set 1's panel goes, and its report comes a beat later.
-        dock.show(open: set2, isFixing: false)
-        dock.logButton(of: set1, isVisible: false)
-        #expect(!dock.isDocked)
-        // Undo within five seconds: set 1 is open again, in view.
-        dock.undo()
-        dock.show(open: set1, isFixing: false)
-        #expect(!dock.isDocked)
-        // Undo while docked with the open row unchanged also puts the editor back.
-        dock.logButton(of: set1, isVisible: false)
+    @Test("an open editor off screen, a fix elsewhere, Cancel, and no geometry report: the set docks again")
+    func fixOffScreenNoReport() {
+        var dock = dock(open: set2)
+        dock.logButton(of: set2, isVisible: false)
         #expect(dock.isDocked)
-        dock.undo()
+        // Fix set 1 far up the list; the lazy list has dropped set 2's panel.
+        dock.show(open: set2, isFixing: true)
         #expect(!dock.isDocked)
+        // Cancel: the panel is not laid out again, so nothing reports. The last report stands at once…
+        dock.show(open: set2, isFixing: false)
+        #expect(dock.isDocked && dock.awaitsReport)
+        // …and the bounded wait settles it: still out of view.
+        dock.noReport()
+        #expect(dock.isDocked && !dock.awaitsReport)
+
+        // In view before the fix, gone after it (the owner scrolled during the fix), and no report: it docks.
+        var scrolled = RowsDock()
+        scrolled.show(open: set2, isFixing: false)
+        scrolled.logButton(of: set2, isVisible: true)
+        scrolled.show(open: set2, isFixing: true)
+        scrolled.show(open: set2, isFixing: false)
+        #expect(!scrolled.isDocked)
+        scrolled.noReport()
+        #expect(scrolled.isDocked)
+
+        // A report always wins over the wait, and a wait ending during a fix settles nothing.
+        var reported = dock
+        reported.show(open: set2, isFixing: true)
+        reported.show(open: set2, isFixing: false)
+        reported.logButton(of: set2, isVisible: true)
+        reported.noReport()
+        #expect(!reported.isDocked)
+        var during = RowsDock()
+        during.show(open: set2, isFixing: false)
+        during.show(open: set2, isFixing: true)
+        during.noReport()
+        #expect(!during.isDocked && during.awaitsReport)
+    }
+
+    @Test("an Undo that leaves the open row where it was changes nothing: an off-screen editor stays docked")
+    func undoOpenRowUnchanged() {
+        var dock = dock(open: set2)
+        dock.logButton(of: set2, isVisible: false)
+        #expect(dock.isDocked)
+        // A running timed set keeps the editor: the untick and touch leave set 2 open.
+        dock.show(open: set2, isFixing: false)
+        #expect(dock.isDocked && !dock.awaitsReport)
+    }
+
+    @Test("a new open row awaits its report; one never laid out docks once the wait ends")
+    func newRowAwaitsReport() {
+        var dock = dock(open: set1)
+        dock.show(open: set2, isFixing: false)
+        #expect(!dock.isDocked && dock.awaitsReport && dock.logVisible == nil)
+        // The panel the Log removed says nothing that counts.
+        dock.logButton(of: set1, isVisible: false)
+        #expect(!dock.isDocked && dock.awaitsReport)
+        dock.noReport()
+        #expect(dock.isDocked)
+    }
+
+    @Test("while the list scrolls itself to the open set nothing docks; an undock is never held")
+    func seekHoldsDock() {
+        // A Log near the bottom: the next panel opens lower, reports out of view, and the list scrolls to it.
+        var dock = dock(open: set1)
+        dock.show(open: set2, isFixing: false)
+        dock.seek(true)
+        dock.logButton(of: set2, isVisible: false)
+        #expect(!dock.isDocked)
+        dock.logButton(of: set2, isVisible: true)
+        dock.seek(false)
+        // It landed in view: the island never showed it.
+        #expect(!dock.isDocked)
+
+        // A seek that lands short leaves it docked once the seek ends.
+        var short = dock
+        short.seek(true)
+        short.logButton(of: set2, isVisible: false)
+        #expect(!short.isDocked)
+        short.seek(false)
+        #expect(short.isDocked)
+
+        // Docked, the island's title scrolls to the editor: it stays docked until the panel shows, then undocks.
+        short.seek(true)
+        #expect(short.isDocked)
+        short.logButton(of: set2, isVisible: true)
+        #expect(!short.isDocked)
     }
 
     @Test("a new open row starts in view: no stale dock from the row before")
@@ -166,19 +238,19 @@ struct RowsDockTests {
     }
 }
 
-@Suite("Rows island: what \"Then\" may open")
+@Suite("Rows island: \"Then\" takes the list to the set, never opens it")
 struct RowsAfterActionTests {
-    /// Every "Then" action the island offers opens that set: performed, the open row is that row.
-    private func expectEveryActionOpens(_ start: RowsSession, logs: Int) throws {
+    /// Every "Then" line that names a row names one the list shows, so a tap lands on it.
+    private func expectEveryLineLands(_ start: RowsSession, logs: Int) throws {
         var session = start
         var second = 10
+        var lines = 0
         for _ in 0 ..< logs {
             let layout = try session.layout(at: second)
-            guard let open = layout.openRow else { return }
-            if let after = layout.island.after, let action = after.action {
-                var opened = session
-                try opened.perform(action, at: second + 1)
-                #expect(try opened.layout(at: second + 2).openRow == after.row, "\(after.text)")
+            guard let open = layout.openRow else { break }
+            if let after = layout.island.after, let row = after.row {
+                lines += 1
+                #expect(layout.item(row) != nil, "\(after.text)")
             }
             // Log the open set and go on.
             let editor = try #require(layout.item(open)?.editor)
@@ -194,15 +266,16 @@ struct RowsAfterActionTests {
             }
             second += 200
         }
+        #expect(lines > 10, "\(lines) lines")
     }
 
-    @Test("walking two whole sessions, every \"Then\" with an action opens its set when performed")
-    func everyActionOpens() throws {
-        try expectEveryActionOpens(try RowsSession.dayOne(), logs: 40)
-        try expectEveryActionOpens(try RowsSession.fullyBody(), logs: 40)
+    @Test("walking two whole sessions, every \"Then\" that names a set names a line in the list")
+    func everyLineLands() throws {
+        try expectEveryLineLands(try RowsSession.dayOne(), logs: 40)
+        try expectEveryLineLands(try RowsSession.fullyBody(), logs: 40)
     }
 
-    @Test("a second side: the line reads, with no action, and a touch on it would not open it")
+    @Test("a second side: the line takes the list to it, though it cannot open yet")
     func secondSide() throws {
         var session = try RowsSession.fullyBody()
         let left = try session.row("bulgarian-split-squat", 0)
@@ -211,14 +284,11 @@ struct RowsAfterActionTests {
         let layout = try session.layout(at: 6)
         #expect(layout.openRow == left)
         let after = try #require(layout.island.after)
-        #expect(after.row == right && after.action == nil)
+        #expect(after.row == right && layout.item(right) != nil)
         #expect(after.text.lowercased().contains("right"))
-        // Why: the engine leaves a locked link closed.
-        try session.perform(.touch(right), at: 7)
-        #expect(try session.layout(at: 8).openRow == left)
     }
 
-    @Test("a drop: while its set is open, the line names the drop and offers nothing to tap")
+    @Test("a drop: while its set is open, the line names the drop and takes the list to it")
     func drop() throws {
         var session = try RowsSession.fullyBody()
         try session.tick("chest-press", 0, kgReps(25, 15), at: 60)
@@ -227,46 +297,80 @@ struct RowsAfterActionTests {
         let layout = try session.layout(at: 250)
         #expect(layout.openRow == set2)
         let after = try #require(layout.island.after)
-        #expect(after.text.hasPrefix("Drop") && after.action == nil)
-        if let drop = after.row {
-            try session.perform(.touch(drop), at: 251)
-            #expect(try session.layout(at: 252).openRow == set2)
-        }
+        #expect(after.text.hasPrefix("Drop"))
+        // The drop waits on set 2, drawn as `+ drop` on its line: the tap takes the list to that line.
+        #expect(after.row == set2 && layout.item(set2)?.tags.contains { $0.text.contains("drop") } == true)
     }
 
-    @Test("a cluster: the next cluster waits on this one, so the line only reads")
+    @Test("a cluster's next part exists in the list: the line takes the list to it")
     func cluster() throws {
         var script = EngineScript(at: engineEpoch)
         try script.start(EngineCatalog.routine([
             EngineCatalog.slot("x", EngineCatalog.press, [PlannedSet(key: "s1", structure: .cluster, load: .kg(80), rirMin: 2, rirMax: 2,
                                                                      miniSetReps: 3, miniSets: 3, intraSetPause: 20)]),
         ]), exercises: EngineCatalog.all)
-        var session = RowsSession(start: engineEpoch, script: script, history: HistoryIndex([]))
+        let session = RowsSession(start: engineEpoch, script: script, history: HistoryIndex([]))
         let head = try session.row("x", 0)
         let layout = try session.layout(at: 1)
         #expect(layout.openRow == head)
         let after = try #require(layout.island.after)
         let second = try #require(after.row)
-        #expect(after.text == "Cluster 2, 80 kg × 3" && after.action == nil)
-        try session.perform(.touch(second), at: 2)
-        #expect(try session.layout(at: 3).openRow == head)
+        #expect(after.text == "Cluster 2, 80 kg × 3" && layout.item(second) != nil)
     }
 
-    @Test("a running plank keeps the editor: the line after it only reads until it stops")
+    @Test("a running plank: the line after it still takes the list to set 2")
     func runningTimedSet() throws {
         var session = try RowsSession.fullyBody()
         let plank = try session.row("plank", 0)
         try session.perform(.touch(plank), at: 5)
-        let ready = try session.layout(at: 6)
-        // Ready, not running: set 2 can open.
-        let set2 = try session.row("plank", 1)
-        #expect(ready.island.after?.action == .touch(set2))
         try session.perform(.startTimedSet(plank), at: 100)
         let running = try session.layout(at: 120)
+        let set2 = try session.row("plank", 1)
         let after = try #require(running.island.after)
-        #expect(after.text == "Set 2, 0:58 hold" && after.row == set2 && after.action == nil)
-        try session.perform(.touch(set2), at: 121)
-        #expect(try session.layout(at: 122).openRow == plank)
+        #expect(after.text == "Set 2, 0:58 hold" && after.row == set2)
+        #expect(running.openRow == plank)
+    }
+}
+
+@Suite("Rows: taking a logged set back")
+struct RowsTakeBackTests {
+    @Test("Undo after an out-of-order Log reopens the set taken back, with its values, not the plan's next set")
+    func undoOutOfOrder() throws {
+        var session = try RowsSession.fullyBody()
+        let calf = try session.row("calf-press", 0)
+        let planned = try session.layout(at: 1).openRow
+        #expect(planned != nil && planned != calf)
+        // The owner opens Calf Press set 1 out of order and logs it.
+        try session.perform(.touch(calf), at: 10)
+        let values = try #require(try session.present(at: 20).row(calf)?.commitValues)
+        try session.perform(.tick(calf), at: 30)
+        let logged = try session.layout(at: 31)
+        #expect(logged.item(calf)?.state == .done && logged.openRow != calf)
+        // Undo: the engine's untick alone would open the plan's next set.
+        var untickOnly = session
+        try untickOnly.perform(.untick(calf), at: 33)
+        #expect(try untickOnly.layout(at: 34).openRow == planned)
+        // The take-back opens Calf Press set 1 again, in place, with what was logged.
+        for action in RowsAction.takeBack(calf) { try session.perform(action, at: 33) }
+        let back = try session.layout(at: 34)
+        #expect(back.openRow == calf && back.item(calf)?.state == .now)
+        let commit = try #require(try session.present(at: 34).row(calf)?.commitValues)
+        #expect(commit.load == values.load && commit.reps == values.reps)
+    }
+
+    @Test("Untick set on an older done set opens it again, and a Log of it brings back what it was")
+    func untickOlderSet() throws {
+        var session = try RowsSession.dayOne()
+        try session.log("leg-press", 0, at: 60)
+        try session.log("leg-press", 1, at: 200)
+        let warmup1 = try session.row("leg-press", 0)
+        for action in RowsAction.takeBack(warmup1) { try session.perform(action, at: 300) }
+        let layout = try session.layout(at: 301)
+        let warmup2 = try session.row("leg-press", 1)
+        #expect(layout.openRow == warmup1 && layout.item(warmup2)?.state == .done)
+        // Its undo is a Log of it.
+        try session.perform(.tick(warmup1), at: 310)
+        #expect(try session.layout(at: 311).item(warmup1)?.state == .done)
     }
 }
 
