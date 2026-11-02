@@ -595,7 +595,7 @@ public struct RowsNextPart: Equatable, Sendable {
         self.setLabel = setLabel
         self.isWarmup = isWarmup
         self.label = label
-        self.loggedText = loggedText ?? "\(label.isEmpty ? "Set \(setLabel)" : label) logged"
+        self.loggedText = loggedText ?? "\(label.isEmpty ? (isWarmup ? "Warm-up" : "Set \(setLabel)") : label) logged"
         self.tint = tint
         self.fields = fields
         self.rpe = rpe

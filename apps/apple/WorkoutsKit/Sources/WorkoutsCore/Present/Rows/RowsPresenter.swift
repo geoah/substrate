@@ -185,7 +185,10 @@ struct RowsBuilder {
         let rows = units.joined().compactMap { state.rows[$0] }
         guard rows.allSatisfy(\.isCompleted) else { return units.flatMap { unitItems($0, isGroup: isGroup) } }
         let sets = rows.map { item($0, isGroup: isGroup) }
-        let values = sets.map(\.values)
+        // In a group each value says whose it is: the labels are all `W`.
+        let values = sets.map { set in
+            isGroup ? "\(p.exerciseName(state.slot(set.slot)?.exercise ?? ExerciseID(""))) \(set.values)" : set.values
+        }
         let previous = rows.map { evaluator.previous($0.id)?.values }
         var comparison: RowsChange?
         if previous.allSatisfy({ $0 != nil }) {
@@ -203,7 +206,10 @@ struct RowsBuilder {
             comparison = RowsText.firstTime
         }
         let title = rows.count == 1 ? "Warm-up" : "Warm-ups"
-        let spoken = rows.map { spokenValues(of: $0) }.joined(separator: "; ")
+        let spoken = rows.map { row in
+            let values = spokenValues(of: row)
+            return isGroup ? "\(p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))): \(values)" : values
+        }.joined(separator: "; ")
         let tail = comparison.map { change in
             ". " + (change == RowsText.sameAsLastTime ? "The same as last time" : change.text.capitalizedFirst)
         } ?? ""

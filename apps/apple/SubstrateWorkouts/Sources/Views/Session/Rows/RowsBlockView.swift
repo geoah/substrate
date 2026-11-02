@@ -33,6 +33,10 @@ struct RowsBlockView: View {
     private var holdsOpenRow: Bool { layout.openRow.map { block.item($0) != nil } ?? false }
     private var groupHeader: GroupHeader? { presentation.blocks.first { $0.id == block.id }?.group }
     private var cards: [ExerciseCard] { block.slots.compactMap { presentation.card($0) } }
+    /// `Superset, Glute Bridge and Bird Dog`: two groups never sound the same.
+    private var spokenTitle: String {
+        block.group == nil ? block.title : [block.title, block.subtitle].compactMap { $0 }.joined(separator: ", ")
+    }
 
     // MARK: - The folded line
 
@@ -129,7 +133,7 @@ struct RowsBlockView: View {
                     roundIcon("chevron.up")
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Fold \(block.title)")
+                .accessibilityLabel("Fold \(spokenTitle)")
             }
             menu
         }
@@ -184,7 +188,7 @@ struct RowsBlockView: View {
         } label: {
             roundIcon("ellipsis")
         }
-        .accessibilityLabel("\(block.title) options")
+        .accessibilityLabel("\(spokenTitle) options")
     }
 
     private func roundIcon(_ symbol: String) -> some View {

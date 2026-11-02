@@ -61,6 +61,29 @@ nonisolated struct WorkoutsActivityAttributes: ActivityAttributes, Sendable {
 }
 
 extension WorkoutsActivityAttributes.ContentState {
+    /// Decodes a state an earlier build wrote: an activity outlives an update
+    /// of the app, and synthesized decoding refuses a missing key even where
+    /// the property has a default. Keys added since read as their defaults.
+    nonisolated init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            clockStart: c.decode(Date.self, forKey: .clockStart),
+            clockPausedAt: c.decodeIfPresent(Date.self, forKey: .clockPausedAt),
+            exercise: c.decode(String.self, forKey: .exercise),
+            setLabel: c.decodeIfPresent(String.self, forKey: .setLabel),
+            isWarmup: c.decodeIfPresent(Bool.self, forKey: .isWarmup) ?? false,
+            values: c.decodeIfPresent(String.self, forKey: .values) ?? "",
+            next: c.decode(String.self, forKey: .next),
+            nextRowID: c.decodeIfPresent(String.self, forKey: .nextRowID),
+            canComplete: c.decodeIfPresent(Bool.self, forKey: .canComplete) ?? true,
+            countdown: c.decodeIfPresent(Countdown.self, forKey: .countdown),
+            setsDone: c.decode(Int.self, forKey: .setsDone),
+            setsPlanned: c.decode(Int.self, forKey: .setsPlanned),
+            finishedSummary: c.decodeIfPresent(String.self, forKey: .finishedSummary),
+            revision: c.decode(Int.self, forKey: .revision)
+        )
+    }
+
     /// The `staleDate` every update carries: the countdown's end, so the
     /// widget flips to "Rest over" at that instant with no app code running
     /// (DESIGN.md §9.1). A finished session is never stale.

@@ -212,6 +212,7 @@ struct SetLabelChip: View {
 
     var body: some View {
         let color = isWarmup ? Color.orange : tint
+        let spoken = isWarmup ? "Warm-up" : label.allSatisfy(\.isNumber) ? "Set \(label)" : nil
         Text(label)
             .font(.system(size: size * 0.6, weight: .bold))
             .monospacedDigit()
@@ -220,7 +221,8 @@ struct SetLabelChip: View {
             .foregroundStyle(color)
             .frame(width: size * 1.35, height: size)
             .background(color.opacity(0.2), in: .rect(cornerRadius: size * 0.3))
-            .accessibilityLabel(isWarmup ? "Warm-up" : "Set \(label)")
+            .accessibilityLabel(spoken ?? "")
+            .accessibilityHidden(spoken == nil)
     }
 }
 
@@ -234,7 +236,8 @@ struct ExerciseLine: View {
         if !phase.state.exercise.isEmpty {
             HStack(spacing: 6) {
                 if let label = phase.state.setLabel {
-                    SetLabelChip(label: label, isWarmup: phase.state.isWarmup, tint: phase.tint, size: chipSize)
+                    // The accent, never the phase's green or orange: orange means a warm-up.
+                    SetLabelChip(label: label, isWarmup: phase.state.isWarmup, tint: .workoutsAccent, size: chipSize)
                 }
                 Text(phase.state.exercise)
                     .font(font)
@@ -519,22 +522,22 @@ struct SmallActivityView: View {
             case .counting:
                 // A transition's label names the exercise the line under it shows.
                 countdownRow(caption: phase.countdown?.kind == .transition ? "Go" : phase.countdown?.label ?? "")
-                ExerciseLine(phase: phase, font: .caption.weight(.semibold), chipSize: 16)
+                ExerciseLine(phase: phase, font: Self.lineFont, chipSize: 16)
                     .minimumScaleFactor(0.8)
             case .timing, .targetReached:
                 countdownRow(caption: phase.timedCaption)
                 Text(phase.countdown?.label ?? phase.state.exercise)
-                    .font(.caption.weight(.semibold))
+                    .font(Self.lineFont)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             case .over, .working:
                 if phase.state.nextRowID == nil {
                     allDone
                 } else {
-                    ExerciseLine(phase: phase, font: .caption.weight(.semibold), chipSize: 16)
+                    ExerciseLine(phase: phase, font: Self.lineFont, chipSize: 16)
                         .minimumScaleFactor(0.8)
                     Text(phase.state.values.isEmpty ? phase.state.next : phase.state.values)
-                        .font(.system(.title3, design: .rounded, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(phase.mode == .over ? phase.tint : .primary)
                         .lineLimit(1)
@@ -542,7 +545,7 @@ struct SmallActivityView: View {
                 }
             case .finished:
                 Label(phase.state.finishedSummary ?? "", systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(Self.lineFont)
                     .foregroundStyle(phase.tint)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -551,17 +554,21 @@ struct SmallActivityView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
+    /// Fixed sizes: the slot does not grow with the watch's text size, so
+    /// text styles that do would clip it again (the owner's complaint).
+    private static let lineFont = Font.system(size: 13, weight: .semibold)
+
     /// The countdown large, its word beside it: `1:16  Rest`.
     private func countdownRow(caption: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             CountdownText(phase: phase)
-                .font(.system(.title2, design: .rounded, weight: .semibold))
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
                 .foregroundStyle(phase.tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .layoutPriority(1)
             Text(caption)
-                .font(.caption2.weight(.semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(phase.mode == .targetReached ? phase.tint : .secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -572,7 +579,7 @@ struct SmallActivityView: View {
         HStack(spacing: 6) {
             SetsRing(phase: phase, size: 18)
             Text(phase.state.next)
-                .font(.caption.weight(.semibold))
+                .font(Self.lineFont)
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
         }
@@ -586,7 +593,7 @@ struct CompactLeading: View {
 
     var body: some View {
         if let label = phase.state.setLabel, phase.mode != .finished {
-            SetLabelChip(label: label, isWarmup: phase.state.isWarmup, tint: phase.tint, size: 18)
+            SetLabelChip(label: label, isWarmup: phase.state.isWarmup, tint: .workoutsAccent, size: 18)
         } else {
             Image(systemName: phase.mode == .finished ? "checkmark.circle.fill" : "dumbbell.fill")
                 .foregroundStyle(phase.tint)

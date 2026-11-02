@@ -21,7 +21,12 @@ enum RowsStyle {
     /// enough that it never reads as the set to do now (owner, 2026-11-02:
     /// "I keep clicking on old ones"). Stronger with Increase Contrast.
     static func doneFill(_ contrast: ColorSchemeContrast) -> Color {
-        Color(.systemGreen).opacity(contrast == .increased ? 0.16 : 0.08)
+        let strong = contrast == .increased
+        // Dark cards need more of the green to show at all.
+        return Color(UIColor { traits in
+            let alpha: CGFloat = traits.userInterfaceStyle == .dark ? (strong ? 0.24 : 0.14) : (strong ? 0.16 : 0.08)
+            return UIColor.systemGreen.withAlphaComponent(alpha)
+        })
     }
 
     /// The colour of an editor's controls: the accent, or orange for a warm-up or a drop.

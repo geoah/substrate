@@ -210,6 +210,8 @@ struct RowsSetLine<MenuItems: View>: View {
 
     private var valuesColor: Color {
         if item.valuesChanged, !isDone { return .accentColor }
+        // Struck through and grey is hard to read with Increase Contrast: the strike alone says done there.
+        if isDone, contrast == .increased { return .primary }
         return item.state == .now ? .primary : .secondary
     }
 
