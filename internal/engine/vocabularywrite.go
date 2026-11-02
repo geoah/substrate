@@ -931,8 +931,23 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
 				return nil, err
 			}
+			_, live := current.PackageByName(g)
+			stored, storedSource := live, ""
+			if !live {
+				// A quarantined package is out of the live registry and still
+				// stored: it keeps its source's rules, and it is not new.
+				var err error
+				if stored, storedSource, err = ds.storedGroup(ctx, ds.db, g); err != nil {
+					return nil, err
+				}
+				if stored {
+					if err := authorizeBySource(*actor, storedSource, groupKind(g) == kindAuthority, g); err != nil {
+						return nil, err
+					}
+				}
+			}
 			if !ds.svc.foreignPackages {
-				if err := authorizeNewPackage(*actor, current, ds.scope.Repository, g); err != nil {
+				if err := authorizeNewPackage(*actor, stored, ds.scope.Repository, g); err != nil {
 					return nil, err
 				}
 			}
@@ -2660,6 +2675,23 @@ func (ds *dataset) markGroupQuarantined(ctx context.Context, group, reason strin
 		},
 	})
 	return err
+}
+
+// storedGroup reports whether a live row of a declaration group (a package,
+// or an authority row) is stored, and its `source`, whether or not the live
+// registry holds it: a quarantined group is stored and out of the registry.
+func (ds *dataset) storedGroup(ctx context.Context, q dbx, group string) (bool, string, error) {
+	var source sql.NullString
+	err := q.QueryRowContext(ctx,
+		`SELECT props->>'source' FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		groupKind(group), group).Scan(&source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	return true, source.String, nil
 }
 
 // groupKind is the meta-kind a declaration GROUP stores as: a package row for a
