@@ -1350,6 +1350,10 @@ func (d *fakeDataset) UninstallBundle(_ context.Context, id string) error {
 	return noSuch("bundle", id)
 }
 
+func (d *fakeDataset) UninstallAppBundle(_ context.Context, _ substrate.Actor, id string) error {
+	return noSuch("bundle", id)
+}
+
 func (d *fakeDataset) PurgeBundle(_ context.Context, id string) (int, error) {
 	return 0, noSuch("bundle", id)
 }

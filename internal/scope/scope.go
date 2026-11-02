@@ -42,6 +42,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -360,6 +361,9 @@ func CheckStored(scopes []string) error {
 // Grant is a stored token's scopes, ready to answer what one request may do.
 type Grant struct {
 	scopes []Scope
+	// agents are the agents the token's owner approved its app to declare
+	// (agent.go), carried beside the scopes and never read as one.
+	agents []substrate.AgentApproval
 }
 
 // NewGrant parses a token's stored scopes. A stored list that does not parse

@@ -147,7 +147,7 @@ func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.
 		ScopesSupported:                        scopesSupported,
 		AuthorizationResponseISSSupported:      true,
 		ClientIDMetadataDocumentSupported:      true,
-		AuthorizationDetailsTypesSupported:     []string{substrate.DetailPackage, substrate.DetailAccount, substrate.DetailWebhook},
+		AuthorizationDetailsTypesSupported:     []string{substrate.DetailPackage, substrate.DetailAccount, substrate.DetailWebhook, substrate.DetailAgent},
 	})
 }
 
@@ -214,6 +214,10 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if scope.RequestsFull(scopes) && len(details) > 0 {
 		writeAuthorizePage(w, http.StatusBadRequest, "a request for full access sets nothing up: it names no authorization_details")
+		return
+	}
+	if err := agentsDeclared(details, scopes); err != nil {
+		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	iss := h.issuerOf(r)
@@ -497,6 +501,22 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			plan.Allowed = before.Covers(scope.WebhookScope(plan.Trigger), false)
 			view.Setup[i].Webhook = &plan
 		}
+		if row.Agent != nil && i < len(req.Details) {
+			plan := *row.Agent
+			want := approvedAgents([]substrate.AuthorizationDetail{req.Details[i]}, authority)
+			if view.Previous != nil {
+				for _, held := range view.Previous.Agents {
+					if len(want) == 1 && scope.CoversAgent(held, want[0]) {
+						plan.Allowed = true
+					}
+				}
+			}
+			declare := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(req.Details[i].Agent)}.Resolve(authority).String()
+			if why := p.refused[declare]; why != "" {
+				plan.Withheld = why
+			}
+			view.Setup[i].Agent = &plan
+		}
 	}
 	registry := make(map[string]substrate.KindInfo, len(p.kinds))
 	for _, k := range p.kinds {
@@ -680,6 +700,12 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(lifetimeDays, *in.LifetimeDays) {
 			return authorize.Approval{}, validation("lifetimeDays must be one of 7, 30 or 90, or 0 for until revoked")
 		}
+		// An agent is declared under its package's declare scope. Without
+		// it, unchecked by the owner or refused because another hand keeps
+		// the package (decision 0205), the app could never declare the
+		// agent, so the rest is approved and the agent approval left off
+		// the token (decision 0206).
+		details := withDeclaredAgents(req.Details, scopes, authority)
 		// Only an approved webhook detail puts `webhook:` on a token.
 		for _, d := range req.Details {
 			if d.Type == substrate.DetailWebhook {
@@ -689,7 +715,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return authorize.Approval{
 			Repository: authority, Dataset: ds, Scopes: scopes,
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: doc.Name,
-			Details: req.Details,
+			Details: details,
 		}, nil
 	}
 	req, err := h.authz.Reserve(id, authority, func(req authorize.Request) error {
@@ -816,6 +842,58 @@ func writeAuthorizationAnswerError(w http.ResponseWriter, r *http.Request, err e
 	default:
 		writeSubstrateError(w, r, err)
 	}
+}
+
+// agentsDeclared refuses a request whose agent detail comes without the
+// declare scope of the agent's package: the app declares the agent under it,
+// so an approval of one without the other sets up nothing it can use.
+func agentsDeclared(details []substrate.AuthorizationDetail, scopes []scope.Scope) error {
+	for _, d := range details {
+		if d.Type != substrate.DetailAgent {
+			continue
+		}
+		want := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}
+		if !slices.Contains(scopes, want) {
+			return fmt.Errorf("the agent %s is declared under %s, which scope does not ask for", d.Agent, want)
+		}
+	}
+	return nil
+}
+
+// withDeclaredAgents is details without the agent details whose package's
+// declare scope the approval does not hold.
+func withDeclaredAgents(details []substrate.AuthorizationDetail, scopes []string, authority string) []substrate.AuthorizationDetail {
+	out := make([]substrate.AuthorizationDetail, 0, len(details))
+	for _, d := range details {
+		if d.Type == substrate.DetailAgent {
+			want := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}.Resolve(authority).String()
+			if !slices.Contains(scopes, want) {
+				continue
+			}
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// approvedAgents are the agent details an approval carried, as the token
+// stores them: every authority resolved.
+func approvedAgents(details []substrate.AuthorizationDetail, authority string) []substrate.AgentApproval {
+	var out []substrate.AgentApproval
+	for _, d := range details {
+		if d.Type != substrate.DetailAgent {
+			continue
+		}
+		a := substrate.AgentApproval{Agent: scope.ResolveAgentKind(d.Agent, authority), SpendCentsPerDay: d.SpendCentsPerDay}
+		for _, k := range d.Reads {
+			a.Reads = append(a.Reads, scope.ResolveAgentKind(k, authority))
+		}
+		for _, k := range d.Writes {
+			a.Writes = append(a.Writes, scope.ResolveAgentKind(k, authority))
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // approvedScopes holds an approval to the request: a non-empty subset of
@@ -1018,6 +1096,7 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
 		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
+		Agents: approvedAgents(c.Approval.Details, c.Approval.Repository),
 	})
 	if err != nil {
 		status, code := http.StatusInternalServerError, "server_error"

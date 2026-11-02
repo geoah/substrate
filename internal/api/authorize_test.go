@@ -77,7 +77,7 @@ func (d *mintingDataset) MintToken(_ context.Context, in substrate.MintTokenInpu
 	secret := fmt.Sprintf("substrate_tok_app%d", n)
 	info := substrate.TokenInfo{
 		ID: fmt.Sprintf("app%d", n), Label: in.Label, Created: time.Unix(0, 0).UTC(),
-		ExpiresAt: in.ExpiresAt, Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
+		ExpiresAt: in.ExpiresAt, Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName, Agents: in.Agents,
 	}
 	d.svc.tokens[secret] = fakeToken{repository: d.repository.Authority, info: info}
 	return info, secret, nil

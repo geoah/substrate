@@ -115,6 +115,7 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		if gerr != nil {
 			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
 		}
+		grant = grant.WithAgents(tok.Agents)
 		ctx = substrate.WithScopes(ctx, tok.Scopes)
 		// A stream outlives this check: the lease reads the token again
 		// before the stream writes on, so a revoked or expired app token

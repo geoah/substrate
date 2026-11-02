@@ -178,7 +178,7 @@ func previousToken(ctx context.Context, ds substrate.Dataset, client authorize.C
 	if scopes == nil {
 		scopes = []string{}
 	}
-	return &substrate.AuthorizationPrevious{ApprovedAt: newest.Created, ExpiresAt: newest.ExpiresAt, Scopes: scopes}, nil
+	return &substrate.AuthorizationPrevious{ApprovedAt: newest.Created, ExpiresAt: newest.ExpiresAt, Scopes: scopes, Agents: newest.Agents}, nil
 }
 
 // grantedDetails is what the token response lists as set up: each package
@@ -209,6 +209,12 @@ func grantedDetails(ctx context.Context, ds substrate.Dataset, issuer, authority
 				Type: d.Type, Trigger: d.Trigger,
 				URL: issuer + "/webhooks/" + url.PathEscape(authority) + "/" + url.PathEscape(d.Trigger),
 			})
+		case substrate.DetailAgent:
+			for _, a := range approvedAgents([]substrate.AuthorizationDetail{d}, authority) {
+				out = append(out, substrate.AuthorizationDetail{
+					Type: d.Type, Agent: a.Agent, Reads: a.Reads, Writes: a.Writes, SpendCentsPerDay: a.SpendCentsPerDay,
+				})
+			}
 		}
 	}
 	return out
@@ -337,9 +343,16 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 				visible = grant.Reads(row.Account.Kind, !held || internalKind(k))
 			case substrate.DetailWebhook:
 				visible = grant.Delivers(row.Webhook.Trigger)
+			case substrate.DetailAgent:
+				// The token's own approval is what the row is about, so the
+				// row is always the token's to read.
+				visible = true
 			}
 		}
 		out.Setup[i] = checkRow(row, visible)
+		if row.Type == substrate.DetailAgent {
+			out.Setup[i].Action = agentCheckAction(grant, full, details[i], authority)
+		}
 	}
 	if lease := leaseFrom(ctx); lease != nil {
 		out.ExpiresAt = lease.expires
@@ -384,8 +397,27 @@ func checkRow(row substrate.AuthorizationSetup, visible bool) substrate.Authoriz
 		if visible {
 			out.Webhook.Package = row.Webhook.Package
 		}
+	case substrate.DetailAgent:
+		out.Agent = &substrate.AuthorizationAgentPlan{Agent: row.Agent.Agent}
 	}
 	return out
+}
+
+// agentCheckAction is a check's answer for an agent row: none when the
+// calling token's approval already covers the agent detail (its reach and
+// its cap), enable when approving again is needed. Nothing is set up on
+// approval either way; an owner's full-access token declares agents freely.
+func agentCheckAction(grant scope.Grant, full bool, d substrate.AuthorizationDetail, authority string) string {
+	if full {
+		return substrate.SetupNone
+	}
+	want := approvedAgents([]substrate.AuthorizationDetail{d}, authority)
+	if len(want) == 1 {
+		if held, ok := grant.Agent(want[0].Agent); ok && scope.CoversAgent(held, want[0]) {
+			return substrate.SetupNone
+		}
+	}
+	return substrate.SetupEnable
 }
 
 // checkMemoTTL is how long a token's last check answers the same body

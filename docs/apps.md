@@ -429,6 +429,60 @@ A request names only `declare:~/<package>`: a package under another
 authority, a glob or a kind is refused with an error page. A `builtin` or
 `published` package is refused at the apply, as for any token.
 
+### Declare an agent of your own
+
+An app keeps one AI agent in a package of its own when the owner approves it
+by name ([0206](decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md)).
+It asks with an `agent` authorization detail, beside `declare:~/<package>`
+for the package the agent lives in:
+
+```json
+{"type": "agent", "agent": "~/trainingcoach/workoutCoach",
+ "reads": ["~/training/routine", "~/training/memory", "substrate.reamde.dev/health/sleep"],
+ "writes": ["~/training/routine", "~/training/memory"],
+ "spendCentsPerDay": 100}
+```
+
+- `agent` is `~/<package>/<name>`, a camelCase name under the repository's
+  own authority. A request without `declare:~/<package>` is refused. An
+  approval without it, unchecked by the owner or refused because another
+  hand keeps the package, approves the rest and leaves the agent off the
+  token; the row says why in `withheld`.
+- `reads` (1 to 24) and `writes` (up to 16) are kinds named in full, `~`
+  allowed: never a glob, an auth kind or a kind of
+  `substrate.reamde.dev/core` or `…/llm`. Every write is also a read.
+- `spendCentsPerDay` is required, from 1 to 200.
+
+The approval page shows the agent with what it reads and changes, its cap,
+that it asks questions in the chat and that what it reads goes to the AI
+provider it runs on. Approving writes nothing: the token stores the
+approval in its `agents`, never in its scopes, so the app's own token reads
+none of the agent's kinds, and the token response echoes the detail, every
+`~` resolved. `/authorizations/check` answers the row `none` while the
+token's approval covers the detail and `enable` when a wider reach or a
+higher cap needs the owner again.
+
+The app then applies the agent document with its package and bundle through
+`POST /api/v1/vocabulary/apply`. The apply admits it only as approved:
+tools `substrate.reamde.dev/core/query`, `…/write` and `…/ask` and nothing
+beside them (no `background`, no `toolsFrom`, no sub-agents, no
+`hiddenFromChat`, no `resume`, purpose absent or `primary`); reads and writes
+within the approval, plus `substrate.reamde.dev/llm/interaction` beside
+`ask`; `budgets.spendCentsPerDay` at most the approved cap; a provider row
+that prices the model with input and output rates above zero; and
+`params.engineGuidance` left on. The token reads the agent's row, and the
+definitions (not the records) of the kinds the agent is approved to read,
+so it declares only kinds the server holds. An app removes such a package,
+when it declares no kinds, with `PATCH` of its bundle's `uninstalled`, as
+the owner would.
+
+The engine runs the agent only while the app holds an unexpired, unrevoked
+token whose approval covers it, on a priced model, and never as another
+agent's sub-agent; it checks again before every model call, so revoking the
+app or reaching the cap stops a running turn. The owner turns the agent off
+by pausing its bundle, which the app's next apply keeps paused, and makes it
+their own by taking the package over.
+
 ### Exchange the code
 
 ```
@@ -777,6 +831,10 @@ answer `401` and its deliveries the door's `404`, which fails closed. There
 is nothing to revoke: the token works again once the binary rolls forward,
 and an app that took the refusal for its access ending signs in again then.
 What a set up installed stays after any rollback.
+
+A binary from before agent approvals ignores a token's `agents`: the token
+still authenticates, and an app's agent runs without the check that a live
+approval covers it. Nothing is refused.
 
 A binary from before app authorization reads an app's token as a
 full-access one, since it does not know `scopes`. Before rolling back past
