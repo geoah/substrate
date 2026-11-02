@@ -245,7 +245,8 @@ func checkRepositoryMigrations(repository string, carried []repositoryMigration,
 			lines = append(lines, fmt.Sprintf("  %d (%s)", v, applied[v]))
 		}
 		errs = append(errs, fmt.Errorf("%w: repository %s recorded %d repository migration(s) this binary does not carry (it carries up to %d), "+
-			"so a newer binary opened it. Run that release or a later one, or restore the copy taken before it ran. Recorded:\n%s",
+			"so a newer binary opened it. Run that release or a later one, or restore the database and the data root "+
+			"(SUBSTRATE_DATA_ROOT) together from the copies taken before it ran, under the same credential key. Recorded:\n%s",
 			ErrRepositoryMigrationsNewer, repository, len(unknown), highest, strings.Join(lines, "\n")))
 	}
 	var drift, gap []string
