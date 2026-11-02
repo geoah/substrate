@@ -121,21 +121,31 @@ POST /api/v1/repository/domain/verify
 → 200 {"verified": true, "verifiedAt": "2026-11-02T12:00:00Z"}
 ```
 
-The check reads `_substrate.<repository>`, holds its `proof=` to the pending
-one, and fetches the `server=` origin's
-`/.well-known/substrate/server.json` to confirm its `server.instance` is this
-server's, an id each server mints once into a file under its data root. A
-pass stamps `domainVerifiedAt` on the repository record and spends the proof;
-the record may then keep `server=` alone. A failure answers `verified: false`
-and a `reason` naming what to change: no record, a record that does not
-parse, the proof differs, `server=` names another substrate, or the lookup
-failed. An earlier stamp stands through a failed check.
+The check reads `_substrate.<repository>` and holds its `proof=` to the
+pending one; the proof is the evidence, since only the name's controller can
+publish it. Then it confirms that `server=` reaches this server: with
+`SUBSTRATE_PUBLIC_URL` set, `server=` must equal that origin exactly, and in
+every case the check fetches `server=`'s `/.well-known/substrate/server.json`
+and compares its `server.instance` with this server's, an id each server
+mints once into a file under its data root. This is a consistency check, not
+authentication of the server: a proxy in front of this server relays its
+document. A pass stamps `domainVerifiedAt` on the repository record and
+spends the proof; the record may then keep `server=` alone. A failure
+answers `verified: false` and a `reason` naming what to change: no record, a
+record that does not parse, the proof differs, `server=` names another
+substrate, or the lookup failed. An earlier stamp stands through a failed
+check, and a server that lost its data root (and so minted a new instance
+id) keeps the stamps it wrote.
 
-A name of one label under the host the request reached (`ada.example.net` on
-`example.net`) passes with no record. The check never dials a loopback or
-private address, so a development server on `localhost` verifies only names
-under its own host. Both routes are the owner's: an app's scoped token is
-refused. Settings shows the record to copy and a **Check** button, and
+A name of exactly one label under the host of `SUBSTRATE_PUBLIC_URL`
+(`ada.substrate.example.net` on `https://substrate.example.net`) passes with
+no record. The request's `Host` header never counts, so with no public URL
+configured every name needs the record. The check never dials a loopback or
+private address, so a development server verifies only names under its
+public URL's host. Both routes refuse a scoped app token; a full-access
+token is a sign-in and acts as the owner
+([decision record 0204](decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)).
+Settings shows the record to copy and a **Check** button, and
 [`substratectl domain`](substratectl.md#verifying-the-repositorys-name) runs
 the same two calls.
 
