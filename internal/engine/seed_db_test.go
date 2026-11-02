@@ -672,20 +672,23 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 }
 
 // The authority chokepoint: shipped declarations are the substrate's to write
-// (seed, upgrade, install); the repository's user owns everything else.
+// (seed, upgrade, install); the repository's user owns everything else, and
+// creates new packages only under the repository's own authority (decision
+// 0210), which is why this test opens with the rule on.
 func TestDeclarationAuthority(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newDataset(t, engine.WithInsecureForeignPackages(false))
+	own := testdb.Repository(t)
 
 	// A user's own kind: theirs to declare.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.PackageManifest("mine.example.com/mine", 1),
+		vocabulary.PackageManifest(own+"/mine", 1),
 		{
 			"kind":     "substrate.reamde.dev/core/kind",
-			"metadata": map[string]any{"id": "mine.example.com/mine/gadget"},
+			"metadata": map[string]any{"id": own + "/mine/gadget"},
 			"data": map[string]any{
-				"authority": "mine.example.com",
+				"authority": own,
 				"package":   "mine",
 				"names":     map[string]any{"singular": "gadget"},
 				"properties": map[string]any{
@@ -726,51 +729,52 @@ func TestDeclarationAuthority(t *testing.T) {
 		}
 	}
 
-	// A package the repository does not hold yet is the user's to create,
-	// EXCEPT under the publisher's own authority: the source check above only
-	// guards packages that already exist, so a NEW sibling of core would
+	// A package the repository does not hold yet is the user's to create only
+	// under the repository's own authority (decision 0210). The source check
+	// above guards packages that already exist, so a NEW sibling of core would
 	// otherwise land as `installed` vocabulary spelled like the substrate's
-	// own (decision record 0047).
-	fresh := []map[string]any{
-		{
-			"kind":     "substrate.reamde.dev/core/package",
-			"metadata": map[string]any{"id": "substrate.reamde.dev/evil"},
-			"data": map[string]any{
-				"authority": "substrate.reamde.dev", "package": "evil", "version": 1,
-			},
-		},
-		{
-			"kind":     "substrate.reamde.dev/core/kind",
-			"metadata": map[string]any{"id": "substrate.reamde.dev/evil/gadget"},
-			"data": map[string]any{
-				"authority": "substrate.reamde.dev",
-				"package":   "evil",
-				"names":     map[string]any{"singular": "gadget"},
-				"properties": map[string]any{
-					"label": map[string]any{"type": "string"},
-				},
-			},
-		},
+	// own, a hand apply of a shipped provider would hold it outside its
+	// publisher's upgrades, and any other name would be squatted.
+	fresh := func(authority string) []map[string]any {
+		return []map[string]any{
+			vocabulary.PackageManifest(authority+"/evil", 1),
+			vocabulary.KindManifest(authority+"/evil", map[string]any{"singular": "gadget"},
+				map[string]any{"properties": map[string]any{"label": map[string]any{"type": "string"}}}),
+		}
 	}
-	for _, actor := range []substrate.Actor{owner, "api", "console"} {
-		_, err := ds.ApplyVocabularyDocuments(ctx, actor, fresh)
-		wantErr(t, err, substrate.ErrForbidden, "actor "+string(actor)+" declares a new package under the publisher")
+	hands := []substrate.Actor{
+		owner, substrate.ActorConsole, substrate.ActorCLI,
+		substrate.AppActor("app.example.org"),
+		substrate.AgentActor(own, "mine", "helper"),
+		substrate.FunctionActor(own, "mine", "helper"),
 	}
-	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", "substrate.reamde.dev/evil"); !errors.Is(err, substrate.ErrNotFound) {
-		t.Fatalf("the refused package left a row behind: %v", err)
+	for _, authority := range []string{
+		"substrate.reamde.dev", "providers.substrate.reamde.dev",
+		"samples.substrate.reamde.dev", "example.org",
+	} {
+		for _, actor := range hands {
+			_, err := ds.ApplyVocabularyDocuments(ctx, actor, fresh(authority))
+			wantErr(t, err, substrate.ErrForbidden, "actor "+string(actor)+" declares a new package under "+authority)
+		}
+		if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", authority+"/evil"); !errors.Is(err, substrate.ErrNotFound) {
+			t.Fatalf("the refused package %s/evil left a row behind: %v", authority, err)
+		}
 	}
-	// The sibling authorities the binary ships under are NOT closed: applying
-	// a provider or sample closure by hand is a door the catalog also opens.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		{
-			"kind":     "substrate.reamde.dev/core/package",
-			"metadata": map[string]any{"id": "providers.substrate.reamde.dev/acme"},
-			"data": map[string]any{
-				"authority": "providers.substrate.reamde.dev", "package": "acme", "version": 1,
-			},
-		},
-	}); err != nil {
-		t.Fatalf("a closure under a publisher SUBDOMAIN must still apply: %v", err)
+	// The refusal names the doors that do bring another authority's package.
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, fresh("providers.substrate.reamde.dev"))
+	if err == nil || !strings.Contains(err.Error(), "substratectl install providers.substrate.reamde.dev/evil") ||
+		!strings.Contains(err.Error(), "/api/v1/catalog/{id}/install") {
+		t.Fatalf("the refusal does not name the install door: %v", err)
+	}
+	// The substrate's own hands are not bound: a catalog install writes as
+	// the bundle it installs.
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor("example.org", "evil"), fresh("example.org")); err != nil {
+		t.Fatalf("a bundle hand may create a package under its own authority: %v", err)
+	}
+	// A package already held keeps its source rules: example.org/evil is now
+	// `installed`, and the owner's token may write it.
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, fresh("example.org")); err != nil {
+		t.Fatalf("a held package under another authority must stay writable: %v", err)
 	}
 }
 

@@ -367,7 +367,7 @@ func handApplyTasks(t *testing.T, ds substrate.Dataset, rewrite map[string]func(
 			}
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), heldHand(samplesPlacehldr+"/"+tasksPackage), docs); err != nil {
 		t.Fatalf("hand apply: %v", err)
 	}
 }

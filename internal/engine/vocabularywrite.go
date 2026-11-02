@@ -921,12 +921,35 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if actor != nil {
 		// THE OWNERSHIP CHECK, at the one chokepoint (seed.go): who may write a
 		// kind DECLARATION into each touched package.
-		for _, g := range sortedKeys(touched) {
+		// Packages before authority rows, so a refused new package is what
+		// the refusal names, never the authority row beside it.
+		ordered := sortedKeys(touched)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return strings.Contains(ordered[i], "/") && !strings.Contains(ordered[j], "/")
+		})
+		for _, g := range ordered {
 			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
 				return nil, err
 			}
-			if err := authorizeNewPackage(*actor, current, g); err != nil {
-				return nil, err
+			_, live := current.PackageByName(g)
+			stored, storedSource := live, ""
+			if !live {
+				// A quarantined package is out of the live registry and still
+				// stored: it keeps its source's rules, and it is not new.
+				var err error
+				if stored, storedSource, err = ds.storedGroup(ctx, ds.db, g); err != nil {
+					return nil, err
+				}
+				if stored {
+					if err := authorizeBySource(*actor, storedSource, groupKind(g) == kindAuthority, g); err != nil {
+						return nil, err
+					}
+				}
+			}
+			if !ds.svc.foreignPackages {
+				if err := authorizeNewPackage(*actor, stored, ds.scope.Repository, g); err != nil {
+					return nil, err
+				}
 			}
 			owner, err := ds.packageOwner(ctx, ds.db, g)
 			if err != nil {
@@ -1017,8 +1040,9 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// authority document travels with every closure published under it, so
 		// publishing that row would close `providers.substrate.reamde.dev`
 		// itself the moment any provider installed, and with it the hand apply
-		// of every sibling closure. The row says who publishes; the package
-		// row says who may write.
+		// of every sibling closure the repository already holds as
+		// `installed`. The row says who publishes; the package row says who
+		// may write.
 		source := vocabulary.SourceInstalled
 		if _, pkgName := vocabulary.SplitPackageRef(aname); b.published && pkgName != "" {
 			source = vocabulary.SourcePublished
@@ -2651,6 +2675,23 @@ func (ds *dataset) markGroupQuarantined(ctx context.Context, group, reason strin
 		},
 	})
 	return err
+}
+
+// storedGroup reports whether a live row of a declaration group (a package,
+// or an authority row) is stored, and its `source`, whether or not the live
+// registry holds it: a quarantined group is stored and out of the registry.
+func (ds *dataset) storedGroup(ctx context.Context, q dbx, group string) (bool, string, error) {
+	var source sql.NullString
+	err := q.QueryRowContext(ctx,
+		`SELECT props->>'source' FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		groupKind(group), group).Scan(&source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	return true, source.String, nil
 }
 
 // groupKind is the meta-kind a declaration GROUP stores as: a package row for a
