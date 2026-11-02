@@ -350,17 +350,20 @@ repository's token may not write a `builtin` package (the seeded `core`,
 `llm`, `console` and `observations`) or a `published` one (an installed
 provider or catalogue); its own packages and the
 samples it imported are `installed` and writable, except one an app declared
-under its `declare:` scope (`declaredBy: app:<host>`, owned by the full
-client id in `declaredByClient`), whose declarations only that app writes
+under its `declare:` scope (`declaredBy` is the app's actor, and the full
+client id in `declaredByClient` owns it), whose declarations only that app writes
 until the owner takes it over; the bundle's disable and enable stay the
 owner's, its purge does not
 ([0205](docs/decisions/0205-an-app-owns-the-package-it-declares.md)). A
 bundle owns one package and its id IS that package.
 
-`substrate.reamde.dev` is a **placeholder**. Moving kind identity to URLs (so
-anyone can publish kinds from a git repo without owning DNS) is real design
-work and it has not happened. Do not half-do it. Its character budget is
-reserved
+`substrate.reamde.dev` is a served domain: its `_substrate` TXT record names
+the authority document other servers read to verify the first-party apps
+([0209](docs/decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)).
+Kind identity is unchanged by that: an authority is still a DNS name, and
+moving kind identity to URLs (so anyone can publish kinds from a git repo
+without owning DNS) is real design work that has not happened. Do not
+half-do it. The authority's character budget is reserved
 ([0014](docs/decisions/0014-authorities-widen-only-outside-the-id-alphabet.md)):
 the record id alphabet is frozen and never gains `%`, and an authority widens
 only with characters the id alphabet excludes and never gains a raw `/`; the
@@ -369,10 +372,14 @@ package segment is the third job for `/`
 0014 stands, first-label reservation included. The
 actors are `bundle:<authority>:<package>`,
 `function:<authority>:<package>:<name>`,
-`agent:<authority>:<package>:<name>` and `app:<host>` (an app's token, from
-the client id the owner approved), derived by the substrate and never declared
+`agent:<authority>:<package>:<name>` and an app's token's actor, from what
+its approval proved: `app:<authority>` for an app whose publisher was
+verified, `app:local` for one whose access went to a loopback address, and
+`app:<host>` of its client id otherwise. All of them are derived by the
+substrate and never declared
 ([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md),
-[0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)). There
+[0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
+[0209](docs/decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)). There
 is no second spelling of a kind anywhere: no generated type name, no folded
 authority. The reference is the name on every surface, and nothing keys on a
 first label.

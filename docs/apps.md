@@ -18,11 +18,17 @@ unchanged ([tokens](auth.md)). An app may ask for that too, with the
 The approval page leads with what the app will be able to do, in plain
 words. From top to bottom:
 
-- **Who asks**: "An app wants to connect to" your repository, headed by the
-  host of the app's client id, which is the one fact the app's URL proves.
-  The name the app gives itself is shown beneath it as its claim. When the
-  access goes to a program on this device (a loopback address), one warning
-  says that nothing confirms the program is the app.
+- **Who asks**: "An app wants to connect to" your repository. A **verified**
+  app is headed by its name, "by" the authority that publishes it, and the
+  name its publisher's authority document gives itself: the authority's own
+  DNS confirms the app is its, and the access goes to that authority
+  ([name your publisher](#name-your-publisher)). Any other app is
+  **unverified**: it is headed by the host of its client id, the name it
+  gives itself is shown beneath as its claim, the page says where its
+  access goes (an origin, or an app on this device), and, when the app
+  names a publisher that could not be confirmed, which step failed. When
+  the access goes to a program on this device (a loopback address), one
+  warning says that nothing confirms the program is the app.
 - **It will be able to**: one sentence per requested scope, from what it
   does and the kinds or agents it reaches, each with a checkbox: uncheck one
   to leave it out. A pattern ending in `*` also covers matching kinds or
@@ -61,15 +67,18 @@ Technical details switch
 ([0131](decisions/0131-the-console-writes-for-two-readers-behind-one-switch.md)),
 so the choice follows you, and flipping it keeps every choice made on the
 page. It adds the full client id; what the app's own document claims, with a
-warning when the site it names is on another host; the address your browser
+warning when the site it names is on another host; the publisher check: the
+authority the app names, the `_substrate` record the server read, the
+authority document it names and whether that document lists the client id; the address your browser
 returns to; the repository; the access the app holds now; each scope as
 written, with every kind it reaches by full reference; per set up row, the
 package id, the version the app needs and the one this server ships, what it
 installs first, the kinds it adds, its functions with what each may write,
 and its triggers; the account's kind and id; the webhook's trigger, whether
 it is on and whether it has a key, which is never shared; the name the app's
-changes are recorded under, `app:` and its host, which history shows as the
-app's and never as yours; and the `authorization_details` as the app sent
+changes are recorded under, which history shows as the app's and never as
+yours: `app:` and the verified authority, `app:local` for an app whose
+access goes to this device, or `app:` and the host of its client id; and the `authorization_details` as the app sent
 them, to copy.
 
 Approving a request that sets something up runs the set up on your server,
@@ -121,11 +130,13 @@ describing the app. Serving it is the whole of registration:
 `client_id` must equal the URL the document is served at, and
 `redirect_uris` must list every redirect URI the app uses. Each one is on the
 `client_id`'s own origin (`https`, the same host and port), or `http` on a
-loopback address (a loopback entry matches any port). Serve the document
-from the host that receives the access: a document on a shared host (a raw
-file on GitHub, a paste) can name only a callback on that origin or a
-loopback one, and the approval page would be headed with the shared host's
-name. A document
+loopback address (a loopback entry matches any port). An unverified app
+serves the document from the host that receives the access: a document on a
+shared host (a raw file on GitHub, a paste) can name only a callback on that
+origin or a loopback one, and the approval page would be headed with the
+shared host's name. A verified app's callback may instead be on its
+authority or a name under it, wherever the document is served
+([name your publisher](#name-your-publisher)). A document
 that carries a `client_secret`, a `jwks` or `jwks_uri`, or another
 `token_endpoint_auth_method` is refused: an app here is a public client. A
 host is named in ASCII: an internationalized name is written as its
@@ -138,6 +149,76 @@ for 10 minutes.
 A local app uses a loopback `client_id` instead, such as
 `http://127.0.0.1/my-tool`, which is never fetched. Its `redirect_uri` must be
 a loopback `http` URL, on any port.
+
+### Name your publisher
+
+An app is **verified** when a domain whose DNS its publisher controls
+confirms the app is its
+([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)).
+Serving a file from a host does not prove that, so the proof is a DNS record
+the publisher adds once, and a document it names:
+
+1. The client document names the publisher's authority:
+   `"substrate_authority": "example.org"`. Anybody can write that line, so
+   it only says which name to ask. A value that is not an authority name is
+   ignored as a claim, and the document still works.
+2. The authority publishes one TXT record at `_substrate.<authority>`:
+
+   ```text
+   _substrate.example.org.  TXT  "v=substrate1 doc=https://example.org/.well-known/substrate/authority.json"
+   ```
+
+   An optional `sha256=` pins the document's digest, in lower-case hex. Two
+   `v=substrate1` records at one name, or one the server cannot parse, are
+   no record.
+3. The **authority document** at that URL lists the app's exact client id.
+   It may be served from any host, because the DNS chose its URL:
+
+   ```json
+   {
+     "authority": "example.org",
+     "name": "Example",
+     "description": "Example's apps.",
+     "apps": [
+       {
+         "client_id": "https://cdn.example.net/workouts/client.json",
+         "name": "Example Workouts",
+         "packages": [],
+         "apple": { "appIDs": ["ABCDE12345.org.example.workouts"] }
+       }
+     ]
+   }
+   ```
+
+   `authority` must be the name the record was looked up under. The server
+   fetches the document the way it fetches a client document (public
+   addresses, no redirects, 5 seconds), up to 64 KB, refuses a key it does
+   not read, and caches a success for 10 minutes. `packages` is read and
+   not yet used.
+4. The `redirect_uri` is `https` on the authority or a name under it, such
+   as `https://apps.example.org/workouts/callback`.
+
+The server checks this when the approval page reads the request, and once
+before parking a request whose redirect is off the client id's origin.
+Anything short of all four steps leaves the app unverified, with the step
+that failed shown to the owner. A loopback `client_id` or a loopback
+redirect is never verified: any program on the device can send either. An
+unverified app may still ask for everything a verified one may, `full`
+included; for `full` the page adds that nothing confirms which program
+receives a token equal to the owner's password.
+
+The token records the verified authority, and the app writes as
+`app:<authority>`. An app whose access went to a loopback address writes as
+`app:local`, and any other as `app:` and the host of its client id. What a
+package the app declares is owned by stays its client id, whichever actor it
+writes as.
+
+To test a document before publishing it, a development server reads it from
+a file in place of the DNS lookup and the fetch:
+`SUBSTRATE_INSECURE_AUTHORITY_DOCS=example.org=/path/to/authority.json`, a
+comma-separated list. The server logs a warning naming each authority at
+boot and refuses to start when a file cannot be read; `.mise/dev.sh` passes
+the variable through. Never set it on a server anybody else reaches.
 
 ### Native apps
 

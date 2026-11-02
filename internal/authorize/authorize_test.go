@@ -53,6 +53,7 @@ func TestAClientIDIsAnHTTPSDocumentURLOrALoopbackApp(t *testing.T) {
 		"https://\u0430pple.com/client.json",
 		"https://%D0%B0pple.com/client.json",
 		"ftp://notes.example.org/client.json",
+		"https://local/client.json",
 		"https://notes.example.org/" + strings.Repeat("a", 2100),
 	} {
 		if _, err := ParseClientID(raw); err == nil {

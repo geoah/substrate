@@ -408,6 +408,8 @@ describe("foldRequest", () => {
       host: "sync.example.com",
       local: false,
       actor: "app:sync.example.com",
+      verified: false,
+      publisher: { listed: false },
     },
     redirect: { uri: "https://sync.example.com/cb", host: "sync.example.com" },
     repository: "ada.example.com",

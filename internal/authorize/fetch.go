@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/egress"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The fetch of an app's metadata document is a server dial of a URL anybody
@@ -45,6 +46,16 @@ type Document struct {
 	// is cut to maxNameLen, URI is kept only when it is an https URL.
 	Name string
 	URI  string
+	// Authority is the publisher the document claims with
+	// `substrate_authority`, a claim until the authority's own record and
+	// document confirm it (Verifier). RefusedAuthority holds a claim that is
+	// not an authority name: the claim is refused, the document is not.
+	Authority        string
+	RefusedAuthority string
+	// Publisher is what the server confirmed about Authority when the
+	// approval page first read the request; the snapshot carries it to the
+	// approval and the token.
+	Publisher Publisher
 }
 
 // FetchError is a refusal the owner may read: it names what failed (a status,
@@ -298,6 +309,14 @@ func ParseDocument(body []byte, clientID string) (Document, error) {
 	if uri, ok := raw["client_uri"].(string); ok {
 		if u, err := parseAbsolute(uri); err == nil && u.Scheme == "https" {
 			doc.URI = uri
+		}
+	}
+	if v, ok := raw["substrate_authority"]; ok {
+		claim, _ := v.(string)
+		if vocabulary.ValidRepositoryAuthority(claim) {
+			doc.Authority = claim
+		} else {
+			doc.RefusedAuthority = truncate(fmt.Sprint(v), 200)
 		}
 	}
 	return doc, nil

@@ -1,12 +1,14 @@
 package substrate
 
+import "net/url"
+
 // The three managed properties of a package row that say who keeps its
 // declarations (decisions 0109 and 0205). The engine stamps them and no
 // document may write them.
 const (
-	// PackageDeclaredBy is the actor that first declared the package:
-	// `app:<host>` for an app, a door, the system, an agent or a function
-	// otherwise. It stays readable, and names the host only.
+	// PackageDeclaredBy is the actor that first declared the package: an
+	// app's `app:` actor, a door, the system, an agent or a function
+	// otherwise. It stays readable, and is never what ownership compares.
 	PackageDeclaredBy = "declaredBy"
 	// PackageDeclaredByClient is the full client id of the app that declared
 	// the package, beside its host-only actor: what ownership is compared on,
@@ -44,24 +46,32 @@ func PackageOwnerOf(props map[string]any) PackageOwner {
 func (o PackageOwner) App() bool { return IsAppActor(o.Actor) }
 
 // Admits reports whether the app writing as actor, under the client id
-// clientID, is this owner. Where the row carries a client id the two must be
-// equal, so a second app on the same host is not the owner. Where it carries
-// only the host (an install from before the client id was stamped), the first
-// app on that host to write claims it: claim is true, and the write stamps
-// its client id, after which only that client id is admitted. An app actor
-// with no client id at all (an engine caller, never a request) is admitted
-// against a host-only stamp and claims nothing.
+// clientID, is this owner. Where the row carries a client id the two client
+// ids must be equal and the actor is not compared: an app's actor follows
+// what its approval proved (decision 0209), so one app may write as
+// `app:<host>` before its publisher is verified and `app:<authority>` after,
+// and stays the same owner. Where the row carries only the host (an install
+// from before the client id was stamped), the first app whose client id is
+// on that host claims it: claim is true, and the write stamps its client id,
+// after which only that client id is admitted. The host compared is the
+// client id's, never the actor's. An app actor with no client id at all (an
+// engine caller, never a request) is admitted against a host-only stamp
+// equal to its actor and claims nothing.
 func (o PackageOwner) Admits(actor Actor, clientID string) (ok, claim bool) {
-	if !o.App() || actor != o.Actor {
+	if !o.App() || !IsAppActor(actor) {
 		return false, false
 	}
 	switch {
 	case o.ClientID != "":
 		return clientID == o.ClientID, false
 	case clientID != "":
+		u, err := url.Parse(clientID)
+		if err != nil || u.Host == "" || AppActor(u.Host) != o.Actor {
+			return false, false
+		}
 		return true, true
 	}
-	return true, false
+	return actor == o.Actor, false
 }
 
 // String names the owner for a person: the client id where it is stamped,
