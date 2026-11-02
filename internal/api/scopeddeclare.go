@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -98,6 +99,102 @@ func (s *scopedDataset) declarable(docs []map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// templatesRead refuses a kind document whose displayTemplate reads through a
+// reference the grant cannot read every possible target of. The engine
+// renders such a token from the referent (its title, or the property the
+// token names) into the record's title, which the app reads back, so the
+// app would read a record of a kind it holds no read scope for. A reference
+// with no pin may name any kind, and is refused.
+func (s *scopedDataset) templatesRead(ctx context.Context, docs []map[string]any) error {
+	batch := map[string]map[string]any{}
+	for _, doc := range docs {
+		if kind, _ := doc["kind"].(string); kind == vocabulary.CoreKind(vocabulary.DocKind) {
+			meta, _ := doc["metadata"].(map[string]any)
+			id, _ := meta["id"].(string)
+			data, _ := doc["data"].(map[string]any)
+			batch[id] = data
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(batch)) {
+		data := batch[id]
+		raw, _ := data["displayTemplate"].(string)
+		tmpl, err := vocabulary.ParseTemplate(raw)
+		if raw == "" || err != nil {
+			// The engine's loader refuses a template it cannot parse.
+			continue
+		}
+		props, _ := data["properties"].(map[string]any)
+		for _, ref := range tmpl.Refs() {
+			head := ref.Prop
+			switch {
+			case ref.Ref != "":
+				head = ref.Ref
+			case ref.Derived != "":
+				head = ref.Derived
+			}
+			decl, _ := props[head].(map[string]any)
+			if t, _ := decl["type"].(string); t != "reference" {
+				continue
+			}
+			read, err := s.referentsRead(ctx, decl, batch)
+			if err != nil {
+				return err
+			}
+			if !read {
+				return fmt.Errorf("%w: an app's token declares %s with data.displayTemplate {%s}, which reads %s, a reference to kinds it does not read",
+					substrate.ErrForbidden, id, ref, head)
+			}
+		}
+	}
+	return nil
+}
+
+// referentsRead reports whether the grant reads every kind a reference
+// declaration may name: its kind pin, or every kind implementing its trait
+// pin, whether stored or declared in the same batch.
+func (s *scopedDataset) referentsRead(ctx context.Context, decl map[string]any, batch map[string]map[string]any) (bool, error) {
+	if trait, _ := decl["trait"].(string); trait != "" {
+		impl, err := s.implementers(ctx, trait)
+		if err != nil {
+			return false, err
+		}
+		for id, data := range batch {
+			if slices.ContainsFunc(declaredList(data["traits"]), func(v any) bool { return v == trait }) {
+				impl = append(impl, id)
+			}
+		}
+		for _, k := range impl {
+			if read, err := s.declaredReads(ctx, k, batch); err != nil || !read {
+				return false, err
+			}
+		}
+		return true, nil
+	}
+	pin, _ := decl["kind"].(string)
+	if pin == "" || pin == vocabulary.ToAny {
+		return false, nil
+	}
+	return s.declaredReads(ctx, pin, batch)
+}
+
+// declaredReads is reads for a kind the registry holds, and the grant's
+// answer for one the batch declares.
+func (s *scopedDataset) declaredReads(ctx context.Context, kind string, batch map[string]map[string]any) (bool, error) {
+	reg, err := s.kinds(ctx)
+	if err != nil {
+		return false, err
+	}
+	if _, ok := reg[kind]; ok {
+		return s.reads(ctx, kind)
+	}
+	data, ok := batch[kind]
+	if !ok {
+		return false, nil
+	}
+	purpose, _ := data["purpose"].(string)
+	return s.grant.Reads(kind, purpose == vocabulary.PurposeInternal), nil
 }
 
 // embedded is the path of the first property under props that turns `embed`
