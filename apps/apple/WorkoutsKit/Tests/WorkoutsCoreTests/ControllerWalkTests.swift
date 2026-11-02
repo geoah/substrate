@@ -20,9 +20,10 @@ struct ControllerWalk {
     let settings = Progression.settings
     private(set) var presentation: SessionPresentation?
 
-    init(at start: Date, history: HistoryIndex, directory: URL) throws {
+    /// - Parameter catalog: nil is the owner's example catalogue.
+    init(at start: Date, history: HistoryIndex, directory: URL, catalog: Catalog? = nil) throws {
         script = EngineScript(at: start, seed: 11)
-        catalog = try BundledCatalog().loadNow()
+        self.catalog = try catalog ?? ExampleFixtures.catalog()
         self.history = history
         self.directory = directory
         journal = ActiveSessionJournal(directory: directory, writingOptions: .atomic)

@@ -1,16 +1,19 @@
 import WorkoutsCore
+import WorkoutsSync
 import SwiftUI
 
 /// The owner's routines by folder (DESIGN.md §7.2): one collapsible section
 /// per folder, a card per routine with its own Start, and a "+" for an empty
-/// session. Routines come with this build in V1; the console's agent writes
-/// them.
+/// session. The console's agent writes them; signed out, the app shows the
+/// sample routine it carries. A routine on the server is deleted by a swipe
+/// or its menu, after a confirmation.
 struct RoutinesView: View {
     @Environment(AppModel.self) private var app
     @Environment(SubstrateLink.self) private var link
     @State private var signingIn = false
     @State private var path: [RoutineID] = []
     @State private var collapsed: Set<String> = []
+    @State private var deleting: RoutineToDelete?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -77,30 +80,39 @@ struct RoutinesView: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else if list.isEmpty, case let .server(host) = app.catalogOrigin {
-                // A repository with no routines yet: the agent writes them, or
-                // the app copies the ones it carries.
+                // A repository with no routines: the agent writes them. The
+                // sample comes back only on request, once the owner deleted it.
+                let offersSample = SampleInstall.offersSample(state: link.sampleState, catalog: catalog)
                 ContentUnavailableView {
                     Label("No routines on \(host) yet", systemImage: "list.bullet.clipboard")
                 } description: {
                     VStack(spacing: 8) {
-                        Text("Ask your agent for a routine, or start from the four full-body routines and thirty exercises this app carries.")
-                        if let reason = link.writeBlockedReason {
+                        Text(RoutineListPresentation.serverEmptyText)
+                        if let problem = link.sampleProblem {
+                            // The first run's write failed; the next sync tries again.
+                            Text("The sample routine could not be added: \(problem) The app tries again at the next sync.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        if offersSample, let reason = link.writeBlockedReason {
                             Text(reason)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 } actions: {
-                    Button {
-                        Task { await link.copyStarterRoutines() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if link.copyingStarter { ProgressView().controlSize(.small) }
-                            Text("Add the Starter Routines")
+                    if offersSample {
+                        Button {
+                            Task { await link.addSampleRoutine() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if link.addingSample { ProgressView().controlSize(.small) }
+                                Text("Add the sample routine")
+                            }
                         }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(link.addingSample || !link.canWrite)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(link.copyingStarter || !link.canWrite)
                     StartSessionButton(request: .empty) {
                         Text("Start empty session")
                     }
@@ -131,6 +143,21 @@ struct RoutinesView: View {
                 Section(isExpanded: expanded(section.title)) {
                     ForEach(section.routines) { card in
                         RoutineCard(card: card) { path.append(card.id) }
+                            .swipeActions(edge: .trailing) {
+                                if canDelete {
+                                    Button("Delete", systemImage: "trash", role: .destructive) {
+                                        deleting = RoutineToDelete(id: card.id, name: card.name)
+                                    }
+                                }
+                            }
+                            .contextMenu {
+                                Button("Show Routine", systemImage: "list.bullet.clipboard") { path.append(card.id) }
+                                if canDelete {
+                                    Button("Delete Routine", systemImage: "trash", role: .destructive) {
+                                        deleting = RoutineToDelete(id: card.id, name: card.name)
+                                    }
+                                }
+                            }
                     }
                 } header: {
                     folderHeader(section)
@@ -140,7 +167,7 @@ struct RoutinesView: View {
                 Section {
                     Button("Sign In to Your Substrate…") { signingIn = true }
                 } footer: {
-                    Text("These routines come with the app. Sign in to train from your own and keep your sessions there.")
+                    Text("This sample comes with the app. Sign in to train from the routines your agent writes and keep your sessions there.")
                 }
             } else if case let .server(host) = app.catalogOrigin {
                 Section {} footer: {
@@ -158,6 +185,14 @@ struct RoutinesView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .confirmsRoutineDelete($deleting)
+    }
+
+    /// Routines on the signed-in substrate can be deleted; the sample the
+    /// app carries signed out cannot, since there is nothing to delete it from.
+    private var canDelete: Bool {
+        guard case .server = app.catalogOrigin else { return false }
+        return link.canDeleteRoutines
     }
 
     private func expanded(_ folder: String) -> Binding<Bool> {

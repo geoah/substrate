@@ -51,39 +51,70 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     }
 
     /// Reads every exercise, setup and routine from the server, keeps them,
-    /// and yields the catalogue to every `updates()` stream.
+    /// and yields the catalogue to every `updates()` stream. A record whose
+    /// delete still waits in the outbox (`hiding`, as `kind/id`) is left
+    /// out, so a routine deleted offline does not come back before its
+    /// delete lands. `hiding` is asked after the server answers, so a delete
+    /// made while the read was on the wire is left out too.
     @discardableResult
-    public func refresh(_ api: WorkoutsAPI) async throws -> Catalog {
+    public func refresh(_ api: WorkoutsAPI, hiding: @Sendable () async -> Set<String> = { [] }) async throws -> Catalog {
         let kinds = codec.kinds
-        let records = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
-        try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        try encoder.encode(RecordFile(format: 1, records: records)).write(to: cacheURL, options: writingOptions)
+        let listed = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
+        let hidden = await hiding()
+        let records = listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }
+        try write(records)
         let catalog = merged(catalog(from: records, source: api.client.server.host() ?? "the server"))
-        let listeners = lock.withLock { Array(continuations.values) }
-        for continuation in listeners {
-            continuation.yield(catalog)
-        }
+        publish(catalog)
         return catalog
     }
 
-    /// Writes the routines this build carries, and the exercises they name,
-    /// into the repository: for a repository that has none to train from. An
-    /// id the repository holds already is left as it is.
-    public func copyStarter(_ api: WorkoutsAPI, from bundled: Catalog) async throws -> Int {
-        let present = Set(try await api.list([codec.kinds.exercise, codec.kinds.routine]).map { "\($0.kind)/\($0.id)" })
-        var written = 0
-        let exercises = bundled.exercises.values.filter { !$0.isLocal }.sorted { $0.id.rawValue < $1.id.rawValue }
+    /// Takes a deleted routine out of the cache at once, before the server
+    /// hears of it, and yields the catalogue without it.
+    @discardableResult
+    public func remove(routine id: RoutineID) throws -> Catalog {
+        guard hasCache else { return try loadNow() }
+        let file = try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL))
+        let records = file.records.filter { !($0.kind == codec.kinds.routine && $0.id == id.rawValue) }
+        try write(records)
+        let catalog = merged(catalog(from: records, source: Self.fileName))
+        publish(catalog)
+        return catalog
+    }
+
+    /// Writes the sample routine this build carries, and the exercises it
+    /// names, into the repository (`SampleInstall`). An id the repository
+    /// holds already is left as it is: an exercise the owner or the agent
+    /// changed keeps its changes. `rewritingRoutine` writes the routine even
+    /// when the server lists it: the sample added back while its purge is
+    /// landing. Answers how many records it wrote.
+    @discardableResult
+    public func copySample(_ api: WorkoutsAPI, from bundled: Catalog, rewritingRoutine: Bool = false) async throws -> Int {
+        guard let sample = bundled.routines[SampleRoutine.id] else { return 0 }
+        var present = Set(try await api.list([codec.kinds.exercise, codec.kinds.routine]).map { "\($0.kind)/\($0.id)" })
+        if rewritingRoutine { present.remove("\(codec.kinds.routine)/\(SampleRoutine.id.rawValue)") }
+        let named = Set(sample.slots.map(\.exercise))
         // Exercises first: a routine slot's exercise must exist.
-        let routines = bundled.routines.values.sorted { $0.id.rawValue < $1.id.rawValue }
-        for record in exercises.map(codec.encode) + routines.map(codec.encode)
-            where !present.contains("\(record.kind)/\(record.id)")
-        {
+        let exercises = bundled.exercises.values.filter { named.contains($0.id) && !$0.isLocal }.sorted { $0.id.rawValue < $1.id.rawValue }
+        var written = 0
+        for record in exercises.map(codec.encode) + [codec.encode(sample)] where !present.contains("\(record.kind)/\(record.id)") {
             try await api.write("PUT", record.kind, record.id, properties: record.properties)
             written += 1
         }
         return written
+    }
+
+    private func write(_ records: [FlatRecord]) throws {
+        try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        try encoder.encode(RecordFile(format: 1, records: records)).write(to: cacheURL, options: writingOptions)
+    }
+
+    private func publish(_ catalog: Catalog) {
+        let listeners = lock.withLock { Array(continuations.values) }
+        for continuation in listeners {
+            continuation.yield(catalog)
+        }
     }
 
     /// Clears the cache: a sign-out, or another repository.

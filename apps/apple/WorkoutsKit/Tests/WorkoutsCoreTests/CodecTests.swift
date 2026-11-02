@@ -3,8 +3,8 @@ import Foundation
 import Testing
 
 /// The generated example records (`Fixtures/examples/*.json`) and
-/// `Fixtures/kinds.json`, from `scripts/examples.py`. Shared by every test
-/// file that needs the examples.
+/// `Fixtures/kinds.json`, from `apps/apple/scripts/workouts-package.py`.
+/// Shared by every test file that needs the examples.
 enum ExampleFixtures {
     static let files = ["exercises", "routines", "sessions", "coverage"]
 
@@ -27,6 +27,23 @@ enum ExampleFixtures {
     /// The finished and in-progress sessions of a fixture file with their sets.
     static func sessions(_ name: String) throws -> [SessionRecords] {
         try RecordCodec().sessionRecords(from: records(name))
+    }
+
+    /// The owner's 30 exercises and 4 routines (`exercises.json` and
+    /// `routines.json`), which the app bundled until the sample routine
+    /// replaced them: the catalogue the owner's example sessions ran on.
+    static func catalog() throws -> Catalog {
+        let codec = RecordCodec()
+        var catalog = Catalog()
+        for record in try records("exercises") {
+            let exercise = try codec.decodeExercise(record)
+            catalog.exercises[exercise.id] = exercise
+        }
+        for record in try records("routines") {
+            let routine = try codec.decodeRoutine(record)
+            catalog.routines[routine.id] = routine
+        }
+        return catalog
     }
 
     static func kinds() throws -> JSONValue {

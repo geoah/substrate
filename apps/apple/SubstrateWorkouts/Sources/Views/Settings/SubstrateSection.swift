@@ -57,7 +57,7 @@ struct SubstrateSection: View {
                 } header: {
                     Text("Refused by Your Substrate")
                 } footer: {
-                    Text("Retry sends the change again. Discard gives up the change and the rest of its session\u{2019}s changes waiting behind it; the session stays on this iPhone.")
+                    Text("Retry sends the change again. Discard gives up the change and the rest of its session\u{2019}s changes waiting behind it; the session stays on this iPhone. A routine whose delete you discard comes back at the next sync.")
                 }
             }
             AccountSection(session: session, manifest: link.manifest, unrevoked: link.unrevoked,

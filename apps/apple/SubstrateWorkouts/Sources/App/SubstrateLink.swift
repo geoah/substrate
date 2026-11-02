@@ -28,6 +28,9 @@ final class SyncAccount {
     /// server and repository only, and never imported from it again.
     let tombstones: SessionTombstones?
     let remote: RemoteCatalog?
+    /// Whether the sample routine was written here, so a deleted one never
+    /// comes back (decision S1).
+    let sample: SampleInstall?
     /// The session controller's writes into this account's outbox.
     private(set) var sink: OutboxSink<EventEnvelope, SessionState>?
     /// This account's package check, nil until it has run.
@@ -40,6 +43,7 @@ final class SyncAccount {
         outbox = directory.map { Outbox(directory: $0) }
         tombstones = directory.map { SessionTombstones(directory: $0) }
         remote = directory.map { RemoteCatalog(directory: $0, localExercises: localExercises) }
+        sample = directory.map { SampleInstall(directory: $0) }
         sink = outbox.map { outbox in
             OutboxSink(outbox: outbox, codec: codec, onQueued: { [weak self] in
                 guard let self else { return }
@@ -76,7 +80,12 @@ final class SubstrateLink {
     /// Why the last package check or catalogue read did not finish.
     private(set) var problem: String?
     private(set) var syncing = false
-    private(set) var copyingStarter = false
+    private(set) var addingSample = false
+    /// The signed-in repository's sample: nil until its first run is settled.
+    private(set) var sampleState: SampleInstall.State?
+    /// Why the sample could not be written at the last sync; tried again at
+    /// the next. Shown where the sample would be, never in the way of sync.
+    private(set) var sampleProblem: String?
     /// Tokens this device stopped using that the server has not revoked yet.
     private(set) var unrevoked: [Session] = []
     var signOutProblem: String?
@@ -206,6 +215,8 @@ final class SubstrateLink {
         parked = []
         waiting = 0
         syncing = false
+        sampleState = account.sample?.state
+        sampleProblem = nil
         if let remote = account.remote, remote.hasCache, let cached = try? remote.loadNow() {
             AppModel.shared.showServerCatalog(cached, host: account.host)
         }
@@ -230,6 +241,8 @@ final class SubstrateLink {
         waiting = 0
         parked = []
         syncing = false
+        sampleState = nil
+        sampleProblem = nil
         status.reset()
     }
 
@@ -291,9 +304,15 @@ final class SubstrateLink {
                 return
             }
             if let remote = account.remote {
-                let catalog = try await remote.refresh(account.api)
+                let read = try await CatalogSync.read(account.api, remote: remote, outbox: account.outbox, sample: account.sample,
+                                                      bundled: { try BundledCatalog().loadNow() })
                 guard isCurrent(account) else { return }
-                AppModel.shared.showServerCatalog(catalog, host: account.host)
+                sampleState = account.sample?.state
+                sampleProblem = read.sampleProblem
+                if let problem = read.sampleProblem {
+                    logger.error("sample routine: \(problem, privacy: .public)")
+                }
+                AppModel.shared.showServerCatalog(read.catalog, host: account.host)
             }
             await exchangeHistory(account)
             guard isCurrent(account) else { return }
@@ -352,6 +371,12 @@ final class SubstrateLink {
             {
                 entries.append(OutboxPlan.exerciseAdded(exercise, codec: codec))
             }
+            // The exercises a session to upload names that the repository
+            // lacks: the sample's, for a session logged signed out.
+            let queuedExercises = Set(entries.map(\.recordID))
+            let bundled = (try? BundledCatalog().loadNow())?.exercises ?? [:]
+            let known = bundled.merging(app.exercises) { _, phone in phone }
+            entries += OutboxPlan.exercisesFor(plan.uploads, server: exercises.union(queuedExercises), known: known, codec: codec)
             for records in plan.uploads.sorted(by: { $0.session.at < $1.session.at }) {
                 entries += OutboxPlan.finished(records, codec: codec)
             }
@@ -364,23 +389,61 @@ final class SubstrateLink {
         }
     }
 
-    /// Copies the routines this build carries, with their exercises, into a
-    /// repository that has none, then reads the catalogue again. Only into
-    /// a package checked at this build's version, like every write.
-    func copyStarterRoutines() async {
-        guard let account, account.package?.writable == true, let remote = account.remote, !copyingStarter else { return }
-        copyingStarter = true
-        defer { copyingStarter = false }
+    /// Writes the sample routine back, with any of its exercises the
+    /// repository lacks, after the owner deleted it; then reads the
+    /// catalogue again. Only into a package checked at this build's version,
+    /// like every write.
+    func addSampleRoutine() async {
+        guard let account, account.package?.writable == true, let remote = account.remote, !addingSample else { return }
+        addingSample = true
+        defer { addingSample = false }
         do {
-            let bundled = try BundledCatalog().loadNow()
-            _ = try await remote.copyStarter(account.api, from: bundled)
+            let outbox = account.outbox
+            try await account.sample?.addBack(account.api, remote: remote, outbox: outbox, bundled: BundledCatalog().loadNow())
             guard isCurrent(account) else { return }
-            let catalog = try await remote.refresh(account.api)
+            sampleState = account.sample?.state
+            sampleProblem = nil
+            let catalog = try await remote.refresh(account.api) { await outbox?.waitingDeletes ?? [] }
             guard isCurrent(account) else { return }
             AppModel.shared.showServerCatalog(catalog, host: account.host)
         } catch {
             if isCurrent(account) { note(error) }
         }
+    }
+
+    /// Whether a routine may be deleted from the app: signed in, with an
+    /// outbox to send the delete through, and a package the app may write.
+    /// While the package is unchecked the delete is queued like any write;
+    /// one known not writable (newer, changed outside the app) would hold the
+    /// delete back with no word of why, so Delete is not offered, and the
+    /// Routines banner says what stops the writes.
+    var canDeleteRoutines: Bool {
+        guard account?.outbox != nil, account?.remote != nil else { return false }
+        return package.map(\.writable) ?? true
+    }
+
+    /// Deletes a routine the owner chose: out of the cached catalogue at
+    /// once, and purged on the server through the outbox. The exercises it
+    /// names stay, since sessions name them too. A delete the outbox cannot
+    /// keep on disk changes nothing and is said.
+    func deleteRoutine(_ id: RoutineID) async {
+        guard let account, let outbox = account.outbox, let remote = account.remote else { return }
+        do {
+            try await outbox.delete(routine: id, codec: codec)
+        } catch {
+            notKept(error, account)
+            return
+        }
+        guard isCurrent(account) else { return }
+        do {
+            let catalog = try remote.remove(routine: id)
+            if remote.hasCache { AppModel.shared.showServerCatalog(catalog, host: account.host) }
+        } catch {
+            // The cache could not be rewritten; the delete still goes, and
+            // the next refresh leaves the routine out until it lands.
+            note(error)
+        }
+        await flush(account)
     }
 
     // MARK: Refused writes

@@ -3,24 +3,26 @@ import Foundation
 import WorkoutsCore
 
 /// What the SwiftUI previews show, built the way the app builds it: the
-/// bundled catalogue, the example sessions of `PreviewHistory.json` (test
-/// data, never the owner's history, DESIGN.md §2.4) as History, and a
-/// session in progress made by the engine and drawn by the presenter. Debug
-/// only, like the JSON beside it, which archives leave out.
+/// bundled catalogue (the sample routine, decision S1), two earlier sessions
+/// of it made by the engine as History, and a session in progress made by
+/// the engine and drawn by the presenter. Made from the bundle at preview
+/// time, so it never drifts from what the app carries. Debug only.
 @MainActor
 enum PreviewData {
     static let catalog: Catalog = (try? BundledCatalog().loadNow()) ?? Catalog()
 
-    /// The three example sessions, newest first, saved to Apple Health.
+    /// The sample, done in full nine and four days ago, newest first, saved
+    /// to Apple Health.
     static let history: [HistoryEntry] = {
-        guard let url = Bundle.main.url(forResource: "PreviewHistory", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let file = try? JSONDecoder().decode(RecordFile.self, from: data),
-              let sessions = try? RecordCodec().sessionRecords(from: file.records)
-        else { return [] }
-        return sessions
-            .map { HistoryEntry(records: $0, local: HistoryLocal(health: HealthSaveState(status: .saved))) }
-            .sorted { $0.records.session.at > $1.records.session.at }
+        let app = AppModel(catalog: catalog, history: [])
+        let entries: [HistoryEntry] = [9, 4].compactMap { daysAgo in
+            var script = Script(app: app, now: Date.now.addingTimeInterval(TimeInterval(-daysAgo * 86400)), startedSecondsAgo: 0)
+            script.start()
+            let end = script.logAll(before: nil, from: 60, every: 75)
+            guard let records = script.finish(at: end) else { return nil }
+            return HistoryEntry(records: records, local: HistoryLocal(health: HealthSaveState(status: .saved)))
+        }
+        return entries.sorted { $0.records.session.at > $1.records.session.at }
     }()
 
     /// The app with the session cover in `layout` (Rows unless a preview asks for the Table).
@@ -34,8 +36,8 @@ enum PreviewData {
         SessionController(app: app, previewState: nil)
     }
 
-    /// Fully Body Collection #1, started 16 minutes ago: the leg press's
-    /// first sets done and its rest counting down.
+    /// The sample, started 16 minutes ago: the leg press's warm-up and top
+    /// set done and its rest counting down.
     static func session(_ app: AppModel, now: Date = .now) -> SessionController {
         SessionController(app: app, previewState: sessionState(app, now: now), now: now)
     }
@@ -64,9 +66,9 @@ enum PreviewData {
     /// driven through the engine with the Rows settings (the RPE pre-fill on),
     /// after the example sessions in History.
     enum RowsMoment: String, CaseIterable {
-        /// Day 1, warm-up 1 of the leg press open in orange.
+        /// The sample, the leg press's warm-up open in orange.
         case warmupOpen
-        /// Leg press set 2 open: warm-ups folded, set 1 done with its verdict, RPE 8 pre-filled.
+        /// Leg press set 2 (the back-off) open: the warm-up folded, the top set done with its verdict, the RPE pre-filled.
         case setTwoOpen
         /// The same after −1 rep: the value tinted, `↺ 10` offered.
         case oneRepFewer
@@ -76,21 +78,21 @@ enum PreviewData {
         case resting
         /// Resting, with set 1 open to fix (see `rowsScreen`).
         case fixing
-        /// Chest press set 1 done out of order: leg press set 3 waits.
+        /// Chest press set 1 open out of order: the leg press's back-off waits.
         case outOfOrder
         /// Set 2 open with the keypad typing 120 (see `rowsScreen`).
         case keypad
         /// The lateral raise as myo-reps: two mini-sets as chips, the third open.
         case myoReps
-        /// Fully Body, the superset in round 1: A1 done, go straight to A2.
+        /// The superset in round 1: A1 done, go straight to A2.
         case superset
-        /// Fully Body, the chest press drop hanging off set 2 and open at once.
+        /// The chest press drop hanging off set 3 and open at once.
         case drop
-        /// Fully Body, the plank ready with its goal and last time.
+        /// The plank ready with its goal and last time.
         case plankReady
-        /// Fully Body, the plank held for 41 s.
+        /// The plank held for 41 s.
         case plankRunning
-        /// Day 1 with every set done: the blocks folded, Finish in the capsule.
+        /// Every set done: the blocks folded, Finish in the capsule.
         case allDone
         /// An empty session: the capsule asks for an exercise.
         case empty
@@ -106,7 +108,7 @@ enum PreviewData {
         guard let state = session.state, let layout = session.presentation?.rowsLayout else { return RowsScreenModel() }
         switch moment {
         case .fixing:
-            guard let set1 = state.slot("leg-press")?.rows[2], let item = layout.item(set1), let fix = item.fix,
+            guard let set1 = state.slot("leg-press")?.rows[1], let item = layout.item(set1), let fix = item.fix,
                   let plus = fix.editor(draft: fix.logged).field(.reps)?.plus
             else { return RowsScreenModel() }
             return RowsScreenModel(fixing: .init(row: set1, draft: fix.logged.applying(plus.patch)))
@@ -124,67 +126,58 @@ enum PreviewData {
         switch moment {
         case .warmupOpen:
             var script = Script(app: app, now: now, startedSecondsAgo: 52)
-            script.start(routine: "day-1-strength-foundation")
+            script.start()
             return script.state
         case .setTwoOpen, .oneRepFewer, .rpeTapped, .keypad:
-            var script = Script(app: app, now: now, startedSecondsAgo: 760)
-            script.start(routine: "day-1-strength-foundation")
+            var script = Script(app: app, now: now, startedSecondsAgo: 560)
+            script.start()
             script.log("leg-press", 0, at: 60)
-            script.log("leg-press", 1, at: 160)
-            script.log("leg-press", 2, at: 400)
-            if moment == .oneRepFewer || moment == .rpeTapped, let set2 = script.row(slot: "leg-press", index: 3) {
-                script.apply(.editSet(.init(row: set2, values: SetValuesPatch(reps: .set(9)))), at: 700)
+            script.log("leg-press", 1, at: 200)
+            if moment == .oneRepFewer || moment == .rpeTapped, let set2 = script.row(slot: "leg-press", index: 2) {
+                script.apply(.editSet(.init(row: set2, values: SetValuesPatch(reps: .set(9)))), at: 500)
                 if moment == .rpeTapped {
-                    script.apply(.editSet(.init(row: set2, values: .enteringRPE(Decimal(string: "8.5")!))), at: 710)
+                    script.apply(.editSet(.init(row: set2, values: .enteringRPE(Decimal(string: "8.5")!))), at: 510)
                 }
             }
             return script.state
         case .resting, .fixing:
             var script = Script(app: app, now: now, startedSecondsAgo: 820)
-            script.start(routine: "day-1-strength-foundation")
+            script.start()
             script.log("leg-press", 0, at: 60)
-            script.log("leg-press", 1, at: 160)
-            script.log("leg-press", 2, at: 400)
-            script.log("leg-press", 3, at: 730)
+            script.log("leg-press", 1, at: 730)
             return script.state
         case .outOfOrder:
             var script = Script(app: app, now: now, startedSecondsAgo: 965)
-            script.start(routine: "day-1-strength-foundation")
+            script.start()
             script.log("leg-press", 0, at: 60)
-            script.log("leg-press", 1, at: 160)
-            script.log("leg-press", 2, at: 400)
-            script.log("leg-press", 3, at: 730)
-            script.touch("iso-lateral-chest-press", 0, at: 960)
+            script.log("leg-press", 1, at: 400)
+            script.touch("chest-press", 0, at: 960)
             return script.state
         case .myoReps:
             var script = Script(app: app, now: now, startedSecondsAgo: 2200)
-            script.start(routine: "day-1-strength-foundation")
-            var at = 60
-            for slot in ["leg-press", "iso-lateral-chest-press", "seated-row"] {
-                at = script.logAll(slot, from: at, every: 90)
-            }
+            script.start()
+            let at = script.logAll(before: "lateral-raise", from: 60, every: 60)
             script.log("lateral-raise", 0, at: at)
-            script.log("lateral-raise", 1, at: at + 120)
-            script.log("lateral-raise", 2, at: at + 150)
-            script.log("lateral-raise", 3, at: at + 180)
+            script.log("lateral-raise", 1, at: at + 30)
+            script.log("lateral-raise", 2, at: at + 60)
             return script.state
         case .superset:
-            var script = Script(app: app, now: now, startedSecondsAgo: 2409)
-            script.start(routine: "fully-body-collection-1")
-            let at = script.logAll(before: "glute-bridge", from: 60, every: 50)
-            script.log("glute-bridge", 0, at: max(at, 2400))
+            var script = Script(app: app, now: now, startedSecondsAgo: 1409)
+            script.start()
+            let at = script.logAll(before: "pull-up", from: 60, every: 50)
+            script.log("pull-up", 0, at: max(at, 1400))
             return script.state
         case .drop:
-            var script = Script(app: app, now: now, startedSecondsAgo: 1206)
-            script.start(routine: "fully-body-collection-1")
+            var script = Script(app: app, now: now, startedSecondsAgo: 606)
+            script.start()
             let at = script.logAll(before: "chest-press", from: 60, every: 50)
             script.log("chest-press", 0, at: at)
             script.log("chest-press", 1, at: at + 100)
-            script.log("chest-press", 2, at: max(at + 200, 1200))
+            script.log("chest-press", 2, at: max(at + 200, 600))
             return script.state
         case .plankReady, .plankRunning:
             var script = Script(app: app, now: now, startedSecondsAgo: 2241)
-            script.start(routine: "fully-body-collection-1")
+            script.start()
             let at = script.logAll(before: "plank", from: 60, every: 50)
             script.touch("plank", 0, at: at)
             if moment == .plankRunning {
@@ -193,11 +186,8 @@ enum PreviewData {
             return script.state
         case .allDone:
             var script = Script(app: app, now: now, startedSecondsAgo: 3000)
-            script.start(routine: "day-1-strength-foundation")
-            var at = 60
-            for slot in ["leg-press", "iso-lateral-chest-press", "seated-row", "lateral-raise", "romanian-deadlift"] {
-                at = script.logAll(slot, from: at, every: 80)
-            }
+            script.start()
+            _ = script.logAll(before: nil, from: 60, every: 70)
             return script.state
         case .empty:
             var script = Script(app: app, now: now, startedSecondsAgo: 30)
@@ -222,9 +212,9 @@ enum PreviewData {
             started = self.now.addingTimeInterval(TimeInterval(-startedSecondsAgo))
         }
 
-        /// Fully Body Collection #1 16 minutes ago, for the Table's previews.
+        /// The sample routine, the one the app carries.
         mutating func start() {
-            start(routine: "fully-body-collection-1")
+            start(routine: SampleRoutine.id.rawValue)
         }
 
         mutating func start(routine id: String) {
@@ -270,10 +260,22 @@ enum PreviewData {
             log(slot, index, at: Int(now.timeIntervalSince(started)) - secondsAgo)
         }
 
-        /// Log: what the row shows, as the button commits it. A set with
-        /// nothing to commit (a drop to failure) gets last time's 8 reps first.
+        /// Log: what the row shows, as the button commits it. A timed set is
+        /// played to its target and stopped; a set with nothing to commit (a
+        /// drop to failure) gets last time's 8 reps first.
         mutating func log(_ slot: String, _ index: Int, at seconds: Int) {
             guard let row = row(slot: slot, index: index) else { return }
+            if case let .ready(target)? = present(at: seconds)?.row(row)?.timer {
+                // Held up to 40 s, so the stop lands before the next tick a step later.
+                let held = min(target.map { Int($0) } ?? 40, 40)
+                apply(.startTimedSet(row: row, target: target), at: seconds - held)
+                guard let values = present(at: seconds)?.row(row)?.stopValues else { return }
+                let at = date(seconds)
+                apply(.stopTimedSet(SessionEvent.CompleteSet(row: row, recordID: SetID(UUIDv7.make(at: at)), values: values,
+                                                             segmentRowIDs: [RowID(UUIDv7.make(at: at))])),
+                      at: seconds)
+                return
+            }
             if present(at: seconds)?.row(row)?.commitValues == nil {
                 apply(.editSet(.init(row: row, values: SetValuesPatch(reps: .set(8)))), at: seconds)
             }
@@ -301,14 +303,22 @@ enum PreviewData {
             return at
         }
 
-        /// Logs every slot before `slot` in display order.
-        mutating func logAll(before slot: String, from seconds: Int, every step: Int) -> Int {
+        /// Logs every slot before `slot` in display order; nil logs them all.
+        mutating func logAll(before slot: String?, from seconds: Int, every step: Int) -> Int {
             var at = seconds
             for key in state?.slots.map(\.key) ?? [] {
                 if key == slot { break }
                 at = logAll(key, from: at, every: step)
             }
             return at
+        }
+
+        /// Finish at `seconds`, unticked sets dropped: the records History keeps.
+        mutating func finish(at seconds: Int) -> SessionRecords? {
+            apply(.finish(.init(start: started, end: date(seconds), sessionRPE: 7,
+                                utcOffset: TimeZone.current.secondsFromGMT(for: started) / 60)), at: seconds)
+            guard let state, state.phase == .finished else { return nil }
+            return SessionEngine.records(state, adapter: "substrate-workouts@0.1.0")
         }
 
         mutating func touch(_ slot: String, _ index: Int, at seconds: Int) {

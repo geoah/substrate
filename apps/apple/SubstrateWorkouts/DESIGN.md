@@ -218,6 +218,13 @@ exercise). The next save writes the file as format 2.
 
 ### 2.4 Bundled data and the generator
 
+> **2026-11-02:** the app now bundles one sample routine and its thirteen exercises, written from
+> [`docs/examples/sample.yaml`](docs/examples/sample.yaml) by `apps/apple/scripts/workouts-package.py`, which
+> also writes the test fixtures from their YAML; the previews run the sample through the engine instead of reading
+> `PreviewHistory.json`, which is gone (decision
+> [S1](docs/decisions.md#s1-one-sample-routine-that-shows-every-feature-written-once-and-deletable)). The rest of this
+> section is the first build's design.
+
 In this repository the bundled and fixture JSON are the source, and `apps/apple/scripts/workouts-package.py` writes
 only the package's manifests and `kinds.json`; the generator below is the first build's, and stayed in rxtx.dev. The
 YAML it read is in [`docs/examples/`](docs/examples/README.md), rehomed to `~/training` and checked equal to the JSON

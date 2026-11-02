@@ -639,7 +639,7 @@ struct PresenterScreenTests {
     }
 
     static func catalog() throws -> Catalog {
-        try BundledCatalog().loadNow()
+        try ExampleFixtures.catalog()
     }
 
     @Test("History: month sections, the routine's name, the local date, a labelled summary")
@@ -725,12 +725,12 @@ struct PresenterScreenTests {
         #expect(slots["push-up"]?.lines == ["2 sets, each until RPE 9", "Rest 1:30"])
         #expect(slots["crunch"]?.lines == ["2 sets of 12–20 reps", "Rest Off"])
         #expect(slots["bulgarian-split-squat"]?.lines
-            == ["2 sets of 8–12 reps at RPE 8, from 10 kg", "Rest 2:00", "Switch sides 0:15"])
+            == ["2 sets of 8–12 reps at RPE 8, from 10 kg", "Rest 2:00", "Left side first", "Switch sides 0:15"])
         #expect(slots["hip-thrust"]?.notes?.hasPrefix("Ribs down") == true)
         let group = try #require(preview.blocks.first { $0.header != nil })
         #expect(group.header == "Superset A, rest 1:00 after each round")
         #expect(group.slots.map(\.groupLabel) == ["A1", "A2"])
-        #expect(group.slots.map(\.lines) == [["2 sets of 12–20 reps", "Then 0:00 to A2"], ["2 sets of 8–10 reps"]])
+        #expect(group.slots.map(\.lines) == [["2 sets of 12–20 reps", "Then straight to A2"], ["2 sets of 8–10 reps"]])
         let day1 = RoutinePresenter.preview(try #require(catalog.routines["day-1-strength-foundation"]), catalog: catalog,
                                             history: history, settings: Progression.settings)
         let day1Slots = Dictionary(uniqueKeysWithValues: day1.blocks.flatMap(\.slots).map { ($0.id, $0) })

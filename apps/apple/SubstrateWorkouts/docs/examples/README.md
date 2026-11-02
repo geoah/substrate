@@ -25,37 +25,38 @@ records with no refusal ([Verification](#verification)).
 
 ## How these relate to the app
 
-These YAML files are the readable form of records the app already carries as JSON, in
-the flat shape substrate's REST API speaks (`{"kind", "id", "properties"}`). In this
-repository the JSON is the source the app builds from
-([DESIGN.md §2.4](../../DESIGN.md#24-bundled-data-and-the-generator)):
+> **Since 2026-11-02 the app carries one sample routine, not the owner's folder**
+> ([decision S1](../decisions.md#s1-one-sample-routine-that-shows-every-feature-written-once-and-deletable)).
+> [`sample.yaml`](sample.yaml) is that routine and its thirteen exercises. The four files below it
+> are test vectors now: the engine's tests replay the owner's sessions on the owner's
+> routines, so they stay here, and the app ships none of them.
 
-| JSON in `apps/apple/`                                                    | Holds the records of                          | Used for                           |
+These YAML files are the readable form of records the app carries as JSON, in the flat
+shape substrate's REST API speaks (`{"kind", "id", "properties"}`). The YAML is the source:
+`apps/apple/scripts/workouts-package.py` writes the JSON from it, and
+`mise run lint:python`, which CI's `lint` job runs, and `mise run apple:test:workouts` both run
+the script with `--check`, so a change to one without the other fails:
+
+| JSON in `apps/apple/`                                                    | Written from                                  | Used for                           |
 | ------------------------------------------------------------------------ | --------------------------------------------- | ---------------------------------- |
-| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/exercises.json`      | [`exercises.yaml`](exercises.yaml)            | The starter exercises, copied with the routines |
-| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/routines.json`       | [`routines.yaml`](routines.yaml)              | The starter routines that **Add the Starter Routines** copies into an empty repository |
-| `WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples/*.json`           | All four files, 163 records                   | Codec, engine and suggestion tests |
-| `SubstrateWorkouts/Preview Content/PreviewHistory.json`                  | [`sessions.yaml`](sessions.yaml)              | SwiftUI previews only              |
+| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/exercises.json`      | [`sample.yaml`](sample.yaml)'s exercises      | The catalogue signed out, and what the first sync writes into an empty repository |
+| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/routines.json`       | [`sample.yaml`](sample.yaml)'s routine        | The same                           |
+| `WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples/*.json`           | The four test-vector files, 163 records       | Codec, engine, presenter and suggestion tests |
 
-Each JSON file names its YAML in its `source` field. On 2026-11-02 every record in these
-four YAML files was checked equal, value for value, to its JSON record: the YAML read
-with PyYAML's safe loader minus the timestamp resolver (so instants stay strings), each
-document turned into `{kind, id: metadata.id, properties: data.properties}`, and the
-lists compared. They agreed after the move to `~/training`, once the five sessions'
-`adapter: spotter@0.1.0` read `substrate-workouts@0.1.0` and the coverage routine's
-folder read "Workouts test vectors", the app's renames, which these files now carry too.
-
-`apps/apple/scripts/workouts-package.py` reads none of this: it turns the package's
-manifests in [`Package/`](../../Package/README.md) into the JSON the app applies and
-`kinds.json`. The script that once generated the JSON from these files,
-`apps/apple/spotter/scripts/examples.py`, stayed in rxtx.dev. So nothing keeps the YAML
-and the JSON together: a change to one is made to the other by hand, and the check above
-is the way to confirm they still agree.
+Each JSON file names its YAML in its `source` field. The script loads the YAML with
+PyYAML's safe loader minus the timestamp resolver, so instants stay strings, and turns each
+document into `{kind, id: metadata.id, properties: data.properties}`. It also refuses an
+exercise id written differently in two files: the sample's exercises are the test vectors'
+records, value for value. The SwiftUI previews read no JSON: they run the bundled sample
+through the engine, so they show what the app carries. On 2026-11-02 the script's output for
+the four test-vector files was byte for byte the JSON that had been kept in step by hand
+until then.
 
 ## Files
 
 | File                               | Records                                                    | Holds                                                                                                                                                                                                                                                                                                 |
 | ---------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`sample.yaml`](sample.yaml)       | 13 exercises, 1 routine                                    | **What the app ships.** "Sample: every feature": every measurement, side, load basis, set structure and way a set ends the app runs, each exercise with a note saying what it shows. Its header lists what each part shows and what is left out, with why.                                                                                          |
 | [`exercises.yaml`](exercises.yaml) | 30 exercises                                               | Every exercise the screenshots show, with measurement type, equipment, laterality, load basis, implements, muscles, rest class, suggestion settings, and codes where the code is certain.                                                                                                             |
 | [`routines.yaml`](routines.yaml)   | 4 workout routines                                         | The folder "Full Body 3x Week (Back-Friendly)": Fully Body Collection #1, Day 1 – Strength Foundation, Day 2 – Volume & Stability, and Day 3 (title hidden in the screenshot). Every planned set has a key.                                                                                           |
 | [`sessions.yaml`](sessions.yaml)   | 3 training sessions, then 65 sets                          | Two finished Day 1 sessions (Thu 22 and Mon 26 October 2026, either side of the clock change) and the finished Fully Body Collection #1 session of Tue 27 October that the screenshots' PREVIOUS column reads from. Each session keeps the planned sets it started with; every set is its own record. |

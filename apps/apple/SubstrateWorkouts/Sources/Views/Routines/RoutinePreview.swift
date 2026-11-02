@@ -6,11 +6,15 @@ import SwiftUI
 /// differ from the defaults, tempo and notes. Start floats in a bar of its
 /// own at the bottom of the list, above the tab bar and the session's bar
 /// when one runs: the list scrolls clear of all three, and neither glass
-/// ever lies over Start.
+/// ever lies over Start. A routine on the signed-in substrate has Delete in
+/// the toolbar, after a confirmation.
 struct RoutinePreview: View {
     let routineID: RoutineID
 
     @Environment(AppModel.self) private var app
+    @Environment(SubstrateLink.self) private var link
+    @Environment(\.dismiss) private var dismiss
+    @State private var deleting: RoutineToDelete?
 
     var body: some View {
         if let catalog = app.catalog, let routine = catalog.routines[routineID] {
@@ -19,6 +23,16 @@ struct RoutinePreview: View {
             list(preview)
                 .navigationTitle(preview.name)
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if canDelete {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Delete Routine", systemImage: "trash", role: .destructive) {
+                                deleting = RoutineToDelete(id: routineID, name: preview.name)
+                            }
+                        }
+                    }
+                }
+                .confirmsRoutineDelete($deleting) { dismiss() }
                 .safeAreaBar(edge: .bottom) {
                     StartSessionButton(request: .routine(routineID)) {
                         Text("Start routine")
@@ -32,6 +46,11 @@ struct RoutinePreview: View {
         } else {
             ContentUnavailableView("Routine not found", systemImage: "list.bullet.clipboard")
         }
+    }
+
+    private var canDelete: Bool {
+        guard case .server = app.catalogOrigin else { return false }
+        return link.canDeleteRoutines
     }
 
     private func list(_ preview: RoutinePreviewPresentation) -> some View {
@@ -125,7 +144,7 @@ private struct SlotLines: View {
 #Preview {
     let app = PreviewData.app()
     NavigationStack {
-        RoutinePreview(routineID: "fully-body-collection-1")
+        RoutinePreview(routineID: SampleRoutine.id)
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
