@@ -924,6 +924,14 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 			if err := authorizeNewPackage(*actor, current, g); err != nil {
 				return nil, err
 			}
+			owner, err := ds.packageOwner(ctx, ds.db, g)
+			if err != nil {
+				return nil, err
+			}
+			_, held := current.PackageByName(g)
+			if err := authorizeAppOwnedWrite(*actor, owner, held, g); err != nil {
+				return nil, err
+			}
 		}
 		// An actor's id does not embed its authority (alone among the kinds), so a
 		// document can CLAIM any authority. Check by the actor declaration's CURRENT

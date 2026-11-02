@@ -27,7 +27,7 @@ import {
 export const ACTOR_KIND = `${CORE_PACKAGE}/actor`
 export const AUTHORITY_KIND = `${CORE_PACKAGE}/authority`
 export const BUNDLE_KIND = `${CORE_PACKAGE}/bundle`
-const PACKAGE_KIND = `${CORE_PACKAGE}/package`
+export const PACKAGE_KIND = `${CORE_PACKAGE}/package`
 const PROPERTY_TYPE_KIND = `${CORE_PACKAGE}/propertytype`
 const RECORD_MAPPING_KIND = `${CORE_PACKAGE}/recordmapping`
 const TRAIT_KIND = `${CORE_PACKAGE}/trait`

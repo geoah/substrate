@@ -972,6 +972,10 @@ func (s *scopedDataset) ApplyVocabularyDocuments(ctx context.Context, _ substrat
 	return s.inner.ApplyVocabularyDocuments(ctx, s.actor, docs)
 }
 
+func (s *scopedDataset) TakeOverPackage(context.Context, substrate.Actor, string, string) (*substrate.Record, error) {
+	return nil, errScope("the vocabulary")
+}
+
 func (s *scopedDataset) PlanVocabularyApply(context.Context, substrate.Actor, []map[string]any) (substrate.VocabularyPlan, error) {
 	return substrate.VocabularyPlan{}, errScope("the vocabulary")
 }

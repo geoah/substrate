@@ -1,5 +1,6 @@
 /** Where something comes from, in the one set of words every surface uses:
- * "Yours", "From Google", "Made by Notekeeper", "Built into substrate". A
+ * "Yours", "From Google", "Made by Notekeeper", "Managed by
+ * workouts.example.org", "Built into substrate". A
  * tool, a collection and a value each name their origin this way; the mark
  * beside the words is `OriginMark`'s. */
 
@@ -58,7 +59,8 @@ export function originWords(origin: Origin, short = false): string {
     case "actor": {
       const { name, cls } = origin.identity
       if (short) return name
-      return cls === "agent" ? `Made by ${name}` : `From ${name}`
+      if (cls === "agent") return `Made by ${name}`
+      return cls === "app" ? `Managed by ${name}` : `From ${name}`
     }
   }
 }

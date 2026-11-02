@@ -15,9 +15,15 @@ import { queryOptions } from "@tanstack/react-query"
 import { scalarText } from "@/lib/format"
 import { rememberKindLabels } from "@/lib/kind-names"
 
-import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request, splitKind } from "./http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE_NAME,
+  request,
+  rootPath,
+  splitKind,
+} from "./http"
 import { listPath } from "./records"
-import type { KindInfo, Page } from "./types"
+import type { KindInfo, Page, SubstrateRecord } from "./types"
 
 // The registry is the core `kind` kind's records, named in `filter.kinds`.
 const KINDS = "kind"
@@ -213,4 +219,14 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
         Number(a.authority === CORE_AUTHORITY) || byName(a, b)
   )
   return { authorities: [...schema, ...machinery] }
+}
+
+/** Takes a package an app manages over (decision 0205): `POST
+ * /api/v1/vocabulary/takeover`, the package named twice, the second time as
+ * the confirmation. Answers the package row, now declared by the console. */
+export function takeOverPackage(packageId: string): Promise<SubstrateRecord> {
+  return request<SubstrateRecord>("POST", rootPath("vocabulary", "takeover"), {
+    package: packageId,
+    confirm: packageId,
+  })
 }

@@ -23,8 +23,9 @@ package engine
 //     (catalog/catalog.go). The embedded catalog is a source, never a
 //     publisher; nothing on the serving path reads it.
 //
-// And one function decides who may write a declaration at all:
-// authorizeDeclarationWrite, below.
+// And one chokepoint decides who may write a declaration at all:
+// authorizeDeclarationWrite, below, with authorizeNewPackage and
+// authorizeAppOwnedWrite beside it.
 
 import (
 	"context"
@@ -112,6 +113,39 @@ func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, pk
 	}
 	return fmt.Errorf("%w: %s publishes the substrate's own vocabulary; a repository declares its own kinds under its own authority",
 		substrate.ErrForbidden, publisherAuthority)
+}
+
+// authorizeAppOwnedWrite is the third rule of the chokepoint (decision 0205):
+// a package an app declared through its `declare:` scope, so its row's
+// `declaredBy` is that app's `app:<host>` actor, is the app's, and its
+// declarations change only under that same actor. Every other hand is
+// refused, the owner's doors, agents, functions, other apps and the
+// substrate's own paths alike: an uninstall or a catalog install would
+// change the app's declarations as surely as an apply. An app actor arises
+// only from a scoped token, and the scoped surface admits a vocabulary write
+// only for the package its `declare:` scope names, so "the same actor" is
+// "the same app, holding the scope". The records of the package's kinds are
+// untouched by this; they stay the owner's.
+//
+// The rule runs the other way too: an app writes declarations only into a
+// package it declared, or a new one it is about to. A package the owner
+// declared, or one the owner took over (TakeOverPackage), is the owner's,
+// and an app's scope does not reach into it.
+//
+// owner is the row's `declaredBy` where it names an app, empty otherwise;
+// held says the repository holds the package at all.
+func authorizeAppOwnedWrite(actor, owner substrate.Actor, held bool, pkg string) error {
+	switch {
+	case owner == "" && (!held || !substrate.IsAppActor(actor)):
+		return nil
+	case owner == actor:
+		return nil
+	case owner == "":
+		return fmt.Errorf("%w: %s is the owner's package, not one %s declared: an app changes only the package it declared",
+			substrate.ErrForbidden, pkg, actor)
+	}
+	return fmt.Errorf("%w: %s is managed by the app %s, which declared it: its package, bundle and kind documents change only through that app, and its records stay yours; to manage the package yourself, take it over (POST /api/v1/vocabulary/takeover)",
+		substrate.ErrForbidden, pkg, owner)
 }
 
 // isSubstratePath reports whether an actor is one of the substrate's own

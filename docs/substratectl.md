@@ -25,7 +25,7 @@ substratectl export                       # the recovery export, a tar of the re
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
 `register`, `login`, `logout`, `token`, `trigger`, `sync`, `function`, `bundle`,
-`catalog`, `import`, `install` and `export`. It needs a server and a token,
+`takeover`, `catalog`, `import`, `install` and `export`. It needs a server and a token,
 and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
@@ -405,6 +405,16 @@ names, printing the consent URL. A bare id is refused, and the refusal lists
 every account the repository holds under it. `list` and `status` take
 `-o json` or `-o yaml`: `list` prints one array and writes its
 `quarantined:` lines to stderr, and `status` prints one object.
+
+A package an app installed under its `declare:` scope is the app's
+([0205](decisions/0205-an-app-owns-the-package-it-declares.md)): `apply`,
+`patch` and `delete` of its package, bundle or kind documents, and
+`bundle uninstall`, answer `403` naming the app, while its records stay
+yours to write. `substratectl takeover <authority>/<package> --confirm
+<authority>/<package>` makes it yours: the package's `declaredBy` becomes
+the actor you write as, nothing else moves, and the app's next change to it
+is refused. It cannot be handed back, and without `--confirm` repeating the
+package it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
 first, then the catalog's providers and samples: whether this repository

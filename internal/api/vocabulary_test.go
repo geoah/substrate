@@ -67,6 +67,19 @@ func (d *fakeDataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor su
 	return d.ApplyVocabularyDocuments(ctx, actor, docs)
 }
 
+// TakeOverPackage records what the route handed it and answers the package
+// row with the taking hand as its declarer; the engine's rules are the
+// engine's tests (internal/engine/appowned_db_test.go).
+func (d *fakeDataset) TakeOverPackage(_ context.Context, actor substrate.Actor, pkg, confirm string) (*substrate.Record, error) {
+	if err := d.fail("TakeOverPackage"); err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.lastTakeover = []string{string(actor), pkg, confirm}
+	return &substrate.Record{ID: pkg, Kind: corePackage + "/package", Version: 2, Properties: map[string]any{"declaredBy": string(actor)}}, nil
+}
+
 // The preview verb: the dataset's plan for the documents, and nothing written.
 // Its body is the documents alone, so a confirmation there is the unknown key
 // the strict decoder refuses.
@@ -477,4 +490,43 @@ func TestAnAppsApplyNeverRemovesWhatThePackageHolds(t *testing.T) {
 	if rec := e.do(http.MethodGet, "/api/v1/"+corePackage+"/kind/"+url.PathEscape(fakeRepository+"/notes/note"), app, nil, ""); rec.Code == http.StatusOK {
 		t.Errorf("an app read another package's kind row: %s", rec.Body.String())
 	}
+}
+
+// THE OWNER TAKES OVER AN APP'S PACKAGE (decision 0205): the route hands the
+// engine the package, the confirmation and the door the request names, and
+// answers the package row; a body without a package is refused before the
+// engine, and the engine's refusals keep their codes. An app's token never
+// reaches the route, its own package's or another's.
+func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	pkg := fakeRepository + "/training"
+	rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", tok,
+		map[string]any{"package": pkg, "confirm": pkg}, "X-Substrate-Actor", "console")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.Record](t, rec); got.ID != pkg || got.Properties["declaredBy"] != "console" {
+		t.Fatalf("takeover answered %+v", got)
+	}
+	if got := strings.Join(ds.lastTakeover, " "); got != "console "+pkg+" "+pkg {
+		t.Fatalf("the dataset was asked %q", got)
+	}
+	wantErrorCode(t, env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", tok, map[string]any{"confirm": pkg}), http.StatusBadRequest, codeBadRequest)
+	wantErrorCode(t, env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", tok, map[string]any{"package": pkg, "force": true}), http.StatusBadRequest, codeBadRequest)
+	for err, status := range map[error]int{
+		fmt.Errorf("%w: wrong hand", substrate.ErrForbidden):       http.StatusForbidden,
+		fmt.Errorf("%w: confirm differs", substrate.ErrValidation): http.StatusUnprocessableEntity,
+		fmt.Errorf("%w: not an app's", substrate.ErrConflict):      http.StatusConflict,
+		fmt.Errorf("%w: package %s", substrate.ErrNotFound, pkg):   http.StatusNotFound,
+	} {
+		ds.errs = map[string]error{"TakeOverPackage": err}
+		if rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", tok, map[string]any{"package": pkg, "confirm": pkg}); rec.Code != status {
+			t.Errorf("%v: %d %s, want %d", err, rec.Code, rec.Body.String(), status)
+		}
+	}
+
+	e := newAppEnv(t)
+	app := e.grant("declare:~/training write:~/training/*", []string{"declare:" + pkg, "write:" + pkg + "/*"})
+	raw, _ := json.Marshal(map[string]any{"package": pkg, "confirm": pkg})
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/vocabulary/takeover", app, raw, "application/json"), http.StatusForbidden)
 }

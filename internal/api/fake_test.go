@@ -327,6 +327,7 @@ type fakeDataset struct {
 	// what the preview answers.
 	lastConfirm    *substrate.ConversionConfirm
 	lastOrigin     string
+	lastTakeover   []string
 	plan           substrate.VocabularyPlan
 	lastDeleteType string
 	lastDeleteID   string

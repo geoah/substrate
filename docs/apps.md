@@ -96,7 +96,10 @@ before, since anything on your computer may send the same client id.
 
 App tokens are listed under **Apps** in Settings, with the app, its scopes,
 when you approved it and when it expires. **Revoke** deletes the token, like
-any other.
+any other. A package an app installed under a `declare:` scope stays the
+app's when you revoke it: its collections read "Managed by <app>" and their
+definitions stay read only until you take the package over from its page
+([keep a package of your own](#keep-a-package-of-your-own)).
 
 ## For an app
 
@@ -306,8 +309,20 @@ of its own, under the repository's own authority
 ([0203](decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
 It asks for `declare:~/<package>` beside the scopes that write the package's
 records, and the approval page says "Install your <package> package and add
-to it as the app changes". A package the app needs from the catalog, such as
-one its kinds name, is a `package` detail of the same request.
+to it as the app changes", and beneath it that the app will own these kinds.
+A package the app needs from the catalog, such as one its kinds name, is a
+`package` detail of the same request.
+
+The package is the app's
+([0205](decisions/0205-an-app-owns-the-package-it-declares.md)): its
+`package`, `bundle` and `kind` documents change only through the app that
+declared it, the `app:<host>` its package row's `declaredBy` names, under the
+`declare:` scope. Every other hand is refused with `403` naming the app: the
+owner's token through the console, `substratectl` or the API, an agent, a
+function, another app holding the same scope, and an uninstall. The records
+of its kinds stay the owner's, to read, write and delete as before. An app in
+turn writes only into a package it declared: a package the owner declared,
+or took over, refuses its apply with `403`.
 
 ```
 scope=declare:~/training write:~/training/* read:substrate.reamde.dev/health/workout
@@ -338,13 +353,25 @@ authority, to `POST /api/v1/vocabulary/apply`:
   when there is none, apply again when it is older, stop and say so when it
   is newer.
 
-A kind edit moves that kind's version and not the package's, so the package
-version alone does not say whether the owner changed the package. The token
-also reads the package's kind rows
+The token also reads the package's kind rows
 (`GET /api/v1/substrate.reamde.dev/core/kind/<authority>%2F<package>%2F<name>`),
-whose `version` an app records after each apply it makes and compares before
-the next: a kind whose version moved, or one it did not install, is the
-owner's change, and the app asks before it applies over it.
+whose `version` an app may record after each apply it makes and compare
+before the next. The server already refuses the owner's edits, so a kind
+whose version moved is a safety net, not a choice to offer: it means the
+package predates the app's install or was taken over.
+
+**The owner's way back.** The owner takes the package over, deliberately:
+**Take over…** on the package's page in the console, which asks for the
+package's identity to be typed, or
+`substratectl takeover <authority>/<package> --confirm <authority>/<package>`,
+both `POST /api/v1/vocabulary/takeover` with
+`{"package": "<authority>/<package>", "confirm": "<authority>/<package>"}`.
+Only the owner's own token takes a package over, and only one an app
+manages (`409` otherwise). It rewrites the row's `declaredBy` to the hand
+that took it and changes nothing else: no kind, no record, no token. From
+then on the owner edits the package as any of theirs, and the app's next
+apply into it answers `403`. It cannot be handed back. Revoking the app
+leaves the package locked.
 
 The guard reads the stored package before the engine applies the batch, and
 the apply takes no expected version, so an owner's edit that lands in between
@@ -633,7 +660,7 @@ A scope is a verb and a pattern:
 | `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
 | `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |
-| `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row ([keep a package of your own](#keep-a-package-of-your-own)) |
+| `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row; the app then owns the package ([keep a package of your own](#keep-a-package-of-your-own)) |
 
 | Pattern | Reaches |
 | --- | --- |

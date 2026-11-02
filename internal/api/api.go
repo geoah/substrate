@@ -409,6 +409,9 @@ func (h *handler) mountResources(r chi.Router) {
 			// conversion plan it would run, with the hash and changelog head a
 			// lossy plan's confirmation names (decision 0067). Writes nothing.
 			r.Post("/vocabulary/plan", h.planVocabulary)
+			// The owner's one way to make a package an app keeps under its
+			// `declare:` scope their own (decision 0205).
+			r.Post("/vocabulary/takeover", h.takeOverPackage)
 			// The boot upgrade's preview: what this binary would move in the
 			// shipped packages here, and the guard lines it refused on.
 			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)
