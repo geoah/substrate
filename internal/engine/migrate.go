@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,6 +77,12 @@ func migrate(ctx context.Context, db *sql.DB) error {
 // The advisory lock is held on one pinned connection: releasing it from a
 // different pooled connection is a silent no-op.
 func migrateThrough(ctx context.Context, db *sql.DB, through int) error {
+	return migrateWith(ctx, db, through, readVectorVersion)
+}
+
+// migrateWith is migrateThrough with the pgvector version reader passed in,
+// so a test can stand in a version older than the test image carries.
+func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion func(context.Context, *sql.Conn) (string, error)) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: migration conn: %w", err)
@@ -113,6 +120,19 @@ func migrateThrough(ctx context.Context, db *sql.DB, through int) error {
 	if err := checkRecorded(migrations, applied); err != nil {
 		return err
 	}
+	// Migrations commit one at a time, so a floor checked by the migration
+	// that needs it would leave the ones before it recorded and the database
+	// refused by the previous release as well. It is checked before any
+	// pending migration applies.
+	if pendingThrough(migrations, applied, through, vectorFloorMigration) {
+		version, err := vectorVersion(ctx, conn)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: read the pgvector version: %w", err)
+		}
+		if err := checkVectorFloor(version); err != nil {
+			return err
+		}
+	}
 	for _, m := range migrations {
 		if m.Version > through {
 			break
@@ -125,6 +145,83 @@ func migrateThrough(ctx context.Context, db *sql.DB, through int) error {
 		}
 	}
 	return nil
+}
+
+// vectorFloorMigration is the first migration that needs vectorFloor: 0015
+// builds its index over `halfvec`, which pgvector added in 0.7.0.
+const vectorFloorMigration = 15
+
+var vectorFloor = [3]int{0, 7, 0}
+
+// ErrVectorTooOld is the boot's refusal of a pgvector older than
+// vectorFloor while vectorFloorMigration is pending. Nothing is applied, so
+// the previous release still boots on the database.
+var ErrVectorTooOld = errors.New("substrate/engine: the database's pgvector is older than this binary needs")
+
+// pendingThrough reports whether migration version is embedded, unapplied
+// and at or below through.
+func pendingThrough(migrations []migration, applied map[int]recorded, through, version int) bool {
+	if version > through {
+		return false
+	}
+	if _, ok := applied[version]; ok {
+		return false
+	}
+	for _, m := range migrations {
+		if m.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+// readVectorVersion is the `vector` extension's version in this database,
+// or, before 0001 has created it, the version CREATE EXTENSION would install.
+// An empty answer means the server has no pgvector at all, which 0001 refuses
+// with Postgres's own error.
+func readVectorVersion(ctx context.Context, conn *sql.Conn) (string, error) {
+	var version sql.NullString
+	err := conn.QueryRowContext(ctx, `
+		SELECT coalesce(
+		    (SELECT extversion FROM pg_extension WHERE extname = 'vector'),
+		    (SELECT default_version FROM pg_available_extensions WHERE name = 'vector'))`).Scan(&version)
+	return version.String, err
+}
+
+// checkVectorFloor refuses a pgvector version below vectorFloor. A version
+// it cannot parse is refused too: guessing would apply migrations a failed
+// 0015 then strands.
+func checkVectorFloor(version string) error {
+	if version == "" {
+		return nil
+	}
+	if parsed, ok := parseVectorVersion(version); ok && slices.Compare(parsed[:], vectorFloor[:]) >= 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: pgvector %s is installed and migration %04d needs %d.%d.%d or newer. "+
+		"Nothing was applied, so the previous release still boots on this database. "+
+		"Install pgvector %d.%d or newer on the Postgres host, run `ALTER EXTENSION vector UPDATE` in this database, "+
+		"and start this binary again; `SELECT extversion FROM pg_extension WHERE extname = 'vector'` shows the version",
+		ErrVectorTooOld, version, vectorFloorMigration, vectorFloor[0], vectorFloor[1], vectorFloor[2],
+		vectorFloor[0], vectorFloor[1])
+}
+
+// parseVectorVersion reads pgvector's `major.minor[.patch]`; a missing patch
+// is 0.
+func parseVectorVersion(version string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 || len(parts) > 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
 }
 
 // checkMigrated is migrate for a read-only open: it reads what the database

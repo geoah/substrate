@@ -16,6 +16,20 @@ backup and recovery procedures. A substrate on your own machine is
   on (`substrate_app`, bound by row level security, and `substrate_maint`,
   which bypasses it for registration and cross-repository lookups), and enables
   the extensions, so the DSN it starts with must be allowed to do those things.
+- **pgvector 0.7 or later**, and 0.8 or later for the semantic half of
+  hybrid search. Migration 0015 indexes `halfvec`, which pgvector added in
+  0.7, so the boot reads the installed version first and, below 0.7, refuses
+  with the version it found before it applies any migration. `compose.yaml`
+  and the dev and test tasks run `pgvector/pgvector:pg16`, which carries 0.8;
+  a distribution package may be older (Ubuntu 24.04's
+  `postgresql-16-pgvector` is 0.6), and a host that pulled the image long
+  ago may still run an older one. `SELECT extversion FROM pg_extension
+  WHERE extname = 'vector'`, run in the substrate database, shows the
+  version (no row there means the extension is not installed in it). To
+  upgrade: with compose, `docker compose pull` and recreate the database
+  container; on your own host, install pgvector 0.7 or later; on a managed
+  service, move to an engine version whose pgvector is 0.7 or later. Then
+  run `ALTER EXTENSION vector UPDATE` in the substrate database.
 - **One port**. The service serves the API under `/api`, the authentication
   endpoints beside it, and the console at `/`. Two routes are live streams:
   an agent chat (`POST …/core/agent/{name}/chat`) and the change feed with

@@ -186,6 +186,33 @@ func MigrateThrough(ctx context.Context, dsn string, through int) error {
 	return migrateThrough(ctx, db, through)
 }
 
+// MigrateThroughWithVectorVersion is MigrateThrough on a server whose
+// pgvector reports version, so a test can stand in one older than the test
+// image carries.
+func MigrateThroughWithVectorVersion(ctx context.Context, dsn string, through int, version string) error {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	return migrateWith(ctx, db, through, func(context.Context, *sql.Conn) (string, error) { return version, nil })
+}
+
+// VectorVersion is the pgvector version the boot's floor check reads.
+func VectorVersion(ctx context.Context, dsn string) (string, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = db.Close() }()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = conn.Close() }()
+	return readVectorVersion(ctx, conn)
+}
+
 // FoldTables are the tables RebuildRepository clears and fills again: the
 // ones the replay writes (foldTables) and property_offers, which the rebuild
 // derives from the replayed rows (rederiveOffers).
