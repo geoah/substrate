@@ -92,10 +92,17 @@ public struct RoutineEditor: Codable, Hashable, Sendable {
 
     // MARK: - The routine
 
+    /// The name as typed; a blank one is what `problem` refuses, and Save
+    /// trims it (`finished`).
     public mutating func rename(_ name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        routine.name = trimmed
+        routine.name = name
+    }
+
+    /// The routine as Save writes it: the name trimmed.
+    public var finished: RoutineEditor {
+        var out = self
+        out.routine.name = routine.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return out
     }
 
     /// An empty folder is no folder.
@@ -290,6 +297,33 @@ public struct RoutineEditor: Codable, Hashable, Sendable {
         settle(group)
     }
 
+    /// Puts another exercise in a slot, under a new key: sessions name the
+    /// slot by its key, and the old one meant the old exercise.
+    /// Answers the slot's key after the change.
+    @discardableResult
+    public mutating func replaceExercise(_ slot: String, with exercise: ExerciseID) -> String {
+        guard let current = self.slot(slot), current.exercise != exercise else { return slot }
+        let key = nextSlotKey(for: exercise)
+        update(slot) {
+            $0.exercise = exercise
+            $0.key = key
+        }
+        return key
+    }
+
+    /// Changes a planned set's role, and moves it among its role's sets:
+    /// warm-ups come first.
+    public mutating func setRole(_ slot: String, _ set: String, _ role: Role) {
+        update(slot) { slot in
+            guard let index = slot.sets.firstIndex(where: { $0.key == set }), slot.sets[index].role != role else { return }
+            var planned = slot.sets.remove(at: index)
+            planned.role = role
+            if role == .warmup { planned.roleLabel = nil }
+            let lastWarmup = slot.sets.lastIndex { $0.role == .warmup }
+            slot.sets.insert(planned, at: lastWarmup.map { $0 + 1 } ?? 0)
+        }
+    }
+
     public mutating func removeSlot(_ key: String) {
         let group = slot(key)?.group
         routine.slots.removeAll { $0.key == key }
@@ -357,6 +391,9 @@ public struct RoutineEditor: Codable, Hashable, Sendable {
     public var problem: String? {
         if routine.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "The routine needs a name." }
         if routine.slots.isEmpty { return "The routine needs at least one exercise." }
+        if Set(routine.slots.map(\.key)).count != routine.slots.count {
+            return "Two exercises in this routine share a key, so it can\u{2019}t be edited here safely."
+        }
         for slot in routine.slots {
             for set in slot.sets {
                 if let min = set.repsMin, let max = set.repsMax, min > max { return "A rep range runs backwards." }
@@ -377,7 +414,18 @@ public extension RoutineEditor {
     /// Nothing the edit did not change is sent, so a property another writer
     /// changed meanwhile is never written back over.
     func patch(codec: RecordCodec) -> JSONObject {
-        Self.patch(from: codec.encode(base).properties, to: codec.encode(routine).properties)
+        let before = codec.encode(base).properties
+        let after = codec.encode(routine).properties
+        var out = Self.patch(from: before, to: after)
+        // Slots name groups by key: the two go together, so a write that
+        // lands over another writer's never pairs one's slots with the
+        // other's groups.
+        if out["slots"] != nil || out["groups"] != nil {
+            for key in ["slots", "groups"] {
+                out[key] = after[key] ?? (before[key] == nil ? nil : .null)
+            }
+        }
+        return out
     }
 
     static func patch(from before: JSONObject, to after: JSONObject) -> JSONObject {

@@ -44,7 +44,7 @@ struct RoutineEditorTests {
     @Test("rename, folder and notes; an emptied field is cleared with null")
     func rename() {
         var editor = RoutineEditor(Self.routine())
-        editor.rename("  Day 1 – Floor  ")
+        editor.rename("Day 1 – Floor")
         editor.setFolder("")
         editor.setNotes("New notes")
         #expect(editor.routine.name == "Day 1 – Floor")
@@ -54,8 +54,9 @@ struct RoutineEditorTests {
         #expect(patch["folder"] == .null)
         #expect(patch["notes"] == .string("New notes"))
         #expect(patch["slots"] == nil && patch["groups"] == nil, "nothing else is sent")
+        #expect(editor.finished.routine.name == "Day 1 – Floor", "Save trims the name")
         editor.rename("   ")
-        #expect(editor.routine.name == "Day 1 – Floor", "a blank name is refused")
+        #expect(editor.problem == "The routine needs a name.")
     }
 
     @Test("an untouched routine asks for no write")
@@ -72,7 +73,7 @@ struct RoutineEditorTests {
         #expect(keys(editor) == ["warm", "b1", "b2", "a1", "a2", "a3", "solo"])
         editor.moveBlocks(from: [0], to: 3)
         #expect(keys(editor) == ["b1", "b2", "a1", "a2", "a3", "warm", "solo"])
-        #expect(Set(editor.patch(codec: codec).map(\.key)) == ["slots"])
+        #expect(Set(editor.patch(codec: codec).map(\.key)) == ["slots", "groups"], "slots and groups go together")
     }
 
     @Test("members reorder inside their group")
@@ -186,7 +187,7 @@ struct RoutineEditorTests {
         }
         #expect(editor.group("a")?.rounds == 3 && editor.group("a")?.roundRest == 90)
         let patch = editor.patch(codec: codec)
-        #expect(Set(patch.map(\.key)) == ["groups"])
+        #expect(Set(patch.map(\.key)) == ["slots", "groups"])
     }
 
     @Test("a duplicate is a new routine at a free slug, whole, unknown fields kept, no version")
@@ -215,6 +216,25 @@ struct RoutineEditorTests {
         #expect(back == editor)
         try drafts.clear()
         #expect(try drafts.load() == nil)
+    }
+
+    @Test("a set made a warm-up moves before the working sets; a replaced exercise gets a new key")
+    func roleAndReplace() {
+        var editor = RoutineEditor(Self.routine())
+        editor.setRole("a1", "s2", .warmup)
+        #expect(editor.slot("a1")?.sets.map(\.key) == ["s2", "s1"])
+        #expect(editor.slot("a1")?.sets.first?.role == .warmup)
+        editor.replaceExercise("a1", with: "other")
+        #expect(editor.slot("a1") == nil)
+        #expect(editor.slot("other")?.group == "a")
+        #expect(editor.members(of: "a") == ["other", "a2", "a3"])
+    }
+
+    @Test("a routine whose slots share a key is not saved")
+    func duplicateKeys() {
+        var routine = Self.routine()
+        routine.slots[2].key = "a1"
+        #expect(RoutineEditor(routine).problem != nil)
     }
 
     @Test("SwiftUI's move, without SwiftUI")

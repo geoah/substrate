@@ -209,6 +209,15 @@ struct LiveServerTests {
         #expect(await outbox.flush(api) == .sent)
         let duplicated = try #require(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue))
         #expect(try codec.decodeRoutine(duplicated).slots == copy.routine.slots)
+        // A second copy at the same id (made from a stale catalogue) is
+        // refused by the server and parked, never merged into the first.
+        var clash = copy.routine
+        clash.name = "A clashing copy"
+        try await outbox.enqueue([OutboxPlan.routineCreated(clash, codec: codec)])
+        guard case .refused = await outbox.flush(api) else { Issue.record("a clashing create landed"); return }
+        let refusedCreate = try #require(await outbox.parked.first { !$0.conflict })
+        #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == duplicated.properties["name"])
+        try await outbox.discard(refusedCreate.id)
         print("live: routine edited at version \(edited.version ?? 0), conflict kept over the coach's notes, duplicated as \(copy.routine.id)")
         for id in ["bulgarian-split-squat-dumbbell", "triceps-pushdown"] {
             try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/exercise", id), query: [("purge", "true")])

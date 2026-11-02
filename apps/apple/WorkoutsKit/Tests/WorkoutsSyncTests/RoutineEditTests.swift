@@ -151,7 +151,7 @@ struct RoutineEditTests {
                 editor.updateSet(slot.key, slot.sets[set].key) { $0.repsMax = ($0.repsMax ?? 0) + 3 }
             }
             #expect(result.paths == ["slots[\(index)].sets[\(set)].repsMax"], "\(name): \(result.paths)")
-            #expect(result.patch == ["slots"])
+            #expect(result.patch.isSuperset(of: ["slots"]) && result.patch.isSubset(of: ["slots", "groups"]))
         }
     }
 
@@ -168,7 +168,7 @@ struct RoutineEditTests {
                   case let .array(now)? = Self.normalized(.object(codec.encode(editor.routine).properties)).objectValue?["slots"]
             else { Issue.record("no slots"); continue }
             #expect(Set(was) == Set(now), "\(name): a slot changed while moving")
-            #expect(Set(editor.patch(codec: codec).map(\.key)) == ["slots"])
+            #expect(Set(editor.patch(codec: codec).map(\.key)) == ["slots", "groups"])
         }
     }
 
@@ -292,6 +292,79 @@ struct RoutineEditTests {
         #expect(await outbox.version(of: codec.kinds.routine, "day-1") == 6)
     }
 
+    @Test("after Keep My Edit, a later edit made on the old version still meets a conflict")
+    func keepMineThenEdit() async throws {
+        let server = ScriptedServer()
+        // The coach wrote version 5; the owner's edit was on 4.
+        server.on { sent in
+            guard sent.method == "PATCH", case let .object(body)? = sent.body else { return nil }
+            switch body["ifVersion"] {
+            case nil: return (200, record(6))
+            case .number(6)?: return (200, record(7))
+            default: return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+            }
+        }
+        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        try await outbox.edit(routine: "day-1", patch: ["slots": .array([])], baseVersion: 4, codec: codec)
+        _ = await outbox.flush(api(server))
+        let parked = try #require(await outbox.parked.first)
+        try await outbox.resolve(parked.id, keepMine: true)
+        // Made offline before Keep My Edit went: never merged into the
+        // unguarded write.
+        try await outbox.edit(routine: "day-1", patch: ["notes": .string("mine")], baseVersion: 4, codec: codec)
+        #expect(await outbox.entries.count == 2)
+        _ = await outbox.flush(api(server))
+        let second = try #require(await outbox.parked.first)
+        #expect(second.conflict, "the second edit was on version 4, and only the app's own guarded writes move it")
+        #expect(second.properties?["notes"] == .string("mine"))
+        guard case let .object(last)? = server.sent.last?.body else { Issue.record("no body"); return }
+        #expect(last["ifVersion"] == .number(4))
+    }
+
+    @Test("an edit never joins a parked one")
+    func notIntoParked() async throws {
+        let server = ScriptedServer()
+        server.answer("PATCH", Self.path, 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        try await outbox.edit(routine: "day-1", patch: ["name": .string("One")], baseVersion: 4, codec: codec)
+        _ = await outbox.flush(api(server))
+        try await outbox.edit(routine: "day-1", patch: ["name": .string("Two")], baseVersion: 4, codec: codec)
+        let entries = await outbox.entries
+        #expect(entries.count == 2)
+        #expect(entries.first?.properties?["name"] == .string("One"))
+        // During the conflict, the catalogue shows the server's routine.
+        #expect(await outbox.waitingRoutines(codec: codec)["day-1"]?.properties["name"] == .string("Two"))
+        try await outbox.resolve(try #require(entries.first?.id), keepMine: false)
+        #expect(await outbox.entries.count == 1)
+    }
+
+    @Test("a duplicate is created only where nothing is: ifVersion 0, and a refusal is parked, not merged")
+    func createOnly() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", "/api/v1/ada.example.com/training/routine/day-1-copy", 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine, taken: ["day-1"])
+        try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
+        guard case .refused = await outbox.flush(api(server)) else { Issue.record("not refused"); return }
+        guard case let .object(body)? = server.sent.first?.body else { Issue.record("no body"); return }
+        #expect(body["ifVersion"] == .number(0))
+        let parked = try #require(await outbox.parked.first)
+        #expect(!parked.conflict)
+
+        // Created: the next edit of it asserts the version the create made.
+        let fresh = ScriptedServer()
+        fresh.on { sent in
+            guard case let .object(body)? = sent.body else { return nil }
+            if sent.method == "PUT" { return (200, record(1)) }
+            return body["ifVersion"] == .number(1) ? (200, record(2)) : (409, "{}")
+        }
+        let other = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        try await other.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
+        #expect(await other.flush(api(fresh)) == .sent)
+        try await other.edit(routine: copy.routine.id, patch: ["name": .string("Mine")], baseVersion: nil, codec: codec)
+        #expect(await other.flush(api(fresh)) == .sent)
+    }
+
     @Test("a duplicate is a PUT of the whole routine; an edit before it is sent goes into its body")
     func duplicate() async throws {
         let (_, routine) = try read(try #require(Self.serverRecords().first).json)
@@ -321,4 +394,9 @@ struct RoutineEditTests {
         #expect(merged[0].version == record.version, "the cache keeps the version the edit asserts")
         #expect(merged[1].id == "new-one")
     }
+}
+
+enum RoutineEditorFixture {
+    static let routine = Routine(id: "day-1", version: 4, name: "Day 1",
+                                 slots: [RoutineSlot(key: "a", exercise: "a", sets: [PlannedSet(key: "s1", repsMin: 8, repsMax: 12)])])
 }

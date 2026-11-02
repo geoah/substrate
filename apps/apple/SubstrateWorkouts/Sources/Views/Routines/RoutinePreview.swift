@@ -81,7 +81,7 @@ struct RoutinePreview: View {
     /// one, else `editor`. A draft of another routine is replaced only
     /// after the owner says so.
     private func edit(_ editor: RoutineEditor) {
-        if let draft = link.draft {
+        if let draft = link.draft, draft.hasChanges {
             if !editor.isNew, !draft.isNew, draft.routine.id == routineID { return open(draft) }
             replacingDraft = editor
             return

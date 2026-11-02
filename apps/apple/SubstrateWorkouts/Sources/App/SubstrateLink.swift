@@ -364,10 +364,14 @@ final class SubstrateLink {
             await refreshOutbox(account)
             return
         }
+        let shown = Set(parked.filter(\.conflict).map(\.id))
         let state = await outbox.flush(account.api)
         guard isCurrent(account) else { return }
         outboxState = state
         await refreshOutbox(account)
+        // A conflict new in this flush: the routine as the server holds it.
+        let conflicts = parked.filter { $0.conflict && $0.kind == codec.kinds.routine && !shown.contains($0.id) }
+        if !conflicts.isEmpty { await reread(conflicts.map { RoutineID($0.recordID) }, account) }
         if state == .signedOut || state == .needsApproval { Task { await status.refresh(force: true) } }
     }
 
@@ -514,8 +518,10 @@ final class SubstrateLink {
     /// cached catalogue at once, the draft dropped, and sent. An edit the
     /// outbox cannot keep on disk changes nothing and throws, and the draft
     /// stays.
-    func saveRoutine(_ editor: RoutineEditor) async throws {
+    func saveRoutine(_ edited: RoutineEditor) async throws {
         guard let account, let outbox = account.outbox, let remote = account.remote else { throw OutboxNotSaved(reason: "the app is not signed in to your substrate.") }
+        guard conflict(for: edited.routine.id) == nil else { throw OutboxNotSaved(reason: Self.conflictFirst) }
+        let editor = edited.finished
         if editor.isNew {
             try await outbox.enqueue([OutboxPlan.routineCreated(editor.routine, codec: codec)])
         } else {
@@ -534,7 +540,27 @@ final class SubstrateLink {
             note(error)
         }
         await refreshOutbox(account)
-        await flush(account)
+        // The sheet closes once the edit is queued; sending is the outbox's.
+        Task { await flush(account) }
+    }
+
+    static let conflictFirst = "This routine has an edit waiting for your choice after a conflict. Choose Keep My Edit or Use Theirs on its page first."
+
+    /// Reads routines again from the server, one by one, into the cache: a
+    /// conflicted one shows as the server holds it, which is what Use
+    /// Theirs keeps, and one Keep My Edit just wrote shows the merge.
+    private func reread(_ ids: [RoutineID], _ account: SyncAccount) async {
+        guard let remote = account.remote else { return }
+        for id in ids {
+            do {
+                let record = try await account.api.get(codec.kinds.routine, id.rawValue)
+                guard isCurrent(account) else { return }
+                let catalog = try remote.store(record: record, removing: id)
+                AppModel.shared.showServerCatalog(catalog, host: account.host)
+            } catch {
+                logger.error("routine \(id.rawValue, privacy: .public) not read again: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     /// The edit of a routine the server refused because the routine changed
@@ -555,17 +581,14 @@ final class SubstrateLink {
             return
         }
         await refreshOutbox(account)
-        if !keepMine, let remote = account.remote {
-            do {
-                let codec = codec
-                let catalog = try await remote.refresh(account.api, hiding: { await outbox.waitingDeletes },
-                                                       waiting: { await outbox.waitingRoutines(codec: codec) })
-                if isCurrent(account) { AppModel.shared.showServerCatalog(catalog, host: account.host) }
-            } catch {
-                if isCurrent(account) { note(error) }
-            }
+        let id = RoutineID(entry.recordID)
+        if keepMine {
+            await flush(account)
+            if !waitingRoutines.contains(id), conflict(for: id) == nil { await reread([id], account) }
+        } else {
+            await reread([id], account)
+            await flush(account)
         }
-        await flush(account)
     }
 
     // MARK: Refused writes

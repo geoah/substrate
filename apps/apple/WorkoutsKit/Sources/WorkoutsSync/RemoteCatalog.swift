@@ -14,6 +14,9 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     // Guards `continuations`; `@unchecked Sendable` rests on it.
     private let lock = NSLock()
     private var continuations: [UUID: AsyncStream<Catalog>.Continuation] = [:]
+    /// Held over each read-modify-write of the cache file, so an edit
+    /// stored on the main actor and a refresh never lose each other's.
+    private let fileLock = NSLock()
 
     public static let fileName = "catalog.json"
 
@@ -66,10 +69,14 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
                         waiting: @Sendable () async -> [String: (creates: Bool, properties: JSONObject)] = { [:] }) async throws -> Catalog
     {
         let kinds = codec.kinds
+        // Asked before the read too: an edit that lands while the list is on
+        // the wire is in neither the list nor the queue asked after it.
+        let before = await waiting()
         let listed = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
         let hidden = await hiding()
-        let records = Self.overlay(listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }, waiting: await waiting(), kind: kinds.routine)
-        try write(records)
+        let pending = before.merging(await waiting()) { _, after in after }
+        let records = Self.overlay(listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }, waiting: pending, kind: kinds.routine)
+        try fileLock.withLock { try write(records) }
         let catalog = merged(catalog(from: records, source: api.client.server.host() ?? "the server"))
         publish(catalog)
         return catalog
@@ -105,14 +112,27 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     /// catalogue with it.
     @discardableResult
     public func store(routine: Routine) throws -> Catalog {
-        var records = hasCache ? try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL)).records : []
-        let record = codec.encode(routine)
-        if let index = records.firstIndex(where: { $0.kind == record.kind && $0.id == record.id }) {
-            records[index] = record
-        } else {
-            records.append(record)
+        try store(record: codec.encode(routine))
+    }
+
+    /// Keeps one record as the server answered it (a routine read again
+    /// after a conflict), or takes it out when the server holds none.
+    @discardableResult
+    public func store(record: FlatRecord?, removing id: RoutineID? = nil) throws -> Catalog {
+        let records = try fileLock.withLock { () throws -> [FlatRecord] in
+            var records = hasCache ? try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL)).records : []
+            if let record {
+                if let index = records.firstIndex(where: { $0.kind == record.kind && $0.id == record.id }) {
+                    records[index] = record
+                } else {
+                    records.append(record)
+                }
+            } else if let id {
+                records.removeAll { $0.kind == codec.kinds.routine && $0.id == id.rawValue }
+            }
+            try write(records)
+            return records
         }
-        try write(records)
         let catalog = merged(catalog(from: records, source: Self.fileName))
         publish(catalog)
         return catalog
@@ -123,9 +143,12 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     @discardableResult
     public func remove(routine id: RoutineID) throws -> Catalog {
         guard hasCache else { return try loadNow() }
-        let file = try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL))
-        let records = file.records.filter { !($0.kind == codec.kinds.routine && $0.id == id.rawValue) }
-        try write(records)
+        let records = try fileLock.withLock { () throws -> [FlatRecord] in
+            let file = try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL))
+            let records = file.records.filter { !($0.kind == codec.kinds.routine && $0.id == id.rawValue) }
+            try write(records)
+            return records
+        }
         let catalog = merged(catalog(from: records, source: Self.fileName))
         publish(catalog)
         return catalog

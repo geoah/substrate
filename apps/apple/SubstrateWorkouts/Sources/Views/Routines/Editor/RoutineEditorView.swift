@@ -48,11 +48,12 @@ struct RoutineEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
-                        .disabled(!model.editor.hasChanges || model.editor.problem != nil || saving)
+                        .disabled(!model.editor.hasChanges || blocked != nil || saving)
                 }
             }
+            .disabled(saving)
             .safeAreaInset(edge: .bottom) {
-                if let problem = model.editor.problem, model.editor.hasChanges {
+                if let problem = blocked, model.editor.hasChanges {
                     Text(problem)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -142,6 +143,13 @@ struct RoutineEditorView: View {
         } footer: {
             Text("Drag to reorder. Swipe right to group an exercise with the next one.")
         }
+    }
+
+    /// What stops Save: the routine's own problem, or a conflict waiting
+    /// for the owner's choice.
+    private var blocked: String? {
+        if link.conflict(for: model.routine.id) != nil { return SubstrateLink.conflictFirst }
+        return model.editor.problem
     }
 
     /// The group's colour, counted over the groups before it, as the preview counts.

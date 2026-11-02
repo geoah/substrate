@@ -5,7 +5,15 @@ import SwiftUI
 /// remove, reorder and open, its rests and its notes.
 struct SlotEditorView: View {
     let model: RoutineEditorModel
-    let slotKey: String
+    let initialKey: String
+    /// The slot's key now: a replaced exercise gets a new one.
+    @State private var replacedKey: String?
+    private var current: String { replacedKey ?? initialKey }
+
+    init(model: RoutineEditorModel, slotKey: String) {
+        self.model = model
+        initialKey = slotKey
+    }
 
     @Environment(AppModel.self) private var app
     @Environment(SubstrateLink.self) private var link
@@ -21,7 +29,7 @@ struct SlotEditorView: View {
     }
 
     var body: some View {
-        if let slot = model.editor.slot(slotKey) {
+        if let slot = model.editor.slot(current) {
             let exercise = app.exercises[slot.exercise]
             List {
                 Section {
@@ -34,7 +42,7 @@ struct SlotEditorView: View {
                     if let key = slot.group, let group = model.editor.group(key) {
                         LabeledContent("In", value: GroupEditorView.title(group))
                         Button("Leave \(group.groupKind.label.lowercased()) \(key.uppercased())", systemImage: "arrow.down.right") {
-                            model.change { $0.leaveGroup(slotKey) }
+                            model.change { $0.leaveGroup(current) }
                         }
                     }
                 }
@@ -42,14 +50,14 @@ struct SlotEditorView: View {
                 rests(slot)
                 Section("Notes") {
                     TextField("Seat height, cues", text: Binding { slot.notes ?? "" } set: { value in
-                        model.change { $0.update(slotKey) { $0.notes = RoutineEditorText.text(value) } }
+                        model.change { $0.update(current) { $0.notes = RoutineEditorText.text(value) } }
                     }, axis: .vertical)
                         .lineLimit(1 ... 6)
                         .font(.subheadline)
                 }
                 Section {
                     Button("Remove from Routine", systemImage: "trash", role: .destructive) {
-                        model.change { $0.removeSlot(slotKey) }
+                        model.change { $0.removeSlot(current) }
                         dismiss()
                     }
                 }
@@ -60,7 +68,9 @@ struct SlotEditorView: View {
             .toolbar { EditButton() }
             .sheet(isPresented: $replacing) {
                 ExercisePicker(title: "Replace exercise") { picked in
-                    model.change { $0.update(slotKey) { $0.exercise = picked.id } }
+                    var key = current
+                    model.change { key = $0.replaceExercise(current, with: picked.id) }
+                    replacedKey = key
                     sendIfLocal(picked, link: link)
                 }
             }
@@ -77,7 +87,7 @@ struct SlotEditorView: View {
     private func sets(_ slot: RoutineSlot, measurement: MeasurementType) -> some View {
         Section("Sets") {
             ForEach(Array(slot.sets.enumerated()), id: \.element.key) { _, planned in
-                NavigationLink(value: RoutineEditorRoute.set(slot: slotKey, set: planned.key)) {
+                NavigationLink(value: RoutineEditorRoute.set(slot: current, set: planned.key)) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(PlannedSetEditorView.label(planned, in: slot))
                             .font(.subheadline.weight(.semibold).monospacedDigit())
@@ -88,12 +98,12 @@ struct SlotEditorView: View {
                     }
                 }
             }
-            .onMove { source, destination in model.change { $0.moveSets(of: slotKey, from: source, to: destination) } }
-            .onDelete { offsets in model.change { $0.removeSets(of: slotKey, at: offsets) } }
+            .onMove { source, destination in model.change { $0.moveSets(of: current, from: source, to: destination) } }
+            .onDelete { offsets in model.change { $0.removeSets(of: current, at: offsets) } }
             HStack {
-                Button("Add set", systemImage: "plus") { model.change { $0.addSet(to: slotKey) } }
+                Button("Add set", systemImage: "plus") { model.change { $0.addSet(to: current) } }
                 Spacer()
-                Button("Add warm-up") { model.change { $0.addSet(to: slotKey, role: .warmup) } }
+                Button("Add warm-up") { model.change { $0.addSet(to: current, role: .warmup) } }
                     .foregroundStyle(GroupPalette.warmup)
             }
             .buttonStyle(.borderless)
@@ -126,7 +136,7 @@ struct SlotEditorView: View {
 
     private func set(_ field: RestField, _ seconds: Seconds?) {
         model.change { editor in
-            editor.update(slotKey) { slot in
+            editor.update(current) { slot in
                 switch field {
                 case .sets: slot.setRest = seconds
                 case .warmups: slot.warmupRest = seconds
@@ -170,7 +180,9 @@ struct PlannedSetEditorView: View {
             let measurement = app.exercises[slot.exercise]?.measurement ?? .weightreps
             Form {
                 Section {
-                    Picker("Role", selection: binding(planned.role) { $0.role = $1 }) {
+                    Picker("Role", selection: Binding { planned.role } set: { role in
+                        model.change { $0.setRole(slotKey, setKey, role) }
+                    }) {
                         Text("Warm-up").tag(Role.warmup)
                         Text("Working").tag(Role.working)
                     }
