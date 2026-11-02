@@ -327,6 +327,12 @@ authority, to `POST /api/v1/vocabulary/apply`:
   and any other key refuse the batch with `403`, and so does a kind that
   declares `indices` or a property that turns `embed` on, which spend the
   owner's database and provider;
+- a kind's `displayTemplate` reads through a reference (`{person}`,
+  `{person.name}`, `{people[].name}`) only when the token reads the
+  reference's pinned kind, or every kind implementing its `trait:` pin, and
+  never through an unpinned one; otherwise the batch answers `403`, because
+  the title the engine renders from the referent is what the token reads
+  back;
 - the apply only adds. A kind document that leaves out a property, field,
   enum value, state, transition or trait the stored kind holds, whoever
   added it, refuses the batch with `409`, and so does a bundle that would
@@ -476,7 +482,10 @@ to its scopes:
 - a list with no `filter.kinds` lists every kind it reads, and `implements`
   and `purposes` narrow those alone;
 - a property condition on a reference, and a reference value in a write,
-  must name a kind the token reads, or the request answers `403`;
+  must name a kind the token reads, or the request answers `403`. A write
+  whose value names a kind the reference's pin does not admit, which the
+  engine resolves through a record mapping, also needs the pinned kind
+  readable, or for a `trait:` pin every kind implementing the trait;
 - a search is lexical (a `semantic` one answers `403`), weighs every word
   alike and carries no scores, since a word's frequency is counted over the
   whole repository;

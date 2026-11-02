@@ -613,6 +613,11 @@ func (s *scopedDataset) checkReferenceValues(ctx context.Context, kind string, p
 					return err
 				}
 			}
+			if read {
+				if read, err = s.pinReadable(ctx, k, site.pin, site.trait); err != nil {
+					return err
+				}
+			}
 			if !read {
 				return fmt.Errorf("%w: an app's token writes %s only with references to kinds it reads", substrate.ErrForbidden, name)
 			}
@@ -621,10 +626,55 @@ func (s *scopedDataset) checkReferenceValues(ctx context.Context, kind string, p
 	return nil
 }
 
-// referenceSite is one reference value a write carries, beside the kind its
-// declaration pins ("" for none). A value of a shape nobody can read is a
-// site with no value, which the check refuses.
-type referenceSite struct{ value, pin string }
+// referenceSite is one reference value a write carries, beside the kind or
+// the trait its declaration pins ("" for none). A value of a shape nobody can
+// read is a site with no value, which the check refuses.
+type referenceSite struct{ value, pin, trait string }
+
+// pinReadable reports whether the grant reads every kind a reference of kind
+// k may land on under its pin. A path the pin does not admit is not refused
+// by the engine when a record mapping leads from k to a kind the pin admits:
+// the engine stores the mapped subject instead and titles the record from
+// it, so the grant must read the pinned kind, or for a trait pin every kind
+// implementing the trait, as well as k.
+func (s *scopedDataset) pinReadable(ctx context.Context, k, pin, trait string) (bool, error) {
+	switch {
+	case trait != "":
+		impl, err := s.implementers(ctx, trait)
+		if err != nil {
+			return false, err
+		}
+		if slices.Contains(impl, k) {
+			return true, nil
+		}
+		for _, i := range impl {
+			if read, err := s.reads(ctx, i); err != nil || !read {
+				return false, err
+			}
+		}
+		return true, nil
+	case pin != "" && pin != k:
+		return s.reads(ctx, pin)
+	}
+	return true, nil
+}
+
+// implementers lists the kinds implementing trait; an unknown trait has
+// none.
+func (s *scopedDataset) implementers(ctx context.Context, trait string) ([]string, error) {
+	impl, err := s.inner.TypesImplementing(ctx, trait)
+	if err != nil {
+		if errors.Is(err, substrate.ErrValidation) || errors.Is(err, substrate.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]string, 0, len(impl))
+	for _, k := range impl {
+		out = append(out, k.Identity)
+	}
+	return out, nil
+}
 
 // targetKind is the kind one reference value names: a full record path
 // carries its own (`<authority>/<package>/<name>/<id>`, and an id may hold a
@@ -697,12 +747,13 @@ func collectReferenceValue(decl map[string]any, v any, out *[]referenceSite) {
 		if pin == "any" {
 			pin = ""
 		}
+		trait, _ := decl["trait"].(string)
 		switch x := v.(type) {
 		case string:
-			*out = append(*out, referenceSite{value: x, pin: pin})
+			*out = append(*out, referenceSite{value: x, pin: pin, trait: trait})
 		case map[string]any:
 			ref, _ := x["ref"].(string)
-			*out = append(*out, referenceSite{value: ref, pin: pin})
+			*out = append(*out, referenceSite{value: ref, pin: pin, trait: trait})
 		default:
 			*out = append(*out, referenceSite{})
 		}
@@ -964,6 +1015,9 @@ func (s *scopedDataset) ChangeTriggers(context.Context, []substrate.Change) (map
 // refuses a lossy change, which only the owner may confirm.
 func (s *scopedDataset) ApplyVocabularyDocuments(ctx context.Context, _ substrate.Actor, docs []map[string]any) ([]*substrate.Record, error) {
 	if err := s.declarable(docs); err != nil {
+		return nil, err
+	}
+	if err := s.templatesRead(ctx, docs); err != nil {
 		return nil, err
 	}
 	if err := s.widensOnly(ctx, docs); err != nil {
