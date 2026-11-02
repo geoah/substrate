@@ -854,6 +854,17 @@ export interface TokenInfo {
   clientId?: string
   /** The name the app claimed when the owner approved it; unverified. */
   clientName?: string
+  /** The agents the owner approved the app to declare (decision 0206). */
+  agents?: AgentApproval[]
+}
+
+/** One approved `agent` detail as a token stores it: the agent, the exact
+ * kinds it reads and writes, and its daily cap in cents. */
+export interface AgentApproval {
+  agent: string
+  reads: string[]
+  writes?: string[]
+  spendCentsPerDay: number
 }
 
 /** One parked app authorization request as the approval page reads it
@@ -919,7 +930,8 @@ export type SetupBlockReason =
 export type SetupProgress = "waiting" | "running" | "done" | "failed"
 
 /** The detail types an authorization request may carry. */
-export type AuthorizationDetailType = "package" | "account" | "webhook"
+export type AuthorizationDetailType =
+  "package" | "account" | "webhook" | "agent"
 
 /** The app asking. `host` is the one fact its client id URL proves; `name` and
  * `uri` are what its own document claims, never present for a local app. */
@@ -1011,10 +1023,15 @@ export interface AuthorizationDetail {
   properties?: Record<string, unknown>
   trigger?: string
   url?: string
+  /** An `agent` detail (decision 0206). */
+  agent?: string
+  reads?: string[]
+  writes?: string[]
+  spendCentsPerDay?: number
 }
 
 /** One detail as approving would set it up. Exactly one of `package`,
- * `account` and `webhook` is present, by `type`. `blocked` is present when
+ * `account`, `webhook` and `agent` is present, by `type`. `blocked` is present when
  * the row cannot run, and then approving is refused. `progress` is present
  * while a set up runs and after one stopped. */
 export interface AuthorizationSetup {
@@ -1025,6 +1042,28 @@ export interface AuthorizationSetup {
   package?: AuthorizationPackage
   account?: AuthorizationAccount
   webhook?: AuthorizationWebhookPlan
+  agent?: AuthorizationAgentPlan
+}
+
+/** An agent row: the one agent the app may declare and keep (decision
+ * 0206), each kind it reads and writes (`held` false for one the server
+ * lacks), and its daily cap. Approving sets nothing up; `allowed` is true
+ * when the previous token's approval already covers it. */
+export interface AuthorizationAgentPlan {
+  agent: string
+  reads?: AuthorizationAgentKind[]
+  writes?: AuthorizationAgentKind[]
+  spendCentsPerDay?: number
+  allowed?: boolean
+  /** Why approving leaves the agent out: its package's declare scope is
+   * refused, since another hand keeps the package (decision 0205). */
+  withheld?: string
+}
+
+export interface AuthorizationAgentKind {
+  identity: string
+  label?: KindLabel
+  held?: boolean
 }
 
 /** Why a setup row cannot run: the reason a client branches on, the server's
@@ -1113,6 +1152,7 @@ export interface AuthorizationPrevious {
   /** Absent when it lasts until revoked. */
   expiresAt?: string
   scopes: string[]
+  agents?: AgentApproval[]
 }
 
 /** Why a set up stopped, in the owner's words: `row` is the row it stopped

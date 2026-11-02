@@ -25,9 +25,13 @@ export function AppManagedSection({
   app,
   clientId,
   packageId,
+  agent = false,
 }: {
   /** The app's actor, `app:<host>`. */
   app: string
+  /** The section heads an app's agent (decision 0206) rather than its
+   * collections. */
+  agent?: boolean
   /** The app's client id, where the row carries it. */
   clientId?: string
   /** `<authority>/<package>`. */
@@ -65,11 +69,19 @@ export function AppManagedSection({
             {clientId}
           </p>
         )}
-        <p className="text-[13px] text-muted-foreground">
-          {appManagedLine(app)} {name} adds to them as it updates, and you can’t
-          change them here. You can pause it and resume it; deleting what it
-          holds waits until you take it over.
-        </p>
+        {agent ? (
+          <p className="text-[13px] text-muted-foreground">
+            {name} keeps this agent: its instructions, what it may read and
+            change, its model and its daily cap. You can’t change them here.
+            Pause it to turn it off; it also stops when {name}’s access ends.
+          </p>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">
+            {appManagedLine(app)} {name} adds to them as it updates, and you
+            can’t change them here. You can pause it and resume it; deleting
+            what it holds waits until you take it over.
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           {bundle.data && (
             <PauseBundleButton bundle={bundle.data} name={name} />

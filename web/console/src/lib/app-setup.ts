@@ -87,7 +87,21 @@ export function setupTitle(row: AuthorizationSetup): string {
     const what = webhookWords(row.webhook)
     return row.action === "none" ? `The ${what} is on` : `Turn on the ${what}`
   }
+  if (row.agent) return `Add an AI agent: ${agentDisplayName(row.agent.agent)}`
   return row.type
+}
+
+/** An agent's name as a person reads it: its local name, words split
+ * ("workoutCoach" reads "Workout coach"). */
+export function agentDisplayName(id: string): string {
+  const local = id.split("/").pop() ?? id
+  const words = local.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** A daily cap in cents as the owner reads it: "$1.00". */
+export function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
 }
 
 /** The triggers a request leaves on: every webhook it names, enabled by

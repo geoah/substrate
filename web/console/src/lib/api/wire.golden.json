@@ -6,6 +6,12 @@
     "properties": false,
     "version": false
   },
+  "AgentApproval": {
+    "agent": true,
+    "reads": true,
+    "spendCentsPerDay": true,
+    "writes": false
+  },
   "AgentEvent": {
     "args": false,
     "callable": false,
@@ -191,6 +197,19 @@
     "label": false,
     "properties": false
   },
+  "AuthorizationAgentKind": {
+    "held": false,
+    "identity": true,
+    "label": false
+  },
+  "AuthorizationAgentPlan": {
+    "agent": true,
+    "allowed": false,
+    "reads": false,
+    "spendCentsPerDay": false,
+    "withheld": false,
+    "writes": false
+  },
   "AuthorizationAnswer": {
     "redirect": false,
     "setup": false,
@@ -228,14 +247,18 @@
     "missing": true
   },
   "AuthorizationDetail": {
+    "agent": false,
     "id": false,
     "kind": false,
     "package": false,
     "properties": false,
+    "reads": false,
+    "spendCentsPerDay": false,
     "trigger": false,
     "type": true,
     "url": false,
-    "version": false
+    "version": false,
+    "writes": false
   },
   "AuthorizationFailure": {
     "message": true,
@@ -275,6 +298,7 @@
     "triggers": false
   },
   "AuthorizationPrevious": {
+    "agents": false,
     "approvedAt": true,
     "expiresAt": false,
     "scopes": true
@@ -316,6 +340,7 @@
   "AuthorizationSetup": {
     "account": false,
     "action": true,
+    "agent": false,
     "blocked": false,
     "package": false,
     "progress": false,
@@ -816,6 +841,7 @@
     "totpSecret": true
   },
   "TokenInfo": {
+    "agents": false,
     "clientId": false,
     "clientName": false,
     "createdAt": true,
