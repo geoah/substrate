@@ -199,3 +199,34 @@ func TestADevelopmentDocumentThatCannotBeReadRefusesTheBoot(t *testing.T) {
 		t.Fatal("a document naming another authority was admitted")
 	}
 }
+
+func TestAPublisherIsTheSameOnlyWhenItVerifiesTheSameWay(t *testing.T) {
+	dns := Publisher{Verified: true, Authority: "example.org"}
+	file := Publisher{Verified: true, Authority: "example.org", FromFile: true}
+	unverified := Publisher{Authority: "example.org", Reason: "example.org publishes no _substrate record"}
+	for _, c := range []struct {
+		name string
+		a, b Publisher
+		same bool
+	}{
+		{"one authority by DNS", dns, Publisher{Verified: true, Authority: "example.org", Name: "renamed"}, true},
+		{"verified, then not", dns, unverified, false},
+		{"not, then verified", unverified, dns, false},
+		{"another authority", dns, Publisher{Verified: true, Authority: "example.com"}, false},
+		{"DNS, then a file", dns, file, false},
+		{"unverified for two reasons", unverified, Publisher{Reason: "another"}, true},
+	} {
+		if got := c.a.Same(c.b); got != c.same {
+			t.Errorf("%s: Same = %v, want %v", c.name, got, c.same)
+		}
+	}
+
+	local := filepath.Join(t.TempDir(), "authority.json")
+	if err := os.WriteFile(local, []byte(authorityJSON("example.org", pubClientID)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v := NewVerifier(PublisherOptions{Resolver: domains.Static{}, LocalDocuments: map[string]string{"example.org": local}})
+	if p := v.Verify(context.Background(), Client{ID: pubClientID, Host: "cdn.example.net"}, claiming("example.org"), pubRedirect); !p.Verified || !p.FromFile {
+		t.Fatalf("a file-vouched publisher reads %+v", p)
+	}
+}

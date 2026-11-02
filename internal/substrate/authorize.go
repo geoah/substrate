@@ -367,7 +367,9 @@ type AuthorizationApp struct {
 // not verified, absent when it is or when it claims no publisher. Record,
 // DocumentURL and Listed are the technical details: the `_substrate` record
 // as read, the document it names, and whether that document lists the
-// client id.
+// client id. FromFile is true when a file this server was configured to
+// read (SUBSTRATE_INSECURE_AUTHORITY_DOCS) stood in for the authority's DNS
+// record and document, so the operator, not the authority, vouched for it.
 type AuthorizationPublisher struct {
 	Authority   string `json:"authority,omitempty"`
 	Name        string `json:"name,omitempty"`
@@ -376,6 +378,7 @@ type AuthorizationPublisher struct {
 	Record      string `json:"record,omitempty"`
 	DocumentURL string `json:"documentUrl,omitempty"`
 	Listed      bool   `json:"listed"`
+	FromFile    bool   `json:"fromFile,omitempty"`
 }
 
 // AuthorizationRedirectTo is where the code goes on approval.

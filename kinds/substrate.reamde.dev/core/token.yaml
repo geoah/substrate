@@ -62,6 +62,11 @@ data:
       managed: true
       description: the authority verified as the app's publisher when the
         owner approved it; absent when nothing verified one
+    appAuthorityFromFile:
+      type: bool
+      managed: true
+      description: true when a file the server was configured to read (SUBSTRATE_INSECURE_AUTHORITY_DOCS),
+        not the authority's DNS, vouched for appAuthority
     appLocal:
       type: bool
       managed: true
