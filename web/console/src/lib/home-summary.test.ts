@@ -76,14 +76,17 @@ function kind(identity: string): KindInfo {
 
 describe("homeSections", () => {
   const HOME = "ada.example.com"
-  const yours = ["task", "project", "person", "note"].map((n) =>
-    kind(`${HOME}/things/${n}`)
-  )
+  const yours = [
+    kind(`${HOME}/tasks/task`),
+    kind(`${HOME}/tasks/project`),
+    kind(`${HOME}/people/person`),
+    kind(`${HOME}/notes/note`),
+  ]
   const google = ["calendarevent", "contact", "gmailthread"].map((n) =>
     kind(`providers.substrate.reamde.dev/google/${n}`)
   )
 
-  it("groups yours first, then each provider under its own heading", () => {
+  it("ranks yours together across packages, then each provider under its own heading", () => {
     const sections = homeSections(
       collectionGroups([...yours, ...google], HOME),
       () => true
